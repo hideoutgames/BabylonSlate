@@ -54,6 +54,7 @@ import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, packedSlimProof, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
+import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import type { SpawnableLight } from "./spawnable-lights";
 import { reserveSceneLightInventory } from "./scene-lighting";
 import { createLoadRehearsal, type LoadRehearsal, type LoadRehearsalReport } from "./load-rehearsal";
@@ -424,6 +425,10 @@ function initializeEngine(
   };
   const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
   onRollback(() => releasePlayRenderPath?.());
+  // Every view's draws count as drawn; Play counts what is first drawn after each world load presents.
+  trackFirstDraws(engine);
+  const firstDraws = options.playMode ? openFirstDrawStats(engine) : null;
+  onRollback(() => firstDraws?.close());
   // Console `fixedlights` switches the shared Engine; the state it found comes back when this view goes.
   let fixedShapeLightingBefore: { enabled: boolean; guard: FixedLightGuard } | null = null;
   const restoreFixedShapeLighting = () => {
@@ -1676,7 +1681,7 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+    ))(), firstDraws: firstDraws?.stats() ?? null, presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
@@ -1759,7 +1764,10 @@ function initializeEngine(
     if (pending.owner) {
       const layer = layerLoads.get(pending.owner.layerId);
       if (layer?.loadId === pending.owner.layerLoadId) layer.ready = true;
-    } else worldLoading = false;
+    } else {
+      worldLoading = false;
+      firstDraws?.resume();
+    }
     pending.resolve();
   };
   function acknowledgeFrameCopy(owners = [...frameOwners], receipt = pendingPerformanceReceipt, copyMs = 0, frameReport = pendingFrameReportReceipt) {
@@ -2298,6 +2306,7 @@ function initializeEngine(
       releaseViewless?.();
       unsubscribeEditorDrop();
       releasePlayLoop?.();
+      firstDraws?.close();
       releaseMainThreadDecoding?.();
       restoreFixedShapeLighting();
       engine.stopRenderLoop(renderLoop);
@@ -2606,6 +2615,7 @@ function initializeEngine(
         worldSceneAssetGuid = command.sceneAssetGuid;
         postProcessParameters.clear();
         worldLoading = true;
+        firstDraws?.pause();
         const sceneLoadId = command.sceneLoadId;
         instanceCompileHold = () => worldLoading && sceneLoadId === worldLoadId;
         worldRenderer.invalidate();

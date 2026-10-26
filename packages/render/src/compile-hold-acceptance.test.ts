@@ -2246,6 +2246,20 @@ describe("compile holds after the first frame", () => {
     }, JSON.stringify(record)).toEqual({ effects: 0, heldFrames: 0, paused: false, shown: true, warmed: 1, pipelines: 0 });
   });
 
+  it.each(["sync", "parallel"] as const)("Play counts a warmed spawn's first draw as late, compiled by the load: %s", async (model) => {
+    // The spawn warm-up compiles the Material on a staged box it never draws, so its first draw comes with the spawn,
+    // after the scene presented: the first draw a program's first use holds iPad WebKit WebGL2 for.
+    const world = playWorld(model, [], ["surface-a"]);
+    await settle(world);
+    const before = world.handle.renderDiagnostics().firstDraws!;
+    world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    for (let index = 0; index < 4; index++) await world.frame();
+    const after = world.handle.renderDiagnostics().firstDraws!;
+    expect({ draws: after.draws - before.draws, loadCompiled: after.loadCompiled - before.loadCompiled, frames: after.frames - before.frames })
+      .toEqual({ draws: 1, loadCompiled: 1, frames: 1 });
+  });
+
   it.each(MODELS)("a Spawn Actor preparation compiles the actor's Material before it spawns: %s", async (model) => {
     // Spawn Actor (and a Class load) prepares the actor's sources first: that preparation also compiles them against
     // the current lighting, so the actor draws in its first frame.

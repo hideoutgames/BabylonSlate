@@ -57,6 +57,8 @@ function fakeEditor(
             ? ({
               presentation: presentation(now, commands), cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
               pipeline: { effective: { renderPath: "forward" } },
+              // One shader first drawn per command run so far.
+              firstDraws: { draws: commands.length, loadCompiled: 0, frames: commands.length, stalls: 0, mostInFrame: 1, worstFrameMs: 20 },
             } as unknown as RenderDiagnostics)
             : null,
         }),
@@ -113,6 +115,16 @@ describe("runFeatureTestCheck", () => {
     expect(fine.passed).toBe(true);
     expect(fine.play.commands).toMatchObject([{ line: "ft_stats", success: true, output: "ft_stats ok" }]);
     expect(report.cancelled).toBe(false);
+  });
+
+  it("reads the shaders first drawn after a scene's commands ran, so Full mode's spawns count", async () => {
+    const editor = fakeEditor({}, undefined, () => ({ drawn: 1, held: 0 }));
+    const report = await runFeatureTestCheck({
+      mode: "full", scenes: [scene("main")], deps: editor.deps, signal: new AbortController().signal,
+    });
+    const main = report.scenes[0];
+    expect(main.play.commands.map((command) => command.line)).toContain("ft_spawn 10");
+    expect(main.play.firstDraws?.draws).toBe(main.play.commands.length);
   });
 
   it("fails a scene on a failed command or a session error, but not on warnings", async () => {

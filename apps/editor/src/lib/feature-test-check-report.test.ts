@@ -21,7 +21,7 @@ describe("formatFeatureTestCheckReport", () => {
         name: "main", path: "assets/main.scene.hasset", passed: false,
         problems: ["Play did not finish loading in 120 s (stuck at Loading Models 45%)."],
         editor: { status: "ready", ms: 4200, phase: null, frames: { frames: 180, durationMs: 3000, fps: 60, p95Ms: 18, maxMs: 40, stalls: 0 }, error: null, gpu: null },
-        play: { status: "timeout", ms: 120_000, phase: "Loading Models 45%", frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark: [],
+        play: { status: "timeout", ms: 120_000, phase: "Loading Models 45%", frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark: [],
           logs: [{ severity: "error", message: "Material FT_Glass failed to compile" }] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 55, after: 55, leak: false, quarantined: false } },
       }, {
@@ -29,6 +29,7 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
+          firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4 },
           commands: [{ line: "ft_stats", success: true, output: "FeatureTest score 0, spinners 4, spawned 0", ms: 1200 }], benchmark: [], logs: [] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 30, after: 30, leak: false, quarantined: false } },
       }],
@@ -44,6 +45,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Play: timeout after 120.0 s at Loading Models 45%");
     expect(lines).toContain("    [error] Material FT_Glass failed to compile");
     expect(lines).toContain("  > ft_stats: ok in 1.2 s · FeatureTest score 0, spinners 4, spawned 0");
+    expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame");
     expect(lines).toContain("  TypeError: x is undefined");
   });
 
@@ -55,7 +57,7 @@ describe("formatFeatureTestCheckReport", () => {
     const scene = (name: string, benchmark: FeatureTestBenchmarkSample[]): FeatureTestCheckSceneResult => ({
       name, path: `assets/${name}.scene.hasset`, passed: true, problems: [],
       editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
-      play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark, logs: [] },
+      play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark, logs: [] },
       session: null,
     });
     const report: FeatureTestCheckReport = {
@@ -82,7 +84,7 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "failed", ms: 15_300, phase: "Presenting First Frame", frames: null,
           error: ["Error: The scene did not present a frame before the loading deadline. Ready: true; draws: 3; rendered: true; GPU pending: true; copied: false."],
           gpu: { api: "webgpu", vendor: "apple", renderer: "apple-a16", version: null } },
-        play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark: [], logs: [] },
+        play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
         session: null,
       }],
     };

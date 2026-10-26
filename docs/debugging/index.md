@@ -167,6 +167,8 @@ The graphs stay read-only: watching never changes your assets or the running gam
 
 Stats shows **fps**, the frame time, and the **script** and **physics** time of the last tick. When script and physics together take more than 8 ms, Stats shows **over 8 ms budget**. `stat unit` splits the tick into its phases: **game** (the Game Instance), **subsystems**, **actors**, **components**, **physics**, **post-physics** and **systems** (Delays, Behaviour Trees, Animation Graphs and crowds). Add more rows with the `stat unit`, `stat memory`, `stat draws` and `stat threads` [console commands](console.md). Play, Simulation, Preview Build and exported games that include the debugger show the same rows.
 
+With `stat draws` on WebGL2, Play, Preview Build and exported games also show **first draws**: how many shaders the game drew for the first time after the scene appeared, how many of those were prepared while the scene loaded, and the longest frame that drew one. Drawing a shader for the first time can make that frame much longer on some devices, so the row is highlighted once such a frame took more than 100 ms. Frames drawn while a scene loads are not counted.
+
 ## Inspector
 
 The Play **Inspector** lists the Game Instance, subsystems, actors and their components. Select one to see its **Identity**, **Transform** and **Variables**. Values are read-only.

@@ -1,3 +1,4 @@
+import type { RenderDiagnostics } from "@haptic/render";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe, ViewportProbe } from "./runtime-probes";
 import { describeError } from "../lib/diagnostic-info";
@@ -87,6 +88,8 @@ export interface FeatureTestCheckSceneResult {
     frames: FrameStats | null;
     runtimeFps: number | null;
     snapshot: ReturnType<PlayProbe["snapshot"]> | null;
+    /** Shaders first drawn after the scene presented, read when its commands finished (WebGL2 only). */
+    firstDraws: NonNullable<RenderDiagnostics["firstDraws"]> | null;
     commands: FeatureTestCheckCommandResult[];
     benchmark: FeatureTestBenchmarkSample[];
     logs: Array<{ severity: string; message: string }>;
@@ -227,7 +230,7 @@ function emptySceneResult(scene: { name: string; path: string }): FeatureTestChe
   return {
     name: scene.name, path: scene.path,
     editor: { status: "not-opened", ms: 0, phase: null, frames: null, error: null, gpu: null },
-    play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, commands: [], benchmark: [], logs: [] },
+    play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
     session: null, passed: false, problems: [],
   };
 }
@@ -310,6 +313,7 @@ async function checkScene(
         if (!command.success) result.problems.push(`Command ${line} failed: ${sentence(command.output || "no output")}`);
       }
     }
+    result.play.firstDraws = play.snapshot().rendering?.firstDraws ?? null;
   } else if (loaded === "closed") {
     result.play.status = "closed";
     result.problems.push("Play closed before the scene finished loading.");
