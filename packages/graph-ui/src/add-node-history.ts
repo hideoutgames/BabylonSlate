@@ -74,11 +74,13 @@ export class AddNodeHistory {
   private loading: Promise<void> | null = null;
   private generation = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private readonly backend: AddNodeHistoryBackend;
+  private readonly now: () => number;
 
-  constructor(
-    private readonly backend: AddNodeHistoryBackend,
-    private readonly now: () => number = Date.now,
-  ) {}
+  constructor(backend: AddNodeHistoryBackend, now: () => number = Date.now) {
+    this.backend = backend;
+    this.now = now;
+  }
 
   private today(): number {
     return Math.floor(this.now() / DAY_MS);
@@ -151,7 +153,7 @@ export class AddNodeHistory {
       .slice(0, MAX_PICKS_PER_CONTEXT - 1);
     context.picks = Object.fromEntries([
       [nodeId, picked],
-      ...others.map(([id, , score, day]) => [id, [score, day]] as const),
+      ...others.map(([id, , score, day]): [string, [number, number]] => [id, [score, day]]),
     ]);
     context.day = today;
     this.contexts.delete(key);

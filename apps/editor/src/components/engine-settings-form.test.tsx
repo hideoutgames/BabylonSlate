@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { defaultEngineSettings, MemoryAppSettingsStore } from "@haptic/vfs";
-import { GraphEditor, type GraphDocument } from "@haptic/graph-ui";
+import { getAddNodeHistory, GraphEditor, type GraphDocument } from "@haptic/graph-ui";
 import { TagProvider } from "@haptic/editor-kit";
 import { EngineSettingsForm } from "./engine-settings-form";
 import { AppSettingsProvider, useAppSettings } from "../context/app-settings-context";
@@ -91,6 +91,28 @@ describe("EngineSettingsForm graph", () => {
       data: expect.objectContaining({ "default:value": 8 }),
     })] }), expect.anything());
     expect((await store.load()).readOnlyPinDefaults).toBe(false);
+  });
+});
+
+describe("EngineSettingsForm Add Node History", () => {
+  afterEach(() => getAddNodeHistory().clear());
+
+  it("turns history off without forgetting it, and forgets it only after Clear is confirmed", async () => {
+    const history = getAddNodeHistory();
+    history.record("pin", "debug.print");
+    const onChange = vi.fn();
+    const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="graph" />);
+    fireEvent.click(view.getByRole("switch", { name: "Add Node History" }));
+    expect(onChange).toHaveBeenLastCalledWith({ graphAddNodeHistoryEnabled: false });
+    expect(history.isEmpty()).toBe(false);
+
+    const clear = view.getByTestId("setting-graph-add-node-history-clear");
+    await waitFor(() => expect(clear).toHaveProperty("disabled", false));
+    fireEvent.click(clear);
+    expect(history.isEmpty()).toBe(false);
+    fireEvent.click(await view.findByTestId("setting-graph-add-node-history-clear-confirm"));
+    expect(history.isEmpty()).toBe(true);
+    expect(clear).toHaveProperty("disabled", true);
   });
 });
 
