@@ -1671,6 +1671,40 @@ describe("compile holds after the first frame", () => {
       .toEqual({ map: false, unrestored: [`${AUTHORED_LIGHT_PREFIX}12 off`] });
   });
 
+  it("a load rehearsal gives the shadow maps its changes released back to their lights, and builds only a map a change starts", async () => {
+    // The sun's and the spot's changes (off, shadows off) release their maps; each revert takes the same allocation
+    // back rather than building it again. The point's shadows-on step builds a map, which its revert disposes.
+    rehearseLoad = true;
+    const world = playWorld("sync", [sun({ castShadows: true }), spot(10, [0, 4, 0], { castShadows: true }), point(11, [1, 4, 0.2])]);
+    const scene = world.handle.scene;
+    const controller = findSceneShadowController(scene)!;
+    const authored = (slotId: number) => scene.lights.find((light) => light.name === `${AUTHORED_LIGHT_PREFIX}${slotId}`)!;
+    const maps = () => [authored(3), authored(10), authored(11)].map((light) => controller.boundGenerator(light));
+    await withClock(world.handle.prewarmSceneMaterials());
+    const before = maps();
+    const added: { name: string }[] = [];
+    const observer = scene.onNewTextureAddedObservable.add((texture) => added.push(texture));
+    const presentation = world.handle.presentFirstFrame();
+    let presented = false;
+    void presentation.finally(() => { presented = true; });
+    for (let index = 0; index < 400 && (index < 4 || !presented); index++) await world.frame();
+    await presentation;
+    scene.onNewTextureAddedObservable.remove(observer);
+    // Read once built: Babylon announces a texture before its subclass names it.
+    const built = added.filter((texture): texture is RenderTargetTexture =>
+      texture instanceof RenderTargetTexture && /shadowmap$/i.test(texture.name));
+    const report = world.handle.loadRehearsalStats();
+    expect({
+      held: before.map((map) => map !== null),
+      kept: maps().map((map, index) => map === before[index]),
+      built: built.map((texture) => texture.name.slice(AUTHORED_LIGHT_PREFIX.length)),
+      live: built.filter((texture) => scene.textures.includes(texture)).length,
+      steps: report?.steps, timedOut: report?.timedOut, unrestored: report?.unrestored,
+    }, JSON.stringify(report)).toEqual({
+      held: [true, true, false], kept: [true, true, true], built: ["11_shadowMap"], live: 0, steps: 6, timedOut: [], unrestored: [],
+    });
+  });
+
   it.each(MODELS)("a burst of swaps adopts at most FIRST_DRAWS_PER_FRAME new variants per frame: %s", async (model) => {
     // Six barrels with Materials of their own under two points: one point switching off asks every Material for a new
     // variant at once. Their first draws spread over frames, previous Effects drawing meanwhile.

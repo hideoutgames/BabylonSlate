@@ -58,6 +58,7 @@ import {
   allocationRequestKey,
   generatorPasses,
   matchesAllocationKey,
+  type AllocationKey,
   type EffectiveShadowBias,
   type ShadowEntry as Entry,
   type ShadowLightStatus,
@@ -83,7 +84,7 @@ import {
   type ShadowMapSlot,
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
-import { ShadowPredictionMaps } from "./shadow-prediction-maps";
+import { detachShadowGenerator, ShadowPredictionMaps } from "./shadow-prediction-maps";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
 export type { ShadowAdmissionSnapshot, ShadowStartPrediction } from "./shadow-admission-plan";
@@ -153,6 +154,17 @@ export class SceneShadowController {
   private selectionCamera: Camera | null = null;
   /** History the sync `restoreAdmission` runs ranks by, instead of its own. */
   private restoring: ShadowAdmissionSnapshot | null = null;
+  /**
+   * A tried change is applied (`snapshotAdmission` with `keepReleasedMaps`, until `restoreAdmission`): a map a sync
+   * takes from a light is parked instead of disposed.
+   */
+  private parking = false;
+  /**
+   * Maps taken from their lights while a tried change was applied: off the light (no receiver binds it, no pass draws
+   * it), still listing the casters. A sync that admits the light again with the same allocation shape gives its map
+   * back; the restore disposes the others.
+   */
+  private readonly parked = new Map<Light, { generator: ShadowGenerator; key: AllocationKey }>();
   /** The effective settings the last sync admitted by. */
   private planSettings: ShadowSettings | null = null;
   /** Per-map closures read their current owner; a local map can move between lights. */
@@ -184,6 +196,7 @@ export class SceneShadowController {
     const engine = scene.getEngine();
     const restored = engine.onContextRestoredObservable.add(() => {
       this.predictions.release();
+      this.disposeParkedMaps();
       for (const entry of this.entries.values()) {
         entry.failedKey = "";
         entry.recovery = null;
@@ -267,6 +280,7 @@ export class SceneShadowController {
       // Their owners still await the ledger releases through their own claims.
       this.views.releaseAll();
       for (const entry of this.entries.values()) entry.generator?.dispose();
+      this.disposeParkedMaps();
       this.predictions.dispose();
       this.entries.clear();
       this.meshes.clear();
@@ -307,6 +321,8 @@ export class SceneShadowController {
       this.entries.set(light, entry);
       light.onDisposeObservable.addOnce(() => {
         this.entries.get(light)?.generator?.dispose();
+        this.parked.get(light)?.generator.dispose();
+        this.parked.delete(light);
         this.entries.delete(light);
         this.views.forgetLight(light);
         markSceneReadinessDirty(this.scene);
@@ -333,8 +349,17 @@ export class SceneShadowController {
     this.pending.add(mesh);
     for (const child of mesh.getChildMeshes()) this.pending.add(child);
   }
-  /** The history the next sync ranks by: its camera, and each light holding a map (admitted or standby) and since when. */
-  snapshotAdmission(): ShadowAdmissionSnapshot {
+  /**
+   * The history the next sync ranks by: its camera, and each light holding a map (admitted or standby) and since when.
+   * With `keepReleasedMaps` (a change about to be tried and reverted), until `restoreAdmission` an admitted map a sync
+   * takes from its light is parked: taken off the light, so receivers and passes see it gone as if disposed, but kept
+   * allocated while room remains after the admitted and standby maps, and given back when its light is admitted again
+   * with the same allocation shape (the restore, normally), instead of built again.
+   */
+  snapshotAdmission(options: { keepReleasedMaps?: boolean } = {}): ShadowAdmissionSnapshot {
+    // A hold its restore never ended keeps nothing for this one.
+    this.disposeParkedMaps();
+    this.parking = options.keepReleasedMaps ?? false;
     const maps = new Map<Light, { standby: boolean; admittedAt: number }>();
     for (const entry of this.entries.values())
       if (entry.generator) maps.set(entry.light, { standby: entry.standby, admittedAt: entry.admittedAt });
@@ -345,7 +370,8 @@ export class SceneShadowController {
    * camera, its holders as the incumbents (each admitted map's distance bonus, and residency as of then), standby maps
    * kept only for lights that held one then, and the holders' admission times given back. Applied to the inputs
    * `snapshot` was taken with, the maps go back to the lights that held them, so a change tried and reverted leaves
-   * admission as it found it, and later syncs carry on from there.
+   * admission as it found it, and later syncs carry on from there. A parked map goes back to its light when the light
+   * is admitted again with the same allocation shape; the others are disposed, and parking ends.
    */
   restoreAdmission(snapshot: ShadowAdmissionSnapshot): void {
     this.restoring = snapshot;
@@ -353,6 +379,8 @@ export class SceneShadowController {
       this.sync("admission");
     } finally {
       this.restoring = null;
+      this.parking = false;
+      this.disposeParkedMaps();
     }
   }
   /** The admitted map; standby maps are neither rendered nor admitted. */
@@ -481,7 +509,7 @@ export class SceneShadowController {
     }
     return [...limits];
   }
-  /** Faces drawn and bytes held: the scene view's maps and every view's own. */
+  /** Faces drawn and bytes held: the scene view's maps (parked ones included) and every view's own. */
   metrics(): { passes: number; bytes: number } {
     let passes = 0;
     let bytes = 0;
@@ -489,15 +517,16 @@ export class SceneShadowController {
       passes += map.passes;
       bytes += map.attachmentBytes;
     });
+    const held = (generator: ShadowGenerator) =>
+      generatorPasses(generator) *
+      (generator.getShadowMap()?.getSize().width ?? 0) ** 2 *
+      shadowBytesPerTexel(this.scene.getEngine());
     for (const { generator, standby } of this.entries.values()) {
       if (!generator) continue;
-      const count = generatorPasses(generator);
-      if (!standby) passes += count;
-      bytes +=
-        count *
-        (generator.getShadowMap()?.getSize().width ?? 0) ** 2 *
-        shadowBytesPerTexel(this.scene.getEngine());
+      if (!standby) passes += generatorPasses(generator);
+      bytes += held(generator);
     }
+    for (const { generator } of this.parked.values()) bytes += held(generator);
     return { passes, bytes };
   }
   /** Whether the Scene lists the mesh; only a mesh that has left needs the search. */
@@ -647,9 +676,14 @@ export class SceneShadowController {
     // Only map moves and standby retention compare serialized settings.
     let serializedSettings: string | undefined;
     const settingsKey = () => (serializedSettings ??= JSON.stringify(settings));
-    const release = (entry: Entry) => {
+    // A restore parks nothing: what it does not give back is disposed.
+    const parking = this.parking && !restoring;
+    const release = (entry: Entry, park = parking) => {
       if (entry.generator) {
-        entry.generator.dispose();
+        // A tried change took an admitted map from its light: it waits off the light for the change's revert.
+        if (park && entry.key && !entry.standby && !entry.resetAllocation && entry.status !== "active")
+          this.park(entry.light, entry.generator, entry.key);
+        else entry.generator.dispose();
         markSceneReadinessDirty(scene);
         invalidateShadowReceiverHandoffs(scene);
       }
@@ -677,6 +711,28 @@ export class SceneShadowController {
         donors.push(entry);
       else release(entry);
     }
+    // A parked map goes back to its light, admitted again with the shape it was built with, before a donor or a
+    // construction could give the light another; its receivers and passes take it up as they would a new map.
+    for (const [light, held] of this.parked) {
+      const entry = this.entries.get(light);
+      if (entry?.status !== "active" || entry.generator) continue;
+      if (!matchesAllocationKey(held.key, entry.mapSize, entry.light, settings.cascades)) {
+        this.disposeParkedMap(light);
+        continue;
+      }
+      this.parked.delete(light);
+      currentCasters();
+      (entry.light._shadowGenerators ??= new Map()).set(held.generator.camera, held.generator);
+      entry.light._markMeshesAsLightDirty();
+      entry.generator = held.generator;
+      entry.key = held.key;
+      entry.failedKey = "";
+      entry.admittedAt = selectionTime;
+      neutralUntilRendered(held.generator);
+      markSceneReadinessDirty(scene);
+      invalidateShadowReceiverHandoffs(scene);
+    }
+    if (restoring) this.disposeParkedMaps();
     // Hand a retained map to a same-kind winner instead of constructing one.
     // Farther donors are least likely to return.
     donors.sort((a, b) => b.distanceSquared - a.distanceSquared);
@@ -772,8 +828,18 @@ export class SceneShadowController {
       if (map && map.refreshRate !== RenderTargetTexture.REFRESHRATE_RENDER_ONCE)
         map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     }
+    // Parked maps are optional reuse after the standby maps: each keeps only room those leave, so a tried change never
+    // holds memory a load without it would have used.
+    let parkedBytes = 0;
+    for (const [light, held] of this.parked) {
+      const bytes = reservedShadowBytes(held.generator, held.key.mapSize, budget.bytesPerTexel);
+      if (admitted.bytes + standby.bytes + parkedBytes + bytes > standbyBudget) this.disposeParkedMap(light);
+      else parkedBytes += bytes;
+    }
     this.views.yieldTo(admitted.bytes + standby.bytes);
-    this.predictions.reserved = { bytes: admitted.bytes + standby.bytes, passes: admitted.passes, samplers: admitted.samplers + standby.samplers };
+    this.predictions.reserved = {
+      bytes: admitted.bytes + standby.bytes + parkedBytes, passes: admitted.passes, samplers: admitted.samplers + standby.samplers,
+    };
     // Prediction maps keep only room the real maps leave, and go with the settings they were built with.
     this.predictions.retainWithin(settingsKey(), standbyBudget);
     this.predictions.reserve();
@@ -856,11 +922,12 @@ export class SceneShadowController {
               { cause: error },
             );
           }
-          // Standby maps are optional reuse; free them before reducing an admitted map.
-          let reclaimed = false;
+          // Parked and standby maps are optional reuse; free them before reducing an admitted map.
+          let reclaimed = this.parked.size > 0;
+          this.disposeParkedMaps();
           for (const other of this.entries.values()) {
             if (!other.standby) continue;
-            release(other);
+            release(other, false);
             reclaimed = true;
           }
           if (reclaimed) {
@@ -885,12 +952,11 @@ export class SceneShadowController {
     for (const entry of this.entries.values()) {
       if (!entry.generator) continue;
       applyCascadeFallback(entry);
-      const cascaded = entry.generator instanceof CascadedShadowGenerator;
-      const passes = generatorPasses(entry.generator);
-      live.bytes +=
-        (cascaded ? 4 : passes) * entry.mapSize ** 2 * budget.bytesPerTexel;
-      if (!entry.standby) live.passes += passes;
+      live.bytes += reservedShadowBytes(entry.generator, entry.mapSize, budget.bytesPerTexel);
+      if (!entry.standby) live.passes += generatorPasses(entry.generator);
     }
+    for (const held of this.parked.values())
+      live.bytes += reservedShadowBytes(held.generator, held.key.mapSize, budget.bytesPerTexel);
     // With the prediction maps' bytes (they draw no pass a frame shows).
     this.predictions.reserved = { ...live };
     this.predictions.reserve();
@@ -912,16 +978,42 @@ export class SceneShadowController {
       return casterBounds;
     });
   }
-  /** Every allocated map: the scene view's (admitted or standby) and every view's own. */
+  /** Every allocated map: the scene view's (admitted, standby or parked) and every view's own. */
   private forEachGenerator(action: (generator: ShadowGenerator) => void): void {
     for (const entry of this.entries.values()) if (entry.generator) action(entry.generator);
+    for (const held of this.parked.values()) action(held.generator);
     this.views.forEachMap((map) => action(map.generator));
+  }
+  /**
+   * Takes `generator` off `light` as its disposal would (receivers and passes no longer see it), keeping it allocated
+   * for `light`'s readmission.
+   */
+  private park(light: Light, generator: ShadowGenerator, key: AllocationKey): void {
+    this.disposeParkedMap(light);
+    detachShadowGenerator(generator);
+    light._markMeshesAsLightDirty();
+    this.parked.set(light, { generator, key });
+  }
+  private disposeParkedMap(light: Light): void {
+    const held = this.parked.get(light);
+    if (!held) return;
+    this.parked.delete(light);
+    held.generator.dispose();
+    markSceneReadinessDirty(this.scene);
+  }
+  private disposeParkedMaps(): void {
+    for (const light of [...this.parked.keys()]) this.disposeParkedMap(light);
   }
   /** Caster state only drives allocated maps (admitted or standby) and their spatial queries. */
   private holdsGenerator(): boolean {
     for (const entry of this.entries.values()) if (entry.generator) return true;
     return false;
   }
+}
+
+/** What a live map reserves: a cascaded map's four-layer construction peak (Babylon builds four, then the authored count), otherwise its faces. */
+function reservedShadowBytes(generator: ShadowGenerator, mapSize: number, bytesPerTexel: number): number {
+  return (generator instanceof CascadedShadowGenerator ? 4 : generatorPasses(generator)) * mapSize ** 2 * bytesPerTexel;
 }
 
 /** Whether a caster at `mesh` can draw into `generator`'s map: a local light's within its range (its cone unchecked), a sun's always. */

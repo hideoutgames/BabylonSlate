@@ -142,7 +142,7 @@ export class ShadowPredictionMaps {
 }
 
 /** Takes `generator` off its light, so receivers never bind it (`light.getShadowGenerator()` does not return it). */
-function detachShadowGenerator(generator: ShadowGenerator): void {
+export function detachShadowGenerator(generator: ShadowGenerator): void {
   const light = generator.getLight();
   const generators = light._shadowGenerators;
   if (!generators) return;
