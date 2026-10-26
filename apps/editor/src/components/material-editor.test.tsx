@@ -551,6 +551,15 @@ describe("Material graph panel", () => {
     expect(lastCommit().nodes.some((node) => node.id === newId)).toBe(false);
     expect(lastCommit().edges.some((edge) => edge.id === "new-edge")).toBe(false);
   });
+  it("finds the Float and Vector constants by their short type names", () => {
+    render(<MaterialGraphPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("graph-add-node"));
+    const search = screen.getByTestId("node-palette-search");
+    for (const [query, type] of [["V1", "const.float"], ["V2", "const.vec2"], ["Vec3", "const.vec3"], ["Float4", "const.vec4"]]) {
+      fireEvent.change(search, { target: { value: query } });
+      expect(screen.getByTestId(`node-palette-item-${type}`)).toBeTruthy();
+    }
+  });
   it("renders the graph canvas with catalog pins", async () => {
     const { container } = render(<MaterialGraphPanel {...panelProps} />);
     await waitFor(() => {

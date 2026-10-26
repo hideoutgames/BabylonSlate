@@ -17,3 +17,7 @@ Returns a fixed Vector 2 that you set in the **Inspector**.
 | Setting | Description |
 | --- | --- |
 | Value | The X and Y values to return. |
+
+## Notes
+
+- In **Add Node**, you can also search for **V2**, **Vec2** or **Float2**.

@@ -17,3 +17,7 @@ Returns a fixed Vector 3 that you set in the **Inspector**.
 | Setting | Description |
 | --- | --- |
 | Value | The X, Y and Z values to return. |
+
+## Notes
+
+- In **Add Node**, you can also search for **V3**, **Vec3** or **Float3**.
