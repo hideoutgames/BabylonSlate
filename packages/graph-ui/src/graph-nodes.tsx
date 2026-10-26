@@ -235,8 +235,8 @@ function PinRow({
   const incomingConnected = useStore((state) =>
     incoming ? isPinWired(state.edges, nodeId, incoming) : false,
   );
-  // An unwired pin that reads Self says so in its label.
-  const incomingLabel = incoming?.selfWhenUnwired && !incomingConnected ? `${incomingName} (Self)` : incomingName;
+  // An unwired pin that reads Self shows a Self field; the handle names it for assistive technology.
+  const incomingHandleLabel = incoming?.selfWhenUnwired && !incomingConnected ? `${incomingName} (Self)` : incomingName;
   const outgoingConnected = useStore((state) =>
     outgoing ? isPinWired(state.edges, nodeId, outgoing) : false,
   );
@@ -267,7 +267,7 @@ function PinRow({
             <PinHandle
               nodeId={nodeId}
               pin={incoming}
-              label={incomingLabel}
+              label={incomingHandleLabel}
               pending={isPending(incoming)}
               hasError={pinHasError(nodeId, incoming.id)}
               connected={incomingConnected}
@@ -276,7 +276,7 @@ function PinRow({
             {preview && displayedIncoming ? <PinDefaultEditor
               nodeId={nodeId} nodeData={data} nodeType={typeof data.__nodeType === "string" ? data.__nodeType : undefined}
               connectedInputIds={connectedInputs?.get(nodeId)}
-              pin={{ ...displayedIncoming, name: incomingLabel }} preview={preview} value={readPinDefaultValue(displayedIncoming, data)}
+              pin={{ ...displayedIncoming, name: incomingName }} preview={preview} value={readPinDefaultValue(displayedIncoming, data)}
               disabled={disabled || !onPinDefaultChange} onChange={(value) => onPinDefaultChange?.(nodeId, incoming.id, value)}
               renderer={renderPinDefaultEditor}
             /> : null}
@@ -284,7 +284,7 @@ function PinRow({
               data-pin-label={incoming.name}
               className="shrink-0 whitespace-nowrap text-base leading-snug text-foreground"
             >
-              {incomingLabel}
+              {incomingName}
               {incoming.typeLabel ? <span className="ml-1 text-xs text-muted-foreground">{incoming.typeLabel}</span> : null}
             </span>
           </>

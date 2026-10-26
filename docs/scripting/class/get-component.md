@@ -10,7 +10,7 @@ Returns the component of a given type on one actor.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Actor | Actor Reference | The actor to search. Left unconnected the pin reads **Actor (Self)** and searches the actor running the graph. |
+| Actor | Actor Reference | The actor to search. Left unconnected the pin shows **Self** and searches the actor running the graph. |
 | Class ID | ActorComponent Class |  |
 
 ## Outputs

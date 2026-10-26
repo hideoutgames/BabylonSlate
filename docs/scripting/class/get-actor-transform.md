@@ -20,5 +20,6 @@ Returns an actor's location, rotation and scale as one transform.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - For an attached actor, the values are relative to its parent.
 - Use [**Break Transform**](break-transform.md) to split the result into its parts.

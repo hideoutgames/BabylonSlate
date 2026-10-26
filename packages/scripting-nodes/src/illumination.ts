@@ -7,11 +7,10 @@ import {
   COLOR,
   objectRef,
 } from "@haptic/scripting";
-import { subject } from "./self-pin";
+import { selfActorPin, subject } from "./self-pin";
 
 const CAMERA = objectRef("CameraComponent");
 const LIGHT = objectRef("LightComponent");
-const ACTOR = objectRef("Actor");
 
 export const illuminationNodes: NodeDefinition[] = [
   {
@@ -21,7 +20,7 @@ export const illuminationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "target", "in", ACTOR)),
+      selfActorPin("target"),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.possessCamera(${ctx.input("target")});`);

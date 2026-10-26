@@ -39,7 +39,7 @@ export const actorNodes: NodeDefinition[] = [
     category: "actor",
     pure: true,
     pins: () => [
-      subject(pin("target", "target", "in", objectRef("Actor"))),
+      selfActorPin("target"),
       pin("out", "out", "out", STRING),
     ],
     codegen: (ctx) => ({
@@ -109,7 +109,7 @@ export const actorNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("parent", "Parent", "in", objectRef("Actor")),
     ],
     codegen: (ctx) => {
@@ -140,7 +140,7 @@ export const actorNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.detachActor(${ctx.input("target")});`);
@@ -152,7 +152,7 @@ export const actorNodes: NodeDefinition[] = [
     category: "actor",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("out", "Out", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => ({
@@ -166,7 +166,7 @@ export const actorNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("owner", "Owner", "in", objectRef("Actor")),
     ],
     codegen: (ctx) => {
@@ -181,7 +181,7 @@ export const actorNodes: NodeDefinition[] = [
     category: "actor",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("out", "Out", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => ({

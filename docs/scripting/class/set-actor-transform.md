@@ -22,6 +22,7 @@ Sets an actor's location, rotation and scale from one transform.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - For an attached actor, the transform is relative to its parent.
 - If any part of the transform is not a finite number, nothing changes.
 - If **Target** is connected to a reference that is empty when the node runs, nothing happens and an error is logged.

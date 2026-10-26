@@ -11,7 +11,7 @@ In the **Content Browser**, choose **New Asset > Rendering > Material**.
 Double-tap a Material to open it.
 
 - **Graph**: place nodes with **Add Node** and wire them into the output node for the Material's domain.
-- **Preview**: the Material on a shape. Pick **Cube**, **Sphere**, **Cylinder**, **Cone**, **Plane** or **Custom** to preview on one of your Models.
+- **Preview**: the Material on a shape. Pick **Cube**, **Sphere**, **Cylinder**, **Cone**, **Plane** or **Custom** to preview on one of your Models. The default sky behind the shape also lights it, so metallic and glossy Materials reflect it.
 - **Inspector**: the Material's settings, or the selected node's properties.
 - **Compiler Results**: problems with the graph. Tap one to jump to its node.
 
