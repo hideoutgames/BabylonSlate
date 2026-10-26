@@ -373,8 +373,8 @@ it("draws a Full Quality capture's own sun maps, fitted to its camera, and leave
 
 it("lets a Full Quality capture whose own sun map does not fit sample the scene view's, without rebuilding materials each frame", async () => {
   const { engine, scene, sun, controller, view, captures, captureCamera } = shadowedHost();
-  // Room for the capture's own targets, not for a copy of the sun map (256² × 4 layers × 12 bytes while it builds).
-  limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 2 * 1024 ** 2);
+  // Room for the capture's own targets, not for a copy of the sun map (256² × 4 layers × 6 bytes while it builds).
+  limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1024 ** 2);
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   await untilPublished(scene, view, captures);
   const capture = captureCamera()!;

@@ -59,7 +59,9 @@ export type ShadowAdmissionBudget = {
   readonly bytes: number;
   readonly passes: number;
   readonly samplers: number;
+  /** Per texel and layer of a local or single sun map, and of a cascaded sun map. */
   readonly bytesPerTexel: number;
+  readonly cascadedBytesPerTexel: number;
   readonly maxTextureSize: number;
   readonly maxCubemapTextureSize: number;
 };
@@ -121,12 +123,12 @@ export function readShadowAdmissionBudget(
     Math.min(profile.passes, ENGINE_SHADOW_BUDGET.passes - other.passes),
   );
   const samplerBudget = remainingShadowSamplers(scene);
-  const bytesPerTexel = shadowBytesPerTexel(scene.getEngine());
   return {
     bytes: byteBudget,
     passes: passBudget,
     samplers: samplerBudget,
-    bytesPerTexel,
+    bytesPerTexel: shadowBytesPerTexel(scene.getEngine()),
+    cascadedBytesPerTexel: shadowBytesPerTexel(scene.getEngine(), true),
     maxTextureSize: caps.maxTextureSize,
     maxCubemapTextureSize: caps.maxCubemapTextureSize,
   };
@@ -157,7 +159,6 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     bytes: byteBudget,
     passes: passBudget,
     samplers: samplerBudget,
-    bytesPerTexel,
   } = budget;
   const measureDistance = (decision: ShadowAdmissionDecision) => {
     const light = decision.entry.light;
@@ -293,7 +294,9 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     mapSize = 2 ** Math.floor(Math.log2(mapSize));
     // CSM constructs four layers before applying an authored lower count.
     // Admit that temporary peak as well as the final attachments.
-    const peakPasses = directional && settings.cascades > 1 ? 4 : passes;
+    const cascaded = directional && settings.cascades > 1;
+    const peakPasses = cascaded ? 4 : passes;
+    const bytesPerTexel = cascaded ? budget.cascadedBytesPerTexel : budget.bytesPerTexel;
     const availableBytes = Math.min(
       byteBudget - admitted.bytes,
       directional

@@ -32,18 +32,21 @@ export function trackViewShadowDrain(engine: AbstractEngine, release: Promise<un
 
 // Per-Engine shadow category ceiling. Cluster textures additionally consume the
 // shared managed lighting byte allowance; neither is total GPU memory.
-export const ENGINE_SHADOW_BUDGET = { bytes: 512 * 1024 ** 2, passes: 64 };
+export const ENGINE_SHADOW_BUDGET = { bytes: 768 * 1024 ** 2, passes: 64 };
 
-/** Matches Babylon's default RGBA half/float/byte choice, plus conservative depth. */
-export function shadowBytesPerTexel(engine: AbstractEngine): number {
+/**
+ * Babylon's shadow colour target (half, float or byte channels; red for a cascaded map, RGBA otherwise) plus its
+ * 32-bit depth texture, per texel and layer.
+ */
+export function shadowBytesPerTexel(engine: AbstractEngine, cascaded = false): number {
   const caps = engine.getCaps();
-  const color =
+  const channel =
     caps.textureHalfFloatRender && caps.textureHalfFloatLinearFiltering
-      ? 8
+      ? 2
       : caps.textureFloatRender && caps.textureFloatLinearFiltering
-        ? 16
-        : 4;
-  return color + 4;
+        ? 4
+        : 1;
+  return channel * (cascaded ? 1 : 4) + 4;
 }
 
 export function otherShadowReservations(scene: Scene): ShadowCost {

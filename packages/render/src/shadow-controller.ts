@@ -69,6 +69,7 @@ import {
   planShadowAdmission,
   predictShadowStarts,
   readShadowAdmissionBudget,
+  type ShadowAdmissionBudget,
   type ShadowAdmissionSnapshot,
   type ShadowStartPrediction,
 } from "./shadow-admission-plan";
@@ -520,7 +521,7 @@ export class SceneShadowController {
     const held = (generator: ShadowGenerator) =>
       generatorPasses(generator) *
       (generator.getShadowMap()?.getSize().width ?? 0) ** 2 *
-      shadowBytesPerTexel(this.scene.getEngine());
+      shadowBytesPerTexel(this.scene.getEngine(), generator instanceof CascadedShadowGenerator);
     for (const { generator, standby } of this.entries.values()) {
       if (!generator) continue;
       if (!standby) passes += generatorPasses(generator);
@@ -788,7 +789,7 @@ export class SceneShadowController {
     );
     for (const entry of donors.reverse()) {
       const generator = entry.generator!;
-      const bytes = generatorPasses(generator) * entry.mapSize ** 2 * budget.bytesPerTexel;
+      const bytes = generatorPasses(generator) * entry.mapSize ** 2 * texelBytes(generator, budget);
       const samplers = admissionSamplers(entry.light, settings);
       // The Forward light budget dropped this light for camera distance: it is
       // camera-rejected like a budget-limited one. Releasing its map would
@@ -832,7 +833,7 @@ export class SceneShadowController {
     // holds memory a load without it would have used.
     let parkedBytes = 0;
     for (const [light, held] of this.parked) {
-      const bytes = reservedShadowBytes(held.generator, held.key.mapSize, budget.bytesPerTexel);
+      const bytes = reservedShadowBytes(held.generator, held.key.mapSize, budget);
       if (admitted.bytes + standby.bytes + parkedBytes + bytes > standbyBudget) this.disposeParkedMap(light);
       else parkedBytes += bytes;
     }
@@ -952,11 +953,11 @@ export class SceneShadowController {
     for (const entry of this.entries.values()) {
       if (!entry.generator) continue;
       applyCascadeFallback(entry);
-      live.bytes += reservedShadowBytes(entry.generator, entry.mapSize, budget.bytesPerTexel);
+      live.bytes += reservedShadowBytes(entry.generator, entry.mapSize, budget);
       if (!entry.standby) live.passes += generatorPasses(entry.generator);
     }
     for (const held of this.parked.values())
-      live.bytes += reservedShadowBytes(held.generator, held.key.mapSize, budget.bytesPerTexel);
+      live.bytes += reservedShadowBytes(held.generator, held.key.mapSize, budget);
     // With the prediction maps' bytes (they draw no pass a frame shows).
     this.predictions.reserved = { ...live };
     this.predictions.reserve();
@@ -1012,8 +1013,12 @@ export class SceneShadowController {
 }
 
 /** What a live map reserves: a cascaded map's four-layer construction peak (Babylon builds four, then the authored count), otherwise its faces. */
-function reservedShadowBytes(generator: ShadowGenerator, mapSize: number, bytesPerTexel: number): number {
-  return (generator instanceof CascadedShadowGenerator ? 4 : generatorPasses(generator)) * mapSize ** 2 * bytesPerTexel;
+function reservedShadowBytes(generator: ShadowGenerator, mapSize: number, budget: ShadowAdmissionBudget): number {
+  return (generator instanceof CascadedShadowGenerator ? 4 : generatorPasses(generator)) * mapSize ** 2 * texelBytes(generator, budget);
+}
+
+function texelBytes(generator: ShadowGenerator, budget: ShadowAdmissionBudget): number {
+  return generator instanceof CascadedShadowGenerator ? budget.cascadedBytesPerTexel : budget.bytesPerTexel;
 }
 
 /** Whether a caster at `mesh` can draw into `generator`'s map: a local light's within its range (its cone unchecked), a sun's always. */
