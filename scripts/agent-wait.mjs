@@ -13,6 +13,8 @@ import {
 } from "./verification-policy.mjs";
 
 const TWO_HOURS = 2 * 60 * 60 * 1000;
+// Covers a cancelled owner's child shutdown plus its release lock wait.
+const CLEANUP_GRACE_MS = 10_000;
 const CODES = { failure: 1, cancellation: 130, timeout: 124, stale: 3 };
 class WaitError extends Error {
   constructor(status, message, exitCode = CODES[status]) {
@@ -130,7 +132,6 @@ export async function runAgentWait(options, context = {}) {
       let capturedBytes = 0;
       const decoder = new StringDecoder("utf8");
       let overflow = false;
-      let killTimer;
       let termination;
       const child = spawn(prefix[0], [...prefix.slice(1), ...args], {
         cwd,
@@ -144,6 +145,14 @@ export async function runAgentWait(options, context = {}) {
           process.kill(-child.pid, signal);
         } catch (error) {
           if (error.code !== "ESRCH") log(`Cleanup: ${error.message}\n`);
+        }
+      };
+      const groupAlive = () => {
+        try {
+          process.kill(-child.pid, 0);
+          return true;
+        } catch (error) {
+          return error.code !== "ESRCH";
         }
       };
       const terminate = () => {
@@ -165,12 +174,13 @@ export async function runAgentWait(options, context = {}) {
           });
         } else {
           killGroup("SIGTERM");
-          termination = new Promise((done) => {
-            killTimer = setTimeout(() => {
-              killGroup("SIGKILL");
-              done();
-            }, 500);
-          });
+          // Escalate only if the group outlives the grace period: a test
+          // owner stops its child and then releases its admission ticket.
+          termination = (async () => {
+            const deadline = Date.now() + CLEANUP_GRACE_MS;
+            while (groupAlive() && Date.now() < deadline) await delay(50);
+            if (groupAlive()) killGroup("SIGKILL");
+          })();
         }
       };
       activeSignal.addEventListener("abort", terminate, { once: true });
@@ -194,7 +204,6 @@ export async function runAgentWait(options, context = {}) {
       });
       child.once("close", async (code, signal) => {
         await termination;
-        clearTimeout(killTimer);
         activeSignal.removeEventListener("abort", terminate);
         if (interruption()) return reject(interruption());
         if (overflow)
