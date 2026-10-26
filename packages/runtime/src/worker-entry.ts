@@ -35,6 +35,11 @@ import { captureConsoleLogs } from "./console-capture";
 import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
 import { createSceneSourceClient } from "./scene-source";
 import { cookedCollisionMeshMap } from "./source-content-control";
+// The physics backends belong in this entry's chunk. Loaded lazily, their chunk imports code this entry also uses from
+// the entry chunk itself, and WebKit evaluates that import as a second copy of the whole worker, which then answers
+// messages as a runtime that never started ("Runtime is unavailable.", "Stale session generation.").
+import "@haptic/physics/havok-backend";
+import "@haptic/physics/rapier-backend";
 
 let runtime: RuntimeDriver | null = null;
 let sceneSources = createSceneSourceClient(onCommand);
