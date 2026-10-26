@@ -6,6 +6,7 @@ import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
 import { parseSplineProperties, SPLINE_COMPONENT_CLASS_ID } from "./spline-component";
 import { normalizeSceneStreamingProperties } from "./scene-streaming";
+import type { SerializedGraph } from "./project";
 
 
 /**
@@ -228,9 +229,31 @@ export interface SerializedScene {
    * SceneLayer or world Scene documents.
    */
   overlayEditor?: boolean;
+  /**
+   * The SceneScript: an Object-like graph (events, functions, variables; no
+   * components) that runs as this Scene's object for as long as it is loaded.
+   * Absent until authored.
+   */
+  script?: SerializedGraph;
 }
 
 export const SCENE_SCHEMA_VERSION = 4;
+
+/**
+ * Keep an authored embedded script (SceneScript, SceneLayerScript) as a graph
+ * without the Actor-only parts; anything else is no script.
+ */
+export function normalizeEmbeddedScript(value: unknown): SerializedGraph | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  if (!Array.isArray(source.nodes) || !Array.isArray(source.edges)) return undefined;
+  const { components: _components, actorDefaults: _actorDefaults, overlayDesign: _overlayDesign, ...script } =
+    source as unknown as SerializedGraph;
+  void _components;
+  void _actorDefaults;
+  void _overlayDesign;
+  return script;
+}
 
 export function identitySerializedTransform(): SerializedTransform {
   return {
@@ -737,12 +760,14 @@ export function normalizeScene(value: unknown): SerializedScene {
   }));
   const actors = rawActors.map((entry, index) => normalizeActor(entry, index, takenIds));
   assertUniqueSceneActorIds(actors, name);
+  const script = normalizeEmbeddedScript(source.script);
   return {
     name,
     viewportMode,
     settings: normalizeSceneSettings(source.settings, viewportMode),
     actors: withResolvedFolderIds(actors, folders),
     folders,
+    ...(script ? { script } : {}),
   };
 }
 

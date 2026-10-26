@@ -167,12 +167,16 @@ function DocumentShell({
   );
 }
 
-export function SceneDocumentDocks({ id, layout }: { id: string; layout: Record<string, unknown> | null }) {
-  const parsed = parseSceneDocumentLayout(layout);
+export function SceneDocumentDocks({ id, kind = "scene", layout }: {
+  id: string;
+  kind?: "scene" | "scene-layer";
+  layout: Record<string, unknown> | null;
+}) {
+  const parsed = parseSceneDocumentLayout(layout, kind);
   return <RegisteredDockviewShell
     key={parsed.sceneMode}
     id={id}
-    documentKind="scene"
+    documentKind={kind}
     sceneMode={parsed.sceneMode}
     surface={parsed.sceneMode}
     initialLayout={parsed[parsed.sceneMode]}
@@ -764,13 +768,9 @@ export function DocumentWorkspace() {
                 testId={`document-workspace-${doc.ref.kind}`}
                 active={active}
               >
-                {doc.ref.kind === "scene" ? <SceneDocumentDocks id={id} layout={doc.layout} /> : <RegisteredDockviewShell
+                {doc.ref.kind === "scene" || doc.ref.kind === "scene-layer" ? <SceneDocumentDocks id={id} kind={doc.ref.kind} layout={doc.layout} /> : <RegisteredDockviewShell
                   id={id}
-                  documentKind={
-                    doc.ref.kind === "scene-layer" || doc.ref.kind === "prefab"
-                      ? doc.ref.kind
-                      : "graph"
-                  }
+                  documentKind={doc.ref.kind === "prefab" ? "prefab" : "graph"}
                   initialLayout={doc.layout}
                   actorPrefab={actorPrefab}
                 />}

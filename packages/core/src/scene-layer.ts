@@ -1,3 +1,4 @@
+import type { SerializedGraph } from "./project";
 import {
   createDefaultSceneSettings,
   normalizeScene,
@@ -132,6 +133,11 @@ export interface SerializedSceneLayer {
   settings: SceneLayerSettings;
   actors: SerializedActor[];
   folders: SerializedOutlinerFolder[];
+  /**
+   * The SceneLayerScript: an Object-like graph that runs once per instance of
+   * this layer, for that instance's lifetime. Absent until authored.
+   */
+  script?: SerializedGraph;
 }
 
 const DENIED = new Set<string>(SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS);
@@ -231,6 +237,7 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
     },
     actors: scene.actors.map(stripDeniedComponents),
     folders: scene.folders,
+    ...(scene.script ? { script: scene.script } : {}),
   };
 }
 
@@ -534,6 +541,7 @@ export function editorSceneToSceneLayer(
     },
     actors: scene.actors,
     folders: scene.folders,
+    script: scene.script,
   });
 }
 
@@ -557,5 +565,6 @@ export function sceneLayerToEditorScene(
     },
     actors: layer.actors,
     folders: layer.folders,
+    ...(layer.script ? { script: layer.script } : {}),
   };
 }

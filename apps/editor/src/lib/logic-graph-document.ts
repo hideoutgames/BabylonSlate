@@ -10,6 +10,7 @@ import {
   type GraphClassMember,
   type GraphClassMemberPin,
   type SerializedGraph,
+  type SerializedScene,
 } from "@haptic/core";
 import { diffGraphCommands, type EditCommand } from "@haptic/edit";
 import { pruneEventMembersToNodes } from "./class-members";
@@ -43,13 +44,17 @@ function isSerializedGraph(value: unknown): value is SerializedGraph {
   return Array.isArray(value.nodes) && Array.isArray(value.edges);
 }
 
-/** Logic graph stored on a Class document or Animation Object. */
+/** Logic graph stored on a Class document, Animation Object, or Scene / Scene Layer script. */
 export function serializedGraphFromDocument(
   kind: string,
   content: unknown,
 ): SerializedGraph | null {
   if (kind === "graph") {
     return isSerializedGraph(content) ? content : null;
+  }
+  if (kind === "scene" || kind === "scene-layer") {
+    const script = isRecord(content) ? content.script : undefined;
+    return isSerializedGraph(script) ? script : null;
   }
   if (kind === "anim-graph") {
     const parsed = parseAnimGraphDocument(content);
@@ -575,6 +580,8 @@ export function collectSceneDocumentsForPalette(options: {
 
 export type LogicGraphCommit =
   | { kind: "graph"; graph: SerializedGraph }
+  /** The whole Scene (or Scene Layer tab) with its new script, for `applySceneChange`. */
+  | { kind: "scene"; scene: SerializedScene }
   | {
       kind: "anim-graph";
       payload: Record<string, unknown>;
@@ -601,13 +608,36 @@ export function logicGraphEditMergeKey(
   return key ? `logic-graph:${key}` : undefined;
 }
 
-/** Persist a logic graph as a Class body or Animation Object. */
+/** Route a `commitLogicGraph` result to the document action its owner takes. */
+export function applyLogicGraphCommit(
+  actions: {
+    applyGraphChange: (id: string, graph: SerializedGraph) => Promise<boolean>;
+    applyAssetDocumentChange: (id: string, payload: Record<string, unknown>, mergeKey?: string) => Promise<boolean>;
+    applySceneChange: (id: string, scene: SerializedScene) => Promise<boolean>;
+  },
+  documentId: string,
+  commit: LogicGraphCommit,
+): void {
+  if (commit.kind === "graph") void actions.applyGraphChange(documentId, commit.graph);
+  else if (commit.kind === "scene") void actions.applySceneChange(documentId, commit.scene);
+  else void actions.applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
+}
+
+/** Persist a logic graph as a Class body, Animation Object or Scene / Scene Layer script. */
 export function commitLogicGraph(
   kind: string,
   content: unknown,
   next: SerializedGraph,
 ): LogicGraphCommit {
   next = pruneEventMembersToNodes(next);
+  if ((kind === "scene" || kind === "scene-layer") && isRecord(content)) {
+    // A script has no prefab: never store components or Actor Defaults on it.
+    const { components: _components, actorDefaults: _actorDefaults, overlayDesign: _overlayDesign, ...script } = next;
+    void _components;
+    void _actorDefaults;
+    void _overlayDesign;
+    return { kind: "scene", scene: { ...(content as unknown as SerializedScene), script } };
+  }
   if (kind === "anim-graph") {
     const payload = replaceSerializedGraphInDocument(
       "anim-graph",

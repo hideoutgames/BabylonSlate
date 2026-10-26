@@ -6,7 +6,7 @@
  */
 import type { AssetRegistry } from "@haptic/assets";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
-import { isSceneAssetClassId } from "@haptic/object-model";
+import { embeddedScriptParentOf } from "@haptic/object-model";
 import { classIdForGraphPath } from "../services/script-compiler";
 import type { CreatableAssetType } from "./content-browser-helpers";
 
@@ -87,8 +87,7 @@ export function classParentLookup(
     if (!byId.has(id)) byId.set(id, asset.header.parentClass ?? "Object");
   }
   return (id) => {
-    if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
-    return byId.get(id) ?? engineParentOf(id) ?? null;
+    return embeddedScriptParentOf(id) ?? byId.get(id) ?? engineParentOf(id) ?? null;
   };
 }
 

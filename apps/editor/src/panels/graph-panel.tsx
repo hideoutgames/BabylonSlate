@@ -55,6 +55,7 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
+import { logicGraphHostClass } from "../lib/embedded-script";
 import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { GraphSteppingBar } from "../components/graph-stepping-bar";
@@ -69,6 +70,7 @@ import {
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import {
+  applyLogicGraphCommit,
   commitLogicGraph,
   serializedGraphFromDocument,
 } from "../lib/logic-graph-document";
@@ -97,9 +99,9 @@ export function GraphPanel(
   const functionId = props.params?.functionId ?? null;
   const panelApi = props.api as IDockviewPanelProps["api"] | undefined;
   const { documentId } = useDocumentWorkspace();
-  const { applyGraphChange, applyAssetDocumentChange } = useDocumentActions();
+  const documentActions = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const { activeDocumentId, animEditorMode } = useActiveDocumentState();
+  const { activeDocumentId, animEditorMode, sceneMode } = useActiveDocumentState();
   const { focusedNodeId, openSessionSource } = usePlay();
   const {
     setSelectedNodeIds,
@@ -132,9 +134,8 @@ export function GraphPanel(
       (asset) => asset.path === doc?.ref.path,
     );
   }, [assetRegistry, registryEpoch, doc?.ref.path]);
-  const parentClass =
-    indexed?.header.parentClass ??
-    (doc?.ref.kind === "anim-graph" ? "Object" : null);
+  // A Scene or Scene Layer edits its embedded script as `Scene:<guid>` / `SceneLayer:<guid>`.
+  const { classId, parentClass } = logicGraphHostClass(doc?.ref.kind, doc?.ref.path, indexed, classIdForGraphPath);
   const {
     parentOf,
     otherClassGraphs,
@@ -150,7 +151,6 @@ export function GraphPanel(
     materialDomains,
     dataAssets,
   } = useGraphPanelCatalogs();
-  const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent = useMemo(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
     [doc?.ref.kind, doc?.content],
@@ -191,8 +191,10 @@ export function GraphPanel(
       knownClassIdSet(parentOf, [
         ...Object.keys(otherClassGraphs),
         ...sceneDocuments.map((scene) => sceneAssetClassId(scene.guid)),
+        // A Scene Layer script's own `SceneLayer:<guid>` class.
+        ...(classId ? [classId] : []),
       ]),
-    [otherClassGraphs, parentOf, sceneDocuments],
+    [classId, otherClassGraphs, parentOf, sceneDocuments],
   );
   const pinCompatibility = useMemo(
     () => scriptPinCompatibility(hierarchy),
@@ -381,6 +383,7 @@ export function GraphPanel(
         documentKind: doc?.ref.kind ?? "",
         animEditorMode:
           doc?.ref.kind === "anim-graph" ? animEditorMode : undefined,
+        sceneMode,
       })
     ) {
       return;
@@ -457,6 +460,7 @@ export function GraphPanel(
     dataAssets,
     typeSchemas,
     animEditorMode,
+    sceneMode,
     focused,
     materialDomains,
     subsystemClasses,
@@ -645,12 +649,7 @@ export function GraphPanel(
                     components: edited.components ?? current.components,
                     functionGraphs: current.functionGraphs,
                   };
-              const commit = commitLogicGraph(doc.ref.kind, doc.content, merged);
-              if (commit.kind !== "graph") {
-                void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
-                return;
-              }
-              void applyGraphChange(documentId, commit.graph);
+              applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, merged));
             }}
           />
         </GraphPinDefaultHostContext.Provider>
@@ -669,9 +668,7 @@ export function GraphPanel(
         onSubmit={(name) => {
           if (!doc || !graphContent || !renameEventId) return;
           const next = renameCustomEvent(graphContent, renameEventId, name, classId);
-          const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
-          if (commit.kind === "graph") void applyGraphChange(documentId, commit.graph);
-          else void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
+          applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
         }}
       />
       {breakpointSettingsDialog}

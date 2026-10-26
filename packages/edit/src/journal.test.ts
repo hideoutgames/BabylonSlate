@@ -42,6 +42,7 @@ import {
   SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
+  SetSceneScriptCommand,
 } from "./commands/scene-fields";
 import {
   commandToJournalPayload,
@@ -167,6 +168,7 @@ describe("journal", () => {
       new SetComponentTransformPresenceCommand(actorId, componentId, scene.actors[0]!.components[0]!.transform, undefined),
       new ReorderFolderCommand("f1", 0, 1),
       new SetSceneOverlayEditorCommand(undefined, true),
+      new SetSceneScriptCommand(undefined, { nodes: [], edges: [], members: [] }, "script:move:n1"),
       new AddActorCommand(createActor("added", "Added"), 1),
       new RemoveActorCommand(scene.actors[0]!, 0),
       new SetActorTransformCommand(

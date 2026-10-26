@@ -181,7 +181,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   });
 
   const doc = useOpenDocument(documentId);
-  const sceneMode = doc?.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : "design";
+  // The viewport is a Design, Landscape or Foliage window; Script mode has none.
+  const layoutMode = doc?.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : "design";
+  const sceneMode = layoutMode === "landscape" || layoutMode === "foliage" ? layoutMode : "design";
   const sceneTools = useSceneTools();
   const overlayTransformBox = doc?.ref.kind === "scene-layer";
   const scene = isSceneWorkspaceKind(doc?.ref.kind)

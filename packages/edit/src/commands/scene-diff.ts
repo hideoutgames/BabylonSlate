@@ -1,5 +1,6 @@
 import type {
   SceneSettings,
+  SerializedGraph,
   SerializedActor,
   SerializedScene,
   SerializedTransform,
@@ -40,8 +41,11 @@ import {
   SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
+  SetSceneScriptCommand,
 } from "./scene-fields";
 import { ReplaceSceneCommand } from "./replace-scene";
+import { diffGraphCommands } from "./graph-diff";
+import type { EditCommand } from "../command";
 
 function transformEqual(a: SerializedTransform, b: SerializedTransform): boolean {
   return (
@@ -288,6 +292,17 @@ function diffActor(previous: SerializedActor, actor: SerializedActor, commands: 
   }
 }
 
+/** A script edit that is one mergeable graph delta continues that graph gesture. */
+function sceneScriptMergeKey(
+  before: SerializedGraph | undefined,
+  after: SerializedGraph | undefined,
+): string | undefined {
+  if (!before || !after) return undefined;
+  const commands: EditCommand<SerializedGraph>[] = diffGraphCommands(before, after);
+  const mergeKey = commands.length === 1 ? commands[0]!.mergeKey : undefined;
+  return mergeKey ? `script:${mergeKey}` : undefined;
+}
+
 /**
  * Derives minimal scene edit commands from a before/after pair, mirroring
  * `diffGraphCommands` so every editing surface can route through the undo stack.
@@ -312,6 +327,10 @@ export function diffSceneCommands(
 
   if (before.overlayEditor !== after.overlayEditor) {
     commands.push(new SetSceneOverlayEditorCommand(before.overlayEditor, after.overlayEditor));
+  }
+
+  if (before.script !== after.script && JSON.stringify(before.script) !== JSON.stringify(after.script)) {
+    commands.push(new SetSceneScriptCommand(before.script, after.script, sceneScriptMergeKey(before.script, after.script)));
   }
 
   // Untouched settings keep their references, so only replaced values

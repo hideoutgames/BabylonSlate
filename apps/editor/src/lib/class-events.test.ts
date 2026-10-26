@@ -35,6 +35,17 @@ describe("nativeEventStubs", () => {
     expect(isScriptCatalogNodeAllowed("flow.event.hit", options)).toBe(false);
   });
 
+  it("gives a Scene or Scene Layer script Begin Play, Tick and Destroyed but no Actor events", () => {
+    for (const parentClass of ["Scene", "SceneLayer"]) {
+      const options = { parentClass, parentOf: (id: string) => (id === "Scene" || id === "SceneLayer" ? "Object" : null) };
+      const stubs = nativeEventStubs(options).map((stub) => stub.eventType);
+      expect(stubs).toEqual(expect.arrayContaining(["flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed"]));
+      for (const event of stubs) expect(isScriptCatalogNodeAllowed(event, options)).toBe(true);
+      expect(isScriptCatalogNodeAllowed("flow.event.hit", options)).toBe(false);
+      expect(isScriptCatalogNodeAllowed("flow.event.beginOverlap", options)).toBe(false);
+    }
+  });
+
   it("lists no Begin Play or Tick on Object", () => {
     expect(nativeEventStubs({ parentClass: "Object" })).toEqual([]);
   });

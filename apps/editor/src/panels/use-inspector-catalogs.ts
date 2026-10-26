@@ -16,6 +16,7 @@ import {
 } from "../lib/logic-graph-document";
 import { collectDataGraphAssets } from "../lib/data-graph";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { embeddedScriptHost } from "../lib/embedded-script";
 
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
 const DATA_KINDS = ["data-tree"] as const;
@@ -25,13 +26,14 @@ const DATA_KINDS = ["data-tree"] as const;
  * document at `docPath`: its index entry and Class ancestry, picker and Class
  * lists, Data and type catalogs, and the asset lookups property rows use.
  */
-export function useInspectorCatalogs(docPath: string | undefined) {
+export function useInspectorCatalogs(docPath: string | undefined, docKind?: string) {
   const { assetRegistry, registryEpoch } = useRegistryState();
   const indexed = useMemo(() => {
     void registryEpoch;
     return (assetRegistry?.list() ?? []).find((asset) => asset.path === docPath);
   }, [assetRegistry, docPath, registryEpoch]);
-  const parentClass = indexed?.header.parentClass ?? null;
+  // A Scene or Scene Layer script's parent is `Scene` / `SceneLayer`.
+  const parentClass = embeddedScriptHost(docKind, indexed)?.parentClass ?? indexed?.header.parentClass ?? null;
   const parentOf = useMemo(
     () => {
       void registryEpoch;

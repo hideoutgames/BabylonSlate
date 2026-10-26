@@ -3,14 +3,16 @@ import {
   Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue,
 } from "@haptic/ui/components/select";
 import { useActiveDocumentState, useDocumentActions } from "../context/document-context";
-import { SCENE_MODES, SCENE_MODE_LABELS, normalizeSceneMode } from "../shell/scene-document-layout";
+import { SCENE_MODE_LABELS, normalizeSceneMode, sceneModesForKind } from "../shell/scene-document-layout";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 
-export function SceneModeSelect({ disabled = false }: { disabled?: boolean }) {
+/** Scene: Design / Landscape / Foliage / Script. Scene Layer: Design / Script. */
+export function SceneModeSelect({ kind, disabled = false }: { kind: "scene" | "scene-layer"; disabled?: boolean }) {
   const { setSceneMode } = useDocumentActions();
   const { sceneMode, activeDocumentId } = useActiveDocumentState();
+  const modes = sceneModesForKind(kind);
   const chooseMode = (value: string | null) => {
-    if (activeDocumentId && value) setSceneMode(activeDocumentId, normalizeSceneMode(value));
+    if (activeDocumentId && value) setSceneMode(activeDocumentId, normalizeSceneMode(value, kind));
   };
   // Collapsed into the toolbar's More Actions menu when the bar is too narrow.
   useToolbarOverflowEntry("scene-mode", TOOLBAR_OVERFLOW_PRIORITY.sceneMode, [{
@@ -24,13 +26,13 @@ export function SceneModeSelect({ disabled = false }: { disabled?: boolean }) {
       value: sceneMode,
       closeOnClick: true,
       onValueChange: chooseMode,
-      items: SCENE_MODES.map((mode) => ({ id: `scene-mode-${mode}`, value: mode, label: SCENE_MODE_LABELS[mode] })),
+      items: modes.map((mode) => ({ id: `scene-mode-${mode}`, value: mode, label: SCENE_MODE_LABELS[mode] })),
     }],
   }]);
   return (
     <Select
       value={sceneMode}
-      items={SCENE_MODES.map((value) => ({ value, label: SCENE_MODE_LABELS[value] }))}
+      items={modes.map((value) => ({ value, label: SCENE_MODE_LABELS[value] }))}
       disabled={disabled}
       onValueChange={chooseMode}
     >
@@ -39,7 +41,7 @@ export function SceneModeSelect({ disabled = false }: { disabled?: boolean }) {
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          {SCENE_MODES.map((mode) => <SelectItem key={mode} value={mode}>{SCENE_MODE_LABELS[mode]}</SelectItem>)}
+          {modes.map((mode) => <SelectItem key={mode} value={mode}>{SCENE_MODE_LABELS[mode]}</SelectItem>)}
         </SelectGroup>
       </SelectContent>
     </Select>

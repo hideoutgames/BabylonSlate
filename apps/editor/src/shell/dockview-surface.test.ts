@@ -29,6 +29,7 @@ describe("dockviewApiKeysForDocument", () => {
       "anim-graph:loco::design",
       "anim-graph:loco::landscape",
       "anim-graph:loco::foliage",
+      "anim-graph:loco::script",
     ]);
   });
 });

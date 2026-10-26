@@ -16,6 +16,7 @@ import {
   listDockWindows,
 } from "../shell/window-catalog";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
+import { hasSceneModes } from "../shell/scene-document-layout";
 import {
   classDocumentShowsPrefab,
   classParentLookup,
@@ -63,7 +64,7 @@ export function WindowsMenu() {
           sourceControl: sourceControl.enabled,
           animEditorMode:
             activeKind === "anim-graph" ? animEditorMode : undefined,
-          sceneMode: activeKind === "scene" ? sceneMode : undefined,
+          sceneMode: hasSceneModes(activeKind) ? sceneMode : undefined,
         })
       : [];
     return windows.map((entry) => {

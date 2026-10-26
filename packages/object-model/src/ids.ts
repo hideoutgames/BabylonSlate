@@ -69,6 +69,26 @@ export function sceneAssetClassId(assetGuid: string): string {
 export function isSceneAssetClassId(classId: string): boolean {
   return classId === "Scene" || classId.startsWith("Scene:");
 }
+
+/**
+ * Class of every live instance of a Content Browser Scene Layer asset; its
+ * SceneLayerScript compiles under this id. `SceneLayer` itself is a locked
+ * engine id, so a script needs its own subclass.
+ */
+export function sceneLayerAssetClassId(assetGuid: string): string {
+  return `SceneLayer:${assetGuid}`;
+}
+
+export function isSceneLayerAssetClassId(classId: string): boolean {
+  return classId.startsWith("SceneLayer:");
+}
+
+/** Parent of a Scene or Scene Layer asset class; undefined for any other id. */
+export function embeddedScriptParentOf(classId: string): "Scene" | "SceneLayer" | undefined {
+  if (classId.startsWith("Scene:")) return "Scene";
+  if (isSceneLayerAssetClassId(classId)) return "SceneLayer";
+  return undefined;
+}
 export function isLockedEngineClassId(classId: string): boolean {
   if ((ENGINE_BASE_CLASS_IDS as readonly string[]).includes(classId)) {
     return true;

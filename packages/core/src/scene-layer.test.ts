@@ -330,3 +330,26 @@ describe("SceneLayerActor Prefab frame", () => {
       .toEqual({ width: 4, height: 3, center: [1, 3.5] });
   });
 });
+
+describe("embedded scripts", () => {
+  const script = {
+    nodes: [{ id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} }],
+    edges: [],
+    members: [{ id: "score", kind: "variable" as const, name: "Score", typeId: "int" }],
+  };
+
+  it("keeps a Scene's script and drops a malformed one or Actor-only parts", () => {
+    expect(normalizeScene({ script: { ...script, components: [{ id: "c" }] } }).script).toEqual(script);
+    expect(normalizeScene({ script: { nodes: "x" } })).not.toHaveProperty("script");
+    expect(normalizeScene({})).not.toHaveProperty("script");
+  });
+
+  it("carries a Scene Layer's script through the editor tab and back", () => {
+    const layer = normalizeSceneLayer({ ...createDefaultSceneLayer(), script });
+    expect(layer.script).toEqual(script);
+    const editor = sceneLayerToEditorScene(layer);
+    expect(editor.script).toEqual(script);
+    expect(editorSceneToSceneLayer(editor).script).toEqual(script);
+    expect(editorSceneToSceneLayer({ ...editor, script: undefined })).not.toHaveProperty("script");
+  });
+});

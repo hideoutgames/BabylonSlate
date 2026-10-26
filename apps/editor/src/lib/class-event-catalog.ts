@@ -198,6 +198,15 @@ function ancestryChain(options?: ClassEventOptions): string[] {
   return walkAncestry(options?.parentClass ?? "Actor", parentOf);
 }
 
+/**
+ * SceneScript (`Scene:<guid>`) and SceneLayerScript (`SceneLayer:<guid>`)
+ * chains: the script runs as the Scene or layer object, with Begin Play, Tick
+ * and Destroyed like an Actor.
+ */
+function isEmbeddedScriptChain(chain: readonly string[]): boolean {
+  return chain.includes("Scene") || chain.includes("SceneLayer");
+}
+
 function isSubsystemChain(chain: readonly string[]): boolean {
   return (
     chain.includes(GAME_SUBSYSTEM_CLASS_ID) ||
@@ -291,6 +300,8 @@ export function nativeEventStubs(
   const types: string[] = [];
   if (chain.includes("Actor") || chain.includes("ActorComponent")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
+  } else if (isEmbeddedScriptChain(chain)) {
+    types.push("flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed");
   }
   // Game Instance, GameSubsystem and SceneSubsystem lifecycles come from the
   // engine catalog so the editor and runtime share one table.
@@ -478,10 +489,10 @@ export function isScriptCatalogNodeAllowed(
     nodeId === "flow.event.beginPlay" ||
     nodeId === "flow.event.destroyed"
   ) {
-    return chain.includes("Actor") || chain.includes("ActorComponent");
+    return chain.includes("Actor") || chain.includes("ActorComponent") || isEmbeddedScriptChain(chain);
   }
   if (nodeId === "flow.event.tick") {
-    return chain.includes("Actor") || chain.includes("ActorComponent") || lineageEvents.has(nodeId);
+    return chain.includes("Actor") || chain.includes("ActorComponent") || isEmbeddedScriptChain(chain) || lineageEvents.has(nodeId);
   }
   if (nodeId === "flow.event.commandRun") {
     return chain.includes("Actor") || chain.includes("DebugCommand");

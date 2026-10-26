@@ -36,7 +36,7 @@ import {
   SetViewportModeCommand,
   type SceneEditCommand,
 } from "./scene";
-import { ReorderFolderCommand } from "./scene-fields";
+import { ReorderFolderCommand, SetSceneScriptCommand } from "./scene-fields";
 import { diffSceneCommands, planSceneChange } from "./scene-diff";
 import { EditSession } from "../session";
 import { commandToJournalPayload, reviveCommand } from "../journal";
@@ -426,6 +426,22 @@ describe("diffSceneCommands", () => {
     expect(add).toHaveLength(1);
     expect(add[0]!.apply(after)).toStrictEqual(before);
     expect(add[0]!.invert().apply(before)).toStrictEqual(after);
+  });
+
+  it("records a SceneScript edit as one undoable delta that continues a node drag", () => {
+    const node = { id: "n1", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} };
+    const before = { ...baseScene(), script: { nodes: [node], edges: [] } };
+    const dragged = { ...before, script: { nodes: [{ ...node, position: { x: 40, y: 0 } }], edges: [] } };
+    const commands = planSceneChange(before, dragged);
+    expect(commands.map((command) => command.type)).toEqual(["scene.setScript"]);
+    expect((commands[0] as SetSceneScriptCommand).mergeKey).toBe("script:move:n1");
+    expect(commands[0]!.apply(before)).toStrictEqual(dragged);
+    expect(commands[0]!.invert().apply(dragged)).toStrictEqual(before);
+
+    const removed = diffSceneCommands(before, baseScene());
+    expect(removed).toHaveLength(1);
+    expect(removed[0]!.apply(before)).not.toHaveProperty("script");
+    expect((removed[0] as SetSceneScriptCommand).mergeKey).toBeUndefined();
   });
 
   it("derives no commands for an unchanged scene", () => {

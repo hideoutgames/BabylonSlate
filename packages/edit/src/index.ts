@@ -71,6 +71,7 @@ export {
   SetComponentNameCommand,
   SetComponentTransformPresenceCommand,
   SetSceneOverlayEditorCommand,
+  SetSceneScriptCommand,
 } from "./commands/scene-fields";
 export { ReplaceSceneCommand, createReplaceSceneCommandFromJson } from "./commands/replace-scene";
 export { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";

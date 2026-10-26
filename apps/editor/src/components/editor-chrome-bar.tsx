@@ -946,9 +946,9 @@ export function EditorChromeBar({
             onAction={() => redoActiveDocument()}
           />
           </ToolbarOverflowItem>
-          {activeKind === "scene" ? (
+          {activeKind === "scene" || activeKind === "scene-layer" ? (
             <ToolbarOverflowItem id="scene-mode">
-              <SceneModeSelect disabled={playing || preparing} />
+              <SceneModeSelect kind={activeKind} disabled={playing || preparing} />
             </ToolbarOverflowItem>
           ) : null}
           {activeKind === "graph" ? (
