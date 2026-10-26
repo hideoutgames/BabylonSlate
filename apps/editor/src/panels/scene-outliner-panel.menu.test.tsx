@@ -385,6 +385,44 @@ describe("SceneOutlinerPanel menus", () => {
   });
 
   it.each([
+    { clicked: "second", copied: ["First", "Second", "Third"] },
+    { clicked: "outside", copied: ["Outside"] },
+  ])("duplicates the selection from a selected row's menu, and only the row from another row's ($clicked)", async ({ clicked, copied }) => {
+    const scene = createDefaultScene();
+    scene.actors = [
+      createActor("first", "First"),
+      createActor("second", "Second"),
+      createActor("third", "Third"),
+      createActor("outside", "Outside"),
+    ];
+    harness.scene = scene;
+    const panel = () => (
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>
+    );
+    const view = render(panel());
+    for (const id of ["first", "second", "third"]) {
+      fireEvent.click(screen.getByTestId(`outliner-menu-${id}`));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Select" }));
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    }
+
+    fireEvent.click(screen.getByTestId(`outliner-menu-${clicked}`));
+    fireEvent.click(screen.getByTestId(`outliner-duplicate-${clicked}`));
+
+    expect(applySceneChange).toHaveBeenCalledTimes(1);
+    const written = applySceneChange.mock.calls[0]?.[1] as SerializedScene;
+    const copies = written.actors.slice(scene.actors.length);
+    expect(copies.map((actor) => actor.name)).toEqual(copied.map((name) => `${name} Copy`));
+    // The copies become the selection.
+    harness.scene = written;
+    view.rerender(panel());
+    await waitFor(() => expect(screen.getAllByRole("treeitem").filter((row) => row.getAttribute("aria-selected") === "true")
+      .map((row) => row.getAttribute("data-testid"))).toEqual(copies.map((actor) => `tree-row-actor:${actor.id}`)));
+  });
+
+  it.each([
     {
       clicked: "parent",
       choice: "Cancel",
