@@ -12,7 +12,8 @@ export function subject(input: GraphPin): GraphPin {
 
 /**
  * An optional reference input that reads the object running the graph while it
- * is unwired, and the node's subject once wired. The graph labels it "(Self)".
+ * is unwired, and the node's subject once wired. The graph shows a read-only
+ * Self field on it while unwired.
  */
 export function selfPin(id: string, name: string, type: PinType): GraphPin {
   return { ...subject(pin(id, name, "in", type, "data", true)), selfWhenUnwired: true };

@@ -20,4 +20,5 @@ Returns the actor that owns another actor.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - Returns an empty reference when there is no owner or the owner has been destroyed.

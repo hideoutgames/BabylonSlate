@@ -10,7 +10,7 @@ Returns a component of an actor as a typed reference.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Target | Actor Reference | The actor that owns the component. When the node targets the owning actor the pin reads **Target (Self)**; connect another actor to read its component instead. |
+| Target | Actor Reference | The actor that owns the component. When the node targets the owning actor the pin shows **Self**; connect another actor to read its component instead. |
 
 ## Outputs
 

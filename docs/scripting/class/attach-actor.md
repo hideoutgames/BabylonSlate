@@ -22,6 +22,7 @@ Makes an actor a child of another actor so it follows its parent.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - **Target** keeps its location, rotation and scale values, which now apply relative to **Parent**.
 - Attaching an actor to one of its own descendants is refused, and a warning is written to the log.
 - Any bone attachment on **Target** is released.

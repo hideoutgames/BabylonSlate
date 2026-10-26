@@ -11,7 +11,7 @@ Calls a function defined on a class and continues when it returns.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Target | Object Reference | Object that owns the function. For a function of this graph's own class the pin reads **Target (Self)** and calls the object running the graph; connect another object of the class to call that one instead. Not shown for Function Library functions. |
+| Target | Object Reference | Object that owns the function. For a function of this graph's own class the pin shows **Self** and calls the object running the graph; connect another object of the class to call that one instead. Not shown for Function Library functions. |
 
 ## Outputs
 

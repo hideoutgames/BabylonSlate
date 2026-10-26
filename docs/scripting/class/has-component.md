@@ -10,7 +10,7 @@ Returns true when an actor has a component of a given type.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Actor | Actor Reference | The actor to check. Left unconnected the pin reads **Actor (Self)** and checks the actor running the graph. |
+| Actor | Actor Reference | The actor to check. Left unconnected the pin shows **Self** and checks the actor running the graph. |
 | Class ID | ActorComponent Class |  |
 
 ## Outputs
