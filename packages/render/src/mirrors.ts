@@ -27,7 +27,7 @@ import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import { MIRROR_RENDERS_PER_FRAME, selectMirrorsToRender, type MirrorCandidate } from "./mirror-selection";
-import { createMirrorReflectionBinding, isMirrorSurfaceMesh, type MirrorReflectionBinding } from "./mirror-surface-state";
+import { createMirrorReflectionBinding, isMirrorSurfaceMesh, markBuiltInMirrorMaterial, type MirrorReflectionBinding } from "./mirror-surface-state";
 import {
   beginPlanarMirrorPassState, buildViewProjectionMatrix, clipFrustumAtMirror, collectPlanarMirrorMeshes, createPlanarMirrorTarget,
   disposePlanarMirrorTarget, drawPlanarMirrorPass, planarMirrorTargetSize, PlanarMirrorMath, resizePlanarMirrorTarget,
@@ -300,6 +300,7 @@ export function builtInMirrorMaterial(scene: Scene): NodeMaterial {
   material.addOutputNode(fragment);
   material.build(false);
   material.doNotSerialize = true;
+  markBuiltInMirrorMaterial(material);
   registerClusteredUnlitMaterial(material);
   builtInMaterials.set(scene, material);
   material.onDisposeObservable.addOnce(() => { if (builtInMaterials.get(scene) === material) builtInMaterials.delete(scene); });
