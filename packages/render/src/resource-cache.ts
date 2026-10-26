@@ -39,6 +39,8 @@ interface CacheEntry {
   textureUploads?: Map<string, string>;
   bytes: number;
   refCount: number;
+  /** Outstanding leases per sampling key of `textures`. */
+  samplingLeases?: Map<string, number>;
   pending?: number;
   preparations?: Set<(reason: string) => void>;
   lastUsed: number;
@@ -318,6 +320,8 @@ export class ResourceCache {
   private readonly blobs = new Map<string, Blob>();
   private readonly readiness = new WeakMap<BaseTexture, Promise<void>>();
   private readonly textureKeys = new WeakMap<BaseTexture, string>();
+  /** The sampling key each wrapper was built for; its leases count per sampling. */
+  private readonly textureSamplings = new WeakMap<BaseTexture, string>();
   /** Shared-upload wrappers whose own preparation passed load-time admission. */
   private readonly admittedTextures = new WeakSet<BaseTexture>();
   private readonly urlKeys = new Map<string, string>();
@@ -354,11 +358,18 @@ export class ResourceCache {
 
   private lease<T extends BaseTexture | string>(resource: T): ResourceLease<T> {
     const key = this.resourceKey(resource);
+    const entry = this.entries.get(key);
+    const sampling = typeof resource === "string" ? undefined : this.textureSamplings.get(resource);
+    if (entry && sampling !== undefined) {
+      entry.samplingLeases ??= new Map();
+      entry.samplingLeases.set(sampling, (entry.samplingLeases.get(sampling) ?? 0) + 1);
+    }
     let released = false;
     return { resource, key, ready: typeof resource === "string" ? undefined : this.readiness.get(resource), release: () => {
       if (released) return;
       released = true;
-      this.release(key);
+      // A generation evicted since holds nothing of a later one with the same key.
+      this.release(key, entry && this.entries.get(key) === entry ? sampling : undefined);
     } };
   }
 
@@ -379,9 +390,14 @@ export class ResourceCache {
 
   /** The entry of `cache` whose wrapper uploads this native texture; static to keep the per-handle owner surface unchanged. */
   static entryHolding(cache: ResourceCache, texture: InternalTexture): { assetGuid: string; leases: number } | null {
-    for (const entry of cache.entries.values())
-      for (const wrapper of entry.textures.values())
-        if (wrapper.getInternalTexture() === texture) return { assetGuid: entry.assetGuid, leases: entry.refCount };
+    for (const entry of cache.entries.values()) {
+      // Samplings that share an upload share its native texture; another sampling's leases do not hold it.
+      const samplings = [...entry.textures].filter(([, wrapper]) => wrapper.getInternalTexture() === texture);
+      if (samplings.length === 0) continue;
+      const leases = samplings.reduce((total, [sampling, wrapper]) => total + (cache.textureSamplings.get(wrapper) === sampling
+        ? entry.samplingLeases?.get(sampling) ?? 0 : entry.refCount), 0);
+      return { assetGuid: entry.assetGuid, leases };
+    }
     return null;
   }
 
@@ -639,6 +655,7 @@ export class ResourceCache {
     uploads.set(key, uploadKey);
     entry.textures.set(key, texture);
     this.textureKeys.set(texture, variantKey);
+    this.textureSamplings.set(texture, key);
     try {
       const measured = this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true, uploadKey);
       preparation.validate(() => admit(true), () => disposeTexture(texture), measured);
@@ -763,14 +780,40 @@ export class ResourceCache {
     }
   }
 
-  private release(resource: string | BaseTexture): void {
+  private release(resource: string | BaseTexture, sampling?: string): void {
     const entry = this.entries.get(this.resourceKey(resource));
     if (!entry) return;
     entry.refCount = Math.max(0, entry.refCount - 1);
+    let samplingReleased = false;
+    if (sampling !== undefined && entry.samplingLeases) {
+      const leases = Math.max(0, (entry.samplingLeases.get(sampling) ?? 0) - 1);
+      if (leases > 0) entry.samplingLeases.set(sampling, leases);
+      else { entry.samplingLeases.delete(sampling); samplingReleased = true; }
+    }
     if (entry.refCount === 0) {
       for (const cancel of [...entry.preparations ?? []])
         cancel("Texture preparation cancelled after its final owner released it");
-    }
+    } else if (samplingReleased) this.retireSampling(entry, sampling!);
+  }
+
+  /**
+   * Dispose a sampling no lease holds while other leases keep its entry, with its own upload and object URL when no
+   * other sampling shares them. Entry eviction never reaches it then, so keeping it would pin a native texture nobody
+   * samples. An unreferenced entry keeps every sampling until it is evicted or flushed.
+   */
+  private retireSampling(entry: CacheEntry, sampling: string): void {
+    const texture = entry.textures.get(sampling);
+    const uploadKey = entry.textureUploads?.get(sampling);
+    if (!texture) return;
+    // Its dispose observer (trackTextureBytes) removes the wrapper and, for an upload no other sampling shares, its bytes.
+    disposeTexture(texture);
+    if (uploadKey === undefined || [...entry.textureUploads?.values() ?? []].includes(uploadKey)) return;
+    const url = entry.uploadUrls?.get(uploadKey);
+    if (!url || url === entry.blobUrl) return;
+    entry.uploadUrls!.delete(uploadKey);
+    const extra = entry.extraBlobUrls.indexOf(url);
+    if (extra >= 0) entry.extraBlobUrls.splice(extra, 1);
+    revokeBlobUrl(url);
   }
 
   /** Drop one reference on `key`; tests use it to release the reference an accounting-only `account()` entry holds. */
@@ -874,6 +917,11 @@ export class ResourceCache {
     for (const entry of [...this.entries.values()]) {
       if (this.isUnreferenced(entry)) {
         this.evictEntry(entry.key, "flush");
+      } else if (entry.refCount > 0) {
+        // A sampling whose last lease went while its entry was unreferenced stays pinned once another lease holds the
+        // entry again; flush it like an unreferenced entry. Six-face cube wrappers record no sampling.
+        for (const [sampling, texture] of [...entry.textures])
+          if (this.textureSamplings.get(texture) === sampling && !entry.samplingLeases?.get(sampling)) this.retireSampling(entry, sampling);
       }
     }
   }

@@ -128,6 +128,7 @@ import { CommandSourcePreparation } from "./command-source-preparation";
 import {
   bindResourceCacheToHandle,
   acquireMaterialTexture,
+  MATERIAL_TEXTURE_SAMPLING,
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
 } from "./resource-cache";
@@ -3053,7 +3054,8 @@ function initializeEngine(
               temporaryBytes: sourceSize + (size ? size.width * size.height * 8 * (isCube ? 6 : 1) : Math.max(1024 * 1024, sourceSize * 16)),
             }, async () => {
               check();
-              const lease = resourceCache.acquireTexture(guid, engine, bytes, { isCube });
+              // Materials sample a 2D Texture unflipped: preparing that sampling warms the upload they bind, not a second one.
+              const lease = resourceCache.acquireTexture(guid, engine, bytes, isCube ? { isCube } : MATERIAL_TEXTURE_SAMPLING);
               nativeReleases.push(() => lease.release());
               await lease.ready;
             });

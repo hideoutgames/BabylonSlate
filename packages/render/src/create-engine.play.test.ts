@@ -40,7 +40,8 @@ import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@haptic/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
-import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
+import { acquireMaterialTexture, ResourceCache, resourceCacheForEngine } from "./resource-cache";
+import { encodeRgbaPng } from "./png-encode";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
@@ -221,7 +222,7 @@ describe("Play createEngine view", () => {
     }
   });
 
-  it("shares prepared models and environment cubes until the final source scope releases", async () => {
+  it("shares prepared models, textures and environment cubes until the final source scope releases", async () => {
     const engine = sharedEngine();
     // NullEngine has no prefiltered cube uploader. Keep the real cube wrapper,
     // preparation admission and cache ownership around its native I/O boundary.
@@ -234,7 +235,8 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     const models = new Map([["shared-model", encodeTriangleGlb()]]);
     const environment = buildFloatDdsCubeFixture();
-    const sources = { assets: { modelBytes: models, textureBytes: new Map([["shared-environment", environment]]) } };
+    const albedo = encodeRgbaPng(2, 2, new Uint8Array(16).fill(255));
+    const sources = { assets: { modelBytes: models, textureBytes: new Map([["shared-environment", environment], ["shared-albedo", albedo]]) } };
     const first = await handle.acquireSceneSources(sources, { prepare: true });
     const geometry = handle.accountedGeometryBytes();
     expect(geometry).toBeGreaterThan(0);
@@ -243,7 +245,10 @@ describe("Play createEngine view", () => {
     const cube = environmentLease.resource;
     expect(cube.isCube).toBe(true);
     expect(cube.gammaSpace).toBe(false);
+    // A Material binds the 2D upload the preparation made, not a second one.
+    const albedoLease = acquireMaterialTexture(handle.resourceCache, "shared-albedo", engine, albedo)!;
     expect(handle.resourceCache.resourceStats().wrappers).toBe(textureCount);
+    albedoLease.release();
     environmentLease.release();
     const second = await handle.acquireSceneSources(sources, { prepare: true });
     expect(handle.accountedGeometryBytes()).toBe(geometry);
