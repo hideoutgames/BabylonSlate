@@ -4,7 +4,7 @@ import {
   type Mesh, type UniformBuffer,
 } from "@babylonjs/core";
 import {
-  RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel,
+  RENDER_QUALITY_PROFILES, createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel, WATER_SHADING_DETAILS, type WaterShadingDetail,
 } from "@haptic/core";
 import { sceneWaterQualityDeviceClamp, updateSceneRenderingSettings } from "./render-settings";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
@@ -260,7 +260,7 @@ describe("Water material binding", () => {
       new FreeCamera("camera", new Vector3(0, 5, -10), scene);
       new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
       new PointLight("lamp", new Vector3(0, 3, 0), scene);
-      const tier = (level: QualityLevel) => updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
+      const tier = (shadingDetail: WaterShadingDetail) => updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { shadingDetail } }) });
       const compiled = async () => {
         const mesh = createWaterMesh(scene, "water", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition());
         const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
@@ -270,8 +270,7 @@ describe("Water material binding", () => {
         mesh.dispose();
         return defines;
       };
-      const levels: QualityLevel[] = ["low", "medium", "high", "ultra"];
-      for (const [index, level] of levels.entries()) {
+      for (const [index, level] of WATER_SHADING_DETAILS.entries()) {
         tier(level);
         const realistic = await compiled();
         expect(realistic).toContain(`#define SLATE_WATER_QUALITY ${index}`);
@@ -345,7 +344,7 @@ describe("Water material binding", () => {
       lake.rotation.z = 0;
       updateSceneWater(scene);
       expect(await compiled(lake)).toContain("SLATE_WATER_PLANAR\n");
-      level("high");
+      updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "screenSpace" } }) });
       updateSceneWater(scene);
       expect(await compiled(lake)).not.toContain("SLATE_WATER_PLANAR\n");
       lake.dispose();

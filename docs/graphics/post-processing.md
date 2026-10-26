@@ -38,8 +38,8 @@ Post-processing cost follows the **Post Processing** group in **Project Settings
 
 | Level | Post Processing Resolution Scale | Allow Ambient Occlusion | Allow Reflections | Allow Volumetric Lighting |
 | --- | --- | --- | --- | --- |
-| Low | 0.5 | Off | Off | Off |
-| Medium | 0.75 | On | Off | Off |
+| Low | 0.75 | Off | Off | Off |
+| Medium | 1 | On | On | Off |
 | High | 1 | On | On | On |
 | Ultra | 1 | On | On | On |
 

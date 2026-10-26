@@ -137,7 +137,8 @@ it("renders Full Quality through the forward pipeline with its own scene copy, w
   // The view draws into its own scene targets: the output holds colour only.
   expect(captureCamera.outputRenderTarget!.depthStencilTexture).toBeNull();
   // Editor helpers stay out of the capture, and the capture compiles nothing for them; world geometry draws in both views.
-  expect(pierCameras).toEqual(new Set(["Main Camera", "renderTargetCapture:capture"]));
+  // The scene view's planar reflection mirrors the pier too; the capture draws no planar reflection of its own.
+  expect(pierCameras).toEqual(new Set(["Main Camera", "renderTargetCapture:capture", "waterPlanarReflection:Main Camera"]));
   expect(helperCameras).toEqual(new Set(["Main Camera"]));
   expect(compiled(helper, captureCamera.renderPassId)).toBe("");
   // Steady frames re-probe neither view: each view's camera swaps are not authored camera changes for the other.

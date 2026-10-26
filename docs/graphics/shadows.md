@@ -26,12 +26,12 @@ Open **Project Settings > Rendering > Shadows**. The values below are the Medium
 | Setting | Default | Description |
 | --- | --- | --- |
 | **Shadows Enabled** | On | Lets eligible lights cast real-time shadows. |
-| **Shadow Distance** | 200 | Directional shadow coverage around the camera, in world units. |
+| **Shadow Distance** | 250 | Directional shadow coverage around the camera, in world units. |
 | **Shadow Distance Fade** | 0.1 | Fades the far edge over this fraction of the distance. 0 turns fading off. |
 | **Directional Map Size** | 2048 | Resolution per cascade, 256 to 4096. |
-| **Shadow Cascades** | 2 | Splits directional coverage, 1 to 4, to keep detail near the camera. |
+| **Shadow Cascades** | 3 | Splits directional coverage, 1 to 4, to keep detail near the camera. |
 | **Shadow Filter** | PCF | **PCF** softens edges. **Contact Hardening (PCSS)** adds a contact-hardening penumbra, in PBR only. |
-| **Shadow Filter Quality** | Medium | Low, Medium or High. Higher uses more texture samples. |
+| **Shadow Filter Quality** | High | Low, Medium or High. Higher uses more texture samples. |
 | **Contact Hardening Size** | 0.05 | PCSS light size. Larger values widen the penumbra. |
 | **Shadow Depth Bias** | 0.0001 | Depth offset. High values detach shadows from surfaces. |
 | **Automatic Shadow Bias** | On | Scales directional bias per cascade, with Depth Bias as the minimum. Landscapes also get a normal offset scaled to the shadow resolution, so sculpted terrain does not shadow itself along its edges. |
@@ -48,8 +48,8 @@ The **Shadows Quality** setting in **Scalability** applies one of these sets. Ch
 
 | Level | Distance | Map size | Cascades | Filter quality | Local shadow lights | Local map size |
 | --- | --- | --- | --- | --- | --- | --- |
-| Low | 80 | 1024 | 1 | Low | 1 | 512 |
-| Medium | 200 | 2048 | 2 | Medium | 2 | 1024 |
+| Low | 120 | 2048 | 2 | Low | 1 | 512 |
+| Medium | 250 | 2048 | 3 | High | 2 | 1024 |
 | High | 350 | 2048 | 4 | High | 4 | 2048 |
 | Ultra | 600 | 4096 | 4 | High | 8 | 2048 |
 

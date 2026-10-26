@@ -228,8 +228,8 @@ it("runs reflections in CEL from the one project setting, keeping ambient occlus
   expect(planSceneEffects(settings, "cel")).toMatchObject({
     reflections: settings.reflections, ambientOcclusion: null, sceneLinear: false });
   expect(planSceneEffects(effects(), "cel")).toBeNull();
-  const { medium, high } = RENDER_QUALITY_PROFILES;
-  expect(planSceneEffects(settings, "cel", true, { allowed: medium.postprocessing })).toBeNull();
+  const { low, high } = RENDER_QUALITY_PROFILES;
+  expect(planSceneEffects(settings, "cel", true, { allowed: low.postprocessing })).toBeNull();
   expect(planSceneEffects(settings, "cel", true, { allowed: high.postprocessing })?.reflections)
     .toEqual(settings.reflections);
 });
@@ -240,7 +240,7 @@ it("skips the screen-space effects a quality tier cannot afford but keeps author
     volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.3 } });
   const { low, medium, high } = RENDER_QUALITY_PROFILES;
   expect(planSceneEffects(settings, "pbr", true, { allowed: medium.postprocessing })).toMatchObject({
-    ambientOcclusion: settings.ambientOcclusion, reflections: null, volumetricLighting: null });
+    ambientOcclusion: settings.ambientOcclusion, reflections: settings.reflections, volumetricLighting: null });
   expect(planSceneEffects(settings, "pbr", true, { allowed: low.postprocessing })).toBeNull();
   expect(planSceneEffects(settings, "pbr", true, { allowed: low.postprocessing, fogVolumesPresent: true })?.volumetricLighting)
     .toMatchObject({ enabled: true, density: 0 });

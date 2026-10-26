@@ -1,3 +1,4 @@
+import { DEFAULT_SHADOW_SETTINGS, RENDER_QUALITY_PROFILES } from "@haptic/core";
 import type { EngineEnum, EngineStruct } from "./engine-types";
 import type { StructField } from "./type-assets";
 
@@ -26,23 +27,29 @@ const bool = (name: string, value: boolean) => field(name, "bool", value);
 const choice = (name: string, type: string, value: string) => field(name, "enum", value, type);
 const structure = (name: string, type: string) => field(name, "struct", undefined, type);
 const define = (name: string, fields: StructField[]): EngineStruct => ({ id: `engine:${name}`, name: name.replace(/([a-z])([A-Z])/g, "$1 $2"), fields });
+/** Quality structs default to the Medium tier, which new projects use. */
+const medium = RENDER_QUALITY_PROFILES.medium, shadows = DEFAULT_SHADOW_SETTINGS;
 /** Stable built-in types use the same property keys as runtime readback. */
 export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("ScalabilityResult", [number("revision", 0), choice("status", "ScalabilityStatus", "rebuildPending"), field("message", "string", "")]),
-  define("ResolutionQuality", [number("scale", 1), bool("dynamic", true), number("minScale", 0.75), number("targetFps", 60)]),
-  define("TextureQuality", [number("lodBias", 0), number("anisotropy", 4), number("byteBudget", 512 * 1024 ** 2)]),
-  define("GeometryQuality", [bool("autoLod", true), number("lodDistanceScale", 1)]),
+  define("ResolutionQuality", [number("scale", medium.resolution.scale), bool("dynamic", medium.resolution.dynamic),
+    number("minScale", medium.resolution.minScale), number("targetFps", medium.resolution.targetFps)]),
+  define("TextureQuality", [number("lodBias", medium.textures.lodBias), number("anisotropy", medium.textures.anisotropy),
+    number("byteBudget", medium.textures.byteBudget)]),
+  define("GeometryQuality", [bool("autoLod", medium.geometry.autoLod), number("lodDistanceScale", medium.geometry.lodDistanceScale)]),
   // Defaults equal the Medium tier; normalization rounds integer fields and snaps FFT Size.
-  define("WaterQuality", [choice("shadingDetail", "WaterShadingDetail", "medium"), number("meshDensity", 0.75),
-    number("contactResolution", 256), bool("refraction", true), number("refractionScale", 0.5),
-    choice("reflections", "WaterReflectionMode", "sky"), number("reflectionSteps", 8), number("planarScale", 0.5),
-    number("fftSize", 256), number("fftCascades", 3)]),
-  define("PostProcessingQuality", [number("resolutionScale", 0.75)]),
-  define("LightingQuality", [choice("localLightMode", "LightBudgetMode", "auto"), number("maxLocalLights", 16)]),
-  define("ShadowQuality", [bool("enabled", true), number("distance", 200), number("fadeFraction", 0.1), number("mapSize", 2048),
-    number("cascades", 2), choice("filter", "ShadowFilter", "pcf"), choice("filterQuality", "ShadowFilterQuality", "medium"),
-    number("softness", 0.05), bool("autoBias", true), number("depthBias", 0.0001), number("normalBias", 0.005),
-    choice("localLightMode", "LightBudgetMode", "auto"), number("maxLocalLights", 2), number("localMapSize", 1024)]),
+  define("WaterQuality", [choice("shadingDetail", "WaterShadingDetail", medium.water.shadingDetail), number("meshDensity", medium.water.meshDensity),
+    number("contactResolution", medium.water.contactResolution), bool("refraction", medium.water.refraction),
+    number("refractionScale", medium.water.refractionScale), choice("reflections", "WaterReflectionMode", medium.water.reflections),
+    number("reflectionSteps", medium.water.reflectionSteps), number("planarScale", medium.water.planarScale),
+    number("fftSize", medium.water.fftSize), number("fftCascades", medium.water.fftCascades)]),
+  define("PostProcessingQuality", [number("resolutionScale", medium.postprocessing.resolutionScale)]),
+  define("LightingQuality", [choice("localLightMode", "LightBudgetMode", medium.lighting.localLightMode), number("maxLocalLights", medium.lighting.maxLocalLights)]),
+  define("ShadowQuality", [bool("enabled", shadows.enabled), number("distance", shadows.distance), number("fadeFraction", shadows.fadeFraction),
+    number("mapSize", shadows.mapSize), number("cascades", shadows.cascades), choice("filter", "ShadowFilter", shadows.filter),
+    choice("filterQuality", "ShadowFilterQuality", shadows.filterQuality), number("softness", shadows.softness), bool("autoBias", shadows.autoBias),
+    number("depthBias", shadows.depthBias), number("normalBias", shadows.normalBias), choice("localLightMode", "LightBudgetMode", shadows.localLightMode),
+    number("maxLocalLights", shadows.maxLocalLights), number("localMapSize", shadows.localMapSize)]),
   define("CelShading", [number("shadowBands", 3), number("shadowThreshold", 0.5), number("shadowStrength", 0.65), bool("specularEnabled", true),
     number("specularStrength", 0.2), number("specularSize", 0.2), number("lightColorInfluence", 1), choice("lightMixing", "CelLightMixing", "strongest"),
     bool("outlinesEnabled", true), field("outlineColor", "color", { x: 0.03, y: 0.03, z: 0.03, w: 1 }), number("outlineWidth", 1),

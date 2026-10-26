@@ -371,7 +371,7 @@ describe("createCommandRegistry", () => {
       success: true,
       output: "framecap 60",
     });
-    expect(registry.execute("quality shadows", host).output).toContain('"distance":200');
+    expect(registry.execute("quality shadows", host).output).toContain('"distance":250');
     expect(host.calls).toEqual([]);
   });
 

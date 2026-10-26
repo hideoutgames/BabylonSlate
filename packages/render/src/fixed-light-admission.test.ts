@@ -9,7 +9,7 @@ import {
   Vector3,
   type Light,
 } from "@babylonjs/core";
-import { normalizeRenderingQuality, normalizeShadowSettings, qualityPresetPatch } from "@haptic/core";
+import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fixedLightSlotTable,
@@ -169,7 +169,7 @@ describe("fixed-shape light admission", () => {
     const { scene, sync, seatOf } = world();
     const fill = new HemisphericLight("fill", Vector3.Up(), scene);
     const extra = new HemisphericLight("extra fill", Vector3.Up(), scene);
-    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("low")) });
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 4 } }) });
     const lamps = Array.from({ length: 6 }, (_, index) => new PointLight(`lamp-${index}`, new Vector3(index * 10, 3, 0), scene));
     sync();
     expect(seatOf(fill)).toBe("FILL:0");
