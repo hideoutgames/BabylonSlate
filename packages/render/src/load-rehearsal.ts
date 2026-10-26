@@ -191,7 +191,9 @@ type AdmissionSnapshot = {
 function snapshotAdmission(scene: Scene): AdmissionSnapshot {
   return {
     forward: forwardLightSelection(scene),
-    shadows: findSceneShadowController(scene)?.snapshotAdmission(),
+    // A map the step takes from its light waits, parked, for the revert to give it back, rather than being disposed
+    // and built again (a sun's cascaded map, which the sun's off and shadows-off steps each take).
+    shadows: findSceneShadowController(scene)?.snapshotAdmission({ keepReleasedMaps: true }),
     lights: [...scene.lights],
   };
 }

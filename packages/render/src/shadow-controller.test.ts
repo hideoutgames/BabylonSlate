@@ -24,6 +24,7 @@ import {
 import { PREDICTION_MAP_SIZE, sceneShadowController } from "./shadow-controller";
 import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
+import { awaitsFirstDraw } from "./shadow-first-draw";
 import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
@@ -1486,6 +1487,68 @@ describe("prediction maps", () => {
     const dispose = vi.spyOn(map, "dispose");
     change(context);
     expect({ held: context.controller.heldPredictionMaps.length, disposed: dispose.mock.calls.length }).toEqual({ held: 0, disposed: 1 });
+  });
+});
+
+describe("maps a tried change takes", () => {
+  /** A sun casting onto a box, its map built, and a snapshot taken to try a change that keeps the maps it takes. */
+  function tried() {
+    const { scene, controller } = fixture();
+    const box = MeshBuilder.CreateBox("box", {}, scene);
+    controller.setParticipation(box, { castShadows: true, receiveShadows: true });
+    const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const map = controller.generator(sun)!;
+    return { scene, controller, sun, map, snapshot: controller.snapshotAdmission({ keepReleasedMaps: true }) };
+  }
+  type Tried = ReturnType<typeof tried>;
+  const changes = [
+    ["switching the sun off", ({ sun }: Tried) => sun.setEnabled(false), ({ sun }: Tried) => sun.setEnabled(true)],
+    ["stopping its shadows", ({ sun, controller }: Tried) => controller.register(sun, false), ({ sun, controller }: Tried) => controller.register(sun, true)],
+  ] as const;
+
+  it.each(changes)("takes the map off its light for %s and gives it back, neutral until it draws, when the restore admits the light again", (_, apply, revert) => {
+    const context = tried();
+    const { controller, sun, map, snapshot } = context;
+    apply(context);
+    controller.sync();
+    const applied = { admitted: controller.generator(sun), bound: sun.getShadowGenerator(), allocated: map.getShadowMap() !== null };
+    revert(context);
+    controller.restoreAdmission(snapshot);
+    expect({ applied, restored: controller.generator(sun) === map, neutral: awaitsFirstDraw(map) && map.getDarkness() === 1 })
+      .toEqual({ applied: { admitted: null, bound: null, allocated: true }, restored: true, neutral: true });
+  });
+
+  it.each(changes)("disposes the map at the restore when its light stays without one after %s", (_, apply) => {
+    const context = tried();
+    const { controller, sun, map, snapshot } = context;
+    apply(context);
+    controller.sync();
+    controller.restoreAdmission(snapshot);
+    controller.sync();
+    expect({ admitted: controller.generator(sun), allocated: map.getShadowMap() !== null, metrics: controller.metrics() })
+      .toEqual({ admitted: null, allocated: false, metrics: { passes: 0, bytes: 0 } });
+  });
+
+  it("keeps a taken map only in the room the admitted maps leave", () => {
+    // Room for one sun map: switching the sun off makes the second directional light the sun, whose map needs it.
+    const context = tried();
+    const { scene, controller, sun, map, snapshot } = context;
+    const engine = scene.getEngine();
+    const second = new DirectionalLight("second", new Vector3(1, -1, 0), scene);
+    controller.register(second, true);
+    controller.sync();
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes);
+    sun.setEnabled(false);
+    controller.sync();
+    const applied = { second: controller.generator(second) !== null, parked: map.getShadowMap() !== null };
+    sun.setEnabled(true);
+    controller.restoreAdmission(snapshot);
+    const restored = controller.generator(sun);
+    expect({ applied, restored: restored !== null && restored !== map, second: controller.generator(second),
+      withinLimit: managedRenderReservations(engine).reservedBytes <= managedRenderReservations(engine).limit })
+      .toEqual({ applied: { second: true, parked: false }, restored: true, second: null, withinLimit: true });
   });
 });
 
