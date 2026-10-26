@@ -79,6 +79,8 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 
 A Water asset reflects scene objects only when its **Object Reflections** is on.
 
+Built-in water takes no **Ambient Occlusion** or **Real-Time Reflections** from [Post Processing](post-processing.md): occlusion would darken the moving waves in patches, and the water draws its own reflections.
+
 ## Custom water Materials
 
 Set a Water asset's **Custom Material** to a Surface Material to replace the built-in shading. Waves and buoyancy still work.

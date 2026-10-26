@@ -10,7 +10,7 @@ import {
 } from "./water-shader-chunks";
 import {
   COLOR_LOCALS, COLOR_UNIFORMS, EDGE_FOAM_CALM, f, FFT, FFT_CASCADE_UNIFORMS, FFT_UNIFORMS, REFLECTS_OBJECTS, REFRACTION, SAMPLES_COPY, SPECTRUM_FOAM_SCALE,
-  WATER_BLEND_DEFINE, WATER_GPU_WAVES_DEFINE,
+  WATER_BLEND_DEFINE, WATER_EFFECTS_GEOMETRY_DEFINE, WATER_GPU_WAVES_DEFINE,
 } from "./water-shader-defines";
 
 /**
@@ -423,7 +423,7 @@ export function waterShaderSource(language: ShaderLanguage): { helpers: string; 
 type VertexPoint = "CUSTOM_VERTEX_DEFINITIONS" | "CUSTOM_VERTEX_UPDATE_WORLDPOS" | "CUSTOM_VERTEX_MAIN_END";
 const FRAGMENT_POINTS = [
   "CUSTOM_FRAGMENT_DEFINITIONS", "CUSTOM_FRAGMENT_UPDATE_ALPHA", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS",
-  "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION", "CUSTOM_FRAGMENT_BEFORE_FOG",
+  "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION", "CUSTOM_FRAGMENT_BEFORE_FOG", "CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR",
 ] as const;
 /** The code a stage injects into the PBR shader, by injection point. */
 function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage): Record<string, string> {
@@ -484,6 +484,17 @@ function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage):
       "#endif",
     ].join("\n"),
     CUSTOM_FRAGMENT_BEFORE_FOG: beforeFogSource(wgsl),
+    // Just before Babylon's geometry writes (`pbrBlockPrePass`); see `WATER_EFFECTS_GEOMETRY_DEFINE`. A zero normal is
+    // no surface to the occlusion march, and zero F0 none to Real-Time Reflections (unlit PBR writes none already).
+    CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: [
+      `#ifdef ${WATER_EFFECTS_GEOMETRY_DEFINE}`,
+      `normalW = ${v3}(0.0);`,
+      "#ifndef UNLIT",
+      `specularEnvironmentR0 = ${v3}(0.0);`,
+      "#endif",
+      "finalColor.a = max(finalColor.a, swEdgeFade * swOpenFade);",
+      "#endif",
+    ].join("\n"),
   } satisfies Record<(typeof FRAGMENT_POINTS)[number], string>;
 }
 

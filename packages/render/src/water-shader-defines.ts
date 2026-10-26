@@ -34,6 +34,14 @@ export const WATER_GPU_WAVES_DEFINE = "SLATE_WATER_GPU_WAVES";
  * water that blends with nothing pays nothing.
  */
 export const WATER_BLEND_DEFINE = "SLATE_WATER_BLEND";
+/**
+ * Set in the scene effects' geometry pass (`isSpatialGeometryPass`). Water writes no normal or reflectivity there, so
+ * ambient occlusion and Real-Time Reflections skip its pixels: its per-pixel wave normals do not match the displaced
+ * mesh in the depth buffer, so occlusion would darken it in blotches that move with the view, and water draws its own
+ * reflections. Its coverage there is its edge fades only, not its view-dependent transparency, so the surface (not
+ * what lies below it) fills the buffers at every angle.
+ */
+export const WATER_EFFECTS_GEOMETRY_DEFINE = "SLATE_WATER_EFFECTS_GEOMETRY";
 /** A Custom Material's Water Colors node mixes toward a blending mesh's colour partners (`WaterColorsBlock`). */
 export const WATER_NODE_BLEND_DEFINE = "SLATE_WATER_NODE_BLEND";
 /** Where a water node graph reads `slateWaterBlend`: its Water Waves node's blend scaling, or its Water Colors node's shares. */

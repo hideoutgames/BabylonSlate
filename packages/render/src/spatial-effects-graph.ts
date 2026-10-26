@@ -4,6 +4,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
+import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 // Unlit Standard surfaces write no reflectivity: installed before any reflectivity geometry pass compiles.
 import "./standard-reflectivity";
 import {
@@ -180,6 +181,7 @@ export class SpatialEffectsGraph {
         graph.scene,
         { doNotChangeAspectRatio: false },
       );
+      registerSpatialGeometryPass(graph.scene, this.geometry.objectRenderer.renderPassId);
       this.geometry.camera = camera;
       this.geometry.objectList = { meshes: [], particleSystems: [] };
       this.geometry.depthTexture = this.clear.outputDepthTexture;
@@ -305,6 +307,7 @@ export class SpatialEffectsGraph {
     if (this.disposed) return;
     this.jitter?.dispose();
     for (const task of this.tasks) task.dispose();
+    if (this.geometry) unregisterSpatialGeometryPass(this.graph.scene, this.geometry.objectRenderer.renderPassId);
     this.geometry?.dispose();
     this.clear?.dispose();
     this.disposed = true;
