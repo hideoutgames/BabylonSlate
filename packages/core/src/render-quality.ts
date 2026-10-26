@@ -168,7 +168,7 @@ export type EffectiveRenderingQuality = RenderingQuality & {
 const MIB = 1024 * 1024;
 /** Authored targets only; neither these counts nor the labels certify a device. */
 export const LOCAL_LIGHT_QUALITY_CAPACITY: Record<QualityLevel, number> = {
-  low: 8,
+  low: 6,
   medium: 32,
   high: 64,
   ultra: 256,
@@ -181,7 +181,7 @@ export const QUALITY_TARGET_LABELS: Record<QualityLevel, string> = {
 };
 export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
   low: {
-    lighting: { localLightMode: "auto", maxLocalLights: 8 },
+    lighting: { localLightMode: "auto", maxLocalLights: 6 },
     resolution: { scale: 0.85, dynamic: true, minScale: 0.5, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 4, byteBudget: 384 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 0.75 },

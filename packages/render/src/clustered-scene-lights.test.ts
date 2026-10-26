@@ -31,6 +31,7 @@ import { applyAuthoredLightProperties } from "./scene-illumination";
 import { sceneShadowController } from "./shadow-controller";
 import { updateSceneRenderingSettings } from "./render-settings";
 import {
+  LOCAL_LIGHT_QUALITY_CAPACITY,
   normalizeRenderingQuality,
   normalizeShadowSettings,
 } from "@haptic/core";
@@ -522,7 +523,7 @@ describe("explicit clustered light ownership", () => {
           lighting: {
             profile: "low",
             localLightMode: manual === undefined ? "auto" : "manual",
-            maxLocalLights: manual ?? 4,
+            maxLocalLights: manual ?? LOCAL_LIGHT_QUALITY_CAPACITY.low,
           },
         }),
         shadows: normalizeShadowSettings({
@@ -542,8 +543,9 @@ describe("explicit clustered light ownership", () => {
     const owner = new ClusteredSceneLights(scene, locals);
     const controller = sceneShadowController(scene);
     expect(controller.generator(spot)).not.toBeNull();
-    expect(owner.status().clustered).toBe(3);
-    expect(locals.filter((light) => light.isEnabled())).toHaveLength(4);
+    // The admitted shadow spot takes one of Low's local lights; the rest go to clustered children.
+    expect(owner.status().clustered).toBe(LOCAL_LIGHT_QUALITY_CAPACITY.low - 1);
+    expect(locals.filter((light) => light.isEnabled())).toHaveLength(LOCAL_LIGHT_QUALITY_CAPACITY.low);
     expect(sun.isEnabled()).toBe(true);
     expect(mesh.lightSources.filter((light) => light === spot)).toHaveLength(1);
     expect(lights.slice(0, 6).every(isAuthoredLightEnabled)).toBe(true);

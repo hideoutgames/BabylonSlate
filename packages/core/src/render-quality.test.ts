@@ -301,7 +301,7 @@ describe("rendering quality sessions", () => {
     });
     expect(session.effective().shadows.maxLocalLights).toBe(8);
     session.execute("lighting", "budget", "auto");
-    expect(resolveLocalLightBudget(session.effective().lighting)).toBe(8);
+    expect(resolveLocalLightBudget(session.effective().lighting)).toBe(6);
     expect(session.effective().lighting.maxLocalLights).toBe(99);
     session.execute("lighting", "medium");
     expect(resolveLocalLightBudget(session.effective().lighting)).toBe(32);

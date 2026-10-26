@@ -42,6 +42,8 @@ async function sphereModel(cacheKey?: string, rings?: number, segments?: number)
   const handle = createTestEngine();
   handles.push(handle);
   const { scene } = handle;
+  // The coverage thresholds the tests select by are those of LOD Distance Scale 1.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ geometry: { autoLod: true, lodDistanceScale: 1 } }) });
   const container = await loadModelContainer(scene, encodeUvSphereGlb(rings, segments), "sphere.glb");
   const lods = await generateModelLods(container, undefined, cacheKey);
   const instantiate = () => {
