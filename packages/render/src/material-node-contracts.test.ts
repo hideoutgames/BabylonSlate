@@ -133,7 +133,7 @@ describe("material node contracts", () => {
     await compile(doc);
   });
 
-  it("keeps a widened Float parameter live and fills missing channels with one", async () => {
+  it("keeps a widened Float parameter live and broadcasts it into every channel", async () => {
     const doc = createDefaultMaterialDocument("Numeric", "postProcess");
     node(doc, "source", "param.float", { name: "Value", value: [0.25] });
     doc.edges = [];
@@ -142,18 +142,13 @@ describe("material node contracts", () => {
     const fragment = result.material.attachedBlocks.find((block): block is FragmentOutputBlock => block instanceof FragmentOutputBlock)!;
     const merge = fragment.rgba.connectedPoint!.ownerBlock as VectorMergerBlock;
     expect(merge).toBeInstanceOf(VectorMergerBlock);
-    for (const channel of [merge.y, merge.z, merge.w]) {
-      expect((channel.connectedPoint!.ownerBlock as InputBlock).value).toBe(1);
-    }
     const source = merge.x.connectedPoint!.ownerBlock as InputBlock;
+    for (const channel of [merge.y, merge.z, merge.w]) {
+      expect(channel.connectedPoint!.ownerBlock).toBe(source);
+    }
     expect(source.value).toBe(0.25);
     expect(result.setParameter("Value", { kind: "float", value: 0.75 })).toBe(true);
     expect(source.value).toBe(0.75);
-    expect(result.setParameter("Value", { kind: "float", value: 0 })).toBe(true);
-    expect(source.value).toBe(0);
-    for (const channel of [merge.y, merge.z, merge.w]) {
-      expect((channel.connectedPoint!.ownerBlock as InputBlock).value).toBe(1);
-    }
   });
   it("keeps different Custom GLSL bodies distinct when numeric node IDs sanitize alike", async () => {
     const doc = createDefaultMaterialDocument();
