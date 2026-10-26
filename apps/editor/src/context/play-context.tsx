@@ -128,6 +128,7 @@ import {
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import { setEditorQuiet } from "../lib/editor-quiet";
+import { subscribeEditorViewportFrameHold } from "../lib/editor-frame-hold";
 import {
   EditorSchedulerRegistry,
   type EditorLoopHandle,
@@ -854,6 +855,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       schedulerRegistryRef.current.setPaused(paused);
       setEncodeQueuePauseReason("visibility", paused);
     });
+  }, []);
+
+  // Save All holds the editor viewports' frames; game views are never registered here.
+  useEffect(() => {
+    const registry = schedulerRegistryRef.current;
+    const unsubscribe = subscribeEditorViewportFrameHold((held) => registry.setFramesHeld(held));
+    return () => {
+      unsubscribe();
+      registry.setFramesHeld(false);
+    };
   }, []);
 
   /** Editor Play stopped at a breakpoint or an error, its view hidden behind the editor until Resume. */

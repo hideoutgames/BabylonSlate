@@ -243,6 +243,7 @@ export function useViewportEngine({
         const unregisterScheduler = registerScheduler({
           setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
           setPaused: (v) => handle.setPaused(v),
+          holdFrames: () => handle.scheduler.acquireObstruction(),
         });
         disposers.push(unregisterScheduler);
         const detachRenderGate = attachViewportRenderGate({

@@ -275,6 +275,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     const unregisterScheduler = registerScheduler({
       setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
       setPaused: (v) => handle.setPaused(v),
+      holdFrames: () => handle.scheduler.acquireObstruction(),
     });
     const detachRenderGate = attachViewportRenderGate({
       canvas,
