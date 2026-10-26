@@ -244,12 +244,19 @@ describe("EditorDebugOverlay", () => {
     return handle;
   }
 
-  it("creates frustum lines and a 1Hz preview RTT when a camera actor is selected", () => {
+  it("creates frustum lines and a preview RTT at the configured rate when a camera actor is selected", () => {
     const { scene } = createHandle();
     const helper = createEditorCameraModel(scene, "other-camera-helper");
+    const origin = MeshBuilder.CreateSphere(editorMeshName("other"), {}, scene);
+    origin.metadata = { editorActorOrigin: true, editorPickProxy: true };
+    origin.visibility = 0;
     const world = MeshBuilder.CreateBox("world", {}, scene);
+    const hidden = MeshBuilder.CreateBox("hidden", {}, scene);
+    hidden.visibility = 0;
     let now = 0;
-    const overlay = new EditorDebugOverlay(scene, { now: () => now });
+    let rate = 2;
+    let shown = true;
+    const overlay = new EditorDebugOverlay(scene, { now: () => now, previewFrameRate: () => rate, isShown: () => shown });
     const sceneData = sceneWith([
       createActor("cam", "Camera", {
         components: [
@@ -264,17 +271,36 @@ describe("EditorDebugOverlay", () => {
     overlay.sync({ sceneData, selectedActorIds: ["cam"] });
     expect(overlay.frustumMesh).not.toBeNull();
     expect(overlay.previewTexture).not.toBeNull();
-    expect(overlay.previewTexture!.renderList).not.toContain(helper);
-    expect(overlay.previewTexture!.renderList).toContain(world);
+    const rtt = overlay.previewTexture!;
+    expect(rtt.renderList).not.toContain(helper);
+    expect(rtt.renderList).not.toContain(origin);
+    expect(rtt.renderList).toContain(world);
+    // Like the scene's own cull, a draw leaves out meshes hidden through visibility.
+    const drawn = rtt.getCustomRenderList!(0, rtt.renderList, rtt.renderList!.length);
+    expect(drawn).toContain(world);
+    expect(drawn).not.toContain(hidden);
+    expect(overlay.previewRenderCount).toBe(1);
+
+    now = 250;
+    overlay.tick();
     expect(overlay.previewRenderCount).toBe(1);
 
     now = 500;
     overlay.tick();
-    expect(overlay.previewRenderCount).toBe(1);
+    expect(overlay.previewRenderCount).toBe(2);
 
+    // A rate change applies from the next tick.
+    rate = 10;
+    now = 600;
+    overlay.tick();
+    expect(overlay.previewRenderCount).toBe(3);
+
+    // An off-screen viewport's preview takes no timed passes.
+    shown = false;
     now = 1000;
     overlay.tick();
-    expect(overlay.previewRenderCount).toBe(2);
+    expect(overlay.previewRenderCount).toBe(3);
+    shown = true;
 
     overlay.sync({ sceneData, selectedActorIds: [] });
     expect(overlay.frustumMesh).toBeNull();

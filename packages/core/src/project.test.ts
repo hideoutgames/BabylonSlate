@@ -12,6 +12,7 @@ import {
   normalizeRenderProjectSettings,
   type ProjectSettings,
 } from "./project";
+import { QUALITY_GROUPS, qualityGroupLabel, resolveRenderingQuality } from "./render-quality";
 
 describe("project schema", () => {
   it("normalizes untrusted render defaults without retaining editor or session state", () => {
@@ -494,6 +495,18 @@ describe("project schema", () => {
       height: 720,
       blackBars: true,
     });
+  });
+
+  it("starts new projects at High in every Scalability group, and keeps it on reload", () => {
+    const labels = (settings: ProjectSettings) => {
+      const effective = resolveRenderingQuality(settings.render);
+      return QUALITY_GROUPS.map((group) => qualityGroupLabel(effective, group));
+    };
+    const created = createEmptyProject("Demo").settings;
+    expect(labels(created)).toEqual(QUALITY_GROUPS.map(() => "high"));
+    expect(normalizeProjectSettings(JSON.parse(JSON.stringify(created)))).toEqual(created);
+    // Existing projects without saved quality keep the Medium-based fallback.
+    expect(labels(normalizeProjectSettings(undefined))).not.toContain("high");
   });
 
   it("keeps a custom 1920×1080 black-bars override on new projects", () => {

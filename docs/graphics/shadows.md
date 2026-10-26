@@ -21,15 +21,15 @@ Shadows have a budget separate from the [light budget](lighting.md#light-budget)
 
 ## Shadow settings
 
-Open **Project Settings > Rendering > Shadows**. The values below are the Medium defaults.
+Open **Project Settings > Rendering > Shadows**. The defaults below are the High level, which new projects use.
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | **Shadows Enabled** | On | Lets eligible lights cast real-time shadows. |
-| **Shadow Distance** | 250 | Directional shadow coverage around the camera, in world units. |
+| **Shadow Distance** | 350 | Directional shadow coverage around the camera, in world units. |
 | **Shadow Distance Fade** | 0.1 | Fades the far edge over this fraction of the distance. 0 turns fading off. |
 | **Directional Map Size** | 2048 | Resolution per cascade, 256 to 4096. |
-| **Shadow Cascades** | 3 | Splits directional coverage, 1 to 4, to keep detail near the camera. |
+| **Shadow Cascades** | 4 | Splits directional coverage, 1 to 4, to keep detail near the camera. |
 | **Shadow Filter** | PCF | **PCF** softens edges. **Contact Hardening (PCSS)** adds a contact-hardening penumbra, in PBR only. |
 | **Shadow Filter Quality** | High | Low, Medium or High. Higher uses more texture samples. |
 | **Contact Hardening Size** | 0.05 | PCSS light size. Larger values widen the penumbra. |
@@ -37,8 +37,8 @@ Open **Project Settings > Rendering > Shadows**. The values below are the Medium
 | **Automatic Shadow Bias** | On | Scales directional bias per cascade, with Depth Bias as the minimum. Landscapes also get a normal offset scaled to the shadow resolution, so sculpted terrain does not shadow itself along its edges. |
 | **Shadow Normal Bias** | 0.005 | Normal offset, in world units. |
 | **Local Shadow Budget Mode** | Auto | **Auto** follows the quality level. **Manual** sets an upper limit. |
-| **Local Shadow Light Budget** | 2 | Manual only. Point and spot lights that can cast shadows at once. |
-| **Local Shadow Map Size** | 1024 | Resolution of each local shadow map or cube face. |
+| **Local Shadow Light Budget** | 4 | Manual only. Point and spot lights that can cast shadows at once. |
+| **Local Shadow Map Size** | 2048 | Resolution of each local shadow map or cube face. |
 
 CEL projects always use PCF. Bands and shadow edges in CEL are hard steps.
 

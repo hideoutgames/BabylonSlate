@@ -57,6 +57,29 @@ export function pickFrustumPlanes(view: Matrix, projection: Matrix, px: number, 
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Babylon writes a fragment's object id only where its alpha exceeds 0.4, but writes its depth regardless. A pickable
+ * mesh hidden through `visibility` (the editor's actor-origin pick spheres) would then go unpicked while hiding what
+ * lies behind it, such as its own billboard; `scene.pick` ignores visibility. The pass draws such meshes just under
+ * full visibility: the transparent variant they already draw with, and an alpha that writes their id.
+ */
+const PICK_VISIBILITY = 0.999;
+
+/** Run `draw` with `meshes` at pick visibility, restoring each mesh's own visibility afterwards. */
+function withPickVisibility<T>(meshes: readonly AbstractMesh[], draw: () => T): T {
+  const hidden: Array<[AbstractMesh, number]> = [];
+  for (const mesh of meshes) {
+    if (mesh.visibility >= PICK_VISIBILITY) continue;
+    hidden.push([mesh, mesh.visibility]);
+    mesh.visibility = PICK_VISIBILITY;
+  }
+  try {
+    return draw();
+  } finally {
+    for (const [mesh, visibility] of hidden) mesh.visibility = visibility;
+  }
+}
+
 const WARN_INTERVAL_MS = 5000;
 const lastWarned = new Map<string, number>();
 
@@ -175,9 +198,10 @@ class PickPass {
   isReady(tap: Tap, objects: AbstractMesh[]): boolean {
     this.aim(tap, objects);
     if (!this.graph) return false;
+    const graph = this.graph;
     // Both probes run, so every missing variant is requested in the same poll.
     const levels = this.levelsReady(objects);
-    const meshes = this.graph.isReady();
+    const meshes = withPickVisibility(objects, () => graph.isReady());
     return levels && meshes;
   }
 
@@ -192,7 +216,7 @@ class PickPass {
     // tap sample the viewport centre. Select this scene for the draw, as the readiness probes do.
     const unpin = pinFloatingOrigin(scene);
     try {
-      graph.execute();
+      withPickVisibility(meshes, () => graph.execute());
     } finally {
       try {
         // The pass rendered through the tap's matrices, not the scene's camera, so Babylon does not

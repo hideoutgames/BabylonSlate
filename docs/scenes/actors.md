@@ -34,7 +34,7 @@ Drag the gizmo handles, or type values in the **Inspector**. When several actors
 | Hide or lock | Use the eye and lock buttons on a row. |
 | Rename | Double-tap the name, or press <kbd>F2</kbd>. |
 | Copy and paste | <kbd>Mod</kbd>+<kbd>C</kbd> and <kbd>Mod</kbd>+<kbd>V</kbd>, also between scenes in the same project. In an empty scene, click the Outliner first. |
-| Duplicate | <kbd>Mod</kbd>+<kbd>D</kbd>, or **Duplicate** in the row menu. |
+| Duplicate | <kbd>Mod</kbd>+<kbd>D</kbd>, or **Duplicate** in the row menu. Both duplicate every selected actor; from the menu of a row that isn't selected, only that actor. The copies become the selection. |
 | Delete | <kbd>Delete</kbd> or <kbd>Backspace</kbd>. Attached children are deleted too. |
 
 The row menu (**⋯**) also has **Select** / **Deselect**, **Frame Selection** and, for actors made from one of your Classes, **Open Actor**.

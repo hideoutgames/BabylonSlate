@@ -41,6 +41,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(picks.displacedCornerBindPose, projection).toEqual({ gpu: null, cpu: "Displaced Corner" });
       // Far draws after Near on the same edge pixel; depth keeps Near.
       expect(picks.leftEdgeOccluded, projection).toEqual({ gpu: "Near", cpu: "Near" });
+      // A pickable mesh hidden through visibility is picked, as by the CPU ray, rather than hiding the box behind it.
+      expect(picks.hiddenProxy, projection).toEqual({ gpu: "Hidden Proxy", cpu: "Hidden Proxy" });
     }
     // Taps right after in-place changes still select the mesh in front.
     expect(report.inPlace.before).toEqual({ gpu: "Plain", cpu: "Plain" });

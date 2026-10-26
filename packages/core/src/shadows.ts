@@ -158,7 +158,7 @@ export const SHADOW_CAPACITY_PROFILES = {
   low: { autoLocalLights: 1, byteBudget: 64 * 1024 ** 2, passes: 8 },
   medium: { autoLocalLights: 2, byteBudget: 192 * 1024 ** 2, passes: 16 },
   high: { autoLocalLights: 4, byteBudget: 256 * 1024 ** 2, passes: 28 },
-  ultra: { autoLocalLights: 8, byteBudget: 384 * 1024 ** 2, passes: 52 },
+  ultra: { autoLocalLights: 8, byteBudget: 768 * 1024 ** 2, passes: 52 },
 } as const;
 export function normalizeShadowSettings(value: unknown): ShadowSettings {
   const clean = normalizeShadowOverrides(value);

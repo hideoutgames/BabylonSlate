@@ -194,7 +194,7 @@ export class ShadowViewMaps {
     // Mirror the scene map's kind even if the settings moved on since it was built.
     if (cascaded !== settings.cascades > 1) return;
     const layers = cascaded ? source.numCascades : 1;
-    const bytesPerTexel = shadowBytesPerTexel(engine);
+    const bytesPerTexel = shadowBytesPerTexel(engine, cascaded);
     const recovery = view.recovery.get(entry.light);
     const first = recovery?.mirrors === source ? Math.min(entry.mapSize, recovery.mapSize) : entry.mapSize;
     for (let mapSize = first; mapSize >= 256; mapSize /= 2) {
@@ -310,7 +310,7 @@ export class ShadowViewMaps {
    */
   missingMirrorBytes(settings: ShadowSettings, admittedBytes: number): number {
     if (!this.views.size) return 0;
-    const bytesPerTexel = shadowBytesPerTexel(this.scene.getEngine());
+    const bytesPerTexel = shadowBytesPerTexel(this.scene.getEngine(), settings.cascades > 1);
     const layers = settings.cascades > 1 ? 4 : 1;
     const smallest = layers * 256 ** 2 * bytesPerTexel;
     const room = availableSceneShadowBytes(this.scene) - admittedBytes;

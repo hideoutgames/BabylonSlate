@@ -93,7 +93,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     setFrameActorHandler,
     setViewportDropApi,
   } = useSceneEditing();
-  const { flySpeed, dropDistance, editorTextureLodEnabled, editorTextureLodQuality } =
+  const { flySpeed, cameraPreviewFrameRate, dropDistance, editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
   const {
     registerSimulationViewport,
@@ -356,6 +356,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     reloadVersion,
     overlayTransformBox,
     flySpeed,
+    cameraPreviewFrameRate,
     commitGizmoTransform,
     commitPilotedActor,
     commitComponentShape,

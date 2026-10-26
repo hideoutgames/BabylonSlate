@@ -29,8 +29,8 @@ import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
 } from "./render-settings";
-import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch } from "@haptic/core";
-import { otherShadowReservations, shadowBytesPerTexel } from "./shadow-admission";
+import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, SHADOW_CAPACITY_PROFILES } from "@haptic/core";
+import { ENGINE_SHADOW_BUDGET, otherShadowReservations, shadowBytesPerTexel } from "./shadow-admission";
 import { beginManagedRenderAllocation, limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { retainAreaLightLookup } from "./area-light-resources";
@@ -123,7 +123,7 @@ describe("shared shadow lifecycle", () => {
       expect(dashes.some(dash => generator.getShadowMap()!.renderList!.includes(dash))).toBe(false);
     }
   });
-  it("downsizes an oversized Ultra sun within conservative memory admission while retaining requested settings", () => {
+  it("admits the Ultra sun at its requested 4096 within the Ultra memory budget", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     engine._features.supportCSM = true;
@@ -147,9 +147,21 @@ describe("shared shadow lifecycle", () => {
     controller.register(sun, true);
     controller.sync();
     expect(controller.generator(sun), JSON.stringify(controller.diagnostics())).not.toBeNull();
-    expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({ status: "active", mapSize: 2048 });
-    expect(controller.metrics().bytes).toBeLessThanOrEqual(384 * 1024 ** 2);
+    expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({ status: "active", mapSize: 4096 });
+    expect(controller.metrics().bytes).toBeLessThanOrEqual(SHADOW_CAPACITY_PROFILES.ultra.byteBudget);
     expect(sceneRenderingSettings(scene).shadows).toMatchObject({ profile: "ultra", preset: "ultra", mapSize: 4096, cascades: 4, maxLocalLights: 8 });
+  });
+  it.each(["medium", "high", "ultra"] as const)("keeps the %s sun at its requested size beside a local shadow light", (level) => {
+    const { scene, controller } = fixture();
+    enableHeadlessCascades(scene.getEngine());
+    const shadows = normalizeShadowSettings(qualityPresetPatch(level).shadows);
+    updateSceneRenderingSettings(scene, { shadows });
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+    controller.register(sun, true);
+    controller.register(new PointLight("point", Vector3.Zero(), scene), true);
+    controller.sync();
+    expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({ status: "active", mapSize: shadows.mapSize });
+    expect(controller.diagnostics().find((entry) => entry.name === "point")).toMatchObject({ status: "active" });
   });
   it.each([
     {
@@ -1046,7 +1058,7 @@ describe("shared shadow lifecycle", () => {
     expect(active).toHaveLength(8);
     expect(allocation).toHaveBeenCalledTimes(8);
     expect(controller.metrics().passes).toBe(48);
-    expect(controller.metrics().bytes).toBeLessThanOrEqual(384 * 1024 ** 2);
+    expect(controller.metrics().bytes).toBeLessThanOrEqual(SHADOW_CAPACITY_PROFILES.ultra.byteBudget);
     expect(controller.limits()).toContain(
       "point shadows: Poisson filter fallback",
     );
@@ -1147,7 +1159,7 @@ describe("shared shadow lifecycle", () => {
     ).toBeLessThanOrEqual(64);
     expect(
       controller.metrics().bytes + previewController.metrics().bytes,
-    ).toBeLessThanOrEqual(512 * 1024 ** 2);
+    ).toBeLessThanOrEqual(ENGINE_SHADOW_BUDGET.bytes);
     expect(previewController.metrics().passes).toBe(12);
     scene.dispose();
     previewController.sync();
@@ -1607,10 +1619,10 @@ describe("view sun shadow maps", () => {
     const metrics = controller.metrics();
     const view = controller.attachView(capture);
     const own = controller.viewBoundGenerator(sun, capture) as CascadedShadowGenerator;
-    // Stats count the view's two cascades of 512² (half-float colour plus depth: 12 bytes a texel).
-    expect(controller.metrics()).toEqual({ passes: metrics.passes + 2, bytes: metrics.bytes + 2 * 512 ** 2 * 12 });
+    // Stats count the view's two cascades of 512² (half-float red colour plus depth: 6 bytes a texel).
+    expect(controller.metrics()).toEqual({ passes: metrics.passes + 2, bytes: metrics.bytes + 2 * 512 ** 2 * 6 });
     // The ledger holds the four layers CSM constructs first (WebGPU frees that texture at the frame's end).
-    expect(managedRenderReservations(scene.getEngine()).categoryBytes.shadow).toBe(4 * 512 ** 2 * 12);
+    expect(managedRenderReservations(scene.getEngine()).categoryBytes.shadow).toBe(4 * 512 ** 2 * 6);
     // A map of the scene map's kind, size and cascades, keyed to the capture camera.
     expect(own).toBeInstanceOf(CascadedShadowGenerator);
     expect(own).not.toBe(main);
@@ -1987,9 +1999,9 @@ describe("view sun shadow maps", () => {
     controller.register(sun, true);
     controller.register(spot, true);
     controller.sync();
-    // A quarter MiB free; another owner holds 2.5 MiB more. The smallest cascaded mirror needs 3 MiB (four 256² layers).
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 2.75 * 1024 ** 2);
-    const other = beginManagedRenderAllocation(engine, 2.5 * 1024 ** 2)!;
+    // A quarter MiB free; another owner holds 1 MiB more. The smallest cascaded mirror needs 1.5 MiB (four 256² layers).
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1.25 * 1024 ** 2);
+    const other = beginManagedRenderAllocation(engine, 1024 ** 2)!;
     const clock = vi.spyOn(performance, "now").mockReturnValue(0);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {

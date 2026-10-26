@@ -27,7 +27,7 @@ const bool = (name: string, value: boolean) => field(name, "bool", value);
 const choice = (name: string, type: string, value: string) => field(name, "enum", value, type);
 const structure = (name: string, type: string) => field(name, "struct", undefined, type);
 const define = (name: string, fields: StructField[]): EngineStruct => ({ id: `engine:${name}`, name: name.replace(/([a-z])([A-Z])/g, "$1 $2"), fields });
-/** Quality structs default to the Medium tier, which new projects use. */
+/** Quality structs default to the Medium tier. */
 const medium = RENDER_QUALITY_PROFILES.medium, shadows = DEFAULT_SHADOW_SETTINGS;
 /** Stable built-in types use the same property keys as runtime readback. */
 export const SCALABILITY_STRUCTS: EngineStruct[] = [
