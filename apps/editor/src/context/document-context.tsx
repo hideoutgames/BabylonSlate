@@ -87,6 +87,7 @@ import {
 } from "../services/source-control-service";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
+import { withEditorViewportFramesHeld } from "../lib/editor-frame-hold";
 import { requeueWithEditLock } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { documentContentIdentity } from "../lib/document-content-identity";
@@ -1179,7 +1180,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return true;
     };
     if (refuseLocked()) return Promise.resolve(false);
-    return enqueueProjectWrite(async () => {
+    // Each await below resumes only after any editor viewport frame drawn
+    // meanwhile, so the viewports hold their frames until this save settles.
+    return enqueueProjectWrite(() => withEditorViewportFramesHeld(async () => {
     if (refuseLocked()) return false;
     return projectService.withBaselineSave(async writer => {
       const progress = beginSaveAllProgress();
@@ -1314,7 +1317,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         progress.finish();
       }
     });
-    });
+    }));
   }, [
     cancelDebouncedSave,
     enqueueProjectWrite,
