@@ -86,7 +86,8 @@ test.describe("P4 Play overlay and session report", () => {
                 };
               };
               const api = host.__hapticPlayTest;
-              // Play's load rehearsal releases and rebuilds shadow maps before its first presented frame.
+              // Play's load rehearsal can start and dispose shadow maps (a light's shadows switched on, a spawned light) before
+              // its first presented frame.
               if (!api || api.modelLoadCount() === 0 || api.loadRehearsal() === null) return false;
               await api.whenModelsReady();
               const visuals = api.visuals().length;
