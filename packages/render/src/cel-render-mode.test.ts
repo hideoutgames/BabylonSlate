@@ -249,9 +249,9 @@ describe("native CEL render mode", () => {
     const native = new CelMaterial(source, scene);
     const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
     mesh.material = native;
-    const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
     const quality = normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } });
-    const frame = async (cel: Parameters<typeof normalizeCelShadingSettings>[0]) => {
+    const frame = async (cel: Parameters<typeof normalizeCelShadingSettings>[0], reflections = true) => {
+      const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: reflections } };
       setSceneRenderSettings(scene, { mode: "cel", effects, quality, cel: normalizeCelShadingSettings(cel) });
       // A new frame: readiness is cached per render id.
       scene.incrementRenderId();
@@ -265,26 +265,26 @@ describe("native CEL render mode", () => {
     };
     const map = ["slateCelReflectivityMetal", "slateCelReflectivityGloss", "slateCelReflectivityMap"];
     // Factors only by default: a textured metalness reads as non-metal, with nothing extra bound or compiled.
-    const factors = await frame({ reflectionsEnabled: true });
+    const factors = await frame({});
     expect(factors.texture).toBeNull();
     expect(factors.defines).not.toMatch(/#define SPECULAR\n/);
     expect(factors.bound("slateCelReflectivity")).toEqual([0.04, 0.04, 0.04, 0]);
     for (const name of map) expect(factors.bound(name)).toBeUndefined();
-    const textured = await frame({ reflectionsEnabled: true, reflectionTexturesEnabled: true });
+    const textured = await frame({ reflectionTexturesEnabled: true });
     expect(textured.texture).toBe(source.metallicTexture);
     expect(textured.defines).toMatch(/#define SPECULAR\n/);
     expect(textured.bound("slateCelReflectivity")).toEqual([0.04, 0.04, 0.04, 1]);
     expect(textured.bound("slateCelReflectivityMetal")).toEqual([0, 0, 1, 0]);
     expect(textured.bound("slateCelReflectivityGloss")).toEqual([0, 1, 0, 0]);
-    // Without CEL reflections running the opt-in binds nothing: the variant is the flat-factor one.
-    const flat = await frame({ reflectionsEnabled: false, reflectionTexturesEnabled: true });
+    // Without Real-Time Reflections running the opt-in binds nothing: the variant is the flat-factor one.
+    const flat = await frame({ reflectionTexturesEnabled: true }, false);
     expect(flat.texture).toBeNull();
     expect(flat.defines).toBe(factors.defines);
     for (const name of map) expect(flat.bound(name)).toBeUndefined();
     // A frozen adapter, ready in its flat variant, still follows the setting.
     native.freeze();
-    await frame({ reflectionsEnabled: false, reflectionTexturesEnabled: true });
-    expect((await frame({ reflectionsEnabled: true, reflectionTexturesEnabled: true })).defines).toBe(textured.defines);
+    await frame({ reflectionTexturesEnabled: true }, false);
+    expect((await frame({ reflectionTexturesEnabled: true })).defines).toBe(textured.defines);
     source.unlit = true;
     native.syncSource();
     expect(native.specularTexture).toBeNull();
@@ -496,10 +496,11 @@ describe("native CEL render mode", () => {
     const errors: string[] = [];
     material.onBuildErrorObservable.add((error) => errors.push(error));
     MeshBuilder.CreateBox("actor", {}, scene).material = material;
-    const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
     const quality = normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } });
-    const render = (reflectionsEnabled: boolean) =>
-      setSceneRenderSettings(scene, { mode: "cel", effects, quality, cel: normalizeCelShadingSettings({ reflectionsEnabled }) });
+    const render = (enabled: boolean) => setSceneRenderSettings(scene, {
+      mode: "cel", quality, cel: normalizeCelShadingSettings({}),
+      effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled } },
+    });
     // The F0 mix of the geometry reflectivity write, present only with base color connected.
     const reflective = "mix(vec3(0.04)";
     render(false);

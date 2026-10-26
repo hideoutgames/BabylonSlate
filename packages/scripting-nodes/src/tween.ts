@@ -4,6 +4,7 @@ import {
   ENGINE_EASING_CURVE_ENUM_ID, ENGINE_TWEEN_SPACE_ENUM_ID,
   type NodeDefinition, type PinType,
 } from "@haptic/scripting";
+import { selfActorPin } from "./self-pin";
 
 const curve = enumRef(ENGINE_EASING_CURVE_ENUM_ID);
 const space = enumRef(ENGINE_TWEEN_SPACE_ENUM_ID);
@@ -29,7 +30,8 @@ function tweenNode(
     pins: () => [
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Completed", "out", EXEC),
-      { ...pin("target", "Target", "in", target ?? value), ...(target ? { subject: true } : { reference: "required" as const }) },
+      target === actor ? selfActorPin("target", "Target")
+        : { ...pin("target", "Target", "in", target ?? value), ...(target ? { subject: true } : { reference: "required" as const }) },
       pin("a", "A", "in", value, "data", true, initial),
       pin("b", "B", "in", value, "data", true, initial),
       pin("duration", "Duration", "in", FLOAT, "data", true, 2),

@@ -5,9 +5,8 @@ import {
   VEC3,
   TRANSFORM,
   ROTATOR,
-  objectRef,
 } from "@haptic/scripting";
-import { subject } from "./self-pin";
+import { selfActorPin } from "./self-pin";
 
 export const transformNodes: NodeDefinition[] = [
   {
@@ -16,7 +15,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -30,7 +29,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("location", "Location", "in", VEC3),
     ],
     codegen: (ctx) => {
@@ -45,7 +44,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("out", "Out", "out", ROTATOR),
     ],
     codegen: (ctx) => ({
@@ -59,7 +58,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("rotation", "Rotation", "in", ROTATOR),
     ],
     codegen: (ctx) => {
@@ -74,7 +73,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -88,7 +87,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("scale", "Scale", "in", VEC3),
     ],
     codegen: (ctx) => {
@@ -103,7 +102,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("out", "Out", "out", TRANSFORM),
     ],
     codegen: (ctx) => ({
@@ -117,7 +116,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("transform", "Transform", "in", TRANSFORM),
     ],
     codegen: (ctx) => {
@@ -132,7 +131,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -145,7 +144,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -158,7 +157,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -172,7 +171,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("target", "Target", "in", objectRef("Actor"))),
+      selfActorPin("target", "Target"),
       pin("offset", "Offset", "in", VEC3),
     ],
     codegen: (ctx) => {

@@ -11,7 +11,7 @@ Calls a Script Interface method on another object and continues when it returns.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Target | Object Reference | Object to call. Left unconnected the pin reads **Target (Self)** and calls the object that runs the graph. |
+| Target | Object Reference | Object to call. Left unconnected the pin shows **Self** and calls the object that runs the graph. |
 
 ## Outputs
 

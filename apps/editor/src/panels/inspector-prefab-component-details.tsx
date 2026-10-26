@@ -228,7 +228,7 @@ export function PrefabComponentDetails({
         onOpenChange={(open) => {
           if (!open) setAssetPick(null);
         }}
-        assets={assetPick?.materialDomain === "text" ? pickerAssets.filter((asset) => materialDomains[asset.guid] === "text") : assetPick?.property === "materialGuid" && component.classId === "MeshComponent" && component.properties.assetGuid
+        assets={assetPick?.materialDomain ? pickerAssets.filter((asset) => materialDomains[asset.guid] === assetPick.materialDomain) : assetPick?.property === "materialGuid" && component.classId === "MeshComponent" && component.properties.assetGuid
           ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
           : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
@@ -236,7 +236,7 @@ export function PrefabComponentDetails({
         allowNone
         onPick={(guid) => {
           if (!assetPick) return;
-          if (guid && assetPick.materialDomain === "text" && materialDomains[guid] !== "text") return;
+          if (guid && assetPick.materialDomain && materialDomains[guid] !== assetPick.materialDomain) return;
           // A Font without an MSDF pair stores Bitmap in the same edit as the Font.
           const bitmapFont =
             assetPick.property === "fontAssetGuid" &&

@@ -11,7 +11,7 @@ Removes an actor, and all of its components, from the game.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Target | Actor Reference | The actor to remove. Left unconnected the pin reads **Target (Self)** and removes the actor running the graph. |
+| Target | Actor Reference | The actor to remove. Left unconnected the pin shows **Self** and removes the actor running the graph. |
 
 ## Outputs
 

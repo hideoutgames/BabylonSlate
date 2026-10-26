@@ -45,10 +45,33 @@ export function isInputEvent(typeId: string): boolean {
   return typeId === "input.actionEvent" || typeId === "input.axisEvent";
 }
 
-/** Nodes whose Actor input reads Self while unwired: saved pins from before it was labelled "(Self)" are replaced. */
+/** Nodes whose Actor input reads Self while unwired: saved pins from before it read Self are replaced. */
 const SELF_ACTOR_NODE_IDS: ReadonlySet<string> = new Set([
   "actor.destroy",
   "actor.attachToBone",
+  "actor.getName",
+  "actor.attach",
+  "actor.detach",
+  "actor.getParent",
+  "actor.setOwner",
+  "actor.getOwner",
+  "camera.possess",
+  "transform.getLocation",
+  "transform.setLocation",
+  "transform.getRotation",
+  "transform.setRotation",
+  "transform.getScale",
+  "transform.setScale",
+  "transform.get",
+  "transform.set",
+  "transform.forward",
+  "transform.right",
+  "transform.up",
+  "transform.addWorldOffset",
+  "physics.addImpulse",
+  "physics.moveCharacter",
+  "navigation.moveTo",
+  "navigation.stopMovement",
   "component.get",
   "component.has",
   "component.add",

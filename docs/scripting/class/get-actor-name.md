@@ -20,4 +20,5 @@ Returns the name of an actor as text.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - Returns an empty string, and logs an error, when the reference is empty.

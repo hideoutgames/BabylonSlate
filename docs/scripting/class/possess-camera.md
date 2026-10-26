@@ -21,4 +21,5 @@ Makes the camera on an actor the view the player sees.
 
 ## Notes
 
+- Leave **Target** unconnected to use the actor running the graph; the pin shows **Self**.
 - Pick an actor that has a Camera component.

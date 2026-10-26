@@ -10,7 +10,7 @@ Returns the Scene Layer an actor belongs to.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Actor | Actor Reference | Left unconnected the pin reads **Actor (Self)** and uses the actor running the graph. |
+| Actor | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
 
 ## Outputs
 

@@ -55,6 +55,11 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | Toggle Drag Select | <kbd>Q</kbd> |
 | Switch 2D / 3D | <kbd>Alt</kbd>+<kbd>V</kbd> |
 | Drop Selection | <kbd>End</kbd> |
+| Design Mode | <kbd>Shift</kbd>+<kbd>1</kbd> |
+| Landscape Mode | <kbd>Shift</kbd>+<kbd>2</kbd> |
+| Foliage Mode | <kbd>Shift</kbd>+<kbd>3</kbd> |
+
+The mode shortcuts switch the active Scene between its Design, Landscape and Foliage modes, as the Scene Mode menu in the toolbar does. They do nothing during Play.
 
 <kbd>W</kbd>, <kbd>A</kbd>, <kbd>S</kbd> and <kbd>D</kbd> fly the camera in 3D and pan it in 2D. They are not editor commands and cannot be rebound.
 

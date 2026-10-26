@@ -16,7 +16,7 @@ export type GraphPin = {
   reference?: "required" | "writable";
   /**
    * An unwired reference input reads the object running the graph: the compiler passes `ctx.self`
-   * and the graph labels the pin "(Self)". A wired reference is used as is.
+   * and the graph shows a read-only Self field on the pin. A wired reference is used as is.
    */
   selfWhenUnwired?: boolean;
   /** Display unit of a number or vector literal (`VALUE_UNITS`); values are never converted. */
