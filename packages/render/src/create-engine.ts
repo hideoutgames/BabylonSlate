@@ -504,6 +504,18 @@ function initializeEngine(
    */
   let loadRehearsal: LoadRehearsal | null = null;
   let loadRehearsalReport: LoadRehearsalReport | null = null;
+  /**
+   * WebGL2 Play loads: a program's first draw holds iPad WebKit and no probe sees it, so the spawn warm-up's staged
+   * meshes stay, shown, until the load rehearsal's starting state has drawn them behind the loading screen
+   * (`releaseStagedSpawnables`). Play's meshes skip view culling (Intermediate performance priority), so its loading
+   * frames already draw the rest of what the load compiled.
+   */
+  let releaseStagedSpawnables: (() => void) | null = null;
+  const releaseStaged = () => {
+    const release = releaseStagedSpawnables;
+    releaseStagedSpawnables = null;
+    release?.();
+  };
   const endLoadRehearsal = () => {
     if (!loadRehearsal) return;
     loadRehearsal.cancel();
@@ -517,7 +529,10 @@ function initializeEngine(
   const cancelPresentation = (error: Error, key?: string) => {
     for (const [id, pending] of pendingPresentations) {
       if (key !== undefined && id !== key) continue;
-      if (id === "world") endLoadRehearsal();
+      if (id === "world") {
+        endLoadRehearsal();
+        releaseStaged();
+      }
       pendingPresentations.delete(id);
       clearTimeout(pending.timer);
       pending.submission?.cancel();
@@ -1741,7 +1756,8 @@ function initializeEngine(
         try { containers.push(await lease.load); } catch { /* it fails when it spawns */ }
       }));
       assertCurrent();
-      await warmSpawnables(scene, { materials, containers }, assertCurrent);
+      releaseStaged();
+      releaseStagedSpawnables = await warmSpawnables(scene, { materials, containers }, assertCurrent, { keepForFirstDraw: true });
       spawnableWarm = { materials: materials.length, models: containers.length, ms: performance.now() - started };
     } finally {
       for (const lease of leases) lease.release();
@@ -1992,6 +2008,8 @@ function initializeEngine(
           if (loadRehearsal.done) loadRehearsalReport = loadRehearsal.report();
           return;
         }
+        // Staged meshes are shown only for the rehearsal's frames, which are never presented.
+        if (key === "world") releaseStaged();
         pending.copied = false;
         const pipelinesBefore = WebGPUCacheRenderPipeline.NumCacheMiss;
         const submission = submitPresentedFrame(engine, () => {
@@ -2307,6 +2325,7 @@ function initializeEngine(
       unsubscribeEditorDrop();
       releasePlayLoop?.();
       firstDraws?.close();
+      releaseStaged();
       releaseMainThreadDecoding?.();
       restoreFixedShapeLighting();
       engine.stopRenderLoop(renderLoop);
@@ -2621,11 +2640,15 @@ function initializeEngine(
         worldRenderer.invalidate();
         // A presented load's rehearsal ends here: the next level keeps none of its Effects, nor its predictions.
         endLoadRehearsal();
+        releaseStaged();
         releaseLightPredictions(scene);
         cancelPresentation(new Error("Scene loading was superseded."), "world");
       }
       // A failed load never reaches the warm-up that ends its hold.
-      if (command.type === "sceneLoadFailed" && command.sceneLoadId === worldLoadId) instanceCompileHold = null;
+      if (command.type === "sceneLoadFailed" && command.sceneLoadId === worldLoadId) {
+        instanceCompileHold = null;
+        releaseStaged();
+      }
       if (command.type === "sceneLayerLoading") {
         const previous = layerLoads.get(command.layerId);
         if (!previous || previous.loadId < command.layerLoadId) {
@@ -3231,7 +3254,9 @@ function initializeEngine(
         endLoadRehearsal();
         loadRehearsalReport = null;
         // Full Quality captures prepare their views in the starting state, so their variants share its Effects.
-        loadRehearsal = createLoadRehearsal(scene, () => !renderTargetCaptures.preparing(), spawnable);
+        loadRehearsal = createLoadRehearsal(scene, () => !renderTargetCaptures.preparing(), spawnable, {
+          staged: releaseStagedSpawnables !== null, onStartingDrawn: releaseStaged,
+        });
       }
     },
     whenMaterialTexturesReady: async (owner) => {
