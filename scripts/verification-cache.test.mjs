@@ -45,7 +45,7 @@ async function fixture(t) {
   };
 }
 
-test("typecheck reuses successful inputs across browser-only commits but invalidates dependencies and configuration", async (t) => {
+test("typecheck reuses successful inputs across prose-only commits but invalidates browser scenarios, dependencies and configuration", async (t) => {
   const f = await fixture(t);
   const phase = { id: "types", command: ["typecheck"], scope: "typecheck" };
   let executions = 0;
@@ -57,10 +57,11 @@ test("typecheck reuses successful inputs across browser-only commits but invalid
     false,
   );
   assert.equal((await cachedVerificationPhase(phase, execute, f)).cached, true);
-  await f.save("e2e/example.spec.ts", "browser-two");
+  await f.save("docs/example.md", "prose-two");
   await f.commit();
   assert.equal((await cachedVerificationPhase(phase, execute, f)).cached, true);
   for (const [file, content] of [
+    ["e2e/example.spec.ts", "browser-two"],
     ["packages/core/src/index.ts", "export const value = 2;"],
     ["pnpm-lock.yaml", "lock-two"],
     ["new.config.mjs", "export default {};"],
@@ -73,7 +74,7 @@ test("typecheck reuses successful inputs across browser-only commits but invalid
       file,
     );
   }
-  assert.equal(executions, 4);
+  assert.equal(executions, 5);
   assert.equal(
     (
       await cachedVerificationPhase(

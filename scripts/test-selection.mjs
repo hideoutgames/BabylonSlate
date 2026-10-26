@@ -60,6 +60,10 @@ export function selectChecks(files, workspace, availableTests = []) {
   let allTooling = false;
   let docs = false;
 
+  const addEditorTypes = () => {
+    const editor = workspace.find((pkg) => pkg.path === "apps/editor");
+    if (editor) packages.add(editor.name);
+  };
   const addTest = (test) => {
     if (!existing.has(test)) return;
     if (test.startsWith("scripts/distribution/")) distributionTests.add(test);
@@ -100,6 +104,8 @@ export function selectChecks(files, workspace, availableTests = []) {
     if (file.startsWith(".github/workflows/")) continue;
     if (file.startsWith("e2e/")) {
       if (!file.endsWith(".spec.ts")) addTest("playwright.config.test.ts");
+      // The editor's typecheck covers the browser scenarios.
+      if (SOURCE_FILE.test(file)) addEditorTypes();
       continue;
     }
     if (
@@ -108,6 +114,7 @@ export function selectChecks(files, workspace, availableTests = []) {
       file === "playwright.config.test.ts"
     ) {
       addTest("playwright.config.test.ts");
+      if (file !== "playwright.config.test.ts") addEditorTypes();
       continue;
     }
     if (file.startsWith("scripts/")) continue;
