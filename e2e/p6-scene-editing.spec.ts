@@ -8,7 +8,7 @@ import { readSaveAllDiagnostics, saveAllIfEnabled } from "./save-all";
 async function commitGizmoNudge(page: Page): Promise<boolean> {
   return page.evaluate(() =>
     (
-      globalThis as {
+      globalThis as unknown as {
         __hapticViewportTest: { commitGizmoNudge: () => Promise<boolean> };
       }
     ).__hapticViewportTest.commitGizmoNudge(),
@@ -18,7 +18,7 @@ async function commitGizmoNudge(page: Page): Promise<boolean> {
 async function sceneDocumentX(page: Page): Promise<number | null> {
   return page.evaluate(() => {
     const position = (
-      globalThis as {
+      globalThis as unknown as {
         __hapticTest: {
           activeSceneActorPosition: () => [number, number, number] | null;
         };
@@ -31,7 +31,7 @@ async function sceneDocumentX(page: Page): Promise<number | null> {
 async function sceneMeshX(page: Page): Promise<number | null> {
   return page.evaluate(() => {
     const position = (
-      globalThis as {
+      globalThis as unknown as {
         __hapticViewportTest: {
           activeSceneMeshPosition: () => [number, number, number] | null;
         };
@@ -47,7 +47,7 @@ async function injectGamepad(
 ): Promise<void> {
   await page.evaluate((next) => {
     (
-      globalThis as {
+      globalThis as unknown as {
         __hapticTest: {
           injectTestGamepad: (
             pad: {

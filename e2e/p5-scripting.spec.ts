@@ -15,7 +15,7 @@ async function injectGamepad(
 ): Promise<void> {
   await page.evaluate((next) => {
     (
-      globalThis as {
+      globalThis as unknown as {
         __hapticTest: {
           injectTestGamepad: (
             pad: {

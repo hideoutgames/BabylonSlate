@@ -392,28 +392,21 @@ for (const backend of ["webgpu"] as const) {
       // scene at all. Preview scenes persist on that Engine across the
       // rebuild — re-query until the API reports a preview scene instead of
       // racing the reload (or a mid-recreation preview Scene).
-      let diagnostics: {
-        scenes: {
-          kind: string;
-          skyboxMesh: boolean;
-          shadowGeneratorCount: number;
-          lights: { name: string }[];
-          materials: { className: string }[];
-        }[];
-      } | null = null;
-      let previewScenes: {
+      type SceneDiagnostics = {
         kind: string;
         skyboxMesh: boolean;
         shadowGeneratorCount: number;
         lights: { name: string }[];
         materials: { className: string }[];
-      }[] = [];
+      };
+      // Asserted rather than annotated: the poll callback assigns it, so a
+      // `null` initializer would narrow it to `null` after the poll.
+      let diagnostics = null as { scenes: SceneDiagnostics[] } | null;
+      let previewScenes: SceneDiagnostics[] = [];
       await expect
         .poll(
           async () => {
-            diagnostics = (await engineSceneDiagnostics(page)) as
-              | typeof diagnostics
-              | null;
+            diagnostics = (await engineSceneDiagnostics(page)) as typeof diagnostics;
             previewScenes = (diagnostics?.scenes ?? []).filter(
               (scene) => scene.kind === "preview",
             );
