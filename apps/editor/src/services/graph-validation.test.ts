@@ -3553,6 +3553,8 @@ describe("subsystems", () => {
     ]);
     expect(rows[1]?.pins).toEqual([expect.objectContaining({ id: "component", type: objectRef("MeshComponent") })]);
     expect(nodes.some((node) => node.nodeType === "variables.get" && node.defaultData?.componentId === "body")).toBe(false);
+    const layerScript = scriptPaletteNodes(registry, { parentClass: "SceneLayer", classId: "SceneLayer:hud", parentOf, ownedActors: sceneActors });
+    expect(layerScript.some((node) => node.id === "casting.cast:SceneLayer:hud")).toBe(false);
     // Without its own actors (any other Class) there are no such rows, and the Scene's member rows stay.
     const other = scriptPaletteNodes(registry, host);
     expect(other.some((node) => (node.nodeType ?? node.id).startsWith("scene.getOwned"))).toBe(false);

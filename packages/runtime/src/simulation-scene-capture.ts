@@ -389,6 +389,8 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
       settings: encode(input.sceneSettings, "scene.settings") as SceneSettings,
       folders: encode(input.baseline.folders, "scene.folders") as SerializedScene["folders"], actors,
       ...(input.baseline.overlayEditor !== undefined ? { overlayEditor: input.baseline.overlayEditor } : {}),
+      // Authored only: Play never changes the SceneScript.
+      ...(input.baseline.script ? { script: input.baseline.script } : {}),
     };
     // Validate hierarchy before a normalizer can silently repair it.
     const checkParents = (rows: readonly { id: string; parentId?: string | null }[], path: string) => {

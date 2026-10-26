@@ -43,6 +43,9 @@ describe("nativeEventStubs", () => {
       for (const event of stubs) expect(isScriptCatalogNodeAllowed(event, options)).toBe(true);
       expect(isScriptCatalogNodeAllowed("flow.event.hit", options)).toBe(false);
       expect(isScriptCatalogNodeAllowed("flow.event.beginOverlap", options)).toBe(false);
+      // No Call Parent: the script runs as the Scene or layer itself.
+      const seeded = ensureEventNodeOnGraph({ nodes: [], edges: [] }, "flow.event.destroyed", { title: "Event Destroyed", parentClassId: parentClass });
+      expect(seeded.nodes.map((node) => node.type)).toEqual(["flow.event.destroyed"]);
     }
   });
 

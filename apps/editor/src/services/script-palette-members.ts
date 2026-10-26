@@ -16,6 +16,7 @@ import { isLatentFunctionKey, type NodeRegistry } from "@haptic/scripting";
 import {
   ENGINE_CLASS_SCRIPT_APIS,
   isHiddenEngineBaseClassId,
+  isSceneLayerAssetClassId,
   sceneAssetClassId,
   type EngineScriptPin,
 } from "@haptic/object-model";
@@ -723,7 +724,8 @@ export function castPaletteNodes(
       ].filter((id): id is string => Boolean(id)),
     ),
   ]
-    .filter((classId) => !isHiddenEngineBaseClassId(classId))
+    // A Scene Layer's script class is the layer itself, never a Cast target of its own script.
+    .filter((classId) => !isHiddenEngineBaseClassId(classId) && !isSceneLayerAssetClassId(classId))
     .sort((a, b) => a.localeCompare(b));
   return classIds.map((classId) => {
     const defaultData: Record<string, unknown> = { "default:class": classId };
