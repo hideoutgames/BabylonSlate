@@ -5,6 +5,8 @@ export interface GraphInteractionSettings {
   assistantDistance: number;
   shakeEnabled: boolean;
   readOnlyPinDefaults?: boolean;
+  /** Learn Add Node picks from dragged pins; unset (previews, tests) is off. */
+  addNodeHistoryEnabled?: boolean;
 }
 
 export const GraphInteractionSettingsContext = createContext<GraphInteractionSettings>({

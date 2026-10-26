@@ -52,6 +52,10 @@ export {
 
 export { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 export {
+  getAddNodeHistory,
+  type AddNodeHistoryScope,
+} from "./add-node-history";
+export {
   DEFAULT_GRAPH_KEYBINDS,
   GraphKeybindsContext,
   graphCommandForEvent,
