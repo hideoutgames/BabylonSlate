@@ -159,6 +159,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   } = useSceneEditing();
   const {
     flySpeed,
+    cameraPreviewFrameRate,
     gridSize,
     snapTranslate,
     snapRotateDeg,
@@ -169,6 +170,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   } = useEditorViewportPrefs();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
+  const cameraPreviewFrameRateRef = useRef(cameraPreviewFrameRate);
+  cameraPreviewFrameRateRef.current = cameraPreviewFrameRate;
   const {
     registerScheduler,
     playing,
@@ -261,6 +264,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         commitComponentPropertiesRef.current(edit.componentId, edit.properties);
       },
       editorFlySpeed: () => flySpeedRef.current,
+      cameraPreviewFrameRate: () => cameraPreviewFrameRateRef.current,
     });
     engineRef.current = handle;
     setEngineEpoch((epoch) => epoch + 1);

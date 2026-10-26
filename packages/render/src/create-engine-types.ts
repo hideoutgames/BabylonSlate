@@ -341,6 +341,8 @@ export interface CreateEngineOptions {
   }) => void;
   /** World units/s for WASD. Read each tick so Engine Settings apply live. */
   editorFlySpeed?: () => number;
+  /** Selected camera or capture lens preview redraws per second. Read each tick so Engine Settings apply live. */
+  cameraPreviewFrameRate?: () => number;
   /** Viewport clear color scheme; defaults from `html.dark` when present. */
   colorScheme?: EditorColorScheme;
   /** Play `clearColor` from scene `settings.environmentColor`. */

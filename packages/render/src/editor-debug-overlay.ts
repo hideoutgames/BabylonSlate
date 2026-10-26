@@ -1,4 +1,3 @@
-import { isEditorCameraModel } from "./editor-camera-model";
 import {
   Color3,
   CreateDashedLinesVertexData,
@@ -40,13 +39,15 @@ import { actorIdFromMeshName, editorComponentMeshName, editorMeshName } from "./
 import { actorMeshName } from "./picking";
 import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
-import { markEditorHelperMesh } from "./helper-mesh";
+import { isEditorHelperMesh, markEditorHelperMesh } from "./helper-mesh";
 import { withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import type { AudioLibrary } from "./audio-service";
 
-export const CAMERA_PREVIEW_INTERVAL_MS = 1000;
+/** Lens preview redraws per second unless the editor sets its own rate. */
+export const DEFAULT_CAMERA_PREVIEW_FRAME_RATE = 30;
+const PREVIEW_CLOCK_SLACK_MS = 1;
 export const CAMERA_PREVIEW_WIDTH = 320;
 export const CAMERA_PREVIEW_HEIGHT = 180;
 const CAMERA_PREVIEW_ASPECT = CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT;
@@ -73,6 +74,10 @@ export type EditorDebugOverlayOptions = {
   now?: () => number;
   /** Installed Render Target assets; a selected capture takes its aspect from its target. */
   renderTargets?: () => ReadonlyMap<string, RenderTargetPayload> | undefined;
+  /** Lens preview redraws per second, read each tick so a settings change applies live. */
+  previewFrameRate?: () => number;
+  /** Whether the viewport is on screen; a hidden viewport's preview takes no timed passes. */
+  isShown?: () => boolean;
 };
 
 /** Lens drawn for the selected Camera or Render Target Capture. */
@@ -377,9 +382,15 @@ export class EditorDebugOverlay {
   private previewCapture: RenderTargetCaptureProperties | null = null;
   private lastSync: OverlaySync | null = null;
   private readonly renderTargets: EditorDebugOverlayOptions["renderTargets"];
+  private readonly previewFrameRate: EditorDebugOverlayOptions["previewFrameRate"];
+  private readonly isShown: EditorDebugOverlayOptions["isShown"];
   private previewCanvas: HTMLCanvasElement | null = null;
   private lastPreviewMs = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** The period the running timer was armed with. */
+  private timerIntervalMs = 0;
+  /** Reused per preview draw: the render list without what the scene's own cull leaves out. */
+  private readonly drawnPreviewMeshes: AbstractMesh[] = [];
   private stopped = false;
   private paused = false;
   private disposed = false;
@@ -413,6 +424,8 @@ export class EditorDebugOverlay {
     this.now = options?.now ?? (() => Date.now());
     this.useExternalClock = Boolean(options?.now);
     this.renderTargets = options?.renderTargets;
+    this.previewFrameRate = options?.previewFrameRate;
+    this.isShown = options?.isShown;
     // Built before any content loads, so these joins never force a probe of a loaded Scene.
     this.lightGuide = new DashedGuide(scene, "debugLight:");
     this.lensGuide = new DashedGuide(scene, "debugFrustum:");
@@ -509,11 +522,15 @@ export class EditorDebugOverlay {
 
   tick(nowMs?: number): void {
     const preview = this.preview;
-    if (!this.lensActive || !preview || this.paused) return;
+    if (!this.lensActive || !preview || this.paused || this.isShown?.() === false) return;
     this.followLivePose();
     const now = nowMs ?? this.now();
-    if (now - this.lastPreviewMs < CAMERA_PREVIEW_INTERVAL_MS) return;
+    const interval = this.previewIntervalMs();
+    // The clock reads whole milliseconds, so a timer firing on time can measure just under a fractional period.
+    if (now - this.lastPreviewMs < interval - PREVIEW_CLOCK_SLACK_MS) return;
     this.lastPreviewMs = now;
+    // Re-arm a running timer whose rate the settings changed.
+    if (this.timer && this.timerIntervalMs !== interval) this.ensureTimer();
     if (this.previewLens) {
       applyAuthoredCameraLens(preview.camera, this.previewLens, this.previewAspect);
     }
@@ -578,9 +595,18 @@ export class EditorDebugOverlay {
     this.preview = null;
   }
 
+  private previewIntervalMs(): number {
+    const rate = this.previewFrameRate?.();
+    return 1000 / (typeof rate === "number" && Number.isFinite(rate) && rate > 0 ? rate : DEFAULT_CAMERA_PREVIEW_FRAME_RATE);
+  }
+
   private ensureTimer(): void {
-    if (this.stopped || this.paused || this.useExternalClock || this.timer || !this.lensActive) return;
-    this.timer = setInterval(() => this.tick(), CAMERA_PREVIEW_INTERVAL_MS);
+    if (this.stopped || this.paused || this.useExternalClock || !this.lensActive) return;
+    const interval = this.previewIntervalMs();
+    if (this.timer && this.timerIntervalMs === interval) return;
+    this.clearTimer();
+    this.timerIntervalMs = interval;
+    this.timer = setInterval(() => this.tick(), interval);
   }
 
   private clearTimer(): void {
@@ -602,6 +628,7 @@ export class EditorDebugOverlay {
     this.previewAspect = CAMERA_PREVIEW_ASPECT;
     this.previewCapture = null;
     if (this.preview) this.preview.rtt.renderList = [];
+    this.drawnPreviewMeshes.length = 0;
     this.previewRenderCount = 0;
     this.lastPreviewMs = Number.NEGATIVE_INFINITY;
     this.clearTimer();
@@ -615,7 +642,7 @@ export class EditorDebugOverlay {
     this.areaNative = null;
   }
 
-  /** Camera lenses keep the fixed 16:9 PIP aspect and preview every scene mesh but debug guides and camera models. */
+  /** Camera lenses keep the fixed 16:9 PIP aspect and preview every scene mesh but editor helpers and debug guides. */
   private cameraLens(component: SerializedComponent): LensDebug {
     const nearClip = Math.max(0.01, asNumber(component.properties.nearClip, 0.1));
     return {
@@ -638,8 +665,9 @@ export class EditorDebugOverlay {
   }
 
   private cameraRenderList(): AbstractMesh[] {
+    // Helpers (origin pick spheres, billboards, camera models, volumes) are not what the game camera sees.
     return this.scene.meshes.filter(
-      (mesh) => !mesh.name.startsWith("debug") && !isEditorCameraModel(mesh),
+      (mesh) => !mesh.name.startsWith("debug") && !isEditorHelperMesh(mesh),
     );
   }
 
@@ -770,6 +798,17 @@ export class EditorDebugOverlay {
       camera.rotationQuaternion = Quaternion.Identity();
       const rtt = new RenderTargetTexture("debugCameraPreview:", size, scene, false);
       rtt.activeCamera = camera;
+      // An explicit render list skips the visibility and layer checks of the scene's own cull, which
+      // would draw a mesh hidden through `visibility` 0 as a dark shape. Apply them on each draw.
+      rtt.getCustomRenderList = (_pass, list, length) => {
+        const drawn = this.drawnPreviewMeshes;
+        drawn.length = 0;
+        for (let index = 0; list && index < length; index += 1) {
+          const mesh = list[index];
+          if (mesh && mesh.visibility > 0 && (mesh.layerMask & camera.layerMask) !== 0) drawn.push(mesh);
+        }
+        return drawn;
+      };
       this.preview = { camera, rtt };
     } finally {
       scene._blockEntityCollection = blocked;

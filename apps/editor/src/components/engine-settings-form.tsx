@@ -9,10 +9,12 @@ import { NumberField, SelectableText } from "@haptic/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
   getHostPlatform,
+  MAX_CAMERA_PREVIEW_FRAME_RATE,
   MAX_UNDO_BYTE_BUDGET,
   MAX_HARDWARE_SCALING_LEVEL,
   MAX_UNDO_HISTORY_LENGTH,
   MAX_VIEWPORT_FRAME_CAP,
+  MIN_CAMERA_PREVIEW_FRAME_RATE,
   MIN_HARDWARE_SCALING_LEVEL,
   MIN_UNDO_BYTE_BUDGET,
   MIN_VIEWPORT_FRAME_CAP,
@@ -329,6 +331,26 @@ export function EngineSettingsForm({
                 void onChange({ viewportFrameCap })
               }
             />
+          </Field>
+          <Field className="settings-field">
+            <FieldLabel htmlFor="setting-camera-preview-frame-rate">
+              Camera Preview Frame Rate (FPS)
+            </FieldLabel>
+            <NumberField
+              id="setting-camera-preview-frame-rate"
+              min={MIN_CAMERA_PREVIEW_FRAME_RATE}
+              max={MAX_CAMERA_PREVIEW_FRAME_RATE}
+              step={1}
+              className="min-h-[var(--chrome-row,28px)]"
+              data-testid="setting-camera-preview-frame-rate"
+              value={settings.cameraPreviewFrameRate}
+              onChange={(cameraPreviewFrameRate) =>
+                void onChange({ cameraPreviewFrameRate: Math.round(cameraPreviewFrameRate) })
+              }
+            />
+            <FieldDescription>
+              How often the preview of a selected Camera or Render Target Capture redraws.
+            </FieldDescription>
           </Field>
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-drop-distance">Drop Distance</FieldLabel>

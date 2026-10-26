@@ -203,6 +203,7 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["debugger", "Profile Retained Data Budget (MiB)", "setting-profile-budget-mib"],
   ["debugger", "GPU Timing", "setting-profile-gpu"],
   ["viewport", "Viewport Frame Cap", "setting-frame-cap"],
+  ["viewport", "Camera Preview Frame Rate", "setting-camera-preview-frame-rate"],
   ["viewport", "Camera Speed", "setting-fly-speed"],
   ["viewport", "Override Project Rendering", "setting-rendering-overrides"],
   ["viewport", "Hardware Scaling Level", "setting-hardware-scale"],
