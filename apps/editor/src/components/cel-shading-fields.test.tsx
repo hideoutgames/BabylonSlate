@@ -131,32 +131,30 @@ it("shows live project values until a field is overridden, and reset restores in
   expect(bands.value).toBe("5");
 });
 
-it("authors CEL reflections off by default and lets a scene opt in against the project", () => {
+it("has no CEL-only Real-Time Reflections switch and lets a scene override Reflection Textures against the project", () => {
   const changes: CelShadingOverrides[] = [];
   const view = render(
     <CelShadingFields project={normalizeCelShadingSettings({})} onChange={(value) => changes.push(value)} />,
   );
-  const authored = screen.getByRole("switch", { name: "Real-Time Reflections" });
-  expect(authored.getAttribute("aria-checked")).toBe("false");
-  fireEvent.click(authored);
-  expect(changes.at(-1)).toMatchObject({ reflectionsEnabled: true, shadowBands: 3 });
+  // Post Processing's Real-Time Reflections is the one setting for PBR and CEL.
+  expect(screen.queryByRole("switch", { name: "Real-Time Reflections" })).toBeNull();
   // Reflections read material values only until Reflection Textures opt in.
   const textures = screen.getByRole("switch", { name: "Reflection Textures" });
   expect(textures.getAttribute("aria-checked")).toBe("false");
   fireEvent.click(textures);
-  expect(changes.at(-1)).toMatchObject({ reflectionTexturesEnabled: true });
+  expect(changes.at(-1)).toMatchObject({ reflectionTexturesEnabled: true, shadowBands: 3 });
   view.unmount();
 
   render(<SceneFields />);
-  const scene = screen.getByRole("switch", { name: "Real-Time Reflections" });
-  expect(screen.getByText(/Project Setting: Off\. Lets Real-Time Reflections/)).toBeTruthy();
+  const scene = screen.getByRole("switch", { name: "Reflection Textures" });
+  expect(screen.getByText(/Project Setting: Off\. With Real-Time Reflections on in Post Processing/)).toBeTruthy();
   // The scene inherits until overridden.
   fireEvent.click(scene);
   expect(scene.getAttribute("aria-checked")).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Override Real-Time Reflections" }));
+  fireEvent.click(screen.getByRole("button", { name: "Override Reflection Textures" }));
   fireEvent.click(scene);
   expect(scene.getAttribute("aria-checked")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Reset Real-Time Reflections To Project Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset Reflection Textures To Project Settings" }));
   expect(scene.getAttribute("aria-checked")).toBe("false");
 });
 

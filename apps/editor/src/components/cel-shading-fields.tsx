@@ -34,7 +34,6 @@ const switchKeys = [
   "outlinesEnabled",
   "outlineDistanceFadeEnabled",
   "specularEnabled",
-  "reflectionsEnabled",
   "reflectionTexturesEnabled",
 ] as const;
 type SwitchKey = (typeof switchKeys)[number];
@@ -118,16 +117,10 @@ const fields: {
       "Colored light tint. Zero uses neutral light with the same intensity.",
   },
   {
-    key: "reflectionsEnabled",
-    label: "Real-Time Reflections",
-    description:
-      "Lets Real-Time Reflections from Post Processing draw on CEL surfaces. Off keeps CEL flat.",
-  },
-  {
     key: "reflectionTexturesEnabled",
     label: "Reflection Textures",
     description:
-      "CEL reflections also read metalness, roughness and specular maps. Off reads material values only.",
+      "With Real-Time Reflections on in Post Processing, CEL reflections also read metalness, roughness and specular maps. Off reads material values only.",
   },
 ];
 
