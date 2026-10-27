@@ -110,12 +110,10 @@ export async function prewarmSceneMaterials(
   await prewarmMeshMaterials(scene, scene.meshes, assertCurrent, skipMesh, onProgress);
 }
 
-/** One compile of the warm-up: a Material's plain or instanced variant for one mesh. */
-type WarmUnit = { mesh: Mesh; material: Material; instanced: boolean };
-
 /**
  * Warm only an additive instance's consumers, without waiting on sibling loads. `onProgress` counts the units (one
- * Material variant for one mesh; units sharing an Effect finish at once) before the first and after each.
+ * Material variant for one mesh; units sharing an Effect finish at once) before the first and after each; a mesh added
+ * meanwhile raises the total. With `onProgress`, `meshes` must be iterable twice (an array, as `scene.meshes`).
  */
 export async function prewarmMeshMaterials(
   scene: Scene,
@@ -142,43 +140,62 @@ export async function prewarmMeshMaterials(
     () => compiles.renew(),
     createHeldThreadBudget(),
   );
-  const units: WarmUnit[] = [];
-  for (const mesh of meshes) {
+  // Counted up front for progress; the loop below still reads each mesh's material when it reaches it, since warming
+  // one can replace another's.
+  const variantsOf = (mesh: AbstractMesh) => {
     // A mesh without vertices draws nothing (empty roots, placeholders, geometry that arrives later).
-    if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || skipMesh?.(mesh)) continue;
+    if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || skipMesh?.(mesh)) return 0;
     const material = mesh.material ?? scene.defaultMaterial;
-    // The same material can have different effects for skinned, morphed,
-    // instanced and static meshes. Warm each consumer, including submaterials.
-    const materials = material instanceof MultiMaterial
-      ? new Set(material.subMaterials.filter((entry): entry is Material => entry !== null))
-      : new Set([material]);
+    const materials = material instanceof MultiMaterial ? new Set(material.subMaterials.filter((entry) => entry !== null)).size : 1;
     const drawn = drawnMaterialVariants(mesh);
-    for (const entry of materials) {
-      if (drawn.plain) units.push({ mesh, material: entry, instanced: false });
-      if (drawn.instanced) units.push({ mesh, material: entry, instanced: true });
-    }
-  }
+    return materials * ((drawn.plain ? 1 : 0) + (drawn.instanced ? 1 : 0));
+  };
+  // Only with a listener: the count reads `meshes` once more, which a one-shot iterator (a stream's slots) cannot give.
+  let total = 0;
+  if (onProgress) for (const mesh of meshes) total += variantsOf(mesh);
+  let done = 0;
+  const compiled = () => {
+    done += 1;
+    // Meshes the warm-up reaches that the count did not see (added meanwhile) raise the total, never past it.
+    total = Math.max(total, done);
+    onProgress?.({ done, total });
+  };
   try {
     await deadline.race((async () => {
-      onProgress?.({ done: 0, total: units.length });
-      for (const [index, { mesh, material: entry, instanced }] of units.entries()) {
+      onProgress?.({ done, total });
+      for (const mesh of meshes) {
         check(mesh);
-        // Listed up front for the count: one disposed since (a load's own cleanup) has nothing left to draw.
-        if (mesh.isDisposed()) {
-          onProgress?.({ done: index + 1, total: units.length });
-          continue;
+        // A mesh without vertices draws nothing (empty roots, placeholders, geometry that arrives later).
+        if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || skipMesh?.(mesh)) continue;
+        const material = mesh.material ?? scene.defaultMaterial;
+        // The same material can have different effects for skinned, morphed,
+        // instanced and static meshes. Warm each consumer, including submaterials.
+        const materials = material instanceof MultiMaterial
+          ? new Set(material.subMaterials.filter((entry): entry is Material => entry !== null))
+          : new Set([material]);
+        for (const entry of materials) {
+          check(mesh);
+          const drawn = drawnMaterialVariants(mesh);
+          if (drawn.plain) {
+            const unit = `"${entry.name}" for "${mesh.name}"`;
+            deadline.advance(unit);
+            await attributeCompileFailure(unit, () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh));
+            check(mesh);
+            compiled();
+          }
+          if (drawn.instanced) {
+            const instanced =`"${entry.name}" for instances of "${mesh.name}"`;
+            deadline.advance(instanced);
+            await attributeCompileFailure(instanced, () => entry.forceCompilationAsync(mesh, { useInstances: true }));
+            check(mesh);
+            compiled();
+          }
         }
-        if (!instanced) {
-          const unit = `"${entry.name}" for "${mesh.name}"`;
-          deadline.advance(unit);
-          await attributeCompileFailure(unit, () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh));
-        } else {
-          const unit = `"${entry.name}" for instances of "${mesh.name}"`;
-          deadline.advance(unit);
-          await attributeCompileFailure(unit, () => entry.forceCompilationAsync(mesh, { useInstances: true }));
-        }
-        check(mesh);
-        onProgress?.({ done: index + 1, total: units.length });
+      }
+      // Units the count saw that were gone by their turn (a mesh disposed, a material replaced) end it at what ran.
+      if (done !== total) {
+        total = done;
+        onProgress?.({ done, total });
       }
     })());
     check();
