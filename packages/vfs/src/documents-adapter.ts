@@ -40,16 +40,17 @@ export interface DocumentsFilesystemApi {
     path: string;
     directory?: Directory;
   }): Promise<{ files: Array<{ name: string; type: string; size: number; mtime: number }> }>;
+  /** Omit `encoding` for bytes (base64 data). Any encoding name means text: iOS writes an unknown one, such as "base64", as UTF-8. */
   readFile(options: {
     path: string;
     directory?: Directory;
-    encoding?: "utf8" | "base64";
+    encoding?: "utf8";
   }): Promise<{ data: string }>;
   writeFile(options: {
     path: string;
     data: string;
     directory?: Directory;
-    encoding?: "utf8" | "base64";
+    encoding?: "utf8";
     recursive?: boolean;
   }): Promise<unknown>;
   deleteFile(options: {
@@ -195,7 +196,6 @@ export class DocumentsStorageAdapter implements ProjectStorage {
       const { data } = await this.fs.readFile({
         path: full,
         directory: this.directory,
-        encoding: "base64",
       });
       const bytes = decodeBase64(data);
       this.reads.record("full", bytes.byteLength);
@@ -228,7 +228,6 @@ export class DocumentsStorageAdapter implements ProjectStorage {
       path: this.abs(path),
       data: encodeBase64(data),
       directory: this.directory,
-      encoding: "base64",
       recursive: true,
     });
   }

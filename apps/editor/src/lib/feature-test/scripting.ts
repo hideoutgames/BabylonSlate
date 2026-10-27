@@ -429,6 +429,14 @@ function getVarOn(id: string, member: GraphClassMember, classId: string, x: numb
   return node;
 }
 
+/** Set Variable on another object (Target wired). */
+function setVarOn(id: string, member: GraphClassMember, classId: string, x: number, y: number, value?: unknown): GraphNode {
+  const node = setVar(id, member, x, y, value);
+  node.data.implicitSelf = false;
+  node.data.classId = classId;
+  return node;
+}
+
 /** Call a function on self; exec handles are `exec` / `then`. */
 function callSelf(id: string, x: number, y: number, member: GraphClassMember, defaults: Record<string, unknown> = {}): GraphNode {
   return gNode(id, "functions.call", x, y, {
@@ -542,6 +550,8 @@ const LIB_WAVE = fnMember("ft-script-fn-lib-wave", "Wave", [
 const SCORE = varMember("ft-game-var-score", "Score", "int", 0, { category: "Score" });
 const ADD_SCORE = fnMember("ft-game-fn-add-score", "AddScore", [{ name: "Amount", typeId: "int", direction: "in" }]);
 const GI_BOOTED = varMember("ft-game-var-booted", "Booted", "bool", false);
+/** Set by the Game Instance's Deferred Spawn Actor before Begin Play; `ft_spawn` keeps the default. */
+const SPAWNED_BY = varMember("ft-script-var-spawned-by", "SpawnedBy", "string", "ft_spawn");
 const GI_OBJECT_CLASS = varMember("ft-game-var-object-class", "ObjectClass", "class", CLASS.dataObject, {
   typeClassId: CLASS.dataObject,
 });
@@ -662,15 +672,22 @@ async function savePulseComponent(ctx: FeatureTestContext): Promise<void> {
   await saveClass(ctx, CLASS.pulseComponent, "ActorComponent", graph);
 }
 
-/** Spawn Actor target (Game Instance and `ft_spawn`). */
+/** Spawn target (the Game Instance's Deferred Spawn Actor and `ft_spawn`); Begin Play prints who set it up. */
 async function saveSpawned(ctx: FeatureTestContext, materialGuid: string | null): Promise<void> {
   const graph = classGraph({
+    members: [SPAWNED_BY],
     components: [scaledMesh("prefab-mesh", "sphere", 0.5, materialGuid)],
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
-      printText("ready", 240, 0, "ft-script-spawned", "FT_ScriptSpawned entered play", 3),
+      getVar("get-spawned-by", SPAWNED_BY, 0, 160),
+      format("ready-text", 240, 160, "FT_ScriptSpawned entered play (spawned by {by})"),
+      printText("ready", 480, 0, "ft-script-spawned", undefined, 3),
     ],
-    edges: [gExec("begin", "ready")],
+    edges: [
+      gExec("begin", "ready"),
+      gWire("get-spawned-by", "value", "ready-text", fmtArg("by")),
+      gWire("ready-text", "out", "ready", "inString"),
+    ],
   });
   await saveClass(ctx, CLASS.spawned, "Actor", graph);
 }
@@ -942,7 +959,8 @@ async function saveSceneWatcher(ctx: FeatureTestContext): Promise<void> {
 
 /**
  * Game Instance (Project Settings): On Init flags Booted; On First Scene
- * Loaded prints the scene, spawns `FT_ScriptSpawned` when the Scripting zone
+ * Loaded prints the scene, spawns `FT_ScriptSpawned` with Deferred Spawn
+ * Actor (setting its SpawnedBy before Begin Play) when the Scripting zone
  * exists and runs the `ft_stats` console command.
  */
 async function saveGameInstance(ctx: FeatureTestContext): Promise<void> {
@@ -963,12 +981,15 @@ async function saveGameInstance(ctx: FeatureTestContext): Promise<void> {
         "default:location": vec(zonePoint("scripting", [0, 4, 5])),
         "default:rotation": ZERO_ROTATOR,
       }),
-      gNode("spawn", "actor.spawn", 1180, 240, { "default:classId": CLASS.spawned }),
-      gNode("assert-spawned", "debug.assertIsValid", 1420, 240, { "default:message": "Game Instance could not spawn FT_ScriptSpawned" }),
-      delay("stats-delay", 1660, 240, 1),
-      gNode("stats", "debug.executeConsoleCommand", 1900, 240, { "default:command": "ft_stats" }),
-      gNode("assert-stats", "debug.assert", 2140, 240, { "default:message": "The ft_stats console command failed" }),
-      printText("stats-print", 2380, 240, "ft-game-stats", undefined, 8),
+      gNode("spawn", "actor.deferredSpawn", 1180, 240, { "default:classId": CLASS.spawned }),
+      cast("as-spawned", 1420, 240, CLASS.spawned),
+      setVarOn("set-spawned-by", SPAWNED_BY, CLASS.spawned, 1660, 240, "FT_GameInstance"),
+      gNode("finish-spawn", "actor.finishDeferredSpawn", 1900, 240),
+      gNode("assert-spawned", "debug.assertIsValid", 2140, 240, { "default:message": "Game Instance could not spawn FT_ScriptSpawned" }),
+      delay("stats-delay", 2380, 240, 1),
+      gNode("stats", "debug.executeConsoleCommand", 2620, 240, { "default:command": "ft_stats" }),
+      gNode("assert-stats", "debug.assert", 2860, 240, { "default:message": "The ft_stats console command failed" }),
+      printText("stats-print", 3100, 240, "ft-game-stats", undefined, 8),
     ],
     edges: [
       ...gChain("init", "set-booted", "booted-log"),
@@ -979,8 +1000,11 @@ async function saveGameInstance(ctx: FeatureTestContext): Promise<void> {
       gWire("has-scripting-zone", "out", "zone-branch", "condition"),
       gWire("zone-branch", "true", "spawn", "execIn"),
       gWire("spawn-pose", "out", "spawn", "transform"),
-      ...gChain("spawn", "assert-spawned", "stats-delay", "stats", "assert-stats", "stats-print"),
-      gWire("spawn", "out", "assert-spawned", "object"),
+      ...gChain("spawn", "as-spawned", "set-spawned-by", "finish-spawn", "assert-spawned", "stats-delay", "stats", "assert-stats", "stats-print"),
+      gWire("spawn", "out", "as-spawned", "object"),
+      gWire("as-spawned", "result", "set-spawned-by", "target"),
+      gWire("spawn", "out", "finish-spawn", "actor"),
+      gWire("finish-spawn", "out", "assert-spawned", "object"),
       gWire("stats", "success", "assert-stats", "condition"),
       gWire("stats", "output", "stats-print", "inString"),
     ],

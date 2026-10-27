@@ -409,6 +409,18 @@ export function createScriptContext(
       if (self?.destroyed) throw Object.assign(new Error("The spawn caller was destroyed"), { name: "AbortError" });
       return actor;
     };
+    context.beginDeferredSpawnActorAsync = async (classId, transform) => {
+      if (!services.beginDeferredSpawnAsync) throw new Error("This host cannot defer an actor spawn");
+      const actor = await services.beginDeferredSpawnAsync(String(classId), transform, self);
+      if (self?.destroyed) throw Object.assign(new Error("The spawn caller was destroyed"), { name: "AbortError" });
+      return actor;
+    };
+    context.finishDeferredSpawnActor = (actor) => {
+      const target = asActor(actor);
+      if (!target) return null;
+      if (!services.finishDeferredSpawn) throw new Error("This host cannot defer an actor spawn");
+      return services.finishDeferredSpawn(target);
+    };
     // A destroyed owner's handle would never be released, so it gets none. A host
     // without load handles hands out "" too and fails every wait and state read.
     context.requestAssetLoad = (assets, options) => self?.destroyed ? "" : services.requestAssetLoad?.(assets, self, options) ?? "";

@@ -103,10 +103,11 @@ export const UNSEEN_CLASS_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map(
 ]);
 
 /**
- * Spawn Actor's compiled call (`actor.spawn` emits `ctx.spawnActorAsync(<class>, <transform>)`): the class is a JSON
- * string when the node names it, any other expression when a pin feeds it.
+ * Spawn Actor's and Deferred Spawn Actor's compiled calls (`actor.spawn` emits `ctx.spawnActorAsync(<class>,
+ * <transform>)`, `actor.deferredSpawn` `ctx.beginDeferredSpawnActorAsync(…)`): the class is a JSON string when the
+ * node names it, any other expression when a pin feeds it.
  */
-const SPAWN_CALL = /\bctx\.spawnActorAsync\(\s*(?:("(?:[^"\\\n]|\\.)*")\s*[,)])?/g;
+const SPAWN_CALL = /\bctx\.(?:spawnActorAsync|beginDeferredSpawnActorAsync)\(\s*(?:("(?:[^"\\\n]|\\.)*")\s*[,)])?/g;
 
 /** One load's sources: its compiled Classes and every asset it holds, with that asset's dependencies, soft ones included. */
 export type SpawnableLightLoad = {

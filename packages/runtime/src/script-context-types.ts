@@ -270,6 +270,8 @@ export interface ScriptContext {
   ): unknown;
   spawnActor(classId: string, transform?: unknown): Actor | null;
   spawnActorAsync(classId: string, transform?: unknown): Promise<Actor | null>;
+  beginDeferredSpawnActorAsync(classId: string, transform?: unknown): Promise<Actor | null>;
+  finishDeferredSpawnActor(actor: unknown): Actor | null;
   isA(instance: unknown, classId: string): boolean;
   getSceneLoadingProgress(): number;
   getTargetSceneName(target: unknown): string;
