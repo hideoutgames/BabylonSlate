@@ -72,7 +72,7 @@
       }
       /* Automated browsers (navigator.webdriver) keep the cover, its timing
        * and its status but paint no wordmark. Headless software rendering
-       * queues the blurred, animated letters faster than it can draw them,
+       * queues the animated letters faster than it can draw them,
        * and works through that backlog long after the intro has gone,
        * delaying every scene load and screenshot that follows. */
       html[data-automation] .haptic-intro > :not(.haptic-intro-status) {
@@ -81,8 +81,10 @@
       /* The wordmark is text, set like haptic.no's title: white ink over a red
        * and an amber copy stretched a little wider, which leave the chromatic
        * fringes. The letters rise out of the baseline one after another while
-       * the copies close in from wide to their resting stretch. Each letter
-       * carries its own blur, so only transforms and opacity animate. */
+       * the copies close in from wide to their resting stretch; only
+       * transforms and opacity animate. The letters carry no filter: WebKit
+       * draws filtered text as a bitmap, soft while it animates and repainted
+       * differently when the animation ends. */
       .haptic-intro-wordmark {
         --t: calc(var(--hi-wordmark-width) / 3.3 / 172.5);
         position: relative;
@@ -122,12 +124,8 @@
       }
       .haptic-intro-wordmark span > span {
         display: inline-block;
-        filter: blur(calc(0.5 * var(--t)));
         animation: haptic-intro-rise 1100ms var(--hi-ease)
           calc(400ms + var(--i) * 85ms) backwards;
-      }
-      .haptic-intro-wordmark .haptic-intro-ca > span {
-        filter: blur(calc(1.2 * var(--t)));
       }
       .haptic-intro-wordmark span > span:nth-child(1) { --i: 0; }
       .haptic-intro-wordmark span > span:nth-child(2) { --i: 1; }
