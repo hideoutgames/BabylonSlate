@@ -89,7 +89,7 @@ import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders
 import { findSceneShadowController, PREDICTION_MAP_SIZE } from "./shadow-controller";
 import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
 import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
-import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
+import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
 import { PREDICTIONS_MAX } from "./variant-prediction";
 import { managedRenderReservations } from "./managed-render-resources";
 import { shadowBytesPerTexel } from "./shadow-admission";
@@ -786,7 +786,7 @@ function expectSwapped(record: CauseRecord, model: Model): void {
   // Only a pending compile (or pipeline) leaves a previous Effect drawing; a synchronous link draws the new one at once.
   // With more new variants than a frame admits (`FIRST_DRAWS_PER_FRAME`), whether the subject's waits depends on its
   // place in the queue, so that case does not say.
-  const previous = model === "sync" && record.effects > FIRST_DRAWS_PER_FRAME
+  const previous = model === "sync" && record.effects > FIRST_DRAWS_PER_FRAME.webgl2
     ? {} : { previousEffectDrawn: record.previousEffectDrawn };
   expect({
     heldFrames: record.heldFrames, holdReported: record.holdReported, holdRaised: record.holdRaised,
@@ -882,16 +882,16 @@ describe("compile holds after the first frame", () => {
       frames.push(view?.rendered === true);
       if (effect && effect !== before) adoptedAfter = index;
     }
-    // Admitted in the change's own frame, with an Effect compiled ahead. On WebGL2 the returning map's casters' depth
-    // variants are first draws too, which the frame's first-draw budget spreads with the receivers': the subject's
-    // comes in the next frame. On WebGPU its pipeline, which only a draw creates, still comes after (the previous
+    // Admitted in the change's own frame, with an Effect compiled ahead. On WebGL2 the first-draw budget admits one
+    // new variant a frame, and the subject's waits behind another receiver's, and with a returning map behind its
+    // casters' depth variants too: it comes one frame later, or two. On WebGPU its pipeline, which only a draw creates, still comes after (the previous
     // Effect draws meanwhile), while the returning map's casters find theirs: the controller's prediction map, standing
     // in for it, drew them ahead.
     expect({ limited, standby, admitted: !isForwardLightExcluded(spotLight()), compiled: realCompiles(world).length,
       drawn: frames.every(Boolean), adoptedAfter, warmedPipelines: world.driver.warmPipelines.size > 0,
       synchronousPipelines: world.driver.synchronous.size }).toEqual({
       limited: true, standby: shadowed, admitted: true, compiled: 0, drawn: true,
-      adoptedAfter: model === "webgpu" ? -1 : shadowed ? 1 : 0, warmedPipelines: model === "webgpu", synchronousPipelines: 0,
+      adoptedAfter: model === "webgpu" ? -1 : shadowed ? 2 : 1, warmedPipelines: model === "webgpu", synchronousPipelines: 0,
     });
   });
 
@@ -1015,9 +1015,10 @@ describe("compile holds after the first frame", () => {
       point: controller().generator(lightOf(11)) !== null,
       // The spot's prediction map goes with its admission (the point that lost its map may now be predicted with one).
       released: controller().heldPredictionMaps.filter((map) => map.getLight() instanceof SpotLight).length,
-      compiled, drawn: frames.every(Boolean), adoptedAtOnce: adoptedAfter === 0, synchronousPipelines: world.driver.synchronous.size }).toEqual({
+      // WebGL2 admits one new variant a frame, so the subject's comes in the frame after the admission.
+      compiled, drawn: frames.every(Boolean), adoptedAfter, synchronousPipelines: world.driver.synchronous.size }).toEqual({
       waiting: { lit: true, map: false, point: true }, predictionMaps: start === "borrowed" ? 0 : 1, attached: false,
-      map: true, point: false, released: 0, compiled: 0, drawn: true, adoptedAtOnce: model !== "webgpu", synchronousPipelines: 0,
+      map: true, point: false, released: 0, compiled: 0, drawn: true, adoptedAfter: model === "webgpu" ? -1 : 1, synchronousPipelines: 0,
     });
   });
 
@@ -1289,7 +1290,7 @@ describe("compile holds after the first frame", () => {
     expect({
       sameOrAdopted: predicted.drawn.every((defines, index) => defines === baseline.drawn[index] || defines === requested(predicted.states[index])),
       notLater: lagged(predicted) <= lagged(baseline),
-      firstDraws: Math.max(...predicted.adopted) <= FIRST_DRAWS_PER_FRAME,
+      firstDraws: Math.max(...predicted.adopted) <= FIRST_DRAWS_PER_FRAME[model === "webgpu" ? "webgpu" : "webgl2"],
       adoptedAlike: predicted.adopted.reduce((sum, count) => sum + count, 0) === baseline.adopted.reduce((sum, count) => sum + count, 0),
     }, counts).toEqual({ sameOrAdopted: true, notLater: true, firstDraws: true, adoptedAlike: true });
     // The admission frame compiles nothing with prediction: what it asks for was compiled on earlier frames.
@@ -1429,7 +1430,7 @@ describe("compile holds after the first frame", () => {
       current = next;
     }
     expect({ compiled: world.driver.created.length, most: Math.max(...perFrame), all: current.every((effect, at) => effect !== start[at]) },
-      JSON.stringify(perFrame)).toEqual({ compiled: 0, most: FIRST_DRAWS_PER_FRAME, all: true });
+      JSON.stringify(perFrame)).toEqual({ compiled: 0, most: firstDrawsPerFrame(world.engine), all: true });
   });
 
   it.each(MODELS)("an area light's emission texture arrives: %s", async (model) => {
@@ -1733,8 +1734,8 @@ describe("compile holds after the first frame", () => {
     }
     expect({
       allAdopted: current.every((effect, at) => effect !== before[at] && world.driver.created.includes(effect!)),
-      atMostPerFrame: Math.max(...adoptedPerFrame) <= FIRST_DRAWS_PER_FRAME,
-      spread: adoptedPerFrame.filter((count) => count > 0).length >= Math.ceil(barrels.length / FIRST_DRAWS_PER_FRAME),
+      atMostPerFrame: Math.max(...adoptedPerFrame) <= firstDrawsPerFrame(world.engine),
+      spread: adoptedPerFrame.filter((count) => count > 0).length >= Math.ceil(barrels.length / firstDrawsPerFrame(world.engine)),
     }, JSON.stringify(adoptedPerFrame)).toEqual({ allAdopted: true, atMostPerFrame: true, spread: true });
   });
 
@@ -2278,6 +2279,28 @@ describe("compile holds after the first frame", () => {
       effects: record.effects, heldFrames: record.heldFrames, paused: record.pausedFrames > 0, shown: drawn.has("actor-20"),
       pipelines: record.pipelines + record.warmPipelines,
     }, JSON.stringify(record)).toEqual({ effects: 0, heldFrames: 0, paused: false, shown: true, pipelines: 0 });
+  });
+
+  it.each(["sync", "parallel"] as const)("two actors a Spawn Actor preparation compiled, spawned in one frame, first draw in frames of their own: %s", async (model) => {
+    // WebGL2: the preparation compiles their Materials without drawing them, so their programs' first uses (the iPad
+    // WebKit stall) are still ahead; the first-draw budget gives each its own frame, and each actor appears whole.
+    const world = playWorld(model, [], ["surface-a"]);
+    await settle(world);
+    const documents = new Map(["surface-c", "surface-d"].map((guid) => [guid, createDefaultMaterialDocument(guid)]));
+    cleanups.push(await withClock(world.handle.acquireSceneSources({ materialDocuments: documents }, { prepare: true, warm: true })));
+    for (let index = 0; index < 6; index++) await world.frame();
+    const before = world.handle.renderDiagnostics().firstDraws!;
+    const drawn = spawnDraws();
+    world.place(
+      { slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } },
+      { slotId: 21, guid: "crate-2", position: [-2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } },
+    );
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-c" });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 21, materialAssetGuid: "surface-d" });
+    for (let index = 0; index < 6; index++) await world.frame();
+    const after = world.handle.renderDiagnostics().firstDraws!;
+    expect({ shown: drawn.has("actor-20") && drawn.has("actor-21"), draws: after.draws - before.draws, mostInFrame: after.mostInFrame })
+      .toEqual({ shown: true, draws: 2, mostInFrame: 1 });
   });
 
   it.each(MODELS)("a spawned actor whose Material arrived after the load is hidden until its variant is ready: %s", async (model) => {
@@ -2876,11 +2899,12 @@ describe("the editor world view", () => {
     expect(driver.created.filter((effect) => driver.isPending(effect)).some((effect) => /#define DEPTHPREPASS\b/.test(effect.defines))).toBe(true);
     driver.release();
     drawn.clear();
-    for (let index = 0; index < 2; index++) {
+    // Its two new variants (colour and depth pre-pass) take a frame each of the WebGL2 first-draw budget.
+    for (let index = 0; index < 3; index++) {
       await frame();
       hidden.push(isRevealPending(pane));
     }
-    expect({ hidden, reveals, drawn: drawn.has("pane") }).toEqual({ hidden: [false, false, false, false, false], reveals: [], drawn: true });
+    expect({ hidden, reveals, drawn: drawn.has("pane") }).toEqual({ hidden: [false, false, false, false, false, false], reveals: [], drawn: true });
   });
 
   it("ends a swap whose new variant failed to link: the previous Effect stays, probing stops and strict readiness passes", async () => {

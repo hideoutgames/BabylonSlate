@@ -25,6 +25,21 @@ function spawner(registry: NodeRegistry, spawned: { named: string } | "variable"
   return { assetGuid: "spawner", classId: "Spawner", source: compileGraph(graph, { assetGuid: "spawner", registry }).source, anchors: [], entryPoints: [] };
 }
 
+/** A Class whose Begin Play runs Add Component on itself, its class named on the node or fed by a class variable. */
+function adder(registry: NodeRegistry, added: { named: string } | "variable"): ScriptBundleEntry {
+  const nodes = [
+    node(registry, "begin", "flow.event.beginPlay"),
+    node(registry, "add", "component.add", added === "variable" ? {} : { "default:classId": added.named }),
+  ];
+  const edges = [{ id: "exec", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "add", targetPinId: "execIn" }];
+  if (added === "variable") {
+    nodes.push(node(registry, "class", "variables.get", { variableName: "Part", typeId: "class", typeClassId: "ActorComponent", implicitSelf: true }));
+    edges.push({ id: "class", sourceNodeId: "class", sourcePinId: "value", targetNodeId: "add", targetPinId: "classId" });
+  }
+  const graph: LogicGraph = { id: "g", kind: "event", nodes, edges };
+  return { assetGuid: "adder", classId: "Adder", source: compileGraph(graph, { assetGuid: "adder", registry }).source, anchors: [], entryPoints: [] };
+}
+
 /** A Class with no light of its own. */
 const plain = (classId: string): ScriptBundleEntry => ({ assetGuid: classId.toLowerCase(), classId, source: "", anchors: [], entryPoints: [] });
 
@@ -40,6 +55,19 @@ describe("the lights a Play load may spawn", () => {
     const lights = spawnableLightsOfLoad({ scripts: [spawner(registry, spawned), ...held], assets: [], isClass: () => true });
     expect([...lights.values()].map(({ kind, properties }) => `${kind}${properties.castShadows ? " shadows" : ""}`).sort())
       .toEqual(generic ? ["point", "point shadows", "spot", "spot shadows"] : []);
+  });
+
+  it.each([
+    ["a Light", { named: "LightComponent" } as const, ["point"]],
+    ["a Hemispheric Fill Light", { named: "HemisphericFillLightComponent" } as const, ["hemispheric"]],
+    ["a Mesh", { named: "MeshComponent" } as const, []],
+    ["a class from a variable", "variable" as const, ["hemispheric", "point"]],
+  ])("adds the light a held Class's Add Component of %s adds", (_, added, kinds) => {
+    // An added component takes its class's defaults; scripts cannot change a light's kind or shadows.
+    const registry = createDefaultNodeRegistry();
+    const lights = spawnableLightsOfLoad({ scripts: [adder(registry, added)], assets: [], isClass: () => true });
+    expect([...lights.values()].map(({ kind, properties }) => `${kind}${properties.castShadows ? " shadows" : ""}`).sort())
+      .toEqual(kinds);
   });
 
   it("adds them when an asset of the load depends on a Class asset it does not hold, and not for one it holds", () => {

@@ -14,6 +14,7 @@ import {
   beginPipelineDeferral, capturePipelineTarget, effectDrawn, pipelinesDeferred, type PipelineTarget,
 } from "./webgpu-pipeline-deferral";
 import { variantSwapsTolerated } from "./variant-swaps";
+import { effectDrawnOn } from "./first-draw-stats";
 
 /**
  * First draws of new variants in a world view's steady frames, and on WebGPU their render pipelines.
@@ -55,10 +56,16 @@ type ColdEntry = { usedAt: number; base: () => boolean; warmed: boolean };
 export const UNUSED_WARM_MS = 500;
 
 /**
- * New variants a world view's steady frame admits at most, so their first draws (a program's first use, a WebGPU
- * pipeline) spread over frames.
+ * New variants a world view's steady frame admits at most, so their first draws spread over frames. WebGL2: a program's
+ * first use holds the thread (about 100 ms on iPad WebKit WebGL2), so one a frame keeps each such frame to one stall.
+ * WebGPU: an admitted variant's pipeline already exists (its warm draws created it asynchronously), so two.
  */
-export const FIRST_DRAWS_PER_FRAME = 2;
+export const FIRST_DRAWS_PER_FRAME = { webgl2: 1, webgpu: 2 } as const;
+
+/** The first-draw budget of a frame on `engine` (`FIRST_DRAWS_PER_FRAME`). */
+export function firstDrawsPerFrame(engine: AbstractEngine): number {
+  return pipelinesDeferred(engine) ? FIRST_DRAWS_PER_FRAME.webgpu : FIRST_DRAWS_PER_FRAME.webgl2;
+}
 
 type WarmupState = {
   /** Cold Effects, oldest first. */
@@ -138,8 +145,10 @@ function install(engine: AbstractEngine): WarmupState {
     state.known.add(effect);
     if ((state.marking === 0 && !variantSwapsTolerated()) || state.cold.has(effect) || state.settled.has(effect)) return effect;
     // WebGPU: a variant no draw has drawn with has no pipeline yet (a new one, or one only a probe pass compiled).
-    // WebGL2: a new variant has not been drawn either.
-    if (pipelinesDeferred(engine) ? effectDrawn(engine, effect) : known) return effect;
+    // WebGL2: a variant no draw has drawn with has its program's first use ahead, a new one or one compiled and never
+    // drawn (a mid-game spawn preparation's warm-up, a mesh hidden at load); untracked Engines count every variant
+    // they held at installation or returned since as drawn.
+    if (pipelinesDeferred(engine) ? effectDrawn(engine, effect) : effectDrawnOn(engine, effect) ?? known) return effect;
     // A variant linked as soon as it is requested (a synchronous driver) draws in this frame while it has room.
     if (!pipelinesDeferred(engine) && variantSwapsTolerated() && state.budget > 0 && effect.isReady()) {
       state.budget -= 1;
@@ -215,7 +224,7 @@ export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boole
     // Per Engine frame: a tolerant preparation and a second view's rounds in the same frame share its admissions.
     if (state.budgetFrame !== engine.frameId) {
       state.budgetFrame = engine.frameId;
-      state.budget = FIRST_DRAWS_PER_FRAME;
+      state.budget = firstDrawsPerFrame(engine);
     }
     let budget = state.budget;
     for (const [effect, entry] of state.cold) {
