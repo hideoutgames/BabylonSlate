@@ -11,12 +11,15 @@ import {
   TEXTURE_EVICTION_TARGET_FACTOR,
 } from "./perf-ceilings";
 import { uploadedTextureBytes } from "./uploaded-texture-bytes";
+import { deviceProfile } from "./device-profile";
 
 export interface ResourceCacheOptions {
   /** Accounted byte ceiling before evicting unreferenced LRU entries. */
   byteCeiling?: number;
   /** When false, skip LRU eviction. */
   budgetEnabled?: boolean;
+  /** The most any budget may hold on this device class (`deviceProfile().textureByteCeiling` by default). */
+  deviceByteCeiling?: number;
   onEvict?: (assetGuid: string, reason: string) => void;
 }
 
@@ -313,6 +316,7 @@ export function describeEngineTexture(engine: AbstractEngine, texture: InternalT
  */
 export class ResourceCache {
   private ceiling: number;
+  private readonly deviceCeiling: number;
   private readonly clientBudgets = new Map<object, { bytes?: number; enabled?: boolean }>();
   private budgetEnabled: boolean;
   private readonly onEvict?: (assetGuid: string, reason: string) => void;
@@ -330,6 +334,7 @@ export class ResourceCache {
 
   constructor(options: ResourceCacheOptions = {}) {
     this.ceiling = options.byteCeiling ?? TEXTURE_BYTE_CEILING;
+    this.deviceCeiling = options.deviceByteCeiling ?? deviceProfile().textureByteCeiling;
     this.budgetEnabled = options.budgetEnabled !== false;
     this.onEvict = options.onEvict;
   }
@@ -379,7 +384,7 @@ export class ResourceCache {
     const flags = policies.flatMap((policy) => policy.enabled === undefined ? [] : [policy.enabled]);
     if (flags.length ? flags.includes(false) : !this.budgetEnabled) return null;
     const caps = policies.flatMap((policy) => policy.bytes === undefined ? [] : [policy.bytes]);
-    return caps.length ? Math.max(...caps) : this.ceiling;
+    return Math.min(caps.length ? Math.max(...caps) : this.ceiling, this.deviceCeiling);
   }
 
   private assertAdmitted(): void {

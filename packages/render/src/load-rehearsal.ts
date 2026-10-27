@@ -1,6 +1,6 @@
 import { DirectionalLight, PointLight, SpotLight, Vector3, type Effect, type Light, type Scene } from "@babylonjs/core";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
-import { isMobileGpuDevice } from "./device-class";
+import { deviceProfile, type DeviceProfile } from "./device-profile";
 import { DriverCompileWatch } from "./driver-compile";
 import { restoreSceneLightOrder } from "./forward-light-slots";
 import {
@@ -29,18 +29,6 @@ export const LOAD_REHEARSAL_STEP_BUDGET = 48;
  * ceiling.
  */
 export const LOAD_REHEARSAL_STEP_MS = 10_000;
-/**
- * The rehearsal ends this long after its first frame, whatever remains (an applied step is reverted and reported as
- * timed out, the others as left out). The first presentation's own compile watch renews its budget for
- * `SCENE_PREPARATION_CEILING_MS` (300 s) from its start, and the frame it then presents needs that room.
- */
-export const LOAD_REHEARSAL_CEILING_MS = 120_000;
-/**
- * The ceiling on a phone or tablet (`isMobileGpuDevice`), which also leaves out the repeats: an iPad's WebKit compiles
- * a step's variants in ten seconds or more, so the full budget kept a load behind its loading screen for minutes. What
- * it leaves out compiles when gameplay first makes that change.
- */
-export const MOBILE_LOAD_REHEARSAL_CEILING_MS = 45_000;
 
 type RehearsalStep = { label: string; kind: string; apply(): void; revert(): void };
 
@@ -49,7 +37,7 @@ export interface LoadRehearsalReport {
   steps: number;
   /** Rehearsed changes that drew: the others drew with Effects an earlier rehearsal frame drew. */
   drawn: number;
-  /** Changes the step budget, the rehearsal's ceiling or a phone or tablet (its repeats) left out. */
+  /** Changes the step budget, the rehearsal's ceiling or the device profile (its repeats) left out. */
   omitted: string[];
   /** Changes whose variants were not ready to draw within `LOAD_REHEARSAL_STEP_MS` (or when the ceiling came), and
    * "starting state" when the starting state never settled. */
@@ -84,7 +72,7 @@ export interface LoadRehearsal {
    */
   frame(draw: () => boolean): void;
   /** Ends a step (or the starting state) that has waited `LOAD_REHEARSAL_STEP_MS`, and the whole rehearsal at
-   * `LOAD_REHEARSAL_CEILING_MS` (`MOBILE_LOAD_REHEARSAL_CEILING_MS` on a phone or tablet); call each loading frame. */
+   * its ceiling (`DeviceProfile.loadRehearsal`); call each loading frame. */
   check(): void;
   /** Reverts an applied step and ends the rehearsal (a superseded load). */
   cancel(): void;
@@ -315,19 +303,21 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * on WebGL2, a render pipeline on WebGPU) rather than when gameplay first shows it. A load with nothing to rehearse
  * draws no frame for it: an extra loading frame steps GPU particles once more, which a paused Simulation's redraw shows.
  *
- * `mobile` (by default a phone or tablet, `isMobileGpuDevice`) leaves out the repeats, reported as left out, and ends
- * the rehearsal at `MOBILE_LOAD_REHEARSAL_CEILING_MS`.
+ * `limits` (the device profile's by default) say whether it rehearses repeats, reported as left out when not, and how
+ * long after its first frame it ends, whatever remains (an applied step reverted and reported as timed out, the others
+ * as left out).
  */
 export function createLoadRehearsal(
   scene: Scene, settled: () => boolean = () => true, spawnable: readonly SpawnableLight[] = [],
-  options: { staged?: boolean; onStartingDrawn?: () => void; drawsOutsideView?: boolean; mobile?: boolean } = {},
+  options: {
+    staged?: boolean; onStartingDrawn?: () => void; drawsOutsideView?: boolean; limits?: DeviceProfile["loadRehearsal"];
+  } = {},
 ): LoadRehearsal {
-  const mobile = options.mobile ?? isMobileGpuDevice();
-  const ceiling = mobile ? MOBILE_LOAD_REHEARSAL_CEILING_MS : LOAD_REHEARSAL_CEILING_MS;
+  const { repeats: rehearsesRepeats, ceilingMs: ceiling } = options.limits ?? deviceProfile().loadRehearsal;
   const { kinds, repeats } = rehearsalSteps(scene, spawnable);
-  const all = mobile ? kinds : [...kinds, ...repeats];
+  const all = rehearsesRepeats ? [...kinds, ...repeats] : kinds;
   const steps = all.slice(0, LOAD_REHEARSAL_STEP_BUDGET);
-  const omitted = [...all.slice(LOAD_REHEARSAL_STEP_BUDGET), ...mobile ? repeats : []].map((step) => step.label);
+  const omitted = [...all.slice(LOAD_REHEARSAL_STEP_BUDGET), ...rehearsesRepeats ? [] : repeats].map((step) => step.label);
   const timedOut: string[] = [];
   const unrestored: string[] = [];
   const engine = scene.getEngine();

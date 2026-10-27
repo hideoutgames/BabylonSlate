@@ -9,14 +9,14 @@ import {
 } from "@babylonjs/core";
 import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
 import { effectiveShadowSettings } from "@haptic/core";
-import { sceneEffectsQualityLimits, sceneRenderingSettings } from "./render-settings";
+import { resolveSceneRenderingQuality, sceneEffectsQualityLimits, sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
 import type { RenderScheduler } from "./render-scheduler";
 import type { FirstDrawStats } from "./first-draw-stats";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
-import { deviceShadowMapCap } from "./device-class";
+import { deviceProfile, deviceTextureLimits } from "./device-profile";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 
 export type RenderDiagnostics = {
@@ -169,8 +169,9 @@ export function createRenderDiagnostics(
           state.shadows,
           engine._features.supportCSM,
           state.mode,
-          deviceShadowMapCap(),
+          deviceProfile().shadowMapCap,
         ).limits,
+        ...deviceTextureLimits(resolveSceneRenderingQuality(scene).textures.byteBudget),
         ...(shadows?.limits() ?? []),
         ...sceneEffectsQualityLimits(scene),
       ],

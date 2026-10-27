@@ -62,7 +62,7 @@ import {
   type ShadowEntry as Entry,
   type ShadowLightStatus,
 } from "./shadow-entry";
-import { deviceShadowMapCap } from "./device-class";
+import { deviceProfile } from "./device-profile";
 import {
   applyShadowAdmission,
   cameraDistanceSquared,
@@ -632,7 +632,7 @@ export class SceneShadowController {
       requested,
       engineSupportsCascades && constructorSupportsCascades,
       state.mode,
-      deviceShadowMapCap(),
+      deviceProfile().shadowMapCap,
     );
     this.planSettings = settings;
     const camera = scene.activeCamera;
