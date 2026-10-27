@@ -12,6 +12,9 @@ export type SpawnableLight = { kind: string; properties: AuthoredLightProperties
  * Class and component, as Play's game runtime names them: a Hemispheric Fill Light is `hemispheric`, a Light its Light
  * Kind (`point` when unset). Play's load rehearses one spawned light of each kind among them. Babylon-free, for the
  * hosts' source preparation (`@haptic/render/spawnable-lights`).
+ *
+ * Lights a script adds with Add Component join them (`addedLights`): an added component takes its class's defaults, and
+ * scripts change only a light's Enabled, Color and Intensity, none of which changes a receiver's defines.
  */
 export function spawnableLightsFromScripts(scripts: Iterable<ScriptBundleEntry>): Map<string, SpawnableLight> {
   const lights = new Map<string, SpawnableLight>();
@@ -23,8 +26,69 @@ export function spawnableLightsFromScripts(scripts: Iterable<ScriptBundleEntry>)
           : undefined;
       if (kind) lights.set(`${script.classId}|${component.id}`, { kind, properties });
     }
+    for (const [key, light] of addedLights(script)) lights.set(key, light);
   }
   return lights;
+}
+
+/** The light an Add Component of each light class adds: its defaults (a Light is an unshadowed point). */
+const ADDED_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map([
+  ["LightComponent", { kind: "point", properties: {} }],
+  ["HemisphericFillLightComponent", { kind: "hemispheric", properties: {} }],
+]);
+
+/** Add Component's compiled call (`component.add` emits `ctx.addComponent(<actor>, <class>, <transform>)`). */
+const ADD_COMPONENT_CALL = /\bctx\.addComponent\(/g;
+
+/**
+ * The lights `script`'s Add Component calls may add: a named light class's, or, for a class a pin or variable feeds,
+ * every light class's (it may be any of them).
+ */
+function addedLights(script: ScriptBundleEntry): Map<string, SpawnableLight> {
+  const lights = new Map<string, SpawnableLight>();
+  for (const call of script.source.matchAll(ADD_COMPONENT_CALL)) {
+    const classArgument = callArguments(script.source, call.index + call[0].length)[1]?.trim();
+    let classId: unknown;
+    try {
+      classId = classArgument?.startsWith('"') ? JSON.parse(classArgument) : undefined;
+    } catch {
+      classId = undefined;
+    }
+    if (typeof classId === "string") {
+      const light = ADDED_LIGHTS.get(classId);
+      if (light) lights.set(`${script.classId}|added ${classId}`, light);
+      continue;
+    }
+    for (const [added, light] of ADDED_LIGHTS) lights.set(`${script.classId}|added ${added}`, light);
+  }
+  return lights;
+}
+
+/** The top-level argument texts of the call whose argument list starts at `start` (just after its opening bracket). */
+function callArguments(source: string, start: number): string[] {
+  const args: string[] = [];
+  let depth = 0;
+  let from = start;
+  for (let index = start; index < source.length; index++) {
+    const char = source[index]!;
+    if (char === '"' || char === "'" || char === "`") {
+      // Skip a string literal, escapes included.
+      for (index++; index < source.length && source[index] !== char; index++) if (source[index] === "\\") index++;
+      continue;
+    }
+    if (char === "(" || char === "[" || char === "{") depth++;
+    else if (char === ")" || char === "]" || char === "}") {
+      if (depth === 0) {
+        args.push(source.slice(from, index));
+        return args;
+      }
+      depth--;
+    } else if (char === "," && depth === 0) {
+      args.push(source.slice(from, index));
+      from = index + 1;
+    }
+  }
+  return args;
 }
 
 /**
