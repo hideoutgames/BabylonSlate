@@ -2,7 +2,7 @@ import { useEffect, useState, type ComponentProps, type RefObject } from "react"
 import { Dialog } from "@haptic/ui/components/dialog";
 import { Button } from "@haptic/ui/components/button";
 import type { SceneViewportLoadPhase } from "../lib/scene-viewport-load";
-import type { SceneLoadPhase } from "@haptic/render";
+import type { SceneLoadCount, SceneLoadPhase } from "@haptic/render";
 import {
   ProgressDialogContent,
   ProgressDialogFailure,
@@ -18,6 +18,8 @@ export type SceneLoadingDialogProps = {
   /** Percent complete, or `null` when the phase has no measurable progress (document reads). */
   progress: number | null;
   phase: SceneLoadingPhase;
+  /** Shown after the phase as `(done/total)`: shader warm-up units, rehearsed light changes. */
+  count?: SceneLoadCount;
   onStop?: () => void;
   failed?: boolean;
   rendering?: boolean;
@@ -50,6 +52,7 @@ export function SceneLoadingDialog({
   open,
   progress,
   phase,
+  count,
   failed = false,
   rendering = false,
   onRetry,
@@ -91,7 +94,7 @@ export function SceneLoadingDialog({
         ) : (
           <ProgressDialogStatus
             title={rendering ? "Updating Rendering" : "Loading Scene"}
-            phase={phase}
+            phase={count ? `${phase} (${count.done}/${count.total})` : phase}
             value={progress}
             valueLabel={progress === null ? null : `${Math.round(progress)}%`}
             progressProps={{ "data-testid": "scene-loading-progress" }}

@@ -67,6 +67,11 @@ export interface LoadRehearsal {
   /** Light changes it rehearses, including those it later times out or leaves out. */
   readonly stepCount: number;
   /**
+   * The light change being rehearsed (1-based) of `stepCount`, while the steps run: null while the starting state draws
+   * (the first frame's own compiles) and once the rehearsal is done.
+   */
+  progress(): { done: number; total: number } | null;
+  /**
    * A loading frame in which the view is ready to draw: applies the next step, draws the applied one with `draw` (true
    * once it drew) while its meshes hold an Effect no rehearsal frame drew, or reverts it.
    */
@@ -400,6 +405,7 @@ export function createLoadRehearsal(
       return endedAt !== undefined;
     },
     stepCount: steps.length,
+    progress: () => endedAt !== undefined || starting || !steps.length ? null : { done: Math.min(index + 1, steps.length), total: steps.length },
     frame(viewDraw) {
       if (endedAt !== undefined) return;
       const draw = options.drawsOutsideView ? () => withoutViewCulling(scene, viewDraw) : viewDraw;

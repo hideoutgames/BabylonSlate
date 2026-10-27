@@ -8,12 +8,18 @@ export interface SceneLayerLoadIdentity {
   layerLoadId: number;
 }
 
-export type SceneLoadPhase = "Preparing Scene" | "Removing Previous Scene" | "Realizing Scene" | "Loading Models" | "Loading Textures" | "Warming Shaders" | "Presenting First Frame";
+export type SceneLoadPhase = "Preparing Scene" | "Removing Previous Scene" | "Realizing Scene" | "Loading Models" | "Loading Textures" | "Compiling Shaders" | "Preparing Lights" | "Presenting First Frame";
+/** How far a counted phase is: `done` of `total` (shader warm-up units, rehearsed light changes). */
+export interface SceneLoadCount {
+  done: number;
+  total: number;
+}
 export interface SceneLoadProgress extends SceneLoadIdentity {
   layerId?: string;
   layerLoadId?: number;
   phase: SceneLoadPhase;
   progress: number;
+  count?: SceneLoadCount;
 }
 
 /** Cross a browser paint before beginning work; cancellation removes both frames. */
@@ -56,8 +62,9 @@ export function createSceneLoadReadiness(options: {
   handle: {
     whenEditorModelsReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
     whenMaterialTexturesReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
-    prewarmSceneMaterials: (owner?: SceneLayerLoadIdentity) => Promise<void>;
-    presentFirstFrame: (owner?: SceneLayerLoadIdentity) => Promise<void>;
+    prewarmSceneMaterials: (owner?: SceneLayerLoadIdentity, onProgress?: (count: SceneLoadCount) => void) => Promise<void>;
+    /** `onLights` reports the light rehearsal's progress while it runs, null once the first frame is what remains. */
+    presentFirstFrame: (owner?: SceneLayerLoadIdentity, onLights?: (count: SceneLoadCount | null) => void) => Promise<void>;
   };
   loading?: LoadingHost;
   activate: (scene: SceneLoadIdentity) => void;
@@ -73,9 +80,10 @@ export function createSceneLoadReadiness(options: {
     const pending = [current, ...layers.values()].find((scene) => scene && !scene.completed);
     options.loading?.progress(pending?.progress ?? null);
   };
-  const progress = (scene: PendingScene, value: number, phase: SceneLoadPhase) => {
+  const progress = (scene: PendingScene, value: number, phase: SceneLoadPhase, count?: SceneLoadCount) => {
     if (!isCurrent(scene)) return;
-    scene.progress = { sceneAssetGuid: scene.sceneAssetGuid, sceneLoadId: scene.sceneLoadId, ...scene.layer, progress: value, phase };
+    scene.progress = { sceneAssetGuid: scene.sceneAssetGuid, sceneLoadId: scene.sceneLoadId, ...scene.layer, progress: value, phase,
+      ...(count ? { count: { ...count } } : {}) };
     publishProgress();
   };
   const release = (scene: PendingScene, cancel = true) => {
@@ -123,13 +131,14 @@ export function createSceneLoadReadiness(options: {
         progress(scene, 60, "Loading Textures");
         await options.handle.whenMaterialTexturesReady(scene.layer);
         if (!isCurrent(scene)) return;
-        progress(scene, 70, "Warming Shaders");
-        await options.handle.prewarmSceneMaterials(scene.layer);
+        progress(scene, 70, "Compiling Shaders");
+        await options.handle.prewarmSceneMaterials(scene.layer, (count) => progress(scene, 70, "Compiling Shaders", count));
         if (!isCurrent(scene)) return;
         progress(scene, 90, "Presenting First Frame");
         await options.loading?.paint(scene.controller.signal);
         if (!isCurrent(scene)) return;
-        await options.handle.presentFirstFrame(scene.layer);
+        await options.handle.presentFirstFrame(scene.layer, (lights) =>
+          progress(scene, 90, lights ? "Preparing Lights" : "Presenting First Frame", lights ?? undefined));
         if (!isCurrent(scene)) return;
         scene.completed = true;
         release(scene, false);

@@ -1672,6 +1672,27 @@ describe("compile holds after the first frame", () => {
       .toEqual({ map: false, unrestored: [`${AUTHORED_LIGHT_PREFIX}12 off`] });
   });
 
+  it("a Play load counts its shader warm-up units and then each light change its rehearsal prepares", async () => {
+    // The world's sun and three lights, each switched off and its shadows toggled: eight changes, shown one by one after
+    // the starting state drew, then the first frame alone.
+    rehearseLoad = true;
+    const world = playWorld("sync", [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])]);
+    const shaders: string[] = [];
+    await withClock(world.handle.prewarmSceneMaterials(undefined, ({ done, total }) => shaders.push(`${done}/${total}`)));
+    const lights: string[] = [];
+    const presentation = world.handle.presentFirstFrame(undefined, (count) => lights.push(count ? `${count.done}/${count.total}` : "frame"));
+    let presented = false;
+    void presentation.finally(() => { presented = true; });
+    for (let index = 0; index < 400 && (index < 4 || !presented); index++) await world.frame();
+    await presentation;
+    const total = Number(shaders[0]!.split("/")[1]);
+    expect({ shadersFrom: shaders[0], shadersTo: shaders.at(-1), shaderSteps: shaders.length, lights }).toEqual({
+      shadersFrom: `0/${total}`, shadersTo: `${total}/${total}`, shaderSteps: total + 1,
+      lights: ["frame", "1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "8/8", "frame"],
+    });
+    expect(total).toBeGreaterThan(0);
+  });
+
   it("a load rehearsal gives the shadow maps its changes released back to their lights, and builds only a map a change starts", async () => {
     // The sun's and the spot's changes (off, shadows off) release their maps; each revert takes the same allocation
     // back rather than building it again. The point's shadows-on step builds a map, which its revert disposes.

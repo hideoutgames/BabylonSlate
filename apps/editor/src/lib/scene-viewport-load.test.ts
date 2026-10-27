@@ -102,7 +102,7 @@ describe("runSceneViewportBlockingLoad", () => {
       { value: 10, phase: "Collecting Assets" },
       { value: 20, phase: "Realizing Scene" },
       { value: 45, phase: "Loading Models" },
-      { value: 70, phase: "Warming Shaders" },
+      { value: 70, phase: "Compiling Shaders" },
       { value: 90, phase: "Presenting First Frame" },
       { value: 100, phase: "Presenting First Frame" },
     ]);

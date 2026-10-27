@@ -60,7 +60,7 @@ export const SCENE_LOAD_PHASES = [
   "Collecting Assets",
   "Realizing Scene",
   "Loading Models",
-  "Warming Shaders",
+  "Compiling Shaders",
   "Presenting First Frame",
 ] as const;
 
@@ -75,16 +75,17 @@ export function isSceneViewportRemountLoad(
 }
 
 export { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
-import { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
+import { waitForSceneLoadingPaint, type SceneLoadCount } from "@haptic/render/scene-load-readiness";
 
 export async function runSceneViewportBlockingLoad(options: {
   signal: AbortSignal;
   realize: () => void | Promise<void>;
   collect: () => Promise<void>;
   whenModelsReady: () => Promise<void>;
-  warmShaders: () => Promise<void>;
+  /** `onCount` counts the warm-up's units as they compile. */
+  warmShaders: (onCount: (count: SceneLoadCount) => void) => Promise<void>;
   presentFirstFrame: () => Promise<void>;
-  onProgress: (value: number, phase: SceneViewportLoadPhase) => void;
+  onProgress: (value: number, phase: SceneViewportLoadPhase, count?: SceneLoadCount) => void;
 }): Promise<void> {
   options.signal.throwIfAborted();
   options.onProgress(0, "Preparing Scene");
@@ -99,8 +100,8 @@ export async function runSceneViewportBlockingLoad(options: {
   options.onProgress(45, "Loading Models");
   await options.whenModelsReady();
   options.signal.throwIfAborted();
-  options.onProgress(70, "Warming Shaders");
-  await options.warmShaders();
+  options.onProgress(70, "Compiling Shaders");
+  await options.warmShaders((count) => options.onProgress(70, "Compiling Shaders", count));
   options.signal.throwIfAborted();
   options.onProgress(90, "Presenting First Frame");
   // Cached assets can finish all readiness work in one microtask batch. Give
