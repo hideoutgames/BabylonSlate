@@ -94,7 +94,6 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "CEL Outline Distance Fade", "project-cel-outlineDistanceFadeEnabled"],
   ["rendering", "CEL Outline Fade Start Distance", "project-cel-outlineFadeStart"],
   ["rendering", "CEL Outline Fade End Distance", "project-cel-outlineFadeEnd"],
-  ["rendering", "Render Path Auto Forward Clustered Forward", "project-render-path"],
   ["rendering", "GPU Backend Auto WebGL2 WebGPU", "project-gpu-backend"],
   ["rendering", "Overall Quality", "quality-all"],
   ["rendering", "Shadows Quality", "quality-shadows"],

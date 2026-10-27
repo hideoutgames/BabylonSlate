@@ -45,7 +45,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
     const snap = play.snapshot;
     if (snap) {
       const r = snap.rendering;
-      lines.push(`  Render: draws ${snap.drawCalls} · meshes ${snap.meshes} · textures ${snap.textures} · memory ${Math.round(snap.accountedBytes / 1048576)} MB${r ? ` · cpu ${r.cpuMs.toFixed(1)} ms · gpu ${r.gpuMs === null ? r.gpuStatus : `${r.gpuMs.toFixed(1)} ms`} · ${r.width}x${r.height} @${r.scalingLevel.toFixed(2)} · ${r.pipeline.effective.renderPath}` : ""}`);
+      lines.push(`  Render: draws ${snap.drawCalls} · meshes ${snap.meshes} · textures ${snap.textures} · memory ${Math.round(snap.accountedBytes / 1048576)} MB${r ? ` · cpu ${r.cpuMs.toFixed(1)} ms · gpu ${r.gpuMs === null ? r.gpuStatus : `${r.gpuMs.toFixed(1)} ms`} · ${r.width}x${r.height} @${r.scalingLevel.toFixed(2)}` : ""}`);
       if (r?.qualityLimits.length) lines.push(`  Quality limits: ${clip(r.qualityLimits.join("; "))}`);
     }
     const first = play.firstDraws;
@@ -62,7 +62,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
   if (play.benchmark.length) {
     lines.push("  Benchmark (frame cap lifted):", `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 8)}${pad("gpu", 8)}${pad("draws", 7)}resolution`);
     for (const sample of play.benchmark) {
-      lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(ms(sample.cpuMs), 8)}${pad(ms(sample.gpuMs), 8)}${pad(String(sample.drawCalls), 7)}${sample.resolution ?? "-"}${ranInstead(sample)}`);
+      lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(ms(sample.cpuMs), 8)}${pad(ms(sample.gpuMs), 8)}${pad(String(sample.drawCalls), 7)}${sample.resolution ?? "-"}`);
     }
     lines.push(`  Highest tier at 60 fps: ${bestProfile([play.benchmark], SMOOTH) ?? "none"} · at 30 fps: ${bestProfile([play.benchmark], PLAYABLE) ?? "none"}`);
   }
@@ -80,12 +80,6 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
     for (const entry of logs) lines.push(`    [${entry.severity}] ${clip(entry.message)}`);
   }
   return lines;
-}
-
-/** Notes when the engine fell back from the requested render path. */
-function ranInstead(sample: FeatureTestBenchmarkSample): string {
-  const requested = sample.label.endsWith("clustered") ? "clusteredForward" : "forward";
-  return sample.renderPath && sample.renderPath !== requested ? ` (ran ${sample.renderPath})` : "";
 }
 
 function pad(text: string, width: number): string {
@@ -125,7 +119,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
     `Haptic Feature Test Check (${MODE_LABELS[report.mode]}) · ${new Date(report.startedAt).toISOString()}`,
     `Result: ${passed}/${report.scenes.length} scenes passed${report.cancelled ? " · CANCELLED" : ""} · took ${s(report.durationMs)}`,
     ...formatDiagnosticEnvironment(environment),
-    `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (no viewport or Play engine reported one)"}${pipeline ? ` · ${pipeline.gpuBackend} ${pipeline.renderPath}` : ""}`,
+    `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (no viewport or Play engine reported one)"}${pipeline ? ` · ${pipeline.gpuBackend}` : ""}`,
   ];
   const sweeps = report.scenes.map((scene) => scene.play.benchmark).filter((sweep) => sweep.length);
   if (report.mode === "benchmark") {

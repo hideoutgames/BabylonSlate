@@ -7,7 +7,7 @@ import { describeError } from "../lib/diagnostic-info";
 export const FEATURE_TEST_CHECK_SCENES = [
   { name: "main", path: "assets/main.scene.hasset" },
   { name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset" },
-  { name: "FT_Clustered", path: "assets/FeatureTest/Scenes/FT_Clustered.scene.hasset" },
+  { name: "FT_Lights", path: "assets/FeatureTest/Scenes/FT_Lights.scene.hasset" },
   { name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.hasset" },
   { name: "FT_Stress", path: "assets/FeatureTest/Scenes/FT_Stress.scene.hasset" },
 ] as const;
@@ -22,18 +22,17 @@ export type FeatureTestCheckMode = "quick" | "full" | "benchmark";
 
 /**
  * Performance profiles a Benchmark sweeps per scene: each quality tier, then
- * Clustered Forward at High, then fixed-shape forward lighting at Medium with
- * each seat guard (compare with "medium · forward"). `recompiles` profiles
- * rebuild every lit shader, so sampling waits for the view to draw again.
+ * fixed-shape forward lighting at Medium with each seat guard (compare with
+ * "medium · forward"). `recompiles` profiles rebuild every lit shader, so
+ * sampling waits for the view to draw again.
  */
 export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands: readonly string[]; recompiles?: true }[] = [
-  { label: "low · forward", commands: ["renderpath forward", "quality low"] },
-  { label: "medium · forward", commands: ["renderpath forward", "quality medium"] },
-  { label: "high · forward", commands: ["renderpath forward", "quality high"] },
-  { label: "ultra · forward", commands: ["renderpath forward", "quality ultra"] },
-  { label: "high · clustered", commands: ["renderpath clusteredForward", "quality high"] },
-  { label: "medium · fixed lights", commands: ["renderpath forward", "quality medium", "fixedlights multiply"], recompiles: true },
-  { label: "medium · fixed lights · branch", commands: ["renderpath forward", "quality medium", "fixedlights branch"], recompiles: true },
+  { label: "low · forward", commands: ["quality low"] },
+  { label: "medium · forward", commands: ["quality medium"] },
+  { label: "high · forward", commands: ["quality high"] },
+  { label: "ultra · forward", commands: ["quality ultra"] },
+  { label: "medium · fixed lights", commands: ["quality medium", "fixedlights multiply"], recompiles: true },
+  { label: "medium · fixed lights · branch", commands: ["quality medium", "fixedlights branch"], recompiles: true },
 ];
 
 /** Above any display refresh, so a Benchmark measures the device rather than the project frame cap. */
@@ -48,7 +47,6 @@ export interface FeatureTestBenchmarkSample {
   gpuMs: number | null;
   drawCalls: number;
   resolution: string | null;
-  renderPath: string | null;
   failed: string[];
 }
 
@@ -437,7 +435,6 @@ async function benchmarkProfiles(
         gpuMs: mean(gpu),
         drawCalls: snapshot.drawCalls,
         resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
-        renderPath: rendering?.pipeline.effective.renderPath ?? null,
         failed,
       });
     }
@@ -445,7 +442,6 @@ async function benchmarkProfiles(
     if (!signal.aborted) {
       await run("fixedlights reset");
       await run("quality reset");
-      await run("renderpath reset");
       await run(`framecap ${cap ?? 60}`);
     }
   }

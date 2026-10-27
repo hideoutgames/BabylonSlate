@@ -34,7 +34,6 @@ import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 
 const DEFAULT_TASKS = [
   "Forward admitted shadows",
-  "Clustered light mask",
   "Forward clear",
   "Forward cull",
   "Forward objects",
@@ -211,7 +210,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   expect(scene.objectRenderers.map((renderer) => renderer.name).sort()).toEqual(["Forward objects", "Forward transparent"]);
   // The split switches the output clear too, so it decides before that clear runs.
   expect(graph.taskNames()).toEqual([
-    "Forward admitted shadows", "Clustered light mask", "Forward cull", "Water split", "Forward clear",
+    "Forward admitted shadows", "Forward cull", "Water split", "Forward clear",
     "Forward objects", "Water clear", "Water opaque", "Water scene copy", "Forward transparent", "Water output",
   ]);
   await settle(graph, camera);

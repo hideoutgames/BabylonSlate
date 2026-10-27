@@ -12,7 +12,6 @@ import {
 } from "@babylonjs/core";
 import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings, type VolumetricLightingSettings } from "@haptic/core";
 import { expect, it, vi } from "vitest";
-import { registerClusteredLightPolicy } from "./clustered-light-policy";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { sceneShadowController } from "./shadow-controller";
 import {
@@ -54,7 +53,7 @@ function shadowedScene() {
   return { engine, scene, camera, shadowed };
 }
 
-it("bounds contributors, includes borrowed cluster children and follows parent transforms", () => {
+it("bounds contributors and follows parent transforms", () => {
   const engine = new NullEngine();
   const scene = new Scene(engine);
   try {
@@ -63,7 +62,7 @@ it("bounds contributors, includes borrowed cluster children and follows parent t
     const sun = new DirectionalLight("sun", Vector3.Down(), scene);
     const near = new PointLight("near", new Vector3(1, 0, 0), scene);
     const child = new SpotLight(
-      "borrowed",
+      "parented",
       new Vector3(2, 0, 0),
       Vector3.Down(),
       1,
@@ -74,16 +73,6 @@ it("bounds contributors, includes borrowed cluster children and follows parent t
     far.range = 2;
     const parent = new TransformNode("moving parent", scene);
     child.parent = parent;
-    scene.removeLight(child);
-    const unregister = registerClusteredLightPolicy(scene, {
-      sync() {},
-      limits: () => [],
-      target: () => undefined,
-      ownsContainer: () => false,
-      allowsLocal: () => true,
-      clusteredCount: () => 1,
-      authoredLights: () => [child],
-    });
     const settings = {
       ...DEFAULT_RENDER_EFFECTS.volumetricLighting,
       enabled: true,
@@ -114,7 +103,6 @@ it("bounds contributors, includes borrowed cluster children and follows parent t
     expect(selectVolumetricLights(scene, camera, settings)).toEqual([sun]);
     scene.lightsEnabled = false;
     expect(selectVolumetricLights(scene, camera, settings)).toEqual([]);
-    unregister();
     child.dispose();
   } finally {
     scene.dispose();

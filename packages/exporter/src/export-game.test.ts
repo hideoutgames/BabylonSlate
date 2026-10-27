@@ -114,7 +114,7 @@ describe("exportGame", () => {
     malformed.render = { gpuBackend: "webgpu", width: -1, height: "bad", mode: "cel" };
     expect(parseGameManifest(JSON.stringify(malformed)).render).toMatchObject({
       gpuBackend: "webgpu", width: 1920, height: 1080, mode: "cel",
-      renderPath: "forward", customResolution: false,
+      customResolution: false,
     });
     for (const value of ["30", 0, -1, 24]) {
       malformed.playFrameCap = value;
@@ -145,7 +145,6 @@ describe("exportGame", () => {
       startupSceneGuid: "scene-1",
       renderSettings: {
         ...DEFAULT_RENDER_PROJECT_SETTINGS,
-        renderPath: "clusteredForward",
         gpuBackend: "webgpu",
         mode: "cel",
         environmentLighting: { enabled: false, intensity: 2, rotationYDegrees: 45, celStrength: 0.5 },
@@ -174,7 +173,6 @@ describe("exportGame", () => {
     expect(result.value.files.has("index.html")).toBe(true);
     expect(result.value.manifest.startupSceneGuid).toBe("scene-1");
     expect(result.value.manifest.render).toEqual({
-      renderPath: "clusteredForward",
       gpuBackend: "webgpu",
       mode: "cel",
       environmentLighting: { enabled: false, intensity: 2, rotationYDegrees: 45, celStrength: 0.5 },

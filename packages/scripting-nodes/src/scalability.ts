@@ -51,8 +51,6 @@ export const scalabilityNodes: NodeDefinition[] = [
     [input("color", "Color", COLOR, { x: 0, y: 0, z: 0, w: 1 })], (ctx) => `{ kind: "patch", render: { effects: { vignette: { color: ${rgbTuple(ctx.input("color"))} } } } }`),
   setter("setRenderMode", "Set Render Mode", "Switch PBR/CEL for this session through the shared material owner. The result remains pending until ready.",
     [input("mode", "Mode", enumRef("engine:RenderMode"), "pbr")], (ctx) => `{ kind: "patch", render: { mode: ${ctx.input("mode")} } }`),
-  setter("setRenderPath", "Set Render Path", "Request the global render path. Effective readback reports backend or scene restrictions.",
-    [input("path", "Render Path", enumRef("engine:RenderPath"), "forward")], (ctx) => `{ kind: "patch", render: { renderPath: ${ctx.input("path")} } }`),
   setting("setResolutionQuality", "Set Resolution Quality", "Configure render scale, dynamic resolution bounds and target frame rate for this session.", "ResolutionQuality", ["quality", "resolution"]),
   setting("setShadowQuality", "Set Shadow Quality", "Configure shadow maps, filtering, distance and local admission. Resource changes prepare at a frame boundary.", "ShadowQuality", ["shadows"]),
   setting("setLightingQuality", "Set Lighting Quality", "Choose automatic or explicit local-light admission within the current quality tier.", "LightingQuality", ["quality", "lighting"]),

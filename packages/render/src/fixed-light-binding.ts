@@ -20,7 +20,6 @@ import {
   type ShadowGenerator,
 } from "@babylonjs/core";
 import type { FixedLightKind, FixedLightLayout } from "@haptic/core";
-import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import type { FixedLightSeat } from "./fixed-light-seats";
 import { keepsLightDefines } from "./light-neutral-tasks";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
@@ -484,11 +483,10 @@ const hookedScenes = new WeakSet<Scene>();
 
 /**
  * Whether a world view may draw a Material's previous Effect while its changed variant compiles: the Scene binds such
- * an Effect by its own light layout (these hooks), on an Engine with uniform buffers, outside Clustered Forward (whose
- * cluster bindings follow the current lights).
+ * an Effect by its own light layout (these hooks), on an Engine with uniform buffers.
  */
 export function sceneBindsPreviousEffects(scene: Scene): boolean {
-  return hookedScenes.has(scene) && scene.getEngine().supportsUniformBuffers && !hasClusteredLightPolicy(scene);
+  return hookedScenes.has(scene) && scene.getEngine().supportsUniformBuffers;
 }
 
 /**
@@ -562,7 +560,7 @@ function compiledLights(effect: Effect): CompiledLights | null {
         (lines.has(`#define RECTAREALIGHTEMISSIONTEXTURE${index}`) ? EMISSION : 0),
       );
     }
-    // A clustered container (or any kind without a stand-in) stays on Babylon's own binding.
+    // A light kind without a stand-in stays on Babylon's own binding.
     if (!types.includes(-1)) lights = { types, shadows, textures };
   }
   compiledLightsCache.set(effect, { defines: effect.defines, lights });

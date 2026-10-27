@@ -598,7 +598,6 @@ it("keeps the default graph free of effect tasks, copies and owned passes", asyn
   // extra render target so Play costs exactly what it always has.
   expect(graph.taskNames()).toEqual([
     "Forward admitted shadows",
-    "Clustered light mask",
     "Forward clear",
     "Forward cull",
     "Forward objects",

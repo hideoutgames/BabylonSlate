@@ -142,7 +142,7 @@ type Rect = { minX: number; minZ: number; maxX: number; maxZ: number };
 /**
  * Per-surface world-aligned texture describing the terrain beneath the water: the signed
  * distance to its shorelines and the true depth over it. Built on the CPU from authored terrain,
- * so it works on every render path and backend.
+ * so it works on every backend.
  */
 export class WaterField {
   texture: RawTexture | null = null;

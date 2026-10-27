@@ -36,7 +36,7 @@ export class ReusableShadowGenerator extends ShadowGenerator {
     if (generators) {
       for (const [camera, generator] of generators)
         if (generator === this) generators.delete(camera);
-      // Match ShadowGenerator.dispose: clustered admission rejects an empty map.
+      // Match ShadowGenerator.dispose: an empty map stands for none.
       if (!generators.size) previous._shadowGenerators = null;
     }
     (light._shadowGenerators ??= new Map()).set(this.camera, this);

@@ -13,7 +13,7 @@ import type { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import type { MovementWorldSync } from "./movement";
 import type { RenderTargetPayload, RenderTargetTexturePayload } from "@haptic/core";
 import type { WaterDefinition } from "@haptic/core";
-import type { ScalabilitySession, ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, ScalabilityAcknowledgement, RenderPath } from "@haptic/core";
+import type { ScalabilitySession, ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, ScalabilityAcknowledgement } from "@haptic/core";
 import type { CollisionTriangleMesh } from "@haptic/core";
 import { inputMappingsFromAssets } from "@haptic/input";
 import type {
@@ -45,7 +45,6 @@ import {
 } from "@haptic/object-model";
 import {
   idleDeviceMotion,
-  type RenderPathStatus,
   type SerializedScene,
   type SerializedSceneLayer,
   type SceneStreamingState,
@@ -197,7 +196,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   private readonly onCommand?: (command: CommandMessage) => void;
   readonly dt: number;
   readonly seed: number;
-  readonly scalabilityProjectRenderPath: RenderPath;
   readonly acquireScene?: AcquireRuntimeScene;
   readonly deferSceneModelsReady: boolean;
   readonly deferSceneLoadingPaint: boolean;
@@ -216,7 +214,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   commandRevision = 0;
   lifecycleId = 0;
   timeDilation = 1;
-  lastRenderPathStatus: RenderPathStatus | null = null;
   tilemapAnimationTimeMs = 0;
   hasAnimatedTiles = false;
   /** Simulated water time: physics, buoyancy, script queries and Play water rendering share it. */
@@ -406,7 +403,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     // 3. Render and physics settings, physics worlds and the Scene library.
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.propertyWrites = createPropertyWrites(this, options);
-    this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
     this.scalability = createScalability(this, options);
     this.dt = options.dt ?? 1 / 60;
     this.seed = options.seed;
@@ -670,17 +666,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       ));
       return;
     }
-  }
-
-  applyRenderPathStatus(
-    message: Extract<ControlMessage, { type: "renderPathStatus" }>,
-  ): void {
-    this.lastRenderPathStatus = {
-      requested: message.requested,
-      effective: message.effective,
-      gpuBackend: message.gpuBackend,
-      limits: [...message.limits],
-    };
   }
 
   requestScalability(request: ScalabilityRequest): ScalabilityResult {

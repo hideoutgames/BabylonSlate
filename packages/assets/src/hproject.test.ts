@@ -75,7 +75,7 @@ describe("hproject codec", () => {
     });
   });
 
-  it("preserves requested renderer axes and shading in an exported project snapshot", async () => {
+  it("preserves the requested backend and shading in an exported project snapshot", async () => {
     const source = new MemoryStorageAdapter();
     await source.openDocumentsProject("Rendering.hproject");
     await writeProjectTree(
@@ -83,14 +83,13 @@ describe("hproject codec", () => {
       createEmptyProjectFiles({ guid: "rendering", name: "Rendering" }),
     );
     const snapshot = createEmptyProject("Rendering", {
-      render: { renderPath: "clusteredForward", gpuBackend: "webgpu", mode: "cel" },
+      render: { gpuBackend: "webgpu", mode: "cel" },
     });
     const manifest = decodeProjectZip(await exportProjectZip(source, snapshot)).find(
       (file) => file.path === "project.json",
     )!;
     const reopened = JSON.parse(new TextDecoder().decode(manifest.data));
     expect(normalizeProjectSettings(reopened.settings).render).toMatchObject({
-      renderPath: "clusteredForward",
       gpuBackend: "webgpu",
       mode: "cel",
     });

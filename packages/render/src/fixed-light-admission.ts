@@ -20,7 +20,6 @@ import {
   type FixedLightKind,
   type FixedLightLayout,
 } from "@haptic/core";
-import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import { installFixedLightBinding } from "./fixed-light-binding";
 import {
   assignFixedLightSeats,
@@ -101,9 +100,9 @@ export function setFixedShapeLightingWorldScene(scene: Scene): void {
   installFixedLightBinding(scene, () => fixedLightSlotTable(scene));
 }
 
-/** Whether the Scene admits lights through the fixed layout. Clustered Forward keeps the legacy path. */
+/** Whether the Scene admits lights through the fixed layout. */
 export function fixedShapeLightingActive(scene: Scene): boolean {
-  return worldScenes.has(scene) && enabledEngines.has(scene.getEngine()) && !hasClusteredLightPolicy(scene);
+  return worldScenes.has(scene) && enabledEngines.has(scene.getEngine());
 }
 
 /** The Scene's slot table, or null where fixed-shape lighting has not admitted lights. */
@@ -240,7 +239,7 @@ export const selectFixedShapeLights: ForwardLightSelection = (
     localBudget: capacity.locals,
     // The bound textures' samplers (area tables and emission) still follow the admitted lights.
     accept: ({ light }) => {
-      const cost = lightSamplerCost(scene, light, hasArea);
+      const cost = lightSamplerCost(light, hasArea);
       if (samplers + cost > capacity.samplers) return false;
       samplers += cost;
       hasArea ||= light instanceof RectAreaLight;

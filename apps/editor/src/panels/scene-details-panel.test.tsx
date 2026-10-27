@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedComponent, SerializedScene, ShadowSettings, RenderPath } from "@haptic/core";
+import type { SerializedComponent, SerializedScene, ShadowSettings } from "@haptic/core";
 import {
   createActor,
   createDefaultScene,
@@ -47,7 +47,7 @@ const harness = vi.hoisted(() => ({
   createdAssets: [] as Array<{ header: Record<string, unknown>; path: string }>,
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.hasset",
-  render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined, renderPath: undefined as RenderPath | undefined },
+  render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined },
   applySceneChange: vi.fn<
     (id: string, scene: SerializedScene) => Promise<boolean>
   >(async () => true),
@@ -181,7 +181,6 @@ beforeEach(() => {
   harness.documentId = "scene:assets/Main.scene.hasset";
   harness.render.mode = "pbr";
   harness.render.shadows = undefined;
-  harness.render.renderPath = undefined;
   harness.scene = createDefaultScene();
   harness.prefabComponents = [];
   harness.createdAssets = [];

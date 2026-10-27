@@ -30,7 +30,6 @@ import {
   exchangeShadowReceivers,
   invalidateShadowReceiverHandoffs,
 } from "./shadow-receiver-handoff";
-import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import {
   authoredShadowParticipation,
   casterWithinShadowRange,
@@ -775,9 +774,7 @@ export class SceneShadowController {
     }
     // Remaining donors keep their receiver defines on standby while the pool,
     // memory and sampler budgets allow; authored, eligibility and settings
-    // changes still release immediately. Clustered Forward moves an unshadowed
-    // light into the cluster instead.
-    const clustered = hasClusteredLightPolicy(scene);
+    // changes still release immediately.
     let pooled = 0;
     for (const entry of this.entries.values())
       if (entry.status === "active" && !(entry.light instanceof DirectionalLight)) pooled++;
@@ -804,7 +801,6 @@ export class SceneShadowController {
         settings.enabled &&
         isForwardLightExcluded(entry.light);
       if (
-        clustered ||
         // A map a reverted change created or moved keeps no standby the restored history did not have.
         (restoring && !restoring.maps.has(entry.light)) ||
         (entry.status !== "outside-relevant-area" &&

@@ -16,7 +16,6 @@ import "@babylonjs/core/Shaders/postprocess.vertex";
 import "@babylonjs/core/ShadersWGSL/postprocess.vertex";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
 import "@babylonjs/core/ShadersWGSL/ShadersInclude/helperFunctions";
-import { clusteredLightTarget } from "./clustered-light-policy";
 import { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
 import { LightNeutralObjectRendererTask } from "./light-neutral-tasks";
 import {
@@ -111,8 +110,7 @@ function copyDimension(output: number, scale: number): number {
  * targets, no per-group depth clear in groups 1–3, (when the output itself
  * cannot be sampled and an own colour/depth pair stands in) a cleared frame,
  * and an output large enough for a copy texel. Cheap and allocation-free: a
- * view compares it every frame and re-plans when it changes. Clustered
- * lighting is checked only when planning (`waterSceneCopyScale`).
+ * view compares it every frame and re-plans when it changes.
  */
 export function waterSceneCopyDemand(scene: Scene, camera: Camera): number {
   const clamp = sceneWaterQualityDeviceClamp(scene);
@@ -129,16 +127,6 @@ export function waterSceneCopyDemand(scene: Scene, camera: Camera): number {
   const height = target ? target.getRenderHeight() : engine.getRenderHeight(true);
   if (copyDimension(width, scale) < 1 || copyDimension(height, scale) < 1) return 0;
   return scale;
-}
-
-/**
- * The copy scale a view's graph plans, or 0 when no scene copy is admitted:
- * `waterSceneCopyDemand` on Forward lighting (a clustered target rejects the
- * copy; the graph already re-plans when that target changes).
- */
-export function waterSceneCopyScale(scene: Scene, camera: Camera): number {
-  const scale = waterSceneCopyDemand(scene, camera);
-  return scale > 0 && clusteredLightTarget(scene, camera) ? 0 : scale;
 }
 
 /** Copy taps per axis: every source texel a downsampled texel covers at integer ratios (4×4 at 0.25). */

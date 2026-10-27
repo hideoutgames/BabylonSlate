@@ -653,7 +653,6 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Lighting Quality](set-lighting-quality.md) | Chooses automatic or manual limits on how many local lights are drawn. |
 | [Set Post Processing Quality](set-post-processing-quality.md) | Scales the resolution of post-process passes that allow scalable resolution. |
 | [Set Render Mode](set-render-mode.md) | Switches between PBR and CEL rendering for the current session. |
-| [Set Render Path](set-render-path.md) | Requests the render path: Auto, Forward or Clustered Forward. |
 | [Set Render Resolution](set-render-resolution.md) | Locks the rendered output to a fixed width and height, with black bars if needed. |
 | [Set Render Scale](set-render-scale.md) | Sets a fixed render scale and turns off dynamic resolution. |
 | [Set Rendering Effects](set-rendering-effects.md) | Sets the colour pipeline, tone mapping, exposure, bloom, vignette and FXAA. |

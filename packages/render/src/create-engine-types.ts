@@ -7,7 +7,7 @@ import type { ParticleLibrary } from "./particle-service";
 import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import type { RagdollCaptureResult } from "./ragdoll-pose";
 import type { RenderProjectSettings, ScalabilityAcknowledgement } from "@haptic/core";
-import type { RenderPath, ResolvedRenderingPipeline } from "@haptic/core";
+import type { ResolvedRenderingPipeline } from "@haptic/core";
 import type { SceneOutlineSelection } from "./scene-outline-host";
 import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readiness";
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
@@ -141,10 +141,9 @@ export interface EngineHandle {
   cancelFrameCapture: (reason?: string) => void;
   /** Existing gizmos/selection overlay adapted to exact runtime identities. */
   attachRuntimeTransformTools: (options: RuntimeTransformToolsOptions) => RuntimeTransformTools;
-  renderPathStatus: () => ResolvedRenderingPipeline;
+  /** The backend the Engine runs, against the project's request. */
+  renderingPipeline: () => ResolvedRenderingPipeline;
   scalabilityStatus: () => ScalabilityAcknowledgement | undefined;
-  /** Non-persistent game-wide session render path request; null resumes the project path. */
-  setRenderPath: (renderPath: RenderPath | null) => void;
   /** Accounted GPU vertex+index bytes for this Scene's GLB cache. */
   accountedGeometryBytes: () => number;
   /** Explicit tap pick (hover picking is disabled). */
@@ -355,8 +354,6 @@ export interface CreateEngineOptions {
   onScalabilityApplied?: (acknowledgement: ScalabilityAcknowledgement) => void;
   onRagdollPoseCaptured?: (result: RagdollCaptureResult) => void;
   onRuntimeOutputChanged?: (settings: RenderProjectSettings) => void;
-  /** Plain scene-owned requested/effective selection, emitted only when it changes. */
-  onRenderPathChanged?: (status: ResolvedRenderingPipeline) => void;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   waterPayloads?: ReadonlyMap<string, import("@haptic/core").WaterDefinition>;

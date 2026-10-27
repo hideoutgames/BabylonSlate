@@ -6,7 +6,7 @@ import { PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, summarizePerforma
   type PerformanceIdentity, type PerformanceTickSample } from "./performance-recorder";
 
 const identity: PerformanceIdentity = { sessionId: "test", mode: "preview", sourceSha: null, buildId: "pack",
-  sceneId: "world", backend: "webgl2", renderPath: "frameGraph", runtimeHost: "worker", quality: "Low",
+  sceneId: "world", backend: "webgl2", runtimeHost: "worker", quality: "Low",
   frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "disabled" };
 
 /** One runtime tick row in `PERFORMANCE_TICK_COLUMNS` order; unnamed timings are 0. */

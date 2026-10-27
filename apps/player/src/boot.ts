@@ -5,7 +5,7 @@ import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
 import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
 import type { AbstractEngine } from "@babylonjs/core";
-import { createSessionBoundaryClient, snapshotFloatCount, type ControlMessage, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
+import { createSessionBoundaryClient, snapshotFloatCount, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
 import { createMessageRateMeter } from "@haptic/debugger";
 import { encodeInputEvents } from "@haptic/input";
 import { parseAnimGraphDocument } from "@haptic/anim-graph";
@@ -33,7 +33,7 @@ import {
   type SceneLoadProgress,
 } from "@haptic/render";
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
-import { playFramebufferSize, type ResolvedRenderingPipeline, type SerializedScene } from "@haptic/core";
+import { playFramebufferSize, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { playerDecoderPaths } from "./decoder-paths";
@@ -236,17 +236,6 @@ function initializePlayer(
     if (worker) worker.postControl({ type: "scalabilityStatus", acknowledgement });
     else runtime?.applyScalabilityStatus(acknowledgement);
   };
-  const publishRenderPathStatus = (status: ResolvedRenderingPipeline) => {
-    const control: ControlMessage = {
-      type: "renderPathStatus",
-      requested: status.requested.renderPath,
-      effective: status.effective.renderPath,
-      gpuBackend: status.effective.gpuBackend,
-      limits: status.limits,
-    };
-    if (worker) worker.postControl(control);
-    else runtime?.applyRenderPathStatus(control);
-  };
   let runtimeOutput = manifest.render;
   /** Set once the runtime's pause paths exist (below). */
   let pipelineHoldChanged: (held: boolean) => void = () => {};
@@ -421,7 +410,6 @@ function initializePlayer(
       if (worker) worker.postControl(control);
       else runtime?.applyAudioVoiceEnded(control);
     },
-    onRenderPathChanged: publishRenderPathStatus,
     onScalabilityApplied: publishScalabilityStatus,
     onRagdollPoseCaptured: (result) => {
       if (worker) worker.postControl(result);
@@ -1121,9 +1109,6 @@ function initializePlayer(
         if (!halted) inProcess.reportError(error);
       });
   }
-  // The subscription above fired before the runtime existed; report the
-  // current status now that the worker or in-process runtime can store it.
-  publishRenderPathStatus(handle.renderPathStatus());
   // The view size too: two-finger drags, cursor projection and Scene Layers measure against it.
   handle.publishSceneLayerSize();
   const initialScalability = handle.scalabilityStatus?.();
@@ -1250,7 +1235,7 @@ function initializePlayer(
           const frameCap = handle.scheduler.gateState().frameCap;
           return { sessionId: diagnosticSessionId, mode: "preview" as const,
             sourceSha: null, buildId: null, sceneId: hostSceneGuid ?? startup,
-            backend: handle.engine.isWebGPU ? "webgpu" : "webgl2", renderPath: handle.renderPathStatus().effective.renderPath,
+            backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
             runtimeHost: worker ? "worker" as const : "in-process" as const,
             quality: JSON.stringify(render), frameCap: Number.isFinite(frameCap) ? frameCap : null,
             dynamicResolution: render.quality?.resolution?.dynamic === true,

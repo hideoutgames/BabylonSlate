@@ -1,4 +1,3 @@
-import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderLanguage, ShaderMaterial, ShaderStore, Vector2, Vector4, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
 import type { ViewportMode } from "@haptic/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
@@ -491,7 +490,6 @@ export function createEditorGrid(
       needAlphaBlending: true,
     },
   );
-  registerClusteredUnlitMaterial(material);
   material.backFaceCulling = false;
   material.disableDepthWrite = true;
   mesh.material = material;
@@ -551,7 +549,6 @@ export function createEditorGrid(
       needAlphaBlending: true,
     },
   );
-  registerClusteredUnlitMaterial(boundsMaterial);
   boundsMaterial.backFaceCulling = false;
   boundsMaterial.disableDepthWrite = true;
   const boundsDepth = boundsMaterial as { disableDepthCheck?: boolean };

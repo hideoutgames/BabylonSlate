@@ -476,7 +476,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       error: sceneLoad.error,
       gpu: sceneLoad.gpu ?? viewportAdapter(),
       details: [
-        `Project rendering: path ${render?.renderPath ?? "default"} · backend ${render?.gpuBackend ?? "default"} · quality ${clipText(JSON.stringify(render?.quality ?? "default"), 160)} · mode ${render?.mode ?? "default"}`,
+        `Project rendering: backend ${render?.gpuBackend ?? "default"} · quality ${clipText(JSON.stringify(render?.quality ?? "default"), 160)} · mode ${render?.mode ?? "default"}`,
         `Engine Settings: overrides ${appSettings.renderingOverridesEnabled ? "on" : "off"} · hardware scaling ${appSettings.hardwareScalingLevel} · viewport cap ${appSettings.viewportFrameCap} fps`,
         `Scene: ${scene?.actors.length ?? 0} actors`,
       ],

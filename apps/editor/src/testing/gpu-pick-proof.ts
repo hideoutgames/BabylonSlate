@@ -3,7 +3,7 @@ import {
   Camera, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, UtilityLayerRenderer, Vector3, VertexBuffer,
 } from "@babylonjs/core";
 import {
-  compileMaterialPlan, createAppWebGpuEngine, gpuPickMesh, pickAtCanvas, requestRenderPath,
+  compileMaterialPlan, createAppWebGpuEngine, gpuPickMesh, pickAtCanvas,
 } from "@haptic/render";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 
@@ -27,7 +27,6 @@ export async function runGpuPickProof(backend: "webgl2" | "webgpu", variant: Gpu
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas)
     : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: variant === "editor" });
   engine.setSize(WIDTH, HEIGHT);
-  requestRenderPath(engine, { renderPath: "forward" });
   const scene = new Scene(engine); scene.clearColor = new Color4(0, 0, 0, 1);
   const camera = new FreeCamera("Pick Camera", new Vector3(0, 0, -CAMERA_DISTANCE), scene);
   camera.setTarget(Vector3.Zero()); camera.mode = Camera.ORTHOGRAPHIC_CAMERA;

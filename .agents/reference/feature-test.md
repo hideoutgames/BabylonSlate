@@ -46,7 +46,7 @@ The Kenney sounds are CC0; `License.txt` and `Source.txt` beside them record lic
 | Main | `assets/main.scene.hasset` | Every 3D feature except the open world, in fixed zones at moderate cost; startup scene and default perf workload |
 | FT_Stress | `assets/FeatureTest/Scenes/FT_Stress.scene.hasset` | Heavy, scalable load: physics pile, particle stress, animated crowd, dense foliage |
 | FT_World | `assets/FeatureTest/Scenes/FT_World.scene.hasset` | Landscape, Foliage, every water body kind, buoyancy, Cables and Splines |
-| FT_Clustered | `assets/FeatureTest/Scenes/FT_Clustered.scene.hasset` | Many unshadowed point lights for Clustered Forward comparisons |
+| FT_Lights | `assets/FeatureTest/Scenes/FT_Lights.scene.hasset` | Many unshadowed point lights: the many-lights workload |
 | FT_2D | `assets/FeatureTest/Scenes/FT_2D.scene.hasset` | Sprites, Sprite Animation, Tilemaps, 2D physics |
 | FT_StreamedRoom | `assets/FeatureTest/Scenes/FT_StreamedRoom.scene.hasset` | Sub-scene streamed into the main scene |
 
@@ -79,7 +79,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play. Its 
 | --- | --- |
 | `FT_Stress` | 320 dynamic bodies over a scaled sweeper, 6 ragdolls, a 32-link chain; 4 stress particle actors (about 16 000 GPU particles); an 8x8 animated Mannequin crowd; a 5184-instance foliage carpet. |
 | `FT_World` (`world.ts`) | 80 m island Landscape (grass, snow, sand, rock layers, collision), 226 foliage instances, Global Sea at -6 m (object reflections off), Ocean (short Realistic spectrum sea without swell, object reflections), Lake, River (the starter water Material `FT_WorldRiverMaterial` as its Custom Material, every water material node) and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines; shadowed sun and light fog. A Full Quality Render Target Capture of the Lake from the south shore (256², every frame) on a captioned monitor facing the world camera, refracting the lake bed and drawing its own sun shadow cascades as the world camera does. Separate from the main scene because an Ocean over every main-scene zone made the main scene miss its loading deadline on software GL. |
-| `FT_Clustered` | 48 unshadowed point lights over a plain floor with the engine default sky, so Auto can select Clustered Forward. |
+| `FT_Lights` | 48 unshadowed point lights over a plain floor with the engine default sky, more than any quality level's light budget admits, so the budget's ranking chooses each surface's lights. |
 | `FT_2D` | Orthographic camera over a 16x9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks), decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DTiles` defines two autotile terrains: Grass (8-neighbour blob on the sheet's grass and dirt cells, incomplete, so it relies on closest-match) and Ledge (4-side, the thin ledge pieces). `two-d.ts` paints the floating ledge with a Ledge brush stroke and a stepped backdrop island (grass top, inner corner, fill) with Grass rect and brush strokes through `applyTilemapPaint`; the scaffold test checks a Tilemap holds terrain tiles of every style. `FT_2DRobotGraph` cycles robot Idle, Walk, Jump, Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
 | `FT_HUD` (Scene Layer) | Every overlay widget: text with the Text-domain Material, rich text, panels, safe area (its label has no Font, so it draws with the project Default Font), form controls, scroll box, virtualized list (10 000 rows) and grid (400 cells), mask and mask panel, texture, material swatch, click button (`FT_UIClickButton`), focus target, card switcher (`FT_UICardSwitcher`), joystick bound to Move, persistent painter. Focus navigation uses Confirm. |
@@ -98,12 +98,11 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play. Its 
 | Command | Effect |
 | --- | --- |
 | `ft_cel` / `ft_pbr` | Switch the shading mode |
-| `ft_cluster` / `ft_forward` | Switch the render path |
 | `ft_spawn [count]` | Spawn `FT_ScriptSpawned` actors (default 10); exercises Play's load-time warm-up of spawnables and the per-mesh hide of a missed one |
 | `ft_stream` | Toggle loading `FT_StreamedRoom` |
 | `ft_stats` | Print score, spinner and spawn counts |
 
-Useful built-ins: `quality low|medium|high|ultra`, `framecap <fps>`, `renderpath auto|forward|clusteredForward`, `fixedlights on|off|multiply|branch`, `possess "<camera name>"`, `stat unit`, `behaviourtreedebug on`, `shownav on`, `showaudiodebug on`.
+Useful built-ins: `quality low|medium|high|ultra`, `framecap <fps>`, `fixedlights on|off|multiply|branch`, `possess "<camera name>"`, `stat unit`, `behaviourtreedebug on`, `shownav on`, `showaudiodebug on`.
 
 ### Workload knobs
 
@@ -131,11 +130,11 @@ For devices without a test harness (iPad, phones, other browsers), a Feature Tes
 | Mode | Scenes | Per scene |
 | --- | --- | --- |
 | Quick | Current Feature Test scene (main otherwise) | Open in the editor and sample viewport frames; Play, sample frames, run `ft_stats`; Stop |
-| Full | `main`, `FT_World`, `FT_Clustered`, `FT_2D`, `FT_Stress` | As Quick; the main scene also runs `ft_spawn 10`, `ft_stream`, `ft_cel`, `ft_pbr` |
-| Benchmark | All five | Play with the frame cap lifted to 240, then 5 s per profile: `low`, `medium`, `high`, `ultra` on Forward, `high` on Clustered Forward, then `medium` on Forward with fixed-shape lighting (`fixedlights multiply`, then `fixedlights branch`; compare with `medium · forward`; each recompiles every lit shader, so it first waits up to 90 s until the view draws without held frames); fixed-shape lighting, quality, render path and cap are restored afterwards |
+| Full | `main`, `FT_World`, `FT_Lights`, `FT_2D`, `FT_Stress` | As Quick; the main scene also runs `ft_spawn 10`, `ft_stream`, `ft_cel`, `ft_pbr` |
+| Benchmark | All five | Play with the frame cap lifted to 240, then 5 s per profile: `low`, `medium`, `high`, `ultra` on Forward, then `medium` on Forward with fixed-shape lighting (`fixedlights multiply`, then `fixedlights branch`; compare with `medium · forward`; each recompiles every lit shader, so it first waits up to 90 s until the view draws without held frames); fixed-shape lighting, quality and cap are restored afterwards |
 
 - **Report**: app version, device (platform, touch points, pixel ratio, screen, cores, memory), browser and GPU adapter (iPadOS Safari reports a Mac; `MacIntel` with touch points is labelled `iPad (reports MacIntel)`). Per scene: editor and Play load times and where a load stuck (an editor load failure adds its error with cause chain; the GPU line falls back to the viewport's adapter when Play never ran); fps, p95, max frame, stalls over 100 ms; draw calls, mesh and texture counts, CPU/GPU frame cost, render resolution; console command output and duration; shaders first drawn after the scene presented (`firstDraws`, read once its commands ran, so Full's `ft_spawn 10` counts; WebGL2 only): how many, how many the load compiled, the frames that held them, those over 100 ms, the worst one and the most in one frame; long frames after the scene presented (from the same session, WebGL2 only): how many took over 100 ms and the four longest, each with its time inside the Engine's frame, first draws and compiles; Preview Session Report entries; texture counts before and after Play (`LEAK` when textures created during Play are still loaded after release; Babylon's once-per-Engine placeholder textures do not count); Play error/warning lines.
-- **Benchmark output**: a per-profile table per scene (quality tiers include their resolution scale, so the resolution column changes between tiers) and the highest Forward tier that holds 60 fps (>= 55 fps, p95 <= 25 ms) and 30 fps (>= 28 fps, p95 <= 45 ms), per scene and across all. A profile the engine could not apply (e.g. Clustered Forward on an orthographic camera) shows `(ran forward)`.
+- **Benchmark output**: a per-profile table per scene (quality tiers include their resolution scale, so the resolution column changes between tiers) and the highest Forward tier that holds 60 fps (>= 55 fps, p95 <= 25 ms) and 30 fps (>= 28 fps, p95 <= 45 ms), per scene and across all.
 - **Pass/fail**: a scene fails when it does not open or load (120 s each), a command fails or times out (60 s), the session report has an error, or release is not confirmed. While a check runs a small status bar with **Cancel** replaces the dialog and the Preview Session Report dialog is held back (its entries go into the report).
 - **Code**: runner [`feature-test-check.ts`](../../apps/editor/src/services/feature-test-check.ts); text report [`feature-test-check-report.ts`](../../apps/editor/src/lib/feature-test-check-report.ts); dialog [`feature-test-check-dialog.tsx`](../../apps/editor/src/components/feature-test-check-dialog.tsx). `FEATURE_TEST_CHECK_SCENES` must name existing scenes (the scaffold gate checks this); a new or renamed Feature Test scene is added there in the same PR.
 
@@ -152,7 +151,7 @@ It creates FeatureTest through the real Create dialog, waits for background text
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `HAPTIC_PERF_SCENES` | `main,stress` | Any of `main`, `stress`, `world`, `clustered`, `2d` |
+| `HAPTIC_PERF_SCENES` | `main,stress` | Any of `main`, `stress`, `world`, `lights`, `2d` |
 | `HAPTIC_PERF_SAMPLE_MS` / `HAPTIC_PERF_SAMPLES` | 15000 / 2 | Measurement windows per host |
 | `HAPTIC_PERF_WARMUP_MS` / `HAPTIC_PERF_SETTLE_MS` | 10000 / 5000 | Play warm-up and editor settle |
 | `HAPTIC_PERF_QUALITY` / `HAPTIC_PERF_FRAMECAP` | project defaults | Play console `quality` (then `quality resolution reset`, so resolution stays fixed) and `framecap` |
@@ -168,7 +167,7 @@ Rules: compare runs on the same machine, browser project and build only; never a
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `HAPTIC_PERF_SCENES` | `main,world` | Scenes with a built-in path: `main`, `world`, `clustered`; others need `HAPTIC_FLY_PATH` |
+| `HAPTIC_PERF_SCENES` | `main,world` | Scenes with a built-in path: `main`, `world`, `lights`; others need `HAPTIC_FLY_PATH` |
 | `HAPTIC_PERF_BACKEND` | project (WebGL2) | `webgl2` or `webgpu`; WebGPU uses the software adapter unless `HAPTIC_RENDER_NATIVE_GPU=1` |
 | `HAPTIC_PERF_QUALITY` | starter (High) | `low`, `medium`, `high` or `ultra`: the project's Overall Quality, with Dynamic Resolution off; High and Ultra allow the starter's scene-wide Volumetric Lighting |
 | `HAPTIC_FLY_SPEED` / `HAPTIC_FLY_PASSES` / `HAPTIC_FLY_WARMUP_MS` | 8 m/s / 2 / 5000 | Fly speed, flights of the path, static hold before the first |
@@ -186,7 +185,7 @@ A switched backend or quality is saved before the first scene opens; scene edits
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `HAPTIC_PERF_SCENES` | `main` | Any of `main`, `stress`, `world`, `clustered`, `2d` |
+| `HAPTIC_PERF_SCENES` | `main` | Any of `main`, `stress`, `world`, `lights`, `2d` |
 | `HAPTIC_PERF_BACKEND` | project (WebGL2) | `webgl2` or `webgpu`; WebGPU uses the software adapter unless `HAPTIC_RENDER_NATIVE_GPU=1` |
 | `HAPTIC_PERF_SETTLE_MS` | 8000 | How long after ready the settled window keeps counting |
 | `HAPTIC_PERF_LABEL`, `HAPTIC_PERF_OUT` | none | Label; extra report path |
@@ -210,9 +209,8 @@ A feature that cannot be showcased is recorded here with its reason; never skip 
 - Environment Source Texture: no `.env` or prefiltered cube exists in `engine-content`; the hub lights from its Skybox instead.
 - HDR environment import: no human-made `.hdr` panorama exists in `engine-content`, so the starter authors no Texture converted from one (nor its kept panorama or Face Size); `hdr-environment.test.ts`, `import-worker-client.test.ts`, `e2e/environment-texture.spec.ts` and `e2e/import-progress.spec.ts` cover conversion, Face Size, the import worker and cancellation with numeric RGBE data.
 - CEL Reflection Textures: no model in `engine-content` carries a metallic-roughness, specular or reflectivity map, so the opt-in changes nothing visible in `ft_cel`; `cel-render-mode.test.ts` and `e2e/spatial-effects.spec.ts` cover it with numeric maps.
-- WebGPU is not the default backend because Clustered Forward is WebGL2-only.
 - Editor-only by design: Spline drawing (the camera tour still travels its Spline in Play), the EditorFunctionLibrary, Object classes (not instantiable), and graph debugging, watches, the stepping bar, Step, Pause On Errors and node breakpoints (Class and Behaviour Tree nodes, State Machine states and transitions, with conditions and hit counts) in Simulation and editor Play, the Profiler's console commands (`profile start`, `profile stop`, `capture frame`) and its Scripts view (editor state, never in an asset), which add no authored data: simulate or play the starter and open any Class, Behaviour Tree or Animation Graph with live instances.
 - Physics query channels: the authored queries are the `FT_UIPitCounter` Sphere Overlap Actors on Dynamic and the `FT_ScriptTouchProbe` Project Touch To Scene on the default channel. Line Trace, Sphere Shape Sweep, Project Cursor To Scene and the Static, Character, Solid and Triggers channels are not authored in any zone yet.
 - `FT_World` cold open on a real GPU is slow: its Water bodies compile large fragment shaders that ANGLE/D3D11 builds one variant after another, taking many seconds each with an empty shader cache; the loading budgets renew while the driver is still compiling. A view that draws Water through its scene copy compiles only the variants it draws (copy-sampling colour variant and its depth pre-pass, during graph preparation under the `Forward transparent` pass id), but colour and depth still compile sequentially because the depth pre-pass is probed only once the colour variant is ready.
-- Main-scene Play on software GL (the `perf-software` project, SwiftShader) does not finish loading in reasonable time; this is the recorded exception to the "first frame on software GL" requirement. Every scene cold-opens within the `SCENE_FIRST_FRAME_TIMEOUT_MS` first-draw budget, and `FT_World`, `FT_Clustered`, `FT_2D` and `FT_Stress` Play load. In main-scene Play the world layer is ready and keeps drawing under the `FT_HUD` layer's loading UI; each frame costs seconds of main-thread time, almost all of it the registered-view canvas copy waiting for SwiftShader, and each HUD slot acquisition re-checks its dependency closure in storage so every storage completion queues behind such a frame. Engine follow-ups: throttle a ready layer while another owner loads; share catalog revision checks between concurrent slot acquisitions. `FT_Stress` Play loads but then runs at one frame every few seconds on software GL.
+- Main-scene Play on software GL (the `perf-software` project, SwiftShader) does not finish loading in reasonable time; this is the recorded exception to the "first frame on software GL" requirement. Every scene cold-opens within the `SCENE_FIRST_FRAME_TIMEOUT_MS` first-draw budget, and `FT_World`, `FT_Lights`, `FT_2D` and `FT_Stress` Play load. In main-scene Play the world layer is ready and keeps drawing under the `FT_HUD` layer's loading UI; each frame costs seconds of main-thread time, almost all of it the registered-view canvas copy waiting for SwiftShader, and each HUD slot acquisition re-checks its dependency closure in storage so every storage completion queues behind such a frame. Engine follow-ups: throttle a ready layer while another owner loads; share catalog revision checks between concurrent slot acquisitions. `FT_Stress` Play loads but then runs at one frame every few seconds on software GL.
 - Engine follow-ups found while authoring: Scene Layer switcher entries and virtualized-list item classes are not in Play's required closure (the HUD places sample instances as a workaround); BT Play Animation and Play Sound guids are not header dependencies.

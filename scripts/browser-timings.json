@@ -7,7 +7,6 @@
     "[desktop-chrome] > basic-3d-mannequin-shadows.spec.ts > Basic 3D mannequin webgl2 pbr medium keeps shadows with collider helpers visible": 27300,
     "[desktop-chrome] > bt-editor.spec.ts > Behaviour Tree editor UX > free-moves a node, undoes each completed move, and restores after save/reopen": 11900,
     "[desktop-chrome] > cel-render-mode.spec.ts > CEL preserves authored colors through Play and unlit scene overrides": 45800,
-    "[desktop-chrome] > clustered-lights.spec.ts > clustered point and spot contributions preserve native and graph PBR and CEL pixels": 12900,
     "[desktop-chrome] > color-grading.spec.ts > LUT color grading remaps display color on webgl2": 3300,
     "[desktop-chrome] > color-pipeline.spec.ts > editor viewport applies project bloom through Post Processing settings": 32300,
     "[desktop-chrome] > component-gallery.spec.ts > gallery primitives, dialogs, and editor composites": 5500,

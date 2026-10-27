@@ -118,7 +118,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   >();
 
   setOwnedTextureDependencies(
-    owner: "shadows" | "clustered" | "water",
+    owner: "shadows" | "water",
     handles: readonly FrameGraphTextureHandle[],
   ): void {
     const previous = this.textureDependencies.get(owner);

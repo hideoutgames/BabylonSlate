@@ -104,8 +104,7 @@ const DEFAULT_UNIFORM_BUFFERS_PER_SHADER_STAGE = 12;
  * one uniform buffer per light in the vertex shader, and the forward light
  * budget is this limit less four (`forwardLightBudget`), so 20 gives 16 slots:
  * the Medium tier's 16 local lights, and every light of the Feature Test main
- * scene (9) with room to spare. Past that, Clustered Forward is the route to
- * many lights. The cap also keeps a Metal adapter that offers 44 from admitting
+ * scene (9) with room to spare. The cap also keeps a Metal adapter that offers 44 from admitting
  * 40-light shaders at High and Ultra, which would be well beyond the 11 to 13
  * slots that WebGL2 desktops give. Babylon's known light bindings cover 32.
  */

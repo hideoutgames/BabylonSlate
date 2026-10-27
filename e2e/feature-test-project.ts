@@ -11,7 +11,7 @@ export const FEATURE_TEST_PROJECT = "FeatureTest";
 export const FEATURE_TEST_SCENES = {
   main: "assets/main.scene.hasset",
   stress: "assets/FeatureTest/Scenes/FT_Stress.scene.hasset",
-  clustered: "assets/FeatureTest/Scenes/FT_Clustered.scene.hasset",
+  lights: "assets/FeatureTest/Scenes/FT_Lights.scene.hasset",
   "2d": "assets/FeatureTest/Scenes/FT_2D.scene.hasset",
   world: "assets/FeatureTest/Scenes/FT_World.scene.hasset",
 } as const;

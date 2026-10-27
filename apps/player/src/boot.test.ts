@@ -99,7 +99,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration, with
     prepareSceneStream: vi.fn(async (_slots: readonly number[], _signal: AbortSignal, progress?: (value: number) => void) => { progress?.(1); }),
     setSceneStreamingPaused: vi.fn(),
     playVisualStates: () => [], playMeshMaterialNames: () => [], isFreeCamEnabled: () => false,
-    renderPathStatus: () => resolveRenderingPipeline(game.manifest.render),
+    renderingPipeline: () => resolveRenderingPipeline(game.manifest.render),
     whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {},
     prewarmSceneMaterials: async () => {}, presentFirstFrame: vi.fn(async () => {}),
     unlockAudio: async () => {},

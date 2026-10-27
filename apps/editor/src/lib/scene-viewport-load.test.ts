@@ -7,12 +7,12 @@ import {
   sceneViewportRenderSettings,
 } from "./scene-viewport-load";
 
-it("retains the requested project path through the loading key", () => {
+it("retains the requested project backend through the loading key", () => {
   const original = sceneViewportRenderSettingsKey({});
-  for (const renderPath of ["auto", "clusteredForward"] as const) {
-    const key = sceneViewportRenderSettingsKey({ renderPath });
+  for (const gpuBackend of ["auto", "webgpu"] as const) {
+    const key = sceneViewportRenderSettingsKey({ gpuBackend });
     expect(key).not.toBe(original);
-    expect(sceneViewportRenderSettings(key).renderPath).toBe(renderPath);
+    expect(sceneViewportRenderSettings(key).gpuBackend).toBe(gpuBackend);
   }
 });
 

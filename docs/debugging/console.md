@@ -18,7 +18,7 @@ The game keeps running while the console is open, and pressing the game does not
 - You can also name arguments: `slomo rate=0.5`.
 - On/off commands accept `on` or `off` (also `true`, `false`, `1`, `0`, `yes`, `no`). With no argument they mean `on`.
 - Commands that set a value print the current value when you leave the value out: `volume` prints the master volume.
-- Quality, render path, frame cap and volume changes last for the session. The next Play starts from your project settings.
+- Quality, frame cap and volume changes last for the session. The next Play starts from your project settings.
 
 ## Commands
 
@@ -35,7 +35,6 @@ The game keeps running while the console is open, and pressing the game does not
 | `quality water` | tier or `reset`; setting and value | Water rendering quality, or one water setting (see below). Buoyancy is unaffected. |  |
 | `quality postprocessing` | tier or `reset` | Post-processing quality. |  |
 | `quality lighting` | tier or `reset`; `budget` N or `auto` | Lighting quality and the number of local lights. |  |
-| `renderpath` | `auto`, `forward`, `clusteredForward` or `reset` | Requests a render path for the session. No argument prints the requested and actual path and the GPU backend. |  |
 | `fixedlights` | `on`, `off`, `multiply`, `branch` or `reset` | Turns fixed-shape lighting on or off for the session. With it on, built-in materials compile their shaders once for the scene's lights, so a light turning on or off or changing places does not recompile them. When they do recompile (for example for more lights than they were built for), the view keeps its last image until the new shaders are ready instead of drawing the old ones. `multiply` and `branch` turn it on and choose how shaders skip unused light slots (`multiply` is the default). No argument prints the current state; Play restores the editor's state when it stops. |  |
 | `framecap` | fps | Limits the frame rate. 0 or less uses 60. |  |
 | `volume` | 0 to 1 | Sets the master volume, like [Set Global Volume](../scripting/class/set-global-volume.md). |  |

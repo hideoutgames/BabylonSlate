@@ -30,7 +30,6 @@ import {
   Camera, Color4, Constants, Frustum, Matrix, RenderTargetTexture, ThinTexture, Vector3,
   type AbstractMesh, type Mesh, type Node, type Observer, type Scene,
 } from "@babylonjs/core";
-import { clusteredLightTarget } from "./clustered-light-policy";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import {
   beginPlanarMirrorPassState, buildViewProjectionMatrix, clipFrustumAtMirror, collectPlanarMirrorMeshes, createPlanarMirrorTarget,
@@ -309,9 +308,8 @@ class WaterPlanarReflections {
   /** Draws (or reuses) `view`'s reflection for this render; false when it has none. */
   private renderView(view: View, scale: number, tick: number): boolean {
     const scene = this.scene, engine = scene.getEngine(), camera = view.camera;
-    // Rig/XR and multi-camera frames draw with other matrices; clustered views use another light binding.
+    // Rig/XR and multi-camera frames draw with other matrices.
     if (camera.mode !== Camera.PERSPECTIVE_CAMERA || camera.rigCameras.length > 0 || (scene.activeCameras?.length ?? 0) > 1) return false;
-    if (clusteredLightTarget(scene, camera)) return false;
     const linear = scene.imageProcessingConfiguration.applyByPostProcess;
     if (linear && !engine.getCaps().textureHalfFloatRender) return false;
     const output = camera.outputRenderTarget;
@@ -531,7 +529,7 @@ export function retainWaterPlanarReflections(scene: Scene): () => void {
 /**
  * The planar reflection `camera`'s view drew in this scene render, or null: Reflections are not Planar on this
  * device, no eligible body (built-in, Object Reflections on, flat: not a river or tilted volume) is visible below
- * the eye, the view is excluded (orthographic, rig/XR, several active cameras, clustered lighting, Scene Linear
+ * the eye, the view is excluded (orthographic, rig/XR, several active cameras, Scene Linear
  * without half-float targets), the scene is not a retained view (previews, thumbnails), the camera belongs to a
  * Render Target Capture or the mirror pass itself, a draw failed (until Water quality changes), or the reflection
  * is not ready yet. Each lookup also requests the reflection for the view's next renders: a view's first request

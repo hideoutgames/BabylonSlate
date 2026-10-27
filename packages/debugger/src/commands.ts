@@ -1,4 +1,4 @@
-import { isRenderPath, QUALITY_GROUPS, QUALITY_LEVELS, RENDER_PATHS, WATER_QUALITY_FIELDS, type QualityGroup, type RenderPath } from "@haptic/core";
+import { QUALITY_GROUPS, QUALITY_LEVELS, WATER_QUALITY_FIELDS, type QualityGroup } from "@haptic/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,
@@ -24,7 +24,6 @@ export const CORE_COMMAND_NAMES = [
   "changescene",
   "quality",
   ...QUALITY_GROUPS.map((group) => `quality ${group}`),
-  "renderpath",
   "fixedlights",
   "framecap",
   "volume",
@@ -144,31 +143,6 @@ export function builtinCommands(): RegisteredCommand[] {
       ],
       run: (args, host) => host.quality(group, args.choice as string | undefined, args.value as string | undefined),
     })),
-    {
-      name: "renderpath",
-      tier: "core",
-      category: "engine",
-      description: "Query or request the session render path",
-      parameters: [
-        { name: "path", type: "enum", optional: true, enumValues: [...RENDER_PATHS, "reset"] },
-      ],
-      run(args, host) {
-        const path = args.path as string | undefined;
-        if (path === undefined) {
-          const status = host.getRenderPath();
-          if (!status) return ok("render path not reported yet");
-          const limits = status.limits.length ? ` — ${status.limits.join(" ")}` : "";
-          return ok(`renderpath ${status.requested} (effective ${status.effective}, ${status.gpuBackend})${limits}`);
-        }
-        if (path === "reset") {
-          host.setRenderPath(null);
-          return ok("renderpath reset");
-        }
-        if (!isRenderPath(path)) return fail(`unknown render path: ${path}`);
-        host.setRenderPath(path as RenderPath);
-        return ok(`renderpath ${path}`);
-      },
-    },
     {
       name: "fixedlights",
       tier: "core",

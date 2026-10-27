@@ -14,7 +14,7 @@ import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
 import { isBuiltInWaterMesh } from "./water-mesh";
-import { WaterSceneCopyGraph, waterSceneCopyDemand, waterSceneCopyScale } from "./water-scene-copy";
+import { WaterSceneCopyGraph, waterSceneCopyDemand } from "./water-scene-copy";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
 import type { AbstractMesh, Camera, Effect, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
@@ -44,8 +44,6 @@ import { isRevealPending, revealRound } from "./reveal-pending";
 import { withPipelineWarmupRound } from "./variant-pipeline-warmup";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
-import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
-import { isManagedClusteredLight } from "./clustered-light-policy";
 import { whenPresentationFenceClear } from "./presented-frame";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,
@@ -218,7 +216,6 @@ export class ForwardSceneFrameGraph {
   private cleanupFailure: unknown;
   private objects: ManagedShadowObjectRendererTask | undefined;
   private shadows: ManagedShadowsTask | undefined;
-  private clustered: FrameGraphClusteredLightsTask | undefined;
   private cull: FrameGraphCullObjectsTask | undefined;
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
@@ -788,7 +785,6 @@ export class ForwardSceneFrameGraph {
     if (this.pending) return { path: "frameGraph", ready: false };
     if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-      this.clustered?.needsPreparation(camera) ||
       !outputCurrent)
       return { path: "frameGraph", ready: false, preparationRequired: true };
     this.assignCamera(camera);
@@ -816,9 +812,6 @@ export class ForwardSceneFrameGraph {
     const reason =
       this.unsupported(camera) ??
       this.failure ??
-      (this.clustered?.needsPreparation(camera)
-        ? "Lighting allocation changes require FrameGraph preparation."
-        : undefined) ??
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
@@ -930,14 +923,6 @@ export class ForwardSceneFrameGraph {
     const scene = this.scene;
     const unavailable = this.unavailable(camera);
     if (unavailable) return unavailable;
-    if (
-      scene.lights.some(
-        (light) =>
-          light.getClassName() === "ClusteredLightContainer" &&
-          !isManagedClusteredLight(scene, light),
-      )
-    )
-      return "Unmanaged clustered light masks are not supported.";
     // An auxiliary view executes inside the owning view's frame.
     if (!this.auxiliary && (scene.frameGraph || scene.customRenderFunction))
       return "Scene already has a render owner.";
@@ -1008,7 +993,6 @@ export class ForwardSceneFrameGraph {
       const renderSize = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, output.width, output.height);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-        this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask || this.ownScene) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
@@ -1141,10 +1125,7 @@ export class ForwardSceneFrameGraph {
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
         this.objects.warmsPipelines = !this.auxiliary;
-        // Clustered lighting rejects the copy; checked only here, since the
-        // graph already re-plans when the cluster target changes.
-        const waterScale = waterDemand > 0 ? waterSceneCopyScale(scene, camera) : 0;
-        if (waterScale > 0) {
+        if (waterDemand > 0) {
           // Sample the chain's scene targets or an imported output directly;
           // only the backbuffer (or a stencil depth) needs an own pair.
           const sceneColor = this.postProcessGraph?.sceneColorTexture ?? this.effectsGraph?.sceneColorTexture ?? this.ownScene?.color;
@@ -1153,7 +1134,7 @@ export class ForwardSceneFrameGraph {
             ? { color: sceneColor, depth: sceneDepth }
             : output.color && output.depth && !HasStencilAspect(output.depth.format) ? { color, depth } : undefined;
           this.water = WaterSceneCopyGraph.create({
-            frameGraph: this.graph, camera, scale: waterScale, width: renderSize.width, height: renderSize.height,
+            frameGraph: this.graph, camera, scale: waterDemand, width: renderSize.width, height: renderSize.height,
             clear: this.clear, cull: this.cull, objects: this.objects, scene: sampleable,
             output: { color, texture: Boolean(output.color) },
           });
@@ -1167,17 +1148,10 @@ export class ForwardSceneFrameGraph {
         if (this.water) jitter?.jitterRenderer(this.water.transparent.objectRenderer);
         this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects, { view: this.auxiliary ? camera : undefined });
         for (const receiver of this.water?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
-        this.clustered = new FrameGraphClusteredLightsTask(
-          this.graph,
-          scene,
-          this.objects,
-        );
         // The scene view draws its auxiliary views here: after Babylon's
-        // evaluation and its own shadow maps, before the cluster mask that each
-        // view redraws for its camera.
-        if (!this.auxiliary) this.clustered.onBeforeTaskExecute.add(() => drawSceneAuxiliaryViews(scene));
+        // evaluation and its own shadow maps, before its own objects.
+        if (!this.auxiliary) this.shadows.onAfterTaskExecute.add(() => drawSceneAuxiliaryViews(scene));
         this.graph.addTask(this.shadows);
-        this.graph.addTask(this.clustered);
         if (this.water?.splitsClear) {
           // The own-pair split switches the output clear: decide before it runs.
           this.graph.addTask(this.cull);
@@ -1620,14 +1594,14 @@ export class ForwardSceneFrameGraph {
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();
-    const { graph, postProcessGraph, effectsGraph, outlineTask, outputCopy, objects, shadows, clustered, clear, cull, water, ownScene } = this;
+    const { graph, postProcessGraph, effectsGraph, outlineTask, outputCopy, objects, shadows, clear, cull, water, ownScene } = this;
     const release = () => {
       postProcessGraph?.disposeTasks();
       effectsGraph?.disposeTasks();
       // Unregisters the transparent pass id together with the tasks that used it.
       water?.disposeTasks();
       outlineTask?.dispose();
-      outputCopy?.dispose(); objects?.dispose(); shadows?.dispose(); clustered?.dispose(); clear?.dispose(); cull?.dispose();
+      outputCopy?.dispose(); objects?.dispose(); shadows?.dispose(); clear?.dispose(); cull?.dispose();
       graph?.dispose();
       if (postProcessGraph) this.postProcessRetirement.add(postProcessGraph);
       if (effectsGraph) this.postProcessRetirement.add(effectsGraph);
@@ -1659,7 +1633,6 @@ export class ForwardSceneFrameGraph {
     this.outputCopy = undefined;
     this.objects = undefined;
     this.shadows = undefined;
-    this.clustered = undefined;
     this.clear = undefined;
     this.cull = undefined;
     this.graph = undefined;

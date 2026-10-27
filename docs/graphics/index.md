@@ -13,14 +13,11 @@ Open **Settings > Project Settings** and choose **Rendering**. Rendering changes
 
 When **Render Mode** is **CEL**, a **CEL Shading** section appears in Project Settings, and each scene can override its values. See [Lighting](lighting.md#cel-shading).
 
-## Render Path and GPU Backend
+## GPU Backend
 
 | Setting | Options | Description |
 | --- | --- | --- |
-| **Render Path** | Auto, Forward, Clustered Forward | How lights are processed. Independent of Render Mode. New projects use Forward. |
 | **GPU Backend** | Auto, WebGL2, WebGPU | Used by viewports, previews, Play and exported games. New projects use WebGL2. |
-
-Clustered Forward requires WebGL2. On WebGPU, or when a scene cannot use it, Haptic falls back to Forward.
 
 On WebGPU, when a view needs shaders it has not drawn before (a scene opening, a new material in the editor), the view and its Render Target captures keep showing their last image until the shaders are ready, and the rest of the editor stays responsive. Light changes and spawns behave as on WebGL2, described below. With **Ambient Occlusion**, **Real-Time Reflections**, **Volumetric Fog**, **Temporal Anti-Aliasing** or a post-process Material that reads **Scene Depth** or **Scene Normal** on, an object that just appeared, or whose material changed, can show that effect wrongly for a few frames (for example, no ambient occlusion yet) instead of the view waiting. A light change usually leaves those effects as they were. It can show them wrongly for a few frames too on some surfaces, for example Standard and CEL surfaces while **Real-Time Reflections** is on, a Standard or CEL surface that no light reached before, and graph Materials while fixed-shape lighting is on (the `fixedlights` console command). Switching one of those effects on, or a Fog Volume coming near, still keeps the last image until its shaders are ready. In Play, Preview Build and exported games the game pauses meanwhile, as during a blocking load: game time, physics, scripts and sound wait, then continue from where they stopped. The pause starts only if the wait lasts about a quarter of a second, so a short wait stops nothing, and it only stops time: keys and buttons you hold stay held, and the pointer stays locked.
 
@@ -71,7 +68,7 @@ The viewport's **View** menu chooses how the editor draws the scene: **PBR** (or
 Scripts can change rendering for the current session without editing project settings:
 
 - [Set Scalability Preset](../scripting/class/set-scalability-preset.md) applies a level to every group.
-- [Set Render Scale](../scripting/class/set-render-scale.md), [Set Render Resolution](../scripting/class/set-render-resolution.md), [Set Frame Cap](../scripting/class/set-frame-cap.md), [Set Render Mode](../scripting/class/set-render-mode.md) and [Set Render Path](../scripting/class/set-render-path.md) change one setting.
+- [Set Render Scale](../scripting/class/set-render-scale.md), [Set Render Resolution](../scripting/class/set-render-resolution.md), [Set Frame Cap](../scripting/class/set-frame-cap.md) and [Set Render Mode](../scripting/class/set-render-mode.md) change one setting.
 - [Get Effective Scalability](../scripting/class/get-effective-scalability.md) reads what the renderer applied, and [Event Scalability Changed](../scripting/class/event-scalability-changed.md) runs when a request is confirmed or rejected.
 - [Reset to Project Defaults](../scripting/class/reset-to-project-defaults.md) clears session changes.
 

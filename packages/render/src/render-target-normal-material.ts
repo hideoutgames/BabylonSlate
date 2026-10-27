@@ -7,7 +7,6 @@ import { createSurfacePlumbing } from "./surface-material-plumbing";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { createGeometryCaptureOutput } from "./geometry-capture-output";
 import { applyLatticeDeformerPlumbing } from "./lattice-deformer-block";
-import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 
 /** Geometry captures share bones, morphs and instancing with surface materials.
  * Their shaders evaluate only the selected output and an optional native mask. */
@@ -23,7 +22,6 @@ function createGeometryMaterial(scene: Scene, depth: boolean, source?: Material)
     material.backFaceCulling = source.backFaceCulling;
     material.cullBackFaces = source.cullBackFaces;
   }
-  registerClusteredUnlitMaterial(material);
   const blocks: NodeMaterialBlock[] = [];
   const plumbing: MaterialPlumbing = {};
   const outputs = createSurfacePlumbing(material.name, blocks, plumbing);

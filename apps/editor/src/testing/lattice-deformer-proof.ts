@@ -8,7 +8,7 @@ import { Lattice } from "@babylonjs/core/Meshes/lattice";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import {
   compileMaterialPlan, createAppWebGpuEngine, disposeMeshLatticeDeformer,
-  requestRenderPath, setMeshLatticeDeformer, SharedOutlineOwner, SceneDeformerHost,
+  setMeshLatticeDeformer, SharedOutlineOwner, SceneDeformerHost,
 } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
@@ -91,7 +91,6 @@ export async function runLatticeDeformerProof(backend: "webgl2" | "webgpu") {
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas)
     : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(WIDTH, HEIGHT);
-  requestRenderPath(engine, { renderPath: "forward" });
   const scene = new Scene(engine); scene.clearColor = new Color4(0, 0, 0, 1);
   const camera = new FreeCamera("Lattice Camera", new Vector3(0, 0, -8), scene);
   camera.setTarget(Vector3.Zero()); camera.mode = Camera.ORTHOGRAPHIC_CAMERA;

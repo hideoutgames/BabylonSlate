@@ -1254,7 +1254,7 @@ function PlayOverlayView({
       gpu: rendering?.adapter ?? null,
       details: [
         `Play: ${session ? `${session.runtimeMode} runtime · tick ${session.lastTickIndex()} · models loaded ${session.modelLoadCount()}` : "session not started"}`,
-        ...(rendering ? [`Render: ${rendering.pipeline.effective.gpuBackend} ${rendering.pipeline.effective.renderPath} · ${rendering.width}x${rendering.height} · draws ${rendering.drawCalls} · meshes ${rendering.resources.meshes} · textures ${rendering.resources.textures}${rendering.qualityLimits.length ? ` · limits ${clipText(rendering.qualityLimits.join("; "), 200)}` : ""}`] : []),
+        ...(rendering ? [`Render: ${rendering.pipeline.effective.gpuBackend} · ${rendering.width}x${rendering.height} · draws ${rendering.drawCalls} · meshes ${rendering.resources.meshes} · textures ${rendering.resources.textures}${rendering.qualityLimits.length ? ` · limits ${clipText(rendering.qualityLimits.join("; "), 200)}` : ""}`] : []),
         ...(rendering?.worldLoad ? [worldLoadLine(rendering.worldLoad)] : []),
         ...(rendering?.textureMemory ? [textureMemoryLine(rendering.textureMemory)] : []),
         ...(() => { const memory = latestHostMemoryStats(); return memory ? [hostMemoryLine(memory.stats, performance.now() - memory.at)] : []; })(),

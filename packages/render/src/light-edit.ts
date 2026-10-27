@@ -8,7 +8,7 @@ import { isComponentValueOnlySceneEdit } from "./scene-transform-edit";
  * Their readiness-relevant side effects mark readiness where they happen: an
  * intensity crossing zero toggles the light's effective Enabled state (which
  * the frame graph observes), and a Range change that moves a light across a
- * shadow, clustered-light or volumetric selection boundary changes that
+ * shadow or volumetric selection boundary changes that
  * selection's own layout, which the shadow controller, light sync and effects
  * key already detect. Anything that chooses a variant (Enabled, light kind,
  * shadow casting and priority, an area light's emission texture) is excluded.

@@ -513,9 +513,6 @@ function handleControl(msg: ControlMessage): void {
     case "scalabilityStatus":
       ensureRuntime().applyScalabilityStatus(msg.acknowledgement);
       return;
-    case "renderPathStatus":
-      ensureRuntime().applyRenderPathStatus(msg);
-      return;
     case "ragdollPoseCaptured":
       runtime?.applyRagdollPoseCaptured(msg);
       return;

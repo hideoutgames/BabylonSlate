@@ -9,11 +9,6 @@ import {
 } from "@babylonjs/core";
 
 import {
-  hasClusteredLightPolicy,
-  isClusteredLocalAllowed,
-  isManagedClusteredLight,
-} from "./clustered-light-policy";
-import {
   canonicalizeForwardLightSlots,
   exchangeForwardLightSlots,
   forwardSlotClass,
@@ -29,7 +24,6 @@ const authoredEnabled = new WeakMap<
 >();
 const excluded = new WeakSet<Light>();
 const forwardExcluded = new WeakSet<Light>();
-const clusteredMembers = new WeakSet<Light>();
 const forwardSelections = new WeakMap<Scene, Set<Light>>();
 /**
  * Lights a what-if admission ranks this many times nearer than they are (squared distances divide by the square), for
@@ -62,7 +56,7 @@ type BudgetChange = (typeof BudgetChange)[keyof typeof BudgetChange];
 /**
  * Creation order: the stable "authored" order of a Scene's lights. The Forward
  * policy reorders `scene.lights` to keep shader slots, so order-sensitive
- * readers (clustered authored order, diagnostics) sort by this instead.
+ * readers (diagnostics) sort by this instead.
  */
 export function compareLightCreation(a: Light, b: Light): number {
   return a.uniqueId - b.uniqueId;
@@ -94,7 +88,7 @@ function effectiveEnabled(light: Light, enabled: boolean): boolean {
     enabled &&
     light.intensity > 0 &&
     !excluded.has(light) &&
-    (!forwardExcluded.has(light) || clusteredMembers.has(light))
+    !forwardExcluded.has(light)
   );
 }
 
@@ -106,14 +100,6 @@ function applyEnabled(light: Light, enabled: boolean): void {
     previous.effective = effective;
   } else authoredEnabled.set(light, { enabled, effective });
   if (light.isEnabled(false) !== effective) light.setEnabled(effective);
-}
-
-/** A borrowed clustered child does not consume its previous conventional slot. */
-export function setClusteredLightMember(light: Light, member: boolean): void {
-  const enabled = isAuthoredLightEnabled(light);
-  if (member) clusteredMembers.add(light);
-  else clusteredMembers.delete(light);
-  applyEnabled(light, enabled);
 }
 
 /**
@@ -135,11 +121,7 @@ export function isDirectionalLightExcluded(light: Light): boolean {
 }
 
 export function isForwardLightExcluded(light: Light): boolean {
-  return (
-    !clusteredMembers.has(light) &&
-    forwardExcluded.has(light) &&
-    isAuthoredLightEnabled(light)
-  );
+  return forwardExcluded.has(light) && isAuthoredLightEnabled(light);
 }
 
 /** Stable scene order selects one enabled sun, regardless of shadow settings. */
@@ -212,12 +194,7 @@ export function syncForwardLightPolicy(
   const previous = forwardSelections.get(scene) ?? new Set<Light>();
   const candidates = scratchCandidates;
   candidates.length = 0;
-  for (const light of scene.lights)
-    if (
-      isForwardEligible(light) &&
-      (!isAuthoredLocal(scene, light) || isClusteredLocalAllowed(scene, light))
-    )
-      candidates.push(light);
+  for (const light of scene.lights) if (isForwardEligible(light)) candidates.push(light);
   const capacity: ForwardLightCapacity = {
     lights: Math.max(0, Math.floor(slots)),
     locals: Math.max(0, Math.floor(localSlots)),
@@ -235,20 +212,19 @@ export function syncForwardLightPolicy(
   } else {
     if (
       candidates.length > capacity.lights ||
-      countLocals(scene, candidates) > capacity.locals ||
-      lightSamplerCount(scene, candidates) > capacity.samplers
+      countLocals(candidates) > capacity.locals ||
+      lightSamplerCount(candidates) > capacity.samplers
     ) {
       sortLightsByAdmission(scene, candidates, previous);
-      // Clustered Forward orders lights itself; light sorting re-sorts every receiver.
-      if (!hasClusteredLightPolicy(scene) && !scene.requireLightSorting)
+      // Light sorting re-sorts every receiver.
+      if (!scene.requireLightSorting)
         keepAdmittedSlotKinds(scene, candidates, previous, capacity);
     }
     selected.clear();
-    samplers = admit(scene, candidates, capacity, selected, limited, samplerLimited);
+    samplers = admit(candidates, capacity, selected, limited, samplerLimited);
   }
   // Decide every light before toggling any, so receivers can be prepared for
-  // the whole change. An eligible light the clustered policy kept out of the
-  // candidates is limited too; fill that set once, and only when needed.
+  // the whole change. Fill the candidate set once, and only when needed.
   const candidateSet = scratchCandidateSet;
   candidateSet.clear();
   const lights = scratchLights;
@@ -287,7 +263,7 @@ export function syncForwardLightPolicy(
         exchanges.length !== transition.entering ||
         exchanges.some(({ preserved }) => !preserved))
     )
-      canonicalizeForwardLightSlots(scene, (light) => isAuthoredLocal(scene, light));
+      canonicalizeForwardLightSlots(scene, (light) => !isGlobalLight(light));
   } finally {
     lights.length = 0;
     authored.length = 0;
@@ -312,7 +288,6 @@ export function syncForwardLightPolicy(
  * the admitted lights use.
  */
 function admit(
-  scene: Scene,
   candidates: readonly Light[],
   capacity: ForwardLightCapacity,
   selected: Set<Light>,
@@ -322,8 +297,8 @@ function admit(
   let selectedLocals = 0;
   let samplers = 0, hasArea = false;
   for (const light of candidates) {
-    const authoredLocal = isAuthoredLocal(scene, light);
-    const samplerCost = lightSamplerCost(scene, light, hasArea);
+    const authoredLocal = !isGlobalLight(light);
+    const samplerCost = lightSamplerCost(light, hasArea);
     if (selected.size >= capacity.lights || (authoredLocal && selectedLocals >= capacity.locals))
       limited?.push(light);
     else if (samplers + samplerCost > capacity.samplers) {
@@ -369,7 +344,7 @@ function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: Read
   const kinds = scratchKinds;
   const quotas = scratchQuotas;
   try {
-    admit(scene, candidates, capacity, ranked);
+    admit(candidates, capacity, ranked);
     // Most syncs keep their selection, and every unchanged one ends here.
     let unchanged = ranked.size === previous.size;
     for (const light of ranked) if (unchanged && !previous.has(light)) unchanged = false;
@@ -380,7 +355,7 @@ function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: Read
       return value;
     };
     const change = (set: ReadonlySet<Light>, light: Light, delta: number) => {
-      if (set.has(light) && isAuthoredLocal(scene, light)) quotas.set(kind(light), (quotas.get(kind(light)) ?? 0) + delta);
+      if (set.has(light) && !isGlobalLight(light)) quotas.set(kind(light), (quotas.get(kind(light)) ?? 0) + delta);
     };
     for (const light of previous) change(previous, light, 1);
     for (const light of ranked) change(ranked, light, -1);
@@ -394,14 +369,14 @@ function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: Read
     const order = scratchOrder;
     const rest = scratchRest;
     for (const light of candidates) {
-      const quota = isAuthoredLocal(scene, light) ? (quotas.get(kind(light)) ?? 0) : 1;
+      const quota = !isGlobalLight(light) ? (quotas.get(kind(light)) ?? 0) : 1;
       if (quota > 0) {
-        if (isAuthoredLocal(scene, light)) quotas.set(kind(light), quota - 1);
+        if (!isGlobalLight(light)) quotas.set(kind(light), quota - 1);
         order.push(light);
       } else rest.push(light);
     }
     order.push(...rest);
-    admit(scene, order, capacity, stable);
+    admit(order, capacity, stable);
     // The nearest light only the ranked selection admits, the farthest only the stable one keeps.
     let entering: Light | undefined;
     let kept: Light | undefined;
@@ -445,9 +420,9 @@ function exchangeSlots(
   authored: readonly boolean[],
   budget: readonly BudgetChange[],
 ): SlotTransition {
-  // Clustered Forward orders lightSources itself; Babylon re-sorts a scene
-  // that requires light sorting whenever a light is added or removed.
-  if (hasClusteredLightPolicy(scene) || scene.requireLightSorting)
+  // Babylon re-sorts a scene that requires light sorting whenever a light is
+  // added or removed.
+  if (scene.requireLightSorting)
     return NO_SLOT_TRANSITION;
   const leaving = scratchLeaving;
   const entering = scratchEntering;
@@ -482,13 +457,9 @@ function isForwardEligible(light: Light): boolean {
   return isIlluminatingLight(light) && !excluded.has(light);
 }
 
-function isAuthoredLocal(scene: Scene, light: Light): boolean {
-  return !isGlobalLight(light) && !isManagedClusteredLight(scene, light);
-}
-
-function countLocals(scene: Scene, lights: readonly Light[]): number {
+function countLocals(lights: readonly Light[]): number {
   let count = 0;
-  for (const light of lights) if (isAuthoredLocal(scene, light)) count++;
+  for (const light of lights) if (!isGlobalLight(light)) count++;
   return count;
 }
 
@@ -528,8 +499,7 @@ export function nearForwardAdmissions(scene: Scene, margin: number): Light[] {
   let cutoff = 0;
   const limited: [Light, number][] = [];
   for (const light of scene.lights) {
-    if (!isForwardEligible(light) || !isAuthoredLocal(scene, light) || !isAuthoredLightEnabled(light)) continue;
-    if (!isClusteredLocalAllowed(scene, light)) continue;
+    if (!isForwardEligible(light) || isGlobalLight(light) || !isAuthoredLightEnabled(light)) continue;
     const squared = Math.max(1, rankingDistanceSquared(light, camera));
     if (selected.has(light)) cutoff = Math.max(cutoff, squared / INCUMBENT_DISTANCE_BONUS);
     else if (forwardExcluded.has(light)) limited.push([light, squared]);
@@ -555,7 +525,7 @@ function admissionPosition(light: Light): Vector3 {
     : light.getAbsolutePosition();
 }
 
-/** Shared authored-local ordering before clustered and conventional resource admission. */
+/** Authored-local ordering before resource admission. */
 export function sortLightsByAdmission(
   scene: Scene,
   lights: Light[],
@@ -588,8 +558,6 @@ export function sortLightsByAdmission(
     lights.sort(
       (a, b) =>
         Number(isGlobalLight(b)) - Number(isGlobalLight(a)) ||
-        Number(isManagedClusteredLight(scene, b)) -
-          Number(isManagedClusteredLight(scene, a)) ||
         (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
           (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
         distances.get(a)! - distances.get(b)! ||

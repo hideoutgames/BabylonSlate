@@ -115,9 +115,9 @@ describe.each(["worker", "in-process"] as const)(
         resetAudioSession() {},
         resetParticleSession() {},
         setAudioReverbField: options.onAudioReverbField ?? (() => {}),
-        renderPathStatus: () => ({
-          requested: { renderPath: "forward", gpuBackend: "webgl2" },
-          effective: { renderPath: "forward", gpuBackend: "webgl2" },
+        renderingPipeline: () => ({
+          requested: { gpuBackend: "webgl2" },
+          effective: { gpuBackend: "webgl2" },
           limits: [],
         }),
         whenEditorModelsReady: () => Promise.resolve(),

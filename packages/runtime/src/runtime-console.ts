@@ -1,8 +1,6 @@
 import type { CommandMessage, GameSessionMode } from "@haptic/bridge";
 import {
   DEFAULT_PLAY_FRAME_CAP,
-  type RenderPath,
-  type RenderPathStatus,
   type ScalabilityRequest,
   type ScalabilitySession,
 } from "@haptic/core";
@@ -55,8 +53,6 @@ interface RuntimeConsoleHost {
   sceneRealizer(): Pick<SceneRealizer, "change">;
   scalability(): Pick<ScalabilitySession, "executeQuality" | "requested">;
   requestScalability(request: ScalabilityRequest): void;
-  projectRenderPath(): RenderPath;
-  renderPathStatus(): RenderPathStatus | null;
   physics(): Pick<RuntimePhysicsWorlds, "setShowCollision" | "main" | "syncLayers" | "emitDebugColliders">;
   navigation(): Pick<RuntimeNavigation, "setShowPathfinding" | "setShowNavAgent">;
   behaviourTrees(): Pick<BehaviourTreeRuntime, "setDebug">;
@@ -169,10 +165,6 @@ export class RuntimeConsole {
     return {
       changeScene: (scene) => host.sceneRealizer().change(scene),
       quality: (group, choice, value) => host.scalability().executeQuality(group, choice, value),
-      setRenderPath: (path) => {
-        host.requestScalability({ kind: "patch", render: { renderPath: path ?? host.projectRenderPath() } });
-      },
-      getRenderPath: () => host.renderPathStatus(),
       setFixedShapeLighting: (request) => {
         this.fixedShapeLighting = { enabled: request.enabled, guard: request.guard };
         host.emit({ type: "setFixedShapeLighting", ...this.fixedShapeLighting });

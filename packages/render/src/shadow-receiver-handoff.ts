@@ -5,7 +5,6 @@ import {
   type MaterialDefines,
   type Scene,
 } from "@babylonjs/core";
-import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import { notifySceneReceiversChanged } from "./scene-readiness-signal";
 
 export type ShadowReceiverHandoff = {
@@ -89,8 +88,6 @@ export function exchangeShadowReceivers(
   const valid =
     a >= 0 &&
     b >= 0 &&
-    // Clustered Forward re-sorts lightSources and moves lights into the cluster.
-    !hasClusteredLightPolicy(scene) &&
     receiverSignature(from) === receiverSignature(to) &&
     !pinned.has(from) &&
     !pinned.has(to) &&

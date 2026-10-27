@@ -1,14 +1,7 @@
-import { syncSceneRenderPath, publishSceneRenderPath } from "./scene-render-path";
 import "./texture-quality";
 import { lightsInCreationOrder, syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
 import { lightingSamplerCapacity } from "./light-sampler-budget";
-import {
-  clusteredLightingLimits,
-  clusteredLocalContributionCount,
-  hasClusteredLightPolicy,
-  syncClusteredLightPolicy,
-} from "./clustered-light-policy";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty, notifySceneReceiversChanged, sceneSignalsHeld } from "./scene-readiness-signal";
 import {
@@ -156,7 +149,6 @@ export function invalidateSceneLighting(scene: Scene): void {
 export function sceneLightingLimits(scene: Scene): string[] {
   return [
     ...scene.lights.flatMap((light) => typeof light.metadata?.areaLight?.error === "string" ? [`${light.name}: ${light.metadata.areaLight.error}`] : []),
-    ...clusteredLightingLimits(scene),
     ...(lightingByScene.get(scene)?.limits() ?? []),
   ];
 }
@@ -210,9 +202,6 @@ function installSceneLighting(scene: Scene): SceneLighting {
 
   const sync = (): void => {
     if (scene.isDisposed) return;
-    syncSceneRenderPath(scene);
-    syncClusteredLightPolicy(scene);
-    publishSceneRenderPath(scene);
     budget = forwardLightBudget(scene.getEngine());
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
@@ -222,11 +211,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
       admission = syncForwardLightPolicy(
         scene,
         budget.slots,
-        Math.max(
-          0,
-          sceneRenderingSettings(scene).localLightBudget -
-            clusteredLocalContributionCount(scene),
-        ),
+        Math.max(0, sceneRenderingSettings(scene).localLightBudget),
         fixedShape ? selectFixedShapeLights : undefined,
       );
     } finally {
@@ -330,9 +315,9 @@ function installSceneLighting(scene: Scene): SceneLighting {
     nextShadowLayout = previousShadowLayout;
     // An authored enable appends its light to each receiver (a re-enabled sun
     // or fill after every local light): restore scene order so the receiver
-    // asks for the Effects that order compiled before. Clustered Forward and
-    // light sorting order lightSources themselves.
-    if (!hasClusteredLightPolicy(scene) && !scene.requireLightSorting) sortReceiverLightSources(scene);
+    // asks for the Effects that order compiled before. Light sorting orders
+    // lightSources itself.
+    if (!scene.requireLightSorting) sortReceiverLightSources(scene);
     // Sized by the light inventory, not the enabled count: turning lights on
     // or off and budget swaps keep MAXLIGHTCOUNT, so a receiver whose own
     // lights are unchanged keeps its Effect. Not the slot count either: Babylon

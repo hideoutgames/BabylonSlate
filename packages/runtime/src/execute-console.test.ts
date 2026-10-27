@@ -354,55 +354,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
-  it("emits setRenderPath for renderpath requests and reports the last engine status", () => {
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      seedDemoActors: false,
-      preferSoftwarePhysics: true,
-      includeDebugCommands: false,
-      onCommand: (command) => commands.push(command),
-    });
-    expect(runtime.executeConsoleCommand("renderpath")).toEqual({
-      success: true,
-      output: "render path not reported yet",
-    });
-    expect(runtime.executeConsoleCommand("renderpath clusteredForward")).toEqual({
-      success: true,
-      output: "renderpath clusteredForward",
-    });
-    expect(runtime.executeConsoleCommand("renderpath reset")).toEqual({
-      success: true,
-      output: "renderpath reset",
-    });
-    expect(runtime.executeConsoleCommand("renderpath nonsense").success).toBe(false);
-    expect(commands).toEqual([
-      expect.objectContaining({ type: "setScalability", transaction: expect.objectContaining({ overrides: { renderPath: "clusteredForward" } }) }),
-      expect.objectContaining({ type: "setScalability", transaction: expect.objectContaining({ overrides: { renderPath: "forward" } }) }),
-    ]);
-    runtime.applyRenderPathStatus({
-      type: "renderPathStatus",
-      requested: "clusteredForward",
-      effective: "clusteredForward",
-      gpuBackend: "webgl2",
-      limits: [],
-    });
-    expect(runtime.executeConsoleCommand("renderpath").output).toBe(
-      "renderpath clusteredForward (effective clusteredForward, webgl2)",
-    );
-    runtime.applyRenderPathStatus({
-      type: "renderPathStatus",
-      requested: "clusteredForward",
-      effective: "forward",
-      gpuBackend: "webgl2",
-      limits: ["Clustered Forward awaits scene capability checks; using Forward."],
-    });
-    expect(runtime.executeConsoleCommand("renderpath").output).toBe(
-      "renderpath clusteredForward (effective forward, webgl2) — Clustered Forward awaits scene capability checks; using Forward.",
-    );
-    runtime.stop();
-  });
-
   it("switches fixed-shape lighting and its seat guard for the session from a release build's console", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

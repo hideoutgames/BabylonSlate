@@ -41,17 +41,6 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/color-grading-proof").then(({ runColorGradingProof, runDisplayColorProof }) => Object.assign(window, { __colorGradingProof: runColorGradingProof, __displayColorProof: runDisplayColorProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("temporalAntiAliasingProof")) {
   void import("./testing/temporal-anti-aliasing-proof").then(({ runTemporalAntiAliasingProof }) => Object.assign(window, { __temporalAntiAliasingProof: runTemporalAntiAliasingProof }));
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("clusteredLightProof")
-) {
-  void import("./testing/clustered-light-proof").then(
-    ({ runClusteredLightProof }) => {
-      Object.assign(window, {
-        __hapticClusteredLightProof: runClusteredLightProof,
-      });
-    },
-  );
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("fixedLightProof")) {
   void import("./testing/fixed-light-proof").then(({ runFixedLightProof }) => Object.assign(window, { __hapticFixedLightProof: runFixedLightProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("variantSwapProof")) {

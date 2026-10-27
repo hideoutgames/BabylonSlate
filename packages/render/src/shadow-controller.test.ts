@@ -330,7 +330,7 @@ describe("shared shadow lifecycle", () => {
     expect(casters()).toContain(proxy);
   });
   it("does not queue a mesh that left the Scene before the controller existed when Babylon's deferred add arrives", async () => {
-    // Babylon's ClusteredLightContainer creates its ProxyMesh and removes it at once.
+    // A mesh a Babylon helper creates and removes at once, before the controller exists.
     let proxy!: ReturnType<typeof MeshBuilder.CreateBox>;
     const { scene, controller } = fixture((bare) => {
       proxy = MeshBuilder.CreateBox("proxy", {}, bare);
