@@ -1,4 +1,4 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, SceneLayerCamera } from "@haptic/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, SceneLayerCamera } from "@haptic/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ActorDefaults, CollisionTriangleMesh, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@haptic/core";
@@ -401,8 +401,6 @@ export type ControlMessage =
   | { type: "sceneStreamProgress"; actorGuid: string; streamLoadId: number; progress: number }
   | { type: "sceneStreamFailed"; actorGuid: string; streamLoadId: number; message: string }
   | { type: "sceneSourceResponse"; requestId: number; scene?: SerializedScene; error?: string }
-  /** Engine-reported render path status for `renderpath` console readback. */
-  | ({ type: "renderPathStatus" } & RenderPathStatus)
   | { type: "scalabilityStatus"; acknowledgement: ScalabilityAcknowledgement };
 
 export type DebugColliderPrimitive = {

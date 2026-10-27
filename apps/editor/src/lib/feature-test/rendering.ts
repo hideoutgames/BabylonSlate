@@ -59,7 +59,7 @@ import { FEATURE_TEST_CAMERA_TOUR, FEATURE_TEST_MAIN_CAMERA, type FeatureTestZon
  * Rendering area: lights and shadows, effects (fog volume, outline, lattice
  * deformer, 3D text, dynamic runtime mesh, spring arm), render targets and mirrors, the
  * automatic Model LOD lane, the touring main camera / sky / sun, project
- * render settings, scalability console commands and the `FT_Clustered` scene.
+ * render settings, scalability console commands and the `FT_Lights` scene.
  */
 
 const RENDER_FOLDER = "Rendering";
@@ -78,11 +78,11 @@ const LOD_DISTANCES = [4, 8, 16, 32, 48] as const;
 const LOD_MODEL_SCALE = 3;
 const LOD_CAMERA_X = -27;
 
-/** Unshadowed point lights in `FT_Clustered` (8 × 6 grid). */
-const CLUSTER_COLUMNS = 8;
-const CLUSTER_ROWS = 6;
-const CLUSTER_SPACING = 3;
-const CLUSTER_CAMERA = { position: [0, 16, -18] as Vec3, target: [0, 0, 6] as Vec3 };
+/** Unshadowed point lights in `FT_Lights` (8 × 6 grid). */
+const LIGHT_GRID_COLUMNS = 8;
+const LIGHT_GRID_ROWS = 6;
+const LIGHT_GRID_SPACING = 3;
+const LIGHT_GRID_CAMERA = { position: [0, 16, -18] as Vec3, target: [0, 0, 6] as Vec3 };
 
 const POST_PROCESS_ENTRY_ID = "ft-render-post-process";
 
@@ -110,7 +110,7 @@ const refsByContext = new WeakMap<FeatureTestContext, RenderingRefs>();
 /**
  * Create rendering assets: Skybox Creator, Render Targets with their sampler
  * Textures and monitor Materials, the spring arm / camera tour / dynamic mesh /
- * manual capture Classes, the `ft_*` scalability commands and the `FT_Clustered` scene.
+ * manual capture Classes, the `ft_*` scalability commands and the `FT_Lights` scene.
  */
 export async function buildFeatureTestRendering(ctx: FeatureTestContext): Promise<void> {
   await createSkyboxCreator(ctx);
@@ -123,7 +123,7 @@ export async function buildFeatureTestRendering(ctx: FeatureTestContext): Promis
     payload: mirrorRippleMaterial("FT_RenderMirrorRipple"),
   })).guid;
   await saveScalabilityCommands(ctx);
-  await addClusteredScene(ctx);
+  await addLightsScene(ctx);
   const chrome = await ctx.createAsset("Material", RENDER_FOLDER, "FT_RenderChrome", { payload: chromeMaterial("FT_RenderChrome") });
   refsByContext.set(ctx, { targets, springArm, tourPath, cameraTour, dynamicMesh, manualCapture, mirrorRipple, chrome: chrome.guid });
 }
@@ -565,13 +565,11 @@ async function saveManualCapture(ctx: FeatureTestContext, renderTargetGuid: stri
   return { ref, components };
 }
 
-/** Console commands perf agents use to flip shading and render path mid-run. */
+/** Console commands perf agents use to flip shading mid-run. */
 async function saveScalabilityCommands(ctx: FeatureTestContext): Promise<void> {
   const commands = [
     { name: "FT_RenderCelCommand", command: "ft_cel", node: "scalability.setRenderMode", data: { "default:mode": "cel" }, report: "Requested CEL shading" },
     { name: "FT_RenderPbrCommand", command: "ft_pbr", node: "scalability.setRenderMode", data: { "default:mode": "pbr" }, report: "Requested PBR shading" },
-    { name: "FT_RenderClusterCommand", command: "ft_cluster", node: "scalability.setRenderPath", data: { "default:path": "clusteredForward" }, report: "Requested Clustered Forward" },
-    { name: "FT_RenderForwardCommand", command: "ft_forward", node: "scalability.setRenderPath", data: { "default:path": "forward" }, report: "Requested Forward" },
   ];
   for (const entry of commands) {
     const graph = classGraph({
@@ -963,37 +961,40 @@ function placeLodLane(ctx: FeatureTestContext): void {
 }
 
 // ---------------------------------------------------------------------------
-// FT_Clustered scene and project settings
+// FT_Lights scene and project settings
 
-/** Plain lit scene with 48 unshadowed point lights so Auto can select Clustered Forward. */
-async function addClusteredScene(ctx: FeatureTestContext): Promise<void> {
+/**
+ * Plain lit scene with 48 unshadowed point lights, more than any quality level's light budget admits: the budget's
+ * ranking chooses which light each surface draws with, and the scene is the many-lights workload.
+ */
+async function addLightsScene(ctx: FeatureTestContext): Promise<void> {
   const scene: SerializedScene = createDefaultScene("3d");
-  scene.name = "FT_Clustered";
+  scene.name = "FT_Lights";
   // Basic 3D's empty placeholder actor has no role here.
   scene.actors = scene.actors.filter((entry) => entry.components.length > 0);
   const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
   if (camera) {
-    camera.transform = tf(CLUSTER_CAMERA.position, {
-      rotation: lookAtRotation(CLUSTER_CAMERA.position, CLUSTER_CAMERA.target),
+    camera.transform = tf(LIGHT_GRID_CAMERA.position, {
+      rotation: lookAtRotation(LIGHT_GRID_CAMERA.position, LIGHT_GRID_CAMERA.target),
     });
   }
   // A dim sun lets the local lights read; the default faces keep the engine sky.
   for (const component of scene.actors.find((entry) => entry.id === DEFAULT_SCENE_SUN_ACTOR_ID)?.components ?? []) {
     if (component.classId === "LightComponent") component.properties = { ...component.properties, intensity: 0.4 };
   }
-  const centerZ = ((CLUSTER_ROWS - 1) * CLUSTER_SPACING) / 2;
-  const width = CLUSTER_COLUMNS * CLUSTER_SPACING + 8;
-  const depth = CLUSTER_ROWS * CLUSTER_SPACING + 8;
-  ctx.addActor(actor("ft-render-cluster-floor", "Cluster Floor",
+  const centerZ = ((LIGHT_GRID_ROWS - 1) * LIGHT_GRID_SPACING) / 2;
+  const width = LIGHT_GRID_COLUMNS * LIGHT_GRID_SPACING + 8;
+  const depth = LIGHT_GRID_ROWS * LIGHT_GRID_SPACING + 8;
+  ctx.addActor(actor("ft-render-grid-floor", "Grid Floor",
     tf([0, -0.15, centerZ], { scale: [width / 1.5, 0.3 / 1.5, depth / 1.5] }),
-    [meshComp("ft-render-cluster-floor-mesh", "box", { collision: "simple" })]), { scene });
+    [meshComp("ft-render-grid-floor-mesh", "box", { collision: "simple" })]), { scene });
   const colors: Vec3[] = [[1, 0.35, 0.3], [0.35, 1, 0.4], [0.35, 0.5, 1], [1, 0.85, 0.35]];
-  for (let index = 0; index < CLUSTER_COLUMNS * CLUSTER_ROWS; index += 1) {
-    const column = index % CLUSTER_COLUMNS;
-    const row = Math.floor(index / CLUSTER_COLUMNS);
+  for (let index = 0; index < LIGHT_GRID_COLUMNS * LIGHT_GRID_ROWS; index += 1) {
+    const column = index % LIGHT_GRID_COLUMNS;
+    const row = Math.floor(index / LIGHT_GRID_COLUMNS);
     const number = String(index + 1).padStart(2, "0");
-    ctx.addActor(lightActor(`ft-render-cluster-light-${number}`, `Cluster Light ${number}`,
-      [(column - (CLUSTER_COLUMNS - 1) / 2) * CLUSTER_SPACING, 1.2, row * CLUSTER_SPACING],
+    ctx.addActor(lightActor(`ft-render-grid-light-${number}`, `Grid Light ${number}`,
+      [(column - (LIGHT_GRID_COLUMNS - 1) / 2) * LIGHT_GRID_SPACING, 1.2, row * LIGHT_GRID_SPACING],
       null,
       { lightKind: "point", color: colors[index % colors.length]!, intensity: 2.5, range: 4.5, castShadows: false },
     ), { scene });
@@ -1002,15 +1003,15 @@ async function addClusteredScene(ctx: FeatureTestContext): Promise<void> {
   [-6, 0, 6].forEach((x, column) => {
     [3, 9].forEach((z, row) => {
       const kind = kinds[(column + row) % kinds.length]!;
-      const id = `ft-render-cluster-${kind}-${column + 1}-${row + 1}`;
-      ctx.addActor(primitive(id, `Cluster ${kind[0]!.toUpperCase()}${kind.slice(1)} ${column + 1}-${row + 1}`, kind,
+      const id = `ft-render-grid-${kind}-${column + 1}-${row + 1}`;
+      ctx.addActor(primitive(id, `Grid ${kind[0]!.toUpperCase()}${kind.slice(1)} ${column + 1}-${row + 1}`, kind,
         [x, 0.75, z - 1.5]), { scene });
     });
   });
   await ctx.addSceneDocument({
     kind: "scene",
     folder: SCENES_FOLDER,
-    name: "FT_Clustered",
+    name: "FT_Lights",
     content: scene,
     order: SCENE_SAVE_ORDER.scene,
   });
@@ -1029,8 +1030,6 @@ function applyRenderSettings(settings: ProjectSettings, lut: string | null): Pro
     ...settings,
     render: {
       ...render,
-      renderPath: "auto",
-      // Clustered Forward is WebGL2-only.
       gpuBackend: "webgl2",
       mode: "pbr",
       cel: { ...normalizeCelShadingSettings(render.cel), reflectionTexturesEnabled: true },

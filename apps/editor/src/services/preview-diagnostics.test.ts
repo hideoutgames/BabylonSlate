@@ -25,7 +25,7 @@ describe("Preview diagnostics lifecycle", () => {
     const player = { postMessage: (data: unknown) => server.receive({ source: parent, origin, data }) } as unknown as Window;
     const recorder = new PerformanceRecorder({ now: () => 0 });
     recorder.start({ sessionId: "packaged-player", mode: "preview", sourceSha: null, buildId: null,
-      sceneId: "scene", backend: "webgl2", renderPath: "frameGraph", runtimeHost: "worker",
+      sceneId: "scene", backend: "webgl2", runtimeHost: "worker",
       quality: "Low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "unavailable" });
     recorder.recordTick({ tickId: 14, elapsedMs: 0, scriptMs: 2, physicsMs: 1, publishMs: 0.1, otherMs: 0,
       gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 2, componentsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0 });
@@ -79,7 +79,7 @@ describe("Preview diagnostics lifecycle", () => {
     const player = { postMessage: (data: unknown) => server.receive({ source: parent, origin, data }) } as unknown as Window;
     const recorder = new PerformanceRecorder({ now: () => 0 });
     recorder.start({ sessionId: "packaged-player", mode: "preview", sourceSha: null, buildId: null,
-      sceneId: "scene", backend: "webgl2", renderPath: "frameGraph", runtimeHost: "worker",
+      sceneId: "scene", backend: "webgl2", runtimeHost: "worker",
       quality: "Low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "unavailable" });
     const { frames, ticks, gpu, memory, longTasks, scripts, ...header } = recorder.stop()!;
     const server = createPreviewDiagnosticServer({ source: () => parent, origin: () => origin,

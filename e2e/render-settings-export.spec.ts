@@ -47,7 +47,7 @@ for (const variant of [{ backend: "webgl2" }] as const) {
     page.on("console", (message) => { if (message.type() === "warning" || message.type() === "error") rendererMessages.push(message.text()); });
     page.on("pageerror", (error) => errors.push(error.message));
     const renderSettings = normalizeRenderProjectSettings({
-      gpuBackend: variant.backend, renderPath: "forward", mode: "cel",
+      gpuBackend: variant.backend, mode: "cel",
       cel: { shadowBands: 5, lightMixing: "blend", specularEnabled: false },
       shadows: { enabled: false },
       quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
@@ -211,9 +211,6 @@ for (const variant of [{ backend: "webgl2" }] as const) {
       expect(await command(page, "qual_clamped")).toMatchObject({ success: true });
       await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBe(0.25);
       expect((await read(page)).scalability?.status).toBe("clamped");
-      expect(await command(page, "qual_cluster")).toMatchObject({ success: true });
-      await expect.poll(async () => (await read(page)).scalability?.pipeline?.requested.renderPath).toBe("clusteredForward");
-      expect((await read(page)).scalability?.pipeline?.effective.renderPath).toBe("clusteredForward");
       expect(await command(page, "qual_reset")).toMatchObject({ success: true });
       await ready(1.25, "second");
       await page.reload();

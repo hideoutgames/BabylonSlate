@@ -13,7 +13,7 @@ describe("formatFeatureTestCheckReport", () => {
     const rendering = {
       adapter: { api: "webgl2", vendor: "Apple Inc.", renderer: "Apple GPU", version: "WebGL 2.0" },
       cpuMs: 4.2, gpuMs: null, gpuStatus: "unsupported", width: 2048, height: 1536, scalingLevel: 1,
-      qualityLimits: [], pipeline: { effective: { renderPath: "forward", gpuBackend: "webgl2" } },
+      qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } },
     } as unknown as RenderDiagnostics;
     const report: FeatureTestCheckReport = {
       mode: "full", startedAt: Date.UTC(2026, 9, 10, 12), durationMs: 95_000, cancelled: false, pageErrors: ["TypeError: x is undefined"],
@@ -43,7 +43,7 @@ describe("formatFeatureTestCheckReport", () => {
       "Result: 1/2 scenes passed · took 95.0 s",
       "App: 1.2.3",
     ]);
-    expect(lines).toContain("GPU: webgl2 · Apple Inc. · Apple GPU · webgl2 forward");
+    expect(lines).toContain("GPU: webgl2 · Apple Inc. · Apple GPU · webgl2");
     expect(lines).toContain("[FAIL] main");
     expect(lines).toContain("  ! Play did not finish loading in 120 s (stuck at Loading Models 45%).");
     expect(lines).toContain("  Play: timeout after 120.0 s at Loading Models 45%");
@@ -55,9 +55,9 @@ describe("formatFeatureTestCheckReport", () => {
   });
 
   it("recommends the highest quality tier every benchmarked scene holds at 60 and 30 fps", () => {
-    const sample = (label: string, fps: number, p95Ms: number, renderPath = "forward"): FeatureTestBenchmarkSample => ({
+    const sample = (label: string, fps: number, p95Ms: number): FeatureTestBenchmarkSample => ({
       label, frames: { frames: fps * 5, durationMs: 5000, fps, p95Ms, maxMs: p95Ms, stalls: 0 }, runtimeFps: fps,
-      cpuMs: 4, gpuMs: null, drawCalls: 100, resolution: "1280x720@1.00", renderPath, failed: [],
+      cpuMs: 4, gpuMs: null, drawCalls: 100, resolution: "1280x720@1.00", failed: [],
     });
     const scene = (name: string, benchmark: FeatureTestBenchmarkSample[]): FeatureTestCheckSceneResult => ({
       name, path: `assets/${name}.scene.hasset`, passed: true, problems: [],
@@ -69,15 +69,14 @@ describe("formatFeatureTestCheckReport", () => {
       mode: "benchmark", startedAt: 0, durationMs: 600_000, cancelled: false, pageErrors: [],
       scenes: [
         scene("light", [sample("low · forward", 60, 18), sample("medium · forward", 60, 19), sample("high · forward", 58, 22),
-          sample("ultra · forward", 40, 30), sample("high · clustered", 57, 22, "forward")]),
+          sample("ultra · forward", 40, 30), sample("medium · fixed lights", 57, 22)]),
         scene("heavy", [sample("low · forward", 59, 20), sample("medium · forward", 35, 40), sample("high · forward", 25, 60),
-          sample("ultra · forward", 20, 80), sample("high · clustered", 24, 61, "clusteredForward")]),
+          sample("ultra · forward", 20, 80), sample("medium · fixed lights", 24, 61)]),
       ],
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines).toContain("Benchmark: highest tier every benchmarked scene holds at 60 fps: low · forward · at 30 fps: medium · forward (2/2 scenes benchmarked)");
     expect(lines).toContain("  Highest tier at 60 fps: high · forward · at 30 fps: ultra · forward");
-    expect(lines.find((line) => line.includes("high · clustered") && line.includes("57"))).toContain("(ran forward)");
   });
 
   it("shows an editor load failure's error and the viewport's GPU when Play never ran", () => {

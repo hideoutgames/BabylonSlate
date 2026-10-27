@@ -12,10 +12,6 @@ import {
 } from "@babylonjs/core";
 import type { VolumetricLightingSettings } from "@haptic/core";
 import {
-  sceneEffectLights,
-  isClusteredLocalAllowed,
-} from "./clustered-light-policy";
-import {
   isAuthoredLightEnabled,
   isDirectionalLightExcluded,
   isForwardLightExcluded,
@@ -103,7 +99,7 @@ export function fillVolumetricSlots(
   const previous = slots.count;
   let count = 0;
   if (scene.lightsEnabled) {
-    const lights = sceneEffectLights(scene);
+    const lights = scene.lights;
     for (let index = 0; index < lights.length; index++) {
       const light = lights[index]!;
       if (
@@ -117,7 +113,6 @@ export function fillVolumetricSlots(
         light.isDisposed() ||
         isDirectionalLightExcluded(light) ||
         isForwardLightExcluded(light) ||
-        !isClusteredLocalAllowed(scene, light) ||
         (light.parent && !light.parent.isEnabled())
       )
         continue;

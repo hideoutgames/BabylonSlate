@@ -1,7 +1,5 @@
 import type { CommandMessage, GameSessionMode, SessionPauseReason } from "@haptic/bridge";
 import type {
-  RenderPath,
-  RenderPathStatus,
   RenderTargetPayload,
   RenderTargetTexturePayload,
   ScalabilitySession,
@@ -78,7 +76,6 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly demandAssetCatalog: boolean;
   readonly dt: number;
   readonly seed: number;
-  readonly scalabilityProjectRenderPath: RenderPath;
   readonly acquireScene?: AcquireRuntimeScene;
   readonly deferSceneModelsReady: boolean;
   readonly deferSceneLoadingPaint: boolean;
@@ -96,7 +93,6 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly commandRevision: number;
   readonly lifecycleId: number;
   readonly timeDilation: number;
-  readonly lastRenderPathStatus: RenderPathStatus | null;
   /** Reset by the Scene realizer's `startWorld`, advanced by the tick phases; the driver's `registerTileContent` re-sends it. */
   tilemapAnimationTimeMs: number;
   readonly hasAnimatedTiles: boolean;

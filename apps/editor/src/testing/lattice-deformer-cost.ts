@@ -5,7 +5,7 @@ import {
 } from "@babylonjs/core";
 import { Lattice } from "@babylonjs/core/Meshes/lattice";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
-import { createAppWebGpuEngine, disposeMeshLatticeDeformer, requestRenderPath, setMeshLatticeDeformer } from "@haptic/render";
+import { createAppWebGpuEngine, disposeMeshLatticeDeformer, setMeshLatticeDeformer } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 
 export interface LatticeDeformerCostOptions {
@@ -60,7 +60,7 @@ export async function runLatticeDeformerCost(backend: "webgl2" | "webgpu", optio
   const host = document.getElementById("root")!; host.append(canvas, progress);
   const started = performance.now();
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { stencil: true });
-  engine.setSize(width, height); requestRenderPath(engine, { renderPath: "forward" });
+  engine.setSize(width, height);
   // Pinned Babylon whole-frame WebGPU timestamps use an obsolete encoder API.
   // A WebGPU timestamp-query capability alone does not make these timings valid.
   const instrument = !engine.isWebGPU && engine.getCaps().timerQuery ? new EngineInstrumentation(engine) : null;

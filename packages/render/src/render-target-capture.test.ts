@@ -1,6 +1,6 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
 import {
-  Constants, FreeCamera, HemisphericLight, LightConstants, Material, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RawTexture, RenderTargetTexture,
+  Constants, FreeCamera, Material, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RawTexture, RenderTargetTexture,
   Scene, StandardMaterial, Vector3,
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
@@ -114,34 +114,6 @@ it("keeps color and data sampling distinct while sharing the uncaptured fallback
   ]), textures);
   expect(color.gammaSpace).toBe(false);
   expect(data.gammaSpace).toBe(true);
-});
-
-it("prepares clustered lighting once per requested color capture while retrying deferred readiness", () => {
-  const { captures, scene } = host();
-  vi.mocked(RenderTargetTexture.prototype.isReadyForRendering).mockRestore();
-  vi.mocked(RenderTargetTexture.prototype.render).mockRestore();
-  // Keep native readiness/init/draw lifecycle; replace only shader readiness
-  // and the GPU clustered-light batch draw unavailable in NullEngine.
-  vi.spyOn(ObjectRenderer.prototype, "_checkReadiness").mockReturnValueOnce(false).mockReturnValue(true);
-  const light = new HemisphericLight("Cluster Boundary", Vector3.Up(), scene);
-  vi.spyOn(light, "getTypeID").mockReturnValue(LightConstants.LIGHTTYPEID_CLUSTERED_CONTAINER);
-  const batchDraw = vi.fn();
-  const update = vi.fn<(camera: { name: string } | null) => { render: typeof batchDraw }>(() => ({ render: batchDraw }));
-  Object.assign(light, { isSupported: true, _updateBatches: update });
-  const output = captures.acquireTexture("texture")!.resource;
-  captures.request("capture"); captures.render();
-  expect(output.getSize().width).toBe(1);
-  expect(batchDraw).toHaveBeenCalledTimes(1);
-  captures.render();
-  expect(output.getSize().width).toBe(16);
-  expect(batchDraw).toHaveBeenCalledTimes(2);
-  expect(update.mock.calls.every(([camera]) => camera?.name === "renderTargetCapture:capture")).toBe(true);
-  captures.render();
-  expect(batchDraw).toHaveBeenCalledTimes(2);
-  vi.spyOn(normalMaterial, "createRenderTargetNormalMaterial").mockImplementation((scene) => new NodeMaterial("Capture Variant", scene));
-  captures.setAssets(new Map([["target", { mode: "WorldNormal", width: 16, height: 8 }]]));
-  captures.request("capture"); captures.render();
-  expect(batchDraw).toHaveBeenCalledTimes(2);
 });
 
 it("actor filtering is opt-in, includes component descendants, and an empty list clears the output", () => {

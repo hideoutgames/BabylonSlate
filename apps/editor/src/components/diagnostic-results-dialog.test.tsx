@@ -15,7 +15,7 @@ function recording(frames = 3, slow: readonly number[] = [], memory = false) {
   let now = 0;
   const recorder = new PerformanceRecorder({ now: () => now });
   recorder.start({ sessionId: "session", mode: "play", sourceSha: "source", buildId: null, sceneId: "scene", backend: "webgl2",
-    renderPath: "frameGraph", runtimeHost: "worker", quality: "low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: [], gpuTiming: "unavailable" });
+    runtimeHost: "worker", quality: "low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: [], gpuTiming: "unavailable" });
   for (let index = 0; index < frames; index++) {
     now += slow.includes(index) ? 40 : frames === 3 ? 20 : 10;
     recorder.recordFrame({ frameId: index, tickId: index, sceneGeneration: 1, completedAtMs: now, preparationMs: 1, submissionMs: 2, copyMs: 0.5,

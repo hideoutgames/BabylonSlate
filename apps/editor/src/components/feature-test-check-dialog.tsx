@@ -63,7 +63,7 @@ function sampleFrames(durationMs: number, signal: AbortSignal) {
 const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
-  benchmark: "Plays every Feature Test scene and measures each quality tier and Clustered Forward with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
+  benchmark: "Plays every Feature Test scene and measures each quality tier and fixed-shape lighting with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
 };
 
 type Phase = { kind: "idle" } | { kind: "running"; message: string } | { kind: "done"; text: string; report: FeatureTestCheckReport };

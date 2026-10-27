@@ -34,7 +34,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   page.on("pageerror", (error) => errors.push(error.message));
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!)) as ProjectDocument;
-  project.settings.render = normalizeRenderProjectSettings({ gpuBackend: backend, renderPath: "forward", mode: "cel", effects: { fxaa: true }, shadows: { enabled: false }, quality: { resolution: { dynamic: false, scale: 0.8, minScale: 0.8 } }, customResolution: true, width: 480, height: 270, blackBars: true });
+  project.settings.render = normalizeRenderProjectSettings({ gpuBackend: backend, mode: "cel", effects: { fxaa: true }, shadows: { enabled: false }, quality: { resolution: { dynamic: false, scale: 0.8, minScale: 0.8 } }, customResolution: true, width: 480, height: 270, blackBars: true });
   project.settings.playFrameCap = 30;
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const version = createDefaultMigrationRegistry().currentVersion("Class");
@@ -144,7 +144,6 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   );
   await testInfo.attach("play-compiled-scalability", { body: JSON.stringify({ custom, reset: await read(page), evidence: renderingEvidence("e2e/scalability-play.spec.ts") }), contentType: "application/json" });
   await expect(transcript.locator('[data-severity="error"]')).toHaveCount(0);
-  await apply("qual_cluster", () => expect.poll(async () => (await read(page)).scalability?.pipeline?.requested.renderPath, { timeout: APPLY_TIMEOUT_MS }).toBe("clusteredForward"));
   await apply("quality resolution scale 0.5", () => expect.poll(async () => (await read(page)).rendering?.width, { timeout: APPLY_TIMEOUT_MS }).toBe(240));
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
@@ -152,7 +151,6 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   await expect(page.getByTestId("save-all-project")).toBeDisabled();
   await clickPlayAndWaitForOverlay(page);
   await expect.poll(async () => (await read(page)).scalability?.effective?.frameCap).toBe(30);
-  expect((await read(page)).scalability?.pipeline?.requested.renderPath).toBe("forward");
   await page.getByTestId("play-overlay-close").click();
   expect(errors).toEqual([]);
 });

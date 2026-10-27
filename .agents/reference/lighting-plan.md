@@ -4,7 +4,7 @@ The plan for Haptic's own data-driven lighting model: one lighting function that
 
 ## Why
 
-Babylon bakes each light's type, shadow and filter into a receiver's defines (`LIGHT{i}`, `POINTLIGHT{i}`, `SHADOW{i}`, `SHADOWPCF{i}`), so a light switching, a shadow starting and a spawn are each a new program. On iPad WebKit a program costs seconds of link plus a blocking first draw, which a load either rehearses behind its loading screen (minutes) or leaves to gameplay (hitches). Three light paths and about fifteen render modules exist to manage when those compiles happen (legacy Forward, fixed-shape seats, Babylon Clustered Forward; the load rehearsal, admission predictions, light-neutral passes, hide-until-ready, first-draw budgets, WebGPU pipeline warm-ups). Lights as data remove the compiles, and with them most of that machinery.
+Babylon bakes each light's type, shadow and filter into a receiver's defines (`LIGHT{i}`, `POINTLIGHT{i}`, `SHADOW{i}`, `SHADOWPCF{i}`), so a light switching, a shadow starting and a spawn are each a new program. On iPad WebKit a program costs seconds of link plus a blocking first draw, which a load either rehearses behind its loading screen (minutes) or leaves to gameplay (hitches). Two light paths and about fifteen render modules exist to manage when those compiles happen (legacy Forward and fixed-shape seats; the load rehearsal, admission predictions, light-neutral passes, hide-until-ready, first-draw budgets, WebGPU pipeline warm-ups). Lights as data remove the compiles, and with them most of that machinery.
 
 ## Invariants
 
@@ -62,8 +62,6 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 
 Each phase is one PR, or a short series, merged into `main` before the next starts.
 
-0. **Plan** (this file) and the mobile rehearsal limits.
-1. **Remove Babylon Clustered Forward**: the `renderPath` setting and its UI, `EngineHandle.setRenderPath`, the `renderpath` console command, the Set Render Path node and its docs page, `scene-render-path.ts`, `render-path-session.ts`, the `clustered-*` modules, `framegraph-clustered-lights.ts`, the clustered CEL shader, the Benchmark `clustered` profile and perf scene, and their docs. Saved projects normalize to Forward.
 2. **Device profile** module; its consumers; the engine plan's memory defaults stated as profile values.
 3. **Material consolidation on the current lighting**, with no visible change:
    - The engine default material becomes a Material document (`createDefaultMaterialDocument`); landscape, foliage, cables and dynamic runtime meshes without a Material use it.

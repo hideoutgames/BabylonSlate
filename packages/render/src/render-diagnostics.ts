@@ -1,5 +1,4 @@
-import { clusteredLocalContributionCount } from "./clustered-light-policy";
-import { sceneRenderPathStatus } from "./scene-render-path";
+import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { readEngineDrawCalls } from "./draw-calls";
 import { managedRenderReservations } from "./managed-render-resources";
 import type { FramePressureSample } from "./hardware-scaling";
@@ -92,7 +91,6 @@ export type RenderDiagnostics = {
   shadowLights: ReturnType<typeof shadowLightDiagnostics>;
   qualityLimits: string[];
   pipeline: ResolvedRenderingPipeline;
-  clusteredLights: number;
   /**
    * Graphics API and adapter identity reported by the Engine itself, so a
    * diagnostics capture always names the real adapter and cannot be mistaken
@@ -141,12 +139,11 @@ export function createRenderDiagnostics(
     const shadows = findSceneShadowController(scene);
     const metrics = shadows?.metrics() ?? { passes: 0, bytes: 0 };
     const state = sceneRenderingSettings(scene);
-    const pipeline = sceneRenderPathStatus(scene);
+    const pipeline = sceneRenderingPipeline(scene);
     const { sample, gpuAttribution } = pressure();
     return {
       cpuMs: cpuMs(),
       pipeline,
-      clusteredLights: clusteredLocalContributionCount(scene),
       readbackMs: readbackMs(),
       shadowDrawCalls: shadows?.shadowDrawCalls() ?? 0,
       shadowTriangles: shadows?.shadowTriangles() ?? 0,

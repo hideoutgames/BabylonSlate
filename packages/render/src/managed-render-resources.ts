@@ -8,14 +8,13 @@ export const MANAGED_RENDER_BYTE_LIMIT = 1024 * 1024 ** 2;
  * `environment` holds filtered image-based lighting cubes.
  */
 export type ManagedRenderCategory =
-  "cluster" | "sceneColor" | "geometry" | "depth" | "postprocess" | "areaLight" | "water" | "shadow" | "environment";
+  "sceneColor" | "geometry" | "depth" | "postprocess" | "areaLight" | "water" | "shadow" | "environment";
 export type ManagedRenderResource = {
   handle: object;
   bytes: number;
   category: ManagedRenderCategory;
 };
 const categories: readonly ManagedRenderCategory[] = [
-  "cluster",
   "sceneColor",
   "geometry",
   "depth",
@@ -74,7 +73,6 @@ function ledger(engine: AbstractEngine): Ledger {
 export function managedRenderReservations(engine: AbstractEngine) {
   const value = ledger(engine);
   const categoryBytes = {
-    cluster: 0,
     sceneColor: 0,
     geometry: 0,
     depth: 0,

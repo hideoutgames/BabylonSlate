@@ -19,7 +19,7 @@ import {
  * frames. It records one JSON report and asserts only that the route ran
  * cleanly; it never asserts a frame rate.
  *
- * Env: HAPTIC_PERF_SCENES (comma list of main|stress|world|clustered|2d, default main,stress),
+ * Env: HAPTIC_PERF_SCENES (comma list of main|stress|world|lights|2d, default main,stress),
  *      HAPTIC_PERF_SAMPLE_MS (default 15000), HAPTIC_PERF_SAMPLES (default 2),
  *      HAPTIC_PERF_WARMUP_MS (default 10000), HAPTIC_PERF_SETTLE_MS (default 5000),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),

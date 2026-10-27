@@ -13,7 +13,7 @@ import {
 import type { GpuBackend } from "@haptic/core";
 import { engineAdapterInfo } from "./render-diagnostics";
 import { sceneRenderingSettings } from "./render-settings";
-import { sceneRenderPathStatus } from "./scene-render-path";
+import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { lightsInCreationOrder } from "./light-policy";
 import { findSceneShadowController } from "./shadow-controller";
 
@@ -93,7 +93,7 @@ export function captureShadowDiagnostics(
   const engine = scene.getEngine();
   const controller = findSceneShadowController(scene);
   const state = sceneRenderingSettings(scene);
-  const pipeline = sceneRenderPathStatus(scene);
+  const pipeline = sceneRenderingPipeline(scene);
   const camera = scene.activeCamera;
   const canvas = engine.getRenderingCanvas();
   const renderSize = camera?.outputRenderTarget?.getSize();

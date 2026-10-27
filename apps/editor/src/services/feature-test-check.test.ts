@@ -56,7 +56,7 @@ function fakeEditor(
           rendering: presentation
             ? ({
               presentation: presentation(now, commands), cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
-              pipeline: { effective: { renderPath: "forward" } },
+              pipeline: { effective: { gpuBackend: "webgl2" } },
               // One shader first drawn per command run so far.
               firstDraws: { draws: commands.length, loadCompiled: 0, frames: commands.length, stalls: 0, mostInFrame: 1, worstFrameMs: 20, longFrames: 0, longest: [] },
             } as unknown as RenderDiagnostics)
@@ -178,9 +178,8 @@ describe("runFeatureTestCheck", () => {
     expect(main.passed).toBe(true);
     expect(main.play.benchmark.map((sample) => sample.label)).toEqual(FEATURE_TEST_BENCHMARK_PROFILES.map((profile) => profile.label));
     expect(editor.commands.slice(0, 2)).toEqual(["framecap", "framecap 240"]);
-    expect(editor.commands.slice(-4)).toEqual(["fixedlights reset", "quality reset", "renderpath reset", "framecap 30"]);
+    expect(editor.commands.slice(-3)).toEqual(["fixedlights reset", "quality reset", "framecap 30"]);
     expect(editor.commands).toContain("fixedlights branch");
-    expect(editor.commands).toContain("renderpath clusteredForward");
     expect(editor.commands).not.toContain("ft_stats");
   });
 

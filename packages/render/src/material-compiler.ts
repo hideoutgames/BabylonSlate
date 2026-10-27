@@ -1,4 +1,3 @@
-import { registerClusteredSurfaceMaterial, registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import {
   AddBlock,
@@ -881,8 +880,6 @@ export function compileMaterialPlan(
       }
       buildState = "ready";
       if (cacheableShadowShape) registerCacheableShadowMaterial(material);
-      if (auxiliary) registerClusteredUnlitMaterial(material);
-      else if ((plan.domain === "surface" || plan.domain === "landscape") && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
       settleBuild([]);
     }
   });

@@ -242,7 +242,6 @@ describe("rendering quality sessions", () => {
     const authored = {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,
       mode: "cel" as const,
-      renderPath: "clusteredForward" as const,
       gpuBackend: "webgpu" as const,
       width: 1234,
       height: 567,
@@ -261,7 +260,6 @@ describe("rendering quality sessions", () => {
       );
       expect(changed).toMatchObject({
         mode: "cel",
-        renderPath: "clusteredForward",
         gpuBackend: "webgpu",
         width: 1234,
         height: 567,

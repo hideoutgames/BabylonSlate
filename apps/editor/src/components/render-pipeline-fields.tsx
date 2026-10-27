@@ -1,12 +1,10 @@
 import {
-  GPU_BACKENDS, RENDER_PATHS, isGpuBackend, isRenderPath,
-  normalizeRenderingPipeline,
-  type GpuBackend, type RenderPath, type RenderingPipelineSettings,
+  GPU_BACKENDS, isGpuBackend, normalizeRenderingPipeline,
+  type GpuBackend, type RenderingPipelineSettings,
 } from "@haptic/core";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@haptic/ui/components/select";
 
-const pathLabels: Record<RenderPath, string> = { auto: "Auto", forward: "Forward", clusteredForward: "Clustered Forward" };
 const backendLabels: Record<GpuBackend, string> = { auto: "Auto", webgl2: "WebGL2", webgpu: "WebGPU" };
 
 type Props = {
@@ -16,32 +14,13 @@ type Props = {
   onChange: (value: RenderingPipelineSettings) => void;
 };
 
-/** Project-wide rendering controls; only the project owns the render path and Engine backend. */
+/** Project-wide rendering controls; only the project owns the Engine backend. */
 export function RenderPipelineFields(props: Props) {
   const project = normalizeRenderingPipeline(props.project);
-  const pathId = `${props.scope}-render-path`;
   return (
     <FieldSet data-testid={`${props.scope}-render-pipeline`}>
       <FieldLegend className={props.hideTitle ? "sr-only" : undefined}>Rendering</FieldLegend>
       <FieldGroup className="gap-2">
-        <Field className="settings-field">
-          <FieldLabel htmlFor={pathId}>Render Path</FieldLabel>
-          <Select value={project.renderPath}
-            onValueChange={(renderPath) => {
-              if (!isRenderPath(renderPath)) return;
-              props.onChange({ ...project, renderPath });
-            }}>
-            <SelectTrigger id={pathId} data-testid={pathId} aria-describedby={`${pathId}-description`}>
-              <SelectValue>{pathLabels[project.renderPath]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent><SelectGroup>
-              {RENDER_PATHS.map((path) => <SelectItem key={path} value={path}>{pathLabels[path]}</SelectItem>)}
-            </SelectGroup></SelectContent>
-          </Select>
-          <FieldDescription id={`${pathId}-description`}>
-            How lights are processed. Independent of Render Mode.
-          </FieldDescription>
-        </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="project-gpu-backend">GPU Backend</FieldLabel>
           <Select value={project.gpuBackend} onValueChange={(gpuBackend) => {

@@ -2,7 +2,6 @@ import {
   InstancedMesh, MaterialDefines, Mesh, type AbstractEngine, type AbstractMesh, type Effect, type Light, type Scene, type ShadowGenerator,
 } from "@babylonjs/core";
 import { drawnMaterialVariants } from "./drawn-variants";
-import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import { fixedShapeLightingActive } from "./fixed-light-admission";
 import { restoreSceneLightOrder } from "./forward-light-slots";
 import {
@@ -206,9 +205,7 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
   const state = stateFor(engine);
   const controller = findSceneShadowController(scene) ?? null;
   const now = performance.now();
-  // Clustered Forward keeps a selection history of its own, which a what-if admission would move and not give back;
-  // its admissions mostly move lights into clusters, which compile nothing. Its shadow starts are still predicted.
-  const forward = hasClusteredLightPolicy(scene) ? [] : nearForwardAdmissions(scene, PREDICTION_MARGIN);
+  const forward = nearForwardAdmissions(scene, PREDICTION_MARGIN);
   const shadows = controller?.nearShadowStarts(PREDICTION_MARGIN) ?? [];
   const near = new Set<Light>([...forward, ...shadows.map((start) => start.light)]);
   const context = contextOf(scene, controller);

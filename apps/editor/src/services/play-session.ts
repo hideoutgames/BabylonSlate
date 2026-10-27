@@ -10,7 +10,6 @@ import {
   type SessionReportEntry,
 } from "@haptic/runtime";
 import type { DebugInspectSnapshot } from "@haptic/object-model";
-import type { ResolvedRenderingPipeline } from "@haptic/core";
 import {
   createEngine,
   navDebugBlockersFromActors,
@@ -20,7 +19,6 @@ import { encodeInputEvents } from "@haptic/input";
 import {
   snapshotFloatCount,
   type CommandMessage,
-  type ControlMessage,
 } from "@haptic/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
@@ -219,17 +217,6 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     if (worker) worker.postControl({ type: "scalabilityStatus", acknowledgement });
     else runtime?.applyScalabilityStatus(acknowledgement);
   };
-  const publishRenderPathStatus = (status: ResolvedRenderingPipeline) => {
-    const control: ControlMessage = {
-      type: "renderPathStatus",
-      requested: status.requested.renderPath,
-      effective: status.effective.renderPath,
-      gpuBackend: status.effective.gpuBackend,
-      limits: status.limits,
-    };
-    if (worker) worker.postControl(control);
-    else runtime?.applyRenderPathStatus(control);
-  };
 
   /** The game asked for device motion, perhaps before input capture was attached. */
   let deviceMotionRequested = false;
@@ -358,7 +345,6 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       if (worker) worker.postControl(control);
       else runtime?.applyAudioVoiceEnded(control);
     },
-    onRenderPathChanged: publishRenderPathStatus,
     onScalabilityApplied: publishScalabilityStatus,
     onRagdollPoseCaptured: (result) => {
       if (worker) worker.postControl(result);
@@ -674,9 +660,6 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       "warning",
     );
   }
-  // The subscription fired before the runtime existed; report the current
-  // status now that the worker or in-process runtime can store it.
-  publishRenderPathStatus(handle.renderPathStatus());
   // The view size too: two-finger drags, cursor projection and Scene Layers measure against it.
   handle.publishSceneLayerSize();
   const initialScalability = handle.scalabilityStatus?.();
@@ -756,7 +739,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       return { sessionId: diagnosticSessionId, mode: options.mode ?? "play", sourceSha: build?.sourceSha ?? null,
         buildId: build ? `${build.packageVersion}:${build.runNumber}.${build.runAttempt}` : null,
         sceneId: sceneLoads.currentSceneGuid() ?? options.sceneAssetGuid ?? "play-scene",
-        backend: handle.engine.isWebGPU ? "webgpu" : "webgl2", renderPath: handle.renderPathStatus().effective.renderPath,
+        backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
         runtimeHost: runtimeMode, quality: JSON.stringify(render ?? {}), frameCap: Number.isFinite(frameCap) ? frameCap : null,
         dynamicResolution: render?.quality?.resolution?.dynamic === true,
         enabledDiagnostics: ["performance"], gpuTiming: "unavailable" };

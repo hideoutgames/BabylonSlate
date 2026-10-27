@@ -122,8 +122,7 @@ export { createAppWebGpuEngine, type WebGpuDeviceLoss } from "./webgpu-engine";
 export { createBackendEngineSession, type BackendEngineSession, type BackendEngineSessionOptions } from "./backend-engine-session";
 export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibility";
 
-export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
-export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
+export { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 export {
   fixedLightSlotTable,
   fixedShapeMaterialSamplerBudget,

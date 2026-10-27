@@ -3,7 +3,7 @@ import { RenderingQualitySession, qualityPresetPatch, qualitySettingPatch, QUALI
 import type { ShadowOverrides } from "./shadows";
 import { normalizeCelShadingOverrides, normalizeCelShadingSettings, type CelShadingOverrides } from "./cel-shading";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
-import type { ResolvedRenderingPipeline } from "./render-path";
+import type { ResolvedRenderingPipeline } from "./rendering-pipeline";
 
 export type RenderSettingsPatch<T = RenderProjectSettings> = {
   [K in keyof T]?: NonNullable<T[K]> extends readonly unknown[] ? T[K]
@@ -39,7 +39,7 @@ export type ScalabilityRequest =
   | { kind: "reset"; group?: QualityGroup };
 
 const ENUMS: Record<string, readonly unknown[]> = {
-  gpuBackend: ["auto", "webgl2", "webgpu"], renderPath: ["auto", "forward", "clusteredForward"],
+  gpuBackend: ["auto", "webgl2", "webgpu"],
   mode: ["pbr", "cel"], "cel.lightMixing": ["strongest", "additive", "blend"],
   "shadows.filter": ["pcf", "pcss"], "shadows.filterQuality": ["low", "medium", "high"],
   "shadows.localLightMode": ["auto", "manual"], "quality.lighting.localLightMode": ["auto", "manual"],

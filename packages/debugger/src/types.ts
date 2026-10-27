@@ -1,4 +1,4 @@
-import type { QualityGroup, RenderPath, RenderPathStatus } from "@haptic/core";
+import type { QualityGroup } from "@haptic/core";
 export type CommandTier = "core" | "debug";
 
 export type CommandParamType = "string" | "float" | "int" | "bool" | "enum";
@@ -37,10 +37,6 @@ export type ConsoleCommandHost = {
   /** Returns false when no loaded scene matches the guid. */
   changeScene(sceneAssetGuid: string): boolean | void;
   quality(group?: QualityGroup, choice?: string, value?: string): CommandResult;
-  /** Request a non-persistent game-wide session render path; null resets. */
-  setRenderPath(path: RenderPath | null): void;
-  /** Last render path status the engine reported, or null before the first report. */
-  getRenderPath(): RenderPathStatus | null;
   /** Switch fixed-shape forward lighting for the session (not persisted). */
   setFixedShapeLighting?(request: FixedShapeLightingRequest): void;
   getFixedShapeLighting?(): FixedShapeLightingRequest;

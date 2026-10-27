@@ -42,8 +42,7 @@ function slotSignature(scene: Scene, light: Light): string | null {
  * neither; otherwise the exchanged receivers are dirtied (Babylon dirties the
  * meshes that hold only one). Admitted lights without a partner move to the
  * end of `scene.lights`, matching where Babylon appends them. The caller keeps
- * sun and fill lights out (sun ownership follows scene order) and skips
- * Clustered Forward, which orders lights itself.
+ * sun and fill lights out (sun ownership follows scene order).
  */
 export function exchangeForwardLightSlots(
   scene: Scene,

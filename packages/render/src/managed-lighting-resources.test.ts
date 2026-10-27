@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine, RawTexture, Scene, Constants } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core";
 import {
   limitManagedLightingBytes,
   reserveManagedShadowBytes,
 } from "./managed-lighting-resources";
 import { beginManagedRenderAllocation, managedRenderReservations } from "./managed-render-resources";
-import { managedTextureResource } from "./clustered-resource-cost";
 const engines: NullEngine[] = [];
 afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
@@ -25,8 +24,8 @@ describe("managed lighting allocation transactions", () => {
     const first = beginManagedRenderAllocation(engine, 30)!;
     const texture = {};
     first.commit([
-      { handle: texture, bytes: 30, category: "cluster" },
-      { handle: texture, bytes: 30, category: "cluster" },
+      { handle: texture, bytes: 30, category: "sceneColor" },
+      { handle: texture, bytes: 30, category: "sceneColor" },
     ]);
     const next = beginManagedRenderAllocation(engine, 50)!;
     expect(managedRenderReservations(engine).reservedBytes).toBe(100);
@@ -34,8 +33,8 @@ describe("managed lighting allocation transactions", () => {
     next.release();
     expect(managedRenderReservations(engine).reservedBytes).toBe(50);
     const borrower = beginManagedRenderAllocation(engine, 30)!;
-    borrower.commit([{ handle: texture, bytes: 30, category: "cluster" }]);
-    expect(managedRenderReservations(engine).categoryBytes.cluster).toBe(30);
+    borrower.commit([{ handle: texture, bytes: 30, category: "sceneColor" }]);
+    expect(managedRenderReservations(engine).categoryBytes.sceneColor).toBe(30);
     first.release();
     first.release();
     expect(managedRenderReservations(engine).reservedBytes).toBe(50);
@@ -48,37 +47,11 @@ describe("managed lighting allocation transactions", () => {
     const engine = fixture(50);
     const candidate = beginManagedRenderAllocation(engine, 40)!;
     expect(() =>
-      candidate.commit([{ handle: {}, bytes: 41, category: "cluster" }]),
+      candidate.commit([{ handle: {}, bytes: 41, category: "sceneColor" }]),
     ).toThrow(/reserved peak/);
     expect(beginManagedRenderAllocation(engine, 11)).toBeUndefined();
     expect(managedRenderReservations(engine).pendingBytes).toBe(40);
     candidate.release();
     expect(managedRenderReservations(engine).reservedBytes).toBe(0);
-  });
-  it("derives float formats, rectangular mip chains and multisample resolve storage from actual textures", () => {
-    const engine = fixture(10000);
-    const scene = new Scene(engine);
-    const texture = new RawTexture(
-      new Float32Array(32),
-      4,
-      2,
-      Constants.TEXTUREFORMAT_RGBA,
-      scene,
-      true,
-      false,
-      1,
-      Constants.TEXTURETYPE_FLOAT,
-    );
-    const internal = texture.getInternalTexture()!;
-    // 4x2 +2x1 +1x1 =11 RGBA32F texels, plus a 4-sample 4x2 attachment.
-    internal.samples = 4;
-    expect(managedTextureResource(texture)).toEqual({
-      handle: internal,
-      bytes: 688,
-    });
-    internal.format = Constants.TEXTUREFORMAT_R;
-    internal.generateMipMaps = false;
-    internal.samples = 1;
-    expect(managedTextureResource(texture).bytes).toBe(32);
   });
 });

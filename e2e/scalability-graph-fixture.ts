@@ -28,7 +28,6 @@ export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph
     graphCommand("qual_clamped", [["scalability.setRenderScale", { "default:scale": 0.1 }]]),
     graphCommand("qual_invalid", [["scalability.setFrameCap", { "default:fps": -10 }]]),
     graphCommand("qual_aa", [["scalability.setAntialiasing", { "default:enabled": true }]]),
-    graphCommand("qual_cluster", [["scalability.setRenderPath", { "default:path": "clusteredForward" }]]),
     graphCommand("qual_settings", [
       ["scalability.setResolution", { "default:width": 400, "default:height": 240 }],
       ["scalability.setResolutionQuality", { "default:settings": { scale: 0.75, minScale: 0.75, dynamic: false, targetFps: 30 } }],

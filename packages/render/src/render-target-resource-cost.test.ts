@@ -120,12 +120,12 @@ describe("managed render-target storage", () => {
       expect(() => renderTargetAllocationBytes(layout)).toThrow();
   });
 
-  it("holds replacement peaks against shadow/cluster siblings and releases only disposed generations", () => {
+  it("holds replacement peaks against shadow and area light siblings and releases only disposed generations", () => {
     const engine = engineWithLimit(128);
     const shadow = {};
     reserveManagedShadowBytes(engine, shadow, 24);
-    const cluster = beginManagedRenderAllocation(engine, 8)!;
-    cluster.commit([{ handle: {}, bytes: 8, category: "cluster" }]);
+    const areaLight = beginManagedRenderAllocation(engine, 8)!;
+    areaLight.commit([{ handle: {}, bytes: 8, category: "areaLight" }]);
     const initial = beginManagedRenderAllocation(
       engine,
       renderTargetAllocationBytes(rgba),
@@ -142,7 +142,7 @@ describe("managed render-target storage", () => {
     replacement.commit(
       managedRenderTargetResources(next, { colorCategory: "postprocess" }),
     );
-    expect(managedRenderReservations(engine).categoryBytes.cluster).toBe(8);
+    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(8);
     expect(managedRenderReservations(engine).categoryBytes).toMatchObject({
       sceneColor: 32,
       postprocess: 64,
@@ -152,7 +152,7 @@ describe("managed render-target storage", () => {
     expect(managedRenderReservations(engine).reservedBytes).toBe(96);
     next.dispose();
     replacement.release();
-    cluster.release();
+    areaLight.release();
     reserveManagedShadowBytes(engine, shadow, 0);
     expect(managedRenderReservations(engine).reservedBytes).toBe(0);
   });

@@ -244,8 +244,6 @@ export function createConsole(rt: RuntimeComposition, options: RuntimeDriverOpti
     sceneRealizer: () => rt.sceneRealizer,
     scalability: () => rt.scalability,
     requestScalability: (request) => { rt.requestScalability(request); },
-    projectRenderPath: () => rt.scalabilityProjectRenderPath,
-    renderPathStatus: () => rt.lastRenderPathStatus,
     physics: () => rt.physics,
     navigation: () => rt.navigation,
     behaviourTrees: () => rt.behaviourTrees,

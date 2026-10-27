@@ -17,7 +17,7 @@ import { QUALITY_GROUPS, qualityGroupLabel, resolveRenderingQuality } from "./re
 describe("project schema", () => {
   it("normalizes untrusted render defaults without retaining editor or session state", () => {
     const input = {
-      gpuBackend: "webgpu", renderPath: "clusteredForward", mode: "cel",
+      gpuBackend: "webgpu", mode: "cel",
       cel: { shadowBands: 5 },
       quality: { resolution: { scale: 0.8, dynamic: false, minScale: 0.8 } },
       width: Infinity, height: -2, customResolution: true,
@@ -27,7 +27,7 @@ describe("project schema", () => {
     };
     const normalized = normalizeRenderProjectSettings(input);
     expect(normalized).toMatchObject({
-      gpuBackend: "webgpu", renderPath: "clusteredForward", mode: "cel",
+      gpuBackend: "webgpu", mode: "cel",
       cel: { shadowBands: 5 },
       quality: { resolution: { scale: 0.8, dynamic: false, minScale: 0.8 } },
       width: 1920, height: 1080, customResolution: true,

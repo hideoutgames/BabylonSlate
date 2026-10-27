@@ -5,7 +5,6 @@ import {
 } from "@babylonjs/core";
 import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
-import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import { applyLatticeDeformerPlumbing } from "./lattice-deformer-block";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
@@ -22,7 +21,6 @@ function createGeneration(source: Material, texture: Texture | null): Generation
   material.transparencyMode = Material.MATERIAL_OPAQUE;
   material.alphaMode = Constants.ALPHA_DISABLE;
   material.allowShaderHotSwapping = false;
-  registerClusteredUnlitMaterial(material);
   const blocks: NodeMaterialBlock[] = [];
   const plumbing: MaterialPlumbing = {};
   createSurfacePlumbing(material.name, blocks, plumbing);

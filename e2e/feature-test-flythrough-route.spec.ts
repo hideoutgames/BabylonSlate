@@ -28,7 +28,7 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  * and the events they coincide with. Counts are hardware-independent; times
  * on software adapters are not device performance. Never asserts frame rates.
  *
- * Env: HAPTIC_PERF_SCENES (comma list of main|world|clustered|stress|2d; default main,world),
+ * Env: HAPTIC_PERF_SCENES (comma list of main|world|lights|stress|2d; default main,world),
  *      HAPTIC_PERF_BACKEND (webgl2|webgpu; default: the project's WebGL2),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra; default: the starter's High. Sets the project's Overall Quality in
  *        Project Settings, with Dynamic Resolution off so the workload stays fixed. High and Ultra allow the starter's
@@ -76,12 +76,12 @@ const PLAY_SCENES = sceneList(process.env.HAPTIC_FLY_PLAY ?? "");
  * Materials, hub, Lights And Shadows, Render Targets), then north-west into
  * Animation. World: south-west shore, hill, puddle, lake, up the river,
  * across the island to the moorings, the Ocean presents and the dry dock.
- * Clustered: two loops around the 48-light grid.
+ * Lights: two loops around the 48-light grid.
  */
 const DEFAULT_PATHS: Partial<Record<FeatureTestSceneName, FlyVec3[]>> = {
   main: [[-84, 4, -3], [84, 4, -3], [84, 5, 18], [40, 5, 30]],
   world: [[-60, 8, -40], [-36, 9, -22], [-28, 6, -8], [-10, 5, 14], [-30, 13, 26], [0, 8, 20], [30, 5, 6], [44, 5, -14], [20, 5, -26]],
-  clustered: [[-16, 3, -6], [16, 3, -6], [16, 3, 20], [-16, 3, 20], [-16, 3, -6], [16, 3, -6], [16, 3, 20], [-16, 3, 20], [-16, 3, -6]],
+  lights: [[-16, 3, -6], [16, 3, -6], [16, 3, 20], [-16, 3, 20], [-16, 3, -6], [16, 3, -6], [16, 3, 20], [-16, 3, 20], [-16, 3, -6]],
 };
 
 function pathFor(scene: FeatureTestSceneName): FlyVec3[] | null {

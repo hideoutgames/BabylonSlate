@@ -284,9 +284,6 @@ export interface RuntimeDriver {
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,
   ): void;
-  applyRenderPathStatus(
-    message: Extract<ControlMessage, { type: "renderPathStatus" }>,
-  ): void;
   applyRagdollPoseCaptured(message: Extract<ControlMessage, { type: "ragdollPoseCaptured" }>): void;
   applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void;
   requestScalability(request: ScalabilityRequest): ScalabilityResult;

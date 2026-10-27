@@ -5598,64 +5598,13 @@ describe("Play createEngine view", () => {
     expect(events).toContain("onClick");
   });
 
-  it("scopes render-path overrides to the live Play session and restores the editor preference", () => {
-    const engine = sharedEngine();
-    const { handle: editor } = editorHandle(engine);
-    editor.setRenderPath("clusteredForward");
-    const { handle: first } = playHandle(engine);
-    expect(first.renderPathStatus().requested.renderPath).toBe("forward");
-    first.setRenderPath("clusteredForward");
-    const { handle: second } = playHandle(engine);
-    expect(second.renderPathStatus().requested.renderPath).toBe("clusteredForward");
-    first.dispose();
-    const disposedInvalidation = vi.spyOn(first.scheduler, "invalidate");
-    second.setRenderPath("forward");
-    expect(disposedInvalidation).not.toHaveBeenCalled();
-    second.dispose();
-    expect(editor.renderPathStatus().requested.renderPath).toBe("clusteredForward");
-    editor.setRenderPath(null);
-    const { handle: next } = playHandle(engine);
-    expect(next.renderPathStatus().requested.renderPath).toBe("forward");
-    next.setRenderPath("clusteredForward");
-    next.dispose();
-    expect(editor.renderPathStatus().requested.renderPath).toBe("forward");
-  });
-
-  it("applies a setScalability render path game-wide and reports the session status", () => {
-    const engine = sharedEngine();
-    const { handle: sibling } = playHandle(engine);
-    const statuses: string[] = [];
-    const withStatus = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
-      sharedEngine: engine,
-      playMode: true,
-      onRenderPathChanged: (status) => statuses.push(status.requested.renderPath),
-    });
-    handles.push(withStatus);
-    // The newest Play view owns the shared framebuffer and applies the transaction.
-    const loops = vi.spyOn(engine, "runRenderLoop");
-    const { handle } = playHandle(engine);
-    expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
-    handle.applyCommand(scalabilityCommand({ renderPath: "clusteredForward" }));
-    loops.mock.calls[0]![0]();
-    expect(handle.renderPathStatus().requested.renderPath).toBe("clusteredForward");
-    expect(sibling.renderPathStatus().requested.renderPath).toBe("clusteredForward");
-    expect(statuses).toContain("clusteredForward");
-    sibling.setRenderPath(null);
-    expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
-    expect(statuses.at(-1)).toBe("forward");
-  });
-
   it("ignores setScalability on non-Play handles", () => {
     const engine = sharedEngine();
     const loop = vi.spyOn(engine, "runRenderLoop");
     const { handle } = editorHandle(engine);
-    handle.applyCommand(scalabilityCommand({ renderPath: "clusteredForward" }));
+    handle.applyCommand(scalabilityCommand({ mode: "cel" }));
     loop.mock.calls[0]![0]();
-    expect(handle.renderPathStatus().requested.renderPath).toBe("forward");
-    // The Engine-level API still applies to shared scenes on the same Engine.
-    handle.setRenderPath("clusteredForward");
-    expect(handle.renderPathStatus().requested.renderPath).toBe("clusteredForward");
-    handle.setRenderPath(null);
+    expect(sceneRenderingSettings(handle.scene).mode).toBe("pbr");
   });
 
   it("hides the Play cursor by default and shows it on setCursorVisible", () => {

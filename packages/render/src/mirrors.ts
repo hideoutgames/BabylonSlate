@@ -14,16 +14,13 @@
  * when the view's size or Resolution Scale changes), so a skipped surface always has its last image to show.
  *
  * Views that draw no reflections (their surfaces keep their last image): orthographic, rig/XR and multi-camera views,
- * Clustered Forward views (their light data is sorted for the view camera), Scene Linear without half-float targets,
- * and Render Target Captures, which show what the scene view drew.
+ * Scene Linear without half-float targets, and Render Target Captures, which show what the scene view drew.
  */
 import {
   Camera, Color4, Constants, Frustum, Matrix, MeshBuilder, NodeMaterial, ShaderLanguage, Vector3,
   type AbstractMesh, type Mesh, type NodeMaterialBlock, type Observer, type RenderTargetTexture, type Scene,
 } from "@babylonjs/core";
 import type { MirrorProperties } from "@haptic/core";
-import { clusteredLightTarget } from "./clustered-light-policy";
-import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import { MIRROR_RENDERS_PER_FRAME, selectMirrorsToRender, type MirrorCandidate } from "./mirror-selection";
@@ -147,7 +144,6 @@ class SceneMirrors {
     if (this.drawing || renderTargetCaptureDrawing.has(scene)) return;
     const camera = scene.activeCamera;
     if (!camera || camera.mode !== Camera.PERSPECTIVE_CAMERA || camera.rigCameras.length > 0 || (scene.activeCameras?.length ?? 0) > 1) return;
-    if (clusteredLightTarget(scene, camera)) return;
     const linear = scene.imageProcessingConfiguration.applyByPostProcess;
     if (linear && !engine.getCaps().textureHalfFloatRender) return;
     const output = camera.outputRenderTarget;
@@ -308,7 +304,6 @@ export function builtInMirrorMaterial(scene: Scene): NodeMaterial {
   material.build(false);
   material.doNotSerialize = true;
   markBuiltInMirrorMaterial(material);
-  registerClusteredUnlitMaterial(material);
   builtInMaterials.set(scene, material);
   material.onDisposeObservable.addOnce(() => { if (builtInMaterials.get(scene) === material) builtInMaterials.delete(scene); });
   return material;

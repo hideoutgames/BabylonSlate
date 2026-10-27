@@ -1,7 +1,7 @@
 /** Pixel qualification of the production coordinator; no fixture-owned renderer. */
 import { Camera, Color3, Color4, Engine, FreeCamera, Matrix, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
-import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, requestRenderPath } from "@haptic/render";
+import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 
@@ -29,7 +29,6 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     viewport: { width: innerWidth, height: innerHeight }, devicePixelRatio,
     renderScale: 1 / engine.getHardwareScalingLevel(), userAgent: navigator.userAgent,
   } });
-  requestRenderPath(engine, { renderPath: "forward" });
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0, 0, 0, 1);
   const camera = new FreeCamera("Shared Outline Camera", new Vector3(0, 0, -5), scene);

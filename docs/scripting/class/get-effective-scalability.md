@@ -14,7 +14,7 @@ Returns the quality settings you requested and the ones the renderer is using.
 | Ready | Boolean | True once the renderer has confirmed settings at least once. |
 | Requested Gpu Backend | GpuBackend | The GPU backend that was asked for: Auto, WebGL2 or WebGPU. |
 | Effective Gpu Backend | GpuBackend | The GPU backend in use. |
-| Fallback Reason | String | Explains why the requested render path or backend is not in use. Empty when nothing limits it. |
+| Fallback Reason | String | Explains why the requested backend or a setting is not in use. Empty when nothing limits it. |
 | Vignette Color | Color | The vignette colour currently in effect. |
 | Cel Outline Color | Color | The CEL outline colour currently in effect. |
 

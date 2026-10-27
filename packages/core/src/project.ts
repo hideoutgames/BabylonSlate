@@ -1,6 +1,6 @@
 import { normalizeCollisionPresets, type CollisionPreset } from "./collision-presets";
 import { applyProjectQualityPatch, normalizeRenderingQuality, qualityPresetPatch, type RenderingQuality } from "./render-quality";
-import { normalizeRenderingPipeline, type RenderPath, type GpuBackend } from "./render-path";
+import { normalizeRenderingPipeline, type GpuBackend } from "./rendering-pipeline";
 import { lookAtRotation } from "./euler";
 import { normalizeCelShadingSettings, type CelShadingSettings, type RenderMode } from "./cel-shading";
 import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
@@ -97,8 +97,6 @@ export interface AudioProjectSettings {
 }
 
 export interface RenderProjectSettings {
-  /** Missing legacy values normalize to Forward. Independent of PBR/CEL. */
-  renderPath?: RenderPath;
   /** Missing legacy values normalize to WebGL2; owned by the project Engine. */
   gpuBackend?: GpuBackend;
   quality?: RenderingQuality;

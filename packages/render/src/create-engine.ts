@@ -33,9 +33,7 @@ import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferS
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
-import { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
-import { requestRenderPath, retainPlayRenderPathSession, subscribeRenderPathSession } from "./render-path-session";
-import type { RenderPath } from "@haptic/core";
+import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import {
@@ -425,8 +423,6 @@ function initializeEngine(
       engine as { getGlInfo?: () => { renderer?: string } }
     ).getGlInfo?.().renderer,
   };
-  const releasePlayRenderPath = options.playMode ? retainPlayRenderPathSession(engine) : null;
-  onRollback(() => releasePlayRenderPath?.());
   // Every view's draws count as drawn; Play counts what is first drawn after each world load presents.
   trackFirstDraws(engine);
   const firstDraws = options.playMode ? openFirstDrawStats(engine) : null;
@@ -567,16 +563,6 @@ function initializeEngine(
     cancelPresentation(new Error("Scene construction failed."));
   });
   setSceneRenderSettings(scene, options.renderSettings ?? {});
-  const unsubscribeRenderPath = options.onRenderPathChanged
-    ? subscribeSceneRenderPath(scene, options.onRenderPathChanged) : () => {};
-  onRollback(unsubscribeRenderPath);
-  // A game-wide session render path request re-keys this view's shader and
-  // presentation admission exactly like a project render-settings change.
-  const unsubscribeRenderPathSession = subscribeRenderPathSession(engine, () => {
-    worldRenderer.invalidate();
-    scheduler.invalidate("asset");
-  });
-  onRollback(unsubscribeRenderPathSession);
   configureCutoutSorting(scene);
   scene.skipPointerMovePicking = true;
   scene.clearColor = options.environmentColor
@@ -1902,7 +1888,6 @@ function initializeEngine(
         setSceneRenderSettings(scene);
         outlineHost.refreshSettings();
         applyRenderingQuality();
-        requestRenderPath(engine, visual.renderPath ? { renderPath: visual.renderPath } : {});
         scheduler.setFrameCap(transaction.settings.frameCap);
         const output = transaction.settings.render;
         if (["width", "height", "customResolution", "blackBars"].some((key) => output[key as keyof RenderProjectSettings] !== appliedOutput[key as keyof RenderProjectSettings])) {
@@ -1928,7 +1913,7 @@ function initializeEngine(
         quality.textures = { ...quality.textures, anisotropy: state.textureAnisotropy };
         const water = sceneWaterQualityDeviceClamp(scene);
         quality.water = { ...quality.water, ...water.quality };
-        const pipeline = sceneRenderPathStatus(scene);
+        const pipeline = sceneRenderingPipeline(scene);
         const limits = [...pipeline.limits, ...water.limits];
         return { revision: transaction.revision, status: transaction.clamped || limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
           message: limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."), pipeline,
@@ -2347,8 +2332,6 @@ function initializeEngine(
       sourceOwners.clear();
       streamAdmission?.clear();
       runtimeScalability?.dispose();
-      unsubscribeRenderPath();
-      unsubscribeRenderPathSession();
       loadGeneration += 1;
       cancelPresentation(new Error("Scene loading was disposed."));
       engine.onContextLostObservable.remove(contextLostObserver);
@@ -2390,8 +2373,6 @@ function initializeEngine(
       track(actual, () => renderTargetCaptures.whenReleased());
       track(actual, () => outlineHost.whenReleased());
       track(actual, () => sceneLayerCompositor?.whenReleased());
-      // Cancel graph preparation before restoring the editor's global request.
-      track(bounded, () => releasePlayRenderPath?.());
       const retired = Promise.all(bounded);
       const released = Promise.all(actual).then(() => {});
       releasedHandle = released;
@@ -3021,11 +3002,8 @@ function initializeEngine(
         },
       };
     },
-    renderPathStatus: () => sceneRenderPathStatus(scene),
+    renderingPipeline: () => sceneRenderingPipeline(scene),
     scalabilityStatus: () => lastScalabilityStatus,
-    setRenderPath: (renderPath: RenderPath | null) => {
-      requestRenderPath(engine, renderPath ? { renderPath } : {});
-    },
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
     pickAt: (x, y) => {
       const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());

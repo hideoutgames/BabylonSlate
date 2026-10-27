@@ -99,20 +99,12 @@ class CaptureTexture extends Texture {
 }
 
 class CaptureRenderTarget extends RenderTargetTexture {
-  private drawingPrepared = false;
   configurePass(): void {
     this._objectRenderer.enableOutlineRendering = false;
     this._objectRenderer.disableDepthPrePass = true;
-    // Babylon 9.29 installs only its clustered-light preparation observer on
-    // this privately owned renderer. Readiness already runs that GPU work;
-    // skip the same observer on the immediately following prepared draw.
-    this._objectRenderer.onInitRenderingObservable.add((_renderer, state) => {
-      if (this.drawingPrepared) state.skipNextObservers = true;
-    }, -1, true);
   }
   renderPrepared(): void {
-    this.drawingPrepared = true;
-    try { this.render(false); } finally { this.drawingPrepared = false; }
+    this.render(false);
   }
 }
 
@@ -685,7 +677,7 @@ export class RenderTargetCaptures {
       const captureTexture = new CaptureRenderTarget(`renderTarget:${guid}`, { width, height }, this.scene, {
         generateMipMaps: false, doNotChangeAspectRatio: false, type, format,
         samplingMode: Texture.NEAREST_SAMPLINGMODE, generateDepthBuffer: true, generateStencilBuffer: false,
-        gammaSpace: mode === "SceneColor", enableClusteredLights: mode === "SceneColor",
+        gammaSpace: mode === "SceneColor",
       });
       captureTexture.configurePass();
       texture = captureTexture;
@@ -835,8 +827,8 @@ export class RenderTargetCaptures {
   }
   private drawReady(destination: CaptureRenderTarget): boolean {
     let ready = false;
-    // Readiness initializes the native renderer and may draw clustered-light
-    // targets, so it needs the same framebuffer/state protection as the draw.
+    // Readiness initializes the native renderer, so it needs the same
+    // framebuffer/state protection as the draw.
     drawBorrowedTarget(this.scene, destination, () => {
       const engine = this.scene.getEngine();
       engine.setAlphaMode(Constants.ALPHA_DISABLE);
