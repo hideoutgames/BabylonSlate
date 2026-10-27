@@ -11,7 +11,10 @@ export interface DeviceProfile {
   mobile: boolean;
   /** Shadow map edge ceiling (`effectiveShadowSettings`'s `mapSizeCap`), or null for none. */
   shadowMapCap: ShadowMapSizeCap | null;
-  /** Texture cache ceiling: a quality level's larger budget is lowered to it. */
+  /**
+   * Texture cache ceiling: a quality level's, the Engine Settings' or a view's larger budget is lowered to it. With
+   * the texture budget turned off in Engine Settings nothing is evicted, here too: that is the user's choice.
+   */
   textureByteCeiling: number;
   /** Play's load rehearsal: whether it rehearses repeats of a kind, and when it ends. */
   loadRehearsal: { repeats: boolean; ceilingMs: number };
