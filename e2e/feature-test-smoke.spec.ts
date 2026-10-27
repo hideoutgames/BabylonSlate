@@ -3,42 +3,61 @@ import { createFeatureTestProject, openFeatureTestScene, seedEngineSettings } fr
 import { clickPlayAndWaitForOverlay } from "./play";
 
 /**
- * Required smoke for the Feature Test starter: its main scene loads in the editor viewport and presents in Play on
- * software GL, plays for a few seconds, and the Play session reports no error. The starter places every engine
- * feature, so a combination that fails to load (an outline beside a Mirror once did) fails here instead of only on a
- * device. The in-app Feature Test Check covers the same steps with device-sized limits and frame sampling.
+ * Required smoke for the Feature Test starter: its main scene loads in the editor viewport and in Play on software
+ * GL, Play finishes the world load and plays on, and the Play session reports no error. The starter places every
+ * engine feature, so a combination that fails to load (an outline beside a Mirror once did) fails here instead of
+ * only on a device. Play draws frames well before the world load finishes: its first-frame presentation comes
+ * minutes later on software GL, and a WebGL error the world raises by then fails it (a Mirror's draw in the effects'
+ * geometry pass once did). The in-app Feature Test Check covers the same steps with device-sized limits and frame
+ * sampling.
  */
 
-/** Play's load on software GL compiles and rehearses the whole scene on one thread (seconds locally; the limit leaves a slow runner room). */
-const PLAY_LOAD_MS = 4 * 60_000;
-/** Gameplay before Play closes, so a script error on its first ticks reaches the session report. */
+/** Play's world load on software GL compiles, rehearses and presents the whole scene on one thread (minutes). */
+const PLAY_LOAD_MS = 8 * 60_000;
+/** Gameplay after the world load, so an error on the next ticks reaches the session report. */
 const PLAY_MS = 3_000;
 
 type PlayHost = {
-  __hapticPlayTest?: { tickIndex(): number; rendering(): { presentation?: { copied: number } } | null };
+  __hapticPlayTest?: {
+    rendering(): { frameAdmission?: { worldLoading: boolean; pendingPresentations: number } } | null;
+  };
 };
 
-async function presented(page: Page): Promise<boolean> {
+/** Play's world load state: loading, presented (the Scene Loading dialog may still show a layer's load), or none yet. */
+async function worldLoad(page: Page): Promise<"loading" | "loaded" | "closed" | null> {
+  if (!(await page.getByTestId("play-overlay").count())) return "closed";
   return page.evaluate(() => {
-    const host = (globalThis as unknown as PlayHost).__hapticPlayTest;
-    return (host?.rendering()?.presentation?.copied ?? 0) > 0 && (host?.tickIndex() ?? 0) > 0;
+    const admission = (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.frameAdmission;
+    if (!admission) return null;
+    return admission.worldLoading || admission.pendingPresentations > 0 ? "loading" : "loaded";
   });
 }
 
 test("the Feature Test main scene loads in the editor and in Play without session errors", async ({ page }) => {
-  test.setTimeout(8 * 60_000);
+  test.setTimeout(14 * 60_000);
   await seedEngineSettings(page);
   await createFeatureTestProject(page);
   await openFeatureTestScene(page, "main");
   await clickPlayAndWaitForOverlay(page);
-  await expect.poll(() => presented(page), { message: "Play presents the main scene", timeout: PLAY_LOAD_MS }).toBe(true);
-  await page.waitForTimeout(PLAY_MS);
-  // Software GL draws this scene at a frame or two a second, too slow for a click's stability check.
-  await page.getByTestId("play-overlay-close").dispatchEvent("click");
+  // A failed presentation ends Play by itself. "loaded" counts only after the load was seen running.
+  let outcome: Awaited<ReturnType<typeof worldLoad>> = null;
+  let started = false;
+  await expect.poll(async () => {
+    outcome = await worldLoad(page);
+    started ||= outcome === "loading";
+    return outcome === "closed" || (started && outcome === "loaded");
+  }, { message: "Play finishes the world load", timeout: PLAY_LOAD_MS }).toBe(true);
+  if (outcome === "loaded") {
+    await page.waitForTimeout(PLAY_MS);
+    // Software GL draws this scene at a frame or two a second, too slow for a click's stability check.
+    const close = page.getByTestId("play-overlay-close");
+    if (await close.count()) await close.dispatchEvent("click");
+  }
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
   // A session with entries opens its report as Play closes; only errors fail the smoke, as in the Feature Test Check.
   await page.getByTestId("preview-session-report").waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
   expect(await sessionErrors(page)).toEqual([]);
+  expect(outcome, "Play finishes the world load before it closes").toBe("loaded");
 });
 
 /** The open session report's error rows, each group with errors expanded to show them. */
