@@ -71,7 +71,7 @@ The Documents tier crosses the Capacitor bridge once per asset write as base64 d
 | Web | `UnavailableSecretStore` (`available: false`): Source Control hidden | none |
 
 - `nativeHttp`: `{ method, url, headers, body?, upload? }` → `{ status, bodyText, headers? }`. `upload` is one base64 image (PNG, JPEG, GIF or WEBP) sent as a `multipart/form-data` POST instead of `body`; the transport owns the encoding and `Content-Type` (Capacitor `formData` entries, or Electron's main process), see [accounts](accounts.md#account-management). Account tokens on Electron use a separate `accountSecrets` bridge.
-- Preload exposes `haptic.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`.
+- Preload exposes `haptic.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`, `.memory` (`memory:stats`: the calling renderer's, the GPU process's, the main process's and every app process's working set, read-only, no arguments).
 
 ## Platform decisions
 

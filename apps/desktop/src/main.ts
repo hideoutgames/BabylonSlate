@@ -21,6 +21,7 @@ import type { ProjectFolderHandle } from "@haptic/core";
 import { DesktopSecretStore, isMissingFile } from "./desktop-secret-store";
 import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
+import { desktopMemoryStats } from "./desktop-memory";
 import {
   allowsEditorPermission,
   externalOpenUrl,
@@ -175,6 +176,7 @@ async function registerIpc(): Promise<void> {
     return Array.isArray(grants) ? grants.filter((grant): grant is string => typeof grant === "string") : [];
   }
 
+  handle("memory:stats", (event) => desktopMemoryStats(app.getAppMetrics(), event.sender.getOSProcessId()));
   handle("settings:read", async () => {
     try {
       return await readFile(settingsPath, "utf8");

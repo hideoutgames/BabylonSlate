@@ -59,6 +59,7 @@ import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import type { SpawnableLight } from "./spawnable-lights";
 import { reserveSceneLightInventory } from "./scene-lighting";
 import { createLoadRehearsal, type LoadRehearsal, type LoadRehearsalReport } from "./load-rehearsal";
+import { estimateTextureMemory } from "./texture-memory-estimate";
 import { releaseLightPredictions } from "./variant-prediction";
 import { nativePreparationForEngine } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
@@ -549,11 +550,16 @@ function initializeEngine(
     if (!pending) return;
     cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending.ready}; draws: ${pending.attempts}; rendered: ${pending.rendered}; GPU pending: ${Boolean(pending.submission)}; copied: ${pending.copied}; render pipelines created: ${pending.pipelines}.`), key);
   };
+  /** Names the GPU memory the Engine held: a mobile browser loses the context under memory pressure. */
+  const contextLostError = () => {
+    const { bytes, textures } = estimateTextureMemory(engine);
+    return new Error(`Rendering context was lost during scene loading (textures held: ${textures}, about ${Math.round(bytes / 1048576)} MB).`);
+  };
   const assertCurrent = (generation: number) => {
     if (disposed || scene.isDisposed || generation !== loadGeneration) {
       throw new Error("Scene loading was superseded or disposed.");
     }
-    if (contextLost) throw new Error("Rendering context was lost during scene loading.");
+    if (contextLost) throw contextLostError();
   };
   onRollback(() => {
     disposed = true;
@@ -1719,6 +1725,7 @@ function initializeEngine(
         registeredViewRequestedEnabled: registeredView ? registeredViewIsEnabled(registeredView) : null,
         rttPresenting: rttPresent?.isPresenting() ?? false, contextLost },
       worldLoad: worldLoading ? worldLoadDiagnostics() : null,
+      textureMemory: estimateTextureMemory(engine),
       engineLoop: { frameId: engine.frameId, activeLoops: engine.activeRenderLoops.length,
         ownsLoop: engine.activeRenderLoops.includes(renderLoop), frameHandler: engine._frameHandler,
         disposed: engine.isDisposed, contextLost: native._contextWasLost,
@@ -2216,7 +2223,7 @@ function initializeEngine(
     frameReportFeed.cancel("The graphics context was lost before frame capture completed.");
     presentationStats.contextLosses += 1;
     loadGeneration += 1;
-    cancelPresentation(new Error("Rendering context was lost during scene loading."));
+    cancelPresentation(contextLostError());
     engineCommandBus.dispatch({ type: "log", message: "WebGL context lost" });
   });
   onRollback(() => engine.onContextLostObservable.remove(contextLostObserver));

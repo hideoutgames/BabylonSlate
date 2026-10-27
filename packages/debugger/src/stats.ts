@@ -79,6 +79,9 @@ export type StatsHudInput = {
   appFootprintBytes?: number;
   appAvailableBytes?: number;
   systemAvailableBytes?: number;
+  /** Desktop app: the GPU process (WebGL resources) and this window's renderer process. */
+  gpuProcessBytes?: number;
+  rendererProcessBytes?: number;
   geometryBytes?: number;
   /** Geometry bytes are past the render package's ceiling warning. */
   geometryHigh?: boolean;
@@ -165,6 +168,8 @@ function groupMetrics(group: StatGroup, input: StatsHudInput, overBudget: boolea
         bytesMetric("app-footprint", "app", input.appFootprintBytes),
         bytesMetric("app-headroom", "headroom", input.appAvailableBytes),
         bytesMetric("system-memory", "free", input.systemAvailableBytes),
+        bytesMetric("renderer-process", "renderer", input.rendererProcessBytes),
+        bytesMetric("gpu-process", "gpu proc", input.gpuProcessBytes),
         bytesMetric("geo", "geo", input.geometryBytes, input.geometryHigh),
       ]);
     case "draws": {

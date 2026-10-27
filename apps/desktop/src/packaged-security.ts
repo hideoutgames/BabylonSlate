@@ -173,7 +173,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
   const counts: Record<string, number> = {
     "save-games:read": 1, "save-games:write": 2, "save-games:remove": 1,
     "save-games:list": 1, "save-games:acquire-lock": 1, "save-games:release-lock": 1,
-    "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
+    "memory:stats": 0, "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
     "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
     "lfs:fetch": 1, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,

@@ -128,6 +128,8 @@ export function StatsHud({
     appFootprintBytes: hostMemory?.appFootprintBytes,
     appAvailableBytes: hostMemory?.appAvailableBytes,
     systemAvailableBytes: hostMemory?.systemAvailableBytes,
+    rendererProcessBytes: hostMemory?.rendererProcessBytes,
+    gpuProcessBytes: hostMemory?.gpuProcessBytes,
     geometryBytes,
     geometryHigh: geometryBytes != null && geometryByteCeilingWarning(geometryBytes) !== null,
     draws,

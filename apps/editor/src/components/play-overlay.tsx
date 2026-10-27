@@ -16,7 +16,7 @@ import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
 import { formatRuntimeLogLine } from "../lib/output-log-line";
-import { formatSceneLoadReport, worldLoadLine } from "../lib/scene-load-report";
+import { formatSceneLoadReport, hostMemoryLine, textureMemoryLine, worldLoadLine } from "../lib/scene-load-report";
 import { nextStatGroups, type StatGroup } from "@haptic/debugger";
 import type { SceneLoadProgress, SpawnableLight } from "@haptic/render";
 import type { RenderDiagnostics } from "@haptic/render";
@@ -99,6 +99,7 @@ import type {
 import { isTestModeEnabled } from "@haptic/vfs";
 import {
   getHostMemoryStats,
+  latestHostMemoryStats,
   type HostMemoryStats,
 } from "@haptic/vfs";
 import {
@@ -1229,6 +1230,16 @@ function PlayOverlayView({
   }, []);
 
   const playStartedRef = useRef(performance.now());
+  // Copy Details builds its text inside the tap, so it reports the last sample: keep one fresh while loading.
+  const loadingWithDetails = sceneLoading !== null && localEngineSettings.debugMode;
+  useEffect(() => {
+    if (!loadingWithDetails) return;
+    const sample = () => { void getHostMemoryStats().catch(() => null); };
+    sample();
+    const id = window.setInterval(sample, 2000);
+    return () => window.clearInterval(id);
+  }, [loadingWithDetails]);
+
   const copyLoadDetails = () => {
     const session = sessionRef.current;
     const rendering = (() => { try { return session?.handle.renderDiagnostics() ?? null; } catch { return null; } })();
@@ -1245,6 +1256,8 @@ function PlayOverlayView({
         `Play: ${session ? `${session.runtimeMode} runtime · tick ${session.lastTickIndex()} · models loaded ${session.modelLoadCount()}` : "session not started"}`,
         ...(rendering ? [`Render: ${rendering.pipeline.effective.gpuBackend} ${rendering.pipeline.effective.renderPath} · ${rendering.width}x${rendering.height} · draws ${rendering.drawCalls} · meshes ${rendering.resources.meshes} · textures ${rendering.resources.textures}${rendering.qualityLimits.length ? ` · limits ${clipText(rendering.qualityLimits.join("; "), 200)}` : ""}`] : []),
         ...(rendering?.worldLoad ? [worldLoadLine(rendering.worldLoad)] : []),
+        ...(rendering?.textureMemory ? [textureMemoryLine(rendering.textureMemory)] : []),
+        ...(() => { const memory = latestHostMemoryStats(); return memory ? [hostMemoryLine(memory.stats, performance.now() - memory.at)] : []; })(),
         problems.length ? `Play log errors and warnings (last ${problems.length}):` : "Play log errors and warnings: none",
         ...problems.map((entry) => `  [${entry.severity}] ${clipText(entry.message, 300)}`),
       ],
