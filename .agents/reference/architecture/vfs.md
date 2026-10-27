@@ -48,7 +48,7 @@ Storage port, platform adapters, app-owned libraries, Engine Settings storage, s
 
 ## Write performance decision
 
-The Documents tier crosses the Capacitor bridge once per asset write with base64 encoding, so: (1) write only dirty documents, (2) externalise large immutable chunks to the blob store (existing hashes are never rewritten), (3) debounce behind the command layer. **No pack format**: one `.hasset` per asset stays the on-disk unit, keeping the registry and Content Browser free of pack indirection. Revisit only with device numbers.
+The Documents tier crosses the Capacitor bridge once per asset write as base64 data with **no** `encoding` option: Capacitor Filesystem treats any encoding name as text (iOS writes an unknown one, such as `"base64"`, as UTF-8), which leaves base64 text on disk that native range reads then see. So: (1) write only dirty documents, (2) externalise large immutable chunks to the blob store (existing hashes are never rewritten), (3) debounce behind the command layer. **No pack format**: one `.hasset` per asset stays the on-disk unit, keeping the registry and Content Browser free of pack indirection. Revisit only with device numbers.
 
 ## App settings (Engine Settings)
 

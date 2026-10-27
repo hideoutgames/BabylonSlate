@@ -1,17 +1,22 @@
 import type { DocumentsFilesystemApi } from "../documents-adapter";
 
 export type FakeDocumentsFs = DocumentsFilesystemApi & {
-  tree: Map<string, { kind: "file" | "dir"; data?: string }>;
+  tree: Map<string, { kind: "file" | "dir"; data?: Uint8Array }>;
 };
 
-/** In-process stand-in for Capacitor Filesystem so Documents-tier logic is testable. */
+const toBase64 = (bytes: Uint8Array) => btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+
+/**
+ * In-process stand-in for Capacitor Filesystem so Documents-tier logic is
+ * testable. Like the native plugin, any `encoding` means text (an unknown name
+ * falls back to UTF-8) and only an omitted one means base64-encoded bytes.
+ */
 export function createFakeDocumentsFs(): FakeDocumentsFs {
-  const tree = new Map<string, { kind: "file" | "dir"; data?: string }>();
+  const tree = new Map<string, { kind: "file" | "dir"; data?: Uint8Array }>();
   tree.set("BabylonSlate/projects", { kind: "dir" });
 
   let revision = 0;
   const revisions = new Map<string, string>();
-  const encodings = new Map<string, string | undefined>();
   const normalize = (path: string) => path.replace(/\/+$/, "") || "";
   const missing = () => Object.assign(new Error("missing"), { code: "OS-PLUG-FILE-0008" });
 
@@ -43,7 +48,7 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
         .map(([key, node]) => ({
           name: key.slice(prefix.length),
           type: node.kind === "dir" ? "directory" : "file",
-          size: node.data?.length ?? 0,
+          size: node.data?.byteLength ?? 0,
           mtime: 1,
         }));
       if (!tree.has(p) && p !== "") {
@@ -51,10 +56,11 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
       }
       return { files };
     },
-    async readFile({ path }) {
+    async readFile({ path, encoding }) {
       const node = tree.get(normalize(path));
       if (!node || node.kind !== "file") throw missing();
-      return { data: node.data ?? "" };
+      const bytes = node.data ?? new Uint8Array();
+      return { data: encoding ? new TextDecoder().decode(bytes) : toBase64(bytes) };
     },
     async readFileRange({ path, offset, length, expectedRevision }) {
       const key = normalize(path);
@@ -62,16 +68,16 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
       if (!node || node.kind !== "file") throw missing();
       const currentRevision = revisions.get(key) ?? "0";
       if (expectedRevision !== undefined && expectedRevision !== currentRevision) throw new Error("Source revision changed");
-      const bytes = encodings.get(key) === "utf8" ? new TextEncoder().encode(node.data ?? "") : Uint8Array.from(atob(node.data ?? ""), c => c.charCodeAt(0));
+      const bytes = node.data ?? new Uint8Array();
       if (offset + length > bytes.length) throw new RangeError("Range exceeds file size");
-      return { data: btoa(String.fromCharCode(...bytes.subarray(offset, offset + length))), totalSize: bytes.length, revision: currentRevision, actualBytesRead: length };
+      return { data: toBase64(bytes.subarray(offset, offset + length)), totalSize: bytes.length, revision: currentRevision, actualBytesRead: length };
     },
     async writeFile({ path, data, encoding }) {
       const p = normalize(path);
       ensureParents(p);
-      tree.set(p, { kind: "file", data });
+      const bytes = encoding ? new TextEncoder().encode(data) : Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+      tree.set(p, { kind: "file", data: bytes });
       revisions.set(p, String(++revision));
-      encodings.set(p, encoding);
       return {};
     },
     async deleteFile({ path }) {
@@ -88,7 +94,7 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
       if (!node) throw missing();
       return {
         type: node.kind === "dir" ? "directory" : "file",
-        size: node.data?.length ?? 0,
+        size: node.data?.byteLength ?? 0,
         mtime: 1,
       };
     },
