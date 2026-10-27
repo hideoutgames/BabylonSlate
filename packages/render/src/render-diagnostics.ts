@@ -17,7 +17,7 @@ import type { RenderScheduler } from "./render-scheduler";
 import type { FirstDrawStats } from "./first-draw-stats";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
-import { deviceShadowMapCap } from "./device-shadow-cap";
+import { deviceShadowMapCap } from "./device-class";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 
 export type RenderDiagnostics = {

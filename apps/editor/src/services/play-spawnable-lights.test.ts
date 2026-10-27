@@ -63,7 +63,7 @@ describe("the lights a Play load may spawn", () => {
     ["a Mesh", { named: "MeshComponent" } as const, []],
     ["a class from a variable", "variable" as const, ["hemispheric", "point"]],
   ])("adds the light a held Class's Add Component of %s adds", (_, added, kinds) => {
-    // An added component takes its class's defaults; scripts cannot change a light's kind or shadows.
+    // An added component takes its class's defaults; scripts cannot change a light's kind.
     const registry = createDefaultNodeRegistry();
     const lights = spawnableLightsOfLoad({ scripts: [adder(registry, added)], assets: [], isClass: () => true });
     expect([...lights.values()].map(({ kind, properties }) => `${kind}${properties.castShadows ? " shadows" : ""}`).sort())

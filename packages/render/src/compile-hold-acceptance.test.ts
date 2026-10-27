@@ -1693,6 +1693,33 @@ describe("compile holds after the first frame", () => {
     expect(total).toBeGreaterThan(0);
   });
 
+  it("a Play load on a phone or tablet leaves out the repeats of a kind it rehearsed", async () => {
+    // The world's sun and three lights: each switched off, and each started casting. The two points are one kind, so
+    // the second's changes are repeats.
+    const rehearsal = async (mobile: boolean) => {
+      // A fresh world per run: the previous one's Engine, clock and render spy go first.
+      for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+      if (vi.isMockFunction(SceneRenderCoordinator.prototype.render)) vi.mocked(SceneRenderCoordinator.prototype.render).mockRestore();
+      if (mobile) {
+        vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)", maxTouchPoints: 5 });
+        cleanups.push(() => vi.unstubAllGlobals());
+      }
+      rehearseLoad = true;
+      const world = playWorld("sync", [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])]);
+      await withClock(world.handle.prewarmSceneMaterials());
+      const presentation = world.handle.presentFirstFrame();
+      let presented = false;
+      void presentation.finally(() => { presented = true; });
+      for (let index = 0; index < 400 && (index < 4 || !presented); index++) await world.frame();
+      await presentation;
+      const { steps, omitted } = world.handle.loadRehearsalStats()!;
+      return { steps, omitted: omitted.map((label) => label.slice(AUTHORED_LIGHT_PREFIX.length)) };
+    };
+    expect([await rehearsal(false), await rehearsal(true)]).toEqual([
+      { steps: 8, omitted: [] }, { steps: 6, omitted: ["11 off", "11 shadows on"] },
+    ]);
+  });
+
   it("a load rehearsal gives the shadow maps its changes released back to their lights, and builds only a map a change starts", async () => {
     // The sun's and the spot's changes (off, shadows off) release their maps; each revert takes the same allocation
     // back rather than building it again. The point's shadows-on step builds a map, which its revert disposes.

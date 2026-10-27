@@ -39,7 +39,7 @@ import {
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { findSceneShadowController } from "./shadow-controller";
-import { deviceShadowMapCap } from "./device-shadow-cap";
+import { deviceShadowMapCap } from "./device-class";
 
 /**
  * The seats of a world Scene's fixed light layout and the light in each, as

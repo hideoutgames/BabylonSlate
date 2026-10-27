@@ -1,5 +1,6 @@
 import { DirectionalLight, PointLight, SpotLight, Vector3, type Effect, type Light, type Scene } from "@babylonjs/core";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
+import { isMobileGpuDevice } from "./device-class";
 import { DriverCompileWatch } from "./driver-compile";
 import { restoreSceneLightOrder } from "./forward-light-slots";
 import {
@@ -34,6 +35,12 @@ export const LOAD_REHEARSAL_STEP_MS = 10_000;
  * `SCENE_PREPARATION_CEILING_MS` (300 s) from its start, and the frame it then presents needs that room.
  */
 export const LOAD_REHEARSAL_CEILING_MS = 120_000;
+/**
+ * The ceiling on a phone or tablet (`isMobileGpuDevice`), which also leaves out the repeats: an iPad's WebKit compiles
+ * a step's variants in ten seconds or more, so the full budget kept a load behind its loading screen for minutes. What
+ * it leaves out compiles when gameplay first makes that change.
+ */
+export const MOBILE_LOAD_REHEARSAL_CEILING_MS = 45_000;
 
 type RehearsalStep = { label: string; kind: string; apply(): void; revert(): void };
 
@@ -42,7 +49,7 @@ export interface LoadRehearsalReport {
   steps: number;
   /** Rehearsed changes that drew: the others drew with Effects an earlier rehearsal frame drew. */
   drawn: number;
-  /** Changes the step budget or the rehearsal's ceiling left out. */
+  /** Changes the step budget, the rehearsal's ceiling or a phone or tablet (its repeats) left out. */
   omitted: string[];
   /** Changes whose variants were not ready to draw within `LOAD_REHEARSAL_STEP_MS` (or when the ceiling came), and
    * "starting state" when the starting state never settled. */
@@ -77,7 +84,7 @@ export interface LoadRehearsal {
    */
   frame(draw: () => boolean): void;
   /** Ends a step (or the starting state) that has waited `LOAD_REHEARSAL_STEP_MS`, and the whole rehearsal at
-   * `LOAD_REHEARSAL_CEILING_MS`; call each loading frame. */
+   * `LOAD_REHEARSAL_CEILING_MS` (`MOBILE_LOAD_REHEARSAL_CEILING_MS` on a phone or tablet); call each loading frame. */
   check(): void;
   /** Reverts an applied step and ends the rehearsal (a superseded load). */
   cancel(): void;
@@ -92,9 +99,9 @@ export interface LoadRehearsal {
  * spawning (`spawnedLightSteps`). Combinations are left out: their count grows exponentially. The first change of each
  * authored kind leads, then the spawned lights (each a kind of its own), so the step budget leaves out repeats (many
  * identical lights, whose changes usually ask for variants an earlier one compiled) rather than a later light of
- * another class.
+ * another class; `repeats` are those after them.
  */
-function rehearsalSteps(scene: Scene, spawnable: readonly SpawnableLight[]): RehearsalStep[] {
+function rehearsalSteps(scene: Scene, spawnable: readonly SpawnableLight[]): { kinds: RehearsalStep[]; repeats: RehearsalStep[] } {
   const shadows = findSceneShadowController(scene);
   const steps: RehearsalStep[] = [];
   for (const light of scene.lights) {
@@ -124,7 +131,7 @@ function rehearsalSteps(scene: Scene, spawnable: readonly SpawnableLight[]): Reh
     (kinds.has(step.kind) ? repeats : leading).push(step);
     kinds.add(step.kind);
   }
-  return [...leading, ...spawnedLightSteps(scene, spawnable), ...repeats];
+  return { kinds: [...leading, ...spawnedLightSteps(scene, spawnable)], repeats };
 }
 
 /** Draws with every enabled, visible mesh selected, as Babylon's cull task does under `skipFrustumClipping`. */
@@ -307,14 +314,20 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * view culling, so a mesh outside the starting view, and its variants for each step, draw here (a program's first use
  * on WebGL2, a render pipeline on WebGPU) rather than when gameplay first shows it. A load with nothing to rehearse
  * draws no frame for it: an extra loading frame steps GPU particles once more, which a paused Simulation's redraw shows.
+ *
+ * `mobile` (by default a phone or tablet, `isMobileGpuDevice`) leaves out the repeats, reported as left out, and ends
+ * the rehearsal at `MOBILE_LOAD_REHEARSAL_CEILING_MS`.
  */
 export function createLoadRehearsal(
   scene: Scene, settled: () => boolean = () => true, spawnable: readonly SpawnableLight[] = [],
-  options: { staged?: boolean; onStartingDrawn?: () => void; drawsOutsideView?: boolean } = {},
+  options: { staged?: boolean; onStartingDrawn?: () => void; drawsOutsideView?: boolean; mobile?: boolean } = {},
 ): LoadRehearsal {
-  const all = rehearsalSteps(scene, spawnable);
+  const mobile = options.mobile ?? isMobileGpuDevice();
+  const ceiling = mobile ? MOBILE_LOAD_REHEARSAL_CEILING_MS : LOAD_REHEARSAL_CEILING_MS;
+  const { kinds, repeats } = rehearsalSteps(scene, spawnable);
+  const all = mobile ? kinds : [...kinds, ...repeats];
   const steps = all.slice(0, LOAD_REHEARSAL_STEP_BUDGET);
-  const omitted = all.slice(LOAD_REHEARSAL_STEP_BUDGET).map((step) => step.label);
+  const omitted = [...all.slice(LOAD_REHEARSAL_STEP_BUDGET), ...mobile ? repeats : []].map((step) => step.label);
   const timedOut: string[] = [];
   const unrestored: string[] = [];
   const engine = scene.getEngine();
@@ -411,7 +424,7 @@ export function createLoadRehearsal(
       const draw = options.drawsOutsideView ? () => withoutViewCulling(scene, viewDraw) : viewDraw;
       if (startedAt === undefined) {
         startedAt = phaseSince = performance.now();
-        watch = new DriverCompileWatch(engine, startedAt, LOAD_REHEARSAL_CEILING_MS);
+        watch = new DriverCompileWatch(engine, startedAt, ceiling);
       }
       if (starting) {
         // Views the first draw created prepare on their own; wait for them without drawing.
@@ -449,7 +462,7 @@ export function createLoadRehearsal(
     check() {
       if (endedAt !== undefined || startedAt === undefined) return;
       const now = performance.now();
-      if (now - startedAt >= LOAD_REHEARSAL_CEILING_MS) {
+      if (now - startedAt >= ceiling) {
         end();
         return;
       }
