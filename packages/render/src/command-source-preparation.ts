@@ -29,10 +29,25 @@ interface Request {
   preparedRelease?: () => void;
 }
 
+/**
+ * One loader call shared by every request with the same sources (`representationKey`): those still waiting join it,
+ * and so do later ones while any slot holds its sources. Each member holds it; the loader's release runs when the last
+ * lets go. Its signal aborts only once every member waiting on it was cancelled.
+ */
+interface SharedLoad {
+  representationKey: string;
+  waiting: Set<Request>;
+  controller: AbortController;
+  /** The loader's release once it resolved; unset while it runs. */
+  release?: () => void;
+  holders: number;
+}
+
 /** Hold the previous visual and its sources until a cold replacement is usable. */
 export class CommandSourcePreparation {
   private loader: CommandSourceLoader | null = null;
   private readonly pending = new Map<string, Request>();
+  private readonly shared = new Map<string, SharedLoad>();
   private readonly retained = new Map<string, { slotId: number; release: () => void; representationKey: string }>();
   private readonly failures = new Map<string, { slotId: number; error: Error }>();
   private readonly followers = new Map<number, Array<{ command: CommandMessage; apply: (command: CommandMessage) => void }>>();
@@ -173,28 +188,77 @@ export class CommandSourcePreparation {
   }
 
   private pump(): void {
-    while (!this.disposed && this.loader && this.active < this.concurrency && this.queue.length) {
-      const request = this.queue.shift()!;
-      if (request.controller.signal.aborted) continue;
+    const ready: Request[] = [];
+    for (let index = 0; !this.disposed && this.loader && index < this.queue.length;) {
+      const request = this.queue[index]!;
+      if (request.controller.signal.aborted) { this.queue.splice(index, 1); continue; }
+      const load = this.shared.get(request.representationKey);
+      if (load) {
+        // Its sources are loading or held already: join without a loader call of its own.
+        this.queue.splice(index, 1);
+        this.join(load, request);
+        if (load.release) ready.push(request);
+        continue;
+      }
+      if (this.active >= this.concurrency) { index++; continue; }
+      this.queue.splice(index, 1);
       this.active++;
-      void this.prepare(request, this.loader);
+      const started: SharedLoad = { representationKey: request.representationKey, waiting: new Set(), controller: new AbortController(), holders: 0 };
+      this.shared.set(request.representationKey, started);
+      this.join(started, request);
+      void this.prepare(started, request, this.loader);
     }
+    for (const request of ready) this.publishSlot(request.slotId);
   }
 
-  private async prepare(request: Request, loader: CommandSourceLoader): Promise<void> {
+  /** Adds `request` to `load`; a load already resolved hands it a hold at once. */
+  private join(load: SharedLoad, request: Request): void {
+    if (load.release) { request.preparedRelease = this.hold(load); return; }
+    load.waiting.add(request);
+    request.controller.signal.addEventListener("abort", () => {
+      load.waiting.delete(request);
+      if (!load.release && !load.waiting.size) load.controller.abort();
+    }, { once: true });
+  }
+
+  /** One holder's release of a resolved load; the last holder runs the loader's release. */
+  private hold(load: SharedLoad): () => void {
+    load.holders++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (--load.holders > 0) return;
+      if (this.shared.get(load.representationKey) === load) this.shared.delete(load.representationKey);
+      load.release!();
+    };
+  }
+
+  private async prepare(load: SharedLoad, first: Request, loader: CommandSourceLoader): Promise<void> {
     let release: (() => void) | undefined;
     try {
-      release = await loader(request.guids, {
-        slotId: request.slotId, consumer: `Actor Slot ${request.slotId}: ${request.command.type}`,
-        signal: request.controller.signal,
-        fontModes: request.fontModes,
+      release = await loader(first.guids, {
+        slotId: first.slotId, consumer: `Actor Slot ${first.slotId}: ${first.command.type}`,
+        signal: load.controller.signal,
+        fontModes: first.fontModes,
       });
-      if (request.controller.signal.aborted || this.pending.get(request.key) !== request || this.disposed) return;
-      request.preparedRelease = release;
+      const members = [...load.waiting].filter((request) =>
+        !request.controller.signal.aborted && this.pending.get(request.key) === request);
+      load.waiting.clear();
+      if (!members.length || this.disposed) {
+        if (this.shared.get(load.representationKey) === load) this.shared.delete(load.representationKey);
+        return;
+      }
+      load.release = release;
       release = undefined;
-      this.publishSlot(request.slotId);
+      for (const request of members) request.preparedRelease = this.hold(load);
+      for (const slotId of new Set(members.map((request) => request.slotId))) this.publishSlot(slotId);
     } catch (cause) {
-      if (this.pending.get(request.key) === request) {
+      if (this.shared.get(load.representationKey) === load) this.shared.delete(load.representationKey);
+      const members = [...load.waiting];
+      load.waiting.clear();
+      for (const request of members) {
+        if (this.pending.get(request.key) !== request) continue;
         this.pending.delete(request.key);
         const error = new Error(`Assets ${request.guids.join(", ")} for actor slot ${request.slotId} failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
         this.failures.set(request.key, { slotId: request.slotId, error });
@@ -205,7 +269,7 @@ export class CommandSourcePreparation {
         this.flushFollowers(request.slotId);
       }
     } finally {
-      try { if (release) this.release(release, request.slotId); }
+      try { if (release) this.release(release, first.slotId); }
       finally { this.active--; this.pump(); }
     }
   }

@@ -167,6 +167,22 @@ describe("render scheduler", () => {
     }
   });
 
+  it("holds a ready owner's next frame under a load for as long as its last frame took", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.acquireContinuous("play");
+    scheduler.setFrameCap(60);
+    scheduler.acquireObstruction();
+    // A 300 ms frame: the load gets the thread until 600 ms, though the cadence allows 317 ms.
+    scheduler.noteRendered(0, 300);
+    expect([scheduler.shouldRenderReadyOwners(317), scheduler.shouldRenderReadyOwners(599), scheduler.shouldRenderReadyOwners(600)])
+      .toEqual([false, false, true]);
+    // Without a load the same frame keeps its cadence.
+    expect(scheduler.shouldRender(317, true)).toBe(true);
+    // A frame that fits its cadence is not held back.
+    scheduler.noteRendered(1000, 1005);
+    expect(scheduler.shouldRenderReadyOwners(1017)).toBe(true);
+  });
+
   it("does not catch up when a cap change lands on a fractional deadline", () => {
     const scheduler = new RenderScheduler();
     scheduler.acquireContinuous("play");
