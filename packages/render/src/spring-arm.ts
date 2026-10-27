@@ -19,6 +19,7 @@ import {
   type Transform,
 } from "@haptic/core";
 import { RENDERING_GROUP } from "./sorting";
+import { drawWhateverTheView } from "./play-view-culling";
 
 /** Play part mesh kind the runtime emits for a `SpringArmComponent`. */
 export const SPRING_ARM_MESH_KIND = "springarm";
@@ -220,7 +221,7 @@ export class SpringArmDebugLines {
     this.mesh.isPickable = false;
     this.mesh.receiveShadows = false;
     this.mesh.applyFog = false;
-    this.mesh.alwaysSelectAsActiveMesh = true;
+    drawWhateverTheView(this.mesh);
     this.mesh.renderingGroupId = RENDERING_GROUP.world;
     this.mesh.metadata = { ...(this.mesh.metadata ?? {}), playDebugOverlay: true };
   }
