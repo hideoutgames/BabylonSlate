@@ -19,7 +19,7 @@
  */
 import {
   Camera, Color4, Constants, Frustum, Matrix, MeshBuilder, NodeMaterial, ShaderLanguage, Vector3,
-  FragmentOutputBlock, type AbstractMesh, type Mesh, type NodeMaterialBlock, type Observer, type RenderTargetTexture, type Scene,
+  type AbstractMesh, type Mesh, type NodeMaterialBlock, type Observer, type RenderTargetTexture, type Scene,
 } from "@babylonjs/core";
 import type { MirrorProperties } from "@haptic/core";
 import { clusteredLightTarget } from "./clustered-light-policy";
@@ -36,6 +36,7 @@ import {
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { shadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
+import { connectGeometrySurfaceOutput, GeometrySurfaceOutputBlock } from "./geometry-surface-output-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
@@ -280,7 +281,12 @@ function ownerFor(scene: Scene): SceneMirrors {
   return owner;
 }
 
-/** The scene's built-in mirror surface material: the reflection times the surface's Tint, unlit. */
+/**
+ * The scene's built-in mirror surface material: the reflection times the surface's Tint, unlit. Like an authored
+ * Material it writes the scene effects' geometry outputs (depth and normal, no reflectivity, so Real-Time Reflections
+ * add none to the reflection): a geometry pass binds every attachment for it, and a draw that leaves one unwritten is
+ * a WebGL error that fails the session's next scene presentation.
+ */
 export function builtInMirrorMaterial(scene: Scene): NodeMaterial {
   const existing = builtInMaterials.get(scene);
   if (existing) return existing;
@@ -294,7 +300,8 @@ export function builtInMirrorMaterial(scene: Scene): NodeMaterial {
   const reflection = new MirrorReflectionBlock("mirrorSurfaceReflection", true);
   plumbing.worldPosition!.connectTo(reflection.worldPosition);
   plumbing.worldPosition!.connectTo(plumbing.clipPosition!);
-  const fragment = new FragmentOutputBlock("mirrorSurfaceOutput");
+  const fragment = new GeometrySurfaceOutputBlock("mirrorSurfaceOutput");
+  connectGeometrySurfaceOutput(fragment, plumbing, null, created);
   reflection.color.connectTo(fragment.rgb);
   material.addOutputNode(outputs[0]!);
   material.addOutputNode(fragment);
