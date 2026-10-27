@@ -2260,6 +2260,26 @@ describe("compile holds after the first frame", () => {
     expect(world.handle.scene.meshes.some((mesh) => mesh.name.startsWith("spawnable-warm:"))).toBe(false);
   });
 
+  it.each(MODELS)("Play culls a mesh outside the camera's view, which the load drew so it needs no first draw in view: %s", async (model) => {
+    // Intermediate priority would draw every mesh every frame; Play clears that for meshes whose bounds hold. The
+    // load rehearsal draws without view culling, so the barrel behind the camera draws there first.
+    rehearseLoad = true;
+    const world = playWorld(model, [{ slotId: 20, guid: "barrel", position: [0, 1, -40], assign: { meshAssetGuid: null, meshKind: "box" } }], ["surface-b"]);
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-b" });
+    const drawn = spawnDraws();
+    await settle(world);
+    const drawnAtLoad = drawn.has("actor-20");
+    drawn.clear();
+    for (let index = 0; index < 3; index++) await world.frame();
+    const drawnOutside = drawn.has("actor-20");
+    const before = world.handle.renderDiagnostics().firstDraws;
+    world.move(20, [2, 1, 1]);
+    for (let index = 0; index < 3; index++) await world.frame();
+    expect({ drawnAtLoad, drawnOutside, drawnInView: drawn.has("actor-20"),
+      firstDrawsInView: before ? world.handle.renderDiagnostics().firstDraws!.draws - before.draws : 0,
+    }).toEqual({ drawnAtLoad: true, drawnOutside: false, drawnInView: true, firstDrawsInView: 0 });
+  });
+
   it.each(MODELS)("a Spawn Actor preparation compiles the actor's Material before it spawns: %s", async (model) => {
     // Spawn Actor (and a Class load) prepares the actor's sources first: that preparation also compiles them against
     // the current lighting, so the actor draws in its first frame.

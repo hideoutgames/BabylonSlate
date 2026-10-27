@@ -120,6 +120,17 @@ function rehearsalSteps(scene: Scene, spawnable: readonly SpawnableLight[]): Reh
   return [...leading, ...spawnedLightSteps(scene, spawnable), ...repeats];
 }
 
+/** Draws with every enabled, visible mesh selected, as Babylon's cull task does under `skipFrustumClipping`. */
+function withoutViewCulling(scene: Scene, draw: () => boolean): boolean {
+  const skipped = scene.skipFrustumClipping;
+  scene.skipFrustumClipping = true;
+  try {
+    return draw();
+  } finally {
+    scene.skipFrustumClipping = skipped;
+  }
+}
+
 function castsShadows(light: Light): boolean {
   return light instanceof DirectionalLight || light instanceof PointLight || light instanceof SpotLight;
 }
@@ -284,10 +295,15 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * `staged` says the scene shows meshes only for the starting state to draw (the spawn warm-up's, on WebGL2, where a
  * program's first draw holds iPad WebKit and no probe sees it): the starting state then draws even without a step, and
  * `onStartingDrawn` runs once it has (or the rehearsal ends first), for the caller to remove them.
+ *
+ * `drawsOutsideView` (Play, whose world Scene culls by view: `play-view-culling.ts`) draws every rehearsal frame without
+ * view culling, so a mesh outside the starting view, and its variants for each step, draw here (a program's first use
+ * on WebGL2, a render pipeline on WebGPU) rather than when gameplay first shows it. A load with nothing to rehearse
+ * draws no frame for it: an extra loading frame steps GPU particles once more, which a paused Simulation's redraw shows.
  */
 export function createLoadRehearsal(
   scene: Scene, settled: () => boolean = () => true, spawnable: readonly SpawnableLight[] = [],
-  options: { staged?: boolean; onStartingDrawn?: () => void } = {},
+  options: { staged?: boolean; onStartingDrawn?: () => void; drawsOutsideView?: boolean } = {},
 ): LoadRehearsal {
   const all = rehearsalSteps(scene, spawnable);
   const steps = all.slice(0, LOAD_REHEARSAL_STEP_BUDGET);
@@ -381,8 +397,9 @@ export function createLoadRehearsal(
     get done() {
       return endedAt !== undefined;
     },
-    frame(draw) {
+    frame(viewDraw) {
       if (endedAt !== undefined) return;
+      const draw = options.drawsOutsideView ? () => withoutViewCulling(scene, viewDraw) : viewDraw;
       if (startedAt === undefined) {
         startedAt = phaseSince = performance.now();
         watch = new DriverCompileWatch(engine, startedAt, LOAD_REHEARSAL_CEILING_MS);
