@@ -125,6 +125,14 @@ export function trackFirstDraws(engine: AbstractEngine): void {
   };
 }
 
+/**
+ * Whether some draw on `engine` has drawn with `effect` since its first view; undefined where the Engine is not
+ * tracked (WebGPU, or an Engine no view was created on).
+ */
+export function effectDrawnOn(engine: AbstractEngine, effect: Effect): boolean | undefined {
+  return trackers.get(engine)?.drawn.has(effect);
+}
+
 /** A counting session on `engine`, paused until `resume`; null where the Engine is not tracked. */
 export function openFirstDrawStats(engine: AbstractEngine): FirstDrawSession | null {
   const tracker = trackers.get(engine);

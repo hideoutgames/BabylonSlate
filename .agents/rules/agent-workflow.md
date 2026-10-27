@@ -58,7 +58,7 @@ Merge to `main` automatically when every gate passes; do not ask first. Complete
 
 - The task is complete, not exploratory or waiting on the user.
 - Targeted local checks cover the current changes and pass (prose-only changes: diff and link review).
-- The latest Verify run for the head (`.github/workflows/verify.yml`) passes `static`, `unit` and all four `e2e` shards, and every other required check passes. Draft skips, missing, pending, cancelled or superseded runs are not a pass. A pull-request run tests the head merged with the base branch as it was when each job started, not GitHub's cached merge; a base that moves afterwards is not covered.
+- The latest Verify run for the head (`.github/workflows/verify.yml`) passes `static`, `unit` and all four `e2e` shards, and every other required check passes. Draft skips, missing, pending, cancelled or superseded runs are not a pass. A pull-request run tests the head merged with the base branch as it was when each job started, not GitHub's cached merge. A base that moves afterwards needs no new run unless GitHub reports a conflict: Verify on `main` catches a break between merged PRs, and a red `main` is fixed forward first.
 - No merge conflicts, no user hold ("PR only", "don't merge", "keep it draft"), and the session is not read-only.
 - Branch protection and required reviews are satisfied; never admin-merge.
 
@@ -70,5 +70,5 @@ Leave the PR unmerged and report why for an incomplete or ambiguous task, a CI f
 2. Count the open non-draft PRs targeting `main`, excluding this one. When fewer than four, mark this PR ready, once; never toggle draft status to restart CI. Otherwise keep it draft and wait with `pnpm --silent agent:wait slot --pr <number>`, rechecking just before marking ready; never change other agents' PRs. A slot result is not a reservation. An already-ready PR may take verified fixes and merge without a new slot.
 3. Wait for CI on the current head with `pnpm --silent agent:wait ci --pr <number>`, then check the other required checks. Pending CI is a reason to wait, not to hand the task back.
 4. On a failure, read the failed job's log, reproduce it locally where possible, fix the cause, rerun only the affected checks, and push the verified fix. Retry an unchanged run only on evidence of a transient infrastructure failure; never weaken checks or remove failing coverage.
-5. Just before merging, refresh the head, checks and mergeability. If the head changed, check the new delta. Resolve routine conflicts, run checks for the resolution, push and wait for fresh CI.
+5. Just before merging, refresh the head, checks and mergeability. If the head changed, check the new delta. A moved base alone needs no new run; resolve a conflict it causes, run checks for the resolution, push and wait for fresh CI.
 6. Merge with a merge commit pinned to the verified head (`gh pr merge <number> --merge --match-head-commit <sha>` or the equivalent), then confirm GitHub reports it merged.
