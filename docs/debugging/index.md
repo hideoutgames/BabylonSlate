@@ -15,7 +15,7 @@ While the game runs, the toolbar at the top right of the game view has these but
 | **Inspector** | Opens a read-only view of the live game. |
 | **Profiler**, **Capture Frame** | Record performance. See [Profiler](profiler.md). |
 | **Recording** | Shows while a performance recording runs. **Stop Recording** stops it and shows its **Summary**. |
-| **Stop** | Ends Play and returns to the editor. |
+| **Stop** | Ends Play and returns to the editor, which loads its open Scenes again: Play releases them while it runs to leave the device's graphics memory to the game. |
 
 ## Choose the tools before you play
 

@@ -37,6 +37,8 @@ export type ViewportTestHost = {
     hardwareScalingLevel: () => number | null;
     postProcessPassCount: () => number | null;
     renderingBaseline: () => Record<string, unknown> | null;
+    /** Babylon Engines alive in the page; answers while Play or Preview Build has released this viewport. */
+    engineCount: () => number;
     shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
     mannequinShadowProbe: (modelOnly?: boolean) => Promise<unknown>;
     mannequinShadowVisibility: (points: { worldPosition: number[]; region: string }[]) => Promise<boolean[]>;
@@ -280,8 +282,10 @@ export function installViewportTestHost({
       engineRef.current?.scheduler.invalidate("asset");
       return true;
     },
+    engineCount: () => EngineStore.Instances.length,
     destroyGraphicsDevice: () => {
-      const engine = engineRef.current?.engine;
+      // Play and Preview Build release this viewport; the project Engine is then the session's.
+      const engine = engineRef.current?.engine ?? ensureSharedEngine();
       // Pinned Babylon 9.29 owning-device boundary.
       const device = engine?.isWebGPU ? (engine as unknown as { _device?: { destroy(): void } })._device : undefined;
       if (!device) return false;

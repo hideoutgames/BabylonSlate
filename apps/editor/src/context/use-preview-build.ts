@@ -63,6 +63,8 @@ export interface PreviewBuildHost {
   playFromScene: boolean;
   traceByteBudget: number | undefined;
   projectOpen: boolean;
+  /** Releases the open Scene viewports' authoring Scenes until the session ends; false when it could not. */
+  releaseSceneViewports: (ticket: GameSessionTicket) => Promise<boolean>;
 }
 
 /**
@@ -87,6 +89,7 @@ export function usePreviewBuild({
   playFromScene,
   traceByteBudget,
   projectOpen,
+  releaseSceneViewports,
 }: PreviewBuildHost) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const initialPreviewTarget = useMemo(
@@ -337,6 +340,7 @@ export function usePreviewBuild({
       previewTraceByteBudgetRef.current = traceByteBudget;
       setPreviewCanCancel(false);
       setPreviewPhase("Launching");
+      if (!await releaseSceneViewports(ticket) || !isCurrentRequest()) return;
       setEncodeQueuePauseReason("play", true);
       setPlayOpen(true);
       setPreviewError(null);
@@ -395,6 +399,7 @@ export function usePreviewBuild({
     setPreparing,
     setStartupAlertOpen,
     setUnsavedPrompt,
+    releaseSceneViewports,
   ]);
 
   const cancelPreviewPreparation = useCallback(() => {

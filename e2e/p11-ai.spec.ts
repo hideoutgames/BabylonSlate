@@ -165,6 +165,8 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await page.getByRole("tab", { name: "Output Log", exact: true }).click();
     try {
       await clickPlayAndWaitForOverlay(page);
+      // Play loads the Scene behind its modal Scene Loading dialog (cold: Play releases the editor's).
+      await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 30_000 });
       await page.getByTestId("play-overlay-close").click({ timeout: 5_000 });
       await expect(page.getByTestId("preview-session-report")).toBeVisible();
       const treeGroup = page.locator(
