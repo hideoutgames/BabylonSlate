@@ -280,9 +280,14 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * `spawnable` lists the light parts Play may spawn: one of each kind is added and removed as a step. Each adds a
  * light to the Scene, so the caller reserves room for one more in the light inventory before the load compiles
  * anything (`reserveSceneLightInventory`), or the step would raise every lit Material's light capacity.
+ *
+ * `staged` says the scene shows meshes only for the starting state to draw (the spawn warm-up's, on WebGL2, where a
+ * program's first draw holds iPad WebKit and no probe sees it): the starting state then draws even without a step, and
+ * `onStartingDrawn` runs once it has (or the rehearsal ends first), for the caller to remove them.
  */
 export function createLoadRehearsal(
   scene: Scene, settled: () => boolean = () => true, spawnable: readonly SpawnableLight[] = [],
+  options: { staged?: boolean; onStartingDrawn?: () => void } = {},
 ): LoadRehearsal {
   const all = rehearsalSteps(scene, spawnable);
   const steps = all.slice(0, LOAD_REHEARSAL_STEP_BUDGET);
@@ -300,7 +305,13 @@ export function createLoadRehearsal(
   let rehearsed = 0;
   let drawn = 0;
   /** The starting state is still drawing (before the first step). */
-  let starting = steps.length > 0;
+  let starting = steps.length > 0 || options.staged === true;
+  let onStartingDrawn = options.onStartingDrawn;
+  const startingDrawn = () => {
+    const done = onStartingDrawn;
+    onStartingDrawn = undefined;
+    done?.();
+  };
   let startDrew = false;
   let applied = false;
   let stepDrew = false;
@@ -315,6 +326,7 @@ export function createLoadRehearsal(
   let variants = 0;
   let pipelines = 0;
   const finish = () => {
+    startingDrawn();
     if (endedAt !== undefined) return;
     endedAt = performance.now();
     variants = compiled() - effectsBefore;
@@ -362,7 +374,7 @@ export function createLoadRehearsal(
     index = steps.length;
     finish();
   };
-  if (!steps.length) {
+  if (!starting) {
     startedAt = endedAt = performance.now();
   }
   return {
@@ -371,12 +383,6 @@ export function createLoadRehearsal(
     },
     frame(draw) {
       if (endedAt !== undefined) return;
-      // One more loading frame after the last step: it starts once the last draw's GPU work let it, so the duration
-      // includes that work.
-      if (index >= steps.length) {
-        finish();
-        return;
-      }
       if (startedAt === undefined) {
         startedAt = phaseSince = performance.now();
         watch = new DriverCompileWatch(engine, startedAt, LOAD_REHEARSAL_CEILING_MS);
@@ -388,6 +394,13 @@ export function createLoadRehearsal(
         if (result === "drew") startDrew = true;
         if (result !== "none") return;
         starting = false;
+        startingDrawn();
+      }
+      // One more loading frame after the last step: it starts once the last draw's GPU work let it, so the duration
+      // includes that work.
+      if (index >= steps.length) {
+        finish();
+        return;
       }
       if (!applied) {
         admission = snapshotAdmission(scene);
@@ -422,6 +435,7 @@ export function createLoadRehearsal(
         // The starting state never settled: rehearse from it as it is.
         starting = false;
         timedOut.push("starting state");
+        startingDrawn();
       }
     },
     cancel() {

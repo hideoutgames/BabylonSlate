@@ -21,18 +21,26 @@ export const SPAWNABLE_PIPELINE_WARM_MS = 10_000;
  * a draw in that pass creates. The staged meshes then stay, hidden from every pass (`hideForPipelineWarmup`), until
  * the world view's warm draws have created their pipelines (`variant-pipeline-warmup.ts`), and go afterwards, or after
  * `SPAWNABLE_PIPELINE_WARM_MS` (a scene no world view probes keeps them that long).
+ *
+ * Elsewhere (WebGL2) a compiled program still holds iPad WebKit at its first draw. With `keepForFirstDraw` (a Play load,
+ * whose load rehearsal draws the starting state behind its loading screen without view culling) the staged meshes stay,
+ * shown and casting no shadow, so that draw is their first: the returned release disposes them, and the caller calls it
+ * once that draw is done, or the load ends. Without it, or where pipelines are deferred, the result is null.
  */
 export async function warmSpawnables(
   scene: Scene,
   sources: { materials: Iterable<Material>; containers: Iterable<AssetContainer> },
   assertCurrent?: () => void,
-): Promise<void> {
+  options: { keepForFirstDraw?: boolean } = {},
+): Promise<(() => void) | null> {
   const staged: AbstractMesh[] = [];
   const disposals: (() => void)[] = [];
   const stage = (mesh: AbstractMesh) => {
     mesh.isVisible = false;
     mesh.isPickable = false;
     mesh.receiveShadows = true;
+    // A receiver, as a spawn is, but never a caster: a render-once map drawn while it is shown would keep it.
+    mesh.metadata = { ...(mesh.metadata as object | null), slateShadowParticipation: { castShadows: false } };
     staged.push(mesh);
   };
   try {
@@ -50,9 +58,19 @@ export async function warmSpawnables(
     }
     await prewarmMeshMaterials(scene, staged, assertCurrent);
     if (pipelinesDeferred(scene.getEngine())) keepForPipelineWarmup(scene, staged, disposals.splice(0));
+    else if (options.keepForFirstDraw && staged.length) return keepForFirstDraw(staged, disposals.splice(0));
+    return null;
   } finally {
     for (const dispose of disposals.splice(0)) dispose();
   }
+}
+
+/** Shows the staged meshes until the release. */
+function keepForFirstDraw(staged: readonly AbstractMesh[], disposals: (() => void)[]): () => void {
+  for (const mesh of staged) mesh.isVisible = true;
+  return () => {
+    for (const dispose of disposals.splice(0)) dispose();
+  };
 }
 
 /** Leaves the staged meshes to the view's warm draws, and disposes them once every one's pipelines are warm. */

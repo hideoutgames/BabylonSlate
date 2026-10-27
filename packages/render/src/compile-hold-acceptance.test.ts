@@ -2246,18 +2246,18 @@ describe("compile holds after the first frame", () => {
     }, JSON.stringify(record)).toEqual({ effects: 0, heldFrames: 0, paused: false, shown: true, warmed: 1, pipelines: 0 });
   });
 
-  it.each(["sync", "parallel"] as const)("Play counts a warmed spawn's first draw as late, compiled by the load: %s", async (model) => {
-    // The spawn warm-up compiles the Material on a staged box it never draws, so its first draw comes with the spawn,
-    // after the scene presented: the first draw a program's first use holds iPad WebKit WebGL2 for.
+  // WebGL2: a program's first draw holds iPad WebKit, so the load draws what it compiled behind its loading screen.
+  it.each(["sync", "parallel"] as const)("a spawned actor's Material the load warmed was drawn by the load, not by its spawn: %s", async (model) => {
+    rehearseLoad = true;
+    // The spawn warm-up's staged box draws in the load rehearsal's starting state, so the spawn draws nothing new.
     const world = playWorld(model, [], ["surface-a"]);
     await settle(world);
     const before = world.handle.renderDiagnostics().firstDraws!;
     world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
     world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
     for (let index = 0; index < 4; index++) await world.frame();
-    const after = world.handle.renderDiagnostics().firstDraws!;
-    expect({ draws: after.draws - before.draws, loadCompiled: after.loadCompiled - before.loadCompiled, frames: after.frames - before.frames })
-      .toEqual({ draws: 1, loadCompiled: 1, frames: 1 });
+    expect(world.handle.renderDiagnostics().firstDraws!.draws - before.draws).toBe(0);
+    expect(world.handle.scene.meshes.some((mesh) => mesh.name.startsWith("spawnable-warm:"))).toBe(false);
   });
 
   it.each(MODELS)("a Spawn Actor preparation compiles the actor's Material before it spawns: %s", async (model) => {
