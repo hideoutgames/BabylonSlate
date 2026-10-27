@@ -128,6 +128,16 @@ export class ActorRealization {
   }
 
   spawnScripted(options: ScriptedActorSpawn): Actor | null {
+    const actor = this.prepareScripted(options);
+    return actor && this.finishScripted(actor);
+  }
+
+  /**
+   * A script-spawned actor with its class defaults, components and stream
+   * adoption, outside the World: no render slot and no Begin Play until
+   * `finishScripted` realizes it (Deferred Spawn Actor).
+   */
+  prepareScripted(options: ScriptedActorSpawn): Actor | null {
     if (this.host.stopped()) return null;
     const streams = this.host.streams();
     if (!streams.canSpawnFor(options.streamOwner)) return null;
@@ -158,6 +168,16 @@ export class ActorRealization {
       .find((script) => script.components !== undefined)?.components;
     if (components) attachSerializedComponents(world, actor, components, { freshIds: true });
     this.host.boundaries().markSpawned(actor);
+    return actor;
+  }
+
+  /**
+   * Realize a `prepareScripted` actor. Null when it was discarded meanwhile
+   * (destroyed, or removed with the streamed Scene that adopted it), already
+   * realized, or the session stopped.
+   */
+  finishScripted(actor: Actor): Actor | null {
+    if (actor.destroyed || actor.world || this.host.world().isSpawnQueued(actor) || this.host.stopped()) return null;
     try {
       this.realize(actor);
     } catch (error) {

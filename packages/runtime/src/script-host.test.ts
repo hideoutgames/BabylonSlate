@@ -1595,6 +1595,85 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("Deferred Spawn Actor lets the spawner set variables that the actor's Begin Play reads", async () => {
+    const registry = createDefaultNodeRegistry();
+    const childGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "health", "variables.get", { variableName: "Health", typeId: "int", implicitSelf: true }),
+        node(registry, "seen", "variables.set", { variableName: "SeenHealth", typeId: "int", implicitSelf: true }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "seen", "execIn"),
+        edge("e2", "health", "value", "seen", "value"),
+      ],
+    };
+    const spawnerGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "defer", "actor.deferredSpawn", { "default:classId": "Child" }),
+        node(registry, "health", "variables.set", {
+          variableName: "Health", typeId: "int", classId: "Child", "default:value": 42,
+        }),
+        node(registry, "finish", "actor.finishDeferredSpawn"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "defer", "execIn"),
+        edge("e2", "defer", "execOut", "health", "execIn"),
+        edge("e3", "defer", "out", "health", "target"),
+        edge("e4", "health", "execOut", "finish", "execIn"),
+        edge("e5", "defer", "out", "finish", "actor"),
+      ],
+    };
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    await runtime.loadScripts([
+      toScript(childGraph, registry, "Child", "child-deferred-asset"),
+      toScript(spawnerGraph, registry, "Spawner", "spawner-deferred-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Spawner" });
+    runtime.start();
+    await flushMicrotasks();
+    const child = runtime.getWorld().getActors().find((actor) => actor.classId === "Child");
+    expect(child?.getVariable("SeenHealth")).toBe(42);
+    runtime.stop();
+  });
+
+  it("keeps a Deferred Spawn Actor result out of play until it finishes, and Destroy Actor cancels it", async () => {
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    await runtime.loadScripts([
+      { classId: "Child", parentClassId: "Actor", assetGuid: "child-asset", anchors: [],
+        source: "export function begin(ctx) { ctx.self.setVariable(\"began\", true); }",
+        entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false }] },
+      { classId: "Spawner", parentClassId: "Actor", assetGuid: "spawner-asset", anchors: [],
+        source: `export async function begin(ctx) {
+          const kept = await ctx.beginDeferredSpawnActorAsync("Child");
+          const cancelled = await ctx.beginDeferredSpawnActorAsync("Child");
+          ctx.setVariable("liveBeforeFinish", ctx.getAllActorsOfClass("Child").length);
+          ctx.setVariable("beganBeforeFinish", kept.getVariable("began") === true);
+          ctx.destroyActor(cancelled);
+          ctx.setVariable("cancelledResult", ctx.finishDeferredSpawnActor(cancelled));
+          ctx.setVariable("kept", ctx.finishDeferredSpawnActor(kept));
+          try { ctx.finishDeferredSpawnActor(kept); } catch (error) { ctx.setVariable("finishedTwice", error.message); }
+        }`,
+        entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] },
+    ]);
+    const spawner = runtime.spawnScriptedActor({ classId: "Spawner" })!;
+    runtime.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(spawner.getVariable("liveBeforeFinish")).toBe(0);
+    expect(spawner.getVariable("beganBeforeFinish")).toBe(false);
+    expect(spawner.getVariable("cancelledResult")).toBeNull();
+    const children = runtime.getWorld().getActors().filter((actor) => actor.classId === "Child");
+    expect(children).toEqual([spawner.getVariable("kept")]);
+    expect(children[0]!.getVariable("began")).toBe(true);
+    expect(spawner.getVariable("finishedTwice")).toMatch(/not waiting to finish spawning/);
+    runtime.stop();
+  });
+
   it("spawns independent prefab components before Begin Play on successive completed Tick invocations", async () => {
     const registry = createDefaultNodeRegistry();
     const childGraph: LogicGraph = {

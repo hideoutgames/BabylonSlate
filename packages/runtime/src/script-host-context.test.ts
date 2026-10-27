@@ -114,6 +114,7 @@ describe("ScriptContext shape", () => {
     "destroyActor", "setActorLocation", "addActorWorldOffset", "setActorRotation", "setActorScale",
     "setActorTransform", "attachToBone", "executeConsoleCommandAsync", "delay", "callInterface", "getComponent",
     "getComponentById", "getOwnedActor", "getOwnedComponent", "callComponentFunction", "addComponent", "spawnActor", "spawnActorAsync",
+    "beginDeferredSpawnActorAsync", "finishDeferredSpawnActor",
     "requestAssetLoad", "requestClassLoad", "waitForAssetLoad", "unloadAsset", "prepareAssets",
     "loadSceneBlocking", "unloadSceneBlocking", "getSceneReference", "invokeCustomEvent", "invokeEvent",
     "invokeFunction", "isActionHeld", "inputBindings", "getInputState", "wasActionPressed", "wasActionReleased",

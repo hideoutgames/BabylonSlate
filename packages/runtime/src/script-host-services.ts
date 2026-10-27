@@ -140,6 +140,10 @@ export interface ScriptHostServices {
   animGraphControl?(target: unknown): AnimGraphControl | null;
   spawnActor?(classId: string, transform?: unknown, owner?: EngineObject | null): Actor | null;
   spawnActorAsync?(classId: string, transform?: unknown, owner?: EngineObject | null): Promise<Actor | null>;
+  /** Deferred Spawn Actor: the prepared actor outside the World, without Begin Play, until `finishDeferredSpawn`. */
+  beginDeferredSpawnAsync?(classId: string, transform?: unknown, owner?: EngineObject | null): Promise<Actor | null>;
+  /** Finish Deferred Spawn Actor: spawns a `beginDeferredSpawnAsync` actor, running its Begin Play; null when it was discarded. */
+  finishDeferredSpawn?(actor: Actor): Actor | null;
   /** Emit a bone attachment (or detach with a null target); false when the renderer cannot address either actor. */
   attachToBone?(actor: Actor, target: Actor | null, boneName: string): boolean;
   print(

@@ -720,6 +720,14 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     return this.actors.spawnScripted(options);
   }
 
+  prepareScriptedActor(options: ScriptedActorSpawn): Actor | null {
+    return this.actors.prepareScripted(options);
+  }
+
+  finishScriptedActor(actor: Actor): Actor | null {
+    return this.actors.finishScripted(actor);
+  }
+
   notifySceneLayerReady(layerId: string, layerLoadId: number): void {
     this.layers.notifyReady(layerId, layerLoadId);
   }
