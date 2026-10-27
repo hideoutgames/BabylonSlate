@@ -187,6 +187,8 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   settlePauseChanges(): void;
   bindUserCommand(def: Omit<UserCommandDef, "run"> & { classId: string }): void;
   spawnScriptedActor(options: ScriptedActorSpawn): Actor | null;
+  prepareScriptedActor(options: ScriptedActorSpawn): Actor | null;
+  finishScriptedActor(actor: Actor): Actor | null;
 }
 
 /** The session class registry; `Enemy` is the class of the empty-Preview demo actor. */
