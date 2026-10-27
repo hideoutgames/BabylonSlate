@@ -25,6 +25,7 @@ import {
   backbufferDepthStencilTextureHandle,
 } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
+import { settlePlayViewCulling } from "./play-view-culling";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
@@ -125,6 +126,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   private readonly shown: AbstractMesh[] = [];
 
   override _execute(): void {
+    // Play: the meshes added since the last cull leave Intermediate's always-drawn mark first (`play-view-culling.ts`).
+    settlePlayViewCulling(this.camera.getScene());
     const target = this.camera.outputRenderTarget?.renderTarget;
     if (!target) {
       super._execute();

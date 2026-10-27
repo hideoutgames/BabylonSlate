@@ -45,6 +45,7 @@ import {
 } from "./particle-system-factory";
 import { markSceneReadinessDirty } from "./scene-perf";
 import { applySortingToParticleSystem, resolveSortingLayer, type SortingLayerResolution } from "./sorting";
+import { drawWhateverTheView } from "./play-view-culling";
 
 export type { ParticleLibrary, ParticleLibraryEmitter } from "@haptic/assets";
 export type ParticleDiagnosticCode =
@@ -457,7 +458,7 @@ export class ParticleService {
       // `alwaysSelectAsActiveMesh` keeps it past the frustum test while only its particles are on screen.
       const node = new Mesh(`particleEmitter:${entry.key}`, host);
       entry.node = node;
-      node.isPickable = false; node.alwaysSelectAsActiveMesh = true;
+      node.isPickable = false; drawWhateverTheView(node);
       const parent = this.slotMeshes.get(entry.command.slotId) ?? this.resolveEmitter?.(entry.command.slotId);
       if (parent?.getScene() === host) node.parent = parent;
       const context = this.slotContext(entry, host, node, payload.space);

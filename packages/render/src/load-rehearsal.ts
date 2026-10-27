@@ -1,4 +1,5 @@
-import { DirectionalLight, PointLight, SpotLight, Vector3, type Effect, type Light, type Scene } from "@babylonjs/core";
+import { DirectionalLight, Frustum, PointLight, SpotLight, Vector3, type Effect, type Light, type Scene } from "@babylonjs/core";
+import { settlePlayViewCulling } from "./play-view-culling";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import { DriverCompileWatch } from "./driver-compile";
 import { restoreSceneLightOrder } from "./forward-light-slots";
@@ -118,6 +119,26 @@ function rehearsalSteps(scene: Scene, spawnable: readonly SpawnableLight[]): Reh
     kinds.add(step.kind);
   }
   return [...leading, ...spawnedLightSteps(scene, spawnable), ...repeats];
+}
+
+/** Whether the active camera's cull would leave out a mesh its view culls (one not marked always drawn). */
+function hasMeshOutsideView(scene: Scene): boolean {
+  const camera = scene.activeCamera;
+  if (!camera) return false;
+  settlePlayViewCulling(scene);
+  const planes = Frustum.GetPlanes(camera.getTransformationMatrix());
+  return scene.meshes.some((mesh) => !mesh.alwaysSelectAsActiveMesh && mesh.isEnabled() && mesh.isVisible && !mesh.isInFrustum(planes));
+}
+
+/** Draws with every enabled, visible mesh selected, as Babylon's cull task does under `skipFrustumClipping`. */
+function withoutViewCulling(scene: Scene, draw: () => boolean): boolean {
+  const skipped = scene.skipFrustumClipping;
+  scene.skipFrustumClipping = true;
+  try {
+    return draw();
+  } finally {
+    scene.skipFrustumClipping = skipped;
+  }
 }
 
 function castsShadows(light: Light): boolean {
@@ -284,10 +305,15 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * `staged` says the scene shows meshes only for the starting state to draw (the spawn warm-up's, on WebGL2, where a
  * program's first draw holds iPad WebKit and no probe sees it): the starting state then draws even without a step, and
  * `onStartingDrawn` runs once it has (or the rehearsal ends first), for the caller to remove them.
+ *
+ * `drawsOutsideView` (Play, whose world Scene culls by view: `play-view-culling.ts`) draws every rehearsal frame without
+ * view culling, so a mesh outside the starting view, and its variants for each step, draw here (a program's first use
+ * on WebGL2, a render pipeline on WebGPU) rather than when gameplay first shows it; the starting state then also draws
+ * without a step when a mesh is outside the view (`hasMeshOutsideView`).
  */
 export function createLoadRehearsal(
   scene: Scene, settled: () => boolean = () => true, spawnable: readonly SpawnableLight[] = [],
-  options: { staged?: boolean; onStartingDrawn?: () => void } = {},
+  options: { staged?: boolean; onStartingDrawn?: () => void; drawsOutsideView?: boolean } = {},
 ): LoadRehearsal {
   const all = rehearsalSteps(scene, spawnable);
   const steps = all.slice(0, LOAD_REHEARSAL_STEP_BUDGET);
@@ -305,7 +331,7 @@ export function createLoadRehearsal(
   let rehearsed = 0;
   let drawn = 0;
   /** The starting state is still drawing (before the first step). */
-  let starting = steps.length > 0 || options.staged === true;
+  let starting = steps.length > 0 || options.staged === true || (options.drawsOutsideView === true && hasMeshOutsideView(scene));
   let onStartingDrawn = options.onStartingDrawn;
   const startingDrawn = () => {
     const done = onStartingDrawn;
@@ -381,8 +407,9 @@ export function createLoadRehearsal(
     get done() {
       return endedAt !== undefined;
     },
-    frame(draw) {
+    frame(viewDraw) {
       if (endedAt !== undefined) return;
+      const draw = options.drawsOutsideView ? () => withoutViewCulling(scene, viewDraw) : viewDraw;
       if (startedAt === undefined) {
         startedAt = phaseSince = performance.now();
         watch = new DriverCompileWatch(engine, startedAt, LOAD_REHEARSAL_CEILING_MS);

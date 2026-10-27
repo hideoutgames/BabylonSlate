@@ -54,6 +54,7 @@ import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, packedSlimProof, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
+import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import type { SpawnableLight } from "./spawnable-lights";
 import { reserveSceneLightInventory } from "./scene-lighting";
@@ -576,6 +577,8 @@ function initializeEngine(
     // Intermediate disables color clear (assumes a full-bleed skybox). Play
     // scenes often have none, so restore autoClear to avoid additive trails.
     scene.autoClear = true;
+    // Intermediate also draws every mesh whatever the camera's view; Play culls the ones whose bounds hold.
+    onRollback(installPlayViewCulling(scene));
     configureEditorRenderingGroups(scene);
   } else {
     scene.performancePriority = ScenePerformancePriority.BackwardCompatible;
@@ -3255,7 +3258,7 @@ function initializeEngine(
         loadRehearsalReport = null;
         // Full Quality captures prepare their views in the starting state, so their variants share its Effects.
         loadRehearsal = createLoadRehearsal(scene, () => !renderTargetCaptures.preparing(), spawnable, {
-          staged: releaseStagedSpawnables !== null, onStartingDrawn: releaseStaged,
+          staged: releaseStagedSpawnables !== null, onStartingDrawn: releaseStaged, drawsOutsideView: true,
         });
       }
     },
