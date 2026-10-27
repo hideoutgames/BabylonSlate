@@ -199,7 +199,8 @@ export async function loadGameFromFiles(
       model = value;
       install = () => { modelBytes.set(entry.guid, value.source); modelPayloads.set(entry.guid, value.payload); };
     } else if (entry.type === "Font") install = () => {
-      fontBytes.set(entry.guid, bytes);
+      // A Font without a source file has only sidecars; no FontFace loads from it.
+      if (bytes.byteLength > 0) fontBytes.set(entry.guid, bytes);
       if (entry.name?.trim()) fontFamilies.set(entry.guid, entry.name.trim());
     };
     else if (entry.type === FONT_FACETYPE_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontFacetypeExport(entry.guid)); install = () => { fontFacetypeBytes.set(guid, bytes); }; }

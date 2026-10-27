@@ -480,7 +480,7 @@ describe("collectAndExportGame", () => {
     ).toBe(false);
   });
 
-  it("warns when a packed Material samples a Texture that has no bytes", async () => {
+  it("fails, naming the Texture, when a packed Material samples a Texture that has no bytes", async () => {
     const mesh = createMeshComponent("mesh-1", "box");
     mesh.properties.materialGuid = "mat-rock";
     const scene = {
@@ -516,11 +516,10 @@ describe("collectAndExportGame", () => {
       physicsWorld: "3d",
       playerFiles,
     });
-    expect(result.ok).toBe(true);
-    if (!isOk(result)) return;
-    expect(
-      result.value.warnings.some((warning) => warning.includes("tex-missing")),
-    ).toBe(true);
+    // The player loads a Material's Textures before the Material.
+    expect(isErr(result) && result.error).toBe(
+      'Material "Rock" requires Texture "Missing" (tex-missing), which the export could not pack: it has no data to pack.',
+    );
   });
 
   it("fails instead of omitting a reachable asset that could not be read", async () => {
@@ -1157,6 +1156,36 @@ describe("collectAndExportGame", () => {
           entry.guid === "font-facetype:font-1",
       ),
     ).toBe(true);
+  });
+
+  it("packs a required Font that has only a facetype as an empty catalog entry", async () => {
+    const text = createText3DComponent("text-1");
+    text.properties.fontAssetGuid = "font-1";
+    const scene = { ...createDefaultScene(), actors: [createActor("label", "3D Text", { components: [text] })] };
+    const facetype = new Uint8Array([9, 8, 7]);
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "font-1", type: "Font", name: "Ascii" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      bytesByGuid: (guid) => guid === "scene-1" ? new TextEncoder().encode(JSON.stringify(scene)) : null,
+      fontFacetypeBytesByGuid: (guid) => (guid === "font-1" ? facetype : null),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    if (!isOk(result)) throw new Error(result.error);
+    const entries = result.value.manifest.assets;
+    expect(entries.find((entry) => entry.guid === "scene-1")?.requiredDependencies).toContain("font-1");
+    expect(entries.find((entry) => entry.guid === "font-1")?.byteLength).toBe(0);
+    expect(entries.some((entry) => entry.guid === "font-facetype:font-1")).toBe(true);
   });
 
   it("packs Font MSDF JSON and atlas PNG as FontMsdf sidecars", async () => {

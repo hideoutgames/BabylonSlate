@@ -287,6 +287,35 @@ function packedMaterialTextureWarnings(
   );
 }
 
+/**
+ * The player loads every required dependency of a packed asset before the
+ * asset, so an artifact that leaves one out cannot load it. Names the first.
+ */
+function unpackedRequiredDependency(
+  manifest: ExportArtifact["manifest"],
+  assets: readonly ExportIndexedAsset[],
+  reached: ReadonlySet<string>,
+  pluginEnabledGuids: ReadonlySet<string>,
+): string | null {
+  const packed = new Set(manifest.assets.map((entry) => entry.guid));
+  for (const entry of manifest.assets) {
+    for (const guid of entry.requiredDependencies ?? []) {
+      if (packed.has(guid)) continue;
+      const dependency = assets.find((asset) => asset.guid === guid);
+      const owner = assets.find((asset) => asset.guid === (entry.ownerGuid ?? entry.guid));
+      const requiredBy = owner ? `${owner.type} "${owner.name}"` : `${entry.type} ${entry.guid}`;
+      if (!dependency) return `${requiredBy} requires asset ${guid}, which is not in the project.`;
+      const named = `${dependency.type} "${dependency.name}" (${dependency.path ?? guid})`;
+      const plugin = dependency.rootId.startsWith("plugin:") ? dependency.rootId.slice("plugin:".length) : null;
+      const reason = plugin && !pluginEnabledGuids.has(plugin)
+        ? "its plugin is disabled in the export preset"
+        : reached.has(guid) ? "it has no data to pack" : "it is Editor Only";
+      return `${requiredBy} requires ${named}, which the export could not pack: ${reason}.`;
+    }
+  }
+  return null;
+}
+
 export async function collectAndExportGame(
   params: CollectExportGameParams,
 ): Promise<Result<ExportArtifact, string>> {
@@ -391,6 +420,10 @@ export async function collectAndExportGame(
       }
       if (emission) exportAssets.push({ guid: areaEmissionExportGuid(guid), type: AREA_EMISSION_EXPORT_TYPE, sceneGuid: packSceneGuidForAsset(guid, startup, closure.value.bySceneGuid), bytes: emission, encoding: "bytes", name: `${asset.name} Area Emission` });
     }
+    // A Font imported without a source file (a typeface JSON) keeps an empty
+    // entry: the player resolves every required Font by its catalog entry and
+    // reads its family and sidecars from there.
+    if (!bytes && asset.type === "Font") bytes = new Uint8Array();
     if (bytes) {
       const payload = params.payloadByGuid?.(guid);
       const textureSize = texturePixelSizeFromPayload(payload);
@@ -604,6 +637,8 @@ export async function collectAndExportGame(
     fileCountFail: preset.fileCountFail,
   });
   if (isOk(packed)) {
+    const unpacked = unpackedRequiredDependency(packed.value.manifest, params.assets, new Set(closure.value.guids), pluginEnabledGuids);
+    if (unpacked) return { ok: false, error: unpacked };
     packed.value.warnings.push(
       ...pluginGraph.diagnostics
         .filter((diagnostic) => diagnostic.severity === "warning")
