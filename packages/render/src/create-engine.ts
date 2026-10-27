@@ -2125,7 +2125,7 @@ function initializeEngine(
     frameCopyReady = true;
     presentationStats.drawn += 1;
     lastDrawCalls = readEngineDrawCalls(engine);
-    scheduler.noteRendered(frameStart);
+    scheduler.noteRendered(frameStart, performance.now());
     lastRenderCpuMs = performance.now() - renderStart;
     if (profileReceipt) {
       profileReceipt.sample.submissionMs = lastRenderCpuMs;

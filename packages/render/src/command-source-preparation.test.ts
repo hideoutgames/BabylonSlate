@@ -131,6 +131,58 @@ describe("cold command source preparation", () => {
     preparation.dispose();
   });
 
+  it("prepares the same sources once for every slot that needs them and releases them with the last slot", async () => {
+    const model = deferred<() => void>();
+    const loads: string[][] = [];
+    const released: string[] = [];
+    const applied: number[] = [];
+    // One loader at a time: slots sharing the model load must not hold "other" back behind loads of their own.
+    const preparation = new CommandSourcePreparation({ concurrency: 1 });
+    preparation.setLoader(async (guids) => {
+      loads.push([...guids]);
+      if (guids[0] === "model") await model.promise;
+      return () => { released.push(guids.join()); };
+    });
+    const apply = (command: CommandMessage) => { if (command.type === "assignMesh") applied.push(command.slotId); };
+    for (const slotId of [7, 8, 9]) preparation.receive({ ...mesh("model"), slotId }, apply);
+    preparation.receive({ ...mesh("other"), slotId: 10 }, apply);
+    expect(loads).toEqual([["model"]]);
+    model.resolve(() => undefined);
+    await preparation.whenReady();
+    expect(loads).toEqual([["model"], ["other"]]);
+    expect([...applied].sort((a, b) => a - b)).toEqual([7, 8, 9, 10]);
+    // A later slot joins the sources the others hold, without a load of its own.
+    preparation.receive({ ...mesh("model"), slotId: 11 }, apply);
+    expect(applied).toContain(11);
+    expect(loads).toHaveLength(2);
+    for (const slotId of [7, 8, 9]) preparation.receive({ type: "despawn", slotId, actorGuid: `actor-${slotId}` }, apply);
+    expect(released).toEqual([]);
+    preparation.receive({ type: "despawn", slotId: 11, actorGuid: "actor-11" }, apply);
+    expect(released).toEqual(["model"]);
+    preparation.dispose();
+  });
+
+  it("aborts a shared preparation only once every slot waiting on it is cancelled", async () => {
+    const result = deferred<() => void>();
+    let signal: AbortSignal | undefined;
+    let released = 0;
+    const applied: string[] = [];
+    const preparation = new CommandSourcePreparation();
+    preparation.setLoader(async (_guids, options) => { signal = options.signal; return result.promise; });
+    const apply = (command: CommandMessage) => { applied.push(`${command.type} ${"slotId" in command ? command.slotId : ""}`); };
+    preparation.receive(mesh("model"), apply);
+    preparation.receive({ ...mesh("model"), slotId: 8 }, apply);
+    preparation.receive({ type: "despawn", slotId: 7, actorGuid: "first" }, apply);
+    expect(signal?.aborted).toBe(false);
+    preparation.receive({ type: "despawn", slotId: 8, actorGuid: "second" }, apply);
+    expect(signal?.aborted).toBe(true);
+    result.resolve(() => { released++; });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(applied).toEqual(["despawn 7", "despawn 8"]);
+    expect(released).toBe(1);
+    preparation.dispose();
+  });
+
   it("applies a re-emitted assignment in place when the slot already holds its sources", async () => {
     const loads: string[][] = [];
     const released: string[] = [];

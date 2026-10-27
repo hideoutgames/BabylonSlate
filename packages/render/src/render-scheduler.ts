@@ -30,6 +30,9 @@ export class RenderScheduler {
   private frameCap = Number.POSITIVE_INFINITY;
   private lastRenderAt: number | null = null;
   private nextRenderAt: number | null = null;
+  /** When the last frame ended and how long it took, for ready owners' yield under a load. */
+  private lastFrameEndedAt: number | null = null;
+  private lastFrameMs = 0;
   private renderedFrames = 0;
   private invalidations = 0;
   private lastSecond = nowMs();
@@ -121,8 +124,13 @@ export class RenderScheduler {
     this.frameCap = cap;
   }
 
-  /** Ready owners may continue under a loading blocker, respecting Pause and cadence. */
+  /**
+   * Ready owners may continue under a loading blocker, respecting Pause and cadence. Each of their frames then leaves
+   * the main thread free for as long as it took, so a slow frame (a large world on a slow GPU or software GL) cannot
+   * starve the load's own work of the thread; a frame that fits its cadence is not held back.
+   */
   shouldRenderReadyOwners(now: number = nowMs()): boolean {
+    if (this.lastFrameEndedAt !== null && now < this.lastFrameEndedAt + this.lastFrameMs) return false;
     return this.shouldRender(now, true);
   }
 
@@ -143,7 +151,10 @@ export class RenderScheduler {
     return true;
   }
 
-  noteRendered(now: number = nowMs()): void {
+  /** `now` is when the frame began (its cadence slot); `endedAt` when its work finished. */
+  noteRendered(now: number = nowMs(), endedAt: number = now): void {
+    this.lastFrameEndedAt = endedAt;
+    this.lastFrameMs = Math.max(0, endedAt - now);
     this.rollStats();
     this.dirty = false;
     this.pausedFrameRequested = false;
