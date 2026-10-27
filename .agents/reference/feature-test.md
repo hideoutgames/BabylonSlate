@@ -124,7 +124,7 @@ Counts are constants in the area modules; changing one changes performance basel
 
 ## On-device check and benchmark
 
-The **Feature Test** starter and its check appear only with Engine Settings → Debugger → **Debug Mode** on; e2e routes enable it through `seedEngineSettings`. When a scene fails to load in Debug Mode, **Copy Error** on the Scene Loading dialog copies the failure details.
+The **Feature Test** starter and its check appear only with Engine Settings → Debugger → **Debug Mode** on; e2e routes enable it through `seedEngineSettings`. When a scene fails to load in Debug Mode, **Copy Error** on the Scene Loading dialog copies the failure details; in Play, **Copy Details** during a load also says what the first frame and the light-change rehearsal are waiting on.
 
 For devices without a test harness (iPad, phones, other browsers), a Feature Test project's **Debug** menu has **Run Feature Test Check…** (phones: **More Tools** → Debug). It walks the scenes with the editor's own controls and writes a plain-text report; **Copy Report** copies it (the text stays selectable when the clipboard is unavailable).
 

@@ -1,4 +1,5 @@
 import { formatGlErrorTrace, glErrorTraceActive, glErrorTraceEntries } from "@haptic/render/gl-error-trace";
+import type { RenderDiagnostics } from "@haptic/render";
 import { collectDiagnosticEnvironment, describeError, formatDiagnosticEnvironment, recentDiagnosticLog, type DiagnosticEnvironment } from "./diagnostic-info";
 
 /** Report lines for the WebGL call trace, or how to turn it on. */
@@ -8,6 +9,17 @@ export function graphicsErrorTraceLines(): string[] {
   return count
     ? [`Graphics error trace (${count} failing WebGL call${count === 1 ? "" : "s"}, newest last):`, ...formatGlErrorTrace().map((line) => `  ${line}`)]
     : ["Graphics error trace: on, no failing WebGL calls recorded"];
+}
+
+/** What the world's first frame waits on: its draw attempts and the load rehearsal of light changes. */
+export function worldLoadLine(load: NonNullable<RenderDiagnostics["worldLoad"]>): string {
+  const frame = load.presentation;
+  const rehearsal = load.rehearsal;
+  return `World load: first frame ${frame
+    ? `ready ${frame.ready} · draws ${frame.draws} · rendered ${frame.rendered} · GPU pending ${frame.gpuPending} · copied ${frame.copied}`
+    : "not requested"} · rehearsal ${rehearsal
+    ? `${rehearsal.done ? "done" : "running"} ${rehearsal.steps}/${rehearsal.total} steps · timed out ${rehearsal.timedOut} · left out ${rehearsal.omitted} · ${Math.round(rehearsal.ms / 1000)} s`
+    : "none"}`;
 }
 
 export interface SceneLoadReportInput {

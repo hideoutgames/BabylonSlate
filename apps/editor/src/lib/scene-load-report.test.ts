@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatSceneLoadReport } from "./scene-load-report";
+import { formatSceneLoadReport, worldLoadLine } from "./scene-load-report";
 
 const environment = {
   appVersion: "1.2.3", userAgent: "Mozilla/5.0 (iPad)", platform: "iPad", touchPoints: 5,
@@ -27,5 +27,14 @@ describe("formatSceneLoadReport", () => {
       "Graphics error trace (1 failing WebGL call, newest last):",
       "  21:06:59 drawElements(0x4, 36, 0x1403, 0) → 1282 INVALID_OPERATION",
     ]);
+  });
+});
+
+describe("worldLoadLine", () => {
+  it("says what the first frame and the load rehearsal are waiting on", () => {
+    expect(worldLoadLine({
+      presentation: { ready: false, draws: 0, rendered: false, gpuPending: false, copied: false },
+      rehearsal: { done: false, steps: 12, total: 30, timedOut: 2, omitted: 0, ms: 61_400 },
+    })).toBe("World load: first frame ready false · draws 0 · rendered false · GPU pending false · copied false · rehearsal running 12/30 steps · timed out 2 · left out 0 · 61 s");
   });
 });
