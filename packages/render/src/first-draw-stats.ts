@@ -7,10 +7,31 @@ import type { AbstractEngine, Effect, Observer } from "@babylonjs/core";
  * the Engine draws from its first view on, and a Play handle's `openFirstDrawStats` counts the ones first drawn while
  * it counts (between a world load's first presented frame and the next load). WebGL2 only: on WebGPU a skipped warm
  * draw returns like a real one, and the cost there is per render pipeline, which Babylon's cache misses count.
+ *
+ * The same session keeps the longest frames it counted, with what they held, since WebKit has no Long Tasks API to
+ * say why a Play frame was long: time inside the Engine's frame and outside it, first draws and Effects created.
  */
 
-/** A frame holding a first draw that lasts longer than this is a stall, as the Feature Test check counts frames. */
+/** A frame that lasts longer than this is a stall (a long frame), as the Feature Test check counts frames. */
 export const FIRST_DRAW_STALL_MS = 100;
+
+/** How many of the longest frames a session keeps. */
+export const LONG_FRAMES_KEPT = 8;
+
+/** A frame longer than `FIRST_DRAW_STALL_MS`, from its start to the next frame's start. */
+export type LongFrame = {
+  ms: number;
+  /**
+   * Of that, from the Engine's frame begin to its end: the render loop's work, Play's scene render among it. The
+   * rest ran outside the Engine's frame (scripts, layout, garbage collection, a blocked main thread) or waited for
+   * the next animation frame.
+   */
+  engineMs: number;
+  /** Effects first drawn in it. */
+  firstDraws: number;
+  /** Effects the Engine created (compiled or started compiling) in it. */
+  compiles: number;
+};
 
 export type FirstDrawStats = {
   /** Effects first drawn while counting. */
@@ -25,6 +46,10 @@ export type FirstDrawStats = {
   mostInFrame: number;
   /** Longest frame that held a first draw, from its start to the next frame's start (0 before one finished). */
   worstFrameMs: number;
+  /** Frames counted, with or without a first draw, longer than `FIRST_DRAW_STALL_MS`. */
+  longFrames: number;
+  /** The longest of them, longest first, at most `LONG_FRAMES_KEPT`. */
+  longest: LongFrame[];
 };
 
 export type FirstDrawSession = {
@@ -43,27 +68,30 @@ type DrawEngine = {
   _compiledEffects?: Record<string, Effect>;
   drawElementsType: Draw;
   drawArraysType: Draw;
+  createEffect: (...args: unknown[]) => Effect;
 };
 
 type Session = {
   stats: FirstDrawStats;
   /** The Effects the Engine held when counting resumed; null while paused. */
   held: WeakSet<Effect> | null;
-  /** First draws in the current frame, and when it began. */
+  /** First draws and Effects created in the current frame, when it began and when its Engine frame ended. */
   inFrame: number;
+  compilesInFrame: number;
   frameStart: number;
+  engineEnd: number | null;
 };
 
-type Tracker = { drawn: WeakSet<Effect>; sessions: Set<Session> };
+type Tracker = { drawn: WeakSet<Effect>; created: WeakSet<Effect>; sessions: Set<Session> };
 
 const trackers = new WeakMap<AbstractEngine, Tracker>();
 
 /** Records every Effect `engine` draws from now on, once per Engine; WebGPU Engines are left alone. */
 export function trackFirstDraws(engine: AbstractEngine): void {
   if (engine.isWebGPU || trackers.has(engine)) return;
-  const tracker: Tracker = { drawn: new WeakSet(), sessions: new Set() };
-  trackers.set(engine, tracker);
   const target = engine as unknown as DrawEngine;
+  const tracker: Tracker = { drawn: new WeakSet(), created: new WeakSet(Object.values(target._compiledEffects ?? {})), sessions: new Set() };
+  trackers.set(engine, tracker);
   const note = (current: Effect | null) => {
     if (!current || tracker.drawn.has(current)) return;
     tracker.drawn.add(current);
@@ -85,6 +113,16 @@ export function trackFirstDraws(engine: AbstractEngine): void {
     drawArrays.call(this, fillMode, start, count, instancesCount);
     note(this._currentEffect);
   };
+  // A cache hit returns an Effect seen before; a new one is a compile (WebGL2 links it at its first use).
+  const createEffect = target.createEffect;
+  target.createEffect = function (this: DrawEngine, ...args: unknown[]) {
+    const effect = createEffect.apply(this, args);
+    if (!tracker.created.has(effect)) {
+      tracker.created.add(effect);
+      for (const session of tracker.sessions) if (session.held) session.compilesInFrame += 1;
+    }
+    return effect;
+  };
 }
 
 /** A counting session on `engine`, paused until `resume`; null where the Engine is not tracked. */
@@ -92,28 +130,41 @@ export function openFirstDrawStats(engine: AbstractEngine): FirstDrawSession | n
   const tracker = trackers.get(engine);
   if (!tracker) return null;
   const session: Session = {
-    stats: { draws: 0, loadCompiled: 0, frames: 0, stalls: 0, mostInFrame: 0, worstFrameMs: 0 },
-    held: null, inFrame: 0, frameStart: 0,
+    stats: { draws: 0, loadCompiled: 0, frames: 0, stalls: 0, mostInFrame: 0, worstFrameMs: 0, longFrames: 0, longest: [] },
+    held: null, inFrame: 0, compilesInFrame: 0, frameStart: 0, engineEnd: null,
   };
-  const finishFrame = (now: number) => {
+  /** `whole` is false for the frame a pause cuts short: its first draws count, its length does not make it long. */
+  const finishFrame = (now: number, whole: boolean) => {
+    const ms = now - session.frameStart;
+    const stats = session.stats;
     if (session.inFrame > 0) {
-      const ms = now - session.frameStart;
-      const stats = session.stats;
       stats.frames += 1;
       if (ms > FIRST_DRAW_STALL_MS) stats.stalls += 1;
       stats.mostInFrame = Math.max(stats.mostInFrame, session.inFrame);
       stats.worstFrameMs = Math.max(stats.worstFrameMs, ms);
     }
+    if (whole && ms > FIRST_DRAW_STALL_MS) {
+      stats.longFrames += 1;
+      const frame: LongFrame = {
+        ms, engineMs: (session.engineEnd ?? now) - session.frameStart, firstDraws: session.inFrame, compiles: session.compilesInFrame,
+      };
+      stats.longest = [...stats.longest, frame].sort((a, b) => b.ms - a.ms).slice(0, LONG_FRAMES_KEPT);
+    }
     session.inFrame = 0;
+    session.compilesInFrame = 0;
     session.frameStart = now;
+    session.engineEnd = null;
   };
-  let observer: Observer<AbstractEngine> | null = null;
+  let observers: [Observer<AbstractEngine>, Observer<AbstractEngine>] | null = null;
   const pause = () => {
     if (!session.held) return;
-    finishFrame(performance.now());
+    finishFrame(performance.now(), false);
     session.held = null;
-    engine.onBeginFrameObservable.remove(observer);
-    observer = null;
+    if (observers) {
+      engine.onBeginFrameObservable.remove(observers[0]);
+      engine.onEndFrameObservable.remove(observers[1]);
+    }
+    observers = null;
   };
   tracker.sessions.add(session);
   return {
@@ -122,11 +173,16 @@ export function openFirstDrawStats(engine: AbstractEngine): FirstDrawSession | n
       const compiled = (engine as unknown as DrawEngine)._compiledEffects ?? {};
       session.held = new WeakSet(Object.values(compiled));
       session.inFrame = 0;
+      session.compilesInFrame = 0;
       session.frameStart = performance.now();
-      observer = engine.onBeginFrameObservable.add(() => finishFrame(performance.now()));
+      session.engineEnd = null;
+      observers = [
+        engine.onBeginFrameObservable.add(() => finishFrame(performance.now(), true)),
+        engine.onEndFrameObservable.add(() => { session.engineEnd = performance.now(); }),
+      ];
     },
     pause,
-    stats: () => ({ ...session.stats }),
+    stats: () => ({ ...session.stats, longest: session.stats.longest.map((frame) => ({ ...frame })) }),
     close() {
       pause();
       tracker.sessions.delete(session);
