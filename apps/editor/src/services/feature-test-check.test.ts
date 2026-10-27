@@ -58,7 +58,7 @@ function fakeEditor(
               presentation: presentation(now, commands), cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
               pipeline: { effective: { renderPath: "forward" } },
               // One shader first drawn per command run so far.
-              firstDraws: { draws: commands.length, loadCompiled: 0, frames: commands.length, stalls: 0, mostInFrame: 1, worstFrameMs: 20 },
+              firstDraws: { draws: commands.length, loadCompiled: 0, frames: commands.length, stalls: 0, mostInFrame: 1, worstFrameMs: 20, longFrames: 0, longest: [] },
             } as unknown as RenderDiagnostics)
             : null,
         }),

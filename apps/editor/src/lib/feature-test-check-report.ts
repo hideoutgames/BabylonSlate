@@ -8,14 +8,22 @@ import {
 import { clipText, formatDiagnosticEnvironment, type DiagnosticEnvironment } from "./diagnostic-info";
 
 export type FeatureTestCheckEnvironment = DiagnosticEnvironment;
+type LongFrame = NonNullable<FeatureTestCheckSceneResult["play"]["firstDraws"]>["longest"][number];
 
 const MAX_LOG_LINES = 8;
+const MAX_LONG_FRAMES = 4;
 const MODE_LABELS = { quick: "Quick", full: "Full", benchmark: "Benchmark" } as const;
 
 const clip = clipText;
 
 function s(ms: number): string {
   return `${(ms / 1000).toFixed(1)} s`;
+}
+
+/** A long frame and what it held; time outside the Engine's frame is scripts, layout, garbage collection or waiting. */
+function longFrame(frame: LongFrame): string {
+  const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+  return `${frame.ms.toFixed(0)} ms (engine ${frame.engineMs.toFixed(0)} ms, ${count(frame.firstDraws, "first draw")}, ${count(frame.compiles, "compile")})`;
 }
 
 function frames(stats: FrameStats | null): string {
@@ -43,6 +51,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
     const first = play.firstDraws;
     if (first) {
       lines.push(`  First draws after load: ${first.draws} (${first.loadCompiled} compiled by the load) in ${first.frames} frame${first.frames === 1 ? "" : "s"} · ${first.stalls} over 100 ms · worst ${first.worstFrameMs.toFixed(0)} ms · most ${first.mostInFrame} in a frame`);
+      lines.push(`  Long frames after load: ${first.longFrames} over 100 ms${first.longest.length ? ` · longest ${first.longest.slice(0, MAX_LONG_FRAMES).map(longFrame).join(", ")}` : ""}`);
     }
   } else if (play.status !== "not-started") {
     lines.push(`  Play: ${play.status} after ${s(play.ms)}${play.phase ? ` at ${play.phase}` : ""}`);

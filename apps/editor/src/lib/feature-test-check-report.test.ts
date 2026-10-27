@@ -29,7 +29,11 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
-          firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4 },
+          firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6, longest: [
+            { ms: 240.2, engineMs: 31.5, firstDraws: 0, compiles: 0 }, { ms: 180.4, engineMs: 170.1, firstDraws: 3, compiles: 1 },
+            { ms: 150, engineMs: 140, firstDraws: 1, compiles: 2 }, { ms: 130, engineMs: 20, firstDraws: 0, compiles: 0 },
+            { ms: 120, engineMs: 110, firstDraws: 1, compiles: 0 },
+          ] },
           commands: [{ line: "ft_stats", success: true, output: "FeatureTest score 0, spinners 4, spawned 0", ms: 1200 }], benchmark: [], logs: [] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 30, after: 30, leak: false, quarantined: false } },
       }],
@@ -46,6 +50,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("    [error] Material FT_Glass failed to compile");
     expect(lines).toContain("  > ft_stats: ok in 1.2 s · FeatureTest score 0, spinners 4, spawned 0");
     expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame");
+    expect(lines).toContain("  Long frames after load: 6 over 100 ms · longest 240 ms (engine 32 ms, 0 first draws, 0 compiles), 180 ms (engine 170 ms, 3 first draws, 1 compile), 150 ms (engine 140 ms, 1 first draw, 2 compiles), 130 ms (engine 20 ms, 0 first draws, 0 compiles)");
     expect(lines).toContain("  TypeError: x is undefined");
   });
 
