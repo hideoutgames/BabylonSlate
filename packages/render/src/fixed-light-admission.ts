@@ -39,6 +39,7 @@ import {
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { findSceneShadowController } from "./shadow-controller";
+import { deviceShadowMapCap } from "./device-shadow-cap";
 
 /**
  * The seats of a world Scene's fixed light layout and the light in each, as
@@ -198,6 +199,7 @@ export const selectFixedShapeLights: ForwardLightSelection = (
     rendering.shadows,
     engine._features.supportCSM && CascadedShadowGenerator.IsSupported,
     rendering.mode,
+    deviceShadowMapCap(),
   );
   const inventory = growFixedLightInventory(
     state.inventory,
