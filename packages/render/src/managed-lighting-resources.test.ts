@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine, RawTexture, Scene, Constants } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core";
 import {
   limitManagedLightingBytes,
   reserveManagedShadowBytes,

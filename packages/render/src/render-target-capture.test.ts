@@ -1,6 +1,6 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
 import {
-  Constants, FreeCamera, HemisphericLight, LightConstants, Material, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RawTexture, RenderTargetTexture,
+  Constants, FreeCamera, Material, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RawTexture, RenderTargetTexture,
   Scene, StandardMaterial, Vector3,
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
