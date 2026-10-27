@@ -50,3 +50,11 @@ it("hands the rest of a batch to nobody once a command's handler terminates the 
   FakeWorker.instance.receive({ channel: "commands", payload: [log("a"), log("b")] });
   expect(FakeWorker.events).toEqual(["a"]);
 });
+
+it("names where the worker failed when WebKit gives no message", () => {
+  const host = createPlayerWorkerHost();
+  const errors: string[] = [];
+  host.onError((error) => errors.push(error.message));
+  FakeWorker.instance.onerror?.({ message: "", filename: "https://example.test/player/worker-worker-entry.js", lineno: 12, colno: 7 } as ErrorEvent);
+  expect(errors).toEqual(["The game worker failed to start or stopped unexpectedly (https://example.test/player/worker-worker-entry.js:12:7)."]);
+});

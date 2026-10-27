@@ -1690,6 +1690,15 @@ function initializeEngine(
   };
   // Engine-owned instrumentation is acquired only by a successfully returned handle.
   let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
+  const worldLoadDiagnostics = () => {
+    const world = pendingPresentations.get("world");
+    const rehearsal = loadRehearsal?.report();
+    return {
+      presentation: world ? { ready: world.ready, draws: world.attempts, rendered: world.rendered, gpuPending: Boolean(world.submission), copied: world.copied } : null,
+      rehearsal: loadRehearsal && rehearsal ? { done: loadRehearsal.done, steps: rehearsal.steps, total: loadRehearsal.stepCount,
+        timedOut: rehearsal.timedOut.length, omitted: rehearsal.omitted.length, ms: Math.round(rehearsal.ms) } : null,
+    };
+  };
   const renderDiagnostics = () => {
     framePhaseLeaseFrames = FRAME_PHASE_LEASE_FRAMES;
     const source = engine.getRenderingCanvas();
@@ -1705,6 +1714,7 @@ function initializeEngine(
         registeredViewEnabled: registeredView?.enabled ?? null,
         registeredViewRequestedEnabled: registeredView ? registeredViewIsEnabled(registeredView) : null,
         rttPresenting: rttPresent?.isPresenting() ?? false, contextLost },
+      worldLoad: worldLoading ? worldLoadDiagnostics() : null,
       engineLoop: { frameId: engine.frameId, activeLoops: engine.activeRenderLoops.length,
         ownsLoop: engine.activeRenderLoops.includes(renderLoop), frameHandler: engine._frameHandler,
         disposed: engine.isDisposed, contextLost: native._contextWasLost,

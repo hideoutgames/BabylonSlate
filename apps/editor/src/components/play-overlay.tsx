@@ -16,7 +16,7 @@ import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
 import { formatRuntimeLogLine } from "../lib/output-log-line";
-import { formatSceneLoadReport } from "../lib/scene-load-report";
+import { formatSceneLoadReport, worldLoadLine } from "../lib/scene-load-report";
 import { nextStatGroups, type StatGroup } from "@haptic/debugger";
 import type { SceneLoadProgress, SpawnableLight } from "@haptic/render";
 import type { RenderDiagnostics } from "@haptic/render";
@@ -1244,6 +1244,7 @@ function PlayOverlayView({
       details: [
         `Play: ${session ? `${session.runtimeMode} runtime · tick ${session.lastTickIndex()} · models loaded ${session.modelLoadCount()}` : "session not started"}`,
         ...(rendering ? [`Render: ${rendering.pipeline.effective.gpuBackend} ${rendering.pipeline.effective.renderPath} · ${rendering.width}x${rendering.height} · draws ${rendering.drawCalls} · meshes ${rendering.resources.meshes} · textures ${rendering.resources.textures}${rendering.qualityLimits.length ? ` · limits ${clipText(rendering.qualityLimits.join("; "), 200)}` : ""}`] : []),
+        ...(rendering?.worldLoad ? [worldLoadLine(rendering.worldLoad)] : []),
         problems.length ? `Play log errors and warnings (last ${problems.length}):` : "Play log errors and warnings: none",
         ...problems.map((entry) => `  [${entry.severity}] ${clipText(entry.message, 300)}`),
       ],

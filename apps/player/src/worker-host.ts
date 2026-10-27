@@ -35,7 +35,9 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
     for (const handler of [...errorHandlers]) handler(error);
   };
   worker.onerror = (event) => {
-    reportError(new Error(event.message || "The game worker failed to start or stopped unexpectedly."));
+    // WebKit reports a worker that failed to load or crashed without a message; keep where it was.
+    const at = event.filename ? ` (${event.filename}:${event.lineno}:${event.colno})` : "";
+    reportError(new Error(event.message ? `${event.message}${at}` : `The game worker failed to start or stopped unexpectedly${at}.`));
   };
   worker.onmessageerror = () => reportError(new Error("The game worker sent an unreadable message."));
   const dispatchCommand = (command: CommandMessage) => {
