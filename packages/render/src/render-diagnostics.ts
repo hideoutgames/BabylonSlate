@@ -17,6 +17,7 @@ import type { RenderScheduler } from "./render-scheduler";
 import type { FirstDrawStats } from "./first-draw-stats";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
+import { deviceShadowMapCap } from "./device-shadow-cap";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 
 export type RenderDiagnostics = {
@@ -169,6 +170,7 @@ export function createRenderDiagnostics(
           state.shadows,
           engine._features.supportCSM,
           state.mode,
+          deviceShadowMapCap(),
         ).limits,
         ...(shadows?.limits() ?? []),
         ...sceneEffectsQualityLimits(scene),

@@ -44,6 +44,18 @@ describe("shadow settings", () => {
     });
     expect(result.limits).toEqual([]);
   });
+  it("caps map edges to a device ceiling without raising a smaller authored size, and says so", () => {
+    const cap = { mapSize: 1024, localMapSize: 512 };
+    const medium = normalizeShadowSettings({ profile: "medium" });
+    const capped = effectiveShadowSettings(medium, true, "pbr", cap);
+    expect(capped.settings).toMatchObject({ mapSize: 1024, localMapSize: 512, cascades: 3 });
+    expect(capped.limits).toEqual(["shadow maps: at most 1024 directional, 512 local on this device class"]);
+    expect(medium).toMatchObject({ mapSize: 2048, localMapSize: 1024 });
+    const small = normalizeShadowSettings({ mapSize: 512, localMapSize: 256 });
+    const kept = effectiveShadowSettings(small, true, "pbr", cap);
+    expect(kept.settings).toMatchObject({ mapSize: 512, localMapSize: 256 });
+    expect(kept.limits).toEqual([]);
+  });
   it("rejects nonfinite values and keeps CEL independent of PBR contact hardening", () => {
     const requested = normalizeShadowSettings({
       distance: Infinity,

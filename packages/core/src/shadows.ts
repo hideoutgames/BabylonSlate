@@ -204,13 +204,29 @@ export function resolveShadowSettings(
     ...normalizeShadowOverrides(scene),
   };
 }
+/** The largest shadow map edges a device class allocates, whatever the quality level asks for. */
+export interface ShadowMapSizeCap {
+  mapSize: number;
+  localMapSize: number;
+}
+/**
+ * Phones and tablets: a lost rendering context on an iPad showed the medium level's 2048 cascades and 1024 point
+ * cube (about 168 MB) are more than mobile WebKit keeps beside the rest of a scene.
+ */
+export const MOBILE_SHADOW_MAP_CAP: ShadowMapSizeCap = { mapSize: 1024, localMapSize: 512 };
 export function effectiveShadowSettings(
   requested: ShadowSettings,
   supportsCascades = true,
   mode: "pbr" | "cel" = "pbr",
+  mapSizeCap: ShadowMapSizeCap | null = null,
 ): { settings: ShadowSettings; limits: string[] } {
   const settings = { ...requested };
   const limits: string[] = [];
+  if (mapSizeCap && (settings.mapSize > mapSizeCap.mapSize || settings.localMapSize > mapSizeCap.localMapSize)) {
+    settings.mapSize = Math.min(settings.mapSize, mapSizeCap.mapSize);
+    settings.localMapSize = Math.min(settings.localMapSize, mapSizeCap.localMapSize);
+    limits.push(`shadow maps: at most ${mapSizeCap.mapSize} directional, ${mapSizeCap.localMapSize} local on this device class`);
+  }
   if (settings.localLightMode === "auto")
     settings.maxLocalLights =
       SHADOW_CAPACITY_PROFILES[settings.profile].autoLocalLights;
