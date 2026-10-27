@@ -29,7 +29,7 @@ The toolbar over the game shows the controls you enabled under **Debug > Overlay
 | **Profiler**, **Capture Frame** | Record performance. See [Profiler](../debugging/profiler.md). |
 | **Stats** | Frame rate and timings. |
 | **Console** | Runs [console commands](../debugging/console.md), including debug-only ones. |
-| **Stop** | Ends the preview and returns to the editor. |
+| **Stop** | Ends the preview and returns to the editor, which loads its open Scenes again. |
 
 There are no Pause, Step or Inspector buttons. Use the `pause`, `resume` and `step` commands in the console instead.
 

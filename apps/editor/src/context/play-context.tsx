@@ -239,6 +239,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [simulationViewportRevision, setSimulationViewportRevision] = useState(0);
   const [simulationHost, setSimulationHost] = useState<HTMLElement | null>(null);
   const simulationRef = useRef<SimulationSession | null>(null);
+  /** Scene viewports Play or Preview Build released, restored once the session ends. */
+  const releasedViewportsRef = useRef<SimulationViewport[]>([]);
   // Presentation may close immediately; editor owners remain held until release.
   const playing = playOpen || sessionState.lifecycle === "running" || sessionState.lifecycle === "paused" ||
     sessionState.lifecycle === "stopping" || sessionState.quarantined;
@@ -586,6 +588,34 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     };
   }, [sessionOwner]);
 
+  /**
+   * Play and Preview Build release every open Scene viewport's authoring Scene, as Simulation releases its own:
+   * kept beside the game's, its GPU memory (shadow maps, probe cubes) doubled Play's, which iPad WebKit answers
+   * by losing the context. Stop rebuilds them. False when the session ended or the release failed.
+   */
+  const releaseSceneViewports = useCallback(async (ticket: GameSessionTicket): Promise<boolean> => {
+    const viewports = [...simulationViewports.current.values()];
+    if (!viewports.length) return true;
+    releasedViewportsRef.current.push(...viewports);
+    const release = Promise.all(viewports.map((viewport) => viewport.suspend())).then(() => undefined);
+    sessionOwner.holdRelease(ticket, release.then(() => ({ quarantined: false }), () => ({ quarantined: true })));
+    try {
+      await sessionOwner.awaitCurrent(ticket, release);
+      return true;
+    } catch (error) {
+      if (sessionOwner.isCurrent(ticket)) sessionOwner.fail(ticket, error, true);
+      return false;
+    }
+  }, [sessionOwner]);
+
+  useEffect(() => {
+    if (!sessionOwner.canStart() || !releasedViewportsRef.current.length) return;
+    const viewports = releasedViewportsRef.current.splice(0);
+    // As for Simulation: a quarantined release leaves them released.
+    if (sessionState.quarantined) return;
+    for (const viewport of viewports) if (simulationViewports.current.get(viewport.documentId) === viewport) viewport.restore();
+  }, [sessionOwner, sessionState]);
+
   useEffect(() => {
     const simulation = simulationRef.current;
     if (!simulation || !sessionOwner.canStart()) return;
@@ -594,13 +624,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setSimulationHost(null);
   }, [sessionOwner, sessionState]);
 
-  const launchPlay = useCallback(
-    (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => {
+  const presentPlay = useCallback(
+    async (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => {
       // Only the preparation that still owns the session presents it: a ticket stopped meanwhile
       // (device loss, its source document closed) released the sources this launch would use.
       const ticket = sessionTicketRef.current;
-      if (!ticket || !sessionOwner.isCurrent(ticket) || ticket.mode === "preview" ||
-        sessionOwner.getSnapshot().lifecycle !== "preparing") return;
+      const launchable = () => Boolean(ticket && sessionOwner.isCurrent(ticket) && ticket.mode !== "preview" &&
+        sessionOwner.getSnapshot().lifecycle === "preparing");
+      if (!ticket || !launchable()) return;
+      // Simulation released its own viewport while it prepared.
+      if (ticket.mode === "play" && (!await releaseSceneViewports(ticket) || !launchable())) return;
       if (!ensureEngine()) {
         appendLog("Play failed: could not create Engine.");
         sessionOwner.fail(ticket, "Play could not create Engine.");
@@ -613,7 +646,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       if (ticket.mode === "simulate") setSimulationHost(simulationRef.current?.viewport.host ?? null);
       setPlayOpen(true);
     },
-    [appendLog, ensureEngine, sessionOwner, releasePlaySources],
+    [appendLog, ensureEngine, sessionOwner, releasePlaySources, releaseSceneViewports],
+  );
+  const launchPlay = useCallback(
+    (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => { void presentPlay(options); },
+    [presentPlay],
   );
 
   const showPreviewReport = useCallback((entries: SessionReportEntry[]) => {
@@ -652,6 +689,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     playFromScene,
     traceByteBudget: appSettings.traceByteBudget,
     projectOpen,
+    releaseSceneViewports,
   });
 
   const requestPlay = useCallback(
