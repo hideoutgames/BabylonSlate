@@ -10,12 +10,22 @@ import { isMobilePlatform } from "./platform";
  *   the separate WebView content process).
  * - `appAvailableBytes`: bytes until iOS jetsam would kill the app process.
  * - `systemAvailableBytes`: device-wide memory exposed by the native host.
+ * - `rendererProcessBytes`, `gpuProcessBytes`, `mainProcessBytes`, `allProcessesBytes`:
+ *   resident memory of the Electron desktop app's processes (the GPU process holds WebGL resources).
  */
 export type HostMemoryStats = {
   jsHeapBytes?: number;
   appFootprintBytes?: number;
   appAvailableBytes?: number;
   systemAvailableBytes?: number;
+  rendererProcessBytes?: number;
+  gpuProcessBytes?: number;
+  mainProcessBytes?: number;
+  allProcessesBytes?: number;
+};
+
+type ElectronMemoryBridge = {
+  stats(): Promise<Partial<Record<"rendererProcessBytes" | "gpuProcessBytes" | "mainProcessBytes" | "allProcessesBytes", number | null>>>;
 };
 
 interface BabylonSlateMemoryPlugin {
@@ -29,6 +39,13 @@ interface BabylonSlateMemoryPlugin {
 const BabylonSlateMemory = registerPlugin<BabylonSlateMemoryPlugin>(
   "BabylonSlateMemory",
 );
+
+let latest: { stats: HostMemoryStats; at: number } | null = null;
+
+/** The last sample `getHostMemoryStats` read, for reports built synchronously inside a tap. */
+export function latestHostMemoryStats(): { stats: HostMemoryStats; at: number } | null {
+  return latest;
+}
 
 /** Poll-friendly: returns null when no source can report on this platform. */
 export async function getHostMemoryStats(): Promise<HostMemoryStats | null> {
@@ -61,5 +78,21 @@ export async function getHostMemoryStats(): Promise<HostMemoryStats | null> {
     }
   }
 
-  return Object.keys(stats).length > 0 ? stats : null;
+  // The Electron preload reports every app process, the GPU process included.
+  const electron = (globalThis as { haptic?: { memory?: ElectronMemoryBridge } }).haptic?.memory;
+  if (electron) {
+    try {
+      const desktop = await electron.stats();
+      for (const key of ["rendererProcessBytes", "gpuProcessBytes", "mainProcessBytes", "allProcessesBytes"] as const) {
+        const value = desktop[key];
+        if (typeof value === "number") stats[key] = value;
+      }
+    } catch {
+      // An older desktop shell without the channel.
+    }
+  }
+
+  if (Object.keys(stats).length === 0) return null;
+  latest = { stats, at: performance.now() };
+  return stats;
 }

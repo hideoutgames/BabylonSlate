@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld("haptic", {
     readSettings: () => ipcRenderer.invoke("settings:read"),
     writeSettings: (json: string) => ipcRenderer.invoke("settings:write", json),
   },
+  memory: {
+    stats: () => ipcRenderer.invoke("memory:stats"),
+  },
   saveGames: {
     read: (key: string) => ipcRenderer.invoke("save-games:read", key),
     write: (key: string, text: string) => ipcRenderer.invoke("save-games:write", key, text),

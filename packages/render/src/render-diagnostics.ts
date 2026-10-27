@@ -44,6 +44,8 @@ export type RenderDiagnostics = {
     rttPresenting: boolean;
     contextLost: boolean;
   };
+  /** Textures the Engine holds and their estimated GPU bytes (`estimateTextureMemory`). */
+  textureMemory?: { bytes: number; textures: number };
   /** While the world loads: the first frame's attempts and the load rehearsal's progress. */
   worldLoad?: {
     presentation: { ready: boolean; draws: number; rendered: boolean; gpuPending: boolean; copied: boolean } | null;
