@@ -609,12 +609,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   }, [sessionOwner]);
 
   useEffect(() => {
-    if (!sessionOwner.canStart() || !releasedViewportsRef.current.length) return;
+    // A game that halted (a fatal diagnostic) ends its session while its presentation stays up for Stop.
+    if (playOpen || !sessionOwner.canStart() || !releasedViewportsRef.current.length) return;
     const viewports = releasedViewportsRef.current.splice(0);
     // As for Simulation: a quarantined release leaves them released.
     if (sessionState.quarantined) return;
     for (const viewport of viewports) if (simulationViewports.current.get(viewport.documentId) === viewport) viewport.restore();
-  }, [sessionOwner, sessionState]);
+  }, [playOpen, sessionOwner, sessionState]);
 
   useEffect(() => {
     const simulation = simulationRef.current;

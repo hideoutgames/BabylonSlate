@@ -12,11 +12,11 @@ async function openClassPrefab(page: Page): Promise<void> {
   await expect(page.getByTestId("prefab-preview-canvas")).toBeVisible();
 }
 
-/** Babylon Engines alive in the page, read through the warm Scene viewport's hook. */
+/** Babylon Engines alive in the page, read through the Scene viewport's hook (Play releases the viewport itself). */
 function engineCount(page: Page): Promise<number | null> {
   return page.evaluate(() => (globalThis as unknown as {
-    __hapticViewportTest?: { renderingBaseline(): { engineCount: number } | null };
-  }).__hapticViewportTest?.renderingBaseline()?.engineCount ?? null);
+    __hapticViewportTest?: { engineCount(): number };
+  }).__hapticViewportTest?.engineCount() ?? null);
 }
 
 test.describe.configure({ mode: "serial" });
