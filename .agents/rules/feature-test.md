@@ -6,6 +6,8 @@ The built-in **Feature Test** starter (`apps/editor/src/lib/feature-test/`) show
 
 Adding, removing, renaming or changing the authored data or runtime behaviour of: an engine component (`ENGINE_COMPONENT_CLASS_IDS` in `packages/core/src/engine-components.ts`) or its properties; a creatable or imported asset type; an engine base class (`ENGINE_BASE_CLASSES`), node or event family, console command or Play feature; project or scene settings; or the starter itself.
 
+A node family counts as a whole: adding a node to an existing family does not apply this rule (its tests and node page cover it), but a change that breaks a node the scaffold already uses still updates the scaffold.
+
 ## Required in the same PR
 
 1. **Update the scaffold.** Author the feature in the owning area module so it is visible in its zone (or in `FT_World`, `FT_2D`, `FT_HUD`, `FT_Clustered`, `FT_Stress`) and exercised in Play. Changed formats update the authored data; removed features leave the scaffold.
