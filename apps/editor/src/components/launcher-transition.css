@@ -44,8 +44,9 @@
 .slate-loading[data-leaving="true"] .slate-splash {
   transform: scale(0.98);
 }
-/* The text wordmark of haptic.no's title (font in index.html): ink over a
- * red and an amber copy stretched a little wider, which leave the fringes. */
+/* The text wordmark of haptic.no's title (font in index.html), as the boot
+ * intro rests: ink over a red and an amber copy stretched a little wider,
+ * which leave the fringes. No filter, so the text stays crisp. */
 .slate-splash-wordmark {
   position: relative;
   align-self: flex-start;
@@ -63,12 +64,10 @@
   position: relative;
   display: block;
   color: var(--foreground);
-  filter: blur(calc(0.5px * 46 / 172.5));
 }
 .slate-splash-wordmark-ca {
   position: absolute;
   inset: 0;
-  filter: blur(calc(1.2px * 46 / 172.5));
 }
 .slate-splash-wordmark-red {
   transform: scaleX(1.075);
