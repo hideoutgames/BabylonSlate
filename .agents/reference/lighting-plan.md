@@ -8,7 +8,8 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 
 ## Invariants
 
-- A level's programs are a bounded, enumerable set, compiled behind the loading screen: no shader compiles after the first presented frame, whatever lights do (switch, spawn, move, start or stop shadows, enter or leave the light budget).
+- No light change compiles a shader: a light switching, spawning, moving, starting or stopping its shadows, or entering or leaving the light budget only writes data.
+- A level's programs (its Materials with the mesh features they draw with, in each pass) are a bounded set, compiled behind its loading screen. Content arriving later (a streamed scene, a Class loaded on demand, a Material a script assigns that the level does not hold) compiles while it loads and stays hidden until ready (`reveal-pending.ts`), never compiling in the frame that first shows it. A settings change (quality level, render mode) may compile.
 - One lighting path. No render-path setting; no light path chosen per material, per Scene or per device.
 - Lighting enters a shader in exactly one place, the lighting function; everything about lights is uniform or buffer data.
 - Every lit surface is a NodeMaterial built from a Material document. Engine code creates no lit `PBRMaterial`, `StandardMaterial` or `CelMaterial`.
@@ -54,7 +55,7 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 
 ### CI gate
 
-- A test plays scripted gameplay after a Play load (lights switched, spawned and moved, shadows started and stopped, a light pushed past the budget) and asserts the Engine's compiled-Effect count and WebGPU pipeline misses do not change after the first presented frame, on WebGL2 and WebGPU. The compile-hold acceptance harness (`compile-hold-acceptance.test.ts`) and the variant-swap proof routes already measure both.
+- A test plays scripted gameplay after a Play load (lights switched, spawned and moved, shadows started and stopped, a light pushed past the budget, spawns of Classes the level holds) and asserts the Engine's compiled-Effect count and WebGPU pipeline misses do not change after the first presented frame, on WebGL2 and WebGPU. The compile-hold acceptance harness (`compile-hold-acceptance.test.ts`) and the variant-swap proof routes already measure both.
 - It cannot pass on the legacy path. It enters with Phase 5 as a test of the new path behind its switch, and becomes a merge gate when Phase 7 makes the new path the default.
 
 ## Phases
