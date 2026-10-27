@@ -50,7 +50,7 @@ async function commitRendering(page: Page) {
   await waitForSceneViewportReady(page);
 }
 
-test("scalability updates budgets, persists Custom and preserves independent settings, the project render path, and an admitted Ultra sun", async ({
+test("scalability updates budgets, persists Custom and preserves independent settings and an admitted Ultra sun", async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
