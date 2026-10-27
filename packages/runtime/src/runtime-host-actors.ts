@@ -23,22 +23,72 @@ interface ActorHostDeps {
   /** The host prepares class assets on demand, so spawns must wait for them. */
   demandAssetCatalog: boolean;
   assetPreloads: Pick<RuntimeAssetPreloads, "acquire" | "release" | "transferOwner" | "getState">;
-  spawn(options: { classId: string; transform?: Transform; streamOwner?: EngineObject | null }): Actor | null;
+  spawn(options: SpawnOptions): Actor | null;
+  /** `spawn` in two steps for Deferred Spawn Actor: the actor outside the World, then its realization. */
+  prepareSpawn(options: SpawnOptions): Actor | null;
+  finishSpawn(actor: Actor): Actor | null;
   /** Pending while a session boundary holds the owner's continuation. */
   continueSimulation(owner: EngineObject | null): Promise<void> | undefined;
   slot(actor: Actor): number | undefined;
   emit(command: CommandMessage): void;
 }
 
+type SpawnOptions = { classId: string; transform?: Transform; streamOwner?: EngineObject | null };
+
 /** Script actor calls: spawning, destruction, added components and bone attachment. */
 export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostServices,
-  "destroyActor" | "addComponent" | "spawnActor" | "spawnActorAsync" | "getActors" | "attachToBone" | "findActor"> {
+  "destroyActor" | "addComponent" | "spawnActor" | "spawnActorAsync" | "beginDeferredSpawnAsync" | "finishDeferredSpawn" |
+  "getActors" | "attachToBone" | "findActor"> {
+  // Deferred Spawn Actor results awaiting Finish Deferred Spawn Actor, with the Class preload each one owns.
+  const deferred = new WeakMap<Actor, string | null>();
+  const release = (preloadId: string | null) => {
+    if (preloadId) deps.assetPreloads.release(preloadId);
+  };
+  // The latent half of Spawn Actor: prepare the Class for `owner`, wait for the owner's simulation, then `create`.
+  // The preload is the caller's to hand on or release.
+  const createPrepared = async (
+    classId: string,
+    transform: unknown,
+    owner: EngineObject | null | undefined,
+    create: (options: SpawnOptions) => Actor | null,
+  ): Promise<{ actor: Actor | null; preloadId: string | null } | null> => {
+    const id = String(classId ?? "").trim();
+    if (!id || deps.stopped() || owner?.destroyed) return null;
+    const guid = deps.classAssetGuids.get(id);
+    if (deps.demandAssetCatalog && !guid && !isLockedEngineClassId(id)) throw new Error(`Class ${id} is missing from the asset catalog`);
+    const preload = deps.demandAssetCatalog && guid
+      ? await deps.assetPreloads.acquire([guid], owner?.guid ?? deps.world().currentScene?.guid ?? "session") : null;
+    try {
+      // Ends quietly, like any continuation, when the session stopped or the owner was destroyed meanwhile,
+      // including by another continuation that resumed in the same flush.
+      for (let pending = deps.continueSimulation(owner ?? null); pending; pending = deps.continueSimulation(owner ?? null)) await pending;
+      if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
+      const actor = create({ classId: id, transform: coerceTransform(transform), streamOwner: owner });
+      return { actor, preloadId: preload?.preloadId ?? null };
+    } catch (error) {
+      release(preload?.preloadId ?? null);
+      throw error;
+    }
+  };
+  // A live actor owns its Class preload, so the preload outlives the spawner; otherwise it is released.
+  const handOver = (preloadId: string | null, actor: Actor | null): void => {
+    if (!preloadId) return;
+    if (actor && !actor.destroyed) deps.assetPreloads.transferOwner(preloadId, actor.guid);
+    else release(preloadId);
+  };
   return {
     destroyActor: (actor) => {
       if (!actor) return;
-      deps.audioParticles.stopAudio(actor);
-      deps.audioParticles.stopParticles(actor);
-      deps.world().destroyActor(actor.guid);
+      if (deferred.has(actor)) {
+        // An unfinished Deferred Spawn Actor result never entered play: its preparation is cancelled.
+        release(deferred.get(actor) ?? null);
+        deferred.delete(actor);
+        deps.world().destroyActorInstance(actor);
+      } else {
+        deps.audioParticles.stopAudio(actor);
+        deps.audioParticles.stopParticles(actor);
+        deps.world().destroyActor(actor.guid);
+      }
       deps.tweens.cancelInvalid();
     },
     addComponent: (actor, classId, transform) => {
@@ -72,27 +122,28 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
       });
     },
     spawnActorAsync: async (classId, transform, owner) => {
-      const id = String(classId ?? "").trim();
-      if (!id || deps.stopped() || owner?.destroyed) return null;
-      const guid = deps.classAssetGuids.get(id);
-      if (deps.demandAssetCatalog && !guid && !isLockedEngineClassId(id)) throw new Error(`Class ${id} is missing from the asset catalog`);
-      const preload = deps.demandAssetCatalog && guid
-        ? await deps.assetPreloads.acquire([guid], owner?.guid ?? deps.world().currentScene?.guid ?? "session") : null;
-      try {
-        // Ends quietly, like any continuation, when the session stopped or the owner was destroyed meanwhile,
-        // including by another continuation that resumed in the same flush.
-        for (let pending = deps.continueSimulation(owner ?? null); pending; pending = deps.continueSimulation(owner ?? null)) await pending;
-        if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
-        const actor = deps.spawn({ classId: id, transform: coerceTransform(transform), streamOwner: owner });
-        if (preload) {
-          if (actor && !actor.destroyed) deps.assetPreloads.transferOwner(preload.preloadId, actor.guid);
-          else deps.assetPreloads.release(preload.preloadId);
-        }
-        return actor;
-      } catch (error) {
-        if (preload) deps.assetPreloads.release(preload.preloadId);
-        throw error;
+      const prepared = await createPrepared(classId, transform, owner, deps.spawn);
+      if (!prepared) return null;
+      handOver(prepared.preloadId, prepared.actor);
+      return prepared.actor;
+    },
+    beginDeferredSpawnAsync: async (classId, transform, owner) => {
+      const prepared = await createPrepared(classId, transform, owner, deps.prepareSpawn);
+      if (!prepared) return null;
+      handOver(prepared.preloadId, prepared.actor);
+      if (prepared.actor) deferred.set(prepared.actor, prepared.preloadId);
+      return prepared.actor;
+    },
+    finishDeferredSpawn: (actor) => {
+      if (!deferred.has(actor)) {
+        if (actor.destroyed) return null;
+        throw new Error(`${actor.classId} (${actor.guid}) is not waiting to finish spawning; pass the result of Deferred Spawn Actor to Finish Deferred Spawn Actor once`);
       }
+      const preloadId = deferred.get(actor) ?? null;
+      deferred.delete(actor);
+      const spawned = deps.finishSpawn(actor);
+      if (!spawned) release(preloadId);
+      return spawned;
     },
     getActors: () => deps.world().getActors(),
     attachToBone: (actor, target, boneName) => {

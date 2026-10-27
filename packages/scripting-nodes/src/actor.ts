@@ -77,6 +77,39 @@ export const actorNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "actor.deferredSpawn",
+    title: "Deferred Spawn Actor",
+    category: "actor",
+    latent: true,
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("classId", "classId", "in", classRef("Actor")),
+      pin("transform", "Transform", "in", TRANSFORM, "data", true),
+      pin("out", "out", "out", objectRef("Actor")),
+    ],
+    codegen: (ctx) => {
+      const out = ctx.output("out");
+      ctx.emit(
+        `${out} = await ctx.beginDeferredSpawnActorAsync(${ctx.input("classId")}, ${ctx.input("transform")});`,
+      );
+    },
+  },
+  {
+    id: "actor.finishDeferredSpawn",
+    title: "Finish Deferred Spawn Actor",
+    category: "actor",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      subject(pin("actor", "Actor", "in", objectRef("Actor"))),
+      pin("out", "out", "out", objectRef("Actor")),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`${ctx.output("out")} = ctx.finishDeferredSpawnActor(${ctx.input("actor")});`);
+    },
+  },
+  {
     id: "actor.getAllOfClass",
     title: "Get All Actors Of Class",
     category: "actor",
