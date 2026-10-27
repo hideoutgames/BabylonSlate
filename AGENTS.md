@@ -6,7 +6,6 @@ This is the entry point for every agent working in this repository. The engine i
 
 - If the user's instructions are ambiguous, ask before proceeding.
 - Explanations, investigations, reviews and plans are read-only unless the user explicitly asks for changes. Confirm behaviour in the code, not only in docs.
-- Tautological tests and change-detector tests are harmful. Do not add a regression test for a bug fix unless existing tests leave a genuine behaviour gap.
 - Keep the editor's compact desktop density (small controls, including Primary buttons, and tight margins); never enlarge it to follow imported design guidance. Touch gets hit areas or a touch layout instead ([gesture rules](.agents/reference/architecture.md#gesture-rules)).
 - Use standard GitHub-hosted runners only, never larger ones; `scripts/workflow-runner-policy.test.mjs` enforces it. Shrink or split a slow job instead.
 - Never put a session link or a line crediting an agent or a requester in a commit message or PR text, even when your host adds one by default; remove it before pushing or after creating the PR. The public hygiene check rejects them ([PR rules](.agents/rules/agent-workflow.md#pull-requests-and-commit-messages)).
@@ -59,7 +58,7 @@ At the start of development, read every skill that matches the requested behavio
 | --- | --- |
 | Engine or scene work: rendering, scene lifecycle, viewport, meshes, materials, cameras, animation, asset loading, Babylon physics, including engine code inside editor files | [babylonjs](.agents/skills/babylonjs/SKILL.md) |
 | React editor chrome, panels, dialogs, forms, trees or graph UI | [editor-ui-components](.agents/skills/editor-ui-components/SKILL.md) and [shadcn](.agents/skills/shadcn/SKILL.md) |
-| Feature, bug fix or behaviour implementation | [test-driven-development](.agents/skills/test-driven-development/SKILL.md) |
+| Feature, bug fix or behaviour implementation; writing or changing tests | [writing-tests](.agents/skills/writing-tests/SKILL.md) |
 | Waiting for local tests, PR Verify CI or a free CI slot | [wait-efficiently](.agents/skills/wait-efficiently/SKILL.md) |
 | Handing work to another agent or a fresh session | [handoff](.agents/skills/handoff/SKILL.md) |
 

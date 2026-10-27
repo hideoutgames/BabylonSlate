@@ -18,8 +18,8 @@
 - For a bug fix, add a regression test only where existing tests leave a genuine behaviour gap; when you add one, confirm it fails before the fix. New behaviour covers the expected outcome and its relevant boundary or failure cases.
 - Extend an existing test when it fits; add a test only for a distinct requirement or failure mode. No tests that mirror implementation, test constants or the framework, confirm mock setup, or exist to raise counts or coverage.
 - Test through the smallest public surface, mock only real external boundaries, and keep tests deterministic. Satisfy coverage gates with meaningful cases, never weaker thresholds.
-- Engine feature, asset type, base class or setting changes also update the Feature Test starter in the same PR ([feature-test.md](feature-test.md)); its scaffold test joins the targeted set.
-- Test projects, coverage gates and environment limits: [testing.md](../reference/testing.md). Approach: the [test-driven-development](../skills/test-driven-development/SKILL.md) skill.
+- Feature Test starter updates: [feature-test.md](feature-test.md).
+- Test projects, coverage gates and environment limits: [testing.md](../reference/testing.md). Approach: the [writing-tests](../skills/writing-tests/SKILL.md) skill.
 
 ## Architecture and documentation
 
@@ -39,7 +39,7 @@
 The repository is public: everything in a commit, PR title, description, review or comment is published.
 
 - A PR description is a short summary of the change: a few lines or a short bullet list, with no filler sections.
-- Never include a link to an agent session, or any line that credits an agent or a requester: "Generated with" or "Written by" footers, co-author or session trailers, "Requested by" lines. Remove any that tooling adds, by editing the PR description or rewriting the commit before you push. The public hygiene check rejects them in commits and PRs.
+- Never include a link to an agent session, or any line that credits an agent or a requester: "Generated with" or "Written by" footers, co-author or session trailers, "Requested by" lines. Remove any that tooling adds, by editing the PR description or rewriting the commit before you push. Re-read the PR description after creating it: some hosts append a footer afterwards. The public hygiene check rejects them in commits and PRs.
 - Never include secrets, tokens, credentials, `.env` contents, internal URLs, customer data, logs, stack traces or raw command output. Name the failing job instead.
 
 ## Merge to main

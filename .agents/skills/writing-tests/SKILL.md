@@ -1,6 +1,23 @@
-# Writing good tests
+---
+name: writing-tests
+description: Use when implementing a feature, bug fix or behaviour change, or when writing or changing tests, mocks or test helpers, to choose tests that protect production behaviour and catch plausible regressions.
+---
 
-Read this when writing or changing tests, mocks or test helpers. A test exists to catch a specific break, so every test names the break it catches and exercises the real thing.
+# Writing tests
+
+Use tests to protect the behaviour people rely on in the editor and game runtime. Which tests a change needs is set by the [testing rules](../../rules/agent-workflow.md#testing); this skill covers choosing and writing them. Tests may be written before or after the implementation: do not discard working code, add redundant tests or stall implementation because no test has failed yet.
+
+A test exists to catch a specific break, so every test names the break it catches and exercises the real thing.
+
+## Choose what to test
+
+Read the implementation and its existing coverage, then name the behaviour that could regress.
+
+- **Runtime or integration change**: exercise the real resolver, compiler, serialisation or host boundary. When Play and the exported player take different paths, cover each affected path.
+- **UI behaviour**: test interaction through the real component. Use a targeted browser check when layout, pixels, touch sizing or focus cannot be established in a DOM test.
+- **Cosmetic changes and documentation** usually need inspection, not new tests.
+
+Vitest projects, the shared mocks and the jsdom traps that produce false passes are in [testing.md](../../reference/testing.md).
 
 ## Principle 1: Name the break
 
@@ -57,3 +74,7 @@ Before finishing, mutate the production code in your head. At least one test sho
 - Missing validation for zero, empty, null, unauthorised or malformed input
 
 A mutation that nothing catches marks the behaviour as unprotected, or the test as tautological.
+
+## Verification
+
+Select, run and record checks as [agent-workflow.md](../../rules/agent-workflow.md#verification) requires.
