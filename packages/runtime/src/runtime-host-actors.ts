@@ -141,8 +141,12 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
       }
       const preloadId = deferred.get(actor) ?? null;
       deferred.delete(actor);
-      const spawned = deps.finishSpawn(actor);
-      if (!spawned) release(preloadId);
+      let spawned: Actor | null = null;
+      try {
+        spawned = deps.finishSpawn(actor);
+      } finally {
+        if (!spawned) release(preloadId);
+      }
       return spawned;
     },
     getActors: () => deps.world().getActors(),
