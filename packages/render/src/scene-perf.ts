@@ -105,16 +105,22 @@ export async function prewarmSceneMaterials(
   scene: Scene,
   assertCurrent?: () => void,
   skipMesh?: (mesh: AbstractMesh) => boolean,
+  onProgress?: (count: { done: number; total: number }) => void,
 ): Promise<void> {
-  await prewarmMeshMaterials(scene, scene.meshes, assertCurrent, skipMesh);
+  await prewarmMeshMaterials(scene, scene.meshes, assertCurrent, skipMesh, onProgress);
 }
 
-/** Warm only an additive instance's consumers, without waiting on sibling loads. */
+/**
+ * Warm only an additive instance's consumers, without waiting on sibling loads. `onProgress` counts the units (one
+ * Material variant for one mesh; units sharing an Effect finish at once) before the first and after each; a mesh added
+ * meanwhile raises the total. With `onProgress`, `meshes` must be iterable twice (an array, as `scene.meshes`).
+ */
 export async function prewarmMeshMaterials(
   scene: Scene,
   meshes: Iterable<AbstractMesh>,
   assertCurrent?: (mesh?: AbstractMesh) => void,
   skipMesh?: (mesh: AbstractMesh) => boolean,
+  onProgress?: (count: { done: number; total: number }) => void,
 ): Promise<void> {
   let finished = false;
   const check = (mesh?: AbstractMesh) => {
@@ -134,8 +140,29 @@ export async function prewarmMeshMaterials(
     () => compiles.renew(),
     createHeldThreadBudget(),
   );
+  // Counted up front for progress; the loop below still reads each mesh's material when it reaches it, since warming
+  // one can replace another's.
+  const variantsOf = (mesh: AbstractMesh) => {
+    // A mesh without vertices draws nothing (empty roots, placeholders, geometry that arrives later).
+    if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || skipMesh?.(mesh)) return 0;
+    const material = mesh.material ?? scene.defaultMaterial;
+    const materials = material instanceof MultiMaterial ? new Set(material.subMaterials.filter((entry) => entry !== null)).size : 1;
+    const drawn = drawnMaterialVariants(mesh);
+    return materials * ((drawn.plain ? 1 : 0) + (drawn.instanced ? 1 : 0));
+  };
+  // Only with a listener: the count reads `meshes` once more, which a one-shot iterator (a stream's slots) cannot give.
+  let total = 0;
+  if (onProgress) for (const mesh of meshes) total += variantsOf(mesh);
+  let done = 0;
+  const compiled = () => {
+    done += 1;
+    // Meshes the warm-up reaches that the count did not see (added meanwhile) raise the total, never past it.
+    total = Math.max(total, done);
+    onProgress?.({ done, total });
+  };
   try {
     await deadline.race((async () => {
+      onProgress?.({ done, total });
       for (const mesh of meshes) {
         check(mesh);
         // A mesh without vertices draws nothing (empty roots, placeholders, geometry that arrives later).
@@ -154,14 +181,21 @@ export async function prewarmMeshMaterials(
             deadline.advance(unit);
             await attributeCompileFailure(unit, () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh));
             check(mesh);
+            compiled();
           }
           if (drawn.instanced) {
             const instanced =`"${entry.name}" for instances of "${mesh.name}"`;
             deadline.advance(instanced);
             await attributeCompileFailure(instanced, () => entry.forceCompilationAsync(mesh, { useInstances: true }));
             check(mesh);
+            compiled();
           }
         }
+      }
+      // Units the count saw that were gone by their turn (a mesh disposed, a material replaced) end it at what ran.
+      if (done !== total) {
+        total = done;
+        onProgress?.({ done, total });
       }
     })());
     check();

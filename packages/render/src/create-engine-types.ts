@@ -9,7 +9,7 @@ import type { RagdollCaptureResult } from "./ragdoll-pose";
 import type { RenderProjectSettings, ScalabilityAcknowledgement } from "@haptic/core";
 import type { RenderPath, ResolvedRenderingPipeline } from "@haptic/core";
 import type { SceneOutlineSelection } from "./scene-outline-host";
-import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
+import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readiness";
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import type { SceneSourceAssets } from "./scene-source-assets";
 import type { LoadRehearsalReport } from "./load-rehearsal";
@@ -245,9 +245,11 @@ export interface EngineHandle {
   /** Material asset guids whose editor tab is open — those stay unfrozen. */
   setEditingMaterialGuids: (guids: ReadonlySet<string>) => void;
   /** Compile shaders before the first editor draw (scene-load warm). */
-  prewarmSceneMaterials: (owner?: SceneLayerLoadIdentity) => Promise<void>;
+  /** `onProgress` counts the warm-up's units (a Material variant for one mesh) as they compile. */
+  prewarmSceneMaterials: (owner?: SceneLayerLoadIdentity, onProgress?: (count: SceneLoadCount) => void) => Promise<void>;
   /** Present one loading frame without resuming normal paused/obstructed drawing. */
-  presentFirstFrame: (owner?: SceneLayerLoadIdentity) => Promise<void>;
+  /** `onLights`: Play's light rehearsal progress while its steps run, then null (the first frame is what remains). */
+  presentFirstFrame: (owner?: SceneLayerLoadIdentity, onLights?: (count: SceneLoadCount | null) => void) => Promise<void>;
   /** Unlock AudioV2 after a user gesture and drain the pre-unlock queue. */
   unlockAudio: () => Promise<void>;
   /** Clear session mixer volumes and stop voices (scene change / Play stop). */

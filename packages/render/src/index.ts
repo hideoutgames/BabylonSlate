@@ -112,7 +112,7 @@ export type { RenderPerformanceSample } from "./render-performance";
 export { engineAdapterInfo, lightsDebugText } from "./render-diagnostics";
 export { formatGlErrorTrace, glErrorTraceActive, glErrorTraceEntries, installGlErrorTrace, type GlErrorTraceEntry } from "./gl-error-trace";
 export { captureShadowDiagnostics, type ShadowDiagnosticOptions, type ShadowDiagnostics } from "./shadow-diagnostics";
-export { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadIdentity, type SceneLayerLoadIdentity, type SceneLoadPhase, type SceneLoadProgress } from "./scene-load-readiness";
+export { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadIdentity, type SceneLayerLoadIdentity, type SceneLoadPhase, type SceneLoadProgress, type SceneLoadCount } from "./scene-load-readiness";
 export { createSceneStreamingReadiness, type SceneStreamIdentity } from "./scene-streaming-readiness";
 export type { SceneSourceAssets } from "./scene-source-assets";
 export { spawnableLightsFromScripts, spawnableLightsOfLoad, spawnsUnseenClasses, type SpawnableLight, type SpawnableLightLoad } from "./spawnable-lights";

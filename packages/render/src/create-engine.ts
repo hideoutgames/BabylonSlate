@@ -49,7 +49,7 @@ import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-hos
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { isLightValueOnlySceneEdit } from "./light-edit";
-import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
+import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, packedSlimProof, releaseUnownedGlbSources } from "./glb-anim";
@@ -497,6 +497,10 @@ function initializeEngine(
     pipelines: number;
     /** Restarts the loading deadline (progress that is not a compile: a rehearsal step). */
     restart?: () => void;
+    /** The world presentation's caller, told the light rehearsal's progress (`publishLights`). */
+    onLights?: (count: SceneLoadCount | null) => void;
+    /** The last progress `onLights` was told, as text. */
+    lightsShown?: string;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
   /**
@@ -1776,9 +1780,19 @@ function initializeEngine(
       for (const lease of leases) lease.release();
     }
   };
+  /** Tells the world presentation's caller where the light rehearsal is, when that changed. */
+  const publishLights = (pending: PendingPresentation) => {
+    if (pending.owner || !pending.onLights) return;
+    const count = loadRehearsal && !loadRehearsal.done ? loadRehearsal.progress() : null;
+    const shown = count ? `${count.done}/${count.total}` : "";
+    if (shown === pending.lightsShown) return;
+    pending.lightsShown = shown;
+    pending.onLights(count);
+  };
   const presentationReady = (pending: PendingPresentation) => {
     try {
       if (!pending.owner && loadRehearsal && !loadRehearsal.done) loadRehearsal.check();
+      publishLights(pending);
       pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady();
       return pending.ready;
     } catch (error) {
@@ -2015,6 +2029,7 @@ function initializeEngine(
         if (key === "world" && loadRehearsal && !loadRehearsal.done) {
           // Drawn is enough: variants its post-draw probe requests draw in a later rehearsal frame.
           loadRehearsal.frame(() => worldRenderer.render(true).rendered);
+          publishLights(pending);
           // Never presented: the loading frame shows the clear colour, as the loading frames before it did.
           engine.clear(scene.clearColor, true, true, true);
           pending.restart?.();
@@ -3235,7 +3250,7 @@ function initializeEngine(
       freezeLibraryMaterials();
       scheduler.invalidate("asset");
     },
-    prewarmSceneMaterials: async (owner) => {
+    prewarmSceneMaterials: async (owner, onProgress) => {
       const scope = loadingScope(owner);
       // Every instance the load published is in the Scene now; later ones compile as they publish.
       if (!owner) instanceCompileHold = null;
@@ -3254,7 +3269,7 @@ function initializeEngine(
       settleSceneWater(scope.target, true);
       // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
       // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
-      await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh);
+      await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh, onProgress);
       scope.assert();
       if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
       freezeLibraryMaterials();
@@ -3302,7 +3317,7 @@ function initializeEngine(
       }
       scope.assert();
     },
-    presentFirstFrame: (owner) => {
+    presentFirstFrame: (owner, onLights) => {
       try { loadingScope(owner); } catch (error) { return Promise.reject(error); }
       if (registeredView && !registeredViewIsEnabled(registeredView)) {
         return Promise.reject(new Error("The loading viewport is not active."));
@@ -3323,7 +3338,7 @@ function initializeEngine(
         else expirePresentation(key);
       };
       const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
-      const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 };
+      const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0, onLights };
       pending.restart = () => {
         if (pending.completionStarted || pendingPresentations.get(key) !== pending) return;
         clearTimeout(pending.timer);

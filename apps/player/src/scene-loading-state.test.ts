@@ -48,11 +48,11 @@ describe("player scene loading state", () => {
     publishPlayerSceneLoading(root, {
       sceneAssetGuid: "world",
       sceneLoadId: 3,
-      phase: "Warming Shaders",
+      phase: "Compiling Shaders",
       progress: 70.4,
     });
     expect(root.dataset.sceneLoading).toBe("true");
-    expect(root.dataset.sceneLoadPhase).toBe("Warming Shaders");
+    expect(root.dataset.sceneLoadPhase).toBe("Compiling Shaders");
     expect(root.dataset.sceneLoadProgress).toBe("70");
     expect(root.dataset.sceneLoadId).toBe("3");
     publishPlayerSceneLoading(root, null);

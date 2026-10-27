@@ -565,7 +565,7 @@ describe("ViewportPanel engine", () => {
     handle.prewarmSceneMaterials.mockReturnValueOnce(new Promise<void>(() => {}));
     try {
       renderViewport();
-      await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Warming Shaders"));
+      await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Compiling Shaders"));
       expect(play.reportSceneViewportLoading).toHaveBeenLastCalledWith("scene:S", true);
       await act(async () => { await viewport.suspend(); });
       // The Simulation is about to run over the viewport; a stale modal here would sit on top of it.

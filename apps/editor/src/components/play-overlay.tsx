@@ -414,7 +414,7 @@ function PlayOverlayView({
   const [postProcessPasses, setPostProcessPasses] = useState(0);
   const [assignedMaterials, setAssignedMaterials] = useState("");
   // The Worker can take time to initialize before its first scene token arrives.
-  const [sceneLoading, setSceneLoading] = useState<Pick<SceneLoadProgress, "phase" | "progress"> | null>({
+  const [sceneLoading, setSceneLoading] = useState<Pick<SceneLoadProgress, "phase" | "progress" | "count"> | null>({
     phase: "Preparing Scene",
     progress: 0,
   });
@@ -1307,7 +1307,7 @@ function PlayOverlayView({
     >
       {simulationSession ? <SimulationRetentionDialog session={simulationSession} onStop={() => finishSessionRef.current()} /> : null}
       <SceneLoadingDialog open={sceneLoading !== null && !sceneLoadFailed} progress={sceneLoading?.progress ?? 0}
-        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} finalFocus={canvasRef}
+        phase={sceneLoading?.phase ?? "Preparing Scene"} count={sceneLoading?.count} onStop={() => finishSessionRef.current()} finalFocus={canvasRef}
         onCopyDetails={localEngineSettings.debugMode ? copyLoadDetails : undefined} />
       <PlayOverlayChrome
         paused={paused}

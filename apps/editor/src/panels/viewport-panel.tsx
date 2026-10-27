@@ -599,6 +599,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         open={sceneLoad.open}
         progress={sceneLoad.progress}
         phase={sceneLoad.phase}
+        count={sceneLoad.count}
         failed={sceneLoad.failed}
         rendering={sceneLoad.rendering}
         onRetry={() => setReloadVersion((version) => version + 1)}

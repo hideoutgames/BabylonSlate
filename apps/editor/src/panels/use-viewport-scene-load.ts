@@ -9,6 +9,7 @@ import {
   engineAdapterInfo,
   type EngineHandle,
   type EditorSceneLoadOptions,
+  type SceneLoadCount,
 } from "@haptic/render";
 import {
   useDocumentActions,
@@ -49,6 +50,8 @@ export interface ViewportSceneLoadState {
   open: boolean;
   progress: number;
   phase: SceneViewportLoadPhase;
+  /** The phase's count when it has one (Compiling Shaders). */
+  count?: SceneLoadCount;
   failed?: boolean;
   rendering?: boolean;
   /** Kept for Debug Mode's Copy Error. */
@@ -371,17 +374,17 @@ export function useViewportSceneLoad({
               if (!isCurrent()) return;
               await handle.whenMaterialTexturesReady();
             },
-            warmShaders: async () => {
+            warmShaders: async (onCount) => {
               if (!isCurrent()) return;
-              await handle.prewarmSceneMaterials();
+              await handle.prewarmSceneMaterials(undefined, onCount);
             },
             presentFirstFrame: async () => {
               if (!isCurrent()) return;
               await handle.presentFirstFrame();
             },
-            onProgress: (progress, phase) => {
+            onProgress: (progress, phase, count) => {
               if (!isCurrent()) return;
-              setSceneLoad({ open: true, progress, phase, rendering });
+              setSceneLoad({ open: true, progress, phase, count, rendering });
             },
           });
         } else {
