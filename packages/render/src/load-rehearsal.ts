@@ -1,5 +1,4 @@
-import { DirectionalLight, Frustum, PointLight, SpotLight, Vector3, type Effect, type Light, type Scene } from "@babylonjs/core";
-import { settlePlayViewCulling } from "./play-view-culling";
+import { DirectionalLight, PointLight, SpotLight, Vector3, type Effect, type Light, type Scene } from "@babylonjs/core";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import { DriverCompileWatch } from "./driver-compile";
 import { restoreSceneLightOrder } from "./forward-light-slots";
@@ -119,15 +118,6 @@ function rehearsalSteps(scene: Scene, spawnable: readonly SpawnableLight[]): Reh
     kinds.add(step.kind);
   }
   return [...leading, ...spawnedLightSteps(scene, spawnable), ...repeats];
-}
-
-/** Whether the active camera's cull would leave out a mesh its view culls (one not marked always drawn). */
-function hasMeshOutsideView(scene: Scene): boolean {
-  const camera = scene.activeCamera;
-  if (!camera) return false;
-  settlePlayViewCulling(scene);
-  const planes = Frustum.GetPlanes(camera.getTransformationMatrix());
-  return scene.meshes.some((mesh) => !mesh.alwaysSelectAsActiveMesh && mesh.isEnabled() && mesh.isVisible && !mesh.isInFrustum(planes));
 }
 
 /** Draws with every enabled, visible mesh selected, as Babylon's cull task does under `skipFrustumClipping`. */
@@ -308,8 +298,8 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  *
  * `drawsOutsideView` (Play, whose world Scene culls by view: `play-view-culling.ts`) draws every rehearsal frame without
  * view culling, so a mesh outside the starting view, and its variants for each step, draw here (a program's first use
- * on WebGL2, a render pipeline on WebGPU) rather than when gameplay first shows it; the starting state then also draws
- * without a step when a mesh is outside the view (`hasMeshOutsideView`).
+ * on WebGL2, a render pipeline on WebGPU) rather than when gameplay first shows it. A load with nothing to rehearse
+ * draws no frame for it: an extra loading frame steps GPU particles once more, which a paused Simulation's redraw shows.
  */
 export function createLoadRehearsal(
   scene: Scene, settled: () => boolean = () => true, spawnable: readonly SpawnableLight[] = [],
@@ -331,7 +321,7 @@ export function createLoadRehearsal(
   let rehearsed = 0;
   let drawn = 0;
   /** The starting state is still drawing (before the first step). */
-  let starting = steps.length > 0 || options.staged === true || (options.drawsOutsideView === true && hasMeshOutsideView(scene));
+  let starting = steps.length > 0 || options.staged === true;
   let onStartingDrawn = options.onStartingDrawn;
   const startingDrawn = () => {
     const done = onStartingDrawn;
