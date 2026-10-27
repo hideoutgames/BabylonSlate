@@ -1,0 +1,95 @@
+# Lighting plan
+
+The plan for Haptic's own data-driven lighting model: one lighting function that reads every light from one block and every local shadow from one atlas, used by every lit surface on WebGL2 and WebGPU. Decided; phases land as separate PRs. When the last phase lands, delete this file and move its decisions into [render.md](architecture/render.md) and [engine-plan.md](engine-plan.md).
+
+## Why
+
+Babylon bakes each light's type, shadow and filter into a receiver's defines (`LIGHT{i}`, `POINTLIGHT{i}`, `SHADOW{i}`, `SHADOWPCF{i}`), so a light switching, a shadow starting and a spawn are each a new program. On iPad WebKit a program costs seconds of link plus a blocking first draw, which a load either rehearses behind its loading screen (minutes) or leaves to gameplay (hitches). Three light paths and about fifteen render modules exist to manage when those compiles happen (legacy Forward, fixed-shape seats, Babylon Clustered Forward; the load rehearsal, admission predictions, light-neutral passes, hide-until-ready, first-draw budgets, WebGPU pipeline warm-ups). Lights as data remove the compiles, and with them most of that machinery.
+
+## Invariants
+
+- A level's programs are a bounded, enumerable set, compiled behind the loading screen: no shader compiles after the first presented frame, whatever lights do (switch, spawn, move, start or stop shadows, enter or leave the light budget).
+- One lighting path. No render-path setting; no light path chosen per material, per Scene or per device.
+- Lighting enters a shader in exactly one place, the lighting function; everything about lights is uniform or buffer data.
+- Every lit surface is a NodeMaterial built from a Material document. Engine code creates no lit `PBRMaterial`, `StandardMaterial` or `CelMaterial`.
+
+## Target design
+
+### Light data
+
+- One uniform block per Scene (`HapticLights`, std140 in GLSL, a uniform buffer in WGSL), rewritten when a light changes: counts per type (directional, point, spot, rect area), then fixed-size arrays of records up to the device profile's light maximum. A record holds position or direction, colour times intensity, range, cone, shadow record index and a valid flag.
+- Each type loops to its runtime count, so each loop is branch-free. A light past the maximum is ranked out by the existing admission (priority, camera distance, incumbent bonus); slot kinds and slot classes go.
+- One hemispheric fill, always declared, black when absent. Rect area lights stay unshadowed and read Babylon's LTC tables (`scene._ltcTextures`) as now, always bound.
+- Light falloff is physical for every surface (today Standard and CEL use range falloff, PBR physical). Specular, IES profiles, projection textures, lightmap modes and falloff types are not authored anywhere and are not supported.
+- Decision for the spike: whether Babylon `Light` objects survive. Once no material and no shadow generator reads them they are inert; removing them (Haptic light records only, `scene.lights` empty and tested empty) means no future material can compile light defines. It depends on what in the editor and the shadow controller uses `Light` as an object (gizmos, picking, billboards, admission).
+
+### Lighting function
+
+- One function in GLSL and WGSL, behind one NodeMaterial block (`HapticLightingBlock`) that replaces `ScenePbrLightingBlock`, `CelLightBlock` and `SceneReflectionBlock` in `material-compiler.ts`. Inputs are the Material Output's: Base Color, Metallic, Roughness, Environment Influence, Normal, Emissive, Opacity, Alpha Clip, plus Ambient Occlusion (added in Phase 3).
+- Direct light: metallic-roughness BRDF over the light loops, shadowed from the atlas. Environment: the Scene's environment cube with the spherical polynomial Haptic already overrides (`environment-irradiance.ts`), the environment BRDF table, `scene.iblIntensity`, and box-projected reflection probes swapped per mesh (`mesh-environment.ts`, `reflection-probes.ts`).
+- CEL is a per-Scene define of the same function (hard steps for bands, shadow visibility and highlights, its own irradiance uniforms from `cel-shader.ts`). A render-mode change is a settings change and may compile.
+- Babylon's NodeMaterial system keeps everything else: vertex paths (bones, morph targets, instances), fog, clip planes, the graph's own nodes.
+- Not needed: clear coat, sheen, iridescence, subsurface, anisotropy, refraction. Neither Material documents nor the glTF loader (`gltf-loader.ts` registers no `KHR_materials_*` extension but unlit) can turn them on.
+
+### Shadow atlas
+
+- One depth-only texture per Scene, its edge from the device profile and the quality level. Sun cascades, spot tiles and a point light's six face tiles share it; each shadowed light's record holds its tile rects, matrices and bias. One sampling path: hardware compare for PCF, and for PCSS the same texture through a second sampler object without compare.
+- Casters keep Babylon's depth-wrapper approach (bones, morph targets, instances, alpha test; authored World Position Offset through `AuthoredShadowDepthWrapper` and `authored-shadow-output.ts`; lattice through `NativeLatticeShadowDepthWrapper`) and render into viewport tiles of the one target. Caster depth variants are bounded by mesh features and compile at load.
+- Admission keeps its ranking (`planShadowAdmission`: priority, `SHADOW_MIN_RESIDENCY_MS`, distance with the incumbent bonus, the sun first) and allocates tiles instead of maps; the budget is atlas area.
+- Full Quality captures lease cascade tiles from the same atlas and fall back to the scene's cascades when it is full, as captures fall back today.
+- Must preserve: neutral until drawn (the record's valid flag); automatic directional bias, per-caster normal bias, receiver-plane PCF and cascade fade (`shadow-receiver.ts`, `shadow-shader.ts`); PCF and PCSS at three quality levels (CEL turns PCSS into PCF); range-fitted local depth; spatial and submesh caster culling (`shadow-geometry-partitions.ts`, `shadow-mesh-policy.ts`); render-once refresh per tile on caster revision, cascades on camera change, continuous refresh for unsafe casters (`shadow-map-refresh.ts`); ranking, residency and priority; the mobile cap; the diagnostics rows (`shadow-diagnostics.ts`, `renderDiagnostics().shadowMapBytes`); volumetric sampling; the authored and lattice depth uniforms; the WebGPU warm and isolated caster draws (`shadow-map-warm.ts`, `shadow-caster-warm.ts`), re-keyed for one render target, until the CI gate proves them unneeded; the Babylon patch hunks the depth wrappers rely on.
+- Dropped: standby maps, parking, donor `moveTo` and receiver exchange; slot-define tracking (`shadow-slot-defines.ts`), per-filter seat samplers, `admissionSamplers`, sampler placeholders (`shadow-sampler-placeholders.ts`) and the sampler headroom (`light-sampler-budget.ts`); cube maps and the Poisson fallback (six compare tiles make point lights PCF); the colour attachment; the CSM four-layer peak charge; the 64 px prediction maps; transparency shadows, frustum edge falloff, darkness as a setting and the cascade debug define, none of which is used.
+
+### Other readers of lights
+
+- Volumetrics read the light block and the atlas instead of their own slots (`volumetric-lights.ts`).
+- Water's CPU lighting (`water-scene-state.ts`: strongest directional plus hemispheric) reads the light records.
+- Geometry passes no longer carry light defines, so `light-neutral-tasks.ts` goes.
+- Previews and thumbnails use the same path. Their studio lighting (two `HemisphericLight`s, `preview-lighting.ts`) becomes a directional key and the hemispheric fill: a deliberate look change, and thumbnails regenerate.
+- The editor world view draws through the same path; Unlit viewport mode is a define of the function.
+
+### Device profile
+
+- One module (`device-profile.ts`, absorbing `device-class.ts`) maps device class to every cap: shadow atlas edge (today's `MOBILE_SHADOW_MAP_CAP`), light maximum, texture budget (the desktop 2 GB default is a profile value), default render scale, and the load rehearsal's limits while they exist. Consumers read the profile; nothing else tests the user agent.
+
+### CI gate
+
+- A test plays scripted gameplay after a Play load (lights switched, spawned and moved, shadows started and stopped, a light pushed past the budget) and asserts the Engine's compiled-Effect count and WebGPU pipeline misses do not change after the first presented frame, on WebGL2 and WebGPU. The compile-hold acceptance harness (`compile-hold-acceptance.test.ts`) and the variant-swap proof routes already measure both.
+- It cannot pass on the legacy path. It enters with Phase 5 as a test of the new path behind its switch, and becomes a merge gate when Phase 7 makes the new path the default.
+
+## Phases
+
+Each phase is one PR, or a short series, merged into `main` before the next starts.
+
+0. **Plan** (this file) and the mobile rehearsal limits.
+1. **Remove Babylon Clustered Forward**: the `renderPath` setting and its UI, `EngineHandle.setRenderPath`, the `renderpath` console command, the Set Render Path node and its docs page, `scene-render-path.ts`, `render-path-session.ts`, the `clustered-*` modules, `framegraph-clustered-lights.ts`, the clustered CEL shader, the Benchmark `clustered` profile and perf scene, and their docs. Saved projects normalize to Forward.
+2. **Device profile** module; its consumers; the engine plan's memory defaults stated as profile values.
+3. **Material consolidation on the current lighting**, with no visible change:
+   - The engine default material becomes a Material document (`createDefaultMaterialDocument`); landscape, foliage, cables and dynamic runtime meshes without a Material use it.
+   - Preserved glTF slots become Material documents: an Ambient Occlusion input on Material Output (with strength), texture coordinate channels and texture transforms in the importer; emissive strength is kept.
+   - Built-in water becomes a graph Material on the water node blocks (`water-node-blocks.ts`), its plugin's behaviour moved into blocks.
+   - The fog-volume guide ball and the GreasedLine debug lines (`play-debug-draw.ts`) become unlit.
+   - `CelMaterial` and the native CEL swap (`scene-render-mode.ts`) go; CEL stays on graph Materials only.
+   - After this phase `ScenePbrLightingBlock` and `CelLightBlock` are the only places lighting enters.
+4. **Spike**: a `HapticLightingBlock` lighting unshadowed lights from the block, in GLSL and WGSL. It answers:
+   - IBL and specular parity against `ScenePbrLightingBlock`, by screenshot comparison;
+   - the per-pixel cost of the loops on the A16 iPad at the Feature Test's light count, as a Benchmark profile against Forward;
+   - the Light-object decision;
+   - PCSS through a second sampler object on WebGL2 and WGSL.
+
+   If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
+5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.
+6. **Shadow atlas** behind the same switch, with the preserve list above.
+7. **Default**: the CI gate passes on the new path; it becomes the default and a merge gate; the Feature Test is measured on the A16 iPad and an iPhone.
+8. **Deletions**: legacy Forward's per-light path (`forward-light-budget.ts` slot kinds, `forward-light-slots.ts`); fixed-shape lighting (`fixed-light-*.ts`, core `fixed-light-layout.ts`, the `fixedlights` command and its Benchmark profiles); `variant-prediction.ts` and the prediction maps; the load rehearsal's light steps and its mobile limits; `light-neutral-tasks.ts`; `reserveSceneLightInventory`; the shadow controller's standby, parking, donor and exchange, slot defines and sampler placeholders; `light-sampler-budget.ts`; the `_materialLightHooks` hunks of the Babylon patch; `ScenePbrLightingBlock`, `CelLightBlock` and `SceneReflectionBlock`; the Poisson fallback report.
+9. **Later, decided separately**: fewer material variants (texture presence and similar defines as always-bound defaults), measured on its own.
+
+## Risks
+
+- Per-pixel loop cost on the A16 at the Feature Test's light count (Phase 4 measures it; culling is the remedy).
+- Environment and specular parity with Babylon's PBR, which existing Scenes are lit by.
+- WGSL parity of the function, the block and the atlas sampling.
+- Atlas tile bleeding under PCF and PCSS kernels, and seams between a point light's six tiles.
+- Authored World Position Offset in the atlas depth pass.
+- WebGPU shadow-pass pipelines created synchronously, until the CI gate proves the warm-ups unneeded.
+- NodeMaterial block API changes at the next Babylon upgrade (pinned; an upgrade re-checks the block).
