@@ -198,7 +198,7 @@ Errors and warnings from the session appear in the **Output Log** window. When P
 - Select an entry to open the asset that caused it. A Class opens at the node, including a node inside a function, and a behaviour tree opens at the node.
 - The report stays open while you work through the entries, and the editor behind it stays usable.
 - An entry that names no asset, or one the project no longer has, shows **No Source**. Selecting it says why nothing opens. If an asset cannot be opened, for example while a Simulation is still stopping, the report says why; select the entry again.
-- **Copy Report** copies every entry as text. The button briefly reads **Copied**, or **Copy Failed** when the clipboard refuses the copy.
+- **Copy Report** copies every entry as text, with the error stack indented under each entry that has one. The button briefly reads **Copied**, or **Copy Failed** when the clipboard refuses the copy.
 
 The report closes only when you close it: choose **Close** or the close button in its title bar, or press <kbd>Esc</kbd> while the keyboard is inside the report. Pressing the editor behind it, opening an asset from it, or pressing <kbd>Esc</kbd> in a graph or the viewport leaves it open.
 

@@ -337,6 +337,16 @@ it("says Copied when the clipboard takes the report, and Copy Failed instead of 
   }
 });
 
+it("copies an entry's stack under it", () => {
+  const writeText = vi.fn(async () => undefined);
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+  renderReport([entry({ code: "scene.loading.failed", message: "Scene loading failed: Maximum call stack size exceeded.",
+    stack: "RangeError: Maximum call stack size exceeded.\nrealizeActor@worker.js:10:5" })], sources());
+  fireEvent.click(screen.getByTestId("session-report-copy"));
+  expect(writeText).toHaveBeenCalledWith(expect.stringContaining(
+    "Maximum call stack size exceeded.\n    RangeError: Maximum call stack size exceeded.\n    realizeActor@worker.js:10:5"));
+});
+
 it("shows an empty report as such when the last session reported nothing", () => {
   renderReport([], sources());
   expect(screen.getByTestId("session-report-empty").textContent).toContain("No Entries");

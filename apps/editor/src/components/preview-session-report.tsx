@@ -270,7 +270,9 @@ export function PreviewSessionReport({
           `[${e.severity}] ${e.code} x${e.count} ${e.message}` +
           (e.assetGuid || nodeId
             ? ` @ ${sessionReportLocationLabel(labels, e)} (${e.assetGuid ?? ""}${nodeId ? `/${nodeId}` : ""})`
-            : "")
+            : "") +
+          // The stack is the only record of where an engine failure came from.
+          (e.stack ? `\n${e.stack.split("\n").map((line) => `    ${line.trim()}`).join("\n")}` : "")
         );
       })
       .join("\n");
