@@ -63,7 +63,7 @@ import {
   type ShadowEntry as Entry,
   type ShadowLightStatus,
 } from "./shadow-entry";
-import { deviceShadowMapCap } from "./device-shadow-cap";
+import { deviceShadowMapCap } from "./device-class";
 import {
   applyShadowAdmission,
   cameraDistanceSquared,

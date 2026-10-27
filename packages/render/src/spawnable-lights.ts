@@ -13,8 +13,8 @@ export type SpawnableLight = { kind: string; properties: AuthoredLightProperties
  * Kind (`point` when unset). Play's load rehearses one spawned light of each kind among them. Babylon-free, for the
  * hosts' source preparation (`@haptic/render/spawnable-lights`).
  *
- * Lights a script adds with Add Component join them (`addedLights`): an added component takes its class's defaults, and
- * scripts change only a light's Enabled, Color and Intensity, none of which changes a receiver's defines.
+ * Lights a script adds with Add Component join them (`addedLights`): an added component takes its class's defaults (a
+ * script that then sets its Cast Shadows makes a kind the rehearsal does not stand in for).
  */
 export function spawnableLightsFromScripts(scripts: Iterable<ScriptBundleEntry>): Map<string, SpawnableLight> {
   const lights = new Map<string, SpawnableLight>();
@@ -152,3 +152,4 @@ export function spawnableLightsOfLoad(load: SpawnableLightLoad): Map<string, Spa
   if (spawnsUnseenClasses(load)) for (const [key, light] of UNSEEN_CLASS_LIGHTS) lights.set(key, light);
   return lights;
 }
+
