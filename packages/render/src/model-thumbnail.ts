@@ -1,4 +1,4 @@
-import type { AnimationGroup, AbstractEngine, Material, Scene } from "@babylonjs/core";
+import type { AnimationGroup, AbstractEngine } from "@babylonjs/core";
 import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import {
   DEFAULT_THUMBNAIL_MAX_EDGE,
@@ -25,6 +25,8 @@ import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
 import { nativePreparationForEngine } from "./native-preparation";
 import { thumbnailMiss, type ThumbnailCaptureResult } from "./thumbnail-capture";
+import { thumbnailMaterials, type ThumbnailMaterialSources } from "./asset-thumbnail";
+import { bindResourceCacheToHandle, resourceCacheForEngine } from "./resource-cache";
 
 type ModelThumbnailOptions = {
   importScale?: number;
@@ -52,17 +54,15 @@ function rgbaBytesFromReadback(
 }
 
 /**
- * One-shot offscreen capture of a Model GLB.
+ * One-shot offscreen capture of a Model GLB, its slots drawn with their Materials from `sources`.
  * Transparent clear so Content Browser `--card` tiles show through.
- * Callers should pass `resolveMaterial: () => null` so construction materials
- * stay — compiling slot NodeMaterials on this throwaway Scene can lose the
- * shared Engine context. A capture that runs out of time reports `expired`.
+ * A capture that runs out of time reports `expired`.
  */
 export async function captureModelThumbnailPng(
   engine: AbstractEngine,
   bytes: Uint8Array,
   slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
-  resolveMaterial: (guid: string, scene: Scene) => Material | null,
+  sources: ThumbnailMaterialSources,
   maxEdge: number = DEFAULT_THUMBNAIL_MAX_EDGE,
   options: ModelThumbnailOptions = {},
 ): Promise<ThumbnailCaptureResult> {
@@ -76,7 +76,7 @@ export async function captureModelThumbnailPng(
     return await nativePreparationForEngine(engine).schedule({
       label: "Model Thumbnail", priority: "background", signal: options.signal,
       temporaryBytes: Math.max(1024, (bytes.byteLength + sourceClipBytes) * 4 + size * size * 16),
-    }, () => captureAdmittedModelThumbnail(engine, bytes, slots, resolveMaterial, size, options));
+    }, () => captureAdmittedModelThumbnail(engine, bytes, slots, sources, size, options));
   } catch {
     // Refused or dropped before the capture started: not a capture that ran out of time.
     return { outcome: options.signal?.aborted ? "cancelled" : "failed" };
@@ -87,7 +87,7 @@ async function captureAdmittedModelThumbnail(
   engine: AbstractEngine,
   bytes: Uint8Array,
   slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
-  resolveMaterial: (guid: string, scene: Scene) => Material | null,
+  sources: ThumbnailMaterialSources,
   size: number,
   options: ModelThumbnailOptions,
 ): Promise<ThumbnailCaptureResult> {
@@ -101,6 +101,8 @@ async function captureAdmittedModelThumbnail(
   /** No image because a wait's bound or the capture's ceiling ran out, rather than for a reason of the asset. */
   const ranOut = () => thumbnailMiss(wanted(), { ceiling: compiles.ceiling, stalled: timedOut });
   const host = createModelPreviewScene(engine, { transparent: true });
+  const binding = bindResourceCacheToHandle(resourceCacheForEngine(engine));
+  const materials = thumbnailMaterials(engine, host.scene, sources, binding.cache);
   let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
   let sourceHost: MaterialPreviewScene | null = null;
   let sourceLoaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
@@ -142,14 +144,12 @@ async function captureAdmittedModelThumbnail(
       group.goToFrame(group.from);
       aimPreviewCameraAtMesh(host.camera, host.mesh);
     }
-    applyModelMaterialSlots(host.mesh, slots, (guid) =>
-      resolveMaterial(guid, host.scene),
-    );
+    applyModelMaterialSlots(host.mesh, slots, (guid) => materials.resolve(guid));
     rtt = createPreviewRenderTarget("modelThumbnail", { width: size, height: size }, host.scene);
     host.camera.outputRenderTarget = rtt;
     // The capture's ceiling also ends the preview renderer's own preparation.
     const current = () => wanted() && performance.now() < compiles.ceiling;
-    // A one-shot render must await imported PBR materials and textures. The wait
+    // A one-shot render must await the slots' Materials and textures. The wait
     // ends unready when the capture stopped being current (cancelled or past its
     // ceiling), its mesh was disposed, or its bound ran out. A disposed mesh is no
     // time limit.
@@ -179,6 +179,9 @@ async function captureAdmittedModelThumbnail(
     sourceLoaded?.dispose();
     sourceHost?.dispose();
     loaded?.dispose();
+    materials.library.dispose();
+    // The Scene still holds cache-bound resources until its renderer releases.
     await host.whenReleased().catch(() => {});
+    binding.dispose();
   }
 }

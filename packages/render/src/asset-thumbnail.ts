@@ -7,6 +7,7 @@ import {
   type AbstractEngine,
   type AbstractMesh,
   type Material,
+  type Scene,
 } from "@babylonjs/core";
 import { DEFAULT_THUMBNAIL_MAX_EDGE } from "@haptic/assets";
 import type { SerializedScene } from "@haptic/core";
@@ -22,7 +23,7 @@ import { MaterialLibrary, type MaterialResolveOptions } from "./material-library
 import { createMaterialPreviewScene, createPreviewRenderTarget, renderPreviewFrame } from "./material-preview";
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
-import { acquireMaterialTexture, bindResourceCacheToHandle, materialTextureSampling, resourceCacheForEngine } from "./resource-cache";
+import { acquireMaterialTexture, bindResourceCacheToHandle, materialTextureSampling, resourceCacheForEngine, type TextureResources } from "./resource-cache";
 import { waitUntilReady } from "./preview-readiness";
 import { PreparationTimedOut } from "./scene-render-coordinator";
 import { createHeldThreadBound, createHeldThreadBudget, SCENE_CAPTURE_CEILING_MS, type HeldThreadBudget } from "./stall-deadline";
@@ -36,6 +37,60 @@ type ThumbnailAssets = {
   functions?: Record<string, MaterialFunctionDocument>;
   assets?: MeshAssetContext;
 };
+
+/** The Material documents a capture may draw, with the functions and texture bytes they read. */
+export type ThumbnailMaterialSources = {
+  materials: ReadonlyMap<string, MaterialDocument>;
+  functions?: Record<string, MaterialFunctionDocument>;
+  textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+};
+
+/**
+ * One capture's Materials, compiled by the real compiler on its Scene. Each is warmed at acquisition, since the
+ * capture draws right after: a program that cannot link fails it. `preparations` settle true once each is ready.
+ */
+export function thumbnailMaterials(
+  engine: AbstractEngine,
+  scene: Scene,
+  sources: ThumbnailMaterialSources,
+  cache: TextureResources,
+) {
+  const preparations: Promise<boolean>[] = [];
+  const resolved = new Map<string, Material | null>();
+  const functions = sources.functions ?? {};
+  let unavailable = false;
+  const library = new MaterialLibrary({
+    functions: () => functions,
+    acquireTexture: (guid, _scene, filter) => {
+      const bytes = sources.textureBytes?.get(guid);
+      return bytes ? acquireMaterialTexture(cache, guid, engine, bytes, materialTextureSampling(filter)) : null;
+    },
+    textureIdentity: (guid) => sources.textureBytes?.has(guid) ? guid : undefined,
+    warmFirstAcquisition: true,
+  });
+  const resolve = (guid: string, options?: MaterialResolveOptions): Material | null => {
+    if (options?.instanceKey) {
+      const document = sources.materials.get(guid);
+      const material = document ? library.resolve(scene, guid, document, options) : null;
+      if (material?.mode === NodeMaterialModes.Material) return material;
+      unavailable = true;
+      return null;
+    }
+    const key = `${guid}:${options?.unlit === true}`;
+    if (resolved.has(key)) return resolved.get(key) ?? null;
+    const document = sources.materials.get(guid);
+    const acquired = document ? library.acquire(scene, guid, document, options) : null;
+    if (!acquired?.ok || acquired.material.mode !== NodeMaterialModes.Material) {
+      unavailable = true;
+      resolved.set(key, null);
+      return null;
+    }
+    resolved.set(key, acquired.material);
+    preparations.push(acquired.ready.then((diagnostics) => diagnostics.length === 0));
+    return acquired.material;
+  };
+  return { library, resolve, preparations, unavailable: () => unavailable };
+}
 
 export type AssetThumbnailRequest = ThumbnailAssets & (
   | { kind: "Material"; materialGuid: string }
@@ -144,41 +199,9 @@ export async function captureAssetThumbnailPng(
   const current = () => shouldContinue() && !host.scene.isDisposed && performance.now() < compiles.ceiling;
   /** No image because a wait's bound or the capture's ceiling ran out, rather than for a reason of the asset. */
   const ranOut = () => thumbnailMiss(shouldContinue(), { ceiling: compiles.ceiling, stalled: bounds.timedOut });
-  const preparations: Promise<boolean>[] = [];
-  const resolved = new Map<string, Material | null>();
-  const functions = request.functions ?? {};
-  let unavailableMaterial = false;
-  const library = new MaterialLibrary({
-    functions: () => functions,
-    acquireTexture: (guid, _scene, filter) => {
-      const bytes = request.assets?.textureBytes?.get(guid);
-      return bytes ? acquireMaterialTexture(binding.cache, guid, engine, bytes, materialTextureSampling(filter)) : null;
-    },
-    textureIdentity: (guid) => request.assets?.textureBytes?.has(guid) ? guid : undefined,
-    // The capture binds each Material at acquisition and draws right after: a program that cannot link must fail it.
-    warmFirstAcquisition: true,
-  });
-  const resolveMaterial = (guid: string, options?: MaterialResolveOptions): Material | null => {
-    if (options?.instanceKey) {
-      const document = request.materials.get(guid);
-      const material = document ? library.resolve(host.scene, guid, document, options) : null;
-      if (material?.mode === NodeMaterialModes.Material) return material;
-      unavailableMaterial = true;
-      return null;
-    }
-    const key = `${guid}:${options?.unlit === true}`;
-    if (resolved.has(key)) return resolved.get(key) ?? null;
-    const document = request.materials.get(guid);
-    const acquired = document ? library.acquire(host.scene, guid, document, options) : null;
-    if (!acquired?.ok || acquired.material.mode !== NodeMaterialModes.Material) {
-      unavailableMaterial = true;
-      resolved.set(key, null);
-      return null;
-    }
-    resolved.set(key, acquired.material);
-    preparations.push(acquired.ready.then((diagnostics) => diagnostics.length === 0));
-    return acquired.material;
-  };
+  const { library, resolve: resolveMaterial, preparations, unavailable } = thumbnailMaterials(engine, host.scene, {
+    materials: request.materials, functions: request.functions, textureBytes: request.assets?.textureBytes,
+  }, binding.cache);
   let sync: EditorSceneSync | undefined;
   let target: RenderTargetTexture | undefined;
   try {
@@ -225,7 +248,7 @@ export async function captureAssetThumbnailPng(
         host.camera.beta = Math.PI / 2;
       }
     }
-    if (unavailableMaterial || !frameMeshes(host, meshes)) return thumbnailMiss(shouldContinue());
+    if (unavailable() || !frameMeshes(host, meshes)) return thumbnailMiss(shouldContinue());
     if (!(await whileCurrent(Promise.all(preparations), current, bounds)).every(Boolean)) return thumbnailMiss(shouldContinue());
     // A wait ends unready when the capture stopped being current (cancelled, past
     // its ceiling, or its Scene was disposed) or its bound ran out. A disposed

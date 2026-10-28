@@ -1,4 +1,5 @@
-import { PBRMaterial, RenderTargetTexture, type Mesh } from "@babylonjs/core";
+import { NodeMaterial, PBRMaterial, RenderTargetTexture, type Mesh } from "@babylonjs/core";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine as createNullTestEngine } from "./create-null-engine";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
@@ -23,6 +24,8 @@ import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 
 /** The PNG of a capture that produced one. */
 const pngOf = (result: ThumbnailCaptureResult) => result.outcome === "captured" ? result.png : undefined;
+/** A capture whose slots name no Material. */
+const NO_MATERIALS = { materials: new Map() };
 
 describe("captureModelThumbnailPng", () => {
   const handles: Array<{
@@ -52,27 +55,36 @@ describe("captureModelThumbnailPng", () => {
       handle.engine,
       encodeTriangleGlb(),
       [],
-      () => null,
+      NO_MATERIALS,
     ));
     expect(png).toBeDefined();
     expect([...png!.subarray(0, 8)]).toEqual([...PNG_SIGNATURE]);
   });
 
-  it("captures construction materials when slot resolve returns null", async () => {
+  it("draws a slot with its Material from the capture's sources, once that Material is ready", async () => {
     const handle = createTestEngine();
     handles.push(handle);
-    const pixels = new Uint8Array(128 * 128 * 4);
-    vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockResolvedValue(
-      pixels,
-    );
-    const png = pngOf(await captureModelThumbnailPng(
+    let materialReady = false;
+    const isReady = NodeMaterial.prototype.isReadyForSubMesh;
+    const readiness = vi
+      .spyOn(NodeMaterial.prototype, "isReadyForSubMesh")
+      .mockImplementation(function (this: NodeMaterial, ...args) {
+        return (materialReady || !this.name.startsWith("material:mat-1")) && isReady.apply(this, args);
+      });
+    const readback = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockResolvedValue(new Uint8Array(128 * 128 * 4));
+    const capture = captureModelThumbnailPng(
       handle.engine,
       encodeTriangleGlb(),
       [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
-      () => null,
-    ));
-    expect(png).toBeDefined();
-    expect([...png!.subarray(0, 8)]).toEqual([...PNG_SIGNATURE]);
+      { materials: new Map([["mat-1", createDefaultMaterialDocument("Hero Mat")]]) },
+    );
+    await vi.waitFor(() => expect(readiness.mock.contexts.some((material) => (material as NodeMaterial).name.startsWith("material:mat-1"))).toBe(true));
+    expect(readback).not.toHaveBeenCalled();
+    materialReady = true;
+    expect(pngOf(await capture)).toBeDefined();
+    expect(readback).toHaveBeenCalledOnce();
   });
 
   it("admits thumbnail decode behind gameplay on the engine's native preparation queue", async () => {
@@ -86,7 +98,7 @@ describe("captureModelThumbnailPng", () => {
       order.push("thumbnail");
       return new Uint8Array(128 * 128 * 4);
     });
-    const capture = captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null);
+    const capture = captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], NO_MATERIALS);
     expect(scheduler.snapshot()).toMatchObject({ active: 1, queued: 1 });
     const gameplay = scheduler.schedule({ label: "Next Actor", temporaryBytes: 1 }, async () => { order.push("gameplay"); });
     unblock();
@@ -105,7 +117,7 @@ describe("captureModelThumbnailPng", () => {
     const scheduler = nativePreparationForEngine(handle.engine, { maxConcurrent: 1, temporaryBytes: bytes.byteLength * 4 - 1 });
     const readback = vi.spyOn(RenderTargetTexture.prototype, "readPixels");
     // Refused for its size: another attempt would be refused too.
-    expect(await captureModelThumbnailPng(handle.engine, bytes, [], () => null)).toEqual({ outcome: "failed" });
+    expect(await captureModelThumbnailPng(handle.engine, bytes, [], NO_MATERIALS)).toEqual({ outcome: "failed" });
     expect(scheduler.snapshot()).toMatchObject({ active: 0, queued: 0, peakTemporaryBytes: 0 });
     expect(handle.engine.scenes).toEqual([handle.scene]);
 
@@ -115,7 +127,7 @@ describe("captureModelThumbnailPng", () => {
     let unblock!: () => void;
     const blocker = queuedScheduler.schedule({ label: "Gameplay", temporaryBytes: 1 }, () => new Promise<void>((resolve) => { unblock = resolve; }));
     const controller = new AbortController();
-    const capture = captureModelThumbnailPng(other.engine, bytes, [], () => null, undefined, { signal: controller.signal });
+    const capture = captureModelThumbnailPng(other.engine, bytes, [], NO_MATERIALS, undefined, { signal: controller.signal });
     expect(queuedScheduler.snapshot().queued).toBe(1);
     controller.abort();
     expect(await capture).toEqual({ outcome: "cancelled" });
@@ -135,7 +147,7 @@ describe("captureModelThumbnailPng", () => {
     const controller = new AbortController();
     let finish!: (pixels: Uint8Array) => void;
     const readback = vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-    const capture = captureModelThumbnailPng(handle.engine, bytes, [], () => null, undefined, { clipName: "Idle", sourceClipBytes, signal: controller.signal });
+    const capture = captureModelThumbnailPng(handle.engine, bytes, [], NO_MATERIALS, undefined, { clipName: "Idle", sourceClipBytes, signal: controller.signal });
     await vi.waitFor(() => expect(readback).toHaveBeenCalledOnce());
     controller.abort();
     expect(scheduler.snapshot().active).toBe(1);
@@ -166,7 +178,7 @@ describe("captureModelThumbnailPng", () => {
       handle.engine,
       view,
       [],
-      () => null,
+      NO_MATERIALS,
     ));
     expect(png).toBeDefined();
     expect([...png!.subarray(0, 8)]).toEqual([...PNG_SIGNATURE]);
@@ -189,7 +201,7 @@ describe("captureModelThumbnailPng", () => {
       handle.engine,
       encodeTriangleGlb(),
       [],
-      () => null,
+      NO_MATERIALS,
     );
     await vi.waitFor(() => expect(readiness).toHaveBeenCalled());
     expect(readback).not.toHaveBeenCalled();
@@ -225,7 +237,7 @@ describe("captureModelThumbnailPng", () => {
         handle.engine,
         retargeted ? encodeParentedAnimatedTriangleGlb("Idle") : posed,
         [],
-        () => null,
+        NO_MATERIALS,
         undefined,
         { clipName: "Idle", ...(retargeted ? { sourceClipBytes: posed } : {}) },
       ));
@@ -245,7 +257,7 @@ describe("captureModelThumbnailPng", () => {
       handle.engine,
       encodeTriangleGlb(),
       [],
-      () => null,
+      NO_MATERIALS,
     );
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await capture).toEqual({ outcome: "expired", reason: "bound" });
@@ -275,7 +287,7 @@ describe("captureModelThumbnailPng", () => {
       const handle = createTestEngine();
       handles.push(handle);
       const clock = neverReady(handle);
-      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null, undefined, options)).toEqual({ outcome: "expired", reason: "ceiling" });
+      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], NO_MATERIALS, undefined, options)).toEqual({ outcome: "expired", reason: "ceiling" });
       expect(clock.elapsed()).toBeGreaterThanOrEqual(ceiling);
       expect(clock.elapsed()).toBeLessThanOrEqual(ceiling + POLL_MS);
     });
@@ -285,7 +297,7 @@ describe("captureModelThumbnailPng", () => {
       handles.push(handle);
       const controller = new AbortController();
       const clock = neverReady(handle);
-      const capture = captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null, undefined, { signal: controller.signal });
+      const capture = captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], NO_MATERIALS, undefined, { signal: controller.signal });
       await vi.waitFor(() => expect(PBRMaterial.prototype.isReadyForSubMesh).toHaveBeenCalled());
       controller.abort();
       expect(await capture).toEqual({ outcome: "cancelled" });
@@ -302,7 +314,7 @@ describe("captureModelThumbnailPng", () => {
         handle.engine,
         encodeParentedAnimatedTriangleGlb("Idle"),
         [],
-        () => null,
+        NO_MATERIALS,
         undefined,
         { clipName: "Missing" },
       ),
@@ -316,7 +328,7 @@ describe("captureModelThumbnailPng", () => {
       const handle = createTestEngine();
       handles.push(handle);
       vi.spyOn(SceneRenderCoordinator.prototype, "prepare").mockRejectedValue(new Error("Scene rendering requires an active camera."));
-      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null)).toEqual({ outcome: "failed" });
+      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], NO_MATERIALS)).toEqual({ outcome: "failed" });
       expect(handle.engine.scenes).toEqual([handle.scene]);
     });
 
@@ -324,7 +336,7 @@ describe("captureModelThumbnailPng", () => {
       const handle = createTestEngine();
       handles.push(handle);
       vi.spyOn(SceneRenderCoordinator.prototype, "prepare").mockRejectedValue(new PreparationTimedOut("Scene rendering preparation timed out."));
-      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null)).toEqual({ outcome: "expired", reason: "bound" });
+      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], NO_MATERIALS)).toEqual({ outcome: "expired", reason: "bound" });
       expect(handle.engine.scenes).toEqual([handle.scene]);
     });
   });
@@ -337,7 +349,7 @@ describe("captureModelThumbnailPng", () => {
         handle.engine,
         new TextEncoder().encode("o cube\nv 0 0 0\n"),
         [],
-        () => null,
+        NO_MATERIALS,
       ),
     ).resolves.toEqual({ outcome: "failed" });
   });

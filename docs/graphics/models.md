@@ -25,6 +25,7 @@ When a file refers to texture files outside it, pick them together with the mode
 A Model has one material slot per material in the file.
 
 - In the Model's editor, each slot shows its Material. **Default** keeps the material from the file.
+- A Model's and an Animation's thumbnails draw each slot with its Material.
 - On a Mesh component, **Material** replaces every slot for that one actor. Choose **Model Materials** to go back to the Model's slots, or **None** for the engine's grey checker.
 - Meshes with no Material draw a grey checker, so missing materials are easy to spot. The checker is lit like any other surface, so a 3D scene needs a [light](lighting.md) for it to show. A **Blank** project's scene has none: add a light, or the meshes draw black.
 

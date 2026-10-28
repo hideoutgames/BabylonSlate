@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   normalizeAnimationPayload,
+  modelMaterialGuids,
   normalizeModelPayload,
 } from "@haptic/assets";
 import {
@@ -20,7 +21,7 @@ import {
   subscribeModelThumbnailJobs,
   type ModelThumbnailJob,
 } from "../lib/model-thumbnail-queue";
-import { prepareAssetThumbnailInput } from "../lib/asset-thumbnail-input";
+import { prepareAssetThumbnailInput, prepareThumbnailMaterialSources } from "../lib/asset-thumbnail-input";
 import { blockingSceneLoadOpen, subscribeBlockingSceneLoads, whenNoBlockingSceneLoad } from "../lib/blocking-scene-loads";
 import { whenEditorAwake } from "../lib/editor-quiet";
 import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
@@ -267,12 +268,19 @@ export function ModelThumbnailCaptureHost() {
         sourceClipBytes = await readChunk(sourceModel.path, "source");
         if (!sourceClipBytes?.byteLength) return "none";
       }
-      if (!shouldContinue()) return "none";
+      if (!assetRegistry || !shouldContinue()) return "none";
+      const sources = await prepareThumbnailMaterialSources({
+        registry: assetRegistry,
+        readAssetChunk: readChunk,
+        collectTextureBytes: (guids) => collectGpuTextureBytes({ assets: assetRegistry.list(), guids, readChunk }),
+        shouldContinue,
+      }, modelMaterialGuids(modelPayload));
+      if (!sources || !shouldContinue()) return "none";
       return finish(await captureModelThumbnailPng(
         engine,
         bytes,
-        [],
-        () => null,
+        modelPayload.materialSlots,
+        sources,
         undefined,
         {
           importScale: modelPayload.importScale,

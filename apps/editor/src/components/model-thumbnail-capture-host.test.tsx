@@ -17,7 +17,7 @@ const captureModelThumbnailPng = vi.fn<
     engine: unknown,
     bytes: Uint8Array,
     slots: unknown,
-    resolveMaterial: (guid: string) => unknown,
+    sources: unknown,
     maxEdge?: number,
     options?: {
       importScale?: number;
@@ -30,6 +30,8 @@ const captureModelThumbnailPng = vi.fn<
 >(async () => captured());
 const MaterialLibrary = vi.fn();
 const captureAssetThumbnailPng = vi.fn<(...args: unknown[]) => Promise<ThumbnailCaptureResult>>(async () => captured());
+const thumbnailSources = { materials: new Map([["mat-1", { name: "Hero Mat" }]]), functions: {}, textureBytes: new Map(), textures: [] };
+const prepareThumbnailMaterialSources = vi.fn<(options: unknown, guids: Iterable<string>) => Promise<typeof thumbnailSources>>(async () => thumbnailSources);
 const prepareAssetThumbnailInput = vi.fn<(input: unknown) => Promise<{ kind: string; materials: Map<string, unknown> }>>(async () => ({ kind: "Material", materials: new Map() }));
 let projectGuid = "project-a";
 let thumbnailsEnabled = true;
@@ -61,7 +63,7 @@ vi.mock("@haptic/render", () => ({
     engine: unknown,
     bytes: Uint8Array,
     slots: unknown,
-    resolveMaterial: (guid: string) => unknown,
+    sources: unknown,
     maxEdge?: number,
     options?: {
       importScale?: number;
@@ -75,7 +77,7 @@ vi.mock("@haptic/render", () => ({
       engine,
       bytes,
       slots,
-      resolveMaterial,
+      sources,
       maxEdge,
       options,
     ),
@@ -96,6 +98,7 @@ vi.mock("@haptic/render", () => ({
 
 vi.mock("../lib/asset-thumbnail-input", () => ({
   prepareAssetThumbnailInput: (input: unknown) => prepareAssetThumbnailInput(input),
+  prepareThumbnailMaterialSources: (options: unknown, guids: Iterable<string>) => prepareThumbnailMaterialSources(options, guids),
 }));
 
 const sharedEngine = vi.hoisted(() => ({ engine: { id: "shared-engine" } as unknown, generation: 1 }));
@@ -124,6 +127,7 @@ afterEach(() => {
     .mockReset()
     .mockResolvedValue(captured());
   MaterialLibrary.mockClear();
+  prepareThumbnailMaterialSources.mockClear();
   resourceCacheForEngine.mockClear();
   collectPlayMaterialLibrary.mockClear();
   collectPlayTextureBytes.mockClear();
@@ -566,7 +570,7 @@ describe("ModelThumbnailCaptureHost", () => {
     expect(scopes.every((scope) => scope.dispose.mock.calls.length === 1)).toBe(true);
   });
 
-  it("captures the packed GLB without a slot MaterialLibrary or extra ResourceCache", async () => {
+  it("captures the packed GLB with its slots' saved Materials, without Play's material library or an extra ResourceCache", async () => {
     render(<ModelThumbnailCaptureHost />);
     enqueueModelThumbnailJobs([
       {
@@ -587,10 +591,11 @@ describe("ModelThumbnailCaptureHost", () => {
     expect(collectPlayTextureBytes).not.toHaveBeenCalled();
     expect(resourceCacheForEngine).not.toHaveBeenCalled();
     expect(MaterialLibrary).not.toHaveBeenCalled();
-    const resolveMaterial = captureModelThumbnailPng.mock.calls[0]![3] as (
-      guid: string,
-    ) => unknown | null;
-    expect(resolveMaterial("mat-1")).toBeNull();
+    expect([...prepareThumbnailMaterialSources.mock.calls[0]![1]]).toEqual(["mat-1"]);
+    expect(captureModelThumbnailPng.mock.calls[0]!.slice(2, 4)).toEqual([
+      [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
+      thumbnailSources,
+    ]);
     expect(writeAssetThumbnail).toHaveBeenCalledWith(
       "model-1",
       expect.any(Uint8Array),
