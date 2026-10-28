@@ -812,6 +812,7 @@ const TEXTURE_NODES: MaterialNodeDefinition[] = [
     inputs: [
       { id: "uv", name: "UV", type: VEC2 },
       { id: "tiling", name: "Tiling", type: VEC2, defaultValue: [1, 1] },
+      { id: "rotation", name: "Rotation", type: FLOAT, defaultValue: [0] },
       { id: "offset", name: "Offset", type: VEC2, defaultValue: [0, 0] },
     ],
     outputs: [{ id: "out", name: "Out", type: VEC2 }],

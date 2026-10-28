@@ -43,6 +43,7 @@ import {
   ReciprocalBlock,
   RefractBlock,
   RemapBlock,
+  Rotate2dBlock,
   ScaleBlock,
   ScreenSizeBlock,
   SmoothStepBlock,
@@ -592,16 +593,19 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     return single(block, { value: block.input }, { out: block.dy });
   },
   "derivative.fwidth": fwidthAdapter,
-  "input.uv": ({ name, plumbing }) => {
-    if (plumbing.uv) {
-      return { blocks: [], inputs: {}, outputs: { uv: plumbing.uv } };
+  "input.uv": ({ name, plumbing, operation }) => {
+    // Channel 1 is a mesh's second UV set (glTF TEXCOORD_1); particles and glyphs have one UV set.
+    const second = operation.properties.channel === 1;
+    const provided = second ? plumbing.uv2 ?? plumbing.uv : plumbing.uv;
+    if (provided) {
+      return { blocks: [], inputs: {}, outputs: { uv: provided } };
     }
     const block = new InputBlock(
       name,
       undefined,
       NodeMaterialBlockConnectionPointTypes.Vector2,
     );
-    block.setAsAttribute("uv");
+    block.setAsAttribute(second ? "uv2" : "uv");
     return single(block, {}, { uv: block.output });
   },
   "input.vertexColor": attributeInput(
@@ -711,14 +715,19 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     return single(block, { direction: block.direction, roughness: block.roughness }, { color: block.color });
   },
   "texture.transformUv": ({ name }) => {
+    // Tiling, then Rotation around the UV origin, then Offset.
     const scale = new MultiplyBlock(name);
+    const rotate = new Rotate2dBlock(`${name}_rotation`);
     const offset = new AddBlock(`${name}_offset`);
-    scale.output.connectTo(offset.left);
+    // Multiply's output takes its type from the UV it is given; Rotate 2D's input is Vector2.
+    scale.output.connectTo(rotate.input, true);
+    rotate.output.connectTo(offset.left);
     return {
-      blocks: [scale, offset],
+      blocks: [scale, rotate, offset],
       inputs: {
         uv: scale.left,
         tiling: scale.right,
+        rotation: rotate.angle,
         offset: offset.right,
       },
       outputs: { out: offset.output },

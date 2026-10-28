@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type ClampBlock, type Effect, type InputBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type ClampBlock, type Effect, type InputBlock, type NodeMaterialConnectionPoint, type MorphTargetsBlock, type Rotate2dBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -1384,6 +1384,46 @@ describe("material compiler", () => {
       (block) => block instanceof TextureBlock,
     ) as TextureBlock | undefined;
     expect(sample?.uv.connectedPoint?.ownerBlock.getClassName()).toBe("AddBlock");
+  });
+
+  /** A Texture Sample whose UV pin reads `uvSource`'s `uvPin`, compiled with `nodes` added to the default Material. */
+  function compileSampledUv(nodes: MaterialDocument["nodes"], uvSource: string, uvPin: string) {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-inline" } }, ...nodes);
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      { id: "e-uv", sourceNodeId: uvSource, sourcePinId: uvPin, targetNodeId: "sample", targetPinId: "uv" },
+      { id: "e-sample", sourceNodeId: "sample", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" },
+    );
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "test", resolveTexture: () => resolved });
+    if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    disposers.push(() => result.material.dispose());
+    return result.material.attachedBlocks.find((block) => block instanceof TextureBlock) as TextureBlock;
+  }
+
+  it("transforms UV by Tiling, then Rotation around the origin, then Offset", () => {
+    const sample = compileSampledUv([
+      { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
+      { id: "xform", type: "texture.transformUv", position: { x: 0, y: 0 }, properties: { "default:rotation": [0.5] } },
+    ], "xform", "out");
+    const offset = sample.uv.connectedPoint!.ownerBlock;
+    const rotate = offset.inputs[0]!.connectedPoint!.ownerBlock as Rotate2dBlock;
+    expect([offset.getClassName(), rotate.getClassName()]).toEqual(["AddBlock", "Rotate2dBlock"]);
+    expect(rotate.input.connectedPoint!.ownerBlock.getClassName()).toBe("MultiplyBlock");
+    expect((rotate.angle.connectedPoint!.ownerBlock as InputBlock).value).toBe(0.5);
+  });
+
+  it("reads a mesh's second UV set from a UV node on channel 1", () => {
+    // Surface UVs pass through the morph target block, which offsets each set.
+    const source = (properties: Record<string, unknown>) => {
+      const sample = compileSampledUv([{ id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties }], "uv", "uv");
+      const morph = sample.uv.connectedPoint!.ownerBlock as MorphTargetsBlock;
+      return [morph.getClassName(), sample.uv.connectedPoint === morph.uvOutput ? "uv" : sample.uv.connectedPoint === morph.uv2Output ? "uv2" : "other"];
+    };
+    expect([source({}), source({ channel: 1 })]).toEqual([["MorphTargetsBlock", "uv"], ["MorphTargetsBlock", "uv2"]]);
   });
 
   it("reports a missing Texture when the provider cannot resolve the guid", () => {

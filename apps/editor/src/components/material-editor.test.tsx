@@ -421,6 +421,19 @@ describe("Material details panel", () => {
     expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain("New Asset");
   });
 
+  it("chooses a UV node's channel", async () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({ id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "uv";
+    render(<MaterialDetailsPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("property-channel"));
+    const option = await screen.findByRole("option", { name: "UV 1" });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
+    expect(lastCommit().nodes.find((node) => node.id === "uv")?.properties).toEqual({ channel: 1 });
+  });
+
   it("writes an authored pin default from Details", () => {
     harness.selectedNodeId = "output";
     render(<MaterialDetailsPanel {...panelProps} />);
