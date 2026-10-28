@@ -31,7 +31,7 @@ A Model has one material slot per material in the file.
 
 Haptic never draws the material stored in the file, in scenes, Play, previews or thumbnails: the import turns each one into a Material asset, and the slot draws that. Each imported Material is a graph you can edit: base colour, metallic, roughness, normal, emission and occlusion (which darkens only light from the environment), with the file's opacity and sidedness. Features the file uses that Haptic does not draw, such as clear coat or sheen, are left out. Images the file samples with nearest filtering, as pixel-art models do, import with the **Pixel Art** usage and keep their hard-edged texels.
 
-When a texture uses a second UV channel, or the file offsets, scales or rotates a texture, the import leaves that slot empty, so it draws the grey checker, and the imported Material asset says so. Points and lines in a file are not drawn.
+A texture on the file's second UV set reads it through a [**UV**](../scripting/material/uv.md) node on **UV 1**, and a texture the file offsets, scales or rotates goes through a [**Transform UV**](../scripting/material/transform-uv.md) node. A texture on a third or later UV set leaves that slot empty, so it draws the grey checker, and the imported Material asset says so. Points and lines in a file are not drawn.
 
 When a file stores no normals for a mesh, Haptic shades that mesh flat, as glTF requires, so its faces look faceted. Include normals in the file for smooth shading.
 

@@ -133,7 +133,7 @@ function importFromBrowse(
   }
 
   const materialGuids: string[] = [];
-  const preservedMaterialSlots = new Set<number>();
+  const emptyMaterialSlots = new Set<number>();
   if (browse.materials.length === 0) {
     const textureGuid = imageGuids[0];
     const materialName = uniqueImportName(`${name}_Material`, usedNames);
@@ -158,7 +158,7 @@ function importFromBrowse(
         usedNames,
       );
       const imported = importedGltfMaterial(materialName, material, imageGuids);
-      if (imported.preserveSource) preservedMaterialSlots.add(i);
+      if (imported.leaveSlotEmpty) emptyMaterialSlots.add(i);
       results.push({
         type: "Material",
         name: materialName,
@@ -170,7 +170,7 @@ function importFromBrowse(
         // re-imports even when material names change.
         payload: {
           ...imported.document,
-          ...(imported.preserveSource ? { importNotice: "The Model's slot is left empty and draws the grey checker: this graph cannot yet draw a texture on a second UV channel or with a texture transform." } : {}),
+          ...(imported.leaveSlotEmpty ? { importNotice: "The Model's slot is left empty and draws the grey checker: the UV node reads UV sets 0 and 1, and this material samples a texture on a later set." } : {}),
           slotIndex: i,
         },
         chunks: [],
@@ -256,7 +256,7 @@ function importFromBrowse(
         materialSlots: materialGuids.map((guid, index) => ({
           index,
           name: slotNames[index],
-          materialGuid: preservedMaterialSlots.has(index) ? null : guid,
+          materialGuid: emptyMaterialSlots.has(index) ? null : guid,
         })),
         skeletonGuid,
         importScale,
