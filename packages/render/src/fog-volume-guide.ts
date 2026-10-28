@@ -83,6 +83,8 @@ export function createReflectionProbeGuide(scene: Scene, name: string, propertie
   const chrome = new PBRMaterial(`${name}:ball`, scene);
   chrome.metallic = 1;
   chrome.roughness = 0.05;
+  // It shows the probe's reflection; scene lights would only add programs to compile.
+  chrome.disableLighting = true;
   ball.material = chrome;
   ball.isPickable = false;
   ball.parent = guide;

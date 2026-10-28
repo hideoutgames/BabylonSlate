@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Ray, Vector3 } from "@babylonjs/core";
+import { PointLight, Ray, Vector3 } from "@babylonjs/core";
 import { createActor, createDefaultScene, identitySerializedTransform } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { createEditorCamera } from "./editor-camera";
@@ -31,6 +31,24 @@ describe("fog volume editor guides", () => {
     expect(guide.visibility).toBe(1);
     expect(guide.getBoundingInfo().boundingBox.maximum.y).toBeCloseTo(3);
     expect(guide.getChildMeshes().some((mesh) => mesh.name.endsWith(":outline"))).toBe(true);
+  });
+
+  it("draws the reflection probe guide's ball with a program no scene light enters", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    createEditorCamera(handle.scene, { mode: "3d" });
+    new PointLight("lamp", Vector3.Zero(), handle.scene);
+    const data = createDefaultScene();
+    data.actors = [createActor("probe", "Reflection Probe", { components: [{
+      id: "probe", classId: "ReflectionProbeComponent", properties: { size: [4, 4, 4] },
+    }] })];
+    applySceneToBabylonScene(handle.scene, data);
+    handle.scene.render();
+    const ball = handle.scene.getMeshByName(editorComponentMeshName("probe", "probe"))!
+      .getChildMeshes().find((mesh) => mesh.name.endsWith(":ball"));
+    const defines = ball?.subMeshes[0]?.effect?.defines;
+    expect(defines).toEqual(expect.any(String));
+    expect(defines).not.toMatch(/LIGHT\d/);
   });
 
   it("preserves non-rendering parent transforms, updates without rebuilding, and hides or disposes the whole guide", () => {

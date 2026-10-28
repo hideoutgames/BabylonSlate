@@ -9,6 +9,7 @@ import {
   type Observer,
   type Scene,
 } from "@babylonjs/core";
+import { GreasedLineMeshMaterialType } from "@babylonjs/core/Materials/GreasedLine/greasedLineMaterialInterfaces";
 import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBuilder";
 import type { CommandMessage, DebugDrawCommand } from "@haptic/bridge";
 import { eulerDegreesToQuaternion } from "@haptic/core";
@@ -312,11 +313,10 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
         const mesh = CreateGreasedLine(
           nextName("line"),
           { points: [start, end] },
-          { width: thickness, color, createAndAssignMaterial: true },
+          // The simple material is unlit, so a light change never recompiles a debug line.
+          { width: thickness, color, createAndAssignMaterial: true, materialType: GreasedLineMeshMaterialType.MATERIAL_TYPE_SIMPLE },
           scene,
         );
-        // Capture the source before a CEL sync can swap in a wrapper; disposing
-        // the source also disposes that wrapper.
         if (mesh.material) materials.push(mesh.material);
         markPlayDebugOverlay(mesh);
         meshes.push(mesh);

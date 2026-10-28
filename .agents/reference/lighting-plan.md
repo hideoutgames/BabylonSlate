@@ -1,6 +1,6 @@
 # Lighting plan
 
-The plan for Haptic's own data-driven lighting model: one lighting function that reads every light from one block and every local shadow from one atlas, used by every lit surface on WebGL2 and WebGPU. Decided; phases land as separate PRs. When the last phase lands, delete this file and move its decisions into [render.md](architecture/render.md) and [engine-plan.md](engine-plan.md).
+The plan for Haptic's own data-driven lighting model: one lighting function that reads every light from one block and every local shadow from one atlas, used by every lit surface on WebGL2 and WebGPU. Decided; phases land as separate PRs. The engine is unreleased, so no phase carries migration or compatibility code: data in an old shape is dropped or regenerated. When the last phase lands, delete this file and move its decisions into [render.md](architecture/render.md) and [engine-plan.md](engine-plan.md).
 
 ## Why
 
@@ -12,7 +12,7 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 - A level's programs (its Materials with the mesh features they draw with, in each pass) are a bounded set, compiled behind its loading screen. Content arriving later (a streamed scene, a Class loaded on demand, a Material a script assigns that the level does not hold) compiles while it loads and stays hidden until ready (`reveal-pending.ts`), never compiling in the frame that first shows it. A settings change (quality level, render mode) may compile.
 - One lighting path. No render-path setting; no light path chosen per material, per Scene or per device.
 - Lighting enters a shader in exactly one place, the lighting function; everything about lights is uniform or buffer data.
-- Every lit surface is a NodeMaterial built from a Material document. Engine code creates no lit `PBRMaterial`, `StandardMaterial` or `CelMaterial`.
+- Every lit surface is a NodeMaterial built from a Material document. Engine code creates no lit `PBRMaterial`, `StandardMaterial` or `CelMaterial`. Built-in water is the one exception until Phase 5 (see Phase 3).
 
 ## Target design
 
@@ -44,7 +44,7 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 ### Other readers of lights
 
 - Volumetrics read the light block and the atlas instead of their own slots (`volumetric-lights.ts`).
-- Water's CPU lighting (`water-scene-state.ts`: strongest directional plus hemispheric) reads the light records.
+- Water's CPU lighting (`water-scene-state.ts`: strongest directional plus hemispheric) reads the light records; Phase 5 also takes built-in water off Babylon's light loop (see Phase 3).
 - Geometry passes no longer carry light defines, so `light-neutral-tasks.ts` goes.
 - Previews and thumbnails use the same path. Their studio lighting (two `HemisphericLight`s, `preview-lighting.ts`) becomes a directional key and the hemispheric fill: a deliberate look change, and thumbnails regenerate.
 - The editor world view draws through the same path; Unlit viewport mode is a define of the function.
@@ -61,10 +61,9 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 3. **Material consolidation on the current lighting**, with no visible change:
    - The engine default material becomes a Material document (`createDefaultMaterialDocument`); landscape, foliage, cables and dynamic runtime meshes without a Material use it.
    - Preserved glTF slots become Material documents: an Ambient Occlusion input on Material Output (with strength), texture coordinate channels and texture transforms in the importer; emissive strength is kept.
-   - Built-in water becomes a graph Material on the water node blocks (`water-node-blocks.ts`), its plugin's behaviour moved into blocks.
-   - The fog-volume guide ball and the GreasedLine debug lines (`play-debug-draw.ts`) become unlit.
+   - Built-in water stays a `PBRMaterial` with its plugin. A Custom Material on the water blocks lacks planar reflections, the removal cut and edge fades, haze, the refraction fallback, specular shaping and the IOR, the Low tier's unlit path, the CEL exemption and two-sided drawing; about half of that is PBR shader internals no graph reaches. Phase 5 decides whether its plugin reads the light records with the material's own lighting disabled, or it becomes a graph Material on `HapticLightingBlock`.
    - `CelMaterial` and the native CEL swap (`scene-render-mode.ts`) go; CEL stays on graph Materials only.
-   - After this phase `ScenePbrLightingBlock` and `CelLightBlock` are the only places lighting enters.
+   - After this phase `ScenePbrLightingBlock`, `CelLightBlock` and built-in water are the only places lighting enters.
 4. **Spike**: a `HapticLightingBlock` lighting unshadowed lights from the block, in GLSL and WGSL. It answers:
    - IBL and specular parity against `ScenePbrLightingBlock`, by screenshot comparison;
    - the per-pixel cost of the loops on the A16 iPad at the Feature Test's light count, as a Benchmark profile against Forward;
