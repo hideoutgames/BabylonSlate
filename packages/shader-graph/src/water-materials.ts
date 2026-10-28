@@ -4,7 +4,7 @@ import { materialPinDefaultPropertyKey } from "./pin-defaults";
 /**
  * A Surface Material for a Water asset's Custom Material that draws what built-in water draws, wired from the water
  * nodes so every part of the look can be edited. It moves with the asset's waves (Water Waves' Offset into World
- * Position Offset, its Normal into Normal), so a body drawn with it matches what floating objects ride, and takes the
+ * Position Offset, its Normal into Normal through Water Reflection's haze), so a body drawn with it matches what floating objects ride, and takes the
  * asset's colours (Water Colors), so the Water asset's Inspector still applies.
  *
  * It is lit and translucent, after FFT-Ocean: the water's colour is emitted (Deep Color with the subsurface light through
@@ -47,7 +47,8 @@ export function createWaterMaterialDocument(name: string): MaterialDocument {
   node("reflection", "input.waterReflection", -1000, 700);
   node("foam", "input.waterFoam", -1000, 940);
   out("waves", "offset", "worldPositionOffset");
-  out("waves", "normal", "normal");
+  // The wave normal, flattened toward the horizon through the haze as built-in water's is (Water Reflection reads the waves').
+  out("reflection", "shadingNormal", "normal");
 
   // Deep water: Deep Color, with the light scattered through the crests in Shallow Color.
   node("scatter", "math.multiply", -600, -120);

@@ -673,7 +673,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     plumbing.viewProjection?.connectTo(block.viewProjection);
     if (!operation.inputs.normal) plumbing.waterWaves?.normal.connectTo(block.waveNormal);
     plumbing.waterWaves?.height.connectTo(block.waveHeight);
-    return { blocks: [block], inputs: { normal: block.normal, roughness: block.roughness }, outputs: { color: block.color, fresnel: block.fresnel } };
+    return { blocks: [block], inputs: { normal: block.normal, roughness: block.roughness }, outputs: { color: block.color, fresnel: block.fresnel, shadingNormal: block.shadingNormal } };
   },
   "input.cameraPosition": ({ name, plumbing }) => {
     const relative: BlockRealization = plumbing.cameraPosition
