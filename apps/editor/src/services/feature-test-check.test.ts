@@ -224,6 +224,10 @@ describe("runFeatureTestCheck", () => {
     const benchmark = report.scenes[0]!.play.benchmark;
     expect(benchmark.find((sample) => sample.label === "medium · fixed lights")!.failed).toEqual([]);
     expect(benchmark.find((sample) => sample.label === "medium · fixed lights · branch")!.failed)
-      .toEqual(["The view still held frames for new shaders after 90 s."]);
+      .toEqual(["The view did not draw steadily within 90 s; the remaining profiles were skipped."]);
+    // Nothing more piles onto a view that stopped drawing; the session settings are still restored.
+    expect(benchmark.at(-1)!.label).toBe("medium · fixed lights · branch");
+    expect(editor.commands).not.toContain("hapticlights forward");
+    expect(editor.commands.slice(-4)).toEqual(["hapticlights reset", "fixedlights reset", "quality reset", "framecap 30"]);
   });
 });

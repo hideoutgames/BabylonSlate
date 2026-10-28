@@ -25,18 +25,18 @@ export type FeatureTestCheckMode = "quick" | "full" | "benchmark";
  * fixed-shape forward lighting at Medium with each seat guard (compare with
  * "medium · forward"), then Medium without shadows and the unshadowed
  * HapticLights spike over Forward's lights and over every light (compare with
- * "medium · forward · no shadows"). `recompiles` profiles rebuild every lit
- * shader, so sampling waits for the view to draw again.
+ * "medium · forward · no shadows"). A profile's commands can rebuild shaders
+ * and render targets, so sampling waits for the view to draw again.
  */
-export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands: readonly string[]; recompiles?: true }[] = [
+export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands: readonly string[] }[] = [
   { label: "low · forward", commands: ["quality low"] },
   { label: "medium · forward", commands: ["quality medium"] },
   { label: "high · forward", commands: ["quality high"] },
   { label: "ultra · forward", commands: ["quality ultra"] },
-  { label: "medium · fixed lights", commands: ["quality medium", "fixedlights multiply"], recompiles: true },
-  { label: "medium · fixed lights · branch", commands: ["quality medium", "fixedlights branch"], recompiles: true },
-  { label: "medium · forward · no shadows", commands: ["quality medium", "fixedlights off", "quality shadows enabled off"], recompiles: true },
-  { label: "medium · haptic lights", commands: ["quality medium", "quality shadows enabled off", "hapticlights forward"], recompiles: true },
+  { label: "medium · fixed lights", commands: ["quality medium", "fixedlights multiply"] },
+  { label: "medium · fixed lights · branch", commands: ["quality medium", "fixedlights branch"] },
+  { label: "medium · forward · no shadows", commands: ["quality medium", "fixedlights off", "quality shadows enabled off"] },
+  { label: "medium · haptic lights", commands: ["quality medium", "quality shadows enabled off", "hapticlights forward"] },
   { label: "medium · haptic lights · all", commands: ["quality medium", "quality shadows enabled off", "hapticlights all"] },
 ];
 
@@ -115,8 +115,11 @@ export interface FeatureTestCheckResources {
   /** Babylon Effects (shader programs) every Engine holds, and how many of them are still compiling. */
   effects: number;
   compiling: number;
-  /** Frames the Play view drew and held (kept its last image, waiting for shaders or settings), since Play started. */
-  playFrames: { drawn: number; held: number } | null;
+  /**
+   * Frames the Play view drew and held (kept its last image, waiting for shaders or settings), and the graphics
+   * context losses it saw, since Play started.
+   */
+  playFrames: { drawn: number; held: number; contextLosses: number } | null;
   textures: number;
   /** Estimated GPU bytes of those textures, render targets included (`estimateTextureMemory`). */
   textureBytes: number;
@@ -161,7 +164,7 @@ export interface FeatureTestCheckTimeouts {
   releaseMs: number;
   /** Wait after a profile change for shaders and render targets to settle. */
   profileSettleMs: number;
-  /** Most a recompiling profile waits for the view to draw again without held frames, before the settle. */
+  /** Most a profile waits for the view to draw again without held frames, before the settle; past it, the sweep stops. */
   profileCompileMs: number;
   editorSampleMs: number;
   playSampleMs: number;
@@ -447,8 +450,10 @@ async function benchmarkProfiles(
         const command = await run(line);
         if (!command.success) failed.push(`${line} failed: ${sentence(command.output || "no output")}`);
       }
-      if (profile.recompiles && !(await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs)))
-        failed.push(`The view still held frames for new shaders after ${seconds(limits.profileCompileMs)}.`);
+      // A view that does not draw again (shaders, render targets or a lost graphics context) ends this scene's
+      // sweep: more changes on top would only pile up work and memory.
+      const steady = await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
+      if (!steady) failed.push(`The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`);
       await deps.sleep(limits.profileSettleMs, signal);
       const cpu: number[] = [];
       const gpu: number[] = [];
@@ -474,6 +479,7 @@ async function benchmarkProfiles(
         resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
         failed,
       });
+      if (!steady) break;
     }
   } finally {
     if (!signal.aborted) {

@@ -100,7 +100,7 @@ async function sampleCheckResources(atMs: number, step: string): Promise<Feature
   const host = await getHostMemoryStats().catch(() => null);
   return {
     atMs, step, effects, compiling, textures, textureBytes,
-    playFrames: presentation ? { drawn: presentation.drawn, held: presentation.held } : null,
+    playFrames: presentation ? { drawn: presentation.drawn, held: presentation.held, contextLosses: presentation.contextLosses } : null,
     jsHeapBytes: host?.jsHeapBytes ?? null,
     appFootprintBytes: host?.appFootprintBytes ?? null,
   };

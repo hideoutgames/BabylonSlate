@@ -91,7 +91,7 @@ function mb(bytes: number | null): string | null {
 function resourceLine(sample: FeatureTestCheckResources): string {
   const memory = [
     `${sample.effects} shaders${sample.compiling ? ` (${sample.compiling} compiling)` : ""}`,
-    ...(sample.playFrames ? [`Play drawn ${sample.playFrames.drawn}, held ${sample.playFrames.held}`] : []),
+    ...(sample.playFrames ? [`Play drawn ${sample.playFrames.drawn}, held ${sample.playFrames.held}${sample.playFrames.contextLosses ? `, CONTEXT LOST ${sample.playFrames.contextLosses}x` : ""}`] : []),
     `${sample.textures} textures (${mb(sample.textureBytes)})`,
     ...(sample.jsHeapBytes !== null ? [`JS heap ${mb(sample.jsHeapBytes)}`] : []),
     ...(sample.appFootprintBytes !== null ? [`app ${mb(sample.appFootprintBytes)}`] : []),

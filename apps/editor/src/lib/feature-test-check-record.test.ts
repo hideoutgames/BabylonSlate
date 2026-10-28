@@ -16,7 +16,7 @@ const report: FeatureTestCheckReport = {
 };
 const sample = (atMs: number, step: string, textureMb: number) => ({
   atMs, step, effects: 300, compiling: atMs > 30_000 ? 40 : 0, textures: 120, textureBytes: textureMb * 1048576,
-  playFrames: { drawn: 900, held: atMs > 30_000 ? 120 : 0 }, jsHeapBytes: null, appFootprintBytes: 1500 * 1048576,
+  playFrames: { drawn: 900, held: atMs > 30_000 ? 120 : 0, contextLosses: atMs > 30_000 ? 1 : 0 }, jsHeapBytes: null, appFootprintBytes: 1500 * 1048576,
 });
 
 describe("the unfinished Feature Test Check", () => {
@@ -47,7 +47,7 @@ describe("the unfinished Feature Test Check", () => {
     expect(lines.slice(-3)).toEqual([
       "Resources before it stopped (last 2 samples, oldest first):",
       "  30.0 s   300 shaders · Play drawn 900, held 0 · 120 textures (400 MB) · app 1500 MB · main: benchmarking medium · forward",
-      "  40.0 s   300 shaders (40 compiling) · Play drawn 900, held 120 · 120 textures (900 MB) · app 1500 MB · main: benchmarking high · forward",
+      "  40.0 s   300 shaders (40 compiling) · Play drawn 900, held 120, CONTEXT LOST 1x · 120 textures (900 MB) · app 1500 MB · main: benchmarking high · forward",
     ]);
     clearUnfinishedCheck();
     expect(loadUnfinishedCheck()).toBeNull();
