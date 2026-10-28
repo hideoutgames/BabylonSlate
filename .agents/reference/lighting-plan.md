@@ -18,7 +18,7 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 
 ### Light data
 
-- One uniform block per Scene (`HapticLights`, std140 in GLSL, a uniform buffer in WGSL), rewritten when a light changes: counts per type (directional, point, spot, rect area), then fixed-size arrays of records up to the device profile's light maximum. A record holds position or direction, colour times intensity, range, cone, shadow record index and a valid flag.
+- One uniform block per Scene (`HapticLights`, std140 in GLSL, a uniform buffer in WGSL), rewritten when a light changes: counts per type (directional, point, spot, rect area), then fixed-size arrays of records up to a light maximum that the device profile (`device-profile.ts`) gains. A record holds position or direction, colour times intensity, range, cone, shadow record index and a valid flag.
 - Each type loops to its runtime count, so each loop is branch-free. A light past the maximum is ranked out by the existing admission (priority, camera distance, incumbent bonus); slot kinds and slot classes go.
 - One hemispheric fill, always declared, black when absent. Rect area lights stay unshadowed and read Babylon's LTC tables (`scene._ltcTextures`) as now, always bound.
 - Light falloff is physical for every surface (today Standard and CEL use range falloff, PBR physical). Specular, IES profiles, projection textures, lightmap modes and falloff types are not authored anywhere and are not supported.
@@ -49,10 +49,6 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 - Previews and thumbnails use the same path. Their studio lighting (two `HemisphericLight`s, `preview-lighting.ts`) becomes a directional key and the hemispheric fill: a deliberate look change, and thumbnails regenerate.
 - The editor world view draws through the same path; Unlit viewport mode is a define of the function.
 
-### Device profile
-
-- One module (`device-profile.ts`, absorbing `device-class.ts`) maps device class to every cap: shadow atlas edge (today's `MOBILE_SHADOW_MAP_CAP`), light maximum, texture budget (the desktop 2 GB default is a profile value), default render scale, and the load rehearsal's limits while they exist. Consumers read the profile; nothing else tests the user agent.
-
 ### CI gate
 
 - A test plays scripted gameplay after a Play load (lights switched, spawned and moved, shadows started and stopped, a light pushed past the budget, spawns of Classes the level holds) and asserts the Engine's compiled-Effect count and WebGPU pipeline misses do not change after the first presented frame, on WebGL2 and WebGPU. The compile-hold acceptance harness (`compile-hold-acceptance.test.ts`) and the variant-swap proof routes already measure both.
@@ -62,7 +58,6 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 
 Each phase is one PR, or a short series, merged into `main` before the next starts.
 
-2. **Device profile** module; its consumers; the engine plan's memory defaults stated as profile values.
 3. **Material consolidation on the current lighting**, with no visible change:
    - The engine default material becomes a Material document (`createDefaultMaterialDocument`); landscape, foliage, cables and dynamic runtime meshes without a Material use it.
    - Preserved glTF slots become Material documents: an Ambient Occlusion input on Material Output (with strength), texture coordinate channels and texture transforms in the importer; emissive strength is kept.

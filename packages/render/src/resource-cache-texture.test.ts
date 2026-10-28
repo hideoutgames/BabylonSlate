@@ -177,6 +177,17 @@ describe("resource cache getTexture", () => {
     expect(cache.accountedBytes()).toBe(0);
     cache.dispose();
   });
+  it("never lets a budget hold unreferenced textures past the device class's ceiling", () => {
+    // A phone or tablet's ceiling bounds a quality level's or a view's larger budget.
+    const cache = new ResourceCache({ byteCeiling: 1000, deviceByteCeiling: 300 });
+    const view = {};
+    cache.account("held", 250);
+    cache.account("released", 250);
+    cache.releaseAccounting("released");
+    cache.setClientBudget(view, 2000);
+    expect(cache.accountedBytes()).toBe(250);
+    cache.dispose();
+  });
   it("keeps concurrent texture representations alive until their own views release them", () => {
     const engine = textureEngine();
     const cache = new ResourceCache();
