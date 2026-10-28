@@ -618,30 +618,6 @@ export class MaterialLibrary {
     doc: MaterialDocument,
     options?: MaterialResolveOptions,
   ): NodeMaterial | null {
-    return this.resolvePlan(scene, assetGuid, doc, options)?.material ?? null;
-  }
-
-  /**
-   * `resolve` that also reports `isReady` for the resolved generation, from the
-   * plan `resolve` already computed. A host that needs both does not lower (and
-   * serialize the document) a second time per resolved binding.
-   */
-  resolveWithReadiness(
-    scene: Scene,
-    assetGuid: string,
-    doc: MaterialDocument,
-    options?: MaterialResolveOptions,
-  ): { material: NodeMaterial; ready: boolean } | null {
-    const resolved = this.resolvePlan(scene, assetGuid, doc, options);
-    return resolved && { material: resolved.material, ready: this.isReadyPlan(scene, assetGuid, resolved.lowered, options) };
-  }
-
-  private resolvePlan(
-    scene: Scene,
-    assetGuid: string,
-    doc: MaterialDocument,
-    options?: MaterialResolveOptions,
-  ): { material: NodeMaterial; lowered: MaterialLowerResult } | null {
     let material = this.materialFor(scene, assetGuid, options);
     const lowered = this.planFor(doc, options?.unlit);
     if (!material || !this.isCompiledPlan(scene, assetGuid, lowered, options)) {
@@ -655,7 +631,7 @@ export class MaterialLibrary {
     for (const [name, value] of options?.parameters ?? []) {
       this.setParameter(scene, assetGuid, name, value, options);
     }
-    return { material, lowered };
+    return material;
   }
 
   /** Retire one replaced asset, or all private materials when the owner despawns. */
