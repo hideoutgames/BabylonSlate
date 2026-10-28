@@ -93,6 +93,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 5 water PR 5: Water Reflection takes built-in water's aerial perspective and horizon haze (`aerialPerspectiveSource`, `horizonHazeSource`) with the scene's fog, flattening the far water's normal toward straight up (built-in water flattens toward its rest normal; the two differ only on tilted rivers) and raising its Fresnel to 1; the flattened normal is its new **Normal** output, which the starter wires to the Material Output. The slope-variance drop under the haze waits for slope-variance roughness.
 
+   Phase 5 water PR 6: every Material a water mesh draws leaves its normal and reflectivity out of the scene effects' geometry pass, as built-in water does (the Water Cut block sets `WATER_EFFECTS_GEOMETRY_DEFINE` and overwrites the output's geometry writes), and the water starter is two-sided. Next: the horizon lift and half-vector normal, slope-variance roughness, the fog pre-division and coverage raise, the four-tap shoreline, each its own PR.
+
    If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
 5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.
 6. **Shadow atlas** behind the same switch, with the preserve list above.
