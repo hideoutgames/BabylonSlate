@@ -44,6 +44,10 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(1, 0, 1, 1);
+    // Fog far beyond the water, so every program compiles its fog (Water Reflection's haze reads it) and no pixel changes.
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    scene.fogStart = 400;
+    scene.fogEnd = 800;
     const camera = new FreeCamera("camera", new Vector3(0, 8, -6), scene);
     camera.setTarget(Vector3.Zero());
     camera.minZ = 0.1;
