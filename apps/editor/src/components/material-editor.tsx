@@ -876,6 +876,11 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
     options: [{ value: "color", label: "Color (sRGB)" }, { value: "data", label: "Data (Linear)" }],
     onChange: (colorSpace) => setProperties({ colorSpace }),
   });
+  if (node.type === "input.uv") rows.push({
+    id: "channel", kind: "enum", label: "UV Channel", value: node.properties.channel === 1 ? "1" : "0",
+    options: [{ value: "0", label: "UV 0" }, { value: "1", label: "UV 1" }],
+    onChange: (channel) => setProperties({ channel: Number(channel) }),
+  });
   if (node.type === "texture.sample") rows.push({
     id: "filter", kind: "enum", label: "Filter", value: node.properties.filter === "nearest" ? "nearest" : "linear",
     options: [{ value: "linear", label: "Linear" }, { value: "nearest", label: "Nearest" }],
