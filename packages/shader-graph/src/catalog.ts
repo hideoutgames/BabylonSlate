@@ -338,6 +338,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
       { id: "depth", name: "Depth", type: FLOAT },
       { id: "fade", name: "Fade", type: FLOAT },
       { id: "transmittance", name: "Transmittance", type: VEC3 },
+      { id: "edgeFade", name: "Edge Fade", type: FLOAT },
     ],
     cost: 4,
   },

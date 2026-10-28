@@ -1,7 +1,8 @@
 /**
  * Test-build-only proof of the Water Cut block on the real GPU: Custom Material water drawn through the Forward
  * FrameGraph (opaque, translucent with its depth pre-pass, translucent with Water Waves on the GPU path, and lit by
- * HapticLightingBlock), each without and with a removal volume over part of it.
+ * HapticLightingBlock), each without and with a removal volume over part of it; and the water starter graph, which
+ * reads every water node, drawn once.
  */
 import { Color4, DirectionalLight, Engine, FreeCamera, Matrix, Scene, Vector3, type AbstractEngine, type Effect, type NodeMaterial } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
@@ -9,7 +10,7 @@ import {
   compileMaterialPlan, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setHapticLighting, setSceneRenderSettings, updateSceneWater,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
-import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialDocument } from "@haptic/shader-graph";
+import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialDocument } from "@haptic/shader-graph";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const MATERIALS = ["opaque", "translucent", "waves", "lit"] as const;
@@ -82,6 +83,17 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
       water.dispose();
       compiled.dispose();
     }
+    // The water starter, lit by HapticLightingBlock: every water node compiles and draws on this backend.
+    setHapticLighting(engine, true);
+    const starterPlan = lowerMaterialDocument(createWaterMaterialDocument("Starter"));
+    if (!starterPlan.ok) throw new Error("The water starter did not lower");
+    const starter = compileMaterialPlan(starterPlan.plan, { scene, name: "starter" });
+    if (!starter.ok) throw new Error("The water starter did not compile");
+    await starter.ready;
+    const starterWater = createWaterMesh(scene, "starter water", normalizeWaterBody({ width: 8, length: 8, resolution: 32 }), createDefaultWaterDefinition(), starter.material);
+    const starterPixels = await draw();
+    starterWater.dispose();
+    starter.dispose();
     // The removal volume's centre across the screen, by the view the draws used (columns read the same on either
     // backend's row order).
     const holeX = Vector3.Project(centre, Matrix.IdentityReadOnly, scene.getTransformMatrix(), camera.viewport.toGlobal(canvas.width, canvas.height)).x;
@@ -89,7 +101,7 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     // Water's depth pre-pass draws its own program, which discards removed water and returns before the look.
     const prePassEffects = Object.values(effects).filter((effect) => /#define DEPTHPREPASS/.test(effect.defines) && /#define SLATE_WATER_SURFACE/.test(effect.defines)).length;
     graph.dispose();
-    return { width: canvas.width, height: canvas.height, holeX, captures, prePassEffects };
+    return { width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, starterPixels };
   } finally {
     setHapticLighting(engine, false);
     scene.dispose();

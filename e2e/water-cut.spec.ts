@@ -40,5 +40,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     // The translucent Materials drew their depth pre-pass as its own program.
     expect(result.prePassEffects).toBeGreaterThanOrEqual(1);
+    // The water starter drew over most of the view.
+    let drawn = 0;
+    for (let index = 0; index < result.starterPixels.length; index += 4) if (!background(result.starterPixels, index)) drawn++;
+    expect(drawn).toBeGreaterThan(result.width * result.height / 3);
   });
 }

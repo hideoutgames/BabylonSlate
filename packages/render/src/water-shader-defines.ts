@@ -110,6 +110,8 @@ export const EMPTY_TEXTURE = new ThinTexture(null);
 export const PLANAR_REACH = 1;
 /** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface, at Refraction 1. */
 export const REFRACTION_SHIFT = 1.2;
+/** How far built-in water's refraction bends of `REFRACTION_SHIFT` and its caps (`refractionSource`), and the Water Scene Color node's with it. */
+export const WATER_REFRACTION_SCALE = 0.55;
 /** Water thickness (metres) beyond which the refracted shift stops growing. */
 export const REFRACTION_DEPTH_CAP = 3;
 /**
