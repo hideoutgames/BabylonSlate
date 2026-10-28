@@ -1,7 +1,7 @@
 /**
  * Test-build-only oracle for the lighting plan's HapticLightingBlock: the same graph Materials, lights and
- * environment cube drawn by Babylon's PBR block and by HapticLightingBlock, on the real GPU, through the Forward
- * FrameGraph, and HapticLightingBlock's Effects across light changes.
+ * environment cube drawn by Babylon's PBR and CEL blocks and by HapticLightingBlock, on the real GPU, through the
+ * Forward FrameGraph, and HapticLightingBlock's Effects across light changes in both render modes.
  */
 import {
   Color4,
@@ -22,7 +22,14 @@ import {
   type NodeMaterial,
 } from "@babylonjs/core";
 import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
-import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
+import {
+  normalizeCelShadingSettings,
+  normalizeEnvironmentLightingSettings,
+  normalizeRenderingQuality,
+  normalizeShadowSettings,
+  type CelShadingSettings,
+  type RenderMode,
+} from "@haptic/core";
 import { applyAuthoredLightProperties, compileMaterialPlan, setHapticLighting, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
@@ -33,9 +40,9 @@ import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Path = "babylon" | "haptic";
 const SURFACES = [
-  { name: "rough dielectric", baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.6 },
-  { name: "smooth metal", baseColor: [0.95, 0.75, 0.35], metallic: 1, roughness: 0.25 },
-  { name: "glossy dielectric", baseColor: [0.2, 0.35, 0.8], metallic: 0, roughness: 0.15 },
+  { name: "rough dielectric", baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.6, environmentInfluence: 1 },
+  { name: "smooth metal", baseColor: [0.95, 0.75, 0.35], metallic: 1, roughness: 0.25, environmentInfluence: 1 },
+  { name: "glossy dielectric", baseColor: [0.2, 0.35, 0.8], metallic: 0, roughness: 0.15, environmentInfluence: 0.5 },
 ] as const;
 
 /** A cube face's pixels: a sky gradient from a bright zenith to a dark ground, tinted per face. */
@@ -79,11 +86,15 @@ export async function runHapticLightProof() {
     scene.activeCamera = camera;
     // As Play's world Scene: Babylon's light helpers ask the fixed-shape hooks first.
     setFixedShapeLightingWorldScene(scene);
-    setSceneRenderSettings(scene, {
-      mode: "pbr",
-      quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } }),
-      shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 0 }),
-    });
+    const quality = normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } });
+    const shadows = normalizeShadowSettings({ cascades: 1, maxLocalLights: 0 });
+    const settings = (mode: RenderMode, cel: Partial<CelShadingSettings> = {}) =>
+      setSceneRenderSettings(scene, {
+        mode, quality, shadows,
+        cel: normalizeCelShadingSettings({ outlinesEnabled: false, ...cel }),
+        environmentLighting: normalizeEnvironmentLightingSettings({ celStrength: 0.8 }),
+      });
+    settings("pbr");
     // A prefiltered environment cube with its irradiance, as the Scene's environment lighting builds one.
     const source = new RawCubeTexture(scene, Array.from({ length: 6 }, (_, index) => face(index, 64)), 64,
       Constants.TEXTUREFORMAT_RGBA, Constants.TEXTURETYPE_UNSIGNED_BYTE, false, true);
@@ -100,6 +111,7 @@ export async function runHapticLightProof() {
       const output = doc.nodes.find((node) => node.id === "output")!.properties;
       output[materialPinDefaultPropertyKey("metallic")] = [surface.metallic];
       output[materialPinDefaultPropertyKey("roughness")] = [surface.roughness];
+      output[materialPinDefaultPropertyKey("environmentInfluence")] = [surface.environmentInfluence];
       const lowered = lowerMaterialDocument(doc);
       if (!lowered.ok) throw new Error(`${surface.name} did not lower`);
       const compiled = compileMaterialPlan(lowered.plan, { scene, name: surface.name });
@@ -122,12 +134,13 @@ export async function runHapticLightProof() {
     const meshes: AbstractMesh[] = [floor, box, ball];
     const assign = (path: Path) => meshes.forEach((mesh, index) => { mesh.material = materials[path][index]!; });
 
-    const authored = (light: Light, color: number[], intensity: number) =>
-      applyAuthoredLightProperties(light, { color, intensity, castShadows: false, range: 40, outerAngle: 70, innerAngle: 40 });
+    // Every colour peaks at one, the white specular colour Babylon's CEL highlights take on (see hapticCelHighlight).
+    const authored = (light: Light, color: number[], intensity: number) => applyAuthoredLightProperties(light, {
+      color, intensity, castShadows: false, range: 40, outerAngle: 70, innerAngle: 40, groundColor: [0.25, 0.2, 0.15] });
     const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
     authored(sun, [1, 0.95, 0.85], 0.7);
     const fill = new HemisphericLight("fill", Vector3.Up(), scene);
-    authored(fill, [0.3, 0.35, 0.5], 0.35);
+    authored(fill, [0.6, 0.7, 1], 0.2);
     const spots = [[-2.6, 3, -0.5], [2.4, 3, 1.2]].map(([x, y, z], index) => {
       const light = new SpotLight(`spot-${index}`, new Vector3(x, y, z), new Vector3(0.1, -1, 0.15), 1, 2, scene);
       authored(light, index ? [0.2, 0.9, 0.3] : [0.9, 0.3, 0.2], 1.4);
@@ -135,7 +148,7 @@ export async function runHapticLightProof() {
     });
     const points = [[-0.6, 1.6, -1.2], [1.4, 1.2, -1.5], [0, 1.8, 1.8]].map(([x, y, z], index) => {
       const light = new PointLight(`point-${index}`, new Vector3(x, y, z), scene);
-      authored(light, [[0.3, 0.4, 1], [1, 0.8, 0.2], [0.8, 0.3, 0.9]][index]!, 0.9);
+      authored(light, [[0.3, 0.4, 1], [1, 0.8, 0.2], [1, 0.3, 0.9]][index]!, 0.9);
       return light;
     });
     const lights = [sun, fill, ...spots, ...points];
@@ -177,27 +190,67 @@ export async function runHapticLightProof() {
     }
 
     // Lights switching, arriving and leaving compile nothing new.
-    assign("haptic");
-    restore();
-    await draw();
-    const before = litEffectKeys(engine);
-    const steps: { step: string; newLitEffects: number }[] = [];
-    const step = async (name: string, change: () => void) => {
-      change();
+    const lightSteps = async () => {
+      assign("haptic");
+      restore();
       await draw();
-      steps.push({ step: name, newLitEffects: litEffectKeys(engine).filter((key) => !before.includes(key)).length });
+      const before = litEffectKeys(engine);
+      const steps: { step: string; newLitEffects: number }[] = [];
+      const step = async (name: string, change: () => void) => {
+        change();
+        await draw();
+        steps.push({ step: name, newLitEffects: litEffectKeys(engine).filter((key) => !before.includes(key)).length });
+      };
+      let added: Light | undefined;
+      await step("a point switched off", () => setAuthoredLightEnabled(points[2]!, false));
+      await step("a spot switched off", () => setAuthoredLightEnabled(spots[1]!, false));
+      await step("the fill switched off", () => setAuthoredLightEnabled(fill, false));
+      await step("all back on", restore);
+      await step("a new point", () => { added = new PointLight("added", new Vector3(0.6, 1.5, -0.4), scene); authored(added, [0.3, 1, 0.9], 0.9); });
+      await step("a point removed", () => added!.dispose());
+      return { steps, effects: before };
     };
-    await step("a point switched off", () => setAuthoredLightEnabled(points[2]!, false));
-    await step("a spot switched off", () => setAuthoredLightEnabled(spots[1]!, false));
-    await step("the fill switched off", () => setAuthoredLightEnabled(fill, false));
-    await step("all back on", restore);
-    await step("a new point", () => authored(new PointLight("added", new Vector3(0.6, 1.5, -0.4), scene), [0.3, 1, 0.9], 0.9));
-    await step("a point removed", () => points[0]!.dispose());
+    const pbr = await lightSteps();
+
+    // CEL: Babylon's CelLightBlock graphs against the block's HAPTIC_CEL. Point and spot lights fall off physically
+    // on the block, by design, so they light the block's poses only.
+    const local = [...spots, ...points];
+    const celPoses: { name: string; cel?: Partial<CelShadingSettings>; apply: () => void; blockOnly?: boolean }[] = [
+      { name: "sun and fill", apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
+      { name: "sun only", apply: () => [fill, ...local].forEach((light) => setAuthoredLightEnabled(light, false)) },
+      { name: "fill only", apply: () => [sun, ...local].forEach((light) => setAuthoredLightEnabled(light, false)) },
+      // A low threshold puts the environment's light in the lit band, which shows its hue and so the cube's rotation.
+      { name: "environment only", cel: { shadowThreshold: 0.2 }, apply: () => lights.forEach((light) => setAuthoredLightEnabled(light, false)) },
+      { name: "rotated environment", cel: { shadowThreshold: 0.2 }, apply: () => { lights.forEach((light) => setAuthoredLightEnabled(light, false)); filtered.cube.rotationY = 1.1; } },
+      { name: "additive", cel: { lightMixing: "additive" }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
+      { name: "blend", cel: { lightMixing: "blend" }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
+      { name: "wide highlights", cel: { specularSize: 0.5, specularStrength: 0.6 }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
+      { name: "no highlights", cel: { specularEnabled: false }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
+      { name: "all lights", apply: () => undefined, blockOnly: true },
+    ];
+    settings("cel");
+    const celCaptures: { name: string; path: Path; pixels: number[] }[] = [];
+    for (const path of ["babylon", "haptic"] as const) {
+      assign(path);
+      for (const pose of celPoses) {
+        if (pose.blockOnly && path === "babylon") continue;
+        settings("cel", pose.cel);
+        restore();
+        pose.apply();
+        celCaptures.push({ name: pose.name, path, pixels: await draw() });
+      }
+    }
+    settings("cel");
+    const cel = await lightSteps();
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     const lightDefines = litEffectKeys(engine).filter((key) => /#define LIGHT\d/.test(effects[key]!.defines)).length;
+    const celEffects = cel.effects.filter((key) => /#define HAPTIC_CEL/.test(effects[key]!.defines)).length;
     graph.dispose();
     filtered.release();
-    return { width: canvas.width, height: canvas.height, captures, steps, hapticEffects: before.length, lightDefines };
+    return {
+      width: canvas.width, height: canvas.height, captures, steps: pbr.steps, hapticEffects: pbr.effects.length, lightDefines,
+      celCaptures, celSteps: cel.steps, celEffects,
+    };
   } finally {
     setHapticLighting(engine, false);
     scene.dispose();

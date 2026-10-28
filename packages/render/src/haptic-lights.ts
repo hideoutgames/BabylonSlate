@@ -91,13 +91,14 @@ export function bindHapticLights(scene: Scene, effect: Effect): void {
 /**
  * Write the block from the Scene's lights, once per frame: every illuminating light, ranked as Forward ranks them
  * (priority, distance, the incumbent bonus), up to each type's maximum. The first hemispheric light is the fill.
+ * A Scene with its lights disabled (the Unlit viewport) writes none, as Babylon's materials then light with none.
  */
 export function writeHapticLights(scene: Scene): void {
   if (!engines.has(scene.getEngine())) return;
   const state = sceneLights(scene);
   const ranked = state.ranked;
   ranked.length = 0;
-  for (const light of scene.lights) if (isIlluminatingLight(light)) ranked.push(light);
+  if (scene.lightsEnabled) for (const light of scene.lights) if (isIlluminatingLight(light)) ranked.push(light);
   sortLightsByAdmission(scene, ranked, state.held);
   state.next.clear();
   const offset = scene.floatingOriginOffset;
