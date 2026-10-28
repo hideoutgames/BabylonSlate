@@ -17,6 +17,7 @@ import {
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { SphericalHarmonics, type SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { areaEmissionTexture } from "./area-emission-array";
 import { CEL_UNIFORMS, bindCelSettings, celFunctions } from "./cel-shader";
 import { HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL, bindHapticLights } from "./haptic-lights";
 import {
@@ -143,6 +144,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     bindHapticLights(scene, effect);
     effect.setTexture("hapticAreaLtc1Sampler", scene._ltcTextures?.LTC1 ?? null);
     effect.setTexture("hapticAreaLtc2Sampler", scene._ltcTextures?.LTC2 ?? null);
+    effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
     if (celEffect(effect)) {
       bindCelSettings(effect, scene);
       return;
@@ -182,6 +184,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emit2DSampler("hapticEnvironmentBrdfSampler");
     state._emit2DSampler("hapticAreaLtc1Sampler");
     state._emit2DSampler("hapticAreaLtc2Sampler");
+    state._emit2DArraySampler("hapticAreaEmissionSampler");
     const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
     state._emitFunction("hapticLights", wgsl ? HAPTIC_LIGHTS_WGSL : HAPTIC_LIGHTS_GLSL, "// HapticLights");
     state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(wgsl)}\n#endif\n`, "// CEL");

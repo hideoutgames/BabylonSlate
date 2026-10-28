@@ -13,7 +13,6 @@ import {
   MeshBuilder,
   PointLight,
   RawCubeTexture,
-  RectAreaLight,
   Scene,
   SpotLight,
   TransformNode,
@@ -42,7 +41,11 @@ import {
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
+import type { AreaEmissionPixels } from "@haptic/assets";
+import { setRectLightEmission } from "../../../../packages/render/src/area-emission-array";
+import { retainAreaEmissionTexture } from "../../../../packages/render/src/area-emission-resource";
 import { retainAreaLightLookup } from "../../../../packages/render/src/area-light-resources";
+import { OwnedRectAreaLight } from "../../../../packages/render/src/area-rect-light";
 import { retainFilteredEnvironment } from "../../../../packages/render/src/environment-prefilter";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
@@ -58,6 +61,21 @@ type Surface = { name: string; baseColor: readonly number[]; metallic: number; r
 // Babylon's rect light specular weighs its Fresnel terms by the light's specular colour times intensity; the block
 // uses the standard LTC Fresnel. The two agree for a white metal under a white light of intensity one.
 const WHITE_METAL: Surface = { name: "white metal", baseColor: [1, 1, 1], metallic: 1, roughness: 0.4, environmentInfluence: 1 };
+
+/** A prepared emission's pixels: warm to cool across, light to dark down, as Prepare Emission's 1024 square. */
+function emissionPixels(): AreaEmissionPixels {
+  const edge = 1024;
+  const rgba = new Uint8Array(edge * edge * 4);
+  for (let y = 0; y < edge; y++) {
+    for (let x = 0; x < edge; x++) {
+      const offset = (y * edge + x) * 4;
+      const across = x / edge;
+      const down = 0.4 + 0.6 * (1 - y / edge);
+      rgba.set([255 * down * (1 - 0.6 * across), 255 * down * 0.8, 255 * down * (0.4 + 0.6 * across), 255], offset);
+    }
+  }
+  return { metadata: { processor: "haptic-light-proof", pixelsHash: "gradient", width: edge, height: edge }, rgba } as unknown as AreaEmissionPixels;
+}
 
 /** A cube face's pixels: a sky gradient from a bright zenith to a dark ground, tinted per face. */
 function face(index: number, size: number): Uint8Array {
@@ -175,7 +193,15 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     const mount = new TransformNode("panel mount", scene);
     mount.position.set(0.3, 2.4, 0.2);
     mount.rotation.x = -Math.PI / 2;
-    const panel = new RectAreaLight("panel", Vector3.Zero(), 4, 2.5, scene);
+    const panel = new OwnedRectAreaLight("panel", Vector3.Zero(), 4, 2.5, scene);
+    // Its emission: a texture of its own on Babylon's path, a layer of the block's array on the other.
+    const emission = emissionPixels();
+    const emissionTexture = retainAreaEmissionTexture(engine, emission);
+    const setEmission = (on: boolean) => {
+      panel.emissionTexture = on ? emissionTexture.texture : null;
+      panel._markMeshesAsLightDirty();
+      setRectLightEmission(panel, on ? emission : undefined);
+    };
     panel.parent = mount;
     authored(panel, [1, 1, 1], 1);
     const panelOnly = () => {
@@ -193,6 +219,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       if (path) assign(path);
       for (const light of lights) setAuthoredLightEnabled(light, true);
       setAuthoredLightEnabled(panel, false);
+      if (panel.emissionTexture) setEmission(false);
       filtered.cube.rotationY = 0;
       filtered.cube.boundingBoxSize = undefined as unknown as Vector3;
       scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
@@ -211,6 +238,11 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
         scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
       } },
       { name: "rect light on metal", apply: (path) => { panelOnly(); for (const mesh of meshes) mesh.material = metal[path]; } },
+      { name: "emissive rect light on metal", apply: (path) => {
+        panelOnly();
+        setEmission(true);
+        for (const mesh of meshes) mesh.material = metal[path];
+      } },
       // The standard LTC Fresnel differs from Babylon's on dielectrics, by design.
       { name: "rect light", apply: panelOnly, blockOnly: true },
     ];
@@ -283,6 +315,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     const lightDefines = litEffectKeys(engine).filter((key) => /#define LIGHT\d/.test(effects[key]!.defines)).length;
     const celEffects = cel.effects.filter((key) => /#define HAPTIC_CEL/.test(effects[key]!.defines)).length;
     graph.dispose();
+    emissionTexture.release();
     filtered.release();
     return {
       width: canvas.width, height: canvas.height, captures, steps: pbr.steps, hapticEffects: pbr.effects.length, lightDefines,

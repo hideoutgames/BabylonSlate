@@ -4,9 +4,11 @@ import { retainAreaLightLookup } from "./area-light-resources";
 import { setAuthoredLightEnabled } from "./light-policy";
 import type { MeshAssetContext } from "./mesh-assets";
 import { areaEmissionResourceKey, retainAreaEmissionTexture } from "./area-emission-resource";
+import { setRectLightEmission } from "./area-emission-array";
+import { hapticLightingActive } from "./haptic-lights";
 
 /** 9.29 adds this key without rebuilding when an existing light slot changes type. */
-class OwnedRectAreaLight extends RectAreaLight {
+export class OwnedRectAreaLight extends RectAreaLight {
   override prepareLightSpecificDefines(defines: MaterialDefines, index: number): void {
     const added = !Object.hasOwn(defines, `RECTAREALIGHTEMISSIONTEXTURE${index}`);
     super.prepareLightSpecificDefines(defines, index);
@@ -70,7 +72,9 @@ export class AreaRectLightOwner {
     const pixels = properties.textureGuid ? emissions?.get(properties.textureGuid) : undefined;
     const key = pixels ? areaEmissionResourceKey(pixels) : undefined;
     this.emissionError = properties.textureGuid && !pixels ? `Processed area-light emission texture is unavailable: ${properties.textureGuid}. Open the Texture and choose Prepare Emission.` : undefined;
-    if (!this.emissionError && key !== this.emissionKey) {
+    // The lighting plan's path draws emissions from one texture array; it keeps no texture per light.
+    if (hapticLightingActive(this.light.getScene())) setRectLightEmission(this.light, this.emissionError ? undefined : pixels);
+    else if (!this.emissionError && key !== this.emissionKey) {
       try {
         const next = pixels ? retainAreaEmissionTexture(this.light.getScene().getEngine(), pixels) : undefined;
         this.light.emissionTexture = next?.texture ?? null;
