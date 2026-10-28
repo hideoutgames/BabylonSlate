@@ -91,6 +91,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 5 water PR 4: Water Scene Color refracts as built-in water does (its bend scale, the tilt's sign, the silhouette fallback `silhouetteFallbackSource`, a soft Available), Water Depth Fade gains **Edge Fade** (built-in water's bank, edge and open-water fades, `waterEdgeSource`, which also gives every water node built-in water's depth), and the starter multiplies Opacity by it. Gentle shores fade over 6 cm until the four-tap shoreline lands. Haze and the Normal output follow.
 
+   Phase 5 water PR 5: Water Reflection takes built-in water's aerial perspective and horizon haze (`aerialPerspectiveSource`, `horizonHazeSource`) with the scene's fog, flattening the far water's normal toward straight up (built-in water flattens toward its rest normal; the two differ only on tilted rivers) and raising its Fresnel to 1; the flattened normal is its new **Normal** output, which the starter wires to the Material Output. The slope-variance drop under the haze waits for slope-variance roughness.
+
    If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
 5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.
 6. **Shadow atlas** behind the same switch, with the preserve list above.
