@@ -114,12 +114,14 @@ function cameraWorld(camera: Camera, local: Vector3, out: Vector3): Vector3 {
 
 /**
  * Water Mesh Density from the project Water quality (device-clamped), re-read only when the quality revision changes;
- * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials.
+ * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials. A frozen Custom
+ * Material is marked dirty, so its water nodes prepare the new quality's defines (the march, the planar mirror).
  */
 export function syncQuality(s: Surface): void {
   const scene = s.mesh.getScene(), revision = sceneWaterQualityRevision(scene);
   s.plugin?.syncQuality(scene);
   if (revision === s.qualityRevision) return;
+  if (!s.plugin && !Number.isNaN(s.qualityRevision) && s.mesh.material?.isFrozen) s.mesh.material.markDirty(true);
   s.qualityRevision = revision;
   const density = sceneWaterQualityDeviceClamp(scene).quality.meshDensity;
   if (density !== s.density) { s.density = density; s.version++; }

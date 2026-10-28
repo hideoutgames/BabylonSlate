@@ -190,6 +190,11 @@ function placeSurface(s: Surface, time: number, now: number): void {
     for (let i = 0; i < 16; i++) placed[i] = m[i]!;
     // A level body can take the view's planar reflection; tilting a volume out of level recompiles without it.
     if (linear && s.plugin) s.plugin.flat = !restVaries(s);
+    else if (linear && s.nodes && s.nodes.flat !== !restVaries(s)) {
+      s.nodes.flat = !s.nodes.flat;
+      // A frozen Material prepares its defines (Water Reflection's planar) again only when marked dirty.
+      if (s.mesh.material?.isFrozen) s.mesh.material.markDirty(true);
+    }
   }
   const world = s.world, inverse = s.inverse;
   syncQuality(s);
@@ -320,6 +325,15 @@ export function sceneWaterSamplesSceneCopy(scene: Scene, refraction: boolean, sc
 }
 
 const COPY_REFRACTS = 1, COPY_REFLECTS = 2;
+
+/**
+ * Whether `mesh` is water that mirrors scene objects: its asset's Object Reflections is on and it draws built-in water, or
+ * a Custom Material with a Water Reflection node. Only such water can take the view's planar reflection.
+ */
+export function waterMeshReflectsObjects(mesh: AbstractMesh): boolean {
+  const surface = surfaceByMesh.get(mesh);
+  return surface !== undefined && (copyUse(surface) & COPY_REFLECTS) !== 0;
+}
 /**
  * A surface's scene-copy use: built-in water's asset (Refraction above 0, Object Reflections), a Custom Material's water
  * nodes (Water Scene Color and Water Depth Fade refract; Water Reflection marches with the asset's Object Reflections).
@@ -624,7 +638,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   refreshSurface(surface, sceneWaterTime(scene));
   attachFields(surface);
   if (!plugin) {
-    surface.nodes = { water, field: surface.field, contacts: surface.contacts, partners: NO_PARTNERS };
+    surface.nodes = { water, field: surface.field, contacts: surface.contacts, partners: NO_PARTNERS, flat: !restVaries(surface) };
     setMeshWaterNodeSurface(mesh, surface.nodes);
     syncNodeSurface(surface);
   }

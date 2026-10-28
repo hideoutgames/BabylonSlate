@@ -1,5 +1,5 @@
 import {
-  Constants, CreateLines, FreeCamera, MaterialPluginBase, Matrix, MeshBuilder, NullEngine, NullEngineOptions, ObjectRenderer, RenderTargetTexture,
+  Constants, CreateLines, FreeCamera, Matrix, MeshBuilder, NullEngine, NullEngineOptions, ObjectRenderer, RenderTargetTexture,
   Scene, StandardMaterial, Vector3, Viewport, type AbstractMesh, type Camera, type Material, type Mesh,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
@@ -7,10 +7,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel, type WaterDefinition,
 } from "@haptic/core";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { managedRenderReservations } from "./managed-render-resources";
+import { compileMaterialPlan } from "./material-compiler";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { completeRawUploads } from "./test-support/null-engine-uploads";
 import { createWaterMesh } from "./water-mesh";
 import { retainWaterPlanarReflections, waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera } from "./water-planar-reflection";
 
@@ -84,21 +87,17 @@ function lake(scene: Scene, name: string, size: number, at: Vector3, definition:
   return mesh;
 }
 
-/** The parts of WaterMaterialPlugin the planar owner reads, on a material NullEngine can draw. */
-class WaterContract extends MaterialPluginBase {
-  readonly water = createDefaultWaterDefinition();
-  readonly body = normalizeWaterBody({ width: 40, length: 40 });
-  constructor(material: Material) {
-    super(material, "SlateWater", 180, {}, true, true);
-  }
-  override getClassName(): string { return "WaterContract"; }
-}
-
-/** A flat lake whose plain StandardMaterial carries the water contract, so NullEngine really draws the view. */
+/** A flat lake whose Custom Material mirrors objects (a Water Reflection node), so NullEngine really draws the view. */
 function drawableLake(scene: Scene, size: number, at: Vector3): Mesh {
-  const material = new StandardMaterial("lake", scene);
-  new WaterContract(material);
-  return lake(scene, "lake", size, at, {}, material);
+  const doc = createDefaultMaterialDocument("Lake");
+  doc.nodes.push({ id: "reflection", type: "input.waterReflection", position: { x: 0, y: 0 }, properties: {} });
+  doc.edges = doc.edges.filter((edge) => edge.targetPinId !== "emissive");
+  doc.edges.push({ id: "mirror", sourceNodeId: "reflection", sourcePinId: "color", targetNodeId: "output", targetPinId: "emissive" });
+  const lowered = lowerMaterialDocument(doc);
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "lake" });
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+  return lake(scene, "lake", size, at, { objectReflections: true }, compiled.material);
 }
 
 const waterBytes = (engine: NullEngine) => managedRenderReservations(engine).categoryBytes.water;
@@ -496,18 +495,20 @@ it("draws for a coordinated view without readiness probes or dropped frames as i
   vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
   vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(() => {});
   gpuBoundary(engine, "real");
+  // The view's readiness waits on the lake's terrain and contact fields.
+  completeRawUploads(engine);
   const scene = new Scene(engine);
   quality(scene, "ultra");
   const camera = new FreeCamera("View", new Vector3(0, 5, -10), scene);
   camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
-  drawableLake(scene, 40, Vector3.Zero());
+  const water = drawableLake(scene, 40, Vector3.Zero());
   const boat = MeshBuilder.CreateBox("boat", {}, scene);
   boat.material = new StandardMaterial("boat", scene);
   boat.position.set(0, 1, 5);
   const renderer = new SceneRenderCoordinator(scene);
   let latest: ReturnType<typeof waterPlanarReflectionForCamera> = null;
-  // Built-in water looks the reflection up while it draws; this lake's plain material stands in for it.
+  // The lake's Water Reflection looks the reflection up while it draws; this reads what the view drew, while it is in sight.
   let lookups = true;
   scene.onAfterRenderObservable.add(() => { latest = lookups ? waterPlanarReflectionForCamera(scene, scene.activeCamera) : null; });
   await renderer.prepare();
@@ -525,10 +526,12 @@ it("draws for a coordinated view without readiness probes or dropped frames as i
   expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ targets: 1, draws: 10 });
   // Water out of sight for longer than the release window frees storage, and returning reallocates it.
   lookups = false;
+  water.setEnabled(false);
   for (let i = 0; i < 130; i++) step();
   expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ targets: 0 });
   expect(waterBytes(engine)).toBe(0);
   lookups = true;
+  water.setEnabled(true);
   for (let i = 0; i < 3; i++) step();
   expect(latest).not.toBeNull();
   expect(waterBytes(engine)).toBeGreaterThan(0);

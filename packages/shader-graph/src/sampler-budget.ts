@@ -16,14 +16,14 @@ const SAMPLER_NODES = new Set([
 
 /**
  * Samplers the water nodes bind, shared by every water node that reads them: the spectrum and its turbulence, the
- * terrain and contact fields, the view's scene copy and the environment cube.
+ * terrain and contact fields, the view's scene copy, the environment cube and the planar mirror.
  */
 const WATER_NODE_SAMPLERS: Readonly<Record<string, readonly string[]>> = {
   "input.waterWaves": ["spectrum", "turbulence"],
   "input.waterFoam": ["terrain", "contacts"],
   "input.waterDepthFade": ["terrain", "contacts", "sceneCopy"],
   "input.waterSceneColor": ["sceneCopy"],
-  "input.waterReflection": ["sceneCopy", "environment"],
+  "input.waterReflection": ["sceneCopy", "environment", "planar", "terrain", "contacts"],
 };
 
 /** Whether the plan's surface takes scene lights, so a fixed light layout shares its samplers. */

@@ -87,6 +87,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 5 water PR 2: the Water Cut block (`WaterCutBlock`), which the compiler adds to every Surface Material: removal volumes and land above the water, a blending neighbour's water, the depth pre-pass discard and early return, the colour pass's discard after every derivative, and the vertex blend cull on the GPU path. Decided: every Material a water mesh draws is cut, so every water mesh keeps its terrain and contact fields.
 
+   Phase 5 water PR 3: planar reflections on the Water Reflection node, through the plugin's lookup (`planarLookupSource`); the mirror's owner takes any water that mirrors objects (`waterMeshReflectsObjects`), and frozen Custom Materials re-prepare their water defines on a Water quality change or a tilt. Decided for the next PR: haze reaches the lighting through a **Normal** output on Water Reflection (the starter wires it to the Material Output's Normal), and the edge and open-water fades through an **Edge Fade** output on Water Depth Fade (the starter multiplies Opacity by it); the refraction fallback matches built-in water exactly; the four-tap shoreline stays with its own PR.
+
    If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
 5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.
 6. **Shadow atlas** behind the same switch, with the preserve list above.

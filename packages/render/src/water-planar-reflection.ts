@@ -1,5 +1,6 @@
 /**
- * Planar reflection infrastructure for built-in water (project Water quality Reflections = Planar).
+ * Planar reflection infrastructure for water that mirrors objects (project Water quality Reflections = Planar): built-in
+ * water and Custom Material water with a Water Reflection node.
  *
  * One dominant flat water body per view is mirrored: a rigid camera at the eye reflected across the body's rest
  * plane renders the opaque scene into a leased target, with an oblique near plane on that plane, so nothing below
@@ -39,8 +40,7 @@ import {
 import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
-import type { WaterMaterialPlugin } from "./water-material";
-import { waterMeshRestVaries } from "./water-mesh";
+import { waterMeshReflectsObjects, waterMeshRestVaries } from "./water-mesh";
 
 /** One view's planar reflection, valid for the scene render in which it was returned. */
 export interface WaterPlanarReflection {
@@ -79,7 +79,6 @@ export interface WaterPlanarReflectionDiagnostics {
   readonly reusedFrames: number;
 }
 
-const PLUGIN_NAME = "SlateWater";
 /**
  * A view keeps drawing while its water looked the reflection up within this many of the view's own renders, so a
  * render that skips the water (shaders still compiling) does not stop it.
@@ -393,12 +392,14 @@ class WaterPlanarReflections {
     return best;
   }
 
-  /** Rest-plane height of an enabled, visible built-in body that asks for object reflections and is flat; NaN otherwise. */
+  /**
+   * Rest-plane height of an enabled, visible body that mirrors objects (`waterMeshReflectsObjects`: built-in water or a
+   * Custom Material's Water Reflection, Object Reflections on) and is flat; NaN otherwise.
+   */
   private reflectingPlane(mesh: AbstractMesh, layerMask: number): number {
     if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || !(mesh.layerMask & layerMask)) return NaN;
-    const plugin = mesh.material?.pluginManager?.getPlugin<WaterMaterialPlugin>(PLUGIN_NAME);
     // Flat as WaterField and contacts define it (not a river or a volume tilted out of level).
-    if (!plugin || !plugin.water.objectReflections || waterMeshRestVaries(mesh as Mesh) !== false) return NaN;
+    if (!waterMeshReflectsObjects(mesh) || waterMeshRestVaries(mesh as Mesh) !== false) return NaN;
     // A level body rests on its local y = 0 plane.
     return mesh.computeWorldMatrix().m[13]!;
   }
@@ -528,7 +529,7 @@ export function retainWaterPlanarReflections(scene: Scene): () => void {
 
 /**
  * The planar reflection `camera`'s view drew in this scene render, or null: Reflections are not Planar on this
- * device, no eligible body (built-in, Object Reflections on, flat: not a river or tilted volume) is visible below
+ * device, no eligible body (`waterMeshReflectsObjects`, flat: not a river or tilted volume) is visible below
  * the eye, the view is excluded (orthographic, rig/XR, several active cameras, Scene Linear
  * without half-float targets), the scene is not a retained view (previews, thumbnails), the camera belongs to a
  * Render Target Capture or the mirror pass itself, a draw failed (until Water quality changes), or the reflection

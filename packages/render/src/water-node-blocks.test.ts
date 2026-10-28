@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Color3, FreeCamera, Matrix, MeshBuilder, Vector3, NullEngine, Scene, ShaderLanguage, type AbstractMesh, type Mesh, type NodeMaterial } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
+import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody } from "@haptic/core";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
-import { createWaterMesh, sceneWaterSamplesSceneCopy, updateSceneWater, waterMeshSamplesSceneCopy } from "./water-mesh";
+import { updateSceneRenderingSettings } from "./render-settings";
+import { createWaterMesh, sceneWaterSamplesSceneCopy, updateSceneWater, waterMeshReflectsObjects, waterMeshSamplesSceneCopy } from "./water-mesh";
 import { materialSceneCopyUse, meshWaterNodeSurface } from "./water-node-blocks";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
@@ -52,6 +53,13 @@ async function programFor(material: NodeMaterial, mesh: AbstractMesh) {
 async function definesFor(material: NodeMaterial, mesh: AbstractMesh): Promise<string> {
   return (await programFor(material, mesh)).defines as string;
 }
+/** A camera looking down at the origin, so water there is in view (its frame update runs) and binds a projection. */
+function overlook(scene: Scene): void {
+  const camera = new FreeCamera("camera", new Vector3(0, 10, -10), scene);
+  camera.setTarget(Vector3.Zero());
+  scene.activeCamera = camera;
+  scene.setTransformMatrix(camera.getViewMatrix(), camera.getProjectionMatrix());
+}
 /** The reflection march's function text. */
 const march = (source: string) => /swMarch\(swOrigin[\s\S]*?\n\}/.exec(source)?.[0] ?? "";
 
@@ -64,16 +72,16 @@ describe("Water material nodes", () => {
     // GLSL rejects a sampler declared twice in one stage.
     const [vertex = ""] = source.split("// Fragment shader");
     const declarations = (stage: string, name: string) => stage.split(wgsl ? `var ${name}: texture_` : ` ${name};`).length - 1;
-    for (const name of ["slateWaterFftSampler", "slateWaterFoamSampler", "slateWaterFieldSampler", "slateWaterContactSampler", "slateWaterSceneSampler", "slateWaterNodeEnvSampler"]) {
+    for (const name of ["slateWaterFftSampler", "slateWaterFoamSampler", "slateWaterFieldSampler", "slateWaterContactSampler", "slateWaterSceneSampler", "slateWaterNodeEnvSampler", "slateWaterNodePlanarSampler"]) {
       expect(declarations(fragment, name), name).toBe(1);
     }
     expect(declarations(vertex, "slateWaterFftSampler")).toBe(1);
     // Every preprocessor directive stands on its own line.
     expect(source).not.toMatch(/\bsw\w*[^\n]*\S#(ifdef|endif|if|else)\b/);
-    for (const helper of ["swnFieldAt", "swnContactAt", "swSceneDepth", "swMarch", "swnEnvTap", "swnNoise"]) expect(fragment, helper).toContain(helper);
+    for (const helper of ["swnFieldAt", "swnContactAt", "swSceneDepth", "swMarch", "swnEnvTap", "swnNoise", "swPlanarTexel"]) expect(fragment, helper).toContain(helper);
     // The terrain and contact fields read the water mesh's data, the copy only with the pass's copy, the cube only with a cube.
     const sampler = (name: string) => wgsl ? `var ${name}: texture_` : ` ${name};`;
-    for (const [name, define] of [["slateWaterFieldSampler", "SLATE_WATER_SURFACE"], ["slateWaterSceneSampler", "SLATE_WATER_NODE_COPY"], ["slateWaterNodeEnvSampler", "SLATE_WATER_NODE_ENV"]] as const) {
+    for (const [name, define] of [["slateWaterFieldSampler", "SLATE_WATER_SURFACE"], ["slateWaterSceneSampler", "SLATE_WATER_NODE_COPY"], ["slateWaterNodeEnvSampler", "SLATE_WATER_NODE_ENV"], ["slateWaterNodePlanarSampler", "SLATE_WATER_NODE_PLANAR"]] as const) {
       expect(fragment).toMatch(new RegExp(`#ifdef ${define}\\s+[^#]*${sampler(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     }
     if (wgsl) {
@@ -177,6 +185,53 @@ describe("Water material nodes", () => {
     const mirror = createWaterMesh(scene, "mirror", normalizeWaterBody({ resolution: 8 }), water, reflection.material);
     expect(meshWaterNodeSurface(mirror)?.field).not.toBeNull();
     expect(meshWaterNodeSurface(mirror)?.contacts).not.toBeNull();
+  });
+
+  it("mirror the view's planar reflection from a level body with Object Reflections at Planar quality, binding it on every draw", async () => {
+    const scene = host();
+    overlook(scene);
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "planar" } }) });
+    const result = compile(scene, graph(["waterReflection"], [["waterReflection", "color", "emissive"]]));
+    expect(await result.ready).toEqual([]);
+    const water = { ...createDefaultWaterDefinition(), objectReflections: true };
+    const body = (name: string, definition = water, kind?: "river") =>
+      createWaterMesh(scene, name, normalizeWaterBody({ resolution: 8 }, kind), definition, result.material);
+    const lake = body("lake"), river = body("river", water, "river"), dull = body("dull", { ...water, objectReflections: false });
+    const plain = compile(scene, createDefaultMaterialDocument("Plain"));
+    const unreflecting = createWaterMesh(scene, "unreflecting", normalizeWaterBody({ resolution: 8 }), water, plain.material);
+    updateSceneWater(scene);
+    // Only water whose graph reads Water Reflection can take the view's mirror.
+    expect([lake, river, dull, unreflecting].map(waterMeshReflectsObjects)).toEqual([true, true, false, false]);
+    const planar = /^#define SLATE_WATER_NODE_PLANAR$/m;
+    expect(await definesFor(result.material, lake)).toMatch(planar);
+    for (const mesh of [river, dull]) expect(await definesFor(result.material, mesh), mesh.name).not.toMatch(planar);
+    // No view drew a mirror: the planar uniform selects the march, and the sampler is still bound, as WebGPU needs.
+    const effect = await programFor(result.material, lake), vectors = new Map<string, number[]>(), textures: string[] = [];
+    vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { vectors.set(name, [x, y, z, w]); return effect; });
+    vi.spyOn(effect, "setTexture").mockImplementation((name) => { textures.push(name); });
+    result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
+    expect(vectors.get("slateWaterNodePlanar")?.[0]).toBe(0);
+    expect(textures).toContain("slateWaterNodePlanarSampler");
+  });
+
+  it("re-prepare a frozen Material's water defines when the Water quality changes or a volume tilts out of level", async () => {
+    const scene = host(), result = compile(scene, graph(["waterReflection"], [["waterReflection", "color", "emissive"]]));
+    overlook(scene);
+    expect(await result.ready).toEqual([]);
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), result.material);
+    updateSceneWater(scene);
+    await definesFor(result.material, lake);
+    result.material.freeze();
+    const dirty = vi.spyOn(result.material, "markDirty");
+    updateSceneWater(scene);
+    expect(dirty).not.toHaveBeenCalled();
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "sky" } }) });
+    updateSceneWater(scene);
+    expect(dirty).toHaveBeenCalledTimes(1);
+    lake.rotation.x = 0.2;
+    updateSceneWater(scene);
+    expect(meshWaterNodeSurface(lake)?.flat).toBe(false);
+    expect(dirty).toHaveBeenCalledTimes(2);
   });
 
   it("ask for the view's scene copy as built-in water does, only from alpha-blended water", () => {
