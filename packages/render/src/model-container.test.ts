@@ -171,6 +171,29 @@ describe("model pose and clip ranges", () => {
     }
   });
 
+  it("keeps a primitive's second UV set, which a Material's UV 1 reads, without its file material", async () => {
+    const handle = createTestEngine();
+    const split = splitGlbJsonBin(encodeTriangleGlb())!;
+    const json = split.json as { meshes: { primitives: { attributes: Record<string, number> }[] }[]; accessors: Record<string, unknown>[]; bufferViews: Record<string, unknown>[]; buffers: { byteLength: number }[] };
+    const uvs = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+    const bin = new Uint8Array(split.bin.byteLength + uvs.byteLength);
+    bin.set(split.bin);
+    bin.set(new Uint8Array(uvs.buffer), split.bin.byteLength);
+    json.bufferViews.push({ buffer: 0, byteOffset: split.bin.byteLength, byteLength: uvs.byteLength });
+    json.accessors.push({ bufferView: 1, componentType: 5126, count: 3, type: "VEC2" });
+    json.buffers[0]!.byteLength = bin.byteLength;
+    json.meshes[0]!.primitives[0]!.attributes.TEXCOORD_1 = 1;
+    try {
+      const container = await loadModelContainer(handle.scene, encodeGlbJsonBin(split.json, bin), "uv1.glb");
+      const mesh = container.meshes.find((entry) => entry.getTotalVertices() > 0)!;
+      expect([...mesh.getVerticesData(VertexBuffer.UV2Kind)!].map((value) => Math.round(value * 10) / 10)).toEqual([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+      expect(container.materials).toHaveLength(0);
+    } finally {
+      handle.scene.dispose();
+      handle.engine.dispose();
+    }
+  });
+
   it("still loads ordinary models without skeletons or animations", async () => {
     const handle = createTestEngine();
     const host = createModelPreviewScene(handle.engine);
