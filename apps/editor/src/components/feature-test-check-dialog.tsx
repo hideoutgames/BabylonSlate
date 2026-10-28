@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { EngineStore, type AbstractEngine, type Effect } from "@babylonjs/core";
+import { estimateTextureMemory } from "@haptic/render";
+import { getHostMemoryStats } from "@haptic/vfs";
 import { SelectableText } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -13,6 +16,12 @@ import { Textarea } from "@haptic/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { useActiveDocumentId, useDocumentActions } from "../context/document-context";
 import { usePlay } from "../context/play-context";
+import {
+  MAX_CHECK_RESOURCE_SAMPLES,
+  clearUnfinishedCheck,
+  loadUnfinishedCheck,
+  saveUnfinishedCheck,
+} from "../lib/feature-test-check-record";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
 import {
@@ -22,6 +31,7 @@ import {
   type FeatureTestCheckDeps,
   type FeatureTestCheckMode,
   type FeatureTestCheckReport,
+  type FeatureTestCheckResources,
 } from "../services/feature-test-check";
 import {
   PLAY_PROBE_KEY,
@@ -63,10 +73,46 @@ function sampleFrames(durationMs: number, signal: AbortSignal) {
 const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
-  benchmark: "Plays every Feature Test scene and measures each quality tier and fixed-shape lighting with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
+  benchmark: "Plays every Feature Test scene and measures each quality tier, fixed-shape lighting and the haptic light loop with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About fifteen minutes; keep the device awake and plugged in.",
 };
 
+/** How often a running check samples what the editor holds, so a crash's report shows memory climbing. */
+const RESOURCE_SAMPLE_MS = 2_000;
+
+/** Shader programs, textures and memory every Engine holds now, and the Play view's drawn and held frames. */
+async function sampleCheckResources(atMs: number, step: string): Promise<FeatureTestCheckResources> {
+  let effects = 0;
+  let compiling = 0;
+  let textures = 0;
+  let textureBytes = 0;
+  for (const engine of EngineStore.Instances) {
+    // Babylon 9.29 keeps every compiled Effect in `_compiledEffects` until it is released.
+    const compiled = (engine as AbstractEngine & { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
+    for (const effect of Object.values(compiled)) {
+      effects += 1;
+      if (!effect.isReady()) compiling += 1;
+    }
+    const memory = estimateTextureMemory(engine);
+    textures += memory.textures;
+    textureBytes += memory.bytes;
+  }
+  const presentation = playProbes.get(PLAY_PROBE_KEY)?.snapshot().rendering?.presentation;
+  const host = await getHostMemoryStats().catch(() => null);
+  return {
+    atMs, step, effects, compiling, textures, textureBytes,
+    playFrames: presentation ? { drawn: presentation.drawn, held: presentation.held, contextLosses: presentation.contextLosses } : null,
+    jsHeapBytes: host?.jsHeapBytes ?? null,
+    appFootprintBytes: host?.appFootprintBytes ?? null,
+  };
+}
+
 type Phase = { kind: "idle" } | { kind: "running"; message: string } | { kind: "done"; text: string; report: FeatureTestCheckReport };
+
+/** The report a check the app stopped during left behind, if any. */
+function unfinishedPhase(): Phase {
+  const report = loadUnfinishedCheck();
+  return report ? { kind: "done", report, text: formatFeatureTestCheckReport(report, collectDiagnosticEnvironment()) } : { kind: "idle" };
+}
 
 export interface FeatureTestCheckDialogProps {
   open: boolean;
@@ -82,7 +128,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
   const activeDocumentId = useActiveDocumentId();
   const { requestPlay, playFromScene, setPlayFromScene, sessionOwner } = usePlay();
   const [mode, setMode] = useState<FeatureTestCheckMode>("quick");
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const [phase, setPhase] = useState<Phase>(unfinishedPhase);
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
   const abortRef = useRef<AbortController | null>(null);
   const activeRef = useRef(activeDocumentId);
@@ -97,6 +143,18 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     abortRef.current = controller;
     setCopied("idle");
     setPhase({ kind: "running", message: "Starting" });
+    clearUnfinishedCheck();
+    const startedAt = performance.now();
+    const record: { step: string; report: FeatureTestCheckReport | null; resources: FeatureTestCheckResources[] } = { step: "Starting", report: null, resources: [] };
+    let running = true;
+    const sample = async () => {
+      const resources = await sampleCheckResources(Math.round(performance.now() - startedAt), record.step);
+      if (!running || !record.report) return;
+      record.resources.push(resources);
+      if (record.resources.length > MAX_CHECK_RESOURCE_SAMPLES) record.resources.shift();
+      saveUnfinishedCheck({ step: record.step, report: record.report, resources: record.resources });
+    };
+    const sampler = setInterval(() => { void sample(); }, RESOURCE_SAMPLE_MS);
     const active = activeRef.current;
     const current = FEATURE_TEST_CHECK_SCENES.find((scene) => `scene:${scene.path}` === active);
     const scenes = mode === "quick" ? [current ?? FEATURE_TEST_CHECK_SCENES[0]] : FEATURE_TEST_CHECK_SCENES;
@@ -124,7 +182,10 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       onProgress: (message) => setPhase({ kind: "running", message }),
     };
     try {
-      const report = await runFeatureTestCheck({ mode, scenes, deps, signal: controller.signal, pageErrors: () => [...pageErrors] });
+      const report = await runFeatureTestCheck({
+        mode, scenes, deps, signal: controller.signal, pageErrors: () => [...pageErrors],
+        onStep: (step, partial) => { record.step = step; record.report = partial; void sample(); },
+      });
       const environment = collectDiagnosticEnvironment();
       setPhase({ kind: "done", report, text: formatFeatureTestCheckReport(report, environment) });
     } catch (error) {
@@ -132,6 +193,9 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       setPhase({ kind: "done", report: { mode, startedAt: Date.now(), durationMs: 0, cancelled: true, scenes: [], pageErrors: [message] },
         text: `Haptic Feature Test Check failed to run: ${message}` });
     } finally {
+      running = false;
+      clearInterval(sampler);
+      clearUnfinishedCheck();
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onRejection);
       releaseReporting();
@@ -165,9 +229,11 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
         <DialogHeader>
           <DialogTitle>Feature Test Check</DialogTitle>
           <DialogDescription>
-            {report
-              ? `${passed} of ${report.scenes.length} scenes passed${report.cancelled ? " before the check was cancelled" : ""}. Copy the report and paste it into your chat or issue.`
-              : MODE_DESCRIPTIONS[mode]}
+            {report?.unfinished
+              ? `The last check did not finish: the app stopped while ${report.unfinished.step}. Copy its report and paste it into your chat or issue.`
+              : report
+                ? `${passed} of ${report.scenes.length} scenes passed${report.cancelled ? " before the check was cancelled" : ""}. Copy the report and paste it into your chat or issue.`
+                : MODE_DESCRIPTIONS[mode]}
           </DialogDescription>
         </DialogHeader>
         {phase.kind === "done" ? (
@@ -195,7 +261,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
         <DialogFooter>
           {phase.kind === "done" ? (
             <>
-              <Button variant="outline" onClick={() => setPhase({ kind: "idle" })}>Run Again</Button>
+              <Button variant="outline" onClick={() => { clearUnfinishedCheck(); setPhase({ kind: "idle" }); }}>Run Again</Button>
               <Button variant="secondary" data-testid="feature-test-check-copy" onClick={() => void copy(phase.text)}>
                 {copied === "copied" ? "Copied" : copied === "failed" ? "Copy Failed: Select The Text" : "Copy Report"}
               </Button>
