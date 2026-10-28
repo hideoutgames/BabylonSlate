@@ -22,7 +22,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       (window as unknown as { __waterCutProof: typeof runWaterCutProof }).__waterCutProof(backend), backend);
     await testInfo.attach(`water-cut-proof-${backend}`, { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
-    for (const material of ["opaque", "translucent", "waves"]) {
+    for (const material of ["opaque", "translucent", "waves", "lit"]) {
       const whole = result.captures.find((capture) => capture.material === material && !capture.cut)!.pixels;
       const cut = result.captures.find((capture) => capture.material === material && capture.cut)!.pixels;
       // The water fills most of the view, and the hole shows the background where the volume stands, and only there.

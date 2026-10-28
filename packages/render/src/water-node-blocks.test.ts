@@ -240,9 +240,9 @@ describe("Water Cut", () => {
     const box = MeshBuilder.CreateBox("box", {}, scene);
     box.material = result.material;
     updateSceneWater(scene);
-    const engine = scene.getEngine(), colour = engine.currentRenderPassId;
+    const engine = scene.getEngine(), colour = engine.currentRenderPassId, prePass = engine.createRenderPassId("pre-pass");
     expect(await definesFor(result.material, water)).not.toContain("#define DEPTHPREPASS");
-    engine.currentRenderPassId = engine.createRenderPassId("pre-pass");
+    engine.currentRenderPassId = prePass;
     engine.setColorWrite(false);
     try {
       expect(await definesFor(result.material, water)).toContain("#define DEPTHPREPASS");
@@ -250,6 +250,7 @@ describe("Water Cut", () => {
     } finally {
       engine.setColorWrite(true);
       engine.currentRenderPassId = colour;
+      engine.releaseRenderPassId(prePass);
     }
   });
 

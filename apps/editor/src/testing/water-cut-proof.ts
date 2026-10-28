@@ -1,26 +1,28 @@
 /**
  * Test-build-only proof of the Water Cut block on the real GPU: Custom Material water drawn through the Forward
- * FrameGraph (opaque, translucent with its depth pre-pass, and translucent with Water Waves on the GPU path), each
- * without and with a removal volume over part of it.
+ * FrameGraph (opaque, translucent with its depth pre-pass, translucent with Water Waves on the GPU path, and lit by
+ * HapticLightingBlock), each without and with a removal volume over part of it.
  */
-import { Color4, Engine, FreeCamera, Matrix, Scene, Vector3, type AbstractEngine, type Effect, type NodeMaterial } from "@babylonjs/core";
+import { Color4, DirectionalLight, Engine, FreeCamera, Matrix, Scene, Vector3, type AbstractEngine, type Effect, type NodeMaterial } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
-import { compileMaterialPlan, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setSceneRenderSettings, updateSceneWater } from "@haptic/render";
+import {
+  compileMaterialPlan, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setHapticLighting, setSceneRenderSettings, updateSceneWater,
+} from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialDocument } from "@haptic/shader-graph";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
-const MATERIALS = ["opaque", "translucent", "waves"] as const;
+const MATERIALS = ["opaque", "translucent", "waves", "lit"] as const;
 
-/** Unlit green water: opaque, translucent, or translucent with Water Waves displacing it. */
+/** Green water: unlit opaque, translucent, or translucent with Water Waves displacing it; or lit and translucent. */
 function waterDocument(kind: (typeof MATERIALS)[number]): MaterialDocument {
-  const doc = createDefaultMaterialDocument(kind);
-  doc.shadingModel = "unlit";
+  const doc = createDefaultMaterialDocument(kind), lit = kind === "lit";
+  if (!lit) doc.shadingModel = "unlit";
   doc.blendMode = kind === "opaque" ? "opaque" : "translucent";
   doc.edges = doc.edges.filter((edge) => edge.targetNodeId !== "output");
   const output = doc.nodes.find((node) => node.id === "output")!.properties;
-  output[materialPinDefaultPropertyKey("baseColor")] = [0, 0, 0];
-  output[materialPinDefaultPropertyKey("emissive")] = [0.1, 0.8, 0.2];
+  output[materialPinDefaultPropertyKey("baseColor")] = lit ? [0.05, 0.8, 0.05] : [0, 0, 0];
+  output[materialPinDefaultPropertyKey("emissive")] = lit ? [0, 0, 0] : [0.1, 0.8, 0.2];
   output[materialPinDefaultPropertyKey("opacity")] = [0.9];
   if (kind === "waves") {
     doc.nodes.push({ id: "waves", type: "input.waterWaves", position: { x: 0, y: 0 }, properties: {} });
@@ -47,6 +49,8 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     camera.maxZ = 50;
     scene.activeCamera = camera;
     setSceneRenderSettings(scene, { mode: "pbr", quality: normalizeRenderingQuality({}), shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 0 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    sun.intensity = 1.5;
     const graph = new ForwardSceneFrameGraph(scene);
     const draw = async () => {
       // Each draw is a new render: water picks its removal volumes once per render.
@@ -61,6 +65,8 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     const centre = new Vector3(1.5, 0, 0);
     const captures: { material: string; cut: boolean; pixels: number[] }[] = [];
     for (const kind of MATERIALS) {
+      // The switch picks the lighting block when a Material compiles.
+      setHapticLighting(engine, kind === "lit");
       const lowered = lowerMaterialDocument(waterDocument(kind));
       if (!lowered.ok) throw new Error(`${kind} did not lower`);
       const compiled = compileMaterialPlan(lowered.plan, { scene, name: kind });
@@ -85,6 +91,7 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     graph.dispose();
     return { width: canvas.width, height: canvas.height, holeX, captures, prePassEffects };
   } finally {
+    setHapticLighting(engine, false);
     scene.dispose();
     engine.dispose();
     canvas.remove();
