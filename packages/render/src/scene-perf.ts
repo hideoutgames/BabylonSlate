@@ -124,8 +124,9 @@ export async function prewarmMeshMaterials(
 ): Promise<void> {
   let finished = false;
   const check = (mesh?: AbstractMesh) => {
-    if (finished || scene.isDisposed) throw new Error("Scene shader warming was cancelled.");
+    // The owner's check first: it names why (a superseded load) before its deferred Scene disposal does.
     assertCurrent?.(mesh);
+    if (finished || scene.isDisposed) throw new Error("Scene shader warming was cancelled.");
   };
   check();
   syncSceneLighting(scene);

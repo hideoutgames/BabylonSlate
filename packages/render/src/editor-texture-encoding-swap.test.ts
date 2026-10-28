@@ -92,6 +92,8 @@ describe("swapping a Texture's stored encoding", () => {
 
   it("announces the shader variant change when a KTX2 replaces a PNG, so the visual is held rather than skipped", async () => {
     const f = spriteFixture();
+    // The engine default material announces itself once its graph has built.
+    await vi.waitFor(() => expect((f.scene.defaultMaterial as NodeMaterial).buildIsInProgress).toBe(false));
     const dirty = vi.fn();
     cleanups.push(onSceneReadinessDirty(f.scene, dirty));
     // Babylon reads a texture with an identity matrix straight from the UVs and any other through the matrix.
@@ -108,6 +110,8 @@ describe("swapping a Texture's stored encoding", () => {
 
   it("does not announce a swap that keeps the shader variant", async () => {
     const f = spriteFixture();
+    // The engine default material announces itself once its graph has built.
+    await vi.waitFor(() => expect((f.scene.defaultMaterial as NodeMaterial).buildIsInProgress).toBe(false));
     const dirty = vi.fn();
     cleanups.push(onSceneReadinessDirty(f.scene, dirty));
 

@@ -59,7 +59,6 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 Each phase is one PR, or a short series, merged into `main` before the next starts.
 
 3. **Material consolidation on the current lighting**, with no visible change:
-   - The engine default material becomes a Material document (`createDefaultMaterialDocument`); landscape, foliage, cables and dynamic runtime meshes without a Material use it.
    - Preserved glTF slots become Material documents: an Ambient Occlusion input on Material Output (with strength), texture coordinate channels and texture transforms in the importer; emissive strength is kept.
    - Built-in water stays a `PBRMaterial` with its plugin. A Custom Material on the water blocks lacks planar reflections, the removal cut and edge fades, haze, the refraction fallback, specular shaping and the IOR, the Low tier's unlit path, the CEL exemption and two-sided drawing; about half of that is PBR shader internals no graph reaches. Phase 5 decides whether its plugin reads the light records with the material's own lighting disabled, or it becomes a graph Material on `HapticLightingBlock`.
    - `CelMaterial` and the native CEL swap (`scene-render-mode.ts`) go; CEL stays on graph Materials only.
