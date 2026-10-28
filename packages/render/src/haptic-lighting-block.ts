@@ -4,6 +4,7 @@ import {
   NodeMaterialBlock,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialBlockTargets,
+  ShaderLanguage,
   type AbstractMesh,
   type BaseTexture,
   type CubeTexture,
@@ -17,12 +18,14 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { SphericalHarmonics, type SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { CEL_UNIFORMS, bindCelSettings, celFunctions } from "./cel-shader";
-import { HAPTIC_LIGHTS_GLSL, bindHapticLights } from "./haptic-lights";
+import { HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL, bindHapticLights } from "./haptic-lights";
 import {
   HAPTIC_IRRADIANCE_KEYS,
   HAPTIC_IRRADIANCE_UNIFORMS,
   HAPTIC_LIGHTING_FUNCTIONS_GLSL,
+  HAPTIC_LIGHTING_FUNCTIONS_WGSL,
   hapticLightingGlsl,
+  hapticLightingWgsl,
 } from "./haptic-lighting-shader";
 import { sceneRenderingSettings } from "./render-settings";
 
@@ -175,11 +178,12 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emitUniformFromString("hapticEnvironmentMatrix", NodeMaterialBlockConnectionPointTypes.Matrix);
     state._emitCubeSampler("hapticEnvironmentSampler");
     state._emit2DSampler("hapticEnvironmentBrdfSampler");
-    state._emitFunction("hapticLights", HAPTIC_LIGHTS_GLSL, "// HapticLights");
-    state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(false)}\n#endif\n`, "// CEL");
-    state._emitFunction("hapticLightingFunctions", HAPTIC_LIGHTING_FUNCTIONS_GLSL, "// Haptic lighting");
-    for (const output of this._outputs) state.compilationString += state._declareOutput(output) + " = vec3(0.0);\n";
-    state.compilationString += hapticLightingGlsl({
+    const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
+    state._emitFunction("hapticLights", wgsl ? HAPTIC_LIGHTS_WGSL : HAPTIC_LIGHTS_GLSL, "// HapticLights");
+    state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(wgsl)}\n#endif\n`, "// CEL");
+    state._emitFunction("hapticLightingFunctions", wgsl ? HAPTIC_LIGHTING_FUNCTIONS_WGSL : HAPTIC_LIGHTING_FUNCTIONS_GLSL, "// Haptic lighting");
+    for (const output of this._outputs) state.compilationString += `${state._declareOutput(output)} = ${wgsl ? "vec3f" : "vec3"}(0.0);\n`;
+    state.compilationString += (wgsl ? hapticLightingWgsl : hapticLightingGlsl)({
       worldPosition: this.worldPosition.associatedVariableName,
       worldNormal: this.worldNormal.associatedVariableName,
       normal: this.normal.isConnected ? this.normal.associatedVariableName : `${this.worldNormal.associatedVariableName}.xyz`,

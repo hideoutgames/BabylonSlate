@@ -16,6 +16,7 @@ import {
   Scene,
   SpotLight,
   Vector3,
+  type AbstractEngine,
   type AbstractMesh,
   type Effect,
   type Light,
@@ -30,7 +31,13 @@ import {
   type CelShadingSettings,
   type RenderMode,
 } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, setHapticLighting, setSceneRenderSettings } from "@haptic/render";
+import {
+  applyAuthoredLightProperties,
+  compileMaterialPlan,
+  createAppWebGpuEngine,
+  setHapticLighting,
+  setSceneRenderSettings,
+} from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { retainFilteredEnvironment } from "../../../../packages/render/src/environment-prefilter";
@@ -60,18 +67,20 @@ function face(index: number, size: number): Uint8Array {
   return pixels;
 }
 
-function litEffectKeys(engine: Engine): string[] {
+function litEffectKeys(engine: AbstractEngine): string[] {
   const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
-  return Object.keys(effects).filter((key) => effects[key]!.fragmentSourceCode.includes("uniform HapticLights")).sort();
+  return Object.keys(effects).filter((key) => effects[key]!.fragmentSourceCode.includes("HapticLights")).sort();
 }
 
-export async function runHapticLightProof() {
+export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2") {
   const canvas = document.createElement("canvas");
   canvas.width = 120;
   canvas.height = 80;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
-  const order = readbackChannelOrder(false);
+  const engine: AbstractEngine = backend === "webgpu"
+    ? await createAppWebGpuEngine(canvas)
+    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const order = readbackChannelOrder(engine.isWebGPU);
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
     return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
@@ -183,6 +192,8 @@ export async function runHapticLightProof() {
     for (const path of ["babylon", "haptic"] as const) {
       assign(path);
       for (const pose of poses) {
+        // Babylon's WGSL reflection block reads a box's uniforms without their `uniforms.` prefix and fails to compile.
+        if (path === "babylon" && engine.isWebGPU && pose.name === "box-projected environment") continue;
         restore();
         pose.apply();
         captures.push({ name: pose.name, path, pixels: await draw() });
