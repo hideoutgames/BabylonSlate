@@ -10,7 +10,7 @@ import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
 import {
-  contactRange, edgeFoamHelpers, fresnelSource, marchSource, meshVertexWaves, placeholderField, planarLookupSource, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
+  aerialPerspectiveSource, contactRange, edgeFoamHelpers, fresnelSource, horizonHazeSource, marchSource, meshVertexWaves, placeholderField, planarLookupSource, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
   sceneWaterNodeLighting, selectWaterRemovals, silhouetteFallbackSource, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
   waterEdgeSource,
   sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
@@ -90,6 +90,9 @@ const SCREEN_UNIFORM = "slateWaterNodeScreen";
 /** The march's own screen terms (`marchSource`): (1 / width, 1 / height, Refraction, march distance). */
 const MARCH_UNIFORM = "slateWaterScreen";
 const SKY_UNIFORMS = ["slateWaterNodeSky", "slateWaterNodeHorizon", "slateWaterNodeSun", "slateWaterNodeSunColor", "slateWaterNodeSunShape"] as const;
+/** The water's haze (`waterHazeConstants`), and the scene's fog (mode, start, end, density) that aerial perspective leaves. */
+const HAZE_UNIFORM = "slateWaterNodeHaze";
+const FOG_UNIFORM = "slateWaterNodeFog";
 /** (max LOD, RGBD, gamma space, level × scene environment intensity) and (1, ±1 y, ±1 z, LOD offset). */
 const ENV_UNIFORMS = ["slateWaterNodeEnv", "slateWaterNodeEnvFlip"] as const;
 const ENV_MATRIX = "slateWaterNodeEnvMatrix";
@@ -331,6 +334,8 @@ function bindSky(effect: Effect, scene: Scene, texture: BaseTexture | null): voi
   effect.setFloat4("slateWaterNodeSun", light.sun[0]!, light.sun[1]!, light.sun[2]!, light.sun[3]!);
   effect.setFloat4("slateWaterNodeSunColor", light.sunColor[0]!, light.sunColor[1]!, light.sunColor[2]!, 0);
   effect.setFloat4("slateWaterNodeSunShape", light.sunShape[0]!, light.sunShape[1]!, light.sunShape[2]!, light.sunShape[3]!);
+  effect.setFloat4(HAZE_UNIFORM, light.haze[0]!, light.haze[1]!, light.haze[2]!, light.haze[3]!);
+  effect.setFloat4(FOG_UNIFORM, scene.fogMode, scene.fogStart, scene.fogEnd, scene.fogDensity);
   effect.setTexture(WATER_NODE_ENV_SAMPLER, texture ?? EMPTY_TEXTURE);
   if (!texture) return;
   const size = texture.getSize().width, lods = Math.max(0, Math.log2(Math.max(size, 1)));
@@ -613,7 +618,9 @@ RegisterClass("BABYLON.WaterSceneColorBlock", WaterSceneColorBlock);
  * the asset's Object Reflections is on: the view's planar mirror where this body is the view's dominant flat one (Planar
  * quality), else the march through the scene copy (Screen Space reflections, and Planar's fallback), shared with
  * built-in water (`planarLookupSource`, `marchSource`) and faded as it fades them. Normal defaults to the Water Waves
- * block's.
+ * block's. Toward the horizon the far water becomes a level mirror of the horizon sky through the haze, as built-in
+ * water's does (`aerialPerspectiveSource`, `horizonHazeSource`): the normal flattens toward straight up and the Fresnel
+ * rises to 1. The flattened normal is the Normal output, for the Material's lighting.
  */
 export class WaterReflectionBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -628,6 +635,7 @@ export class WaterReflectionBlock extends WaterNodeBlock {
     this.registerInput("waveHeight", Types.Float, true);
     this.registerOutput("color", Types.Color3);
     this.registerOutput("fresnel", Types.Float);
+    this.registerOutput("shadingNormal", Types.Vector3);
   }
   get worldPosition() { return this._inputs[0]!; }
   get cameraPosition() { return this._inputs[1]!; }
@@ -640,6 +648,8 @@ export class WaterReflectionBlock extends WaterNodeBlock {
   get waveHeight() { return this._inputs[7]!; }
   get color() { return this._outputs[0]!; }
   get fresnel() { return this._outputs[1]!; }
+  /** The normal reflected around, flattened toward straight up by the horizon haze (the Normal pin). */
+  get shadingNormal() { return this._outputs[2]!; }
   override getClassName(): string { return "WaterReflectionBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
     const scene = material.getScene(), surface = meshWaterNodeSurface(mesh);
@@ -668,7 +678,16 @@ export class WaterReflectionBlock extends WaterNodeBlock {
     const wgsl = wgslOf(state), v3 = wgsl ? "vec3f" : "vec3";
     emitCopyHelpers(state);
     state._emitUniformFromString(MARCH_UNIFORM, Types.Vector4);
-    for (const name of [...SKY_UNIFORMS, ...ENV_UNIFORMS]) state._emitUniformFromString(name, Types.Vector4);
+    for (const name of [...SKY_UNIFORMS, ...ENV_UNIFORMS, HAZE_UNIFORM, FOG_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
+    // Babylon's fog factor, as the compiler's Fog block emits it (the include is emitted once).
+    state._emitFunctionFromInclude("fogFragmentDeclaration", "", {
+      removeUniforms: true, removeVaryings: true, removeIfDef: false,
+      replaceStrings: wgsl ? [
+        { search: /fn CalcFogFactor\(\)/, replace: "fn CalcFogFactor(vFogDistance: vec3f, vFogInfos: vec4f)" },
+        { search: /uniforms.vFogInfos/g, replace: "vFogInfos" },
+        { search: /fragmentInputs.vFogDistance/g, replace: "vFogDistance" },
+      ] : [{ search: /float CalcFogFactor\(\)/, replace: "float CalcFogFactor(vec3 vFogDistance, vec4 vFogInfos)" }],
+    });
     state._emitUniformFromString(ENV_MATRIX, Types.Matrix);
     declareSampler(state, WATER_NODE_ENV_SAMPLER, "cube", WATER_NODE_ENV_DEFINE);
     state._emitFunction("swnEnvTap", `#ifdef ${WATER_NODE_ENV_DEFINE}\n${wgsl
@@ -685,18 +704,26 @@ export class WaterReflectionBlock extends WaterNodeBlock {
       ? `fn swPlanarTexel(uv: vec2f) -> vec4f { return textureSampleLevel(${PLANAR_SAMPLER}, ${PLANAR_SAMPLER}Sampler, uv, 0.0); }`
       : `vec4 swPlanarTexel(vec2 uv) { return textureLod(${PLANAR_SAMPLER}, uv, 0.0); }`}\n#endif\n`, "");
     state._emitFunctionFromInclude("helperFunctions", "");
-    const [color, fresnel] = this._outputs.map((output) => output.associatedVariableName);
-    state.compilationString += this.declare(state, this.color, `${v3}(0.0)`) + this.declare(state, this.fresnel, "0.0");
+    const [color, fresnel, shadingNormal] = this._outputs.map((output) => output.associatedVariableName);
+    state.compilationString += this.declare(state, this.color, `${v3}(0.0)`) + this.declare(state, this.fresnel, "0.0")
+      + this.declare(state, this.shadingNormal, `${v3}(0.0, 1.0, 0.0)`);
     const position = this.worldPosition.associatedVariableName, eye = this.cameraPosition.associatedVariableName;
     const normal = this.value(this.normal, this.value(this.waveNormal, `${v3}(0.0, 1.0, 0.0)`));
     const roughness = this.value(this.roughness, `${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.y`);
     state.compilationString += "{\n" + bind(`
 vec3 swnV = normalize(${eye} - ${position}.xyz);
 vec3 swnN = normalize(${normal});
+float swnEyeDist = length(${eye} - ${position}.xyz);
+float swnAirKeep = 1.0;
+`, wgsl) + `#ifdef FOG\n${bind(`swnAirKeep = max(toLinearSpace(CalcFogFactor((${this.view.associatedVariableName} * vec4(${position}.xyz, 1.0)).xyz, U.${FOG_UNIFORM})), 0.0);`, wgsl)}#endif\n` + bind(`
+${aerialPerspectiveSource("swnEyeDist", "swnAirKeep", `U.${LOOK_UNIFORM}.w`, `U.${HAZE_UNIFORM}`)}
+${horizonHazeSource("(1.0 - clamp(swnV.y, 0.0, 1.0))")}
+swnN = normalize(mix(swnN, vec3(0.0, 1.0, 0.0), swHaze * swHaze));
 float swnNdotV = clamp(dot(swnN, swnV), 0.0, 1.0);
 float swnRoughNear = clamp(${roughness}, 0.0, 1.0);
 float swnRough = mix(max(swnRoughNear, ${f(WATER_FAR_ROUGHNESS)}), swnRoughNear, 1.0 / (1.0 + length(${eye} - ${position}.xyz) * ${f(WATER_GLOSS_FALLOFF)}));
 ${fresnelSource("swnRough", "swnNdotV", "swnFres")}
+swnFres = mix(swnFres, 1.0, swHaze);
 vec3 swnR = reflect(-swnV, swnN);
 float swnRawY = swnR.y;
 ${reflectionKeepSource("swnR.y", "swnV.y", "swnKeep")}
@@ -722,6 +749,7 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
       + this.objectReflection(state, position, eye)
       + (this.color.hasEndpoints ? `${color} = swnSky * ${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.z;\n` : "")
       + (this.fresnel.hasEndpoints ? `${fresnel} = swnFres;\n` : "")
+      + (this.shadingNormal.hasEndpoints ? `${shadingNormal} = swnN;\n` : "")
       + "}\n";
     return this;
   }

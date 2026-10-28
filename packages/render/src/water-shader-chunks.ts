@@ -75,6 +75,29 @@ float ${prefix}ContactFoamAmount(vec2 p, float t, float dist, float width) {
 
 
 /**
+ * Aerial perspective as `swAir` (0 to 1), from the eye's `distance` and what scene fog leaves of it (`keep`, its factor in
+ * linear space, 1 without fog): the scene's haze over the water's own exponential haze, plus a ramp to the far plane, from
+ * `haze` (`waterHazeConstants`); none in orthographic views (`ortho` is 1). GLSL-shaped. Built-in water and the Water
+ * Reflection node share it.
+ */
+export function aerialPerspectiveSource(distance: string, keep: string, ortho: string, haze: string): string {
+  return `
+float swAirOn = 1.0 - ${ortho};
+float swAir = 1.0 - (1.0 - (1.0 - exp(-${distance} * ${haze}.x)) * ${keep} * swAirOn) * (1.0 - smoothstep(${haze}.y, ${haze}.z, ${distance}) * swAirOn);`;
+}
+
+/**
+ * How far the far sea becomes a level mirror of the horizon sky and melts into it, as `swHaze`, from `swAir` and how
+ * grazing the view is (`graze`, 1 − the view direction's height). The shading normal flattens by its square and the
+ * Fresnel rises to 1 with it. GLSL-shaped. Built-in water and the Water Reflection node share it.
+ */
+export function horizonHazeSource(graze: string): string {
+  return `
+// Toward the horizon the far sea becomes a level mirror of the horizon sky and melts into it.
+float swHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, ${graze})) * (1.0 - smoothstep(0.98, 0.9985, ${graze}));`;
+}
+
+/**
  * Beside the silhouette of something in front of the water, a downsampled copy texel holds that object (its nearest
  * depth): there the copy is not what lies behind this point. The nearest neighbouring texel that does lie behind the
  * water stands in for it (its colour and depth, at most one copy texel away, written into `uv` and `sceneZ`), so
@@ -655,8 +678,7 @@ float swAirKeep = max(toLinearSpace(CalcFogFactor()), 0.0);
 #else
 float swAirKeep = 1.0;
 #endif
-float swAirOn = 1.0 - S.projection[3][3];
-float swAir = 1.0 - (1.0 - (1.0 - exp(-swEyeDist * U.slateWaterHaze.x)) * swAirKeep * swAirOn) * (1.0 - smoothstep(U.slateWaterHaze.y, U.slateWaterHaze.z, swEyeDist) * swAirOn);
+${aerialPerspectiveSource("swEyeDist", "swAirKeep", "S.projection[3][3]", "U.slateWaterHaze")}
 // Foam patterns ride the current and drift downwind with the waves (\`waterFoamDrift\`).
 vec2 swFlowed = swWorld - (IN.vSlateWaterFlow.xy + U.slateWaterMotion.yz) * swTime;
 // Rest (Lagrangian) point relative to the floating origin: the interpolated offset is exact on the displaced triangle.
@@ -742,8 +764,7 @@ vec3 swL = U.slateWaterSun.xyz;
 vec3 swSun = U.slateWaterSunColor.rgb * U.slateWaterSun.w;
 vec3 swAmb = U.slateWaterLight.rgb;
 float swGraze = 1.0 - clamp(swV.y, 0.0, 1.0);
-// Toward the horizon the far sea becomes a level mirror of the horizon sky and melts into it.
-float swHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - smoothstep(0.98, 0.9985, swGraze));
+${horizonHazeSource("swGraze")}
 normalW = normalize(mix(normalW, swBaseNormal, swHaze * swHaze));
 swSharp = 1.0;
 #if ${SAMPLES_COPY}

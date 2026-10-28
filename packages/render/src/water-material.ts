@@ -43,7 +43,9 @@ export {
   waterFoamThresholdOf,
 } from "./water-shader-defines";
 export {
+  aerialPerspectiveSource,
   edgeFoamHelpers,
+  horizonHazeSource,
   marchSource,
   transmittanceSource,
   WATER_FAR_ROUGHNESS,

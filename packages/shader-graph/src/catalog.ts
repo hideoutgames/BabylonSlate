@@ -373,6 +373,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     outputs: [
       { id: "color", name: "Color", type: VEC3, colorHint: true },
       { id: "fresnel", name: "Fresnel", type: FLOAT },
+      { id: "shadingNormal", name: "Normal", type: VEC3 },
     ],
     cost: 10,
   },

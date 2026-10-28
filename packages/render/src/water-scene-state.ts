@@ -225,9 +225,9 @@ const NO_REMOVALS: WaterRemovalCandidate[] = [];
  */
 /**
  * The scene's water lighting this render (`sceneWaterLighting`): the sun, ambient and the analytic sky and horizon the
- * water nodes reflect without an environment. Shared with built-in water; read-only.
+ * water nodes reflect without an environment, and its haze constants. Shared with built-in water; read-only.
  */
-export function sceneWaterNodeLighting(scene: Scene): Readonly<Pick<WaterLighting, "sun" | "sunColor" | "sky" | "horizon" | "sunShape">> {
+export function sceneWaterNodeLighting(scene: Scene): Readonly<Pick<WaterLighting, "sun" | "sunColor" | "sky" | "horizon" | "sunShape" | "haze">> {
   return sceneWaterBindingData(scene).lighting;
 }
 

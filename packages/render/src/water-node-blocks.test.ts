@@ -107,6 +107,9 @@ describe("Water material nodes", () => {
       const [, fragment = ""] = result.material.compiledShaders.split("// Fragment shader");
       expect(fragment).toMatch(/\w+ = swEdgeFade \* swOpenFade;/);
       expect(fragment).toContain("swCopyTexel");
+      // Its lighting takes Water Reflection's normal, flattened by the horizon haze through the scene's fog.
+      expect(fragment).toMatch(/\w+ = swnN;/);
+      expect(fragment).toMatch(/swnAirKeep = max\(toLinearSpace\(CalcFogFactor\(/);
       // NullEngine has no lit WGSL includes to draw a mesh with.
       if (language === ShaderLanguage.WGSL) return;
       for (const kind of ["ocean", "lake", "river", "puddle", "global"] as const) {
