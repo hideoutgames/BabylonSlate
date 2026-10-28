@@ -656,7 +656,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     plumbing.view?.connectTo(block.view);
     plumbing.waterWaves?.height.connectTo(block.waveHeight);
     plumbing.waterWaves?.normal.connectTo(block.waveNormal);
-    return { blocks: [block], inputs: { distance: block.distance }, outputs: { depth: block.depth, fade: block.fade, transmittance: block.transmittance } };
+    return { blocks: [block], inputs: { distance: block.distance }, outputs: { depth: block.depth, fade: block.fade, transmittance: block.transmittance, edgeFade: block.edgeFade } };
   },
   "input.waterSceneColor": ({ name, plumbing, operation }) => {
     const block = new WaterSceneColorBlock(name);

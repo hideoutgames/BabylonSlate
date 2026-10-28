@@ -103,6 +103,10 @@ describe("Water material nodes", () => {
       expect(plan.ok && plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
       const result = compile(scene, doc);
       expect(await result.ready).toEqual([]);
+      // Its Opacity fades at the body's edges, and its refraction falls back beside silhouettes, as built-in water's.
+      const [, fragment = ""] = result.material.compiledShaders.split("// Fragment shader");
+      expect(fragment).toMatch(/\w+ = swEdgeFade \* swOpenFade;/);
+      expect(fragment).toContain("swCopyTexel");
       // NullEngine has no lit WGSL includes to draw a mesh with.
       if (language === ShaderLanguage.WGSL) return;
       for (const kind of ["ocean", "lake", "river", "puddle", "global"] as const) {

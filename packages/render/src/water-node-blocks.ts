@@ -11,13 +11,17 @@ import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
 import {
   contactRange, edgeFoamHelpers, fresnelSource, marchSource, meshVertexWaves, placeholderField, planarLookupSource, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
-  sceneWaterNodeLighting, selectWaterRemovals, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
+  sceneWaterNodeLighting, selectWaterRemovals, silhouetteFallbackSource, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
+  waterEdgeSource,
   sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
   WATER_NODE_BLEND_DEFINE, WATER_REMOVAL_SHAPE_UNIFORMS, WATER_REMOVAL_SLOTS, WATER_REMOVAL_UNIFORMS, type WaterRemovalCandidate,
 } from "./water-material";
 import { waterPlanarReflectionForCamera } from "./water-planar-reflection";
 import { waterRemovalShapeVector } from "./water-removal-mesh";
-import { PLANAR_REACH } from "./water-shader-defines";
+import {
+  PLANAR_REACH, REFRACTION_DEPTH_CAP, REFRACTION_FAR, REFRACTION_SHIFT as BUILT_IN_REFRACTION_SHIFT, REFRACTION_SHIFT_PX as BUILT_IN_REFRACTION_SHIFT_PX,
+  WATER_REFRACTION_SCALE,
+} from "./water-shader-defines";
 import { isSkyboxMesh } from "./skybox";
 import { WATER_SCENE_COPY_SKY_DEPTH, isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 import { declareWaterAttributes, isBlendingWaterSurface, isWaterSurfaceMesh, WATER_DEPTH_PRE_PASS_DEFINE, WATER_SURFACE_DEFINE } from "./water-surface-block";
@@ -91,11 +95,9 @@ const ENV_UNIFORMS = ["slateWaterNodeEnv", "slateWaterNodeEnvFlip"] as const;
 const ENV_MATRIX = "slateWaterNodeEnvMatrix";
 /** Longest reflected ray the march follows (world units), shortened to the view's far plane; as built-in water. */
 const MARCH_DISTANCE = 500;
-/** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface; as built-in water. */
-const REFRACTION_SHIFT = 1.2;
-const REFRACTION_DEPTH_CAP = 3;
-const REFRACTION_SHIFT_PX = [28, 3] as const;
-const REFRACTION_FAR = [6, 60] as const;
+/** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface, as built-in water bends it. */
+const REFRACTION_SHIFT = BUILT_IN_REFRACTION_SHIFT * WATER_REFRACTION_SCALE;
+const REFRACTION_SHIFT_PX = BUILT_IN_REFRACTION_SHIFT_PX.map((px) => px * WATER_REFRACTION_SCALE);
 /** Bound where the pass has no copy or the variant has no cube: Babylon's empty texture. */
 const EMPTY_TEXTURE = new ThinTexture(null);
 
@@ -216,12 +218,17 @@ vec2 swSceneTexelUv() { return 1.0 / vec2(textureSize(${s}, 0)); }
 
 const fragCoord = (state: NodeMaterialBuildState) => wgslOf(state) ? "fragmentInputs.position" : "gl_FragCoord";
 
-/** Water depth below this pixel's surface, as `swnDepth`: the body's shelving bank, the terrain where it is known. */
-function depthSource(height: string): string {
+/**
+ * This pixel's terrain tap (`swnField`) and what meets the water there, as built-in water derives it (`waterEdgeSource`):
+ * `swnDepth`, the water below this pixel's surface at `height` (the body's shelving bank, the terrain where it is
+ * known), and the edge and open-water fades. The terrain slope there is taken as steep: built-in water's four-tap slope
+ * is not ported yet, so gentle shores thin out over 6 cm instead of up to 40.
+ */
+function edgeSource(height: string): string {
   return `
-float swnBody = max(0.01, swnData.z);
-vec4 swnField = swnFieldAt(swnPos.xz);
-float swnDepth = mix(swnBody * (1.0 - exp(-min(max(swnData.y, 0.0), 24.0) * 0.35 / swnBody)), max(0.0, swnField.y + ${height}), swnField.w);
+vec4 swnField = swnFieldAt(swnPos.xz);${waterEdgeSource({
+    known: "swnField.w", on: "swnField.x", shore: "swnField.z", terrainDepth: `(swnField.y + ${height})`, slope: "1.0", bank: "swnData.y", body: "swnData.z" })}
+float swnDepth = swDepth;
 `;
 }
 
@@ -420,7 +427,7 @@ ${edgeFoamHelpers("swn")}`, wgsl), "");
     state.compilationString += `{\n${surfaceLocals(state, this.worldPosition.associatedVariableName)}#ifdef ${WATER_SURFACE_DEFINE}\n`
       + bind(`float swnHeight = swnData.x;\nfloat swnTime = swnData.w;\nvec2 swnDrift = vec2(0.0);\n`, wgsl)
       + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${gpuHeight};\nswnTime = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x;\nswnDrift = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.yz;\n#endif\n`
-      + bind(`${depthSource("swnHeight")}
+      + bind(`${edgeSource("swnHeight")}
 vec4 swnTerms = U.${FOAM_UNIFORM};
 vec2 swnFlowed = swnPos.xz - (swnFlow.xz + swnDrift) * swnTime;
 float swnFoot = length(fwidth(swnPos.xz));
@@ -457,6 +464,7 @@ export class WaterDepthFadeBlock extends WaterNodeBlock {
     this.registerOutput("depth", Types.Float);
     this.registerOutput("fade", Types.Float);
     this.registerOutput("transmittance", Types.Vector3);
+    this.registerOutput("edgeFade", Types.Float);
   }
   get worldPosition() { return this._inputs[0]!; }
   get cameraPosition() { return this._inputs[1]!; }
@@ -468,6 +476,8 @@ export class WaterDepthFadeBlock extends WaterNodeBlock {
   get depth() { return this._outputs[0]!; }
   get fade() { return this._outputs[1]!; }
   get transmittance() { return this._outputs[2]!; }
+  /** Built-in water's edge and open-water fades (`waterEdgeSource`), for Opacity. */
+  get edgeFade() { return this._outputs[3]!; }
   override getClassName(): string { return "WaterDepthFadeBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
     prepareSurfaceDefines(defines, material, mesh, true);
@@ -486,15 +496,15 @@ export class WaterDepthFadeBlock extends WaterNodeBlock {
     emitFieldHelpers(state);
     emitCopyHelpers(state);
     state._emitUniformFromString(ABSORB_UNIFORM, Types.Vector4);
-    const [depth, fade, transmittance] = this._outputs.map((output) => output.associatedVariableName);
+    const [depth, fade, transmittance, edgeFade] = this._outputs.map((output) => output.associatedVariableName);
     state.compilationString += this.declare(state, this.depth, "1.0") + this.declare(state, this.fade, "1.0")
-      + this.declare(state, this.transmittance, `${v3}(0.0)`);
+      + this.declare(state, this.transmittance, `${v3}(0.0)`) + this.declare(state, this.edgeFade, "1.0");
     const position = this.worldPosition.associatedVariableName, eye = this.cameraPosition.associatedVariableName, view = this.view.associatedVariableName;
     const distance = this.value(this.distance, `${wgsl ? "uniforms." : ""}${FOAM_UNIFORM}.w`);
     state.compilationString += `{\n${surfaceLocals(state, position)}#ifdef ${WATER_SURFACE_DEFINE}\n`
       + bind(`float swnHeight = swnData.x;\n`, wgsl)
       + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.value(this.waveHeight, "0.0")};\n#endif\n`
-      + bind(depthSource("swnHeight"), wgsl)
+      + bind(edgeSource("swnHeight"), wgsl)
       + bind("float swnOpenSky = 0.0;\n", wgsl)
       + `#ifdef ${WATER_NODE_COPY_DEFINE}\n`
       + bind(`
@@ -503,13 +513,14 @@ float swnWaterZ = abs((${view} * vec4(${position}.xyz, 1.0)).z);
 float swnSceneZ = swSceneDepth(swnUv);
 float swnOrtho = U.${LOOK_UNIFORM}.w;
 float swnDrop = mix(abs(${eye}.y - ${position}.y) / max(swnWaterZ, 0.001), abs(${view}[1][2]), swnOrtho);
-float swnBehind = step(swnWaterZ, swnSceneZ) * (1.0 - step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swnSceneZ));
-swnDepth = mix(swnDepth, max(swnSceneZ - swnWaterZ, 0.0) * swnDrop, swnBehind);
+float swnBehind = step(swnWaterZ, swnSceneZ);
+swnDepth = mix(swnDepth, min(swnDepth, max(swnSceneZ - swnWaterZ, 0.0) * swnDrop), swnBehind);
 // No geometry behind the water in the copy (its sky depth): open water lets nothing through, as built-in water.
 swnOpenSky = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swnSceneZ);
 `, wgsl)
       + "#endif\n"
       + (this.depth.hasEndpoints ? `${depth} = swnDepth;\n` : "")
+      + (this.edgeFade.hasEndpoints ? `${edgeFade} = swEdgeFade * swOpenFade;\n` : "")
       + (this.fade.hasEndpoints ? `${fade} = 1.0 - exp(-swnDepth / max(${distance}, 0.001));\n` : "")
       + (this.transmittance.hasEndpoints ? bind(`
 vec3 swnTN = normalize(${this.value(this.waveNormal, `${v3}(0.0, 1.0, 0.0)`)});
@@ -525,8 +536,10 @@ RegisterClass("BABYLON.WaterDepthFadeBlock", WaterDepthFadeBlock);
 /**
  * Water Scene Color: the view's scene copy behind this pixel (linear colour), bent by the surface's tilt through the
  * water behind it as built-in Refraction bends it (Refraction where connected, else the asset's), never taking anything
- * in front of the water. Available is 1 where the colour came from the copy, 0 where the pass has none (a material
- * preview, a capture, an opaque Material, Water Refraction off): Color is black there.
+ * in front of the water: beside a silhouette, a neighbouring copy texel behind the water stands in, as built-in water's
+ * (`silhouetteFallbackSource`). Available is 1 where the colour came from the copy, easing to 0 just behind what is in
+ * front of the water as built-in water's refracted share does, and 0 where the pass has none (a material preview, a
+ * capture, an opaque Material, Water Refraction off): Color is black there.
  */
 export class WaterSceneColorBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -572,7 +585,7 @@ float swnWaterZ = abs((${view} * vec4(${position}.xyz, 1.0)).z);
 float swnZ0 = swSceneDepth(swnUv);
 vec3 swnN = normalize(${normal});
 vec2 swnSlope = swnN.xz / max(swnN.y, 0.1);
-vec2 swnTilt = (${view} * vec4(-swnSlope.x, 0.0, -swnSlope.y, 0.0)).xy;
+vec2 swnTilt = (${view} * vec4(swnSlope.x, 0.0, swnSlope.y, 0.0)).xy;
 float swnThick = min(max(swnZ0 - swnWaterZ, 0.0), ${f(REFRACTION_DEPTH_CAP)});
 vec2 swnShift = swnTilt * U.${SCREEN_UNIFORM}.zw * (${refraction} * ${f(REFRACTION_SHIFT)} * swnThick * mix(1.0 / max(swnWaterZ, 0.05), 1.0, U.${LOOK_UNIFORM}.w));
 swnShift = swnShift * min(1.0, mix(${f(REFRACTION_SHIFT_PX[0])}, ${f(REFRACTION_SHIFT_PX[1])}, smoothstep(${f(REFRACTION_FAR[0])}, ${f(REFRACTION_FAR[1])}, swnWaterZ)) * U.${SCREEN_UNIFORM}.x / max(length(swnShift), 0.000001));
@@ -581,9 +594,10 @@ float swnZ1 = swSceneDepth(swnBent);
 float swnLeak = step(swnZ1, swnWaterZ);
 swnBent = mix(swnBent, swnUv, swnLeak);
 float swnSceneZ = mix(swnZ1, swnZ0, swnLeak);
+${silhouetteFallbackSource("swnBent", "swnSceneZ", "swnWaterZ", `U.${SCREEN_UNIFORM}.x`)}
 `, wgsl)
       + (this.color.hasEndpoints ? `${color} = swSceneColor(swnBent);\n` : "")
-      + (this.available.hasEndpoints ? `${available} = step(swnWaterZ - 0.01, swnSceneZ);\n` : "")
+      + (this.available.hasEndpoints ? `${available} = smoothstep(-0.03, 0.03 + swnWaterZ * 0.004, swnSceneZ - swnWaterZ);\n` : "")
       + "}\n#endif\n";
     return this;
   }

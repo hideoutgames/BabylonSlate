@@ -93,7 +93,10 @@ export function createWaterMaterialDocument(name: string): MaterialDocument {
   wire("covered", "out", "opaque", "a"); wire("scene", "available", "opaque", "alpha");
   node("opacity", "math.multiply", 900, 820);
   wire("opaque", "out", "opacity", "a"); wire("colors", "opacity", "opacity", "b");
-  out("opacity", "out", "opacity");
+  // The body's edges and gentle shores fade out, as built-in water's do.
+  node("edges", "math.multiply", 1150, 820);
+  wire("opacity", "out", "edges", "a"); wire("depth", "edgeFade", "edges", "b");
+  out("edges", "out", "opacity");
   doc.nodes = nodes;
   doc.edges = edges;
   return doc;

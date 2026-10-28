@@ -40,5 +40,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     // The translucent Materials drew their depth pre-pass as its own program.
     expect(result.prePassEffects).toBeGreaterThanOrEqual(1);
+    // The water starter drew: clear water, it tints the magenta background it refracts (most of the lake, measured).
+    let drawn = 0;
+    for (let index = 0; index < result.starterPixels.length; index += 4) {
+      const [r, g, b] = [result.starterPixels[index]!, result.starterPixels[index + 1]!, result.starterPixels[index + 2]!];
+      if (255 - r + g + 255 - b > 24) drawn++;
+    }
+    expect(drawn).toBeGreaterThan(result.width * result.height / 10);
   });
 }

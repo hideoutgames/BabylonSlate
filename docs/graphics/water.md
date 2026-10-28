@@ -94,6 +94,7 @@ The water Material moves with the asset's waves and takes its colours on every k
 - In shallow water, what lies below, by the water's [Transmittance](../scripting/material/water-depth-fade.md): clear in the shallows, tinted toward the deep water's colour with depth.
 - Reflections, mixed in by their Fresnel.
 - Foam in Foam Color, lit by the scene.
+- Edges that fade out at shores and open-water borders (Water Depth Fade **Edge Fade**).
 
 It is an ordinary Material graph, so you can change any step, for example for stylized water.
 
@@ -101,7 +102,7 @@ It is an ordinary Material graph, so you can change any step, for example for st
 | --- | --- |
 | [Water Waves](../scripting/material/water-waves.md) | The simulated ocean: the wave offset for World Position Offset, the normal, height, crest foam and subsurface light. |
 | [Water Colors](../scripting/material/water-colors.md) | The asset's Shallow, Deep and Foam Color and Opacity. |
-| [Water Depth Fade](../scripting/material/water-depth-fade.md) | The depth below the surface, a fade from the waterline into deep water, and how much light the water lets through. |
+| [Water Depth Fade](../scripting/material/water-depth-fade.md) | The depth below the surface, a fade from the waterline into deep water, how much light the water lets through, and its edge fade. |
 | [Water Scene Color](../scripting/material/water-scene-color.md) | The scene behind the water, bent by the waves. |
 | [Water Reflection](../scripting/material/water-reflection.md) | The reflected sky and scene objects, and the Fresnel amount. |
 | [Water Foam](../scripting/material/water-foam.md) | Whitecap, shoreline and contact foam. |

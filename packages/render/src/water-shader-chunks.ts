@@ -9,7 +9,7 @@ import { WATER_SCENE_COPY_SKY_DEPTH } from "./water-scene-copy";
 import {
   BLEND_COLOR_UNIFORMS, BLEND_PARTNERS, COLOR_LOCALS, COLOR_UNIFORMS, EDGE_FOAM_CALM, f, FFT, FFT_CASCADE_UNIFORMS, fromTier, ifDefined, OPEN_EDGE_FADE,
   OPEN_EDGE_FADE_TERRAIN, PIXEL_SLOPE_CAP, PIXEL_SLOPE_FILTER, PLANAR, REFLECTS_OBJECTS, REFRACTION, REFRACTION_DEPTH_CAP, REFRACTION_FAR, REFRACTION_SHIFT,
-  REFRACTION_SHIFT_PX, SAMPLES_COPY, SOFT_SHORE_DEPTH, SPECTRUM_FOAM_SCALE, SSR, SSR_REFINE_STEPS, SSR_STEPS, SSR_THICKNESS, TURBIDITY, WATER_BLEND_DEFINE,
+  REFRACTION_SHIFT_PX, SAMPLES_COPY, WATER_REFRACTION_SCALE, SOFT_SHORE_DEPTH, SPECTRUM_FOAM_SCALE, SSR, SSR_REFINE_STEPS, SSR_STEPS, SSR_THICKNESS, TURBIDITY, WATER_BLEND_DEFINE,
   WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_PLANAR_SAMPLER, WATER_SCENE_SAMPLER,
 } from "./water-shader-defines";
 
@@ -75,6 +75,52 @@ float ${prefix}ContactFoamAmount(vec2 p, float t, float dist, float width) {
 
 
 /**
+ * Beside the silhouette of something in front of the water, a downsampled copy texel holds that object (its nearest
+ * depth): there the copy is not what lies behind this point. The nearest neighbouring texel that does lie behind the
+ * water stands in for it (its colour and depth, at most one copy texel away, written into `uv` and `sceneZ`), so
+ * silhouettes keep refracting instead of dropping a texel-sized block of pixels back to the blended surface. Only there:
+ * four depth loads. `waterZ` is the water's view depth, `pixel` the output's 1 / width. GLSL-shaped; reads the copy
+ * helpers. Built-in water and the Water Scene Color node share it.
+ */
+export function silhouetteFallbackSource(uv: string, sceneZ: string, waterZ: string, pixel: string): string {
+  return `
+vec2 swCopyTexel = swSceneTexelUv();
+if (${sceneZ} < ${waterZ} && swCopyTexel.x > ${pixel} * 1.01) {
+  float swBehind = ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)};
+  vec2 swBehindUv = ${uv};${[[-1, 0], [1, 0], [0, -1], [0, 1]].map(([x, y], k) => `
+  vec2 swNearUv${k} = ${uv} + swCopyTexel * vec2(${f(x!)}, ${f(y!)});
+  float swNearZ${k} = swSceneDepth(swNearUv${k});
+  if (swNearZ${k} >= ${waterZ} && swNearZ${k} < swBehind) { swBehind = swNearZ${k}; swBehindUv = swNearUv${k}; }`).join("")}
+  if (swBehind < ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)}) { ${uv} = swBehindUv; ${sceneZ} = swBehind; }
+}`;
+}
+
+/**
+ * What meets the water from the terrain and the body's edges, as `swBank` (bank distance, capped by the terrain's
+ * shoreline), `swDepth` (the bottom estimate: a shelving bank capped by the body's depth, or the terrain where it is
+ * known), `swEdgeFade` (the water thins out over its last few centimetres, crisp at walls and cliffs) and `swOpenFade`
+ * (open-water edges, an ocean's outer edge or a lake drawn smaller than its basin, fade out instead of foaming), from
+ * the terrain field's known-terrain weight `known`, its `on` weight and shoreline `shore`, the terrain's depth below the
+ * surface `terrainDepth` and its slope `slope`, and the body's bank distance `bank` and depth `body`. GLSL-shaped; reads
+ * `U.slateWaterFieldInfo`. Built-in water and the water nodes share it.
+ */
+export function waterEdgeSource(o: { known: string; on: string; shore: string; terrainDepth: string; slope: string; bank: string; body: string }): string {
+  return `
+float swFieldShore = mix(${f(SHORE[1])}, ${o.shore}, ${o.on});
+float swKnown = ${o.known};
+float swOpenEdge = U.slateWaterFieldInfo.x * (1.0 - smoothstep(0.0, 0.1, swKnown));
+float swOpenAny = max(swOpenEdge, swKnown * smoothstep(0.5, 2.5, swFieldShore - max(0.0, ${o.bank})));
+float swOpenW = mix(${f(OPEN_EDGE_FADE_TERRAIN)}, ${f(OPEN_EDGE_FADE)}, swOpenEdge);
+float swBankV = mix(${o.bank}, max(${o.bank}, ${f(SHORE[1])}), swOpenAny);
+float swOpenFade = mix(1.0, smoothstep(0.0, swOpenW, ${o.bank}), swOpenAny);
+float swShoreSoft = mix(1.0, smoothstep(0.0, mix(${f(SOFT_SHORE_DEPTH)}, 0.06, smoothstep(0.35, 1.0, ${o.slope})), ${o.terrainDepth}), swKnown);
+float swBank = min(min(max(0.0, swBankV), max(0.0, swFieldShore)), ${f(SHORE[1])});
+float swBodyDepth = max(0.01, ${o.body});
+float swDepth = mix(swBodyDepth * (1.0 - exp(-swBank * 0.35 / swBodyDepth)), max(0.0, ${o.terrainDepth}), swKnown);
+float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * swShoreSoft;`;
+}
+
+/**
  * Refraction (`SLATE_WATER_REFRACTION`), right after the bottom estimate: the view ray bends by the surface tilt (in
  * view space), more through thicker water and less far away, and reads the view's scene copy there. A shifted ray
  * that lands on something in front of the water (an object above it) keeps the straight ray, so nothing above the
@@ -102,19 +148,7 @@ float swSceneZ1 = swSceneDepth(swRefrUv);
 float swLeak = step(swSceneZ1, swWaterZ);
 swRefrUv = mix(swRefrUv, swScreenUv, swLeak);
 float swSceneZ = mix(swSceneZ1, swSceneZ0, swLeak);
-// Beside the silhouette of something in front of the water, a downsampled copy texel holds that object (its nearest
-// depth): there the copy is not what lies behind this point. The nearest neighbouring texel that does lie behind the
-// water stands in for it (its colour and depth, at most one copy texel away), so silhouettes keep refracting instead of
-// dropping a texel-sized block of pixels back to the blended surface. Only there: four depth loads.
-vec2 swCopyTexel = swSceneTexelUv();
-if (swSceneZ < swWaterZ && swCopyTexel.x > U.slateWaterScreen.x * 1.01) {
-  float swBehind = ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)};
-  vec2 swBehindUv = swRefrUv;${[[-1, 0], [1, 0], [0, -1], [0, 1]].map(([x, y], k) => `
-  vec2 swNearUv${k} = swRefrUv + swCopyTexel * vec2(${f(x!)}, ${f(y!)});
-  float swNearZ${k} = swSceneDepth(swNearUv${k});
-  if (swNearZ${k} >= swWaterZ && swNearZ${k} < swBehind) { swBehind = swNearZ${k}; swBehindUv = swNearUv${k}; }`).join("")}
-  if (swBehind < ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)}) { swRefrUv = swBehindUv; swSceneZ = swBehind; }
-}
+${silhouetteFallbackSource("swRefrUv", "swSceneZ", "swWaterZ", "U.slateWaterScreen.x")}
 vec3 swBackground = swSceneColor(swRefrUv);
 // Where no neighbour lies behind it either, the pixel keeps the blended surface.
 float swRefracts = step(swWaterZ, swSceneZ);
@@ -658,27 +692,13 @@ vec3 swWaveN = normalW;
 // Height of the small cascades over the large one (metres): FFT-Ocean lights the crests of the small waves riding the swell.
 float swSpCrest = (0.2 * swSpLarge + swSpSmall) * swSp.x * swBlendH;
 
-// What meets the water: terrain shoreline and true depth, and objects crossing the surface.
-float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
-float swKnown = swField.a * swFieldOn;
+// What meets the water: terrain shoreline and true depth, the body's edges, and objects crossing the surface.
+${waterEdgeSource({ known: "swField.a * swFieldOn", on: "swFieldOn", shore: "swTerrainShore", terrainDepth: "swTerrainDepth", slope: "swShoreSlope", bank: "IN.vSlateWater.y", body: "IN.vSlateWater.z" })}
 float swObject = abs(swContactSigned);
-// Open-water edges fade out (an ocean's outer edge, a lake drawn smaller than its basin) instead of foaming.
-float swOpenEdge = U.slateWaterFieldInfo.x * (1.0 - smoothstep(0.0, 0.1, swField.a * swFieldOn));
-float swOpenAny = max(swOpenEdge, swKnown * smoothstep(0.5, 2.5, swFieldShore - max(0.0, IN.vSlateWater.y)));
-float swOpenW = mix(${f(OPEN_EDGE_FADE_TERRAIN)}, ${f(OPEN_EDGE_FADE)}, swOpenEdge);
-float swBankV = mix(IN.vSlateWater.y, max(IN.vSlateWater.y, ${f(SHORE[1])}), swOpenAny);
-float swOpenFade = mix(1.0, smoothstep(0.0, swOpenW, IN.vSlateWater.y), swOpenAny);
-// Soft waterline over known terrain: the water thins out over its last few centimetres (crisp at walls and cliffs).
-float swShoreSoft = mix(1.0, smoothstep(0.0, mix(${f(SOFT_SHORE_DEPTH)}, 0.06, smoothstep(0.35, 1.0, swShoreSlope)), swTerrainDepth), swKnown);
-float swBank = min(min(max(0.0, swBankV), max(0.0, swFieldShore)), ${f(SHORE[1])});
-float swBodyDepth = max(0.01, IN.vSlateWater.z);
-// Bottom estimate: a shelving bank capped by the component Depth, or the terrain where it is known.
-float swDepth = mix(swBodyDepth * (1.0 - exp(-swBank * 0.35 / swBodyDepth)), max(0.0, swTerrainDepth), swKnown);
-float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * swShoreSoft;
 // Refraction bends by the wave slope (\`refractionSource\` reads these names).
 vec2 swGradient = swSlope;
 vec2 swDetailMid = vec2(0.0);
-float swChopGain = 0.0;${refractionSource(0.55)}
+float swChopGain = 0.0;${refractionSource(WATER_REFRACTION_SCALE)}
 float swAbsorb = max(0.01, U.slateWaterLook.y);
 
 // Foam. Crests: FFT-Ocean's bias of n − 1 cascades plus Crest Foam's threshold, over the summed turbulence.
