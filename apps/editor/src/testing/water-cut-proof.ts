@@ -2,10 +2,11 @@
  * Test-build-only proof of the Water Cut block on the real GPU: Custom Material water drawn through the Forward
  * FrameGraph (opaque, translucent with its depth pre-pass, translucent with Water Waves on the GPU path, and lit by
  * HapticLightingBlock), each without and with a removal volume over part of it; and the water starter graph, which
- * reads every water node, drawn once.
+ * reads every water node, drawn once with ambient occlusion and Real-Time Reflections, so it also draws the scene
+ * effects' geometry pass.
  */
 import { Color4, DirectionalLight, Engine, FreeCamera, Matrix, Scene, Vector3, type AbstractEngine, type Effect, type NodeMaterial } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
+import { createDefaultWaterDefinition, normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import {
   compileMaterialPlan, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setHapticLighting, setSceneRenderSettings, updateSceneWater,
 } from "@haptic/render";
@@ -53,7 +54,8 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     camera.minZ = 0.1;
     camera.maxZ = 50;
     scene.activeCamera = camera;
-    setSceneRenderSettings(scene, { mode: "pbr", quality: normalizeRenderingQuality({}), shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 0 }) });
+    const shadows = normalizeShadowSettings({ cascades: 1, maxLocalLights: 0 });
+    setSceneRenderSettings(scene, { mode: "pbr", quality: normalizeRenderingQuality({}), shadows });
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     sun.intensity = 1.5;
     const graph = new ForwardSceneFrameGraph(scene);
@@ -89,8 +91,14 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
       water.dispose();
       compiled.dispose();
     }
-    // The water starter, lit by HapticLightingBlock: every water node compiles and draws on this backend.
+    // The water starter, lit by HapticLightingBlock: every water node compiles and draws on this backend, and in the
+    // scene effects' geometry pass, which it leaves its normal and reflectivity out of. Medium, the default tier, skips
+    // Real-Time Reflections.
     setHapticLighting(engine, true);
+    setSceneRenderSettings(scene, {
+      mode: "pbr", shadows, effects: normalizeRenderEffectsSettings({ ambientOcclusion: { enabled: true }, reflections: { enabled: true } }),
+      quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),
+    });
     const starterPlan = lowerMaterialDocument(createWaterMaterialDocument("Starter"));
     if (!starterPlan.ok) throw new Error("The water starter did not lower");
     const starter = compileMaterialPlan(starterPlan.plan, { scene, name: "starter" });
@@ -107,8 +115,9 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     // Water's depth pre-pass draws its own program, which discards removed water and returns before the look.
     const prePassEffects = Object.values(effects).filter((effect) => /#define DEPTHPREPASS/.test(effect.defines) && /#define SLATE_WATER_SURFACE/.test(effect.defines)).length;
+    const geometryEffects = Object.values(effects).filter((effect) => /#define SLATE_WATER_EFFECTS_GEOMETRY/.test(effect.defines)).length;
     graph.dispose();
-    return { width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, starterPixels };
+    return { width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, geometryEffects, starterPixels };
   } finally {
     setHapticLighting(engine, false);
     scene.dispose();

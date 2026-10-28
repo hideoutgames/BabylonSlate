@@ -7,6 +7,7 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { createWaterMesh, sceneWaterSamplesSceneCopy, updateSceneWater, waterMeshReflectsObjects, waterMeshSamplesSceneCopy } from "./water-mesh";
 import { materialSceneCopyUse, meshWaterNodeSurface } from "./water-node-blocks";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
+import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
@@ -110,6 +111,8 @@ describe("Water material nodes", () => {
       // Its lighting takes Water Reflection's normal, flattened by the horizon haze through the scene's fog.
       expect(fragment).toMatch(/\w+ = swnN;/);
       expect(fragment).toMatch(/swnAirKeep = max\(toLinearSpace\(CalcFogFactor\(/);
+      // It is seen from below too, as built-in water is.
+      expect(result.material.backFaceCulling).toBe(false);
       // NullEngine has no lit WGSL includes to draw a mesh with.
       if (language === ShaderLanguage.WGSL) return;
       for (const kind of ["ocean", "lake", "river", "puddle", "global"] as const) {
@@ -313,6 +316,42 @@ describe("Water Cut", () => {
       engine.setColorWrite(true);
       engine.currentRenderPassId = colour;
       engine.releaseRenderPassId(prePass);
+    }
+  });
+
+  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("writes no normal or reflectivity in the scene effects' geometry pass, after the output's, in language %s", async (language) => {
+    const wgsl = language === ShaderLanguage.WGSL, result = compile(host(wgsl), createDefaultMaterialDocument("Plain"));
+    expect(await result.ready).toEqual([]);
+    const { fragment } = stages(result.material.compiledShaders), target = wgsl ? "fragmentOutputs.fragData0" : "gl_FragData[0]";
+    const exempt = fragment.lastIndexOf("#ifdef SLATE_WATER_EFFECTS_GEOMETRY");
+    expect(exempt).toBeGreaterThan(fragment.lastIndexOf("* 0.5 + 0.5, 1.0);"));
+    const after = fragment.slice(exempt);
+    expect(after).toContain(`PREPASS_WORLD_NORMAL_INDEX == 0\n${target} = ${wgsl ? "vec4f" : "vec4"}(0.5, 0.5, 0.5, 1.0);`);
+    expect(after).toContain(`PREPASS_REFLECTIVITY_INDEX == 0\n${target} = ${wgsl ? "vec4f" : "vec4"}(0.0, 0.0, 0.0, 1.0);`);
+  });
+
+  it("compiles the scene effects' geometry pass as its own variant, for water only", async () => {
+    const scene = host(), result = compile(scene, createDefaultMaterialDocument("Plain"));
+    expect(await result.ready).toEqual([]);
+    const water = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), result.material);
+    const box = MeshBuilder.CreateBox("box", {}, scene);
+    box.material = result.material;
+    const engine = scene.getEngine(), colour = engine.currentRenderPassId;
+    const spatial = engine.createRenderPassId("Spatial Geometry"), authored = engine.createRenderPassId("Post-process Geometry");
+    registerSpatialGeometryPass(scene, spatial);
+    try {
+      expect(await definesFor(result.material, water)).not.toContain("SLATE_WATER_EFFECTS_GEOMETRY");
+      engine.currentRenderPassId = spatial;
+      expect(await definesFor(result.material, water)).toContain("#define SLATE_WATER_EFFECTS_GEOMETRY\n");
+      expect(await definesFor(result.material, box)).not.toContain("SLATE_WATER_EFFECTS_GEOMETRY");
+      // An authored post-process chain's geometry pass keeps the water's own surface, as it does built-in water's.
+      engine.currentRenderPassId = authored;
+      expect(await definesFor(result.material, water)).not.toContain("SLATE_WATER_EFFECTS_GEOMETRY");
+    } finally {
+      engine.currentRenderPassId = colour;
+      unregisterSpatialGeometryPass(scene, spatial);
+      engine.releaseRenderPassId(spatial);
+      engine.releaseRenderPassId(authored);
     }
   });
 
