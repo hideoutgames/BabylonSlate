@@ -58,16 +58,11 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-/**
- * Saved, dependency-scoped capture input. No open document, gameplay graph,
- * or unrelated project payload is read while browsing an asset tile.
- */
-export async function prepareAssetThumbnailInput(
-  options: AssetThumbnailInputOptions,
-): Promise<AssetThumbnailRequest | null> {
-  const { asset, registry } = options;
+type ThumbnailSourceOptions = Omit<AssetThumbnailInputOptions, "asset" | "pixelsPerUnit">;
+
+/** An asset's saved document (its document chunk, else its header payload), or null once the capture stopped. */
+function documentReader(options: ThumbnailSourceOptions) {
   const current = options.shouldContinue ?? (() => true);
-  if (!current()) return null;
   const readChunk = async (entry: IndexedAsset, id: string) =>
     current() ? options.readAssetChunk(entry.path, id) : null;
   const readDocument = async (entry: IndexedAsset) => {
@@ -83,6 +78,78 @@ export async function prepareAssetThumbnailInput(
       return null;
     }
   };
+  return { current, readChunk, readDocument };
+}
+
+/**
+ * The saved Material documents `materialGuids` name (a Material Instance as its parent chain), the functions they
+ * call and the bytes of every texture they or `textureGuids` sample. Null once the capture stopped.
+ */
+export async function prepareThumbnailMaterialSources(
+  options: ThumbnailSourceOptions,
+  materialGuids: Iterable<string>,
+  textureGuids: Iterable<string> = [],
+) {
+  const { registry } = options;
+  const { current, readDocument } = documentReader(options);
+  const textures = new Set(textureGuids);
+  const materials = new Map<string, MaterialDocument>();
+  const instances = new Map<string, MaterialInstanceDocument>();
+  const functions: Record<string, MaterialFunctionDocument> = {};
+  const needed: Array<{ guid: string; type: "Material" | "MaterialFunction" }> =
+    [...materialGuids].map((guid) => ({ guid, type: "Material" }));
+  const visited = new Set<string>();
+  for (let index = 0; index < needed.length; index += 1) {
+    if (!current()) return null;
+    const { guid, type } = needed[index]!;
+    if (visited.has(guid)) continue;
+    visited.add(guid);
+    const entry = registry.getByGuid(guid);
+    // A material reference may name a Material Instance; it renders as its parent chain.
+    const instance = type === "Material" && entry?.header.type === "MaterialInstance";
+    if (!entry || (entry.header.type !== type && !instance)) continue;
+    const content = await readDocument(entry);
+    if (!current()) return null;
+    if (!content) continue;
+    if (instance) {
+      const document = normalizeMaterialInstanceDocument(content);
+      instances.set(guid, document);
+      const dependencies = materialInstanceDependencies(document);
+      for (const texture of dependencies.textures) textures.add(texture);
+      if (dependencies.parent) needed.push({ guid: dependencies.parent, type: "Material" });
+      continue;
+    }
+    const document = type === "Material"
+      ? normalizeMaterialDocument(content)
+      : normalizeMaterialFunctionDocument(content);
+    if (type === "Material") materials.set(guid, document as MaterialDocument);
+    else functions[guid] = document as MaterialFunctionDocument;
+    const dependencies = materialDependencies(document);
+    for (const texture of dependencies.textures) textures.add(texture);
+    for (const fn of dependencies.functions) needed.push({ guid: fn, type: "MaterialFunction" });
+  }
+  for (const [guid, document] of materializeMaterialInstances(materials, instances)) {
+    materials.set(guid, document);
+  }
+  if (!current()) return null;
+  const textureList = [...textures];
+  const textureBytes = textureList.length > 0
+    ? await options.collectTextureBytes(textureList)
+    : new Map<string, Uint8Array>();
+  if (!current()) return null;
+  return { materials, functions, textureBytes, textures: textureList };
+}
+
+/**
+ * Saved, dependency-scoped capture input. No open document, gameplay graph,
+ * or unrelated project payload is read while browsing an asset tile.
+ */
+export async function prepareAssetThumbnailInput(
+  options: AssetThumbnailInputOptions,
+): Promise<AssetThumbnailRequest | null> {
+  const { asset, registry } = options;
+  const { current, readChunk, readDocument } = documentReader(options);
+  if (!current()) return null;
 
   let prefab: SerializedScene | undefined;
   if (classAsset(asset)) {
@@ -176,51 +243,10 @@ export async function prepareAssetThumbnailInput(
     if (sprite.textureGuid) textureGuids.add(sprite.textureGuid);
   }
 
-  const materials = new Map<string, MaterialDocument>();
-  const instances = new Map<string, MaterialInstanceDocument>();
-  const functions: Record<string, MaterialFunctionDocument> = {};
-  const needed: Array<{ guid: string; type: "Material" | "MaterialFunction" }> =
-    [...materialGuids].map((guid) => ({ guid, type: "Material" }));
-  const visited = new Set<string>();
-  for (let index = 0; index < needed.length; index += 1) {
-    if (!current()) return null;
-    const { guid, type } = needed[index]!;
-    if (visited.has(guid)) continue;
-    visited.add(guid);
-    const entry = registry.getByGuid(guid);
-    // A material reference may name a Material Instance; it renders as its parent chain.
-    const instance = type === "Material" && entry?.header.type === "MaterialInstance";
-    if (!entry || (entry.header.type !== type && !instance)) continue;
-    const content = await readDocument(entry);
-    if (!current()) return null;
-    if (!content) continue;
-    if (instance) {
-      const document = normalizeMaterialInstanceDocument(content);
-      instances.set(guid, document);
-      const dependencies = materialInstanceDependencies(document);
-      for (const texture of dependencies.textures) textureGuids.add(texture);
-      if (dependencies.parent) needed.push({ guid: dependencies.parent, type: "Material" });
-      continue;
-    }
-    const document = type === "Material"
-      ? normalizeMaterialDocument(content)
-      : normalizeMaterialFunctionDocument(content);
-    if (type === "Material") materials.set(guid, document as MaterialDocument);
-    else functions[guid] = document as MaterialFunctionDocument;
-    const dependencies = materialDependencies(document);
-    for (const texture of dependencies.textures) textureGuids.add(texture);
-    for (const fn of dependencies.functions) needed.push({ guid: fn, type: "MaterialFunction" });
-  }
-  for (const [guid, document] of materializeMaterialInstances(materials, instances)) {
-    materials.set(guid, document);
-  }
+  const sources = await prepareThumbnailMaterialSources(options, materialGuids, textureGuids);
+  if (!sources) return null;
+  const { materials, functions, textureBytes, textures } = sources;
   if (!prefab && !materials.has(asset.header.guid)) return null;
-  if (!current()) return null;
-  const textures = [...textureGuids];
-  const textureBytes = textures.length > 0
-    ? await options.collectTextureBytes(textures)
-    : new Map<string, Uint8Array>();
-  if (!current()) return null;
   const assets = {
     textureBytes,
     texturePixelSizes: texturePixelSizesFromHeaders(
