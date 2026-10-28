@@ -65,4 +65,4 @@ Feature Test is a developer starter that places every engine feature in a few sc
 4. Pick **Quick (Current Scene)**, **Full (All Scenes)** or **Benchmark**, then choose **Start**.
 5. When it finishes, choose **Copy Report** to copy the plain-text results.
 
-Benchmark plays every scene at each quality level and takes about ten minutes; keep the device awake and plugged in.
+Benchmark plays every scene at each quality level, then with the lighting experiments (`fixedlights`, `hapticlights` in the [console](../debugging/console.md)), and takes about fifteen minutes; keep the device awake and plugged in.

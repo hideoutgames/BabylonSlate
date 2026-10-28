@@ -178,8 +178,9 @@ describe("runFeatureTestCheck", () => {
     expect(main.passed).toBe(true);
     expect(main.play.benchmark.map((sample) => sample.label)).toEqual(FEATURE_TEST_BENCHMARK_PROFILES.map((profile) => profile.label));
     expect(editor.commands.slice(0, 2)).toEqual(["framecap", "framecap 240"]);
-    expect(editor.commands.slice(-3)).toEqual(["fixedlights reset", "quality reset", "framecap 30"]);
+    expect(editor.commands.slice(-4)).toEqual(["hapticlights reset", "fixedlights reset", "quality reset", "framecap 30"]);
     expect(editor.commands).toContain("fixedlights branch");
+    expect(editor.commands).toContain("hapticlights all");
     expect(editor.commands).not.toContain("ft_stats");
   });
 

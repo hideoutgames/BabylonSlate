@@ -43,6 +43,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/temporal-anti-aliasing-proof").then(({ runTemporalAntiAliasingProof }) => Object.assign(window, { __temporalAntiAliasingProof: runTemporalAntiAliasingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("fixedLightProof")) {
   void import("./testing/fixed-light-proof").then(({ runFixedLightProof }) => Object.assign(window, { __hapticFixedLightProof: runFixedLightProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("hapticLightProof")) {
+  void import("./testing/haptic-light-proof").then(({ runHapticLightProof }) => Object.assign(window, { __hapticLightProof: runHapticLightProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("variantSwapProof")) {
   void import("./testing/variant-swap-proof").then(({ runVariantSwapProof }) => Object.assign(window, { __hapticVariantSwapProof: runVariantSwapProof }));
 } else if (
