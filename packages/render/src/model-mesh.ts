@@ -1,9 +1,3 @@
-import {
-  slimGlbEmbeddedImages,
-  shouldSlimModelEmbeddedTextures,
-  type PackedTextureSlimProof,
-} from "@haptic/assets";
-
 const GLB_MAGIC = 0x46546c67;
 const CHUNK_JSON = 0x4e4f534a;
 
@@ -45,19 +39,6 @@ export function packedGltfBytes(bytes: Uint8Array): Uint8Array {
   const packed =
     bytes.byteOffset === 0 && bytes.buffer.byteLength === bytes.byteLength;
   return packed ? bytes : bytes.slice();
-}
-
-/** Packed GLB for the loader; slims rasters only when slot textures are packed. */
-export function gpuModelBytes(
-  bytes: Uint8Array,
-  payload?: unknown,
-  packedTextures?: PackedTextureSlimProof | null,
-): Uint8Array {
-  const packed = packedGltfBytes(bytes);
-  if (payload && shouldSlimModelEmbeddedTextures(payload, packedTextures)) {
-    return slimGlbEmbeddedImages(packed);
-  }
-  return packed;
 }
 
 export function gltfLoaderExtension(bytes: Uint8Array): ".glb" | ".gltf" {

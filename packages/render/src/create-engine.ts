@@ -50,7 +50,7 @@ import { isLightValueOnlySceneEdit } from "./light-edit";
 import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
-import { acquireGlbContainer, packedSlimProof, releaseUnownedGlbSources } from "./glb-anim";
+import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
@@ -87,10 +87,9 @@ import {
   readSnapshotHeader,
   type CommandMessage,
 } from "@haptic/bridge";
-import {
-  materialDependencies,
-  type MaterialDocument,
-  type MaterialFunctionDocument,
+import type {
+  MaterialDocument,
+  MaterialFunctionDocument,
 } from "@haptic/shader-graph";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applyCableFrame, stepEditorCables } from "./cable-mesh";
@@ -883,10 +882,7 @@ function initializeEngine(
   // The library memoizes lowered plans per functions record identity; every
   // accepted installMaterialDocuments replaces it.
   let materialFunctionRecord = Object.fromEntries(materialFunctions);
-  binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
   const editingMaterialGuids = new Set<string>();
-  const compiledMaterialGuids = new Set<string>();
-  binding.compiledMaterialGuids = compiledMaterialGuids;
   const freezeLibraryMaterials = (): void => {
     if (options.playMode) return;
     applyEditorMaterialFreeze(scene, editingMaterialGuids);
@@ -924,11 +920,7 @@ function initializeEngine(
     const host = options?.scene ?? scene;
     const document = materialDocuments.get(guid);
     if (!document) return null;
-    const resolved = materialLibrary.resolveWithReadiness(host, guid, document, options);
-    if (!resolved) return null;
-    if (resolved.ready) compiledMaterialGuids.add(guid);
-    else compiledMaterialGuids.delete(guid);
-    return resolved.material;
+    return materialLibrary.resolve(host, guid, document, options);
   };
   binding.releaseMaterialInstance = (key, assetGuid) =>
     materialLibrary.releaseInstance(key, assetGuid);
@@ -1331,13 +1323,10 @@ function initializeEngine(
       binding.waters = assets.waters ?? binding.waters;
       binding.tilesets = assets.tilesets ?? binding.tilesets;
       binding.sortingLayers = assets.sortingLayers ?? binding.sortingLayers;
-      if (assets.materialTextureGuids) {
-        binding.materialTextureGuids = assets.materialTextureGuids;
-      }
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng, materialTextureGuids: binding.materialTextureGuids, compiledMaterialGuids };
+      return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng };
   };
   const installMaterialDocuments = (
     documents: ReadonlyMap<string, MaterialDocument>,
@@ -1354,7 +1343,6 @@ function initializeEngine(
       for (const [guid, document] of documents) {
         materialDocuments.set(guid, document);
       }
-      binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
       if (functions) {
         materialFunctions.clear();
         for (const [guid, document] of functions) {
@@ -1379,7 +1367,6 @@ function initializeEngine(
     installMeshAssets(union.assets!);
     installMaterialDocuments(union.materialDocuments!, union.materialFunctions);
     spawnableLights = union.spawnableLights ?? new Map();
-    for (const guid of compiledMaterialGuids) if (!union.materialDocuments?.has(guid)) compiledMaterialGuids.delete(guid);
     const models = new Set(binding.modelSources?.keys());
     releaseUnownedGlbSources(scene, models);
     for (const layer of sceneLayerCompositor?.layers() ?? []) releaseUnownedGlbSources(layer.scene, models);
@@ -1760,9 +1747,8 @@ function initializeEngine(
     const leases: { release(): void }[] = [];
     const containers: AssetContainer[] = [];
     try {
-      const packed = packedSlimProof(binding);
       await Promise.all([...binding.modelSources ?? []].map(async ([guid, source]) => {
-        const lease = acquireGlbContainer(scene, guid, source, binding.modelPayloads?.get(guid), packed);
+        const lease = acquireGlbContainer(scene, guid, source);
         leases.push(lease);
         try { containers.push(await lease.load); } catch { /* it fails when it spawns */ }
       }));
@@ -3120,16 +3106,12 @@ function initializeEngine(
               const diagnostics = await material.ready;
               if (diagnostics.some((entry) => entry.severity === "error"))
                 throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
-              compiledMaterialGuids.add(guid);
               if (document.domain === "surface") spawnableMaterials.push(material.material);
             });
           }
           for (const [guid, source] of prepared.assets?.modelSources ?? []) {
             check();
-            const lease = acquireGlbContainer(scene, guid, source, binding.modelPayloads?.get(guid), {
-              packedTextureGuids: new Set(binding.textureBytes?.keys()),
-              texturesByMaterialGuid: binding.materialTextureGuids ?? new Map(), compiledMaterialGuids,
-            }, preparation.priority);
+            const lease = acquireGlbContainer(scene, guid, source, preparation.priority);
             nativeReleases.push(() => lease.release());
             spawnableContainers.push(await lease.load);
             await lease.lods();
@@ -3426,16 +3408,6 @@ export function syncEditorPlayState(
     handle.resize();
     handle.scheduler.invalidate("play");
   }
-}
-
-function materialTextureGuidMap(
-  documents: ReadonlyMap<string, MaterialDocument>,
-): Map<string, readonly string[]> {
-  const out = new Map<string, readonly string[]>();
-  for (const [guid, document] of documents) {
-    out.set(guid, materialDependencies(document).textures);
-  }
-  return out;
 }
 
 /** Texture work the first frame still waits on, named for loading diagnostics. */

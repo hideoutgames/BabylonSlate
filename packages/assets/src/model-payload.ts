@@ -113,52 +113,6 @@ export function modelAssetGuids(payload: unknown): string[] {
   return [...guids].sort();
 }
 
-/** Packed Texture proof required before replacing embedded GLB rasters with a 1×1 stub. */
-export type PackedTextureSlimProof = {
-  packedTextureGuids: ReadonlySet<string>;
-  texturesByMaterialGuid: ReadonlyMap<string, readonly string[]>;
-  /**
-   * Slot Material guids that compiled in this Scene. Omit or leave empty to
-   * keep authored GLB rasters — packed bytes alone must not slim.
-   */
-  compiledMaterialGuids?: ReadonlySet<string>;
-};
-
-/**
- * Slim only when every slot has a Material guid, that Material compiled, and
- * every texture it samples is present in packed Texture bytes. Bound slots
- * alone must not slim — Preview Build otherwise leaves construction mats on
- * a red stub.
- */
-export function shouldSlimModelEmbeddedTextures(
-  payload: unknown,
-  packed?: PackedTextureSlimProof | null,
-): boolean {
-  const slots = normalizeModelPayload(payload).materialSlots;
-  if (
-    slots.length === 0 ||
-    !slots.every(
-      (slot) =>
-        typeof slot.materialGuid === "string" && slot.materialGuid.length > 0,
-    )
-  ) {
-    return false;
-  }
-  if (!packed) return false;
-  if (!packed.compiledMaterialGuids) return false;
-  for (const slot of slots) {
-    const materialGuid = slot.materialGuid;
-    if (!materialGuid) return false;
-    if (!packed.compiledMaterialGuids.has(materialGuid)) return false;
-    const textures = packed.texturesByMaterialGuid.get(materialGuid);
-    if (!textures) return false;
-    for (const guid of textures) {
-      if (!packed.packedTextureGuids.has(guid)) return false;
-    }
-  }
-  return true;
-}
-
 const PACKED_MODEL_MAGIC = new Uint8Array([0x42, 0x53, 0x4d, 0x4f]); // BSMO
 const packedEncoder = new TextEncoder();
 const packedDecoder = new TextDecoder();

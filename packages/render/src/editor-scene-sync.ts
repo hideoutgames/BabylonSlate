@@ -143,7 +143,6 @@ export class EditorSceneSync {
     slotAnimEpoch: new Map<number, number>(),
     slotAnimationGroups: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
-    reuseFullDetailInstance: true,
   };
 
   constructor(
@@ -1129,11 +1128,6 @@ export class EditorSceneSync {
       this.assets?.modelClipAnimationGuids;
     this.modelLoadBinding.retargetAnimationLoads =
       this.assets?.retargetAnimationLoads;
-    this.modelLoadBinding.textureBytes = this.assets?.textureBytes;
-    this.modelLoadBinding.materialTextureGuids =
-      this.assets?.materialTextureGuids;
-    this.modelLoadBinding.compiledMaterialGuids =
-      this.assets?.compiledMaterialGuids;
     const generation = this.applyGeneration;
     const signal = this.pendingApply?.signal;
     let unpublished = models.length;

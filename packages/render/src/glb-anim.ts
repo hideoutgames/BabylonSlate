@@ -15,12 +15,12 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { loadModelContainer, parentContainerRoots } from "./model-container";
 import { Scene } from "@babylonjs/core/scene";
-import { installedAssetIdentity, normalizeModelImportScale, shouldSlimModelEmbeddedTextures, type PackedTextureSlimProof } from "@haptic/assets";
+import { installedAssetIdentity, normalizeModelImportScale } from "@haptic/assets";
 import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
 } from "./anim-apply";
-import { isGltfModelBytes, gpuModelBytes } from "./model-mesh";
+import { isGltfModelBytes } from "./model-mesh";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
@@ -51,18 +51,7 @@ export type ModelAnimLoadBinding = Pick<
   | "modelClipAnimationGuids"
   | "retargetAnimationLoads"
   | "spritePayloads"
-  | "textureBytes"
-  | "materialTextureGuids"
-  | "compiledMaterialGuids"
-> & {
-  /**
-   * The editor keeps a model loaded before its slot Materials compiled, rather
-   * than reloading it slim once they have: slimming only releases embedded
-   * textures, while the reload rebuilds the instance and recompiles its shaders
-   * at whichever edit applies next.
-   */
-  reuseFullDetailInstance?: boolean;
-};
+>;
 
 const MODEL_PLACEHOLDER_KEY = "editorModelPlaceholder";
 const MODEL_INSTANCE_KEY = "hapticModelInstance";
@@ -77,9 +66,8 @@ type ModelPlaceholderMeta = {
 };
 
 type CachedGlb = {
-  key: string;
   /** Model bytes identity; generated LOD indices are shared across Scenes by it. */
-  geometryKey: string;
+  key: string;
   guid: string;
   references: number;
   retired: boolean;
@@ -148,8 +136,8 @@ export function glbContainerLoadCount(scene: Scene): number {
   return glbCaches.get(scene)?.loadCount ?? 0;
 }
 
-function modelSourceKey(guid: string, source: Blob, payload?: unknown, packed?: PackedTextureSlimProof | null): string {
-  return `${guid}:${installedAssetIdentity(source)}:slim=${Boolean(payload && shouldSlimModelEmbeddedTextures(payload, packed))}`;
+function modelSourceKey(guid: string, source: Blob): string {
+  return `${guid}:${installedAssetIdentity(source)}`;
 }
 
 /** Child of the actor placeholder so scene TRS and import scale stay independent. */
@@ -251,23 +239,6 @@ export function reportGlbLoadFailure(guid: string, error: unknown): void {
   console.warn(`[render] Model ${guid} failed to load: ${detail}`);
 }
 
-async function loadGlbContainer(scene: Scene, bytes: Uint8Array, name: string) {
-  return loadModelContainer(scene, bytes, name);
-}
-
-export function packedSlimProof(
-  binding: Pick<
-    ModelAnimLoadBinding,
-    "textureBytes" | "materialTextureGuids" | "compiledMaterialGuids"
-  >,
-): PackedTextureSlimProof | undefined {
-  if (!binding.textureBytes || !binding.materialTextureGuids) return undefined;
-  return {
-    packedTextureGuids: new Set(binding.textureBytes.keys()),
-    texturesByMaterialGuid: binding.materialTextureGuids,
-    compiledMaterialGuids: binding.compiledMaterialGuids ?? new Set(),
-  };
-}
 
 function retireSource(cache: SceneGlbCache, entry: CachedGlb): void {
   if (entry.retired) return;
@@ -308,7 +279,7 @@ function modelLods(cache: SceneGlbCache, entry: CachedGlb): Promise<ModelLodSet 
     const lods = await nativePreparationForEngine(container.scene.getEngine()).schedule({
       label: `Model ${entry.guid} LOD`, temporaryBytes: Math.max(1024, entry.accounted * 2), signal: entry.controller.signal,
       priority: entry.priority,
-    }, () => generateModelLods(container, current, entry.geometryKey));
+    }, () => generateModelLods(container, current, entry.key));
     if (cache.disposed || entry.retired) {
       lods.dispose();
       throw new Error("Model preparation cancelled");
@@ -333,19 +304,16 @@ export function acquireGlbContainer(
   scene: Scene,
   guid: string,
   source: Blob,
-  payload?: unknown,
-  packed?: PackedTextureSlimProof | null,
   priority?: NativePreparationPriority,
 ): { key: string; load: Promise<AssetContainer>; lods(): Promise<ModelLodSet | null>; release(): void } {
   const cache = cacheFor(scene);
   if (cache.disposed || scene.isDisposed) throw new Error("Model scene is disposed");
-  const key = modelSourceKey(guid, source, payload, packed);
+  const key = modelSourceKey(guid, source);
   cache.requested.set(guid, key);
   let entry = cache.entries.get(key);
   if (!entry) {
     entry = {
       key, guid, references: 0, retired: false, accounted: 0,
-      geometryKey: `${guid}:${installedAssetIdentity(source)}`,
       controller: new AbortController(),
       priority,
       load: Promise.resolve(null as unknown as AssetContainer),
@@ -360,8 +328,7 @@ export function acquireGlbContainer(
       const bytes = new Uint8Array(await source.arrayBuffer());
       if (!isGltfModelBytes(bytes)) throw new Error("Unsupported model content");
       if (cache.disposed || created.retired) throw new Error("Model preparation cancelled");
-      // The descriptor lookup precedes byte unpacking/slimming and native decode.
-      const container = await loadGlbContainer(scene, gpuModelBytes(bytes, payload, packed), `${guid}.glb`);
+      const container = await loadModelContainer(scene, bytes, `${guid}.glb`);
       if (cache.disposed || created.retired) {
         container.dispose();
         throw new Error("Model preparation cancelled");
@@ -661,12 +628,11 @@ function prepareModelInstance(
   }
 }
 
-/** The identity a model load installs under: source, payload, packing, import scale, LOD and animations. */
+/** The identity a model load installs under: source, import scale, LOD and animations. */
 function slotModelLoadKey(binding: ModelAnimLoadBinding, clipAssetGuid: string, bytes: Blob) {
   const payload = binding.modelPayloads?.get(clipAssetGuid);
   const importScale = normalizeModelImportScale(payload?.importScale);
   const autoLod = payload?.autoLod !== false;
-  const packed = packedSlimProof(binding);
   const animations = JSON.stringify({
     clips: [...(binding.modelClipAnimationGuids?.get(clipAssetGuid) ?? [])],
     retargets: (binding.retargetAnimationLoads?.get(clipAssetGuid) ?? []).map((row) => {
@@ -675,25 +641,19 @@ function slotModelLoadKey(binding: ModelAnimLoadBinding, clipAssetGuid: string, 
     }),
   });
   const settings = `:scale=${importScale}:lod=${autoLod}:${animations}`;
-  return {
-    importScale, autoLod, packed,
-    key: `${modelSourceKey(clipAssetGuid, bytes, payload, packed)}${settings}`,
-    fullDetailKey: `${modelSourceKey(clipAssetGuid, bytes, payload, null)}${settings}`,
-  };
+  return { importScale, autoLod, key: `${modelSourceKey(clipAssetGuid, bytes)}${settings}` };
 }
 
-/** The placeholder already holds an instance of this load; a full-detail instance also satisfies a slim request. */
-function installedLoadSatisfies(binding: ModelAnimLoadBinding, meta: ModelPlaceholderMeta, key: string, fullDetailKey: string): boolean {
-  return Boolean(meta[MODEL_INSTANCE_KEY]) && (meta[MODEL_LOAD_KEY] === key ||
-    (Boolean(binding.reuseFullDetailInstance) && meta[MODEL_LOAD_KEY] === fullDetailKey));
+/** The placeholder already holds an instance of this load. */
+function installedLoadSatisfies(meta: ModelPlaceholderMeta, key: string): boolean {
+  return Boolean(meta[MODEL_INSTANCE_KEY]) && meta[MODEL_LOAD_KEY] === key;
 }
 
 /** Whether `beginSlotModelAnimLoad` would find this model already installed on `placeholder` and adopt nothing. */
 export function isSlotModelInstalled(binding: ModelAnimLoadBinding, clipAssetGuid: string, bytes: Blob, placeholder: AbstractMesh): boolean {
   const meta = placeholder.metadata as ModelPlaceholderMeta | null | undefined;
   if (!meta) return false;
-  const { key, fullDetailKey } = slotModelLoadKey(binding, clipAssetGuid, bytes);
-  return installedLoadSatisfies(binding, meta, key, fullDetailKey);
+  return installedLoadSatisfies(meta, slotModelLoadKey(binding, clipAssetGuid, bytes).key);
 }
 
 /**
@@ -712,9 +672,9 @@ export function beginSlotModelAnimLoad(
   prepareInstance?: (root: Mesh) => void | Promise<void>,
   priority?: NativePreparationPriority,
 ): Promise<void> {
-  const { importScale, autoLod, packed, key, fullDetailKey } = slotModelLoadKey(binding, clipAssetGuid, bytes);
+  const { importScale, autoLod, key } = slotModelLoadKey(binding, clipAssetGuid, bytes);
   const meta = asPlaceholderMeta(placeholder);
-  if (installedLoadSatisfies(binding, meta, key, fullDetailKey)) return Promise.resolve();
+  if (installedLoadSatisfies(meta, key)) return Promise.resolve();
   const pending = pendingModelLoads.get(placeholder);
   if (pending?.key === key && pending.isCurrent()) {
     const adopted = pending.promise.then(() => {
@@ -752,7 +712,7 @@ export function beginSlotModelAnimLoad(
   pendingModelLoads.set(placeholder, request);
   const load = (async () => {
     let prepared: PreparedModelInstance | undefined;
-    const lease = acquireGlbContainer(scene, clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed, priority);
+    const lease = acquireGlbContainer(scene, clipAssetGuid, bytes, priority);
     // Generation overlaps preparation; the instance publishes at full detail
     // and its levels attach once they are ready.
     const lods = autoLod ? lease.lods() : null;
@@ -780,14 +740,7 @@ export function beginSlotModelAnimLoad(
       for (const row of retargets) {
         const sourceBytes = binding.modelSources?.get(row.sourceModelGuid);
         if (!sourceBytes) continue;
-        const sourceLease = acquireGlbContainer(
-          scene,
-          row.sourceModelGuid,
-          sourceBytes,
-          binding.modelPayloads?.get(row.sourceModelGuid),
-          packedSlimProof(binding),
-          priority,
-        );
+        const sourceLease = acquireGlbContainer(scene, row.sourceModelGuid, sourceBytes, priority);
         prepared.bundle.releaseWith(() => sourceLease.release());
         const sourceContainer = await wait(sourceLease.load);
         if (!request.isCurrent()) return;
@@ -922,8 +875,8 @@ export async function animationRetargetMatchingClips(
   let sourceContainer: AssetContainer | undefined;
   let targetContainer: AssetContainer | undefined;
   try {
-    sourceContainer = await loadGlbContainer(scene, sourceBytes, "retarget-src.glb");
-    targetContainer = await loadGlbContainer(scene, targetBytes, "retarget-dst.glb");
+    sourceContainer = await loadModelContainer(scene, sourceBytes, "retarget-src.glb");
+    targetContainer = await loadModelContainer(scene, targetBytes, "retarget-dst.glb");
     for (const clipName of new Set(clipNames)) {
       if (retargetKeepsChannels(sourceContainer, targetContainer, clipName)) {
         matching.add(clipName);

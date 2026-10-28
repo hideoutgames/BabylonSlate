@@ -661,8 +661,6 @@ export function applySceneToBabylonScene(
     modelPayloads: meshAssets.modelPayloads,
     modelClipAnimationGuids: meshAssets.modelClipAnimationGuids,
     retargetAnimationLoads: meshAssets.retargetAnimationLoads,
-    textureBytes: meshAssets.textureBytes,
-    materialTextureGuids: meshAssets.materialTextureGuids,
   };
   let loadSlot = 0;
   const actorIndex = new SceneActorIndex(sceneData.actors);

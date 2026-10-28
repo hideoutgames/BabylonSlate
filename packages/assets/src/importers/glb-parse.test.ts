@@ -1,4 +1,3 @@
-import { crc32, inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   buildMinimalGlbFixture,
@@ -8,7 +7,6 @@ import {
   ingestGltfForImport,
   parseGlbForBrowse,
   parseGltfJsonForBrowse,
-  slimGlbEmbeddedImages,
   splitGlbJsonBin,
   stripUnmatchedGltfImageUris,
 } from "./glb-parse";
@@ -22,23 +20,6 @@ const ONE_BY_ONE_PNG = Uint8Array.from([
   0x00, 0xf7, 0x03, 0x41, 0x43, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
   0xae, 0x42, 0x60, 0x82,
 ]);
-
-/** Verifies every chunk CRC and inflates the image data of a small PNG. */
-function decodePngChunks(bytes: Uint8Array): { types: string[]; pixels: number[] } {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const types: string[] = [];
-  const data: Uint8Array[] = [];
-  for (let offset = 8; offset < bytes.byteLength;) {
-    const length = view.getUint32(offset);
-    const typeAndData = bytes.subarray(offset + 4, offset + 8 + length);
-    const type = String.fromCharCode(...typeAndData.subarray(0, 4));
-    expect(view.getUint32(offset + 8 + length), `${type} CRC`).toBe(crc32(typeAndData));
-    types.push(type);
-    if (type === "IDAT") data.push(typeAndData.subarray(4));
-    offset += 12 + length;
-  }
-  return { types, pixels: [...inflateSync(Buffer.concat(data))] };
-}
 
 function kenneyStyleSidecarGlb(uri = "Textures/colormap.png"): Uint8Array {
   return encodeGlbJsonBin(
@@ -893,69 +874,5 @@ describe("importModel sidecar GLB", () => {
     expect(model.payload.materialSlots).toEqual([
       expect.objectContaining({ index: 0, name: "colormap", materialGuid: material.guid }),
     ]);
-  });
-});
-
-describe("slimGlbEmbeddedImages", () => {
-  it("replaces embedded rasters with a tiny PNG", () => {
-    const glb = buildMinimalGlbFixture({
-      imageRgba: new Uint8Array(2048),
-    });
-    const slim = slimGlbEmbeddedImages(glb);
-    expect(slim.byteLength).toBeLessThan(glb.byteLength);
-    const parsed = parseGlbForBrowse(slim);
-    expect(parsed?.images[0]?.bytes.byteLength).toBeGreaterThan(0);
-  });
-
-  it("keeps mesh bufferViews when replacing images", () => {
-    const positions = new Uint8Array(36);
-    positions.fill(1);
-    const png = new Uint8Array(2048);
-    png.fill(7);
-    const bin = new Uint8Array(36 + 2048);
-    bin.set(positions, 0);
-    bin.set(png, 36);
-    const glb = encodeGlbJsonBin(
-      {
-        asset: { version: "2.0" },
-        buffers: [{ byteLength: bin.byteLength }],
-        bufferViews: [
-          { buffer: 0, byteOffset: 0, byteLength: 36 },
-          { buffer: 0, byteOffset: 36, byteLength: 2048 },
-        ],
-        accessors: [
-          { bufferView: 0, componentType: 5126, count: 3, type: "VEC3" },
-        ],
-        images: [{ bufferView: 1, mimeType: "image/png" }],
-        meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
-      },
-      bin,
-    );
-    const slim = slimGlbEmbeddedImages(glb);
-    expect(slim.byteLength).toBeLessThan(glb.byteLength);
-    const split = splitGlbJsonBin(slim);
-    expect(split).not.toBeNull();
-    const accessors = split!.json.accessors as Array<Record<string, unknown>>;
-    const views = split!.json.bufferViews as Array<Record<string, unknown>>;
-    const viewIndex = accessors[0]!.bufferView as number;
-    expect(views[viewIndex]!.byteLength).toBe(36);
-    const offset = views[viewIndex]!.byteOffset as number;
-    expect(split!.bin.subarray(offset, offset + 36)).toEqual(positions);
-  });
-
-  it("uses the 1x1 red PNG stub so leftover construction mats are visibly red", () => {
-    const glb = buildMinimalGlbFixture({
-      imageRgba: new Uint8Array(2048),
-    });
-    const slim = slimGlbEmbeddedImages(glb);
-    const parsed = parseGlbForBrowse(slim);
-    const stub = parsed?.images[0]?.bytes;
-    expect(stub).toBeDefined();
-    expect(stub!.byteLength).toBeLessThan(128);
-    expect([...stub!.subarray(0, 8)]).toEqual([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-    ]);
-    // Browsers reject an undecodable stub at upload ("bad image data"), so decode it fully.
-    expect(decodePngChunks(stub!)).toEqual({ types: ["IHDR", "IDAT", "IEND"], pixels: [0, 0xff, 0, 0] });
   });
 });

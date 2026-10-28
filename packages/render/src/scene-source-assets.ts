@@ -19,7 +19,7 @@ export interface SceneSourceAssets {
 
 const assetMaps = ["renderTargets", "renderTargetTextures", "waters", "textureBytes", "areaEmissions",
   "texturePixelSizes", "spritePayloads", "spriteAnimations", "tilemaps", "tilesets", "modelBytes", "modelSources",
-  "modelPayloads", "materialTextureGuids", "modelClipAnimationGuids", "retargetAnimationLoads", "fontFacetypeBytes",
+  "modelPayloads", "modelClipAnimationGuids", "retargetAnimationLoads", "fontFacetypeBytes",
   "fontMsdfJson", "fontMsdfPng", "fontCssStackByGuid"] as const satisfies readonly (keyof MeshAssetContext)[];
 
 export function captureMeshSourceAssets(source: MeshAssetContext): MeshAssetContext {
