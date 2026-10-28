@@ -131,31 +131,10 @@ it("shows live project values until a field is overridden, and reset restores in
   expect(bands.value).toBe("5");
 });
 
-it("has no CEL-only Real-Time Reflections switch and lets a scene override Reflection Textures against the project", () => {
-  const changes: CelShadingOverrides[] = [];
-  const view = render(
-    <CelShadingFields project={normalizeCelShadingSettings({})} onChange={(value) => changes.push(value)} />,
-  );
+it("has no CEL-only Real-Time Reflections switch", () => {
+  render(<CelShadingFields project={normalizeCelShadingSettings({})} onChange={() => {}} />);
   // Post Processing's Real-Time Reflections is the one setting for PBR and CEL.
   expect(screen.queryByRole("switch", { name: "Real-Time Reflections" })).toBeNull();
-  // Reflections read material values only until Reflection Textures opt in.
-  const textures = screen.getByRole("switch", { name: "Reflection Textures" });
-  expect(textures.getAttribute("aria-checked")).toBe("false");
-  fireEvent.click(textures);
-  expect(changes.at(-1)).toMatchObject({ reflectionTexturesEnabled: true, shadowBands: 3 });
-  view.unmount();
-
-  render(<SceneFields />);
-  const scene = screen.getByRole("switch", { name: "Reflection Textures" });
-  expect(screen.getByText(/Project Setting: Off\. With Real-Time Reflections on in Post Processing/)).toBeTruthy();
-  // The scene inherits until overridden.
-  fireEvent.click(scene);
-  expect(scene.getAttribute("aria-checked")).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Override Reflection Textures" }));
-  fireEvent.click(scene);
-  expect(scene.getAttribute("aria-checked")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Reset Reflection Textures To Project Settings" }));
-  expect(scene.getAttribute("aria-checked")).toBe("false");
 });
 
 it("overrides light mixing independently and resets to the current project choice", () => {

@@ -96,12 +96,7 @@ type SceneRendering = {
    * Materials connect their reflectivity inputs only while it is set, so a flat CEL frame binds nothing extra.
    */
   celReflections: boolean;
-  /**
-   * `celReflections` with CEL Reflection Textures on: the native CEL adapter then binds its source's metalness,
-   * roughness or specular map for the reflectivity write. Graph Materials ignore it.
-   */
-  celReflectionTextures: boolean;
-  /** Called when `mode`, `celReflections` or `celReflectionTextures` changes, after the plan is current. */
+  /** Called when `mode` or `celReflections` changes, after the plan is current. */
   listeners: Set<(mode: RenderMode) => void>;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
@@ -164,7 +159,6 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
       celReflections: false,
-      celReflectionTextures: false,
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -224,10 +218,8 @@ export function updateSceneRenderingSettings(
   replanSceneEffects(state);
   // Fog Volumes and the LUT, which replan elsewhere, never change whether reflections run.
   const celReflections = mode === "cel" && state.effectsPlan?.reflections != null;
-  const celReflectionTextures = celReflections && state.cel.reflectionTexturesEnabled;
-  if (modeChanged || celReflections !== state.celReflections || celReflectionTextures !== state.celReflectionTextures) {
+  if (modeChanged || celReflections !== state.celReflections) {
     state.celReflections = celReflections;
-    state.celReflectionTextures = celReflectionTextures;
     for (const listener of state.listeners) listener(mode);
   }
   syncImageProcessingMode(scene, state);

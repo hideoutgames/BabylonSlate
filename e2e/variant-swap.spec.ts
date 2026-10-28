@@ -16,7 +16,7 @@ test("a world view draws each Material's previous Effect with the changed lights
     (window as unknown as { __hapticVariantSwapProof: typeof runVariantSwapProof }).__hapticVariantSwapProof());
   await testInfo.attach("variant-swap-proof", { body: JSON.stringify(result), contentType: "application/json" });
   expect(errors).toEqual([]);
-  const materials = ["native pbr", "native standard", "cel source:CEL", "graph"];
+  const materials = ["native pbr", "native standard", "graph"];
   expect(result.steps.map((step) => step.name)).toEqual([
     "a spot gives way to a point", "the sun is removed", "a spot stops casting shadows", "a point light stops casting shadows",
   ]);
@@ -78,8 +78,8 @@ test("a world view draws each Material's previous Effect with the changed lights
   });
   // A light that waits within reach of an admission has the variants it asks for compiled ahead: a spot entering the
   // Forward budget, one taking a point's shadow map and one taking the first spot map (its variants from a prediction
-  // map) link no program when admitted. The four Materials' first draws
-  // still spread one per frame on WebGL2 (FIRST_DRAWS_PER_FRAME), the last three frames late, as when the same
+  // map) link no program when admitted. The three Materials' first draws
+  // still spread one per frame on WebGL2 (FIRST_DRAWS_PER_FRAME), the last two frames late, as when the same
   // admissions jump straight in, which link their programs then.
   const predicted = result.predicted;
   const outcome = (admission: (typeof predicted)["forward"]["approached"]) => ({
@@ -91,14 +91,14 @@ test("a world view draws each Material's previous Effect with the changed lights
     forward: outcome(predicted.forward.approached), shadow: outcome(predicted.shadow.approached),
     first: outcome(predicted.first.approached),
     aheadForward: predicted.forward.approached.linksAhead > 0, aheadShadow: predicted.shadow.approached.linksAhead > 0,
-    jumpedForward: predicted.forward.jumped.admitted && predicted.forward.jumped.linksAtAdmission > 0 && late.forward === 3,
-    jumpedShadow: predicted.shadow.jumped.admitted && predicted.shadow.jumped.linksAtAdmission > 0 && late.shadow === 3,
+    jumpedForward: predicted.forward.jumped.admitted && predicted.forward.jumped.linksAtAdmission > 0 && late.forward === 2,
+    jumpedShadow: predicted.shadow.jumped.admitted && predicted.shadow.jumped.linksAtAdmission > 0 && late.shadow === 2,
     aheadFirst: predicted.first.approached.linksAhead > 0,
     jumpedFirst: predicted.first.jumped.admitted && predicted.first.jumped.linksAtAdmission > 0,
   }, JSON.stringify(predicted)).toEqual({
-    forward: { admitted: true, links: 0, late: 3, held: 0, glErrors: [] },
-    shadow: { admitted: true, links: 0, late: 3, held: 0, glErrors: [] },
-    first: { admitted: true, links: 0, late: 3, held: 0, glErrors: [] },
+    forward: { admitted: true, links: 0, late: 2, held: 0, glErrors: [] },
+    shadow: { admitted: true, links: 0, late: 2, held: 0, glErrors: [] },
+    first: { admitted: true, links: 0, late: 2, held: 0, glErrors: [] },
     aheadForward: true, aheadShadow: true, jumpedForward: true, jumpedShadow: true, aheadFirst: true, jumpedFirst: true,
   });
 });

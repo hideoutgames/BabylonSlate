@@ -34,7 +34,6 @@ import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/sh
 import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
 import { glErrorTraceEntries, installGlErrorTrace } from "@haptic/render/gl-error-trace";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
-import { CelMaterial } from "../../../../packages/render/src/cel-material";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { isForwardLightExcluded, setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
@@ -67,7 +66,7 @@ type Step = {
   referenceDifference?: number;
 };
 
-/** A world view on a real WebGL2 Engine with the four lit Material kinds: native PBR and Standard, CEL, a graph. */
+/** A world view on a real WebGL2 Engine with the three lit Material kinds: native PBR and Standard, a graph. */
 async function worldView() {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -93,14 +92,13 @@ async function worldView() {
   pbr.roughness = 0.55;
   const standard = new StandardMaterial("native standard", scene);
   standard.diffuseColor = new Color3(0.8, 0.8, 0.8);
-  const cel = new CelMaterial(new PBRMaterial("cel source", scene), scene);
   const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
   if (!lowered.ok) throw new Error("The default Material did not lower.");
   const compiled = compileMaterialPlan(lowered.plan, { scene, name: "graph" });
   if (!compiled.ok) throw new Error("The default Material did not compile.");
-  const materials: Material[] = [pbr, standard, cel, compiled.material];
+  const materials: Material[] = [pbr, standard, compiled.material];
   const meshes: Mesh[] = materials.map((material, index) => {
-    const x = -3 + index * 2;
+    const x = -2 + index * 2;
     const floor = MeshBuilder.CreateGround(`floor-${index}`, { width: 1.9, height: 6 }, scene);
     floor.position.x = x;
     floor.material = material;

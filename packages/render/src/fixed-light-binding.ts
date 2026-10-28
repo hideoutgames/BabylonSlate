@@ -157,18 +157,6 @@ function classKind(hosts: readonly FixedLightKind[]): FixedLightKind {
   return hosts[0]!;
 }
 
-let legacyScopes = 0;
-
-/** Runs `prepare` with Babylon's own light defines in every Scene (materials whose shaders use other light includes). */
-export function withLegacyLightDefines<T>(prepare: () => T): T {
-  legacyScopes++;
-  try {
-    return prepare();
-  } finally {
-    legacyScopes--;
-  }
-}
-
 type Defines = MaterialDefines & Record<string, unknown>;
 
 function setDefine(defines: Defines, name: string, value: boolean | number, state: { needRebuild: boolean }): void {
@@ -430,7 +418,6 @@ export function fixedLightDefinesSignature(
 /** Native lit materials whose shaders read Babylon's stock light include, on an Engine with uniform buffers. */
 function bindsBySeat(scene: Scene, defines: Defines): boolean {
   return (
-    legacyScopes === 0 &&
     scene.getEngine().supportsUniformBuffers &&
     (defines instanceof PBRMaterialDefines || defines instanceof StandardMaterialDefines)
   );

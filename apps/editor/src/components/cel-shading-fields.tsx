@@ -34,7 +34,6 @@ const switchKeys = [
   "outlinesEnabled",
   "outlineDistanceFadeEnabled",
   "specularEnabled",
-  "reflectionTexturesEnabled",
 ] as const;
 type SwitchKey = (typeof switchKeys)[number];
 const isSwitch = (key: keyof CelShadingSettings): key is SwitchKey => (switchKeys as readonly string[]).includes(key);
@@ -115,12 +114,6 @@ const fields: {
     label: "Light Color Influence",
     description:
       "Colored light tint. Zero uses neutral light with the same intensity.",
-  },
-  {
-    key: "reflectionTexturesEnabled",
-    label: "Reflection Textures",
-    description:
-      "With Real-Time Reflections on in Post Processing, CEL reflections also read metalness, roughness and specular maps. Off reads material values only.",
   },
 ];
 

@@ -7,7 +7,6 @@ import {
 import { forwardLightBudget } from "./forward-light-budget";
 import { restoreSceneLightOrder, sortReceiverLightSources } from "./forward-light-slots";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
-import { CelMaterial } from "./cel-material";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createRenderDiagnostics } from "./render-diagnostics";
 import {
@@ -182,7 +181,6 @@ describe("scene material lighting", () => {
         compiled.material,
         pbr,
         standard,
-        new CelMaterial(pbr, scene),
       ];
       const budget = forwardLightBudget(scene.getEngine());
       // NullEngine's absent GL query uses the documented WebGL2 minimum, leaving

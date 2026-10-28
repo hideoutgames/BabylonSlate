@@ -23,7 +23,6 @@ import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2Shade
 import { lightFragment } from "@babylonjs/core/Shaders/ShadersInclude/lightFragment";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CelMaterial } from "./cel-material";
 import {
   fixedLightSlotTable,
   setFixedShapeLightingEnabled,
@@ -317,17 +316,7 @@ describe("fixed-shape light binding", () => {
     expect(await effectOf(...pairs[0])).not.toBe(multiplied);
   });
 
-  it("keeps Babylon's light defines for the CEL adapter and on Engines without uniform buffers", async () => {
-    const { scene } = world();
-    lightRig(scene);
-    const cel = new CelMaterial(new PBRMaterial("source", scene), scene);
-    const mesh = MeshBuilder.CreateBox("cel", {}, scene);
-    mesh.material = cel;
-    frame(scene);
-    const effect = await effectOf(cel, mesh);
-    expect(effect.defines).not.toContain("SLATE_FIXED_LIGHT");
-    expect(effect.defines).toContain("#define LIGHT5\n");
-
+  it("keeps Babylon's light defines on Engines without uniform buffers", async () => {
     const engine = new NullEngine();
     engines.push(engine);
     const plain = new Scene(engine);

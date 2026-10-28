@@ -6,7 +6,6 @@ import {
   FreeCamera,
   MeshBuilder,
   PBRMaterial,
-  RawTexture,
   Scene,
   SpotLight,
   StandardMaterial,
@@ -124,14 +123,13 @@ async function captureAmbientOcclusion(
   return { off, on, linear, orthographic, orthographicOff, disabled };
 }
 
-/** The render mode and CEL Reflection Textures setting the proof's next draw applies. */
-type ReflectionRender = { mode: RenderMode; celTextures: boolean };
+/** The render mode the proof's next draw applies. */
+type ReflectionRender = { mode: RenderMode };
 
 /**
  * A red unlit box over a floor, drawn without and with Real-Time Reflections for each surface kind: an authored
- * graph mirror in PBR and in CEL, a native PBR metal under CEL's adapter, a
- * native metal whose metalness and roughness come from a glTF metallic-roughness map, under CEL with factors only and
- * with Reflection Textures, and an unlit Standard floor, whose white default specular color must not make it a mirror.
+ * graph mirror in PBR and in CEL, and an unlit Standard floor, whose white default specular color must not make it a
+ * mirror.
  */
 async function captureReflections(
   scene: Scene,
@@ -141,42 +139,28 @@ async function captureReflections(
   effects: ReturnType<typeof normalizeRenderEffectsSettings>,
   draw: () => Promise<number[]>,
 ) {
-  const pair = async (material: Material, mode: RenderMode, celTextures = false) => {
+  const pair = async (material: Material, mode: RenderMode) => {
     floor.material = material;
-    Object.assign(render, { mode, celTextures });
+    render.mode = mode;
     const capture = async (enabled: boolean) => {
       effects.reflections.enabled = enabled;
       try {
         return await draw();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`${material.name}, ${mode}${celTextures ? " with Reflection Textures" : ""}, reflections ${enabled ? "on" : "off"}: ${message}`, { cause: error });
+        throw new Error(`${material.name}, ${mode}, reflections ${enabled ? "on" : "off"}: ${message}`, { cause: error });
       }
     };
     const off = await capture(false);
     const on = await capture(true);
     return { off, on };
   };
-  const metal = new PBRMaterial("Native Metal Floor", scene);
-  metal.metallic = 1;
-  metal.roughness = 0.05;
-  metal.albedoColor = new Color3(0.9, 0.9, 0.9);
-  // glTF factors at full metalness and roughness; the map (occlusion, roughness 0.05, metalness 1) makes it a mirror.
-  const textured = new PBRMaterial("Textured Metal Floor", scene);
-  Object.assign(textured, { metallic: 1, roughness: 1, albedoColor: new Color3(0.9, 0.9, 0.9) });
-  textured.metallicTexture = RawTexture.CreateRGBATexture(new Uint8Array([255, 13, 255, 255]), 1, 1, scene);
-  textured.useRoughnessFromMetallicTextureAlpha = false;
-  textured.useRoughnessFromMetallicTextureGreen = true;
-  textured.useMetallnessFromMetallicTextureBlue = true;
   const unlit = new StandardMaterial("Unlit Standard Floor", scene);
   unlit.disableLighting = true;
   unlit.diffuseColor = new Color3(0.1, 0.1, 0.1);
   return {
     pbr: await pair(mirror, "pbr"),
     cel: await pair(mirror, "cel"),
-    celNative: await pair(metal, "cel"),
-    celTexturedFactors: await pair(textured, "cel"),
-    celTextured: await pair(textured, "cel", true),
     unlitStandard: await pair(unlit, "pbr"),
   };
 }
@@ -312,11 +296,11 @@ export async function runSpatialEffectsProof(
           enabled: false, density: 0, intensity: 0, resolutionScale: 1, maxDistance: 20,
         });
       }
-      const render: ReflectionRender = { mode: "pbr", celTextures: false };
+      const render: ReflectionRender = { mode: "pbr" };
       const settings = () =>
         setSceneRenderSettings(scene, {
           mode: render.mode,
-          cel: normalizeCelShadingSettings({ reflectionTexturesEnabled: render.celTextures }),
+          cel: normalizeCelShadingSettings({}),
           effects,
           // Medium, the default tier, skips reflections and scene-wide volumetrics.
           quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),

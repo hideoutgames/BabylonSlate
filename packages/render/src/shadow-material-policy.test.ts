@@ -21,7 +21,6 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@haptic/shader-graph";
-import { CelMaterial } from "./cel-material";
 import { compileMaterialPlan } from "./material-compiler";
 import { HelperProgramPlugin, shareHelperProgram } from "./helper-program";
 import { canCacheShadowMaterial, hasStockVertexStage } from "./shadow-material-policy";
@@ -64,19 +63,14 @@ async function compiledMaterial(
 }
 
 describe("shadow material cache policy", () => {
-  it.each(["pbr", "standard", "cel"] as const)(
+  it.each(["pbr", "standard"] as const)(
     "admits an opaque native %s caster but stops caching alpha coverage",
     (kind) => {
       const { scene, mesh } = fixture();
       const material = nativeMaterial(
         kind === "pbr"
           ? new PBRMaterial("opaque", scene)
-          : kind === "standard"
-            ? new StandardMaterial("opaque", scene)
-            : new CelMaterial(
-                nativeMaterial(new PBRMaterial("source", scene)),
-                scene,
-              ),
+          : new StandardMaterial("opaque", scene),
       );
       mesh.material = material;
       expect(canCacheShadowMaterial(material, mesh)).toBe(true);
@@ -126,18 +120,6 @@ describe("shadow material cache policy", () => {
     const padded = new PBRMaterial("deforming-bounds", scene);
     padded.metadata = { boundsPadding: 2 };
     expect(canCacheShadowMaterial(padded, mesh)).toBe(false);
-  });
-
-  it("revokes native CEL provenance if its shader or bind hooks change", () => {
-    const { scene, mesh } = fixture();
-    const material = new CelMaterial(new PBRMaterial("source", scene), scene);
-    const resolver = material.customShaderNameResolve;
-    material.customShaderNameResolve = () => "custom";
-    expect(canCacheShadowMaterial(material, mesh)).toBe(false);
-    material.customShaderNameResolve = resolver;
-    expect(canCacheShadowMaterial(material, mesh)).toBe(true);
-    material.onBindObservable.add(() => {});
-    expect(canCacheShadowMaterial(material, mesh)).toBe(false);
   });
 
   it.each(["skeleton", "morph", "baked", "render-hook"] as const)(

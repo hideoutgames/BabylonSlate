@@ -81,7 +81,7 @@ vTBN = mat3(slateLatticeBasisT,
     };
   }
 }
-const supportedClasses = new Set(["StandardMaterial", "PBRMaterial", "PBRMetallicRoughnessMaterial", "PBRSpecularGlossinessMaterial", "CelMaterial"]);
+const supportedClasses = new Set(["StandardMaterial", "PBRMaterial", "PBRMetallicRoughnessMaterial", "PBRSpecularGlossinessMaterial"]);
 /** The only way this plugin reaches a material: no global factory, because one
  * adds its code, sampler and uniforms to every Standard/PBR shader, cage or not.
  * The cage owner calls this for each material it draws, then marks them dirty.
