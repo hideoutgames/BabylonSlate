@@ -28,7 +28,9 @@ A Model has one material slot per material in the file.
 - On a Mesh component, **Material** replaces every slot for that one actor. Choose **Model Materials** to go back to the Model's slots, or **None** for the engine's grey checker.
 - Meshes with no Material draw a grey checker, so missing materials are easy to spot. The checker is lit like any other surface, so a 3D scene needs a [light](lighting.md) for it to show. A **Blank** project's scene has none: add a light, or the meshes draw black.
 
-When the file uses material features a Haptic Material cannot represent, the Model keeps the original material, and the imported Material asset says so.
+Each imported Material is a graph you can edit: base colour, metallic, roughness, normal, emission and occlusion (which darkens only light from the environment), with the file's opacity and sidedness. Features the file uses that Haptic does not draw, such as clear coat or sheen, are left out. Images the file samples with nearest filtering, as pixel-art models do, import with the **Pixel Art** usage and keep their hard-edged texels.
+
+When a texture uses a second UV channel, or the file offsets, scales or rotates a texture, the Model keeps the original material for that slot, and the imported Material asset says so.
 
 When a file stores no normals for a mesh, Haptic shades that mesh flat, as glTF requires, so its faces look faceted. Include normals in the file for smooth shading.
 

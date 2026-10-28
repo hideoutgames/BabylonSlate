@@ -20,6 +20,7 @@ import {
   fixedShapeMaterialSamplerBudget,
   setSceneRenderSettings,
   acquireMaterialTexture,
+  materialTextureSampling,
   installPreviewEnvironment,
   materialUnavailable,
   resourceCacheForEngine,
@@ -313,10 +314,10 @@ export function MaterialEditingProvider({
       textureIdentity: (guid) => { const source = textureBytesRef.current.get(guid); return source instanceof Blob ? installedAssetIdentity(source) : undefined; },
       particlePreview: true,
       functions: () => functionsRef.current,
-      acquireTexture: (guid) => {
+      acquireTexture: (guid, _scene, filter) => {
         const bytes = textureBytesRef.current.get(guid);
         const engine = engineRef.current;
-        return bytes && engine ? acquireMaterialTexture(resourceCacheForEngine(engine), guid, engine, bytes) : null;
+        return bytes && engine ? acquireMaterialTexture(resourceCacheForEngine(engine), guid, engine, bytes, materialTextureSampling(filter)) : null;
       },
       // A program the Engine cannot link is first created when the preview draws, after `ready` accepted the build, so
       // `compile` never sees it. The library has already retired the generation. The result for that compile is

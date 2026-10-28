@@ -43,6 +43,7 @@ import type {
   MaterialDiagnostic,
   MaterialOperand,
   MaterialOperation,
+  MaterialTextureFilter,
   MaterialValueType,
 } from "@haptic/shader-graph";
 import { componentCount, materialNodeDefinition } from "@haptic/shader-graph";
@@ -114,7 +115,7 @@ export interface CompileMaterialOptions {
   scene: Scene;
   name: string;
   /** Texture asset guid to a live Babylon texture (through `ResourceCache`). */
-  resolveTexture?: (guid: string) => Texture | null;
+  resolveTexture?: (guid: string, filter?: MaterialTextureFilter) => Texture | null;
   /** Packed KTX2 / raster decode failure after the first `build()`. */
   onTextureError?: (diagnostic: MaterialDiagnostic) => void;
   /**
@@ -1262,7 +1263,7 @@ function bindTexture(
     plan.textures.find((entry) => entry.operationId === producerId) ??
     plan.textures.find((entry) => entry.operationId === operation.id);
   if (!binding) return true;
-  const texture = options.resolveTexture?.(binding.textureGuid) ?? null;
+  const texture = options.resolveTexture?.(binding.textureGuid, binding.filter) ?? null;
   if (!texture || isDisposedGpuTexture(texture)) {
     diagnostics.push({
       code: "material.missingTexture",

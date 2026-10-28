@@ -22,7 +22,7 @@ import { MaterialLibrary, type MaterialResolveOptions } from "./material-library
 import { createMaterialPreviewScene, createPreviewRenderTarget, renderPreviewFrame } from "./material-preview";
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
-import { acquireMaterialTexture, bindResourceCacheToHandle, resourceCacheForEngine } from "./resource-cache";
+import { acquireMaterialTexture, bindResourceCacheToHandle, materialTextureSampling, resourceCacheForEngine } from "./resource-cache";
 import { waitUntilReady } from "./preview-readiness";
 import { PreparationTimedOut } from "./scene-render-coordinator";
 import { createHeldThreadBound, createHeldThreadBudget, SCENE_CAPTURE_CEILING_MS, type HeldThreadBudget } from "./stall-deadline";
@@ -150,9 +150,9 @@ export async function captureAssetThumbnailPng(
   let unavailableMaterial = false;
   const library = new MaterialLibrary({
     functions: () => functions,
-    acquireTexture: (guid) => {
+    acquireTexture: (guid, _scene, filter) => {
       const bytes = request.assets?.textureBytes?.get(guid);
-      return bytes ? acquireMaterialTexture(binding.cache, guid, engine, bytes) : null;
+      return bytes ? acquireMaterialTexture(binding.cache, guid, engine, bytes, materialTextureSampling(filter)) : null;
     },
     textureIdentity: (guid) => request.assets?.textureBytes?.has(guid) ? guid : undefined,
     // The capture binds each Material at acquisition and draws right after: a program that cannot link must fail it.

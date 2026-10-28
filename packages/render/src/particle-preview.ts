@@ -9,6 +9,7 @@ import {
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
+  MaterialTextureFilter,
 } from "@haptic/shader-graph";
 import {
   createMaterialPreviewScene,
@@ -72,7 +73,7 @@ export function createParticleMaterialResolver(options: {
   documents: ReadonlyMap<string, MaterialDocument>;
   functions?: ReadonlyMap<string, MaterialFunctionDocument>;
   resolveTexture?: (guid: string) => Texture | null;
-  acquireTexture?: (guid: string) => ResourceLease<Texture> | null;
+  acquireTexture?: (guid: string, scene: Scene, filter?: MaterialTextureFilter) => ResourceLease<Texture> | null;
 }): {
   acquire: (guid: string, owner: ParticleMaterialOwner) => ResourceLease<NodeMaterial> | null;
   dispose: () => void;

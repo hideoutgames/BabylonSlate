@@ -60,7 +60,7 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
 3. **Material consolidation on the current lighting**, with no visible change:
    - The engine default material becomes a Material document (`createDefaultMaterialDocument`); landscape, foliage, cables and dynamic runtime meshes without a Material use it.
-   - Preserved glTF slots become Material documents: an Ambient Occlusion input on Material Output (with strength), texture coordinate channels and texture transforms in the importer; emissive strength is kept.
+   - Preserved glTF slots become Material documents (importer only). Done: occlusion as Environment Influence (glTF occlusion is indirect-only), identity `KHR_texture_transform`, image-less textures and unread extensions, and NEAREST samplers as a Texture Sample's Filter with the Pixel Art usage; every bundled model converts. Left: UV channel 1 (an Input UV channel) and non-identity texture transforms (Transform UV, and rotation), the only cases the importer still preserves.
    - Built-in water becomes a graph Material on the water node blocks (`water-node-blocks.ts`), its plugin's behaviour moved into blocks.
    - The fog-volume guide ball and the GreasedLine debug lines (`play-debug-draw.ts`) become unlit.
    - `CelMaterial` and the native CEL swap (`scene-render-mode.ts`) go; CEL stays on graph Materials only.

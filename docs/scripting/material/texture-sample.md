@@ -30,8 +30,11 @@ Samples a texture at UV and returns its colour, its separate channels and the te
 | Setting | Description |
 | --- | --- |
 | Color Space | Color (sRGB) converts the texture to linear. Data (Linear) leaves the values unchanged. |
+| Filter | Linear blends neighbouring texels and uses mipmaps. Nearest draws each texel as a hard-edged square, without mipmaps, for pixel art. |
 | Texture | The texture asset to sample when the Texture pin is unconnected. |
 
 ## Notes
 
 - Colour textures are read as sRGB and converted to linear by default. Set Color Space to Data (Linear) for normal maps and masks.
+- Filter applies to the texture picked here. A texture from a connected **Texture Parameter** is always sampled Linear.
+- An imported model whose file asks for nearest filtering gets Nearest samples, and its images import with the **Pixel Art** [Texture](../../assets/texture.md) usage.
