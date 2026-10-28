@@ -12,7 +12,7 @@ import { acquireAuthoredMaterialVariant, MaterialCompileStalled } from "./materi
 import { syncSceneLighting } from "./scene-lighting";
 import { invalidateShadowReceiverHandoffs } from "./shadow-receiver-handoff";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { acquireMaterialTexture, ResourceCache, type ResourceLease } from "./resource-cache";
+import { acquireMaterialTexture, materialTextureSampling, ResourceCache, type ResourceLease } from "./resource-cache";
 
 const disposers: Array<() => void> = [];
 
@@ -942,7 +942,36 @@ describe("material library", () => {
       },
     );
     library.acquire(scene, "mat-1", doc);
-    expect(resolveTexture).toHaveBeenCalledWith("tex-1");
+    // A Texture Parameter's texture is sampled linearly.
+    expect(resolveTexture).toHaveBeenCalledWith("tex-1", undefined);
+  });
+
+  it("samples a texture picked on a Nearest Texture Sample nearest and without mipmaps, and smoothly elsewhere", () => {
+    const scene = host();
+    // Two samplings of an unmeasured texture.
+    const cache = new ResourceCache({ byteCeiling: 512 * 1024 * 1024 });
+    disposers.push(() => cache.dispose());
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const library = new MaterialLibrary({
+      acquireTexture: (guid, owner, filter) => acquireMaterialTexture(cache, guid, owner.getEngine(), bytes, materialTextureSampling(filter)),
+      textureIdentity: () => "installed-source",
+    });
+    disposers.push(() => library.dispose());
+    const picked = (filter?: string) => {
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex", ...(filter ? { filter } : {}) } });
+      doc.edges = [{ id: "e-sample", sourceNodeId: "sample", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" }];
+      return doc;
+    };
+    const [nearest, linear] = [picked("nearest"), picked()];
+    const sampled = (guid: string, doc: MaterialDocument) => {
+      const result = library.acquire(scene, guid, doc);
+      if (!result.ok) throw new Error(result.diagnostics[0]?.message);
+      return (result.material.getBlockByName("sample") as TextureBlock).texture!;
+    };
+    const [pixel, smooth] = [sampled("pixel", nearest), sampled("smooth", linear)];
+    expect([pixel.samplingMode, pixel.noMipmap]).toEqual([Texture.NEAREST_SAMPLINGMODE, true]);
+    expect(smooth.samplingMode).toBe(Texture.TRILINEAR_SAMPLINGMODE);
   });
 
   it("releases material texture ownership without disposing an independent view's lease", async () => {

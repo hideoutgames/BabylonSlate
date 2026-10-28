@@ -54,9 +54,14 @@ export interface MaterialOperation {
   source: MaterialOperationSource;
 }
 
+/** How a Texture Sample filters the texture picked on it: smooth by default, or each texel as a hard square. */
+export type MaterialTextureFilter = "linear" | "nearest";
+
 export interface MaterialTextureBinding {
   operationId: string;
   textureGuid: string;
+  /** Set only when not linear. */
+  filter?: "nearest";
 }
 
 export interface MaterialCostFeatures {
@@ -450,7 +455,7 @@ export function lowerMaterialDocument(
 
     const textureGuid = node.properties.textureGuid;
     if (typeof textureGuid === "string" && textureGuid !== "") {
-      textures.push({ operationId: id, textureGuid });
+      textures.push({ operationId: id, textureGuid, ...(node.properties.filter === "nearest" ? { filter: "nearest" as const } : {}) });
     }
     return operation;
   }

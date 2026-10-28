@@ -1,10 +1,24 @@
-import { createDefaultMaterialDocument, materialDependencies } from "@haptic/shader-graph";
+import { createDefaultMaterialDocument, materialDependencies, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import type { GlbBrowseMaterial } from "./glb-parse";
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" ? value as Record<string, unknown> : {};
 const number = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
+const vector = (value: unknown, fallback: readonly number[]) => fallback.map((entry, index) => number(Array.isArray(value) ? value[index] : undefined, entry));
 
-/** Extract the supported metallic/roughness subset; retain loader materials for the rest. */
+/** A texture reference the graph samples as is: UV channel 0, and no extension but an identity KHR_texture_transform. */
+function sampledAsIs(reference: Record<string, unknown>): boolean {
+  const extensions = record(reference.extensions);
+  if (Object.keys(extensions).some((key) => key !== "KHR_texture_transform")) return false;
+  const transform = record(extensions.KHR_texture_transform);
+  return number(transform.texCoord, number(reference.texCoord, 0)) === 0 && number(transform.rotation, 0) === 0 &&
+    vector(transform.offset, [0, 0]).every((value) => value === 0) && vector(transform.scale, [1, 1]).every((value) => value === 1);
+}
+
+/**
+ * The glTF metallic/roughness material as a graph. Extensions the loader does not read (clear coat, sheen and so on)
+ * are dropped, as the loader drops them; the Model keeps the loader's material only for a texture on UV channel 1 or
+ * with a texture transform.
+ */
 export function importedGltfMaterial(name: string, material: GlbBrowseMaterial, imageGuids: readonly string[]) {
   const doc = createDefaultMaterialDocument(name);
   doc.nodes = doc.nodes.filter((node) => node.id === "output");
@@ -12,7 +26,7 @@ export function importedGltfMaterial(name: string, material: GlbBrowseMaterial, 
   const source = material.source ?? {};
   const pbr = record(source.pbrMetallicRoughness);
   const extensions = record(source.extensions);
-  let preserveSource = !!source.occlusionTexture || Object.keys(extensions).some((key) => !["KHR_materials_unlit", "KHR_materials_emissive_strength"].includes(key));
+  let preserveSource = false;
   doc.shadingModel = material.unlit ? "unlit" : "pbr";
   doc.blendMode = source.alphaMode === "BLEND" ? "translucent" : source.alphaMode === "MASK" ? "masked" : "opaque";
   doc.alphaCutoff = number(source.alphaCutoff, 0.5);
@@ -28,9 +42,10 @@ export function importedGltfMaterial(name: string, material: GlbBrowseMaterial, 
     if (typeof ref.index !== "number") return null;
     const image = material.textureImages?.[ref.index] ?? null;
     const guid = image === null ? undefined : imageGuids[image];
-    if (!guid) { preserveSource = true; return null; }
-    if (number(ref.texCoord, 0) !== 0 || Object.keys(record(ref.extensions)).length) preserveSource = true;
-    return add(id, "texture.sample", { textureGuid: guid, colorSpace });
+    // A texture with no image has nothing to sample; its factor still applies.
+    if (!guid) return null;
+    if (!sampledAsIs(ref)) preserveSource = true;
+    return add(id, "texture.sample", { textureGuid: guid, colorSpace, ...(material.nearestTextures?.[ref.index] ? { filter: "nearest" } : {}) });
   };
   const channel = (id: string, values: number[], texture: string | null, pin: string) => {
     const value = factor(`${id}-factor`, values);
@@ -50,6 +65,16 @@ export function importedGltfMaterial(name: string, material: GlbBrowseMaterial, 
   const emission = Array.isArray(source.emissiveFactor) ? source.emissiveFactor : [];
   const strength = number(record(extensions.KHR_materials_emissive_strength).emissiveStrength, 1);
   channel("emissive", [0, 1, 2].map((i) => number(emission[i], 0) * strength), sample("emission", source.emissiveTexture, "color"), "rgb");
+  // glTF occlusion darkens only indirect light, which is what Environment Influence scales.
+  const occlusion = sample("occlusion", source.occlusionTexture, "data");
+  if (occlusion) {
+    const strength = add("occlusion-strength", "math.mix", {
+      [materialPinDefaultPropertyKey("a")]: [1],
+      [materialPinDefaultPropertyKey("alpha")]: [number(record(source.occlusionTexture).strength, 1)],
+    });
+    wire(occlusion, "r", strength, "b");
+    wire(strength, "out", "output", "environmentInfluence");
+  }
   const normal = sample("normal", source.normalTexture, "data");
   if (normal) {
     const unpack = add("normal-map", "shading.normalMap", { "default:strength": [number(record(source.normalTexture).scale, 1)] });

@@ -2,6 +2,7 @@ import { createDefaultMaterialDocument, migrateLegacyShaderPayload } from "@hapt
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
 import { sniffSourceImageSize } from "../image-size";
+import { shouldCompressTexture } from "../texture-compression";
 import { MATERIAL_PAYLOAD_VERSION } from "../migration";
 import { cookGeneratedCollisionFromGltf } from "../simple-collision";
 import { normalizeModelPayload, DEFAULT_MODEL_IMPORT_SCALE } from "../model-payload";
@@ -113,6 +114,8 @@ function importFromBrowse(
     // Recorded like an image import's, so Downsample, encode padding and
     // overlay sizes use the source size rather than the encoded one.
     const size = chunks.length > 0 ? sniffSourceImageSize(image.bytes) : null;
+    // A nearest-filtered image (a pixel-art palette) keeps its exact texels: no compression, mipmaps or LOD.
+    const usage = image.nearest ? "pixelArt" : "albedo";
     results.push({
       type: "Texture",
       name: uniqueImportName(`${name}_${image.name}`, usedNames),
@@ -121,9 +124,9 @@ function importFromBrowse(
       dependencies: [],
       parentClass: null,
       payload: {
-        usage: "albedo",
+        usage,
         ...(size ? { width: size.width, height: size.height } : {}),
-        ...(chunks.length > 0 ? { compressionState: "pending" } : {}),
+        ...(chunks.length > 0 && shouldCompressTexture(usage) ? { compressionState: "pending" } : {}),
       },
       chunks,
     });
@@ -167,7 +170,7 @@ function importFromBrowse(
         // re-imports even when material names change.
         payload: {
           ...imported.document,
-          ...(imported.preserveSource ? { importNotice: "The Model retains its glTF material because this graph does not represent every imported feature." } : {}),
+          ...(imported.preserveSource ? { importNotice: "The Model keeps its glTF material: this graph cannot yet draw a texture on a second UV channel or with a texture transform." } : {}),
           slotIndex: i,
         },
         chunks: [],

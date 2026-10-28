@@ -13,11 +13,15 @@ export interface GlbBrowseImage {
   name: string;
   mime: string;
   bytes: Uint8Array;
+  /** Every texture that reads it magnifies with NEAREST filtering, as pixel-art models ask. */
+  nearest?: boolean;
 }
 
 export interface GlbBrowseMaterial {
   source?: Record<string, unknown>;
   textureImages?: Array<number | null>;
+  /** Per glTF texture: its sampler magnifies with NEAREST filtering. */
+  nearestTextures?: boolean[];
   name: string;
   /** Index into `images` when a baseColor / metallicRoughness texture is present. */
   albedoImageIndex: number | null;
@@ -586,6 +590,9 @@ export function parseGltfJsonForBrowse(
   }
 }
 
+/** glTF sampler `magFilter` for nearest filtering. */
+const GL_NEAREST = 9728;
+
 function browseFromGltfJson(
   json: Record<string, unknown>,
   bin: Uint8Array | null,
@@ -643,6 +650,16 @@ function browseFromGltfJson(
     images.push({ name, mime, bytes: new Uint8Array(0) });
   }
 
+  const samplersJson = Array.isArray(json.samplers) ? json.samplers : [];
+  const nearestTextures = texturesJson.map((texture) => {
+    const sampler = (texture as Record<string, unknown> | undefined)?.sampler;
+    return typeof sampler === "number" && (samplersJson[sampler] as Record<string, unknown> | undefined)?.magFilter === GL_NEAREST;
+  });
+  for (const [index, image] of images.entries()) {
+    const readers = texturesJson.flatMap((texture, at) => (texture as Record<string, unknown> | undefined)?.source === index ? [nearestTextures[at]] : []);
+    if (readers.length > 0 && readers.every(Boolean)) image.nearest = true;
+  }
+
   const images_out = images;
   const materials: GlbBrowseMaterial[] = materialsJson.map((entry, i) => {
     const material = entry as Record<string, unknown>;
@@ -671,6 +688,7 @@ function browseFromGltfJson(
         const source = (texture as Record<string, unknown>)?.source;
         return typeof source === "number" ? source : null;
       }),
+      nearestTextures,
       unlit: Boolean(
         (material.extensions as Record<string, unknown> | undefined)
           ?.KHR_materials_unlit,

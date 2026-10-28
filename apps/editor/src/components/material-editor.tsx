@@ -876,6 +876,11 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
     options: [{ value: "color", label: "Color (sRGB)" }, { value: "data", label: "Data (Linear)" }],
     onChange: (colorSpace) => setProperties({ colorSpace }),
   });
+  if (node.type === "texture.sample") rows.push({
+    id: "filter", kind: "enum", label: "Filter", value: node.properties.filter === "nearest" ? "nearest" : "linear",
+    options: [{ value: "linear", label: "Linear" }, { value: "nearest", label: "Nearest" }],
+    onChange: (filter) => setProperties({ filter }),
+  });
 
   return (
     <div className="flex flex-col gap-2" data-testid="material-node-details">

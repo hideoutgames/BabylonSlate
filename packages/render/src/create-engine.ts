@@ -129,6 +129,7 @@ import { CommandSourcePreparation } from "./command-source-preparation";
 import {
   bindResourceCacheToHandle,
   acquireMaterialTexture,
+  materialTextureSampling,
   MATERIAL_TEXTURE_SAMPLING,
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
@@ -893,13 +894,13 @@ function initializeEngine(
   const materialLibrary = new MaterialLibrary({
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => materialFunctionRecord,
-    acquireTexture: (guid, consumerScene) => {
+    acquireTexture: (guid, consumerScene, filter) => {
       if (binding.renderTargetTextures?.has(guid)) {
         return renderTargetCaptures.acquireTexture(guid, consumerScene);
       }
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
-      return acquireMaterialTexture(resourceCache, guid, engine, bytes);
+      return acquireMaterialTexture(resourceCache, guid, engine, bytes, materialTextureSampling(filter));
     },
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);

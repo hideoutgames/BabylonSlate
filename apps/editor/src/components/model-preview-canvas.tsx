@@ -23,6 +23,7 @@ import {
   createModelPreviewScene,
   setSceneRenderSettings,
   acquireMaterialTexture,
+  materialTextureSampling,
   installPreviewEnvironment,
   isColliderVisualMesh,
   loadModelPreviewSource,
@@ -326,10 +327,10 @@ export function ModelPreviewCanvas({
       const library = new MaterialLibrary({
         textureIdentity: (guid) => { const source = textureBytes.get(guid); return source ? installedAssetIdentity(source) : undefined; },
         functions: () => Object.fromEntries(materials.functions),
-        acquireTexture: (guid) => {
+        acquireTexture: (guid, _scene, filter) => {
           const data = textureBytes.get(guid);
           if (!data) return null;
-          return acquireMaterialTexture(lease.cache, guid, engine, data);
+          return acquireMaterialTexture(lease.cache, guid, engine, data, materialTextureSampling(filter));
         },
       });
       releaseCandidate = () => { library.dispose(); lease.dispose(); };

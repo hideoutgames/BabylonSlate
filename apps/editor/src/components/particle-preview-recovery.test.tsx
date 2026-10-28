@@ -101,6 +101,7 @@ vi.mock("@haptic/render", () => {
     },
     resourceCacheForEngine: () => ({}),
     acquireMaterialTexture: (_cache: unknown, _guid: string, _engine: unknown, bytes: Uint8Array) => bytes,
+    materialTextureSampling: () => undefined,
     installTextureBytes: (bytes: ReadonlyMap<string, Uint8Array>) => bytes,
   };
 });

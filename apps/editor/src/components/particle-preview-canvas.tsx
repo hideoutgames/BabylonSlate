@@ -15,6 +15,7 @@ import {
 import {
   ParticleService,
   acquireMaterialTexture,
+  materialTextureSampling,
   createMaterialPreviewPresenter,
   createParticleMaterialResolver,
   createParticlePreviewScene,
@@ -406,9 +407,9 @@ export function ParticlePreviewCanvas({
         scene: host.scene,
         documents: docs.documents,
         functions: docs.functions,
-        acquireTexture: (guid) => {
+        acquireTexture: (guid, _scene, filter) => {
           const data = sources.get(guid);
-          return data ? acquireMaterialTexture(cache, guid, engine, data) : null;
+          return data ? acquireMaterialTexture(cache, guid, engine, data, materialTextureSampling(filter)) : null;
         },
       });
       const service = new ParticleService({

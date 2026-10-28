@@ -1,5 +1,6 @@
 import { installedAssetHeader, installedEnvironmentInfo, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@haptic/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
+import type { MaterialTextureFilter } from "@haptic/shader-graph";
 import { CubeTexture, type ICubeTextureCreationOptions } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
@@ -1024,6 +1025,11 @@ export const MATERIAL_TEXTURE_SAMPLING: TextureSamplingOptions = {
   invertY: false,
 };
 
+/** A Material's sampling of a texture for a Texture Sample's Filter: Nearest is pixel art's, without the flip. */
+export function materialTextureSampling(filter?: MaterialTextureFilter): TextureSamplingOptions | undefined {
+  return filter === "nearest" ? PIXEL_ART_TEXTURE_SAMPLING : undefined;
+}
+
 export function acquireMaterialTexture(
   cache: TextureResources,
   assetGuid: string,
@@ -1043,21 +1049,24 @@ export function acquireMaterialTexture(
 }
 
 /** One material generation owns its sampled textures; compiler callbacks only borrow. */
-export function materialTextureBindings(acquire: ((guid: string) => ResourceLease<Texture> | null) | undefined, identity?: (guid: string) => string | undefined) {
+export function materialTextureBindings(
+  acquire: ((guid: string, filter?: MaterialTextureFilter) => ResourceLease<Texture> | null) | undefined,
+  identity?: (guid: string) => string | undefined,
+) {
   const leases = new Map<string, ResourceLease<Texture>>();
-  const bindingKey = (guid: string) => `${guid}\0${identity?.(guid) ?? ""}`;
+  const bindingKey = (guid: string, filter?: MaterialTextureFilter) => `${guid}\0${identity?.(guid) ?? ""}\0${filter ?? "linear"}`;
   return {
-    resolve(guid: string): Texture | null {
-      const key = bindingKey(guid);
+    resolve(guid: string, filter?: MaterialTextureFilter): Texture | null {
+      const key = bindingKey(guid, filter);
       const current = leases.get(key);
       if (current && !isDisposedGpuTexture(current.resource)) return current.resource;
-      const next = acquire?.(guid);
+      const next = acquire?.(guid, filter);
       if (!next) return null;
       leases.set(key, next);
       current?.release();
       return next.resource;
     },
-    ready(guid: string) { return leases.get(bindingKey(guid))?.ready; },
+    ready(guid: string, filter?: MaterialTextureFilter) { return leases.get(bindingKey(guid, filter))?.ready; },
     prune(textures: readonly BaseTexture[]) {
       const used = new Set(textures);
       const generations = new Set(textures.flatMap((texture) => {

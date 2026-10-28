@@ -536,6 +536,34 @@ describe("parseGlbForBrowse", () => {
     expect(browse!.rigKind).toBe("none");
   });
 
+  it("imports a pixel-art palette model as a Material that samples its uncompressed palette nearest", async () => {
+    // A Holiday Pack model: one NEAREST-sampled colormap, read through an identity KHR_texture_transform.
+    const glb = encodeGlbJsonBin(
+      {
+        asset: { version: "2.0" },
+        buffers: [{ byteLength: ONE_BY_ONE_PNG.byteLength }],
+        bufferViews: [{ buffer: 0, byteLength: ONE_BY_ONE_PNG.byteLength }],
+        images: [{ mimeType: "image/png", bufferView: 0, name: "colormap" }],
+        samplers: [{ magFilter: 9728, minFilter: 9984 }],
+        textures: [{ source: 0, sampler: 0 }],
+        materials: [{ name: "colormap", pbrMetallicRoughness: {
+          baseColorTexture: { index: 0, extensions: { KHR_texture_transform: { texCoord: 0 } } },
+        } }],
+      },
+      ONE_BY_ONE_PNG,
+    );
+    const results = await importModel(glb, { fileName: "tree.glb", existingGuids: new Set() });
+    const texture = results.find((result) => result.type === "Texture")!;
+    expect(texture.payload).toMatchObject({ usage: "pixelArt" });
+    expect(texture.payload.compressionState).toBeUndefined();
+    const material = results.find((result) => result.type === "Material")!;
+    expect(material.payload.importNotice).toBeUndefined();
+    const nodes = material.payload.nodes as Array<{ type: string; properties: Record<string, unknown> }>;
+    expect(nodes.find((node) => node.type === "texture.sample")?.properties).toMatchObject({ textureGuid: texture.guid, filter: "nearest" });
+    expect(results.find((result) => result.type === "Model")!.payload.materialSlots)
+      .toEqual([expect.objectContaining({ materialGuid: material.guid })]);
+  });
+
   it("importModel copies omitted-offset GLB pixels onto a Texture with no Skeleton", async () => {
     const png = Uint8Array.from([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,

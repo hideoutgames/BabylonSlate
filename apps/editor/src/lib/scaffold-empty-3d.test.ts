@@ -33,10 +33,9 @@ function indexed(
 describe("applyKenneyMannequinEmptyScaffold", () => {
   it("adds the Mannequin capsule facing the default camera and prepares its authored lit material dependencies", async () => {
     const created = [
-      // The importer preserves unsupported source material features; the
-      // template subsequently replaces that slot with its authored lit graph.
+      // The import binds the slot to its Material, unlit as in the file; the template makes that Material lit.
       indexed("Model", "model-1", {
-        materialSlots: [{ index: 0, name: "texture-d", materialGuid: null }],
+        materialSlots: [{ index: 0, name: "texture-d", materialGuid: "material-1" }],
         skeletonGuid: "skel-1",
       }),
       indexed("Skeleton", "skel-1", {

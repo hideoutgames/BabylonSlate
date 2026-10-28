@@ -10,6 +10,7 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialLowerResult,
+  type MaterialTextureFilter,
 } from "@haptic/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
@@ -123,7 +124,8 @@ function documentForPlan(
 
 export interface MaterialLibraryOptions {
   particlePreview?: boolean;
-  acquireTexture?: (guid: string, scene: Scene) => ResourceLease<Texture> | null;
+  /** `filter` is a Texture Sample's Filter, which a host passes on as `materialTextureSampling(filter)`. */
+  acquireTexture?: (guid: string, scene: Scene, filter?: MaterialTextureFilter) => ResourceLease<Texture> | null;
   textureIdentity?: (guid: string) => string | undefined;
   resolveTexture?: (guid: string) => Texture | null;
   /** Return a new record whenever a function document changes; lowering is
@@ -313,7 +315,7 @@ export class MaterialLibrary {
     const failed = failures.get(failureKey);
     if (failed?.hash === hash) return { ok: false, diagnostics: [...failed.diagnostics] };
 
-    const textures = materialTextureBindings(this.options.acquireTexture ? (guid) => this.options.acquireTexture!(guid, scene) : undefined, this.options.textureIdentity);
+    const textures = materialTextureBindings(this.options.acquireTexture ? (guid, filter) => this.options.acquireTexture!(guid, scene, filter) : undefined, this.options.textureIdentity);
     let compiled: ReturnType<typeof compileMaterialPlan>;
     // Instances compile under their root Material's name so generated block
     // names, and therefore the shader text, match and the GPU program is shared.
@@ -340,7 +342,7 @@ export class MaterialLibrary {
     }
     compiled.material.name = compiled.material.id = materialName;
     const texturePreparations = lowered.plan.textures.flatMap((binding) => {
-      const preparation = textures.ready(binding.textureGuid);
+      const preparation = textures.ready(binding.textureGuid, binding.filter);
       return preparation ? [preparation] : [];
     });
     const textureFailure = (error: unknown): MaterialDiagnostic => ({

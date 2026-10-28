@@ -8,7 +8,7 @@ import {
 import {
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateWaterMeshDefinition,
-  MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine, type RenderShadingSettings,
+  MaterialLibrary, installTextureBytes, acquireMaterialTexture, materialTextureSampling, resourceCacheForEngine, type RenderShadingSettings,
 } from "@haptic/render";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
@@ -236,9 +236,9 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
         const cache = resourceCacheForEngine(engine);
         materials = new MaterialLibrary({
           functions: () => Object.fromEntries(library.functions),
-          acquireTexture: (guid) => {
+          acquireTexture: (guid, _scene, filter) => {
             const source = sources?.get(guid);
-            return source ? acquireMaterialTexture(cache, guid, engine, source, { hasAlpha: true }) : null;
+            return source ? acquireMaterialTexture(cache, guid, engine, source, { hasAlpha: true, ...materialTextureSampling(filter) }) : null;
           },
         });
         const document = library.documents.get(materialGuid);

@@ -59,7 +59,7 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 Each phase is one PR, or a short series, merged into `main` before the next starts.
 
 3. **Material consolidation on the current lighting**, with no visible change:
-   - Preserved glTF slots become Material documents: an Ambient Occlusion input on Material Output (with strength), texture coordinate channels and texture transforms in the importer; emissive strength is kept.
+   - Preserved glTF slots become Material documents (importer only). Done: occlusion as Environment Influence (glTF occlusion is indirect-only), identity `KHR_texture_transform`, image-less textures and unread extensions, and NEAREST samplers as a Texture Sample's Filter with the Pixel Art usage; every bundled model converts. Left: UV channel 1 (an Input UV channel) and non-identity texture transforms (Transform UV, and rotation), the only cases the importer still preserves.
    - Built-in water stays a `PBRMaterial` with its plugin. A Custom Material on the water blocks lacks planar reflections, the removal cut and edge fades, haze, the refraction fallback, specular shaping and the IOR, the Low tier's unlit path, the CEL exemption and two-sided drawing; about half of that is PBR shader internals no graph reaches. Phase 5 decides whether its plugin reads the light records with the material's own lighting disabled, or it becomes a graph Material on `HapticLightingBlock`.
    - `CelMaterial` and the native CEL swap (`scene-render-mode.ts`) go; CEL stays on graph Materials only.
    - After this phase `ScenePbrLightingBlock`, `CelLightBlock` and built-in water are the only places lighting enters.
