@@ -193,23 +193,21 @@ describe("runFeatureTestCheck", () => {
     expect(main.passed).toBe(true);
     expect(main.play.benchmark.map((sample) => sample.label)).toEqual(FEATURE_TEST_BENCHMARK_PROFILES.map((profile) => profile.label));
     expect(editor.commands.slice(0, 2)).toEqual(["framecap", "framecap 240"]);
-    expect(editor.commands.slice(-4)).toEqual(["hapticlights reset", "fixedlights reset", "quality reset", "framecap 30"]);
+    expect(editor.commands.slice(-3)).toEqual(["fixedlights reset", "quality reset", "framecap 30"]);
     expect(editor.commands).toContain("fixedlights branch");
-    expect(editor.commands).toContain("hapticlights all");
-    expect(editor.commands.filter((command) => command === "quality shadows enabled off")).toHaveLength(3);
     expect(editor.commands).not.toContain("ft_stats");
   });
 
   it("samples a recompiling profile only once the view draws without held frames, within a bound", async () => {
-    // `fixedlights multiply` holds the view for 20 s of new shaders; `fixedlights branch` never stops holding.
+    // `quality high` holds the view for 20 s of new shaders; `fixedlights multiply` never stops holding.
     const counts = { drawn: 0, held: 0 };
     const issuedAt = new Map<string, number>();
     let heldUntil = -1;
     const editor = fakeEditor({}, undefined, (now, commands) => {
       const last = commands.at(-1) ?? "";
-      if (!issuedAt.has(last) && (last === "fixedlights multiply" || last === "fixedlights branch")) {
+      if (!issuedAt.has(last) && (last === "quality high" || last === "fixedlights multiply")) {
         issuedAt.set(last, now);
-        heldUntil = last === "fixedlights multiply" ? now + 20_000 : Number.POSITIVE_INFINITY;
+        heldUntil = last === "quality high" ? now + 20_000 : Number.POSITIVE_INFINITY;
       }
       if (now < heldUntil) counts.held++;
       else counts.drawn++;
@@ -218,16 +216,16 @@ describe("runFeatureTestCheck", () => {
     const report = await runFeatureTestCheck({
       mode: "benchmark", scenes: [scene("main")], deps: editor.deps, signal: new AbortController().signal,
     });
-    const sampledAt = editor.sampled.find((sample) => sample.after === "fixedlights multiply")!.now;
+    const sampledAt = editor.sampled.find((sample) => sample.after === "quality high")!.now;
     // Held 20 s, then steady draws and the 3 s settle.
-    expect(sampledAt - issuedAt.get("fixedlights multiply")!).toBeGreaterThanOrEqual(23_000);
+    expect(sampledAt - issuedAt.get("quality high")!).toBeGreaterThanOrEqual(23_000);
     const benchmark = report.scenes[0]!.play.benchmark;
-    expect(benchmark.find((sample) => sample.label === "medium · fixed lights")!.failed).toEqual([]);
-    expect(benchmark.find((sample) => sample.label === "medium · fixed lights · branch")!.failed)
+    expect(benchmark.find((sample) => sample.label === "high · forward")!.failed).toEqual([]);
+    expect(benchmark.find((sample) => sample.label === "medium · fixed lights")!.failed)
       .toEqual(["The view did not draw steadily within 90 s; the remaining profiles were skipped."]);
     // Nothing more piles onto a view that stopped drawing; the session settings are still restored.
-    expect(benchmark.at(-1)!.label).toBe("medium · fixed lights · branch");
-    expect(editor.commands).not.toContain("hapticlights forward");
-    expect(editor.commands.slice(-4)).toEqual(["hapticlights reset", "fixedlights reset", "quality reset", "framecap 30"]);
+    expect(benchmark.at(-1)!.label).toBe("medium · fixed lights");
+    expect(editor.commands).not.toContain("fixedlights branch");
+    expect(editor.commands.slice(-3)).toEqual(["fixedlights reset", "quality reset", "framecap 30"]);
   });
 });

@@ -70,6 +70,8 @@ import { SceneReflectionBlock } from "./scene-reflection-block";
 import { FlatNormalBlock } from "./flat-normal-block";
 import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geometry-surface-output-block";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
+import { HapticLightingBlock } from "./haptic-lighting-block";
+import { hapticLightingActive } from "./haptic-lights";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@haptic/bridge";
@@ -1530,64 +1532,81 @@ function attachSurfaceShading(
     return fragment;
   }
 
-  const pbr = new ScenePbrLightingBlock(`${options.name}_pbr`);
-  pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
-  pbr.alpha.connectTo(fragment.a);
-  const reflection = new SceneReflectionBlock(`${options.name}_reflection`);
-  plumbing.position?.connectTo(reflection.position);
-  plumbing.world?.connectTo(reflection.world);
-  reflection.reflection.connectTo(pbr.reflection);
-  created.push(reflection);
-  created.push(pbr);
-  plumbing.worldPosition?.connectTo(pbr.worldPosition);
-  plumbing.worldNormal4?.connectTo(pbr.worldNormal);
-  plumbing.view?.connectTo(pbr.view);
-  plumbing.cameraPosition?.connectTo(pbr.cameraPosition);
-
-  if (baseColor) {
-    baseColor.connectTo(pbr.baseColor);
-    baseColor.connectTo(fragment.geometryBaseColor);
-  } else {
-    const fallback = createConstantBlock(
-      `${options.name}_baseColorFallback`,
-      "vec3",
-      [0.8, 0.8, 0.8],
-      true,
-    );
+  const surfaceColor = baseColor ?? (() => {
+    const fallback = createConstantBlock(`${options.name}_baseColorFallback`, "vec3", [0.8, 0.8, 0.8], true);
     created.push(fallback);
-    fallback.output.connectTo(pbr.baseColor);
-    fallback.output.connectTo(fragment.geometryBaseColor);
-  }
+    return fallback.output;
+  })();
+  surfaceColor.connectTo(fragment.geometryBaseColor);
   const metallic = outputPoint("metallic", `${options.name}_metallic`, false);
-  if (metallic) metallic.connectTo(pbr.metallic);
   if (metallic) metallic.connectTo(fragment.geometryMetallic);
-  const roughness = outputPoint(
-    "roughness",
-    `${options.name}_roughness`,
-    false,
-  );
-  if (roughness) roughness.connectTo(pbr.roughness);
+  const roughness = outputPoint("roughness", `${options.name}_roughness`, false);
   if (roughness) roughness.connectTo(fragment.geometryRoughness);
   const normal = outputPoint("normal", `${options.name}_normalInput`, false);
-  if (normal) {
-    // PBR registers a Vector 4 perturbed normal; the authored channel is a
-    // Vector 3 direction, so widen it with a zero w.
-    const widen = new VectorMergerBlock(`${options.name}_normalWiden`);
-    created.push(widen);
-    normal.connectTo(widen.xyzIn);
-    widen.xyzw.connectTo(pbr.perturbedNormal);
-  }
   const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
-  if (opacity) opacity.connectTo(pbr.opacity);
+
+  // The surface's direct and environment light, from the lighting plan's block or Babylon's PBR block.
+  let diffuseDirect: NodeMaterialConnectionPoint;
+  let specularDirect: NodeMaterialConnectionPoint;
+  let diffuseIndirect: NodeMaterialConnectionPoint;
+  let specularIndirect: NodeMaterialConnectionPoint;
+  if (hapticLightingActive(options.scene)) {
+    const lighting = new HapticLightingBlock(`${options.name}_lighting`);
+    created.push(lighting);
+    plumbing.worldPosition?.connectTo(lighting.worldPosition);
+    plumbing.worldNormal4?.connectTo(lighting.worldNormal);
+    plumbing.cameraPosition?.connectTo(lighting.cameraPosition);
+    surfaceColor.connectTo(lighting.baseColor);
+    // The Material Output's own defaults, for a plan that leaves a channel out.
+    const constant = (value: number, suffix: string) => {
+      const block = createConstantBlock(`${options.name}_${suffix}`, "float", [value]);
+      created.push(block);
+      return block.output;
+    };
+    (metallic ?? constant(0, "metallicDefault")).connectTo(lighting.metallic);
+    (roughness ?? constant(0.5, "roughnessDefault")).connectTo(lighting.roughness);
+    normal?.connectTo(lighting.normal);
+    if (opacity) opacity.connectTo(fragment.a);
+    ({ diffuseDirect, specularDirect, diffuseIndirect, specularIndirect } = lighting);
+  } else {
+    const pbr = new ScenePbrLightingBlock(`${options.name}_pbr`);
+    pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
+    pbr.alpha.connectTo(fragment.a);
+    const reflection = new SceneReflectionBlock(`${options.name}_reflection`);
+    plumbing.position?.connectTo(reflection.position);
+    plumbing.world?.connectTo(reflection.world);
+    reflection.reflection.connectTo(pbr.reflection);
+    created.push(reflection);
+    created.push(pbr);
+    plumbing.worldPosition?.connectTo(pbr.worldPosition);
+    plumbing.worldNormal4?.connectTo(pbr.worldNormal);
+    plumbing.view?.connectTo(pbr.view);
+    plumbing.cameraPosition?.connectTo(pbr.cameraPosition);
+    surfaceColor.connectTo(pbr.baseColor);
+    if (metallic) metallic.connectTo(pbr.metallic);
+    if (roughness) roughness.connectTo(pbr.roughness);
+    if (normal) {
+      // PBR registers a Vector 4 perturbed normal; the authored channel is a
+      // Vector 3 direction, so widen it with a zero w.
+      const widen = new VectorMergerBlock(`${options.name}_normalWiden`);
+      created.push(widen);
+      normal.connectTo(widen.xyzIn);
+      widen.xyzw.connectTo(pbr.perturbedNormal);
+    }
+    if (opacity) opacity.connectTo(pbr.opacity);
+    // pbr.lighting has already passed through image processing and must not be
+    // used for linear emission or fog composition.
+    diffuseDirect = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
+    specularDirect = pbr.specularDir;
+    diffuseIndirect = pbr.diffuseInd;
+    specularIndirect = pbr.specularInd;
+  }
 
   const environmentOperand = plan.outputs.environmentInfluence;
   const customEnvironment = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1);
   // These are the linear contributions supported by our surface compiler.
-  // pbr.lighting has already passed through image processing and must not be
-  // used for linear emission or fog composition.
-  const diffuse = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
-  const lit = addColor(diffuse, pbr.specularDir, "litColor");
-  let indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
+  const lit = addColor(diffuseDirect, specularDirect, "litColor");
+  let indirect = addColor(diffuseIndirect, specularIndirect, "environmentColor");
   if (customEnvironment) {
     const influence = outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)!;
     const clamp = new ClampBlock(`${options.name}_environmentInfluenceClamp`);

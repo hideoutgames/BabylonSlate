@@ -1062,8 +1062,6 @@ export type CommandMessage =
   | { type: "setLightsDebug"; enabled: boolean }
   /** Session fixed-shape forward lighting (console `fixedlights`); the Play Engine restores its own state when Play ends. */
   | { type: "setFixedShapeLighting"; enabled: boolean; guard: "multiply" | "branch" }
-  /** Session HapticLights spike (console `hapticlights`); the Play Engine restores its own state when Play ends. */
-  | { type: "setHapticLighting"; lights: "forward" | "all" | null }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }
   | { type: "setStat"; name: string; enabled: boolean }

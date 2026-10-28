@@ -8,7 +8,6 @@ export type {
   ConsoleCompleteKind,
   ConsoleCompletionContext,
   FixedShapeLightingRequest,
-  HapticLightingRequest,
   RegisteredCommand,
 } from "./types";
 export {

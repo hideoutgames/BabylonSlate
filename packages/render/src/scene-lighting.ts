@@ -29,14 +29,8 @@ import {
 } from "@babylonjs/core";
 import { CelLightBlock } from "./cel-light-block";
 import { hapticLightingActive, writeHapticLights } from "./haptic-lights";
-import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 
 type LitMaterial = Material & { maxSimultaneousLights: number };
-
-/** A graph lit by the app's PBR block, which the spike's light block can draw. */
-function drawsScenePbrLighting(material: Material): boolean {
-  return material instanceof NodeMaterial && material.attachedBlocks.some((block) => block instanceof ScenePbrLightingBlock);
-}
 
 function isLitMaterial(material: Material): material is LitMaterial {
   if (!("maxSimultaneousLights" in material)) return false;
@@ -187,8 +181,6 @@ function installSceneLighting(scene: Scene): SceneLighting {
   let fixedShape = false;
   // What seated materials' light defines depend on (fixedLightDefinesSignature), as of the last refresh.
   let refreshedFixedShape = false;
-  // The last refresh drew PBR graph Materials with the spike's light block (`haptic-lights.ts`).
-  let refreshedHaptic = false;
   let fixedDefines: unknown[] = [];
   let nextFixedDefines: unknown[] = [];
   const watchedLights = new Map<Light, Observer<boolean>>();
@@ -212,7 +204,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
   const sync = (): void => {
     if (scene.isDisposed) return;
     budget = forwardLightBudget(scene.getEngine());
-    const haptic = hapticLightingActive(scene);
+    // HapticLightingBlock reads every light from one block, rewritten each frame; its Materials hold no light defines.
+    if (hapticLightingActive(scene)) writeHapticLights(scene);
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
     policyToggles = toggled;
@@ -252,12 +245,10 @@ function installSceneLighting(scene: Scene): SceneLighting {
     nextFixedDefines.length = 0;
     const table = fixedShape ? fixedLightSlotTable(scene) : null;
     if (table) fixedLightDefinesSignature(scene, table, nextFixedDefines);
-    if (haptic) writeHapticLights(scene);
     // Seated materials' defines changed (a lit material refreshes, which also
     // leaves Babylon's path when the switch turns off). Lights moving through
-    // unshadowed seats only rebind. Switching the spike's light block refreshes too.
+    // unshadowed seats only rebind.
     const fixedChanged =
-      refreshedHaptic !== haptic ||
       refreshedFixedShape !== fixedShape ||
       nextFixedDefines.length !== fixedDefines.length ||
       nextFixedDefines.some((entry, index) => entry !== fixedDefines[index]);
@@ -321,7 +312,6 @@ function installSceneLighting(scene: Scene): SceneLighting {
     enabledLights = nextEnabled;
     nextEnabled = previousEnabled;
     refreshedFixedShape = fixedShape;
-    refreshedHaptic = haptic;
     [fixedDefines, nextFixedDefines] = [nextFixedDefines, fixedDefines];
     const previousShadowLayout = shadowLayout;
     shadowLayout = nextShadowLayout;
@@ -352,10 +342,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
     try {
       for (const material of scene.materials) {
         if (!isLitMaterial(material)) continue;
-        // The light block's materials read no light defines, so lights changing never recompiles them.
-        const lights = haptic && drawsScenePbrLighting(material) ? 0 : capacity;
-        if (!changed && material.maxSimultaneousLights === lights) continue;
-        material.maxSimultaneousLights = lights;
+        if (!changed && material.maxSimultaneousLights === capacity) continue;
+        material.maxSimultaneousLights = capacity;
         material.markAsDirty(Material.LightDirtyFlag);
         // Light defines alone do not invalidate a frozen material's cached
         // readiness, including when a disposed generator removes SHADOW defines.

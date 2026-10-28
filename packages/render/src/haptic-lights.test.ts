@@ -14,9 +14,11 @@ import {
   type NodeMaterial,
 } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { HapticLightingBlock } from "./haptic-lighting-block";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, setHapticLighting } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
 import { syncSceneLighting } from "./scene-lighting";
+import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -51,38 +53,40 @@ async function drawnDefines(scene: Scene, mesh: Mesh, material: NodeMaterial): P
   await material.forceCompilationAsync(mesh);
   scene.render();
   expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
-  return mesh.subMeshes[0]!.effect!.defines.split("\n").filter((line) => /HAPTIC_LIGHTS|#define LIGHT\d|SPECULARTERM|MAXLIGHTCOUNT/.test(line));
+  return mesh.subMeshes[0]!.effect!.defines.split("\n").filter((line) => /HAPTIC_|#define LIGHT\d|SPECULARTERM|MAXLIGHTCOUNT/.test(line));
 }
 
-describe("the HapticLights spike", () => {
-  it("draws PBR graphs from the light block, whose defines no light change alters", async () => {
+describe("HapticLightingBlock and the HapticLights block", () => {
+  it("lights PBR graphs from the light block, with no light define, so no light change recompiles them", async () => {
     const { engine, scene } = host();
     new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    setHapticLighting(engine, true);
     const { mesh, material } = await litBox(scene);
-    // Off: Babylon's per-light path.
-    expect(await drawnDefines(scene, mesh, material)).toEqual(expect.arrayContaining(["#define LIGHT0"]));
-    expect(material.compiledShaders).toContain("#ifdef HAPTIC_LIGHTS");
-
-    setHapticLighting(engine, "all");
-    const haptic = await drawnDefines(scene, mesh, material);
-    expect(haptic).toEqual(expect.arrayContaining(["#define HAPTIC_LIGHTS", "#define SPECULARTERM"]));
-    expect(haptic.some((line) => /#define LIGHT\d/.test(line))).toBe(false);
-    expect(material.maxSimultaneousLights).toBe(0);
+    expect(material.attachedBlocks.some((block) => block instanceof HapticLightingBlock)).toBe(true);
+    expect(material.attachedBlocks.some((block) => block instanceof ScenePbrLightingBlock)).toBe(false);
+    const defines = await drawnDefines(scene, mesh, material);
+    expect(defines.some((line) => /#define LIGHT\d/.test(line))).toBe(false);
+    expect(material.compiledShaders).toContain("uniform HapticLights");
     const effect = mesh.subMeshes[0]!.effect;
     // Lights arriving, leaving and switching keep the Effect.
     new SpotLight("spot", new Vector3(1, 3, 0), Vector3.Down(), Math.PI / 3, 2, scene);
     new DirectionalLight("sun", new Vector3(0, -1, 0), scene);
     scene.lights[0]!.setEnabled(false);
-    expect(await drawnDefines(scene, mesh, material)).toEqual(haptic);
+    expect(await drawnDefines(scene, mesh, material)).toEqual(defines);
     expect(mesh.subMeshes[0]!.effect).toBe(effect);
+  });
 
-    setHapticLighting(engine, null);
+  it("leaves graphs on Babylon's PBR block while the switch is off", async () => {
+    const { scene } = host();
+    new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    const { mesh, material } = await litBox(scene);
+    expect(material.attachedBlocks.some((block) => block instanceof ScenePbrLightingBlock)).toBe(true);
     expect(await drawnDefines(scene, mesh, material)).toEqual(expect.arrayContaining(["#define LIGHT0"]));
   });
 
   it("writes the Scene's lights as records, the first hemispheric light as the fill", async () => {
     const { engine, scene } = host();
-    setHapticLighting(engine, "all");
+    setHapticLighting(engine, true);
     const fill = new HemisphericLight("fill", Vector3.Up(), scene);
     fill.diffuse = new Color3(0.5, 0.5, 1);
     fill.groundColor = new Color3(0.2, 0.1, 0);

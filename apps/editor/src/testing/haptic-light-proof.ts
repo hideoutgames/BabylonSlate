@@ -1,44 +1,67 @@
 /**
- * Test-build-only differential oracle for the lighting plan's Phase 4 spike: the same PBR graph Scene drawn by
- * Babylon's per-light path and by the HapticLights loops (both light sets), on the real GPU, through the Forward
- * FrameGraph.
+ * Test-build-only oracle for the lighting plan's HapticLightingBlock: the same graph Materials, lights and
+ * environment cube drawn by Babylon's PBR block and by HapticLightingBlock, on the real GPU, through the Forward
+ * FrameGraph, and HapticLightingBlock's Effects across light changes.
  */
 import {
   Color4,
+  Constants,
   DirectionalLight,
   Engine,
   FreeCamera,
   HemisphericLight,
   MeshBuilder,
   PointLight,
+  RawCubeTexture,
   Scene,
   SpotLight,
   Vector3,
+  type AbstractMesh,
   type Effect,
   type Light,
+  type NodeMaterial,
 } from "@babylonjs/core";
+import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, setHapticLighting, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
+import { retainFilteredEnvironment } from "../../../../packages/render/src/environment-prefilter";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
-import { setHapticLighting, type HapticLightSet } from "../../../../packages/render/src/haptic-lights";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
-type Path = "babylon" | HapticLightSet;
-const PATHS: readonly Path[] = ["babylon", "forward", "all"];
+type Path = "babylon" | "haptic";
+const SURFACES = [
+  { name: "rough dielectric", baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.6 },
+  { name: "smooth metal", baseColor: [0.95, 0.75, 0.35], metallic: 1, roughness: 0.25 },
+  { name: "glossy dielectric", baseColor: [0.2, 0.35, 0.8], metallic: 0, roughness: 0.15 },
+] as const;
 
-/** Lit Effects (Babylon's light defines or the light block) the Engine holds, by key. */
+/** A cube face's pixels: a sky gradient from a bright zenith to a dark ground, tinted per face. */
+function face(index: number, size: number): Uint8Array {
+  const tint = [[1, 0.9, 0.8], [0.8, 0.9, 1], [1, 1, 1], [0.3, 0.25, 0.2], [0.9, 1, 0.85], [1, 0.85, 0.9]][index]!;
+  const pixels = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    const t = index === 2 ? 1 : index === 3 ? 0.2 : 1 - y / size;
+    for (let x = 0; x < size; x++) {
+      const offset = (y * size + x) * 4;
+      for (let channel = 0; channel < 3; channel++) pixels[offset + channel] = Math.round(255 * (0.15 + 0.7 * t) * tint[channel]!);
+      pixels[offset + 3] = 255;
+    }
+  }
+  return pixels;
+}
+
 function litEffectKeys(engine: Engine): string[] {
   const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
-  return Object.keys(effects).filter((key) => /#define (LIGHT0|HAPTIC_LIGHTS)\b/.test(effects[key]!.defines)).sort();
+  return Object.keys(effects).filter((key) => effects[key]!.fragmentSourceCode.includes("uniform HapticLights")).sort();
 }
 
 export async function runHapticLightProof() {
   const canvas = document.createElement("canvas");
-  canvas.width = 96;
-  canvas.height = 72;
+  canvas.width = 120;
+  canvas.height = 80;
   document.getElementById("root")!.append(canvas);
   const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const order = readbackChannelOrder(false);
@@ -49,8 +72,8 @@ export async function runHapticLightProof() {
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
-    const camera = new FreeCamera("camera", new Vector3(0, 4.5, -7.5), scene);
-    camera.setTarget(new Vector3(0, 0.4, 0));
+    const camera = new FreeCamera("camera", new Vector3(0, 3.6, -7), scene);
+    camera.setTarget(new Vector3(0, 0.5, 0));
     camera.minZ = 0.1;
     camera.maxZ = 40;
     scene.activeCamera = camera;
@@ -61,23 +84,46 @@ export async function runHapticLightProof() {
       quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } }),
       shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 0 }),
     });
-    const doc = createDefaultMaterialDocument("Graph Surface");
-    doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [0.8, 0.8, 0.8];
-    const lowered = lowerMaterialDocument(doc);
-    if (!lowered.ok) throw new Error("Surface fixture did not lower");
-    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "Graph Surface" });
-    if (!compiled.ok) throw new Error("Surface fixture did not compile");
-    await compiled.ready;
-    const floor = MeshBuilder.CreateGround("floor", { width: 8, height: 6 }, scene);
-    floor.material = compiled.material;
-    const box = MeshBuilder.CreateBox("box", { size: 1 }, scene);
-    box.position.set(-1.4, 0.5, 0.6);
-    box.material = compiled.material;
-    const ball = MeshBuilder.CreateSphere("ball", { diameter: 1.2, segments: 16 }, scene);
-    ball.position.set(1.4, 0.6, 0.2);
-    ball.material = compiled.material;
+    // A prefiltered environment cube with its irradiance, as the Scene's environment lighting builds one.
+    const source = new RawCubeTexture(scene, Array.from({ length: 6 }, (_, index) => face(index, 64)), 64,
+      Constants.TEXTUREFORMAT_RGBA, Constants.TEXTURETYPE_UNSIGNED_BYTE, false, true);
+    const filtered = retainFilteredEnvironment(engine, source);
+    if (!filtered) throw new Error("This device cannot prefilter an environment cube.");
+    await filtered.ready;
+    filtered.cube.sphericalPolynomial = await CubeMapToSphericalPolynomialTools.ConvertCubeMapTextureToSphericalPolynomial(source);
+    scene.environmentTexture = filtered.cube;
+    scene.iblIntensity = 1;
+
+    const compile = async (surface: (typeof SURFACES)[number]): Promise<NodeMaterial> => {
+      const doc = createDefaultMaterialDocument(surface.name);
+      doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [...surface.baseColor];
+      const output = doc.nodes.find((node) => node.id === "output")!.properties;
+      output[materialPinDefaultPropertyKey("metallic")] = [surface.metallic];
+      output[materialPinDefaultPropertyKey("roughness")] = [surface.roughness];
+      const lowered = lowerMaterialDocument(doc);
+      if (!lowered.ok) throw new Error(`${surface.name} did not lower`);
+      const compiled = compileMaterialPlan(lowered.plan, { scene, name: surface.name });
+      if (!compiled.ok) throw new Error(`${surface.name} did not compile`);
+      await compiled.ready;
+      return compiled.material;
+    };
+    // The switch picks the lighting block when a Material compiles.
+    const materials: Record<Path, NodeMaterial[]> = { babylon: [], haptic: [] };
+    for (const surface of SURFACES) materials.babylon.push(await compile(surface));
+    setHapticLighting(engine, true);
+    for (const surface of SURFACES) materials.haptic.push(await compile(surface));
+
+    const floor = MeshBuilder.CreateGround("floor", { width: 9, height: 6 }, scene);
+    const box = MeshBuilder.CreateBox("box", { size: 1.2 }, scene);
+    box.position.set(-1.8, 0.6, 0.4);
+    box.rotation.y = 0.6;
+    const ball = MeshBuilder.CreateSphere("ball", { diameter: 1.4, segments: 24 }, scene);
+    ball.position.set(1.7, 0.7, 0.2);
+    const meshes: AbstractMesh[] = [floor, box, ball];
+    const assign = (path: Path) => meshes.forEach((mesh, index) => { mesh.material = materials[path][index]!; });
+
     const authored = (light: Light, color: number[], intensity: number) =>
-      applyAuthoredLightProperties(light, { color, intensity, castShadows: false, range: 9, outerAngle: 70, innerAngle: 40 });
+      applyAuthoredLightProperties(light, { color, intensity, castShadows: false, range: 40, outerAngle: 70, innerAngle: 40 });
     const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
     authored(sun, [1, 0.95, 0.85], 0.7);
     const fill = new HemisphericLight("fill", Vector3.Up(), scene);
@@ -92,6 +138,7 @@ export async function runHapticLightProof() {
       authored(light, [[0.3, 0.4, 1], [1, 0.8, 0.2], [0.8, 0.3, 0.9]][index]!, 0.9);
       return light;
     });
+    const lights = [sun, fill, ...spots, ...points];
     const graph = new ForwardSceneFrameGraph(scene);
     const draw = async () => {
       await graph.prepare(camera);
@@ -99,15 +146,29 @@ export async function runHapticLightProof() {
       try { graph.render(camera, false); } finally { engine.endFrame(); }
       return read();
     };
+    const restore = () => {
+      for (const light of lights) setAuthoredLightEnabled(light, true);
+      filtered.cube.rotationY = 0;
+      filtered.cube.boundingBoxSize = undefined as unknown as Vector3;
+      scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
+    };
     const poses: { name: string; apply: () => void }[] = [
       { name: "all lights", apply: () => undefined },
       { name: "two off", apply: () => { setAuthoredLightEnabled(points[1]!, false); setAuthoredLightEnabled(spots[1]!, false); } },
       { name: "sun only", apply: () => { for (const light of [fill, ...spots, ...points]) setAuthoredLightEnabled(light, false); } },
+      { name: "environment only", apply: () => { for (const light of lights) setAuthoredLightEnabled(light, false); } },
+      { name: "rotated environment", apply: () => { filtered.cube.rotationY = 1.1; } },
+      // A reflection probe's box projection.
+      { name: "box-projected environment", apply: () => {
+        filtered.cube.boundingBoxPosition = new Vector3(0.5, 1.5, 0.5);
+        filtered.cube.boundingBoxSize = new Vector3(8, 4, 7);
+        // The cube is the Engine's, not the Scene's: its Materials learn of the box as a probe's do.
+        scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
+      } },
     ];
-    const restore = () => { for (const light of [sun, fill, ...spots, ...points]) setAuthoredLightEnabled(light, true); };
     const captures: { name: string; path: Path; pixels: number[] }[] = [];
-    for (const path of PATHS) {
-      setHapticLighting(engine, path === "babylon" ? null : path);
+    for (const path of ["babylon", "haptic"] as const) {
+      assign(path);
       for (const pose of poses) {
         restore();
         pose.apply();
@@ -115,8 +176,8 @@ export async function runHapticLightProof() {
       }
     }
 
-    // Lights switching, arriving and leaving on the light block compile nothing new.
-    setHapticLighting(engine, "all");
+    // Lights switching, arriving and leaving compile nothing new.
+    assign("haptic");
     restore();
     await draw();
     const before = litEffectKeys(engine);
@@ -133,11 +194,12 @@ export async function runHapticLightProof() {
     await step("a new point", () => authored(new PointLight("added", new Vector3(0.6, 1.5, -0.4), scene), [0.3, 1, 0.9], 0.9));
     await step("a point removed", () => points[0]!.dispose());
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
-    const hapticLitEffects = litEffectKeys(engine).filter((key) => effects[key]!.defines.includes("#define HAPTIC_LIGHTS\n")).length;
+    const lightDefines = litEffectKeys(engine).filter((key) => /#define LIGHT\d/.test(effects[key]!.defines)).length;
     graph.dispose();
-    return { width: canvas.width, height: canvas.height, captures, steps, hapticLitEffects };
+    filtered.release();
+    return { width: canvas.width, height: canvas.height, captures, steps, hapticEffects: before.length, lightDefines };
   } finally {
-    setHapticLighting(engine, null);
+    setHapticLighting(engine, false);
     scene.dispose();
     engine.dispose();
     canvas.remove();

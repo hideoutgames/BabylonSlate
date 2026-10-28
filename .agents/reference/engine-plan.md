@@ -277,7 +277,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 ## Debugging tiers
 
 - The command system is always present; only the debugger UI and debug-tier commands are optional and tree-shaken out of non-debug exports.
-- Core commands ship in every build: `changescene`, `quality` (and its groups), `fixedlights`, `hapticlights`, `framecap`, `volume`, `quit`, `help`, and every user `DebugCommand`. Debug-tier commands (`stat *`, `showcollision`, `wireframe`, `pause`, `step`, `slomo`, `freecam`, `possess`, `destroyactor`, `dumplog`, …) ship only with the bundled debugger ([packages/debugger/src](../../packages/debugger/src/)).
+- Core commands ship in every build: `changescene`, `quality` (and its groups), `fixedlights`, `framecap`, `volume`, `quit`, `help`, and every user `DebugCommand`. Debug-tier commands (`stat *`, `showcollision`, `wireframe`, `pause`, `step`, `slomo`, `freecam`, `possess`, `destroyactor`, `dumplog`, …) ship only with the bundled debugger ([packages/debugger/src](../../packages/debugger/src/)).
 - Engine command names are reserved; a colliding user command fails at edit time.
 - Stats HUD on the main thread at about 5 Hz, splitting render, script and physics time; memory shown as accounted bytes; per-channel bridge traffic. HUDs never `setState` at 60 Hz.
 - The trace recorder spills `.htrace` (same container format) to derived data; with input stream and RNG seed it replays through the headless harness.
