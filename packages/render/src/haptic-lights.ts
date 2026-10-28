@@ -14,7 +14,7 @@ import { isIlluminatingLight, sortLightsByAdmission } from "./light-policy";
 /**
  * Lighting plan: lit graph Materials (`HapticLightingBlock`) read every light from one per-Scene uniform block
  * (`HapticLights`) and loop over it, instead of Babylon's per-light defines, so no light change compiles a shader.
- * Behind an Engine switch while the plan's phases land; GLSL only, unshadowed.
+ * Behind an Engine switch while the plan's phases land; unshadowed.
  */
 
 /** Records per light type the block holds. */
@@ -32,13 +32,13 @@ export function hapticLighting(engine: AbstractEngine): boolean {
   return engines.has(engine);
 }
 
-/** Graph Materials of `scene` draw with the light block: switched on, on a WebGL2 Engine with uniform buffers. */
+/** Graph Materials of `scene` draw with the light block: switched on, on an Engine with uniform buffers. */
 export function hapticLightingActive(scene: Scene): boolean {
   const engine = scene.getEngine();
-  return engines.has(engine) && !engine.isWebGPU && engine.supportsUniformBuffers;
+  return engines.has(engine) && engine.supportsUniformBuffers;
 }
 
-/** The block's GLSL declaration; its layout matches `hapticLightBuffer`. */
+/** The block's GLSL and WGSL declarations; their layout matches `hapticLightBuffer`. WGSL binds the buffer by the variable's name. */
 export const HAPTIC_LIGHTS_GLSL = `layout(std140) uniform HapticLights {
 vec4 hapticCounts;
 vec4 hapticFillDirection;
@@ -48,6 +48,17 @@ vec4 hapticDirectional[${HAPTIC_LIGHT_MAXIMUM.directional * 2}];
 vec4 hapticPoint[${HAPTIC_LIGHT_MAXIMUM.point * 2}];
 vec4 hapticSpot[${HAPTIC_LIGHT_MAXIMUM.spot * 3}];
 };
+`;
+export const HAPTIC_LIGHTS_WGSL = `struct HapticLightsBlock {
+hapticCounts: vec4f,
+hapticFillDirection: vec4f,
+hapticFillSky: vec4f,
+hapticFillGround: vec4f,
+hapticDirectional: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.directional * 2}>,
+hapticPoint: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.point * 2}>,
+hapticSpot: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.spot * 3}>,
+};
+var<uniform> HapticLights : HapticLightsBlock;
 `;
 
 type SceneLights = { buffer: UniformBuffer; held: Set<Light>; next: Set<Light>; ranked: Light[] };
@@ -82,10 +93,10 @@ export function hapticLightBuffer(scene: Scene): UniformBuffer {
 
 /** Bind the block for a draw with `effect`, which reads it. */
 export function bindHapticLights(scene: Scene, effect: Effect): void {
-  // bindToEffect only records the Effect; bindUniformBuffer binds it.
-  const buffer = sceneLights(scene).buffer;
-  buffer.bindToEffect(effect, "HapticLights");
-  buffer.bindUniformBuffer();
+  // Bound directly, never through bindToEffect: a UniformBuffer rebinds to its recorded Effect on every update, which
+  // on WebGPU writes into whichever draw context is current, possibly a released one, as the block updates between draws.
+  const buffer = sceneLights(scene).buffer.getBuffer();
+  if (buffer) effect.bindUniformBuffer(buffer, "HapticLights");
 }
 
 /**

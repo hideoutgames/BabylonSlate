@@ -77,6 +77,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 5 PR 2: CEL as the block's `HAPTIC_CEL` define. The same spec draws nine CEL poses (sun, fill, environment, a rotated cube, the three mixing modes, highlights) pixel-identical to Babylon's `CelLightBlock`; point and spot lights differ by the physical-falloff decision.
 
+   Phase 5 PR 3: the WGSL twin, so the switch applies on WebGPU. The spec runs on WebGL2 and WebGPU; on WebGPU Babylon's reflection block cannot compile a box-projected cube (its WGSL reads the box uniforms without the `uniforms.` prefix), so graph Materials lit by a box-projected reflection probe fail to compile there until the new path is the default.
+
    If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
 5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.
 6. **Shadow atlas** behind the same switch, with the preserve list above.
