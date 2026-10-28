@@ -53,13 +53,15 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     sun.intensity = 1.5;
     const graph = new ForwardSceneFrameGraph(scene);
-    const draw = async () => {
-      // Each draw is a new render: water picks its removal volumes once per render.
-      scene.incrementRenderId();
-      updateSceneWater(scene);
-      await graph.prepare(camera);
-      engine.beginFrame();
-      try { graph.render(camera, false); } finally { engine.endFrame(); }
+    const draw = async (frames = 1) => {
+      for (let frame = 0; frame < frames; frame++) {
+        // Each draw is a new render: water picks its removal volumes once per render.
+        scene.incrementRenderId();
+        updateSceneWater(scene);
+        await graph.prepare(camera);
+        engine.beginFrame();
+        try { graph.render(camera, false); } finally { engine.endFrame(); }
+      }
       const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
       return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
     };
@@ -91,7 +93,8 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     if (!starter.ok) throw new Error("The water starter did not compile");
     await starter.ready;
     const starterWater = createWaterMesh(scene, "starter water", normalizeWaterBody({ width: 8, length: 8, resolution: 32 }), createDefaultWaterDefinition(), starter.material);
-    const starterPixels = await draw();
+    // It samples the view's scene copy, which the view plans once the water asks for it: a few frames.
+    const starterPixels = await draw(6);
     starterWater.dispose();
     starter.dispose();
     // The removal volume's centre across the screen, by the view the draws used (columns read the same on either
