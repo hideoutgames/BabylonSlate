@@ -112,8 +112,11 @@ export interface FeatureTestCheckResources {
   /** Milliseconds since the check started. */
   atMs: number;
   step: string;
-  /** Babylon Effects (shader programs) every Engine holds. */
+  /** Babylon Effects (shader programs) every Engine holds, and how many of them are still compiling. */
   effects: number;
+  compiling: number;
+  /** Frames the Play view drew and held (kept its last image, waiting for shaders or settings), since Play started. */
+  playFrames: { drawn: number; held: number } | null;
   textures: number;
   /** Estimated GPU bytes of those textures, render targets included (`estimateTextureMemory`). */
   textureBytes: number;

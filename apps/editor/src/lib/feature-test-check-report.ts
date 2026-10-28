@@ -90,7 +90,8 @@ function mb(bytes: number | null): string | null {
 /** One resource sample: time into the check, what the Engines held, and the step it was at. */
 function resourceLine(sample: FeatureTestCheckResources): string {
   const memory = [
-    `${sample.effects} shaders`,
+    `${sample.effects} shaders${sample.compiling ? ` (${sample.compiling} compiling)` : ""}`,
+    ...(sample.playFrames ? [`Play drawn ${sample.playFrames.drawn}, held ${sample.playFrames.held}`] : []),
     `${sample.textures} textures (${mb(sample.textureBytes)})`,
     ...(sample.jsHeapBytes !== null ? [`JS heap ${mb(sample.jsHeapBytes)}`] : []),
     ...(sample.appFootprintBytes !== null ? [`app ${mb(sample.appFootprintBytes)}`] : []),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EngineStore, type AbstractEngine } from "@babylonjs/core";
+import { EngineStore, type AbstractEngine, type Effect } from "@babylonjs/core";
 import { estimateTextureMemory } from "@haptic/render";
 import { getHostMemoryStats } from "@haptic/vfs";
 import { SelectableText } from "@haptic/editor-kit";
@@ -79,21 +79,28 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
 /** How often a running check samples what the editor holds, so a crash's report shows memory climbing. */
 const RESOURCE_SAMPLE_MS = 2_000;
 
-/** Shader programs, textures and memory every Engine holds now. */
+/** Shader programs, textures and memory every Engine holds now, and the Play view's drawn and held frames. */
 async function sampleCheckResources(atMs: number, step: string): Promise<FeatureTestCheckResources> {
   let effects = 0;
+  let compiling = 0;
   let textures = 0;
   let textureBytes = 0;
   for (const engine of EngineStore.Instances) {
     // Babylon 9.29 keeps every compiled Effect in `_compiledEffects` until it is released.
-    effects += Object.keys((engine as AbstractEngine & { _compiledEffects?: object })._compiledEffects ?? {}).length;
+    const compiled = (engine as AbstractEngine & { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
+    for (const effect of Object.values(compiled)) {
+      effects += 1;
+      if (!effect.isReady()) compiling += 1;
+    }
     const memory = estimateTextureMemory(engine);
     textures += memory.textures;
     textureBytes += memory.bytes;
   }
+  const presentation = playProbes.get(PLAY_PROBE_KEY)?.snapshot().rendering?.presentation;
   const host = await getHostMemoryStats().catch(() => null);
   return {
-    atMs, step, effects, textures, textureBytes,
+    atMs, step, effects, compiling, textures, textureBytes,
+    playFrames: presentation ? { drawn: presentation.drawn, held: presentation.held } : null,
     jsHeapBytes: host?.jsHeapBytes ?? null,
     appFootprintBytes: host?.appFootprintBytes ?? null,
   };
