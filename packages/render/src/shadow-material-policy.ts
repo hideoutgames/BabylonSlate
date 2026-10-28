@@ -15,7 +15,6 @@ import {
   StandardMaterial,
   type AbstractMesh,
 } from "@babylonjs/core";
-import { CelMaterial } from "./cel-material";
 import { HelperProgramPlugin } from "./helper-program";
 import { TextureQualityPlugin } from "./texture-quality";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
@@ -134,18 +133,5 @@ export function canCacheShadowMaterial(
     material.clipPlane6
   )
     return false;
-  const constructor = material.constructor;
-  if (constructor === CelMaterial) {
-    if (
-      material.pluginManager?._plugins.some(
-        (plugin) => !nativePlugins.has(plugin.constructor),
-      )
-    )
-      return false;
-    const cel = material as CelMaterial;
-    return (
-      cel.hasOriginalShadowHooks() && canCacheShadowMaterial(cel.source, mesh)
-    );
-  }
   return hasStockVertexStage(material);
 }

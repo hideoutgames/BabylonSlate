@@ -10,7 +10,6 @@ import { SHARED_OUTLINE_ATTRIBUTE, type SharedOutlineGroup, type SharedOutlineVi
 import { SHARED_OUTLINE_MASK_SHADER } from "./shared-outline-shaders";
 import type { EffectCompileFailure } from "./effect-compile-failure";
 import { acquireAuthoredOutlineVariant, type AuthoredOutlineVariant } from "./material-compiler";
-import { CelMaterial } from "./cel-material";
 import { isBuiltInMirrorMaterial } from "./mirror-surface-state";
 import { bindMeshLatticeDeformer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { LATTICE_SAMPLER, LATTICE_UNIFORMS } from "./lattice-deformer-shader";
@@ -109,12 +108,8 @@ export class SharedOutlineMaskRenderer {
     }
     if (!program) {
       const variant = acquireAuthoredOutlineVariant(source);
-      // The engine's CEL adapter changes lighting, not StandardMaterial coverage.
-      // Only admit the actual adapter with its original hooks, never an arbitrary
-      // custom material that happens to use the same class name.
-      const nativeCel = source instanceof CelMaterial && source.hasOriginalShadowHooks();
       // The built-in mirror surface is opaque and draws its plain plane: the position-only mask reproduces it.
-      if (!variant && !nativeCel && !isBuiltInMirrorMaterial(source) && !["StandardMaterial", "PBRMaterial", "PBRMetallicRoughnessMaterial", "PBRSpecularGlossinessMaterial", "BackgroundMaterial"].includes(source.getClassName()))
+      if (!variant && !isBuiltInMirrorMaterial(source) && !["StandardMaterial", "PBRMaterial", "PBRMetallicRoughnessMaterial", "PBRSpecularGlossinessMaterial", "BackgroundMaterial"].includes(source.getClassName()))
         throw new Error(`Shared outlines cannot reproduce the coverage of custom material "${source.name}".`);
       program = { source, variant }; this.programs.set(subMesh, program);
     }

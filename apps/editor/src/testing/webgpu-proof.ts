@@ -153,6 +153,9 @@ export async function runWebGpuProof() {
         graph.material = compiled.material;
         await native.material!.forceCompilationAsync(native);
         await compiled.material.forceCompilationAsync(graph);
+        // A CEL graph's switch resyncs scene lighting, which can recompile the native plane after its forced compile.
+        for (let attempt = 0; attempt < 250 && !(native.isReady(true) && graph.isReady(true)); attempt++)
+          await new Promise((resolve) => setTimeout(resolve, 20));
         for (let frame = 0; frame < 3; frame++) {
           engine.beginFrame();
           scene.render(false);
