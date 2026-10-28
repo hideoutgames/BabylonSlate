@@ -117,7 +117,7 @@ async function setupCelColorFixture(page: Page, saveTimeout?: number) {
       components: [mesh],
     }),
     // No material assigned: the box draws with the engine default material,
-    // a native PBR material whose albedo is a 204/166 grey checker texture.
+    // a graph Material with a procedural 204/166 grey checker.
     createActor("native-actor", "Native Texture", {
       transform: {
         position: [1.5, 0, 0],
@@ -154,8 +154,7 @@ test("CEL preserves authored colors through Play and unlit scene overrides", asy
   await expect
     .poll(() => pixelsNear(viewport, authored), { timeout: 30_000 })
     .toBeGreaterThan(500);
-  // The fallback takes the imported/native material path and must preserve raw
-  // texture pixels too: both checker texels, not one flat grey.
+  // The engine default must keep both checker greys, not one flat grey.
   for (const texel of [[204, 204, 204], [166, 166, 166]]) {
     await expect
       .poll(() => pixelsNear(viewport, texel))

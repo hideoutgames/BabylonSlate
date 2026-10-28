@@ -59,7 +59,6 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 Each phase is one PR, or a short series, merged into `main` before the next starts.
 
 3. **Material consolidation on the current lighting**, with no visible change:
-   - The engine default material becomes a Material document (`createDefaultMaterialDocument`); landscape, foliage, cables and dynamic runtime meshes without a Material use it.
    - Preserved glTF slots become Material documents: an Ambient Occlusion input on Material Output (with strength), texture coordinate channels and texture transforms in the importer; emissive strength is kept.
    - Built-in water becomes a graph Material on the water node blocks (`water-node-blocks.ts`), its plugin's behaviour moved into blocks.
    - The fog-volume guide ball and the GreasedLine debug lines (`play-debug-draw.ts`) become unlit.

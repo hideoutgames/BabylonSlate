@@ -3,8 +3,8 @@ import { ACTOR_FRAMING_MIN_RADIUS } from "./actor-framing";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import {
   Mesh,
+  NodeMaterial,
   NullEngine,
-  PBRMaterial,
   ScenePerformancePriority,
   ShaderMaterial,
 } from "@babylonjs/core";
@@ -433,7 +433,7 @@ describe("p20-editor-scene-freeze", () => {
     expect(visual?.material).toBeTruthy();
     expect(visual!.material!.isFrozen).toBe(true);
     const def = handle.scene.materials.find(isEngineDefaultMaterial);
-    expect(def).toBeInstanceOf(PBRMaterial);
+    expect(def).toBeInstanceOf(NodeMaterial);
     expect(def!.isFrozen).toBe(true);
 
     handle.setEditingMaterialGuids(new Set(["mat-1"]));

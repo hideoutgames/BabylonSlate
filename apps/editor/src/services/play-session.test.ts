@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine, RawTexture, Scene, StandardMaterial } from "@babylonjs/core";
-import { installEngineDefaultMaterial } from "@haptic/render";
 import { SessionDiagnosticAggregator } from "@haptic/runtime";
 import type { DebugInspectSnapshot } from "@haptic/object-model";
 import {
@@ -66,13 +65,12 @@ describe("texturesRetainedAfterPlay", () => {
     return texture;
   };
 
-  /** What an editor preview Scene creates on the shared Engine the first time it draws a PBR Material: the default checker and the BRDF table. */
+  /** What an editor preview Scene creates on the shared Engine for its lit Materials: the BRDF table. */
   function mountEditorPreview(engine: NullEngine) {
     const scene = new Scene(engine);
-    const checker = installEngineDefaultMaterial(scene).albedoTexture!.getInternalTexture()!;
     const brdfTexture = rawTexture(scene, "data:EnvironmentBRDFTexture2");
     scene.environmentBRDFTexture = brdfTexture;
-    return { scene, checker, brdf: brdfTexture.getInternalTexture()! };
+    return { scene, brdf: brdfTexture.getInternalTexture()! };
   }
 
   it("leaves out the textures of an editor Scene opened during the session, which it still references", () => {
@@ -81,7 +79,7 @@ describe("texturesRetainedAfterPlay", () => {
     const play = new Scene(engine);
     const preview = mountEditorPreview(engine);
     play.dispose();
-    expect(engine.getLoadedTexturesCache()).toEqual(expect.arrayContaining([preview.checker, preview.brdf]));
+    expect(engine.getLoadedTexturesCache()).toContain(preview.brdf);
     expect(texturesRetainedAfterPlay(engine, before, new Set([play]))).toEqual([]);
   });
 
