@@ -2616,8 +2616,9 @@ describe("compile holds after the first frame", () => {
   });
 
   /** Gives the world's meshes (by name) PBR Materials of their own before the load: one can then change alone. */
+  /** A native PBR Material of each mesh's own, as an imported model's preserved slot has. */
   const ownMaterials = (world: PlayWorld, ...names: string[]) => names.map((name) => {
-    const material = (world.handle.scene.defaultMaterial as PBRMaterial).clone(name);
+    const material = new PBRMaterial(name, world.handle.scene);
     world.handle.scene.getMeshByName(name)!.material = material;
     return material;
   });

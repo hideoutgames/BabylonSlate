@@ -1,15 +1,18 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  Color3,
+  HemisphericLight,
+  type Mesh,
   NullEngine,
   Scene,
   StandardMaterial,
-  Texture,
+  Vector3,
+  type NodeMaterial,
 } from "@babylonjs/core";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import {
-  ENGINE_DEFAULT_CHECKER_TILES,
+  ENGINE_DEFAULT_CHECKER_GREYS,
   createEngineDefaultMaterial,
-  engineDefaultCheckerRgba,
+  engineDefaultMaterialDocument,
   installEngineDefaultMaterial,
   isEngineDefaultMaterial,
 } from "./default-material";
@@ -36,41 +39,52 @@ function rawScene(): Scene {
 }
 
 describe("engine default material", () => {
-  it("uses a UV-tiled grey checker for albedo", () => {
+  it("is a lit checker Material whose light grey is a new surface Material's Base Color", async () => {
     const scene = rawScene();
+    new HemisphericLight("fill", Vector3.Up(), scene);
     const material = createEngineDefaultMaterial(scene);
-    const albedo = material.albedoTexture;
+    // Its colour comes from the graph, not the Material Output's constants.
+    const lowered = lowerMaterialDocument(engineDefaultMaterialDocument());
+    expect(lowered.ok && [lowered.plan.outputs.baseColor?.kind, lowered.plan.outputs.emissive?.kind]).toEqual(["operation", "operation"]);
+    const newMaterialBaseColor = createDefaultMaterialDocument().nodes.find((node) => node.type === "const.color")!.properties.value;
+    expect(newMaterialBaseColor).toEqual([ENGINE_DEFAULT_CHECKER_GREYS[0], ENGINE_DEFAULT_CHECKER_GREYS[0], ENGINE_DEFAULT_CHECKER_GREYS[0]]);
+    expect(ENGINE_DEFAULT_CHECKER_GREYS.map((grey) => Math.round(grey * 255))).toEqual([204, 166]);
+    const box = createPrimitiveMesh(scene, "box", "box");
+    scene.defaultMaterial = material;
+    // Its shaders load asynchronously.
+    await vi.waitFor(() => expect(material.isReadyForSubMesh(box, box.subMeshes[0]!)).toBe(true));
+    expect(box.subMeshes[0]!.effect?.defines).toMatch(/LIGHT0/);
+  });
 
-    expect(albedo).toBeInstanceOf(Texture);
-    const tiled = albedo as Texture;
-    expect(tiled.getSize()).toEqual({ width: 2, height: 2 });
-    expect(tiled.wrapU).toBe(Texture.WRAP_ADDRESSMODE);
-    expect(tiled.wrapV).toBe(Texture.WRAP_ADDRESSMODE);
-    expect(tiled.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
-    expect(tiled.uScale).toBe(ENGINE_DEFAULT_CHECKER_TILES);
-    expect(tiled.vScale).toBe(ENGINE_DEFAULT_CHECKER_TILES);
-    expect(ENGINE_DEFAULT_CHECKER_TILES).toBe(8);
-    // Light 0.8 (user default baseColor) and slightly darker 0.65, as 8-bit sRGB.
-    // NullEngine does not retain RawTexture pixel buffers; this is the source
-    // createEngineDefaultMaterial uploads.
-    expect(Array.from(engineDefaultCheckerRgba())).toEqual([
-      204, 204, 204, 255, 166, 166, 166, 255, 166, 166, 166, 255, 204, 204, 204,
-      255,
-    ]);
+  it("gives a mesh whose scaling turns non-uniform after its first readiness check the program of one that starts so", async () => {
+    const scene = rawScene();
+    new HemisphericLight("fill", Vector3.Up(), scene);
+    const material = createEngineDefaultMaterial(scene);
+    scene.defaultMaterial = material;
+    const [early, late] = ["early", "late"].map((name) => createPrimitiveMesh(scene, name, "box"));
+    for (const mesh of [early!, late!]) mesh.scaling.set(12, 0.2, 12);
+    const ready = (...meshes: Mesh[]) => vi.waitFor(() => {
+      for (const mesh of meshes) expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
+    });
+    // A load's warm-up and readiness probes can check a mesh before its first world matrix.
+    await ready(early!);
+    scene.incrementRenderId();
+    for (const mesh of [early!, late!]) mesh.computeWorldMatrix(true);
+    await ready(early!, late!);
+    expect(early!.subMeshes[0]!.effect!.defines).toMatch(/NONUNIFORMSCALING/);
+    expect(early!.subMeshes[0]!.effect).toBe(late!.subMeshes[0]!.effect);
   });
 
   it("emits its checker in a 2D scene, which has no lights, and not in 3D", () => {
     const scene = rawScene();
-    const material = installEngineDefaultMaterial(scene);
+    const material = installEngineDefaultMaterial(scene) as NodeMaterial;
     material.freeze();
+    const emission = () => material.getInputBlocks().find((block) => block.name === "emission")?.value;
     applySceneEnvironment(scene, createDefaultScene("2d"));
-    expect(material.emissiveTexture).toBe(material.albedoTexture);
-    expect(material.emissiveColor).toEqual(new Color3(1, 1, 1));
+    expect(emission()).toBe(1);
     expect(material.isFrozen).toBe(true);
-    expect(material.unlit).toBe(false);
     applySceneEnvironment(scene, createDefaultScene("3d"));
-    expect(material.emissiveTexture).toBeNull();
-    expect(material.emissiveColor).toEqual(new Color3(0, 0, 0));
+    expect(emission()).toBe(0);
   });
 
   it("installs as scene.defaultMaterial and reuses the same instance", () => {

@@ -14,7 +14,7 @@ index ad74e8e1285c4b11dd438bc3d17f44cf44043d88..935c8ebb843a0c58a473dc33c55d3f5a
                      depthBiasSlopeScale: topologyIsTriangle ? this._depthBiasSlopeScale : 0,
                  },
 diff --git a/Materials/Node/Blocks/Input/inputBlock.pure.js b/Materials/Node/Blocks/Input/inputBlock.pure.js
-index af4f41adb3fc89a86ecc1ca868192ba4a754135b..3c8b2420b8e5f5bb6245298bb406582e8a31c72d 100644
+index af4f41adb3fc89a86ecc1ca868192ba4a754135b..5b9b5dc169279876b20f2359ab70007b6c5a1ea3 100644
 --- a/Materials/Node/Blocks/Input/inputBlock.pure.js
 +++ b/Materials/Node/Blocks/Input/inputBlock.pure.js
 @@ -41,6 +41,21 @@ const attributeDefine = {
@@ -85,6 +85,23 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..3c8b2420b8e5f5bb6245298bb406582e
                              state._attributeDeclaration += `attribute ${state._getShaderType(this.type)} ${this.declarationVariableName};\n`;
                              state._attributeDeclaration += `#else\n`;
                              state._attributeDeclaration += `${state._getShaderType(this.type)} ${this.declarationVariableName} = ${state._getShaderType(this.type)}(0.);\n`;
+diff --git a/Materials/Node/Blocks/transformBlock.pure.js b/Materials/Node/Blocks/transformBlock.pure.js
+index e9b7db89b862fc9abb62e955da36e782c93d8006..785e699fb93290c6338127cc5d13af71529a988f 100644
+--- a/Materials/Node/Blocks/transformBlock.pure.js
++++ b/Materials/Node/Blocks/transformBlock.pure.js
+@@ -172,9 +172,9 @@ let TransformBlock = (() => {
+              * @param mesh defines the mesh to be rendered
+              */
+             prepareDefines(defines, nodeMaterial, mesh) {
+-                if (mesh && mesh.nonUniformScaling) {
+-                    defines.setValue("NONUNIFORMSCALING", true);
+-                }
++                // Keyed on first preparation, so a mesh whose scaling turns non-uniform later builds the same define string
++                // (and Effect) as one that starts so. Once set it stays set, as before.
++                defines.setValue("NONUNIFORMSCALING", defines.NONUNIFORMSCALING === true || !!(mesh && mesh.nonUniformScaling));
+             }
+             /**
+              * Serializes the block
 diff --git a/Materials/Node/nodeMaterial.pure.js b/Materials/Node/nodeMaterial.pure.js
 index 677079dbbeaeeed37feb51fc976b9c2fb0f34423..c7823a5ea1f5a31047b5748814c0f044420a0610 100644
 --- a/Materials/Node/nodeMaterial.pure.js
@@ -141,7 +158,7 @@ index 81218c39625f0efe767d0d29227f5bc9a673d714..1b1f8d30725c747ca935f15038267c76
      const len = Math.min(mesh.lightSources.length, maxSimultaneousLights);
      for (let i = 0; i < len; i++) {
          const light = mesh.lightSources[i];
-@@ -617,6 +621,10 @@ export function AreLightsTexturesReady(scene, mesh, maxSimultaneousLights, disableLighting = false) {
+@@ -617,6 +621,10 @@ export function AreLightsTexturesReady(scene, mesh, maxSimultaneousLights, disab
      if (!scene.lightsEnabled || disableLighting) {
          return true;
      }
@@ -152,7 +169,7 @@ index 81218c39625f0efe767d0d29227f5bc9a673d714..1b1f8d30725c747ca935f15038267c76
      const lights = mesh.lightSources;
      const count = Math.min(lights.length, maxSimultaneousLights);
      for (let i = 0; i < count; i++) {
-@@ -640,6 +648,11 @@ export function PrepareDefinesForLights(scene, mesh, defines, specularSupported, maxSimultaneousLights = 4, disableLighting = false) {
+@@ -640,6 +648,11 @@ export function PrepareDefinesForLights(scene, mesh, defines, specularSupported,
      if (!defines._areLightsDirty) {
          return defines._needNormals;
      }
@@ -453,7 +470,7 @@ index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea43
      /**
       * Encode the texture to RGBD if possible.
 diff --git a/Particles/gpuParticleSystem.pure.d.ts b/Particles/gpuParticleSystem.pure.d.ts
-index 42a19a93119be03738ecfb3d48e2a0626a14d81a..92204738b04416361b5427ec5d001c7c93c214b9 100644
+index 42a19a93119be03738ecfb3d48e2a0626a14d81a..7feea5a663aa00efa03fb561485cce59a8022a1a 100644
 --- a/Particles/gpuParticleSystem.pure.d.ts
 +++ b/Particles/gpuParticleSystem.pure.d.ts
 @@ -56,6 +56,8 @@ export declare class GPUParticleSystem extends BaseParticleSystem implements IDi
@@ -466,7 +483,7 @@ index 42a19a93119be03738ecfb3d48e2a0626a14d81a..92204738b04416361b5427ec5d001c7c
      private _cachedUpdateDefines;
      private _randomTextureSize;
 diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.pure.js
-index 23cc4b44ae5ddaa1a098cc367cbe2b53fb5c8196..125ef9305ad59e91d2e3bf3fd1486edce2fd407b 100644
+index 23cc4b44ae5ddaa1a098cc367cbe2b53fb5c8196..bacc8b9795a0f0634198be4e50fbb399ee10a585 100644
 --- a/Particles/gpuParticleSystem.pure.js
 +++ b/Particles/gpuParticleSystem.pure.js
 @@ -775,6 +775,8 @@ export class GPUParticleSystem extends BaseParticleSystem {
@@ -766,7 +783,7 @@ index 3d66a1233b00a9d792d58bb0b233cf8815e5a9de..e73a4da64e042d7c2f0a9f44b4777721
          }
          else if (body.getPrestepType() == PhysicsPrestepType.ACTION) {
 diff --git a/assetContainer.js b/assetContainer.js
-index 046984e478022e39c2405a1fa1d86c5326015e25..521afef3565b03446e7699397d540f17b61afc22 100644
+index 046984e478022e39c2405a1fa1d86c5326015e25..b516442421c03d91a13171478e349f6f821cf133 100644
 --- a/assetContainer.js
 +++ b/assetContainer.js
 @@ -202,7 +202,7 @@ export class AssetContainer extends AbstractAssetContainer {
@@ -791,7 +808,7 @@ index 046984e478022e39c2405a1fa1d86c5326015e25..521afef3565b03446e7699397d540f17
          for (const camera of cameras) {
              camera.dispose();
 diff --git a/scene.pure.d.ts b/scene.pure.d.ts
-index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..79b40ff5e116b92d42aed46496340b62987cdab0 100644
+index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..f77d02ea45623317e2f61239902a41751eeeb235 100644
 --- a/scene.pure.d.ts
 +++ b/scene.pure.d.ts
 @@ -2365,8 +2365,9 @@ export declare class Scene implements IAnimatable, IClipPlanesHolder, IAssetCont
@@ -806,7 +823,7 @@ index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..79b40ff5e116b92d42aed46496340b62
      /**
       * Freeze all materials
 diff --git a/scene.pure.js b/scene.pure.js
-index 07e0f7e14442d2187e86d561a8c448f01d67b238..10f58511d6243c767e4fbfd258eb68feade6945e 100644
+index 07e0f7e14442d2187e86d561a8c448f01d67b238..d2e494f04c93bc71fdd3d4f4938045d9f061a5d1 100644
 --- a/scene.pure.js
 +++ b/scene.pure.js
 @@ -4517,20 +4517,21 @@ export class Scene {

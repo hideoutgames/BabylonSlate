@@ -1,5 +1,5 @@
-import type { LinesMesh } from "@babylonjs/core";
-import { describe, expect, it } from "vitest";
+import { PointLight, Vector3, type LinesMesh } from "@babylonjs/core";
+import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage, DebugDrawCommand } from "@haptic/bridge";
 import { createTestEngine } from "./create-null-engine";
 import { createPlayDebugDraw, PLAY_DEBUG_DRAW_PREFIX } from "./play-debug-draw";
@@ -184,6 +184,35 @@ describe("play debug draw", () => {
     overlay.noteSimTick(2);
     expect(overlayMeshes(scene)).toHaveLength(0);
     expect(scene.materials).toHaveLength(materialCount);
+    overlay.dispose();
+    engine.dispose();
+  });
+
+  it("draws a thick line with a program no scene light enters", async () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    new PointLight("lamp", Vector3.Zero(), scene);
+    const overlay = createPlayDebugDraw(scene);
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        thickness: 2,
+        start: { x: 0, y: 0, z: 0 },
+        end: { x: 1, y: 0, z: 0 },
+      }),
+    );
+    const line = scene.meshes.find((mesh) => mesh.name.startsWith(PLAY_DEBUG_DRAW_PREFIX));
+    // The null engine never uploads the line's colour table; a real one does on creation.
+    for (const texture of line?.material?.getActiveTextures() ?? []) texture.getInternalTexture()!.isReady = true;
+    // A shader material keeps its program on itself, not on the submesh, and loads its shaders asynchronously.
+    const defines = await vi.waitFor(() => {
+      scene.render();
+      const effect = line?.material?.getEffect();
+      expect(effect?.isReady()).toBe(true);
+      return effect!.defines;
+    });
+    expect(defines).not.toMatch(/LIGHT\d/);
     overlay.dispose();
     engine.dispose();
   });

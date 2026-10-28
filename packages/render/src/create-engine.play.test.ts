@@ -1,7 +1,7 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PBRMetallicRoughnessBlock, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -2052,13 +2052,15 @@ describe("Play createEngine view", () => {
       handle.scene.lights.some((light) => light.isEnabled() && light.intensity > 0),
     ).toBe(true);
     const lights = [...handle.scene.lights];
+    const defaultUnlit = () => (handle.scene.defaultMaterial as NodeMaterial).attachedBlocks
+      .find((block): block is PBRMetallicRoughnessBlock => block instanceof PBRMetallicRoughnessBlock)?.unlit;
     handle.editor!.setViewportShadingMode("unlit");
     expect(handle.scene.lightsEnabled).toBe(false);
-    expect((handle.scene.defaultMaterial as PBRMaterial).unlit).toBe(true);
+    expect(defaultUnlit()).toBe(true);
     handle.loadScene(data);
     handle.editor!.setViewportShadingMode("pbr");
     expect(handle.scene.lightsEnabled).toBe(true);
-    expect((handle.scene.defaultMaterial as PBRMaterial).unlit).toBe(false);
+    expect(defaultUnlit()).toBe(false);
     expect(handle.scene.lights).toEqual(lights);
     expect(data.actors).toHaveLength(1);
   });
