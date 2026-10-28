@@ -141,6 +141,8 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     if (!mesh) return;
     const scene = mesh.getScene();
     bindHapticLights(scene, effect);
+    effect.setTexture("hapticAreaLtc1Sampler", scene._ltcTextures?.LTC1 ?? null);
+    effect.setTexture("hapticAreaLtc2Sampler", scene._ltcTextures?.LTC2 ?? null);
     if (celEffect(effect)) {
       bindCelSettings(effect, scene);
       return;
@@ -178,6 +180,8 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emitUniformFromString("hapticEnvironmentMatrix", NodeMaterialBlockConnectionPointTypes.Matrix);
     state._emitCubeSampler("hapticEnvironmentSampler");
     state._emit2DSampler("hapticEnvironmentBrdfSampler");
+    state._emit2DSampler("hapticAreaLtc1Sampler");
+    state._emit2DSampler("hapticAreaLtc2Sampler");
     const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
     state._emitFunction("hapticLights", wgsl ? HAPTIC_LIGHTS_WGSL : HAPTIC_LIGHTS_GLSL, "// HapticLights");
     state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(wgsl)}\n#endif\n`, "// CEL");

@@ -46,16 +46,21 @@ for (const backend of ["webgl2", "webgpu"] as const) {
 
     // PBR. The same BRDF and environment evaluated in another order: float rounding only. The lights' range is far
     // beyond the scene, so HapticLightingBlock's range window (which Babylon's physical falloff lacks) stays at one.
-    // The software WebGPU adapter rounds a few silhouette pixels of the glossy ball, at grazing angles, further.
-    const tolerance = backend === "webgl2" ? { outliers: 0, largest: 2 } : { outliers: 10, largest: 8 };
+    // The software WebGPU adapter rounds a few silhouette pixels of the ball, at grazing angles, further (measured:
+    // up to 3 pixels, by up to 9/255 on the white metal).
+    const tolerance = backend === "webgl2" ? { outliers: 0, largest: 2 } : { outliers: 10, largest: 16 };
     const paths = (captures: typeof result.captures, path: string) =>
       new Map(captures.filter((capture) => capture.path === path).map((capture) => [capture.name, capture.pixels]));
     const babylon = paths(result.captures, "babylon");
     const haptic = paths(result.captures, "haptic");
     // Babylon's WGSL reflection block cannot compile a box-projected cube, so WebGPU has no reference for that pose.
     const boxReference = backend === "webgl2" ? ["box-projected environment"] : [];
-    expect([...babylon.keys()]).toEqual(["all lights", "two off", "sun only", "environment only", "rotated environment", ...boxReference]);
-    expect([...haptic.keys()]).toEqual(["all lights", "two off", "sun only", "environment only", "rotated environment", "box-projected environment"]);
+    expect([...babylon.keys()]).toEqual([
+      "all lights", "two off", "sun only", "environment only", "rotated environment", ...boxReference, "rect light on metal",
+    ]);
+    expect([...haptic.keys()]).toEqual([
+      "all lights", "two off", "sun only", "environment only", "rotated environment", "box-projected environment", "rect light on metal", "rect light",
+    ]);
     for (const [name, reference] of babylon) {
       const { outliers, largest, lit } = compare(reference, haptic.get(name)!);
       expect(lit, name).toBeGreaterThan(1500);
@@ -65,8 +70,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // The poses really differ, so a block that ignored a light, the cube's rotation or its box would fail above.
     for (const pose of ["two off", "environment only", "rotated environment", "box-projected environment"])
       expect(haptic.get(pose), pose).not.toEqual(haptic.get("all lights"));
-    // Two programs per Material, for the plain and the box-projected cube, and none carries Babylon's light defines.
-    expect(result.hapticEffects).toBe(6);
+    // The rect light lights the regular surfaces too, where its Fresnel is the standard LTC one rather than Babylon's.
+    expect(compare(haptic.get("environment only")!, haptic.get("rect light")!).outliers).toBeGreaterThan(1000);
+    // Two programs per Material, for the plain and the box-projected cube, and one for the white metal; none carries
+    // Babylon's light defines. WebGPU releases a program once no draw holds it, as the white metal pose's Material
+    // swap leaves them, so there only the three drawn since remain.
+    expect(result.hapticEffects).toBe(backend === "webgl2" ? 7 : 3);
     expect(result.lightDefines).toBe(0);
     expect(result.steps).toEqual(LIGHT_STEPS);
 
@@ -87,6 +96,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(celBabylon.get("rotated environment")).not.toEqual(celBabylon.get("environment only"));
     // Point and spot lights fall off physically on the block, by design: lit, and not as Babylon's CEL draws them.
     expect(celHaptic.get("all lights")).not.toEqual(celHaptic.get("sun and fill"));
+    // Babylon's light block draws rect lights far dimmer than its PBR block; the block lights CEL with PBR's form factor.
+    expect(compare(celHaptic.get("environment only")!, celHaptic.get("rect light")!).outliers).toBeGreaterThan(300);
     // One CEL program per Material: CEL ignores the cube's format and box.
     expect(result.celEffects).toBe(3);
     expect(result.celSteps).toEqual(LIGHT_STEPS);

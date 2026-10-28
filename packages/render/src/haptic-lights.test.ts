@@ -7,6 +7,7 @@ import {
   MeshBuilder,
   NullEngine,
   PointLight,
+  RectAreaLight,
   Scene,
   SpotLight,
   Vector3,
@@ -14,6 +15,7 @@ import {
   type NodeMaterial,
 } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { retainAreaLightLookup } from "./area-light-resources";
 import { CelLightBlock } from "./cel-light-block";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, setHapticLighting } from "./haptic-lights";
@@ -107,7 +109,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(await drawnDefines(scene, mesh, material)).toEqual(expect.arrayContaining(["#define LIGHT0"]));
   });
 
-  it("writes the Scene's lights as records, the first hemispheric light as the fill", async () => {
+  it("writes the Scene's lights as records, the first hemispheric light as the fill and rect lights by their half extents", async () => {
     const { engine, scene } = host();
     setHapticLighting(engine, true);
     const fill = new HemisphericLight("fill", Vector3.Up(), scene);
@@ -122,19 +124,28 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), new Vector3(0, -2, 0), Math.PI / 2, 2, scene);
     spot.range = 9;
     new PointLight("dark", new Vector3(0, 0, 0), scene).intensity = 0;
+    // A Babylon rect light without the tables in place would fetch them.
+    retainAreaLightLookup(scene);
+    const panel = new RectAreaLight("panel", new Vector3(1, 2, 3), 4, 2, scene);
+    panel.intensity = 2;
     syncSceneLighting(scene);
     const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
     const read = (name: string, length: number) => [...buffer._bufferData.subarray(buffer._uniformLocations[name]!, buffer._uniformLocations[name]! + length)];
     expect(read("hapticCounts", 4)).toEqual([1, 1, 1, 1]);
+    expect(read("hapticFillDirection", 4)).toEqual([0, 1, 0, 1]);
     expect(read("hapticFillSky", 3)).toEqual([1, 1, 2]);
     expect(read("hapticFillGround", 3).map((value) => Math.round(value * 10) / 10)).toEqual([0.4, 0.2, 0]);
     expect(read("hapticDirectional", 8)).toEqual([0, -2, 0, sun.radius, 3, 3, 3, 0].map(Math.fround));
     expect(read("hapticPoint", 8)).toEqual([1, 2, 3, lamp.radius, 1, 1, 1, 7].map(Math.fround));
     expect(read("hapticSpot", 12).map((value) => Math.round(value * 1000) / 1000)).toEqual([0, 4, 0, 0, 0, -1, 0, 0.707, 1, 1, 1, 9]);
+    const scaled = Math.fround(panel.getScaledIntensity());
+    expect(read("hapticRect", 16)).toEqual([1, 2, 3, 0, 2, 0, 0, 0, 0, 1, 0, 0, scaled, scaled, scaled, 0]);
+    expect(scene._ltcTextures).toBeDefined();
     expect(HAPTIC_LIGHT_MAXIMUM.point).toBeGreaterThan(0);
     // The Unlit viewport: Babylon's materials light with no light, and so does the block.
     scene.lightsEnabled = false;
     syncSceneLighting(scene);
     expect(read("hapticCounts", 4)).toEqual([0, 0, 0, 0]);
+    expect(read("hapticFillDirection", 4)[3]).toBe(0);
   });
 });
