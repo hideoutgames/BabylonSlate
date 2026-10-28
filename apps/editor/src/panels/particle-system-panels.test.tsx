@@ -63,6 +63,7 @@ vi.mock("@haptic/render", () => {
     createParticleMaterialResolver: () => ({ acquire: vi.fn(), dispose: vi.fn() }),
     resourceCacheForEngine: () => ({}),
     acquireMaterialTexture: vi.fn(),
+    materialTextureSampling: () => undefined,
     installTextureBytes: (bytes: ReadonlyMap<string, Uint8Array>) => bytes,
   };
 });
