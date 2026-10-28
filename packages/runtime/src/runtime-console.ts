@@ -16,6 +16,7 @@ import {
   type CommandResult,
   type ConsoleCommandHost,
   type FixedShapeLightingRequest,
+  type HapticLightingRequest,
   type RegisteredCommand,
   type UserCommandDef,
 } from "@haptic/debugger";
@@ -93,6 +94,7 @@ export class RuntimeConsole {
   private flushingActors = false;
   private volume = 1;
   private fixedShapeLighting: FixedShapeLightingRequest = { enabled: false, guard: "multiply" };
+  private hapticLighting: HapticLightingRequest = null;
   private readonly host: RuntimeConsoleHost;
 
   constructor(options: RuntimeConsoleOptions, host: RuntimeConsoleHost) {
@@ -170,6 +172,11 @@ export class RuntimeConsole {
         host.emit({ type: "setFixedShapeLighting", ...this.fixedShapeLighting });
       },
       getFixedShapeLighting: () => this.fixedShapeLighting,
+      setHapticLighting: (lights) => {
+        this.hapticLighting = lights;
+        host.emit({ type: "setHapticLighting", lights });
+      },
+      getHapticLighting: () => this.hapticLighting,
       setLightsDebug: (enabled) => host.emit({ type: "setLightsDebug", enabled }),
       setFrameCap: (fps) => {
         host.requestScalability({ kind: "patch", frameCap: fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP });

@@ -4,6 +4,7 @@ import type {
   CommandParameter,
   ConsoleCommandHost,
   FixedShapeLightingRequest,
+  HapticLightingRequest,
   RegisteredCommand,
 } from "./types";
 
@@ -25,6 +26,7 @@ export const CORE_COMMAND_NAMES = [
   "quality",
   ...QUALITY_GROUPS.map((group) => `quality ${group}`),
   "fixedlights",
+  "hapticlights",
   "framecap",
   "volume",
   "quit",
@@ -161,6 +163,25 @@ export function builtinCommands(): RegisteredCommand[] {
         else if (mode !== undefined) return fail(`unknown fixedlights mode: ${mode}`);
         if (mode !== undefined) host.setFixedShapeLighting(next);
         return ok(`fixedlights ${next.enabled ? `on (${next.guard})` : "off"}`);
+      },
+    },
+    {
+      name: "hapticlights",
+      tier: "core",
+      category: "engine",
+      description: "Query or switch the HapticLights spike for the session: lit graph Materials loop over Forward's lights or every light",
+      parameters: [
+        { name: "lights", type: "enum", optional: true, enumValues: ["forward", "all", "off", "reset"] },
+      ],
+      run(args, host) {
+        if (!host.setHapticLighting) return fail("HapticLights cannot be switched here");
+        const lights = args.lights as string | undefined;
+        let next: HapticLightingRequest = host.getHapticLighting?.() ?? null;
+        if (lights === "forward" || lights === "all") next = lights;
+        else if (lights === "off" || lights === "reset") next = null;
+        else if (lights !== undefined) return fail(`unknown hapticlights light set: ${lights}`);
+        if (lights !== undefined) host.setHapticLighting(next);
+        return ok(`hapticlights ${next ?? "off"}`);
       },
     },
     flagCommand("lightsdebug", (host, enabled) => host.setLightsDebug?.(enabled), "Show light illumination and shadow allocation diagnostics"),

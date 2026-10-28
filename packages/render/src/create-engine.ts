@@ -42,6 +42,7 @@ import {
   setFixedShapeLightingWorldScene,
 } from "./fixed-light-admission";
 import { fixedShapeLightGuard, setFixedShapeLightGuard, type FixedLightGuard } from "./fixed-light-binding";
+import { hapticLighting, setHapticLighting, type HapticLightSet } from "./haptic-lights";
 import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
 import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-host";
 import { markLatticeComponentRoot } from "./lattice-deformer";
@@ -434,6 +435,13 @@ function initializeEngine(
     setFixedShapeLightGuard(engine, fixedShapeLightingBefore.guard);
     setFixedShapeLightingEnabled(engine, fixedShapeLightingBefore.enabled);
     fixedShapeLightingBefore = null;
+  };
+  // Console `hapticlights` likewise.
+  let hapticLightingBefore: HapticLightSet | null | undefined;
+  const restoreHapticLighting = () => {
+    if (hapticLightingBefore === undefined) return;
+    setHapticLighting(engine, hapticLightingBefore);
+    hapticLightingBefore = undefined;
   };
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: mainThreadDecoding,
@@ -2333,6 +2341,7 @@ function initializeEngine(
       releaseStaged();
       releaseMainThreadDecoding?.();
       restoreFixedShapeLighting();
+      restoreHapticLighting();
       engine.stopRenderLoop(renderLoop);
       // Bounded cleanup reporting (`bounded`) stays separate from confirmed
       // actual native release (`actual`): an uncertain report never proves a
@@ -2823,6 +2832,11 @@ function initializeEngine(
         fixedShapeLightingBefore ??= { enabled: isFixedShapeLightingEnabled(engine), guard: fixedShapeLightGuard(engine) };
         setFixedShapeLightGuard(engine, command.guard);
         setFixedShapeLightingEnabled(engine, command.enabled);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setHapticLighting" && options.playMode) {
+        if (hapticLightingBefore === undefined) hapticLightingBefore = hapticLighting(engine);
+        setHapticLighting(engine, command.lights);
         scheduler.invalidate("asset");
       }
       if (command.type === "tilemapAnimationTime") {

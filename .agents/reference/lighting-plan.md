@@ -26,7 +26,7 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 
 ### Lighting function
 
-- One function in GLSL and WGSL, behind one NodeMaterial block (`HapticLightingBlock`) that replaces `ScenePbrLightingBlock`, `CelLightBlock` and `SceneReflectionBlock` in `material-compiler.ts`. Inputs are the Material Output's: Base Color, Metallic, Roughness, Environment Influence, Normal, Emissive, Opacity, Alpha Clip, plus Ambient Occlusion (added in Phase 3).
+- One function in GLSL and WGSL, behind one NodeMaterial block (`HapticLightingBlock`) that replaces `ScenePbrLightingBlock`, `CelLightBlock` and `SceneReflectionBlock` in `material-compiler.ts`. Inputs are the Material Output's: Base Color, Metallic, Roughness, Environment Influence, Normal, Emissive, Opacity, Alpha Clip (glTF occlusion arrives as Environment Influence, Phase 3).
 - Direct light: metallic-roughness BRDF over the light loops, shadowed from the atlas. Environment: the Scene's environment cube with the spherical polynomial Haptic already overrides (`environment-irradiance.ts`), the environment BRDF table, `scene.iblIntensity`, and box-projected reflection probes swapped per mesh (`mesh-environment.ts`, `reflection-probes.ts`).
 - CEL is a per-Scene define of the same function (hard steps for bands, shadow visibility and highlights, its own irradiance uniforms from `cel-shader.ts`). A render-mode change is a settings change and may compile.
 - Babylon's NodeMaterial system keeps everything else: vertex paths (bones, morph targets, instances), fog, clip planes, the graph's own nodes.
@@ -58,7 +58,7 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 
 Each phase is one PR, or a short series, merged into `main` before the next starts.
 
-3. **Material consolidation on the current lighting**, with no visible change:
+3. **Material consolidation on the current lighting**, with no visible change. Done:
    - Preserved glTF slots become Material documents (importer only). Done: occlusion as Environment Influence (glTF occlusion is indirect-only), identity `KHR_texture_transform`, image-less textures and unread extensions, NEAREST samplers as a Texture Sample's Filter with the Pixel Art usage, UV set 1 (the UV node's UV Channel) and `KHR_texture_transform` (Transform UV's Tiling, Rotation and Offset, the rotation negated as Babylon's loader turned it); every bundled model converts. Only a texture on UV set 2 or later still leaves a slot empty.
    - Decided: a file's own materials are never drawn. Models load with `skipMaterials`; a slot draws its Material asset, an empty or unresolved slot the engine default checker, in scenes, Play, previews and thumbnails alike.
    - Built-in water stays a `PBRMaterial` with its plugin. A Custom Material on the water blocks lacks planar reflections, the removal cut and edge fades, haze, the refraction fallback, specular shaping and the IOR, the Low tier's unlit path, the CEL exemption and two-sided drawing; about half of that is PBR shader internals no graph reaches. Phase 5 decides whether its plugin reads the light records with the material's own lighting disabled, or it becomes a graph Material on `HapticLightingBlock`.
@@ -69,6 +69,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
    - the per-pixel cost of the loops on the A16 iPad at the Feature Test's light count, as a Benchmark profile against Forward;
    - the Light-object decision;
    - PCSS through a second sampler object on WebGL2 and WGSL.
+
+   Spike PR 1: the light loops inside `ScenePbrLightingBlock` behind a `HAPTIC_LIGHTS` define ([`haptic-lights.ts`](../../packages/render/src/haptic-lights.ts)), GLSL only, unshadowed, off by default. One per-Scene `HapticLights` uniform block holds a fill (the first hemispheric light), 4 directional, 32 point and 16 spot records; with it on, `scene-lighting.ts` gives those Materials no light slots, so no light change alters their defines. Console `hapticlights forward|all|off` switches it for a Play session (`forward`: the lights Forward admitted; `all`: every illuminating light ranked as Forward ranks them). Point and spot lights end at their range, which Babylon's physical falloff ignores, and the Benchmark profiles `medium · haptic lights` and `medium · haptic lights · all` measure it, shadows off, against `medium · forward · no shadows`. `e2e/haptic-lights.spec.ts` checks it draws Babylon's pixels on WebGL2 and compiles nothing on light changes. Not covered: shadows and area lights, per-light mesh inclusion and exclusion, CEL graphs, built-in water and native materials (Babylon's path). Next: the A16 numbers, WGSL loops, IBL and specular parity by screenshot, PCSS through a second sampler, the Light-object decision.
 
    If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
 5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.

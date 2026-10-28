@@ -383,6 +383,24 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
+  it("switches the HapticLights spike for the session from a release build's console", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, includeDebugCommands: false, onCommand: (command) => commands.push(command) });
+    const run = (line: string) => runtime.executeConsoleCommand(line);
+    expect(run("hapticlights")).toEqual({ success: true, output: "hapticlights off" });
+    expect(run("hapticlights forward")).toEqual({ success: true, output: "hapticlights forward" });
+    expect(run("hapticlights all")).toEqual({ success: true, output: "hapticlights all" });
+    expect(run("hapticlights")).toEqual({ success: true, output: "hapticlights all" });
+    expect(run("hapticlights reset")).toEqual({ success: true, output: "hapticlights off" });
+    expect(run("hapticlights sideways").success).toBe(false);
+    expect(commands.filter((command) => command.type === "setHapticLighting")).toEqual([
+      { type: "setHapticLighting", lights: "forward" },
+      { type: "setHapticLighting", lights: "all" },
+      { type: "setHapticLighting", lights: null },
+    ]);
+    runtime.stop();
+  });
+
   it("dispatches complete presets after manual lighting edits and reports Custom without resetting simulation", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, includeDebugCommands: false, onCommand: (command) => commands.push(command) });
