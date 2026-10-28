@@ -18,6 +18,8 @@ export interface DeviceProfile {
   textureByteCeiling: number;
   /** Play's load rehearsal: whether it rehearses repeats of a kind, and when it ends. */
   loadRehearsal: { repeats: boolean; ceilingMs: number };
+  /** Distinct rect area light emission textures the lighting plan's path holds at once (5.3 MiB each). */
+  areaEmissionLayers: number;
 }
 
 /**
@@ -29,6 +31,7 @@ const DESKTOP: DeviceProfile = {
   shadowMapCap: null,
   textureByteCeiling: TEXTURE_BYTE_CEILING,
   loadRehearsal: { repeats: true, ceilingMs: 120_000 },
+  areaEmissionLayers: 4,
 };
 
 /**
@@ -41,6 +44,7 @@ const MOBILE: DeviceProfile = {
   shadowMapCap: MOBILE_SHADOW_MAP_CAP,
   textureByteCeiling: 768 * MIB,
   loadRehearsal: { repeats: false, ceilingMs: 45_000 },
+  areaEmissionLayers: 2,
 };
 
 /**

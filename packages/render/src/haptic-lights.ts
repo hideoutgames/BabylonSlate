@@ -13,7 +13,9 @@ import {
   type Light,
   type Scene,
 } from "@babylonjs/core";
+import { rectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
+import { deviceProfile } from "./device-profile";
 import { isIlluminatingLight, sortLightsByAdmission } from "./light-policy";
 
 /**
@@ -68,7 +70,10 @@ hapticRect: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.rect * 4}>,
 var<uniform> HapticLights : HapticLightsBlock;
 `;
 
-type SceneLights = { buffer: UniformBuffer; held: Set<Light>; next: Set<Light>; ranked: Light[] };
+type SceneLights = {
+  buffer: UniformBuffer; held: Set<Light>; next: Set<Light>; ranked: Light[];
+  rects: RectAreaLight[]; layers: number[]; limits: string[];
+};
 const scenes = new WeakMap<Scene, SceneLights>();
 const directional = new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8);
 const point = new Float32Array(HAPTIC_LIGHT_MAXIMUM.point * 8);
@@ -90,7 +95,7 @@ function sceneLights(scene: Scene): SceneLights {
     buffer.create();
     // Rect area lights read Babylon's LTC tables, always bound, so a rect light arriving compiles nothing.
     const releaseLookup = retainAreaLightLookup(scene);
-    lights = { buffer, held: new Set(), next: new Set(), ranked: [] };
+    lights = { buffer, held: new Set(), next: new Set(), ranked: [], rects: [], layers: [], limits: [] };
     scenes.set(scene, lights);
     scene.onDisposeObservable.addOnce(() => {
       buffer.dispose();
@@ -116,7 +121,8 @@ export function bindHapticLights(scene: Scene, effect: Effect): void {
 /**
  * Write the block from the Scene's lights, once per frame: every illuminating light, ranked as Forward ranks them
  * (priority, distance, the incumbent bonus), up to each type's maximum. The first hemispheric light is the fill.
- * A rect area light's record holds its centre and its half width and half height vectors, as Babylon's does.
+ * A rect area light's record holds its centre and its half width and half height vectors, as Babylon's does, and the
+ * layer of its emission in the texture array (`area-emission-array.ts`), -1 for its flat colour.
  * A Scene with its lights disabled (the Unlit viewport) writes none, as Babylon's materials then light with none.
  */
 export function writeHapticLights(scene: Scene): void {
@@ -133,6 +139,7 @@ export function writeHapticLights(scene: Scene): void {
   let points = 0;
   let spots = 0;
   let rects = 0;
+  state.rects.length = 0;
   for (const light of ranked) {
     if (light instanceof HemisphericLight) {
       if (fill) continue;
@@ -162,7 +169,8 @@ export function writeHapticLights(scene: Scene): void {
       const height = Vector3.TransformNormalFromFloatsToRef(0, light.height / 2, 0, world, TmpVectors.Vector3[2]);
       const intensity = light.getScaledIntensity();
       rect.set([position.x - offset.x, position.y - offset.y, position.z - offset.z, 0, width.x, width.y, width.z, 0,
-        height.x, height.y, height.z, 0, light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, 0], rects * 16);
+        height.x, height.y, height.z, 0, light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, -1], rects * 16);
+      state.rects.push(light);
       rects++;
     } else if (light instanceof PointLight) {
       if (points === HAPTIC_LIGHT_MAXIMUM.point) continue;
@@ -174,6 +182,14 @@ export function writeHapticLights(scene: Scene): void {
     } else continue;
     state.next.add(light);
   }
+  const cap = deviceProfile().areaEmissionLayers;
+  syncAreaEmissionLayers(scene, state.rects, cap, state.layers);
+  state.limits.length = 0;
+  state.rects.forEach((light, index) => {
+    rect[index * 16 + 15] = state.layers[index]!;
+    if (state.layers[index] === -1 && rectLightEmission(light))
+      state.limits.push(`${light.name}: draws its flat colour; this device holds ${cap} area light emission textures at once`);
+  });
   const buffer = state.buffer;
   buffer.updateFloat4("hapticCounts", directionals, points, spots, rects);
   if (!fill) buffer.updateFloat4("hapticFillDirection", 0, 1, 0, 0);
@@ -192,4 +208,9 @@ export function writeHapticLights(scene: Scene): void {
   buffer.updateFloatArray("hapticRect", rect);
   buffer.update();
   [state.held, state.next] = [state.next, state.held];
+}
+
+/** Lights the block draws other than as authored, for `sceneLightingLimits`. */
+export function hapticLightLimits(scene: Scene): readonly string[] {
+  return scenes.get(scene)?.limits ?? [];
 }

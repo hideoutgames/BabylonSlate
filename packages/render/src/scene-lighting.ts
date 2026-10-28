@@ -28,7 +28,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { CelLightBlock } from "./cel-light-block";
-import { hapticLightingActive, writeHapticLights } from "./haptic-lights";
+import { hapticLightLimits, hapticLightingActive, writeHapticLights } from "./haptic-lights";
 
 type LitMaterial = Material & { maxSimultaneousLights: number };
 
@@ -151,6 +151,7 @@ export function sceneLightingLimits(scene: Scene): string[] {
   return [
     ...scene.lights.flatMap((light) => typeof light.metadata?.areaLight?.error === "string" ? [`${light.name}: ${light.metadata.areaLight.error}`] : []),
     ...(lightingByScene.get(scene)?.limits() ?? []),
+    ...hapticLightLimits(scene),
   ];
 }
 

@@ -57,9 +57,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const boxReference = backend === "webgl2" ? ["box-projected environment"] : [];
     expect([...babylon.keys()]).toEqual([
       "all lights", "two off", "sun only", "environment only", "rotated environment", ...boxReference, "rect light on metal",
+      "emissive rect light on metal",
     ]);
     expect([...haptic.keys()]).toEqual([
-      "all lights", "two off", "sun only", "environment only", "rotated environment", "box-projected environment", "rect light on metal", "rect light",
+      "all lights", "two off", "sun only", "environment only", "rotated environment", "box-projected environment", "rect light on metal",
+      "emissive rect light on metal", "rect light",
     ]);
     for (const [name, reference] of babylon) {
       const { outliers, largest, lit } = compare(reference, haptic.get(name)!);
@@ -70,10 +72,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // The poses really differ, so a block that ignored a light, the cube's rotation or its box would fail above.
     for (const pose of ["two off", "environment only", "rotated environment", "box-projected environment"])
       expect(haptic.get(pose), pose).not.toEqual(haptic.get("all lights"));
+    // The emission texture really colours the rect light's reflection.
+    expect(compare(haptic.get("rect light on metal")!, haptic.get("emissive rect light on metal")!).outliers).toBeGreaterThan(300);
     // The rect light lights the regular surfaces too, where its Fresnel is the standard LTC one rather than Babylon's.
     expect(compare(haptic.get("environment only")!, haptic.get("rect light")!).outliers).toBeGreaterThan(1000);
-    // Two programs per Material, for the plain and the box-projected cube, and one for the white metal; none carries
-    // Babylon's light defines. WebGPU releases a program once no draw holds it, as the white metal pose's Material
+    // Two programs per Material, for the plain and the box-projected cube, and one for the white metal, which draws its
+    // rect light's emission without another; none carries Babylon's light defines. WebGPU releases a program once no draw holds it, as the white metal pose's Material
     // swap leaves them, so there only the three drawn since remain.
     expect(result.hapticEffects).toBe(backend === "webgl2" ? 7 : 3);
     expect(result.lightDefines).toBe(0);

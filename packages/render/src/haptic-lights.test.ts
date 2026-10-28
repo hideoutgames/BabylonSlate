@@ -4,6 +4,8 @@ import {
   DirectionalLight,
   FreeCamera,
   HemisphericLight,
+  InternalTexture,
+  InternalTextureSource,
   MeshBuilder,
   NullEngine,
   PointLight,
@@ -14,7 +16,9 @@ import {
   type Mesh,
   type NodeMaterial,
 } from "@babylonjs/core";
+import type { AreaEmissionPixels } from "@haptic/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { CelLightBlock } from "./cel-light-block";
 import { HapticLightingBlock } from "./haptic-lighting-block";
@@ -30,11 +34,12 @@ afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
-/** A NullEngine Scene that reports uniform buffers, as WebGL2 does. */
+/** A NullEngine Scene that reports uniform buffers, as WebGL2 does, and makes the texture arrays it cannot. */
 function host() {
   const engine = new NullEngine();
   engines.push(engine);
   vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+  vi.spyOn(engine, "createRawTexture2DArray").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.Raw2DArray));
   const scene = new Scene(engine);
   new FreeCamera("camera", new Vector3(0, 0, -5), scene);
   return { engine, scene };
@@ -139,7 +144,8 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(read("hapticPoint", 8)).toEqual([1, 2, 3, lamp.radius, 1, 1, 1, 7].map(Math.fround));
     expect(read("hapticSpot", 12).map((value) => Math.round(value * 1000) / 1000)).toEqual([0, 4, 0, 0, 0, -1, 0, 0.707, 1, 1, 1, 9]);
     const scaled = Math.fround(panel.getScaledIntensity());
-    expect(read("hapticRect", 16)).toEqual([1, 2, 3, 0, 2, 0, 0, 0, 0, 1, 0, 0, scaled, scaled, scaled, 0]);
+    // No emission: layer -1, its flat colour.
+    expect(read("hapticRect", 16)).toEqual([1, 2, 3, 0, 2, 0, 0, 0, 0, 1, 0, 0, scaled, scaled, scaled, -1]);
     expect(scene._ltcTextures).toBeDefined();
     expect(HAPTIC_LIGHT_MAXIMUM.point).toBeGreaterThan(0);
     // The Unlit viewport: Babylon's materials light with no light, and so does the block.
@@ -147,5 +153,35 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     syncSceneLighting(scene);
     expect(read("hapticCounts", 4)).toEqual([0, 0, 0, 0]);
     expect(read("hapticFillDirection", 4)[3]).toBe(0);
+  });
+
+  it("gives each distinct rect light emission a layer of one array, rebuilt only when the set changes", () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    retainAreaLightLookup(scene);
+    const emission = (hash: string) =>
+      ({ metadata: { processor: "test", pixelsHash: hash, width: 1, height: 1 }, rgba: new Uint8Array(4) }) as unknown as AreaEmissionPixels;
+    const panels = ["a", "b", "a", "c"].map((hash, index) => {
+      const panel = new RectAreaLight(`panel ${index}`, new Vector3(index, 2, 0), 1, 1, scene);
+      setRectLightEmission(panel, emission(hash));
+      return panel;
+    });
+    const layers: number[] = [];
+    syncAreaEmissionLayers(scene, panels, 2, layers);
+    // A shared emission shares its layer; one past the cap draws its flat colour.
+    expect(layers).toEqual([0, 1, 0, -1]);
+    const array = areaEmissionTexture(scene);
+    expect(array.is2DArray).toBe(true);
+    syncAreaEmissionLayers(scene, panels, 2, layers);
+    expect(areaEmissionTexture(scene)).toBe(array);
+    setRectLightEmission(panels[1]!, undefined);
+    syncAreaEmissionLayers(scene, panels, 2, layers);
+    expect(layers).toEqual([0, -1, 0, 1]);
+    expect(areaEmissionTexture(scene)).not.toBe(array);
+    // The block's records carry each light's layer.
+    syncSceneLighting(scene);
+    const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+    const records = buffer._bufferData.subarray(buffer._uniformLocations.hapticRect!, buffer._uniformLocations.hapticRect! + 64);
+    expect([0, 1, 2, 3].map((index) => records[index * 16 + 15]).sort()).toEqual([-1, 0, 0, 1]);
   });
 });
