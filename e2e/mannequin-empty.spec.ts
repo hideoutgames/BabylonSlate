@@ -117,8 +117,9 @@ test.describe("3D Empty Kenney Mannequin", () => {
       "true",
     );
     const animationCanvas = page.getByTestId("animation-preview-canvas");
+    // The Mannequin draws once its slot Material has compiled.
     await expect
-      .poll(async () => (await previewPixels(animationCanvas)).model)
+      .poll(async () => (await previewPixels(animationCanvas)).model, { timeout: 30_000 })
       .toBeGreaterThan(100);
     const showBones = page.getByRole("button", {
       name: "Show Bones",

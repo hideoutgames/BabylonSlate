@@ -1,35 +1,23 @@
-import { installedAssetIdentity } from "@haptic/assets";
-import { installTextureBytes } from "@haptic/render";
 import { useEffect, useRef, useState } from "react";
 import { Mesh, Quaternion, type AbstractEngine } from "@babylonjs/core";
 import {
-  modelMaterialGuids,
   normalizeModelPayload,
   simpleColliderToPhysicsShape,
   type ModelSimpleCollider,
 } from "@haptic/assets";
 import type { ColliderShape } from "@haptic/physics";
 import {
-  MaterialLibrary,
-  bindResourceCacheToHandle,
-  prewarmMaterial,
-  visualMeshes,
   ViewportShadingOverlay,
-  applyModelMaterialSlots,
   attachMaterialPreviewGestures,
   createColliderVisualMesh,
   createGizmoHost,
   createMaterialPreviewPresenter,
   createModelPreviewScene,
   setSceneRenderSettings,
-  acquireMaterialTexture,
-  materialTextureSampling,
   installPreviewEnvironment,
   isColliderVisualMesh,
   loadModelPreviewSource,
-  materialUnavailable,
   reportGlbLoadFailure,
-  resourceCacheForEngine,
   type GizmoHost,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
@@ -48,15 +36,10 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@haptic/ui/components/toggle-group";
-import {
-  useDocumentActions,
-  useProjectState,
-  useRegistryState,
-} from "../context/document-context";
+import { useProjectState } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { useModelColliderSession } from "../context/model-collider-session";
-import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
-import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
+import { useModelSlotMaterials } from "../lib/use-model-slot-materials";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
 const MODEL_PREVIEW_SHADING: { value: ViewportShadingMode; label: string }[] = [
@@ -93,17 +76,10 @@ export function ModelPreviewCanvas({
     gizmoTool,
     setGizmoTool,
   } = useModelColliderSession();
-  const { collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocumentActions();
   const { projectDocument } = useProjectState();
-  const { assetRegistry } = useRegistryState();
-  const { editorTextureLodEnabled, editorTextureLodQuality } =
-    useEditorViewportPrefs();
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
-  const [materialsReady, setMaterialsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const materialOwnerRef = useRef<(() => void) | null>(null);
-  const materialRevision = savedMaterialLibraryKey(assetRegistry?.list() ?? []);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const shadingRef = useRef<ViewportShadingOverlay | null>(null);
@@ -119,7 +95,18 @@ export function ModelPreviewCanvas({
   const [shadingMode, setShadingMode] = useState<ViewportShadingMode>("pbr");
   const shadingModeRef = useRef(shadingMode);
   shadingModeRef.current = shadingMode;
-  const slotKey = JSON.stringify(model.materialSlots);
+  const materials = useModelSlotMaterials({
+    hostRef,
+    engine,
+    slots: model.materialSlots,
+    generation: previewGeneration,
+    onApplied: () => {
+      shadingRef.current?.apply();
+      presenterRef.current?.present({ force: true });
+    },
+  });
+  const releaseMaterials = materials.release;
+  const previewError = loadError ?? materials.error;
   useEffect(() => {
     const host = hostRef.current;
     if (host) {
@@ -273,8 +260,7 @@ export function ModelPreviewCanvas({
       cancelled = true;
       window.cancelAnimationFrame(raf.id);
       overlay.dispose();
-      materialOwnerRef.current?.();
-      materialOwnerRef.current = null;
+      releaseMaterials();
       gestures?.dispose();
       presenter?.dispose();
       loaded?.dispose();
@@ -287,7 +273,7 @@ export function ModelPreviewCanvas({
       visuals.forEach((visual) => visual.dispose());
       visuals.clear();
     };
-  }, [engine, sourceBytes, model.importScale, setSelectedColliderId]);
+  }, [engine, sourceBytes, model.importScale, setSelectedColliderId, releaseMaterials]);
 
   useEffect(() => {
     const overlay = shadingRef.current;
@@ -296,84 +282,6 @@ export function ModelPreviewCanvas({
     presenterRef.current?.present({ force: true });
   }, [shadingMode, previewGeneration]);
 
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host || !engine) return;
-    let cancelled = false;
-    const slots = JSON.parse(slotKey) as ReturnType<
-      typeof normalizeModelPayload
-    >["materialSlots"];
-    setMaterialsReady(false);
-    let releaseCandidate: (() => void) | undefined;
-    let published = false;
-    void (async () => {
-      try {
-      const extraGuids = modelMaterialGuids({
-        materialSlots: slots,
-        clipNames: [],
-      });
-      const materials = await collectPlayMaterialLibrary(
-        undefined,
-        [],
-        extraGuids,
-      );
-      const textureBytes = installTextureBytes(await collectPlayTextureBytes(
-        new Map(),
-        new Map(),
-        materials.textureGuids,
-      ))!;
-      if (cancelled || hostRef.current !== host) return;
-      const lease = bindResourceCacheToHandle(resourceCacheForEngine(engine));
-      const library = new MaterialLibrary({
-        textureIdentity: (guid) => { const source = textureBytes.get(guid); return source ? installedAssetIdentity(source) : undefined; },
-        functions: () => Object.fromEntries(materials.functions),
-        acquireTexture: (guid, _scene, filter) => {
-          const data = textureBytes.get(guid);
-          if (!data) return null;
-          return acquireMaterialTexture(lease.cache, guid, engine, data, materialTextureSampling(filter));
-        },
-      });
-      releaseCandidate = () => { library.dispose(); lease.dispose(); };
-      for (const [guid, document] of materials.documents) {
-        const acquired = library.acquire(host.scene, guid, document);
-        if (materialUnavailable(acquired)) throw new Error(acquired.diagnostics.map((d) => d.message).join("; "));
-        const errors = await acquired.ready;
-        if (errors.length) throw new Error(errors.map((d) => d.message).join("; "));
-        for (const mesh of visualMeshes(host.mesh)) {
-          if (mesh instanceof Mesh) await prewarmMaterial(acquired.material, mesh);
-        }
-        if (cancelled || hostRef.current !== host) return;
-      }
-      applyModelMaterialSlots(host.mesh, slots, (guid) =>
-        library.materialFor(host.scene, guid),
-      );
-      const previous = materialOwnerRef.current;
-      materialOwnerRef.current = releaseCandidate;
-      published = true;
-      setMaterialsReady(true);
-      previous?.();
-      setLoadError(null);
-      shadingRef.current?.apply();
-      presenterRef.current?.present({ force: true });
-      } catch (error) {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
-      } finally {
-        if (!published) { releaseCandidate?.(); releaseCandidate = undefined; }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    collectPlayMaterialLibrary,
-    collectPlayTextureBytes,
-    engine,
-    previewGeneration,
-    slotKey,
-    materialRevision,
-    editorTextureLodEnabled,
-    editorTextureLodQuality,
-  ]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -529,9 +437,9 @@ export function ModelPreviewCanvas({
         ref={canvasRef}
         className="h-full w-full"
         data-testid="model-preview-canvas"
-        aria-busy={!materialsReady}
+        aria-busy={!materials.ready}
       />
-      {loadError ? (
+      {previewError ? (
         <div
           className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-3"
           data-testid="model-preview-load-error"
@@ -540,7 +448,7 @@ export function ModelPreviewCanvas({
             <EmptyHeader>
               <EmptyTitle>Preview Error</EmptyTitle>
               <EmptyDescription>
-                {loadError}
+                {previewError}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>

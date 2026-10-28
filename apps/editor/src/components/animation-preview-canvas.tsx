@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import type { AbstractEngine } from "@babylonjs/core";
-import type { SkeletonKind } from "@haptic/assets";
+import type { ModelMaterialSlot, SkeletonKind } from "@haptic/assets";
 import {
   attachMaterialPreviewGestures,
   attachSkeletonPreview,
@@ -17,18 +17,22 @@ import {
 } from "@haptic/render";
 import { useOptionalPlay } from "../context/play-context";
 import { useProjectState } from "../context/document-context";
+import { useModelSlotMaterials } from "../lib/use-model-slot-materials";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
 const STOPPED_CLIP = { playing: false, looping: false };
 
 export function AnimationPreviewCanvas({
   sourceBytes,
+  materialSlots,
   clipName,
   skeletonKind = null,
   showBones = false,
   sourceClipBytes = null,
 }: {
   sourceBytes: Uint8Array;
+  /** The Model's slots, drawn with their Materials. */
+  materialSlots: readonly ModelMaterialSlot[];
   clipName: string;
   skeletonKind?: SkeletonKind | null;
   showBones?: boolean;
@@ -45,6 +49,13 @@ export function AnimationPreviewCanvas({
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
   const playingRef = useRef<AnimationGroup | null>(null);
+  const { release: releaseMaterials } = useModelSlotMaterials({
+    hostRef,
+    engine,
+    slots: materialSlots,
+    generation: previewGeneration,
+    onApplied: () => presenterRef.current?.present({ force: true }),
+  });
   useEffect(() => {
     const host = hostRef.current;
     if (host) {
@@ -168,6 +179,7 @@ export function AnimationPreviewCanvas({
       setClip(STOPPED_CLIP);
       bonesRef.current?.dispose();
       bonesRef.current = null;
+      releaseMaterials();
       stopRestoreWatch?.();
       stopRestoreWatch = null;
       gestures?.dispose();
@@ -179,7 +191,7 @@ export function AnimationPreviewCanvas({
       hostRef.current = null;
       presenterRef.current = null;
     };
-  }, [clipName, engine, sourceBytes, sourceClipBytes]);
+  }, [clipName, engine, sourceBytes, sourceClipBytes, releaseMaterials]);
 
   useEffect(() => {
     const host = hostRef.current;
