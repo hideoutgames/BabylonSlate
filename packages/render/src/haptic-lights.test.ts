@@ -14,9 +14,11 @@ import {
   type NodeMaterial,
 } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { CelLightBlock } from "./cel-light-block";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, setHapticLighting } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
+import { setSceneRenderSettings } from "./scene-render-mode";
 import { syncSceneLighting } from "./scene-lighting";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 
@@ -76,6 +78,27 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(mesh.subMeshes[0]!.effect).toBe(effect);
   });
 
+  it("draws CEL as a define of the same graph, which a render-mode change re-prepares even when frozen", async () => {
+    const { engine, scene } = host();
+    new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    setHapticLighting(engine, true);
+    setSceneRenderSettings(scene, { mode: "cel" });
+    const { mesh, material } = await litBox(scene);
+    const lighting = material.attachedBlocks.find((block) => block instanceof HapticLightingBlock);
+    expect(lighting).toBeDefined();
+    expect(material.attachedBlocks.some((block) => block instanceof CelLightBlock)).toBe(false);
+    const cel = await drawnDefines(scene, mesh, material);
+    expect(cel).toContain("#define HAPTIC_CEL");
+    expect(cel.some((line) => /#define (LIGHT\d|HAPTIC_ENVIRONMENT)/.test(line))).toBe(false);
+    expect(material.compiledShaders).toContain("slateCelBand");
+    // Frozen and drawn, as the editor holds library Materials: only a dirty mark re-prepares its defines.
+    material.freeze();
+    expect(await drawnDefines(scene, mesh, material)).toEqual(cel);
+    setSceneRenderSettings(scene, { mode: "pbr" });
+    expect(await drawnDefines(scene, mesh, material)).not.toContain("#define HAPTIC_CEL");
+    expect(material.attachedBlocks.find((block) => block instanceof HapticLightingBlock)).toBe(lighting);
+  });
+
   it("leaves graphs on Babylon's PBR block while the switch is off", async () => {
     const { scene } = host();
     new PointLight("lamp", new Vector3(0, 2, 0), scene);
@@ -109,5 +132,9 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(read("hapticPoint", 8)).toEqual([1, 2, 3, lamp.radius, 1, 1, 1, 7].map(Math.fround));
     expect(read("hapticSpot", 12).map((value) => Math.round(value * 1000) / 1000)).toEqual([0, 4, 0, 0, 0, -1, 0, 0.707, 1, 1, 1, 9]);
     expect(HAPTIC_LIGHT_MAXIMUM.point).toBeGreaterThan(0);
+    // The Unlit viewport: Babylon's materials light with no light, and so does the block.
+    scene.lightsEnabled = false;
+    syncSceneLighting(scene);
+    expect(read("hapticCounts", 4)).toEqual([0, 0, 0, 0]);
   });
 });

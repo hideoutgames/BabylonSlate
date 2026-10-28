@@ -16,6 +16,7 @@ import {
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { SphericalHarmonics, type SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { CEL_UNIFORMS, bindCelSettings, celFunctions } from "./cel-shader";
 import { HAPTIC_LIGHTS_GLSL, bindHapticLights } from "./haptic-lights";
 import {
   HAPTIC_IRRADIANCE_KEYS,
@@ -23,6 +24,7 @@ import {
   HAPTIC_LIGHTING_FUNCTIONS_GLSL,
   hapticLightingGlsl,
 } from "./haptic-lighting-shader";
+import { sceneRenderingSettings } from "./render-settings";
 
 const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
 
@@ -40,6 +42,22 @@ function renderingHarmonics(polynomial: SphericalPolynomial | null): SphericalHa
   return harmonics;
 }
 
+function celMode(scene: Scene): boolean {
+  return sceneRenderingSettings(scene).mode === "cel";
+}
+
+const celEffects = new WeakMap<Effect, boolean>();
+
+/** Whether `effect` is a CEL program. A draw binds for its own Effect, which can be the previous mode's until the new one compiles. */
+function celEffect(effect: Effect): boolean {
+  let cel = celEffects.get(effect);
+  if (cel === undefined) {
+    cel = /^#define HAPTIC_CEL$/m.test(effect.defines);
+    celEffects.set(effect, cel);
+  }
+  return cel;
+}
+
 /** The Scene's environment cube as it lights `scene`'s current mesh (a reflection probe's, `mesh-environment.ts`). */
 function environmentCube(scene: Scene): BaseTexture | null {
   const texture = scene.environmentTexture;
@@ -49,7 +67,8 @@ function environmentCube(scene: Scene): BaseTexture | null {
 /**
  * Lit surface shading for graph Materials (lighting plan): every light from the `HapticLights` block and the
  * Scene's environment cube, through one lighting function (`haptic-lighting-shader.ts`). No Babylon light block
- * is involved, so a Material drawing with it compiles no light defines and no light change recompiles it.
+ * is involved, so a Material drawing with it compiles no light defines and no light change recompiles it. CEL is
+ * the `HAPTIC_CEL` define, set from the Scene's render mode: a mode change recompiles, as a settings change may.
  */
 export class HapticLightingBlock extends NodeMaterialBlock {
   constructor(name: string) {
@@ -62,6 +81,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     this.registerInput("roughness", NodeMaterialBlockConnectionPointTypes.Float, false, NodeMaterialBlockTargets.Fragment);
     // A world-space shading normal (a normal map's); the interpolated world normal otherwise.
     this.registerInput("normal", NodeMaterialBlockConnectionPointTypes.Vector3, true, NodeMaterialBlockTargets.Fragment);
+    this.registerInput("environmentInfluence", NodeMaterialBlockConnectionPointTypes.Float, true, NodeMaterialBlockTargets.Fragment);
     for (const name of ["diffuseDirect", "specularDirect", "diffuseIndirect", "specularIndirect"])
       this.registerOutput(name, NodeMaterialBlockConnectionPointTypes.Color3, NodeMaterialBlockTargets.Fragment);
   }
@@ -77,6 +97,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   get metallic() { return this._inputs[4]!; }
   get roughness() { return this._inputs[5]!; }
   get normal() { return this._inputs[6]!; }
+  get environmentInfluence() { return this._inputs[7]!; }
   get diffuseDirect() { return this._outputs[0]!; }
   get specularDirect() { return this._outputs[1]!; }
   get diffuseIndirect() { return this._outputs[2]!; }
@@ -85,7 +106,10 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   override prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial, mesh?: AbstractMesh): void {
     if (!mesh) return;
     const scene = mesh.getScene();
-    const environment = environmentCube(scene);
+    const cel = celMode(scene);
+    // CEL lights with the cube's irradiance polynomial alone (`bindCelSettings`), so its programs ignore the cube.
+    const environment = cel ? null : environmentCube(scene);
+    defines.setValue("HAPTIC_CEL", cel, true);
     // A different cube format or projection is a settings change, which may compile; lights never are.
     defines.setValue("HAPTIC_ENVIRONMENT", !!environment, true);
     defines.setValue("HAPTIC_ENVIRONMENT_RGBD", !!environment?.isRGBD, true);
@@ -100,6 +124,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
 
   override isReady(mesh: AbstractMesh): boolean {
     const scene = mesh.getScene();
+    if (celMode(scene)) return true;
     const brdf = GetEnvironmentBRDFTexture(scene);
     return (!brdf || brdf.isReady()) && (scene.environmentTexture?.isReadyOrNotBlocking() ?? true);
   }
@@ -113,6 +138,10 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     if (!mesh) return;
     const scene = mesh.getScene();
     bindHapticLights(scene, effect);
+    if (celEffect(effect)) {
+      bindCelSettings(effect, scene);
+      return;
+    }
     effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
     const environment = environmentCube(scene);
     if (!environment) return;
@@ -142,10 +171,12 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state.sharedData.dynamicUniformBlocks.push(this);
     state.sharedData.forcedBindableBlocks.push(this);
     for (const uniform of VECTOR4_UNIFORMS) state._emitUniformFromString(uniform, NodeMaterialBlockConnectionPointTypes.Vector4);
+    for (const uniform of CEL_UNIFORMS) state._emitUniformFromString(uniform, NodeMaterialBlockConnectionPointTypes.Vector4, "HAPTIC_CEL");
     state._emitUniformFromString("hapticEnvironmentMatrix", NodeMaterialBlockConnectionPointTypes.Matrix);
     state._emitCubeSampler("hapticEnvironmentSampler");
     state._emit2DSampler("hapticEnvironmentBrdfSampler");
     state._emitFunction("hapticLights", HAPTIC_LIGHTS_GLSL, "// HapticLights");
+    state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(false)}\n#endif\n`, "// CEL");
     state._emitFunction("hapticLightingFunctions", HAPTIC_LIGHTING_FUNCTIONS_GLSL, "// Haptic lighting");
     for (const output of this._outputs) state.compilationString += state._declareOutput(output) + " = vec3(0.0);\n";
     state.compilationString += hapticLightingGlsl({
@@ -156,6 +187,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       baseColor: this.baseColor.associatedVariableName,
       metallic: this.metallic.associatedVariableName,
       roughness: this.roughness.associatedVariableName,
+      environmentInfluence: this.environmentInfluence.isConnected ? this.environmentInfluence.associatedVariableName : "1.0",
     }, {
       diffuseDirect: this.diffuseDirect.associatedVariableName,
       specularDirect: this.specularDirect.associatedVariableName,
@@ -166,3 +198,11 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   }
 }
 RegisterClass("BABYLON.HapticLightingBlock", HapticLightingBlock);
+
+/** A render-mode change re-prepares `material`'s defines (`HAPTIC_CEL`) on its next draw, frozen or not. */
+export function followRenderMode(material: NodeMaterial): void {
+  const listeners = sceneRenderingSettings(material.getScene()).listeners;
+  const listener = () => material.markDirty(true);
+  listeners.add(listener);
+  material.onDisposeObservable.addOnce(() => listeners.delete(listener));
+}

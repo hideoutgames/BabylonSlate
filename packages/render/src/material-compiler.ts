@@ -70,7 +70,7 @@ import { SceneReflectionBlock } from "./scene-reflection-block";
 import { FlatNormalBlock } from "./flat-normal-block";
 import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geometry-surface-output-block";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
-import { HapticLightingBlock } from "./haptic-lighting-block";
+import { HapticLightingBlock, followRenderMode } from "./haptic-lighting-block";
 import { hapticLightingActive } from "./haptic-lights";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
@@ -700,9 +700,11 @@ export function compileMaterialPlan(
       }
     }
     for (const node of outputNodes) material.addOutputNode(node);
-    if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary) {
+    if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary && plan.shadingModel !== "unlit") {
       const surface = outputNodes.find((node) => node instanceof FragmentOutputBlock);
-      if (surface) installCelSurface(material, plan, surface, created, plumbing, outputPoint);
+      // HapticLightingBlock's CEL is a define; Babylon's blocks swap in a CEL graph.
+      if (hapticLightingActive(scene)) followRenderMode(material);
+      else if (surface) installCelSurface(material, plan, surface, created, plumbing, outputPoint);
     }
   } catch (error) {
     diagnostics.push({
@@ -1544,12 +1546,15 @@ function attachSurfaceShading(
   if (roughness) roughness.connectTo(fragment.geometryRoughness);
   const normal = outputPoint("normal", `${options.name}_normalInput`, false);
   const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
+  const environmentOperand = plan.outputs.environmentInfluence;
+  const influence = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1)
+    ? outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)
+    : null;
 
-  // The surface's direct and environment light, from the lighting plan's block or Babylon's PBR block.
-  let diffuseDirect: NodeMaterialConnectionPoint;
-  let specularDirect: NodeMaterialConnectionPoint;
-  let diffuseIndirect: NodeMaterialConnectionPoint;
-  let specularIndirect: NodeMaterialConnectionPoint;
+  // The surface's direct and environment light (scaled by Environment Influence), from the lighting plan's block
+  // or Babylon's PBR block.
+  let lit: NodeMaterialConnectionPoint;
+  let indirect: NodeMaterialConnectionPoint;
   if (hapticLightingActive(options.scene)) {
     const lighting = new HapticLightingBlock(`${options.name}_lighting`);
     created.push(lighting);
@@ -1566,8 +1571,10 @@ function attachSurfaceShading(
     (metallic ?? constant(0, "metallicDefault")).connectTo(lighting.metallic);
     (roughness ?? constant(0.5, "roughnessDefault")).connectTo(lighting.roughness);
     normal?.connectTo(lighting.normal);
+    influence?.connectTo(lighting.environmentInfluence);
     if (opacity) opacity.connectTo(fragment.a);
-    ({ diffuseDirect, specularDirect, diffuseIndirect, specularIndirect } = lighting);
+    lit = addColor(lighting.diffuseDirect, lighting.specularDirect, "litColor");
+    indirect = addColor(lighting.diffuseIndirect, lighting.specularIndirect, "environmentColor");
   } else {
     const pbr = new ScenePbrLightingBlock(`${options.name}_pbr`);
     pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
@@ -1596,29 +1603,22 @@ function attachSurfaceShading(
     if (opacity) opacity.connectTo(pbr.opacity);
     // pbr.lighting has already passed through image processing and must not be
     // used for linear emission or fog composition.
-    diffuseDirect = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
-    specularDirect = pbr.specularDir;
-    diffuseIndirect = pbr.diffuseInd;
-    specularIndirect = pbr.specularInd;
+    lit = addColor(addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor"), pbr.specularDir, "litColor");
+    indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
+    if (influence) {
+      const clamp = new ClampBlock(`${options.name}_environmentInfluenceClamp`);
+      clamp.minimum = 0;
+      clamp.maximum = 1;
+      const scale = new ScaleBlock(`${options.name}_environmentInfluenceScale`);
+      created.push(clamp, scale);
+      influence.connectTo(clamp.value);
+      clamp.output.connectTo(scale.factor);
+      indirect.connectTo(scale.input);
+      indirect = scale.output;
+    }
   }
 
-  const environmentOperand = plan.outputs.environmentInfluence;
-  const customEnvironment = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1);
   // These are the linear contributions supported by our surface compiler.
-  const lit = addColor(diffuseDirect, specularDirect, "litColor");
-  let indirect = addColor(diffuseIndirect, specularIndirect, "environmentColor");
-  if (customEnvironment) {
-    const influence = outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)!;
-    const clamp = new ClampBlock(`${options.name}_environmentInfluenceClamp`);
-    clamp.minimum = 0;
-    clamp.maximum = 1;
-    const scale = new ScaleBlock(`${options.name}_environmentInfluenceScale`);
-    created.push(clamp, scale);
-    influence.connectTo(clamp.value);
-    clamp.output.connectTo(scale.factor);
-    indirect.connectTo(scale.input);
-    indirect = scale.output;
-  }
   const lighting = addColor(lit, indirect, "totalLighting");
   const color = emissive ? addColor(lighting, emissive, "surfaceEmission") : lighting;
   writeLinearSurfaceColor(applyFog(color), fragment, options.name, created);
