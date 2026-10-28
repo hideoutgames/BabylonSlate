@@ -7,7 +7,6 @@ import {
   collectAssetDependencyMetadata,
   decodeHasset,
   encodeHasset,
-  normalizeModelPayload,
   newAssetGuid,
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
@@ -189,13 +188,12 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
   if (!skeleton) {
     throw new Error("Kenney Mannequin import did not create a Skeleton.");
   }
-  // The template intentionally uses a lit material. Generic imports still
-  // preserve the source shading model and unsupported material extensions.
+  // The template intentionally uses a lit material; the import keeps the file's unlit shading.
   const registry = options.registry;
   const storage = registry.storageFor("project");
   const blobs = registry.blobsFor("project");
   const materials = created.filter((asset) => asset.header.type === "Material");
-  for (const asset of [...materials, model]) {
+  for (const asset of materials) {
     const decoded = await decodeHasset(
       await storage.readBinary(asset.path),
       (hash) => blobs.readBlob(hash),
@@ -204,19 +202,11 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
     const payload = documentBytes
       ? JSON.parse(new TextDecoder().decode(documentBytes)) as Record<string, unknown>
       : { ...decoded.header.payload };
-    if (asset.header.type === "Material") {
-      payload.shadingModel = "pbr";
-      const nodes = payload.nodes as Array<{ id: string; properties: Record<string, unknown> }>;
-      for (const node of nodes) {
-        if (node.id === "metallic-factor") node.properties.value = [0];
-        if (node.id === "roughness-factor") node.properties.value = [0.8];
-      }
-    } else {
-      const modelPayload = normalizeModelPayload(payload);
-      payload.materialSlots = modelPayload.materialSlots.map((slot) => ({
-        ...slot,
-        materialGuid: materials[slot.index]?.header.guid ?? slot.materialGuid,
-      }));
+    payload.shadingModel = "pbr";
+    const nodes = payload.nodes as Array<{ id: string; properties: Record<string, unknown> }>;
+    for (const node of nodes) {
+      if (node.id === "metallic-factor") node.properties.value = [0];
+      if (node.id === "roughness-factor") node.properties.value = [0.8];
     }
     const chunks = decoded.header.chunks.map((chunk) => ({
       id: chunk.id, kind: chunk.kind, mime: chunk.mime,
