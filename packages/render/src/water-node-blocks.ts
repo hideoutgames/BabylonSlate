@@ -1,7 +1,7 @@
 import {
   Camera, Color3, CubeTexture, Matrix, NodeMaterial, NodeMaterialBlock, NodeMaterialBlockTargets, NodeMaterialBlockConnectionPointTypes as Types, PBRMaterial,
   ShaderLanguage, Texture, ThinTexture, Vector3, type AbstractMesh, type BaseTexture, type Effect, type Material, type Mesh, type NodeMaterialConnectionPoint,
-  type NodeMaterialDefines, type Scene,
+  type NodeMaterialDefines, type Scene, type SubMesh,
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
@@ -10,12 +10,14 @@ import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
 import {
-  contactRange, edgeFoamHelpers, fresnelSource, marchSource, meshVertexWaves, placeholderField, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
+  contactRange, edgeFoamHelpers, fresnelSource, marchSource, meshVertexWaves, placeholderField, planarLookupSource, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
   sceneWaterNodeLighting, selectWaterRemovals, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
   sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
   WATER_NODE_BLEND_DEFINE, WATER_REMOVAL_SHAPE_UNIFORMS, WATER_REMOVAL_SLOTS, WATER_REMOVAL_UNIFORMS, type WaterRemovalCandidate,
 } from "./water-material";
+import { waterPlanarReflectionForCamera } from "./water-planar-reflection";
 import { waterRemovalShapeVector } from "./water-removal-mesh";
+import { PLANAR_REACH } from "./water-shader-defines";
 import { isSkyboxMesh } from "./skybox";
 import { WATER_SCENE_COPY_SKY_DEPTH, isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 import { declareWaterAttributes, isBlendingWaterSurface, isWaterSurfaceMesh, WATER_DEPTH_PRE_PASS_DEFINE, WATER_SURFACE_DEFINE } from "./water-surface-block";
@@ -37,12 +39,17 @@ export interface WaterNodeSurface {
   contacts: WaterContactField | null;
   /** The neighbours whose colours it mixes toward while blending, by slot (null where a slot is empty). */
   partners: readonly (WaterDefinition | null)[];
+  /** Level (not a river or a volume tilted out of level), so it can take the view's planar reflection. */
+  flat: boolean;
 }
 const nodeSurfaces = new WeakMap<AbstractMesh, WaterNodeSurface>();
 /** Registers (or with null removes) what `mesh`'s Custom Material water nodes read. */
 export function setMeshWaterNodeSurface(mesh: AbstractMesh, surface: WaterNodeSurface | null): void {
-  if (surface) nodeSurfaces.set(mesh, surface);
-  else nodeSurfaces.delete(mesh);
+  if (!surface) { nodeSurfaces.delete(mesh); return; }
+  nodeSurfaces.set(mesh, surface);
+  // The placeholder bound for an empty field exists before the first draw: a texture added mid-frame changes the
+  // scene's membership, and the view holds that frame.
+  placeholderField(mesh.getScene());
 }
 export function meshWaterNodeSurface(mesh: AbstractMesh | null | undefined): WaterNodeSurface | null {
   return (mesh && nodeSurfaces.get(mesh)) || null;
@@ -54,7 +61,13 @@ export const WATER_NODE_COPY_DEFINE = "SLATE_WATER_NODE_COPY";
 export const WATER_NODE_SSR_DEFINE = "SLATE_WATER_SSR_STEPS";
 /** Water Reflection samples an environment or skybox cube (`waterSkyCube`); otherwise it reflects the analytic sky. */
 export const WATER_NODE_ENV_DEFINE = "SLATE_WATER_NODE_ENV";
+/** Water Reflection reads the view's planar mirror (Planar quality, a flat body, Object Reflections on). */
+export const WATER_NODE_PLANAR_DEFINE = "SLATE_WATER_NODE_PLANAR";
 export const WATER_NODE_SCENE_SAMPLER = "slateWaterSceneSampler";
+const PLANAR_SAMPLER = "slateWaterNodePlanarSampler";
+/** (1 for this body's mirror, 1 for a display-encoded mirror, `PLANAR_REACH`, 0) and the mirror's view-projection. */
+const PLANAR_UNIFORM = "slateWaterNodePlanar";
+const PLANAR_MATRIX = "slateWaterNodePlanarMatrix";
 export const WATER_NODE_ENV_SAMPLER = "slateWaterNodeEnvSampler";
 const FIELD_SAMPLER = "slateWaterFieldSampler";
 const CONTACT_SAMPLER = "slateWaterContactSampler";
@@ -583,8 +596,10 @@ RegisterClass("BABYLON.WaterSceneColorBlock", WaterSceneColorBlock);
  * water's environment BRDF: water's 2% at normal incidence, less at grazing angles the rougher the water). The sky is the
  * scene's environment or skybox cube, else the analytic sky built-in water reflects, blurred by Roughness (Roughness
  * where connected, else the asset's), which rises with distance as built-in water's does; scene objects replace it where
- * the asset's Object Reflections is on and the pass marches the scene copy (Screen Space reflections; Planar quality
- * marches too). Normal defaults to the Water Waves block's.
+ * the asset's Object Reflections is on: the view's planar mirror where this body is the view's dominant flat one (Planar
+ * quality), else the march through the scene copy (Screen Space reflections, and Planar's fallback), shared with
+ * built-in water (`planarLookupSource`, `marchSource`) and faded as it fades them. Normal defaults to the Water Waves
+ * block's.
  */
 export class WaterReflectionBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -596,6 +611,7 @@ export class WaterReflectionBlock extends WaterNodeBlock {
     this.registerInput("normal", Types.Vector3, true);
     this.registerInput("roughness", Types.Float, true);
     this.registerInput("waveNormal", Types.Vector3, true);
+    this.registerInput("waveHeight", Types.Float, true);
     this.registerOutput("color", Types.Color3);
     this.registerOutput("fresnel", Types.Float);
   }
@@ -606,20 +622,32 @@ export class WaterReflectionBlock extends WaterNodeBlock {
   get normal() { return this._inputs[4]!; }
   get roughness() { return this._inputs[5]!; }
   get waveNormal() { return this._inputs[6]!; }
+  /** The Water Waves block's per-pixel Wave Height, for the planar lookup's contacts (the compiler connects it). */
+  get waveHeight() { return this._inputs[7]!; }
   get color() { return this._outputs[0]!; }
   get fresnel() { return this._outputs[1]!; }
   override getClassName(): string { return "WaterReflectionBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
-    const scene = material.getScene();
+    const scene = material.getScene(), surface = meshWaterNodeSurface(mesh);
     const copied = prepareSurfaceDefines(defines, material, mesh, true);
-    defines.setValue(WATER_NODE_SSR_DEFINE, marchSteps(scene, meshWaterNodeSurface(mesh), copied), true);
+    defines.setValue(WATER_NODE_SSR_DEFINE, marchSteps(scene, surface, copied), true);
     defines.setValue(WATER_NODE_ENV_DEFINE, waterSkyCube(scene) !== null, true);
+    const planar = isWaterSurfaceMesh(mesh) && surface !== null && surface.water.objectReflections && surface.flat &&
+      sceneWaterQualityDeviceClamp(scene).quality.reflections === "planar";
+    defines.setValue(WATER_NODE_PLANAR_DEFINE, planar, true);
   }
-  override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
+  override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh, subMesh?: SubMesh): void {
     const scene = material.getScene();
     bindSurface(effect, scene, mesh);
     bindCopy(effect, scene, mesh);
     bindSky(effect, scene, waterSkyCube(scene));
+    // The lookup is also the mirror's demand, so only water drawing the planar variant keeps it alive. The planar
+    // uniform also selects the march for water that is not the view's dominant body.
+    const planar = subMesh?.materialDefines?.[WATER_NODE_PLANAR_DEFINE] ? waterPlanarReflectionForCamera(scene, scene.activeCamera) : null;
+    const mine = planar && planar.mesh === mesh ? planar : null;
+    effect.setFloat4(PLANAR_UNIFORM, mine ? 1 : 0, mine?.gammaSpace ? 1 : 0, PLANAR_REACH, 0);
+    if (mine) effect.setMatrix(PLANAR_MATRIX, mine.viewProjection);
+    effect.setTexture(PLANAR_SAMPLER, mine?.texture ?? EMPTY_TEXTURE);
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
@@ -633,6 +661,16 @@ export class WaterReflectionBlock extends WaterNodeBlock {
       ? `fn swnEnvTap(dir: vec3f, lod: f32) -> vec4f { return textureSampleLevel(${WATER_NODE_ENV_SAMPLER}, ${WATER_NODE_ENV_SAMPLER}Sampler, dir, lod); }`
       : `vec4 swnEnvTap(vec3 dir, float lod) { return textureLod(${WATER_NODE_ENV_SAMPLER}, dir, lod); }`}\n#endif\n`, "");
     state._emitFunction("swMarch", `#if defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0\n${nodeMarchSource(wgsl)}\n#endif\n`, "");
+    // The planar mirror, and the contacts its lookup reads.
+    emitSurfaceVaryings(state);
+    emitFieldHelpers(state);
+    state._emitUniformFromString(PLANAR_UNIFORM, Types.Vector4);
+    state._emitUniformFromString(PLANAR_MATRIX, Types.Matrix);
+    declareSampler(state, PLANAR_SAMPLER, "2d", WATER_NODE_PLANAR_DEFINE);
+    state._emitFunction("swPlanarTexel", `#ifdef ${WATER_NODE_PLANAR_DEFINE}\n${wgsl
+      ? `fn swPlanarTexel(uv: vec2f) -> vec4f { return textureSampleLevel(${PLANAR_SAMPLER}, ${PLANAR_SAMPLER}Sampler, uv, 0.0); }`
+      : `vec4 swPlanarTexel(vec2 uv) { return textureLod(${PLANAR_SAMPLER}, uv, 0.0); }`}\n#endif\n`, "");
+    state._emitFunctionFromInclude("helperFunctions", "");
     const [color, fresnel] = this._outputs.map((output) => output.associatedVariableName);
     state.compilationString += this.declare(state, this.color, `${v3}(0.0)`) + this.declare(state, this.fresnel, "0.0");
     const position = this.worldPosition.associatedVariableName, eye = this.cameraPosition.associatedVariableName;
@@ -646,6 +684,7 @@ float swnRoughNear = clamp(${roughness}, 0.0, 1.0);
 float swnRough = mix(max(swnRoughNear, ${f(WATER_FAR_ROUGHNESS)}), swnRoughNear, 1.0 / (1.0 + length(${eye} - ${position}.xyz) * ${f(WATER_GLOSS_FALLOFF)}));
 ${fresnelSource("swnRough", "swnNdotV", "swnFres")}
 vec3 swnR = reflect(-swnV, swnN);
+float swnRawY = swnR.y;
 ${reflectionKeepSource("swnR.y", "swnV.y", "swnKeep")}
 swnR = normalize(vec3(swnR.x, max(swnR.y, 0.02), swnR.z));
 float swnSkyH = 1.0 - clamp(swnR.y, 0.0, 1.0);
@@ -665,14 +704,35 @@ vec4 swnEnv = swnEnvTap(swnDir, swnRough * U.slateWaterNodeEnv.x + U.slateWaterN
 vec3 swnGamma = pow(max(swnEnv.rgb, vec3(0.0)), vec3(2.2));
 vec3 swnLinear = mix(swnEnv.rgb, swnGamma, U.slateWaterNodeEnv.z);
 swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y) * U.slateWaterNodeEnv.w;
-`, wgsl) + `#endif\n${bind("swnSky = swnSky * swnKeep;", wgsl)}#if defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0\n`
-      + bind(`vec4 swnHit = swMarch(${position}.xyz, swnR, ${this.viewProjection.associatedVariableName}, ${this.view.associatedVariableName}, ${eye});
-swnSky = mix(swnSky, swnHit.rgb, swnHit.a * (1.0 - smoothstep(0.2, 0.45, swnRoughNear)));
-`, wgsl) + "#endif\n"
+`, wgsl) + `#endif\n${bind("swnSky = swnSky * swnKeep;", wgsl)}`
+      + this.objectReflection(state, position, eye)
       + (this.color.hasEndpoints ? `${color} = swnSky * ${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.z;\n` : "")
       + (this.fresnel.hasEndpoints ? `${fresnel} = swnFres;\n` : "")
       + "}\n";
     return this;
+  }
+  /**
+   * Scene objects over the sky, as built-in water draws them (`objectReflectionSource`): the planar mirror where it is
+   * this body's, else the march; sharp hits fade as the water gets rough, where the reflected ray leaves below the
+   * horizon, and where it turns faster across the screen than the view does (grazing ripples).
+   */
+  private objectReflection(state: NodeMaterialBuildState, position: string, eye: string): string {
+    const wgsl = wgslOf(state), march = `defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0`;
+    const lookup = planarLookupSource(`${position}.xyz`, eye, "swnR", "swnObject", "U.slateWaterContactInfo.y", `U.${PLANAR_UNIFORM}`, `U.${PLANAR_MATRIX}`, "swnObj");
+    return `#if defined(${WATER_NODE_PLANAR_DEFINE}) || (${march})\n${bind("vec4 swnObj = vec4(0.0);\n", wgsl)}`
+      + `#ifdef ${WATER_NODE_PLANAR_DEFINE}\n{\n${surfaceLocals(state, position)}${bind("float swnHeight = swnData.x;\n", wgsl)}`
+      + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.value(this.waveHeight, "0.0")};\n#endif\n`
+      + bind(`float swnObject = abs(swnContactAt(swnPos.xz, swnHeight));\nif (U.${PLANAR_UNIFORM}.x > 0.5) {${lookup}\n}\n`, wgsl)
+        .replace(/\bSW_TO_LINEAR\(/g, wgsl ? "toLinearSpaceVec3(" : "toLinearSpace(")
+      + `}\n#endif\n#if ${march}\n`
+      + bind(`if (U.${PLANAR_UNIFORM}.x < 0.5) {
+  swnObj = swMarch(${position}.xyz, swnR, ${this.viewProjection.associatedVariableName}, ${this.view.associatedVariableName}, ${eye});
+}
+`, wgsl) + "#endif\n"
+      + bind(`swnObj.a = swnObj.a * (1.0 - smoothstep(0.2, 0.45, swnRoughNear)) * smoothstep(-0.01, 0.03, swnRawY)
+  * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swnR)) / max(length(fwidth(swnV)), 0.00001)));
+swnSky = mix(swnSky, swnObj.rgb, swnObj.a);
+`, wgsl) + "#endif\n";
   }
 }
 RegisterClass("BABYLON.WaterReflectionBlock", WaterReflectionBlock);

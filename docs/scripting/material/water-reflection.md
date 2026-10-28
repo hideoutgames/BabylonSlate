@@ -23,6 +23,8 @@ Returns what the water mirrors at this point, and how strongly it reflects.
 ## Notes
 
 - Reflects the scene's environment or skybox, or a sky made from the scene's background and sun when it has neither.
-- Also reflects scene objects when the asset's **Object Reflections** is on, the Material is Translucent and the project's **Water Reflections** quality is Screen Space or Planar.
+- Also reflects scene objects when the asset's **Object Reflections** is on:
+  - At **Planar** [Water Reflections](../../graphics/water.md) quality, a flat body (not a River or a tilted volume) mirrors them as built-in water does. Each view mirrors one body, the one that covers most of it.
+  - Otherwise, at Screen Space or Planar quality, it reflects the objects it can see on screen. This needs a Translucent Material.
 - Blend it over the water's colour with [**Mix**](mix.md), using Fresnel as the blend.
 - Only in Surface and Landscape materials.

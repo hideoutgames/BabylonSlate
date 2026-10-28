@@ -49,6 +49,7 @@ export {
   WATER_FAR_ROUGHNESS,
   WATER_GLOSS_FALLOFF,
   fresnelSource,
+  planarLookupSource,
   reflectionKeepSource,
   REMOVAL_HELPER,
   WATER_REMOVAL_SLOTS,

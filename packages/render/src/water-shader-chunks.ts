@@ -124,6 +124,35 @@ swDepth = mix(swDepth, min(swDepth, max(swSceneZ - swWaterZ, 0.0) * swDropPerDep
 }
 
 /**
+ * The view's planar mirror seen along `ray` from `position` (render space, as is `eye`), into `out` (linear colour,
+ * coverage), with the mirror's (on, display-encoded, reach) in `planar` and its view-projection in `matrix`; `object`
+ * is the distance to the nearest object in the water, within the contact range `range`. GLSL-shaped; reads
+ * `swPlanarTexel` and decodes with `SW_TO_LINEAR`. Built-in water and the Water Reflection node share it.
+ */
+export function planarLookupSource(position: string, eye: string, ray: string, object: string, range: string, planar: string, matrix: string, out: string): string {
+  return `
+  float swPlanarReach = length(${eye} - ${position}) * ${planar}.z;
+  // Beside an object standing in the water (within the contact range), what this point mirrors is mostly that object, a
+  // short way along the ray: the lookup follows the ray only about as far as the object is, so the object's reflection
+  // meets it at the waterline instead of swinging with the full tilt.
+  swPlanarReach = mix(min(swPlanarReach, ${object} * 2.0), swPlanarReach, smoothstep(0.5, 1.0, ${object} / max(${range}, 0.001)));
+  vec4 swPlanarClip = ${matrix} * vec4(${position} + ${ray} * swPlanarReach, 1.0);
+  vec2 swPlanarUv = swPlanarClip.xy / max(swPlanarClip.w, 0.000001) * 0.5 + vec2(0.5);
+  // The tilt can carry the lookup past the mirrored view's edge, where the clamped target would smear its border texels
+  // across the water: it is pulled back along the tilt toward this fragment's own mirror point (inside the view) until
+  // it lies within the target.
+  vec4 swPlanarClip0 = ${matrix} * vec4(${position}, 1.0);
+  vec2 swPlanarUv0 = clamp(swPlanarClip0.xy / max(swPlanarClip0.w, 0.000001) * 0.5 + vec2(0.5), vec2(0.0), vec2(1.0));
+  vec2 swPlanarD = swPlanarUv - swPlanarUv0;
+  vec2 swPlanarRoom = mix(swPlanarUv0, vec2(1.0) - swPlanarUv0, step(vec2(0.0), swPlanarD)) / max(abs(swPlanarD), vec2(0.000001));
+  swPlanarUv = swPlanarUv0 + swPlanarD * clamp(min(swPlanarRoom.x, swPlanarRoom.y), 0.0, 1.0);
+  vec4 swPlanarHit = swPlanarTexel(swPlanarUv);
+  vec3 swPlanarColor = swPlanarHit.rgb / max(swPlanarHit.a, 0.001);
+  // A point behind the mirrored camera has no projection (its uv would clamp to an edge texel): the sky stays.
+  ${out} = vec4(mix(swPlanarColor, SW_TO_LINEAR(swPlanarColor), ${planar}.y), swPlanarHit.a * step(0.000001, swPlanarClip.w));`;
+}
+
+/**
  * Object reflections (`SLATE_WATER_SSR`, `SLATE_WATER_PLANAR`) along `ray` (a world direction): `swObjRefl` holds
  * linear colour and coverage, 0 where nothing was found (the sky or environment reflection stays). The planar
  * reflection looks up where the reflected ray, followed `PLANAR_REACH` times the eye's distance beyond this fragment's
@@ -142,26 +171,7 @@ function objectReflectionSource(ray: string, roughness: string): string {
 vec4 swObjRefl = vec4(0.0);
 vec3 swReflRay = ${ray};
 swReflRay = normalize(vec3(swReflRay.x, max(swReflRay.y, 0.02), swReflRay.z));${ifDefined(PLANAR, `
-if (U.slateWaterPlanar.x > 0.5) {
-  float swPlanarReach = length(S.vEyePosition.xyz - IN.vPositionW) * U.slateWaterPlanar.z;
-  // Beside an object standing in the water (within the contact range), what this point mirrors is mostly that object, a
-  // short way along the ray: the lookup follows the ray only about as far as the object is, so the object's reflection
-  // meets it at the waterline instead of swinging with the full tilt.
-  swPlanarReach = mix(min(swPlanarReach, swObject * 2.0), swPlanarReach, smoothstep(0.5, 1.0, swObject / max(U.slateWaterContactInfo.y, 0.001)));
-  vec4 swPlanarClip = U.slateWaterPlanarMatrix * vec4(IN.vPositionW + swReflRay * swPlanarReach, 1.0);
-  vec2 swPlanarUv = swPlanarClip.xy / max(swPlanarClip.w, 0.000001) * 0.5 + vec2(0.5);
-  // The tilt can carry the lookup past the mirrored view's edge, where the clamped target would smear its border texels
-  // across the water: it is pulled back along the tilt toward this fragment's own mirror point (inside the view) until
-  // it lies within the target.
-  vec4 swPlanarClip0 = U.slateWaterPlanarMatrix * vec4(IN.vPositionW, 1.0);
-  vec2 swPlanarUv0 = clamp(swPlanarClip0.xy / max(swPlanarClip0.w, 0.000001) * 0.5 + vec2(0.5), vec2(0.0), vec2(1.0));
-  vec2 swPlanarD = swPlanarUv - swPlanarUv0;
-  vec2 swPlanarRoom = mix(swPlanarUv0, vec2(1.0) - swPlanarUv0, step(vec2(0.0), swPlanarD)) / max(abs(swPlanarD), vec2(0.000001));
-  swPlanarUv = swPlanarUv0 + swPlanarD * clamp(min(swPlanarRoom.x, swPlanarRoom.y), 0.0, 1.0);
-  vec4 swPlanarHit = swPlanarTexel(swPlanarUv);
-  vec3 swPlanarColor = swPlanarHit.rgb / max(swPlanarHit.a, 0.001);
-  // A point behind the mirrored camera has no projection (its uv would clamp to an edge texel): the sky stays.
-  swObjRefl = vec4(mix(swPlanarColor, SW_TO_LINEAR(swPlanarColor), U.slateWaterPlanar.y), swPlanarHit.a * step(0.000001, swPlanarClip.w));
+if (U.slateWaterPlanar.x > 0.5) {${planarLookupSource("IN.vPositionW", "S.vEyePosition.xyz", "swReflRay", "swObject", "U.slateWaterContactInfo.y", "U.slateWaterPlanar", "U.slateWaterPlanarMatrix", "swObjRefl")}
 }`)}${ifDefined(SSR, `
 if (U.slateWaterPlanar.x < 0.5) {
   swObjRefl = swMarch(IN.vPositionW, swReflRay);
