@@ -103,19 +103,6 @@ describe("CEL settings persistence and inheritance", () => {
     expect(normalizeSceneSettings({ celShading: { reflectionsEnabled: false } }).celShading).toEqual({});
   });
 
-  it("reads reflection factors only by default, persists the texture opt-in and overrides it per scene", () => {
-    // Projects saved before the setting existed load with it off.
-    expect(normalizeCelShadingSettings({}).reflectionTexturesEnabled).toBe(false);
-    const project = normalizeProjectSettings(JSON.parse(JSON.stringify(normalizeProjectSettings({
-      render: { mode: "cel", cel: normalizeCelShadingSettings({ reflectionTexturesEnabled: true }) },
-    }))));
-    expect(project.render.cel?.reflectionTexturesEnabled).toBe(true);
-    expect(resolveCelShadingSettings(project.render.cel, {}).reflectionTexturesEnabled).toBe(true);
-    const scene = normalizeSceneSettings({ celShading: { reflectionTexturesEnabled: false } });
-    expect(resolveCelShadingSettings(project.render.cel, scene.celShading).reflectionTexturesEnabled).toBe(false);
-    expect(normalizeCelShadingOverrides({ reflectionTexturesEnabled: 1 })).toEqual({});
-  });
-
   it("rejects invalid overrides and bounds authored numbers before they reach shaders", () => {
     const overrides = normalizeCelShadingOverrides({
       shadowBands: 99,

@@ -16,7 +16,7 @@ test("a world view draws each Material's previous Effect with the changed lights
     (window as unknown as { __hapticVariantSwapProof: typeof runVariantSwapProof }).__hapticVariantSwapProof());
   await testInfo.attach("variant-swap-proof", { body: JSON.stringify(result), contentType: "application/json" });
   expect(errors).toEqual([]);
-  const materials = ["native pbr", "native standard", "cel source:CEL", "graph"];
+  const materials = ["native pbr", "native standard", "graph"];
   expect(result.steps.map((step) => step.name)).toEqual([
     "a spot gives way to a point", "the sun is removed", "a spot stops casting shadows", "a point light stops casting shadows",
   ]);

@@ -6,7 +6,6 @@ import {
   MeshBuilder,
   NullEngine,
   NodeMaterial,
-  PBRMaterial,
   RenderTargetTexture,
   Scene,
   StandardMaterial,
@@ -16,7 +15,6 @@ import {
 import { MATERIAL_PREVIEW_MESHES, createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { normalizeCelShadingSettings } from "@haptic/core";
 import { isEngineDefaultMaterial } from "./default-material";
-import { CelMaterial } from "./cel-material";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { MaterialLibrary } from "./material-library";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
@@ -273,13 +271,12 @@ describe("material preview scene", () => {
         specularSize: 0.25,
       }),
     });
-    // The engine default checker texture never reports ready under
-    // NullEngine, so bind an explicit textureless CEL material for the
-    // uniform assertion instead.
-    const material = new CelMaterial(new PBRMaterial("preview-cel", host.scene), host.scene);
+    // The engine default is a graph Material, which follows the render mode itself.
+    const material = host.scene.defaultMaterial as NodeMaterial;
     const mesh = host.mesh;
     mesh.material = material;
     host.scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    await vi.waitFor(() => expect(material.compiledShaders).toContain("slateCelSurfaceLight"));
     await material.forceCompilationAsync(mesh);
     const subMesh = mesh.subMeshes[0]!;
     expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);

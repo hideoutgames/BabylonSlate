@@ -7,11 +7,11 @@ import { checkedShader } from "./checked-shader";
  * The Standard shader's geometry-pass reflectivity write in Babylon 9.29 (`default.fragment`, GLSL and WGSL): the
  * specular map or specular color, as the F0 that Real-Time Reflections read. Group 1 is that native body.
  */
-export const STANDARD_REFLECTIVITY_WRITE =
+const STANDARD_REFLECTIVITY_WRITE =
   /#ifdef PREPASS_REFLECTIVITY\n(#if defined\(SPECULAR\)\n[^\n]*\n#else\n[^\n]*\n#endif)\n/;
 
 /** A statement writing `value` (a vec4) to the reflectivity attachment. */
-export function reflectivityWrite(wgsl: boolean, value: string): string {
+function reflectivityWrite(wgsl: boolean, value: string): string {
   return wgsl
     ? `fragData[PREPASS_REFLECTIVITY_INDEX]=${value};`
     : `WRITE_GEOMETRY_FRAGMENT_OUTPUT(PREPASS_REFLECTIVITY_INDEX,${value});`;

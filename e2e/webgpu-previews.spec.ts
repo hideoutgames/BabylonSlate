@@ -393,7 +393,6 @@ for (const backend of ["webgpu"] as const) {
         skyboxMesh: boolean;
         shadowGeneratorCount: number;
         lights: { name: string }[];
-        materials: { className: string }[];
       };
       // Asserted rather than annotated: the poll callback assigns it, so a
       // `null` initializer would narrow it to `null` after the poll.
@@ -452,15 +451,6 @@ for (const backend of ["webgpu"] as const) {
           scene.skyboxMesh,
           `prefab preview must not get the skybox on ${backend}/${mode}`,
         ).toBe(false);
-      // Previews draw Material assets and the engine default, NodeMaterials
-      // that CEL leaves unwrapped, so no preview material is a CEL wrapper.
-      const celWrapped = scenes
-        .flatMap((scene) => scene.materials)
-        .filter((material) => material.className === "CelMaterial");
-      expect(
-        celWrapped.length,
-        `unexpected CEL material on ${backend}/${mode}`,
-      ).toBe(0);
     }
 
     await testInfo.attach("preview-gpu-errors", {
