@@ -4,7 +4,8 @@ import { HAPTIC_LIGHT_MAXIMUM } from "./haptic-lights";
  * The lighting function of `HapticLightingBlock`, in GLSL and WGSL twins that change together: a metallic-roughness
  * surface lit by the `HapticLights` block
  * and the Scene's environment cube. GGX distribution, height-correlated Smith visibility and Schlick Fresnel for
- * specular, Lambert for diffuse, the split-sum environment BRDF table with multi-scatter energy compensation, and
+ * specular, Lambert for diffuse, linearly transformed cosines for rect area lights (with the standard LTC Fresnel,
+ * as Babylon's OpenPBR material uses), the split-sum environment BRDF table with multi-scatter energy compensation, and
  * irradiance from the cube's spherical harmonics. Point and spot lights fall off with the inverse square of their
  * distance, windowed to reach zero at their range. Under `HAPTIC_CEL` the same lights and falloffs feed CEL's ramp
  * instead (`cel-shader.ts`).
@@ -66,9 +67,54 @@ float hapticConeFalloff(vec3 lightDirection, vec3 L, float cosHalfAngle) {
   return exp2(dot(vec4(L, 1.0), vec4(-lightDirection * kappa, -kappa)));
 }
 
+// Rect area lights: linearly transformed cosines from Babylon's two 64x64 tables (its ltcHelperFunctions).
+vec3 hapticLtcEdge(vec3 v1, vec3 v2) {
+  float x = dot(v1, v2);
+  float y = abs(x);
+  float a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+  float b = 3.4175940 + (4.1616724 + y) * y;
+  float v = a / b;
+  float thetaSinTheta = x > 0.0 ? v : 0.5 * inversesqrt(max(1.0 - x * x, 1e-7)) - v;
+  return cross(v1, v2) * thetaSinTheta;
+}
+// The rect's form factor at P through the inverse transform (identity for diffuse); zero behind its emitting side.
+float hapticLtcEvaluate(vec3 N, vec3 V, vec3 P, mat3 mInv, vec3 c0, vec3 c1, vec3 c2, vec3 c3) {
+  if (dot(cross(c1 - c0, c3 - c0), P - c0) < 0.0) return 0.0;
+  vec3 T1 = normalize(V - N * dot(V, N));
+  vec3 T2 = -cross(N, T1);
+  mat3 m = mInv * transpose(mat3(T1, T2, N));
+  vec3 p0 = normalize(m * (c0 - P));
+  vec3 p1 = normalize(m * (c1 - P));
+  vec3 p2 = normalize(m * (c2 - P));
+  vec3 p3 = normalize(m * (c3 - P));
+  vec3 f = hapticLtcEdge(p0, p1) + hapticLtcEdge(p1, p2) + hapticLtcEdge(p2, p3) + hapticLtcEdge(p3, p0);
+  float l = length(f);
+  return max((l * l + f.z) / (l + 1.0), 0.0);
+}
+// Rect i's diffuse and specular form factors, and the table's Fresnel terms (x scales F0, y scales F90 - F0).
+struct hapticArea { float diffuse; float specular; vec2 fresnel; };
+hapticArea hapticAreaLight(vec3 P, vec3 N, vec3 V, int i, float roughness) {
+  vec3 center = hapticRect[i * 4].xyz;
+  vec3 halfWidth = hapticRect[i * 4 + 1].xyz;
+  vec3 halfHeight = hapticRect[i * 4 + 2].xyz;
+  vec3 c0 = center + halfWidth - halfHeight;
+  vec3 c1 = center - halfWidth - halfHeight;
+  vec3 c2 = center - halfWidth + halfHeight;
+  vec3 c3 = center + halfWidth + halfHeight;
+  vec2 uv = vec2(roughness, sqrt(1.0 - clamp(dot(N, V), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
+  vec4 t1 = textureLod(hapticAreaLtc1Sampler, uv, 0.0);
+  vec4 t2 = textureLod(hapticAreaLtc2Sampler, uv, 0.0);
+  mat3 mInv = mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
+  hapticArea area;
+  area.diffuse = hapticLtcEvaluate(N, V, P, mat3(1.0), c0, c1, c2, c3);
+  area.specular = hapticLtcEvaluate(N, V, P, mInv, c0, c1, c2, c3);
+  area.fresnel = t2.xy;
+  return area;
+}
+
 // Every light of the block: diffuse irradiance (before the surface's diffuse colour) and specular radiance.
 void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec3 diffuse, inout vec3 specular) {
-  if (hapticCounts.w > 0.0) {
+  if (hapticFillDirection.w > 0.0) {
     vec3 L = normalize(hapticFillDirection.xyz);
     float NdotL = hapticSaturateEps(dot(N, L) * 0.5 + 0.5);
     diffuse += mix(hapticFillGround.rgb, hapticFillSky.rgb, NdotL);
@@ -114,6 +160,13 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     float roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
   }
+  for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.rect}; i++) {
+    if (i >= int(hapticCounts.w)) break;
+    hapticArea area = hapticAreaLight(P, N, V, i, surface.roughness);
+    vec3 color = hapticRect[i * 4 + 3].rgb;
+    diffuse += color * area.diffuse;
+    specular += color * (surface.F0 * area.fresnel.x + (vec3(1.0) - surface.F0) * area.fresnel.y) * area.specular;
+  }
 }
 
 #ifdef HAPTIC_CEL
@@ -133,7 +186,7 @@ vec3 hapticCelHighlight(vec3 N, vec3 V, vec3 L, float NdotL, vec3 color) {
 // The surface's display colour: the lights and the environment's irradiance on its display base colour.
 vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInfluence) {
   hapticCelLight result = hapticCelLight(vec3(0.0), vec3(0.0), 0.0);
-  if (hapticCounts.w > 0.0) {
+  if (hapticFillDirection.w > 0.0) {
     // The fill bands its wrapped N.L before mixing ground and sky, so it adds no smooth hue gradient.
     vec3 L = normalize(hapticFillDirection.xyz);
     float band = slateCelBand(dot(N, L) * 0.5 + 0.5);
@@ -169,6 +222,14 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     // The cone never reaches zero, so the highlight stops at its half angle.
     float inCone = step(direction.w, dot(-L, direction.xyz));
     hapticCelAdd(result, color.rgb * (NdotL * falloff), hapticCelHighlight(N, V, L, NdotL, color.rgb) * inCone);
+  }
+  // Rect lights at a fixed roughness of one half, as Babylon's light block evaluates them; the highlight is the
+  // specular form factor past CEL's threshold.
+  for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.rect}; i++) {
+    if (i >= int(hapticCounts.w)) break;
+    hapticArea area = hapticAreaLight(P, N, V, i, 0.5);
+    vec3 color = hapticRect[i * 4 + 3].rgb;
+    hapticCelAdd(result, color * area.diffuse, slateCelHighlight(area.specular, area.diffuse) * slateCelTint(color));
   }
   hapticCelAdd(result, slateCelEnvironmentLight(N) * environmentInfluence, vec3(0.0));
   return slateCelSurfaceLight(result.diffuse, result.peak) * base + slateCelSurfaceSpecular(result.specular);
@@ -316,8 +377,47 @@ fn hapticConeFalloff(lightDirection: vec3f, L: vec3f, cosHalfAngle: f32) -> f32 
   return exp2(dot(vec4f(L, 1.0), vec4f(-lightDirection * kappa, -kappa)));
 }
 
+fn hapticLtcEdge(v1: vec3f, v2: vec3f) -> vec3f {
+  let x = dot(v1, v2);
+  let y = abs(x);
+  let a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+  let b = 3.4175940 + (4.1616724 + y) * y;
+  let v = a / b;
+  let thetaSinTheta = select(0.5 * inverseSqrt(max(1.0 - x * x, 1e-7)) - v, v, x > 0.0);
+  return cross(v1, v2) * thetaSinTheta;
+}
+fn hapticLtcEvaluate(N: vec3f, V: vec3f, P: vec3f, mInv: mat3x3f, c0: vec3f, c1: vec3f, c2: vec3f, c3: vec3f) -> f32 {
+  if (dot(cross(c1 - c0, c3 - c0), P - c0) < 0.0) { return 0.0; }
+  let T1 = normalize(V - N * dot(V, N));
+  let T2 = -cross(N, T1);
+  let m = mInv * transpose(mat3x3f(T1, T2, N));
+  let p0 = normalize(m * (c0 - P));
+  let p1 = normalize(m * (c1 - P));
+  let p2 = normalize(m * (c2 - P));
+  let p3 = normalize(m * (c3 - P));
+  let f = hapticLtcEdge(p0, p1) + hapticLtcEdge(p1, p2) + hapticLtcEdge(p2, p3) + hapticLtcEdge(p3, p0);
+  let l = length(f);
+  return max((l * l + f.z) / (l + 1.0), 0.0);
+}
+struct hapticArea { diffuse: f32, specular: f32, fresnel: vec2f };
+fn hapticAreaLight(P: vec3f, N: vec3f, V: vec3f, i: i32, roughness: f32) -> hapticArea {
+  let center = HapticLights.hapticRect[i * 4].xyz;
+  let halfWidth = HapticLights.hapticRect[i * 4 + 1].xyz;
+  let halfHeight = HapticLights.hapticRect[i * 4 + 2].xyz;
+  let c0 = center + halfWidth - halfHeight;
+  let c1 = center - halfWidth - halfHeight;
+  let c2 = center - halfWidth + halfHeight;
+  let c3 = center + halfWidth + halfHeight;
+  let uv = vec2f(roughness, sqrt(1.0 - clamp(dot(N, V), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
+  let t1 = textureSampleLevel(hapticAreaLtc1Sampler, hapticAreaLtc1SamplerSampler, uv, 0.0);
+  let t2 = textureSampleLevel(hapticAreaLtc2Sampler, hapticAreaLtc2SamplerSampler, uv, 0.0);
+  let mInv = mat3x3f(vec3f(t1.x, 0.0, t1.y), vec3f(0.0, 1.0, 0.0), vec3f(t1.z, 0.0, t1.w));
+  return hapticArea(hapticLtcEvaluate(N, V, P, mat3x3f(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0), c0, c1, c2, c3),
+    hapticLtcEvaluate(N, V, P, mInv, c0, c1, c2, c3), t2.xy);
+}
+
 fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diffuse: ptr<function, vec3f>, specular: ptr<function, vec3f>) {
-  if (HapticLights.hapticCounts.w > 0.0) {
+  if (HapticLights.hapticFillDirection.w > 0.0) {
     let L = normalize(HapticLights.hapticFillDirection.xyz);
     let NdotL = hapticSaturateEps(dot(N, L) * 0.5 + 0.5);
     *diffuse += mix(HapticLights.hapticFillGround.rgb, HapticLights.hapticFillSky.rgb, NdotL);
@@ -362,6 +462,13 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
     let roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     *specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
   }
+  for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.rect}; i++) {
+    if (i >= i32(HapticLights.hapticCounts.w)) { break; }
+    let area = hapticAreaLight(P, N, V, i, surface.roughness);
+    let color = HapticLights.hapticRect[i * 4 + 3].rgb;
+    *diffuse += color * area.diffuse;
+    *specular += color * (surface.F0 * area.fresnel.x + (vec3f(1.0) - surface.F0) * area.fresnel.y) * area.specular;
+  }
 }
 
 #ifdef HAPTIC_CEL
@@ -378,7 +485,7 @@ fn hapticCelHighlight(N: vec3f, V: vec3f, L: vec3f, NdotL: f32, color: vec3f) ->
 }
 fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInfluence: f32) -> vec3f {
   var result = hapticCelLight(vec3f(0.0), vec3f(0.0), 0.0);
-  if (HapticLights.hapticCounts.w > 0.0) {
+  if (HapticLights.hapticFillDirection.w > 0.0) {
     let L = normalize(HapticLights.hapticFillDirection.xyz);
     let band = slateCelBand(dot(N, L) * 0.5 + 0.5);
     hapticCelAdd(&result, mix(HapticLights.hapticFillGround.rgb, HapticLights.hapticFillSky.rgb, band), hapticCelHighlight(N, V, L, band, HapticLights.hapticFillSky.rgb));
@@ -412,6 +519,12 @@ fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInflu
     let falloff = hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w);
     let inCone = step(direction.w, dot(-L, direction.xyz));
     hapticCelAdd(&result, color.rgb * (NdotL * falloff), hapticCelHighlight(N, V, L, NdotL, color.rgb) * inCone);
+  }
+  for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.rect}; i++) {
+    if (i >= i32(HapticLights.hapticCounts.w)) { break; }
+    let area = hapticAreaLight(P, N, V, i, 0.5);
+    let color = HapticLights.hapticRect[i * 4 + 3].rgb;
+    hapticCelAdd(&result, color * area.diffuse, slateCelHighlight(area.specular, area.diffuse) * slateCelTint(color));
   }
   hapticCelAdd(&result, slateCelEnvironmentLight(N) * environmentInfluence, vec3f(0.0));
   return slateCelSurfaceLight(result.diffuse, result.peak) * base + slateCelSurfaceSpecular(result.specular);

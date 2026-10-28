@@ -13,8 +13,10 @@ import {
   MeshBuilder,
   PointLight,
   RawCubeTexture,
+  RectAreaLight,
   Scene,
   SpotLight,
+  TransformNode,
   Vector3,
   type AbstractEngine,
   type AbstractMesh,
@@ -40,6 +42,7 @@ import {
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
+import { retainAreaLightLookup } from "../../../../packages/render/src/area-light-resources";
 import { retainFilteredEnvironment } from "../../../../packages/render/src/environment-prefilter";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
@@ -51,6 +54,10 @@ const SURFACES = [
   { name: "smooth metal", baseColor: [0.95, 0.75, 0.35], metallic: 1, roughness: 0.25, environmentInfluence: 1 },
   { name: "glossy dielectric", baseColor: [0.2, 0.35, 0.8], metallic: 0, roughness: 0.15, environmentInfluence: 0.5 },
 ] as const;
+type Surface = { name: string; baseColor: readonly number[]; metallic: number; roughness: number; environmentInfluence: number };
+// Babylon's rect light specular weighs its Fresnel terms by the light's specular colour times intensity; the block
+// uses the standard LTC Fresnel. The two agree for a white metal under a white light of intensity one.
+const WHITE_METAL: Surface = { name: "white metal", baseColor: [1, 1, 1], metallic: 1, roughness: 0.4, environmentInfluence: 1 };
 
 /** A cube face's pixels: a sky gradient from a bright zenith to a dark ground, tinted per face. */
 function face(index: number, size: number): Uint8Array {
@@ -114,7 +121,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     scene.environmentTexture = filtered.cube;
     scene.iblIntensity = 1;
 
-    const compile = async (surface: (typeof SURFACES)[number]): Promise<NodeMaterial> => {
+    const compile = async (surface: Surface): Promise<NodeMaterial> => {
       const doc = createDefaultMaterialDocument(surface.name);
       doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [...surface.baseColor];
       const output = doc.nodes.find((node) => node.id === "output")!.properties;
@@ -131,8 +138,10 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     // The switch picks the lighting block when a Material compiles.
     const materials: Record<Path, NodeMaterial[]> = { babylon: [], haptic: [] };
     for (const surface of SURFACES) materials.babylon.push(await compile(surface));
+    const metal = { babylon: await compile(WHITE_METAL) } as Record<Path, NodeMaterial>;
     setHapticLighting(engine, true);
     for (const surface of SURFACES) materials.haptic.push(await compile(surface));
+    metal.haptic = await compile(WHITE_METAL);
 
     const floor = MeshBuilder.CreateGround("floor", { width: 9, height: 6 }, scene);
     const box = MeshBuilder.CreateBox("box", { size: 1.2 }, scene);
@@ -161,6 +170,18 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       return light;
     });
     const lights = [sun, fill, ...spots, ...points];
+    // A rect light above the scene, facing down (Babylon's emits along -Z), off but in the rect light poses.
+    retainAreaLightLookup(scene);
+    const mount = new TransformNode("panel mount", scene);
+    mount.position.set(0.3, 2.4, 0.2);
+    mount.rotation.x = -Math.PI / 2;
+    const panel = new RectAreaLight("panel", Vector3.Zero(), 4, 2.5, scene);
+    panel.parent = mount;
+    authored(panel, [1, 1, 1], 1);
+    const panelOnly = () => {
+      for (const light of lights) setAuthoredLightEnabled(light, false);
+      setAuthoredLightEnabled(panel, true);
+    };
     const graph = new ForwardSceneFrameGraph(scene);
     const draw = async () => {
       await graph.prepare(camera);
@@ -168,13 +189,15 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       try { graph.render(camera, false); } finally { engine.endFrame(); }
       return read();
     };
-    const restore = () => {
+    const restore = (path?: Path) => {
+      if (path) assign(path);
       for (const light of lights) setAuthoredLightEnabled(light, true);
+      setAuthoredLightEnabled(panel, false);
       filtered.cube.rotationY = 0;
       filtered.cube.boundingBoxSize = undefined as unknown as Vector3;
       scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
     };
-    const poses: { name: string; apply: () => void }[] = [
+    const poses: { name: string; apply: (path: Path) => void; blockOnly?: boolean }[] = [
       { name: "all lights", apply: () => undefined },
       { name: "two off", apply: () => { setAuthoredLightEnabled(points[1]!, false); setAuthoredLightEnabled(spots[1]!, false); } },
       { name: "sun only", apply: () => { for (const light of [fill, ...spots, ...points]) setAuthoredLightEnabled(light, false); } },
@@ -187,23 +210,25 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
         // The cube is the Engine's, not the Scene's: its Materials learn of the box as a probe's do.
         scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
       } },
+      { name: "rect light on metal", apply: (path) => { panelOnly(); for (const mesh of meshes) mesh.material = metal[path]; } },
+      // The standard LTC Fresnel differs from Babylon's on dielectrics, by design.
+      { name: "rect light", apply: panelOnly, blockOnly: true },
     ];
     const captures: { name: string; path: Path; pixels: number[] }[] = [];
     for (const path of ["babylon", "haptic"] as const) {
-      assign(path);
       for (const pose of poses) {
+        if (pose.blockOnly && path === "babylon") continue;
         // Babylon's WGSL reflection block reads a box's uniforms without their `uniforms.` prefix and fails to compile.
         if (path === "babylon" && engine.isWebGPU && pose.name === "box-projected environment") continue;
-        restore();
-        pose.apply();
+        restore(path);
+        pose.apply(path);
         captures.push({ name: pose.name, path, pixels: await draw() });
       }
     }
 
     // Lights switching, arriving and leaving compile nothing new.
     const lightSteps = async () => {
-      assign("haptic");
-      restore();
+      restore("haptic");
       await draw();
       const before = litEffectKeys(engine);
       const steps: { step: string; newLitEffects: number }[] = [];
@@ -216,7 +241,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       await step("a point switched off", () => setAuthoredLightEnabled(points[2]!, false));
       await step("a spot switched off", () => setAuthoredLightEnabled(spots[1]!, false));
       await step("the fill switched off", () => setAuthoredLightEnabled(fill, false));
-      await step("all back on", restore);
+      await step("all back on", () => restore());
       await step("a new point", () => { added = new PointLight("added", new Vector3(0.6, 1.5, -0.4), scene); authored(added, [0.3, 1, 0.9], 0.9); });
       await step("a point removed", () => added!.dispose());
       return { steps, effects: before };
@@ -237,16 +262,17 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       { name: "blend", cel: { lightMixing: "blend" }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
       { name: "wide highlights", cel: { specularSize: 0.5, specularStrength: 0.6 }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
       { name: "no highlights", cel: { specularEnabled: false }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
+      // Babylon's light block draws a rect light far dimmer than its PBR block does, so no reference.
+      { name: "rect light", apply: panelOnly, blockOnly: true },
       { name: "all lights", apply: () => undefined, blockOnly: true },
     ];
     settings("cel");
     const celCaptures: { name: string; path: Path; pixels: number[] }[] = [];
     for (const path of ["babylon", "haptic"] as const) {
-      assign(path);
       for (const pose of celPoses) {
         if (pose.blockOnly && path === "babylon") continue;
         settings("cel", pose.cel);
-        restore();
+        restore(path);
         pose.apply();
         celCaptures.push({ name: pose.name, path, pixels: await draw() });
       }
