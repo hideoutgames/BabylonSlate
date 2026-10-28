@@ -33,9 +33,6 @@ export type FixedShapeLightingRequest = {
   guard: "multiply" | "branch";
 };
 
-/** Session HapticLights spike (lighting plan Phase 4): the light set its loops read, or off. */
-export type HapticLightingRequest = "forward" | "all" | null;
-
 export type ConsoleCommandHost = {
   /** Returns false when no loaded scene matches the guid. */
   changeScene(sceneAssetGuid: string): boolean | void;
@@ -43,9 +40,6 @@ export type ConsoleCommandHost = {
   /** Switch fixed-shape forward lighting for the session (not persisted). */
   setFixedShapeLighting?(request: FixedShapeLightingRequest): void;
   getFixedShapeLighting?(): FixedShapeLightingRequest;
-  /** Switch the HapticLights spike for the session (not persisted). */
-  setHapticLighting?(lights: HapticLightingRequest): void;
-  getHapticLighting?(): HapticLightingRequest;
   setFrameCap(fps: number): void;
   setVolume(volume: number): void;
   getFrameCap?(): number;

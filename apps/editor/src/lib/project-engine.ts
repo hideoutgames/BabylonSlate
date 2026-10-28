@@ -3,6 +3,7 @@ import {
   createBackendEngineSession,
   setFixedShapeLightGuard,
   setFixedShapeLightingEnabled,
+  setHapticLighting,
   type BackendEngineSession,
 } from "@haptic/render";
 import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "./public-engine-assets";
@@ -65,7 +66,10 @@ export async function createProjectEngineSession(
     releaseCanvas: (canvas) => canvas.remove(),
   });
   if (constructorCanvas) constructorCanvas.style.display = "none";
-  if (import.meta.env.VITE_TEST_MODE === "true") applyTestFixedShapeLighting(session);
+  if (import.meta.env.VITE_TEST_MODE === "true") {
+    applyTestFixedShapeLighting(session);
+    applyTestHapticLighting(session);
+  }
   return session;
 }
 
@@ -78,6 +82,15 @@ function applyTestFixedShapeLighting(session: ProjectEngineSession): void {
   if (guard !== "multiply" && guard !== "branch") return;
   setFixedShapeLightGuard(session.engine, guard);
   setFixedShapeLightingEnabled(session.engine, true);
+}
+
+/** Test builds: graph Materials draw with the lighting plan's `HapticLightingBlock` from the Engine's first load. */
+export const TEST_HAPTIC_LIGHTING_KEY = "haptic:test-haptic-lighting";
+
+function applyTestHapticLighting(session: ProjectEngineSession): void {
+  let value: string | null;
+  try { value = localStorage.getItem(TEST_HAPTIC_LIGHTING_KEY); } catch { return; }
+  if (value === "on") setHapticLighting(session.engine, true);
 }
 
 /** Serial ownership: a superseded device request settles before another Engine starts. */

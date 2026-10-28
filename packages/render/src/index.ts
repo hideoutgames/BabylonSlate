@@ -111,6 +111,7 @@ export type { RenderPerformanceSample } from "./render-performance";
 
 export { engineAdapterInfo, lightsDebugText } from "./render-diagnostics";
 export { estimateTextureMemory } from "./texture-memory-estimate";
+export { hapticLighting, setHapticLighting } from "./haptic-lights";
 export { formatGlErrorTrace, glErrorTraceActive, glErrorTraceEntries, installGlErrorTrace, type GlErrorTraceEntry } from "./gl-error-trace";
 export { captureShadowDiagnostics, type ShadowDiagnosticOptions, type ShadowDiagnostics } from "./shadow-diagnostics";
 export { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadIdentity, type SceneLayerLoadIdentity, type SceneLoadPhase, type SceneLoadProgress, type SceneLoadCount } from "./scene-load-readiness";

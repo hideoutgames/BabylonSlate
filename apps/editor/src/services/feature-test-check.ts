@@ -23,10 +23,8 @@ export type FeatureTestCheckMode = "quick" | "full" | "benchmark";
 /**
  * Performance profiles a Benchmark sweeps per scene: each quality tier, then
  * fixed-shape forward lighting at Medium with each seat guard (compare with
- * "medium · forward"), then Medium without shadows and the unshadowed
- * HapticLights spike over Forward's lights and over every light (compare with
- * "medium · forward · no shadows"). A profile's commands can rebuild shaders
- * and render targets, so sampling waits for the view to draw again.
+ * "medium · forward"). A profile's commands can rebuild shaders and render
+ * targets, so sampling waits for the view to draw again.
  */
 export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands: readonly string[] }[] = [
   { label: "low · forward", commands: ["quality low"] },
@@ -35,9 +33,6 @@ export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands
   { label: "ultra · forward", commands: ["quality ultra"] },
   { label: "medium · fixed lights", commands: ["quality medium", "fixedlights multiply"] },
   { label: "medium · fixed lights · branch", commands: ["quality medium", "fixedlights branch"] },
-  { label: "medium · forward · no shadows", commands: ["quality medium", "fixedlights off", "quality shadows enabled off"] },
-  { label: "medium · haptic lights", commands: ["quality medium", "quality shadows enabled off", "hapticlights forward"] },
-  { label: "medium · haptic lights · all", commands: ["quality medium", "quality shadows enabled off", "hapticlights all"] },
 ];
 
 /** Above any display refresh, so a Benchmark measures the device rather than the project frame cap. */
@@ -429,7 +424,7 @@ async function viewDrawsSteadily(play: PlayProbe, deps: FeatureTestCheckDeps, si
 /**
  * Sweeps FEATURE_TEST_BENCHMARK_PROFILES on the running scene with the frame
  * cap lifted into `samples`, one as each profile finishes, then restores the
- * session's HapticLights, fixed-shape lighting, quality, render path and cap.
+ * session's fixed-shape lighting, quality, render path and cap.
  */
 async function benchmarkProfiles(
   sceneName: string,
@@ -483,7 +478,6 @@ async function benchmarkProfiles(
     }
   } finally {
     if (!signal.aborted) {
-      await run("hapticlights reset");
       await run("fixedlights reset");
       await run("quality reset");
       await run(`framecap ${cap ?? 60}`);
