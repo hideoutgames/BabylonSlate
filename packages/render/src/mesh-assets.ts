@@ -53,17 +53,6 @@ export interface MeshAssetContext {
    * physics debug instead).
    */
   drawMeshCollision?: boolean;
-  /**
-   * Texture guids sampled by each Material document (`materialDependencies`).
-   * With `textureBytes`, GLB slim runs only when those guids are packed.
-   */
-  materialTextureGuids?: ReadonlyMap<string, readonly string[]>;
-  /**
-   * Material guids whose graph built and whose textures were admitted in this Scene (the library's
-   * `isReady`; the program itself links later, in the load's warm-up or a readiness probe). GLB slim
-   * requires this so a packed-but-unbound slot cannot stick on the 1×1 red stub.
-   */
-  compiledMaterialGuids?: ReadonlySet<string>;
   /** Native clipName → Animation guid, keyed by Model guid. */
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   /** Retargeted Animation loads keyed by the actor (target) Model guid. */

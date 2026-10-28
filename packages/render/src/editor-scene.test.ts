@@ -1717,12 +1717,11 @@ describe("EditorSceneSync", () => {
     expect(changed).toHaveBeenCalledTimes(parts.length);
   });
 
-  it("does not rebuild a loaded model when its slot Materials finish compiling", async () => {
+  it("keeps a loaded model's instance when its actor moves", async () => {
     const { scene } = createHandle();
     const slot = new StandardMaterial("slot-0", scene);
     const mesh = createMeshComponent("c1", "box");
     mesh.properties.assetGuid = "hero-model";
-    const compiled = new Set<string>();
     const sync = new EditorSceneSync(scene, undefined, { resolveMaterial: (guid) => (guid === "mat-1" ? slot : null) });
     sync.setMeshAssets({
       modelBytes: new Map([["hero-model", encodeUvHierarchyGlb()]]),
@@ -1730,9 +1729,6 @@ describe("EditorSceneSync", () => {
         clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
         materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
       }]]),
-      textureBytes: new Map(),
-      materialTextureGuids: new Map([["mat-1", [] as string[]]]),
-      compiledMaterialGuids: compiled,
     });
     const authored = sceneWith([createActor("a", "A", { components: [mesh] })]);
     sync.apply(authored);
@@ -1744,8 +1740,6 @@ describe("EditorSceneSync", () => {
     await sync.whenEditorModelsReady();
     const parts = visualMeshes(sync.meshForActor("a")!);
 
-    // Compiling the slot Material lets a fresh load drop the embedded textures, but this instance renders the same.
-    compiled.add("mat-1");
     const moved = structuredClone(authored);
     moved.actors[0]!.transform.position = [1, 2, 3];
     sync.apply(moved);
