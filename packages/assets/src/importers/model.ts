@@ -170,7 +170,7 @@ function importFromBrowse(
         // re-imports even when material names change.
         payload: {
           ...imported.document,
-          ...(imported.preserveSource ? { importNotice: "The Model keeps its glTF material: this graph cannot yet draw a texture on a second UV channel or with a texture transform." } : {}),
+          ...(imported.preserveSource ? { importNotice: "The Model's slot is left empty and draws the grey checker: this graph cannot yet draw a texture on a second UV channel or with a texture transform." } : {}),
           slotIndex: i,
         },
         chunks: [],

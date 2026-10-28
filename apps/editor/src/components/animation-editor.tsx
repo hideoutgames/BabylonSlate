@@ -10,8 +10,10 @@ import {
 import { isGltfModelBytes } from "@haptic/render";
 import {
   normalizeAnimationPayload,
+  normalizeModelPayload,
   normalizeSkeletonPayload,
   type AnimationPayload,
+  type ModelMaterialSlot,
   type SkeletonKind,
 } from "@haptic/assets";
 import {
@@ -65,6 +67,13 @@ export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
   const doc = useOpenDocument(documentId);
   const animation = normalizeAnimationPayload(asRecord(doc?.content));
   const sourceBytes = useAssetSourceBytes(animation.modelGuid);
+  const model = assetRegistry
+    ?.list()
+    .find((asset) => asset.header.guid === animation.modelGuid);
+  const materialSlots =
+    model?.header.type === "Model"
+      ? normalizeModelPayload(model.header.payload ?? {}).materialSlots
+      : [];
   const sourceAnim = animation.sourceAnimationGuid
     ? assetRegistry
         ?.list()
@@ -89,6 +98,7 @@ export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
       <AnimationPreview
         payload={animation}
         sourceBytes={sourceBytes}
+        materialSlots={materialSlots}
         sourceClipBytes={sourceClipBytes}
         skeletonKind={skeletonKind}
         showBones={showBones}
@@ -112,6 +122,7 @@ export function AnimationDetailsPanel(_props: IDockviewPanelProps) {
 export function AnimationPreview({
   payload,
   sourceBytes = null,
+  materialSlots,
   sourceClipBytes = null,
   skeletonKind = null,
   showBones = false,
@@ -119,6 +130,7 @@ export function AnimationPreview({
 }: {
   payload: AnimationPayload;
   sourceBytes?: Uint8Array | null;
+  materialSlots: readonly ModelMaterialSlot[];
   sourceClipBytes?: Uint8Array | null;
   skeletonKind?: SkeletonKind | null;
   showBones?: boolean;
@@ -158,6 +170,7 @@ export function AnimationPreview({
       <div className="min-h-0 flex-1">
         <AnimationPreviewCanvas
           sourceBytes={sourceBytes}
+          materialSlots={materialSlots}
           clipName={payload.clipName}
           skeletonKind={skeletonKind}
           showBones={showBones}

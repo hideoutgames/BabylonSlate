@@ -1,7 +1,8 @@
-import { NodeMaterial, PBRMaterial, RenderTargetTexture, type Mesh } from "@babylonjs/core";
+import { NodeMaterial, RenderTargetTexture, type Mesh } from "@babylonjs/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine as createNullTestEngine } from "./create-null-engine";
+import { isEngineDefaultMaterial } from "./default-material";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 
 /** Thumbnails draw through the FrameGraph into a color/depth target. */
@@ -184,15 +185,15 @@ describe("captureModelThumbnailPng", () => {
     expect([...png!.subarray(0, 8)]).toEqual([...PNG_SIGNATURE]);
   });
 
-  it("waits for imported materials before reading the one-shot render", async () => {
+  it("draws a part without a Material with the engine default, once that is ready", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     let materialReady = false;
-    const isReady = PBRMaterial.prototype.isReadyForSubMesh;
+    const isReady = NodeMaterial.prototype.isReadyForSubMesh;
     const readiness = vi
-      .spyOn(PBRMaterial.prototype, "isReadyForSubMesh")
-      .mockImplementation(function (this: PBRMaterial, ...args) {
-        return materialReady && isReady.apply(this, args);
+      .spyOn(NodeMaterial.prototype, "isReadyForSubMesh")
+      .mockImplementation(function (this: NodeMaterial, ...args) {
+        return (materialReady || !isEngineDefaultMaterial(this)) && isReady.apply(this, args);
       });
     const readback = vi
       .spyOn(RenderTargetTexture.prototype, "readPixels")
@@ -203,7 +204,7 @@ describe("captureModelThumbnailPng", () => {
       [],
       NO_MATERIALS,
     );
-    await vi.waitFor(() => expect(readiness).toHaveBeenCalled());
+    await vi.waitFor(() => expect(readiness.mock.contexts.some((material) => isEngineDefaultMaterial(material as NodeMaterial))).toBe(true));
     expect(readback).not.toHaveBeenCalled();
     materialReady = true;
     expect(pngOf(await capture)).toBeDefined();
@@ -251,7 +252,7 @@ describe("captureModelThumbnailPng", () => {
     vi.useFakeTimers();
     const handle = createTestEngine();
     handles.push(handle);
-    vi.spyOn(PBRMaterial.prototype, "isReadyForSubMesh").mockReturnValue(false);
+    vi.spyOn(NodeMaterial.prototype, "isReadyForSubMesh").mockReturnValue(false);
     const readback = vi.spyOn(RenderTargetTexture.prototype, "readPixels");
     const capture = captureModelThumbnailPng(
       handle.engine,
@@ -271,7 +272,7 @@ describe("captureModelThumbnailPng", () => {
       const clock = installVirtualClock();
       const effects = (handle.engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
       let probes = 0;
-      vi.spyOn(PBRMaterial.prototype, "isReadyForSubMesh").mockImplementation(() => {
+      vi.spyOn(NodeMaterial.prototype, "isReadyForSubMesh").mockImplementation(() => {
         probes += 1;
         effects[`elsewhere-${probes}`] = { isReady: () => true, getCompilationError: () => "" };
         clock.advance(POLL_MS);
@@ -298,7 +299,7 @@ describe("captureModelThumbnailPng", () => {
       const controller = new AbortController();
       const clock = neverReady(handle);
       const capture = captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], NO_MATERIALS, undefined, { signal: controller.signal });
-      await vi.waitFor(() => expect(PBRMaterial.prototype.isReadyForSubMesh).toHaveBeenCalled());
+      await vi.waitFor(() => expect(NodeMaterial.prototype.isReadyForSubMesh).toHaveBeenCalled());
       controller.abort();
       expect(await capture).toEqual({ outcome: "cancelled" });
       expect(clock.elapsed()).toBeLessThan(SCENE_CAPTURE_CEILING_MS);

@@ -17,6 +17,7 @@ const MODEL_GUID = "00000000-0000-4000-8000-000000000010";
 const PBR_MATERIAL_GUID = "00000000-0000-4000-8000-000000000011";
 const CEL_MATERIAL_GUID = "00000000-0000-4000-8000-000000000012";
 const UNLIT_MATERIAL_GUID = "00000000-0000-4000-8000-000000000013";
+const QUAD_MATERIAL_GUID = "00000000-0000-4000-8000-000000000014";
 
 const MODEL_ASSET = "assets/Quad.model.hasset";
 const PBR_MATERIAL_ASSET = "assets/AuthoredPbr.material.hasset";
@@ -33,8 +34,8 @@ function isGpuFailure(type: string, message: string): boolean {
   );
 }
 
-/** Small textured quad GLB; the same synthetic model the CEL spec packs. */
-function encodeQuadGlb(uri: string): Uint8Array {
+/** Small quad GLB whose one primitive names material 0. */
+function encodeQuadGlb(): Uint8Array {
   const vertices = new Float32Array([
     -2, -2, 0, 2, -2, 0, 2, 2, 0, -2, 2, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
     0, 0, 1, 0, 1, 1, 0, 1,
@@ -65,19 +66,7 @@ function encodeQuadGlb(uri: string): Uint8Array {
         { bufferView: 2, componentType: 5126, count: 4, type: "VEC2" },
         { bufferView: 3, componentType: 5123, count: 6, type: "SCALAR" },
       ],
-      images: [{ uri }],
-      textures: [{ source: 0 }],
-      materials: [
-        {
-          name: "Native",
-          doubleSided: true,
-          pbrMetallicRoughness: {
-            baseColorTexture: { index: 0 },
-            metallicFactor: 0,
-            roughnessFactor: 1,
-          },
-        },
-      ],
+      materials: [{ name: "Quad", doubleSided: true }],
       meshes: [
         {
           primitives: [
@@ -101,12 +90,13 @@ function materialAsset(
   guid: string,
   name: string,
   color: number[],
-  unlit = false,
+  options: { unlit?: boolean; twoSided?: boolean } = {},
 ) {
   const document = createDefaultMaterialDocument(name);
   document.nodes.find((node) => node.id === "baseColor")!.properties.value =
     color;
-  if (unlit) document.shadingModel = "unlit";
+  if (options.unlit) document.shadingModel = "unlit";
+  document.twoSided = options.twoSided === true;
   return encodeAssetDocument({
     guid,
     type: "Material",
@@ -116,16 +106,8 @@ function materialAsset(
   });
 }
 
-/** Project fixture: backend pinned, one quad GLB, three authored materials. */
-async function proofProjectFiles(page: Page, backend: Backend) {
-  const uri = await page.evaluate(() => {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 2;
-    const context = canvas.getContext("2d")!;
-    context.fillStyle = "#33994d";
-    context.fillRect(0, 0, 2, 2);
-    return canvas.toDataURL("image/png");
-  });
+/** Project fixture: backend pinned, one quad GLB, four authored materials. */
+async function proofProjectFiles(backend: Backend) {
   const files = await minimalProjectFiles();
   const project = JSON.parse(
     new TextDecoder().decode(files.get(PROJECT_FILE)!),
@@ -144,7 +126,7 @@ async function proofProjectFiles(page: Page, backend: Backend) {
         name: "Quad",
         version: 1,
         payload: {
-          materialSlots: [{ index: 0, name: "Native", materialGuid: null }],
+          materialSlots: [{ index: 0, name: "Quad", materialGuid: QUAD_MATERIAL_GUID }],
           importScale: 1,
         },
       },
@@ -154,7 +136,7 @@ async function proofProjectFiles(page: Page, backend: Backend) {
             id: "source",
             kind: "geometry",
             mime: "model/gltf-binary",
-            data: encodeQuadGlb(uri),
+            data: encodeQuadGlb(),
           },
         ],
       },
@@ -170,7 +152,12 @@ async function proofProjectFiles(page: Page, backend: Backend) {
   );
   files.set(
     "assets/Unlit.material.hasset",
-    await materialAsset(UNLIT_MATERIAL_GUID, "Unlit", [0.9, 0.75, 0.1], true),
+    await materialAsset(UNLIT_MATERIAL_GUID, "Unlit", [0.9, 0.75, 0.1], { unlit: true }),
+  );
+  files.set(
+    "assets/Quad.material.hasset",
+    // Two-sided, as the importer makes a double-sided glTF material.
+    await materialAsset(QUAD_MATERIAL_GUID, "Quad", [0.2, 0.6, 0.3], { twoSided: true }),
   );
   return files;
 }
@@ -295,7 +282,7 @@ for (const backend of ["webgpu"] as const) {
         errors.push(message.text());
     });
 
-    await openMinimalTestProject(page, await proofProjectFiles(page, backend));
+    await openMinimalTestProject(page, await proofProjectFiles(backend));
     await openMainScene(page);
 
     for (const mode of ["pbr", "cel"] as const) {
@@ -344,11 +331,20 @@ for (const backend of ["webgpu"] as const) {
       await openAssetFromBrowser(page, MODEL_ASSET);
       const modelCanvas = page.getByTestId("model-preview-canvas");
       await expect(modelCanvas).toBeVisible({ timeout: 30_000 });
+      // The quad draws once its slot Material has compiled.
       await expect
-        .poll(async () => (await canvasEvidence(modelCanvas)).nonBlank, {
-          timeout: 30_000,
-        })
-        .toBeGreaterThan(200);
+        .poll(
+          async () => {
+            const evidence = await canvasEvidence(modelCanvas);
+            const [red, green, blue] = centerPixel(evidence);
+            return evidence.nonBlank > 200 && green! > Math.max(red!, blue!);
+          },
+          {
+            timeout: 30_000,
+            message: `model preview never showed its slot Material on ${backend}/${mode}`,
+          },
+        )
+        .toBe(true);
       const model = await canvasEvidence(modelCanvas);
       await modelCanvas.screenshot({
         path: testInfo.outputPath(`model-${mode}-${backend}.png`),
@@ -357,11 +353,11 @@ for (const backend of ["webgpu"] as const) {
         await page.getByTestId("model-preview-load-error").count(),
         `model preview error on ${backend}/${mode}`,
       ).toBe(0);
-      // The framed quad covers the center with its green base color texture.
+      // The framed quad covers the center with its slot Material's green base color.
       const [modelRed, modelGreen, modelBlue] = centerPixel(model);
       expect(
         modelGreen,
-        `model preview shows its green texture on ${backend}/${mode}`,
+        `model preview shows its slot Material on ${backend}/${mode}`,
       ).toBeGreaterThan(Math.max(modelRed!, modelBlue!));
 
       // Real Prefab document preview: pitch-black background, no skybox.
@@ -456,34 +452,15 @@ for (const backend of ["webgpu"] as const) {
           scene.skyboxMesh,
           `prefab preview must not get the skybox on ${backend}/${mode}`,
         ).toBe(false);
-      // CEL material replacement reaches preview PBR/native materials, while
-      // authored NodeMaterials stay unwrapped (they are the preview subject).
-      if (mode === "cel") {
-        await expect
-          .poll(
-            async () => {
-              const current = (await engineSceneDiagnostics(page)) as {
-                scenes: { materials: { className: string }[] }[];
-              } | null;
-              return (
-                current?.scenes
-                  .flatMap((scene) => scene.materials)
-                  .filter((material) => material.className === "CelMaterial")
-                  .length ?? 0
-              );
-            },
-            { timeout: 30_000 },
-          )
-          .toBeGreaterThan(0);
-      } else {
-        const celWrapped = scenes
-          .flatMap((scene) => scene.materials)
-          .filter((material) => material.className === "CelMaterial");
-        expect(
-          celWrapped.length,
-          `unexpected CEL material under PBR on ${backend}`,
-        ).toBe(0);
-      }
+      // Previews draw Material assets and the engine default, NodeMaterials
+      // that CEL leaves unwrapped, so no preview material is a CEL wrapper.
+      const celWrapped = scenes
+        .flatMap((scene) => scene.materials)
+        .filter((material) => material.className === "CelMaterial");
+      expect(
+        celWrapped.length,
+        `unexpected CEL material on ${backend}/${mode}`,
+      ).toBe(0);
     }
 
     await testInfo.attach("preview-gpu-errors", {

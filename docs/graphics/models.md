@@ -24,14 +24,14 @@ When a file refers to texture files outside it, pick them together with the mode
 
 A Model has one material slot per material in the file.
 
-- In the Model's editor, each slot shows its Material. **Default** keeps the material from the file.
-- A Model's and an Animation's thumbnails draw each slot with its Material.
+- In the Model's editor, each slot shows its Material. An empty slot shows **None** and draws the grey checker.
+- A Model's and an Animation's previews and thumbnails draw each slot with its Material.
 - On a Mesh component, **Material** replaces every slot for that one actor. Choose **Model Materials** to go back to the Model's slots, or **None** for the engine's grey checker.
 - Meshes with no Material draw a grey checker, so missing materials are easy to spot. The checker is lit like any other surface, so a 3D scene needs a [light](lighting.md) for it to show. A **Blank** project's scene has none: add a light, or the meshes draw black.
 
-Each imported Material is a graph you can edit: base colour, metallic, roughness, normal, emission and occlusion (which darkens only light from the environment), with the file's opacity and sidedness. Features the file uses that Haptic does not draw, such as clear coat or sheen, are left out. Images the file samples with nearest filtering, as pixel-art models do, import with the **Pixel Art** usage and keep their hard-edged texels.
+Haptic never draws the material stored in the file, in scenes, Play, previews or thumbnails: the import turns each one into a Material asset, and the slot draws that. Each imported Material is a graph you can edit: base colour, metallic, roughness, normal, emission and occlusion (which darkens only light from the environment), with the file's opacity and sidedness. Features the file uses that Haptic does not draw, such as clear coat or sheen, are left out. Images the file samples with nearest filtering, as pixel-art models do, import with the **Pixel Art** usage and keep their hard-edged texels.
 
-When a texture uses a second UV channel, or the file offsets, scales or rotates a texture, the Model keeps the original material for that slot, and the imported Material asset says so.
+When a texture uses a second UV channel, or the file offsets, scales or rotates a texture, the import leaves that slot empty, so it draws the grey checker, and the imported Material asset says so. Points and lines in a file are not drawn.
 
 When a file stores no normals for a mesh, Haptic shades that mesh flat, as glTF requires, so its faces look faceted. Include normals in the file for smooth shading.
 

@@ -19,7 +19,7 @@ Double-tap the asset to open it. The window has **Preview**, **Colliders** and a
 
 | Setting | Description |
 | --- | --- |
-| Material slots | One row per material in the file. Pick a Material or Material Instance, or **Default** to keep the file's own material. |
+| Material slots | One row per material in the file. Pick a Material or Material Instance; an empty slot (**None**) draws the grey checker. |
 | Auto LOD | Under **Level Of Detail**. Generates simpler meshes for distant views when the model loads. On by default. |
 | Clips | The animation clips in the file. Read-only. |
 
