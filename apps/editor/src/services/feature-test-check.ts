@@ -107,6 +107,21 @@ export interface FeatureTestCheckSceneResult {
   problems: string[];
 }
 
+/** What the editor held at one moment of a check: shader programs, textures and memory. */
+export interface FeatureTestCheckResources {
+  /** Milliseconds since the check started. */
+  atMs: number;
+  step: string;
+  /** Babylon Effects (shader programs) every Engine holds. */
+  effects: number;
+  textures: number;
+  /** Estimated GPU bytes of those textures, render targets included (`estimateTextureMemory`). */
+  textureBytes: number;
+  /** Where the browser reports them: the JS heap (Chromium) and the native shell's footprint. */
+  jsHeapBytes: number | null;
+  appFootprintBytes: number | null;
+}
+
 export interface FeatureTestCheckReport {
   mode: FeatureTestCheckMode;
   startedAt: number;
@@ -114,6 +129,8 @@ export interface FeatureTestCheckReport {
   cancelled: boolean;
   scenes: FeatureTestCheckSceneResult[];
   pageErrors: string[];
+  /** A check the app stopped during (a crash or reload): its last step and resource samples, oldest first. */
+  unfinished?: { step: string; resources: FeatureTestCheckResources[] };
 }
 
 export interface FeatureTestCheckDeps {
@@ -205,12 +222,24 @@ export async function runFeatureTestCheck(options: {
   signal: AbortSignal;
   timeouts?: Partial<FeatureTestCheckTimeouts>;
   pageErrors?: () => string[];
+  /** Each progress step with the report so far, which a crash would otherwise lose. */
+  onStep?: (step: string, report: FeatureTestCheckReport) => void;
 }): Promise<FeatureTestCheckReport> {
-  const { deps, signal, mode } = options;
+  const { signal, mode } = options;
   const limits = { ...DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS, ...options.timeouts };
-  const startedAt = deps.now();
+  const startedAt = options.deps.now();
   const wallClock = Date.now();
   const scenes: FeatureTestCheckSceneResult[] = [];
+  const partial = (): FeatureTestCheckReport => ({
+    mode, startedAt: wallClock, durationMs: options.deps.now() - startedAt, cancelled: false, scenes, pageErrors: options.pageErrors?.() ?? [],
+  });
+  const deps: FeatureTestCheckDeps = {
+    ...options.deps,
+    onProgress: (message) => {
+      options.deps.onProgress?.(message);
+      options.onStep?.(message, partial());
+    },
+  };
   let cancelled = false;
   for (const scene of options.scenes) {
     if (signal.aborted) { cancelled = true; break; }
@@ -304,7 +333,7 @@ async function checkScene(
     result.play.snapshot = play.snapshot();
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
     if (mode === "benchmark") {
-      result.play.benchmark = await benchmarkProfiles(scene.name, play, run, deps, signal, limits);
+      await benchmarkProfiles(scene.name, play, run, deps, signal, limits, result.play.benchmark);
       for (const sample of result.play.benchmark) {
         for (const failure of sample.failed) result.problems.push(`${sample.label}: ${failure}`);
       }
@@ -393,8 +422,8 @@ async function viewDrawsSteadily(play: PlayProbe, deps: FeatureTestCheckDeps, si
 
 /**
  * Sweeps FEATURE_TEST_BENCHMARK_PROFILES on the running scene with the frame
- * cap lifted, then restores the session's HapticLights, fixed-shape lighting,
- * quality, render path and cap.
+ * cap lifted into `samples`, one as each profile finishes, then restores the
+ * session's HapticLights, fixed-shape lighting, quality, render path and cap.
  */
 async function benchmarkProfiles(
   sceneName: string,
@@ -403,8 +432,8 @@ async function benchmarkProfiles(
   deps: FeatureTestCheckDeps,
   signal: AbortSignal,
   limits: FeatureTestCheckTimeouts,
-): Promise<FeatureTestBenchmarkSample[]> {
-  const samples: FeatureTestBenchmarkSample[] = [];
+  samples: FeatureTestBenchmarkSample[],
+): Promise<void> {
   const cap = /(\d+)/.exec((await run("framecap")).output)?.[1];
   await run(`framecap ${BENCHMARK_FRAME_CAP}`);
   try {
@@ -451,7 +480,6 @@ async function benchmarkProfiles(
       await run(`framecap ${cap ?? 60}`);
     }
   }
-  return samples;
 }
 
 function mean(values: readonly number[]): number | null {

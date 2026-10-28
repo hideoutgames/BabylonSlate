@@ -2,6 +2,7 @@ import {
   FEATURE_TEST_BENCHMARK_PROFILES,
   type FeatureTestBenchmarkSample,
   type FeatureTestCheckReport,
+  type FeatureTestCheckResources,
   type FeatureTestCheckSceneResult,
   type FrameStats,
 } from "../services/feature-test-check";
@@ -82,6 +83,21 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
   return lines;
 }
 
+function mb(bytes: number | null): string | null {
+  return bytes === null ? null : `${Math.round(bytes / 1048576)} MB`;
+}
+
+/** One resource sample: time into the check, what the Engines held, and the step it was at. */
+function resourceLine(sample: FeatureTestCheckResources): string {
+  const memory = [
+    `${sample.effects} shaders`,
+    `${sample.textures} textures (${mb(sample.textureBytes)})`,
+    ...(sample.jsHeapBytes !== null ? [`JS heap ${mb(sample.jsHeapBytes)}`] : []),
+    ...(sample.appFootprintBytes !== null ? [`app ${mb(sample.appFootprintBytes)}`] : []),
+  ];
+  return `  ${pad(s(sample.atMs), 9)}${memory.join(" · ")} · ${clip(sample.step, 80)}`;
+}
+
 function pad(text: string, width: number): string {
   return text.length >= width ? `${text} ` : text.padEnd(width);
 }
@@ -117,7 +133,8 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
   const pipeline = report.scenes.map((scene) => scene.play.snapshot?.rendering?.pipeline.effective).find(Boolean);
   const lines = [
     `Haptic Feature Test Check (${MODE_LABELS[report.mode]}) · ${new Date(report.startedAt).toISOString()}`,
-    `Result: ${passed}/${report.scenes.length} scenes passed${report.cancelled ? " · CANCELLED" : ""} · took ${s(report.durationMs)}`,
+    `Result: ${passed}/${report.scenes.length} scenes passed${report.cancelled ? " · CANCELLED" : ""}${report.unfinished ? " · DID NOT FINISH" : ""} · took ${s(report.durationMs)}`,
+    ...(report.unfinished ? [`Did not finish: the app stopped (a crash or reload) while ${report.unfinished.step}.`] : []),
     ...formatDiagnosticEnvironment(environment),
     `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (no viewport or Play engine reported one)"}${pipeline ? ` · ${pipeline.gpuBackend}` : ""}`,
   ];
@@ -132,6 +149,10 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
   if (report.pageErrors.length) {
     lines.push(`Page errors (${report.pageErrors.length}):`);
     for (const error of report.pageErrors.slice(0, MAX_LOG_LINES)) lines.push(`  ${clip(error)}`);
+  }
+  if (report.unfinished?.resources.length) {
+    lines.push("", `Resources before it stopped (last ${report.unfinished.resources.length} samples, oldest first):`);
+    for (const sample of report.unfinished.resources) lines.push(resourceLine(sample));
   }
   return lines.join("\n").trimEnd();
 }
