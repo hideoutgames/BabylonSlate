@@ -130,10 +130,9 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   }
 
   override isReady(mesh: AbstractMesh): boolean {
-    const scene = mesh.getScene();
-    if (celMode(scene)) return true;
-    const brdf = GetEnvironmentBRDFTexture(scene);
-    return (!brdf || brdf.isReady()) && (scene.environmentTexture?.isReadyOrNotBlocking() ?? true);
+    const scene = mesh.getScene(), brdf = GetEnvironmentBRDFTexture(scene);
+    // Every program binds the split-sum table; CEL ignores the cube.
+    return (!brdf || brdf.isReady()) && (celMode(scene) || (scene.environmentTexture?.isReadyOrNotBlocking() ?? true));
   }
 
   override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
@@ -148,11 +147,12 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     effect.setTexture("hapticAreaLtc1Sampler", scene._ltcTextures?.LTC1 ?? null);
     effect.setTexture("hapticAreaLtc2Sampler", scene._ltcTextures?.LTC2 ?? null);
     effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
+    // WebGPU draws only with every declared texture bound: the table always, the cube where a program declares it.
+    effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
     if (celEffect(effect)) {
       bindCelSettings(effect, scene);
       return;
     }
-    effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
     const environment = environmentCube(scene);
     if (!environment) return;
     effect.setTexture("hapticEnvironmentSampler", environment);
@@ -183,7 +183,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     for (const uniform of VECTOR4_UNIFORMS) state._emitUniformFromString(uniform, NodeMaterialBlockConnectionPointTypes.Vector4);
     for (const uniform of CEL_UNIFORMS) state._emitUniformFromString(uniform, NodeMaterialBlockConnectionPointTypes.Vector4, "HAPTIC_CEL");
     state._emitUniformFromString("hapticEnvironmentMatrix", NodeMaterialBlockConnectionPointTypes.Matrix);
-    state._emitCubeSampler("hapticEnvironmentSampler");
+    state._emitCubeSampler("hapticEnvironmentSampler", "defined(HAPTIC_ENVIRONMENT)");
     state._emit2DSampler("hapticEnvironmentBrdfSampler");
     state._emit2DSampler("hapticAreaLtc1Sampler");
     state._emit2DSampler("hapticAreaLtc2Sampler");
