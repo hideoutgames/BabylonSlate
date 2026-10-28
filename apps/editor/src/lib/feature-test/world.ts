@@ -38,7 +38,7 @@ import { monitorMaterial } from "./rendering";
 /**
  * `FT_World` scene: an island Landscape (painted layers, collision,
  * a river channel and a lake basin) with Foliage, every water body kind, a
- * Water Removal dry dock, buoyant presents, Splines and Cables. The dense
+ * Water Removal dry dock and river ford, buoyant presents, Splines and Cables. The dense
  * Foliage workload lives only in `FT_Stress` (`foliage` region).
  *
  * Landscape-local coordinates (`land(x, y, z)`) share the landscape actor's
@@ -198,7 +198,7 @@ export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
 
 /**
  * `FT_World`: island Landscape with Foliage, Global Water Volume at sea level,
- * Ocean, Lake, River, Puddle, Water Removal dry dock, buoyant presents (two
+ * Ocean, Lake, River, Puddle, Water Removal dry dock and river ford, buoyant presents (two
  * moored by Cables), static Cables, two Splines; plus the `FT_Stress` Foliage.
  */
 export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<void> {
@@ -248,6 +248,7 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
       widthScales: RIVER_COURSE.map((point) => point.scale),
     }),
   ]));
+  add(riverFord(island.riverLine, land));
   // No Water asset: the Puddle renders and simulates with the engine's Realistic defaults.
   add(actor("ft-world-puddle", "Puddle", tf(land(PUDDLE.x, PUDDLE.height + 0.03, PUDDLE.z)), [
     comp("ft-world-puddle-water", "WaterPuddleComponent", { width: 3, length: 2 }),
@@ -539,6 +540,19 @@ function dryDock(position: Vec3, seabed: number): SerializedActor {
     boxMesh("ft-world-drydock-wall-east", [width / 2, wallY, 0], [0.4, height, length]),
     boxMesh("ft-world-drydock-wall-west", [-width / 2, wallY, 0], [0.4, height, length]),
     boxMesh("ft-world-drydock-hull", [0, seabed - position[1] + 0.8, 0], [2.4, 1.6, 6]),
+  ]);
+}
+
+/**
+ * A dry ford across the River: a Water Removal Volume cutting its Custom Material water, a fifth of the way down the
+ * course (upstream of the rope crossing), turned across the flow.
+ */
+function riverFord(line: readonly WaterRiverSample[], land: (x: number, y: number, z: number) => Vec3): SerializedActor {
+  const index = Math.floor(line.length * 0.2);
+  const at = line[index]!, next = line[index + 1]!;
+  const yaw = round(Math.atan2(next.x - at.x, next.z - at.z) * 180 / Math.PI);
+  return actor("ft-world-ford", "River Ford", tf(land(round(at.x), round(at.y), round(at.z)), { rotationDeg: [0, yaw, 0] }), [
+    comp("ft-world-ford-removal", "WaterRemovalVolumeComponent", { shape: "box", width: round(at.halfWidth * 2 + 2), height: 4, length: 2 }),
   ]);
 }
 
