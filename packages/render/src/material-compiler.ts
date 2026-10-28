@@ -1550,6 +1550,12 @@ function attachSurfaceShading(
   const influence = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1)
     ? outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)
     : null;
+  // A non-metal's reflectance, F0 = 0.08 x Specular; the blocks' own default is 0.5 (F0 0.04).
+  const specularOperand = plan.outputs.specular;
+  const specular = specularOperand && !(specularOperand.kind === "constant" && specularOperand.value[0] === 0.5)
+    ? outputPoint("specular", `${options.name}_specular`, false)
+    : null;
+  specular?.connectTo(fragment.geometrySpecular);
 
   // The surface's direct and environment light (scaled by Environment Influence), from the lighting plan's block
   // or Babylon's PBR block.
@@ -1572,6 +1578,7 @@ function attachSurfaceShading(
     (roughness ?? constant(0.5, "roughnessDefault")).connectTo(lighting.roughness);
     normal?.connectTo(lighting.normal);
     influence?.connectTo(lighting.environmentInfluence);
+    specular?.connectTo(lighting.specular);
     if (opacity) opacity.connectTo(fragment.a);
     lit = addColor(lighting.diffuseDirect, lighting.specularDirect, "litColor");
     indirect = addColor(lighting.diffuseIndirect, lighting.specularIndirect, "environmentColor");
@@ -1601,6 +1608,14 @@ function attachSurfaceShading(
       widen.xyzw.connectTo(pbr.perturbedNormal);
     }
     if (opacity) opacity.connectTo(pbr.opacity);
+    // Babylon's block derives F0 from a constant index of refraction, ((n - 1) / (n + 1))^2; lowering warns of a
+    // Specular that is not constant (`material.specularConstant`).
+    if (specular && specularOperand?.kind === "constant") {
+      const reflectance = Math.sqrt(0.08 * Math.min(Math.max(specularOperand.value[0]!, 0), 1));
+      const ior = createConstantBlock(`${options.name}_indexOfRefraction`, "float", [(1 + reflectance) / (1 - reflectance)]);
+      created.push(ior);
+      ior.output.connectTo(pbr.indexOfRefraction);
+    }
     // pbr.lighting has already passed through image processing and must not be
     // used for linear emission or fog composition.
     lit = addColor(addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor"), pbr.specularDir, "litColor");

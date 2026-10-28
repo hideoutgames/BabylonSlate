@@ -81,6 +81,9 @@ export function createWaterMaterialDocument(name: string): MaterialDocument {
   constant("noEnvironment", 600, 640, 0);
   out("noEnvironment", "out", "environmentInfluence");
   out("noEnvironment", "out", "metallic");
+  // Water reflects about 2% head-on (an index of refraction of 1.333).
+  constant("waterSpecular", 600, 760, 0.255);
+  out("waterSpecular", "out", "specular");
   // Without the scene copy, the deep or reflecting water covers the background; with it the water is opaque.
   node("cover", "math.max", 0, 760);
   wire("depth", "fade", "cover", "a"); wire("reflection", "fresnel", "cover", "b");

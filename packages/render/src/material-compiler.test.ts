@@ -4,6 +4,7 @@ import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   lowerMaterialDocument,
+  materialPinDefaultPropertyKey,
   migrateLegacyShaderPayload,
   newCustomGlslProperties,
   type MaterialDocument,
@@ -92,6 +93,30 @@ it("scales only indirect surface lighting with a live Environment Influence para
   expect(result.material.getBlockByName("environmentWeight")).toHaveProperty("value", 0.6);
   expect(result.material.compiledShaders).toContain("finalDiffuse=diffuseBase");
   result.dispose();
+});
+
+it("turns a constant Specular into Babylon's index of refraction, and warns when it is not constant", async () => {
+  const scene = host();
+  const doc = createDefaultMaterialDocument();
+  const output = doc.nodes.find((node) => node.type === "output.surface")!;
+  output.properties[materialPinDefaultPropertyKey("specular")] = [0.255];
+  const result = compileMaterialPlan(planFor(doc), { scene, name: "water" });
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  expect(await result.ready).toEqual([]);
+  // F0 = 0.08 x 0.255 = 0.0204, water's: an index of refraction of 1.333.
+  const ior = result.material.getBlockByName("water_indexOfRefraction") as InputBlock;
+  expect(ior.value).toBeCloseTo(1.3333, 3);
+  result.dispose();
+
+  doc.nodes.push({ id: "shine", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Shine", value: [0.3] } });
+  doc.edges.push({ id: "shine-output", sourceNodeId: "shine", sourcePinId: "out", targetNodeId: output.id, targetPinId: "specular" });
+  const lowered = lowerMaterialDocument(doc);
+  if (!lowered.ok) throw new Error("did not lower");
+  expect(lowered.diagnostics).toEqual([expect.objectContaining({ code: "material.specularConstant", severity: "warning", nodeId: output.id })]);
+  const live = compileMaterialPlan(lowered.plan, { scene, name: "shiny" });
+  if (!live.ok) throw new Error(JSON.stringify(live.diagnostics));
+  expect(live.material.getBlockByName("shiny_indexOfRefraction")).toBeNull();
+  live.dispose();
 });
 
 /** Base Color driven by a Multiply so the graph is not a bare constant. */

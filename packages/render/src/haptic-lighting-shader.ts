@@ -315,7 +315,7 @@ vec3 hapticRadiance(vec3 P, vec3 N, vec3 V, float alpha) {
 /** The block's fragment code: its four outputs (declared zero) from the surface inputs. Arguments are GLSL expressions. */
 export function hapticLightingGlsl(input: {
   worldPosition: string; worldNormal: string; normal: string; cameraPosition: string;
-  baseColor: string; metallic: string; roughness: string; environmentInfluence: string;
+  baseColor: string; metallic: string; specular: string; roughness: string; environmentInfluence: string;
 }, output: { diffuseDirect: string; specularDirect: string; diffuseIndirect: string; specularIndirect: string }): string {
   return `vec3 hapticN = normalize(${input.normal});
 vec3 hapticGeometricN = normalize(${input.worldNormal}.xyz);
@@ -331,9 +331,11 @@ ${output.diffuseDirect} = hapticToLinear(max(hapticCelLighting(hapticP, hapticN,
 #else
 float hapticNdotVUnclamped = dot(hapticN, hapticV);
 float hapticMetallic = clamp(${input.metallic}, 0.0, 1.0);
+// A non-metal reflects 0.08 times Specular (0.04 at the default 0.5) and diffuses what it does not reflect.
+float hapticDielectricF0 = 0.08 * clamp(${input.specular}, 0.0, 1.0);
 hapticSurface hapticS;
-hapticS.diffuse = ${input.baseColor} * (0.96 * (1.0 - hapticMetallic));
-hapticS.F0 = mix(vec3(0.04), ${input.baseColor}, hapticMetallic);
+hapticS.diffuse = ${input.baseColor} * ((1.0 - hapticDielectricF0) * (1.0 - hapticMetallic));
+hapticS.F0 = mix(vec3(hapticDielectricF0), ${input.baseColor}, hapticMetallic);
 hapticS.roughness = clamp(${input.roughness}, 0.0, 1.0);
 hapticS.NdotV = abs(hapticNdotVUnclamped) + HAPTIC_EPSILON;
 vec3 hapticBrdf = hapticBrdfLookup(hapticS.NdotV, hapticS.roughness);
@@ -631,7 +633,7 @@ fn hapticRadiance(P: vec3f, N: vec3f, V: vec3f, alpha: f32) -> vec3f {
 /** `hapticLightingGlsl` in WGSL. */
 export function hapticLightingWgsl(input: {
   worldPosition: string; worldNormal: string; normal: string; cameraPosition: string;
-  baseColor: string; metallic: string; roughness: string; environmentInfluence: string;
+  baseColor: string; metallic: string; specular: string; roughness: string; environmentInfluence: string;
 }, output: { diffuseDirect: string; specularDirect: string; diffuseIndirect: string; specularIndirect: string }): string {
   return `var hapticN = normalize(${input.normal});
 var hapticGeometricN = normalize(${input.worldNormal}.xyz);
@@ -646,9 +648,10 @@ ${output.diffuseDirect} = hapticToLinear(max(hapticCelLighting(hapticP, hapticN,
 #else
 let hapticNdotVUnclamped = dot(hapticN, hapticV);
 let hapticMetallic = clamp(${input.metallic}, 0.0, 1.0);
+let hapticDielectricF0 = 0.08 * clamp(${input.specular}, 0.0, 1.0);
 var hapticS: hapticSurface;
-hapticS.diffuse = ${input.baseColor} * (0.96 * (1.0 - hapticMetallic));
-hapticS.F0 = mix(vec3f(0.04), ${input.baseColor}, hapticMetallic);
+hapticS.diffuse = ${input.baseColor} * ((1.0 - hapticDielectricF0) * (1.0 - hapticMetallic));
+hapticS.F0 = mix(vec3f(hapticDielectricF0), ${input.baseColor}, hapticMetallic);
 hapticS.roughness = clamp(${input.roughness}, 0.0, 1.0);
 hapticS.NdotV = abs(hapticNdotVUnclamped) + HAPTIC_EPSILON;
 let hapticBrdf = hapticBrdfLookup(hapticS.NdotV, hapticS.roughness);
