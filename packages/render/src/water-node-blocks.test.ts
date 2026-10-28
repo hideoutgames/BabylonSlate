@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Color3, FreeCamera, Matrix, MeshBuilder, Vector3, NullEngine, Scene, ShaderLanguage, type AbstractMesh, type NodeMaterial } from "@babylonjs/core";
+import { Color3, FreeCamera, Matrix, MeshBuilder, Vector3, NullEngine, Scene, ShaderLanguage, type AbstractMesh, type Mesh, type NodeMaterial } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { createWaterMesh, sceneWaterSamplesSceneCopy, updateSceneWater, waterMeshSamplesSceneCopy } from "./water-mesh";
-import { materialSceneCopyUse, materialUsesWaterFields, meshWaterNodeSurface } from "./water-node-blocks";
+import { materialSceneCopyUse, meshWaterNodeSurface } from "./water-node-blocks";
+import { createWaterRemovalMesh } from "./water-removal-mesh";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
@@ -43,10 +44,13 @@ function compile(scene: Scene, doc: MaterialDocument) {
   return result;
 }
 
-async function definesFor(material: NodeMaterial, mesh: AbstractMesh): Promise<string> {
+async function programFor(material: NodeMaterial, mesh: AbstractMesh) {
   await material.forceCompilationAsync(mesh);
   expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
-  return mesh.subMeshes[0]!.effect!.defines as string;
+  return mesh.subMeshes[0]!.effect!;
+}
+async function definesFor(material: NodeMaterial, mesh: AbstractMesh): Promise<string> {
+  return (await programFor(material, mesh)).defines as string;
 }
 /** The reflection march's function text. */
 const march = (source: string) => /swMarch\(swOrigin[\s\S]*?\n\}/.exec(source)?.[0] ?? "";
@@ -167,21 +171,12 @@ describe("Water material nodes", () => {
     expect(water).toMatch(/^#define SLATE_WATER_SSR_STEPS 0$/m);
   });
 
-  it("give Custom Material water terrain and contact fields only when a node reads them", async () => {
+  it("give every Custom Material water mesh terrain and contact fields, which its cut reads for land above the water", async () => {
     const scene = host(), water = createDefaultWaterDefinition();
-    const foam = compile(scene, graph(["waterFoam"], [["waterFoam", "foam", "roughness"]]));
     const reflection = compile(scene, graph(["waterReflection"], [["waterReflection", "color", "baseColor"]]));
-    expect(materialUsesWaterFields(foam.material)).toBe(true);
-    expect(materialUsesWaterFields(reflection.material)).toBe(false);
-    const foamy = createWaterMesh(scene, "foamy", normalizeWaterBody({ resolution: 8 }), water, foam.material);
     const mirror = createWaterMesh(scene, "mirror", normalizeWaterBody({ resolution: 8 }), water, reflection.material);
-    expect(meshWaterNodeSurface(foamy)?.field).not.toBeNull();
-    expect(meshWaterNodeSurface(foamy)?.contacts).not.toBeNull();
-    expect(meshWaterNodeSurface(mirror)?.field).toBeNull();
-    // A Material edit that adds a field-reading node builds them at the next water update.
-    mirror.material = foam.material;
-    updateSceneWater(scene);
     expect(meshWaterNodeSurface(mirror)?.field).not.toBeNull();
+    expect(meshWaterNodeSurface(mirror)?.contacts).not.toBeNull();
   });
 
   it("ask for the view's scene copy as built-in water does, only from alpha-blended water", () => {
@@ -200,5 +195,95 @@ describe("Water material nodes", () => {
     lake.dispose(); pond.dispose();
     updateSceneWater(scene);
     expect(sceneWaterSamplesSceneCopy(scene, true, true)).toBe(false);
+  });
+});
+
+describe("Water Cut", () => {
+  const stages = (source: string) => { const [vertex = "", fragment = ""] = source.split("// Fragment shader"); return { vertex, fragment }; };
+
+  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("is in every Surface Material, under the water define, and discards removed water last in language %s", async (language) => {
+    const wgsl = language === ShaderLanguage.WGSL, result = compile(host(wgsl), createDefaultMaterialDocument("Plain"));
+    expect(await result.ready).toEqual([]);
+    const source = result.material.compiledShaders, { vertex, fragment } = stages(source);
+    expect(source).not.toMatch(/\bU\.\w|\bIN\.|\b[AO]\.slate/);
+    expect(fragment.split(wgsl ? "fn swRemoval(" : "float swRemoval(").length - 1).toBe(1);
+    for (let i = 0; i < 4; i++) expect(fragment).toContain(wgsl ? `uniform slateWaterRemoval${i}: mat4x4f;` : `uniform mat4 slateWaterRemoval${i};`);
+    if (wgsl) expect(fragment).not.toMatch(/^\s*(float|vec[234]|bool) \w+ =/m);
+    // The depth pre-pass leaves at once; the colour pass discards only after the output is written.
+    const prePass = new RegExp(`#ifdef DEPTHPREPASS\\s+if \\((\\w+)\\) \\{ discard; \\}\\s+return${wgsl ? " fragmentOutputs" : ""};`).exec(fragment);
+    expect(prePass).not.toBeNull();
+    const written = Math.max(-1, ...[...fragment.matchAll(wgsl ? /fragmentOutputs\.color\s*=/g : /gl_FragColor\s*=/g)].map((match) => match.index));
+    expect(written).toBeGreaterThan(-1);
+    expect(fragment.lastIndexOf(`if (${prePass![1]}) { discard; }`)).toBeGreaterThan(written);
+    // Only a graph with Water Waves has a GPU path, so only it carries the blend cull.
+    expect(vertex).not.toContain(wgsl ? "vertexOutputs.position.z" : "gl_Position.z");
+  });
+
+  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("culls a blending GPU-path surface's deep vertices and reads the geometry's waterline with Water Waves in language %s", async (language) => {
+    const wgsl = language === ShaderLanguage.WGSL, result = compile(host(wgsl), allNodes());
+    expect(await result.ready).toEqual([]);
+    const { vertex, fragment } = stages(result.material.compiledShaders), clip = wgsl ? "vertexOutputs.position" : "gl_Position";
+    const cull = vertex.lastIndexOf(`${clip}.z = 2.0 * ${clip}.w;`);
+    expect(cull).toBeGreaterThan(vertex.lastIndexOf(`${clip} =`));
+    expect(vertex.slice(0, cull)).toMatch(/#if defined\(SLATE_WATER_GPU_WAVES\) && defined\(SLATE_WATER_BLEND\)\s+if \(min\([^#]*\)\) \{\s+$/);
+    // Water Foam reads the per-pixel height; the cut reads the vertex stage's, as built-in water's waterline does.
+    const heights = [...fragment.matchAll(/#ifdef SLATE_WATER_GPU_WAVES\s+swnHeight = ([\w.]+);/g)].map((match) => match[1]!.replace(/^fragmentInputs\./, ""));
+    expect(heights.some((name) => new RegExp(`\\b${name} = `).test(vertex))).toBe(true);
+    // The depth pre-pass samples none of the waves' per-pixel spectrum.
+    expect(fragment).toMatch(/#ifndef DEPTHPREPASS\s+#ifdef SLATE_WATER_GPU_WAVES/);
+  });
+
+  it("compiles the depth pre-pass as its own variant, for water only", async () => {
+    const scene = host(), result = compile(scene, allNodes());
+    expect(await result.ready).toEqual([]);
+    const water = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), result.material);
+    const box = MeshBuilder.CreateBox("box", {}, scene);
+    box.material = result.material;
+    updateSceneWater(scene);
+    const engine = scene.getEngine(), colour = engine.currentRenderPassId;
+    expect(await definesFor(result.material, water)).not.toContain("#define DEPTHPREPASS");
+    engine.currentRenderPassId = engine.createRenderPassId("pre-pass");
+    engine.setColorWrite(false);
+    try {
+      expect(await definesFor(result.material, water)).toContain("#define DEPTHPREPASS");
+      expect(await definesFor(result.material, box)).not.toContain("#define DEPTHPREPASS");
+    } finally {
+      engine.setColorWrite(true);
+      engine.currentRenderPassId = colour;
+    }
+  });
+
+  it("binds each water mesh's nearest removal volumes, clears the empty slots and binds nothing off water", async () => {
+    const scene = host(), result = compile(scene, createDefaultMaterialDocument("Plain"));
+    expect(await result.ready).toEqual([]);
+    const body = normalizeWaterBody({ width: 10, length: 10, resolution: 8 });
+    const near = createWaterMesh(scene, "near", body, createDefaultWaterDefinition(), result.material);
+    const far = createWaterMesh(scene, "far", body, createDefaultWaterDefinition(), result.material);
+    far.position.x = 100;
+    const box = MeshBuilder.CreateBox("box", {}, scene);
+    box.material = result.material;
+    const hole = createWaterRemovalMesh(scene, "hole", { shape: "sphere", width: 2 }, { editor: false });
+    hole.position.set(2, 0, 1);
+    updateSceneWater(scene);
+    const effect = await programFor(result.material, near);
+    expect(await programFor(result.material, far)).toBe(effect);
+    const vectors = new Map<string, number[]>(), matrices = new Map<string, Matrix>();
+    for (const program of [effect, await programFor(result.material, box)]) {
+      vi.spyOn(program, "setFloat4").mockImplementation((name, x, y, z, w) => { vectors.set(name, [x, y, z, w]); return program; });
+      vi.spyOn(program, "setMatrix").mockImplementation((name, matrix) => { matrices.set(name, matrix as Matrix); return program; });
+    }
+    const bind = (mesh: AbstractMesh) => {
+      vectors.clear(); matrices.clear();
+      result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh as Mesh, mesh.subMeshes[0]!);
+    };
+    bind(near);
+    // A sphere 2 wide: shape code 2, then the half extents.
+    expect(vectors.get("slateWaterRemovalShape0")).toEqual([2, 1, 2, 2]);
+    expect(matrices.get("slateWaterRemoval0")!.getTranslation().asArray()).toEqual([-2, 0, -1]);
+    for (let i = 1; i < 4; i++) expect(vectors.get(`slateWaterRemovalShape${i}`), `slot ${i}`).toEqual([0, 0, 0, 0]);
+    bind(far);
+    expect(vectors.get("slateWaterRemovalShape0")).toEqual([0, 0, 0, 0]);
+    bind(box);
+    expect([...vectors.keys(), ...matrices.keys()].filter((name) => name.startsWith("slateWater"))).toEqual([]);
   });
 });

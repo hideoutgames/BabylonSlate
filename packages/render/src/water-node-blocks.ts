@@ -1,5 +1,5 @@
 import {
-  Camera, Color3, CubeTexture, NodeMaterial, NodeMaterialBlock, NodeMaterialBlockTargets, NodeMaterialBlockConnectionPointTypes as Types, PBRMaterial,
+  Camera, Color3, CubeTexture, Matrix, NodeMaterial, NodeMaterialBlock, NodeMaterialBlockTargets, NodeMaterialBlockConnectionPointTypes as Types, PBRMaterial,
   ShaderLanguage, Texture, ThinTexture, Vector3, type AbstractMesh, type BaseTexture, type Effect, type Material, type Mesh, type NodeMaterialConnectionPoint,
   type NodeMaterialDefines, type Scene,
 } from "@babylonjs/core";
@@ -8,15 +8,17 @@ import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { createDefaultWaterDefinition, WATER_BLEND_COLOR_PARTNERS, type WaterDefinition } from "@haptic/core";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import type { WaterContactField } from "./water-contact-field";
-import { WATER_FIELD_SHORE_RANGE as SHORE, type WaterField } from "./water-field";
+import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
 import {
-  contactRange, edgeFoamHelpers, fresnelSource, marchSource, meshVertexWaves, placeholderField, reflectionKeepSource, sceneWaterNodeLighting, stripShaderComments, toWgsl,
-  transmittanceSource, waterAbsorption,
-  sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE, WATER_NODE_BLEND_DEFINE,
+  contactRange, edgeFoamHelpers, fresnelSource, marchSource, meshVertexWaves, placeholderField, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
+  sceneWaterNodeLighting, selectWaterRemovals, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
+  sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
+  WATER_NODE_BLEND_DEFINE, WATER_REMOVAL_SHAPE_UNIFORMS, WATER_REMOVAL_SLOTS, WATER_REMOVAL_UNIFORMS, type WaterRemovalCandidate,
 } from "./water-material";
+import { waterRemovalShapeVector } from "./water-removal-mesh";
 import { isSkyboxMesh } from "./skybox";
 import { WATER_SCENE_COPY_SKY_DEPTH, isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
-import { declareWaterAttributes, isWaterSurfaceMesh, WATER_SURFACE_DEFINE } from "./water-surface-block";
+import { declareWaterAttributes, isBlendingWaterSurface, isWaterSurfaceMesh, WATER_DEPTH_PRE_PASS_DEFINE, WATER_SURFACE_DEFINE } from "./water-surface-block";
 
 /**
  * The water nodes' fragment blocks: Water Foam, Water Depth Fade, Water Scene Color and Water Reflection. Each reads
@@ -29,9 +31,9 @@ import { declareWaterAttributes, isWaterSurfaceMesh, WATER_SURFACE_DEFINE } from
 /** What a Custom Material's water nodes read for one water mesh; the water mesh owns it. */
 export interface WaterNodeSurface {
   readonly water: WaterDefinition;
-  /** Terrain under the surface, once a node needs it (`materialUsesWaterFields`). */
+  /** Terrain under the surface. */
   field: WaterField | null;
-  /** Objects crossing the surface, likewise. */
+  /** Objects crossing the surface. */
   contacts: WaterContactField | null;
   /** The neighbours whose colours it mixes toward while blending, by slot (null where a slot is empty). */
   partners: readonly (WaterDefinition | null)[];
@@ -755,6 +757,97 @@ export class WaterColorsBlock extends WaterNodeBlock {
 }
 RegisterClass("BABYLON.WaterColorsBlock", WaterColorsBlock);
 
+/** A blending surface's ownership margin in metres (`slateWaterBlend.z`), for the cut. */
+const CUT_MARGIN_VARYING = "vSlateWaterNodeMargin";
+const cutRemovals = new WeakMap<AbstractMesh, { frame: number; render: number; selected: WaterRemovalCandidate[]; gaps: Float64Array }>();
+/** The removal volumes `mesh` cuts this render (`selectWaterRemovals`), chosen at its first draw of the render. */
+function meshRemovals(scene: Scene, mesh: AbstractMesh): readonly WaterRemovalCandidate[] {
+  const data = sceneWaterBindingData(scene);
+  let cache = cutRemovals.get(mesh);
+  if (!cache) cutRemovals.set(mesh, cache = { frame: -1, render: -1, selected: [], gaps: new Float64Array(WATER_REMOVAL_SLOTS + 1) });
+  if (cache.frame !== data.frame || cache.render !== data.render) {
+    selectWaterRemovals(data.removals, mesh, cache.selected, cache.gaps);
+    cache.frame = data.frame;
+    cache.render = data.render;
+  }
+  return cache.selected;
+}
+
+/**
+ * Water Cut: built-in water's cut (`cutSource`) for whatever Material a water mesh draws; the compiler adds one to every
+ * Surface Material, and on any other mesh it compiles away. Removed water is inside one of the nearest removal volumes
+ * (`selectWaterRemovals`), over known terrain above the geometry's waterline (Wave Height: the Water Waves node's
+ * vertex height on the GPU path, the displaced vertices' own otherwise), or, on a blending surface, water a neighbour
+ * owns. The depth pre-pass (colour writes off, under its own render pass: `WATER_DEPTH_PRE_PASS_DEFINE`) discards it at
+ * once and returns before the look; the colour pass discards it at the very end, after every derivative of the look was
+ * taken with the whole quad running. A blending GPU-path surface also culls vertices deep in water it never draws
+ * (`waterBlendCullSource`).
+ */
+export class WaterCutBlock extends WaterNodeBlock {
+  constructor(name: string) {
+    super(name);
+    this.registerInput("worldPosition", Types.Vector4);
+    this.registerInput("waveHeight", Types.Float, true);
+  }
+  get worldPosition() { return this._inputs[0]!; }
+  /** The geometry's wave height on the GPU path: the Water Waves node's vertex height (the compiler connects it). */
+  get waveHeight() { return this._inputs[1]!; }
+  override getClassName(): string { return "WaterCutBlock"; }
+  override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
+    prepareSurfaceDefines(defines, material, mesh, false);
+    defines.setValue(WATER_BLEND_DEFINE, isBlendingWaterSurface(mesh), true);
+    defines.setValue(WATER_DEPTH_PRE_PASS_DEFINE, isWaterSurfaceMesh(mesh) && !material.getScene().getEngine().getColorWrite(), true);
+  }
+  override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
+    if (!isWaterSurfaceMesh(mesh)) return;
+    const scene = material.getScene(), selected = meshRemovals(scene, mesh!);
+    bindSurface(effect, scene, mesh);
+    for (let i = 0; i < WATER_REMOVAL_SLOTS; i++) {
+      const entry = selected[i];
+      if (!entry) {
+        effect.setFloat4(WATER_REMOVAL_SHAPE_UNIFORMS[i]!, 0, 0, 0, 0);
+        effect.setMatrix(WATER_REMOVAL_UNIFORMS[i]!, Matrix.IdentityReadOnly);
+        continue;
+      }
+      const shape = entry.shape ??= waterRemovalShapeVector(entry.volume);
+      effect.setFloat4(WATER_REMOVAL_SHAPE_UNIFORMS[i]!, shape[0], shape[1], shape[2], shape[3]);
+      effect.setMatrix(WATER_REMOVAL_UNIFORMS[i]!, entry.inverse ??= entry.mesh.getWorldMatrix().clone().invert());
+    }
+  }
+  protected override _buildBlock(state: NodeMaterialBuildState): this {
+    super._buildBlock(state);
+    const wgsl = wgslOf(state), vertex = state._vertexState;
+    emitSurfaceVaryings(state);
+    emitFieldHelpers(state);
+    for (const name of WATER_REMOVAL_SHAPE_UNIFORMS) state._emitUniformFromString(name, Types.Vector4, WATER_SURFACE_DEFINE);
+    for (const name of WATER_REMOVAL_UNIFORMS) state._emitUniformFromString(name, Types.Matrix, WATER_SURFACE_DEFINE);
+    state._emitFunction("swRemoval", `#ifdef ${WATER_SURFACE_DEFINE}\n${bind(REMOVAL_HELPER, wgsl)}#endif\n`, "");
+    // The ownership margin, and on the GPU path (only a graph with Water Waves has one) the blend cull, once the vertex
+    // program has written its clip position.
+    declareWaterAttributes(vertex, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
+    const gpu = this.waveHeight.isConnected;
+    if (vertex._emitVaryingFromString(CUT_MARGIN_VARYING, Types.Float, WATER_BLEND_DEFINE)) {
+      vertex.compilationString += `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "vertexOutputs." : ""}${CUT_MARGIN_VARYING} = ${wgsl ? "vertexInputs." : ""}slateWaterBlend.z;\n#endif\n`;
+      if (gpu) vertex._injectAtEnd += waterBlendCullSource(wgsl);
+    }
+    state._emitVaryingFromString(CUT_MARGIN_VARYING, Types.Float, WATER_BLEND_DEFINE);
+    const removed = state._getFreeVariableName("swnRemoved");
+    const cut = WATER_REMOVAL_UNIFORMS.map((name, i) => `swRemoval(U.${name}, U.${WATER_REMOVAL_SHAPE_UNIFORMS[i]}, swnPos)`).reduce((a, b) => `min(${a}, ${b})`);
+    // Only real terrain removes water: cells extended past a landscape's edge (alpha ramp) never do.
+    state.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\n${wgsl ? `var ${removed}: bool` : `bool ${removed}`} = false;\n{\n`
+      + surfaceLocals(state, this.worldPosition.associatedVariableName)
+      + bind("float swnHeight = swnData.x;\nfloat swnKeep = 1.0;\n", wgsl)
+      + (gpu ? `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.waveHeight.associatedVariableName};\n#endif\n` : "")
+      + `#ifdef ${WATER_BLEND_DEFINE}\nswnKeep = min(swnData.y, ${wgsl ? "fragmentInputs." : ""}${CUT_MARGIN_VARYING} + 0.015);\n#endif\n`
+      + bind(`vec4 swnField = swnFieldAt(swnPos.xz);\nfloat swnCut = ${cut};\n`, wgsl)
+      + `${removed} = swnCut < 0.0 || swnKeep < 0.0 || (swnField.w > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swnField.y + swnHeight <= 0.0);\n}\n`
+      + `#ifdef ${WATER_DEPTH_PRE_PASS_DEFINE}\nif (${removed}) { discard; }\nreturn${wgsl ? " fragmentOutputs" : ""};\n#endif\n#endif\n`;
+    state._injectAtEnd += `#if defined(${WATER_SURFACE_DEFINE}) && !defined(${WATER_DEPTH_PRE_PASS_DEFINE})\nif (${removed}) { discard; }\n#endif\n`;
+    return this;
+  }
+}
+RegisterClass("BABYLON.WaterCutBlock", WaterCutBlock);
+
 const marchSources = new Map<boolean, string>();
 /**
  * Built-in water's screen-space march (`marchSource`) with the view, view-projection and eye as parameters: the node's
@@ -775,15 +868,8 @@ function nodeMarchSource(wgsl: boolean): string {
   return source;
 }
 
-/** Water node blocks that read the terrain and contact fields. */
-const FIELD_BLOCKS = [WaterFoamBlock, WaterDepthFadeBlock];
 /** Water node blocks that sample the view's scene copy: (refraction-style reads, reflection marches). */
 const COPY_BLOCKS = [WaterSceneColorBlock, WaterDepthFadeBlock];
-
-/** Whether a built material's graph reads the terrain and contact fields (Water Foam, Water Depth Fade). */
-export function materialUsesWaterFields(material: Material | null | undefined): boolean {
-  return material instanceof NodeMaterial && material.attachedBlocks.some((block) => FIELD_BLOCKS.some((type) => block instanceof type));
-}
 
 /**
  * What a built material's graph reads from the view's scene copy: `refraction` for Water Scene Color and Water Depth

@@ -60,6 +60,9 @@ worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);${materia
  */
 const BLEND_CULL_CELLS = 2;
 const BLEND_CULL_MARGIN = 1;
+const BLEND_CULL = `if (min(A.slateWaterData.y, A.slateWaterBlend.z) < -(${f(BLEND_CULL_CELLS)} * A.slateWaterData.x + ${f(BLEND_CULL_MARGIN)})) {
+  SW_CLIP_POSITION.z = 2.0 * SW_CLIP_POSITION.w;
+}`;
 
 /**
  * Varyings at CUSTOM_VERTEX_MAIN_END, which runs after the world-position hook: GPU waves pass their own height and
@@ -85,12 +88,19 @@ O.vSlateWaterBlendColors = A.slateWaterBlendColors;
 // every fragment of those triangles would discard: its clip depth moves past the far side of the clip volume (x, y and w
 // unchanged, so the triangles it starts clip to within their own outline) and they rasterize nothing, in the depth
 // pre-pass and the colour pass alike.
-if (min(A.slateWaterData.y, A.slateWaterBlend.z) < -(${f(BLEND_CULL_CELLS)} * A.slateWaterData.x + ${f(BLEND_CULL_MARGIN)})) {
-  SW_CLIP_POSITION.z = 2.0 * SW_CLIP_POSITION.w;
-}
+${BLEND_CULL}
 #endif
 #endif
 `;
+
+/**
+ * The blend cull of `VERTEX_VARYINGS` for the Water Cut block's vertex program, which the graph's Water Waves node
+ * displaces (GPU waves only: there `slateWaterData.x` is the grid spacing).
+ */
+export function waterBlendCullSource(wgsl: boolean): string {
+  return `#if defined(${WATER_GPU_WAVES_DEFINE}) && defined(${WATER_BLEND_DEFINE})\n${bindVertexSource(BLEND_CULL, wgsl)
+    .replace(/\bSW_CLIP_POSITION\b/g, wgsl ? "vertexOutputs.position" : "gl_Position")}\n#endif\n`;
+}
 
 /**
  * Binds the GLSL-shaped `A.` / `U.` / `O.` prefixes for one language, and `S.` (the view matrix's owner: the scene
@@ -176,10 +186,7 @@ export const WATER_EYE_UNIFORM = "slateWaterEye";
 export const WATER_NODE_FOAM_UNIFORM = "slateWaterNodeFoam";
 /** The Water Waves node's light: (direction toward the sun, Subsurface). */
 export const WATER_NODE_SUN_UNIFORM = "slateWaterNodeWaveSun";
-/**
- * Varying the Water Waves node's vertex stage hands its fragment stage: (bank gain × offset share, height share, and
- * while blending the union bank distance and ownership margin, both in metres).
- */
+/** Varying the Water Waves node's vertex stage hands its fragment stage: (bank gain × offset share, height share). */
 export const WATER_NODE_VARYING = "vSlateWaterWaves";
 
 /**
@@ -200,13 +207,7 @@ swvDs = A.slateWaterBlend.y;
 #endif
 float swvBankT = clamp(A.slateWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
 float swvGain = mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));
-float swvKeepBank = 1.0;
-float swvKeepMargin = 1.0;
-#ifdef ${WATER_BLEND_DEFINE}
-swvKeepBank = A.slateWaterData.y;
-swvKeepMargin = A.slateWaterBlend.z;
-#endif
-${out} = vec4(swvGain * swvDs, swvHs, swvKeepBank, swvKeepMargin);
+${out} = vec2(swvGain * swvDs, swvHs);
 }
 #endif
 `;
@@ -215,8 +216,7 @@ ${out} = vec4(swvGain * swvDs, swvHs, swvKeepBank, swvKeepMargin);
 /**
  * The Water Waves node's fragment code: the spectrum at this pixel's rest point (`rest`, the interpolated undisplaced
  * world position plus the grid offset), every cascade through its mips as built-in water samples it
- * (`spectrumSurfaceSource`): it discards what a blending surface does not own, then gives the displaced surface's
- * normal over the mesh's base normal (`base`), the height, and
+ * (`spectrumSurfaceSource`): the displaced surface's normal over the mesh's base normal (`base`), the height, and
  * FFT-Ocean's crest foam from the persistent turbulence with the asset's Crest Foam and Foam Amount, and the subsurface
  * light built-in water draws (`subsurfaceSource`). Writes `swnNormal`, `swnHeight`, `swnFoam`, `swnSubsurface` and
  * `swnEdgeTurbulence` (the turbulence past the crest threshold, which edge foam reads: `edgeFoamHelpers`).
@@ -246,9 +246,7 @@ vec3 swnRestW = ${rest}.xyz + U.slateWaterGridOffset.xyz;
 vec2 swnRest = swnRestW.xz;
 float swnDist = max(length(swnRestW - U.${WATER_EYE_UNIFORM}.xyz), 0.001);
 vec4 swnSp = U.slateWaterFft;
-vec4 swnShares = ${varying};
-// A blending surface draws only the water it owns inside the blended shoreline, as built-in water does (\`cutSource\`).
-if (min(swnShares.z, swnShares.w + 0.015) < 0.0) { discard; }
+vec2 swnShares = ${varying};
 float swnTurbScale = swnSp.x * swnShares.x;
 vec2 swnGrad = vec2(0.0);
 vec3 swnJ = vec3(0.0);

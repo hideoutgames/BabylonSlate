@@ -6,9 +6,20 @@ import { meshVertexWaves, WATER_GPU_WAVES_DEFINE } from "./water-material";
 /** Set for a mesh that carries the water vertex data: Water Surface and Water Waves read it. */
 export const WATER_SURFACE_DEFINE = "SLATE_WATER_SURFACE";
 
+/**
+ * Babylon's depth pre-pass define (`DEPTHPREPASS`, as built-in water reads it), which the Water Cut block sets for a
+ * water mesh's draw with colour writes off: the graph discards removed water there and returns before the look.
+ */
+export const WATER_DEPTH_PRE_PASS_DEFINE = "DEPTHPREPASS";
+
 /** Whether `mesh` is a water surface carrying the per-vertex data the water nodes read. */
 export function isWaterSurfaceMesh(mesh?: AbstractMesh): boolean {
   return mesh?.isVerticesDataPresent("slateWaterData") === true && mesh.isVerticesDataPresent("slateWaterFlow");
+}
+
+/** Whether `mesh` is a water surface blending with its neighbours (`WATER_BLEND_DEFINE`: it carries `slateWaterBlend`). */
+export function isBlendingWaterSurface(mesh?: AbstractMesh): boolean {
+  return isWaterSurfaceMesh(mesh) && mesh!.isVerticesDataPresent("slateWaterBlend");
 }
 
 /**
@@ -45,6 +56,8 @@ export class WaterSurfaceBlock extends NodeMaterialBlock {
   get gpuWaveHeight() { return this._inputs[0]!; }
   /** The Water Waves node's Simulation Time, likewise. */
   get gpuTime() { return this._inputs[1]!; }
+  /** The vertex's wave height: the displaced vertices' own, or the connected Water Waves node's. */
+  get waveHeight() { return this._outputs[0]!; }
   override getClassName(): string { return "WaterSurfaceBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, _material: NodeMaterial, mesh?: AbstractMesh): void {
     defines.setValue(WATER_SURFACE_DEFINE, isWaterSurfaceMesh(mesh), true);
@@ -57,6 +70,7 @@ export class WaterSurfaceBlock extends NodeMaterialBlock {
     const wgsl = state.shaderLanguage === 1;
     declareWaterAttributes(state, WATER_SURFACE_DEFINE, [["slateWaterData", 4], ["slateWaterFlow", 3]]);
     for (const [index, output] of this._outputs.entries()) {
+      if (!output.hasEndpoints) continue;
       const zero = index === 4 ? (wgsl ? "vec3f(0.0)" : "vec3(0.0)") : "0.0";
       const source = index === 4 ? "slateWaterFlow" : `slateWaterData.${"xyzw"[index]}`;
       state.compilationString += `${state._declareOutput(output)} = ${zero};\n#ifdef ${WATER_SURFACE_DEFINE}\n${output.associatedVariableName} = ${wgsl ? "vertexInputs." : ""}${source};\n#endif\n`;

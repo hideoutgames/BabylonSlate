@@ -50,13 +50,16 @@ export {
   WATER_GLOSS_FALLOFF,
   fresnelSource,
   reflectionKeepSource,
+  REMOVAL_HELPER,
   WATER_REMOVAL_SLOTS,
 } from "./water-shader-chunks";
 export {
   waterAbsorption,
   placeholderField,
+  sceneWaterBindingData,
   sceneWaterBodyLight,
   sceneWaterNodeLighting,
+  type WaterRemovalCandidate,
 } from "./water-scene-state";
 export {
   waterVertexSource,
@@ -71,6 +74,7 @@ export {
   type WaterWaveNodeSources,
   waterWaveNodeSources,
   toWgsl,
+  waterBlendCullSource,
   waterShaderSource,
   stripShaderComments,
 } from "./water-shader-source";
@@ -133,8 +137,30 @@ const FRAME_DEFINITION_FIELDS = [
  * three colours; each partner's three and nine.
  */
 const FRAME_KEY_LENGTH = 12 + FRAME_DEFINITION_FIELDS.length + 9 + BLEND_PARTNERS * (3 + 9);
-const REMOVAL_SHAPE_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemovalShape${i}`);
-const REMOVAL_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemoval${i}`);
+/** Each removal slot's (shape code, half extents) and inverse world matrix (`REMOVAL_HELPER`); the Water Cut block's too. */
+export const WATER_REMOVAL_SHAPE_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemovalShape${i}`);
+export const WATER_REMOVAL_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemoval${i}`);
+
+/**
+ * The nearest `WATER_REMOVAL_SLOTS` of the render's enabled removal volumes (`WaterBindingData.removals`) that reach
+ * `mesh`'s bounds, nearest first, into `selected`; `gaps` is scratch of `WATER_REMOVAL_SLOTS + 1`. By insertion into
+ * the slots: no per-render arrays. Built-in water and the Water Cut block cut the same volumes.
+ */
+export function selectWaterRemovals(removals: readonly WaterRemovalCandidate[], mesh: AbstractMesh | null | undefined, selected: WaterRemovalCandidate[], gaps: Float64Array): void {
+  selected.length = 0;
+  if (removals.length === 0) return;
+  const center = mesh?.getBoundingInfo().boundingSphere;
+  for (const entry of removals) {
+    const gap = center ? Vector3.Distance(center.centerWorld, entry.position) - entry.radius - center.radiusWorld : 0;
+    if (gap > 0) continue;
+    let at = selected.length;
+    while (at > 0 && gaps[at - 1]! > gap) at--;
+    if (at >= WATER_REMOVAL_SLOTS) continue;
+    for (let j = Math.min(selected.length, WATER_REMOVAL_SLOTS - 1); j > at; j--) { selected[j] = selected[j - 1]!; gaps[j] = gaps[j - 1]!; }
+    selected[at] = entry; gaps[at] = gap;
+    if (selected.length > WATER_REMOVAL_SLOTS) selected.length = WATER_REMOVAL_SLOTS;
+  }
+}
 /** Sets one define; true when its value changed. */
 function setDefine(defines: MaterialDefines, name: string, value: boolean | number): boolean {
   if (defines[name] === value) return false;
@@ -483,22 +509,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     // The nearest enabled removal volumes that can reach this surface.
     const mesh = this.mesh;
     if (this.bindingFrame !== data.frame || this.bindingRender !== data.render || this.removalMesh !== mesh) {
-      const selected = this.selectedRemovals, gaps = this.removalGaps;
-      selected.length = 0;
-      if (data.removals.length > 0) {
-        // The nearest few that reach the surface, by insertion into the slots (no per-render arrays).
-        const center = mesh?.getBoundingInfo().boundingSphere;
-        for (const entry of data.removals) {
-          const gap = center ? Vector3.Distance(center.centerWorld, entry.position) - entry.radius - center.radiusWorld : 0;
-          if (gap > 0) continue;
-          let at = selected.length;
-          while (at > 0 && gaps[at - 1]! > gap) at--;
-          if (at >= WATER_REMOVAL_SLOTS) continue;
-          for (let j = Math.min(selected.length, WATER_REMOVAL_SLOTS - 1); j > at; j--) { selected[j] = selected[j - 1]!; gaps[j] = gaps[j - 1]!; }
-          selected[at] = entry; gaps[at] = gap;
-          if (selected.length > WATER_REMOVAL_SLOTS) selected.length = WATER_REMOVAL_SLOTS;
-        }
-      }
+      selectWaterRemovals(data.removals, mesh, this.selectedRemovals, this.removalGaps);
       this.bindingFrame = data.frame;
       this.bindingRender = data.render;
       this.removalMesh = mesh;
@@ -507,11 +518,11 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     if (this.selectedRemovals.length > 0 || this.removalsCleared !== buffer) {
       for (let i = 0; i < WATER_REMOVAL_SLOTS; i++) {
         const entry = this.selectedRemovals[i];
-        if (!entry) { buffer.updateFloat4(REMOVAL_SHAPE_UNIFORMS[i]!, 0, 0, 0, 0); buffer.updateMatrix(REMOVAL_UNIFORMS[i]!, Matrix.IdentityReadOnly); continue; }
+        if (!entry) { buffer.updateFloat4(WATER_REMOVAL_SHAPE_UNIFORMS[i]!, 0, 0, 0, 0); buffer.updateMatrix(WATER_REMOVAL_UNIFORMS[i]!, Matrix.IdentityReadOnly); continue; }
         const shape = entry.shape ??= waterRemovalShapeVector(entry.volume);
-        buffer.updateFloat4(REMOVAL_SHAPE_UNIFORMS[i]!, shape[0], shape[1], shape[2], shape[3]);
+        buffer.updateFloat4(WATER_REMOVAL_SHAPE_UNIFORMS[i]!, shape[0], shape[1], shape[2], shape[3]);
         entry.inverse ??= entry.mesh.getWorldMatrix().clone().invert();
-        buffer.updateMatrix(REMOVAL_UNIFORMS[i]!, entry.inverse);
+        buffer.updateMatrix(WATER_REMOVAL_UNIFORMS[i]!, entry.inverse);
       }
       this.removalsCleared = this.selectedRemovals.length > 0 ? null : buffer;
     }

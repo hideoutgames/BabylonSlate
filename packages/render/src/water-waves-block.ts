@@ -8,7 +8,7 @@ import {
   meshVertexWaves, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_FFT_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_GPU_WAVES_DEFINE,
   WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM, WATER_NODE_VARYING, WATER_VERTEX_WAVE_UNIFORMS, waterWaveBlockSource, waterWaveNodeSources,
 } from "./water-material";
-import { declareWaterAttributes, isWaterSurfaceMesh, WATER_SURFACE_DEFINE } from "./water-surface-block";
+import { declareWaterAttributes, isBlendingWaterSurface, isWaterSurfaceMesh, WATER_DEPTH_PRE_PASS_DEFINE, WATER_SURFACE_DEFINE } from "./water-surface-block";
 
 /** Varyings of the rest point and world normal the fragment stage samples the spectrum at. */
 const WATER_NODE_REST_VARYING = "vSlateWaterRest";
@@ -78,7 +78,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     const surface = isWaterSurfaceMesh(mesh), waves = surface ? meshVertexWaves(mesh) : null;
     defines.setValue(WATER_SURFACE_DEFINE, surface, true);
     defines.setValue(WATER_GPU_WAVES_DEFINE, waves !== null, true);
-    defines.setValue(WATER_BLEND_DEFINE, waves !== null && mesh!.isVerticesDataPresent("slateWaterBlend"), true);
+    defines.setValue(WATER_BLEND_DEFINE, isBlendingWaterSurface(mesh), true);
     defines.setValue(WATER_FFT_DEFINE, waves ? waves.cascades(mesh!.getScene()) : 1, true);
   }
   /** Binds the waves, the spectrum and the clock of the mesh being drawn, every draw: surfaces sharing a material have their own. */
@@ -129,18 +129,19 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     state._emitFunction("swFftTapLod", waterWaveNodeSources(state.shaderLanguage).vertexHelpers, "");
   }
   /**
-   * The fragment's per-pixel normal, height, crest foam and subsurface light. The vertex stage hands over the bank and blend shares through
+   * The fragment's per-pixel normal, height, crest foam and subsurface light. The vertex stage hands over the bank gain and blend shares through
    * `WATER_NODE_VARYING` (written into the vertex program from here, so a graph that reads only fragment outputs still
-   * gets it); the rest point and the base normal arrive as the inputs' own varyings.
+   * gets it); the rest point and the base normal arrive as the inputs' own varyings. The depth pre-pass, which returns
+   * after the Water Cut block, samples none of it.
    */
   private buildFragment(state: NodeMaterialBuildState): void {
     const wgsl = state.shaderLanguage === ShaderLanguage.WGSL, v3 = wgsl ? "vec3f" : "vec3", sources = waterWaveNodeSources(state.shaderLanguage);
     const vertex = state._vertexState;
     this.declareVertexInputs(vertex);
-    if (vertex._emitVaryingFromString(WATER_NODE_VARYING, Types.Vector4, WATER_GPU_WAVES_DEFINE)) {
+    if (vertex._emitVaryingFromString(WATER_NODE_VARYING, Types.Vector2, WATER_GPU_WAVES_DEFINE)) {
       vertex.compilationString += `${sources.varying(`${wgsl ? "vertexOutputs." : ""}${WATER_NODE_VARYING}`)}\n`;
     }
-    state._emitVaryingFromString(WATER_NODE_VARYING, Types.Vector4, WATER_GPU_WAVES_DEFINE);
+    state._emitVaryingFromString(WATER_NODE_VARYING, Types.Vector2, WATER_GPU_WAVES_DEFINE);
     for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
     declareArraySampler(state, WATER_FFT_SAMPLER);
     declareArraySampler(state, WATER_FOAM_SAMPLER);
@@ -167,7 +168,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     state.compilationString += local("swnNormal", v3, worldNormal)
       + local("swnHeight", wgsl ? "f32" : "float", "0.0") + local("swnFoam", wgsl ? "f32" : "float", "0.0") + local("swnSubsurface", wgsl ? "f32" : "float", "0.0")
       + local("swnEdgeTurbulence", wgsl ? "f32" : "float", "0.0")
-      + `${sources.fragment(rest, base, `${from}${WATER_NODE_VARYING}`)}\n`
+      + `#ifndef ${WATER_DEPTH_PRE_PASS_DEFINE}\n${sources.fragment(rest, base, `${from}${WATER_NODE_VARYING}`)}\n#endif\n`
       + declare(this.height, "swnHeight") + declare(this.normal, "swnNormal") + declare(this.crestFoam, "swnFoam") + declare(this.subsurface, "swnSubsurface") + declare(this.edgeTurbulence, "swnEdgeTurbulence")
       + declare(this.time, `${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x`);
   }

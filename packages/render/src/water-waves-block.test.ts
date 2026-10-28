@@ -177,7 +177,7 @@ describe("Water Waves node", () => {
     expect(declaredUnder(source, "SLATE_WATER_SURFACE", "attribute vec4 slateWaterData;")).toBe(true);
     expect(declaredUnder(source, "SLATE_WATER_SURFACE", "attribute vec3 slateWaterFlow;")).toBe(true);
     expect(source).not.toMatch(/SLATE_WATER_GPU_WAVES|slateWaterClock|slateWaterBaseNormal/);
-    expect(source).toMatch(/\w+ = slateWaterData\.x;/);
+    expect(source).toMatch(/\w+ = slateWaterData\.y;/);
   });
 
   it("gives Water Surface the node's Wave Height and Simulation Time, because a GPU mesh's vertex data carries neither", async () => {
