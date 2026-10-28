@@ -86,6 +86,8 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     // A world-space shading normal (a normal map's); the interpolated world normal otherwise.
     this.registerInput("normal", NodeMaterialBlockConnectionPointTypes.Vector3, true, NodeMaterialBlockTargets.Fragment);
     this.registerInput("environmentInfluence", NodeMaterialBlockConnectionPointTypes.Float, true, NodeMaterialBlockTargets.Fragment);
+    // A non-metal's reflectance, F0 = 0.08 x Specular; 0.5 (F0 0.04) unconnected.
+    this.registerInput("specular", NodeMaterialBlockConnectionPointTypes.Float, true, NodeMaterialBlockTargets.Fragment);
     for (const name of ["diffuseDirect", "specularDirect", "diffuseIndirect", "specularIndirect"])
       this.registerOutput(name, NodeMaterialBlockConnectionPointTypes.Color3, NodeMaterialBlockTargets.Fragment);
   }
@@ -102,6 +104,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   get roughness() { return this._inputs[5]!; }
   get normal() { return this._inputs[6]!; }
   get environmentInfluence() { return this._inputs[7]!; }
+  get specular() { return this._inputs[8]!; }
   get diffuseDirect() { return this._outputs[0]!; }
   get specularDirect() { return this._outputs[1]!; }
   get diffuseIndirect() { return this._outputs[2]!; }
@@ -197,6 +200,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       cameraPosition: this.cameraPosition.associatedVariableName,
       baseColor: this.baseColor.associatedVariableName,
       metallic: this.metallic.associatedVariableName,
+      specular: this.specular.isConnected ? this.specular.associatedVariableName : "0.5",
       roughness: this.roughness.associatedVariableName,
       environmentInfluence: this.environmentInfluence.isConnected ? this.environmentInfluence.associatedVariableName : "1.0",
     }, {

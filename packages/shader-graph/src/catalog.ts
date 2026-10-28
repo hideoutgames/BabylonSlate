@@ -942,6 +942,7 @@ const OUTPUT_NODES: MaterialNodeDefinition[] = [
         defaultValue: [0.8, 0.8, 0.8],
       },
       { id: "metallic", name: "Metallic", type: FLOAT, defaultValue: [0] },
+      { id: "specular", name: "Specular", type: FLOAT, defaultValue: [0.5] },
       { id: "roughness", name: "Roughness", type: FLOAT, defaultValue: [0.5] },
       { id: "environmentInfluence", name: "Environment Influence", type: FLOAT, defaultValue: [1] },
       { id: "normal", name: "Normal", type: VEC3 },

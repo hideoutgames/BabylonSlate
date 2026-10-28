@@ -21,6 +21,7 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     this.registerInput("geometryBaseColor", Types.Color3, true);
     this.registerInput("geometryMetallic", Types.Float, true);
     this.registerInput("geometryRoughness", Types.Float, true);
+    this.registerInput("geometrySpecular", Types.Float, true);
   }
 
   get geometryPosition() { return this.getInputByName("geometryPosition")!; }
@@ -30,6 +31,7 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
   get geometryBaseColor() { return this.getInputByName("geometryBaseColor")!; }
   get geometryMetallic() { return this.getInputByName("geometryMetallic")!; }
   get geometryRoughness() { return this.getInputByName("geometryRoughness")!; }
+  get geometrySpecular() { return this.getInputByName("geometrySpecular")!; }
   override getClassName(): string { return "GeometrySurfaceOutputBlock"; }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -43,8 +45,9 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     const vec3 = state._getShaderType(Types.Vector3);
     const metallic = this.geometryMetallic.isConnected ? this.geometryMetallic.associatedVariableName : "0.0";
     const roughness = this.geometryRoughness.isConnected ? this.geometryRoughness.associatedVariableName : "0.5";
+    const dielectricF0 = this.geometrySpecular.isConnected ? `(0.08 * clamp(${this.geometrySpecular.associatedVariableName}, 0.0, 1.0))` : "0.04";
     const reflectivity = this.geometryBaseColor.isConnected
-      ? `${vec4}(mix(${vec3}(0.04), ${this.geometryBaseColor.associatedVariableName}, clamp(${metallic}, 0.0, 1.0)), 1.0 - clamp(${roughness}, 0.0, 1.0))`
+      ? `${vec4}(mix(${vec3}(${dielectricF0}), ${this.geometryBaseColor.associatedVariableName}, clamp(${metallic}, 0.0, 1.0)), 1.0 - clamp(${roughness}, 0.0, 1.0))`
       : `${vec4}(0.0)`;
     const color = wgsl ? "fragmentOutputsColor" : "gl_FragColor";
     const savedColor = state._getFreeVariableName("geometrySurfaceColor");

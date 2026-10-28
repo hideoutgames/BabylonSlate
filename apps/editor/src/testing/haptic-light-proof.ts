@@ -53,14 +53,15 @@ import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Path = "babylon" | "haptic";
 const SURFACES = [
-  { name: "rough dielectric", baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.6, environmentInfluence: 1 },
-  { name: "smooth metal", baseColor: [0.95, 0.75, 0.35], metallic: 1, roughness: 0.25, environmentInfluence: 1 },
-  { name: "glossy dielectric", baseColor: [0.2, 0.35, 0.8], metallic: 0, roughness: 0.15, environmentInfluence: 0.5 },
+  { name: "rough dielectric", baseColor: [0.8, 0.8, 0.8], metallic: 0, specular: 0.5, roughness: 0.6, environmentInfluence: 1 },
+  { name: "smooth metal", baseColor: [0.95, 0.75, 0.35], metallic: 1, specular: 0.5, roughness: 0.25, environmentInfluence: 1 },
+  // Water's Specular: Babylon's block takes it as an index of refraction of 1.333.
+  { name: "glossy dielectric", baseColor: [0.2, 0.35, 0.8], metallic: 0, specular: 0.255, roughness: 0.15, environmentInfluence: 0.5 },
 ] as const;
-type Surface = { name: string; baseColor: readonly number[]; metallic: number; roughness: number; environmentInfluence: number };
+type Surface = { name: string; baseColor: readonly number[]; metallic: number; specular: number; roughness: number; environmentInfluence: number };
 // Babylon's rect light specular weighs its Fresnel terms by the light's specular colour times intensity; the block
 // uses the standard LTC Fresnel. The two agree for a white metal under a white light of intensity one.
-const WHITE_METAL: Surface = { name: "white metal", baseColor: [1, 1, 1], metallic: 1, roughness: 0.4, environmentInfluence: 1 };
+const WHITE_METAL: Surface = { name: "white metal", baseColor: [1, 1, 1], metallic: 1, specular: 0.5, roughness: 0.4, environmentInfluence: 1 };
 
 /** A prepared emission's pixels: warm to cool across, light to dark down, as Prepare Emission's 1024 square. */
 function emissionPixels(): AreaEmissionPixels {
@@ -145,6 +146,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       const output = doc.nodes.find((node) => node.id === "output")!.properties;
       output[materialPinDefaultPropertyKey("metallic")] = [surface.metallic];
       output[materialPinDefaultPropertyKey("roughness")] = [surface.roughness];
+      output[materialPinDefaultPropertyKey("specular")] = [surface.specular];
       output[materialPinDefaultPropertyKey("environmentInfluence")] = [surface.environmentInfluence];
       const lowered = lowerMaterialDocument(doc);
       if (!lowered.ok) throw new Error(`${surface.name} did not lower`);
