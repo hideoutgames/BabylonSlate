@@ -181,6 +181,7 @@ describe("runFeatureTestCheck", () => {
     expect(editor.commands.slice(-4)).toEqual(["hapticlights reset", "fixedlights reset", "quality reset", "framecap 30"]);
     expect(editor.commands).toContain("fixedlights branch");
     expect(editor.commands).toContain("hapticlights all");
+    expect(editor.commands.filter((command) => command === "quality shadows enabled off")).toHaveLength(3);
     expect(editor.commands).not.toContain("ft_stats");
   });
 

@@ -21,6 +21,7 @@ import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setHapticLighting, type HapticLightSet } from "../../../../packages/render/src/haptic-lights";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
@@ -53,6 +54,8 @@ export async function runHapticLightProof() {
     camera.minZ = 0.1;
     camera.maxZ = 40;
     scene.activeCamera = camera;
+    // As Play's world Scene: Babylon's light helpers ask the fixed-shape hooks first.
+    setFixedShapeLightingWorldScene(scene);
     setSceneRenderSettings(scene, {
       mode: "pbr",
       quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } }),
