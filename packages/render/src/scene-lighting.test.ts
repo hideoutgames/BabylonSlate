@@ -1,4 +1,3 @@
-import { installAssetBytes } from "@haptic/assets";
 import {
   isForwardLightExcluded,
   setAuthoredLightEnabled,
@@ -41,10 +40,6 @@ import { compileMaterialPlan } from "./material-compiler";
 import { setupDefaultViewport } from "./viewport";
 import { sceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
 import { ViewportShadingOverlay } from "./viewport-shading-mode";
-import { beginSlotModelAnimLoad, createModelActorRoot } from "./glb-anim";
-import { encodeUvHierarchyGlb } from "./glb-test-fixtures";
-import { createSnapshotSceneBinding } from "./snapshot-apply";
-import { visualMeshes } from "./visual-meshes";
 import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { retainAreaLightLookup } from "./area-light-resources";
 
@@ -392,29 +387,6 @@ describe("scene material lighting", () => {
     ];
     for (const material of materials) {
       expect(shaderLights(scene, material).LIGHT5).toBe(true);
-    }
-  });
-
-  it("updates asynchronous GLB material clones before they render", async () => {
-    const scene = host();
-    lights(scene, 6);
-    beginFrame(scene);
-    const root = createModelActorRoot(scene, "model");
-    await beginSlotModelAnimLoad(
-      scene,
-      createSnapshotSceneBinding(),
-      1,
-      "model",
-      installAssetBytes(encodeUvHierarchyGlb({ separateMaterials: true })),
-      root,
-    );
-    const parts = visualMeshes(root);
-    expect(parts.length).toBe(2);
-    for (const part of parts) {
-      expect(part.material).toBeInstanceOf(PBRMaterial);
-      expect(shaderLights(scene, part.material as PBRMaterial).LIGHT5).toBe(
-        true,
-      );
     }
   });
 

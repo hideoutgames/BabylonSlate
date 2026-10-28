@@ -636,36 +636,7 @@ type PreparedModelInstance = {
   groups: NamedSeekableGroup[];
 };
 
-/** One owned material per source in a visual, preserving borrowed texture lifetime. */
-export function createModelMaterialCloner(scene: Scene, bundle: VisualBundle) {
-  const copies = new Map<unknown, unknown>();
-  const textureCopies = new Map<unknown, Set<unknown>>();
-  const cloneMaterial = (source: Material): Material => {
-    const previous = copies.get(source) as Material | undefined;
-    if (previous) return previous;
-    const clone = source instanceof MultiMaterial ? new MultiMaterial(source.name, scene) : source.clone(source.name);
-    if (!clone) throw new Error(`Cannot clone model material ${source.name}`);
-    bundle.ownMaterial(clone);
-    copies.set(source, clone);
-    if (source instanceof MultiMaterial && clone instanceof MultiMaterial) {
-      clone.subMaterials = source.subMaterials.map((material) => material ? cloneMaterial(material) : null);
-    } else {
-      const borrowed = source.getActiveTextures();
-      for (const [index, texture] of clone.getActiveTextures().entries()) {
-        if (!borrowed.includes(texture)) bundle.ownTexture(texture);
-        const original = borrowed[index];
-        if (original) {
-          const variants = textureCopies.get(original) ?? new Set<unknown>();
-          variants.add(texture); textureCopies.set(original, variants);
-        }
-      }
-    }
-    return clone;
-  };
-  return { cloneMaterial, copies, textureCopies };
-}
-
-/** Native clone semantics retained, with explicit materials and wrapper ownership. */
+/** Native clone semantics retained, with wrapper ownership. */
 function prepareModelInstance(
   placeholder: AbstractMesh,
   container: AssetContainer,
@@ -679,27 +650,10 @@ function prepareModelInstance(
     hideModelPlaceholder(staging);
     const wrapper = applyModelImportScale(staging, importScale);
     bundle.ownRenderUser({ dispose: () => { if (!wrapper.isDisposed()) wrapper.dispose(true); } });
+    // The load skips the file's materials; the instance's slots assign its Materials.
     const instance = bundle.ownRenderUser(container.instantiateModelsToScene(keepSourceName, false, { doNotInstantiate: true }));
     for (const node of instance.rootNodes) node.parent = wrapper;
-    const { cloneMaterial, copies, textureCopies } = createModelMaterialCloner(placeholder.getScene(), bundle);
-    for (const child of staging.getChildMeshes()) {
-      child.renderingGroupId = placeholder.renderingGroupId;
-      if (child.material) child.material = cloneMaterial(child.material);
-    }
-    // With Babylon material cloning disabled, material/texture animation targets
-    // still reference the source. Redirect them to this generation's clones.
-    for (const group of instance.animationGroups) {
-      for (const targeted of [...group.targetedAnimations]) {
-        const textures = textureCopies.get(targeted.target);
-        if (textures?.size) {
-          const [first, ...rest] = textures;
-          targeted.target = first;
-          for (const target of rest) group.addTargetedAnimation(targeted.animation.clone(), target);
-        } else {
-          targeted.target = copies.get(targeted.target) ?? targeted.target;
-        }
-      }
-    }
+    for (const child of staging.getChildMeshes()) child.renderingGroupId = placeholder.renderingGroupId;
     return { bundle, staging, wrapper, instance, groups: [] };
   } catch (error) {
     bundle.dispose();

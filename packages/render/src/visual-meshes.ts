@@ -2,13 +2,6 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Mesh, type AbstractMesh, type Material, type Node } from "@babylonjs/core";
 import { isColliderVisualTree } from "./collider-visual";
 
-/**
- * Keyed by mesh, not stored in `mesh.metadata`: Babylon clones share their
- * source's metadata object, so model instances would read each other's
- * (possibly retired) material.
- */
-const constructionMaterials = new WeakMap<AbstractMesh, Material | null>();
-
 function hasGeometry(mesh: AbstractMesh): boolean {
   return mesh.getTotalVertices() > 0;
 }
@@ -81,9 +74,3 @@ export function applyMaterialToVisualMeshes(
   }
 }
 
-export function constructionMaterialOf(mesh: AbstractMesh): Material | null {
-  if (!constructionMaterials.has(mesh)) {
-    constructionMaterials.set(mesh, mesh.material ?? null);
-  }
-  return constructionMaterials.get(mesh) ?? null;
-}

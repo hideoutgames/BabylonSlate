@@ -53,7 +53,7 @@ Worker-side animation state machine plus per-instance Animation Object graphs th
 
 - Clip lookup is per slot (`getAnimationGroups(slotId)`); never seek another actor's same-name group. With `clipAssetGuid` set, untagged groups do not match.
 - Each Model is loaded once per Scene; actors instance under a `__importScale` child of an empty named root (`editorActor:<id>` / `actor-N`) so import scale never overwrites snapshot TRS.
-- Material slots map by glTF material index, then construction name, then unused index — not child visit order. `MeshComponent.materialGuid` overrides the whole visual.
+- Material slots map by the glTF material index each primitive names (`modelMaterialIndexOf`), not child visit order; the file's own materials are never loaded. `MeshComponent.materialGuid` overrides the whole visual.
 - `resolveAnimGraphClips` keeps Animation guids (never rewrites Animation → Model). Retargeted Animations load the source Model GLB and retarget at rest pose.
 - `anim.skeletonMismatch` is an error when an Animation's skeleton differs from the owning Model's.
 

@@ -6,7 +6,7 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { parseFoliageProperties, type FoliageBatch } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
-import { acquireGlbContainer, createModelMaterialCloner, prepareInstanceMaterials } from "./glb-anim";
+import { acquireGlbContainer, prepareInstanceMaterials } from "./glb-anim";
 import { installAssetBytes } from "@haptic/assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { RENDERING_GROUP } from "./sorting";
@@ -91,7 +91,6 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
   const root = new Mesh(name, scene);
   root.isPickable = false;
   const bundle = new VisualBundle();
-  const { cloneMaterial } = createModelMaterialCloner(scene, bundle);
   const batches: Array<{ root: Mesh; batch: FoliageBatch }> = [];
   batchesByRoot.set(root, batches);
   let cancel!: (reason: Error) => void;
@@ -131,7 +130,6 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           const mesh = geometry.clone(`${name}:foliage:${batchIndex}:${sourceMesh.uniqueId}:${cell}`, batchRoot, true);
           bundle.ownRenderUser(mesh);
           isolateFoliageGeometry(mesh, geometry);
-          if (mesh.material) mesh.material = cloneMaterial(mesh.material);
           mesh.position.setAll(0); mesh.rotation.setAll(0); mesh.rotationQuaternion = Quaternion.Identity(); mesh.scaling.setAll(1);
           mesh.skeleton = null; mesh.morphTargetManager = null;
           mesh.setEnabled(true); mesh.isVisible = true; mesh.visibility = 1;

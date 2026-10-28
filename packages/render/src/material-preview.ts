@@ -14,17 +14,12 @@ import {
   type Mesh,
   type NodeMaterial,
 } from "@babylonjs/core";
-import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { MaterialParameterValue } from "@haptic/bridge";
 import type { MaterialDocument, MaterialPreviewMesh } from "@haptic/shader-graph";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { adoptLoadedHierarchy } from "./glb-anim";
-import { addMissingFlatNormals } from "./model-container";
-import {
-  gltfLoaderExtension,
-  isGltfModelBytes,
-  packedGltfBytes,
-} from "./model-mesh";
+import { loadModelContainer } from "./model-container";
+import { isGltfModelBytes } from "./model-mesh";
 import {
   applyMaterialToVisualMeshes,
   visualHierarchyBoundingVectors,
@@ -226,16 +221,11 @@ export function createMaterialPreviewScene(
       ) {
         mesh.visibility = 0;
         try {
-          const packed = packedGltfBytes(customMeshBytes);
-          const container = await LoadAssetContainerAsync(packed, scene, {
-            pluginExtension: gltfLoaderExtension(customMeshBytes),
-            name: "material-preview-custom.glb",
-          });
+          const container = await loadModelContainer(scene, customMeshBytes, "material-preview-custom.glb");
           if (generation !== meshGeneration) {
             container.dispose();
             return mesh;
           }
-          addMissingFlatNormals(container);
           container.addAllToScene();
           adoptLoadedHierarchy(mesh, container);
           customContainer = container;

@@ -149,7 +149,7 @@ describe("ModelEditor", () => {
     );
   });
 
-  it("shows Default when a slot has no Material", () => {
+  it("shows None when a slot has no Material, which draws the grey checker", () => {
     render(
       <ModelEditor
         payload={{
@@ -160,7 +160,7 @@ describe("ModelEditor", () => {
       />,
     );
     expect(screen.getByTestId("property-slot-0").textContent).toContain(
-      "Default",
+      "None",
     );
   });
 });

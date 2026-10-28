@@ -200,7 +200,7 @@ export function ModelEditor({
       kind: "asset",
       label: slot.name,
       value: slot.materialGuid,
-      placeholder: "Default",
+      placeholder: "None",
       onPick: () => setPickIndex(slot.index),
       onChange: (value) => setSlotGuid(slot.index, value),
       ...assetRowIdentity(

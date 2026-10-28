@@ -23,7 +23,6 @@ import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from 
 import { createSpriteQuad } from "./sprite-quad";
 import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-apply";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
-import { constructionMaterialOf } from "./visual-meshes";
 import { onSceneReadinessDirty } from "./scene-perf";
 
 it("installs uploadable legacy UASTC descriptors without mutating stored asset bytes", async () => {
@@ -198,7 +197,7 @@ describe("applyAlbedoTexture", () => {
   it("restores a static sprite's owned material immediately after clearing an authored assignment", () => {
     const f = spriteFixture();
     try {
-      const construction = constructionMaterialOf(f.mesh);
+      const construction = f.mesh.material;
       const texture = f.auto.diffuseTexture;
       const bounds = f.mesh.getBoundingInfo();
       f.authored.metadata = { boundsPadding: 2 };

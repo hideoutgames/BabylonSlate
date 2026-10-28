@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   Frustum,
   Matrix,
+  Mesh,
   MeshBuilder,
   PBRMaterial,
   StandardMaterial,
@@ -27,6 +28,7 @@ import {
   encodeTriangleGlb,
   encodeUvHierarchyGlb,
 } from "./glb-test-fixtures";
+import { loadModelContainer, parentContainerRoots } from "./model-container";
 import {
   isGltfModelBytes,
 } from "./model-mesh";
@@ -89,188 +91,78 @@ describe("applyModelMaterialSlots", () => {
     }
   });
 
-  it("keeps construction materials when a slot guid is empty", () => {
+  /** A loaded two-part model under a hidden placeholder, part-b first in the file; each part names its own glTF material. */
+  async function twoParts(options = { separateMaterials: true, laterMaterialFirst: true }) {
     const handle = createTestEngine();
     handles.push(handle);
-    const { scene } = handle;
-    const root = MeshBuilder.CreateBox("root", { size: 1 }, scene);
-    const child = MeshBuilder.CreateBox("child", { size: 1 }, scene);
-    child.parent = root;
-    const constructionA = new StandardMaterial("slot-0", scene);
-    const constructionB = new StandardMaterial("slot-1", scene);
-    root.material = constructionA;
-    child.material = constructionB;
+    const container = await loadModelContainer(handle.scene, encodeUvHierarchyGlb(options), "two-parts.glb");
+    container.addAllToScene();
+    const root = MeshBuilder.CreateBox("placeholder", { size: 1 }, handle.scene);
+    root.visibility = 0;
+    parentContainerRoots(root, container);
+    const part = (name: string) => root.getChildMeshes().find((mesh) => mesh.name === name)!;
+    return { scene: handle.scene, root, partA: part("part-a"), partB: part("part-b") };
+  }
+  const slots = (a: string | null, b: string | null) => [
+    { index: 0, name: "MatA", materialGuid: a },
+    { index: 1, name: "MatB", materialGuid: b },
+  ];
 
-    applyModelMaterialSlots(
-      root,
-      [
-        { index: 0, name: "Hero Mat", materialGuid: null },
-        { index: 1, name: "Slot 2", materialGuid: null },
-      ],
-      () => new StandardMaterial("unused", scene),
-    );
+  it("draws each part with the slot of the glTF material its primitive names, not child visit order", async () => {
+    const { scene, root, partA, partB } = await twoParts();
+    const [a, b] = [new StandardMaterial("a", scene), new StandardMaterial("b", scene)];
+    applyModelMaterialSlots(root, slots("a", "b"), (guid) => (guid === "a" ? a : guid === "b" ? b : null));
+    expect([partA.material, partB.material]).toEqual([a, b]);
+  });
 
-    expect(root.material).toBe(constructionA);
-    expect(child.material).toBe(constructionB);
-    expect(isEngineDefaultMaterial(root.material)).toBe(false);
+  it("draws an empty or unresolved slot with the engine default, never the file's material or a previous Material", async () => {
+    const { scene, root, partA, partB } = await twoParts();
+    // The load skips the file's materials.
+    expect([partA.material, partB.material, scene.materials.some((material) => material.name.startsWith("Mat"))]).toEqual([null, null, false]);
+    const authored = new StandardMaterial("authored", scene);
+    applyModelMaterialSlots(root, slots("a", null), () => authored);
+    expect([partA.material, partB.material]).toEqual([authored, null]);
+    applyModelMaterialSlots(root, slots("broken", null), () => null);
+    expect(partA.material).toBeNull();
     expect(isEngineDefaultMaterial(scene.defaultMaterial)).toBe(true);
   });
 
-  it("keeps each instance of one model on its own construction material", () => {
+  it("gives every instance and clone of a model's part the part's slot", async () => {
     const handle = createTestEngine();
     handles.push(handle);
-    const { scene } = handle;
-    // Babylon clones share their source's metadata object, as glTF instances do.
-    const source = MeshBuilder.CreateBox("part", { size: 1 }, scene);
-    source.metadata = {};
-    const first = source.clone("first");
-    const second = source.clone("second");
-    first.material = new StandardMaterial("colormap", scene);
-    second.material = new StandardMaterial("colormap", scene);
-    const own = second.material;
-    const slots = [{ index: 0, name: "colormap", materialGuid: null }];
-
-    applyModelMaterialSlots(first, slots, () => null);
-    first.material.dispose();
-    applyModelMaterialSlots(second, slots, () => null);
-
-    expect(second.material).toBe(own);
-    expect(scene.materials).toContain(own);
+    const scene = handle.scene;
+    // A template container, as Play keeps one per model load.
+    const container = await loadModelContainer(scene, encodeUvHierarchyGlb({ separateMaterials: true, laterMaterialFirst: true }), "two-parts.glb");
+    const instance = container.instantiateModelsToScene((name) => name, false, { doNotInstantiate: true });
+    const copy = new Mesh("copy-root", scene);
+    for (const node of instance.rootNodes) node.parent = copy;
+    const partA = copy.getChildMeshes().find((mesh) => mesh.name === "part-a")!;
+    const clone = partA.clone("part-a-clone", copy)!;
+    const a = new StandardMaterial("a", scene);
+    applyModelMaterialSlots(copy, slots("a", null), (guid) => (guid === "a" ? a : null));
+    expect(copy.getChildMeshes().filter((mesh) => mesh.material === a).map((mesh) => mesh.name).sort()).toEqual(["part-a", "part-a-clone"]);
+    expect(clone.material).toBe(a);
   });
 
-  it("assigns a resolved material to a filled slot and restores the import on clear or a failed resolve", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const { scene } = handle;
-    const root = MeshBuilder.CreateBox("root", { size: 1 }, scene);
-    const child = MeshBuilder.CreateBox("child", { size: 1 }, scene);
-    child.parent = root;
-    const constructionA = new StandardMaterial("slot-0", scene);
-    const constructionB = new StandardMaterial("slot-1", scene);
-    const override = new StandardMaterial("override", scene);
-    root.material = constructionA;
-    child.material = constructionB;
-
-    applyModelMaterialSlots(
-      root,
-      [
-        { index: 0, name: "Hero Mat", materialGuid: "mat-1" },
-        { index: 1, name: "Slot 2", materialGuid: null },
-      ],
-      (guid) => (guid === "mat-1" ? override : null),
-    );
-
-    expect(root.material).toBe(override);
-    expect(child.material).toBe(constructionB);
-
-    applyModelMaterialSlots(
-      root,
-      [
-        { index: 0, name: "Hero Mat", materialGuid: null },
-        { index: 1, name: "Slot 2", materialGuid: null },
-      ],
-      () => null,
-    );
-
-    expect(root.material).toBe(constructionA);
-    expect(child.material).toBe(constructionB);
-
-    applyModelMaterialSlots(
-      root,
-      [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }, { index: 1, name: "Slot 2", materialGuid: null }],
-      () => override,
-    );
-    // A replacement Material that fails to resolve must not leave the old override.
-    applyModelMaterialSlots(
-      root,
-      [{ index: 0, name: "Hero Mat", materialGuid: "broken" }, { index: 1, name: "Slot 2", materialGuid: null }],
-      () => null,
-    );
-
-    expect(root.material).toBe(constructionA);
+  it("leaves a placeholder root that no glTF primitive made alone", async () => {
+    const { scene, root, partA } = await twoParts({ separateMaterials: false, laterMaterialFirst: false });
+    const stub = new StandardMaterial("stub", scene);
+    root.material = stub;
+    const shared = new StandardMaterial("shared", scene);
+    applyModelMaterialSlots(root, [{ index: 0, name: "MatA", materialGuid: "shared" }], () => shared);
+    expect([root.material, partA.material]).toEqual([stub, shared]);
   });
 
-  it("skips a hidden placeholder root so slot 0 maps to the loaded mesh", () => {
+  it("draws every primitive of a file without materials with its one slot", async () => {
     const handle = createTestEngine();
     handles.push(handle);
-    const { scene } = handle;
-    const root = MeshBuilder.CreateBox("placeholder", { size: 1 }, scene);
-    const child = MeshBuilder.CreateBox("gltf-mesh", { size: 1 }, scene);
-    child.parent = root;
-    const stubMat = new StandardMaterial("stub", scene);
-    const gltfMat = new StandardMaterial("gltf", scene);
-    const override = new StandardMaterial("override", scene);
-    root.material = stubMat;
-    root.visibility = 0;
-    child.material = gltfMat;
-
-    applyModelMaterialSlots(
-      root,
-      [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
-      (guid) => (guid === "mat-1" ? override : null),
-    );
-
-    expect(root.material).toBe(stubMat);
-    expect(child.material).toBe(override);
-  });
-
-  it("maps construction materials to named slot indices, not child visit order", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const { scene } = handle;
-    const root = MeshBuilder.CreateBox("placeholder", { size: 1 }, scene);
-    root.visibility = 0;
-    const partB = MeshBuilder.CreateBox("part-b", { size: 1 }, scene);
-    const partA = MeshBuilder.CreateBox("part-a", { size: 1 }, scene);
-    partB.parent = root;
-    partA.parent = root;
-    const matB = new StandardMaterial("MatB", scene);
-    const matA = new StandardMaterial("MatA", scene);
-    const slot0 = new StandardMaterial("slot-0", scene);
-    const slot1 = new StandardMaterial("slot-1", scene);
-    partB.material = matB;
-    partA.material = matA;
-
-    applyModelMaterialSlots(
-      root,
-      [
-        { index: 0, name: "MatA", materialGuid: "mat-a" },
-        { index: 1, name: "MatB", materialGuid: "mat-b" },
-      ],
-      (guid) => (guid === "mat-a" ? slot0 : guid === "mat-b" ? slot1 : null),
-    );
-
-    expect(partA.material).toBe(slot0);
-    expect(partB.material).toBe(slot1);
-  });
-
-  it("maps same-named construction clones to one slot, not the next unused index", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const { scene } = handle;
-    const root = MeshBuilder.CreateBox("placeholder", { size: 1 }, scene);
-    root.visibility = 0;
-    const partB = MeshBuilder.CreateBox("part-b", { size: 1 }, scene);
-    const partA = MeshBuilder.CreateBox("part-a", { size: 1 }, scene);
-    partB.parent = root;
-    partA.parent = root;
-    partB.material = new StandardMaterial("Skin", scene);
-    partA.material = new StandardMaterial("Skin", scene);
-    const slot0 = new StandardMaterial("slot-0", scene);
-    const slot1 = new StandardMaterial("slot-1", scene);
-
-    applyModelMaterialSlots(
-      root,
-      [
-        { index: 0, name: "Skin", materialGuid: "mat-skin" },
-        { index: 1, name: "Trim", materialGuid: "mat-trim" },
-      ],
-      (guid) =>
-        guid === "mat-skin" ? slot0 : guid === "mat-trim" ? slot1 : null,
-    );
-
-    expect(partA.material).toBe(slot0);
-    expect(partB.material).toBe(slot0);
+    const container = await loadModelContainer(handle.scene, encodeTriangleGlb(), "triangle.glb");
+    container.addAllToScene();
+    const root = new Mesh("root", handle.scene);
+    parentContainerRoots(root, container);
+    const only = new StandardMaterial("only", handle.scene);
+    applyModelMaterialSlots(root, [{ index: 0, name: "Material", materialGuid: "only" }], () => only);
+    expect(visualMeshes(root).map((mesh) => mesh.material)).toEqual([only]);
   });
 });
 
