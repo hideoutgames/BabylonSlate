@@ -83,6 +83,8 @@ import { createGeometryCaptureOutput } from "./geometry-capture-output";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
 import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
 import { applyLatticeDeformerPlumbing, LatticeDeformerBlock } from "./lattice-deformer-block";
+import { WaterCutBlock } from "./water-node-blocks";
+import { WaterSurfaceBlock } from "./water-surface-block";
 import { WaterWavesBlock } from "./water-waves-block";
 import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
@@ -669,6 +671,21 @@ export function compileMaterialPlan(
       } else if (color) color.connectTo(fragment.rgba);
       outputNodes.push(fragment);
     } else {
+      // Every Surface Material keeps built-in water's cut where it draws a water mesh (removal volumes, land above the
+      // water, a blending neighbour's water), in every variant; elsewhere it compiles away. It reads the final
+      // displaced position, and the geometry's own waterline: the Water Waves node's vertex height on the GPU path.
+      if (plan.domain === "surface" && plumbing.worldPosition) {
+        const cut = new WaterCutBlock(`${options.name}_waterCut`);
+        plumbing.worldPosition.connectTo(cut.worldPosition);
+        if (plumbing.waterWaves) {
+          const vertexHeight = new WaterSurfaceBlock(`${options.name}_waterCutHeight`);
+          plumbing.waterWaves.height.connectTo(vertexHeight.gpuWaveHeight);
+          vertexHeight.waveHeight.connectTo(cut.waveHeight);
+          created.push(vertexHeight);
+        }
+        created.push(cut);
+        outputNodes.push(cut);
+      }
       if (outlineMask) {
         const identity = new SharedOutlineIdentityBlock(`${options.name}_identity`);
         const output = new SharedOutlineOutputBlock(`${options.name}_outline`);

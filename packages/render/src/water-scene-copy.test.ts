@@ -170,6 +170,10 @@ function frames(graph: ForwardSceneFrameGraph, run: () => void) {
 it("keeps the default five-task graph when no built-in water could sample a copy", async () => {
   const { scene, camera } = host();
   box(scene, "opaque");
+  // NullEngine never marks raw uploads ready: model the GPU completion of the surface's contact field, which the
+  // readiness probe waits for.
+  const engine = scene.getEngine(), upload = engine.createRawTexture.bind(engine);
+  vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => Object.assign(upload(...args), { isReady: true }));
   // A custom-material water surface has no WaterMaterialPlugin and cannot sample the copy.
   createWaterMesh(scene, "custom", normalizeWaterBody({ resolution: 8 }), undefined, new StandardMaterial("custom", scene));
   const graph = new ForwardSceneFrameGraph(scene);

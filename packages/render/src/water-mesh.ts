@@ -18,7 +18,7 @@ import {
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
-import { materialSceneCopyUse, materialUsesWaterFields, setMeshWaterNodeSurface } from "./water-node-blocks";
+import { materialSceneCopyUse, setMeshWaterNodeSurface } from "./water-node-blocks";
 import { materialHasWaterWaves } from "./water-waves-block";
 import { advanceBlendRebuild, markBlendDirty, syncSceneBlend } from "./water-mesh-blend";
 import { blendNormals, globalReachRows, liveBlendInputs, placeBlend, placeGlobalBlend, sceneBlends } from "./water-mesh-blend-data";
@@ -457,20 +457,17 @@ function syncCustomMaterial(s: Surface): void {
   syncNodeSurface(s);
 }
 
-/**
- * What a Custom Material's water nodes read follows its graph: its scene-copy use, and the terrain and contact fields,
- * built the first time a graph reads them (Water Foam, Water Depth Fade) and kept for the surface's life.
- */
+/** A Custom Material's scene-copy use follows its graph. */
 function syncNodeSurface(s: Surface): void {
   if (!s.nodes) return;
   const use = materialSceneCopyUse(s.material);
   s.nodeCopyUse = (use.refraction ? COPY_REFRACTS : 0) | (use.reflection ? COPY_REFLECTS : 0);
-  if (!s.field && materialUsesWaterFields(s.material)) attachFields(s);
-  s.nodes.field = s.field;
-  s.nodes.contacts = s.contacts;
 }
 
-/** Builds the surface's terrain and contact fields (built-in water always has them; see `syncNodeSurface`). */
+/**
+ * Builds the surface's terrain and contact fields. Every surface has them: built-in water's look and every Custom
+ * Material's cut (`WaterCutBlock`: land above the water) read them.
+ */
 function attachFields(surface: Surface): void {
   const { mesh, water, body, plugin } = surface, scene = mesh.getScene();
   const fieldSurface: WaterFieldSurface = {
@@ -625,9 +622,9 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     surface.copyCounted = 0;
   });
   refreshSurface(surface, sceneWaterTime(scene));
-  if (plugin) attachFields(surface);
-  else {
-    surface.nodes = { water, field: null, contacts: null, partners: NO_PARTNERS };
+  attachFields(surface);
+  if (!plugin) {
+    surface.nodes = { water, field: surface.field, contacts: surface.contacts, partners: NO_PARTNERS };
     setMeshWaterNodeSurface(mesh, surface.nodes);
     syncNodeSurface(surface);
   }

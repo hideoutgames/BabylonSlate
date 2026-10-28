@@ -106,6 +106,23 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(material.attachedBlocks.find((block) => block instanceof HapticLightingBlock)).toBe(lighting);
   });
 
+  it("binds every texture a program declares, as WebGPU needs: the split-sum table in both modes, the cube only where declared", async () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    const { mesh, material } = await litBox(scene);
+    // A Scene without an environment cube compiles no cube sampler.
+    expect(material.compiledShaders).toMatch(/#if defined\(HAPTIC_ENVIRONMENT\)\s+uniform samplerCube hapticEnvironmentSampler;/);
+    for (const mode of ["pbr", "cel"] as const) {
+      setSceneRenderSettings(scene, { mode });
+      await drawnDefines(scene, mesh, material);
+      const effect = mesh.subMeshes[0]!.effect!, bound: string[] = [];
+      vi.spyOn(effect, "setTexture").mockImplementation((name) => { bound.push(name); });
+      material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+      expect(bound, mode).toEqual(expect.arrayContaining(["hapticEnvironmentBrdfSampler", "hapticAreaLtc1Sampler", "hapticAreaLtc2Sampler", "hapticAreaEmissionSampler"]));
+      expect(bound, mode).not.toContain("hapticEnvironmentSampler");
+    }
+  });
+
   it("leaves graphs on Babylon's PBR block while the switch is off", async () => {
     const { scene } = host();
     new PointLight("lamp", new Vector3(0, 2, 0), scene);
