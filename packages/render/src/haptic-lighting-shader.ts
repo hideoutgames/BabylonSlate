@@ -107,7 +107,7 @@ float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradien
 // Contact Hardening (Babylon's computeShadowWithPCSS and computeShadowWithCSMPCSS) on a view's tile: the depth around the
 // position, over the light's size (\`contact.w\`, a share of the tile, a cascade's corrected toward the first's by
 // \`contact.xy\`), is searched for blockers, then compare taps spread over a radius that grows with the blockers' distance
-// from the receiver, on Babylon's Poisson discs turned per position, each a single texel as Babylon's nearest sampling
+// from the receiver, on Babylon's Poisson discs turned per position, each a bilinear comparison as Babylon's depth texture
 // takes. A perspective view compares Babylon's depth metric over its planes (\`contact.xy\`), a cascade its depth scaled
 // by its depth correction (\`contact.z\`). Low, medium and high quality take 16, 16 and 32 search taps and 16, 32 and 64
 // compare taps; 1 without a blocker.
@@ -115,11 +115,6 @@ ${poissonGlsl("hapticPoisson32", POISSON_32)}${poissonGlsl("hapticPoisson64", PO
 // The atlas's depth at a texel of the tile, read without compare (\`hapticShadowAtlasDepth\`).
 float hapticShadowDepth(vec4 tile, vec2 texel, float size) {
   return texelFetch(hapticShadowAtlasDepth, ivec2(tile.xy / tile.w + clamp(floor(texel), vec2(0.0), vec2(size - 1.0)) + 0.5), 0).r;
-}
-
-// The view's comparison at a texel of the tile, one texel's as a nearest sampler takes it.
-float hapticShadowPoint(vec4 tile, vec2 texel, float size, float depth) {
-  return textureLod(hapticShadowAtlas, vec3(tile.xy + (clamp(floor(texel), vec2(0.0), vec2(size - 1.0)) + 0.5) * tile.w, depth), 0.0);
 }
 
 // Babylon's depth metric, (clip z + near) / (near + far), of a perspective view with planes \`range\` at an NDC depth,
@@ -158,7 +153,7 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
     if (i >= taps) break;
     vec2 offset = quality == 2 ? hapticPoisson64[i] : hapticPoisson32[min(i, 31)];
     offset = vec2(offset.x * turn.x - offset.y * turn.y, offset.y * turn.x + offset.x * turn.y);
-    lit += hapticShadowPoint(tile, texels + offset * radius, size, depth);
+    lit += hapticShadowTap(tile, texels + offset * radius, depth);
   }
   return mix(lit / float(taps), 1.0, min(distance, 1.0));
 }
@@ -303,11 +298,6 @@ fn hapticShadowDepth(tile: vec4f, texel: vec2f, size: f32) -> f32 {
   return textureLoad(hapticShadowAtlas, vec2i(tile.xy / tile.w + clamp(floor(texel), vec2f(0.0), vec2f(size - 1.0)) + 0.5), 0);
 }
 
-fn hapticShadowPoint(tile: vec4f, texel: vec2f, size: f32, depth: f32) -> f32 {
-  return textureSampleCompareLevel(hapticShadowAtlas, hapticShadowAtlasSampler,
-    tile.xy + (clamp(floor(texel), vec2f(0.0), vec2f(size - 1.0)) + 0.5) * tile.w, depth);
-}
-
 fn hapticDepthMetric(range: vec2f, ndc: f32) -> f32 {
   // WebGPU's depth range is zero to one.
   let z = range.x * range.y / (range.y - (range.y - range.x) * ndc);
@@ -344,7 +334,7 @@ fn hapticContactLit(tile: vec4f, shading: vec4f, contact: vec4f, clip: vec4f, de
     var offset: vec2f;
     if (quality == 2) { offset = hapticPoisson64[i]; } else { offset = hapticPoisson32[min(i, 31)]; }
     offset = vec2f(offset.x * turn.x - offset.y * turn.y, offset.y * turn.x + offset.x * turn.y);
-    lit += hapticShadowPoint(tile, texels + offset * radius, size, depth);
+    lit += hapticShadowTap(tile, texels + offset * radius, depth);
   }
   return mix(lit / f32(taps), 1.0, min(distance, 1.0));
 }
