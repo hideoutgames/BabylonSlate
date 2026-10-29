@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, PointLight, Scene, SpotLight, Vector3, type AbstractEngine } from "@babylonjs/core";
+import { DirectionalLight, NullEngine, PointLight, Scene, SpotLight, Vector3, type AbstractEngine } from "@babylonjs/core";
 import { normalizeShadowSettings } from "@haptic/core";
 import { planShadowAdmission, type ShadowAdmissionBudget } from "./shadow-admission-plan";
 import { SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge } from "./shadow-atlas";
@@ -17,7 +17,7 @@ function scene(): Scene {
   return new Scene(engine);
 }
 
-function entry(light: SpotLight | PointLight): ShadowEntry {
+function entry(light: SpotLight | PointLight | DirectionalLight): ShadowEntry {
   return {
     light, requested: true, priority: 0, generator: null, key: null, settings: null, mapSize: 0, reason: null,
     failedKey: "", recovery: null, resetAllocation: false, status: "disabled", standby: false, admittedAt: -Infinity,
@@ -31,10 +31,10 @@ const budget = (atlasEdge: number): ShadowAdmissionBudget => ({
   maxTextureSize: 16384, maxCubemapTextureSize: 16384, atlasEdge,
 });
 
-function plan(lights: (SpotLight | PointLight)[], atlasEdge: number, localMapSize: number) {
+function plan(lights: (SpotLight | PointLight | DirectionalLight)[], atlasEdge: number, localMapSize: number, sun = { mapSize: 2048, cascades: 1 }) {
   const entries = new Map(lights.map((light) => [light, entry(light)]));
   return planShadowAdmission({
-    entries, settings: normalizeShadowSettings({ cascades: 1, maxLocalLights: 8, localMapSize }), camera: null,
+    entries, settings: normalizeShadowSettings({ ...sun, maxLocalLights: 8, localMapSize }), camera: null,
     previousCamera: null, restoring: null, at: 0, budget: budget(atlasEdge), measure: () => 0,
   });
 }
@@ -61,6 +61,22 @@ describe("Shadow admission into the lighting plan's atlas", () => {
     ]);
     expect(admitted.bytes).toBe(2048 ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL);
     expect(admitted.samplers).toBe(0);
+  });
+
+  it("admits the sun's cascades as tiles, leaving room for the local maps planned into the atlas", () => {
+    const host = scene();
+    const sun = new DirectionalLight("sun", new Vector3(0, -1, 0), host);
+    const spots = [0, 1, 2, 3, 4, 5, 6, 7].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), Vector3.Down(), 1, 2, host));
+    // Ultra: four 4096 cascades would fill the 8192 atlas; eight 2048 spot tiles keep half of it.
+    const ultra = plan([sun, ...spots], 8192, 2048, { mapSize: 4096, cascades: 4 });
+    expect(ultra.decisions.map(({ status, mapSize }) => [status, mapSize])).toEqual([["active", 2048], ...spots.map(() => ["active", 2048])]);
+    expect(ultra.decisions[0]!.reason).toBe("shadow map reduced by shadow atlas space");
+    // Alone, the sun takes the whole atlas.
+    expect(plan([sun], 8192, 2048, { mapSize: 4096, cascades: 4 }).decisions.map(({ mapSize, reason }) => [mapSize, reason])).toEqual([[4096, null]]);
+    // Medium: three 2048 cascades and two 1024 spot tiles fit a 4096 atlas, with no sampler.
+    const medium = plan([sun, spots[0]!, spots[1]!], 4096, 1024, { mapSize: 2048, cascades: 3 });
+    expect(medium.decisions.map(({ status, mapSize }) => [status, mapSize])).toEqual([["active", 2048], ["active", 1024], ["active", 1024]]);
+    expect(medium.admitted.samplers).toBe(0);
   });
 
   it("caps a spot map at the atlas's edge, and counts no atlas without a spot map in it", () => {

@@ -87,7 +87,7 @@ import {
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
 import { detachShadowGenerator, ShadowPredictionMaps } from "./shadow-prediction-maps";
 import { hapticLightingActive } from "./haptic-lights";
-import { AtlasShadowGenerator, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
+import { isAtlasShadow, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
 export type { ShadowAdmissionSnapshot, ShadowStartPrediction } from "./shadow-admission-plan";
@@ -523,7 +523,7 @@ export class SceneShadowController {
       passes += map.passes;
       bytes += map.attachmentBytes;
     });
-    const held = (generator: ShadowGenerator) => generator instanceof AtlasShadowGenerator ? 0 :
+    const held = (generator: ShadowGenerator) => isAtlasShadow(generator) ? 0 :
       generatorPasses(generator) *
       (generator.getShadowMap()?.getSize().width ?? 0) ** 2 *
       shadowBytesPerTexel(this.scene.getEngine(), generator instanceof CascadedShadowGenerator);
@@ -1020,7 +1020,7 @@ export class SceneShadowController {
 /** What a live map reserves: a cascaded map's four-layer construction peak (Babylon builds four, then the authored count), otherwise its faces. */
 /** A map's bytes: none for an atlas tile, whose bytes are the atlas's. */
 function reservedShadowBytes(generator: ShadowGenerator, mapSize: number, budget: ShadowAdmissionBudget): number {
-  if (generator instanceof AtlasShadowGenerator) return 0;
+  if (isAtlasShadow(generator)) return 0;
   return (generator instanceof CascadedShadowGenerator ? 4 : generatorPasses(generator)) * mapSize ** 2 * texelBytes(generator, budget);
 }
 

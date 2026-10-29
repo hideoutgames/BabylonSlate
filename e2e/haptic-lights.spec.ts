@@ -133,26 +133,29 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.celEffects).toBe(3);
     expect(result.celSteps).toEqual(LIGHT_STEPS);
 
-    // A spot light's shadow on the block's path, drawn through the shadow controller and the frame graph into its tile
-    // of the atlas: a floor pixel whose view of the lamp the box or the ball blocks draws as with the lamp off, any
-    // other as with the lamp's shadow switched off, in both render modes, and the shadow compiles nothing.
-    const settled = settledShadowPixels(result.shadow.blocked, result.width, result.height);
-    const shadowReport = result.shadow.modes.map(({ mode, atlas, shadowed, unshadowed, unlit, newLitEffects }) => ({
-      mode, atlas, newLitEffects, blocked: settled.blocked.length, open: settled.open.length,
-      // The lamp really lights the blocked pixels when nothing shadows them.
-      lampLight: settled.blocked.reduce((sum, pixel) => sum + difference(unshadowed, unlit, pixel), 0) / settled.blocked.length,
-      blockedLit: settled.blocked.filter((pixel) => difference(shadowed, unlit, pixel) > 2).length,
-      openShadowed: settled.open.filter((pixel) => difference(shadowed, unshadowed, pixel) > 2).length,
-    }));
-    await testInfo.attach(`haptic-light-shadow-${backend}`, { body: JSON.stringify(shadowReport), contentType: "application/json" });
-    for (const report of shadowReport) {
-      expect(report.atlas, report.mode).toBe(true);
-      expect(report.newLitEffects, report.mode).toBe(0);
-      expect(report.blocked, report.mode).toBeGreaterThan(100);
-      expect(report.open, report.mode).toBeGreaterThan(1000);
-      expect(report.lampLight, report.mode).toBeGreaterThan(20);
-      expect(report.blockedLit, report.mode).toBe(0);
-      expect(report.openShadowed, report.mode).toBe(0);
+    // A spot light's and the sun's shadows on the block's path, drawn through the shadow controller and the frame graph
+    // into the atlas: a floor pixel whose view of the light the box or the ball blocks draws as with the light off, any
+    // other as with the light's shadow switched off, in both render modes, and the shadow compiles nothing.
+    for (const [light, { blocked, modes }] of Object.entries(result.shadow)) {
+      const settled = settledShadowPixels(blocked, result.width, result.height);
+      const shadowReport = modes.map(({ mode, atlas, shadowed, unshadowed, unlit, newLitEffects }) => ({
+        light, mode, atlas, newLitEffects, blocked: settled.blocked.length, open: settled.open.length,
+        // The light really lights the blocked pixels when nothing shadows them.
+        lighting: settled.blocked.reduce((sum, pixel) => sum + difference(unshadowed, unlit, pixel), 0) / settled.blocked.length,
+        blockedLit: settled.blocked.filter((pixel) => difference(shadowed, unlit, pixel) > 2).length,
+        openShadowed: settled.open.filter((pixel) => difference(shadowed, unshadowed, pixel) > 2).length,
+      }));
+      await testInfo.attach(`haptic-light-${light}-shadow-${backend}`, { body: JSON.stringify(shadowReport), contentType: "application/json" });
+      for (const report of shadowReport) {
+        const label = `${light} ${report.mode}`;
+        expect(report.atlas, label).toBe(true);
+        expect(report.newLitEffects, label).toBe(0);
+        expect(report.blocked, label).toBeGreaterThan(100);
+        expect(report.open, label).toBeGreaterThan(1000);
+        expect(report.lighting, label).toBeGreaterThan(20);
+        expect(report.blockedLit, label).toBe(0);
+        expect(report.openShadowed, label).toBe(0);
+      }
     }
   });
 }

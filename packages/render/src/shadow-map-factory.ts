@@ -14,7 +14,7 @@ import {
 } from "@babylonjs/core";
 import type { ShadowSettings } from "@haptic/core";
 import { ReusableShadowGenerator, type LocalShadowLight } from "./reusable-shadow-generator";
-import { createAtlasShadowGenerator } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
 import { trackShadowSlotDefines } from "./shadow-slot-defines";
@@ -93,10 +93,15 @@ export function shadowAllocationCheckpoint(
   };
 }
 
-/** A spot map as a tile of the lighting plan's atlas; a full atlas fails the allocation, which the controller retries smaller. */
-function atlasShadowGenerator(light: SpotLight, mapSize: number, atlasEdge: number): ShadowGenerator {
-  const generator = createAtlasShadowGenerator(light, mapSize, atlasEdge);
-  if (!generator) throw new Error(`The shadow atlas has no free ${mapSize}-texel tile.`);
+/**
+ * A spot map, or the sun's cascades, as tiles of the lighting plan's atlas; a full atlas fails the allocation, which
+ * the controller retries smaller.
+ */
+function atlasShadowGenerator(light: SpotLight | DirectionalLight, mapSize: number, cascades: number, atlasEdge: number): ShadowGenerator {
+  const generator = light instanceof DirectionalLight
+    ? createAtlasCascadedShadowGenerator(light, mapSize, cascades, atlasEdge)
+    : createAtlasShadowGenerator(light, mapSize, atlasEdge);
+  if (!generator) throw new Error(`The shadow atlas has no ${light instanceof DirectionalLight ? cascades : 1} free ${mapSize}-texel tiles.`);
   return generator;
 }
 
@@ -105,8 +110,8 @@ function atlasShadowGenerator(light: SpotLight, mapSize: number, atlasEdge: numb
  * receiver defines, automatic bias, culled caster lists and draw counters.
  * `view` keys a sun map to a view's camera (attachView); null is the scene
  * view's map, which receivers of every other camera bind. `atlasEdge`: the
- * lighting plan's atlas a spot map is a tile of (`ShadowAdmissionBudget.atlasEdge`),
- * 0 for maps of their own.
+ * lighting plan's atlas a spot map or the scene view's sun is a tile of
+ * (`ShadowAdmissionBudget.atlasEdge`), 0 for maps of their own.
  */
 export function createShadowGenerator(
   context: ShadowMapContext,
@@ -125,22 +130,23 @@ export function createShadowGenerator(
   // A view's map is keyed to its camera; the scene view's to the null camera.
   const camera = view ?? undefined;
   const generator =
-    directionalLight && settings.cascades > 1
-      ? new CascadedShadowGenerator(
-          mapSize,
-          entry.light as DirectionalLight,
-          undefined,
-          camera,
-        )
-      : directionalLight
-        ? new ShadowGenerator(mapSize, entry.light, undefined, camera)
-        : atlasTileEdge(entry.light, atlasEdge)
-          ? atlasShadowGenerator(entry.light as SpotLight, mapSize, atlasEdge)
+    atlasTileEdge(entry.light, atlasEdge)
+      ? atlasShadowGenerator(entry.light as SpotLight | DirectionalLight, mapSize, settings.cascades, atlasEdge)
+      : directionalLight && settings.cascades > 1
+        ? new CascadedShadowGenerator(
+            mapSize,
+            entry.light as DirectionalLight,
+            undefined,
+            camera,
+          )
+        : directionalLight
+          ? new ShadowGenerator(mapSize, entry.light, undefined, camera)
           : new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
   const slot = { entry, view: view !== null };
   context.slots.set(generator, slot);
   if (generator instanceof CascadedShadowGenerator) {
-    generator.numCascades = settings.cascades;
+    // An atlas sun is built with its count, which may be one; Babylon's setter allows two at least.
+    if (!(generator instanceof AtlasCascadedShadowGenerator)) generator.numCascades = settings.cascades;
     generator.stabilizeCascades = true;
     generator.lambda = 0.7;
     generator.shadowMaxZ = settings.distance;
@@ -371,4 +377,8 @@ export function applyShadowSettings(
   generator.bias = settings.depthBias;
   generator.normalBias = settings.normalBias;
   generator.frustumEdgeFalloff = 0;
+  if (generator instanceof AtlasCascadedShadowGenerator) {
+    generator.fadeFraction = settings.fadeFraction;
+    generator.autoBias = settings.autoBias;
+  }
 }

@@ -59,10 +59,10 @@ export type AllocationKey = {
 
 /**
  * The edge of the shadow atlas `light`'s map is a tile of while the lighting plan's atlas is `atlasEdge` texels
- * (`ShadowAdmissionBudget.atlasEdge`, 0 off its path): a spot light's, so far.
+ * (`ShadowAdmissionBudget.atlasEdge`, 0 off its path): a spot light's and the sun's cascades, so far.
  */
 export function atlasTileEdge(light: ShadowLight, atlasEdge: number): number {
-  return light instanceof SpotLight ? atlasEdge : 0;
+  return light instanceof SpotLight || light instanceof DirectionalLight ? atlasEdge : 0;
 }
 
 export function allocationKey(

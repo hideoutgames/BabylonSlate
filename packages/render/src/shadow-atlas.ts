@@ -1,4 +1,17 @@
-import { Constants, RenderTargetTexture, Viewport, type AbstractEngine, type Effect, type Scene, type SpotLight } from "@babylonjs/core";
+import {
+  CascadedShadowGenerator,
+  Constants,
+  Matrix,
+  RenderTargetTexture,
+  Vector4,
+  Viewport,
+  type AbstractEngine,
+  type Camera,
+  type DirectionalLight,
+  type Effect,
+  type Scene,
+  type SpotLight,
+} from "@babylonjs/core";
 import { SHADOW_CAPACITY_PROFILES, type ShadowProfile } from "@haptic/core";
 import { deviceProfile } from "./device-profile";
 import { ReusableShadowGenerator } from "./reusable-shadow-generator";
@@ -106,22 +119,22 @@ function tileClearsReady(engine: AbstractEngine): boolean {
 }
 
 /**
- * A light's tile as a render target: the atlas's framebuffer and depth texture, sized and cleared as the tile. Its
- * viewport is set once the framebuffer is bound (`onBeforeRenderObservable`): the object renderer sets the camera's
- * before the bind. It never owns the atlas: disposing it leaves the framebuffer to the atlas.
+ * A light's tiles as one render target: the atlas's framebuffer and depth texture, drawn one pass per tile (a sun's
+ * cascades are layers) into the atlas's single layer. It never owns the atlas: disposing it leaves the framebuffer to
+ * the atlas.
  */
 class AtlasTileTarget extends RenderTargetTexture {
   private readonly atlas: RenderTargetTexture;
-  readonly tile: ShadowAtlasTile;
+  readonly tiles: readonly ShadowAtlasTile[];
 
-  constructor(name: string, atlas: RenderTargetTexture, tile: ShadowAtlasTile) {
-    super(name, tile.size, atlas.getScene()!, { generateMipMaps: false, doNotChangeAspectRatio: true, noColorAttachment: true, delayAllocation: true });
+  constructor(name: string, atlas: RenderTargetTexture, tiles: readonly ShadowAtlasTile[]) {
+    const size = tiles[0]!.size;
+    // As many passes as tiles: the object renderer takes one per layer.
+    super(name, tiles.length > 1 ? { width: size, height: size, layers: tiles.length } : size, atlas.getScene()!,
+      { generateMipMaps: false, doNotChangeAspectRatio: true, noColorAttachment: true, delayAllocation: true });
     this.atlas = atlas;
-    this.tile = tile;
+    this.tiles = tiles;
     this.share();
-    const edge = atlas.getRenderSize();
-    const viewport = new Viewport(tile.x / edge, tile.y / edge, tile.size / edge, tile.size / edge);
-    this.onBeforeRenderObservable.add(() => this.getScene()!.getEngine().setViewport(viewport));
   }
 
   private share(): void {
@@ -129,8 +142,19 @@ class AtlasTileTarget extends RenderTargetTexture {
     this._texture = this.atlas.renderTarget?._depthStencilTexture ?? null;
   }
 
+  // Layered, so a render draws a pass per tile.
+  override get is2DArray(): boolean {
+    return this.tiles.length > 1;
+  }
+
+  override set is2DArray(_value: boolean) {}
+
+  override _bindFrameBuffer(faceIndex = 0): void {
+    super._bindFrameBuffer(faceIndex, 0);
+  }
+
   override getSize() {
-    return { width: this.tile.size, height: this.tile.size };
+    return { width: this.tiles[0]!.size, height: this.tiles[0]!.size };
   }
 
   override render(useCameraPostProcess?: boolean, dumpForDebug?: boolean): void {
@@ -156,45 +180,122 @@ class AtlasTileTarget extends RenderTargetTexture {
   }
 }
 
-let placing: { atlas: Atlas; tile: ShadowAtlasTile } | null = null;
+/** Called once a Scene's atlas map has drawn (`watchShadowDraws`). */
+const drawWatchers = new WeakMap<Scene, () => void>();
+
+/** Calls `drawn` each time one of the Scene's atlas maps has drawn, after all its tiles: their views have changed. */
+export function watchShadowDraws(scene: Scene, drawn: () => void): void {
+  drawWatchers.set(scene, drawn);
+}
+
+/** An atlas map's tiles and the view each was last drawn with, which its shadow is sampled by. */
+export interface AtlasShadow {
+  readonly tiles: readonly ShadowAtlasTile[];
+  /** Per tile, the view-projection it was last drawn with: until its first draw, the one it would draw with. */
+  readonly drawnViews: readonly Matrix[];
+}
+
+/**
+ * Draws `map`'s passes into its tiles of an `edge`-texel atlas: each pass's viewport is its tile, set once the
+ * framebuffer is bound (the object renderer sets the camera's before the bind), and each tile clears only its own depth
+ * under a scissor. `drawing(pass)` runs as a pass starts, once Babylon's generator has set its view. Installed once the
+ * generator has set its own observers.
+ */
+function drawIntoTiles(map: AtlasTileTarget, edge: number, drawing: (pass: number) => void): void {
+  const scene = map.getScene()!;
+  const viewports = map.tiles.map((tile) => new Viewport(tile.x / edge, tile.y / edge, tile.size / edge, tile.size / edge));
+  let pass = 0;
+  map.ignoreCameraViewport = false;
+  map.onBeforeRenderObservable.add((layer) => {
+    pass = layer;
+    scene.getEngine().setViewport(viewports[layer]!);
+    drawing(layer);
+  });
+  // Only the tile's depth: Babylon's clear would wipe every other light's.
+  map.onClearObservable.clear();
+  map.onClearObservable.add((engine) => {
+    const tile = map.tiles[pass]!;
+    engine.enableScissor(tile.x, tile.y, tile.size, tile.size);
+    try {
+      engine.clear(null, false, true, false);
+    } finally {
+      // A scissor left behind clips every later pass.
+      engine.disableScissor();
+    }
+  });
+  map.onAfterUnbindObservable.add(() => drawWatchers.get(scene)?.());
+}
+
+type Placement = { atlas: Atlas; tiles: ShadowAtlasTile[] };
+let placing: Placement | null = null;
+
+/** Allocates `count` tiles of `size` texels in the Scene's `edge`-texel atlas, or none when one does not fit. */
+function place(scene: Scene, size: number, count: number, edge: number): Placement | null {
+  const atlas = sceneAtlas(scene, edge);
+  const tiles: ShadowAtlasTile[] = [];
+  for (let index = 0; index < count; index++) {
+    const tile = atlas.tiles.allocate(size);
+    if (!tile) {
+      for (const placed of tiles) atlas.tiles.free(placed);
+      return null;
+    }
+    tiles.push(tile);
+  }
+  return { atlas, tiles };
+}
+
+/** Builds a generator into `placement`'s tiles, giving them back if its construction fails. */
+function construct<T>(placement: Placement, build: () => T): T {
+  placing = placement;
+  try {
+    return build();
+  } catch (error) {
+    for (const tile of placement.tiles) placement.atlas.tiles.free(tile);
+    throw error;
+  } finally {
+    placing = null;
+  }
+}
 
 /**
  * A spot light's shadow generator drawing into its tile of the Scene's atlas, made only while a tile of its size is
  * free (`createAtlasShadowGenerator`). It moves between lights as its legacy counterpart does (`moveTo`), keeping its
  * tile; disposing it frees the tile.
  */
-export class AtlasShadowGenerator extends ReusableShadowGenerator {
+export class AtlasShadowGenerator extends ReusableShadowGenerator implements AtlasShadow {
   // Set while Babylon's constructor builds the map, before field initializers would run.
-  declare private placement: { atlas: Atlas; tile: ShadowAtlasTile };
+  declare private placement: Placement;
+  private readonly view = Matrix.Identity();
+  private readonly views = [this.view];
+  private drawn = false;
+
+  get tiles(): readonly ShadowAtlasTile[] {
+    return this.placement.tiles;
+  }
 
   /** The tile, in texels of the atlas. */
   get tile(): ShadowAtlasTile {
-    return this.placement.tile;
+    return this.placement.tiles[0]!;
+  }
+
+  get drawnViews(): readonly Matrix[] {
+    if (!this.drawn) this.view.copyFrom(this.getTransformMatrix());
+    return this.views;
   }
 
   protected override _createTargetRenderTexture(): void {
     this.placement ??= placing!;
     this._shadowMap?.dispose();
-    const map = new AtlasTileTarget(`${this._light.name}_shadowTile`, this.placement.atlas.target, this.placement.tile);
+    const map = new AtlasTileTarget(`${this._light.name}_shadowTile`, this.placement.atlas.target, this.placement.tiles);
     map.noPrePassRenderer = true;
     this._shadowMap = map;
   }
 
   protected override _initializeShadowMap(): void {
     super._initializeShadowMap();
-    const map = this._shadowMap!;
-    map.ignoreCameraViewport = false;
-    // Only the tile's depth: Babylon's clear would wipe every other light's.
-    map.onClearObservable.clear();
-    const tile = this.placement.tile;
-    map.onClearObservable.add((engine) => {
-      engine.enableScissor(tile.x, tile.y, tile.size, tile.size);
-      try {
-        engine.clear(null, false, true, false);
-      } finally {
-        // A scissor left behind clips every later pass.
-        engine.disableScissor();
-      }
+    drawIntoTiles(this._shadowMap as AtlasTileTarget, this.placement.atlas.tiles.edge, () => {
+      this.view.copyFrom(this.getTransformMatrix());
+      this.drawn = true;
     });
   }
 
@@ -203,7 +304,7 @@ export class AtlasShadowGenerator extends ReusableShadowGenerator {
 
   override dispose(): void {
     super.dispose();
-    this.placement.atlas.tiles.free(this.placement.tile);
+    for (const tile of this.placement.tiles) this.placement.atlas.tiles.free(tile);
   }
 }
 
@@ -212,16 +313,102 @@ export class AtlasShadowGenerator extends ReusableShadowGenerator {
  * has no tile of that size free.
  */
 export function createAtlasShadowGenerator(light: SpotLight, size: number, edge: number): AtlasShadowGenerator | null {
-  const atlas = sceneAtlas(light.getScene(), edge);
-  const tile = atlas.tiles.allocate(size);
-  if (!tile) return null;
-  placing = { atlas, tile };
-  try {
-    return new AtlasShadowGenerator(size, light);
-  } catch (error) {
-    atlas.tiles.free(tile);
-    throw error;
-  } finally {
-    placing = null;
+  const placement = place(light.getScene(), size, 1, edge);
+  return placement && construct(placement, () => new AtlasShadowGenerator(size, light));
+}
+
+/**
+ * The sun's cascaded shadow generator drawing each cascade into its own tile of the Scene's atlas, built with its
+ * cascade count (`createAtlasCascadedShadowGenerator`), which a change of count rebuilds. Disposing it frees the tiles.
+ */
+export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implements AtlasShadow {
+  declare private placement: Placement;
+  declare private views: Matrix[];
+  private readonly ends: number[] = [];
+  private readonly lengths: number[] = [];
+  private readonly depth = new Vector4(0, 0, 0, 0);
+  /** The share of the shadow distance's far end over which the shadow fades out (`ShadowSettings.fadeFraction`). */
+  fadeFraction = 0;
+  /** Automatic bias (`ShadowSettings.autoBias`): receivers compare against their own plane (receiver-plane PCF). */
+  autoBias = false;
+
+  get tiles(): readonly ShadowAtlasTile[] {
+    return this.placement.tiles;
   }
+
+  get drawnViews(): readonly Matrix[] {
+    return this.views;
+  }
+
+  /** Per cascade, its far end in view depth from the camera it was last drawn for (Babylon's `viewFrustumZ`). */
+  get cascadeEnds(): readonly number[] {
+    return this.ends;
+  }
+
+  /** Per cascade, its length in view depth as last drawn (Babylon's `frustumLengths`), over which it blends into the next. */
+  get cascadeLengths(): readonly number[] {
+    return this.lengths;
+  }
+
+  /** The view depth plane (world position to depth) of the camera the cascades were last drawn for. */
+  get cascadeDepth(): Vector4 {
+    return this.depth;
+  }
+
+  protected override _initializeGenerator(): void {
+    // Built with its count: Babylon's default of four would take four tiles before the count could be lowered.
+    (this as unknown as { _numCascades?: number })._numCascades ??= placing!.tiles.length;
+    super._initializeGenerator();
+  }
+
+  protected override _createTargetRenderTexture(): void {
+    this.placement ??= placing!;
+    if (this.numCascades !== this.placement.tiles.length) throw new Error("An atlas cascade map keeps the cascade count it was built with.");
+    this.views ??= this.placement.tiles.map(() => Matrix.Identity());
+    this._shadowMap?.dispose();
+    const map = new AtlasTileTarget(`${this._light.name}_shadowTiles`, this.placement.atlas.target, this.placement.tiles);
+    map.noPrePassRenderer = true;
+    this._shadowMap = map;
+  }
+
+  protected override _initializeShadowMap(): void {
+    super._initializeShadowMap();
+    const csm = this as unknown as { _viewSpaceFrustumsZ: number[]; _frustumLengths: number[] };
+    drawIntoTiles(this._shadowMap as AtlasTileTarget, this.placement.atlas.tiles.edge, (cascade) => {
+      this.views[cascade]!.copyFrom(this.getCascadeTransformMatrix(cascade)!);
+      // The splits the cascades are drawn for, computed as the map binds.
+      if (cascade === 0) {
+        this.ends.splice(0, Infinity, ...csm._viewSpaceFrustumsZ);
+        this.lengths.splice(0, Infinity, ...csm._frustumLengths);
+        const camera = this._getCamera();
+        if (camera) {
+          const m = camera.getViewMatrix().m, eye = camera.globalPosition;
+          this.depth.set(m[2]!, m[6]!, m[10]!, -(m[2]! * eye.x + m[6]! * eye.y + m[10]! * eye.z));
+        }
+      }
+    });
+  }
+
+  protected override _applyFilterValues(): void {}
+
+  override dispose(): void {
+    super.dispose();
+    for (const tile of this.placement.tiles) this.placement.atlas.tiles.free(tile);
+  }
+}
+
+/** Whether `generator` draws into the atlas. */
+export function isAtlasShadow(generator: unknown): generator is AtlasShadowGenerator | AtlasCascadedShadowGenerator {
+  return generator instanceof AtlasShadowGenerator || generator instanceof AtlasCascadedShadowGenerator;
+}
+
+/**
+ * The sun's cascaded shadow generator with `cascades` tiles of `size` texels in the Scene's `edge`-texel atlas, or null
+ * when the atlas has not that many free.
+ */
+export function createAtlasCascadedShadowGenerator(
+  light: DirectionalLight, size: number, cascades: number, edge: number, camera?: Camera,
+): AtlasCascadedShadowGenerator | null {
+  const placement = place(light.getScene(), size, cascades, edge);
+  return placement && construct(placement, () => new AtlasCascadedShadowGenerator(size, light, undefined, camera));
 }
