@@ -84,7 +84,7 @@ Water takes no **Ambient Occlusion** or **Real-Time Reflections** from [Post Pro
 
 ## Custom water Materials
 
-Set a Water asset's **Custom Material** to a Surface Material to replace the built-in shading. Waves and buoyancy still work. As with built-in water, [Water Removal Volumes](../components/water-removal-volume.md) and land above the water remove it, and where bodies merge (see [Water Blend Distance](#water-blend-distance)) each draws only its own water.
+Set a Water asset's **Custom Material** to a Surface Material to replace the built-in shading. Waves and buoyancy still work. As with built-in water, [Water Removal Volumes](../components/water-removal-volume.md) and land above the water remove it, and where bodies merge (see [Water Blend Distance](#water-blend-distance)) each draws only its own water. A Translucent Material on water also becomes more opaque where its light is brighter than the display can show, such as sun glints and foam, as built-in water does, so that light shows instead of fading to a dim white.
 
 To edit the built-in look, choose **Edit As Material** in the Water asset's Inspector. It creates a Material that closely matches the built-in water, built from the water nodes, sets it as the **Custom Material** and opens it. You can also start one with **New Asset > Rendering > Material** and the **Water** starter, or **Create New** in the **Custom Material** picker.
 
