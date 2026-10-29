@@ -253,8 +253,8 @@ function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerat
  * origin (the block's positions are), the tile in atlas texture coordinates, the darkness, which stays neutral until
  * the map has drawn, and the filter quality; the sun's first, from the map the rendering camera samples
  * (`sunShadowMap`), with its cascade choice (`hapticSunShadow`: its cascade count, blend factor, distance fade and
- * first view; the camera's view depth plane; its cascades' far ends and lengths in it), as last drawn. Updates them in
- * the buffer, which the caller updates.
+ * first view, always 0; the camera's view depth plane; its cascades' far ends and lengths in it), as last drawn.
+ * Updates them in the buffer, which the caller updates.
  */
 function writeShadowViews(scene: Scene, state: SceneLights): void {
   const offset = scene.floatingOriginOffset;

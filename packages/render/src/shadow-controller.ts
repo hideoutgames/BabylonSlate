@@ -719,8 +719,6 @@ export class SceneShadowController {
         donors.push(entry);
       else release(entry);
     }
-    // The views' atlas mirrors of maps released above go too, before a replacement could need their tiles.
-    this.views.prune();
     // A parked map goes back to its light, admitted again with the shape it was built with, before a donor or a
     // construction could give the light another; its receivers and passes take it up as they would a new map.
     for (const [light, held] of this.parked) {
@@ -742,6 +740,9 @@ export class SceneShadowController {
       markSceneReadinessDirty(scene);
       invalidateShadowReceiverHandoffs(scene);
     }
+    // The views' atlas mirrors of maps released above go too (a map given back keeps its own), before a replacement
+    // could need their tiles.
+    this.views.prune();
     if (restoring) this.disposeParkedMaps();
     // Hand a retained map to a same-kind winner instead of constructing one.
     // Farther donors are least likely to return.
