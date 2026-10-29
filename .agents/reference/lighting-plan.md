@@ -44,10 +44,10 @@ Babylon bakes each light's type, shadow and filter into a receiver's defines (`L
 
 ### Other readers of lights
 
-- Volumetrics read the light block and the atlas instead of their own slots (`volumetric-lights.ts`).
+- Volumetrics read the light block and the atlas instead of their own slots (`volumetric-lights.ts`), with the atlas (Phase 6): the march already takes its lights as uniforms, so only its shadow maps tie it to the legacy path.
 - Water's CPU lighting (`water-scene-state.ts`: strongest directional plus hemispheric) reads the light records; built-in water becomes a graph Material on the block (see Phase 5).
 - Geometry passes no longer carry light defines, so `light-neutral-tasks.ts` goes.
-- Previews and thumbnails use the same path. Their studio lighting (two `HemisphericLight`s, `preview-lighting.ts`) becomes a directional key and the hemispheric fill: a deliberate look change, and thumbnails regenerate.
+- Previews and thumbnails use the same path. Their studio lighting (`preview-lighting.ts`) is a directional key and one hemispheric fill, which both paths draw alike (Phase 5).
 - The editor world view draws through the same path; Unlit viewport mode is a define of the function.
 
 ### CI gate
@@ -113,9 +113,11 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 5 PR 6: the light block's maximum per device (`DeviceProfile.lightMaximum`; decided: desktop 4 directional, 32 point, 16 spot, 4 rect, the block's records; phones and tablets half). The block's lights come from the existing admission (`selectHapticLights` in `syncForwardLightPolicy`): ranked as Forward ranks them, admitted per type up to the maximum and within the Local Light Budget, which the block ignored before, so lights past either are forward-excluded (yellow billboard, volumetrics skip them) and listed in `sceneLightingLimits`. The one-sun rule and one fill hold on this path as on Forward. The A16 cost of the maximum is measured in Phase 7.
 
+   Phase 5 PR 7: previews and thumbnails light with a directional key and one hemispheric fill (`preview-lighting.ts`; decided: the key from the upper right of the preview camera's default view, about square to it, intensity 2; the fill sky 0.35, ground 0.15). The block holds one fill, so the old two-fill rig drew its second fill on the legacy path only; the new rig draws alike on both. Thumbnails already stored keep the old lighting until the asset is saved or **Generate Thumbnail** runs. Volumetrics move to Phase 6, with the atlas.
+
    If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
-5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.
-6. **Shadow atlas** behind the same switch, with the preserve list above.
+5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, water reading the records, previews moved over. The CI gate runs on this path.
+6. **Shadow atlas** behind the same switch, with the preserve list above; volumetrics read the block and the atlas.
 7. **Default**: the CI gate passes on the new path; it becomes the default and a merge gate; the Feature Test is measured on the A16 iPad and an iPhone. The user docs take the look changes it ships (physical falloff, previews, CEL's fog and emissive), and Specular's constant-only warning goes.
 8. **Deletions**: legacy Forward's per-light path (`forward-light-budget.ts` slot kinds, `forward-light-slots.ts`); fixed-shape lighting (`fixed-light-*.ts`, core `fixed-light-layout.ts`, the `fixedlights` command and its Benchmark profiles); `variant-prediction.ts` and the prediction maps; the load rehearsal's light steps and its mobile limits; `light-neutral-tasks.ts`; `reserveSceneLightInventory`; the shadow controller's standby, parking, donor and exchange, slot defines and sampler placeholders; `light-sampler-budget.ts`; the `_materialLightHooks` hunks of the Babylon patch; `ScenePbrLightingBlock`, `CelLightBlock` and `SceneReflectionBlock`; the CEL graph swap (`cel-surface.ts`, `display-color-block.ts`) and `cel-shader.ts`'s patches of Babylon's light functions; the Poisson fallback report.
 9. **Later, decided separately**: fewer material variants (texture presence and similar defines as always-bound defaults), measured on its own.

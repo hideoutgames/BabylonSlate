@@ -30,6 +30,7 @@ import { compileMaterialPlan } from "./material-compiler";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
+import { createPreviewLighting } from "./preview-lighting";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -209,6 +210,18 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     // The block holds one fill.
     expect(sceneLightingLimits(scene).join()).toContain("Light block: 22/23 requested lights admitted; 64 scalability local lights");
     expect(sceneLightingLimits(scene).join()).toMatch(/Limited: second fill$/);
+  });
+
+  it("draws the preview studio rig whole, as the legacy path does: one directional key and one fill", () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    createPreviewLighting(scene);
+    syncSceneLighting(scene);
+    const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+    const read = (name: string) => [...buffer._bufferData.subarray(buffer._uniformLocations[name]!, buffer._uniformLocations[name]! + 4)];
+    expect(read("hapticCounts")).toEqual([1, 0, 0, 0]);
+    expect(read("hapticFillDirection")[3]).toBe(1);
+    expect(sceneLightingLimits(scene)).toEqual([]);
   });
 
   it("gives each distinct rect light emission a layer of one array, rebuilt only when the set changes", () => {
