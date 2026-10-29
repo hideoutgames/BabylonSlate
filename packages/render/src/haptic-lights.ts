@@ -16,7 +16,7 @@ import {
 import { rectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { deviceProfile } from "./device-profile";
-import { isIlluminatingLight, sortLightsByAdmission } from "./light-policy";
+import { isIlluminatingLight, sortLightsByAdmission, type ForwardLightSelection } from "./light-policy";
 
 /**
  * Lighting plan: lit graph Materials (`HapticLightingBlock`) read every light from one per-Scene uniform block
@@ -24,7 +24,7 @@ import { isIlluminatingLight, sortLightsByAdmission } from "./light-policy";
  * Behind an Engine switch while the plan's phases land; unshadowed.
  */
 
-/** Records per light type the block holds. */
+/** Records per light type the block holds: the most any device draws (`DeviceProfile.lightMaximum`). */
 export const HAPTIC_LIGHT_MAXIMUM = { directional: 4, point: 32, spot: 16, rect: 4 } as const;
 
 const engines = new WeakSet<AbstractEngine>();
@@ -70,10 +70,7 @@ hapticRect: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.rect * 4}>,
 var<uniform> HapticLights : HapticLightsBlock;
 `;
 
-type SceneLights = {
-  buffer: UniformBuffer; held: Set<Light>; next: Set<Light>; ranked: Light[];
-  rects: RectAreaLight[]; layers: number[]; limits: string[];
-};
+type SceneLights = { buffer: UniformBuffer; rects: RectAreaLight[]; layers: number[]; limits: string[] };
 const scenes = new WeakMap<Scene, SceneLights>();
 const directional = new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8);
 const point = new Float32Array(HAPTIC_LIGHT_MAXIMUM.point * 8);
@@ -95,7 +92,7 @@ function sceneLights(scene: Scene): SceneLights {
     buffer.create();
     // Rect area lights read Babylon's LTC tables, always bound, so a rect light arriving compiles nothing.
     const releaseLookup = retainAreaLightLookup(scene);
-    lights = { buffer, held: new Set(), next: new Set(), ranked: [], rects: [], layers: [], limits: [] };
+    lights = { buffer, rects: [], layers: [], limits: [] };
     scenes.set(scene, lights);
     scene.onDisposeObservable.addOnce(() => {
       buffer.dispose();
@@ -118,21 +115,60 @@ export function bindHapticLights(scene: Scene, effect: Effect): void {
   if (buffer) effect.bindUniformBuffer(buffer, "HapticLights");
 }
 
+type LightKind = "fill" | keyof typeof HAPTIC_LIGHT_MAXIMUM;
+
+/** How the block draws `light`: its records' type, the fill, or not at all (null). */
+function lightKind(light: Light): LightKind | null {
+  if (light instanceof HemisphericLight) return "fill";
+  if (light instanceof DirectionalLight) return "directional";
+  if (light instanceof SpotLight) return "spot";
+  if (light instanceof RectAreaLight) return "rect";
+  if (light instanceof PointLight) return "point";
+  return null;
+}
+
+const admitted: Light[] = [];
+const admittedCounts = { directional: 0, point: 0, spot: 0, rect: 0 };
+
 /**
- * Write the block from the Scene's lights, once per frame: every illuminating light, ranked as Forward ranks them
- * (priority, distance, the incumbent bonus), up to each type's maximum. The first hemispheric light is the fill.
- * A rect area light's record holds its centre and its half width and half height vectors, as Babylon's does, and the
- * layer of its emission in the texture array (`area-emission-array.ts`), -1 for its flat colour.
- * A Scene with its lights disabled (the Unlit viewport) writes none, as Babylon's materials then light with none.
+ * The block's admission, as Forward's selection (`syncForwardLightPolicy`): the lights ranked as Forward ranks them
+ * (priority, camera distance, the incumbent bonus), then admitted while their type is under this device's maximum
+ * (`DeviceProfile.lightMaximum`) and, for point, spot and rect lights, within the Local Light Budget. The first fill
+ * is admitted beside them. The block has no shader slots or samplers to run out of; the rest are limited.
+ */
+export const selectHapticLights: ForwardLightSelection = (scene, candidates, previous, capacity, limited) => {
+  sortLightsByAdmission(scene, candidates, previous);
+  const maximum = deviceProfile().lightMaximum;
+  admitted.length = 0;
+  admittedCounts.directional = admittedCounts.point = admittedCounts.spot = admittedCounts.rect = 0;
+  let fill = false;
+  let locals = 0;
+  for (const light of candidates) {
+    const kind = lightKind(light);
+    if (kind === "fill") {
+      if (fill) { limited.push(light); continue; }
+      fill = true;
+    } else {
+      const local = kind !== "directional";
+      if (!kind || admittedCounts[kind] >= maximum[kind] || (local && locals >= capacity.locals)) { limited.push(light); continue; }
+      admittedCounts[kind]++;
+      if (local) locals++;
+    }
+    admitted.push(light);
+  }
+  return { admitted, samplers: 0 };
+};
+
+/**
+ * Write the block from the lights the admission left on (`selectHapticLights`), once per frame, after it. The fill is
+ * the admitted hemispheric light. A rect area light's record holds its centre and its half width and half height
+ * vectors, as Babylon's does, and the layer of its emission in the texture array (`area-emission-array.ts`), -1 for
+ * its flat colour. A Scene with its lights disabled (the Unlit viewport) writes none, as Babylon's materials then light
+ * with none.
  */
 export function writeHapticLights(scene: Scene): void {
   if (!engines.has(scene.getEngine())) return;
   const state = sceneLights(scene);
-  const ranked = state.ranked;
-  ranked.length = 0;
-  if (scene.lightsEnabled) for (const light of scene.lights) if (isIlluminatingLight(light)) ranked.push(light);
-  sortLightsByAdmission(scene, ranked, state.held);
-  state.next.clear();
   const offset = scene.floatingOriginOffset;
   let fill: HemisphericLight | null = null;
   let directionals = 0;
@@ -140,10 +176,11 @@ export function writeHapticLights(scene: Scene): void {
   let spots = 0;
   let rects = 0;
   state.rects.length = 0;
-  for (const light of ranked) {
+  // The admission keeps within the block's records; the checks below hold them whatever it admitted.
+  if (scene.lightsEnabled) for (const light of scene.lights) {
+    if (!light.isEnabled() || !isIlluminatingLight(light)) continue;
     if (light instanceof HemisphericLight) {
-      if (fill) continue;
-      fill = light;
+      fill ??= light;
     } else if (light instanceof DirectionalLight) {
       if (directionals === HAPTIC_LIGHT_MAXIMUM.directional) continue;
       const direction = light.computeTransformedInformation() ? light.transformedDirection : light.direction;
@@ -179,8 +216,7 @@ export function writeHapticLights(scene: Scene): void {
       point.set([position.x - offset.x, position.y - offset.y, position.z - offset.z, light.radius,
         light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, light.range], points * 8);
       points++;
-    } else continue;
-    state.next.add(light);
+    }
   }
   const cap = deviceProfile().areaEmissionLayers;
   syncAreaEmissionLayers(scene, state.rects, cap, state.layers);
@@ -207,7 +243,6 @@ export function writeHapticLights(scene: Scene): void {
   buffer.updateFloatArray("hapticSpot", spot);
   buffer.updateFloatArray("hapticRect", rect);
   buffer.update();
-  [state.held, state.next] = [state.next, state.held];
 }
 
 /** Lights the block draws other than as authored, for `sceneLightingLimits`. */
