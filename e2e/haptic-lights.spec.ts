@@ -13,6 +13,33 @@ const LIGHT_STEPS = [
   { step: "a point removed", newLitEffects: 0 },
 ];
 
+/** The largest channel difference between two captures at a pixel. */
+function difference(a: number[], b: number[], pixel: number) {
+  let largest = 0;
+  for (let channel = 0; channel < 3; channel++) largest = Math.max(largest, Math.abs(a[pixel * 4 + channel]! - b[pixel * 4 + channel]!));
+  return largest;
+}
+
+/**
+ * The floor pixels whose view of the shadow poses' lamp is blocked (1) or open (0), leaving out each pixel with a
+ * neighbour of another kind or off the floor: at an outline the filter blends, and a pixel's centre does not stand for
+ * its whole area.
+ */
+function settledShadowPixels(blocked: number[], width: number, height: number) {
+  const settled = { blocked: [] as number[], open: [] as number[] };
+  for (let row = 1; row < height - 1; row++) {
+    for (let column = 1; column < width - 1; column++) {
+      const pixel = row * width + column;
+      const kind = blocked[pixel]!;
+      if (kind < 0) continue;
+      let uniform = true;
+      for (let dy = -1; dy <= 1 && uniform; dy++) for (let dx = -1; dx <= 1; dx++) if (blocked[pixel + dy * width + dx] !== kind) uniform = false;
+      if (uniform) (kind ? settled.blocked : settled.open).push(pixel);
+    }
+  }
+  return settled;
+}
+
 /** Pixels (of 9600) differing by more than 2/255, the largest difference, and the reference's lit pixels. */
 function compare(reference: number[], pixels: number[]) {
   let outliers = 0;
@@ -105,5 +132,27 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // One CEL program per Material: CEL ignores the cube's format and box.
     expect(result.celEffects).toBe(3);
     expect(result.celSteps).toEqual(LIGHT_STEPS);
+
+    // A spot light's shadow on the block's path, drawn through the shadow controller and the frame graph into its tile
+    // of the atlas: a floor pixel whose view of the lamp the box or the ball blocks draws as with the lamp off, any
+    // other as with the lamp's shadow switched off, in both render modes, and the shadow compiles nothing.
+    const settled = settledShadowPixels(result.shadow.blocked, result.width, result.height);
+    const shadowReport = result.shadow.modes.map(({ mode, atlas, shadowed, unshadowed, unlit, newLitEffects }) => ({
+      mode, atlas, newLitEffects, blocked: settled.blocked.length, open: settled.open.length,
+      // The lamp really lights the blocked pixels when nothing shadows them.
+      lampLight: settled.blocked.reduce((sum, pixel) => sum + difference(unshadowed, unlit, pixel), 0) / settled.blocked.length,
+      blockedLit: settled.blocked.filter((pixel) => difference(shadowed, unlit, pixel) > 2).length,
+      openShadowed: settled.open.filter((pixel) => difference(shadowed, unshadowed, pixel) > 2).length,
+    }));
+    await testInfo.attach(`haptic-light-shadow-${backend}`, { body: JSON.stringify(shadowReport), contentType: "application/json" });
+    for (const report of shadowReport) {
+      expect(report.atlas, report.mode).toBe(true);
+      expect(report.newLitEffects, report.mode).toBe(0);
+      expect(report.blocked, report.mode).toBeGreaterThan(100);
+      expect(report.open, report.mode).toBeGreaterThan(1000);
+      expect(report.lampLight, report.mode).toBeGreaterThan(20);
+      expect(report.blockedLit, report.mode).toBe(0);
+      expect(report.openShadowed, report.mode).toBe(0);
+    }
   });
 }

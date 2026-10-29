@@ -138,7 +138,7 @@ function fixture(kind: "2d" | "cube" | "array" = "cube", webgl2 = true) {
     expect(target._framebuffer).toBe(targetFramebuffer);
     expect(state.deleted).toHaveLength(1);
   };
-  return { gl, engine, generator, target, state, depth, expectRestored };
+  return { gl, engine, generator, target, state, depth, attachments, expectRestored };
 }
 
 describe("shadow allocation validation", () => {
@@ -240,6 +240,19 @@ describe("shadow allocation validation", () => {
     target._depthStencilBuffer = depth;
     beginShadowAllocationValidation(engine)(generator);
     expectRestored();
+  });
+
+  it("validates a depth-only target by its depth texture alone", () => {
+    const { gl, engine, generator, target, attachments, expectRestored } = fixture("2d");
+    (target as { texture: unknown }).texture = null;
+    gl.checkFramebufferStatus.mockImplementation(() =>
+      !attachments.has(gl.COLOR_ATTACHMENT0) && attachments.get(gl.DEPTH_ATTACHMENT)?.texture !== undefined
+        ? gl.FRAMEBUFFER_COMPLETE : gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+    beginShadowAllocationValidation(engine)(generator);
+    expect(gl.checkFramebufferStatus).toHaveBeenCalledTimes(1);
+    expectRestored();
+    target.depthStencilTexture = null;
+    expect(() => beginShadowAllocationValidation(engine)(generator)).toThrow(/color texture allocation is missing/);
   });
 
   it("rejects allocation errors raised while probing otherwise complete attachments", () => {

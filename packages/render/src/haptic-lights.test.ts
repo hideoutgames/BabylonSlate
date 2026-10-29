@@ -11,6 +11,7 @@ import {
   PointLight,
   RectAreaLight,
   Scene,
+  ShadowGenerator,
   SpotLight,
   Vector3,
   type Mesh,
@@ -31,6 +32,8 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { createPreviewLighting } from "./preview-lighting";
+import { SHADOW_ATLAS_EDGE, createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
+import { shadowAllocationCheckpoint } from "./shadow-map-factory";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -38,12 +41,13 @@ afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
-/** A NullEngine Scene that reports uniform buffers, as WebGL2 does, and makes the texture arrays it cannot. */
+/** A NullEngine Scene that reports uniform buffers, as WebGL2 does, and makes the texture arrays and depth textures it cannot. */
 function host() {
   const engine = new NullEngine();
   engines.push(engine);
   vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
   vi.spyOn(engine, "createRawTexture2DArray").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.Raw2DArray));
+  vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
   const scene = new Scene(engine);
   new FreeCamera("camera", new Vector3(0, 0, -5), scene);
   return { engine, scene };
@@ -127,6 +131,25 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     }
   });
 
+  it("binds the shadow atlas to every draw, and whether the drawn mesh receives shadows", async () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    const { mesh, material } = await litBox(scene);
+    await drawnDefines(scene, mesh, material);
+    const effect = mesh.subMeshes[0]!.effect!, atlases: unknown[] = [], receivers: number[] = [];
+    vi.spyOn(effect, "setDepthStencilTexture").mockImplementation((_name, texture) => { atlases.push(texture); });
+    vi.spyOn(effect, "setFloat").mockImplementation((name, value) => {
+      if (name === "hapticShadowReceiver") receivers.push(value);
+      return effect;
+    });
+    for (const receives of [true, false]) {
+      mesh.receiveShadows = receives;
+      material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+    }
+    expect(receivers).toEqual([1, 0]);
+    expect(atlases).toEqual([shadowAtlasTexture(scene), shadowAtlasTexture(scene)]);
+  });
+
   it("leaves graphs on Babylon's PBR block while the switch is off", async () => {
     const { scene } = host();
     new PointLight("lamp", new Vector3(0, 2, 0), scene);
@@ -163,7 +186,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(read("hapticFillGround", 3).map((value) => Math.round(value * 10) / 10)).toEqual([0.4, 0.2, 0]);
     expect(read("hapticDirectional", 8)).toEqual([0, -2, 0, sun.radius, 3, 3, 3, 0].map(Math.fround));
     expect(read("hapticPoint", 8)).toEqual([1, 2, 3, lamp.radius, 1, 1, 1, 7].map(Math.fround));
-    expect(read("hapticSpot", 12).map((value) => Math.round(value * 1000) / 1000)).toEqual([0, 4, 0, 0, 0, -1, 0, 0.707, 1, 1, 1, 9]);
+    expect(read("hapticSpot", 16).map((value) => Math.round(value * 1000) / 1000)).toEqual([0, 4, 0, 0, 0, -1, 0, 0.707, 1, 1, 1, 9, -1, 0, 0, 0]);
     const scaled = Math.fround(panel.getScaledIntensity());
     // No emission: layer -1, its flat colour.
     expect(read("hapticRect", 16)).toEqual([1, 2, 3, 0, 2, 0, 0, 0, 0, 1, 0, 0, scaled, scaled, scaled, -1]);
@@ -174,6 +197,59 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     syncSceneLighting(scene);
     expect(read("hapticCounts", 4)).toEqual([0, 0, 0, 0]);
     expect(read("hapticFillDirection", 4)[3]).toBe(0);
+  });
+
+  it("names each spot light's shadow view of the atlas in its record: its transform, tile, darkness and filter quality", () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    const spots = [0, 1, 2].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene));
+    const [first, second] = [spots[0]!, spots[1]!].map((spot) => createAtlasShadowGenerator(spot, SHADOW_ATLAS_EDGE / 2)!);
+    second!.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
+    second!.setDarkness(0.25);
+    syncSceneLighting(scene);
+    const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+    const read = (name: string, from: number, length: number) =>
+      [...buffer._bufferData.subarray(buffer._uniformLocations[name]! + from, buffer._uniformLocations[name]! + from + length)];
+    const views = () => [0, 1, 2].map((index) => read("hapticSpot", index * 16 + 12, 1)[0]);
+    // The third spot casts no shadow.
+    expect(views()).toEqual([0, 1, -1]);
+    expect(read("hapticShadowViews", 0, 16)).toEqual([...first!.getTransformMatrix().m].map(Math.fround));
+    const texel = 1 / SHADOW_ATLAS_EDGE;
+    expect(read("hapticShadowViews", 16, 8)).toEqual([0, 0, 0.5, texel, 0, 2, 0, 0].map(Math.fround));
+    expect(read("hapticShadowViews", 24 + 16, 8)).toEqual([0.5, 0, 0.5, texel, 0.25, 1, 0, 0].map(Math.fround));
+    // A light's or the Scene's shadows switched off sample none.
+    spots[0]!.shadowEnabled = false;
+    syncSceneLighting(scene);
+    expect(views()).toEqual([-1, 0, -1]);
+    scene.shadowsEnabled = false;
+    syncSceneLighting(scene);
+    expect(views()).toEqual([-1, -1, -1]);
+    // Two more tiles of a quarter fill the atlas; disposing a map frees its tile.
+    expect([createAtlasShadowGenerator(spots[2]!, SHADOW_ATLAS_EDGE / 2), createAtlasShadowGenerator(spots[2]!, SHADOW_ATLAS_EDGE / 2)].every(Boolean)).toBe(true);
+    expect(createAtlasShadowGenerator(spots[2]!, SHADOW_ATLAS_EDGE / 4)).toBeNull();
+    first!.dispose();
+    expect(createAtlasShadowGenerator(spots[0]!, SHADOW_ATLAS_EDGE / 2)!.tile).toEqual({ x: 0, y: 0, size: SHADOW_ATLAS_EDGE / 2 });
+  });
+
+  it("makes the atlas again after a failed shadow allocation released it with the first tile", () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene);
+    const placeholder = shadowAtlasTexture(scene);
+    // As a failed allocation check releases what the attempt made.
+    const rollback = shadowAllocationCheckpoint(scene);
+    const failed = createAtlasShadowGenerator(spot, SHADOW_ATLAS_EDGE / 2)!;
+    const released = shadowAtlasTexture(scene);
+    expect(released).not.toBe(placeholder);
+    rollback(failed);
+    expect(shadowAtlasTexture(scene)).toBe(placeholder);
+    const generator = createAtlasShadowGenerator(spot, SHADOW_ATLAS_EDGE / 2)!;
+    const atlas = shadowAtlasTexture(scene);
+    expect(atlas).not.toBe(released);
+    expect(generator.tile).toEqual({ x: 0, y: 0, size: SHADOW_ATLAS_EDGE / 2 });
+    expect(generator.getShadowMap()!.renderTarget).toBe(atlas.renderTarget);
+    scene.dispose();
+    expect(atlas.getInternalTexture()).toBeNull();
   });
 
   it("draws the lights nearest the camera within the Local Light Budget and this device's maximum, and reports the rest", () => {
