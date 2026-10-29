@@ -101,6 +101,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 5 water PR 9: Water Scene Color's Color is pre-divided by the Material's own fog (built-in water's fog pre-division, by the Fog block's raw factor and linear fog colour), so the background seen through Custom Material water is fogged once. Graph Materials fog by the raw `CalcFogFactor` while PBR materials, built-in water included, mix by its linear-space value: the template PR compares water in fog. Decided: the premultiplied coverage raise goes to every translucent Material a water mesh draws, through a hidden compiler step before fog (as Water Cut is added), skipped in Scene Linear.
 
+   Phase 5 water PR 10: the Water Coverage block (`WaterCoverageBlock`), which the compiler adds to every translucent Surface Material before its fog: on water, outside Scene Linear, built-in water's coverage raise (by the brightest channel, colour lowered as far). With the scene copy built-in water also adds the background the raise hides back as refracted light; the starter is opaque where it refracts, so the graph needs only the plain raise. Next: the four-tap shoreline, then the built-in template document.
+
    If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
 5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.
 6. **Shadow atlas** behind the same switch, with the preserve list above.
