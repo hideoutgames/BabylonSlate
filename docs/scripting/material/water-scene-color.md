@@ -24,5 +24,6 @@ Returns the scene behind the water at this point, bent by the waves as built-in 
 
 - The scene behind the water is available in scene viewports and Play when the Material's **Blend Mode** is Translucent and the project's **Water Refraction** quality is on. It is not available in the material preview or in captures.
 - Mix toward your own colour with Available, so the water still looks right where the scene is not available.
+- In fog, what lies behind the water is already fogged. Color comes back with the Material's own fog taken out, so after the Material's fog the background keeps its fog once, as through built-in water. Mix or tint it into the Material's colour; other uses, such as raising it to a power, can fog it unevenly.
 - Never shows anything in front of the water, such as an object standing in it. Beside such an object, it shows the scene just next to it instead, as built-in water does.
 - Only in Surface and Landscape materials.
