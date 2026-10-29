@@ -1,4 +1,5 @@
 import { createWaterMesh } from "./water-mesh";
+import { builtInWaterMaterial } from "./water-template";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { createCableMesh } from "./cable-mesh";
 import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
@@ -299,7 +300,7 @@ export function createPlayMesh(
   if (meshKind === "water" && water) {
     const definition = assetGuid ? binding?.waters?.get(assetGuid) : undefined;
     const material = definition?.materialGuid ? binding?.resolveMaterial?.(definition.materialGuid) : null;
-    return finishPlayWorldMesh(createWaterMesh(scene, name, water, definition, material));
+    return finishPlayWorldMesh(createWaterMesh(scene, name, water, definition, material ?? builtInWaterMaterial(scene)));
   }
   if (meshKind === "landscape" && landscape) return createLandscapeMesh(scene, name, landscape, binding);
   if (meshKind === "foliage" && foliage) return createFoliageMesh(scene, name, foliage, binding);
