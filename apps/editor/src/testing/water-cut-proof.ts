@@ -3,8 +3,8 @@
  * FrameGraph (opaque, translucent with its depth pre-pass, translucent with Water Waves on the GPU path, and lit by
  * HapticLightingBlock), each without and with a removal volume over part of it; and the water starter graph, which
  * reads every water node, drawn once with ambient occlusion and Real-Time Reflections, so it also draws the scene
- * effects' geometry pass; and, in dense fog, water that shows only what Water Scene Color refracts, unbent, over a floor,
- * and the floor without it.
+ * effects' geometry pass; in dense fog, water that shows only what Water Scene Color refracts, unbent, over a floor,
+ * and the floor without it; and a faint translucent Material three times brighter than white, whose coverage rises.
  */
 import {
   Color3, Color4, DirectionalLight, Engine, FreeCamera, Matrix, MeshBuilder, Scene, StandardMaterial, Vector3, type AbstractEngine, type Effect, type NodeMaterial,
@@ -161,6 +161,22 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     glass.dispose();
     floor.dispose();
     floorMaterial.dispose();
+    // A glint: 20% coverage of light three times brighter than white, which an 8-bit target would clip to a dim white.
+    Object.assign(scene, { fogStart: 400, fogEnd: 800 });
+    const glintDoc = waterDocument("translucent");
+    const glintOutput = glintDoc.nodes.find((node) => node.id === "output")!.properties;
+    // A display-space colour: about 3 in linear.
+    glintOutput[materialPinDefaultPropertyKey("emissive")] = [1.65, 1.65, 1.65];
+    glintOutput[materialPinDefaultPropertyKey("opacity")] = [0.2];
+    const glintPlan = lowerMaterialDocument(glintDoc);
+    if (!glintPlan.ok) throw new Error("The glint did not lower");
+    const glint = compileMaterialPlan(glintPlan.plan, { scene, name: "glint" });
+    if (!glint.ok) throw new Error("The glint did not compile");
+    await glint.ready;
+    const glintWater = createWaterMesh(scene, "glint water", normalizeWaterBody({ width: 8, length: 8, resolution: 8 }), createDefaultWaterDefinition(), glint.material);
+    const glintPixels = await draw(2);
+    glintWater.dispose();
+    glint.dispose();
     // The removal volume's centre across the screen, by the view the draws used (columns read the same on either
     // backend's row order).
     const holeX = Vector3.Project(centre, Matrix.IdentityReadOnly, scene.getTransformMatrix(), camera.viewport.toGlobal(canvas.width, canvas.height)).x;
@@ -168,7 +184,7 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     // Water's depth pre-pass draws its own program, which discards removed water and returns before the look.
     const prePassEffects = Object.values(effects).filter((effect) => /#define DEPTHPREPASS/.test(effect.defines) && /#define SLATE_WATER_SURFACE/.test(effect.defines)).length;
     graph.dispose();
-    return { width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, geometryEffects, starterPixels, starterCopied, fogDirect, fogThrough };
+    return { width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, geometryEffects, starterPixels, starterCopied, fogDirect, fogThrough, glintPixels };
   } finally {
     setHapticLighting(engine, false);
     scene.dispose();

@@ -1003,6 +1003,44 @@ export class WaterCutBlock extends WaterNodeBlock {
 }
 RegisterClass("BABYLON.WaterCutBlock", WaterCutBlock);
 
+/**
+ * Water Coverage: built-in water's coverage raise (`beforeFogSource`) for a translucent Material a water mesh draws; the
+ * compiler adds one before the fog, and on any other mesh it compiles away. In an 8-bit display target light brighter
+ * than the display shows would clip to a dim, half-covered white: the coverage rises instead, by the brightest channel
+ * (to at most 1), and the colour comes down as far, so the light added over the background is kept (glints and foam over
+ * clear shallow water). Scene Linear (`IMAGEPROCESSINGPOSTPROCESS`, a half-float target) never clips, and keeps both.
+ */
+export class WaterCoverageBlock extends WaterNodeBlock {
+  constructor(name: string) {
+    super(name);
+    this.registerInput("color", Types.Color3);
+    this.registerInput("alpha", Types.Float);
+    this.registerOutput("rgb", Types.Color3);
+    this.registerOutput("a", Types.Float);
+  }
+  get color() { return this._inputs[0]!; }
+  get alpha() { return this._inputs[1]!; }
+  get rgb() { return this._outputs[0]!; }
+  get a() { return this._outputs[1]!; }
+  override getClassName(): string { return "WaterCoverageBlock"; }
+  override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
+    prepareSurfaceDefines(defines, material, mesh, false);
+  }
+  protected override _buildBlock(state: NodeMaterialBuildState): this {
+    super._buildBlock(state);
+    const wgsl = wgslOf(state), color = this.color.associatedVariableName, alpha = this.alpha.associatedVariableName;
+    const rgb = this.rgb.associatedVariableName, a = this.a.associatedVariableName;
+    state.compilationString += `${state._declareOutput(this.rgb)} = ${color};\n${state._declareOutput(this.a)} = ${alpha};\n`
+      + `#if defined(${WATER_SURFACE_DEFINE}) && !defined(IMAGEPROCESSINGPOSTPROCESS)\n{\n`
+      + bind(`float swnBright = max(max(${color}.r, ${color}.g), max(${color}.b, 1.0));
+${a} = min(${alpha} * swnBright, 1.0);
+${rgb} = ${color} * (${alpha} / max(${a}, 0.00001));
+`, wgsl) + "}\n#endif\n";
+    return this;
+  }
+}
+RegisterClass("BABYLON.WaterCoverageBlock", WaterCoverageBlock);
+
 const marchSources = new Map<boolean, string>();
 /**
  * Built-in water's screen-space march (`marchSource`) with the view, view-projection and eye as parameters: the node's

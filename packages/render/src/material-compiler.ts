@@ -83,7 +83,7 @@ import { createGeometryCaptureOutput } from "./geometry-capture-output";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
 import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
 import { applyLatticeDeformerPlumbing, LatticeDeformerBlock } from "./lattice-deformer-block";
-import { WaterCutBlock } from "./water-node-blocks";
+import { WaterCoverageBlock, WaterCutBlock } from "./water-node-blocks";
 import { WaterSurfaceBlock } from "./water-surface-block";
 import { WaterWavesBlock } from "./water-waves-block";
 import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
@@ -1519,6 +1519,16 @@ function attachSurfaceShading(
     created.push(fog, displayColor, linearColor);
     return fog.output;
   };
+  // Built-in water's coverage raise for a translucent Material on water, before the fog (`WaterCoverageBlock`); it
+  // compiles away on other meshes.
+  const covered = (color: NodeMaterialConnectionPoint, alpha: NodeMaterialConnectionPoint) => {
+    if (options.overlay || plan.domain !== "surface" || plan.blendMode !== "translucent") return { color, alpha };
+    const coverage = new WaterCoverageBlock(`${options.name}_waterCoverage`);
+    created.push(coverage);
+    color.connectTo(coverage.color);
+    alpha.connectTo(coverage.alpha);
+    return { color: coverage.rgb, alpha: coverage.a };
+  };
 
   if (plan.shadingModel === "unlit") {
     // Screen overlays draw after the Display Color stage, so they always
@@ -1545,8 +1555,9 @@ function attachSurfaceShading(
     } else {
       // Like lit surfaces, world unlit color is linear: it stays linear for a
       // Scene Linear display stage and is encoded for display otherwise.
-      if (color) writeLinearSurfaceColor(applyFog(color), fragment, options.name, created);
-      if (opacity) opacity.connectTo(fragment.a);
+      const shown = color && opacity ? covered(color, opacity) : { color, alpha: opacity };
+      if (shown.color) writeLinearSurfaceColor(applyFog(shown.color), fragment, options.name, created);
+      shown.alpha?.connectTo(fragment.a);
     }
     return fragment;
   }
@@ -1577,6 +1588,7 @@ function attachSurfaceShading(
   // The surface's direct and environment light (scaled by Environment Influence), from the lighting plan's block
   // or Babylon's PBR block.
   let lit: NodeMaterialConnectionPoint;
+  let alpha: NodeMaterialConnectionPoint | null;
   let indirect: NodeMaterialConnectionPoint;
   if (hapticLightingActive(options.scene)) {
     const lighting = new HapticLightingBlock(`${options.name}_lighting`);
@@ -1596,13 +1608,13 @@ function attachSurfaceShading(
     normal?.connectTo(lighting.normal);
     influence?.connectTo(lighting.environmentInfluence);
     specular?.connectTo(lighting.specular);
-    if (opacity) opacity.connectTo(fragment.a);
+    alpha = opacity;
     lit = addColor(lighting.diffuseDirect, lighting.specularDirect, "litColor");
     indirect = addColor(lighting.diffuseIndirect, lighting.specularIndirect, "environmentColor");
   } else {
     const pbr = new ScenePbrLightingBlock(`${options.name}_pbr`);
     pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
-    pbr.alpha.connectTo(fragment.a);
+    alpha = pbr.alpha;
     const reflection = new SceneReflectionBlock(`${options.name}_reflection`);
     plumbing.position?.connectTo(reflection.position);
     plumbing.world?.connectTo(reflection.world);
@@ -1653,7 +1665,9 @@ function attachSurfaceShading(
   // These are the linear contributions supported by our surface compiler.
   const lighting = addColor(lit, indirect, "totalLighting");
   const color = emissive ? addColor(lighting, emissive, "surfaceEmission") : lighting;
-  writeLinearSurfaceColor(applyFog(color), fragment, options.name, created);
+  const shown = alpha ? covered(color, alpha) : { color, alpha };
+  writeLinearSurfaceColor(applyFog(shown.color), fragment, options.name, created);
+  shown.alpha?.connectTo(fragment.a);
   return fragment;
 }
 

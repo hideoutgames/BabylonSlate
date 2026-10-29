@@ -63,5 +63,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     expect(floor).toBeGreaterThan(result.width * result.height / 6);
     expect(apart / (floor * 3)).toBeLessThan(3);
+    // The glint's coverage rose by its brightest channel (to 60% over the magenta background, not 20% of a clipped white).
+    let raised = 0;
+    for (let index = 0; index < result.glintPixels.length; index += 4) if (result.glintPixels[index + 1]! > 120) raised++;
+    expect(raised).toBeGreaterThan(result.width * result.height / 3);
   });
 }

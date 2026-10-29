@@ -380,6 +380,24 @@ describe("Water Cut", () => {
     }
   });
 
+  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("raises a translucent Material's coverage for its brightest light before the fog, off in Scene Linear, in language %s", async (language) => {
+    const wgsl = language === ShaderLanguage.WGSL;
+    const translucent = createDefaultMaterialDocument("Glass");
+    translucent.blendMode = "translucent";
+    const result = compile(host(wgsl), translucent);
+    expect(await result.ready).toEqual([]);
+    const { fragment } = stages(result.material.compiledShaders);
+    const raise = fragment.indexOf("swnBright");
+    expect(raise).toBeGreaterThan(-1);
+    expect(fragment.slice(0, raise)).toMatch(/#if defined\(SLATE_WATER_SURFACE\) && !defined\(IMAGEPROCESSINGPOSTPROCESS\)\s+\{\s+(float |var )$/);
+    // The Fog block mixes what the raise leaves.
+    expect(fragment.lastIndexOf("CalcFogFactor(")).toBeGreaterThan(raise);
+    // An opaque Material covers everything already.
+    const opaque = compile(host(wgsl), createDefaultMaterialDocument("Stone"));
+    expect(await opaque.ready).toEqual([]);
+    expect(opaque.material.compiledShaders).not.toContain("swnBright");
+  });
+
   it("binds each water mesh's nearest removal volumes, clears the empty slots and binds nothing off water", async () => {
     const scene = host(), result = compile(scene, createDefaultMaterialDocument("Plain"));
     expect(await result.ready).toEqual([]);
