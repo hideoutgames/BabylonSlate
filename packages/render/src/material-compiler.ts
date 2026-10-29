@@ -9,7 +9,6 @@ import {
   Constants,
   DiscardBlock,
   FragmentOutputBlock,
-  FogBlock,
   ImageProcessingBlock,
   InputBlock,
   Material,
@@ -21,7 +20,6 @@ import {
   ShaderLanguage,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
-  NodeMaterialSystemValues,
   RemapBlock,
   ScaleBlock,
   TextureBlock,
@@ -88,7 +86,7 @@ import { WaterSurfaceBlock } from "./water-surface-block";
 import { WaterWavesBlock } from "./water-waves-block";
 import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
-import { LinearColorBlock } from "./linear-color-block";
+import { SceneFogBlock } from "./scene-fog-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 
@@ -1505,18 +1503,14 @@ function attachSurfaceShading(
     right.connectTo(add.right);
     return add.output;
   };
+  // The scene's fog, by the one rule every surface fogs by (`SceneFogBlock`).
   const applyFog = (color: NodeMaterialConnectionPoint) => {
-    if (options.overlay) return color;
-    const fog = new FogBlock(`${options.name}_fog`);
-    const displayColor = new InputBlock(`${options.name}_fogColor`);
-    displayColor.setAsSystemValue(NodeMaterialSystemValues.FogColor);
-    const linearColor = new LinearColorBlock(`${options.name}_linearFogColor`);
-    displayColor.output.connectTo(linearColor.color);
-    linearColor.output.connectTo(fog.fogColor);
+    if (options.overlay || !plumbing.worldPosition || !plumbing.view) return color;
+    const fog = new SceneFogBlock(`${options.name}_fog`);
     color.connectTo(fog.input);
-    plumbing.worldPosition?.connectTo(fog.worldPosition);
-    plumbing.view?.connectTo(fog.view);
-    created.push(fog, displayColor, linearColor);
+    plumbing.worldPosition.connectTo(fog.worldPosition);
+    plumbing.view.connectTo(fog.view);
+    created.push(fog);
     return fog.output;
   };
   // Built-in water's coverage raise for a translucent Material on water, before the fog (`WaterCoverageBlock`); it

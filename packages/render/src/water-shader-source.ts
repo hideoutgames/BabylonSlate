@@ -335,12 +335,12 @@ export function toWgsl(source: string): string {
  * target that never clips at 1) coverage is the water's own and nothing is raised.
  *
  * The refracted scene (`swRefracted`; `SLATE_WATER_REFRACTION`) is light from behind the surface, already fogged by its
- * own materials. Its share `swRefractedWeight` is the coverage the water's own light leaves it (the output's coverage
- * less the water's blend coverage), whatever tint, caustics or foam `swRefracted` carries. With the copy the water
- * covers that share too, so Babylon's fog below would fog the background again and add its fog colour over it: the
- * refracted light is pre-divided by the fog factor, less the fog colour at its share, so the result equals blending
- * (the water's fog on its own light only). The factor is the weight Babylon's PBR fog mixes with
- * (`toLinearSpace(CalcFogFactor())` under `PBR`, which water materials are).
+ * own materials. Its share `swRefractedWeight` is, per channel, how much of the background the output keeps (through the
+ * absorption, the Fresnel, foam and edge fade, plus the raised coverage's copy). With the copy the water covers that
+ * share too, so Babylon's fog below would fog the background again and add its fog colour over it: the refracted light
+ * is pre-divided by the fog factor, less the fog colour at its share, so the background keeps its own fog only. The
+ * factor is the weight Babylon's PBR fog mixes with (`toLinearSpace(CalcFogFactor())` under `PBR`, which water materials
+ * are), the one rule graph Materials fog by too (`sceneFogKeep`); Water Scene Color pre-divides the same way.
  */
 function beforeFogSource(wgsl: boolean): string {
   const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4", f1 = wgsl ? "f32" : "float";
@@ -360,7 +360,7 @@ function beforeFogSource(wgsl: boolean): string {
     declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("swNeed")}), 0.02, 1.0)`),
     declare(f1, "swRaised", "max(swCover - finalColor.a, 0.0)"),
     "swRefracted += swBehindCopy * swRaised;",
-    "swRefractedWeight += swRaised;",
+    `swRefractedWeight += ${v3}(swRaised);`,
     "#else",
     declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("finalColor")}), 0.02, 1.0)`),
     "#endif",

@@ -893,7 +893,7 @@ float swWaterA = (1.0 - (1.0 - swFres) * swTransmit) * swEdgeFade;
 alpha = 1.0 - (1.0 - swWaterA) * (1.0 - swFoam * swFoamEdge);${ifDefined(REFRACTION, `
 // The refracted scene replaces the blended background: the copy behind this point through the absorption.
 vec3 swRefracted = swBackground * swTransmitRgb * ((1.0 - swFres) * (1.0 - swFoam) * swEdgeFade * swRefracts);
-float swRefractedWeight = (1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade * swRefracts;
+vec3 swRefractedWeight = swTransmitRgb * ((1.0 - swFres) * (1.0 - swFoam) * swEdgeFade * swRefracts);
 alpha = mix(alpha, max(alpha, swEdgeFade), swRefracts);`)}
 ${objectReflectionSource("normalize(swRefl)", "swShadeRough")}
 #if ${REFLECTS_OBJECTS}
