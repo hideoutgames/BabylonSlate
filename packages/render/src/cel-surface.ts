@@ -1,9 +1,6 @@
 import { DisplayColorBlock } from "./display-color-block";
 import {
   AddBlock,
-  FogBlock,
-  InputBlock,
-  NodeMaterialSystemValues,
   VectorMergerBlock,
   type NodeMaterial,
   type NodeMaterialBlock,
@@ -17,6 +14,7 @@ import {
 } from "./material-block-registry";
 import { sceneRenderingSettings } from "./render-settings";
 import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geometry-surface-output-block";
+import { SceneFogBlock } from "./scene-fog-block";
 import { syncSceneLighting } from "./scene-lighting";
 
 type OutputPoint = (
@@ -149,16 +147,17 @@ function createCelSurface(
     toDisplay(emissive, "emissionDisplay").connectTo(emission.right);
     color = emission.output;
   }
-  const fog = new FogBlock(`${name}_celFog`);
-  created.push(fog);
-  color.connectTo(fog.input);
-  plumbing.worldPosition?.connectTo(fog.worldPosition);
-  plumbing.view?.connectTo(fog.view);
-  const fogColor = new InputBlock(`${name}_celFogColor`);
-  fogColor.setAsSystemValue(NodeMaterialSystemValues.FogColor);
-  created.push(fogColor);
-  fogColor.output.connectTo(fog.fogColor);
-  fog.output.connectTo(fragment.rgb);
+  // The scene's fog by the one rule every surface fogs by, in linear between CEL's display colour and its output.
+  if (plumbing.worldPosition && plumbing.view) {
+    const fog = new SceneFogBlock(`${name}_celFog`);
+    fog.displaySpace = true;
+    created.push(fog);
+    color.connectTo(fog.input);
+    plumbing.worldPosition.connectTo(fog.worldPosition);
+    plumbing.view.connectTo(fog.view);
+    color = fog.output;
+  }
+  color.connectTo(fragment.rgb);
   const opacity = outputPoint("opacity", `${name}_celOpacity`, false);
   if (opacity) opacity.connectTo(fragment.a);
   // LightBlock's output is display-space, with no PBR or image-processing block.

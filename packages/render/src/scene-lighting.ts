@@ -1,4 +1,5 @@
 import "./texture-quality";
+import "./standard-fog";
 import { lightsInCreationOrder, syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
 import { lightingSamplerCapacity } from "./light-sampler-budget";

@@ -46,7 +46,7 @@ Distance fog is set per scene in **Scene Settings**.
 | **Fog Start**, **Fog End** | 0, 100 | Linear only. Distances from the camera, in scene units. |
 | **Fog Density** | 0.01 | Exponential modes only. Higher values hide nearby objects. 0 shows no fog. |
 
-Materials and water fade alike: at the same distance they take the same amount of fog, and what you see through water keeps its own fog only.
+Every surface fades alike: Materials, water, 3D Text and sprites take the same amount of fog at the same distance, and what you see through water keeps its own fog only.
 
 Scene Layers (2D overlays) are never fogged.
 
