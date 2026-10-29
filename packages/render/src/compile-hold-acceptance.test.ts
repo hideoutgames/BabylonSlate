@@ -36,6 +36,8 @@ import {
   ArcRotateCamera,
   Constants,
   DirectionalLight,
+  InternalTexture,
+  InternalTextureSource,
   Mesh,
   MeshBuilder,
   NullEngine,
@@ -81,6 +83,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { setFixedShapeLightingEnabled, setFixedShapeLightingWorldScene } from "./fixed-light-admission";
 import { isForwardLightExcluded, nearForwardAdmissions, setAuthoredLightEnabled } from "./light-policy";
+import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, setHapticLighting } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
@@ -144,6 +147,8 @@ vi.mock("./variant-prediction", async (importOriginal) => {
   };
 });
 let predictAhead = false;
+// A case on the lighting plan's path switches its Play Engine to the light block (`setHapticLighting`) before the load.
+let lightingBlock = false;
 const {
   beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred, effectDrawn: actualEffectDrawn,
   deferredPipelinesStalled: actualDeferredPipelinesStalled, capturePipelineTarget: actualCapturePipelineTarget,
@@ -185,6 +190,7 @@ afterEach(() => {
   vi.mocked(capturePipelineTarget).mockImplementation(actualCapturePipelineTarget);
   rehearseLoad = false;
   predictAhead = false;
+  lightingBlock = false;
   frameMs = FRAME_MS;
 });
 
@@ -511,6 +517,15 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
   cleanups.push(() => vi.useRealTimers());
   const engine = headlessEngine();
+  if (lightingBlock) {
+    setHapticLighting(engine, true);
+    // The block's rect light emissions are layers of one texture array, which NullEngine cannot make: one uploaded at once.
+    vi.spyOn(engine, "createRawTexture2DArray").mockImplementation(() => {
+      const texture = new InternalTexture(engine, InternalTextureSource.Raw2DArray);
+      texture.isReady = true;
+      return texture;
+    });
+  }
   const driver = driverModel(engine, model);
   const holds: boolean[] = [];
   const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -2828,6 +2843,65 @@ async function editorView(options: { fixedShape?: boolean; native?: boolean } = 
   for (let index = 0; index < 3; index++) expect(await frame()).toBe(true);
   return { engine, driver, scene, far, material: compiled.material, view, frame, effect, resize };
 }
+
+/**
+ * The lighting plan's CI gate on its path (`setHapticLighting`): after the first presented frame, lights switched,
+ * spawned, recoloured, moved, removed and pushed past the light block's maximum, and a spawn of an actor the level
+ * holds, compile no shader and wait on no WebGPU pipeline. Shadows join it with the shadow atlas (Phase 6); it becomes a
+ * merge gate when the path becomes the default (Phase 7).
+ */
+describe("the lighting plan's CI gate", () => {
+  const actors = () => [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])];
+  /** The gameplay script: Effects each step compiled. */
+  const play = async (world: PlayWorld) => {
+    const steps: Array<[string, () => void]> = [
+      ["a point light switches off", () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))],
+      ["it switches back on", () => world.place(point(11, [1.5, 2.5, -1]))],
+      ["a point light spawns", () => world.place(point(12, [0, 2.5, 2]))],
+      ["a spot light spawns", () => world.place(spot(13, [0, 5, 0]))],
+      ["lights move", () => { world.move(10, [-3, 2, -2]); world.move(13, [1, 5, 1]); }],
+      ["a light's colour and intensity change", () => world.place(point(12, [0, 2.5, 2], { color: [1, 0.4, 0.2], intensity: 3 }))],
+      ["a light is removed", () => world.remove(12)],
+      ["more point lights spawn than the block draws", () =>
+        world.place(...Array.from({ length: 40 }, (_, index) => point(100 + index, [-10 + (index % 10) * 2, 2.5, Math.floor(index / 10) * 3])))],
+      ["an actor the level holds spawns", () => world.place({ slotId: 200, guid: "crate-2", position: [2, 1, 0], assign: { meshAssetGuid: null, meshKind: "box" } })],
+    ];
+    const compiled: Record<string, number> = {};
+    for (const [name, step] of steps) {
+      const before = world.driver.created.length;
+      step();
+      for (let index = 0; index < 4; index++) await world.frame();
+      compiled[name] = world.driver.created.length - before;
+    }
+    return compiled;
+  };
+
+  it.each(MODELS)("lights change mid-game without compiling a shader or waiting on a pipeline: %s", async (model) => {
+    lightingBlock = true;
+    const world = playWorld(model, actors());
+    await settle(world);
+    world.driver.arm();
+    const compiled = await play(world);
+    const lightDefines = Object.values(compiledEffects(world.engine)).filter((effect) => /#define LIGHT0\b/.test(effect.defines));
+    // The block drew the script's lights: the sun, the spot and as many of the 42 points left as the Local Light Budget
+    // leaves beside the spot, up to the block's maximum.
+    const points = Math.min(HAPTIC_LIGHT_MAXIMUM.point, sceneRenderingSettings(world.handle.scene).localLightBudget - 1);
+    const buffer = hapticLightBuffer(world.handle.scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+    const counts = [...buffer._bufferData.subarray(buffer._uniformLocations.hapticCounts!, buffer._uniformLocations.hapticCounts! + 4)];
+    expect({ compiled, pipelines: world.driver.pipelines.size, lightDefines: lightDefines.length, counts }).toEqual({
+      compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, lightDefines: 0,
+      counts: [1, points, 1, 0],
+    });
+  });
+
+  it("the same script compiles mid-game on the legacy path", async () => {
+    const world = playWorld("sync", actors());
+    await settle(world);
+    world.driver.arm();
+    const compiled = await play(world);
+    expect(Object.values(compiled).reduce((sum, count) => sum + count, 0), JSON.stringify(compiled)).toBeGreaterThan(0);
+  });
+});
 
 describe("the editor world view", () => {
   it("probes each steady frame while a frozen graph Material swaps, so it draws its new variant once that is ready", async () => {
