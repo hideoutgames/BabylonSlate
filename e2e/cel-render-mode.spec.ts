@@ -76,6 +76,8 @@ async function projectMode(page: Page, mode: "PBR" | "CEL", setup = false) {
 // Keep the color/shadow workflows bounded independently; every case still runs
 // with the project's default global CEL outlines and the real authoring/save path.
 async function setupCelColorFixture(page: Page, saveTimeout?: number) {
+  // Graph Materials draw with the lighting plan's light block, its CEL define, from the Engine's first load.
+  await page.addInitScript(() => localStorage.setItem("haptic:test-haptic-lighting", "on"));
   const shaderErrors: string[] = [];
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
