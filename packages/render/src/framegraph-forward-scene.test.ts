@@ -933,7 +933,7 @@ function marchBindings() {
     clear: () => { for (const spy of [float4, float2, float, texture]) spy.mockClear(); },
     position: (slot: number) => named(float4, `volumePosition${slot}`),
     /** [kind, cascades] per bind: 0 none, 1 compare, 2 cube, 3 packed cube, 4 cascades. */
-    shadow: (slot: number) => named(float2, `volumeShadow${slot}`),
+    shadow: (slot: number) => named(float4, `volumeShadow${slot}`).map((values) => values.slice(0, 2)),
     count: () => named(float, "volumeLightCount").map(([count]) => count),
     texture: (name: string) => named(texture, name).map(([value]) => value),
     /** The Effects the march bound its first slot on. */

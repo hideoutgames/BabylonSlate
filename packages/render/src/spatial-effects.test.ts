@@ -1,7 +1,8 @@
-import { afterEach, expect, it } from "vitest";
-import { Camera, FreeCamera, NullEngine, Scene, Vector3 } from "@babylonjs/core";
+import { afterEach, expect, it, vi } from "vitest";
+import { Camera, FreeCamera, NullEngine, Scene, ShaderStore, Vector3 } from "@babylonjs/core";
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { EffectCompileFailure } from "./effect-compile-failure";
+import { setHapticLighting } from "./haptic-lights";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createSpatialStages, type SpatialStage } from "./spatial-effects";
 import { volumetricShader } from "./volumetric-shader";
@@ -9,8 +10,14 @@ import { volumetricShader } from "./volumetric-shader";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); });
 
-function stagesFor(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, failure?: EffectCompileFailure, mode = Camera.PERSPECTIVE_CAMERA): SpatialStage[] {
+function stagesFor(
+  effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, failure?: EffectCompileFailure, mode = Camera.PERSPECTIVE_CAMERA, lightBlock = false,
+): SpatialStage[] {
   const engine = new NullEngine();
+  if (lightBlock) {
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    setHapticLighting(engine, true);
+  }
   // The spatial chain needs four float targets and depth sampling.
   Object.assign(engine.getCaps(), {
     maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
@@ -51,20 +58,36 @@ it("reports a failed volumetric march as the chain's compile failure", () => {
   expect(failure.message).toBe("Scene Volumetric Lighting failed to compile: march failed");
 });
 
-it("declares in the volumetric march, in both shader languages, exactly the uniforms and samplers its Effect binds", () => {
-  const stages = stagesFor({ volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 4 } });
+it.each([
+  ["its lights' own maps", false],
+  ["the light block's atlas", true],
+] as const)("declares in the volumetric march, in both shader languages, exactly the uniforms and samplers its Effect binds (%s)", (_, lightBlock) => {
+  const stages = stagesFor({ volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 4 } },
+    undefined, undefined, lightBlock);
   const march = stages[named(stages, "Scene Volumetric Lighting")]!.wrapper;
   // Babylon adds the post-process scale (read by its vertex shader) and the source texture (the march reads none).
   const uniforms = march.options.uniforms.filter((name) => name !== "scale").sort();
   const samplers = march.options.samplers.filter((name) => name !== "textureSampler").sort();
-  const glsl = [...march.options.fragmentShader.matchAll(/uniform\s+(?:highp\s+)?(\w+)\s+(\w+)/g)];
+  // A march that reads the light block's buffer is drawn from the shader store, which passes Babylon its buffers.
+  expect(march.options.useShaderStore).toBe(lightBlock);
+  const fragment = lightBlock ? ShaderStore.ShadersStore[`${march.options.fragmentShader}FragmentShader`]! : march.options.fragmentShader;
+  const glsl = [...fragment.matchAll(/uniform\s+(?:highp\s+)?(\w+)\s+(\w+)/g)];
   expect(glsl.filter(([, type]) => !type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual(uniforms);
   expect(glsl.filter(([, type]) => type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual(samplers);
-  const wgsl = volumetricShader(true, 4, DEFAULT_RENDER_EFFECTS.volumetricLighting.steps, true, false);
+  const wgsl = volumetricShader(true, 4, DEFAULT_RENDER_EFFECTS.volumetricLighting.steps, true, false, false, lightBlock);
   expect([...wgsl.matchAll(/uniform\s+(\w+)\s*:/g)].map(([, name]) => name).sort()).toEqual(uniforms);
   expect([...wgsl.matchAll(/var\s+(\w+)\s*:\s*texture_/g)].map(([, name]) => name).sort()).toEqual(samplers);
-  // Two shadow samplers a slot, the first slot's cascades and the scene depth.
-  expect(samplers).toHaveLength(2 * 4 + 2);
+  if (lightBlock) {
+    // The scene depth and the atlas; the block's views in its buffer.
+    expect(samplers).toEqual(["depthSampler", "hapticShadowAtlas"]);
+    expect(march.options.uniformBuffers).toEqual(["HapticLights"]);
+    expect(fragment).toContain("uniform HapticLights {");
+    expect(wgsl).toContain("var<uniform> HapticLights : HapticLightsBlock;");
+  } else {
+    // Two shadow samplers a slot, the first slot's cascades and the scene depth.
+    expect(samplers).toHaveLength(2 * 4 + 2);
+    expect(march.options.uniformBuffers).toEqual([]);
+  }
 });
 
 it("gives the orthographic reflection compose the parallel view direction its trace uses", async () => {

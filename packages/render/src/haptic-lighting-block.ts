@@ -23,6 +23,7 @@ import { HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL, bindHapticLights } from "./hapt
 import {
   HAPTIC_IRRADIANCE_KEYS,
   HAPTIC_IRRADIANCE_UNIFORMS,
+  HAPTIC_SHADOW_ATLAS,
   HAPTIC_LIGHTING_FUNCTIONS_GLSL,
   HAPTIC_LIGHTING_FUNCTIONS_WGSL,
   hapticLightingGlsl,
@@ -30,8 +31,6 @@ import {
 } from "./haptic-lighting-shader";
 import { sceneRenderingSettings } from "./render-settings";
 import { shadowAtlasTexture } from "./shadow-atlas";
-
-const SHADOW_ATLAS_SAMPLER = "hapticShadowAtlas";
 
 const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
 
@@ -150,7 +149,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     effect.setTexture("hapticAreaLtc1Sampler", scene._ltcTextures?.LTC1 ?? null);
     effect.setTexture("hapticAreaLtc2Sampler", scene._ltcTextures?.LTC2 ?? null);
     effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
-    effect.setDepthStencilTexture(SHADOW_ATLAS_SAMPLER, shadowAtlasTexture(scene));
+    effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
     effect.setFloat("hapticShadowReceiver", mesh.receiveShadows ? 1 : 0);
     // WebGPU draws only with every declared texture bound: the table always, the cube where a program declares it.
     effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
@@ -196,11 +195,11 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emit2DArraySampler("hapticAreaEmissionSampler");
     const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
     // The shadow atlas compares as it samples (`shadow-atlas.ts`); the build state has no helper for a compare sampler.
-    if (!state.samplers.includes(SHADOW_ATLAS_SAMPLER)) {
+    if (!state.samplers.includes(HAPTIC_SHADOW_ATLAS)) {
       state._samplerDeclaration += wgsl
-        ? `var ${SHADOW_ATLAS_SAMPLER}Sampler: sampler_comparison;\nvar ${SHADOW_ATLAS_SAMPLER}: texture_depth_2d;\n`
-        : `uniform highp sampler2DShadow ${SHADOW_ATLAS_SAMPLER};\n`;
-      state.samplers.push(SHADOW_ATLAS_SAMPLER);
+        ? `var ${HAPTIC_SHADOW_ATLAS}Sampler: sampler_comparison;\nvar ${HAPTIC_SHADOW_ATLAS}: texture_depth_2d;\n`
+        : `uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n`;
+      state.samplers.push(HAPTIC_SHADOW_ATLAS);
     }
     state._emitFunction("hapticLights", wgsl ? HAPTIC_LIGHTS_WGSL : HAPTIC_LIGHTS_GLSL, "// HapticLights");
     state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(wgsl)}\n#endif\n`, "// CEL");

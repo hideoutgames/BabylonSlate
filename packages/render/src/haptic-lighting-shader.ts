@@ -14,6 +14,280 @@ import { HAPTIC_LIGHT_MAXIMUM } from "./haptic-lights";
 /** Pre-scaled spherical harmonics of the environment's irradiance (Babylon's PBR evaluation), one uniform each. */
 export const HAPTIC_IRRADIANCE_KEYS = ["l00", "l1_1", "l10", "l11", "l2_2", "l2_1", "l20", "l21", "l22"] as const;
 export const HAPTIC_IRRADIANCE_UNIFORMS = HAPTIC_IRRADIANCE_KEYS.map((key) => `hapticIrradiance_${key}`);
+/** The shadow atlas's compare sampler, which the block's shadows read (`shadowAtlasTexture`). */
+export const HAPTIC_SHADOW_ATLAS = "hapticShadowAtlas";
+
+/**
+ * The light block's shadows, read from its views (\`hapticShadowViews\`) and the atlas: a view's (\`hapticShadow\`), a
+ * point light's (\`hapticPointShadow\`) and the sun's cascades (\`hapticSunShadowFactor\`). \`surface\`: a mesh's, filtered
+ * at the view's quality with receiver-plane bias and honouring Receive Shadows (\`hapticShadowReceiver\`); else a
+ * position on no surface (the volumetric march's), one bilinear compare tap, as the march takes on Babylon's maps.
+ */
+export function hapticShadowGlsl(surface: boolean): string {
+  return `// A light's shadow from its view of the atlas (\`hapticShadowViews\`): 1 where lit, the view's darkness where shadowed; 1
+// without a view (index < 0), outside its frustum and on a mesh that does not receive shadows. Babylon's PCF at the
+// view's filter quality (0 low, 1 medium, 2 high: its computeShadowWithPCF1, 3 and 5): one, four or nine weighted
+// bilinear compare taps, each kept a texel inside the view's tile so a neighbouring tile never bleeds in. A sun cascade
+// with automatic bias compares each tap against the receiver's plane, as the legacy path's receiver-plane PCF does
+// (\`shadow-receiver.ts\`), from the position's change across the pixel (\`dPdx\`, \`dPdy\`, taken where control flow is
+// uniform); low quality then compares four texel centres, as one bilinear comparison takes one depth.
+float hapticShadowTap(vec4 tile, vec2 texel, float depth) {
+  return textureLod(hapticShadowAtlas, vec3(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), depth), 0.0);
+}
+
+${surface ? `// The receiver plane's depth change per texel of a \`size\`-texel tile of the orthographic \`view\`, or none where a
+// singular or grazing projection cannot tell it.
+vec2 hapticReceiverGradient(mat4 view, vec3 dPdx, vec3 dPdy, float size) {
+  vec3 dx = (view * vec4(dPdx, 0.0)).xyz * 0.5;
+  vec3 dy = (view * vec4(dPdy, 0.0)).xyz * 0.5;
+  float scale = max(max(abs(dx.x), abs(dx.y)), max(abs(dy.x), abs(dy.y)));
+  if (scale <= 1e-20 || scale >= 1e20) return vec2(0.0);
+  dx /= scale;
+  dy /= scale;
+  float det = dx.x * dy.y - dx.y * dy.x;
+  if (abs(det) <= 1e-4 || abs(det) >= 4.0) return vec2(0.0);
+  vec2 gradient = vec2(dx.z * dy.y - dy.z * dx.y, dy.z * dx.x - dx.z * dy.x) / det / size;
+  return all(lessThan(abs(gradient), vec2(1e10))) ? gradient : vec2(0.0);
+}
+
+// A bilinear tap at \`tap\` texels compared at the receiver plane's depth there (\`gradient\` per texel from \`origin\`),
+// lowered by the plane's rise across the tap's footprint.
+float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradient, float maximum) {
+  vec2 phase = fract(tap - 0.5);
+  float bound = dot(max(gradient, 0.0), phase) + dot(max(-gradient, 0.0), 1.0 - phase);
+  return hapticShadowTap(tile, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
+}
+
+` : ""}float hapticShadow(float index, vec3 P, vec3 dPdx, vec3 dPdy) {
+  if (index < 0.0${surface ? " || hapticShadowReceiver == 0.0" : ""}) return 1.0;
+  int base = int(index) * 6;
+  mat4 view = mat4(hapticShadowViews[base], hapticShadowViews[base + 1], hapticShadowViews[base + 2], hapticShadowViews[base + 3]);
+  vec4 clip = view * vec4(P, 1.0);
+  if (clip.w <= 0.0) return 1.0;
+  vec3 ndc = clip.xyz / clip.w;
+  vec2 uv = ndc.xy * 0.5 + 0.5;
+  float depth = ndc.z * 0.5 + 0.5;
+  vec4 tile = hapticShadowViews[base + 4];
+  vec4 shading = hapticShadowViews[base + 5];
+  // A cascade clamps its depth, as Babylon's cascaded PCF does.
+  float maximum = shading.z > 0.5 ? 0.99999994 : 1.0;
+  depth = shading.z > 0.5 ? clamp(depth, 0.0, maximum) : depth;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) return 1.0;
+  float size = tile.z / tile.w;
+  vec2 texels = uv * size;
+${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dPdx, dPdy, size) : vec2(0.0);
+  float lit;
+  if (shading.y < 0.5) {
+    if (gradient == vec2(0.0)) return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));
+    vec2 st = fract(texels - 0.5);
+    vec2 a = clamp(floor(texels - 0.5), vec2(0.0), vec2(size - 1.0)) + 0.5;
+    vec2 b = clamp(floor(texels - 0.5) + 1.0, vec2(0.0), vec2(size - 1.0)) + 0.5;
+    lit = (1.0 - st.x) * (1.0 - st.y) * hapticShadowTap(tile, a, clamp(depth + dot(gradient, a - texels), 0.0, maximum))
+      + st.x * (1.0 - st.y) * hapticShadowTap(tile, vec2(b.x, a.y), clamp(depth + dot(gradient, vec2(b.x, a.y) - texels), 0.0, maximum))
+      + (1.0 - st.x) * st.y * hapticShadowTap(tile, vec2(a.x, b.y), clamp(depth + dot(gradient, vec2(a.x, b.y) - texels), 0.0, maximum))
+      + st.x * st.y * hapticShadowTap(tile, b, clamp(depth + dot(gradient, b - texels), 0.0, maximum));
+    return mix(shading.x, 1.0, lit);
+  }
+  vec2 st = fract(texels + 0.5);
+  vec2 corner = floor(texels + 0.5) - 0.5;
+  if (shading.y < 1.5) {
+    vec2 w0 = 3.0 - 2.0 * st;
+    vec2 w1 = 1.0 + 2.0 * st;
+    vec2 a = corner + (2.0 - st) / w0 - 1.0;
+    vec2 b = corner + st / w1 + 1.0;
+    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2(a.x, a.y), texels, depth, gradient, maximum)
+      + w1.x * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
+      + w0.x * w1.y * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
+      + w1.x * w1.y * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
+  } else {
+    vec2 w0 = 4.0 - 3.0 * st;
+    vec2 w2 = 1.0 + 3.0 * st;
+    vec2 a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
+    vec2 b = corner + (3.0 + st) / 7.0;
+    vec2 c = corner + st / w2 + 2.0;
+    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2(a.x, a.y), texels, depth, gradient, maximum)
+      + 7.0 * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
+      + w2.x * w0.y * hapticPlaneTap(tile, vec2(c.x, a.y), texels, depth, gradient, maximum)
+      + w0.x * 7.0 * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
+      + 49.0 * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)
+      + w2.x * 7.0 * hapticPlaneTap(tile, vec2(c.x, b.y), texels, depth, gradient, maximum)
+      + w0.x * w2.y * hapticPlaneTap(tile, vec2(a.x, c.y), texels, depth, gradient, maximum)
+      + 7.0 * w2.y * hapticPlaneTap(tile, vec2(b.x, c.y), texels, depth, gradient, maximum)
+      + w2.x * w2.y * hapticPlaneTap(tile, vec2(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
+  }
+  return mix(shading.x, 1.0, lit);
+` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));\n"}}
+
+// A point light's shadow (its record's \`shadow\`: first view, faces): the view of the cube face the position lies in,
+// in Babylon's order (+X, -X, -Y, +Y, +Z, -Z); the one view of a point light with a direction.
+float hapticPointShadow(vec4 shadow, vec3 fromLight, vec3 P) {
+  if (shadow.x < 0.0) return 1.0;
+  vec3 a = abs(fromLight);
+  float face = shadow.y < 1.5 ? 0.0
+    : a.x >= a.y && a.x >= a.z ? (fromLight.x > 0.0 ? 0.0 : 1.0)
+    : a.y >= a.z ? (fromLight.y < 0.0 ? 2.0 : 3.0)
+    : (fromLight.z > 0.0 ? 4.0 : 5.0);
+  return hapticShadow(shadow.x + face, P, vec3(0.0), vec3(0.0));
+}
+
+// The sun's shadow from its cascades (\`hapticSunShadow\`): Babylon's choice of the first cascade whose far end lies
+// beyond the position's view depth, its blend into the next over the last part of its length, and the fade to unshadowed
+// over the last part of the shadow distance; 1 beyond the last cascade.
+float hapticSunShadowFactor(vec3 P, vec3 dPdx, vec3 dPdy) {
+  vec4 cascades = hapticSunShadow[0];
+  int count = int(cascades.x);
+  if (count == 0) return 1.0;
+  float depth = dot(hapticSunShadow[1], vec4(P, 1.0));
+  vec4 ends = hapticSunShadow[2];
+  int index = -1;
+  float ahead = 0.0;
+  for (int i = 0; i < 4; i++) {
+    if (i >= count) break;
+    ahead = ends[i] - depth;
+    if (ahead >= 0.0) {
+      index = i;
+      break;
+    }
+  }
+  if (index < 0) return 1.0;
+  float shadow = hapticShadow(cascades.w + float(index), P, dPdx, dPdy);
+  float blend = clamp(ahead / hapticSunShadow[3][index], 0.0, 1.0) * cascades.y;
+  if (index < count - 1 && blend < 1.0) shadow = mix(hapticShadow(cascades.w + float(index + 1), P, dPdx, dPdy), shadow, blend);
+  float end = ends[count - 1];
+  if (cascades.z > 0.0) shadow = mix(shadow, 1.0, smoothstep(end * (1.0 - cascades.z), end, abs(depth)));
+  return shadow;
+}
+
+`;
+}
+
+/** \`hapticShadowGlsl\`'s WGSL twin. */
+export function hapticShadowWgsl(surface: boolean): string {
+  return `fn hapticShadowTap(tile: vec4f, texel: vec2f, depth: f32) -> f32 {
+  return textureSampleCompareLevel(hapticShadowAtlas, hapticShadowAtlasSampler,
+    clamp(tile.xy + texel * tile.w, tile.xy + vec2f(tile.w), tile.xy + vec2f(tile.z - tile.w)), depth);
+}
+
+${surface ? `fn hapticReceiverGradient(view: mat4x4f, dPdx: vec3f, dPdy: vec3f, size: f32) -> vec2f {
+  // WebGPU's depth range is zero to one: only the texture coordinates halve.
+  var dx = (view * vec4f(dPdx, 0.0)).xyz * vec3f(0.5, 0.5, 1.0);
+  var dy = (view * vec4f(dPdy, 0.0)).xyz * vec3f(0.5, 0.5, 1.0);
+  let scale = max(max(abs(dx.x), abs(dx.y)), max(abs(dy.x), abs(dy.y)));
+  if (scale <= 1e-20 || scale >= 1e20) { return vec2f(0.0); }
+  dx /= scale;
+  dy /= scale;
+  let det = dx.x * dy.y - dx.y * dy.x;
+  if (abs(det) <= 1e-4 || abs(det) >= 4.0) { return vec2f(0.0); }
+  let gradient = vec2f(dx.z * dy.y - dy.z * dx.y, dy.z * dx.x - dx.z * dy.x) / det / size;
+  return select(vec2f(0.0), gradient, all(abs(gradient) < vec2f(1e10)));
+}
+
+fn hapticPlaneTap(tile: vec4f, tap: vec2f, origin: vec2f, depth: f32, gradient: vec2f, maximum: f32) -> f32 {
+  let phase = fract(tap - 0.5);
+  let bound = dot(max(gradient, vec2f(0.0)), phase) + dot(max(-gradient, vec2f(0.0)), vec2f(1.0) - phase);
+  return hapticShadowTap(tile, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
+}
+
+` : ""}fn hapticShadow(index: f32, P: vec3f, dPdx: vec3f, dPdy: vec3f) -> f32 {
+  if (index < 0.0${surface ? " || uniforms.hapticShadowReceiver == 0.0" : ""}) { return 1.0; }
+  let base = i32(index) * 6;
+  let view = mat4x4f(HapticLights.hapticShadowViews[base], HapticLights.hapticShadowViews[base + 1], HapticLights.hapticShadowViews[base + 2],
+    HapticLights.hapticShadowViews[base + 3]);
+  let clip = view * vec4f(P, 1.0);
+  if (clip.w <= 0.0) { return 1.0; }
+  let ndc = clip.xyz / clip.w;
+  let uv = ndc.xy * 0.5 + 0.5;
+  let tile = HapticLights.hapticShadowViews[base + 4];
+  let shading = HapticLights.hapticShadowViews[base + 5];
+  let maximum = select(1.0, 0.99999994, shading.z > 0.5);
+  // WebGPU's depth range is zero to one.
+  let depth = select(ndc.z, clamp(ndc.z, 0.0, maximum), shading.z > 0.5);
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) { return 1.0; }
+  let size = tile.z / tile.w;
+  let texels = uv * size;
+${surface ? `  var gradient = vec2f(0.0);
+  if (shading.w > 0.5) { gradient = hapticReceiverGradient(view, dPdx, dPdy, size); }
+  var lit: f32;
+  if (shading.y < 0.5) {
+    if (all(gradient == vec2f(0.0))) { return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth)); }
+    let st = fract(texels - 0.5);
+    let a = clamp(floor(texels - 0.5), vec2f(0.0), vec2f(size - 1.0)) + 0.5;
+    let b = clamp(floor(texels - 0.5) + 1.0, vec2f(0.0), vec2f(size - 1.0)) + 0.5;
+    lit = (1.0 - st.x) * (1.0 - st.y) * hapticShadowTap(tile, a, clamp(depth + dot(gradient, a - texels), 0.0, maximum))
+      + st.x * (1.0 - st.y) * hapticShadowTap(tile, vec2f(b.x, a.y), clamp(depth + dot(gradient, vec2f(b.x, a.y) - texels), 0.0, maximum))
+      + (1.0 - st.x) * st.y * hapticShadowTap(tile, vec2f(a.x, b.y), clamp(depth + dot(gradient, vec2f(a.x, b.y) - texels), 0.0, maximum))
+      + st.x * st.y * hapticShadowTap(tile, b, clamp(depth + dot(gradient, b - texels), 0.0, maximum));
+    return mix(shading.x, 1.0, lit);
+  }
+  let st = fract(texels + 0.5);
+  let corner = floor(texels + 0.5) - 0.5;
+  if (shading.y < 1.5) {
+    let w0 = 3.0 - 2.0 * st;
+    let w1 = 1.0 + 2.0 * st;
+    let a = corner + (2.0 - st) / w0 - 1.0;
+    let b = corner + st / w1 + 1.0;
+    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2f(a.x, a.y), texels, depth, gradient, maximum)
+      + w1.x * w0.y * hapticPlaneTap(tile, vec2f(b.x, a.y), texels, depth, gradient, maximum)
+      + w0.x * w1.y * hapticPlaneTap(tile, vec2f(a.x, b.y), texels, depth, gradient, maximum)
+      + w1.x * w1.y * hapticPlaneTap(tile, vec2f(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
+  } else {
+    let w0 = 4.0 - 3.0 * st;
+    let w2 = 1.0 + 3.0 * st;
+    let a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
+    let b = corner + (3.0 + st) / 7.0;
+    let c = corner + st / w2 + 2.0;
+    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2f(a.x, a.y), texels, depth, gradient, maximum)
+      + 7.0 * w0.y * hapticPlaneTap(tile, vec2f(b.x, a.y), texels, depth, gradient, maximum)
+      + w2.x * w0.y * hapticPlaneTap(tile, vec2f(c.x, a.y), texels, depth, gradient, maximum)
+      + w0.x * 7.0 * hapticPlaneTap(tile, vec2f(a.x, b.y), texels, depth, gradient, maximum)
+      + 49.0 * hapticPlaneTap(tile, vec2f(b.x, b.y), texels, depth, gradient, maximum)
+      + w2.x * 7.0 * hapticPlaneTap(tile, vec2f(c.x, b.y), texels, depth, gradient, maximum)
+      + w0.x * w2.y * hapticPlaneTap(tile, vec2f(a.x, c.y), texels, depth, gradient, maximum)
+      + 7.0 * w2.y * hapticPlaneTap(tile, vec2f(b.x, c.y), texels, depth, gradient, maximum)
+      + w2.x * w2.y * hapticPlaneTap(tile, vec2f(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
+  }
+  return mix(shading.x, 1.0, lit);
+` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));\n"}}
+
+fn hapticPointShadow(shadow: vec4f, fromLight: vec3f, P: vec3f) -> f32 {
+  if (shadow.x < 0.0) { return 1.0; }
+  let a = abs(fromLight);
+  var face = 0.0;
+  if (shadow.y > 1.5) {
+    if (a.x >= a.y && a.x >= a.z) { face = select(1.0, 0.0, fromLight.x > 0.0); }
+    else if (a.y >= a.z) { face = select(3.0, 2.0, fromLight.y < 0.0); }
+    else { face = select(5.0, 4.0, fromLight.z > 0.0); }
+  }
+  return hapticShadow(shadow.x + face, P, vec3f(0.0), vec3f(0.0));
+}
+
+fn hapticSunShadowFactor(P: vec3f, dPdx: vec3f, dPdy: vec3f) -> f32 {
+  let cascades = HapticLights.hapticSunShadow[0];
+  let count = i32(cascades.x);
+  if (count == 0) { return 1.0; }
+  let depth = dot(HapticLights.hapticSunShadow[1], vec4f(P, 1.0));
+  let ends = HapticLights.hapticSunShadow[2];
+  var index = -1;
+  var ahead = 0.0;
+  for (var i: i32 = 0; i < 4; i++) {
+    if (i >= count) { break; }
+    ahead = ends[i] - depth;
+    if (ahead >= 0.0) {
+      index = i;
+      break;
+    }
+  }
+  if (index < 0) { return 1.0; }
+  var shadow = hapticShadow(cascades.w + f32(index), P, dPdx, dPdy);
+  let blend = clamp(ahead / HapticLights.hapticSunShadow[3][index], 0.0, 1.0) * cascades.y;
+  if (index < count - 1 && blend < 1.0) { shadow = mix(hapticShadow(cascades.w + f32(index + 1), P, dPdx, dPdy), shadow, blend); }
+  let end = ends[count - 1];
+  if (cascades.z > 0.0) { shadow = mix(shadow, 1.0, smoothstep(end * (1.0 - cascades.z), end, abs(depth))); }
+  return shadow;
+}
+
+`;
+}
 
 export const HAPTIC_LIGHTING_FUNCTIONS_GLSL = `
 #define HAPTIC_PI 3.1415926535897932
@@ -67,141 +341,7 @@ float hapticConeFalloff(vec3 lightDirection, vec3 L, float cosHalfAngle) {
   return exp2(dot(vec4(L, 1.0), vec4(-lightDirection * kappa, -kappa)));
 }
 
-// A light's shadow from its view of the atlas (\`hapticShadowViews\`): 1 where lit, the view's darkness where shadowed; 1
-// without a view (index < 0), outside its frustum and on a mesh that does not receive shadows. Babylon's PCF at the
-// view's filter quality (0 low, 1 medium, 2 high: its computeShadowWithPCF1, 3 and 5): one, four or nine weighted
-// bilinear compare taps, each kept a texel inside the view's tile so a neighbouring tile never bleeds in. A sun cascade
-// with automatic bias compares each tap against the receiver's plane, as the legacy path's receiver-plane PCF does
-// (\`shadow-receiver.ts\`), from the position's change across the pixel (\`dPdx\`, \`dPdy\`, taken where control flow is
-// uniform); low quality then compares four texel centres, as one bilinear comparison takes one depth.
-float hapticShadowTap(vec4 tile, vec2 texel, float depth) {
-  return textureLod(hapticShadowAtlas, vec3(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), depth), 0.0);
-}
-
-// The receiver plane's depth change per texel of a \`size\`-texel tile of the orthographic \`view\`, or none where a
-// singular or grazing projection cannot tell it.
-vec2 hapticReceiverGradient(mat4 view, vec3 dPdx, vec3 dPdy, float size) {
-  vec3 dx = (view * vec4(dPdx, 0.0)).xyz * 0.5;
-  vec3 dy = (view * vec4(dPdy, 0.0)).xyz * 0.5;
-  float scale = max(max(abs(dx.x), abs(dx.y)), max(abs(dy.x), abs(dy.y)));
-  if (scale <= 1e-20 || scale >= 1e20) return vec2(0.0);
-  dx /= scale;
-  dy /= scale;
-  float det = dx.x * dy.y - dx.y * dy.x;
-  if (abs(det) <= 1e-4 || abs(det) >= 4.0) return vec2(0.0);
-  vec2 gradient = vec2(dx.z * dy.y - dy.z * dx.y, dy.z * dx.x - dx.z * dy.x) / det / size;
-  return all(lessThan(abs(gradient), vec2(1e10))) ? gradient : vec2(0.0);
-}
-
-// A bilinear tap at \`tap\` texels compared at the receiver plane's depth there (\`gradient\` per texel from \`origin\`),
-// lowered by the plane's rise across the tap's footprint.
-float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradient, float maximum) {
-  vec2 phase = fract(tap - 0.5);
-  float bound = dot(max(gradient, 0.0), phase) + dot(max(-gradient, 0.0), 1.0 - phase);
-  return hapticShadowTap(tile, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
-}
-
-float hapticShadow(float index, vec3 P, vec3 dPdx, vec3 dPdy) {
-  if (index < 0.0 || hapticShadowReceiver == 0.0) return 1.0;
-  int base = int(index) * 6;
-  mat4 view = mat4(hapticShadowViews[base], hapticShadowViews[base + 1], hapticShadowViews[base + 2], hapticShadowViews[base + 3]);
-  vec4 clip = view * vec4(P, 1.0);
-  if (clip.w <= 0.0) return 1.0;
-  vec3 ndc = clip.xyz / clip.w;
-  vec2 uv = ndc.xy * 0.5 + 0.5;
-  float depth = ndc.z * 0.5 + 0.5;
-  vec4 tile = hapticShadowViews[base + 4];
-  vec4 shading = hapticShadowViews[base + 5];
-  // A cascade clamps its depth, as Babylon's cascaded PCF does.
-  float maximum = shading.z > 0.5 ? 0.99999994 : 1.0;
-  depth = shading.z > 0.5 ? clamp(depth, 0.0, maximum) : depth;
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) return 1.0;
-  float size = tile.z / tile.w;
-  vec2 texels = uv * size;
-  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dPdx, dPdy, size) : vec2(0.0);
-  float lit;
-  if (shading.y < 0.5) {
-    if (gradient == vec2(0.0)) return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));
-    vec2 st = fract(texels - 0.5);
-    vec2 a = clamp(floor(texels - 0.5), vec2(0.0), vec2(size - 1.0)) + 0.5;
-    vec2 b = clamp(floor(texels - 0.5) + 1.0, vec2(0.0), vec2(size - 1.0)) + 0.5;
-    lit = (1.0 - st.x) * (1.0 - st.y) * hapticShadowTap(tile, a, clamp(depth + dot(gradient, a - texels), 0.0, maximum))
-      + st.x * (1.0 - st.y) * hapticShadowTap(tile, vec2(b.x, a.y), clamp(depth + dot(gradient, vec2(b.x, a.y) - texels), 0.0, maximum))
-      + (1.0 - st.x) * st.y * hapticShadowTap(tile, vec2(a.x, b.y), clamp(depth + dot(gradient, vec2(a.x, b.y) - texels), 0.0, maximum))
-      + st.x * st.y * hapticShadowTap(tile, b, clamp(depth + dot(gradient, b - texels), 0.0, maximum));
-    return mix(shading.x, 1.0, lit);
-  }
-  vec2 st = fract(texels + 0.5);
-  vec2 corner = floor(texels + 0.5) - 0.5;
-  if (shading.y < 1.5) {
-    vec2 w0 = 3.0 - 2.0 * st;
-    vec2 w1 = 1.0 + 2.0 * st;
-    vec2 a = corner + (2.0 - st) / w0 - 1.0;
-    vec2 b = corner + st / w1 + 1.0;
-    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2(a.x, a.y), texels, depth, gradient, maximum)
-      + w1.x * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
-      + w0.x * w1.y * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
-      + w1.x * w1.y * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
-  } else {
-    vec2 w0 = 4.0 - 3.0 * st;
-    vec2 w2 = 1.0 + 3.0 * st;
-    vec2 a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
-    vec2 b = corner + (3.0 + st) / 7.0;
-    vec2 c = corner + st / w2 + 2.0;
-    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2(a.x, a.y), texels, depth, gradient, maximum)
-      + 7.0 * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
-      + w2.x * w0.y * hapticPlaneTap(tile, vec2(c.x, a.y), texels, depth, gradient, maximum)
-      + w0.x * 7.0 * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
-      + 49.0 * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)
-      + w2.x * 7.0 * hapticPlaneTap(tile, vec2(c.x, b.y), texels, depth, gradient, maximum)
-      + w0.x * w2.y * hapticPlaneTap(tile, vec2(a.x, c.y), texels, depth, gradient, maximum)
-      + 7.0 * w2.y * hapticPlaneTap(tile, vec2(b.x, c.y), texels, depth, gradient, maximum)
-      + w2.x * w2.y * hapticPlaneTap(tile, vec2(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
-  }
-  return mix(shading.x, 1.0, lit);
-}
-
-// A point light's shadow (its record's \`shadow\`: first view, faces): the view of the cube face the position lies in,
-// in Babylon's order (+X, -X, -Y, +Y, +Z, -Z); the one view of a point light with a direction.
-float hapticPointShadow(vec4 shadow, vec3 fromLight, vec3 P) {
-  if (shadow.x < 0.0) return 1.0;
-  vec3 a = abs(fromLight);
-  float face = shadow.y < 1.5 ? 0.0
-    : a.x >= a.y && a.x >= a.z ? (fromLight.x > 0.0 ? 0.0 : 1.0)
-    : a.y >= a.z ? (fromLight.y < 0.0 ? 2.0 : 3.0)
-    : (fromLight.z > 0.0 ? 4.0 : 5.0);
-  return hapticShadow(shadow.x + face, P, vec3(0.0), vec3(0.0));
-}
-
-// The sun's shadow from its cascades (\`hapticSunShadow\`): Babylon's choice of the first cascade whose far end lies
-// beyond the position's view depth, its blend into the next over the last part of its length, and the fade to unshadowed
-// over the last part of the shadow distance; 1 beyond the last cascade.
-float hapticSunShadowFactor(vec3 P, vec3 dPdx, vec3 dPdy) {
-  vec4 cascades = hapticSunShadow[0];
-  int count = int(cascades.x);
-  if (count == 0) return 1.0;
-  float depth = dot(hapticSunShadow[1], vec4(P, 1.0));
-  vec4 ends = hapticSunShadow[2];
-  int index = -1;
-  float ahead = 0.0;
-  for (int i = 0; i < 4; i++) {
-    if (i >= count) break;
-    ahead = ends[i] - depth;
-    if (ahead >= 0.0) {
-      index = i;
-      break;
-    }
-  }
-  if (index < 0) return 1.0;
-  float shadow = hapticShadow(cascades.w + float(index), P, dPdx, dPdy);
-  float blend = clamp(ahead / hapticSunShadow[3][index], 0.0, 1.0) * cascades.y;
-  if (index < count - 1 && blend < 1.0) shadow = mix(hapticShadow(cascades.w + float(index + 1), P, dPdx, dPdy), shadow, blend);
-  float end = ends[count - 1];
-  if (cascades.z > 0.0) shadow = mix(shadow, 1.0, smoothstep(end * (1.0 - cascades.z), end, abs(depth)));
-  return shadow;
-}
-
-// Rect area lights: linearly transformed cosines from Babylon's two 64x64 tables (its ltcHelperFunctions).
+${hapticShadowGlsl(true)}// Rect area lights: linearly transformed cosines from Babylon's two 64x64 tables (its ltcHelperFunctions).
 vec3 hapticLtcEdge(vec3 v1, vec3 v2) {
   float x = dot(v1, v2);
   float y = abs(x);
@@ -552,130 +692,7 @@ fn hapticConeFalloff(lightDirection: vec3f, L: vec3f, cosHalfAngle: f32) -> f32 
   return exp2(dot(vec4f(L, 1.0), vec4f(-lightDirection * kappa, -kappa)));
 }
 
-fn hapticShadowTap(tile: vec4f, texel: vec2f, depth: f32) -> f32 {
-  return textureSampleCompareLevel(hapticShadowAtlas, hapticShadowAtlasSampler,
-    clamp(tile.xy + texel * tile.w, tile.xy + vec2f(tile.w), tile.xy + vec2f(tile.z - tile.w)), depth);
-}
-
-fn hapticReceiverGradient(view: mat4x4f, dPdx: vec3f, dPdy: vec3f, size: f32) -> vec2f {
-  // WebGPU's depth range is zero to one: only the texture coordinates halve.
-  var dx = (view * vec4f(dPdx, 0.0)).xyz * vec3f(0.5, 0.5, 1.0);
-  var dy = (view * vec4f(dPdy, 0.0)).xyz * vec3f(0.5, 0.5, 1.0);
-  let scale = max(max(abs(dx.x), abs(dx.y)), max(abs(dy.x), abs(dy.y)));
-  if (scale <= 1e-20 || scale >= 1e20) { return vec2f(0.0); }
-  dx /= scale;
-  dy /= scale;
-  let det = dx.x * dy.y - dx.y * dy.x;
-  if (abs(det) <= 1e-4 || abs(det) >= 4.0) { return vec2f(0.0); }
-  let gradient = vec2f(dx.z * dy.y - dy.z * dx.y, dy.z * dx.x - dx.z * dy.x) / det / size;
-  return select(vec2f(0.0), gradient, all(abs(gradient) < vec2f(1e10)));
-}
-
-fn hapticPlaneTap(tile: vec4f, tap: vec2f, origin: vec2f, depth: f32, gradient: vec2f, maximum: f32) -> f32 {
-  let phase = fract(tap - 0.5);
-  let bound = dot(max(gradient, vec2f(0.0)), phase) + dot(max(-gradient, vec2f(0.0)), vec2f(1.0) - phase);
-  return hapticShadowTap(tile, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
-}
-
-fn hapticShadow(index: f32, P: vec3f, dPdx: vec3f, dPdy: vec3f) -> f32 {
-  if (index < 0.0 || uniforms.hapticShadowReceiver == 0.0) { return 1.0; }
-  let base = i32(index) * 6;
-  let view = mat4x4f(HapticLights.hapticShadowViews[base], HapticLights.hapticShadowViews[base + 1], HapticLights.hapticShadowViews[base + 2],
-    HapticLights.hapticShadowViews[base + 3]);
-  let clip = view * vec4f(P, 1.0);
-  if (clip.w <= 0.0) { return 1.0; }
-  let ndc = clip.xyz / clip.w;
-  let uv = ndc.xy * 0.5 + 0.5;
-  let tile = HapticLights.hapticShadowViews[base + 4];
-  let shading = HapticLights.hapticShadowViews[base + 5];
-  let maximum = select(1.0, 0.99999994, shading.z > 0.5);
-  // WebGPU's depth range is zero to one.
-  let depth = select(ndc.z, clamp(ndc.z, 0.0, maximum), shading.z > 0.5);
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) { return 1.0; }
-  let size = tile.z / tile.w;
-  let texels = uv * size;
-  var gradient = vec2f(0.0);
-  if (shading.w > 0.5) { gradient = hapticReceiverGradient(view, dPdx, dPdy, size); }
-  var lit: f32;
-  if (shading.y < 0.5) {
-    if (all(gradient == vec2f(0.0))) { return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth)); }
-    let st = fract(texels - 0.5);
-    let a = clamp(floor(texels - 0.5), vec2f(0.0), vec2f(size - 1.0)) + 0.5;
-    let b = clamp(floor(texels - 0.5) + 1.0, vec2f(0.0), vec2f(size - 1.0)) + 0.5;
-    lit = (1.0 - st.x) * (1.0 - st.y) * hapticShadowTap(tile, a, clamp(depth + dot(gradient, a - texels), 0.0, maximum))
-      + st.x * (1.0 - st.y) * hapticShadowTap(tile, vec2f(b.x, a.y), clamp(depth + dot(gradient, vec2f(b.x, a.y) - texels), 0.0, maximum))
-      + (1.0 - st.x) * st.y * hapticShadowTap(tile, vec2f(a.x, b.y), clamp(depth + dot(gradient, vec2f(a.x, b.y) - texels), 0.0, maximum))
-      + st.x * st.y * hapticShadowTap(tile, b, clamp(depth + dot(gradient, b - texels), 0.0, maximum));
-    return mix(shading.x, 1.0, lit);
-  }
-  let st = fract(texels + 0.5);
-  let corner = floor(texels + 0.5) - 0.5;
-  if (shading.y < 1.5) {
-    let w0 = 3.0 - 2.0 * st;
-    let w1 = 1.0 + 2.0 * st;
-    let a = corner + (2.0 - st) / w0 - 1.0;
-    let b = corner + st / w1 + 1.0;
-    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2f(a.x, a.y), texels, depth, gradient, maximum)
-      + w1.x * w0.y * hapticPlaneTap(tile, vec2f(b.x, a.y), texels, depth, gradient, maximum)
-      + w0.x * w1.y * hapticPlaneTap(tile, vec2f(a.x, b.y), texels, depth, gradient, maximum)
-      + w1.x * w1.y * hapticPlaneTap(tile, vec2f(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
-  } else {
-    let w0 = 4.0 - 3.0 * st;
-    let w2 = 1.0 + 3.0 * st;
-    let a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
-    let b = corner + (3.0 + st) / 7.0;
-    let c = corner + st / w2 + 2.0;
-    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2f(a.x, a.y), texels, depth, gradient, maximum)
-      + 7.0 * w0.y * hapticPlaneTap(tile, vec2f(b.x, a.y), texels, depth, gradient, maximum)
-      + w2.x * w0.y * hapticPlaneTap(tile, vec2f(c.x, a.y), texels, depth, gradient, maximum)
-      + w0.x * 7.0 * hapticPlaneTap(tile, vec2f(a.x, b.y), texels, depth, gradient, maximum)
-      + 49.0 * hapticPlaneTap(tile, vec2f(b.x, b.y), texels, depth, gradient, maximum)
-      + w2.x * 7.0 * hapticPlaneTap(tile, vec2f(c.x, b.y), texels, depth, gradient, maximum)
-      + w0.x * w2.y * hapticPlaneTap(tile, vec2f(a.x, c.y), texels, depth, gradient, maximum)
-      + 7.0 * w2.y * hapticPlaneTap(tile, vec2f(b.x, c.y), texels, depth, gradient, maximum)
-      + w2.x * w2.y * hapticPlaneTap(tile, vec2f(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
-  }
-  return mix(shading.x, 1.0, lit);
-}
-
-fn hapticPointShadow(shadow: vec4f, fromLight: vec3f, P: vec3f) -> f32 {
-  if (shadow.x < 0.0) { return 1.0; }
-  let a = abs(fromLight);
-  var face = 0.0;
-  if (shadow.y > 1.5) {
-    if (a.x >= a.y && a.x >= a.z) { face = select(1.0, 0.0, fromLight.x > 0.0); }
-    else if (a.y >= a.z) { face = select(3.0, 2.0, fromLight.y < 0.0); }
-    else { face = select(5.0, 4.0, fromLight.z > 0.0); }
-  }
-  return hapticShadow(shadow.x + face, P, vec3f(0.0), vec3f(0.0));
-}
-
-fn hapticSunShadowFactor(P: vec3f, dPdx: vec3f, dPdy: vec3f) -> f32 {
-  let cascades = HapticLights.hapticSunShadow[0];
-  let count = i32(cascades.x);
-  if (count == 0) { return 1.0; }
-  let depth = dot(HapticLights.hapticSunShadow[1], vec4f(P, 1.0));
-  let ends = HapticLights.hapticSunShadow[2];
-  var index = -1;
-  var ahead = 0.0;
-  for (var i: i32 = 0; i < 4; i++) {
-    if (i >= count) { break; }
-    ahead = ends[i] - depth;
-    if (ahead >= 0.0) {
-      index = i;
-      break;
-    }
-  }
-  if (index < 0) { return 1.0; }
-  var shadow = hapticShadow(cascades.w + f32(index), P, dPdx, dPdy);
-  let blend = clamp(ahead / HapticLights.hapticSunShadow[3][index], 0.0, 1.0) * cascades.y;
-  if (index < count - 1 && blend < 1.0) { shadow = mix(hapticShadow(cascades.w + f32(index + 1), P, dPdx, dPdy), shadow, blend); }
-  let end = ends[count - 1];
-  if (cascades.z > 0.0) { shadow = mix(shadow, 1.0, smoothstep(end * (1.0 - cascades.z), end, abs(depth))); }
-  return shadow;
-}
-
-fn hapticLtcEdge(v1: vec3f, v2: vec3f) -> vec3f {
+${hapticShadowWgsl(true)}fn hapticLtcEdge(v1: vec3f, v2: vec3f) -> vec3f {
   let x = dot(v1, v2);
   let y = abs(x);
   let a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;

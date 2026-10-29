@@ -2,6 +2,8 @@ import {
   type Camera,
   DirectionalLight,
   FreeCamera,
+  InternalTexture,
+  InternalTextureSource,
   NullEngine,
   PointLight,
   Scene,
@@ -12,7 +14,10 @@ import {
 } from "@babylonjs/core";
 import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings, type VolumetricLightingSettings } from "@haptic/core";
 import { expect, it, vi } from "vitest";
+import { hapticLightBuffer, setHapticLighting } from "./haptic-lights";
 import { updateSceneRenderingSettings } from "./render-settings";
+import { syncSceneLighting } from "./scene-lighting";
+import { createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 import { sceneShadowController } from "./shadow-controller";
 import {
   bindVolumetricLights,
@@ -24,7 +29,7 @@ import {
   type VolumeShadowPlaceholders,
 } from "./volumetric-lights";
 
-const NONE: VolumeShadow = { kind: "none", cascades: 0, packed: false };
+const NONE: VolumeShadow = { kind: "none", cascades: 0, packed: false, first: 0 };
 
 /** The lights taking part, in slot order. */
 function selectVolumetricLights(scene: Scene, camera: Camera, settings: VolumetricLightingSettings): VolumeLight[] {
@@ -183,13 +188,13 @@ it("binds each slot's map for its light's shadow kind and a placeholder to every
       fillVolumetricSlots(slots, scene, camera, settings);
       bindVolumetricLights(effect as unknown as Effect, scene, camera, slots, 3, textures, { ...NONE });
     };
-    const shadows = () => effect.setFloat2.mock.calls.filter(([name]) => String(name).startsWith("volumeShadow"));
+    const shadows = () => effect.setFloat4.mock.calls.filter(([name]) => String(name).startsWith("volumeShadow"));
     const placeholders = () => effect.setTexture.mock.calls.map(([name, texture]) => [name, (texture as { name: string }).name]);
     bind();
     // Two lights in three slots: the sun compares its map in the first; the unshadowed point light and the empty slot
     // sample nothing, so every one of their samplers holds a placeholder.
     expect(effect.setFloat).toHaveBeenCalledExactlyOnceWith("volumeLightCount", 2);
-    expect(shadows()).toEqual([["volumeShadow0", 1, 1], ["volumeShadow1", 0, 0], ["volumeShadow2", 0, 0]]);
+    expect(shadows()).toEqual([["volumeShadow0", 1, 1, 0, 0], ["volumeShadow1", 0, 0, 0, 0], ["volumeShadow2", 0, 0, 0, 0]]);
     expect(bindShadowLight).toHaveBeenCalledExactlyOnceWith("0", effect);
     expect(placeholders()).toEqual([
       ["shadowTextureCube0", "cube"], ["shadowTextureCascades0", "cascades"],
@@ -202,10 +207,51 @@ it("binds each slot's map for its light's shadow kind and a placeholder to every
     sceneShadowController(scene).sync();
     bind();
     expect(slots.lights.slice(0, slots.count)).toEqual([sun, point]);
-    expect(shadows()[0]).toEqual(["volumeShadow0", 0, 0]);
+    expect(shadows()[0]).toEqual(["volumeShadow0", 0, 0, 0, 0]);
     expect(bindShadowLight).not.toHaveBeenCalled();
     expect(placeholders()[0]).toEqual(["shadowTexture0", "compare"]);
   } finally {
+    scene.dispose();
+    engine.dispose();
+  }
+});
+
+it("binds each slot's views of the light block's atlas on its path, and no map or placeholder of its own", () => {
+  const engine = new NullEngine();
+  vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+  vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
+  vi.spyOn(engine, "createRawTexture2DArray").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.Raw2DArray));
+  engine._features.supportCSM = true;
+  setHapticLighting(engine, true);
+  const scene = new Scene(engine);
+  const camera = new FreeCamera("camera", Vector3.Zero(), scene);
+  try {
+    const sun = new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene);
+    const spot = new SpotLight("spot", new Vector3(1, 3, 0), Vector3.Down(), Math.PI / 2, 2, scene);
+    const point = new PointLight("point", new Vector3(-1, 2, 0), scene);
+    new PointLight("unshadowed", new Vector3(0, 2, 1), scene);
+    createAtlasCascadedShadowGenerator(sun, 512, 2, 2048);
+    createAtlasShadowGenerator(spot, 512, 2048);
+    createAtlasShadowGenerator(point, 256, 2048);
+    syncSceneLighting(scene);
+    const effect = {
+      setFloat4: vi.fn(), setFloat2: vi.fn(), setFloat: vi.fn(), setTexture: vi.fn(), setDepthStencilTexture: vi.fn(),
+      bindUniformBuffer: vi.fn(),
+    };
+    const textures = { compare: { name: "compare" }, cube: { name: "cube" }, cascades: { name: "cascades" } } as unknown as VolumeShadowPlaceholders;
+    const slots = createVolumetricSlots();
+    fillVolumetricSlots(slots, scene, camera, { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 4, maxDistance: 10 });
+    bindVolumetricLights(effect as unknown as Effect, scene, camera, slots, 4, textures, { ...NONE }, true);
+    // [kind, views, first view]: the sun's two cascades from view 0, the spot light's view after them, the point
+    // light's six faces after that; the unshadowed light none.
+    expect(effect.setFloat4.mock.calls.filter(([name]) => String(name).startsWith("volumeShadow"))).toEqual([
+      ["volumeShadow0", 4, 2, 0, 0], ["volumeShadow1", 1, 1, 4, 0], ["volumeShadow2", 2, 6, 5, 0], ["volumeShadow3", 0, 0, 0, 0],
+    ]);
+    expect(effect.bindUniformBuffer).toHaveBeenCalledExactlyOnceWith(hapticLightBuffer(scene).getBuffer(), "HapticLights");
+    expect(effect.setDepthStencilTexture).toHaveBeenCalledExactlyOnceWith("hapticShadowAtlas", shadowAtlasTexture(scene));
+    expect(effect.setTexture).not.toHaveBeenCalled();
+  } finally {
+    setHapticLighting(engine, false);
     scene.dispose();
     engine.dispose();
   }
@@ -274,7 +320,7 @@ it("binds a Full Quality capture's march to the sun map fitted to the capture's 
     bind(capture);
     expect(mainBind).not.toHaveBeenCalled();
     expect(ownBind).not.toHaveBeenCalled();
-    expect(effect.setFloat2).toHaveBeenCalledWith("volumeShadow0", 0, 0);
+    expect(effect.setFloat4).toHaveBeenCalledWith("volumeShadow0", 0, 0, 0, 0);
     await view.release();
   } finally {
     scene.dispose();

@@ -256,3 +256,41 @@ for (const backend of ["webgl2"] as const) {
     }
   });
 }
+
+// On the light block's path the march reads each light's views of the shadow atlas (its WGSL twin too): its fog matches
+// the legacy march's on the lights' own maps, and the occluder still cuts the beam.
+for (const backend of ["webgl2", "webgpu"] as const) {
+  test(`volumetric shadows on the light block's path match the legacy path's on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["warning", "error"].includes(message.type()) &&
+        /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|context lost|fatal error/i.test(message.text()))
+        errors.push(message.text());
+    });
+    await page.goto("/?test=1&spatialEffectsProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as {
+      __spatialEffectsProof?: unknown;
+    }).__spatialEffectsProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as {
+      __spatialEffectsProof: typeof runSpatialEffectsProof;
+    }).__spatialEffectsProof(backend, "volumetricShadows"), backend).catch(async (error: unknown) => {
+      await testInfo.attach("volumetric-shadow-errors", { body: JSON.stringify(errors), contentType: "application/json" });
+      throw error;
+    });
+    await testInfo.attach("volumetric-shadow-pixels", { body: JSON.stringify(result), contentType: "application/json" });
+    expect(errors).toEqual([]);
+    expect(result.reservations.reservedBytes).toBe(0);
+    const [legacy, block] = result.volumetricShadowCaptures;
+    expect([legacy?.lightBlock, block?.lightBlock]).toEqual([false, true]);
+    const brighter = (a: number[], b: number[], by: number) => a.filter((value, i) => i % 4 === 0 && value > b[i]! + by).length;
+    for (const capture of [legacy!, block!]) {
+      const path = capture.lightBlock ? "light block" : "legacy";
+      expect(brighter(capture.shadowed, capture.off, 8), `${path}: the beam fogs the view`).toBeGreaterThan(20);
+      expect(brighter(capture.open, capture.shadowed, 3), `${path}: the occluder's shadow cuts the beam`).toBeGreaterThan(20);
+    }
+    expect(pixelDifference(legacy!.shadowed, block!.shadowed), "the light block's shadowed fog").toBeLessThan(1);
+    expect(pixelDifference(legacy!.open, block!.open), "unshadowed fog").toBeLessThan(0.5);
+  });
+}

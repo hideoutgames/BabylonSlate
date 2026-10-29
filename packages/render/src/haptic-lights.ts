@@ -382,6 +382,28 @@ export function writeHapticLights(scene: Scene): void {
   buffer.update();
 }
 
+/**
+ * Writes into `out` the block's shadow views of `light` as last written: a spot light's one, a point light's faces or
+ * the shadowed sun's cascades (from view 0, the rendering camera's map); false when the block draws it unshadowed.
+ */
+export function hapticShadowViews(scene: Scene, light: Light, out: { first: number; count: number }): boolean {
+  const state = scenes.get(scene);
+  if (!state) return false;
+  if (light === state.sun) {
+    if (!state.sunWritten) return false;
+    out.first = 0;
+    out.count = state.sunWritten.tiles.length;
+    return true;
+  }
+  for (const { shadow, first } of state.shadowed)
+    if (shadow.getLight() === light) {
+      out.first = first;
+      out.count = shadow.tiles.length;
+      return true;
+    }
+  return false;
+}
+
 /** Lights the block draws other than as authored, for `sceneLightingLimits`. */
 export function hapticLightLimits(scene: Scene): readonly string[] {
   return scenes.get(scene)?.limits ?? [];
