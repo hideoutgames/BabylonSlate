@@ -29,7 +29,8 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { CelLightBlock } from "./cel-light-block";
-import { hapticLightLimits, hapticLightingActive, writeHapticLights } from "./haptic-lights";
+import { deviceProfile } from "./device-profile";
+import { hapticLightLimits, hapticLightingActive, selectHapticLights, writeHapticLights } from "./haptic-lights";
 
 type LitMaterial = Material & { maxSimultaneousLights: number };
 
@@ -181,6 +182,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
   let budget = forwardLightBudget(scene.getEngine());
   // The last selection was fixed-shape lighting's per-class admission.
   let fixedShape = false;
+  let haptic = false;
   // What seated materials' light defines depend on (fixedLightDefinesSignature), as of the last refresh.
   let refreshedFixedShape = false;
   let fixedDefines: unknown[] = [];
@@ -206,22 +208,23 @@ function installSceneLighting(scene: Scene): SceneLighting {
   const sync = (): void => {
     if (scene.isDisposed) return;
     budget = forwardLightBudget(scene.getEngine());
-    // HapticLightingBlock reads every light from one block, rewritten each frame; its Materials hold no light defines.
-    if (hapticLightingActive(scene)) writeHapticLights(scene);
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
     policyToggles = toggled;
-    fixedShape = fixedShapeLightingActive(scene);
+    haptic = hapticLightingActive(scene);
+    fixedShape = !haptic && fixedShapeLightingActive(scene);
     try {
       admission = syncForwardLightPolicy(
         scene,
         budget.slots,
         Math.max(0, sceneRenderingSettings(scene).localLightBudget),
-        fixedShape ? selectFixedShapeLights : undefined,
+        haptic ? selectHapticLights : fixedShape ? selectFixedShapeLights : undefined,
       );
     } finally {
       policyToggles = undefined;
     }
+    // HapticLightingBlock reads the admitted lights from one block, rewritten each frame; its Materials hold no light defines.
+    if (haptic) writeHapticLights(scene);
     if (toggled.size) {
       for (const light of toggled)
         if (!isPreservedExchange(light)) {
@@ -387,16 +390,23 @@ function installSceneLighting(scene: Scene): SceneLighting {
       lightInventory = lights;
       dirty = true;
     },
-    limits: () =>
-      fixedShape
-        ? fixedShapeLightingLimits(scene)
-        : admission.limited.length
-        ? [
-            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${sceneRenderingSettings(scene).localLightBudget} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved); ${admission.samplers}/${lightingSamplerCapacity(scene)} lighting samplers, ${admission.samplerLimited.length} limited by sampler headroom. Limited: ${lightsInCreationOrder(admission.limited)
-              .slice(0, 16)
-              .map((light) => light.name)
-              .join(", ")}${admission.limited.length > 16 ? ", …" : ""}`,
-          ]
-        : [],
+    limits: () => {
+      if (fixedShape) return fixedShapeLightingLimits(scene);
+      if (!admission.limited.length) return [];
+      const limited = `Limited: ${lightsInCreationOrder(admission.limited)
+        .slice(0, 16)
+        .map((light) => light.name)
+        .join(", ")}${admission.limited.length > 16 ? ", …" : ""}`;
+      const local = sceneRenderingSettings(scene).localLightBudget;
+      if (haptic) {
+        const maximum = deviceProfile().lightMaximum;
+        return [
+          `Light block: ${admission.admitted}/${admission.requested} requested lights admitted; ${local} scalability local lights; this device draws at most ${maximum.point} point, ${maximum.spot} spot, ${maximum.rect} rect area and ${maximum.directional} directional lights and one fill. ${limited}`,
+        ];
+      }
+      return [
+        `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${local} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved); ${admission.samplers}/${lightingSamplerCapacity(scene)} lighting samplers, ${admission.samplerLimited.length} limited by sampler headroom. ${limited}`,
+      ];
+    },
   };
 }

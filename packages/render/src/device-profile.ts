@@ -20,6 +20,11 @@ export interface DeviceProfile {
   loadRehearsal: { repeats: boolean; ceilingMs: number };
   /** Distinct rect area light emission textures the lighting plan's path holds at once (5.3 MiB each). */
   areaEmissionLayers: number;
+  /**
+   * The most lights of each type the lighting plan's light block draws at once (at most `HAPTIC_LIGHT_MAXIMUM`): every
+   * lit pixel loops over the lights in use. Lights past it are ranked out as the Local Light Budget ranks them.
+   */
+  lightMaximum: { directional: number; point: number; spot: number; rect: number };
 }
 
 /**
@@ -32,12 +37,14 @@ const DESKTOP: DeviceProfile = {
   textureByteCeiling: TEXTURE_BYTE_CEILING,
   loadRehearsal: { repeats: true, ceilingMs: 120_000 },
   areaEmissionLayers: 4,
+  lightMaximum: { directional: 4, point: 32, spot: 16, rect: 4 },
 };
 
 /**
  * Phones and tablets: WKWebView kills a page past its memory limit and iPad WebKit compiles a rehearsal step's
  * variants in ten seconds or more, so maps and textures stay at the Medium level's (the A16 iPad's) and the
  * rehearsal leaves out repeats and ends sooner. What it leaves out compiles when gameplay first makes that change.
+ * The light block draws half the desktop's lights, which a mobile GPU loops over in every lit pixel.
  */
 const MOBILE: DeviceProfile = {
   mobile: true,
@@ -45,6 +52,7 @@ const MOBILE: DeviceProfile = {
   textureByteCeiling: 768 * MIB,
   loadRehearsal: { repeats: false, ceilingMs: 45_000 },
   areaEmissionLayers: 2,
+  lightMaximum: { directional: 2, point: 16, spot: 8, rect: 2 },
 };
 
 /**

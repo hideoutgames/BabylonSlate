@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { deviceProfile, deviceTextureLimits, isMobileGpuDevice } from "./device-profile";
+import { HAPTIC_LIGHT_MAXIMUM } from "./haptic-lights";
 
 const IPAD = { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0.1 Safari/605.1.15", maxTouchPoints: 5 };
 const MAC = { ...IPAD, maxTouchPoints: 0 };
@@ -20,4 +21,10 @@ it("lowers a texture budget above a phone or tablet's ceiling, and reports it", 
   expect(deviceTextureLimits(ceiling, IPAD)).toEqual([]);
   expect(deviceTextureLimits(ceiling + 1, IPAD)).toEqual([expect.stringContaining("on this device class")]);
   expect(deviceTextureLimits(ceiling + 1, MAC)).toEqual([]);
+});
+
+it("draws as many lights as the light block holds, and half of each type on a phone or tablet", () => {
+  expect(deviceProfile(MAC).lightMaximum).toEqual(HAPTIC_LIGHT_MAXIMUM);
+  const mobile = deviceProfile(IPAD).lightMaximum;
+  for (const [type, maximum] of Object.entries(HAPTIC_LIGHT_MAXIMUM)) expect(mobile[type as keyof typeof mobile], type).toBe(maximum / 2);
 });

@@ -17,15 +17,18 @@ import {
   type NodeMaterial,
 } from "@babylonjs/core";
 import type { AreaEmissionPixels } from "@haptic/assets";
+import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { CelLightBlock } from "./cel-light-block";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, setHapticLighting } from "./haptic-lights";
+import { isForwardLightExcluded } from "./light-policy";
+import { updateSceneRenderingSettings } from "./render-settings";
 import { compileMaterialPlan } from "./material-compiler";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { syncSceneLighting } from "./scene-lighting";
+import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 
 const engines: NullEngine[] = [];
@@ -170,6 +173,42 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     syncSceneLighting(scene);
     expect(read("hapticCounts", 4)).toEqual([0, 0, 0, 0]);
     expect(read("hapticFillDirection", 4)[3]).toBe(0);
+  });
+
+  it("draws the lights nearest the camera within the Local Light Budget and this device's maximum, and reports the rest", () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    const lamps = Array.from({ length: 20 }, (_, index) => new PointLight(`lamp ${index}`, new Vector3(0, 0, index + 1), scene));
+    const sun = new DirectionalLight("sun", new Vector3(0, -1, 0), scene);
+    new DirectionalLight("second sun", new Vector3(0, -1, 0), scene);
+    const fill = new HemisphericLight("fill", Vector3.Up(), scene);
+    new HemisphericLight("second fill", Vector3.Up(), scene);
+    const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+    const counts = () => [...buffer._bufferData.subarray(buffer._uniformLocations.hapticCounts!, buffer._uniformLocations.hapticCounts! + 4)];
+    const budget = (lights: number) => {
+      const quality = normalizeRenderingQuality(qualityPresetPatch("high"));
+      quality.lighting.localLightMode = "manual";
+      quality.lighting.maxLocalLights = lights;
+      updateSceneRenderingSettings(scene, { quality });
+      syncSceneLighting(scene);
+    };
+    // The budget ranks out the farthest lights, which the editor shows as limited; one sun and one fill stay.
+    budget(12);
+    expect(counts()).toEqual([1, 12, 0, 0]);
+    expect(lamps.map(isForwardLightExcluded)).toEqual(lamps.map((_, index) => index >= 12));
+    expect([sun.isEnabled(), fill.isEnabled()]).toEqual([true, true]);
+    expect(sceneLightingLimits(scene).join()).toContain("Light block: 14/23 requested lights admitted; 12 scalability local lights");
+    // A phone or tablet draws at most half the block's point lights, whatever the budget.
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)", maxTouchPoints: 5 });
+    budget(64);
+    expect(counts()).toEqual([1, HAPTIC_LIGHT_MAXIMUM.point / 2, 0, 0]);
+    expect(lamps.filter((lamp) => !isForwardLightExcluded(lamp))).toEqual(lamps.slice(0, HAPTIC_LIGHT_MAXIMUM.point / 2));
+    vi.unstubAllGlobals();
+    budget(64);
+    expect(counts()).toEqual([1, 20, 0, 0]);
+    // The block holds one fill.
+    expect(sceneLightingLimits(scene).join()).toContain("Light block: 22/23 requested lights admitted; 64 scalability local lights");
+    expect(sceneLightingLimits(scene).join()).toMatch(/Limited: second fill$/);
   });
 
   it("gives each distinct rect light emission a layer of one array, rebuilt only when the set changes", () => {
