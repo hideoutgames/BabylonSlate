@@ -2,6 +2,8 @@ import {
   Camera,
   EffectWrapper,
   Matrix,
+  ShaderLanguage,
+  ShaderStore,
   Vector2,
   type Effect,
   type Scene,
@@ -39,6 +41,8 @@ import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
 import { bindFogVolumes, hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import type { EffectCompileFailure } from "./effect-compile-failure";
+import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
+import { hapticLightingActive } from "./haptic-lights";
 
 /** Delay native define setters until all settings/camera flags are configured.
  * Babylon otherwise overwrites (and leaks) each intermediate Effect reference. */
@@ -190,6 +194,25 @@ export function volumetricMarchIdle(
   return volume.density <= 0 && (!localVolumes || selectFogVolumes(scene, camera, volume.maxDistance).length === 0);
 }
 
+/** Shader store keys of the fragment sources that read uniform buffers, by language and source. */
+const storedFragments = new Map<string, string>();
+
+/** `fragment`'s key in the shader store, registered with its first use. */
+function storedFragment(fragment: string, wgsl: boolean): string {
+  const id = `${wgsl ? "wgsl" : "glsl"}:${fragment}`;
+  let key = storedFragments.get(id);
+  if (!key) {
+    key = `hapticSpatialStage${storedFragments.size}`;
+    storedFragments.set(id, key);
+    ShaderStore.GetShadersStore(wgsl ? ShaderLanguage.WGSL : ShaderLanguage.GLSL)[`${key}FragmentShader`] = fragment;
+  }
+  return key;
+}
+
+/**
+ * A stage's Effect from its inline fragment source. Babylon builds an inline source's Effect with a constructor that
+ * takes no uniform buffers, so a fragment that reads one (the light block's) is drawn from the shader store instead.
+ */
 function customWrapper(
   scene: Scene,
   name: string,
@@ -197,19 +220,22 @@ function customWrapper(
   uniforms: string[],
   samplers: string[],
   failure?: EffectCompileFailure,
+  uniformBuffers: string[] = [],
 ): EffectWrapper {
   const wgsl = scene.getEngine().isWebGPU;
+  const stored = uniformBuffers.length > 0;
   return new EffectWrapper({
     name,
     engine: scene.getEngine(),
     useAsPostProcess: true,
     shaderLanguage: wgsl ? 1 : 0,
-    useShaderStore: false,
-    vertexShader: (wgsl ? postprocessVertexShaderWGSL : postprocessVertexShader)
-      .shader,
-    fragmentShader: fragment,
+    useShaderStore: stored,
+    // The store's own post-process vertex shader, or its source.
+    vertexShader: stored ? undefined : (wgsl ? postprocessVertexShaderWGSL : postprocessVertexShader).shader,
+    fragmentShader: stored ? storedFragment(fragment, wgsl) : fragment,
     uniforms,
     samplers,
+    uniformBuffers,
     onError: failure?.for(name),
   });
 }
@@ -381,6 +407,8 @@ export function createSpatialStages(
     const volume = plan.volumetricLighting;
     if (volume) {
       const localVolumes = hasFogVolumes(scene);
+      // The lighting plan's path: the slots' shadows are the light block's views of its atlas.
+      const lightBlock = hapticLightingActive(scene);
       // One march per settings: Max Lights slots, each taking any light type and shadow kind through uniforms.
       const slotCount = volume.maxLights;
       const uniforms = [
@@ -393,7 +421,7 @@ export function createSpatialStages(
         "volumeLightCount",
         ...(localVolumes ? ["fogVolumeCount", "fogVolumeInverse", "fogVolumeParameters"] : []),
       ];
-      const samplers = ["depthSampler"];
+      const samplers = ["depthSampler", ...(lightBlock ? [HAPTIC_SHADOW_ATLAS] : [])];
       for (let i = 0; i < slotCount; i++) {
         uniforms.push(
           `volumePosition${i}`,
@@ -402,8 +430,9 @@ export function createSpatialStages(
           `volumeCone${i}`,
           `volumeDepth${i}`,
           `volumeShadow${i}`,
-          `lightMatrix${volumeShadowIndex(i, "compare")}`,
         );
+        if (lightBlock) continue;
+        uniforms.push(`lightMatrix${volumeShadowIndex(i, "compare")}`);
         samplers.push(`shadowTexture${volumeShadowIndex(i, "compare")}`, `shadowTexture${volumeShadowIndex(i, "cube")}`);
         if (volumeSlotSamples(i, "cascades")) {
           const index = volumeShadowIndex(i, "cascades");
@@ -424,17 +453,19 @@ export function createSpatialStages(
             engine.isNDCHalfZRange,
             engine.useReverseDepthBuffer,
             localVolumes,
+            lightBlock,
           ),
           uniforms,
           samplers,
           failure,
+          lightBlock ? ["HapticLights"] : [],
         ),
       );
       const inverseProjection = Matrix.Identity(),
         inverseView = Matrix.Identity();
       const mainInput = stages.length;
       const slots = createVolumetricSlots();
-      const scratch: VolumeShadow = { kind: "none", cascades: 0, packed: false };
+      const scratch: VolumeShadow = { kind: "none", cascades: 0, packed: false, first: 0 };
       const idle = () => volumetricMarchIdle(scene, camera, volume, localVolumes);
       stages.push({
         wrapper: march,
@@ -473,7 +504,7 @@ export function createSpatialStages(
           // Selected as the march draws: the frame has moved the camera (inputs, animation) and drawn its shadow
           // maps by now, so the nearest lights and their maps are this frame's.
           fillVolumetricSlots(slots, scene, camera, volume);
-          bindVolumetricLights(effect, scene, camera, slots, slotCount, placeholders, scratch);
+          bindVolumetricLights(effect, scene, camera, slots, slotCount, placeholders, scratch, lightBlock);
           if (localVolumes) bindFogVolumes(effect, scene, camera, volume.maxDistance);
         },
       });

@@ -27,6 +27,7 @@ import {
   applyAuthoredLightProperties,
   createAppWebGpuEngine,
   MaterialLibrary,
+  setHapticLighting,
   setSceneRenderSettings,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
@@ -165,10 +166,14 @@ async function captureReflections(
   };
 }
 
-/** Actual numeric pixels from authored materials and scene lights, without editor chrome. */
+/**
+ * Actual numeric pixels from authored materials and scene lights, without editor chrome. `volumetricShadows`: the
+ * shadowed fog spot light without and with volumetric lighting, its shadow cast and not, on the legacy path and on the
+ * light block's (its views of the shadow atlas), over unlit surfaces both paths draw alike.
+ */
 export async function runSpatialEffectsProof(
   backend: "webgl2" | "webgpu",
-  kind: "combined" | "fogVolumes" | "ambientOcclusion" | "reflections",
+  kind: "combined" | "fogVolumes" | "ambientOcclusion" | "reflections" | "volumetricShadows",
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -183,7 +188,9 @@ export async function runSpatialEffectsProof(
         });
   engine.setSize(96, 72);
   try {
-    const captureScene = async () => {
+    const captureScene = async (lightBlock = false) => {
+      // Graph Materials and the march compiled from here on draw with the light block.
+      setHapticLighting(engine, lightBlock);
       const scene = new Scene(engine);
       scene.clearColor = new Color4(0, 0, 0, 1);
       const library = new MaterialLibrary();
@@ -255,7 +262,7 @@ export async function runSpatialEffectsProof(
         box.position.y = 1.3;
         box.material = red;
       }
-      if (kind === "combined") {
+      if (kind === "combined" || kind === "volumetricShadows") {
         light = new SpotLight(
           "Fog Light",
           new Vector3(0, 3, 0),
@@ -363,6 +370,15 @@ export async function runSpatialEffectsProof(
         if (kind === "reflections") {
           return { reflectionCaptures: [await captureReflections(scene, floor, mirror!, render, effects, draw)] };
         }
+        if (kind === "volumetricShadows") {
+          if (!light) throw new Error("The volumetric shadow capture has no spot light");
+          const off = await draw();
+          effects.volumetricLighting.enabled = true;
+          const shadowed = await draw();
+          applyAuthoredLightProperties(light, { intensity: 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: false });
+          const open = await draw();
+          return { volumetricShadowCaptures: [{ lightBlock, off, shadowed, open }] };
+        }
         const off = await draw();
         effects.reflections.enabled = true;
         effects.volumetricLighting.enabled = true;
@@ -402,6 +418,7 @@ export async function runSpatialEffectsProof(
           disabled,
         }] };
       } finally {
+        setHapticLighting(engine, false);
         graph.dispose();
         await graph.whenReleased();
         library.dispose();
@@ -413,8 +430,16 @@ export async function runSpatialEffectsProof(
         engine.endFrame();
       }
     };
-    const { captures = [], fogCaptures = [], occlusionCaptures = [], reflectionCaptures = [] } = await captureScene();
-    return { captures, fogCaptures, occlusionCaptures, reflectionCaptures, reservations: managedRenderReservations(engine) };
+    // Volumetric shadows draw the scene on both paths.
+    const scenes = kind === "volumetricShadows" ? [await captureScene(false), await captureScene(true)] : [await captureScene()];
+    return {
+      captures: scenes.flatMap((scene) => scene.captures ?? []),
+      fogCaptures: scenes.flatMap((scene) => scene.fogCaptures ?? []),
+      occlusionCaptures: scenes.flatMap((scene) => scene.occlusionCaptures ?? []),
+      reflectionCaptures: scenes.flatMap((scene) => scene.reflectionCaptures ?? []),
+      volumetricShadowCaptures: scenes.flatMap((scene) => scene.volumetricShadowCaptures ?? []),
+      reservations: managedRenderReservations(engine),
+    };
   } finally {
     engine.dispose();
     canvas.remove();

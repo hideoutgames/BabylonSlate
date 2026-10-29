@@ -1,10 +1,14 @@
 import { VOLUME_MAX_CASCADES, VOLUME_SHADOW_CODE, volumeShadowIndex, volumeSlotSamples } from "./volumetric-lights";
 import { MAX_FOG_VOLUMES } from "./fog-volumes";
+import { HAPTIC_SHADOW_ATLAS, hapticShadowGlsl, hapticShadowWgsl } from "./haptic-lighting-shader";
+import { HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL } from "./haptic-lights";
 
 /**
  * One bounded single-scattering shader, emitted for both native shader languages. It has `slots` light slots whatever
- * lights are near: each reads its light's type, shadow kind (`VOLUME_SHADOW_CODE`) and cascade count from uniforms,
- * and the march skips the slots past `volumeLightCount`, so only settings change the shader.
+ * lights are near: each reads its light's type, shadow kind (`VOLUME_SHADOW_CODE`) and view or cascade count from
+ * uniforms, and the march skips the slots past `volumeLightCount`, so only settings change the shader. `lightBlock`:
+ * the lighting plan's path, where the slots' shadows are the light block's views of its atlas (`HapticLights`), not
+ * maps of their own.
  */
 export function volumetricShader(
   wgsl: boolean,
@@ -13,6 +17,7 @@ export function volumetricShader(
   halfZ: boolean,
   reverseZ: boolean,
   localVolumes = false,
+  lightBlock = false,
 ): string {
   const v2 = wgsl ? "vec2f" : "vec2",
     v3 = wgsl ? "vec3f" : "vec3",
@@ -161,10 +166,23 @@ coord.z = clamp(coord.z ${reverseZ ? "+" : "-"} 0.0001, 0.0, 1.0);
 return ${sampleCompare};`;
   };
   const code = VOLUME_SHADOW_CODE;
-  for (let i = 0; i < slots; i++) {
-    for (const name of ["volumePosition", "volumeDirection", "volumeColor"])
-      header += field(v4, `${name}${i}`);
-    header += field(v2, `volumeCone${i}`) + field(v2, `volumeDepth${i}`) + field(v2, `volumeShadow${i}`);
+  if (lightBlock) {
+    header += wgsl
+      ? `${HAPTIC_LIGHTS_WGSL}var ${HAPTIC_SHADOW_ATLAS}Sampler: sampler_comparison; var ${HAPTIC_SHADOW_ATLAS}: texture_depth_2d;\n`
+      : `${HAPTIC_LIGHTS_GLSL}uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n`;
+    // A slot's shadow (\`volumeShadow\`: kind, views, first view): a spot light's view, a point light's faces or the
+    // sun's cascades, as the block draws them, at a position of the march (world space; the block's are rebased). On a
+    // line of their own: Babylon splits a line's statements, which would end a comment after the uniforms at its first
+    // semicolon.
+    functions += "\n" + (wgsl ? hapticShadowWgsl(false) : hapticShadowGlsl(false)) + fn("volumeLightShadow", [[v4, "shadow"], [v3, "p"], [v3, "lightPosition"]], f, `
+${decl(v3, "P", `p - ${u("volumeShadowOffset")}`)}
+if (shadow.x < ${code.compare - 0.5}) { return 1.0; }
+if (shadow.x < ${code.compare + 0.5}) { return hapticShadow(shadow.z, P, ${v3}(0.0), ${v3}(0.0)); }
+if (shadow.x < ${code.cube + 0.5}) { return hapticPointShadow(${v4}(shadow.z, shadow.y, 0.0, 0.0), p - lightPosition, P); }
+return hapticSunShadowFactor(P, ${v3}(0.0), ${v3}(0.0));`);
+  }
+  /** Slot `i`'s shadow from its light's own map, declaring the slot's samplers: a kind per sampler. */
+  const mapVisibility = (i: number): string => {
     // Each kind has its own sampler (and the index Babylon binds it under), so no sampler ever changes type.
     const compare = `shadowTexture${volumeShadowIndex(i, "compare")}`;
     const cube = `shadowTexture${volumeShadowIndex(i, "cube")}`;
@@ -207,6 +225,13 @@ ${decl(integer, "last", "max(cascades - 1, 0)")}
 if (viewZ > ${u(splits)}[last]) { return 1.0; }
 ${compareTail(`${u(matrices)}[layer]`, cascades, "layer")}`;
     } else visibility += "return 1.0;";
+    return visibility;
+  };
+  for (let i = 0; i < slots; i++) {
+    for (const name of ["volumePosition", "volumeDirection", "volumeColor"])
+      header += field(v4, `${name}${i}`);
+    header += field(v2, `volumeCone${i}`) + field(v2, `volumeDepth${i}`) + field(v4, `volumeShadow${i}`);
+    // A slot's shadow: the light block's view on its path, else its light's map in the slot's samplers.
     functions += fn(
       `visibility${i}`,
       [
@@ -214,7 +239,7 @@ ${compareTail(`${u(matrices)}[layer]`, cascades, "layer")}`;
         [f, "viewZ"],
       ],
       f,
-      visibility,
+      lightBlock ? `return volumeLightShadow(${u(`volumeShadow${i}`)}, p, ${u(`volumePosition${i}`)}.xyz);` : mapVisibility(i),
     );
     // Slots past the lights taking part this frame are skipped: one uniform branch per step.
     lighting += `if (${u("volumeLightCount")} > ${i}.5) {
