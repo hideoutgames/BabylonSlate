@@ -38,8 +38,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       // The waves move between the two draws, so a few silhouette pixels may change.
       expect(closed, material).toBeLessThan(opened / 10);
     }
-    // The translucent Materials drew their depth pre-pass as its own program.
+    // The translucent Materials drew their depth pre-pass as its own program, and the starter its geometry pass.
     expect(result.prePassEffects).toBeGreaterThanOrEqual(1);
+    expect(result.geometryEffects).toBeGreaterThanOrEqual(1);
     // The water starter drew: clear water, it tints the magenta background it refracts (most of the lake, measured).
     let drawn = 0;
     for (let index = 0; index < result.starterPixels.length; index += 4) {

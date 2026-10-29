@@ -80,7 +80,7 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 
 A Water asset reflects scene objects only when its **Object Reflections** is on.
 
-Built-in water takes no **Ambient Occlusion** or **Real-Time Reflections** from [Post Processing](post-processing.md): occlusion would darken the moving waves in patches, and the water draws its own reflections.
+Water takes no **Ambient Occlusion** or **Real-Time Reflections** from [Post Processing](post-processing.md), whether built in or drawn by a [Custom Material](#custom-water-materials): occlusion would darken the moving waves in patches, and the water draws its own reflections.
 
 ## Custom water Materials
 
@@ -88,7 +88,7 @@ Set a Water asset's **Custom Material** to a Surface Material to replace the bui
 
 To edit the built-in look, choose **Edit As Material** in the Water asset's Inspector. It creates a Material that closely matches the built-in water, built from the water nodes, sets it as the **Custom Material** and opens it. You can also start one with **New Asset > Rendering > Material** and the **Water** starter, or **Create New** in the **Custom Material** picker.
 
-The water Material moves with the asset's waves and takes its colours on every kind of water body, so the Water asset's settings still apply. It is Translucent and built from every water node:
+The water Material moves with the asset's waves and takes its colours on every kind of water body, so the Water asset's settings still apply. It is Translucent, two-sided (so it shows from below the surface too) and built from every water node:
 
 - Deep Color, with the sunlight through the crests (Water Waves **Subsurface**) in Shallow Color, lit by the scene (Water Colors **Scene Light**).
 - In shallow water, what lies below, by the water's [Transmittance](../scripting/material/water-depth-fade.md): clear in the shallows, tinted toward the deep water's colour with depth.

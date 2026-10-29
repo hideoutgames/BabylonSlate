@@ -55,22 +55,29 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     // FragmentOutputBlock assumes attachment zero is color. Geometry tasks can
     // put color last or omit it entirely, so overwrite each requested slot after
     // the native output, within this block (including after CEL/PBR switches).
-    for (let index = 0; index < 8; index++) {
-      const target = wgsl ? `fragmentOutputs.fragData${index}` : `gl_FragData[${index}]`;
-      for (const [define, value] of [
-        ["PREPASS_COLOR", savedColor],
-        ["PREPASS_DEPTH", `${vec4}((${view} * ${position}).z, 0.0, 0.0, 1.0)`],
-        ["PREPASS_REFLECTIVITY", reflectivity],
-        ["PREPASS_NORMALIZED_VIEW_DEPTH", `${vec4}(((${view} * ${position}).z - ${camera}.y) / (${camera}.z - ${camera}.y), 0.0, 0.0, 1.0)`],
-        ["PREPASS_WORLD_NORMAL", `${vec4}(normalize(${normal}) * 0.5 + 0.5, 1.0)`],
-      ]) {
-        state.compilationString += `#if defined(PREPASS) && defined(${define}) && ${define}_INDEX == ${index}\n${target} = ${value};\n#endif\n`;
-      }
+    for (const [define, value] of [
+      ["PREPASS_COLOR", savedColor],
+      ["PREPASS_DEPTH", `${vec4}((${view} * ${position}).z, 0.0, 0.0, 1.0)`],
+      ["PREPASS_REFLECTIVITY", reflectivity],
+      ["PREPASS_NORMALIZED_VIEW_DEPTH", `${vec4}(((${view} * ${position}).z - ${camera}.y) / (${camera}.z - ${camera}.y), 0.0, 0.0, 1.0)`],
+      ["PREPASS_WORLD_NORMAL", `${vec4}(normalize(${normal}) * 0.5 + 0.5, 1.0)`],
+    ]) {
+      state.compilationString += geometryOutputWrite(wgsl, define, value);
     }
     return this;
   }
 }
 RegisterClass("BABYLON.GeometrySurfaceOutputBlock", GeometrySurfaceOutputBlock);
+
+/** Writes `value` to the geometry output `define` names (`PREPASS_WORLD_NORMAL` and so on), where the pass has one. */
+export function geometryOutputWrite(wgsl: boolean, define: string, value: string): string {
+  let code = "";
+  for (let index = 0; index < 8; index++) {
+    const target = wgsl ? `fragmentOutputs.fragData${index}` : `gl_FragData[${index}]`;
+    code += `#if defined(PREPASS) && defined(${define}) && ${define}_INDEX == ${index}\n${target} = ${value};\n#endif\n`;
+  }
+  return code;
+}
 
 export function connectGeometrySurfaceOutput(
   block: GeometrySurfaceOutputBlock,

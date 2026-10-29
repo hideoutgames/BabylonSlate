@@ -20,8 +20,10 @@ import { waterPlanarReflectionForCamera } from "./water-planar-reflection";
 import { waterRemovalShapeVector } from "./water-removal-mesh";
 import {
   PLANAR_REACH, REFRACTION_DEPTH_CAP, REFRACTION_FAR, REFRACTION_SHIFT as BUILT_IN_REFRACTION_SHIFT, REFRACTION_SHIFT_PX as BUILT_IN_REFRACTION_SHIFT_PX,
-  WATER_REFRACTION_SCALE,
+  WATER_EFFECTS_GEOMETRY_DEFINE, WATER_REFRACTION_SCALE,
 } from "./water-shader-defines";
+import { geometryOutputWrite } from "./geometry-surface-output-block";
+import { isSpatialGeometryPass } from "./spatial-geometry-passes";
 import { isSkyboxMesh } from "./skybox";
 import { WATER_SCENE_COPY_SKY_DEPTH, isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 import { declareWaterAttributes, isBlendingWaterSurface, isWaterSurfaceMesh, WATER_DEPTH_PRE_PASS_DEFINE, WATER_SURFACE_DEFINE } from "./water-surface-block";
@@ -883,7 +885,8 @@ function meshRemovals(scene: Scene, mesh: AbstractMesh): readonly WaterRemovalCa
  * owns. The depth pre-pass (colour writes off, under its own render pass: `WATER_DEPTH_PRE_PASS_DEFINE`) discards it at
  * once and returns before the look; the colour pass discards it at the very end, after every derivative of the look was
  * taken with the whole quad running. A blending GPU-path surface also culls vertices deep in water it never draws
- * (`waterBlendCullSource`).
+ * (`waterBlendCullSource`). In the scene effects' geometry pass (`WATER_EFFECTS_GEOMETRY_DEFINE`) the water writes no
+ * normal or reflectivity, as built-in water writes none, so ambient occlusion and Real-Time Reflections skip it.
  */
 export class WaterCutBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -897,8 +900,11 @@ export class WaterCutBlock extends WaterNodeBlock {
   override getClassName(): string { return "WaterCutBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
     prepareSurfaceDefines(defines, material, mesh, false);
+    const scene = material.getScene(), engine = scene.getEngine(), water = isWaterSurfaceMesh(mesh);
     defines.setValue(WATER_BLEND_DEFINE, isBlendingWaterSurface(mesh), true);
-    defines.setValue(WATER_DEPTH_PRE_PASS_DEFINE, isWaterSurfaceMesh(mesh) && !material.getScene().getEngine().getColorWrite(), true);
+    defines.setValue(WATER_DEPTH_PRE_PASS_DEFINE, water && !engine.getColorWrite(), true);
+    // Registered with the pass's geometry task before its first readiness probe, so it never changes for the pass.
+    defines.setValue(WATER_EFFECTS_GEOMETRY_DEFINE, water && isSpatialGeometryPass(scene, engine.currentRenderPassId), true);
   }
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
     if (!isWaterSurfaceMesh(mesh)) return;
@@ -945,6 +951,10 @@ export class WaterCutBlock extends WaterNodeBlock {
       + `${removed} = swnCut < 0.0 || swnKeep < 0.0 || (swnField.w > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swnField.y + swnHeight <= 0.0);\n}\n`
       + `#ifdef ${WATER_DEPTH_PRE_PASS_DEFINE}\nif (${removed}) { discard; }\nreturn${wgsl ? " fragmentOutputs" : ""};\n#endif\n#endif\n`;
     state._injectAtEnd += `#if defined(${WATER_SURFACE_DEFINE}) && !defined(${WATER_DEPTH_PRE_PASS_DEFINE})\nif (${removed}) { discard; }\n#endif\n`;
+    // After the output's geometry writes: the encoded zero normal and zero reflectivity those effects skip.
+    const v4 = wgsl ? "vec4f" : "vec4";
+    state._injectAtEnd += `#ifdef ${WATER_EFFECTS_GEOMETRY_DEFINE}\n${geometryOutputWrite(wgsl, "PREPASS_WORLD_NORMAL", `${v4}(0.5, 0.5, 0.5, 1.0)`)}`
+      + `${geometryOutputWrite(wgsl, "PREPASS_REFLECTIVITY", `${v4}(0.0, 0.0, 0.0, 1.0)`)}#endif\n`;
     return this;
   }
 }

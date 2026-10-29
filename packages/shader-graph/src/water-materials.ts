@@ -16,6 +16,8 @@ export function createWaterMaterialDocument(name: string): MaterialDocument {
   const doc = createDefaultMaterialDocument(name);
   doc.blendMode = "translucent";
   doc.shadingModel = "pbr";
+  // Seen from below too, as built-in water is.
+  doc.twoSided = true;
   const nodes: MaterialGraphNode[] = [doc.nodes.find((node) => node.type === "output.surface")!];
   const edges: MaterialGraphEdge[] = [];
   const node = (id: string, type: string, x: number, y: number, defaults: Record<string, number | readonly number[]> = {}) => {
