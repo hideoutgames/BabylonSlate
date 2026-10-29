@@ -194,24 +194,22 @@ export function volumetricMarchIdle(
   return volume.density <= 0 && (!localVolumes || selectFogVolumes(scene, camera, volume.maxDistance).length === 0);
 }
 
-/** Shader store keys of the fragment sources that read uniform buffers, by language and source. */
-const storedFragments = new Map<string, string>();
-
-/** `fragment`'s key in the shader store, registered with its first use. */
+/**
+ * `fragment`'s key in the shader store, which holds it from its first use: its source's FNV-1a hash and length, so a
+ * source always has the same key and Babylon's compiled Effect of a key is always that source's.
+ */
 function storedFragment(fragment: string, wgsl: boolean): string {
-  const id = `${wgsl ? "wgsl" : "glsl"}:${fragment}`;
-  let key = storedFragments.get(id);
-  if (!key) {
-    key = `hapticSpatialStage${storedFragments.size}`;
-    storedFragments.set(id, key);
-    ShaderStore.GetShadersStore(wgsl ? ShaderLanguage.WGSL : ShaderLanguage.GLSL)[`${key}FragmentShader`] = fragment;
-  }
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < fragment.length; index++) hash = Math.imul(hash ^ fragment.charCodeAt(index), 0x01000193);
+  const key = `hapticSpatialStage${(hash >>> 0).toString(16)}x${fragment.length}`;
+  ShaderStore.GetShadersStore(wgsl ? ShaderLanguage.WGSL : ShaderLanguage.GLSL)[`${key}FragmentShader`] ??= fragment;
   return key;
 }
 
 /**
  * A stage's Effect from its inline fragment source. Babylon builds an inline source's Effect with a constructor that
- * takes no uniform buffers, so a fragment that reads one (the light block's) is drawn from the shader store instead.
+ * takes no uniform buffers, so a fragment that reads one (the light block's) is drawn from the shader store instead,
+ * where stages of the same source share one Effect (Babylon reports its compile failure to the first of them only).
  */
 function customWrapper(
   scene: Scene,
