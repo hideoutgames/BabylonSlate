@@ -13,6 +13,77 @@ index ad74e8e1285c4b11dd438bc3d17f44cf44043d88..935c8ebb843a0c58a473dc33c55d3f5a
                      depthBiasClamp: topologyIsTriangle ? this._depthBiasClamp : 0,
                      depthBiasSlopeScale: topologyIsTriangle ? this._depthBiasSlopeScale : 0,
                  },
+diff --git a/Engines/thinEngine.pure.d.ts b/Engines/thinEngine.pure.d.ts
+index 24b6329cb60c28f279e16018f9a3f5566d8c30b5..82cfaba9ce0c12d963c3b5074fe5149494fa0b33 100644
+--- a/Engines/thinEngine.pure.d.ts
++++ b/Engines/thinEngine.pure.d.ts
+@@ -982,6 +982,16 @@ export declare class ThinEngine extends AbstractEngine {
+      * @internal
+      */
+     _bindTexture(channel: number, texture: Nullable<InternalTexture>, name: string): void;
++    /**
++     * Haptic: the WebGL2 sampler object a texture unit samples the uniform `name` with, null for the texture's own state.
++     * @internal
++     */
++    _samplerObjectFor?: (name: string) => Nullable<WebGLSampler>;
++    /**
++     * Haptic: binds `_samplerObjectFor(name)`, or none, to texture unit `channel`.
++     * @internal
++     */
++    _bindSamplerObject(channel: number, name: string): void;
+     /**
+      * Unbind all textures from the webGL context
+      */
+diff --git a/Engines/thinEngine.pure.js b/Engines/thinEngine.pure.js
+index 1b0259a1a514fadb726788114650232754c0287f..1d76e2606711a4de83509a940109fe5419eca330 100644
+--- a/Engines/thinEngine.pure.js
++++ b/Engines/thinEngine.pure.js
+@@ -3157,6 +3157,37 @@ export class ThinEngine extends AbstractEngine {
+         this._activeChannel = channel;
+         const target = texture ? this._getTextureTarget(texture) : this._gl.TEXTURE_2D;
+         this._bindTextureDirectly(target, texture);
++        this._bindSamplerObject(channel, name);
++    }
++    /**
++     * Haptic: binds the WebGL2 sampler object `_samplerObjectFor(name)` gives the uniform `name` to texture unit
++     * `channel`, or none, so that unit samples with the texture's own state. A sampler object overrides the state of
++     * whichever texture the unit holds, so every texture bound through `_setTexture` or `_bindTexture` sets it. Nothing
++     * happens until `_samplerObjectFor` is set.
++     * @internal
++     */
++    _bindSamplerObject(channel, name) {
++        // A texture array's missing layers come as unit -1.
++        if (!this._samplerObjectFor || channel < 0) {
++            return;
++        }
++        const sampler = (name && this._samplerObjectFor(name)) || null;
++        const bound = (this._boundSamplerObjects ??= []);
++        if (bound[channel] === sampler) {
++            return;
++        }
++        this._gl.bindSampler(channel, sampler);
++        bound[channel] = sampler;
++    }
++    /**
++     * Reset the texture cache to empty state
++     */
++    resetTextureCache() {
++        super.resetTextureCache();
++        // Haptic: the units' sampler objects are unknown too (`_bindSamplerObject`).
++        if (this._boundSamplerObjects) {
++            this._boundSamplerObjects.length = 0;
++        }
+     }
+     /**
+      * Unbind all textures from the webGL context
+@@ -3208,6 +3239,7 @@ export class ThinEngine extends AbstractEngine {
+         return this._gl.REPEAT;
+     }
+     _setTexture(channel, texture, isPartOfTextureArray = false, depthStencilTexture = false, name = "") {
++        this._bindSamplerObject(channel, name);
+         // Not ready?
+         if (!texture) {
+             if (this._boundTexturesCache[channel] != null) {
 diff --git a/Materials/Node/Blocks/Input/inputBlock.pure.js b/Materials/Node/Blocks/Input/inputBlock.pure.js
 index af4f41adb3fc89a86ecc1ca868192ba4a754135b..5b9b5dc169279876b20f2359ab70007b6c5a1ea3 100644
 --- a/Materials/Node/Blocks/Input/inputBlock.pure.js
