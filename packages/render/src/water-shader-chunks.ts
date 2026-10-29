@@ -119,6 +119,37 @@ if (${sceneZ} < ${waterZ} && swCopyTexel.x > ${pixel} * 1.01) {
 }
 
 /**
+ * The four-tap shoreline: where `cond` holds (known terrain under waves), the local world-space shoreline distance as
+ * the displaced depth `depth` over the terrain slope, written into `shore` (a variable holding the stored rest
+ * distance), and the slope as `swShoreSlope` (1, steep, where clamped or unmeasured), which sizes the soft shore.
+ * Central differences one cell apart around the field uv `uv` keep the slope continuous (a bilinear field's own gradient
+ * steps at every cell); they read the fine depth (2 cm steps) through `tap` (a field tap at an explicit level, legal in
+ * the branch). Where a tap is clamped beyond the fine range (a floor deeper than any trough reaches, or land above the
+ * highest crest) the waves cannot move the shoreline, so the stored rest distance stands: steep coasts keep their
+ * shoreline, and the full-range depth's 16 cm steps never read as slopes (over a gentle deep floor they drew contour
+ * rings of shore foam). Only real terrain takes this path: cells extended past an underwater landscape edge (alpha ramp)
+ * have no floor slope to measure. GLSL-shaped; reads `U.slateWaterFieldStep` and `U.slateWaterFieldBounds`. Built-in
+ * water and the water nodes share it.
+ */
+export function shorelineSource(o: { tap: string; uv: string; cond: string; depth: string; shore: string }): string {
+  return `
+float swShoreSlope = 1.0;
+if (${o.cond}) {
+  vec2 swFieldStep = U.slateWaterFieldStep.xy;
+  vec4 swTapE = ${o.tap}(${o.uv} + vec2(swFieldStep.x, 0.0));
+  vec4 swTapW = ${o.tap}(${o.uv} - vec2(swFieldStep.x, 0.0));
+  vec4 swTapN = ${o.tap}(${o.uv} + vec2(0.0, swFieldStep.y));
+  vec4 swTapS = ${o.tap}(${o.uv} - vec2(0.0, swFieldStep.y));
+  vec2 swCellMetres = max(swFieldStep / U.slateWaterFieldBounds.zw, vec2(0.000001));
+  vec2 swTerrainSlope = vec2(swTapE.b - swTapW.b, swTapN.b - swTapS.b) * (U.slateWaterFieldStep.z * 0.5) / swCellMetres;
+  float swFineClamped = max(smoothstep(0.93, 0.99, max(max(swTapE.b, swTapW.b), max(swTapN.b, swTapS.b))),
+    1.0 - smoothstep(0.01, 0.07, min(min(swTapE.b, swTapW.b), min(swTapN.b, swTapS.b))));
+  ${o.shore} = mix(clamp(${o.depth} / max(length(swTerrainSlope), 0.001), ${f(SHORE[0])}, ${f(SHORE[1])}), ${o.shore}, swFineClamped);
+  swShoreSlope = mix(length(swTerrainSlope), 1.0, swFineClamped);
+}`;
+}
+
+/**
  * What meets the water from the terrain and the body's edges, as `swBank` (bank distance, capped by the terrain's
  * shoreline), `swDepth` (the bottom estimate: a shelving bank capped by the body's depth, or the terrain where it is
  * known), `swEdgeFade` (the water thins out over its last few centimetres, crisp at walls and cliffs) and `swOpenFade`
@@ -909,10 +940,6 @@ export function cutSource(wgsl: boolean): string {
   const sampleContacts = wgsl
     ? "var swContactTex: vec4f = textureSampleLevel(slateWaterContactSampler, slateWaterContactSamplerSampler, swContactUv, 0.0);"
     : "vec4 swContactTex = texture2D(slateWaterContactSampler, swContactUv);";
-  // Inside a branch: explicit level 0, no implicit derivatives.
-  const tap = (name: string, uv: string) => wgsl
-    ? `var ${name}: vec4f = textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, ${uv}, 0.0);`
-    : `vec4 ${name} = texture2DLodEXT(slateWaterFieldSampler, ${uv}, 0.0);`;
   const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `swRemoval(U.slateWaterRemoval${i}, U.slateWaterRemovalShape${i}, swPosW)`);
   const blended = (i: number) => Array.from({ length: BLEND_PARTNERS }, (_, k) =>
     ` + U.${BLEND_COLOR_UNIFORMS[k * COLOR_UNIFORMS.length + i]} * swBlendShares[${k}]`).join("");
@@ -962,32 +989,8 @@ float swDet = swDx.x * swDy.y - swDx.y * swDy.x;
 float swSafeDet = mix(1e-12, swDet, step(1e-12, abs(swDet)));
 vec2 swContactGrad = vec2(swContactDerivative.x * swDy.y - swContactDerivative.y * swDx.y, swDx.x * swContactDerivative.y - swDy.x * swContactDerivative.x) / swSafeDet;
 vec2 swContactDir = swContactGrad / max(length(swContactGrad), 0.00001);
-// Over known terrain with waves, convert wave-relative depth to a local world-space shoreline distance: the
-// displaced depth over the terrain slope. Central differences one cell apart keep that slope continuous (a bilinear
-// field's own gradient steps at every cell); they read the fine depth (2 cm steps). Where a tap is clamped beyond the
-// fine range (a floor deeper than any trough reaches, or land above the highest crest) the waves cannot move the
-// shoreline, so the stored rest distance stands: steep coasts keep their shoreline, and the full-range depth's 16 cm
-// steps never read as slopes (over a gentle deep floor they drew contour rings of shore foam). Rest-height distance
-// stays exact when waves are off. Only real terrain takes this path: cells extended past an underwater landscape edge
-// (alpha ramp) have no floor slope to measure, so they keep the stored distance to real land. Open water skips the
-// four taps. The terrain's slope there (\`swShoreSlope\`; 1, steep, where clamped or unmeasured) sizes the shore swash,
-// and its seaward direction (\`swShoreNormal\`, zero where unmeasured) tells the bores which coasts face the swell.
-float swShoreSlope = 1.0;
-vec2 swShoreNormal = vec2(0.0);
-if (U.slateWaterWaves.x > 0.0 && swField.a > ${f(WATER_FIELD_TERRAIN_ALPHA)}) {
-  vec2 swFieldStep = U.slateWaterFieldStep.xy;
-  ${tap("swTapE", "swFieldUv + vec2(swFieldStep.x, 0.0)")}
-  ${tap("swTapW", "swFieldUv - vec2(swFieldStep.x, 0.0)")}
-  ${tap("swTapN", "swFieldUv + vec2(0.0, swFieldStep.y)")}
-  ${tap("swTapS", "swFieldUv - vec2(0.0, swFieldStep.y)")}
-  vec2 swCellMetres = max(swFieldStep / U.slateWaterFieldBounds.zw, vec2(0.000001));
-  vec2 swTerrainSlope = vec2(swTapE.b - swTapW.b, swTapN.b - swTapS.b) * (swFineSpan * 0.5) / swCellMetres;
-  float swFineClamped = max(smoothstep(0.93, 0.99, max(max(swTapE.b, swTapW.b), max(swTapN.b, swTapS.b))),
-    1.0 - smoothstep(0.01, 0.07, min(min(swTapE.b, swTapW.b), min(swTapN.b, swTapS.b))));
-  swTerrainShore = mix(clamp(swTerrainDepth / max(length(swTerrainSlope), 0.001), ${f(SHORE[0])}, ${f(SHORE[1])}), swTerrainShore, swFineClamped);
-  swShoreSlope = mix(length(swTerrainSlope), 1.0, swFineClamped);
-  swShoreNormal = swTerrainSlope / max(length(swTerrainSlope), 0.0001) * (1.0 - swFineClamped);
-}
+// The four-tap shoreline (\`shorelineSource\`) over known terrain with waves.
+${shorelineSource({ tap: "swFieldTapAt", uv: "swFieldUv", cond: `U.slateWaterWaves.x > 0.0 && swField.a > ${f(WATER_FIELD_TERRAIN_ALPHA)}`, depth: "swTerrainDepth", shore: "swTerrainShore" })}
 float swCut = min(min(${removals[0]}, ${removals[1]}), min(${removals[2]}, ${removals[3]}));
 // Only real terrain removes water; cells extended past a landscape's edge (alpha ramp) never do.
 ${wgsl ? "var swRemoved: bool" : "bool swRemoved"} = swCut < 0.0 || swBlendKeep < 0.0 || (swField.a * swFieldOn > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swTerrainDepth <= 0.0);
