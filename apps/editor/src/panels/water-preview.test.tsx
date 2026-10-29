@@ -42,6 +42,8 @@ vi.mock("@haptic/render", async () => {
       return host;
     },
     attachMaterialPreviewGestures: () => ({ dispose: () => {} }),
+    // Graph Materials draw with Babylon's lighting here: built-in water keeps its plugin.
+    builtInWaterMaterial: () => null,
     createMaterialPreviewPresenter: () => ({ present: () => { harness.presents += 1; }, dispose: () => {} }),
     createWaterMesh: (scene: unknown, _name: string, _body: unknown, definition: WaterDefinition, material: unknown) => {
       const mesh = { host: harness.hosts.find((host) => host.scene === scene)!, definition: structuredClone(definition), material };
