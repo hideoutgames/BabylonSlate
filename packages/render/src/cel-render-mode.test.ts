@@ -118,6 +118,24 @@ describe("CEL render mode", () => {
     compiled.dispose();
   });
 
+  it("fogs a CEL graph by the one rule, in linear between its display colour and output", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    setSceneRenderSettings(scene, { mode: "cel", cel: normalizeCelShadingSettings({}) });
+    const compiled = await defaultGraph(scene, "graph-fog");
+    const material = compiled.material;
+    expect(material.compiledShaders).toContain("return toLinearSpace(CalcFogFactor(viewPosition, sceneFogInfo));");
+    expect(material.compiledShaders).toMatch(/= toGammaSpace\(fogKeep\w* \* toLinearSpace\(\w+\.rgb\) \+ \(1\.0 - fogKeep\w*\) \* sceneFogColor\.rgb\);/);
+    const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
+    mesh.material = material;
+    await material.forceCompilationAsync(mesh);
+    const subMesh = mesh.subMeshes[0]!;
+    expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+    expect(subMesh.effect!.defines).toMatch(/^#define FOG$/m);
+    compiled.dispose();
+  });
+
   it("switches authored graphs in place and preserves frozen materials and live parameters", async () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();

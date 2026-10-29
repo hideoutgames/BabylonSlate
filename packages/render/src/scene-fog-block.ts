@@ -55,6 +55,8 @@ export function emitSceneFogFactor(state: NodeMaterialBuildState): void {
  * Material; the water nodes that undo or read the fog use the same factor.
  */
 export class SceneFogBlock extends NodeMaterialBlock {
+  /** The input and output are display-space (the legacy CEL surface's): fogged in linear by the same rule between. */
+  displaySpace = false;
   constructor(name: string) {
     super(name, NodeMaterialBlockTargets.Fragment);
     this.registerInput("input", Types.Color3);
@@ -87,9 +89,11 @@ export class SceneFogBlock extends NodeMaterialBlock {
     state._emitUniformFromString(SCENE_FOG_COLOR_UNIFORM, Types.Vector4);
     const output = this.output.associatedVariableName, input = this.input.associatedVariableName;
     const keep = state._getFreeVariableName("fogKeep");
+    const linear = this.displaySpace ? `${wgsl ? "toLinearSpaceVec3" : "toLinearSpace"}(${input}.rgb)` : `${input}.rgb`;
+    const fogged = `${keep} * ${linear} + (1.0 - ${keep}) * ${wgsl ? "uniforms." : ""}${SCENE_FOG_COLOR_UNIFORM}.rgb`;
     state.compilationString += `${state._declareOutput(this.output)} = ${input}.rgb;\n#ifdef FOG\n`
       + `${state._declareLocalVar(keep, Types.Float)} = sceneFogKeep((${this.view.associatedVariableName} * vec4${wgsl ? "f" : ""}(${this.worldPosition.associatedVariableName}.xyz, 1.0)).xyz);\n`
-      + `${output} = ${keep} * ${input}.rgb + (1.0 - ${keep}) * ${wgsl ? "uniforms." : ""}${SCENE_FOG_COLOR_UNIFORM}.rgb;\n#endif\n`;
+      + `${output} = ${this.displaySpace ? `${wgsl ? "toGammaSpaceVec3" : "toGammaSpace"}(${fogged})` : fogged};\n#endif\n`;
     return this;
   }
 }
