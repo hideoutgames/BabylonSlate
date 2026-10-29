@@ -9,6 +9,7 @@ import {
   type Camera,
   type DirectionalLight,
   type Effect,
+  type PointLight,
   type Scene,
   type SpotLight,
 } from "@babylonjs/core";
@@ -258,33 +259,51 @@ function construct<T>(placement: Placement, build: () => T): T {
 }
 
 /**
- * A spot light's shadow generator drawing into its tile of the Scene's atlas, made only while a tile of its size is
- * free (`createAtlasShadowGenerator`). It moves between lights as its legacy counterpart does (`moveTo`), keeping its
- * tile; disposing it frees the tile.
+ * A spot or point light's shadow generator drawing into its tiles of the Scene's atlas: a spot light's one, a point
+ * light's six, one per cube face in Babylon's order (+X, -X, -Y, +Y, +Z, -Z), each a 90-degree view drawn and sampled
+ * as a spot light's is. Made only while that many tiles of its size are free (`createAtlasShadowGenerator`). It moves
+ * between lights of its kind as its legacy counterpart does (`moveTo`), keeping its tiles; disposing it frees them.
  */
 export class AtlasShadowGenerator extends ReusableShadowGenerator implements AtlasShadow {
   // Set while Babylon's constructor builds the map, before field initializers would run.
   declare private placement: Placement;
-  private readonly view = Matrix.Identity();
-  private readonly views = [this.view];
+  declare private views: Matrix[];
   private drawn = false;
 
   get tiles(): readonly ShadowAtlasTile[] {
     return this.placement.tiles;
   }
 
-  /** The tile, in texels of the atlas. */
+  /** The first tile, in texels of the atlas. */
   get tile(): ShadowAtlasTile {
     return this.placement.tiles[0]!;
   }
 
   get drawnViews(): readonly Matrix[] {
-    if (!this.drawn) this.view.copyFrom(this.getTransformMatrix());
+    // A spot light's view until its first draw; a point light's faces are drawn in turn.
+    if (!this.drawn && this.views.length === 1) this.views[0]!.copyFrom(this.getTransformMatrix());
     return this.views;
+  }
+
+  // PCF on a point light's faces too: Babylon's own cube maps fall back to Poisson sampling, whose casters write no
+  // biased depth.
+  override get filter(): number {
+    return super.filter;
+  }
+
+  override set filter(value: number) {
+    if (!this._light.needCube()) {
+      super.filter = value;
+      return;
+    }
+    if (this._filter === value) return;
+    this._filter = value;
+    this._light._markMeshesAsLightDirty();
   }
 
   protected override _createTargetRenderTexture(): void {
     this.placement ??= placing!;
+    this.views ??= this.placement.tiles.map(() => Matrix.Identity());
     this._shadowMap?.dispose();
     const map = new AtlasTileTarget(`${this._light.name}_shadowTile`, this.placement.atlas.target, this.placement.tiles);
     map.noPrePassRenderer = true;
@@ -293,8 +312,9 @@ export class AtlasShadowGenerator extends ReusableShadowGenerator implements Atl
 
   protected override _initializeShadowMap(): void {
     super._initializeShadowMap();
-    drawIntoTiles(this._shadowMap as AtlasTileTarget, this.placement.atlas.tiles.edge, () => {
-      this.view.copyFrom(this.getTransformMatrix());
+    // Babylon's observer has set the pass's face (`_currentFaceIndex`) by now, so the view is that face's.
+    drawIntoTiles(this._shadowMap as AtlasTileTarget, this.placement.atlas.tiles.edge, (face) => {
+      this.views[face]!.copyFrom(this.getTransformMatrix());
       this.drawn = true;
     });
   }
@@ -309,11 +329,11 @@ export class AtlasShadowGenerator extends ReusableShadowGenerator implements Atl
 }
 
 /**
- * A spot light's shadow generator with a `size`-texel tile of the Scene's `edge`-texel atlas, or null when the atlas
- * has no tile of that size free.
+ * A spot or point light's shadow generator with `size`-texel tiles of the Scene's `edge`-texel atlas (a point light's
+ * six, one per cube face), or null when the atlas has not that many free.
  */
-export function createAtlasShadowGenerator(light: SpotLight, size: number, edge: number): AtlasShadowGenerator | null {
-  const placement = place(light.getScene(), size, 1, edge);
+export function createAtlasShadowGenerator(light: SpotLight | PointLight, size: number, edge: number): AtlasShadowGenerator | null {
+  const placement = place(light.getScene(), size, light.needCube() ? 6 : 1, edge);
   return placement && construct(placement, () => new AtlasShadowGenerator(size, light));
 }
 

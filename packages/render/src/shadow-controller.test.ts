@@ -124,7 +124,24 @@ describe("shared shadow lifecycle", () => {
     expect([single.numCascades, single.tiles.length]).toEqual([1, 1]);
   });
 
-  it("draws spot maps as tiles of the light block's atlas, rebuilt for another atlas edge and released with the last", () => {
+  it("draws a point light's shadow as six face tiles of the light block's atlas, filtered with PCF", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    setHapticLighting(engine, true);
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
+    const lamp = new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    controller.register(lamp, true);
+    controller.sync();
+    const generator = lamp.getShadowGenerator() as AtlasShadowGenerator;
+    expect(generator).toBeInstanceOf(AtlasShadowGenerator);
+    // Medium's 1024 local maps, one per face.
+    expect(generator.tiles.map((tile) => tile.size)).toEqual([1024, 1024, 1024, 1024, 1024, 1024]);
+    expect(generator.usePercentageCloserFiltering).toBe(true);
+    expect(controller.diagnostics()[0]?.passes).toBe(6);
+  });
+
+    it("draws spot maps as tiles of the light block's atlas, rebuilt for another atlas edge and released with the last", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     Object.assign(engine.getCaps(), { maxTextureSize: 8192 });

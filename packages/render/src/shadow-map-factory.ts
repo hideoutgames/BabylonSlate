@@ -94,14 +94,14 @@ export function shadowAllocationCheckpoint(
 }
 
 /**
- * A spot map, or the sun's cascades, as tiles of the lighting plan's atlas; a full atlas fails the allocation, which
- * the controller retries smaller.
+ * A spot map, a point light's faces or the sun's cascades as tiles of the lighting plan's atlas; a full atlas fails the
+ * allocation, which the controller retries smaller.
  */
-function atlasShadowGenerator(light: SpotLight | DirectionalLight, mapSize: number, cascades: number, atlasEdge: number): ShadowGenerator {
+function atlasShadowGenerator(light: SpotLight | PointLight | DirectionalLight, mapSize: number, cascades: number, atlasEdge: number): ShadowGenerator {
   const generator = light instanceof DirectionalLight
     ? createAtlasCascadedShadowGenerator(light, mapSize, cascades, atlasEdge)
     : createAtlasShadowGenerator(light, mapSize, atlasEdge);
-  if (!generator) throw new Error(`The shadow atlas has no ${light instanceof DirectionalLight ? cascades : 1} free ${mapSize}-texel tiles.`);
+  if (!generator) throw new Error(`The shadow atlas has no room for ${light.name}'s ${mapSize}-texel tiles.`);
   return generator;
 }
 
@@ -110,7 +110,7 @@ function atlasShadowGenerator(light: SpotLight | DirectionalLight, mapSize: numb
  * receiver defines, automatic bias, culled caster lists and draw counters.
  * `view` keys a sun map to a view's camera (attachView); null is the scene
  * view's map, which receivers of every other camera bind. `atlasEdge`: the
- * lighting plan's atlas a spot map or the scene view's sun is a tile of
+ * lighting plan's atlas the scene view's maps are tiles of
  * (`ShadowAdmissionBudget.atlasEdge`), 0 for maps of their own.
  */
 export function createShadowGenerator(
@@ -131,7 +131,7 @@ export function createShadowGenerator(
   const camera = view ?? undefined;
   const generator =
     atlasTileEdge(entry.light, atlasEdge)
-      ? atlasShadowGenerator(entry.light as SpotLight | DirectionalLight, mapSize, settings.cascades, atlasEdge)
+      ? atlasShadowGenerator(entry.light, mapSize, settings.cascades, atlasEdge)
       : directionalLight && settings.cascades > 1
         ? new CascadedShadowGenerator(
             mapSize,

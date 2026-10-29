@@ -161,6 +161,18 @@ float hapticShadow(float index, vec3 P, vec3 dPdx, vec3 dPdy) {
   return mix(shading.x, 1.0, lit);
 }
 
+// A point light's shadow (its record's \`shadow\`: first view, faces): the view of the cube face the position lies in,
+// in Babylon's order (+X, -X, -Y, +Y, +Z, -Z); the one view of a point light with a direction.
+float hapticPointShadow(vec4 shadow, vec3 fromLight, vec3 P) {
+  if (shadow.x < 0.0) return 1.0;
+  vec3 a = abs(fromLight);
+  float face = shadow.y < 1.5 ? 0.0
+    : a.x >= a.y && a.x >= a.z ? (fromLight.x > 0.0 ? 0.0 : 1.0)
+    : a.y >= a.z ? (fromLight.y < 0.0 ? 2.0 : 3.0)
+    : (fromLight.z > 0.0 ? 4.0 : 5.0);
+  return hapticShadow(shadow.x + face, P, vec3(0.0), vec3(0.0));
+}
+
 // The sun's shadow from its cascades (\`hapticSunShadow\`): Babylon's choice of the first cascade whose far end lies
 // beyond the position's view depth, its blend into the next over the last part of its length, and the fade to unshadowed
 // over the last part of the shadow distance; 1 beyond the last cascade.
@@ -283,15 +295,15 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
   }
   for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.point}; i++) {
     if (i >= int(hapticCounts.y)) break;
-    vec4 position = hapticPoint[i * 2];
-    vec4 color = hapticPoint[i * 2 + 1];
+    vec4 position = hapticPoint[i * 3];
+    vec4 color = hapticPoint[i * 3 + 1];
     vec3 offset = position.xyz - P;
     float distanceSquared = dot(offset, offset);
     if (distanceSquared >= color.w * color.w) continue;
     float lightDistance = sqrt(distanceSquared);
     vec3 L = offset / max(lightDistance, HAPTIC_EPSILON);
     float NdotL = hapticSaturateEps(dot(N, L));
-    vec3 radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w);
+    vec3 radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticPointShadow(hapticPoint[i * 3 + 2], -offset, P);
     diffuse += radiance * (NdotL / HAPTIC_PI);
     // A light's radius widens its highlight.
     float roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
@@ -359,13 +371,14 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
   }
   for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.point}; i++) {
     if (i >= int(hapticCounts.y)) break;
-    vec4 color = hapticPoint[i * 2 + 1];
-    vec3 offset = hapticPoint[i * 2].xyz - P;
+    vec4 color = hapticPoint[i * 3 + 1];
+    vec3 offset = hapticPoint[i * 3].xyz - P;
     float distanceSquared = dot(offset, offset);
     if (distanceSquared >= color.w * color.w) continue;
     vec3 L = normalize(offset);
     float NdotL = max(dot(N, L), 0.0);
-    hapticCelAdd(result, color.rgb * (NdotL * hapticRangeFalloff(distanceSquared, color.w)), hapticCelHighlight(N, V, L, NdotL, color.rgb));
+    float shadow = slateCelShadowVisibility(hapticPointShadow(hapticPoint[i * 3 + 2], -offset, P));
+    hapticCelAdd(result, color.rgb * (NdotL * hapticRangeFalloff(distanceSquared, color.w) * shadow), hapticCelHighlight(N, V, L, NdotL, color.rgb) * shadow);
   }
   for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
     if (i >= int(hapticCounts.z)) break;
@@ -625,6 +638,18 @@ fn hapticShadow(index: f32, P: vec3f, dPdx: vec3f, dPdy: vec3f) -> f32 {
   return mix(shading.x, 1.0, lit);
 }
 
+fn hapticPointShadow(shadow: vec4f, fromLight: vec3f, P: vec3f) -> f32 {
+  if (shadow.x < 0.0) { return 1.0; }
+  let a = abs(fromLight);
+  var face = 0.0;
+  if (shadow.y > 1.5) {
+    if (a.x >= a.y && a.x >= a.z) { face = select(1.0, 0.0, fromLight.x > 0.0); }
+    else if (a.y >= a.z) { face = select(3.0, 2.0, fromLight.y < 0.0); }
+    else { face = select(5.0, 4.0, fromLight.z > 0.0); }
+  }
+  return hapticShadow(shadow.x + face, P, vec3f(0.0), vec3f(0.0));
+}
+
 fn hapticSunShadowFactor(P: vec3f, dPdx: vec3f, dPdy: vec3f) -> f32 {
   let cascades = HapticLights.hapticSunShadow[0];
   let count = i32(cascades.x);
@@ -735,15 +760,15 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
   }
   for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.point}; i++) {
     if (i >= i32(HapticLights.hapticCounts.y)) { break; }
-    let position = HapticLights.hapticPoint[i * 2];
-    let color = HapticLights.hapticPoint[i * 2 + 1];
+    let position = HapticLights.hapticPoint[i * 3];
+    let color = HapticLights.hapticPoint[i * 3 + 1];
     let offset = position.xyz - P;
     let distanceSquared = dot(offset, offset);
     if (distanceSquared >= color.w * color.w) { continue; }
     let lightDistance = sqrt(distanceSquared);
     let L = offset / max(lightDistance, HAPTIC_EPSILON);
     let NdotL = hapticSaturateEps(dot(N, L));
-    let radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w);
+    let radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticPointShadow(HapticLights.hapticPoint[i * 3 + 2], -offset, P);
     *diffuse += radiance * (NdotL / HAPTIC_PI);
     let roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     *specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
@@ -807,13 +832,14 @@ fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInflu
   }
   for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.point}; i++) {
     if (i >= i32(HapticLights.hapticCounts.y)) { break; }
-    let color = HapticLights.hapticPoint[i * 2 + 1];
-    let offset = HapticLights.hapticPoint[i * 2].xyz - P;
+    let color = HapticLights.hapticPoint[i * 3 + 1];
+    let offset = HapticLights.hapticPoint[i * 3].xyz - P;
     let distanceSquared = dot(offset, offset);
     if (distanceSquared >= color.w * color.w) { continue; }
     let L = normalize(offset);
     let NdotL = max(dot(N, L), 0.0);
-    hapticCelAdd(&result, color.rgb * (NdotL * hapticRangeFalloff(distanceSquared, color.w)), hapticCelHighlight(N, V, L, NdotL, color.rgb));
+    let shadow = slateCelShadowVisibility(hapticPointShadow(HapticLights.hapticPoint[i * 3 + 2], -offset, P));
+    hapticCelAdd(&result, color.rgb * (NdotL * hapticRangeFalloff(distanceSquared, color.w) * shadow), hapticCelHighlight(N, V, L, NdotL, color.rgb) * shadow);
   }
   for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
     if (i >= i32(HapticLights.hapticCounts.z)) { break; }
