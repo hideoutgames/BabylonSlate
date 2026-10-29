@@ -14,6 +14,7 @@ import {
   SpotLight,
   RenderTargetTexture,
   Scene,
+  ShadowDepthWrapper,
   ShadowGenerator,
   StandardMaterial,
   UniversalCamera,
@@ -1686,6 +1687,34 @@ describe("atlas caster variants", () => {
     };
     expect([sun, spot, lamp].map((light) => isAtlasShadow(light.getShadowGenerator()))).toEqual([true, true, true]);
     expect([sun, spot, lamp].map((light) => held.includes(drawnWith(light)))).toEqual([true, true, true]);
+  });
+
+  it("asks a caster whose Material draws its depth through a wrapper until it holds its variants, then no more", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    enableHeadlessCascades(engine);
+    setHapticLighting(engine, true);
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    // Authored World Position Offset and lattice deformation draw a caster's depth through a standalone wrapper of a
+    // variant Material that no other pass draws: its first ask compiles that Material, a later one the depth variant,
+    // which the wrapper holds itself.
+    const crate = MeshBuilder.CreateBox("crate", { size: 1 }, scene);
+    const material = crate.material = new StandardMaterial("offset", scene);
+    const wrapper = material.shadowDepthWrapper =
+      new ShadowDepthWrapper(new StandardMaterial("offset depth", scene), scene, { standalone: true });
+    const asked = vi.spyOn(wrapper, "isReadyForSubMesh");
+    const kinds = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
+      .map((effect) => /SM_LIGHTTYPE_(\w+)/.exec(effect.defines)?.[1]).filter(Boolean).sort();
+    controller.sync();
+    controller.warmCasterVariants();
+    for (let frame = 0; frame < 4; frame++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      controller.sync();
+    }
+    expect(kinds()).toEqual(["DIRECTIONALLIGHT", "POINTLIGHT", "SPOTLIGHT"]);
+    asked.mockClear();
+    for (let frame = 0; frame < 3; frame++) controller.sync();
+    expect(asked).not.toHaveBeenCalled();
   });
 
   it("asks again for new shadow settings, and holds nothing off the light block's path", async () => {

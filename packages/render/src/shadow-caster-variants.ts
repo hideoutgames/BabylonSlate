@@ -1,4 +1,4 @@
-import { DirectionalLight, PointLight, SpotLight, Vector3, type Light, type ShadowGenerator } from "@babylonjs/core";
+import { DirectionalLight, PointLight, SpotLight, Vector3, type AbstractMesh, type Light, type ShadowGenerator } from "@babylonjs/core";
 import type { ShadowSettings } from "@haptic/core";
 import {
   beginManagedRenderAllocation,
@@ -25,12 +25,13 @@ const EDGE = 4 * TILE;
  * asks for them ahead, in its world presentation's loading frames, for the casters as its starting state poses them (a
  * variant reads the caster's scaling; `SceneShadowController.warmCasterVariants`): a map of each kind, built as an
  * admitted map is, on a stand-in light outside the Scene, with tiles in a private atlas of the atlas's format, asks
- * every caster for its depth variant, as the map's own readiness check would, whatever its light's reach, and again at
- * each of the controller's syncs until every caster holds them (a new map asks for nothing until Babylon has loaded its
- * shaders).
- * Never drawn, the maps keep those variants compiled while they live (the casters' draw wrappers for their passes hold
- * them), until new shadow settings build them again. A caster that arrives once they are held, with a variant no caster
- * had, compiles it at its first cast.
+ * every caster for its depth variant, as the map's own readiness check would, whatever its light's reach. The
+ * controller's syncs ask again only the casters that check found not ready (the map's shaders loading, an Effect
+ * compiling, a depth wrapper's variant Material not yet ready, which its first ask compiles), so a caster that never
+ * becomes ready costs one check per sync.
+ * Never drawn, the maps keep those variants compiled while they live (the casters' draw wrappers for their passes, or
+ * their Materials' depth wrappers, hold them), until new shadow settings build them again. A caster that arrives once
+ * they are held, with a variant no caster had, compiles it at its first cast.
  */
 export class ShadowCasterVariants {
   private readonly context: ShadowMapContext;
@@ -40,22 +41,21 @@ export class ShadowCasterVariants {
   private lease: ManagedRenderLease | null = null;
   /** The settings the maps were built with, serialized; null without maps. */
   private built: string | null = null;
-  /** Some caster does not hold its depth variants yet. */
-  private pending = false;
+  /** The casters some map's readiness check found not ready when it last asked. */
+  private waiting = new Set<AbstractMesh>();
   constructor(context: ShadowMapContext) {
     this.context = context;
   }
   /** Asks every caster for its depth variant of each kind of atlas map with `settings`, building the maps for them. */
   warm(settings: ShadowSettings): void {
     if (JSON.stringify(settings) !== this.built) this.build(settings);
-    this.pending = this.built !== null;
-    this.request();
+    this.request(this.context.casters);
   }
-  /** A sync: builds the maps again for `settings` when they were built for others, or asks the casters still pending. */
+  /** A sync: builds the maps again for `settings` when they were built for others, or asks the casters still waiting. */
   follow(settings: ShadowSettings): void {
     if (this.built === null) return;
     if (JSON.stringify(settings) !== this.built) this.warm(settings);
-    else if (this.pending) this.request();
+    else if (this.waiting.size) this.request([...this.waiting].filter((caster) => this.context.casters.has(caster)));
   }
   /** Disposes the maps, which release the variants only they held. */
   dispose(): void {
@@ -68,7 +68,7 @@ export class ShadowCasterVariants {
     this.atlas = null;
     this.lease = null;
     this.built = null;
-    this.pending = false;
+    this.waiting.clear();
   }
   private build(settings: ShadowSettings): void {
     this.dispose();
@@ -93,30 +93,24 @@ export class ShadowCasterVariants {
     }
     this.built = JSON.stringify(settings);
   }
-  /**
-   * Each caster's depth variants for each map, prepared in the map's first pass as its own readiness check does; still
-   * pending while a drawn part of a caster (with a Material and vertices) holds none there.
-   */
-  private request(): void {
+  /** `casters`' depth variants for each map, prepared in the map's first pass by its own readiness check. */
+  private request(casters: Iterable<AbstractMesh>): void {
     const engine = this.context.scene.getEngine();
     const pass = engine.currentRenderPassId;
-    let pending = false;
+    const waiting = new Set<AbstractMesh>();
     try {
       for (const generator of this.maps) {
         const map = generator.getShadowMap()!;
-        const id = map.renderPassId;
-        engine.currentRenderPassId = id;
-        for (const caster of this.context.casters) {
+        engine.currentRenderPassId = map.renderPassId;
+        for (const caster of casters) {
           // A variant reads the caster's world matrix (non-uniform scaling), which a frame computes before its maps draw.
           caster.computeWorldMatrix();
-          map.customIsReadyFunction?.(caster, 0, true);
-          pending ||= caster.subMeshes?.some((part) =>
-            part.getMaterial() && part.verticesCount > 0 && !part._getDrawWrapper(id)?.effect) ?? false;
+          if (!map.customIsReadyFunction!(caster, 0, true)) waiting.add(caster);
         }
       }
     } finally {
       engine.currentRenderPassId = pass;
     }
-    this.pending = pending;
+    this.waiting = waiting;
   }
 }
