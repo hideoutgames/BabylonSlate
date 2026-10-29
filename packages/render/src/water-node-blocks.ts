@@ -10,7 +10,7 @@ import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
 import {
-  aerialPerspectiveSource, contactRange, edgeFoamHelpers, fresnelSource, horizonHazeSource, marchSource, meshVertexWaves, placeholderField, planarLookupSource, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
+  aerialPerspectiveSource, contactRange, edgeFoamHelpers, fresnelSource, horizonHazeSource, horizonLiftSource, marchSource, meshVertexWaves, placeholderField, planarLookupSource, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
   sceneWaterNodeLighting, selectWaterRemovals, silhouetteFallbackSource, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
   waterEdgeSource,
   sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
@@ -622,7 +622,9 @@ RegisterClass("BABYLON.WaterSceneColorBlock", WaterSceneColorBlock);
  * built-in water (`planarLookupSource`, `marchSource`) and faded as it fades them. Normal defaults to the Water Waves
  * block's. Toward the horizon the far water becomes a level mirror of the horizon sky through the haze, as built-in
  * water's does (`aerialPerspectiveSource`, `horizonHazeSource`): the normal flattens toward straight up and the Fresnel
- * rises to 1. The flattened normal is the Normal output, for the Material's lighting.
+ * rises to 1. The reflected ray is lifted above the horizon with built-in water's smooth floor (`horizonLiftSource`),
+ * so the water never mirrors more water, and the Normal output is the half vector toward the lifted ray, so the
+ * Material's lighting (the sun's highlight) follows the reflection as built-in water's does.
  */
 export class WaterReflectionBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -650,7 +652,7 @@ export class WaterReflectionBlock extends WaterNodeBlock {
   get waveHeight() { return this._inputs[7]!; }
   get color() { return this._outputs[0]!; }
   get fresnel() { return this._outputs[1]!; }
-  /** The normal reflected around, flattened toward straight up by the horizon haze (the Normal pin). */
+  /** The half vector toward the lifted reflected ray, for the Material's lighting (the Normal pin). */
   get shadingNormal() { return this._outputs[2]!; }
   override getClassName(): string { return "WaterReflectionBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
@@ -729,7 +731,10 @@ swnFres = mix(swnFres, 1.0, swHaze);
 vec3 swnR = reflect(-swnV, swnN);
 float swnRawY = swnR.y;
 ${reflectionKeepSource("swnR.y", "swnV.y", "swnKeep")}
-swnR = normalize(vec3(swnR.x, max(swnR.y, 0.02), swnR.z));
+${horizonLiftSource("swnR", "swnV.y")}
+swnR = normalize(swnR);
+// The lighting follows the lifted ray through the half vector toward it; the Fresnel stays the facet's.
+vec3 swnH = normalize(swnV + swnR);
 float swnSkyH = 1.0 - clamp(swnR.y, 0.0, 1.0);
 swnSkyH = swnSkyH * swnSkyH * swnSkyH;
 vec3 swnSky = mix(U.slateWaterNodeSky.rgb, U.slateWaterNodeHorizon.rgb, swnSkyH);
@@ -751,7 +756,7 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
       + this.objectReflection(state, position, eye)
       + (this.color.hasEndpoints ? `${color} = swnSky * ${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.z;\n` : "")
       + (this.fresnel.hasEndpoints ? `${fresnel} = swnFres;\n` : "")
-      + (this.shadingNormal.hasEndpoints ? `${shadingNormal} = swnN;\n` : "")
+      + (this.shadingNormal.hasEndpoints ? `${shadingNormal} = swnH;\n` : "")
       + "}\n";
     return this;
   }
@@ -762,19 +767,20 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
    */
   private objectReflection(state: NodeMaterialBuildState, position: string, eye: string): string {
     const wgsl = wgslOf(state), march = `defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0`;
-    const lookup = planarLookupSource(`${position}.xyz`, eye, "swnR", "swnObject", "U.slateWaterContactInfo.y", `U.${PLANAR_UNIFORM}`, `U.${PLANAR_MATRIX}`, "swnObj");
-    return `#if defined(${WATER_NODE_PLANAR_DEFINE}) || (${march})\n${bind("vec4 swnObj = vec4(0.0);\n", wgsl)}`
+    const lookup = planarLookupSource(`${position}.xyz`, eye, "swnObjR", "swnObject", "U.slateWaterContactInfo.y", `U.${PLANAR_UNIFORM}`, `U.${PLANAR_MATRIX}`, "swnObj");
+    // Seen from below the ray is not lifted: objects are looked up above the horizon, as built-in water looks them up.
+    return `#if defined(${WATER_NODE_PLANAR_DEFINE}) || (${march})\n${bind("vec4 swnObj = vec4(0.0);\nvec3 swnObjR = normalize(vec3(swnR.x, max(swnR.y, 0.02), swnR.z));\n", wgsl)}`
       + `#ifdef ${WATER_NODE_PLANAR_DEFINE}\n{\n${surfaceLocals(state, position)}${bind("float swnHeight = swnData.x;\n", wgsl)}`
       + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.value(this.waveHeight, "0.0")};\n#endif\n`
       + bind(`float swnObject = abs(swnContactAt(swnPos.xz, swnHeight));\nif (U.${PLANAR_UNIFORM}.x > 0.5) {${lookup}\n}\n`, wgsl)
         .replace(/\bSW_TO_LINEAR\(/g, wgsl ? "toLinearSpaceVec3(" : "toLinearSpace(")
       + `}\n#endif\n#if ${march}\n`
       + bind(`if (U.${PLANAR_UNIFORM}.x < 0.5) {
-  swnObj = swMarch(${position}.xyz, swnR, ${this.viewProjection.associatedVariableName}, ${this.view.associatedVariableName}, ${eye});
+  swnObj = swMarch(${position}.xyz, swnObjR, ${this.viewProjection.associatedVariableName}, ${this.view.associatedVariableName}, ${eye});
 }
 `, wgsl) + "#endif\n"
       + bind(`swnObj.a = swnObj.a * (1.0 - smoothstep(0.2, 0.45, swnRoughNear)) * smoothstep(-0.01, 0.03, swnRawY)
-  * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swnR)) / max(length(fwidth(swnV)), 0.00001)));
+  * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swnObjR)) / max(length(fwidth(swnV)), 0.00001)));
 swnSky = mix(swnSky, swnObj.rgb, swnObj.a);
 `, wgsl) + "#endif\n";
   }

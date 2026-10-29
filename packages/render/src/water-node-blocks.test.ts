@@ -108,8 +108,10 @@ describe("Water material nodes", () => {
       const [, fragment = ""] = result.material.compiledShaders.split("// Fragment shader");
       expect(fragment).toMatch(/\w+ = swEdgeFade \* swOpenFade;/);
       expect(fragment).toContain("swCopyTexel");
-      // Its lighting takes Water Reflection's normal, flattened by the horizon haze through the scene's fog.
-      expect(fragment).toMatch(/\w+ = swnN;/);
+      // Its lighting takes Water Reflection's normal: the half vector toward the reflected ray, lifted above the horizon
+      // as built-in water lifts it, from the waves' normal flattened by the horizon haze through the scene's fog.
+      expect(fragment).toMatch(/\w+ = swnH;/);
+      expect(fragment).toMatch(/swnRLiftA(: f32)? = 60\.0 \* \(0\.03 - swnR\.y\)/);
       expect(fragment).toMatch(/swnAirKeep = max\(toLinearSpace\(CalcFogFactor\(/);
       // It is seen from below too, as built-in water is.
       expect(result.material.backFaceCulling).toBe(false);

@@ -46,6 +46,7 @@ export {
   aerialPerspectiveSource,
   edgeFoamHelpers,
   horizonHazeSource,
+  horizonLiftSource,
   marchSource,
   transmittanceSource,
   WATER_FAR_ROUGHNESS,
