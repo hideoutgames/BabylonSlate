@@ -188,7 +188,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(read("hapticFillSky", 3)).toEqual([1, 1, 2]);
     expect(read("hapticFillGround", 3).map((value) => Math.round(value * 10) / 10)).toEqual([0.4, 0.2, 0]);
     expect(read("hapticDirectional", 8)).toEqual([0, -2, 0, sun.radius, 3, 3, 3, 0].map(Math.fround));
-    expect(read("hapticPoint", 8)).toEqual([1, 2, 3, lamp.radius, 1, 1, 1, 7].map(Math.fround));
+    expect(read("hapticPoint", 12)).toEqual([1, 2, 3, lamp.radius, 1, 1, 1, 7, -1, 0, 0, 0].map(Math.fround));
     expect(read("hapticSpot", 16).map((value) => Math.round(value * 1000) / 1000)).toEqual([0, 4, 0, 0, 0, -1, 0, 0.707, 1, 1, 1, 9, -1, 0, 0, 0]);
     const scaled = Math.fround(panel.getScaledIntensity());
     // No emission: layer -1, its flat colour.
@@ -270,6 +270,31 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const plane = read("hapticSunShadow", 4, 4);
     const camera = scene.activeCamera!;
     expect(plane[0]! * camera.globalPosition.x + plane[1]! * camera.globalPosition.y + plane[2]! * camera.globalPosition.z + plane[3]!).toBeCloseTo(0);
+  });
+
+  it("draws a point light's shadow as six face tiles of the atlas, in Babylon's face order, filtered with PCF", () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    const lamp = new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    const generator = createAtlasShadowGenerator(lamp, EDGE / 4, EDGE)!;
+    generator.usePercentageCloserFiltering = true;
+    // Babylon's own cube maps fall back to Poisson sampling.
+    expect([generator.tiles.length, generator.filter]).toEqual([6, ShadowGenerator.FILTER_PCF]);
+    syncSceneLighting(scene);
+    const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+    const read = (name: string, from: number, length: number) =>
+      [...buffer._bufferData.subarray(buffer._uniformLocations[name]! + from, buffer._uniformLocations[name]! + from + length)];
+    // Its record's shadow: the first view and six faces.
+    expect(read("hapticPoint", 8, 4)).toEqual([0, 6, 0, 0]);
+    // Drawn, each face's view is the one Babylon drew that face with: face 2 looks down.
+    vi.spyOn(engine, "enableScissor").mockImplementation(() => {});
+    vi.spyOn(engine, "disableScissor").mockImplementation(() => {});
+    generator.getShadowMap()!.render();
+    const below = Vector3.TransformCoordinates(new Vector3(0, 0, 0), generator.drawnViews[2]!);
+    const above = Vector3.TransformCoordinates(new Vector3(0, 0, 0), generator.drawnViews[3]!);
+    expect([Math.abs(below.x) < 1e-6 && Math.abs(below.y) < 1e-6, below.z > 0 && below.z < 1]).toEqual([true, true]);
+    expect(above.z < 0 || above.z > 1).toBe(true);
+    expect(read("hapticShadowViews", 2 * 24, 16)).toEqual([...generator.drawnViews[2]!.m].map(Math.fround));
   });
 
   it("makes the atlas again after a failed shadow allocation released it with the first tile", () => {

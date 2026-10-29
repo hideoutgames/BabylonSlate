@@ -279,9 +279,12 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
   if (planned.some((decision) => atlasTileEdge(decision.entry.light, atlasEdge)))
     admitted.bytes += atlasEdge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
   let atlasArea = 0;
-  // The sun, admitted first, leaves the atlas room for the local maps planned into it at the level's size.
-  const localTiles = planned.filter((decision) =>
-    !(decision.entry.light instanceof DirectionalLight) && atlasTileEdge(decision.entry.light, atlasEdge)).length;
+  // The sun, admitted first, leaves the atlas room for the local maps planned into it at the level's size (a point
+  // light's six faces).
+  let localTiles = 0;
+  for (const decision of planned)
+    if (!(decision.entry.light instanceof DirectionalLight) && atlasTileEdge(decision.entry.light, atlasEdge))
+      localTiles += admissionPasses(decision.entry.light, settings);
   const localReserve = localTiles * Math.min(settings.localMapSize, atlasEdge) ** 2;
   // Admitted totals never exceed the planned ones, so every planned entry still
   // fits the local, pass and sampler budgets; only memory or atlas space can reject it here.

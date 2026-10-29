@@ -133,8 +133,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.celEffects).toBe(3);
     expect(result.celSteps).toEqual(LIGHT_STEPS);
 
-    // A spot light's and the sun's shadows on the block's path, drawn through the shadow controller and the frame graph
-    // into the atlas: a floor pixel whose view of the light the box or the ball blocks draws as with the light off, any
+    // A spot light's, the sun's and a point light's shadows on the block's path, drawn through the shadow controller and
+    // the frame graph into the atlas: a floor pixel whose view of the light the box or the ball blocks draws as with the light off, any
     // other as with the light's shadow switched off, in both render modes, and the shadow compiles nothing.
     for (const [light, { blocked, modes }] of Object.entries(result.shadow)) {
       const settled = settledShadowPixels(blocked, result.width, result.height);

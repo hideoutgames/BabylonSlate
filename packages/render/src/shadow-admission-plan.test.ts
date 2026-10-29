@@ -53,11 +53,11 @@ describe("Shadow admission into the lighting plan's atlas", () => {
     const spots = [0, 1, 2, 3, 4].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), Vector3.Down(), 1, 2, host));
     const lamp = new PointLight("lamp", new Vector3(0, 2, 0), host);
     const { decisions, admitted } = plan([...spots, lamp], 2048, 1024);
-    // Four 1024 tiles fill a 2048 atlas; a point light's map of its own needs a sampler.
+    // Four 1024 tiles fill a 2048 atlas: neither the fifth spot light nor a point light's six faces find room.
     expect(decisions.map(({ status, reason, mapSize }) => [status, reason, mapSize])).toEqual([
       ...[0, 1, 2, 3].map(() => ["active", null, 1024]),
       ["budget-limited", "shadow atlas space", 0],
-      ["budget-limited", "material sampler headroom", 0],
+      ["budget-limited", "shadow atlas space", 0],
     ]);
     expect(admitted.bytes).toBe(2048 ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL);
     expect(admitted.samplers).toBe(0);
@@ -77,6 +77,11 @@ describe("Shadow admission into the lighting plan's atlas", () => {
     const medium = plan([sun, spots[0]!, spots[1]!], 4096, 1024, { mapSize: 2048, cascades: 3 });
     expect(medium.decisions.map(({ status, mapSize }) => [status, mapSize])).toEqual([["active", 2048], ["active", 1024], ["active", 1024]]);
     expect(medium.admitted.samplers).toBe(0);
+    // A point light's six faces count in the room the sun leaves: Medium's three 2048 cascades and one point light's
+    // six 1024 faces need 18.9 Mtexels of a 4096 atlas's 16.8, so the cascades halve.
+    const lamp = new PointLight("lamp", new Vector3(0, 2, 0), host);
+    expect(plan([sun, lamp], 4096, 1024, { mapSize: 2048, cascades: 3 }).decisions.map(({ status, mapSize }) => [status, mapSize]))
+      .toEqual([["active", 1024], ["active", 1024]]);
   });
 
   it("caps a spot map at the atlas's edge, and counts no atlas without a spot map in it", () => {

@@ -2,7 +2,7 @@ import {
   CascadedShadowGenerator,
   DirectionalLight,
   SpotLight,
-  type PointLight,
+  PointLight,
   type ShadowGenerator,
 } from "@babylonjs/core";
 import type { ShadowSettings } from "@haptic/core";
@@ -59,10 +59,10 @@ export type AllocationKey = {
 
 /**
  * The edge of the shadow atlas `light`'s map is a tile of while the lighting plan's atlas is `atlasEdge` texels
- * (`ShadowAdmissionBudget.atlasEdge`, 0 off its path): a spot light's and the sun's cascades, so far.
+ * (`ShadowAdmissionBudget.atlasEdge`, 0 off its path): every shadow light's but a capture's own sun maps.
  */
 export function atlasTileEdge(light: ShadowLight, atlasEdge: number): number {
-  return light instanceof SpotLight || light instanceof DirectionalLight ? atlasEdge : 0;
+  return light instanceof SpotLight || light instanceof DirectionalLight || light instanceof PointLight ? atlasEdge : 0;
 }
 
 export function allocationKey(

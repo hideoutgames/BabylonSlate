@@ -346,9 +346,12 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       return mask;
     };
     // A spot light behind the box aims through it, so the box's shadow falls toward the camera where it shines
-    // brightest; the sun shines toward the camera too.
+    // brightest; the sun shines toward the camera too, and a bulb behind and between the box and the ball lights the
+    // floor through several of its cube faces.
     const lamp = new SpotLight("shadowed lamp", new Vector3(-1.8, 3.4, 1.8), new Vector3(0, -3.4, -2.1).normalize(), 1, 2, scene);
     applyAuthoredLightProperties(lamp, { color: [1, 0.95, 0.9], intensity: 50, castShadows: false, range: 40, outerAngle: 90, innerAngle: 60 });
+    const bulb = new PointLight("shadowed bulb", new Vector3(0, 2.4, 1.6), scene);
+    applyAuthoredLightProperties(bulb, { color: [1, 0.9, 0.8], intensity: 30, castShadows: false, range: 40 });
     /**
      * `light`'s shadow on the block's path, drawn into the Scene's atlas through the shadow controller and the frame
      * graph as Play draws it, and read by programs that compile nothing for it. Per render mode: the light with its
@@ -366,7 +369,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       for (const mode of ["pbr", "cel"] as const) {
         settings(mode);
         restore("haptic");
-        for (const other of [...lights, lamp]) setAuthoredLightEnabled(other, other === light);
+        for (const other of [...lights, lamp, bulb]) setAuthoredLightEnabled(other, other === light);
         await draw();
         const before = litEffectKeys(engine);
         const shadowed = await drawShadowed();
@@ -395,7 +398,15 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       }),
       blocked: floorShadowMask(() => sun.direction.normalizeToNew().scaleInPlace(-100)),
     };
-    const shadow = { spot: spotShadow, sun: sunShadow };
+    // The bulb's faces, the sun's map released.
+    const pointShadow = {
+      modes: await shadowPoses(bulb, () => {
+        applyAuthoredLightProperties(sun, { color: [1, 0.95, 0.85], intensity: 3, castShadows: false, range: 40, outerAngle: 70, innerAngle: 40 });
+        applyAuthoredLightProperties(bulb, { color: [1, 0.9, 0.8], intensity: 30, castShadows: true, range: 40 });
+      }),
+      blocked: floorShadowMask((point) => bulb.getAbsolutePosition().subtract(point)),
+    };
+    const shadow = { spot: spotShadow, sun: sunShadow, point: pointShadow };
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     const lightDefines = litEffectKeys(engine).filter((key) => /#define LIGHT\d/.test(effects[key]!.defines)).length;
     const celEffects = cel.effects.filter((key) => /#define HAPTIC_CEL/.test(effects[key]!.defines)).length;
