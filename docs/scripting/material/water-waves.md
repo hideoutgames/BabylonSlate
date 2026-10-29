@@ -19,7 +19,7 @@ Returns the water asset's simulated ocean at this point: the wave offset, height
 
 ## Notes
 
-- Connect Offset to **World Position Offset** on [**Material Output**](material-output.md) to displace the water, and Normal to its **Normal** to shade it. The water starter shades it through [**Water Reflection**](water-reflection.md)'s Normal, which flattens the distant water toward the horizon.
+- Connect Offset to **World Position Offset** on [**Material Output**](material-output.md) to displace the water, and Normal to its **Normal** to shade it. The water starter shades it through [**Water Reflection**](water-reflection.md)'s Normal, which lights the water along its reflection and flattens the distant water toward the horizon; its foam keeps this Normal.
 - Wave Height, Normal, Crest Foam and Subsurface are sampled per pixel, so short waves stay sharp between mesh vertices.
 - Only affects water bodies that use this material as their Custom Material. Other meshes get no offset and keep their own normal.
 - Only in Surface and Landscape materials.
