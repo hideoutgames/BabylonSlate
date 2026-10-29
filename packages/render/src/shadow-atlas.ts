@@ -1,4 +1,6 @@
 import { Constants, RenderTargetTexture, Viewport, type AbstractEngine, type Effect, type Scene, type SpotLight } from "@babylonjs/core";
+import { SHADOW_CAPACITY_PROFILES, type ShadowProfile } from "@haptic/core";
+import { deviceProfile } from "./device-profile";
 import { ReusableShadowGenerator } from "./reusable-shadow-generator";
 import { ShadowAtlasAllocator, type ShadowAtlasTile } from "./shadow-atlas-allocator";
 
@@ -9,8 +11,19 @@ import { ShadowAtlasAllocator, type ShadowAtlasTile } from "./shadow-atlas-alloc
  * instances, alpha test) is unchanged, drawn into the light's tile. Behind the lighting plan's Engine switch.
  */
 
-/** The atlas's edge in texels. */
-export const SHADOW_ATLAS_EDGE = 2048;
+/** Bytes per texel of the atlas: 32-bit depth, its only attachment. */
+export const SHADOW_ATLAS_BYTES_PER_TEXEL = 4;
+
+/**
+ * The atlas's edge in texels at a shadow quality level: the largest power of two whose depth fits the level's shadow
+ * byte budget (Low and Medium 4096, High and Ultra 8192), within the device's texture limit and its device class's cap
+ * (`DeviceProfile.shadowAtlasCap`).
+ */
+export function shadowAtlasEdge(engine: AbstractEngine, profile: ShadowProfile): number {
+  const fits = Math.sqrt(SHADOW_CAPACITY_PROFILES[profile].byteBudget / SHADOW_ATLAS_BYTES_PER_TEXEL);
+  const edge = Math.min(fits, engine.getCaps().maxTextureSize, deviceProfile().shadowAtlasCap ?? Infinity);
+  return 2 ** Math.floor(Math.log2(edge));
+}
 
 type Atlas = { target: RenderTargetTexture; tiles: ShadowAtlasAllocator };
 const atlases = new WeakMap<Scene, Atlas>();
@@ -34,18 +47,37 @@ function depthTarget(name: string, edge: number, scene: Scene): RenderTargetText
 }
 
 /**
- * The Scene's atlas, made with its first tile and disposed with the Scene. A shadow allocation that fails disposes the
- * textures it made, the atlas among them when that tile was its first: the next tile makes it again.
+ * The Scene's atlas at `edge` texels, made with its first tile and disposed with the Scene, or replaced once no tile
+ * is left in it (a quality level of another edge rebuilds every atlas map, whose allocation keys carry the edge). A
+ * shadow allocation that fails disposes the textures it made, the atlas among them when that tile was its first: the
+ * next tile makes it again.
  */
-function sceneAtlas(scene: Scene): Atlas {
+function sceneAtlas(scene: Scene, edge: number): Atlas {
   let atlas = atlases.get(scene);
+  if (atlas && atlas.tiles.edge !== edge) {
+    if (!atlas.tiles.empty) throw new Error(`The shadow atlas is ${atlas.tiles.edge} texels, not ${edge}, while it holds tiles.`);
+    atlas.target.dispose();
+    atlas = undefined;
+  }
   if (!atlas) {
-    const target = depthTarget("hapticShadowAtlas", SHADOW_ATLAS_EDGE, scene);
-    atlas = { target, tiles: new ShadowAtlasAllocator(SHADOW_ATLAS_EDGE) };
+    const target = depthTarget("hapticShadowAtlas", edge, scene);
+    atlas = { target, tiles: new ShadowAtlasAllocator(edge) };
     atlases.set(scene, atlas);
     disposeWithScene(scene, target, () => atlases.delete(scene));
   }
   return atlas;
+}
+
+/** Disposes the Scene's atlas once it holds no tile, as its last map is released: its memory follows its use. */
+export function releaseEmptyShadowAtlas(scene: Scene): void {
+  const atlas = atlases.get(scene);
+  if (atlas?.tiles.empty) atlas.target.dispose();
+}
+
+/** The bytes the Scene's atlas holds: none until its first tile. */
+export function shadowAtlasBytes(scene: Scene): number {
+  const edge = atlases.get(scene)?.tiles.edge ?? 0;
+  return edge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
 }
 
 /**
@@ -175,9 +207,12 @@ export class AtlasShadowGenerator extends ReusableShadowGenerator {
   }
 }
 
-/** A spot light's atlas shadow generator with a `size`-texel tile, or null when the atlas has no tile of that size free. */
-export function createAtlasShadowGenerator(light: SpotLight, size: number): AtlasShadowGenerator | null {
-  const atlas = sceneAtlas(light.getScene());
+/**
+ * A spot light's shadow generator with a `size`-texel tile of the Scene's `edge`-texel atlas, or null when the atlas
+ * has no tile of that size free.
+ */
+export function createAtlasShadowGenerator(light: SpotLight, size: number, edge: number): AtlasShadowGenerator | null {
+  const atlas = sceneAtlas(light.getScene(), edge);
   const tile = atlas.tiles.allocate(size);
   if (!tile) return null;
   placing = { atlas, tile };

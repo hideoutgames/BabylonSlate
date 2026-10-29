@@ -32,8 +32,11 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { createPreviewLighting } from "./preview-lighting";
-import { SHADOW_ATLAS_EDGE, createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
+import { createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 import { shadowAllocationCheckpoint } from "./shadow-map-factory";
+
+/** An atlas edge for the tests that place tiles themselves. */
+const EDGE = 2048;
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -203,7 +206,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const { engine, scene } = host();
     setHapticLighting(engine, true);
     const spots = [0, 1, 2].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene));
-    const [first, second] = [spots[0]!, spots[1]!].map((spot) => createAtlasShadowGenerator(spot, SHADOW_ATLAS_EDGE / 2)!);
+    const [first, second] = [spots[0]!, spots[1]!].map((spot) => createAtlasShadowGenerator(spot, EDGE / 2, EDGE)!);
     second!.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
     second!.setDarkness(0.25);
     syncSceneLighting(scene);
@@ -214,7 +217,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     // The third spot casts no shadow.
     expect(views()).toEqual([0, 1, -1]);
     expect(read("hapticShadowViews", 0, 16)).toEqual([...first!.getTransformMatrix().m].map(Math.fround));
-    const texel = 1 / SHADOW_ATLAS_EDGE;
+    const texel = 1 / EDGE;
     expect(read("hapticShadowViews", 16, 8)).toEqual([0, 0, 0.5, texel, 0, 2, 0, 0].map(Math.fround));
     expect(read("hapticShadowViews", 24 + 16, 8)).toEqual([0.5, 0, 0.5, texel, 0.25, 1, 0, 0].map(Math.fround));
     // A light's or the Scene's shadows switched off sample none.
@@ -225,10 +228,10 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     syncSceneLighting(scene);
     expect(views()).toEqual([-1, -1, -1]);
     // Two more tiles of a quarter fill the atlas; disposing a map frees its tile.
-    expect([createAtlasShadowGenerator(spots[2]!, SHADOW_ATLAS_EDGE / 2), createAtlasShadowGenerator(spots[2]!, SHADOW_ATLAS_EDGE / 2)].every(Boolean)).toBe(true);
-    expect(createAtlasShadowGenerator(spots[2]!, SHADOW_ATLAS_EDGE / 4)).toBeNull();
+    expect([createAtlasShadowGenerator(spots[2]!, EDGE / 2, EDGE), createAtlasShadowGenerator(spots[2]!, EDGE / 2, EDGE)].every(Boolean)).toBe(true);
+    expect(createAtlasShadowGenerator(spots[2]!, EDGE / 4, EDGE)).toBeNull();
     first!.dispose();
-    expect(createAtlasShadowGenerator(spots[0]!, SHADOW_ATLAS_EDGE / 2)!.tile).toEqual({ x: 0, y: 0, size: SHADOW_ATLAS_EDGE / 2 });
+    expect(createAtlasShadowGenerator(spots[0]!, EDGE / 2, EDGE)!.tile).toEqual({ x: 0, y: 0, size: EDGE / 2 });
   });
 
   it("makes the atlas again after a failed shadow allocation released it with the first tile", () => {
@@ -238,15 +241,15 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const placeholder = shadowAtlasTexture(scene);
     // As a failed allocation check releases what the attempt made.
     const rollback = shadowAllocationCheckpoint(scene);
-    const failed = createAtlasShadowGenerator(spot, SHADOW_ATLAS_EDGE / 2)!;
+    const failed = createAtlasShadowGenerator(spot, EDGE / 2, EDGE)!;
     const released = shadowAtlasTexture(scene);
     expect(released).not.toBe(placeholder);
     rollback(failed);
     expect(shadowAtlasTexture(scene)).toBe(placeholder);
-    const generator = createAtlasShadowGenerator(spot, SHADOW_ATLAS_EDGE / 2)!;
+    const generator = createAtlasShadowGenerator(spot, EDGE / 2, EDGE)!;
     const atlas = shadowAtlasTexture(scene);
     expect(atlas).not.toBe(released);
-    expect(generator.tile).toEqual({ x: 0, y: 0, size: SHADOW_ATLAS_EDGE / 2 });
+    expect(generator.tile).toEqual({ x: 0, y: 0, size: EDGE / 2 });
     expect(generator.getShadowMap()!.renderTarget).toBe(atlas.renderTarget);
     scene.dispose();
     expect(atlas.getInternalTexture()).toBeNull();

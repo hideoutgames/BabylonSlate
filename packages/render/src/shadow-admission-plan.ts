@@ -7,6 +7,7 @@ import {
   type Camera,
 } from "@babylonjs/core";
 import { SHADOW_CAPACITY_PROFILES, type ShadowSettings } from "@haptic/core";
+import { hapticLightingActive } from "./haptic-lights";
 import { isDirectionalLightExcluded } from "./light-policy";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import type { LocalShadowLight } from "./reusable-shadow-generator";
@@ -17,10 +18,12 @@ import {
   shadowBytesPerTexel,
   type ShadowCost,
 } from "./shadow-admission";
+import { SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge } from "./shadow-atlas";
 import {
   admissionPasses,
   admissionSamplers,
   allocationRequestKey,
+  atlasTileEdge,
   type ShadowEntry as Entry,
   type ShadowLightStatus,
 } from "./shadow-entry";
@@ -64,6 +67,12 @@ export type ShadowAdmissionBudget = {
   readonly cascadedBytesPerTexel: number;
   readonly maxTextureSize: number;
   readonly maxCubemapTextureSize: number;
+  /**
+   * The lighting plan's shadow atlas edge (`shadowAtlasEdge`) while graph Materials draw with its light block, else 0.
+   * Its spot maps are tiles of the atlas, admitted by its area; the atlas, allocated whole, takes its bytes from
+   * `bytes` once one is.
+   */
+  readonly atlasEdge: number;
 };
 /** What a sync admits by (`planShadowAdmission`). */
 export type ShadowAdmissionInput = {
@@ -131,6 +140,7 @@ export function readShadowAdmissionBudget(
     cascadedBytesPerTexel: shadowBytesPerTexel(scene.getEngine(), true),
     maxTextureSize: caps.maxTextureSize,
     maxCubemapTextureSize: caps.maxCubemapTextureSize,
+    atlasEdge: hapticLightingActive(scene) ? shadowAtlasEdge(scene.getEngine(), settings.profile) : 0,
   };
 }
 
@@ -149,7 +159,7 @@ export function cameraDistanceSquared(light: LocalShadowLight, camera: Camera): 
 /**
  * Which lights hold a map, and at what size, without writing to the entries: ranked by priority, residency and camera
  * distance (an incumbent's bonus included), the sun first, then within the light count, pass, sampler and memory
- * budgets. `applyShadowAdmission` writes the decisions back.
+ * budgets, and an atlas tile's within the atlas's area. `applyShadowAdmission` writes the decisions back.
  */
 export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissionPlan {
   const { entries, settings, camera, restoring, budget, measure } = input;
@@ -229,9 +239,10 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
       a.entry.light.uniqueId - b.entry.light.uniqueId,
   );
   const admitted: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
+  const atlasEdge = budget.atlasEdge;
   const reserveLocalMaps =
     settings.maxLocalLights > 0 &&
-    candidates.some((decision) => !(decision.entry.light instanceof DirectionalLight));
+    candidates.some((decision) => !(decision.entry.light instanceof DirectionalLight) && !atlasTileEdge(decision.entry.light, atlasEdge));
   // Reserve the single sun before local maps regardless of local priorities.
   candidates.sort(
     (a, b) =>
@@ -246,7 +257,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     const light = decision.entry.light;
     const directional = light instanceof DirectionalLight;
     const passes = admissionPasses(light, settings);
-    const samplers = admissionSamplers(light, settings);
+    const samplers = admissionSamplers(light, settings, atlasEdge);
     decision.reason =
       !directional && plannedLocal >= settings.maxLocalLights
         ? "local light capacity"
@@ -260,23 +271,28 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     plannedSamplers += samplers;
     if (!directional) {
       plannedLocal += 1;
-      remainingLocalFaces += passes;
+      if (!atlasTileEdge(light, atlasEdge)) remainingLocalFaces += passes;
     }
     return true;
   });
+  // The atlas is allocated whole for its first tile: the other maps share the bytes it leaves.
+  if (planned.some((decision) => atlasTileEdge(decision.entry.light, atlasEdge)))
+    admitted.bytes += atlasEdge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
+  let atlasArea = 0;
   // Admitted totals never exceed the planned ones, so every planned entry still
-  // fits the local, pass and sampler budgets; only memory can reject it here.
+  // fits the local, pass and sampler budgets; only memory or atlas space can reject it here.
   for (const decision of planned) {
     const entry = decision.entry;
     const directional = entry.light instanceof DirectionalLight;
     const passes = admissionPasses(entry.light, settings);
-    const samplers = admissionSamplers(entry.light, settings);
+    const samplers = admissionSamplers(entry.light, settings, atlasEdge);
+    const atlased = atlasTileEdge(entry.light, atlasEdge) > 0;
     const requestedSize = directional
       ? settings.mapSize
       : settings.localMapSize;
     // A recovery keyed to other settings no longer limits the map.
     const recovery = decision.dropRecovery ? null : entry.recovery;
-    let mapSize = Math.min(requestedSize, budget.maxTextureSize);
+    let mapSize = Math.min(requestedSize, atlased ? atlasEdge : budget.maxTextureSize);
     if (entry.light.needCube())
       mapSize = Math.min(mapSize, budget.maxCubemapTextureSize);
     if (recovery) mapSize = Math.min(mapSize, recovery.mapSize);
@@ -292,6 +308,21 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
         entry.generator.getShadowMap()?.getSize().width ?? mapSize,
       );
     mapSize = 2 ** Math.floor(Math.log2(mapSize));
+    if (atlased) {
+      while (mapSize >= 256 && atlasArea + mapSize ** 2 > atlasEdge ** 2) mapSize /= 2;
+      if (mapSize < 256) {
+        decision.reason = "shadow atlas space";
+        continue;
+      }
+      atlasArea += mapSize ** 2;
+      decision.mapSize = mapSize;
+      decision.reason = recovery
+        ? "shadow map reduced after allocation failure"
+        : mapSize < requestedSize ? "shadow map reduced by shadow atlas space" : null;
+      decision.status = "active";
+      admitted.passes += passes;
+      continue;
+    }
     // CSM constructs four layers before applying an authored lower count.
     // Admit that temporary peak as well as the final attachments.
     const cascaded = directional && settings.cascades > 1;

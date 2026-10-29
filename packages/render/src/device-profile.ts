@@ -25,6 +25,8 @@ export interface DeviceProfile {
    * lit pixel loops over the lights in use. Lights past it are ranked out as the Local Light Budget ranks them.
    */
   lightMaximum: { directional: number; point: number; spot: number; rect: number };
+  /** The lighting plan's shadow atlas edge ceiling in texels (`shadowAtlasEdge`), or null for none. */
+  shadowAtlasCap: number | null;
 }
 
 /**
@@ -38,13 +40,15 @@ const DESKTOP: DeviceProfile = {
   loadRehearsal: { repeats: true, ceilingMs: 120_000 },
   areaEmissionLayers: 4,
   lightMaximum: { directional: 4, point: 32, spot: 16, rect: 4 },
+  shadowAtlasCap: null,
 };
 
 /**
  * Phones and tablets: WKWebView kills a page past its memory limit and iPad WebKit compiles a rehearsal step's
  * variants in ten seconds or more, so maps and textures stay at the Medium level's (the A16 iPad's) and the
  * rehearsal leaves out repeats and ends sooner. What it leaves out compiles when gameplay first makes that change.
- * The light block draws half the desktop's lights, which a mobile GPU loops over in every lit pixel.
+ * The light block draws half the desktop's lights, which a mobile GPU loops over in every lit pixel, and its shadow
+ * atlas holds the capped maps (16 MiB).
  */
 const MOBILE: DeviceProfile = {
   mobile: true,
@@ -53,6 +57,7 @@ const MOBILE: DeviceProfile = {
   loadRehearsal: { repeats: false, ceilingMs: 45_000 },
   areaEmissionLayers: 2,
   lightMaximum: { directional: 2, point: 16, spot: 8, rect: 2 },
+  shadowAtlasCap: 2048,
 };
 
 /**

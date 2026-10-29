@@ -1,8 +1,8 @@
 import {
   CascadedShadowGenerator,
   DirectionalLight,
+  SpotLight,
   type PointLight,
-  type SpotLight,
   type ShadowGenerator,
 } from "@babylonjs/core";
 import type { ShadowSettings } from "@haptic/core";
@@ -53,17 +53,29 @@ export type AllocationKey = {
   readonly mapSize: number;
   readonly cube: boolean;
   readonly cascades: number;
+  /** The edge of the shadow atlas a spot map's tile is in, 0 for a map of its own. */
+  readonly atlasEdge: number;
 };
+
+/**
+ * The edge of the shadow atlas `light`'s map is a tile of while the lighting plan's atlas is `atlasEdge` texels
+ * (`ShadowAdmissionBudget.atlasEdge`, 0 off its path): a spot light's, so far.
+ */
+export function atlasTileEdge(light: ShadowLight, atlasEdge: number): number {
+  return light instanceof SpotLight ? atlasEdge : 0;
+}
 
 export function allocationKey(
   mapSize: number,
   light: ShadowLight,
   cascades: number,
+  atlasEdge = 0,
 ): AllocationKey {
   return {
     mapSize,
     cube: light.needCube(),
     cascades: light instanceof DirectionalLight ? cascades : 1,
+    atlasEdge: atlasTileEdge(light, atlasEdge),
   };
 }
 
@@ -78,12 +90,14 @@ export function matchesAllocationKey(
   mapSize: number,
   light: ShadowLight,
   cascades: number,
+  atlasEdge = 0,
 ): boolean {
   return (
     key !== null &&
     sameJsonNumber(key.mapSize, mapSize) &&
     key.cube === light.needCube() &&
-    sameJsonNumber(key.cascades, light instanceof DirectionalLight ? cascades : 1)
+    sameJsonNumber(key.cascades, light instanceof DirectionalLight ? cascades : 1) &&
+    key.atlasEdge === atlasTileEdge(light, atlasEdge)
   );
 }
 
@@ -96,8 +110,9 @@ export function admissionPasses(light: ShadowLight, settings: ShadowSettings): n
       : 1;
 }
 
-/** Material samplers admission charges a light under the effective settings. */
-export function admissionSamplers(light: ShadowLight, settings: ShadowSettings): number {
+/** Material samplers admission charges a light under the effective settings: none for an atlas tile, always bound. */
+export function admissionSamplers(light: ShadowLight, settings: ShadowSettings, atlasEdge = 0): number {
+  if (atlasTileEdge(light, atlasEdge)) return 0;
   return settings.filter === "pcss" && !light.needCube() ? 2 : 1;
 }
 

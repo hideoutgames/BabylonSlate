@@ -31,6 +31,11 @@ export class ShadowAtlasAllocator {
   free(tile: ShadowAtlasTile): void {
     release(this.root, tile);
   }
+
+  /** No tile is allocated. */
+  get empty(): boolean {
+    return !this.root.tile && !this.root.children;
+  }
 }
 
 function isPowerOfTwo(value: number): boolean {

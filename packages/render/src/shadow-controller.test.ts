@@ -36,6 +36,8 @@ import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
+import { setHapticLighting } from "./haptic-lights";
+import { AtlasShadowGenerator, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -98,6 +100,36 @@ function prepareShadowLayers(generator: ShadowGenerator): void {
 }
 
 describe("shared shadow lifecycle", () => {
+  it("draws spot maps as tiles of the light block's atlas, rebuilt for another atlas edge and released with the last", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    Object.assign(engine.getCaps(), { maxTextureSize: 8192 });
+    setHapticLighting(engine, true);
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    // NullEngine makes no depth texture.
+    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
+    controller.register(spot, true);
+    controller.sync();
+    const medium = spot.getShadowGenerator();
+    expect(medium).toBeInstanceOf(AtlasShadowGenerator);
+    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(4096);
+    expect(controller.metrics().bytes).toBe(shadowAtlasBytes(scene));
+    // High's byte budget holds an atlas of 8192: the map is rebuilt in it.
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ profile: "high", cascades: 1, maxLocalLights: 1 }) });
+    controller.sync();
+    const high = spot.getShadowGenerator() as AtlasShadowGenerator;
+    expect(high).toBeInstanceOf(AtlasShadowGenerator);
+    expect(high).not.toBe(medium);
+    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+    expect(high.tile.size).toBe(2048);
+    // With the last map the atlas goes.
+    controller.register(spot, false);
+    controller.sync();
+    expect(shadowAtlasBytes(scene)).toBe(0);
+    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(1);
+    expect(controller.predictionMap(spot)).toBeNull();
+  });
   it("excludes collider display segments without excluding authored meshes below the collider", () => {
     const { scene, controller } = fixture();
     const sun = new DirectionalLight("sun", new Vector3(0.35, -1, 0.2), scene);

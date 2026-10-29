@@ -14,7 +14,6 @@ import {
 } from "@babylonjs/core";
 import type { ShadowSettings } from "@haptic/core";
 import { ReusableShadowGenerator, type LocalShadowLight } from "./reusable-shadow-generator";
-import { hapticLightingActive } from "./haptic-lights";
 import { createAtlasShadowGenerator } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
@@ -31,7 +30,7 @@ import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { awaitsFirstDraw, isWarmShadowRender, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { isRevealPending } from "./reveal-pending";
 import { listsHiddenCaster } from "./shadow-caster-warm";
-import type { EffectiveShadowBias, ShadowEntry as Entry } from "./shadow-entry";
+import { atlasTileEdge, type EffectiveShadowBias, type ShadowEntry as Entry } from "./shadow-entry";
 
 // Every Babylon 9.29 shadow filter returns fully lit at darkness 1.
 export const NEUTRAL_DARKNESS = 1;
@@ -94,11 +93,20 @@ export function shadowAllocationCheckpoint(
   };
 }
 
+/** A spot map as a tile of the lighting plan's atlas; a full atlas fails the allocation, which the controller retries smaller. */
+function atlasShadowGenerator(light: SpotLight, mapSize: number, atlasEdge: number): ShadowGenerator {
+  const generator = createAtlasShadowGenerator(light, mapSize, atlasEdge);
+  if (!generator) throw new Error(`The shadow atlas has no free ${mapSize}-texel tile.`);
+  return generator;
+}
+
 /**
  * Constructs one admitted map with every hook the controller relies on:
  * receiver defines, automatic bias, culled caster lists and draw counters.
  * `view` keys a sun map to a view's camera (attachView); null is the scene
- * view's map, which receivers of every other camera bind.
+ * view's map, which receivers of every other camera bind. `atlasEdge`: the
+ * lighting plan's atlas a spot map is a tile of (`ShadowAdmissionBudget.atlasEdge`),
+ * 0 for maps of their own.
  */
 export function createShadowGenerator(
   context: ShadowMapContext,
@@ -107,6 +115,7 @@ export function createShadowGenerator(
   settings: ShadowSettings,
   view: Camera | null,
   casterBounds: ReturnType<ShadowSpatialIndex["bounds"]> | undefined,
+  atlasEdge = 0,
 ): ShadowGenerator {
   const scene = context.scene;
   const directionalLight = entry.light instanceof DirectionalLight;
@@ -125,9 +134,9 @@ export function createShadowGenerator(
         )
       : directionalLight
         ? new ShadowGenerator(mapSize, entry.light, undefined, camera)
-        // The lighting plan's block samples spot lights' shadows from the Scene's atlas, while a tile is free.
-        : (hapticLightingActive(scene) && entry.light instanceof SpotLight ? createAtlasShadowGenerator(entry.light, mapSize) : null)
-          ?? new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
+        : atlasTileEdge(entry.light, atlasEdge)
+          ? atlasShadowGenerator(entry.light as SpotLight, mapSize, atlasEdge)
+          : new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
   const slot = { entry, view: view !== null };
   context.slots.set(generator, slot);
   if (generator instanceof CascadedShadowGenerator) {
