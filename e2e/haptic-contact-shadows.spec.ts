@@ -20,36 +20,41 @@ function capture(result: Result, name: string) {
   return found;
 }
 
-/**
- * Per floor pixel of a shadow mask (1 blocked, 0 open, -1 off the floor), how many pixels away (in rings) the nearest
- * floor pixel of the other kind is; off the floor, -1.
- */
-function distanceToEdge(blocked: number[], width: number, height: number) {
-  const distance = blocked.map(() => -1);
-  for (let pixel = 0; pixel < blocked.length; pixel++) {
-    const kind = blocked[pixel]!;
-    if (kind < 0) continue;
-    const row = Math.floor(pixel / width), column = pixel % width;
-    let ring = 1;
-    for (; ring < Math.max(width, height); ring++) {
-      let other = false;
-      for (let dy = -ring; dy <= ring && !other; dy++) {
-        for (let dx = -ring; dx <= ring; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
-          const y = row + dy, x = column + dx;
-          if (y < 0 || y >= height || x < 0 || x >= width) continue;
-          const neighbour = blocked[y * width + x]!;
-          if (neighbour >= 0 && neighbour !== kind) {
-            other = true;
-            break;
-          }
-        }
+/** Per pixel, the Chebyshev distance to the nearest pixel where `source` holds (a breadth-first search over 8 neighbours). */
+function chebyshevDistance(source: boolean[], width: number, height: number): number[] {
+  const distance = source.map((held) => (held ? 0 : Infinity));
+  const queue = source.flatMap((held, pixel) => (held ? [pixel] : []));
+  for (let head = 0; head < queue.length; head++) {
+    const pixel = queue[head]!, row = Math.floor(pixel / width), column = pixel % width;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const y = row + dy, x = column + dx;
+        if (y < 0 || y >= height || x < 0 || x >= width) continue;
+        const neighbour = y * width + x;
+        if (distance[neighbour]! <= distance[pixel]! + 1) continue;
+        distance[neighbour] = distance[pixel]! + 1;
+        queue.push(neighbour);
       }
-      if (other) break;
     }
-    distance[pixel] = ring;
   }
   return distance;
+}
+
+/** Per floor pixel of a shadow mask (1 blocked, 0 open, -1 off the floor), how far the nearest floor pixel of the other kind is. */
+function distanceToEdge(blocked: number[], width: number, height: number) {
+  const toBlocked = chebyshevDistance(blocked.map((kind) => kind === 1), width, height);
+  const toOpen = chebyshevDistance(blocked.map((kind) => kind === 0), width, height);
+  return blocked.map((kind, pixel) => (kind === 1 ? toOpen[pixel]! : kind === 0 ? toBlocked[pixel]! : -1));
+}
+
+/** The share of a light's contribution a pixel keeps (its largest channel), between unlit (0) and unshadowed (1). */
+function lightShare(drawn: number[], open: number[], unlit: number[], pixel: number) {
+  let share = 0;
+  for (let channel = 0; channel < 3; channel++) {
+    const full = open[pixel * 4 + channel]! - unlit[pixel * 4 + channel]!;
+    if (full > 8) share = Math.max(share, (drawn[pixel * 4 + channel]! - unlit[pixel * 4 + channel]!) / full);
+  }
+  return share;
 }
 
 for (const backend of ["webgl2", "webgpu"] as const) {
@@ -86,13 +91,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       const blocked = haptic.blocked[light]!;
       const edge = distanceToEdge(blocked, haptic.width, haptic.height);
       const drawn = capture(haptic, light).pixels, open = capture(haptic, `${light} unshadowed`).pixels, unlit = capture(haptic, `${light} unlit`).pixels;
-      const bands: Record<number, { umbra: number; umbraLit: number; open: number; openShadowed: number }> = {};
+      const bands: Record<number, { umbra: number; umbraShare: number; open: number; openShadowed: number }> = {};
       for (let ring = 1; ring <= 6; ring++) {
         const umbra = blocked.map((kind, pixel) => (kind === 1 && edge[pixel]! >= ring ? pixel : -1)).filter((pixel) => pixel >= 0);
         const far = blocked.map((kind, pixel) => (kind === 0 && edge[pixel]! >= ring ? pixel : -1)).filter((pixel) => pixel >= 0);
         bands[ring] = {
           umbra: umbra.length,
-          umbraLit: umbra.filter((pixel) => difference(drawn, unlit, pixel) > 2).length,
+          umbraShare: Math.max(0, ...umbra.map((pixel) => lightShare(drawn, open, unlit, pixel))),
           open: far.length,
           openShadowed: far.filter((pixel) => difference(drawn, open, pixel) > 2).length,
         };
@@ -104,5 +109,20 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await testInfo.attach(`haptic-contact-shadows-${backend}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
     console.log(JSON.stringify(report));
     expect(errors).toEqual([]);
+    const spot = report.spot as { atlas: boolean[]; shadowed: number; contrast: number; outliers: number; largest: number };
+    const sun = report.sun as { atlas: boolean[]; shadowed: number; contrast: number; mean: number; largest: number };
+    // Babylon's maps on its path, atlas tiles on the block's; each shadow real.
+    expect([spot.atlas, sun.atlas]).toEqual([[false, true], [false, true]]);
+    expect(spot.shadowed).toBeGreaterThan(200);
+    expect(sun.shadowed).toBeGreaterThan(2000);
+    // The spot light's matches Babylon's PCSS but for float rounding and the blockers' depth, which Babylon's colour copy
+    // holds with the caster's bias added a second time (measured: up to 9 pixels, by up to 9/255).
+    expect(spot.outliers).toBeLessThanOrEqual(12);
+    expect(spot.largest).toBeLessThanOrEqual(12);
+    // The sun's differs from Babylon's within its penumbra only (measured: under 1/255 on average, up to 13/255).
+    expect(sun.mean).toBeLessThanOrEqual(1);
+    expect(sun.largest).toBeLessThanOrEqual(16);
+    // CEL draws Contact Hardening as PCF.
+    expect(report.cel).toEqual({ differing: 0 });
   });
 }
