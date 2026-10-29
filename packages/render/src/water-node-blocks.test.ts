@@ -118,13 +118,15 @@ describe("Water material nodes", () => {
       // as built-in water lifts it, from the waves' normal flattened by the horizon haze through the scene's fog.
       expect(fragment).toMatch(/\w+ = swnH;/);
       expect(fragment).toMatch(/swnRLiftA(: f32)? = 60\.0 \* \(0\.03 - swnR\.y\)/);
-      // What it refracts was fogged by what lies below: it comes undone of the Material's own fog, by the Fog block's factor.
-      expect(fragment).toMatch(/swnFogKeep(: f32)? = max\(CalcFogFactor\([^;]*, (uniforms\.)?slateWaterNodeFog\), 0\.01\);/);
-      expect(fragment).toMatch(/= \(\w+ - (uniforms\.)?slateWaterNodeFogColor\.rgb \* \(1\.0 - swnFogKeep\)\) \/ swnFogKeep;/);
+      // What it refracts was fogged by what lies below: it comes undone of the Material's own fog, by the same factor.
+      expect(fragment).toMatch(/swnFogKeep(: f32)? = max\(sceneFogKeep\([^;]*\), 0\.01\);/);
+      expect(fragment).toMatch(/= \(\w+ - (uniforms\.)?sceneFogColor\.rgb \* \(1\.0 - swnFogKeep\)\) \/ swnFogKeep;/);
       // Its Roughness is built-in water's slope-variance roughness, which drops away under the haze.
       expect(fragment).toMatch(/\w+ = swnShade;/);
       expect(fragment).toMatch(/swnShadeVar(: f32)? = \(max\([^;]*\* \(1\.0 - 0\.97 \* swHaze\);/);
-      expect(fragment).toMatch(/swnAirKeep = max\(toLinearSpace\(CalcFogFactor\(/);
+      expect(fragment).toMatch(/swnAirKeep = max\(sceneFogKeep\(/);
+      // Every fog term is the one rule surfaces fog by: Babylon PBR's linear-space factor.
+      expect(fragment).toMatch(/sceneFogKeep\((vec3 )?viewPosition[^)]*\)[^{]*\{ return toLinearSpace\(CalcFogFactor\(viewPosition, (uniforms\.)?sceneFogInfo\)\); \}/);
       // It is seen from below too, as built-in water is.
       expect(result.material.backFaceCulling).toBe(false);
       // NullEngine has no lit WGSL includes to draw a mesh with.
@@ -170,9 +172,9 @@ describe("Water material nodes", () => {
     const effect = lake.subMeshes[0]!.effect!, bound = new Map<string, number[]>();
     vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
     result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
-    expect(bound.get("slateWaterNodeFog")).toEqual([Scene.FOGMODE_LINEAR, 10, 50, scene.fogDensity]);
+    expect(bound.get("sceneFogInfo")).toEqual([Scene.FOGMODE_LINEAR, 10, 50, scene.fogDensity]);
     const linear = new Color3(0.6, 0.3, 0.9).toLinearSpace(scene.getEngine().useExactSrgbConversions);
-    expect(bound.get("slateWaterNodeFogColor")!.map((v) => Number(v.toFixed(5)))).toEqual([linear.r, linear.g, linear.b, 0].map((v) => Number(v.toFixed(5))));
+    expect(bound.get("sceneFogColor")!.map((v) => Number(v.toFixed(5)))).toEqual([linear.r, linear.g, linear.b, 0].map((v) => Number(v.toFixed(5))));
   });
 
   it("bind whether the asset's waves move the shoreline, for the four-tap shoreline over terrain", async () => {
@@ -415,8 +417,8 @@ describe("Water Cut", () => {
     const raise = fragment.indexOf("swnBright");
     expect(raise).toBeGreaterThan(-1);
     expect(fragment.slice(0, raise)).toMatch(/#if defined\(SLATE_WATER_SURFACE\) && !defined\(IMAGEPROCESSINGPOSTPROCESS\)\s+\{\s+(float |var )$/);
-    // The Fog block mixes what the raise leaves.
-    expect(fragment.lastIndexOf("CalcFogFactor(")).toBeGreaterThan(raise);
+    // The Scene Fog block mixes what the raise leaves.
+    expect(fragment.lastIndexOf("= sceneFogKeep(")).toBeGreaterThan(raise);
     // An opaque Material covers everything already.
     const opaque = compile(host(wgsl), createDefaultMaterialDocument("Stone"));
     expect(await opaque.ready).toEqual([]);

@@ -7,8 +7,8 @@ test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 /**
  * How far built-in water's graph Material may draw from its plugin, per scenario: the mean, over the pixels either
  * water covers, of each pixel's largest channel difference, and the 95th percentile of it (0 to 255). Measured on both
- * backends, with headroom; tightened as the remaining differences close. Fog is the furthest: graph Materials fog by
- * Babylon's raw fog factor, PBR materials by its linear-space value.
+ * backends, with headroom; tightened as the remaining differences close. Both fog by one rule (Babylon PBR's), so fog
+ * keeps the tightest bound.
  */
 type Scenario = Awaited<ReturnType<typeof runWaterTemplateProof>>["captures"][number]["scenario"];
 const BOUNDS: Record<Scenario, { mean: number; p95: number }> = {
@@ -16,7 +16,7 @@ const BOUNDS: Record<Scenario, { mean: number; p95: number }> = {
   deep: { mean: 8, p95: 12 },
   grazing: { mean: 5, p95: 8 },
   glint: { mean: 5, p95: 8 },
-  fog: { mean: 12, p95: 16 },
+  fog: { mean: 4, p95: 6 },
   environment: { mean: 4, p95: 6 },
 };
 

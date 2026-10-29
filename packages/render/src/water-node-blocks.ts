@@ -23,6 +23,7 @@ import {
   WATER_EFFECTS_GEOMETRY_DEFINE, WATER_REFRACTION_SCALE,
 } from "./water-shader-defines";
 import { geometryOutputWrite } from "./geometry-surface-output-block";
+import { SCENE_FOG_COLOR_UNIFORM, bindSceneFog, bindSceneFogColor, emitSceneFogFactor } from "./scene-fog-block";
 import { isSpatialGeometryPass } from "./spatial-geometry-passes";
 import { isSkyboxMesh } from "./skybox";
 import { WATER_SCENE_COPY_SKY_DEPTH, isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
@@ -92,12 +93,8 @@ const SCREEN_UNIFORM = "slateWaterNodeScreen";
 /** The march's own screen terms (`marchSource`): (1 / width, 1 / height, Refraction, march distance). */
 const MARCH_UNIFORM = "slateWaterScreen";
 const SKY_UNIFORMS = ["slateWaterNodeSky", "slateWaterNodeHorizon", "slateWaterNodeSun", "slateWaterNodeSunColor", "slateWaterNodeSunShape"] as const;
-/** The water's haze (`waterHazeConstants`), and the scene's fog (mode, start, end, density) that aerial perspective leaves. */
+/** The water's haze (`waterHazeConstants`). */
 const HAZE_UNIFORM = "slateWaterNodeHaze";
-const FOG_UNIFORM = "slateWaterNodeFog";
-/** The scene's fog colour, linear, as the compiler's Fog block mixes toward it (Water Scene Color's pre-division). */
-const FOG_COLOR_UNIFORM = "slateWaterNodeFogColor";
-const fogScratch = new Color3();
 /** (max LOD, RGBD, gamma space, level × scene environment intensity) and (1, ±1 y, ±1 z, LOD offset). */
 const ENV_UNIFORMS = ["slateWaterNodeEnv", "slateWaterNodeEnvFlip"] as const;
 const ENV_MATRIX = "slateWaterNodeEnvMatrix";
@@ -336,28 +333,6 @@ export function waterSkyCube(scene: Scene): BaseTexture | null {
   return texture instanceof CubeTexture && texture.isReady() ? texture : null;
 }
 
-/** The scene's fog (mode, start, end, density), for Babylon's fog factor (`emitFogFactor`). Allocation-free. */
-function bindFog(effect: Effect, scene: Scene): void {
-  effect.setFloat4(FOG_UNIFORM, scene.fogMode, scene.fogStart, scene.fogEnd, scene.fogDensity);
-}
-
-/**
- * Babylon's fog factor, `CalcFogFactor(view-space position, U.slateWaterNodeFog)`, from the include the compiler's Fog
- * block emits (once per program).
- */
-function emitFogFactor(state: NodeMaterialBuildState): void {
-  const wgsl = wgslOf(state);
-  state._emitUniformFromString(FOG_UNIFORM, Types.Vector4);
-  state._emitFunctionFromInclude("fogFragmentDeclaration", "", {
-    removeUniforms: true, removeVaryings: true, removeIfDef: false,
-    replaceStrings: wgsl ? [
-      { search: /fn CalcFogFactor\(\)/, replace: "fn CalcFogFactor(vFogDistance: vec3f, vFogInfos: vec4f)" },
-      { search: /uniforms.vFogInfos/g, replace: "vFogInfos" },
-      { search: /fragmentInputs.vFogDistance/g, replace: "vFogDistance" },
-    ] : [{ search: /float CalcFogFactor\(\)/, replace: "float CalcFogFactor(vec3 vFogDistance, vec4 vFogInfos)" }],
-  });
-}
-
 /** Uniforms of the analytic sky and of the cube `texture` (when there is one). Allocation-free. */
 function bindSky(effect: Effect, scene: Scene, texture: BaseTexture | null): void {
   const light = sceneWaterNodeLighting(scene);
@@ -367,7 +342,7 @@ function bindSky(effect: Effect, scene: Scene, texture: BaseTexture | null): voi
   effect.setFloat4("slateWaterNodeSunColor", light.sunColor[0]!, light.sunColor[1]!, light.sunColor[2]!, 0);
   effect.setFloat4("slateWaterNodeSunShape", light.sunShape[0]!, light.sunShape[1]!, light.sunShape[2]!, light.sunShape[3]!);
   effect.setFloat4(HAZE_UNIFORM, light.haze[0]!, light.haze[1]!, light.haze[2]!, light.haze[3]!);
-  bindFog(effect, scene);
+  bindSceneFog(effect, scene);
   effect.setTexture(WATER_NODE_ENV_SAMPLER, texture ?? EMPTY_TEXTURE);
   if (!texture) return;
   const size = texture.getSize().width, lods = Math.max(0, Math.log2(Math.max(size, 1)));
@@ -577,8 +552,8 @@ RegisterClass("BABYLON.WaterDepthFadeBlock", WaterDepthFadeBlock);
  * (`silhouetteFallbackSource`). Available is 1 where the colour came from the copy, easing to 0 just behind what is in
  * front of the water as built-in water's refracted share does, and 0 where the pass has none (a material preview, a
  * capture, an opaque Material, Water Refraction off): Color is black there. The copy is fogged already, so in the
- * scene's fog Color comes with the Material's own fog undone (built-in water's pre-division, by the Fog block's factor
- * and colour): mixed into the Material's colour by any share, the background keeps its own fog only.
+ * scene's fog Color comes with the Material's own fog undone (built-in water's pre-division, by the Scene Fog block's
+ * factor and colour): mixed into the Material's colour by any share, the background keeps its own fog only.
  */
 export class WaterSceneColorBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -607,18 +582,16 @@ export class WaterSceneColorBlock extends WaterNodeBlock {
     const scene = material.getScene();
     bindSurface(effect, scene, mesh);
     bindCopy(effect, scene, mesh);
-    bindFog(effect, scene);
-    // As the shader's `toLinearSpace` converts the Fog block's colour.
-    scene.fogColor.toLinearSpaceToRef(fogScratch, scene.getEngine().useExactSrgbConversions);
-    effect.setFloat4(FOG_COLOR_UNIFORM, fogScratch.r, fogScratch.g, fogScratch.b, 0);
+    bindSceneFog(effect, scene);
+    bindSceneFogColor(effect, scene);
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     const wgsl = wgslOf(state), v3 = wgsl ? "vec3f" : "vec3";
     emitCopyHelpers(state);
     state._emitUniformFromString(ORIGIN_UNIFORM, Types.Vector4);
-    emitFogFactor(state);
-    state._emitUniformFromString(FOG_COLOR_UNIFORM, Types.Vector4);
+    emitSceneFogFactor(state);
+    state._emitUniformFromString(SCENE_FOG_COLOR_UNIFORM, Types.Vector4);
     const [color, available] = this._outputs.map((output) => output.associatedVariableName);
     state.compilationString += this.declare(state, this.color, `${v3}(0.0)`) + this.declare(state, this.available, "0.0");
     const position = this.worldPosition.associatedVariableName, view = this.view.associatedVariableName;
@@ -642,10 +615,10 @@ float swnSceneZ = mix(swnZ1, swnZ0, swnLeak);
 ${silhouetteFallbackSource("swnBent", "swnSceneZ", "swnWaterZ", `U.${SCREEN_UNIFORM}.x`)}
 `, wgsl)
       + (this.color.hasEndpoints ? `${color} = swSceneColor(swnBent);\n`
-        // The copy is already fogged: undo the Material's own fog on it, which the Fog block applies after (its factor
-        // and linear fog colour), so the background keeps its fog once, whatever share of the output it takes.
-        + `#ifdef FOG\n${bind(`float swnFogKeep = max(CalcFogFactor((${view} * vec4(${position}.xyz, 1.0)).xyz, U.${FOG_UNIFORM}), 0.01);
-${color} = (${color} - U.${FOG_COLOR_UNIFORM}.rgb * (1.0 - swnFogKeep)) / swnFogKeep;
+        // The copy is already fogged: undo the Material's own fog on it, which the Scene Fog block applies after (its
+        // factor and linear fog colour), so the background keeps its fog once, whatever share of the output it takes.
+        + `#ifdef FOG\n${bind(`float swnFogKeep = max(sceneFogKeep((${view} * vec4(${position}.xyz, 1.0)).xyz), 0.01);
+${color} = (${color} - U.${SCENE_FOG_COLOR_UNIFORM}.rgb * (1.0 - swnFogKeep)) / swnFogKeep;
 `, wgsl)}#endif\n` : "")
       + (this.available.hasEndpoints ? `${available} = smoothstep(-0.03, 0.03 + swnWaterZ * 0.004, swnSceneZ - swnWaterZ);\n` : "")
       + "}\n#endif\n";
@@ -731,7 +704,7 @@ export class WaterReflectionBlock extends WaterNodeBlock {
     emitCopyHelpers(state);
     state._emitUniformFromString(MARCH_UNIFORM, Types.Vector4);
     for (const name of [...SKY_UNIFORMS, ...ENV_UNIFORMS, HAZE_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
-    emitFogFactor(state);
+    emitSceneFogFactor(state);
     state._emitUniformFromString(ENV_MATRIX, Types.Matrix);
     declareSampler(state, WATER_NODE_ENV_SAMPLER, "cube", WATER_NODE_ENV_DEFINE);
     state._emitFunction("swnEnvTap", `#ifdef ${WATER_NODE_ENV_DEFINE}\n${wgsl
@@ -759,7 +732,7 @@ vec3 swnV = normalize(${eye} - ${position}.xyz);
 vec3 swnN = normalize(${normal});
 float swnEyeDist = length(${eye} - ${position}.xyz);
 float swnAirKeep = 1.0;
-`, wgsl) + `#ifdef FOG\n${bind(`swnAirKeep = max(toLinearSpace(CalcFogFactor((${this.view.associatedVariableName} * vec4(${position}.xyz, 1.0)).xyz, U.${FOG_UNIFORM})), 0.0);`, wgsl)}#endif\n` + bind(`
+`, wgsl) + `#ifdef FOG\n${bind(`swnAirKeep = max(sceneFogKeep((${this.view.associatedVariableName} * vec4(${position}.xyz, 1.0)).xyz), 0.0);`, wgsl)}#endif\n` + bind(`
 ${aerialPerspectiveSource("swnEyeDist", "swnAirKeep", `U.${LOOK_UNIFORM}.w`, `U.${HAZE_UNIFORM}`)}
 ${horizonHazeSource("(1.0 - clamp(swnV.y, 0.0, 1.0))")}
 swnN = normalize(mix(swnN, vec3(0.0, 1.0, 0.0), swHaze * swHaze));

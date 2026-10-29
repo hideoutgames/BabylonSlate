@@ -159,7 +159,7 @@ function multiplyMaterial(): MaterialDocument {
 }
 
 describe("material compiler", () => {
-  it.each(["pbr", "unlit"] as const)("builds %s fog with the WGSL vector color conversion", async (shadingModel) => {
+  it.each(["pbr", "unlit"] as const)("builds %s fog in WGSL by the one rule every surface fogs by", async (shadingModel) => {
     const scene = host();
     vi.spyOn(scene.getEngine(), "isWebGPU", "get").mockReturnValue(true);
     const doc = createDefaultMaterialDocument();
@@ -168,8 +168,9 @@ describe("material compiler", () => {
     if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
     disposers.push(() => result.dispose());
     expect(await result.ready).toEqual([]);
-    expect(result.material.compiledShaders).toContain("= CalcFogFactor(");
-    expect(result.material.compiledShaders).toMatch(/= toLinearSpaceVec3\(uniforms\.[^)]*fogColor[^)]*\)/);
+    // Babylon PBR's rule: the fog factor in linear space, toward the scene's linear fog colour.
+    expect(result.material.compiledShaders).toContain("return toLinearSpace(CalcFogFactor(viewPosition, uniforms.sceneFogInfo));");
+    expect(result.material.compiledShaders).toMatch(/\(1\.0 - fogKeep\w*\) \* uniforms\.sceneFogColor\.rgb;/);
   });
 
   it.each(["pbr", "unlit"] as const)("compiles live scene fog into %s surfaces", async (shadingModel) => {
@@ -192,15 +193,15 @@ describe("material compiler", () => {
     const effect = subMesh.effect!;
     expect(effect.defines).toMatch(/^#define FOG$/m);
     // The final compiled fragment shader must actually evaluate the fog factor.
-    expect(result.material.compiledShaders).toContain("= CalcFogFactor(");
+    expect(result.material.compiledShaders).toMatch(/= sceneFogKeep\(/);
     const setFloat4 = vi.spyOn(effect, "setFloat4");
     result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, subMesh);
-    expect(setFloat4).toHaveBeenCalledWith(expect.stringMatching(/^fogParameters/), Scene.FOGMODE_LINEAR, 2, 10, scene.fogDensity);
+    expect(setFloat4).toHaveBeenCalledWith("sceneFogInfo", Scene.FOGMODE_LINEAR, 2, 10, scene.fogDensity);
     scene.fogMode = Scene.FOGMODE_EXP2;
     scene.fogDensity = 0.7;
     scene.resetCachedMaterial();
     result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, subMesh);
-    expect(setFloat4).toHaveBeenCalledWith(expect.stringMatching(/^fogParameters/), Scene.FOGMODE_EXP2, 2, 10, 0.7);
+    expect(setFloat4).toHaveBeenCalledWith("sceneFogInfo", Scene.FOGMODE_EXP2, 2, 10, 0.7);
   });
 
   it.each(["pbr", "unlit"] as const)("leaves %s color linear for a Scene Linear display stage", async (shadingModel) => {
