@@ -19,7 +19,7 @@ Returns how deep the water is below this point, a fade that rises from 0 at the 
 | Depth | Float | Metres of water straight down from the surface. |
 | Fade | Float | 1 − e^(−Depth / Distance): 0 at the waterline, near 1 at three times Distance. |
 | Transmittance | Vector 3 | How much of what lies below reaches the camera, per colour channel: near 1 in the shallows, falling with Depth and with a flatter view. The colours Shallow Color lacks fade first. Built-in water uses the same amount. |
-| Edge Fade | Float | 0 to 1: how much water there is at this point near the body's edges. It falls to 0 over the last few centimetres at a shore, and over several metres at an edge that meets no land, such as an Ocean's outer edge. 1 everywhere else. Built-in water fades the same way. |
+| Edge Fade | Float | 0 to 1: how much water there is at this point near the body's edges. It falls to 0 at a shore over the last few centimetres of depth where the shore is steep, and up to 40 cm where it is gentle. At an edge that meets no land, such as an Ocean's outer edge, it fades over several metres. 1 everywhere else. Built-in water fades the same way. |
 
 ## Notes
 

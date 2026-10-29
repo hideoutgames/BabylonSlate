@@ -103,6 +103,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 5 water PR 10: the Water Coverage block (`WaterCoverageBlock`), which the compiler adds to every translucent Surface Material before its fog: on water, outside Scene Linear, built-in water's coverage raise (by the brightest channel, colour lowered as far). With the scene copy built-in water also adds the background the raise hides back as refracted light; the starter is opaque where it refracts, so the graph needs only the plain raise. Next: the four-tap shoreline, then the built-in template document.
 
+   Phase 5 water PR 11: the four-tap shoreline (`shorelineSource`, shared): the water nodes take built-in water's shoreline under the waves and the terrain slope that softens gentle shores, so Edge Fade, the depth and the shore foam follow the moving waterline as built-in water's do. The plugin's unused seaward shore direction goes. Next: the built-in template document, compared with the plugin's pixels.
+
    If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
 5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.
 6. **Shadow atlas** behind the same switch, with the preserve list above.
