@@ -86,6 +86,8 @@ import {
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
 import { detachShadowGenerator, ShadowPredictionMaps } from "./shadow-prediction-maps";
+import { hapticLightingActive } from "./haptic-lights";
+import { AtlasShadowGenerator, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
 export type { ShadowAdmissionSnapshot, ShadowStartPrediction } from "./shadow-admission-plan";
@@ -411,6 +413,8 @@ export class SceneShadowController {
    * real maps, which release it when they need that room. Null when shadows are off or there is no room.
    */
   predictionMap(light: Light): ShadowGenerator | null {
+    // The light block's Materials hold no shadow defines to predict, and a map would hold an atlas tile.
+    if (hapticLightingActive(this.scene)) return null;
     return this.predictions.map(light);
   }
   /** Disposes the prediction maps `release` picks (all by default), and gives their bytes back. */
@@ -513,12 +517,13 @@ export class SceneShadowController {
   /** Faces drawn and bytes held: the scene view's maps (parked ones included) and every view's own. */
   metrics(): { passes: number; bytes: number } {
     let passes = 0;
-    let bytes = 0;
+    // The atlas whole; its tiles hold none of their own.
+    let bytes = shadowAtlasBytes(this.scene);
     this.views.forEachMap((map) => {
       passes += map.passes;
       bytes += map.attachmentBytes;
     });
-    const held = (generator: ShadowGenerator) =>
+    const held = (generator: ShadowGenerator) => generator instanceof AtlasShadowGenerator ? 0 :
       generatorPasses(generator) *
       (generator.getShadowMap()?.getSize().width ?? 0) ** 2 *
       shadowBytesPerTexel(this.scene.getEngine(), generator instanceof CascadedShadowGenerator);
@@ -700,7 +705,7 @@ export class SceneShadowController {
     const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&
-        matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades)) {
+        matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge)) {
         if (entry.standby) {
           entry.standby = false;
           entry.admittedAt = selectionTime;
@@ -718,7 +723,7 @@ export class SceneShadowController {
     for (const [light, held] of this.parked) {
       const entry = this.entries.get(light);
       if (entry?.status !== "active" || entry.generator) continue;
-      if (!matchesAllocationKey(held.key, entry.mapSize, entry.light, settings.cascades)) {
+      if (!matchesAllocationKey(held.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge)) {
         this.disposeParkedMap(light);
         continue;
       }
@@ -742,7 +747,7 @@ export class SceneShadowController {
       if (entry.status !== "active" || entry.generator || entry.light instanceof DirectionalLight)
         continue;
       const index = donors.findIndex((donor) =>
-        matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades) &&
+        matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge) &&
         (donor.generator as ReusableShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
       if (index < 0) continue;
       const [donor] = donors.splice(index, 1) as [Entry];
@@ -788,8 +793,8 @@ export class SceneShadowController {
     );
     for (const entry of donors.reverse()) {
       const generator = entry.generator!;
-      const bytes = generatorPasses(generator) * entry.mapSize ** 2 * texelBytes(generator, budget);
-      const samplers = admissionSamplers(entry.light, settings);
+      const bytes = reservedShadowBytes(generator, entry.mapSize, budget);
+      const samplers = admissionSamplers(entry.light, settings, budget.atlasEdge);
       // The Forward light budget dropped this light for camera distance: it is
       // camera-rejected like a budget-limited one. Releasing its map would
       // dispose the generator, and readmission would rebuild every caster's
@@ -887,7 +892,7 @@ export class SceneShadowController {
       while (mapSize >= 256) {
         const cleanup = shadowAllocationCheckpoint(scene);
         try {
-          const generator = createShadowGenerator(this.maps, entry, mapSize, settings, null, casterBounds);
+          const generator = createShadowGenerator(this.maps, entry, mapSize, settings, null, casterBounds, budget.atlasEdge);
           entry.generator = generator;
           // Receivers may bind the new map before its first draw (a view keeps drawing while its casters compile).
           neutralUntilRendered(generator);
@@ -895,7 +900,7 @@ export class SceneShadowController {
           invalidateShadowReceiverHandoffs(scene);
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
-          entry.key = allocationKey(mapSize, entry.light, settings.cascades);
+          entry.key = allocationKey(mapSize, entry.light, settings.cascades, budget.atlasEdge);
           entry.failedKey = "";
           if (entry.recovery)
             entry.reason = "shadow map reduced after allocation failure";
@@ -947,7 +952,9 @@ export class SceneShadowController {
     }
     // Failed constructors own no allocation. Retain conservative CSM creation
     // headroom for live generators so another client cannot consume it mid-sync.
-    const live: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
+    // The atlas is counted whole, once, while it holds a map.
+    releaseEmptyShadowAtlas(scene);
+    const live: ShadowCost = { bytes: shadowAtlasBytes(scene), passes: 0, samplers: 0 };
     for (const entry of this.entries.values()) {
       if (!entry.generator) continue;
       applyCascadeFallback(entry);
@@ -1011,7 +1018,9 @@ export class SceneShadowController {
 }
 
 /** What a live map reserves: a cascaded map's four-layer construction peak (Babylon builds four, then the authored count), otherwise its faces. */
+/** A map's bytes: none for an atlas tile, whose bytes are the atlas's. */
 function reservedShadowBytes(generator: ShadowGenerator, mapSize: number, budget: ShadowAdmissionBudget): number {
+  if (generator instanceof AtlasShadowGenerator) return 0;
   return (generator instanceof CascadedShadowGenerator ? 4 : generatorPasses(generator)) * mapSize ** 2 * texelBytes(generator, budget);
 }
 
