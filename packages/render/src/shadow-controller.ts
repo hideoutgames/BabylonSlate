@@ -436,7 +436,8 @@ export class SceneShadowController {
    * to the camera, so materials drawn for it bind a map fitted to it as a scene
    * view there would fit one. Point and spot maps do not depend on the view and
    * stay shared. The maps follow every sync until the claim is released; each
-   * reserves in the shared rendering ledger and redraws in every pass the view draws.
+   * reserves in the shared rendering ledger (an atlas map's mirror: cascade
+   * tiles of the atlas) and redraws in every pass the view draws.
    */
   attachView(camera: Camera): ViewShadows {
     if (this.scene.isDisposed) return { release: () => Promise.resolve() };
@@ -739,6 +740,9 @@ export class SceneShadowController {
       markSceneReadinessDirty(scene);
       invalidateShadowReceiverHandoffs(scene);
     }
+    // The views' atlas mirrors of maps released above go too (a map given back keeps its own), before a replacement
+    // could need their tiles.
+    this.views.prune();
     if (restoring) this.disposeParkedMaps();
     // Hand a retained map to a same-kind winner instead of constructing one.
     // Farther donors are least likely to return.
@@ -926,7 +930,8 @@ export class SceneShadowController {
               { cause: error },
             );
           }
-          // Parked and standby maps are optional reuse; free them before reducing an admitted map.
+          // Parked and standby maps are optional reuse; free them before reducing an admitted map. The views' atlas
+          // maps give way too, as their ledger maps do (`yieldTo`).
           let reclaimed = this.parked.size > 0;
           this.disposeParkedMaps();
           for (const other of this.entries.values()) {
@@ -934,6 +939,7 @@ export class SceneShadowController {
             release(other, false);
             reclaimed = true;
           }
+          if (this.views.yieldAtlasTiles()) reclaimed = true;
           if (reclaimed) {
             entry.failedKey = "";
             entry.status = "active";
@@ -982,7 +988,7 @@ export class SceneShadowController {
     this.views.sync(settings, () => {
       currentCasters();
       return casterBounds;
-    });
+    }, budget.atlasEdge);
   }
   /** Every allocated map: the scene view's (admitted, standby or parked) and every view's own. */
   private forEachGenerator(action: (generator: ShadowGenerator) => void): void {

@@ -29,10 +29,12 @@ import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowAtlasTexture,
 /** Records per light type the block holds: the most any device draws (`DeviceProfile.lightMaximum`). */
 export const HAPTIC_LIGHT_MAXIMUM = { directional: 4, point: 32, spot: 16, rect: 4 } as const;
 /**
- * Shadow views the block holds: one per cascade of the shadowed sun, and 48 for local lights' tiles (a spot light's
- * one, a point light's six). A light whose views do not fit draws unshadowed.
+ * Shadow views the block holds: first one per cascade of the shadowed sun, then 48 for local lights' tiles (a spot
+ * light's one, a point light's six). A light whose views do not fit draws unshadowed.
  */
 export const HAPTIC_SHADOW_VIEWS = 4 + 48;
+/** The views the sun's cascades take, whichever camera's map they are; local lights' follow. */
+const SUN_SHADOW_VIEWS = 4;
 /**
  * A shadow view's record: its light's view-projection (four columns), its atlas tile (u, v, size, texel) and (darkness,
  * filter quality: 0 low, 1 medium, 2 high, 1 for a cascade, whose depth clamps, 1 for receiver-plane bias).
@@ -86,11 +88,13 @@ hapticSunShadow: array<vec4f, 4>,
 var<uniform> HapticLights : HapticLightsBlock;
 `;
 
-/** A shadowed light's map this frame and its first shadow view. */
-type ShadowedLight = { shadow: AtlasShadowGenerator | AtlasCascadedShadowGenerator; first: number };
+/** A shadowed local light's map this frame and its first shadow view. */
+type ShadowedLight = { shadow: AtlasShadowGenerator; first: number };
 type SceneLights = {
   buffer: UniformBuffer; rects: RectAreaLight[]; layers: number[]; limits: string[];
-  shadowed: ShadowedLight[]; shadowViews: Float32Array; sunShadow: Float32Array;
+  /** The shadowed sun this frame and the map of it last written, the rendering camera's (`sunShadowMap`). */
+  shadowed: ShadowedLight[]; sun: DirectionalLight | null; sunWritten: AtlasCascadedShadowGenerator | null;
+  shadowViews: Float32Array; sunShadow: Float32Array;
 };
 const scenes = new WeakMap<Scene, SceneLights>();
 const directional = new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8);
@@ -102,7 +106,10 @@ const rect = new Float32Array(HAPTIC_LIGHT_MAXIMUM.rect * 16);
 function sceneLights(scene: Scene): SceneLights {
   let lights = scenes.get(scene);
   if (!lights) {
-    const buffer = new UniformBuffer(scene.getEngine(), undefined, true, "HapticLights");
+    // Not dynamic: on WebGPU, a write after the frame's last update moves the block to another buffer, so draws keep the
+    // values they were bound with when it changes between them (a view drawing with its own sun map); a dynamic buffer
+    // has one, which every draw of the frame reads at its last values.
+    const buffer = new UniformBuffer(scene.getEngine(), undefined, false, "HapticLights");
     buffer.addUniform("hapticCounts", 4);
     buffer.addUniform("hapticFillDirection", 4);
     buffer.addUniform("hapticFillSky", 4);
@@ -117,7 +124,7 @@ function sceneLights(scene: Scene): SceneLights {
     // Rect area lights read Babylon's LTC tables, always bound, so a rect light arriving compiles nothing.
     const releaseLookup = retainAreaLightLookup(scene);
     lights = {
-      buffer, rects: [], layers: [], limits: [], shadowed: [],
+      buffer, rects: [], layers: [], limits: [], shadowed: [], sun: null, sunWritten: null,
       shadowViews: new Float32Array(HAPTIC_SHADOW_VIEWS * SHADOW_VIEW_VEC4S * 4), sunShadow: new Float32Array(16),
     };
     scenes.set(scene, lights);
@@ -127,7 +134,14 @@ function sceneLights(scene: Scene): SceneLights {
       writeShadowViews(scene, state);
       state.buffer.update();
     });
+    // A view with its own sun map (a Full Quality capture's) draws with it, and the scene view with its own after.
+    const cameraChanged = scene.onActiveCameraChanged.add(() => {
+      if (!state.sun || sunShadowMap(scene, state.sun) === state.sunWritten) return;
+      writeShadowViews(scene, state);
+      state.buffer.update();
+    });
     scene.onDisposeObservable.addOnce(() => {
+      scene.onActiveCameraChanged.remove(cameraChanged);
       buffer.dispose();
       releaseLookup();
     });
@@ -192,44 +206,68 @@ export const selectHapticLights: ForwardLightSelection = (scene, candidates, pre
   return { admitted, samplers: 0 };
 };
 
+/** Whether `light` casts shadows this frame. */
+function castsShadows(scene: Scene, light: Light): boolean {
+  return scene.shadowsEnabled && light.shadowEnabled;
+}
+
 /**
- * `light`'s map when it casts shadows into the atlas and the block has room for its views (from `views` on), as its
- * first view, or null.
+ * A spot or point light's map when it casts shadows into the atlas and the block has room for its views (from `views`
+ * on), as its first view, or null.
  */
-function shadowedLight(scene: Scene, light: SpotLight | PointLight | DirectionalLight, views: number): ShadowedLight | null {
+function shadowedLight(scene: Scene, light: SpotLight | PointLight, views: number): ShadowedLight | null {
   const shadow = light.getShadowGenerator();
-  if (!(shadow instanceof AtlasShadowGenerator || shadow instanceof AtlasCascadedShadowGenerator) ||
-    !scene.shadowsEnabled || !light.shadowEnabled || views + shadow.tiles.length > HAPTIC_SHADOW_VIEWS) return null;
+  if (!(shadow instanceof AtlasShadowGenerator) || !castsShadows(scene, light) || views + shadow.tiles.length > HAPTIC_SHADOW_VIEWS)
+    return null;
   return { shadow, first: views };
+}
+
+/**
+ * The sun's cascades the rendering camera samples: its own map when it has one in the atlas (a Full Quality capture's,
+ * `SceneShadowController.attachView`), else the scene view's, or null when neither is in the atlas.
+ */
+function sunShadowMap(scene: Scene, light: DirectionalLight): AtlasCascadedShadowGenerator | null {
+  const own = scene.activeCamera && light.getShadowGenerator(scene.activeCamera);
+  if (own instanceof AtlasCascadedShadowGenerator) return own;
+  const shadow = light.getShadowGenerator();
+  return shadow instanceof AtlasCascadedShadowGenerator ? shadow : null;
+}
+
+/** Writes `shadow`'s views from `first` on (`writeShadowViews`). */
+function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerator | AtlasCascadedShadowGenerator, first: number, edge: number): void {
+  const offset = scene.floatingOriginOffset;
+  const quality = shadow.filteringQuality === ShadowGenerator.QUALITY_LOW ? 0 : shadow.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? 1 : 2;
+  const cascaded = shadow instanceof AtlasCascadedShadowGenerator;
+  shadow.tiles.forEach((tile, index) => {
+    const base = (first + index) * SHADOW_VIEW_VEC4S * 4;
+    Matrix.TranslationToRef(offset.x, offset.y, offset.z, shadowTransform);
+    shadowTransform.multiplyToRef(shadow.drawnViews[index]!, shadowTransform);
+    state.shadowViews.set(shadowTransform.m, base);
+    state.shadowViews.set([tile.x / edge, tile.y / edge, tile.size / edge, 1 / edge, shadow.getDarkness(), quality, Number(cascaded),
+      Number(cascaded && shadow.autoBias)], base + 16);
+  });
 }
 
 /**
  * Writes the shadowed lights' views: per tile, the view-projection it was last drawn with, relative to the floating
  * origin (the block's positions are), the tile in atlas texture coordinates, the darkness, which stays neutral until
- * the map has drawn, and the filter quality; and the sun's cascade choice (`hapticSunShadow`: its cascade count, blend
- * factor, distance fade and first view; the camera's view depth plane; its cascades' far ends and lengths in it), as
- * last drawn. Updates them in the buffer, which the caller updates.
+ * the map has drawn, and the filter quality; the sun's first, from the map the rendering camera samples
+ * (`sunShadowMap`), with its cascade choice (`hapticSunShadow`: its cascade count, blend factor, distance fade and
+ * first view, always 0; the camera's view depth plane; its cascades' far ends and lengths in it), as last drawn.
+ * Updates them in the buffer, which the caller updates.
  */
 function writeShadowViews(scene: Scene, state: SceneLights): void {
   const offset = scene.floatingOriginOffset;
   const edge = shadowAtlasTexture(scene).getRenderSize();
   state.sunShadow.fill(0);
-  for (const { shadow, first } of state.shadowed) {
-    const quality = shadow.filteringQuality === ShadowGenerator.QUALITY_LOW ? 0 : shadow.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? 1 : 2;
-    const cascaded = shadow instanceof AtlasCascadedShadowGenerator;
-    shadow.tiles.forEach((tile, index) => {
-      const base = (first + index) * SHADOW_VIEW_VEC4S * 4;
-      Matrix.TranslationToRef(offset.x, offset.y, offset.z, shadowTransform);
-      shadowTransform.multiplyToRef(shadow.drawnViews[index]!, shadowTransform);
-      state.shadowViews.set(shadowTransform.m, base);
-      state.shadowViews.set([tile.x / edge, tile.y / edge, tile.size / edge, 1 / edge, shadow.getDarkness(), quality, Number(cascaded),
-        Number(cascaded && shadow.autoBias)], base + 16);
-    });
-    if (!cascaded) continue;
+  for (const { shadow, first } of state.shadowed) writeViews(scene, state, shadow, first, edge);
+  const shadow = state.sunWritten = state.sun && sunShadowMap(scene, state.sun);
+  if (shadow) {
+    writeViews(scene, state, shadow, 0, edge);
     const plane = shadow.cascadeDepth;
     // The camera's view depth of a block position, which is relative to the floating origin.
     const sign = scene.useRightHandedSystem ? -1 : 1;
-    state.sunShadow.set([shadow.numCascades, shadow.cascadeBlendPercentage === 0 ? 10000 : 1 / shadow.cascadeBlendPercentage, shadow.fadeFraction, first,
+    state.sunShadow.set([shadow.numCascades, shadow.cascadeBlendPercentage === 0 ? 10000 : 1 / shadow.cascadeBlendPercentage, shadow.fadeFraction, 0,
       sign * plane.x, sign * plane.y, sign * plane.z, sign * (plane.w + plane.x * offset.x + plane.y * offset.y + plane.z * offset.z)]);
     state.sunShadow.set(shadow.cascadeEnds.slice(0, 4), 8);
     state.sunShadow.set(shadow.cascadeLengths.slice(0, 4), 12);
@@ -254,10 +292,10 @@ export function writeHapticLights(scene: Scene): void {
   let points = 0;
   let spots = 0;
   let rects = 0;
-  let views = 0;
+  let views = SUN_SHADOW_VIEWS;
   state.rects.length = 0;
   state.shadowed.length = 0;
-  let sun: ShadowedLight | null = null;
+  state.sun = null;
   // The admission keeps within the block's records; the checks below hold them whatever it admitted.
   if (scene.lightsEnabled) for (const light of scene.lights) {
     if (!light.isEnabled() || !isIlluminatingLight(light)) continue;
@@ -268,12 +306,8 @@ export function writeHapticLights(scene: Scene): void {
       const direction = light.computeTransformedInformation() ? light.transformedDirection : light.direction;
       const intensity = light.getScaledIntensity();
       // The first shadowed sun's shadow is the block's sun shadow; w marks the light that casts it.
-      const shadowed: ShadowedLight | null = sun ? null : shadowedLight(scene, light, views);
-      if (shadowed) {
-        sun = shadowed;
-        state.shadowed.push(shadowed);
-        views += shadowed.shadow.tiles.length;
-      }
+      const shadowed = !state.sun && castsShadows(scene, light) && light.getShadowGenerator() instanceof AtlasCascadedShadowGenerator;
+      if (shadowed) state.sun = light;
       directional.set([direction.x, direction.y, direction.z, light.radius,
         light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, shadowed ? 1 : 0], directionals * 8);
       directionals++;

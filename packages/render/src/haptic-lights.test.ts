@@ -202,7 +202,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(read("hapticFillDirection", 4)[3]).toBe(0);
   });
 
-  it("names each spot light's shadow view of the atlas in its record: its transform, tile, darkness and filter quality", () => {
+  it("names each spot light's shadow view of the atlas in its record, after the sun's: its transform, tile, darkness and filter quality", () => {
     const { engine, scene } = host();
     setHapticLighting(engine, true);
     const spots = [0, 1, 2].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene));
@@ -214,16 +214,16 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const read = (name: string, from: number, length: number) =>
       [...buffer._bufferData.subarray(buffer._uniformLocations[name]! + from, buffer._uniformLocations[name]! + from + length)];
     const views = () => [0, 1, 2].map((index) => read("hapticSpot", index * 16 + 12, 1)[0]);
-    // The third spot casts no shadow.
-    expect(views()).toEqual([0, 1, -1]);
-    expect(read("hapticShadowViews", 0, 16)).toEqual([...first!.getTransformMatrix().m].map(Math.fround));
+    // The first four views are the sun's; the third spot casts no shadow.
+    expect(views()).toEqual([4, 5, -1]);
+    expect(read("hapticShadowViews", 4 * 24, 16)).toEqual([...first!.getTransformMatrix().m].map(Math.fround));
     const texel = 1 / EDGE;
-    expect(read("hapticShadowViews", 16, 8)).toEqual([0, 0, 0.5, texel, 0, 2, 0, 0].map(Math.fround));
-    expect(read("hapticShadowViews", 24 + 16, 8)).toEqual([0.5, 0, 0.5, texel, 0.25, 1, 0, 0].map(Math.fround));
+    expect(read("hapticShadowViews", 4 * 24 + 16, 8)).toEqual([0, 0, 0.5, texel, 0, 2, 0, 0].map(Math.fround));
+    expect(read("hapticShadowViews", 5 * 24 + 16, 8)).toEqual([0.5, 0, 0.5, texel, 0.25, 1, 0, 0].map(Math.fround));
     // A light's or the Scene's shadows switched off sample none.
     spots[0]!.shadowEnabled = false;
     syncSceneLighting(scene);
-    expect(views()).toEqual([-1, 0, -1]);
+    expect(views()).toEqual([-1, 4, -1]);
     scene.shadowsEnabled = false;
     syncSceneLighting(scene);
     expect(views()).toEqual([-1, -1, -1]);
@@ -284,8 +284,8 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
     const read = (name: string, from: number, length: number) =>
       [...buffer._bufferData.subarray(buffer._uniformLocations[name]! + from, buffer._uniformLocations[name]! + from + length)];
-    // Its record's shadow: the first view and six faces.
-    expect(read("hapticPoint", 8, 4)).toEqual([0, 6, 0, 0]);
+    // Its record's shadow: the first view after the sun's and six faces.
+    expect(read("hapticPoint", 8, 4)).toEqual([4, 6, 0, 0]);
     // Drawn, each face's view is the one Babylon drew that face with: face 2 looks down.
     vi.spyOn(engine, "enableScissor").mockImplementation(() => {});
     vi.spyOn(engine, "disableScissor").mockImplementation(() => {});
@@ -294,7 +294,43 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const above = Vector3.TransformCoordinates(new Vector3(0, 0, 0), generator.drawnViews[3]!);
     expect([Math.abs(below.x) < 1e-6 && Math.abs(below.y) < 1e-6, below.z > 0 && below.z < 1]).toEqual([true, true]);
     expect(above.z < 0 || above.z > 1).toBe(true);
-    expect(read("hapticShadowViews", 2 * 24, 16)).toEqual([...generator.drawnViews[2]!.m].map(Math.fround));
+    expect(read("hapticShadowViews", (4 + 2) * 24, 16)).toEqual([...generator.drawnViews[2]!.m].map(Math.fround));
+  });
+
+  it("writes the sun's cascades of the camera rendering: a view's own map while it draws, the scene view's after", () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    engine._features.supportCSM = true;
+    const main = scene.activeCamera!;
+    const capture = new FreeCamera("capture", new Vector3(20, 6, 20), scene);
+    scene.activeCamera = main;
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    createAtlasCascadedShadowGenerator(sun, EDGE / 4, 2, EDGE)!;
+    // A Full Quality capture's own cascades, keyed to its camera.
+    const own = createAtlasCascadedShadowGenerator(sun, EDGE / 4, 2, EDGE, capture)!;
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene);
+    const lamp = createAtlasShadowGenerator(spot, EDGE / 4, EDGE)!;
+    syncSceneLighting(scene);
+    const buffer = hapticLightBuffer(scene) as unknown as {
+      _bufferData: Float32Array; _uniformLocations: Record<string, number>; update(): void;
+    };
+    const read = (name: string, from: number, length: number) =>
+      [...buffer._bufferData.subarray(buffer._uniformLocations[name]! + from, buffer._uniformLocations[name]! + from + length)];
+    const tiles = () => [0, 1].map((view) => read("hapticShadowViews", view * 24 + 16, 2));
+    const scene0 = tiles();
+    expect(scene0).toEqual([[0, 0], [0.25, 0]]);
+    const update = vi.spyOn(buffer, "update");
+    scene.activeCamera = capture;
+    expect(tiles()).toEqual(own.tiles.map((tile) => [tile.x / EDGE, tile.y / EDGE]));
+    // The spot light's view keeps its place.
+    expect(read("hapticSpot", 12, 1)).toEqual([4]);
+    expect(read("hapticShadowViews", 4 * 24 + 16, 2)).toEqual([lamp.tile.x / EDGE, lamp.tile.y / EDGE]);
+    scene.activeCamera = main;
+    expect(tiles()).toEqual(scene0);
+    expect(update).toHaveBeenCalledTimes(2);
+    // A camera without its own map samples the scene view's: nothing to write.
+    scene.activeCamera = new FreeCamera("other", Vector3.Zero(), scene);
+    expect(update).toHaveBeenCalledTimes(2);
   });
 
   it("makes the atlas again after a failed shadow allocation released it with the first tile", () => {

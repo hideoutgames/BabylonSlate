@@ -20,10 +20,12 @@ import {
   shadowBytesPerTexel,
   trackViewShadowDrain,
 } from "./shadow-admission";
+import { isAtlasShadow } from "./shadow-atlas";
 import type { ShadowEntry as Entry } from "./shadow-entry";
 import {
   applyShadowSettings,
   createShadowGenerator,
+  neutralUntilRendered,
   shadowAllocationCheckpoint,
   type ShadowMapContext,
 } from "./shadow-map-factory";
@@ -32,15 +34,17 @@ import {
  * A view's own sun map (a Full Quality Render Target Capture's): the scene
  * map's kind, size, cascades and settings, keyed to the view's camera and
  * fitted to it as a scene view there would fit it. `mirrors` is the scene map
- * it was built from; a replaced scene map replaces it.
+ * it was built from; a replaced scene map replaces it. A mirror of a shadow
+ * atlas map is cascade tiles of the same atlas, which holds their memory: it
+ * has no lease and charges nothing.
  */
 export type ViewMap = {
   generator: ShadowGenerator;
   mirrors: ShadowGenerator;
-  lease: ManagedRenderLease;
+  lease: ManagedRenderLease | null;
   /** Ledger charge: a cascaded map's four-layer construction peak, as the scene map's reservation holds. */
   bytes: number;
-  /** Final attachments and layers drawn, for metrics(). */
+  /** Final attachments (none of an atlas map's own) and layers drawn, for metrics(). */
   attachmentBytes: number;
   passes: number;
 };
@@ -79,6 +83,8 @@ export class ShadowViewMaps {
   private readonly views = new Map<Camera, View>();
   /** Effective settings of the last sync, which views mirror. */
   private settings: ShadowSettings | null = null;
+  /** The last sync's atlas edge, which mirrors of atlas maps take tiles of. */
+  private atlasEdge = 0;
   private readonly entries: ReadonlyMap<Light, Entry>;
   private readonly maps: ShadowMapContext;
   private readonly scene: Scene;
@@ -108,10 +114,24 @@ export class ShadowViewMaps {
   generator(light: Light, camera: Camera): ShadowGenerator | undefined {
     return this.views.get(camera)?.maps.get(light)?.generator;
   }
-  /** Mirrors the maps a sync admitted with `settings`, after their releases and replacements. */
-  sync(settings: ShadowSettings, casterBounds: () => CasterBounds | undefined): void {
+  /**
+   * Mirrors the maps a sync admitted with `settings`, after their releases and replacements; mirrors of atlas maps are
+   * tiles of the `atlasEdge`-texel atlas (`ShadowAdmissionBudget.atlasEdge`).
+   */
+  sync(settings: ShadowSettings, casterBounds: () => CasterBounds | undefined, atlasEdge = 0): void {
     this.settings = settings;
+    this.atlasEdge = atlasEdge;
     for (const view of this.views.values()) this.syncView(view, casterBounds);
+  }
+  /**
+   * Drops every view's atlas mirrors of scene maps released or replaced since, before their replacements are built:
+   * their tiles go back with the scene map's, and the atlas with its last tile. Ledger mirrors go at the sync's end,
+   * or yield their charge to the scene view's maps first (`yieldTo`).
+   */
+  prune(): void {
+    for (const view of this.views.values())
+      for (const [light, map] of view.maps)
+        if (isAtlasShadow(map.generator) && this.stale(light, map.mirrors)) this.dropViewMap(view, light);
   }
   /** Every view's map, view by view. */
   forEachMap(action: (map: ViewMap) => void): void {
@@ -139,11 +159,7 @@ export class ShadowViewMaps {
     casterBounds: () => CasterBounds | undefined,
   ): void {
     const settings = this.settings;
-    for (const [light, map] of view.maps) {
-      const entry = this.entries.get(light);
-      if (!settings || entry?.status !== "active" || entry.standby || entry.generator !== map.mirrors)
-        this.dropViewMap(view, light);
-    }
+    for (const [light, map] of view.maps) if (this.stale(light, map.mirrors)) this.dropViewMap(view, light);
     for (const [light, { mirrors }] of view.refused)
       if (this.entries.get(light)?.generator !== mirrors) view.refused.delete(light);
     for (const [light, { mirrors }] of view.recovery)
@@ -166,6 +182,11 @@ export class ShadowViewMaps {
       this.createViewMap(view, entry, source, settings, casterBounds());
     }
   }
+  /** Whether a mirror of `light`'s map `mirrors` outlived it: the scene map was released or replaced since. */
+  private stale(light: Light, mirrors: ShadowGenerator): boolean {
+    const entry = this.entries.get(light);
+    return !this.settings || entry?.status !== "active" || entry.standby || entry.generator !== mirrors;
+  }
   /**
    * The scene map's allocation for the view's camera, reserved in the shared
    * rendering ledger first. A refused reservation halves the map like admission
@@ -176,7 +197,10 @@ export class ShadowViewMaps {
    * failed construction retries at half size on a later sync, after its
    * release has drained. Nothing is allocated while any view map's release on
    * this Engine is still draining: its texture still holds the memory, and a
-   * view allocated beside it would settle smaller for good.
+   * view allocated beside it would settle smaller for good. A mirror of an
+   * atlas map reserves nothing: it takes cascade tiles of the size the atlas
+   * has room for, halving at once, in the room the scene view's admitted and
+   * standby maps leave, and samples neutrally until its first draw.
    */
   private createViewMap(
     view: View,
@@ -191,8 +215,9 @@ export class ShadowViewMaps {
     // until WebGPU's end-of-frame drain: allocate once they have gone, on a later sync.
     if (pendingViewShadowDrains(engine)) return;
     const cascaded = source instanceof CascadedShadowGenerator;
-    // Mirror the scene map's kind even if the settings moved on since it was built.
-    if (cascaded !== settings.cascades > 1) return;
+    const atlas = isAtlasShadow(source);
+    // Mirror the scene map's kind even if the settings moved on since it was built (an atlas sun's is always cascaded).
+    if (!atlas && cascaded !== settings.cascades > 1) return;
     const layers = cascaded ? source.numCascades : 1;
     const bytesPerTexel = shadowBytesPerTexel(engine, cascaded);
     const recovery = view.recovery.get(entry.light);
@@ -201,15 +226,18 @@ export class ShadowViewMaps {
       // CSM constructs four layers before applying the authored count, and
       // WebGPU destroys that texture only at the frame's end: charge the peak
       // for the map's lifetime, as the scene map's reservation does.
-      const bytes = (cascaded ? 4 : layers) * mapSize ** 2 * bytesPerTexel;
-      const lease = beginManagedRenderAllocation(engine, bytes);
-      if (!lease) continue;
+      const bytes = atlas ? 0 : (cascaded ? 4 : layers) * mapSize ** 2 * bytesPerTexel;
+      const lease = atlas ? null : beginManagedRenderAllocation(engine, bytes) ?? null;
+      if (!atlas && !lease) continue;
       const cleanup = shadowAllocationCheckpoint(scene);
       try {
-        const generator = createShadowGenerator(this.maps, entry, mapSize, settings, view.camera, casterBounds);
-        lease.commit([{ handle: generator.getShadowMap()!, bytes, category: "shadow" }]);
+        const generator = createShadowGenerator(this.maps, entry, mapSize, settings, view.camera, casterBounds,
+          atlas ? this.atlasEdge : 0);
+        lease?.commit([{ handle: generator.getShadowMap()!, bytes, category: "shadow" }]);
+        // Its tiles hold what their last map drew until it draws.
+        if (atlas) neutralUntilRendered(generator);
         view.maps.set(entry.light, {
-          generator, mirrors: source, lease, bytes, attachmentBytes: layers * mapSize ** 2 * bytesPerTexel, passes: layers,
+          generator, mirrors: source, lease, bytes, attachmentBytes: atlas ? 0 : layers * mapSize ** 2 * bytesPerTexel, passes: layers,
         });
         view.recovery.delete(entry.light);
         view.refused.delete(entry.light);
@@ -224,6 +252,8 @@ export class ShadowViewMaps {
         // Uncertain cleanup keeps the reservation.
         if (failures.length > 1)
           throw new AggregateError(failures, "View shadow allocation and resource cleanup failed", { cause: error });
+        // Its tiles are free again at once: the next size down.
+        if (!lease) continue;
         this.releaseViewLease(view, lease);
         // Its reservation drains first (WebGPU: at the frame's end); a later
         // sync retries at half size.
@@ -235,7 +265,7 @@ export class ShadowViewMaps {
     const previous = view.refused.get(entry.light);
     view.refused.set(entry.light, { mirrors: source, retryAt: performance.now() + VIEW_REFUSAL_RETRY_MS });
     if (previous?.mirrors !== source)
-      console.warn(`[render] A Full Quality capture samples "${entry.light.name}" shadows from the main camera's map: its own map does not fit the shared rendering budget.`);
+      console.warn(`[render] A Full Quality capture samples "${entry.light.name}" shadows from the main camera's map: its own map does not fit ${atlas ? "the shadow atlas" : "the shared rendering budget"}.`);
   }
   /** Committed bytes of every view's maps, which the scene view's admission leaves out. */
   bytes(): number {
@@ -253,14 +283,30 @@ export class ShadowViewMaps {
   yieldTo(sceneBytes: number): void {
     if (sceneBytes <= availableSceneShadowBytes(this.scene)) return;
     const maps: Array<{ view: View; light: Light; bytes: number }> = [];
+    // Atlas maps hold no ledger room (`yieldAtlasTiles`).
     for (const view of this.views.values())
-      for (const [light, { bytes }] of view.maps) maps.push({ view, light, bytes });
+      for (const [light, { bytes }] of view.maps) if (bytes) maps.push({ view, light, bytes });
     maps.sort((a, b) => b.bytes - a.bytes);
     for (const { view, light } of maps) {
       if (sceneBytes <= availableSceneShadowBytes(this.scene)) break;
       this.dropViewMap(view, light, true);
     }
     this.retryRefusedViewMaps();
+  }
+  /**
+   * When a scene view's map finds no room in the shadow atlas, the views' atlas maps give way, as their ledger maps do
+   * (`yieldTo`): it is built again with their tiles free, and they take the room it leaves at the sync's end. Whether
+   * any gave way.
+   */
+  yieldAtlasTiles(): boolean {
+    let yielded = false;
+    for (const view of this.views.values())
+      for (const [light, { generator }] of view.maps)
+        if (isAtlasShadow(generator)) {
+          this.dropViewMap(view, light);
+          yielded = true;
+        }
+    return yielded;
   }
   /**
    * Disposes a view's map; its ledger charge goes after the WebGPU destruction
@@ -278,6 +324,7 @@ export class ShadowViewMaps {
       this.trackViewRelease(view, Promise.reject(error instanceof Error ? error : new Error(String(error))), false);
       return;
     }
+    if (!map.lease) return;
     if (yieldToScene) map.lease.release();
     // Idempotent after the yield's release: then it only waits for the drain.
     this.releaseViewLease(view, map.lease);
@@ -317,7 +364,8 @@ export class ShadowViewMaps {
     const now = performance.now();
     let bytes = 0;
     for (const entry of this.entries.values()) {
-      if (!(entry.light instanceof DirectionalLight) || entry.status !== "active") continue;
+      // An atlas map's mirror asks for atlas tiles, not ledger room.
+      if (!(entry.light instanceof DirectionalLight) || entry.status !== "active" || isAtlasShadow(entry.generator)) continue;
       for (const view of this.views.values()) {
         if (view.maps.has(entry.light)) continue;
         const refused = view.refused.get(entry.light);

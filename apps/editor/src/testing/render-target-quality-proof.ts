@@ -1,18 +1,19 @@
 import {
   Color3, Color4, DirectionalLight, Engine, FreeCamera, HemisphericLight, Mesh, MeshBuilder, Quaternion, StandardMaterial, Scene,
-  Vector3, type AbstractEngine, type BaseTexture,
+  Vector3, type AbstractEngine, type BaseTexture, type Material,
 } from "@babylonjs/core";
 import {
   createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality,
   normalizeShadowSettings, normalizeWaterBody, type RenderTargetCaptureQuality,
 } from "@haptic/core";
 import {
-  applyAuthoredLightProperties, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, RenderTargetCaptures,
-  setSceneWaterTime,
+  applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh,
+  RenderTargetCaptures, setHapticLighting, setSceneWaterTime,
 } from "@haptic/render";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { updateSceneRenderingSettings } from "@haptic/render/render-settings";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
+import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 
 const QUALITIES: readonly RenderTargetCaptureQuality[] = ["fast", "fullQuality"];
 type Backend = "webgl2" | "webgpu";
@@ -189,9 +190,10 @@ const SHADOW_FAR_VIEW = new Vector3(0, 7, -214);
 /**
  * A pillar yard on a pale ground under a shadowed sun, rendered by the
  * production scene view, with one Full Quality capture over the yard.
- * Numeric primitives only.
+ * `lightBlock`: the lighting plan's path, graph Materials drawn with its light
+ * block and shadows in its atlas; else Standard materials. Numeric primitives only.
  */
-async function shadowHost(backend: Backend, size: number) {
+async function shadowHost(backend: Backend, size: number, lightBlock: boolean) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   document.getElementById("root")!.append(canvas);
@@ -202,6 +204,25 @@ async function shadowHost(backend: Backend, size: number) {
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.55, 0.7, 0.9, 1);
   configureEditorRenderingGroups(scene);
+  // Graph Materials compiled from here on draw with the light block.
+  setHapticLighting(engine, lightBlock);
+  const matte = async (name: string, color: Color3): Promise<Material> => {
+    if (!lightBlock) {
+      const material = new StandardMaterial(name, scene);
+      material.diffuseColor = color;
+      material.specularColor = Color3.Black();
+      return material;
+    }
+    const doc = createDefaultMaterialDocument(name);
+    doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [color.r, color.g, color.b];
+    doc.nodes.find((node) => node.id === "output")!.properties[materialPinDefaultPropertyKey("roughness")] = [1];
+    const lowered = lowerMaterialDocument(doc);
+    if (!lowered.ok) throw new Error(`${name} did not lower`);
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name });
+    if (!compiled.ok) throw new Error(`${name} did not compile`);
+    await compiled.ready;
+    return compiled.material;
+  };
   const camera = new FreeCamera("Main Camera", SHADOW_FAR_VIEW.clone(), scene);
   camera.rotationQuaternion = SHADOW_LENS.rotation.clone();
   camera.fov = 50 * Math.PI / 180;
@@ -209,17 +230,13 @@ async function shadowHost(backend: Backend, size: number) {
   camera.maxZ = 100;
   scene.activeCamera = camera;
   new HemisphericLight("Sky", new Vector3(0, 1, 0), scene).intensity = 0.35;
-  // Low and behind the yard, so long shadows fall toward the lens.
+  // Low and behind the yard, so long shadows fall toward the lens. The light block's diffuse divides by π, as PBR's does.
   const sun = new DirectionalLight("Sun", new Vector3(0.35, -0.75, -0.8), scene);
-  applyAuthoredLightProperties(sun, { intensity: 1.4, color: [1, 1, 1], castShadows: true });
+  const sunIntensity = lightBlock ? 1.4 * Math.PI : 1.4;
+  applyAuthoredLightProperties(sun, { intensity: sunIntensity, color: [1, 1, 1], castShadows: true });
   const ground = MeshBuilder.CreateGround("Ground", { width: 600, height: 600 }, scene);
-  const pale = new StandardMaterial("Pale Ground", scene);
-  pale.diffuseColor = new Color3(0.85, 0.85, 0.8);
-  pale.specularColor = Color3.Black();
-  ground.material = pale;
-  const grey = new StandardMaterial("Grey Pillar", scene);
-  grey.diffuseColor = new Color3(0.6, 0.6, 0.65);
-  grey.specularColor = Color3.Black();
+  ground.material = await matte("Pale Ground", new Color3(0.85, 0.85, 0.8));
+  const grey = await matte("Grey Pillar", new Color3(0.6, 0.6, 0.65));
   for (const [x, z, height] of [[-5, 4, 5], [-2, 7, 6], [1, 3, 4], [4, 6, 6], [7, 2, 5], [-7, 9, 6], [2, 10, 7]] as const) {
     const pillar = MeshBuilder.CreateBox(`Pillar ${x} ${z}`, { width: 1.2, height, depth: 1.2 }, scene);
     pillar.material = grey;
@@ -263,61 +280,72 @@ async function shadowHost(backend: Backend, size: number) {
     await released;
     // The scene view's own shadow maps are charged until the scene goes.
     scene.dispose();
+    // The light block's lookup tables go at WebGPU's next end-of-frame drain.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    engine.beginFrame();
+    engine.endFrame();
     const retainedBytes = managedRenderReservations(engine).reservedBytes;
+    setHapticLighting(engine, false);
     engine.dispose();
     canvas.remove();
     return retainedBytes;
   };
-  return { engine, scene, camera, sun, view, captures, output, configure, frame, settle, dispose };
+  return { engine, scene, camera, sun, sunIntensity, view, captures, output, configure, frame, settle, dispose };
 }
 
 /**
  * A Full Quality capture over a pillar yard far from the scene camera, against
  * the scene view's own image after its camera moves to the capture's pose and
  * lens: the sun shadows in view must be the ones that view draws. Cascaded and
- * single-map (Low) sun shadows. `shadowContrast` is how much the reference
+ * single-map (Low) sun shadows, with Standard materials and on the light
+ * block's path (its atlas). `shadowContrast` is how much the reference
  * changes without sun shadows, so a match cannot come from shadows missing in both.
  */
 export async function runRenderTargetShadowProof(backend: Backend) {
   const size = 96;
-  const host = await shadowHost(backend, size);
-  try {
-    const cases: Record<string, { fullQuality: number; shadowContrast: number }> = {};
-    const shadowSettings = [
-      ["cascaded", normalizeShadowSettings({ cascades: 2, distance: 50, mapSize: 1024 })],
-      ["low", normalizeShadowSettings({ profile: "low" })],
-    ] as const;
-    for (const [label, shadows] of shadowSettings) {
-      updateSceneRenderingSettings(host.scene, { shadows });
-      host.camera.position.copyFrom(SHADOW_FAR_VIEW);
-      // A fresh capture, so it publishes only images drawn with this case's settings.
-      host.configure(false);
-      host.configure(true);
-      await host.settle(() => host.captures.diagnostics().every((entry) => entry.published), `${label} capture`);
-      host.frame(); host.frame();
-      const capture = await readCapture(host.output, size);
-      host.configure(false);
-      host.camera.position.copyFrom(SHADOW_LENS.position);
-      await host.settle(() => true, `${label} view at the capture pose`);
-      host.frame(); host.frame();
-      const reference = await readView(host.engine, backend, size);
-      applyAuthoredLightProperties(host.sun, { intensity: 1.4, color: [1, 1, 1], castShadows: false });
-      await host.settle(() => true, `${label} view without sun shadows`);
-      host.frame(); host.frame();
-      const unshadowed = await readView(host.engine, backend, size);
-      applyAuthoredLightProperties(host.sun, { intensity: 1.4, color: [1, 1, 1], castShadows: true });
-      cases[label] = { fullQuality: meanError(reference, capture), shadowContrast: meanError(reference, unshadowed) };
+  const cases: Record<string, { fullQuality: number; shadowContrast: number }> = {};
+  const shadowSettings = [
+    ["cascaded", normalizeShadowSettings({ cascades: 2, distance: 50, mapSize: 1024 })],
+    ["low", normalizeShadowSettings({ profile: "low" })],
+  ] as const;
+  let effectiveBackend = "";
+  let mainCameraPreserved = true;
+  let retainedBytes = 0;
+  for (const lightBlock of [false, true]) {
+    const host = await shadowHost(backend, size, lightBlock);
+    try {
+      for (const [label, shadows] of shadowSettings) {
+        updateSceneRenderingSettings(host.scene, { shadows });
+        host.camera.position.copyFrom(SHADOW_FAR_VIEW);
+        // A fresh capture, so it publishes only images drawn with this case's settings.
+        host.configure(false);
+        host.configure(true);
+        await host.settle(() => host.captures.diagnostics().every((entry) => entry.published), `${label} capture`);
+        host.frame(); host.frame();
+        const capture = await readCapture(host.output, size);
+        host.configure(false);
+        host.camera.position.copyFrom(SHADOW_LENS.position);
+        await host.settle(() => true, `${label} view at the capture pose`);
+        host.frame(); host.frame();
+        const reference = await readView(host.engine, backend, size);
+        applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: false });
+        await host.settle(() => true, `${label} view without sun shadows`);
+        host.frame(); host.frame();
+        const unshadowed = await readView(host.engine, backend, size);
+        applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: true });
+        cases[lightBlock ? `light block ${label}` : label] = {
+          fullQuality: meanError(reference, capture), shadowContrast: meanError(reference, unshadowed),
+        };
+      }
+      effectiveBackend = host.engine.isWebGPU ? "webgpu" : "webgl2";
+      mainCameraPreserved &&= host.scene.activeCamera === host.camera;
+    } catch (error) {
+      await host.dispose().catch(() => {});
+      throw error;
     }
-    return {
-      effectiveBackend: host.engine.isWebGPU ? "webgpu" : "webgl2",
-      cases,
-      mainCameraPreserved: host.scene.activeCamera === host.camera,
-      retainedBytes: await host.dispose(),
-    };
-  } catch (error) {
-    await host.dispose().catch(() => {});
-    throw error;
+    retainedBytes += await host.dispose();
   }
+  return { effectiveBackend, cases, mainCameraPreserved, retainedBytes };
 }
 
 /**
