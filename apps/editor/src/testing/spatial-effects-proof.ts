@@ -195,37 +195,39 @@ function crossesOccluder(from: Vector3, to: Vector3): boolean {
 
 /**
  * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): how far the camera's ray travels through the
- * fog light's cone where the occluder blocks the light (`shadowed`) and where nothing does (`open`), in metres, up to
- * the march's distance or a march step past the first surface (the march's samples lie a step apart, so its last one
- * may lie up to a step beyond the surface).
+ * fog light's cone where the occluder blocks the light (`shadowed`), in metres, up to the march's distance or the
+ * first surface, and through it in the march step past that surface
+ * (`shadowedBeyond`: the march's samples lie a step apart, so its last one may lie up to a step beyond the surface).
  */
 function beamLengths(scene: Scene, camera: FreeCamera, engine: AbstractEngine, maxDistance: number, marchStep: number) {
   const width = engine.getRenderWidth();
   const height = engine.getRenderHeight();
   const shadowed: number[] = [];
-  const open: number[] = [];
+  const shadowedBeyond: number[] = [];
   const step = 0.01;
   for (let row = 0; row < height; row++) {
     const y = engine.isWebGPU ? row + 0.5 : height - row - 0.5;
     for (let column = 0; column < width; column++) {
       const ray = scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera);
       const hit = scene.pickWithRay(ray);
-      const end = Math.min(hit?.hit ? hit.distance + marchStep : Infinity, maxDistance);
+      const surface = Math.min(hit?.hit ? hit.distance : Infinity, maxDistance);
+      const end = Math.min(surface + marchStep, maxDistance);
       let inShadow = 0;
-      let inLight = 0;
+      let beyond = 0;
       for (let distance = step / 2; distance < end; distance += step) {
         const point = ray.origin.add(ray.direction.scale(distance));
         const toPoint = point.subtract(FOG_LIGHT.position);
         const length = toPoint.length();
         if (length >= FOG_LIGHT.range || -toPoint.y / length < FOG_LIGHT.cosHalfAngle) continue;
-        if (crossesOccluder(point, FOG_LIGHT.position)) inShadow += step;
-        else inLight += step;
+        if (!crossesOccluder(point, FOG_LIGHT.position)) continue;
+        if (distance < surface) inShadow += step;
+        else beyond += step;
       }
       shadowed.push(Math.round(inShadow * 100) / 100);
-      open.push(Math.round(inLight * 100) / 100);
+      shadowedBeyond.push(Math.round(beyond * 100) / 100);
     }
   }
-  return { width, height, shadowed, open };
+  return { width, height, shadowed, shadowedBeyond };
 }
 
 /**

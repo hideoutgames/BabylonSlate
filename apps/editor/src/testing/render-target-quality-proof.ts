@@ -307,44 +307,41 @@ export async function runRenderTargetShadowProof(backend: Backend) {
     ["cascaded", normalizeShadowSettings({ cascades: 2, distance: 50, mapSize: 1024 })],
     ["low", normalizeShadowSettings({ profile: "low" })],
   ] as const;
-  let effectiveBackend = "";
-  let mainCameraPreserved = true;
-  let retainedBytes = 0;
-  {
-    const host = await shadowHost(backend, size);
-    try {
-      for (const [label, shadows] of shadowSettings) {
-        updateSceneRenderingSettings(host.scene, { shadows });
-        host.camera.position.copyFrom(SHADOW_FAR_VIEW);
-        // A fresh capture, so it publishes only images drawn with this case's settings.
-        host.configure(false);
-        host.configure(true);
-        await host.settle(() => host.captures.diagnostics().every((entry) => entry.published), `${label} capture`);
-        host.frame(); host.frame();
-        const capture = await readCapture(host.output, size);
-        host.configure(false);
-        host.camera.position.copyFrom(SHADOW_LENS.position);
-        await host.settle(() => true, `${label} view at the capture pose`);
-        host.frame(); host.frame();
-        const reference = await readView(host.engine, backend, size);
-        applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: false });
-        await host.settle(() => true, `${label} view without sun shadows`);
-        host.frame(); host.frame();
-        const unshadowed = await readView(host.engine, backend, size);
-        applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: true });
-        cases[label] = {
-          fullQuality: meanError(reference, capture), shadowContrast: meanError(reference, unshadowed),
-        };
-      }
-      effectiveBackend = host.engine.isWebGPU ? "webgpu" : "webgl2";
-      mainCameraPreserved &&= host.scene.activeCamera === host.camera;
-    } catch (error) {
-      await host.dispose().catch(() => {});
-      throw error;
+  const host = await shadowHost(backend, size);
+  try {
+    for (const [label, shadows] of shadowSettings) {
+      updateSceneRenderingSettings(host.scene, { shadows });
+      host.camera.position.copyFrom(SHADOW_FAR_VIEW);
+      // A fresh capture, so it publishes only images drawn with this case's settings.
+      host.configure(false);
+      host.configure(true);
+      await host.settle(() => host.captures.diagnostics().every((entry) => entry.published), `${label} capture`);
+      host.frame(); host.frame();
+      const capture = await readCapture(host.output, size);
+      host.configure(false);
+      host.camera.position.copyFrom(SHADOW_LENS.position);
+      await host.settle(() => true, `${label} view at the capture pose`);
+      host.frame(); host.frame();
+      const reference = await readView(host.engine, backend, size);
+      applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: false });
+      await host.settle(() => true, `${label} view without sun shadows`);
+      host.frame(); host.frame();
+      const unshadowed = await readView(host.engine, backend, size);
+      applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: true });
+      cases[label] = {
+        fullQuality: meanError(reference, capture), shadowContrast: meanError(reference, unshadowed),
+      };
     }
-    retainedBytes += await host.dispose();
+    return {
+      effectiveBackend: host.engine.isWebGPU ? "webgpu" : "webgl2",
+      cases,
+      mainCameraPreserved: host.scene.activeCamera === host.camera,
+      retainedBytes: await host.dispose(),
+    };
+  } catch (error) {
+    await host.dispose().catch(() => {});
+    throw error;
   }
-  return { effectiveBackend, cases, mainCameraPreserved, retainedBytes };
 }
 
 /**

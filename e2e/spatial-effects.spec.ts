@@ -287,10 +287,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const brighter = (a: number[], b: number[], by: number) => a.filter((value, i) => i % 4 === 0 && value > b[i]! + by).length;
     expect(brighter(shadowed, off, 8), "the beam fogs the view").toBeGreaterThan(20);
     /**
-     * Pixels whose view ray, and each neighbour's, runs through the beam's shadow for `shadowed` metres and through
-     * its lit part for `lit`: the march's coarser buffer blends a pixel with its neighbours.
+     * Pixels whose view ray, and each neighbour's, passes `test`: given how far it runs through the beam's shadow up to
+     * the surface and in the march step past it (the march may sample there). Neighbours too, as the march's coarser
+     * buffer blends a pixel with them.
      */
-    const settled = (test: (shadowed: number, lit: number) => boolean) => {
+    const settled = (test: (shadowed: number, beyond: number) => boolean) => {
       const pixels: number[] = [];
       for (let row = 2; row < beam.height - 2; row++)
         for (let column = 2; column < beam.width - 2; column++) {
@@ -298,7 +299,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
           for (let dy = -2; dy <= 2 && all; dy++)
             for (let dx = -2; dx <= 2 && all; dx++) {
               const at = (row + dy) * beam.width + column + dx;
-              all = test(beam.shadowed[at]!, beam.open[at]!);
+              all = test(beam.shadowed[at]!, beam.shadowedBeyond[at]!);
             }
           if (all) pixels.push(row * beam.width + column);
         }
@@ -306,7 +307,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     };
     const largest = (pixel: number) => Math.max(...[0, 1, 2].map((channel) => Math.abs(shadowed[pixel * 4 + channel]! - open[pixel * 4 + channel]!)));
     // Rays that never enter the shadow, through the lit beam or past it: the same fog with and without the shadow.
-    const unshadowed = settled((shadow) => shadow === 0);
+    const unshadowed = settled((shadow, beyond) => shadow === 0 && beyond === 0);
     const unshadowedApart = unshadowed.filter((pixel) => largest(pixel) > 1);
     // Rays that run through a metre or more of the shadow: darker than with the shadow off.
     const cut = settled((shadow) => shadow >= 1);
