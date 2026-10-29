@@ -88,6 +88,7 @@ import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
 import { detachShadowGenerator, ShadowPredictionMaps } from "./shadow-prediction-maps";
 import { hapticLightingActive } from "./haptic-lights";
 import { isAtlasShadow, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
+import { ShadowCasterVariants } from "./shadow-caster-variants";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
 export type { ShadowAdmissionSnapshot, ShadowStartPrediction } from "./shadow-admission-plan";
@@ -191,14 +192,18 @@ export class SceneShadowController {
   private readonly views: ShadowViewMaps;
   /** Prediction maps by light kind (`predictionMap`), and the scene's shadow reservation. */
   private readonly predictions: ShadowPredictionMaps;
+  /** The light block's path: maps of each atlas kind that hold their casters' depth variants (`warmCasterVariants`). */
+  private readonly casterVariants: ShadowCasterVariants;
   constructor(scene: Scene) {
     this.scene = scene;
     this.maps = { scene, spatial: this.spatial, casters: this.meshes, slots: this.slots, counters: this.counters };
     this.views = new ShadowViewMaps(this.entries, this.maps);
     this.predictions = new ShadowPredictionMaps(this.maps, () => this.planSettings);
+    this.casterVariants = new ShadowCasterVariants(this.maps);
     const engine = scene.getEngine();
     const restored = engine.onContextRestoredObservable.add(() => {
       this.predictions.release();
+      this.casterVariants.dispose();
       this.disposeParkedMaps();
       for (const entry of this.entries.values()) {
         entry.failedKey = "";
@@ -285,6 +290,7 @@ export class SceneShadowController {
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.disposeParkedMaps();
       this.predictions.dispose();
+      this.casterVariants.dispose();
       this.entries.clear();
       this.meshes.clear();
       this.pending.clear();
@@ -416,6 +422,19 @@ export class SceneShadowController {
     // The light block's Materials hold no shadow defines to predict, and a map would hold an atlas tile.
     if (hapticLightingActive(this.scene)) return null;
     return this.predictions.map(light);
+  }
+  /**
+   * On the light block's path, asks every caster for its depth variant of each kind of atlas map (the sun's cascades, a
+   * spot light's tile, a point light's faces) ahead of that kind's first shadow start, which then compiles none
+   * (`ShadowCasterVariants`; Play's world presentation, in its loading frames, as its starting state poses the casters).
+   * New shadow settings ask again.
+   */
+  warmCasterVariants(): void {
+    if (!hapticLightingActive(this.scene)) return;
+    if (!this.planSettings) this.sync();
+    const settings = this.planSettings;
+    if (settings?.enabled) this.casterVariants.warm(settings);
+    else this.casterVariants.dispose();
   }
   /** Disposes the prediction maps `release` picks (all by default), and gives their bytes back. */
   releasePredictionMaps(release: (map: ShadowGenerator) => boolean = () => true): void {
@@ -641,6 +660,8 @@ export class SceneShadowController {
       deviceProfile().shadowMapCap,
     );
     this.planSettings = settings;
+    if (settings.enabled) this.casterVariants.follow(settings);
+    else this.casterVariants.dispose();
     const camera = scene.activeCamera;
     camera?.getViewMatrix();
     const restoring = this.restoring;

@@ -89,6 +89,7 @@ import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-s
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
+import { isAtlasShadow } from "./shadow-atlas";
 import { findSceneShadowController, PREDICTION_MAP_SIZE } from "./shadow-controller";
 import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
 import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
@@ -527,6 +528,9 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
     });
     // Nor the shadow atlas's depth texture.
     vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
+    // Nor scissor its tiles' clears.
+    vi.spyOn(engine, "enableScissor").mockImplementation(() => {});
+    vi.spyOn(engine, "disableScissor").mockImplementation(() => {});
   }
   const driver = driverModel(engine, model);
   const holds: boolean[] = [];
@@ -2848,9 +2852,10 @@ async function editorView(options: { fixedShape?: boolean; native?: boolean } = 
 
 /**
  * The lighting plan's CI gate on its path (`setHapticLighting`): after the first presented frame, lights switched,
- * spawned, recoloured, moved, removed and pushed past the light block's maximum, and a spawn of an actor the level
- * holds, compile no shader and wait on no WebGPU pipeline. Shadows join it with the shadow atlas (Phase 6); it becomes a
- * merge gate when the path becomes the default (Phase 7).
+ * spawned, recoloured, moved, removed and pushed past the light block's maximum, shadows started for each kind of atlas
+ * map (the sun's cascades, a spot light's tile, a point light's faces), moved, stopped and started again, and a spawn of
+ * an actor the level holds, compile no shader, wait on no WebGPU pipeline and create none in a shadow pass. It becomes
+ * a merge gate when the path becomes the default (Phase 7).
  */
 describe("the lighting plan's CI gate", () => {
   const actors = () => [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])];
@@ -2863,6 +2868,12 @@ describe("the lighting plan's CI gate", () => {
       ["a spot light spawns", () => world.place(spot(13, [0, 5, 0]))],
       ["lights move", () => { world.move(10, [-3, 2, -2]); world.move(13, [1, 5, 1]); }],
       ["a light's colour and intensity change", () => world.place(point(12, [0, 2.5, 2], { color: [1, 0.4, 0.2], intensity: 3 }))],
+      ["the sun starts casting shadows", () => world.place(sun({ castShadows: true }))],
+      ["a spot light starts casting shadows", () => world.place(spot(13, [1, 5, 1], { castShadows: true }))],
+      ["a point light starts casting shadows", () => world.place(point(10, [-3, 2, -2], { castShadows: true }))],
+      ["a shadowed light moves", () => world.move(13, [-1, 5, 0])],
+      ["a light stops casting shadows", () => world.place(point(10, [-3, 2, -2]))],
+      ["it starts again", () => world.place(point(10, [-3, 2, -2], { castShadows: true }))],
       ["a light is removed", () => world.remove(12)],
       ["more point lights spawn than the block draws", () =>
         world.place(...Array.from({ length: 40 }, (_, index) => point(100 + index, [-10 + (index % 10) * 2, 2.5, Math.floor(index / 10) * 3])))],
@@ -2890,9 +2901,15 @@ describe("the lighting plan's CI gate", () => {
     const points = Math.min(HAPTIC_LIGHT_MAXIMUM.point, sceneRenderingSettings(world.handle.scene).localLightBudget - 1);
     const buffer = hapticLightBuffer(world.handle.scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
     const counts = [...buffer._bufferData.subarray(buffer._uniformLocations.hapticCounts!, buffer._uniformLocations.hapticCounts! + 4)];
-    expect({ compiled, pipelines: world.driver.pipelines.size, lightDefines: lightDefines.length, counts }).toEqual({
-      compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, lightDefines: 0,
-      counts: [1, points, 1, 0],
+    // The atlas holds the three kinds' maps.
+    const atlas = [3, 13, 10].map((slot) =>
+      isAtlasShadow(world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${slot}`)?.getShadowGenerator()));
+    expect({
+      compiled, pipelines: world.driver.pipelines.size, synchronous: world.driver.synchronous.size, lightDefines: lightDefines.length,
+      counts, atlas,
+    }).toEqual({
+      compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, lightDefines: 0,
+      counts: [1, points, 1, 0], atlas: [true, true, true],
     });
   });
 

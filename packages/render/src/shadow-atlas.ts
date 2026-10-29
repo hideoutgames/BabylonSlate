@@ -229,10 +229,43 @@ function drawIntoTiles(map: AtlasTileTarget, edge: number, drawing: (pass: numbe
 
 type Placement = { atlas: Atlas; tiles: ShadowAtlasTile[] };
 let placing: Placement | null = null;
+/** The atlas maps are placed in instead of the Scene's while `placeInPrivateAtlas` builds them. */
+let privateAtlas: Atlas | null = null;
+
+/** A depth-only atlas of the Scene atlas's format for maps no light samples (`createPrivateShadowAtlas`). */
+export type PrivateShadowAtlas = { readonly target: RenderTargetTexture; readonly tiles: ShadowAtlasAllocator };
+
+/**
+ * A depth-only atlas of `edge` texels and the Scene atlas's format, kept out of the Scene's texture list (views count
+ * the Scene's textures), for maps that are never sampled: they hold none of the Scene atlas's area or memory. Disposed
+ * with the Scene, or by its owner.
+ */
+export function createPrivateShadowAtlas(scene: Scene, edge: number): PrivateShadowAtlas {
+  const entities = scene as unknown as { _blockEntityCollection: boolean };
+  const blocked = entities._blockEntityCollection;
+  entities._blockEntityCollection = true;
+  try {
+    const target = depthTarget("hapticShadowAtlasPrivate", edge, scene);
+    disposeWithScene(scene, target, () => {});
+    return { target, tiles: new ShadowAtlasAllocator(edge) };
+  } finally {
+    entities._blockEntityCollection = blocked;
+  }
+}
+
+/** Runs `build` with the atlas maps it makes placed in `atlas` rather than the Scene's atlas. */
+export function placeInPrivateAtlas<T>(atlas: PrivateShadowAtlas, build: () => T): T {
+  privateAtlas = atlas;
+  try {
+    return build();
+  } finally {
+    privateAtlas = null;
+  }
+}
 
 /** Allocates `count` tiles of `size` texels in the Scene's `edge`-texel atlas, or none when one does not fit. */
 function place(scene: Scene, size: number, count: number, edge: number): Placement | null {
-  const atlas = sceneAtlas(scene, edge);
+  const atlas = privateAtlas ?? sceneAtlas(scene, edge);
   const tiles: ShadowAtlasTile[] = [];
   for (let index = 0; index < count; index++) {
     const tile = atlas.tiles.allocate(size);
