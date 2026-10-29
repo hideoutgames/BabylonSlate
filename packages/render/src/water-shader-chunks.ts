@@ -545,6 +545,16 @@ float ${out} = mix(1.0, 0.55, smoothstep(0.0, -0.2, ${rayY}) * step(0.0, ${viewY
 }
 
 /**
+ * Lifts the reflected ray `ray` (a variable, changed in place; normalize it after) above the horizon with a smooth
+ * floor, so the water never mirrors more water. Seen from below (`viewY` < 0) it stays.
+ */
+export function horizonLiftSource(ray: string, viewY: string): string {
+  return `
+float ${ray}LiftA = 60.0 * (0.03 - ${ray}.y);
+${ray}.y = mix(${ray}.y, ${ray}.y + (max(${ray}LiftA, 0.0) + log(1.0 + exp(-abs(${ray}LiftA)))) / 60.0, step(0.0, ${viewY}));`;
+}
+
+/**
  * FFT-Ocean's subsurface light, declared as `out` (a float): light scattered through the crests of the small waves
  * (`crest`, their height in metres over the swell) toward a viewer (`view`, toward the eye) facing the sun (`sun`, toward
  * it) across the wave (`normal`), times Subsurface (`strength`) and the spectrum's readiness (`ready`). Only crests lit
@@ -788,9 +798,7 @@ swSlopeVariance = (max(swRoughD * swRoughD * swRoughD * swRoughD - swRoughNear *
 // becomes the half vector toward that ray, so the environment lookup follows it, while the Fresnel stays the facet's.
 vec3 swRefl = reflect(-swV, normalW);
 float swReflRawY = swRefl.y;${reflectionKeepSource("swReflRawY", "swV.y", "swReflKeepLocal")}
-swReflKeep = swReflKeepLocal;
-float swLiftA = 60.0 * (0.03 - swRefl.y);
-swRefl.y = mix(swRefl.y, swRefl.y + (max(swLiftA, 0.0) + log(1.0 + exp(-abs(swLiftA)))) / 60.0, step(0.0, swV.y));
+swReflKeep = swReflKeepLocal;${horizonLiftSource("swRefl", "swV.y")}
 normalW = normalize(swV + normalize(swRefl));
 // Body: Deep Color, lit by the scene (a dim scene keeps a dim sea), with FFT-Ocean's subsurface light (Shallow Color).
 vec3 swLumW = vec3(0.3, 0.59, 0.11);
