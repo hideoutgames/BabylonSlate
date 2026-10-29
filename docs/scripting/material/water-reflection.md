@@ -11,7 +11,7 @@ Returns what the water mirrors at this point, and how strongly it reflects.
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
 | Normal | Vector 3 |  | The surface normal to reflect around. The [**Water Waves**](water-waves.md) Normal when unconnected, else straight up. |
-| Roughness | Float |  | Blurs the reflected sky. The asset's **Roughness** when unconnected. Like built-in water, the water gets rougher with distance. |
+| Roughness | Float |  | How rough the water is close by, which blurs the reflection. The asset's **Roughness** when unconnected. Like built-in water, the water gets rougher with distance. |
 
 ## Outputs
 
@@ -20,6 +20,7 @@ Returns what the water mirrors at this point, and how strongly it reflects.
 | Color | Vector 3 | Linear colour of the reflection, times the asset's **Reflection Strength**. Dimmer where a wave would reflect a ray below the horizon, toward other water. |
 | Fresnel | Float | How much the water reflects: about 0.02 looking straight down, rising toward grazing angles, less the rougher the water. The same amount built-in water uses. |
 | Normal | Vector 3 | The normal that lights the water along its reflection, as built-in water's does: halfway between the view and the reflected ray. The normal it reflects around is flattened toward straight up where distant water meets the horizon through haze and fog. Connect it to **Normal** on [**Material Output**](material-output.md) so the lighting, such as the sun's highlight, matches the reflection. |
+| Roughness | Float | The roughness the reflection is blurred by, as built-in water's: Roughness close by, rougher with distance and where the waves change within a pixel, and smooth again where the distant water mirrors the horizon. Connect it to **Roughness** on [**Material Output**](material-output.md) so distant sun glints break up into a soft sheen instead of flickering. |
 
 ## Notes
 

@@ -92,7 +92,7 @@ The water Material moves with the asset's waves and takes its colours on every k
 
 - Deep Color, with the sunlight through the crests (Water Waves **Subsurface**) in Shallow Color, lit by the scene (Water Colors **Scene Light**).
 - In shallow water, what lies below, by the water's [Transmittance](../scripting/material/water-depth-fade.md): clear in the shallows, tinted toward the deep water's colour with depth.
-- Reflections, mixed in by their Fresnel.
+- Reflections, mixed in by their Fresnel: glossy close by and rougher in the distance (Water Reflection **Roughness**), as built-in water's are.
 - Foam in Foam Color, lit by the scene.
 - Edges that fade out at shores and open-water borders (Water Depth Fade **Edge Fade**).
 
