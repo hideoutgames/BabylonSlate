@@ -219,6 +219,7 @@ import {
   SCENE_FIRST_FRAME_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
+import { findSceneShadowController } from "./shadow-controller";
 import { firstFrameCompletionMs } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 
@@ -1772,6 +1773,9 @@ function initializeEngine(
   const presentationReady = (pending: PendingPresentation) => {
     try {
       if (!pending.owner && loadRehearsal && !loadRehearsal.done) loadRehearsal.check();
+      // The light block's path: each kind of shadow map's caster depth variants, ahead of its first shadow start, for
+      // the casters as the starting state poses them.
+      if (!pending.owner && options.playMode) findSceneShadowController(scene)?.warmCasterVariants();
       publishLights(pending);
       pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady();
       return pending.ready;

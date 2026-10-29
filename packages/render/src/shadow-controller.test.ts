@@ -14,12 +14,14 @@ import {
   SpotLight,
   RenderTargetTexture,
   Scene,
+  ShadowDepthWrapper,
   ShadowGenerator,
   StandardMaterial,
   UniversalCamera,
   TransformNode,
   Vector3,
   type AbstractEngine,
+  type Effect,
 } from "@babylonjs/core";
 import { PREDICTION_MAP_SIZE, sceneShadowController } from "./shadow-controller";
 import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";
@@ -38,7 +40,7 @@ import { retainAreaLightLookup } from "./area-light-resources";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { setHapticLighting } from "./haptic-lights";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, isAtlasShadow, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -1639,6 +1641,106 @@ describe("maps a tried change takes", () => {
     expect({ applied, restored: restored !== null && restored !== map, second: controller.generator(second),
       withinLimit: managedRenderReservations(engine).reservedBytes <= managedRenderReservations(engine).limit })
       .toEqual({ applied: { second: true, parked: false }, restored: true, second: null, withinLimit: true });
+  });
+});
+
+describe("atlas caster variants", () => {
+  it.each([1, 2])("hold each atlas kind's caster depth variant that a first shadow start then draws with (%i cascades)", async (cascades) => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    enableHeadlessCascades(engine);
+    setHapticLighting(engine, true);
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades, maxLocalLights: 2 }) });
+    // Posed with a non-uniform scale, as a level's floor is: its variant reads its world matrix.
+    const crate = MeshBuilder.CreateBox("crate", { size: 1 }, scene);
+    crate.scaling.set(6, 0.2, 6);
+    controller.sync();
+    const compiled = () => new Set(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects));
+    const before = compiled();
+    // Babylon loads a new map's shaders first: a later sync asks again.
+    controller.warmCasterVariants();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.sync();
+    const held = [...compiled()].filter((effect) => !before.has(effect));
+    expect(held.map((effect) => /SM_LIGHTTYPE_(\w+)/.exec(effect.defines)?.[1]).sort()).toEqual(["DIRECTIONALLIGHT", "POINTLIGHT", "SPOTLIGHT"]);
+    expect(held.every((effect) => /NONUNIFORMSCALING/.test(effect.defines))).toBe(true);
+    // The stand-ins hold nothing of the Scene's: no light, no atlas tile, no texture.
+    expect([scene.lights.length, shadowAtlasBytes(scene), scene.textures.length]).toEqual([0, 0, 0]);
+    // The first map of each kind draws its caster with the variant held for it.
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
+    const lamp = new PointLight("lamp", new Vector3(2, 2, 0), scene);
+    for (const light of [sun, spot, lamp]) controller.register(light, true);
+    controller.sync();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const drawnWith = (light: DirectionalLight | SpotLight | PointLight) => {
+      const map = light.getShadowGenerator()!.getShadowMap()!;
+      const pass = engine.currentRenderPassId;
+      engine.currentRenderPassId = map.renderPassId;
+      try {
+        map.customIsReadyFunction!(crate, 0, true);
+      } finally {
+        engine.currentRenderPassId = pass;
+      }
+      return crate.subMeshes[0]!._getDrawWrapper(map.renderPassId)!.effect!;
+    };
+    expect([sun, spot, lamp].map((light) => isAtlasShadow(light.getShadowGenerator()))).toEqual([true, true, true]);
+    expect([sun, spot, lamp].map((light) => held.includes(drawnWith(light)))).toEqual([true, true, true]);
+  });
+
+  it("asks a caster whose Material draws its depth through a wrapper until it holds its variants, then no more", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    enableHeadlessCascades(engine);
+    setHapticLighting(engine, true);
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    // Authored World Position Offset and lattice deformation draw a caster's depth through a standalone wrapper of a
+    // variant Material that no other pass draws: its first ask compiles that Material, a later one the depth variant,
+    // which the wrapper holds itself.
+    const crate = MeshBuilder.CreateBox("crate", { size: 1 }, scene);
+    const material = crate.material = new StandardMaterial("offset", scene);
+    const wrapper = material.shadowDepthWrapper =
+      new ShadowDepthWrapper(new StandardMaterial("offset depth", scene), scene, { standalone: true });
+    const asked = vi.spyOn(wrapper, "isReadyForSubMesh");
+    const kinds = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
+      .map((effect) => /SM_LIGHTTYPE_(\w+)/.exec(effect.defines)?.[1]).filter(Boolean).sort();
+    controller.sync();
+    controller.warmCasterVariants();
+    for (let frame = 0; frame < 4; frame++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      controller.sync();
+    }
+    expect(kinds()).toEqual(["DIRECTIONALLIGHT", "POINTLIGHT", "SPOTLIGHT"]);
+    asked.mockClear();
+    for (let frame = 0; frame < 3; frame++) controller.sync();
+    expect(asked).not.toHaveBeenCalled();
+  });
+
+  it("asks again for new shadow settings, and holds nothing off the light block's path", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    enableHeadlessCascades(engine);
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    MeshBuilder.CreateBox("crate", { size: 1 }, scene);
+    const variants = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
+      .filter((effect) => /SM_LIGHTTYPE/.test(effect.defines));
+    controller.warmCasterVariants();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.sync();
+    expect(variants()).toEqual([]);
+    setHapticLighting(engine, true);
+    controller.warmCasterVariants();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.sync();
+    expect(variants().map((effect) => /SM_NORMALBIAS (\d)/.exec(effect.defines)?.[1])).toEqual(["1", "1", "1"]);
+    // Without normal bias the casters draw other variants: the next syncs hold those too (Babylon releases the others
+    // at a frame's end).
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, normalBias: 0 }) });
+    controller.sync();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.sync();
+    expect(variants().filter((effect) => /SM_NORMALBIAS 0/.test(effect.defines))).toHaveLength(3);
   });
 });
 

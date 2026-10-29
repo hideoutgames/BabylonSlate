@@ -61,32 +61,8 @@ export class ShadowPredictionMaps {
       const room = Math.min(SHADOW_CAPACITY_PROFILES[settings.profile].byteBudget,
         ENGINE_SHADOW_BUDGET.bytes - otherShadowReservations(this.scene).bytes, availableSceneShadowBytes(this.scene));
       if (this.reserved.bytes + this.predictionBytes() + bytes > room) return null;
-      const entry: Entry = {
-        light, requested: true, priority: 0, generator: null, key: null, settings, mapSize: PREDICTION_MAP_SIZE,
-        reason: null, failedKey: "", recovery: null, resetAllocation: false, status: "disabled", standby: false,
-        admittedAt: -Infinity, distanceSquared: 0, effectiveBias: [],
-      };
-      // Kept out of the scene's texture list as well as off the light: views count the scene's textures, and one
-      // added would ask each for a strict readiness probe. A lost context releases it (`restored` in the controller).
-      const scene = this.scene as unknown as { _blockEntityCollection: boolean };
-      const blocked = scene._blockEntityCollection;
-      scene._blockEntityCollection = true;
-      // A light holding a standby map keeps it: a new generator replaces its light's map for the same camera key.
-      const attached = light._shadowGenerators;
-      const holding = attached ? [...attached] : [];
-      let generator: ShadowGenerator;
-      try {
-        generator = createShadowGenerator(this.maps, entry, PREDICTION_MAP_SIZE, settings, null, undefined);
-      } finally {
-        scene._blockEntityCollection = blocked;
-      }
-      this.maps.slots.delete(generator);
-      detachShadowGenerator(generator);
-      if (attached && holding.length) {
-        light._shadowGenerators = attached;
-        for (const [camera, owner] of holding) attached.set(camera, owner);
-      }
-      setAwaitingFirstDraw(generator, false);
+      // A lost context releases it (`restored` in the controller).
+      const generator = createDetachedShadowGenerator(this.maps, light, settings, PREDICTION_MAP_SIZE);
       held = { generator, key, bytes };
       this.held.set(kind, held);
       this.reserve();
@@ -139,6 +115,42 @@ export class ShadowPredictionMaps {
     for (const held of this.held.values()) held.generator.dispose();
     this.held.clear();
   }
+}
+
+/**
+ * A map for `light` built as an admitted map is (`createShadowGenerator`, with `settings`, `mapSize` and, for a tile of
+ * an `atlasEdge`-texel atlas, its edge) that no admission counts and no receiver binds: out of the controller's slots,
+ * off the light, and out of the Scene's texture list (views count the Scene's textures, and one added would ask each
+ * for a strict readiness probe). It awaits no first draw. A light's own map stays attached.
+ */
+export function createDetachedShadowGenerator(
+  maps: ShadowMapContext, light: Entry["light"], settings: ShadowSettings, mapSize: number, atlasEdge = 0,
+): ShadowGenerator {
+  const entry: Entry = {
+    light, requested: true, priority: 0, generator: null, key: null, settings, mapSize,
+    reason: null, failedKey: "", recovery: null, resetAllocation: false, status: "disabled", standby: false,
+    admittedAt: -Infinity, distanceSquared: 0, effectiveBias: [],
+  };
+  const scene = maps.scene as unknown as { _blockEntityCollection: boolean };
+  const blocked = scene._blockEntityCollection;
+  scene._blockEntityCollection = true;
+  // A light holding a standby map keeps it: a new generator replaces its light's map for the same camera key.
+  const attached = light._shadowGenerators;
+  const holding = attached ? [...attached] : [];
+  let generator: ShadowGenerator;
+  try {
+    generator = createShadowGenerator(maps, entry, mapSize, settings, null, undefined, atlasEdge);
+  } finally {
+    scene._blockEntityCollection = blocked;
+  }
+  maps.slots.delete(generator);
+  detachShadowGenerator(generator);
+  if (attached && holding.length) {
+    light._shadowGenerators = attached;
+    for (const [camera, owner] of holding) attached.set(camera, owner);
+  }
+  setAwaitingFirstDraw(generator, false);
+  return generator;
 }
 
 /** Takes `generator` off its light, so receivers never bind it (`light.getShadowGenerator()` does not return it). */
