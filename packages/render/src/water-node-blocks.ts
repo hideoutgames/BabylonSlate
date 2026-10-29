@@ -11,7 +11,7 @@ import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
 import {
   aerialPerspectiveSource, contactRange, edgeFoamHelpers, fresnelSource, horizonHazeSource, horizonLiftSource, marchSource, meshVertexWaves, placeholderField, planarLookupSource, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
-  sceneWaterNodeLighting, selectWaterRemovals, silhouetteFallbackSource, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
+  sceneWaterNodeLighting, selectWaterRemovals, silhouetteFallbackSource, slopeVarianceSource, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
   waterEdgeSource,
   sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
   WATER_NODE_BLEND_DEFINE, WATER_REMOVAL_SHAPE_UNIFORMS, WATER_REMOVAL_SLOTS, WATER_REMOVAL_UNIFORMS, type WaterRemovalCandidate,
@@ -615,8 +615,10 @@ RegisterClass("BABYLON.WaterSceneColorBlock", WaterSceneColorBlock);
  * Water Reflection: what the water mirrors along the reflected view ray (linear colour times Reflection Strength; the sky
  * dimmed where the ray leaves below the horizon, as built-in water dims it) and the Fresnel weight of that reflection (built-in
  * water's environment BRDF: water's 2% at normal incidence, less at grazing angles the rougher the water). The sky is the
- * scene's environment or skybox cube, else the analytic sky built-in water reflects, blurred by Roughness (Roughness
- * where connected, else the asset's), which rises with distance as built-in water's does; scene objects replace it where
+ * scene's environment or skybox cube, else the analytic sky built-in water reflects, blurred by built-in water's
+ * slope-variance roughness (`slopeVarianceSource`: Roughness where connected, else the asset's, rising with distance and
+ * with the normal's variation across the pixel, less under the haze), which is also the Roughness output for the
+ * Material's lighting, so far sun glints break up as built-in water's do; scene objects replace it where
  * the asset's Object Reflections is on: the view's planar mirror where this body is the view's dominant flat one (Planar
  * quality), else the march through the scene copy (Screen Space reflections, and Planar's fallback), shared with
  * built-in water (`planarLookupSource`, `marchSource`) and faded as it fades them. Normal defaults to the Water Waves
@@ -640,6 +642,7 @@ export class WaterReflectionBlock extends WaterNodeBlock {
     this.registerOutput("color", Types.Color3);
     this.registerOutput("fresnel", Types.Float);
     this.registerOutput("shadingNormal", Types.Vector3);
+    this.registerOutput("shadingRoughness", Types.Float);
   }
   get worldPosition() { return this._inputs[0]!; }
   get cameraPosition() { return this._inputs[1]!; }
@@ -654,6 +657,8 @@ export class WaterReflectionBlock extends WaterNodeBlock {
   get fresnel() { return this._outputs[1]!; }
   /** The half vector toward the lifted reflected ray, for the Material's lighting (the Normal pin). */
   get shadingNormal() { return this._outputs[2]!; }
+  /** The slope-variance roughness the reflection is blurred by, for the Material's lighting (the Roughness pin). */
+  get shadingRoughness() { return this._outputs[3]!; }
   override getClassName(): string { return "WaterReflectionBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
     const scene = material.getScene(), surface = meshWaterNodeSurface(mesh);
@@ -708,9 +713,9 @@ export class WaterReflectionBlock extends WaterNodeBlock {
       ? `fn swPlanarTexel(uv: vec2f) -> vec4f { return textureSampleLevel(${PLANAR_SAMPLER}, ${PLANAR_SAMPLER}Sampler, uv, 0.0); }`
       : `vec4 swPlanarTexel(vec2 uv) { return textureLod(${PLANAR_SAMPLER}, uv, 0.0); }`}\n#endif\n`, "");
     state._emitFunctionFromInclude("helperFunctions", "");
-    const [color, fresnel, shadingNormal] = this._outputs.map((output) => output.associatedVariableName);
+    const [color, fresnel, shadingNormal, shadingRoughness] = this._outputs.map((output) => output.associatedVariableName);
     state.compilationString += this.declare(state, this.color, `${v3}(0.0)`) + this.declare(state, this.fresnel, "0.0")
-      + this.declare(state, this.shadingNormal, `${v3}(0.0, 1.0, 0.0)`);
+      + this.declare(state, this.shadingNormal, `${v3}(0.0, 1.0, 0.0)`) + this.declare(state, this.shadingRoughness, "0.0");
     const position = this.worldPosition.associatedVariableName, eye = this.cameraPosition.associatedVariableName;
     const normal = this.value(this.normal, this.value(this.waveNormal, `${v3}(0.0, 1.0, 0.0)`));
     const roughness = this.value(this.roughness, `${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.y`);
@@ -728,6 +733,7 @@ float swnRoughNear = clamp(${roughness}, 0.0, 1.0);
 float swnRough = mix(max(swnRoughNear, ${f(WATER_FAR_ROUGHNESS)}), swnRoughNear, 1.0 / (1.0 + length(${eye} - ${position}.xyz) * ${f(WATER_GLOSS_FALLOFF)}));
 ${fresnelSource("swnRough", "swnNdotV", "swnFres")}
 swnFres = mix(swnFres, 1.0, swHaze);
+${slopeVarianceSource("swnN", "swnRough", "swnRoughNear", "swHaze", "swnShade")}
 vec3 swnR = reflect(-swnV, swnN);
 float swnRawY = swnR.y;
 ${reflectionKeepSource("swnR.y", "swnV.y", "swnKeep")}
@@ -745,10 +751,10 @@ swnAura = swnAura * swnAura;
 swnAura = swnAura * swnAura;
 swnAura = swnAura * swnAura;
 swnSky += U.slateWaterNodeSunColor.rgb * swnSun.w * (U.slateWaterNodeSunColor.rgb * (swnSkyH * U.slateWaterNodeSunShape.z * (0.25 + 0.35 * swnAz * swnAz)) + vec3(swnAura * 0.05));
-swnSky = mix(swnSky, mix(U.slateWaterNodeSky.rgb, U.slateWaterNodeHorizon.rgb, 0.55), smoothstep(0.1, 0.6, swnRough) * 0.5);
+swnSky = mix(swnSky, mix(U.slateWaterNodeSky.rgb, U.slateWaterNodeHorizon.rgb, 0.55), smoothstep(0.05, 0.35, sqrt(swnShadeVar)) * 0.5);
 `, wgsl) + `#ifdef ${WATER_NODE_ENV_DEFINE}\n` + bind(`
 vec3 swnDir = (U.${ENV_MATRIX} * vec4(swnR, 0.0)).xyz * U.slateWaterNodeEnvFlip.xyz;
-vec4 swnEnv = swnEnvTap(swnDir, swnRough * U.slateWaterNodeEnv.x + U.slateWaterNodeEnvFlip.w);
+vec4 swnEnv = swnEnvTap(swnDir, swnShade * U.slateWaterNodeEnv.x + U.slateWaterNodeEnvFlip.w);
 vec3 swnGamma = pow(max(swnEnv.rgb, vec3(0.0)), vec3(2.2));
 vec3 swnLinear = mix(swnEnv.rgb, swnGamma, U.slateWaterNodeEnv.z);
 swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y) * U.slateWaterNodeEnv.w;
@@ -757,6 +763,7 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
       + (this.color.hasEndpoints ? `${color} = swnSky * ${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.z;\n` : "")
       + (this.fresnel.hasEndpoints ? `${fresnel} = swnFres;\n` : "")
       + (this.shadingNormal.hasEndpoints ? `${shadingNormal} = swnH;\n` : "")
+      + (this.shadingRoughness.hasEndpoints ? `${shadingRoughness} = swnShade;\n` : "")
       + "}\n";
     return this;
   }
@@ -779,7 +786,7 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
   swnObj = swMarch(${position}.xyz, swnObjR, ${this.viewProjection.associatedVariableName}, ${this.view.associatedVariableName}, ${eye});
 }
 `, wgsl) + "#endif\n"
-      + bind(`swnObj.a = swnObj.a * (1.0 - smoothstep(0.2, 0.45, swnRoughNear)) * smoothstep(-0.01, 0.03, swnRawY)
+      + bind(`swnObj.a = swnObj.a * (1.0 - smoothstep(0.2, 0.45, swnShade)) * smoothstep(-0.01, 0.03, swnRawY)
   * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swnObjR)) / max(length(fwidth(swnV)), 0.00001)));
 swnSky = mix(swnSky, swnObj.rgb, swnObj.a);
 `, wgsl) + "#endif\n";
