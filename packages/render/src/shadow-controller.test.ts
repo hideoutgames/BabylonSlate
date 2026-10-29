@@ -25,6 +25,7 @@ import { PREDICTION_MAP_SIZE, sceneShadowController } from "./shadow-controller"
 import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { awaitsFirstDraw } from "./shadow-first-draw";
+import { NEUTRAL_DARKNESS } from "./shadow-map-factory";
 import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
@@ -1642,6 +1643,87 @@ describe("maps a tried change takes", () => {
 });
 
 describe("view sun shadow maps", () => {
+  /** The light block's path, Medium: the sun's `cascades` 2048 cascades in a 4096 atlas, and a capture's camera. */
+  const atlasSun = (cascades: number) => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    enableHeadlessCascades(engine);
+    setHapticLighting(engine, true);
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades, maxLocalLights: 1 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    return { scene, engine, controller, sun, capture: new UniversalCamera("capture", new Vector3(20, 6, 20), scene) };
+  };
+  const tileSizes = (generator: unknown) => (generator as AtlasCascadedShadowGenerator).tiles.map((tile) => tile.size);
+
+  it("gives a capture its own sun cascades as tiles of the light block's atlas, which charge nothing and go with the claim", async () => {
+    const { scene, engine, controller, sun, capture } = atlasSun(2);
+    const reserved = managedRenderReservations(engine).reservedBytes;
+    const claim = controller.attachView(capture);
+    const own = sun.getShadowGenerator(capture) as AtlasCascadedShadowGenerator;
+    expect(own).toBeInstanceOf(AtlasCascadedShadowGenerator);
+    expect(own).not.toBe(sun.getShadowGenerator());
+    expect(controller.viewBoundGenerator(sun, capture)).toBe(own);
+    expect(own.getShadowMap()!.renderTarget).toBe(shadowAtlasTexture(scene).renderTarget);
+    expect(tileSizes(own)).toEqual([2048, 2048]);
+    // Its tiles hold what their last map drew until it draws.
+    expect([own.getDarkness(), awaitsFirstDraw(own)]).toEqual([NEUTRAL_DARKNESS, true]);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(reserved);
+    expect(controller.metrics()).toEqual({ passes: 4, bytes: shadowAtlasBytes(scene) });
+    expect(unsupportedManagedShadows(scene)).toBeUndefined();
+    await claim.release();
+    expect(sun.getShadowGenerator(capture)).toBeNull();
+    expect(own.getShadowMap()).toBeNull();
+  });
+
+  it("samples the scene view's sun cascades for a capture whose own find no room in the atlas", () => {
+    const { controller, sun, capture } = atlasSun(4);
+    // Four 2048 cascades fill the 4096 atlas.
+    expect(tileSizes(sun.getShadowGenerator())).toEqual([2048, 2048, 2048, 2048]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      controller.attachView(capture);
+      expect(sun.getShadowGenerator(capture)).toBeNull();
+      expect(controller.viewBoundGenerator(sun, capture)).toBe(sun.getShadowGenerator());
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("does not fit the shadow atlas"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("makes a capture's cascades give way before a scene view's map would shrink for atlas room, and take what it leaves", () => {
+    const { scene, controller, sun, capture } = atlasSun(2);
+    controller.attachView(capture);
+    // The scene view's and the capture's cascades fill the atlas.
+    expect(tileSizes(sun.getShadowGenerator(capture))).toEqual([2048, 2048]);
+    const spot = new SpotLight("spot", new Vector3(0, 4, -4), new Vector3(0, -1, 0.5), 1, 1, scene);
+    controller.register(spot, true);
+    controller.sync();
+    expect((spot.getShadowGenerator() as AtlasShadowGenerator).tile.size).toBe(1024);
+    expect(tileSizes(sun.getShadowGenerator(capture))).toEqual([1024, 1024]);
+  });
+
+  it("follows the scene view's sun map into an atlas of another edge, and goes with it, the atlas with them", () => {
+    const { scene, engine, controller, sun, capture } = atlasSun(2);
+    Object.assign(engine.getCaps(), { maxTextureSize: 8192 });
+    controller.attachView(capture);
+    const medium = sun.getShadowGenerator(capture);
+    // High's 8192 atlas: the scene view's map is rebuilt in it, and the capture's after it.
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ profile: "high", cascades: 2, maxLocalLights: 1 }) });
+    controller.sync();
+    const high = sun.getShadowGenerator(capture);
+    expect(medium!.getShadowMap()).toBeNull();
+    expect(high).toBeInstanceOf(AtlasCascadedShadowGenerator);
+    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+    expect(tileSizes(high)).toEqual(tileSizes(sun.getShadowGenerator()));
+    // The sun's shadow off: both maps go in the same sync, and the atlas with its last tile.
+    controller.register(sun, false);
+    controller.sync();
+    expect([high!.getShadowMap(), sun.getShadowGenerator(capture)]).toEqual([null, null]);
+    expect(shadowAtlasBytes(scene)).toBe(0);
+  });
   it("binds a single sun map with the box it was drawn with, whichever camera binds it", () => {
     const { scene, controller } = fixture();
     updateSceneRenderingSettings(scene, {
