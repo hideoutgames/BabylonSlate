@@ -71,7 +71,8 @@ export function beginShadowAllocationValidation(
       if (!target?._framebuffer || !gl.isFramebuffer(target._framebuffer)) {
         throw new Error("Shadow framebuffer allocation is missing or invalid");
       }
-      const color = liveTexture(gl, target.texture, "color");
+      // A depth-only target (the shadow atlas, `shadow-atlas.ts`) has no colour texture: it draws into its depth texture.
+      const color = target.texture || !target.depthStencilTexture ? liveTexture(gl, target.texture, "color") : null;
       const depth = target.depthStencilTexture
         ? liveTexture(gl, target.depthStencilTexture, "depth")
         : null;
@@ -152,7 +153,7 @@ export function beginShadowAllocationValidation(
               );
             }
           };
-          attach(gl.COLOR_ATTACHMENT0, color);
+          if (color) attach(gl.COLOR_ATTACHMENT0, color);
           if (depth) attach(depthAttachment, depth);
           const status = gl.checkFramebufferStatus(bindingTarget);
           if (status !== gl.FRAMEBUFFER_COMPLETE) {

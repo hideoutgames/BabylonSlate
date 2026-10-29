@@ -9,11 +9,12 @@ import { builtInWaterMaterial } from "./water-template";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
 
-/** A NullEngine Scene that reports uniform buffers, as WebGL2 does, and makes the texture arrays it cannot. */
+/** A NullEngine Scene that reports uniform buffers, as WebGL2 does, and makes the texture arrays and depth textures it cannot. */
 function host() {
   const engine = new NullEngine();
   vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
   vi.spyOn(engine, "createRawTexture2DArray").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.Raw2DArray));
+  vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
   const scene = new Scene(engine);
   new FreeCamera("camera", new Vector3(0, 6, -12), scene);
   disposers.push(() => { setHapticLighting(engine, false); scene.dispose(); engine.dispose(); });

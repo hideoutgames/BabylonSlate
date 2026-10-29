@@ -14,6 +14,8 @@ import {
 } from "@babylonjs/core";
 import type { ShadowSettings } from "@haptic/core";
 import { ReusableShadowGenerator, type LocalShadowLight } from "./reusable-shadow-generator";
+import { hapticLightingActive } from "./haptic-lights";
+import { createAtlasShadowGenerator } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
 import { trackShadowSlotDefines } from "./shadow-slot-defines";
@@ -123,7 +125,9 @@ export function createShadowGenerator(
         )
       : directionalLight
         ? new ShadowGenerator(mapSize, entry.light, undefined, camera)
-        : new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
+        // The lighting plan's block samples spot lights' shadows from the Scene's atlas, while a tile is free.
+        : (hapticLightingActive(scene) && entry.light instanceof SpotLight ? createAtlasShadowGenerator(entry.light, mapSize) : null)
+          ?? new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
   const slot = { entry, view: view !== null };
   context.slots.set(generator, slot);
   if (generator instanceof CascadedShadowGenerator) {

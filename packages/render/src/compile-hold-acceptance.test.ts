@@ -525,6 +525,8 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
       texture.isReady = true;
       return texture;
     });
+    // Nor the shadow atlas's depth texture.
+    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
   }
   const driver = driverModel(engine, model);
   const holds: boolean[] = [];

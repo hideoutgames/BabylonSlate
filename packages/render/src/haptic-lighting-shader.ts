@@ -67,6 +67,52 @@ float hapticConeFalloff(vec3 lightDirection, vec3 L, float cosHalfAngle) {
   return exp2(dot(vec4(L, 1.0), vec4(-lightDirection * kappa, -kappa)));
 }
 
+// A light's shadow from its view of the atlas (\`hapticShadowViews\`): 1 where lit, the view's darkness where shadowed; 1
+// without a view (index < 0), outside its frustum and on a mesh that does not receive shadows. Babylon's PCF at the
+// view's filter quality (0 low, 1 medium, 2 high: its computeShadowWithPCF1, 3 and 5): one, four or nine weighted
+// bilinear compare taps, each kept a texel inside the view's tile so a neighbouring tile never bleeds in.
+float hapticShadowTap(vec4 tile, vec2 texel, float depth) {
+  return textureLod(hapticShadowAtlas, vec3(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), depth), 0.0);
+}
+
+float hapticShadow(float index, vec3 P) {
+  if (index < 0.0 || hapticShadowReceiver == 0.0) return 1.0;
+  int base = int(index) * 6;
+  vec4 clip = mat4(hapticShadowViews[base], hapticShadowViews[base + 1], hapticShadowViews[base + 2], hapticShadowViews[base + 3]) * vec4(P, 1.0);
+  if (clip.w <= 0.0) return 1.0;
+  vec3 ndc = clip.xyz / clip.w;
+  vec2 uv = ndc.xy * 0.5 + 0.5;
+  float depth = ndc.z * 0.5 + 0.5;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) return 1.0;
+  vec4 tile = hapticShadowViews[base + 4];
+  vec4 shading = hapticShadowViews[base + 5];
+  vec2 texels = uv * (tile.z / tile.w);
+  if (shading.y < 0.5) return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));
+  vec2 st = fract(texels + 0.5);
+  vec2 corner = floor(texels + 0.5) - 0.5;
+  float lit;
+  if (shading.y < 1.5) {
+    vec2 w0 = 3.0 - 2.0 * st;
+    vec2 w1 = 1.0 + 2.0 * st;
+    vec2 a = corner + (2.0 - st) / w0 - 1.0;
+    vec2 b = corner + st / w1 + 1.0;
+    lit = (w0.x * w0.y * hapticShadowTap(tile, vec2(a.x, a.y), depth) + w1.x * w0.y * hapticShadowTap(tile, vec2(b.x, a.y), depth)
+      + w0.x * w1.y * hapticShadowTap(tile, vec2(a.x, b.y), depth) + w1.x * w1.y * hapticShadowTap(tile, vec2(b.x, b.y), depth)) / 16.0;
+  } else {
+    vec2 w0 = 4.0 - 3.0 * st;
+    vec2 w2 = 1.0 + 3.0 * st;
+    vec2 a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
+    vec2 b = corner + (3.0 + st) / 7.0;
+    vec2 c = corner + st / w2 + 2.0;
+    lit = (w0.x * w0.y * hapticShadowTap(tile, vec2(a.x, a.y), depth) + 7.0 * w0.y * hapticShadowTap(tile, vec2(b.x, a.y), depth)
+      + w2.x * w0.y * hapticShadowTap(tile, vec2(c.x, a.y), depth) + w0.x * 7.0 * hapticShadowTap(tile, vec2(a.x, b.y), depth)
+      + 49.0 * hapticShadowTap(tile, vec2(b.x, b.y), depth) + w2.x * 7.0 * hapticShadowTap(tile, vec2(c.x, b.y), depth)
+      + w0.x * w2.y * hapticShadowTap(tile, vec2(a.x, c.y), depth) + 7.0 * w2.y * hapticShadowTap(tile, vec2(b.x, c.y), depth)
+      + w2.x * w2.y * hapticShadowTap(tile, vec2(c.x, c.y), depth)) / 144.0;
+  }
+  return mix(shading.x, 1.0, lit);
+}
+
 // Rect area lights: linearly transformed cosines from Babylon's two 64x64 tables (its ltcHelperFunctions).
 vec3 hapticLtcEdge(vec3 v1, vec3 v2) {
   float x = dot(v1, v2);
@@ -173,16 +219,17 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
   }
   for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
     if (i >= int(hapticCounts.z)) break;
-    vec4 position = hapticSpot[i * 3];
-    vec4 direction = hapticSpot[i * 3 + 1];
-    vec4 color = hapticSpot[i * 3 + 2];
+    vec4 position = hapticSpot[i * 4];
+    vec4 direction = hapticSpot[i * 4 + 1];
+    vec4 color = hapticSpot[i * 4 + 2];
     vec3 offset = position.xyz - P;
     float distanceSquared = dot(offset, offset);
     if (distanceSquared >= color.w * color.w) continue;
     float lightDistance = sqrt(distanceSquared);
     vec3 L = offset / max(lightDistance, HAPTIC_EPSILON);
     float NdotL = hapticSaturateEps(dot(N, L));
-    vec3 radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w);
+    vec3 radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w)
+      * hapticShadow(hapticSpot[i * 4 + 3].x, P);
     diffuse += radiance * (NdotL / HAPTIC_PI);
     float roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
@@ -238,9 +285,9 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
   }
   for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
     if (i >= int(hapticCounts.z)) break;
-    vec4 direction = hapticSpot[i * 3 + 1];
-    vec4 color = hapticSpot[i * 3 + 2];
-    vec3 offset = hapticSpot[i * 3].xyz - P;
+    vec4 direction = hapticSpot[i * 4 + 1];
+    vec4 color = hapticSpot[i * 4 + 2];
+    vec3 offset = hapticSpot[i * 4].xyz - P;
     float distanceSquared = dot(offset, offset);
     if (distanceSquared >= color.w * color.w) continue;
     vec3 L = normalize(offset);
@@ -248,7 +295,9 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     float falloff = hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w);
     // The cone never reaches zero, so the highlight stops at its half angle.
     float inCone = step(direction.w, dot(-L, direction.xyz));
-    hapticCelAdd(result, color.rgb * (NdotL * falloff), hapticCelHighlight(N, V, L, NdotL, color.rgb) * inCone);
+    // CEL's hard shadow edge, as Babylon's CEL light block steps the shadow.
+    float shadow = slateCelShadowVisibility(hapticShadow(hapticSpot[i * 4 + 3].x, P));
+    hapticCelAdd(result, color.rgb * (NdotL * falloff * shadow), hapticCelHighlight(N, V, L, NdotL, color.rgb) * (inCone * shadow));
   }
   // Rect lights at a fixed roughness of one half, as Babylon's light block evaluates them; the highlight is the
   // specular form factor past CEL's threshold.
@@ -406,6 +455,51 @@ fn hapticConeFalloff(lightDirection: vec3f, L: vec3f, cosHalfAngle: f32) -> f32 
   return exp2(dot(vec4f(L, 1.0), vec4f(-lightDirection * kappa, -kappa)));
 }
 
+fn hapticShadowTap(tile: vec4f, texel: vec2f, depth: f32) -> f32 {
+  return textureSampleCompareLevel(hapticShadowAtlas, hapticShadowAtlasSampler,
+    clamp(tile.xy + texel * tile.w, tile.xy + vec2f(tile.w), tile.xy + vec2f(tile.z - tile.w)), depth);
+}
+
+fn hapticShadow(index: f32, P: vec3f) -> f32 {
+  if (index < 0.0 || uniforms.hapticShadowReceiver == 0.0) { return 1.0; }
+  let base = i32(index) * 6;
+  let clip = mat4x4f(HapticLights.hapticShadowViews[base], HapticLights.hapticShadowViews[base + 1], HapticLights.hapticShadowViews[base + 2],
+    HapticLights.hapticShadowViews[base + 3]) * vec4f(P, 1.0);
+  if (clip.w <= 0.0) { return 1.0; }
+  let ndc = clip.xyz / clip.w;
+  let uv = ndc.xy * 0.5 + 0.5;
+  // WebGPU's depth range is zero to one.
+  let depth = ndc.z;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) { return 1.0; }
+  let tile = HapticLights.hapticShadowViews[base + 4];
+  let shading = HapticLights.hapticShadowViews[base + 5];
+  let texels = uv * (tile.z / tile.w);
+  if (shading.y < 0.5) { return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth)); }
+  let st = fract(texels + 0.5);
+  let corner = floor(texels + 0.5) - 0.5;
+  var lit: f32;
+  if (shading.y < 1.5) {
+    let w0 = 3.0 - 2.0 * st;
+    let w1 = 1.0 + 2.0 * st;
+    let a = corner + (2.0 - st) / w0 - 1.0;
+    let b = corner + st / w1 + 1.0;
+    lit = (w0.x * w0.y * hapticShadowTap(tile, vec2f(a.x, a.y), depth) + w1.x * w0.y * hapticShadowTap(tile, vec2f(b.x, a.y), depth)
+      + w0.x * w1.y * hapticShadowTap(tile, vec2f(a.x, b.y), depth) + w1.x * w1.y * hapticShadowTap(tile, vec2f(b.x, b.y), depth)) / 16.0;
+  } else {
+    let w0 = 4.0 - 3.0 * st;
+    let w2 = 1.0 + 3.0 * st;
+    let a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
+    let b = corner + (3.0 + st) / 7.0;
+    let c = corner + st / w2 + 2.0;
+    lit = (w0.x * w0.y * hapticShadowTap(tile, vec2f(a.x, a.y), depth) + 7.0 * w0.y * hapticShadowTap(tile, vec2f(b.x, a.y), depth)
+      + w2.x * w0.y * hapticShadowTap(tile, vec2f(c.x, a.y), depth) + w0.x * 7.0 * hapticShadowTap(tile, vec2f(a.x, b.y), depth)
+      + 49.0 * hapticShadowTap(tile, vec2f(b.x, b.y), depth) + w2.x * 7.0 * hapticShadowTap(tile, vec2f(c.x, b.y), depth)
+      + w0.x * w2.y * hapticShadowTap(tile, vec2f(a.x, c.y), depth) + 7.0 * w2.y * hapticShadowTap(tile, vec2f(b.x, c.y), depth)
+      + w2.x * w2.y * hapticShadowTap(tile, vec2f(c.x, c.y), depth)) / 144.0;
+  }
+  return mix(shading.x, 1.0, lit);
+}
+
 fn hapticLtcEdge(v1: vec3f, v2: vec3f) -> vec3f {
   let x = dot(v1, v2);
   let y = abs(x);
@@ -501,16 +595,17 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
   }
   for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
     if (i >= i32(HapticLights.hapticCounts.z)) { break; }
-    let position = HapticLights.hapticSpot[i * 3];
-    let direction = HapticLights.hapticSpot[i * 3 + 1];
-    let color = HapticLights.hapticSpot[i * 3 + 2];
+    let position = HapticLights.hapticSpot[i * 4];
+    let direction = HapticLights.hapticSpot[i * 4 + 1];
+    let color = HapticLights.hapticSpot[i * 4 + 2];
     let offset = position.xyz - P;
     let distanceSquared = dot(offset, offset);
     if (distanceSquared >= color.w * color.w) { continue; }
     let lightDistance = sqrt(distanceSquared);
     let L = offset / max(lightDistance, HAPTIC_EPSILON);
     let NdotL = hapticSaturateEps(dot(N, L));
-    let radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w);
+    let radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w)
+      * hapticShadow(HapticLights.hapticSpot[i * 4 + 3].x, P);
     *diffuse += radiance * (NdotL / HAPTIC_PI);
     let roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     *specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
@@ -562,16 +657,17 @@ fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInflu
   }
   for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
     if (i >= i32(HapticLights.hapticCounts.z)) { break; }
-    let direction = HapticLights.hapticSpot[i * 3 + 1];
-    let color = HapticLights.hapticSpot[i * 3 + 2];
-    let offset = HapticLights.hapticSpot[i * 3].xyz - P;
+    let direction = HapticLights.hapticSpot[i * 4 + 1];
+    let color = HapticLights.hapticSpot[i * 4 + 2];
+    let offset = HapticLights.hapticSpot[i * 4].xyz - P;
     let distanceSquared = dot(offset, offset);
     if (distanceSquared >= color.w * color.w) { continue; }
     let L = normalize(offset);
     let NdotL = max(dot(N, L), 0.0);
     let falloff = hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w);
     let inCone = step(direction.w, dot(-L, direction.xyz));
-    hapticCelAdd(&result, color.rgb * (NdotL * falloff), hapticCelHighlight(N, V, L, NdotL, color.rgb) * inCone);
+    let shadow = slateCelShadowVisibility(hapticShadow(HapticLights.hapticSpot[i * 4 + 3].x, P));
+    hapticCelAdd(&result, color.rgb * (NdotL * falloff * shadow), hapticCelHighlight(N, V, L, NdotL, color.rgb) * (inCone * shadow));
   }
   for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.rect}; i++) {
     if (i >= i32(HapticLights.hapticCounts.w)) { break; }
