@@ -194,11 +194,12 @@ function crossesOccluder(from: Vector3, to: Vector3): boolean {
 }
 
 /**
- * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): how far the camera's ray travels, up to the
- * first surface or the march's distance, through the fog light's cone where the occluder blocks the light
- * (`shadowed`) and where nothing does (`open`), in metres.
+ * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): how far the camera's ray travels through the
+ * fog light's cone where the occluder blocks the light (`shadowed`) and where nothing does (`open`), in metres, up to
+ * the march's distance or a march step past the first surface (the march's samples lie a step apart, so its last one
+ * may lie up to a step beyond the surface).
  */
-function beamLengths(scene: Scene, camera: FreeCamera, engine: AbstractEngine, maxDistance: number) {
+function beamLengths(scene: Scene, camera: FreeCamera, engine: AbstractEngine, maxDistance: number, marchStep: number) {
   const width = engine.getRenderWidth();
   const height = engine.getRenderHeight();
   const shadowed: number[] = [];
@@ -209,7 +210,7 @@ function beamLengths(scene: Scene, camera: FreeCamera, engine: AbstractEngine, m
     for (let column = 0; column < width; column++) {
       const ray = scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera);
       const hit = scene.pickWithRay(ray);
-      const end = Math.min(hit?.hit ? hit.distance : Infinity, maxDistance);
+      const end = Math.min(hit?.hit ? hit.distance + marchStep : Infinity, maxDistance);
       let inShadow = 0;
       let inLight = 0;
       for (let distance = step / 2; distance < end; distance += step) {
@@ -438,7 +439,8 @@ export async function runSpatialEffectsProof(
           const shadowed = await draw();
           applyAuthoredLightProperties(light, { intensity: 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: false });
           const open = await draw();
-          const beam = beamLengths(scene, camera, engine, effects.volumetricLighting.maxDistance);
+          const { maxDistance, steps } = effects.volumetricLighting;
+          const beam = beamLengths(scene, camera, engine, maxDistance, maxDistance / steps);
           return { volumetricShadowCaptures: [{ off, shadowed, open, beam }] };
         }
         const off = await draw();

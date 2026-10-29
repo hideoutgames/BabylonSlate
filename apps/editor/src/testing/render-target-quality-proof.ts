@@ -117,8 +117,12 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     await released;
-    const retainedBytes = managedRenderReservations(engine).reservedBytes;
+    // The light block's lookup tables are the Scene's until it goes, at WebGPU's next end-of-frame drain.
     scene.dispose();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    engine.beginFrame();
+    engine.endFrame();
+    const retainedBytes = managedRenderReservations(engine).reservedBytes;
     setHapticLighting(engine, false);
     engine.dispose();
     canvas.remove();
