@@ -32,7 +32,7 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { createPreviewLighting } from "./preview-lighting";
-import { createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
+import { createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 import { shadowAllocationCheckpoint } from "./shadow-map-factory";
 
 /** An atlas edge for the tests that place tiles themselves. */
@@ -232,6 +232,44 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(createAtlasShadowGenerator(spots[2]!, EDGE / 4, EDGE)).toBeNull();
     first!.dispose();
     expect(createAtlasShadowGenerator(spots[0]!, EDGE / 2, EDGE)!.tile).toEqual({ x: 0, y: 0, size: EDGE / 2 });
+  });
+
+  it("writes the shadowed sun's cascades as views, and how the block chooses between them, as they were last drawn", () => {
+    const { engine, scene } = host();
+    setHapticLighting(engine, true);
+    engine._features.supportCSM = true;
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    const generator = createAtlasCascadedShadowGenerator(sun, EDGE / 4, 3, EDGE)!;
+    generator.cascadeBlendPercentage = 0.05;
+    generator.fadeFraction = 0.1;
+    expect(generator.numCascades).toBe(3);
+    syncSceneLighting(scene);
+    const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+    const read = (name: string, from: number, length: number) =>
+      [...buffer._bufferData.subarray(buffer._uniformLocations[name]! + from, buffer._uniformLocations[name]! + from + length)];
+    // w marks the shadowed sun; its record: three cascades, blending over their last twentieth, fading over the last
+    // tenth of the shadow distance, from view 0.
+    expect(read("hapticDirectional", 7, 1)).toEqual([1]);
+    expect(read("hapticSunShadow", 0, 4).map((value) => Math.round(value * 1000) / 1000)).toEqual([3, 20, 0.1, 0]);
+    // Each cascade a tile, its depth clamped.
+    const texel = Math.fround(1 / EDGE);
+    expect([0, 1, 2].map((view) => read("hapticShadowViews", view * 24 + 16, 8))).toEqual([
+      [0, 0, 0.25, texel, 0, 2, 1, 0], [0.25, 0, 0.25, texel, 0, 2, 1, 0], [0, 0.25, 0.25, texel, 0, 2, 1, 0],
+    ]);
+    // Drawn, the views and splits are the ones the cascades were drawn with, and the block takes them at once.
+    // NullEngine has no scissor.
+    vi.spyOn(engine, "enableScissor").mockImplementation(() => {});
+    vi.spyOn(engine, "disableScissor").mockImplementation(() => {});
+    scene.incrementRenderId();
+    scene.updateTransformMatrix(true);
+    generator.getShadowMap()!.render();
+    expect(generator.cascadeEnds.every((end) => end > 0)).toBe(true);
+    expect(read("hapticSunShadow", 8, 3)).toEqual(generator.cascadeEnds.slice(0, 3).map(Math.fround));
+    expect(read("hapticShadowViews", 24, 16)).toEqual([...generator.getCascadeTransformMatrix(1)!.m].map(Math.fround));
+    // The camera's view depth plane: its forward axis and the camera's depth.
+    const plane = read("hapticSunShadow", 4, 4);
+    const camera = scene.activeCamera!;
+    expect(plane[0]! * camera.globalPosition.x + plane[1]! * camera.globalPosition.y + plane[2]! * camera.globalPosition.z + plane[3]!).toBeCloseTo(0);
   });
 
   it("makes the atlas again after a failed shadow allocation released it with the first tile", () => {

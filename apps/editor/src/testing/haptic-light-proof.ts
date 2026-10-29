@@ -52,7 +52,7 @@ import { OwnedRectAreaLight } from "../../../../packages/render/src/area-rect-li
 import { retainFilteredEnvironment } from "../../../../packages/render/src/environment-prefilter";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
-import { AtlasShadowGenerator } from "../../../../packages/render/src/shadow-atlas";
+import { isAtlasShadow } from "../../../../packages/render/src/shadow-atlas";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Path = "babylon" | "haptic";
@@ -126,9 +126,10 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     // As Play's world Scene: Babylon's light helpers ask the fixed-shape hooks first.
     setFixedShapeLightingWorldScene(scene);
     const quality = normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } });
-    // One local shadow, which only the shadow poses' lamp casts, biased past the acne its slanting light would show on
-    // the floor (as on Babylon's own spot shadows: the default bias, measured, draws the same stripes on both paths).
-    const shadows = normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, depthBias: 0.0008 });
+    // One local shadow and the sun's two cascades, which only the shadow poses cast, biased past the acne a slanting
+    // light would show on the floor (as on Babylon's own spot shadows: the default bias, measured, draws the same
+    // stripes on both paths).
+    const shadows = normalizeShadowSettings({ cascades: 2, maxLocalLights: 1, depthBias: 0.0008 });
     const settings = (mode: RenderMode, cel: Partial<CelShadingSettings> = {}) =>
       setSceneRenderSettings(scene, {
         mode, quality, shadows,
@@ -322,9 +323,10 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
 
     /**
      * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's swap chain texture's top-down): 1 where the box or
-     * the ball blocks the floor's view of `light`, 0 where nothing does, -1 off the floor.
+     * the ball blocks the floor's view of a light (`toLight`: from a floor point to the light), 0 where nothing does, -1
+     * off the floor.
      */
-    const floorShadowMask = (light: Vector3) => {
+    const floorShadowMask = (toLight: (point: Vector3) => Vector3) => {
       const mask: number[] = [];
       for (let row = 0; row < canvas.height; row++) {
         const y = engine.isWebGPU ? row + 0.5 : canvas.height - row - 0.5;
@@ -335,43 +337,65 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
             mask.push(-1);
             continue;
           }
-          const toLight = light.subtract(hit.pickedPoint);
-          const length = toLight.length();
-          const towards = new Ray(hit.pickedPoint, toLight.scaleInPlace(1 / length), length);
+          const offset = toLight(hit.pickedPoint);
+          const length = offset.length();
+          const towards = new Ray(hit.pickedPoint, offset.scaleInPlace(1 / length), length);
           mask.push(scene.pickWithRay(towards, (mesh) => mesh === box || mesh === ball)?.hit ? 1 : 0);
         }
       }
       return mask;
     };
-    // A spot light's shadow on the block's path, drawn into its tile of the Scene's atlas through the shadow controller
-    // and the frame graph as Play draws it, and read by programs that compile nothing for it. Per render mode: the
-    // lamp with its shadow, with its shadow switched off (`shadowEnabled`) and off itself. The lamp, behind the box,
-    // aims through it, so the box's shadow falls toward the camera where the lamp shines brightest.
+    // A spot light behind the box aims through it, so the box's shadow falls toward the camera where it shines
+    // brightest; the sun shines toward the camera too.
     const lamp = new SpotLight("shadowed lamp", new Vector3(-1.8, 3.4, 1.8), new Vector3(0, -3.4, -2.1).normalize(), 1, 2, scene);
-    applyAuthoredLightProperties(lamp, { color: [1, 0.95, 0.9], intensity: 50, castShadows: true, range: 40, outerAngle: 90, innerAngle: 60 });
-    const drawShadowed = async () => {
-      // A new or resumed map samples neutrally until it has drawn.
-      for (let frame = 0; frame < 60 && (lamp.getShadowGenerator() as ShadowGenerator | null)?.getDarkness() !== 0; frame++) await draw();
-      return draw();
+    applyAuthoredLightProperties(lamp, { color: [1, 0.95, 0.9], intensity: 50, castShadows: false, range: 40, outerAngle: 90, innerAngle: 60 });
+    /**
+     * `light`'s shadow on the block's path, drawn into the Scene's atlas through the shadow controller and the frame
+     * graph as Play draws it, and read by programs that compile nothing for it. Per render mode: the light with its
+     * shadow, with its shadow switched off (`shadowEnabled`) and off itself, every other light off; and whether its
+     * map draws into the atlas.
+     */
+    const shadowPoses = async (light: Light, cast: () => void) => {
+      cast();
+      const drawShadowed = async () => {
+        // A new or resumed map samples neutrally until it has drawn.
+        for (let frame = 0; frame < 60 && (light.getShadowGenerator() as ShadowGenerator | null)?.getDarkness() !== 0; frame++) await draw();
+        return draw();
+      };
+      const modes: { mode: RenderMode; atlas: boolean; shadowed: number[]; unshadowed: number[]; unlit: number[]; newLitEffects: number }[] = [];
+      for (const mode of ["pbr", "cel"] as const) {
+        settings(mode);
+        restore("haptic");
+        for (const other of [...lights, lamp]) setAuthoredLightEnabled(other, other === light);
+        await draw();
+        const before = litEffectKeys(engine);
+        const shadowed = await drawShadowed();
+        const atlas = isAtlasShadow(light.getShadowGenerator());
+        light.shadowEnabled = false;
+        const unshadowed = await draw();
+        light.shadowEnabled = true;
+        setAuthoredLightEnabled(light, false);
+        const unlit = await draw();
+        setAuthoredLightEnabled(light, true);
+        modes.push({ mode, atlas, shadowed, unshadowed, unlit, newLitEffects: litEffectKeys(engine).filter((key) => !before.includes(key)).length });
+      }
+      return modes;
     };
-    const shadowModes: { mode: RenderMode; atlas: boolean; shadowed: number[]; unshadowed: number[]; unlit: number[]; newLitEffects: number }[] = [];
-    for (const mode of ["pbr", "cel"] as const) {
-      settings(mode);
-      restore("haptic");
-      for (const light of lights) setAuthoredLightEnabled(light, false);
-      await draw();
-      const before = litEffectKeys(engine);
-      const shadowed = await drawShadowed();
-      const atlas = lamp.getShadowGenerator() instanceof AtlasShadowGenerator;
-      lamp.shadowEnabled = false;
-      const unshadowed = await draw();
-      lamp.shadowEnabled = true;
-      setAuthoredLightEnabled(lamp, false);
-      const unlit = await draw();
-      setAuthoredLightEnabled(lamp, true);
-      shadowModes.push({ mode, atlas, shadowed, unshadowed, unlit, newLitEffects: litEffectKeys(engine).filter((key) => !before.includes(key)).length });
-    }
-    const shadow = { blocked: floorShadowMask(lamp.getAbsolutePosition()), modes: shadowModes };
+    const spotShadow = {
+      modes: await shadowPoses(lamp, () => applyAuthoredLightProperties(lamp, {
+        color: [1, 0.95, 0.9], intensity: 50, castShadows: true, range: 40, outerAngle: 90, innerAngle: 60 })),
+      blocked: floorShadowMask((point) => lamp.getAbsolutePosition().subtract(point)),
+    };
+    // The sun's cascades, its map's other cascades lit by the same sun.
+    const sunShadow = {
+      modes: await shadowPoses(sun, () => {
+        applyAuthoredLightProperties(lamp, { color: [1, 0.95, 0.9], intensity: 50, castShadows: false, range: 40, outerAngle: 90, innerAngle: 60 });
+        sun.direction = new Vector3(-0.25, -0.75, -0.9);
+        applyAuthoredLightProperties(sun, { color: [1, 0.95, 0.85], intensity: 3, castShadows: true, range: 40, outerAngle: 70, innerAngle: 40 });
+      }),
+      blocked: floorShadowMask(() => sun.direction.normalizeToNew().scaleInPlace(-100)),
+    };
+    const shadow = { spot: spotShadow, sun: sunShadow };
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     const lightDefines = litEffectKeys(engine).filter((key) => /#define LIGHT\d/.test(effects[key]!.defines)).length;
     const celEffects = cel.effects.filter((key) => /#define HAPTIC_CEL/.test(effects[key]!.defines)).length;

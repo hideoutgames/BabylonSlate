@@ -18,7 +18,7 @@ import { rectLightEmission, syncAreaEmissionLayers } from "./area-emission-array
 import { retainAreaLightLookup } from "./area-light-resources";
 import { deviceProfile } from "./device-profile";
 import { isIlluminatingLight, sortLightsByAdmission, type ForwardLightSelection } from "./light-policy";
-import { AtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowAtlasTexture, watchShadowDraws } from "./shadow-atlas";
 
 /**
  * Lighting plan: lit graph Materials (`HapticLightingBlock`) read every light from one per-Scene uniform block
@@ -28,11 +28,11 @@ import { AtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 
 /** Records per light type the block holds: the most any device draws (`DeviceProfile.lightMaximum`). */
 export const HAPTIC_LIGHT_MAXIMUM = { directional: 4, point: 32, spot: 16, rect: 4 } as const;
-/** Shadow views the block holds: one per shadowed spot light. */
-export const HAPTIC_SHADOW_VIEWS = 16;
+/** Shadow views the block holds: one per shadowed spot light, and one per cascade of the shadowed sun. */
+export const HAPTIC_SHADOW_VIEWS = HAPTIC_LIGHT_MAXIMUM.spot + 4;
 /**
  * A shadow view's record: its light's view-projection (four columns), its atlas tile (u, v, size, texel) and (darkness,
- * filter quality: 0 low, 1 medium, 2 high).
+ * filter quality: 0 low, 1 medium, 2 high, 1 for a cascade, whose depth clamps, 1 for receiver-plane bias).
  */
 const SHADOW_VIEW_VEC4S = 6;
 
@@ -65,6 +65,7 @@ vec4 hapticPoint[${HAPTIC_LIGHT_MAXIMUM.point * 2}];
 vec4 hapticSpot[${HAPTIC_LIGHT_MAXIMUM.spot * 4}];
 vec4 hapticRect[${HAPTIC_LIGHT_MAXIMUM.rect * 4}];
 vec4 hapticShadowViews[${HAPTIC_SHADOW_VIEWS * SHADOW_VIEW_VEC4S}];
+vec4 hapticSunShadow[4];
 };
 `;
 export const HAPTIC_LIGHTS_WGSL = `struct HapticLightsBlock {
@@ -77,16 +78,21 @@ hapticPoint: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.point * 2}>,
 hapticSpot: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.spot * 4}>,
 hapticRect: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.rect * 4}>,
 hapticShadowViews: array<vec4f, ${HAPTIC_SHADOW_VIEWS * SHADOW_VIEW_VEC4S}>,
+hapticSunShadow: array<vec4f, 4>,
 };
 var<uniform> HapticLights : HapticLightsBlock;
 `;
 
-type SceneLights = { buffer: UniformBuffer; rects: RectAreaLight[]; layers: number[]; limits: string[] };
+/** A shadowed light's map this frame and its first shadow view. */
+type ShadowedLight = { shadow: AtlasShadowGenerator | AtlasCascadedShadowGenerator; first: number };
+type SceneLights = {
+  buffer: UniformBuffer; rects: RectAreaLight[]; layers: number[]; limits: string[];
+  shadowed: ShadowedLight[]; shadowViews: Float32Array; sunShadow: Float32Array;
+};
 const scenes = new WeakMap<Scene, SceneLights>();
 const directional = new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8);
 const point = new Float32Array(HAPTIC_LIGHT_MAXIMUM.point * 8);
 const spot = new Float32Array(HAPTIC_LIGHT_MAXIMUM.spot * 16);
-const shadowViews = new Float32Array(HAPTIC_SHADOW_VIEWS * SHADOW_VIEW_VEC4S * 4);
 const shadowTransform = new Matrix();
 const rect = new Float32Array(HAPTIC_LIGHT_MAXIMUM.rect * 16);
 
@@ -103,11 +109,21 @@ function sceneLights(scene: Scene): SceneLights {
     buffer.addUniform("hapticSpot", 4, HAPTIC_LIGHT_MAXIMUM.spot * 4);
     buffer.addUniform("hapticRect", 4, HAPTIC_LIGHT_MAXIMUM.rect * 4);
     buffer.addUniform("hapticShadowViews", 4, HAPTIC_SHADOW_VIEWS * SHADOW_VIEW_VEC4S);
+    buffer.addUniform("hapticSunShadow", 4, 4);
     buffer.create();
     // Rect area lights read Babylon's LTC tables, always bound, so a rect light arriving compiles nothing.
     const releaseLookup = retainAreaLightLookup(scene);
-    lights = { buffer, rects: [], layers: [], limits: [] };
+    lights = {
+      buffer, rects: [], layers: [], limits: [], shadowed: [],
+      shadowViews: new Float32Array(HAPTIC_SHADOW_VIEWS * SHADOW_VIEW_VEC4S * 4), sunShadow: new Float32Array(16),
+    };
     scenes.set(scene, lights);
+    // A map draws after the block's write, with the views it is then sampled by.
+    const state = lights;
+    watchShadowDraws(scene, () => {
+      writeShadowViews(scene, state);
+      state.buffer.update();
+    });
     scene.onDisposeObservable.addOnce(() => {
       buffer.dispose();
       releaseLookup();
@@ -174,22 +190,49 @@ export const selectHapticLights: ForwardLightSelection = (scene, candidates, pre
 };
 
 /**
- * Writes `light`'s shadow as shadow view `index` when it casts shadows into the atlas and the block has a view free:
- * its view-projection relative to the floating origin (the block's positions are), its tile in atlas texture
- * coordinates, its darkness, which stays neutral until the tile has drawn, and its filter quality. Returns the view's
- * index, or -1 for none.
+ * `light`'s map when it casts shadows into the atlas and the block has room for its views (from `views` on), as its
+ * first view, or null.
  */
-function writeShadowView(scene: Scene, light: SpotLight, index: number): number {
-  const generator = light.getShadowGenerator();
-  if (!(generator instanceof AtlasShadowGenerator) || !scene.shadowsEnabled || !light.shadowEnabled || index >= HAPTIC_SHADOW_VIEWS) return -1;
+function shadowedLight(scene: Scene, light: SpotLight | DirectionalLight, views: number): ShadowedLight | null {
+  const shadow = light.getShadowGenerator();
+  if (!(shadow instanceof AtlasShadowGenerator || shadow instanceof AtlasCascadedShadowGenerator) ||
+    !scene.shadowsEnabled || !light.shadowEnabled || views + shadow.tiles.length > HAPTIC_SHADOW_VIEWS) return null;
+  return { shadow, first: views };
+}
+
+/**
+ * Writes the shadowed lights' views: per tile, the view-projection it was last drawn with, relative to the floating
+ * origin (the block's positions are), the tile in atlas texture coordinates, the darkness, which stays neutral until
+ * the map has drawn, and the filter quality; and the sun's cascade choice (`hapticSunShadow`: its cascade count, blend
+ * factor, distance fade and first view; the camera's view depth plane; its cascades' far ends and lengths in it), as
+ * last drawn. Updates them in the buffer, which the caller updates.
+ */
+function writeShadowViews(scene: Scene, state: SceneLights): void {
   const offset = scene.floatingOriginOffset;
-  Matrix.TranslationToRef(offset.x, offset.y, offset.z, shadowTransform);
-  shadowTransform.multiplyToRef(generator.getTransformMatrix(), shadowTransform);
-  const base = index * SHADOW_VIEW_VEC4S * 4, edge = shadowAtlasTexture(scene).getRenderSize(), tile = generator.tile;
-  shadowViews.set(shadowTransform.m, base);
-  const quality = generator.filteringQuality === ShadowGenerator.QUALITY_LOW ? 0 : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? 1 : 2;
-  shadowViews.set([tile.x / edge, tile.y / edge, tile.size / edge, 1 / edge, generator.getDarkness(), quality, 0, 0], base + 16);
-  return index;
+  const edge = shadowAtlasTexture(scene).getRenderSize();
+  state.sunShadow.fill(0);
+  for (const { shadow, first } of state.shadowed) {
+    const quality = shadow.filteringQuality === ShadowGenerator.QUALITY_LOW ? 0 : shadow.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? 1 : 2;
+    const cascaded = shadow instanceof AtlasCascadedShadowGenerator;
+    shadow.tiles.forEach((tile, index) => {
+      const base = (first + index) * SHADOW_VIEW_VEC4S * 4;
+      Matrix.TranslationToRef(offset.x, offset.y, offset.z, shadowTransform);
+      shadowTransform.multiplyToRef(shadow.drawnViews[index]!, shadowTransform);
+      state.shadowViews.set(shadowTransform.m, base);
+      state.shadowViews.set([tile.x / edge, tile.y / edge, tile.size / edge, 1 / edge, shadow.getDarkness(), quality, Number(cascaded),
+        Number(cascaded && shadow.autoBias)], base + 16);
+    });
+    if (!cascaded) continue;
+    const plane = shadow.cascadeDepth;
+    // The camera's view depth of a block position, which is relative to the floating origin.
+    const sign = scene.useRightHandedSystem ? -1 : 1;
+    state.sunShadow.set([shadow.numCascades, shadow.cascadeBlendPercentage === 0 ? 10000 : 1 / shadow.cascadeBlendPercentage, shadow.fadeFraction, first,
+      sign * plane.x, sign * plane.y, sign * plane.z, sign * (plane.w + plane.x * offset.x + plane.y * offset.y + plane.z * offset.z)]);
+    state.sunShadow.set(shadow.cascadeEnds.slice(0, 4), 8);
+    state.sunShadow.set(shadow.cascadeLengths.slice(0, 4), 12);
+  }
+  state.buffer.updateFloatArray("hapticShadowViews", state.shadowViews);
+  state.buffer.updateFloatArray("hapticSunShadow", state.sunShadow);
 }
 
 /**
@@ -210,6 +253,8 @@ export function writeHapticLights(scene: Scene): void {
   let rects = 0;
   let views = 0;
   state.rects.length = 0;
+  state.shadowed.length = 0;
+  let sun: ShadowedLight | null = null;
   // The admission keeps within the block's records; the checks below hold them whatever it admitted.
   if (scene.lightsEnabled) for (const light of scene.lights) {
     if (!light.isEnabled() || !isIlluminatingLight(light)) continue;
@@ -219,8 +264,15 @@ export function writeHapticLights(scene: Scene): void {
       if (directionals === HAPTIC_LIGHT_MAXIMUM.directional) continue;
       const direction = light.computeTransformedInformation() ? light.transformedDirection : light.direction;
       const intensity = light.getScaledIntensity();
+      // The first shadowed sun's shadow is the block's sun shadow; w marks the light that casts it.
+      const shadowed: ShadowedLight | null = sun ? null : shadowedLight(scene, light, views);
+      if (shadowed) {
+        sun = shadowed;
+        state.shadowed.push(shadowed);
+        views += shadowed.shadow.tiles.length;
+      }
       directional.set([direction.x, direction.y, direction.z, light.radius,
-        light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, 0], directionals * 8);
+        light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, shadowed ? 1 : 0], directionals * 8);
       directionals++;
     } else if (light instanceof SpotLight) {
       if (spots === HAPTIC_LIGHT_MAXIMUM.spot) continue;
@@ -228,11 +280,15 @@ export function writeHapticLights(scene: Scene): void {
       const position = transformed ? light.transformedPosition : light.position;
       const direction = (transformed ? light.transformedDirection : light.direction).normalizeToNew();
       const intensity = light.getScaledIntensity();
+      const shadowed = shadowedLight(scene, light, views);
+      if (shadowed) {
+        state.shadowed.push(shadowed);
+        views += shadowed.shadow.tiles.length;
+      }
       spot.set([position.x - offset.x, position.y - offset.y, position.z - offset.z, light.radius,
         direction.x, direction.y, direction.z, Math.cos(light.angle * 0.5),
         light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, light.range,
-        writeShadowView(scene, light, views), 0, 0, 0], spots * 16);
-      if (spot[spots * 16 + 12]! >= 0) views++;
+        shadowed ? shadowed.first : -1, 0, 0, 0], spots * 16);
       spots++;
     } else if (light instanceof RectAreaLight) {
       if (rects === HAPTIC_LIGHT_MAXIMUM.rect) continue;
@@ -278,7 +334,7 @@ export function writeHapticLights(scene: Scene): void {
   buffer.updateFloatArray("hapticPoint", point);
   buffer.updateFloatArray("hapticSpot", spot);
   buffer.updateFloatArray("hapticRect", rect);
-  buffer.updateFloatArray("hapticShadowViews", shadowViews);
+  writeShadowViews(scene, state);
   buffer.update();
 }
 

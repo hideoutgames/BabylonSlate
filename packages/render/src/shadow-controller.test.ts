@@ -37,7 +37,7 @@ import { retainAreaLightLookup } from "./area-light-resources";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { setHapticLighting } from "./haptic-lights";
-import { AtlasShadowGenerator, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -100,6 +100,30 @@ function prepareShadowLayers(generator: ShadowGenerator): void {
 }
 
 describe("shared shadow lifecycle", () => {
+  it("draws the sun's cascades as tiles of the light block's atlas, built with the level's cascade count", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    enableHeadlessCascades(engine);
+    setHapticLighting(engine, true);
+    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 3, maxLocalLights: 1 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const generator = sun.getShadowGenerator() as AtlasCascadedShadowGenerator;
+    expect(generator).toBeInstanceOf(AtlasCascadedShadowGenerator);
+    expect(generator.numCascades).toBe(3);
+    // Medium's three 2048 cascades in its 4096 atlas.
+    expect(generator.tiles.map((tile) => tile.size)).toEqual([2048, 2048, 2048]);
+    expect(controller.metrics().bytes).toBe(shadowAtlasBytes(scene));
+    // One cascade, which Babylon's own count could not be.
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1 }) });
+    controller.sync();
+    const single = sun.getShadowGenerator() as AtlasCascadedShadowGenerator;
+    expect(single).not.toBe(generator);
+    expect([single.numCascades, single.tiles.length]).toEqual([1, 1]);
+  });
+
   it("draws spot maps as tiles of the light block's atlas, rebuilt for another atlas edge and released with the last", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
