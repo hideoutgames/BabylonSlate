@@ -112,6 +112,9 @@ describe("Water material nodes", () => {
       // as built-in water lifts it, from the waves' normal flattened by the horizon haze through the scene's fog.
       expect(fragment).toMatch(/\w+ = swnH;/);
       expect(fragment).toMatch(/swnRLiftA(: f32)? = 60\.0 \* \(0\.03 - swnR\.y\)/);
+      // What it refracts was fogged by what lies below: it comes undone of the Material's own fog, by the Fog block's factor.
+      expect(fragment).toMatch(/swnFogKeep(: f32)? = max\(CalcFogFactor\([^;]*, (uniforms\.)?slateWaterNodeFog\), 0\.01\);/);
+      expect(fragment).toMatch(/= \(\w+ - (uniforms\.)?slateWaterNodeFogColor\.rgb \* \(1\.0 - swnFogKeep\)\) \/ swnFogKeep;/);
       // Its Roughness is built-in water's slope-variance roughness, which drops away under the haze.
       expect(fragment).toMatch(/\w+ = swnShade;/);
       expect(fragment).toMatch(/swnShadeVar(: f32)? = \(max\([^;]*\* \(1\.0 - 0\.97 \* swHaze\);/);
@@ -147,6 +150,23 @@ describe("Water material nodes", () => {
     const linear = new Color3(0.9, 0.5, 0.1).toLinearSpace(scene.getEngine().useExactSrgbConversions);
     const expected = [linear.r, linear.g, linear.b].map((v) => Number(v.toFixed(5)));
     expect(bound.get(read)!.map((value) => value.slice(0, 3).map((v) => Number(v.toFixed(5))))).toEqual(bound.get(read)!.map(() => expected));
+  });
+
+  it("bind the scene's fog and its linear colour for Water Scene Color's pre-division", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    new FreeCamera("camera", new Vector3(0, 6, -12), scene);
+    Object.assign(scene, { fogMode: Scene.FOGMODE_LINEAR, fogStart: 10, fogEnd: 50, fogColor: new Color3(0.6, 0.3, 0.9) });
+    const result = compile(scene, graph(["waterSceneColor"], [["waterSceneColor", "color", "emissive"]], "translucent"));
+    expect(await result.ready).toEqual([]);
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), result.material);
+    await definesFor(result.material, lake);
+    const effect = lake.subMeshes[0]!.effect!, bound = new Map<string, number[]>();
+    vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
+    result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
+    expect(bound.get("slateWaterNodeFog")).toEqual([Scene.FOGMODE_LINEAR, 10, 50, scene.fogDensity]);
+    const linear = new Color3(0.6, 0.3, 0.9).toLinearSpace(scene.getEngine().useExactSrgbConversions);
+    expect(bound.get("slateWaterNodeFogColor")!.map((v) => Number(v.toFixed(5)))).toEqual([linear.r, linear.g, linear.b, 0].map((v) => Number(v.toFixed(5))));
   });
 
   it("mix Water Colors toward a differently coloured neighbour where the bodies blend", async () => {

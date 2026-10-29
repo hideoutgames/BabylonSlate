@@ -41,6 +41,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // The translucent Materials drew their depth pre-pass as its own program, and the starter its geometry pass.
     expect(result.prePassEffects).toBeGreaterThanOrEqual(1);
     expect(result.geometryEffects).toBeGreaterThanOrEqual(1);
+    expect(result.starterCopied).toBe(true);
     // The water starter drew: clear water, it tints the magenta background it refracts (most of the lake, measured).
     let drawn = 0;
     for (let index = 0; index < result.starterPixels.length; index += 4) {
@@ -48,5 +49,19 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       if (255 - r + g + 255 - b > 24) drawn++;
     }
     expect(drawn).toBeGreaterThan(result.width * result.height / 10);
+    // In dense fog, water that shows only what lies below it draws the floor as the view sees it without the water:
+    // the floor's own fog once, not the water's fog over it again. Inside the floor only: the downsampled scene copy
+    // softens its silhouette.
+    const onFloor = (x: number, y: number) => x >= 0 && y >= 0 && x < result.width && y < result.height &&
+      !background(result.fogDirect, (y * result.width + x) * 4) && !background(result.fogThrough, (y * result.width + x) * 4);
+    let floor = 0, apart = 0;
+    for (let y = 0; y < result.height; y++) for (let x = 0; x < result.width; x++) {
+      if (![[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => onFloor(x + dx!, y + dy!))) continue;
+      floor++;
+      const index = (y * result.width + x) * 4;
+      for (let channel = 0; channel < 3; channel++) apart += Math.abs(result.fogDirect[index + channel]! - result.fogThrough[index + channel]!);
+    }
+    expect(floor).toBeGreaterThan(result.width * result.height / 6);
+    expect(apart / (floor * 3)).toBeLessThan(3);
   });
 }
