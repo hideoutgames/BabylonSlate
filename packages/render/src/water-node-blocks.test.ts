@@ -7,6 +7,8 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { createWaterMesh, sceneWaterSamplesSceneCopy, updateSceneWater, waterMeshReflectsObjects, waterMeshSamplesSceneCopy } from "./water-mesh";
 import { materialSceneCopyUse, meshWaterNodeSurface } from "./water-node-blocks";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
+import type { WaterField } from "./water-field";
+import { placeholderField } from "./water-material";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 
 const disposers: Array<() => void> = [];
@@ -107,6 +109,10 @@ describe("Water material nodes", () => {
       // Its Opacity fades at the body's edges, and its refraction falls back beside silhouettes, as built-in water's.
       const [, fragment = ""] = result.material.compiledShaders.split("// Fragment shader");
       expect(fragment).toMatch(/\w+ = swEdgeFade \* swOpenFade;/);
+      // Its shoreline under the waves comes from four terrain taps, whose slope softens gentle shores, as built-in water's.
+      expect(fragment).toMatch(/if \((uniforms\.)?slateWaterFieldStep\.w > 0\.0 && swnField\.w > [\d.]+\) \{/);
+      expect(fragment).toMatch(/swShoreSlope = mix\(length\(swTerrainSlope\), 1\.0, swFineClamped\);/);
+      expect(fragment).toMatch(/smoothstep\(0\.35, 1\.0, swShoreSlope\)/);
       expect(fragment).toContain("swCopyTexel");
       // Its lighting takes Water Reflection's normal: the half vector toward the reflected ray, lifted above the horizon
       // as built-in water lifts it, from the waves' normal flattened by the horizon haze through the scene's fog.
@@ -167,6 +173,25 @@ describe("Water material nodes", () => {
     expect(bound.get("slateWaterNodeFog")).toEqual([Scene.FOGMODE_LINEAR, 10, 50, scene.fogDensity]);
     const linear = new Color3(0.6, 0.3, 0.9).toLinearSpace(scene.getEngine().useExactSrgbConversions);
     expect(bound.get("slateWaterNodeFogColor")!.map((v) => Number(v.toFixed(5)))).toEqual([linear.r, linear.g, linear.b, 0].map((v) => Number(v.toFixed(5))));
+  });
+
+  it("bind whether the asset's waves move the shoreline, for the four-tap shoreline over terrain", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    new FreeCamera("camera", new Vector3(0, 6, -12), scene);
+    const result = compile(scene, graph(["waterDepthFade"], [["waterDepthFade", "edgeFade", "opacity"]], "translucent"));
+    expect(await result.ready).toEqual([]);
+    for (const [water, waves] of [[createDefaultWaterDefinition(), 1], [{ ...createDefaultWaterDefinition(), waveHeight: 0 }, 0]] as const) {
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), water, result.material);
+      await definesFor(result.material, lake);
+      // Terrain under the lake (any texture stands in for its field here).
+      meshWaterNodeSurface(lake)!.field = { texture: placeholderField(scene), bounds: [0, 0, 0.1, 0.1], depthRange: [-4, 2], texelSize: [0.01, 0.01], fineDepthMin: -1, fineDepthSpan: 2 } as unknown as WaterField;
+      const effect = lake.subMeshes[0]!.effect!, bound = new Map<string, number[]>();
+      vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
+      result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
+      expect(bound.get("slateWaterFieldStep")).toEqual([0.01, 0.01, 2, waves]);
+      lake.dispose();
+    }
   });
 
   it("mix Water Colors toward a differently coloured neighbour where the bodies blend", async () => {

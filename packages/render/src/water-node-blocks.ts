@@ -11,7 +11,7 @@ import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
 import {
   aerialPerspectiveSource, contactRange, edgeFoamHelpers, fresnelSource, horizonHazeSource, horizonLiftSource, marchSource, meshVertexWaves, placeholderField, planarLookupSource, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
-  sceneWaterNodeLighting, selectWaterRemovals, silhouetteFallbackSource, slopeVarianceSource, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
+  sceneWaterNodeLighting, selectWaterRemovals, shorelineSource, silhouetteFallbackSource, slopeVarianceSource, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
   waterEdgeSource,
   sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
   WATER_NODE_BLEND_DEFINE, WATER_REMOVAL_SHAPE_UNIFORMS, WATER_REMOVAL_SLOTS, WATER_REMOVAL_UNIFORMS, type WaterRemovalCandidate,
@@ -227,15 +227,19 @@ vec2 swSceneTexelUv() { return 1.0 / vec2(textureSize(${s}, 0)); }
 const fragCoord = (state: NodeMaterialBuildState) => wgslOf(state) ? "fragmentInputs.position" : "gl_FragCoord";
 
 /**
- * This pixel's terrain tap (`swnField`) and what meets the water there, as built-in water derives it (`waterEdgeSource`):
- * `swnDepth`, the water below this pixel's surface at `height` (the body's shelving bank, the terrain where it is
- * known), and the edge and open-water fades. The terrain slope there is taken as steep: built-in water's four-tap slope
- * is not ported yet, so gentle shores thin out over 6 cm instead of up to 40.
+ * This pixel's terrain tap (`swnField`) and what meets the water there, as built-in water derives it: the shoreline
+ * under the waves from four terrain taps (`shorelineSource`, where the asset has waves: `slateWaterFieldStep.w`), and
+ * from it (`waterEdgeSource`) `swnDepth`, the water below this pixel's surface at `height` (the body's shelving bank,
+ * the terrain where it is known), and the edge and open-water fades.
  */
 function edgeSource(height: string): string {
   return `
-vec4 swnField = swnFieldAt(swnPos.xz);${waterEdgeSource({
-    known: "swnField.w", on: "swnField.x", shore: "swnField.z", terrainDepth: `(swnField.y + ${height})`, slope: "1.0", bank: "swnData.y", body: "swnData.z" })}
+vec4 swnField = swnFieldAt(swnPos.xz);
+float swnShore = swnField.z;
+float swnTerrainDepth = swnField.y + ${height};${shorelineSource({
+    tap: "swnFieldTap", uv: "((swnPos.xz - U.slateWaterFieldBounds.xy) * U.slateWaterFieldBounds.zw)",
+    cond: `U.slateWaterFieldStep.w > 0.0 && swnField.w > ${f(WATER_FIELD_TERRAIN_ALPHA)}`, depth: "swnTerrainDepth", shore: "swnShore" })}${waterEdgeSource({
+    known: "swnField.w", on: "swnField.x", shore: "swnShore", terrainDepth: "swnTerrainDepth", slope: "swShoreSlope", bank: "swnData.y", body: "swnData.z" })}
 float swnDepth = swDepth;
 `;
 }
@@ -270,7 +274,8 @@ function bindSurface(effect: Effect, scene: Scene, mesh: AbstractMesh | undefine
     const bounds = field.bounds, depth = field.depthRange, texel = field.texelSize;
     effect.setFloat4("slateWaterFieldBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);
     effect.setFloat4("slateWaterFieldInfo", 1, field.fineDepthMin, depth[0]!, depth[1]!);
-    effect.setFloat4("slateWaterFieldStep", texel[0], texel[1], field.fineDepthSpan, 0);
+    // w: the asset has waves, which move the shoreline (`shorelineSource`).
+    effect.setFloat4("slateWaterFieldStep", texel[0], texel[1], field.fineDepthSpan, (w?.waveHeight ?? 0) > 0 ? 1 : 0);
   } else {
     effect.setFloat4("slateWaterFieldBounds", 0, 0, 1, 1);
     effect.setFloat4("slateWaterFieldInfo", 0, 0, 0, 1);

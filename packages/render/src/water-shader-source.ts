@@ -383,9 +383,14 @@ function beforeFogSource(wgsl: boolean): string {
   ].join("\n");
 }
 
-/** One more read of the contact field at an explicit level, legal in any control flow (Realistic's wake taps). */
-const CONTACT_TAP_GLSL = "vec4 swContactAt(vec2 uv) { return texture2DLodEXT(slateWaterContactSampler, uv, 0.0); }\n";
-const CONTACT_TAP_WGSL = "fn swContactAt(uv: vec2f) -> vec4f { return textureSampleLevel(slateWaterContactSampler, slateWaterContactSamplerSampler, uv, 0.0); }\n";
+/**
+ * One more read of the contact field or the terrain field at an explicit level, legal in any control flow (Realistic's
+ * wake taps, the four-tap shoreline).
+ */
+const CONTACT_TAP_GLSL = "vec4 swContactAt(vec2 uv) { return texture2DLodEXT(slateWaterContactSampler, uv, 0.0); }\n"
+  + "vec4 swFieldTapAt(vec2 uv) { return texture2DLodEXT(slateWaterFieldSampler, uv, 0.0); }\n";
+const CONTACT_TAP_WGSL = "fn swContactAt(uv: vec2f) -> vec4f { return textureSampleLevel(slateWaterContactSampler, slateWaterContactSamplerSampler, uv, 0.0); }\n"
+  + "fn swFieldTapAt(uv: vec2f) -> vec4f { return textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, uv, 0.0); }\n";
 
 /**
  * The look sources read the asset's colours through the cut code's blended locals (`COLOR_LOCALS`) and its wave height

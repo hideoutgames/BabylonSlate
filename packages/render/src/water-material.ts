@@ -55,6 +55,7 @@ export {
   planarLookupSource,
   reflectionKeepSource,
   REMOVAL_HELPER,
+  shorelineSource,
   silhouetteFallbackSource,
   slopeVarianceSource,
   waterEdgeSource,
