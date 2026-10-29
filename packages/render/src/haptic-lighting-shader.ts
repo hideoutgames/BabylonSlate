@@ -1,4 +1,4 @@
-import { HAPTIC_LIGHT_MAXIMUM } from "./haptic-lights";
+import { HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S } from "./haptic-lights";
 
 /**
  * The lighting function of `HapticLightingBlock`, in GLSL and WGSL twins that change together: a metallic-roughness
@@ -16,6 +16,52 @@ export const HAPTIC_IRRADIANCE_KEYS = ["l00", "l1_1", "l10", "l11", "l2_2", "l2_
 export const HAPTIC_IRRADIANCE_UNIFORMS = HAPTIC_IRRADIANCE_KEYS.map((key) => `hapticIrradiance_${key}`);
 /** The shadow atlas's compare sampler, which the block's shadows read (`shadowAtlasTexture`). */
 export const HAPTIC_SHADOW_ATLAS = "hapticShadowAtlas";
+/**
+ * WebGL2: the shadow atlas read plainly, beside its compare sampler, for Contact Hardening's blocker search: the same
+ * depth texture on another unit with a sampler object without compare (`plainDepthSampler`). WGSL loads the depth from
+ * the compare binding's texture instead.
+ */
+export const HAPTIC_SHADOW_ATLAS_DEPTH = "hapticShadowAtlasDepth";
+
+/** Babylon's Poisson discs for PCSS (its `PoissonSamplers32` and `PoissonSamplers64`), as x, y pairs. */
+const POISSON_32 = [
+  0.06407013, 0.05409927, 0.7366577, 0.5789394, -0.6270542, -0.5320278, -0.4096107, 0.8411095,
+  0.6849564, -0.4990818, -0.874181, -0.04579735, 0.9989998, 0.0009880066, -0.004920578, -0.9151649,
+  0.1805763, 0.9747483, -0.2138451, 0.2635818, 0.109845, 0.3884785, 0.06876755, -0.3581074,
+  0.374073, -0.7661266, 0.3079132, -0.1216763, -0.3794335, -0.8271583, -0.203878, -0.07715034,
+  0.5912697, 0.1469799, -0.88069, 0.3031784, 0.5040108, 0.8283722, -0.5844124, 0.5494877,
+  0.6017799, -0.1726654, -0.5554981, 0.1559997, -0.3016369, -0.3900928, -0.5550632, -0.1723762,
+  0.925029, 0.2995041, -0.2473137, 0.5538505, 0.9183037, -0.2862392, 0.2469421, 0.6718712,
+  0.3916397, -0.4328209, -0.03576927, -0.6220032, -0.04661255, 0.7995201, 0.4402924, 0.3640312,
+];
+const POISSON_64 = [
+  -0.613392, 0.617481, 0.170019, -0.040254, -0.299417, 0.791925, 0.64568, 0.49321,
+  -0.651784, 0.717887, 0.421003, 0.02707, -0.817194, -0.271096, -0.705374, -0.668203,
+  0.97705, -0.108615, 0.063326, 0.142369, 0.203528, 0.214331, -0.667531, 0.32609,
+  -0.098422, -0.295755, -0.885922, 0.215369, 0.566637, 0.605213, 0.039766, -0.3961,
+  0.751946, 0.453352, 0.078707, -0.715323, -0.075838, -0.529344, 0.724479, -0.580798,
+  0.222999, -0.215125, -0.467574, -0.405438, -0.248268, -0.814753, 0.354411, -0.88757,
+  0.175817, 0.382366, 0.487472, -0.063082, -0.084078, 0.898312, 0.488876, -0.783441,
+  0.470016, 0.217933, -0.69689, -0.549791, -0.149693, 0.605762, 0.034211, 0.97998,
+  0.503098, -0.308878, -0.016205, -0.872921, 0.385784, -0.393902, -0.146886, -0.859249,
+  0.643361, 0.164098, 0.634388, -0.049471, -0.688894, 0.007843, 0.464034, -0.188818,
+  -0.44084, 0.137486, 0.364483, 0.511704, 0.034028, 0.325968, 0.099094, -0.308023,
+  0.69396, -0.366253, 0.678884, -0.204688, 0.001801, 0.780328, 0.145177, -0.898984,
+  0.062655, -0.611866, 0.315226, -0.604297, -0.780145, 0.486251, -0.371868, 0.882138,
+  0.200476, 0.49443, -0.494552, -0.711051, 0.612476, 0.705252, -0.578845, -0.768792,
+  -0.772454, -0.090976, 0.50444, 0.372295, 0.155736, 0.065157, 0.391522, 0.849605,
+  -0.620106, -0.328104, 0.789239, -0.419965, -0.545396, 0.538133, -0.178564, -0.596057,
+];
+
+function poissonGlsl(name: string, disc: readonly number[]): string {
+  const points = Array.from({ length: disc.length / 2 }, (_, index) => `vec2(${disc[index * 2]}, ${disc[index * 2 + 1]})`);
+  return `const vec2 ${name}[${points.length}] = vec2[${points.length}](${points.join(", ")});\n`;
+}
+
+function poissonWgsl(name: string, disc: readonly number[]): string {
+  const points = Array.from({ length: disc.length / 2 }, (_, index) => `vec2f(${disc[index * 2]}, ${disc[index * 2 + 1]})`);
+  return `const ${name} = array<vec2f, ${points.length}>(${points.join(", ")});\n`;
+}
 
 /**
  * The light block's shadows, read from its views (\`hapticShadowViews\`) and the atlas: a view's (\`hapticShadow\`), a
@@ -58,9 +104,68 @@ float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradien
   return hapticShadowTap(tile, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
 }
 
+// Contact Hardening (Babylon's computeShadowWithPCSS and computeShadowWithCSMPCSS) on a view's tile: the depth around the
+// position, over the light's size (\`contact.w\`, a share of the tile, a cascade's corrected toward the first's by
+// \`contact.xy\`), is searched for blockers, then compare taps spread over a radius that grows with the blockers' distance
+// from the receiver, on Babylon's Poisson discs turned per position, each a single texel as Babylon's nearest sampling
+// takes. A perspective view compares Babylon's depth metric over its planes (\`contact.xy\`), a cascade its depth scaled
+// by its depth correction (\`contact.z\`). Low, medium and high quality take 16, 16 and 32 search taps and 16, 32 and 64
+// compare taps; 1 without a blocker.
+${poissonGlsl("hapticPoisson32", POISSON_32)}${poissonGlsl("hapticPoisson64", POISSON_64)}
+// The atlas's depth at a texel of the tile, read without compare (\`hapticShadowAtlasDepth\`).
+float hapticShadowDepth(vec4 tile, vec2 texel, float size) {
+  return texelFetch(hapticShadowAtlasDepth, ivec2(tile.xy / tile.w + clamp(floor(texel), vec2(0.0), vec2(size - 1.0)) + 0.5), 0).r;
+}
+
+// The view's comparison at a texel of the tile, one texel's as a nearest sampler takes it.
+float hapticShadowPoint(vec4 tile, vec2 texel, float size, float depth) {
+  return textureLod(hapticShadowAtlas, vec3(tile.xy + (clamp(floor(texel), vec2(0.0), vec2(size - 1.0)) + 0.5) * tile.w, depth), 0.0);
+}
+
+// Babylon's depth metric, (clip z + near) / (near + far), of a perspective view with planes \`range\` at an NDC depth,
+// through Babylon's projection (GL's depth range).
+float hapticDepthMetric(vec2 range, float ndc) {
+  float z = 2.0 * range.x * range.y / (range.x + range.y - (range.y - range.x) * ndc);
+  return (ndc * z + range.x) / (range.x + range.y);
+}
+
+float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float depth, vec2 texels, float size) {
+  bool cascade = shading.z > 0.5;
+  int quality = int(shading.y - 2.5);
+  int searches = quality == 2 ? 32 : 16;
+  int taps = quality == 0 ? 16 : quality == 1 ? 32 : 64;
+  vec2 correction = cascade ? contact.xy : vec2(1.0);
+  float receiver = cascade ? depth : (clip.z + contact.x) / (contact.x + contact.y);
+  vec2 search = contact.w * size * correction;
+  float blockers = 0.0;
+  float sum = 0.0;
+  for (int i = 0; i < 32; i++) {
+    if (i >= searches) break;
+    float stored = hapticShadowDepth(tile, texels + search * hapticPoisson32[i], size);
+    float blocker = cascade ? stored : hapticDepthMetric(contact.xy, stored * 2.0 - 1.0);
+    if (blocker < receiver) {
+      sum += blocker;
+      blockers += 1.0;
+    }
+  }
+  if (blockers < 1.0) return 1.0;
+  float distance = (receiver - sum / blockers) * (cascade ? contact.z : 1.0);
+  vec2 radius = (distance + 10.0 / size) * contact.w * size * correction;
+  float angle = fract(sin(dot(clip.xy, vec2(12.9898, 78.233))) * 43758.5453) * 3.1415926;
+  vec2 turn = vec2(cos(angle), sin(angle));
+  float lit = 0.0;
+  for (int i = 0; i < 64; i++) {
+    if (i >= taps) break;
+    vec2 offset = quality == 2 ? hapticPoisson64[i] : hapticPoisson32[min(i, 31)];
+    offset = vec2(offset.x * turn.x - offset.y * turn.y, offset.y * turn.x + offset.x * turn.y);
+    lit += hapticShadowPoint(tile, texels + offset * radius, size, depth);
+  }
+  return mix(lit / float(taps), 1.0, min(distance, 1.0));
+}
+
 ` : ""}float hapticShadow(float index, vec3 P, vec3 dPdx, vec3 dPdy) {
   if (index < 0.0${surface ? " || hapticShadowReceiver == 0.0" : ""}) return 1.0;
-  int base = int(index) * 6;
+  int base = int(index) * ${HAPTIC_SHADOW_VIEW_VEC4S};
   mat4 view = mat4(hapticShadowViews[base], hapticShadowViews[base + 1], hapticShadowViews[base + 2], hapticShadowViews[base + 3]);
   vec4 clip = view * vec4(P, 1.0);
   if (clip.w <= 0.0) return 1.0;
@@ -75,9 +180,14 @@ float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradien
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) return 1.0;
   float size = tile.z / tile.w;
   vec2 texels = uv * size;
-${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dPdx, dPdy, size) : vec2(0.0);
+${surface ? `#ifndef HAPTIC_CEL
+  if (shading.y > 2.5) return mix(shading.x, 1.0, hapticContactLit(tile, shading, hapticShadowViews[base + 6], clip, depth, texels, size));
+#endif
+  // CEL draws Contact Hardening as PCF.
+  float quality = shading.y > 2.5 ? shading.y - 3.0 : shading.y;
+  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dPdx, dPdy, size) : vec2(0.0);
   float lit;
-  if (shading.y < 0.5) {
+  if (quality < 0.5) {
     if (gradient == vec2(0.0)) return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));
     vec2 st = fract(texels - 0.5);
     vec2 a = clamp(floor(texels - 0.5), vec2(0.0), vec2(size - 1.0)) + 0.5;
@@ -90,7 +200,7 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
   }
   vec2 st = fract(texels + 0.5);
   vec2 corner = floor(texels + 0.5) - 0.5;
-  if (shading.y < 1.5) {
+  if (quality < 1.5) {
     vec2 w0 = 3.0 - 2.0 * st;
     vec2 w1 = 1.0 + 2.0 * st;
     vec2 a = corner + (2.0 - st) / w0 - 1.0;
@@ -188,9 +298,60 @@ fn hapticPlaneTap(tile: vec4f, tap: vec2f, origin: vec2f, depth: f32, gradient: 
   return hapticShadowTap(tile, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
 }
 
+${poissonWgsl("hapticPoisson32", POISSON_32)}${poissonWgsl("hapticPoisson64", POISSON_64)}
+fn hapticShadowDepth(tile: vec4f, texel: vec2f, size: f32) -> f32 {
+  return textureLoad(hapticShadowAtlas, vec2i(tile.xy / tile.w + clamp(floor(texel), vec2f(0.0), vec2f(size - 1.0)) + 0.5), 0);
+}
+
+fn hapticShadowPoint(tile: vec4f, texel: vec2f, size: f32, depth: f32) -> f32 {
+  return textureSampleCompareLevel(hapticShadowAtlas, hapticShadowAtlasSampler,
+    tile.xy + (clamp(floor(texel), vec2f(0.0), vec2f(size - 1.0)) + 0.5) * tile.w, depth);
+}
+
+fn hapticDepthMetric(range: vec2f, ndc: f32) -> f32 {
+  // WebGPU's depth range is zero to one.
+  let z = range.x * range.y / (range.y - (range.y - range.x) * ndc);
+  return (ndc * z + range.x) / (range.x + range.y);
+}
+
+fn hapticContactLit(tile: vec4f, shading: vec4f, contact: vec4f, clip: vec4f, depth: f32, texels: vec2f, size: f32) -> f32 {
+  let cascade = shading.z > 0.5;
+  let quality = i32(shading.y - 2.5);
+  let searches = select(16, 32, quality == 2);
+  let taps = select(select(64, 32, quality == 1), 16, quality == 0);
+  let correction = select(vec2f(1.0), contact.xy, cascade);
+  let receiver = select((clip.z + contact.x) / (contact.x + contact.y), depth, cascade);
+  let search = contact.w * size * correction;
+  var blockers = 0.0;
+  var sum = 0.0;
+  for (var i: i32 = 0; i < 32; i++) {
+    if (i >= searches) { break; }
+    let stored = hapticShadowDepth(tile, texels + search * hapticPoisson32[i], size);
+    let blocker = select(hapticDepthMetric(contact.xy, stored), stored, cascade);
+    if (blocker < receiver) {
+      sum += blocker;
+      blockers += 1.0;
+    }
+  }
+  if (blockers < 1.0) { return 1.0; }
+  let distance = (receiver - sum / blockers) * select(1.0, contact.z, cascade);
+  let radius = (distance + 10.0 / size) * contact.w * size * correction;
+  let angle = fract(sin(dot(clip.xy, vec2f(12.9898, 78.233))) * 43758.5453) * 3.1415926;
+  let turn = vec2f(cos(angle), sin(angle));
+  var lit = 0.0;
+  for (var i: i32 = 0; i < 64; i++) {
+    if (i >= taps) { break; }
+    var offset: vec2f;
+    if (quality == 2) { offset = hapticPoisson64[i]; } else { offset = hapticPoisson32[min(i, 31)]; }
+    offset = vec2f(offset.x * turn.x - offset.y * turn.y, offset.y * turn.x + offset.x * turn.y);
+    lit += hapticShadowPoint(tile, texels + offset * radius, size, depth);
+  }
+  return mix(lit / f32(taps), 1.0, min(distance, 1.0));
+}
+
 ` : ""}fn hapticShadow(index: f32, P: vec3f, dPdx: vec3f, dPdy: vec3f) -> f32 {
   if (index < 0.0${surface ? " || uniforms.hapticShadowReceiver == 0.0" : ""}) { return 1.0; }
-  let base = i32(index) * 6;
+  let base = i32(index) * ${HAPTIC_SHADOW_VIEW_VEC4S};
   let view = mat4x4f(HapticLights.hapticShadowViews[base], HapticLights.hapticShadowViews[base + 1], HapticLights.hapticShadowViews[base + 2],
     HapticLights.hapticShadowViews[base + 3]);
   let clip = view * vec4f(P, 1.0);
@@ -205,10 +366,17 @@ fn hapticPlaneTap(tile: vec4f, tap: vec2f, origin: vec2f, depth: f32, gradient: 
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) { return 1.0; }
   let size = tile.z / tile.w;
   let texels = uv * size;
-${surface ? `  var gradient = vec2f(0.0);
+${surface ? `#ifndef HAPTIC_CEL
+  if (shading.y > 2.5) {
+    return mix(shading.x, 1.0, hapticContactLit(tile, shading, HapticLights.hapticShadowViews[base + 6], clip, depth, texels, size));
+  }
+#endif
+  // CEL draws Contact Hardening as PCF.
+  let quality = select(shading.y, shading.y - 3.0, shading.y > 2.5);
+  var gradient = vec2f(0.0);
   if (shading.w > 0.5) { gradient = hapticReceiverGradient(view, dPdx, dPdy, size); }
   var lit: f32;
-  if (shading.y < 0.5) {
+  if (quality < 0.5) {
     if (all(gradient == vec2f(0.0))) { return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth)); }
     let st = fract(texels - 0.5);
     let a = clamp(floor(texels - 0.5), vec2f(0.0), vec2f(size - 1.0)) + 0.5;
@@ -221,7 +389,7 @@ ${surface ? `  var gradient = vec2f(0.0);
   }
   let st = fract(texels + 0.5);
   let corner = floor(texels + 0.5) - 0.5;
-  if (shading.y < 1.5) {
+  if (quality < 1.5) {
     let w0 = 3.0 - 2.0 * st;
     let w1 = 1.0 + 2.0 * st;
     let a = corner + (2.0 - st) / w0 - 1.0;

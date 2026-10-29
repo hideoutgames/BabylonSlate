@@ -3,6 +3,8 @@ import {
   Constants,
   Matrix,
   RenderTargetTexture,
+  Vector2,
+  Vector3,
   Vector4,
   Viewport,
   type AbstractEngine,
@@ -302,6 +304,7 @@ export class AtlasShadowGenerator extends ReusableShadowGenerator implements Atl
   declare private placement: Placement;
   declare private views: Matrix[];
   private drawn = false;
+  private readonly range = new Vector2(0, 1);
 
   get tiles(): readonly ShadowAtlasTile[] {
     return this.placement.tiles;
@@ -314,8 +317,28 @@ export class AtlasShadowGenerator extends ReusableShadowGenerator implements Atl
 
   get drawnViews(): readonly Matrix[] {
     // A spot light's view until its first draw; a point light's faces are drawn in turn.
-    if (!this.drawn && this.views.length === 1) this.views[0]!.copyFrom(this.getTransformMatrix());
+    if (!this.drawn && this.views.length === 1) {
+      this.views[0]!.copyFrom(this.getTransformMatrix());
+      this.recordRange();
+    }
     return this.views;
+  }
+
+  /**
+   * The near and far planes of the perspective views it was last drawn with, which Contact Hardening reads depth over:
+   * until its first draw, those it would draw with.
+   */
+  get drawnDepthRange(): Vector2 {
+    return this.range;
+  }
+
+  /** The planes of Babylon's perspective projection it draws with (`PerspectiveFovLHToRef`, depth not reversed). */
+  private recordRange(): void {
+    const m = (this as unknown as { _projectionMatrix: Matrix })._projectionMatrix.m;
+    const near = this._scene.getEngine().isNDCHalfZRange ? -m[14]! / m[10]! : -m[14]! / (m[10]! + 1);
+    const far = -m[14]! / (m[10]! - 1);
+    // A view not yet computed (an identity projection) has none.
+    if (Number.isFinite(near) && Number.isFinite(far) && far > near) this.range.set(near, far);
   }
 
   // PCF on a point light's faces too: Babylon's own cube maps fall back to Poisson sampling, whose casters write no
@@ -348,6 +371,7 @@ export class AtlasShadowGenerator extends ReusableShadowGenerator implements Atl
     // Babylon's observer has set the pass's face (`_currentFaceIndex`) by now, so the view is that face's.
     drawIntoTiles(this._shadowMap as AtlasTileTarget, this.placement.atlas.tiles.edge, (face) => {
       this.views[face]!.copyFrom(this.getTransformMatrix());
+      this.recordRange();
       this.drawn = true;
     });
   }
@@ -380,6 +404,7 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   private readonly ends: number[] = [];
   private readonly lengths: number[] = [];
   private readonly depth = new Vector4(0, 0, 0, 0);
+  declare private corrections: Vector3[];
   /** The share of the shadow distance's far end over which the shadow fades out (`ShadowSettings.fadeFraction`). */
   fadeFraction = 0;
   /** Automatic bias (`ShadowSettings.autoBias`): receivers compare against their own plane (receiver-plane PCF). */
@@ -408,6 +433,15 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
     return this.depth;
   }
 
+  /**
+   * Per cascade, as last drawn, Contact Hardening's corrections toward the first cascade (Babylon's
+   * `_lightSizeUVCorrection` and `_depthCorrection`): its width and height over the first's, and its depth range over the
+   * first's, so a penumbra keeps its size in the world from cascade to cascade.
+   */
+  get cascadeCorrections(): readonly Vector3[] {
+    return this.corrections;
+  }
+
   protected override _initializeGenerator(): void {
     // Built with its count: Babylon's default of four would take four tiles before the count could be lowered.
     (this as unknown as { _numCascades?: number })._numCascades ??= placing!.tiles.length;
@@ -418,6 +452,7 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
     this.placement ??= placing!;
     if (this.numCascades !== this.placement.tiles.length) throw new Error("An atlas cascade map keeps the cascade count it was built with.");
     this.views ??= this.placement.tiles.map(() => Matrix.Identity());
+    this.corrections ??= this.placement.tiles.map(() => new Vector3(1, 1, 1));
     this._shadowMap?.dispose();
     const map = new AtlasTileTarget(`${this._light.name}_shadowTiles`, this.placement.atlas.target, this.placement.tiles);
     map.noPrePassRenderer = true;
@@ -426,7 +461,9 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
 
   protected override _initializeShadowMap(): void {
     super._initializeShadowMap();
-    const csm = this as unknown as { _viewSpaceFrustumsZ: number[]; _frustumLengths: number[] };
+    const csm = this as unknown as {
+      _viewSpaceFrustumsZ: number[]; _frustumLengths: number[]; _cascadeMinExtents: Vector3[]; _cascadeMaxExtents: Vector3[];
+    };
     drawIntoTiles(this._shadowMap as AtlasTileTarget, this.placement.atlas.tiles.edge, (cascade) => {
       this.views[cascade]!.copyFrom(this.getCascadeTransformMatrix(cascade)!);
       // The splits the cascades are drawn for, computed as the map binds.
@@ -438,6 +475,13 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
           const m = camera.getViewMatrix().m, eye = camera.globalPosition;
           this.depth.set(m[2]!, m[6]!, m[10]!, -(m[2]! * eye.x + m[6]! * eye.y + m[10]! * eye.z));
         }
+        const min = csm._cascadeMinExtents, max = csm._cascadeMaxExtents;
+        // A flat cascade (no extent) keeps the first's sizes.
+        const ratio = (a: number, b: number) => (a / b > 0 && Number.isFinite(a / b) ? a / b : 1);
+        this.corrections.forEach((correction, index) => correction.set(
+          ratio(max[0]!.x - min[0]!.x, max[index]!.x - min[index]!.x),
+          ratio(max[0]!.y - min[0]!.y, max[index]!.y - min[index]!.y),
+          ratio(max[index]!.z - min[index]!.z, max[0]!.z - min[0]!.z)));
       }
     });
   }
