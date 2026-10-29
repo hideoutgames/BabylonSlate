@@ -364,13 +364,23 @@ function countCopyIntent(scene: Scene, use: number, delta: 1 | -1): void {
   if (use & COPY_REFLECTS) intents.reflecting = Math.max(0, intents.reflecting + delta);
 }
 
+/** The graph Materials that draw built-in water (`builtInWaterMaterial`). */
+const builtInMaterials = new WeakSet<Material>();
+/** Marks `material` as the graph Material that draws built-in water (`isBuiltInWaterMesh`). */
+export function markBuiltInWaterMaterial(material: Material): void {
+  builtInMaterials.add(material);
+}
+
 /**
- * Whether `mesh` is built-in water (the `WaterMaterialPlugin`, not a Custom Material). Its drawn variant depends on the
- * render pass that draws it (the scene-copy pass compiles refraction, the others and the depth pre-pass do not), which
- * a mesh-level warm-up or a pre-graph probe cannot know: only the view's graph probes it, under the real pass.
+ * Whether `mesh` is built-in water: the `WaterMaterialPlugin`, or the graph Material that replaces it
+ * (`builtInWaterMaterial`), not a Custom Material. Its drawn variant depends on the render pass that draws it (the
+ * scene-copy pass compiles refraction, the others and the depth pre-pass do not), which a mesh-level warm-up or a
+ * pre-graph probe cannot know: only the view's graph probes it, under the real pass.
  */
 export function isBuiltInWaterMesh(mesh: AbstractMesh): boolean {
-  return (mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true && surfaceByMesh.get(mesh)?.plugin != null;
+  if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
+  const surface = surfaceByMesh.get(mesh);
+  return surface !== undefined && (surface.plugin !== null || (mesh.material !== null && builtInMaterials.has(mesh.material)));
 }
 
 /**

@@ -44,6 +44,7 @@ import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { createUIControl2DMesh } from "./ui-controls2d-mesh";
 import { VisualBundle } from "./visual-bundle";
 import { createWaterMesh } from "./water-mesh";
+import { builtInWaterMaterial } from "./water-template";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
 /** Build a primitive mesh for editor or Play from a MeshComponent kind. */
@@ -229,7 +230,8 @@ function createComponentMesh(
   if (waterKind) {
     const body = normalizeWaterBody(component.properties, waterKind);
     const definition = body.assetGuid ? assets?.waters?.get(body.assetGuid) : undefined;
-    return createWaterMesh(scene, name, body, definition, definition?.materialGuid ? assets?.resolveMaterial?.(definition.materialGuid, { scene }) : null);
+    const material = definition?.materialGuid ? assets?.resolveMaterial?.(definition.materialGuid, { scene }) : null;
+    return createWaterMesh(scene, name, body, definition, material ?? builtInWaterMaterial(scene));
   }
   if (component.classId === "WaterRemovalVolumeComponent") return createWaterRemovalMesh(scene, name, component.properties, { editor: true });
   if (component.classId === "FogVolumeComponent") return createFogVolumeGuide(scene, name, component.properties);

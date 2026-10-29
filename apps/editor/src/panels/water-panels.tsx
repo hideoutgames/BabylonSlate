@@ -6,7 +6,7 @@ import {
   createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type RenderProjectSettings, type WaterDefinition,
 } from "@haptic/core";
 import {
-  attachMaterialPreviewGestures,
+  attachMaterialPreviewGestures, builtInWaterMaterial,
   createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateWaterMeshDefinition,
   MaterialLibrary, installTextureBytes, acquireMaterialTexture, materialTextureSampling, resourceCacheForEngine, type RenderShadingSettings,
 } from "@haptic/render";
@@ -251,7 +251,7 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
         customMaterial = acquired.material;
       }
       if (cancelled) return;
-      meshRef.current = createWaterMesh(host.scene, "water-preview", normalizeWaterBody(PREVIEW_BODY), definitionRef.current, customMaterial);
+      meshRef.current = createWaterMesh(host.scene, "water-preview", normalizeWaterBody(PREVIEW_BODY), definitionRef.current, customMaterial ?? builtInWaterMaterial(host.scene));
       animating = true;
       frame = requestAnimationFrame(tick);
     })().catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Water preview could not load."); });
