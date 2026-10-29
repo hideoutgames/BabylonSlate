@@ -81,8 +81,9 @@ export function createWaterMaterialDocument(name: string): MaterialDocument {
   node("foamAlbedo", "math.multiply", 600, 0);
   wire("foamTint", "out", "foamAlbedo", "a"); splat("foam", "foam", "foamAlbedo", "b");
   out("foamAlbedo", "out", "baseColor");
-  node("roughness", "math.mix", 600, 520, { a: 0.08, b: 1 });
-  wire("foam", "foam", "roughness", "alpha");
+  // Glossy close by, rougher with distance and where the waves vary within a pixel, as built-in water is; foam is rough.
+  node("roughness", "math.mix", 600, 520, { b: 1 });
+  wire("reflection", "shadingRoughness", "roughness", "a"); wire("foam", "foam", "roughness", "alpha");
   out("roughness", "out", "roughness");
   constant("noEnvironment", 600, 640, 0);
   out("noEnvironment", "out", "environmentInfluence");

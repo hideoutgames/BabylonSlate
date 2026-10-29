@@ -97,6 +97,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 5 water PR 7: Water Reflection lifts its reflected ray above the horizon with built-in water's smooth floor (`horizonLiftSource`, shared), and its Normal output is the half vector toward the lifted ray, so the Material's lighting follows the reflection; the starter mixes it back to Water Waves' Normal under foam. Built-in water mixes its foam back to the haze-flattened facet normal; the two differ only where far foam meets the haze, where foam has faded out.
 
+   Phase 5 water PR 8: slope-variance roughness (`slopeVarianceSource`, shared): Water Reflection's new **Roughness** output is built-in water's distance gloss plus the normal's variation across the pixel, dropping away under the haze, and it blurs the node's environment, analytic sky and object reflections as built-in water's roughness does; the starter mixes it toward 1 under foam into the Material Output's Roughness. Still to compare in the template PR: built-in water's log compression of bright sun specular (`swSpecSquash`), which the lighting block does not do.
+
    If the loops cost too much on the A16, add light culling (per-cluster light lists built on the CPU) before Phase 5. Clusters, not per-mesh lists, because per-mesh lists fail on large surfaces and instanced batches.
 5. **Light data path behind an Engine switch**: light records, the block, ranking to the profile maximum, rect area lights, the fill, CEL as the per-Scene define, volumetrics and water reading the records, previews moved over. The CI gate runs on this path.
 6. **Shadow atlas** behind the same switch, with the preserve list above.

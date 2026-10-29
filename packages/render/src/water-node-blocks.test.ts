@@ -112,6 +112,9 @@ describe("Water material nodes", () => {
       // as built-in water lifts it, from the waves' normal flattened by the horizon haze through the scene's fog.
       expect(fragment).toMatch(/\w+ = swnH;/);
       expect(fragment).toMatch(/swnRLiftA(: f32)? = 60\.0 \* \(0\.03 - swnR\.y\)/);
+      // Its Roughness is built-in water's slope-variance roughness, which drops away under the haze.
+      expect(fragment).toMatch(/\w+ = swnShade;/);
+      expect(fragment).toMatch(/swnShadeVar(: f32)? = \(max\([^;]*\* \(1\.0 - 0\.97 \* swHaze\);/);
       expect(fragment).toMatch(/swnAirKeep = max\(toLinearSpace\(CalcFogFactor\(/);
       // It is seen from below too, as built-in water is.
       expect(result.material.backFaceCulling).toBe(false);

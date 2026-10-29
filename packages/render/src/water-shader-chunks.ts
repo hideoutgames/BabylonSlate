@@ -545,6 +545,23 @@ float ${out} = mix(1.0, 0.55, smoothstep(0.0, -0.2, ${rayY}) * step(0.0, ${viewY
 }
 
 /**
+ * Slope-variance roughness, declared as `out` (GGX roughness) with its variance `${out}Var`: the distance gloss
+ * (`roughD`, above Roughness `roughNear`) that filtered waves lose, plus the shading normal's (`normal`) own variation
+ * across the pixel (specular antialiasing), so far sun glints break up instead of aliasing. Under the horizon haze
+ * (`haze`) the water is a level mirror, and the variance drops away.
+ */
+export function slopeVarianceSource(normal: string, roughD: string, roughNear: string, haze: string, out: string): string {
+  const fourth = (r: string) => `${r} * ${r} * ${r} * ${r}`;
+  return `
+vec2 ${out}Slope = ${normal}.xz / max(${normal}.y, 0.1);
+vec2 ${out}Dx = dFdx(${out}Slope);
+vec2 ${out}Dy = dFdy(${out}Slope);
+float ${out}Pixel = min((dot(${out}Dx, ${out}Dx) + dot(${out}Dy, ${out}Dy)) * ${f(PIXEL_SLOPE_FILTER / 2)}, ${f(PIXEL_SLOPE_CAP)});
+float ${out}Var = (max(${fourth(roughD)} - ${fourth(roughNear)}, 0.0) * 0.5 + ${out}Pixel) * (1.0 - 0.97 * ${haze});
+float ${out} = sqrt(sqrt(${fourth(roughNear)} + 2.0 * ${out}Var));`;
+}
+
+/**
  * Lifts the reflected ray `ray` (a variable, changed in place; normalize it after) above the horizon with a smooth
  * floor, so the water never mirrors more water. Seen from below (`viewY` < 0) it stays.
  */
@@ -788,12 +805,8 @@ float swRoughFar = max(swRoughNear, ${f(WATER_FAR_ROUGHNESS)});
 float swRoughD = mix(swRoughFar, swRoughNear, 1.0 / (1.0 + swEyeDist * ${f(WATER_GLOSS_FALLOFF)}));
 vec3 swFresN = normalW;
 float swNdotV = clamp(dot(swFresN, swV), 0.0, 1.0);${fresnelSource("swRoughD", "swNdotV", "swFresBrdf")}
-float swFres = mix(swFresBrdf, 1.0, swHaze);
-vec2 swShadeSlope = normalW.xz / max(normalW.y, 0.1);
-vec2 swShadeDx = dFdx(swShadeSlope);
-vec2 swShadeDy = dFdy(swShadeSlope);
-float swShadeVar = min((dot(swShadeDx, swShadeDx) + dot(swShadeDy, swShadeDy)) * ${f(PIXEL_SLOPE_FILTER / 2)}, ${f(PIXEL_SLOPE_CAP)});
-swSlopeVariance = (max(swRoughD * swRoughD * swRoughD * swRoughD - swRoughNear * swRoughNear * swRoughNear * swRoughNear, 0.0) * 0.5 + swShadeVar) * (1.0 - 0.97 * swHaze);
+float swFres = mix(swFresBrdf, 1.0, swHaze);${slopeVarianceSource("normalW", "swRoughD", "swRoughNear", "swHaze", "swShadeRough")}
+swSlopeVariance = swShadeRoughVar;
 // Reflected rays stay above the horizon (a smooth floor), so the water never mirrors more water; the shading normal
 // becomes the half vector toward that ray, so the environment lookup follows it, while the Fresnel stays the facet's.
 vec3 swRefl = reflect(-swV, normalW);
@@ -851,7 +864,7 @@ alpha = 1.0 - (1.0 - swWaterA) * (1.0 - swFoam * swFoamEdge);${ifDefined(REFRACT
 vec3 swRefracted = swBackground * swTransmitRgb * ((1.0 - swFres) * (1.0 - swFoam) * swEdgeFade * swRefracts);
 float swRefractedWeight = (1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade * swRefracts;
 alpha = mix(alpha, max(alpha, swEdgeFade), swRefracts);`)}
-${objectReflectionSource("normalize(swRefl)", "sqrt(sqrt(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance))")}
+${objectReflectionSource("normalize(swRefl)", "swShadeRough")}
 #if ${REFLECTS_OBJECTS}
 swObjRefl.a *= smoothstep(-0.01, 0.03, swReflRawY) * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swReflRay)) / max(length(fwidth(swV)), 0.00001)));
 #endif

@@ -56,6 +56,7 @@ export {
   reflectionKeepSource,
   REMOVAL_HELPER,
   silhouetteFallbackSource,
+  slopeVarianceSource,
   waterEdgeSource,
   WATER_REMOVAL_SLOTS,
 } from "./water-shader-chunks";
