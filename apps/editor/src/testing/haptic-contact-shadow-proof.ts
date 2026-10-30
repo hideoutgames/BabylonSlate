@@ -1,8 +1,7 @@
 /**
- * Test-build-only oracle for Contact Hardening (PCSS) on the lighting plan's light block: a spot light's and the sun's
- * shadows drawn by Babylon's own shadow maps and PBR block (`babylon`) or by the shadow atlas and HapticLightingBlock
- * (`haptic`), on the real GPU through the Forward FrameGraph; on the block only, a point light's, whose Babylon cube
- * map falls back to Poisson sampling, and CEL's, which draws it as PCF.
+ * Test-build-only oracle for Contact Hardening (PCSS) on the lighting plan's light block: a spot light's, the sun's and
+ * a point light's shadows drawn from the shadow atlas by HapticLightingBlock, on the real GPU through the Forward
+ * FrameGraph, each with ray-cast masks of what blocks the floor's view of the light, and CEL's, which draws it as PCF.
  */
 import {
   Color4,
@@ -37,10 +36,9 @@ import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-p
 import { isAtlasShadow } from "../../../../packages/render/src/shadow-atlas";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
-type Path = "babylon" | "haptic";
 type Capture = { name: string; atlas: boolean; pixels: number[] };
 
-export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu", path: Path) {
+export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
   canvas.width = 120;
   canvas.height = 80;
@@ -55,7 +53,7 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu", 
   };
   const scene = new Scene(engine);
   // The switch picks the lighting block when a Material compiles, and the atlas when a shadow map is made.
-  if (path === "haptic") setHapticLighting(engine, true);
+  setHapticLighting(engine, true);
   try {
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
     const camera = new FreeCamera("camera", new Vector3(0, 3.6, -7), scene);
@@ -135,22 +133,21 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu", 
       return { name, atlas: false, pixels };
     };
     const captures: Capture[] = [];
-    captures.push(await shadowed(lamp, "spot"), await unshadowed(lamp, "spot unshadowed"));
-    captures.push(await shadowed(sun, "sun"), await unshadowed(sun, "sun unshadowed"));
     const blocked: Record<string, number[]> = {};
-    if (path === "haptic") {
-      setAuthoredLightEnabled(sun, false);
-      captures.push({ name: "sun unlit", atlas: false, pixels: await draw() });
-      blocked.sun = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, () => sun.direction.normalizeToNew().scaleInPlace(-100));
-      captures.push(await shadowed(bulb, "point"), await unshadowed(bulb, "point unshadowed"));
-      setAuthoredLightEnabled(bulb, false);
-      captures.push({ name: "point unlit", atlas: false, pixels: await draw() });
-      blocked.point = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, (point) => bulb.getAbsolutePosition().subtract(point));
-      settings("cel", "pcss");
-      captures.push(await shadowed(lamp, "cel spot"));
-      settings("cel", "pcf");
-      captures.push(await shadowed(lamp, "cel spot pcf"));
-    }
+    /** `light`'s captures (shadowed, unshadowed, unlit) and its floor mask, `toLight` from a floor point. */
+    const poses = async (light: Light, name: string, toLight: (point: Vector3) => Vector3) => {
+      captures.push(await shadowed(light, name), await unshadowed(light, `${name} unshadowed`));
+      setAuthoredLightEnabled(light, false);
+      captures.push({ name: `${name} unlit`, atlas: false, pixels: await draw() });
+      blocked[name] = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, toLight);
+    };
+    await poses(lamp, "spot", (point) => lamp.getAbsolutePosition().subtract(point));
+    await poses(sun, "sun", () => sun.direction.normalizeToNew().scaleInPlace(-100));
+    await poses(bulb, "point", (point) => bulb.getAbsolutePosition().subtract(point));
+    settings("cel", "pcss");
+    captures.push(await shadowed(lamp, "cel spot"));
+    settings("cel", "pcf");
+    captures.push(await shadowed(lamp, "cel spot pcf"));
     graph.dispose();
     return { width: canvas.width, height: canvas.height, captures, blocked };
   } finally {
