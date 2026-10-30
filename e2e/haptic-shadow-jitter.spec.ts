@@ -33,20 +33,20 @@ function chebyshevDistance(source: boolean[], width: number, height: number): nu
   return distance;
 }
 
-/** The share of the unshadowed light a pixel keeps (its largest lit channel's ratio), or -1 where nothing is lit. */
-function shares(drawn: number[], open: number[], count: number): number[] {
+/** The share of the sun's light a pixel keeps (its largest channel's), between unlit (0) and unshadowed (1), or -1 where the sun lights nothing. */
+function shares(drawn: number[], open: number[], unlit: number[], count: number): number[] {
   return Array.from({ length: count }, (_, pixel) => {
     let share = -1;
     for (let channel = 0; channel < 3; channel++) {
-      const full = open[pixel * 4 + channel]!;
-      if (full > 24) share = Math.max(share, drawn[pixel * 4 + channel]! / full);
+      const index = pixel * 4 + channel, full = open[index]! - unlit[index]!;
+      if (full > 24) share = Math.max(share, (drawn[index]! - unlit[index]!) / full);
     }
     return share;
   });
 }
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`the light block's shadow filters jitter only under temporal anti-aliasing, smoothing a coarse map's staircase, on ${backend}`, async ({ page }, testInfo) => {
+  test(`the light block's shadow filters jitter only under temporal anti-aliasing, leaving the shadow where it is, on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(240_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -61,12 +61,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       (window as unknown as { __hapticShadowJitterProof: Proof }).__hapticShadowJitterProof(backend, temporal), [backend, backend === "webgl2"] as const);
     const { width, height, blocked } = result;
     const count = width * height;
-    const open = capture(result, "unshadowed").pixels;
+    const open = capture(result, "unshadowed").pixels, unlit = capture(result, "unlit").pixels;
     const toBlocked = chebyshevDistance(blocked.map((kind) => kind === 1), width, height);
     const toOpen = chebyshevDistance(blocked.map((kind) => kind === 0), width, height);
     const edge = blocked.map((kind, pixel) => (kind === 1 ? toOpen[pixel]! : kind === 0 ? toBlocked[pixel]! : -1));
-    const fixed = shares(capture(result, "fixed").pixels, open, count);
-    const phases = Array.from({ length: 16 }, (_, index) => shares(capture(result, `phase ${index + 1}`).pixels, open, count));
+    const fixed = shares(capture(result, "fixed").pixels, open, unlit, count);
+    const phases = Array.from({ length: 16 }, (_, index) => shares(capture(result, `phase ${index + 1}`).pixels, open, unlit, count));
     const averaged = fixed.map((value, pixel) => (value < 0 ? -1 : phases.reduce((sum, phase) => sum + phase[pixel]!, 0) / phases.length));
     // Floor pixels whose 3x3 neighbourhood is all floor: a pixel beside the box's silhouette blends with the box
     // under temporal anti-aliasing.
@@ -76,42 +76,28 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (blocked[pixel + dy * width + dx]! < 0) return false;
       return true;
     };
-    // The staircase: near the outline a straight soft edge's share depends only on the distance from the box's analytic
-    // shadow outline edge it lies by, a texel staircase's also on where along that edge the pixel lies. Pixels within
-    // 0.3 m (about two map texels) are binned by edge and distance in centimetres; the staircase is their mean deviation
-    // from their bin's mean.
-    const band = Array.from({ length: count }, (_, pixel) => pixel)
-      .filter((pixel) => inner(pixel) && fixed[pixel]! >= 0 && Math.abs(result.outline[pixel]?.distance ?? Infinity) < 0.3);
-    const staircase = (image: number[]) => {
-      const bins = new Map<string, number[]>();
-      for (const pixel of band) {
-        const bin = `${result.outline[pixel]!.edge} ${Math.round(result.outline[pixel]!.distance * 100)}`;
-        bins.set(bin, [...(bins.get(bin) ?? []), image[pixel]!]);
-      }
-      let deviation = 0;
-      for (const values of bins.values()) {
-        const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-        deviation += values.reduce((sum, value) => sum + Math.abs(value - mean), 0);
-      }
-      return deviation / band.length;
-    };
+    const floorPixels = Array.from({ length: count }, (_, pixel) => pixel).filter((pixel) => fixed[pixel]! >= 0 && result.outline[pixel]);
+    // The outline band: within 0.3 m (about two map texels) of the box's analytic shadow outline.
+    const near = (pixel: number) => Math.abs(result.outline[pixel]!.distance) < 0.3;
+    const band = floorPixels.filter(near);
+    const shadowIn = (image: number[]) => band.reduce((sum, pixel) => sum + 1 - image[pixel]!, 0);
     // Away from the outline the jitter changes nothing: the umbra stays dark and the open floor lit.
-    const far = (kind: number) => Array.from({ length: count }, (_, pixel) => pixel)
-      .filter((pixel) => blocked[pixel] === kind && edge[pixel]! >= 4 && fixed[pixel]! >= 0 && inner(pixel));
+    const far = (kind: number) => floorPixels.filter((pixel) => blocked[pixel] === kind && edge[pixel]! >= 4 && inner(pixel));
     const umbra = far(1), lit = far(0);
     const differ = (a: number[], b: number[]) => a.filter((value, index) => value !== b[index]).length;
     const report = {
       band: band.length, umbra: umbra.length, lit: lit.length,
-      staircase: { fixed: staircase(fixed), averaged: staircase(averaged) },
+      // One jittered frame moves the filter's pattern along the outline; sixteen average to the fixed shadow's amount.
+      bandChanged: band.filter((pixel) => Math.abs(phases[0]![pixel]! - fixed[pixel]!) > 0.05).length,
+      changedOffBand: floorPixels.filter((pixel) => !near(pixel) && phases.some((phase) => Math.abs(phase[pixel]! - fixed[pixel]!) > 0.02)).length,
+      averagedShadowRatio: shadowIn(averaged) / shadowIn(fixed),
       jittered: result.captures.map((entry) => [entry.name, entry.jittered]),
       amplitudeZeroDiffers: differ(capture(result, "amplitude 0").pixels, capture(result, "fixed").pixels),
       fixedAgainDiffers: differ(capture(result, "fixed again").pixels, capture(result, "fixed").pixels),
-      fixedUmbraMax: Math.max(...umbra.map((pixel) => fixed[pixel]!)),
-      fixedLitMin: Math.min(...lit.map((pixel) => fixed[pixel]!)),
       averagedUmbraMax: Math.max(...umbra.map((pixel) => averaged[pixel]!)),
       averagedLitMin: Math.min(...lit.map((pixel) => averaged[pixel]!)),
       temporal: backend === "webgl2" ? (() => {
-        const drawn = shares(capture(result, "temporal").pixels, open, count);
+        const drawn = shares(capture(result, "temporal").pixels, open, unlit, count);
         return { umbraMax: Math.max(...umbra.map((pixel) => drawn[pixel]!)), litMin: Math.min(...lit.map((pixel) => drawn[pixel]!)) };
       })() : null,
     };
@@ -120,20 +106,23 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(errors).toEqual([]);
     expect(report.jittered).toEqual([
       ["fixed", false], ["amplitude 0", true], ...Array.from({ length: 16 }, (_, index) => [`phase ${index + 1}`, true]),
-      ["fixed again", false], ["unshadowed", false], ...(backend === "webgl2" ? [["temporal", true], ["temporal off", false]] : []),
+      ["fixed again", false], ["unshadowed", false], ["unlit", false], ...(backend === "webgl2" ? [["temporal", true], ["temporal off", false]] : []),
     ]);
     // At amplitude 0 the jittered program draws the fixed pattern exactly, and dropping the define restores it.
     expect([report.amplitudeZeroDiffers, report.fixedAgainDiffers]).toEqual([0, 0]);
-    // Sixteen jittered frames average to a smoother outline than the fixed pattern's staircase.
-    expect(report.band).toBeGreaterThan(100);
-    expect(report.staircase.averaged).toBeLessThanOrEqual(0.6 * report.staircase.fixed);
-    expect([report.umbra, report.lit].every((size) => size > 100)).toBe(true);
-    expect(report.averagedUmbraMax).toBeLessThan(0.5);
+    // A jittered frame redraws a large part of the outline band and nothing off it; sixteen frames average to the fixed
+    // pattern's shadow within 2 %: the jitter moves the filter's texel pattern, not the shadow.
+    expect(report.band).toBeGreaterThan(1000);
+    expect(report.bandChanged).toBeGreaterThan(report.band / 5);
+    expect(report.changedOffBand).toBe(0);
+    expect(Math.abs(report.averagedShadowRatio - 1)).toBeLessThan(0.02);
+    expect([report.umbra, report.lit].every((size) => size > 500)).toBe(true);
+    expect(report.averagedUmbraMax).toBeLessThan(0.05);
     expect(report.averagedLitMin).toBeGreaterThan(0.95);
     // Temporal anti-aliasing resolves the jitter into the same shadow.
     if (report.temporal) {
-      expect(report.temporal.umbraMax).toBeLessThan(0.5);
-      expect(report.temporal.litMin).toBeGreaterThan(0.9);
+      expect(report.temporal.umbraMax).toBeLessThan(0.05);
+      expect(report.temporal.litMin).toBeGreaterThan(0.95);
     }
   });
 }

@@ -23,6 +23,7 @@ import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene"
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { forceViewTerms } from "../../../../packages/render/src/haptic-view-inputs";
+import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 import { floorShadowMask } from "./haptic-contact-shadow-proof";
 
@@ -45,15 +46,16 @@ export async function runHapticShadowJitterProof(backend: "webgl2" | "webgpu", t
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
-    const camera = new FreeCamera("camera", new Vector3(0, 4, -4.5), scene);
-    camera.setTarget(new Vector3(0, 0, 0.5));
+    // Close above the shadow's long edges, so each map texel spans about six pixels.
+    const camera = new FreeCamera("camera", new Vector3(1.1, 3, -1.6), scene);
+    camera.setTarget(new Vector3(0.9, 0, 0));
     camera.minZ = 0.1;
     camera.maxZ = 40;
     scene.activeCamera = camera;
     setSceneBindsPreviousEffects(scene);
     const effects = normalizeRenderEffectsSettings(undefined);
-    // One cascade from a 256-texel map over 24 m, about 6 texels per metre (two to three pixels each at the box), at Low
-    // filter quality: one bilinear comparison, whose texel staircase the fixed pattern draws plainly.
+    // One cascade from a 256-texel map over 24 m, about 6 texels per metre, at Low filter quality: one bilinear
+    // comparison, whose texel staircase the fixed pattern draws plainly.
     const settings = () => setSceneRenderSettings(scene, {
       mode: "pbr", effects, quality: normalizeRenderingQuality({}),
       shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256, distance: 24, filterQuality: "low", depthBias: 0.0008 }),
@@ -122,6 +124,10 @@ export async function runHapticShadowJitterProof(backend: "webgl2" | "webgpu", t
     sun.shadowEnabled = false;
     captures.push({ name: "unshadowed", pixels: await draw(), jittered: false });
     sun.shadowEnabled = true;
+    setAuthoredLightEnabled(sun, false);
+    captures.push({ name: "unlit", pixels: await draw(), jittered: false });
+    setAuthoredLightEnabled(sun, true);
+    await settle();
     if (temporal) {
       effects.temporalAntiAliasing = { enabled: true, samples: 8, blend: 0.1 };
       settings();
