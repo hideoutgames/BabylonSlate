@@ -273,8 +273,8 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   );
   const canvas = page.getByTestId("play-canvas");
   const prints = page.getByTestId("print-overlay");
-  // The first print waits for the rest of the Play load after the models (shader warm-up, the light rehearsal, the
-  // first frame): 4 to 5 s on SwiftShader, past the default 5 s on a slow runner.
+  // The first print waits for the rest of the Play load after the models (shader warm-up, the starting-state draw,
+  // the first frame): 4 to 5 s on SwiftShader, past the default 5 s on a slow runner.
   await expect(prints).toContainText("Idle", { timeout: 30_000 });
   // The Play canvas keeps resizing for a few frames after the first visible
   // pixels (CI showed 1024x576 at the baseline vs the settled 960x540), so

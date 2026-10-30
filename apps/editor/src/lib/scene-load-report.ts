@@ -12,15 +12,12 @@ export function graphicsErrorTraceLines(): string[] {
     : ["Graphics error trace: on, no failing WebGL calls recorded"];
 }
 
-/** What the world's first frame waits on: its draw attempts and the load rehearsal of light changes. */
+/** What the world's first frame waits on: its draw attempts. */
 export function worldLoadLine(load: NonNullable<RenderDiagnostics["worldLoad"]>): string {
   const frame = load.presentation;
-  const rehearsal = load.rehearsal;
   return `World load: first frame ${frame
     ? `ready ${frame.ready} · draws ${frame.draws} · rendered ${frame.rendered} · GPU pending ${frame.gpuPending} · copied ${frame.copied}`
-    : "not requested"} · rehearsal ${rehearsal
-    ? `${rehearsal.done ? "done" : "running"} ${rehearsal.steps}/${rehearsal.total} steps · timed out ${rehearsal.timedOut} · left out ${rehearsal.omitted} · ${Math.round(rehearsal.ms / 1000)} s`
-    : "none"}`;
+    : "not requested"}`;
 }
 
 const megabytes = (bytes: number) => `${Math.round(bytes / 1048576)} MB`;

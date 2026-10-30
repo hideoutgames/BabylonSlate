@@ -41,8 +41,8 @@ describe("SceneLoadingDialog", () => {
   });
 
   it("shows a counted phase's progress after its name", () => {
-    const { rerender } = render(<SceneLoadingDialog open progress={90} phase="Preparing Lights" count={{ done: 2, total: 8 }} />);
-    expect(screen.getByRole("dialog").textContent).toContain("Preparing Lights (2/8)");
+    const { rerender } = render(<SceneLoadingDialog open progress={70} phase="Compiling Shaders" count={{ done: 2, total: 8 }} />);
+    expect(screen.getByRole("dialog").textContent).toContain("Compiling Shaders (2/8)");
     rerender(<SceneLoadingDialog open progress={90} phase="Presenting First Frame" />);
     expect(screen.getByRole("dialog").textContent).toContain("Presenting First Frame");
     expect(screen.getByRole("dialog").textContent).not.toContain("(");

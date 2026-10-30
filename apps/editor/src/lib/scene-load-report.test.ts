@@ -31,11 +31,10 @@ describe("formatSceneLoadReport", () => {
 });
 
 describe("worldLoadLine", () => {
-  it("says what the first frame and the load rehearsal are waiting on", () => {
+  it("says what the first frame is waiting on", () => {
     expect(worldLoadLine({
       presentation: { ready: false, draws: 0, rendered: false, gpuPending: false, copied: false },
-      rehearsal: { done: false, steps: 12, total: 30, timedOut: 2, omitted: 0, ms: 61_400 },
-    })).toBe("World load: first frame ready false · draws 0 · rendered false · GPU pending false · copied false · rehearsal running 12/30 steps · timed out 2 · left out 0 · 61 s");
+    })).toBe("World load: first frame ready false · draws 0 · rendered false · GPU pending false · copied false");
   });
 });
 

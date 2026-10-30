@@ -23,7 +23,7 @@ export const SPAWNABLE_PIPELINE_WARM_MS = 10_000;
  * `SPAWNABLE_PIPELINE_WARM_MS` (a scene no world view probes keeps them that long).
  *
  * Elsewhere (WebGL2) a compiled program still holds iPad WebKit at its first draw. With `keepForFirstDraw` (a Play load,
- * whose load rehearsal draws the starting state behind its loading screen without view culling) the staged meshes stay,
+ * whose starting-state draw runs behind its loading screen without view culling) the staged meshes stay,
  * shown and casting no shadow, so that draw is their first: the returned release disposes them, and the caller calls it
  * once that draw is done, or the load ends. Without it, or where pipelines are deferred, the result is null.
  */

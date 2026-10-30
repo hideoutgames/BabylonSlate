@@ -296,7 +296,7 @@ function initializePlayer(
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
-    // What the startup sources' Classes may spawn: Play's load rehearses a light of each kind.
+    // What the startup sources' Classes may spawn.
     spawnableLights: spawnableLightsOf(game.scripts, manifest.assets.filter((entry) => startupAssets.has(entry.guid))),
     renderTargets: content.renderTargets,
     renderTargetTextures: content.renderTargetTextures,

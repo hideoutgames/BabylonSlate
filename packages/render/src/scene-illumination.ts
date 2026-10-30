@@ -299,7 +299,7 @@ export function applyAuthoredLightProperties(
 /**
  * The Babylon light a Play light part (`light:{kind}`) draws as, with `properties` applied (registering its shadows):
  * a hemispheric, directional or spot light, and a point light for any other kind. The caller poses it and syncs the
- * shadow maps. Play's spawned and scene actors and the load rehearsal's spawned lights share it, so their defines match.
+ * shadow maps. Play's spawned and scene actors share it, so their defines match.
  */
 export function createPlayLight(scene: Scene, name: string, kind: string, properties?: AuthoredLightProperties): Light {
   const light =

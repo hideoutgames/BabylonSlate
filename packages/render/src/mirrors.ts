@@ -24,7 +24,9 @@ import type { MirrorProperties } from "@haptic/core";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import { MIRROR_RENDERS_PER_FRAME, selectMirrorsToRender, type MirrorCandidate } from "./mirror-selection";
-import { createMirrorReflectionBinding, isMirrorSurfaceMesh, markBuiltInMirrorMaterial, type MirrorReflectionBinding } from "./mirror-surface-state";
+import {
+  createMirrorReflectionBinding, isMirrorSurfaceMesh, markBuiltInMirrorMaterial, mirrorFallbackTexture, type MirrorReflectionBinding,
+} from "./mirror-surface-state";
 import {
   beginPlanarMirrorPassState, buildViewProjectionMatrix, clipFrustumAtMirror, collectPlanarMirrorMeshes, createPlanarMirrorTarget,
   disposePlanarMirrorTarget, drawPlanarMirrorPass, planarMirrorTargetSize, PlanarMirrorMath, resizePlanarMirrorTarget,
@@ -32,7 +34,6 @@ import {
 } from "./planar-mirror";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
-import { shadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
 import { connectGeometrySurfaceOutput, GeometrySurfaceOutputBlock } from "./geometry-surface-output-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import type { MaterialPlumbing } from "./material-block-registry";
@@ -316,8 +317,8 @@ export function builtInMirrorMaterial(scene: Scene): NodeMaterial {
  */
 export function createMirrorSurfaceMesh(scene: Scene, name: string, properties: MirrorProperties): Mesh {
   const mesh = MeshBuilder.CreatePlane(name, { width: properties.width, height: properties.height }, scene);
-  // Placeholders exist before any pass binds them (allocating inside a pass would rebind its framebuffer).
-  shadowSamplerPlaceholders(scene);
+  // The fallback texel exists before any pass binds it.
+  mirrorFallbackTexture(scene);
   const builtIn = builtInMirrorMaterial(scene);
   mesh.material = builtIn;
   mesh.onMaterialChangedObservable.add(() => { if (!mesh.material && !mesh.isDisposed()) mesh.material = builtIn; });

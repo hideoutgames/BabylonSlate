@@ -1,4 +1,4 @@
-import { Matrix, Vector3, type AbstractMesh, type Material, type ThinTexture } from "@babylonjs/core";
+import { Constants, Matrix, RawTexture, Vector3, type AbstractMesh, type Material, type Scene, type ThinTexture } from "@babylonjs/core";
 
 /** What a Mirror surface's material samples: written by the scene's mirror owner, read by Mirror Reflection blocks. */
 export interface MirrorReflectionBinding {
@@ -17,6 +17,27 @@ export interface MirrorReflectionBinding {
 }
 
 const bindings = new WeakMap<AbstractMesh, MirrorReflectionBinding>();
+const fallbacks = new WeakMap<Scene, RawTexture>();
+
+/**
+ * One white texel, which a Mirror Reflection block binds while its surface's reflection has not drawn (a WebGPU bind
+ * group needs a texture in every binding; the block then reads none of it). Made with the scene's first Mirror
+ * surface, outside any pass, and disposed with the scene.
+ */
+export function mirrorFallbackTexture(scene: Scene): RawTexture {
+  let texture = fallbacks.get(scene);
+  if (texture) return texture;
+  texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene, false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
+  texture.name = "mirror-fallback";
+  fallbacks.set(scene, texture);
+  texture.onDisposeObservable.addOnce(() => fallbacks.delete(scene));
+  return texture;
+}
+
+/** The scene's fallback texel if a Mirror surface made it; never allocates (a draw may ask). */
+export function existingMirrorFallbackTexture(scene: Scene): RawTexture | undefined {
+  return fallbacks.get(scene);
+}
 
 export function createMirrorReflectionBinding(mesh: AbstractMesh, tint: [number, number, number]): MirrorReflectionBinding {
   const binding: MirrorReflectionBinding = { texture: null, viewProjection: Matrix.Identity(), origin: Vector3.Zero(), gammaSpace: true, tint };

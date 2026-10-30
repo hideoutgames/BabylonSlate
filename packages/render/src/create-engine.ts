@@ -42,7 +42,7 @@ import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-hos
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { isLightValueOnlySceneEdit } from "./light-edit";
-import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readiness";
+import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
@@ -50,7 +50,7 @@ import { warmSpawnables } from "./spawnable-warm";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import type { SpawnableLight } from "./spawnable-lights";
-import { createLoadRehearsal, type LoadRehearsal, type LoadRehearsalReport } from "./load-rehearsal";
+import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
 import { nativePreparationForEngine } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
@@ -112,6 +112,7 @@ import {
 } from "./glb-anim";
 import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import {
+  AUTHORED_LIGHT_PREFIX,
   applySceneEnvironment as applySerializedSceneEnvironment,
   refreshAuthoredCameraLenses,
 } from "./scene-illumination";
@@ -478,25 +479,19 @@ function initializeEngine(
     errorsCleared: boolean;
     /** WebGPU render pipelines the latest submitted draw created; they build inside its GPU completion. */
     pipelines: number;
-    /** Restarts the loading deadline (progress that is not a compile: a rehearsal step). */
+    /** Restarts the loading deadline (progress that is not a compile: a starting-state frame). */
     restart?: () => void;
-    /** The world presentation's caller, told the light rehearsal's progress (`publishLights`). */
-    onLights?: (count: SceneLoadCount | null) => void;
-    /** The last progress `onLights` was told, as text. */
-    lightsShown?: string;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
   /**
-   * Play's load rehearsal of its light changes (`load-rehearsal.ts`), run in the world presentation's loading frames
-   * before its first presented frame; its report once it ends.
+   * Play's draw of its starting state without view culling (`starting-state-draw.ts`), in the world presentation's
+   * loading frames before its first presented frame.
    */
-  let loadRehearsal: LoadRehearsal | null = null;
-  let loadRehearsalReport: LoadRehearsalReport | null = null;
+  let startingDraw: StartingStateDraw | null = null;
   /**
    * WebGL2 Play loads: a program's first draw holds iPad WebKit and no probe sees it, so the spawn warm-up's staged
-   * meshes stay, shown, until the load rehearsal's starting state has drawn them behind the loading screen
-   * (`releaseStagedSpawnables`). Play's meshes skip view culling (Intermediate performance priority), so its loading
-   * frames already draw the rest of what the load compiled.
+   * meshes stay, shown, until the starting-state draw has drawn them behind the loading screen
+   * (`releaseStagedSpawnables`).
    */
   let releaseStagedSpawnables: (() => void) | null = null;
   const releaseStaged = () => {
@@ -504,13 +499,12 @@ function initializeEngine(
     releaseStagedSpawnables = null;
     release?.();
   };
-  const endLoadRehearsal = () => {
-    if (!loadRehearsal) return;
-    loadRehearsal.cancel();
+  const endStartingDraw = () => {
+    if (!startingDraw) return;
+    startingDraw.cancel();
     // Its Effects go with its load: Play keeps one Scene across loads, which would otherwise keep every level's.
-    loadRehearsal.release();
-    loadRehearsalReport = loadRehearsal.report();
-    loadRehearsal = null;
+    startingDraw.release();
+    startingDraw = null;
   };
   const frameOwners = new Map<string, PendingPresentation>();
   const presentationKey = (owner?: SceneLayerLoadIdentity) => owner ? `layer:${owner.layerId}` : "world";
@@ -518,7 +512,7 @@ function initializeEngine(
     for (const [id, pending] of pendingPresentations) {
       if (key !== undefined && id !== key) continue;
       if (id === "world") {
-        endLoadRehearsal();
+        endStartingDraw();
         releaseStaged();
       }
       pendingPresentations.delete(id);
@@ -1344,7 +1338,7 @@ function initializeEngine(
     materialFunctions: new Map(materialFunctions), audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary, fonts: options.fontFaceEntries, spawnableLights: options.spawnableLights,
   }])]]);
-  /** The light parts the owned sources' Classes may spawn, which Play's load rehearses. */
+  /** The light parts the owned sources' Classes may spawn: with any, Play's load draws its starting state. */
   let spawnableLights: ReadonlyMap<string, SpawnableLight> = new Map(options.spawnableLights ?? []);
   let nextSourceOwner = 0;
   let sourceFontGuids = new Set(options.fontFaceEntries?.map((font) => font.guid));
@@ -1662,11 +1656,8 @@ function initializeEngine(
   let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
   const worldLoadDiagnostics = () => {
     const world = pendingPresentations.get("world");
-    const rehearsal = loadRehearsal?.report();
     return {
       presentation: world ? { ready: world.ready, draws: world.attempts, rendered: world.rendered, gpuPending: Boolean(world.submission), copied: world.copied } : null,
-      rehearsal: loadRehearsal && rehearsal ? { done: loadRehearsal.done, steps: rehearsal.steps, total: loadRehearsal.stepCount,
-        timedOut: rehearsal.timedOut.length, omitted: rehearsal.omitted.length, ms: Math.round(rehearsal.ms) } : null,
     };
   };
   const renderDiagnostics = () => {
@@ -1746,22 +1737,12 @@ function initializeEngine(
       for (const lease of leases) lease.release();
     }
   };
-  /** Tells the world presentation's caller where the light rehearsal is, when that changed. */
-  const publishLights = (pending: PendingPresentation) => {
-    if (pending.owner || !pending.onLights) return;
-    const count = loadRehearsal && !loadRehearsal.done ? loadRehearsal.progress() : null;
-    const shown = count ? `${count.done}/${count.total}` : "";
-    if (shown === pending.lightsShown) return;
-    pending.lightsShown = shown;
-    pending.onLights(count);
-  };
   const presentationReady = (pending: PendingPresentation) => {
     try {
-      if (!pending.owner && loadRehearsal && !loadRehearsal.done) loadRehearsal.check();
+      if (!pending.owner && startingDraw && !startingDraw.done) startingDraw.check();
       // The light block's path: each kind of shadow map's caster depth variants, ahead of its first shadow start, for
       // the casters as the starting state poses them.
       if (!pending.owner && options.playMode) findSceneShadowController(scene)?.warmCasterVariants();
-      publishLights(pending);
       pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady();
       return pending.ready;
     } catch (error) {
@@ -1994,17 +1975,15 @@ function initializeEngine(
           if (draw() && pending.rendered) frameOwners.set(key, pending);
           return;
         }
-        if (key === "world" && loadRehearsal && !loadRehearsal.done) {
-          // Drawn is enough: variants its post-draw probe requests draw in a later rehearsal frame.
-          loadRehearsal.frame(() => worldRenderer.render(true).rendered);
-          publishLights(pending);
+        if (key === "world" && startingDraw && !startingDraw.done) {
+          // Drawn is enough: variants its post-draw probe requests draw in a later starting-state frame.
+          startingDraw.frame(() => worldRenderer.render(true).rendered);
           // Never presented: the loading frame shows the clear colour, as the loading frames before it did.
           engine.clear(scene.clearColor, true, true, true);
           pending.restart?.();
-          if (loadRehearsal.done) loadRehearsalReport = loadRehearsal.report();
           return;
         }
-        // Staged meshes are shown only for the rehearsal's frames, which are never presented.
+        // Staged meshes are shown only for the starting-state frames, which are never presented.
         if (key === "world") releaseStaged();
         pending.copied = false;
         const pipelinesBefore = WebGPUCacheRenderPipeline.NumCacheMiss;
@@ -2629,8 +2608,8 @@ function initializeEngine(
         const sceneLoadId = command.sceneLoadId;
         instanceCompileHold = () => worldLoading && sceneLoadId === worldLoadId;
         worldRenderer.invalidate();
-        // A presented load's rehearsal ends here: the next level keeps none of its Effects.
-        endLoadRehearsal();
+        // A presented load's starting-state draw ends here: the next level keeps none of its Effects.
+        endStartingDraw();
         releaseStaged();
         cancelPresentation(new Error("Scene loading was superseded."), "world");
       }
@@ -3118,7 +3097,6 @@ function initializeEngine(
     },
     nativePreparationStats: () => nativePreparation.snapshot(),
     spawnableWarmStats: () => spawnableWarm,
-    loadRehearsalStats: () => loadRehearsalReport ?? (loadRehearsal?.done ? loadRehearsal.report() : null),
     releaseInitialSources,
     setSourceLibraries: (libraries) => {
       if (libraries.audioLibrary) audioService?.setLibrary(libraries.audioLibrary, true);
@@ -3203,11 +3181,8 @@ function initializeEngine(
       const scope = loadingScope(owner);
       // Every instance the load published is in the Scene now; later ones compile as they publish.
       if (!owner) instanceCompileHold = null;
-      // A previous load's rehearsal stops first (its Effects go after the warm-ups below, which may share them): an
-      // applied step's stand-in light would count in the Scene's lights.
-      if (!owner && options.playMode) loadRehearsal?.cancel();
-      // The light parts Play may spawn, which its load rehearses.
-      const spawnable = !owner && options.playMode ? [...spawnableLights.values()] : [];
+      // A previous load's starting-state draw stops first (its Effects go after the warm-ups below, which may share them).
+      if (!owner && options.playMode) startingDraw?.cancel();
       applyRenderingQuality();
       // Water's blend and placement (flat) are otherwise first settled by the first frame's update, after the shader
       // warm-up and the graph's probes compiled every variant without them: each then compiles twice. Copy intent is
@@ -3223,14 +3198,14 @@ function initializeEngine(
       if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
       else await worldRenderer.prepare(scope.assert);
       scope.assert();
-      // Play rehearses its light changes in the world presentation's loading frames, before the first presented one.
+      // Play draws its starting state without view culling in the world presentation's loading frames, before the
+      // first presented one, when the Scene holds a light, Play may spawn one, or the spawn warm-up staged meshes.
       if (!owner && options.playMode) {
-        endLoadRehearsal();
-        loadRehearsalReport = null;
+        endStartingDraw();
+        const draws = releaseStagedSpawnables !== null || spawnableLights.size > 0 ||
+          scene.lights.some((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX));
         // Full Quality captures prepare their views in the starting state, so their variants share its Effects.
-        loadRehearsal = createLoadRehearsal(scene, () => !renderTargetCaptures.preparing(), spawnable, {
-          staged: releaseStagedSpawnables !== null, onStartingDrawn: releaseStaged, drawsOutsideView: true,
-        });
+        startingDraw = createStartingStateDraw(scene, () => !renderTargetCaptures.preparing(), { draws, onDrawn: releaseStaged });
       }
     },
     whenMaterialTexturesReady: async (owner) => {
@@ -3263,7 +3238,7 @@ function initializeEngine(
       }
       scope.assert();
     },
-    presentFirstFrame: (owner, onLights) => {
+    presentFirstFrame: (owner) => {
       try { loadingScope(owner); } catch (error) { return Promise.reject(error); }
       if (registeredView && !registeredViewIsEnabled(registeredView)) {
         return Promise.reject(new Error("The loading viewport is not active."));
@@ -3284,7 +3259,7 @@ function initializeEngine(
         else expirePresentation(key);
       };
       const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
-      const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0, onLights };
+      const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 };
       pending.restart = () => {
         if (pending.completionStarted || pendingPresentations.get(key) !== pending) return;
         clearTimeout(pending.timer);

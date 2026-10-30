@@ -128,22 +128,6 @@ export type ForwardLightSelection = (
   limited: Light[],
 ) => Iterable<Light>;
 
-/**
- * The scene's last Forward light selection, which its next selection favours (a copy; undefined before the first).
- * A load rehearsal takes it before a light change it tries and gives it back (`restoreForwardLightSelection`) once
- * the change is reverted, so the next selection ranks as if the change never happened.
- */
-export function forwardLightSelection(scene: Scene): ReadonlySet<Light> | undefined {
-  const selection = forwardSelections.get(scene);
-  return selection && new Set(selection);
-}
-
-/** Makes `selection` (from `forwardLightSelection`) the one the scene's next Forward selection favours. */
-export function restoreForwardLightSelection(scene: Scene, selection: ReadonlySet<Light> | undefined): void {
-  if (selection) forwardSelections.set(scene, new Set(selection));
-  else forwardSelections.delete(scene);
-}
-
 /** Scene-local selection; authored Enabled and priority are retained. */
 export function syncForwardLightPolicy(
   scene: Scene,

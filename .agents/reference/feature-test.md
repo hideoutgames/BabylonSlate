@@ -123,7 +123,7 @@ Counts are constants in the area modules; changing one changes performance basel
 
 ## On-device check and benchmark
 
-The **Feature Test** starter and its check appear only with Engine Settings → Debugger → **Debug Mode** on; e2e routes enable it through `seedEngineSettings`. When a scene fails to load in Debug Mode, **Copy Error** on the Scene Loading dialog copies the failure details; in Play, **Copy Details** during a load also says what the first frame and the light-change rehearsal are waiting on.
+The **Feature Test** starter and its check appear only with Engine Settings → Debugger → **Debug Mode** on; e2e routes enable it through `seedEngineSettings`. When a scene fails to load in Debug Mode, **Copy Error** on the Scene Loading dialog copies the failure details; in Play, **Copy Details** during a load also says what the first frame is waiting on.
 
 For devices without a test harness (iPad, phones, other browsers), a Feature Test project's **Debug** menu has **Run Feature Test Check…** (phones: **More Tools** → Debug). It walks the scenes with the editor's own controls and writes a plain-text report; **Copy Report** copies it (the text stays selectable when the clipboard is unavailable).
 
@@ -148,7 +148,7 @@ HAPTIC_PERF_FEATURE_TEST=1 pnpm run test:e2e e2e/feature-test-perf-route.spec.ts
   --config playwright.perf.config.ts --project perf-software
 ```
 
-It creates FeatureTest through the real Create dialog, waits for background texture encodes, then for each scene in `HAPTIC_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks, and times create, scene ready, Play boot and reopen; each scene's Play entry also carries the load's spawnable warm-up and light-change rehearsal reports (`spawnableWarm`, `loadRehearsal`). A scene that shows **Scene Loading Failed** is retried once and counted as `loadRetries`; a second failure fails the run. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `HAPTIC_PERF_OUT` when set.
+It creates FeatureTest through the real Create dialog, waits for background texture encodes, then for each scene in `HAPTIC_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks, and times create, scene ready, Play boot and reopen; each scene's Play entry also carries the load's spawnable warm-up report (`spawnableWarm`). A scene that shows **Scene Loading Failed** is retried once and counted as `loadRetries`; a second failure fails the run. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `HAPTIC_PERF_OUT` when set.
 
 | Env | Default | Effect |
 | --- | --- | --- |

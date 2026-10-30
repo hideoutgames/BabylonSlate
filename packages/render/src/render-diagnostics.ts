@@ -46,10 +46,9 @@ export type RenderDiagnostics = {
   };
   /** Textures the Engine holds and their estimated GPU bytes (`estimateTextureMemory`). */
   textureMemory?: { bytes: number; textures: number };
-  /** While the world loads: the first frame's attempts and the load rehearsal's progress. */
+  /** While the world loads: the first frame's attempts. */
   worldLoad?: {
     presentation: { ready: boolean; draws: number; rendered: boolean; gpuPending: boolean; copied: boolean } | null;
-    rehearsal: { done: boolean; steps: number; total: number; timedOut: number; omitted: number; ms: number } | null;
   } | null;
   engineLoop?: {
     frameId: number;

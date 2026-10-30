@@ -13,7 +13,7 @@ import { clickPlayAndWaitForOverlay } from "./play";
  * limits and frame sampling.
  */
 
-/** Play's load on software GL compiles, rehearses and presents the whole scene on one thread (minutes). */
+/** Play's load on software GL compiles, draws and presents the whole scene on one thread (minutes). */
 const PLAY_LOAD_MS = 8 * 60_000;
 /** Gameplay after the load, so an error on the next ticks reaches the session report. */
 const PLAY_MS = 3_000;
