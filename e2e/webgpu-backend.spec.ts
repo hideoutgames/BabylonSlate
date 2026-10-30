@@ -1,5 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import type { runWebGpuPredictedAdmissionsProof, runWebGpuProof } from "../apps/editor/src/testing/webgpu-proof";
+import type { runWebGpuProof } from "../apps/editor/src/testing/webgpu-proof";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
@@ -168,24 +168,25 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   expect(externalRequests).toEqual([]);
   expect(result.retainedEngines).toBe(0);
   expect(result.cancelledEngineReleased).toBe(true);
-  // A world view on the software adapter never waits for a new variant's render pipeline: a light switching off draws
-  // each Material's previous Effect while its pipeline is created asynchronously, as do floors whose spot starts or
-  // stops casting shadows (a lost map's sampler takes a placeholder of the declared type, so no GPU validation error),
-  // a spawn with a variant nothing compiled stays hidden meanwhile, and a spawn whose Material the load warmed creates
-  // no pipeline at all. The first spawn built again (a visual a script's write rebuilds) is revealed in its first frame
-  // and creates none; the same Effect with another vertex layout waits hidden for its own pipeline, holding nothing. A
-  // new shadow map, the spot's and the sun's first cascaded one, draws once its casters' depth pipelines exist,
-  // creating none synchronously, and a spawn into the drawn sun map with a caster depth variant no caster drew is
-  // revealed once that pipeline exists, so the map's redraw with it creates none synchronously either.
+  // A world view of graph Materials on the light block, on the software adapter, never waits for a new variant's
+  // render pipeline: a light switching off creates none (the block's records change, no variant), fog switching on
+  // draws each Material's previous Effect while its fogged variant's pipeline is created asynchronously, a new shadow
+  // map (the spot's tile, the sun's first cascades) draws once its casters' depth pipelines exist, creating none
+  // synchronously and changing no receiver's Effect, a spawn with a variant nothing compiled stays hidden meanwhile,
+  // and a spawn whose Material the load warmed creates no pipeline at all. The first spawn built again (a visual a
+  // script's write rebuilds) is revealed in its first frame and creates none; the same Effect with another vertex
+  // layout waits hidden for its own pipeline, holding nothing. A spawn into the drawn sun map with a caster depth
+  // variant no caster drew is revealed once that pipeline exists, so the map's redraw with it creates none
+  // synchronously either.
   const swap = result.variantSwap!;
   expect({
+    lightOff: { held: swap.lightOff.held, kept: swap.lightOff.kept, ...swap.lightOff.pipelines },
     swap: { done: swap.swap.done, held: swap.swap.held, previous: swap.swap.previousFrames > 0, ...swap.swap.pipelines,
       asynchronous: swap.swap.pipelines.asynchronous > 0 },
-    shadowGain: { done: swap.shadowGain.done, held: swap.shadowGain.held, synchronous: swap.shadowGain.pipelines.synchronous },
-    sunShadows: { done: swap.sunShadows.done, held: swap.sunShadows.held, synchronous: swap.sunShadows.pipelines.synchronous,
-      cascades: swap.sunShadows.cascades },
-    shadowLoss: { done: swap.shadowLoss.done, held: swap.shadowLoss.held, previous: swap.shadowLoss.previousFrames > 0,
-      synchronous: swap.shadowLoss.pipelines.synchronous },
+    shadowGain: { done: swap.shadowGain.done, held: swap.shadowGain.held, kept: swap.shadowGain.kept,
+      synchronous: swap.shadowGain.pipelines.synchronous },
+    sunShadows: { done: swap.sunShadows.done, held: swap.sunShadows.held, kept: swap.sunShadows.kept,
+      synchronous: swap.sunShadows.pipelines.synchronous, cascades: swap.sunShadows.cascades },
     spawn: { done: swap.spawn.done, held: swap.spawn.held, hidden: swap.spawn.hiddenFrames > 0, ...swap.spawn.pipelines,
       asynchronous: swap.spawn.pipelines.asynchronous > 0 },
     respawn: { done: swap.respawn.done, frames: swap.respawn.frames, held: swap.respawn.held, hidden: swap.respawn.hiddenFrames,
@@ -198,10 +199,10 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     casterSpawn: { done: swap.casterSpawn.done, held: swap.casterSpawn.held, hidden: swap.casterSpawn.hiddenFrames > 0,
       synchronous: swap.casterSpawn.pipelines.synchronous },
   }, JSON.stringify(swap)).toEqual({
+    lightOff: { held: 0, kept: true, synchronous: 0, asynchronous: 0 },
     swap: { done: true, held: 0, previous: true, synchronous: 0, asynchronous: true },
-    shadowGain: { done: true, held: 0, synchronous: 0 },
-    sunShadows: { done: true, held: 0, synchronous: 0, cascades: 2 },
-    shadowLoss: { done: true, held: 0, previous: true, synchronous: 0 },
+    shadowGain: { done: true, held: 0, kept: true, synchronous: 0 },
+    sunShadows: { done: true, held: 0, kept: true, synchronous: 0, cascades: 2 },
     spawn: { done: true, held: 0, hidden: true, synchronous: 0, asynchronous: true },
     respawn: { done: true, frames: 1, held: 0, hidden: 0, synchronous: 0, asynchronous: 0 },
     layout: { done: true, held: 0, hidden: true, sameEffect: true, synchronous: 0, asynchronous: true },
@@ -209,30 +210,19 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     warmSpawn: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
     casterSpawn: { done: true, held: 0, hidden: true, synchronous: 0 },
   });
-  // After a load rehearsal of the lights' changes (each drawn once behind the loading screen), a point switching off
-  // and a spot starting to cast shadows create no pipeline at all.
-  const rehearsed = result.rehearsedChanges!;
-  expect({
-    rehearsed: rehearsed.report.steps > 0 && rehearsed.report.timedOut.length === 0,
-    pointOff: { done: rehearsed.pointOff.done, held: rehearsed.pointOff.held, ...rehearsed.pointOff.pipelines },
-    spotShadows: { done: rehearsed.spotShadows.done, held: rehearsed.spotShadows.held, ...rehearsed.spotShadows.pipelines },
-  }, JSON.stringify(rehearsed)).toEqual({
-    rehearsed: true,
-    pointOff: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
-    spotShadows: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
-  });
   // With a geometry pass (temporal anti-aliasing), a spawn with a variant nothing compiled stays hidden until its colour
   // pipelines exist, then is left out of the geometry pass alone, holding no frame, until its geometry pipeline exists;
-  // a light switching off keeps the floor's geometry Effect while its colour variant swaps.
+  // a light switching off keeps the floor's colour and geometry Effects and creates no pipeline.
   const geometry = result.geometrySpawn!;
   expect({
     geometryPass: geometry.geometryPass, settled: geometry.settled, done: geometry.done, held: geometry.held,
     hidden: geometry.hiddenFrames > 0, leftOut: geometry.leftOutFrames > 0, synchronous: geometry.pipelines.synchronous,
     asynchronous: geometry.pipelines.asynchronous > 0,
-    lightOff: { done: geometry.lightOff.done, held: geometry.lightOff.held, geometryKept: geometry.lightOff.geometryKept },
+    lightOff: { held: geometry.lightOff.held, colourKept: geometry.lightOff.colourKept, geometryKept: geometry.lightOff.geometryKept,
+      ...geometry.lightOff.pipelines },
   }, JSON.stringify(geometry)).toEqual({
     geometryPass: true, settled: true, done: true, held: 0, hidden: true, leftOut: true, synchronous: 0, asynchronous: true,
-    lightOff: { done: true, held: 0, geometryKept: true },
+    lightOff: { held: 0, colourKept: true, geometryKept: true, synchronous: 0, asynchronous: 0 },
   });
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);
@@ -410,70 +400,6 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
       `${mode} preview texture rows`,
     ).toBeGreaterThan(40);
   }
-});
-
-test("WebGPU admissions a waiting light approaches have their variants and casters' pipelines ready ahead", async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (message) => {
-    if (isGpuFailure(message.type(), message.text())) errors.push(message.text());
-  });
-  await page.goto("/?webgpuProof");
-  await page.waitForFunction(() => "__hapticWebGpuPredictedAdmissionsProof" in window);
-  const result = await page.evaluate(() =>
-    (window as unknown as {
-      __hapticWebGpuPredictedAdmissionsProof: typeof runWebGpuPredictedAdmissionsProof;
-    }).__hapticWebGpuPredictedAdmissionsProof(),
-  );
-  await testInfo.attach("webgpu-predicted-admissions", { body: JSON.stringify(result), contentType: "application/json" });
-  expect(errors).toEqual([]);
-  expect(result.retainedEngines).toBe(0);
-  // A light that waits within reach of an admission has the Effects it asks for compiled ahead: a spot entering the
-  // Forward budget (and a shadowed one, whose standby map comes back with it), one taking a point's shadow map and one
-  // taking the first spot map compile no Effect and hold no frame when admitted, its new map's first draw included.
-  // Their receivers' render pipelines are still created then, asynchronously, previous variants drawing meanwhile. The
-  // casters of a returning standby map and of the first spot map create no pipeline synchronously: a render of the
-  // controller's prediction map created theirs ahead, while nothing else creates pipelines ahead. Jumping straight in,
-  // the same admissions compile their Effects then, and a new or returning map waits, neutral, for its casters' depth
-  // pipelines, which a warm render of it creates asynchronously. A prediction left to expire leaves no pipeline behind.
-  const predicted = result.predictedAdmissions;
-  const outcome = (admission: (typeof predicted)["forward"]["approached"]) => ({
-    admitted: admission.admitted, done: admission.done, mapDrawn: admission.mapDrawn, effects: admission.effectsAtAdmission,
-    held: admission.held, synchronous: admission.pipelines.synchronous, asynchronous: admission.pipelines.asynchronous > 0,
-  });
-  const jumped = (admission: (typeof predicted)["forward"]["jumped"]) => ({
-    admitted: admission.admitted, done: admission.done, mapDrawn: admission.mapDrawn, compiled: admission.effectsAtAdmission > 0,
-    held: admission.held, synchronous: admission.pipelines.synchronous,
-  });
-  expect({
-    forward: outcome(predicted.forward.approached), standby: outcome(predicted.standby.approached),
-    shadow: outcome(predicted.shadow.approached), first: outcome(predicted.first.approached),
-    ahead: {
-      forward: predicted.forward.approached.effectsAhead > 0 && predicted.forward.approached.pipelinesAhead === 0,
-      standby: predicted.standby.approached.effectsAhead > 0 && predicted.standby.approached.pipelinesAhead > 0,
-      shadow: predicted.shadow.approached.effectsAhead > 0 && predicted.shadow.approached.pipelinesAhead === 0,
-      first: predicted.first.approached.effectsAhead > 0 && predicted.first.approached.pipelinesAhead > 0,
-    },
-    jumped: {
-      forward: jumped(predicted.forward.jumped), standby: jumped(predicted.standby.jumped),
-      shadow: jumped(predicted.shadow.jumped), first: jumped(predicted.first.jumped),
-    },
-    expired: { standby: predicted.standby.expired.pipelinesLeft, first: predicted.first.expired.pipelinesLeft },
-  }, JSON.stringify(predicted)).toEqual({
-    forward: { admitted: true, done: true, mapDrawn: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
-    standby: { admitted: true, done: true, mapDrawn: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
-    shadow: { admitted: true, done: true, mapDrawn: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
-    first: { admitted: true, done: true, mapDrawn: true, effects: 0, held: 0, synchronous: 0, asynchronous: true },
-    ahead: { forward: true, standby: true, shadow: true, first: true },
-    jumped: {
-      forward: { admitted: true, done: true, mapDrawn: true, compiled: true, held: 0, synchronous: 0 },
-      standby: { admitted: true, done: true, mapDrawn: true, compiled: true, held: 0, synchronous: 0 },
-      shadow: { admitted: true, done: true, mapDrawn: true, compiled: true, held: 0, synchronous: 0 },
-      first: { admitted: true, done: true, mapDrawn: true, compiled: true, held: 0, synchronous: 0 },
-    },
-    expired: { standby: 0, first: 0 },
-  });
 });
 
 function isGpuFailure(type: string, message: string): boolean {

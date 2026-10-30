@@ -109,7 +109,11 @@ async function worldView() {
     }
     throw new Error("The world view did not settle.");
   };
-  const drawnEffects = () => meshes.map((mesh) => mesh.subMeshes[0]!._getDrawWrapper(camera.renderPassId)?.effect ?? null);
+  /** The Effect each floor draws with in the view's object pass. */
+  const drawnEffects = () => {
+    const pass = engine.getRenderPassNames().lastIndexOf("Forward objects#0");
+    return meshes.map((mesh) => (pass < 0 ? null : mesh.subMeshes[0]!._getDrawWrapper(pass)?.effect ?? null));
+  };
 
   // The driver: every Effect created while held reports not ready until released.
   let holding = false;
@@ -299,7 +303,7 @@ async function spawnReveal() {
       else frames.held++;
       hiddenDifference = Math.max(hiddenDifference, difference(await view.read(), before));
     }
-    const effect = () => box.subMeshes[0]!._getDrawWrapper(view.scene.activeCamera!.renderPassId)?.effect ?? null;
+    const effect = () => box.subMeshes[0]!._getDrawWrapper(view.engine.getRenderPassNames().lastIndexOf("Forward objects#0"))?.effect ?? null;
     const compiling = !!effect() && view.driver.created.has(effect()!) && !effect()!.isReady();
     view.driver.stop();
     let appeared = 0;

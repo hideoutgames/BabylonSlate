@@ -393,7 +393,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     };
 
     // Direct light against the oracle: MATTE everywhere, no environment (its scale zero, so the block adds none).
-    const analytic: { name: string; pixels: number[]; expected: (Rgb | null)[] }[] = [];
+    const analytic: { name: string; first: number[]; pixels: number[]; expected: (Rgb | null)[] }[] = [];
     const analyticPoses: { name: string; apply: () => void }[] = [
       { name: "all lights", apply: () => undefined },
       { name: "two off", apply: () => { setAuthoredLightEnabled(points[1]!, false); setAuthoredLightEnabled(spots[1]!, false); } },
@@ -405,8 +405,9 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       restore(matte);
       scene.iblIntensity = 0;
       pose.apply();
+      const first = await draw();
       analytic.push({
-        name: pose.name, pixels: await draw(),
+        name: pose.name, first, pixels: await draw(),
         expected: flat((point, normal) => directLight(point, normal, eye, linearBase(MATTE), MATTE.roughness, lights)),
       });
     }
@@ -431,7 +432,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       const major = sizes.indexOf(sorted[0]!);
       return { face: major * 2 + (axes[major]! > 0 ? 0 : 1), margin: sorted[0]! / sorted[1]! };
     };
-    const mirrors: { name: string; pixels: number[]; expected: ({ face: number; margin: number } | null)[] }[] = [];
+    const mirrors: { name: string; first: number[]; pixels: number[]; expected: ({ face: number; margin: number } | null)[] }[] = [];
     const mirrorPoses: { name: string; apply: () => void }[] = [
       { name: "faces", apply: () => undefined },
       { name: "rotated faces", apply: () => { faces.rotationY = 1.1; } },
@@ -451,7 +452,8 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       scene.environmentTexture = faces;
       pose.apply();
       scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
-      mirrors.push({ name: pose.name, pixels: await draw(), expected: flat(reflectedFace) });
+      const first = await draw();
+      mirrors.push({ name: pose.name, first, pixels: await draw(), expected: flat(reflectedFace) });
     }
     // The furnace: in a uniform cube a rough white metal reflects exactly the cube's colour (the multi-scatter term
     // restores what the single-scatter table loses), and MATTE adds its diffuse colour times the cube's irradiance
