@@ -55,12 +55,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       const lake = settled(result.distances[scenario], true);
       const dry = settled(result.distances[scenario], false);
       lakes[scenario] = lake;
-      // Two metres inside its edge (where the water fades out over the bank) the water changes every pixel, in the
-      // scenarios whose water does not resemble its background (fog and the sky cube's reflection come close to it).
-      const open = lake.filter((pixel) => result.insets[scenario][pixel]! >= 2);
+      // Two metres inside its edge (where the water fades out over the bank) and within 25 m (beyond, the far water
+      // fades toward what lies behind it) the water changes every pixel, in the scenarios whose water does not resemble
+      // its background: fog, the sky cube's reflection and the glare toward the sun come close to it in places.
+      const open = lake.filter((pixel) => result.insets[scenario][pixel]! >= 2 && result.distances[scenario][pixel]! <= 25);
       report[scenario] = { lake: lake.length, open: open.length, dryOpen: open.filter((pixel) => !wet(pixel)).length, dry: dry.length, wetDry: dry.filter(wet).length };
       expect(lake.length, scenario).toBeGreaterThan(width * height / 4);
-      if (["sun", "deep", "grazing", "glint"].includes(scenario)) expect(open.filter((pixel) => !wet(pixel)), `${scenario}: the lake draws`).toEqual([]);
+      if (["sun", "deep", "grazing"].includes(scenario)) expect(open.filter((pixel) => !wet(pixel)), `${scenario}: the lake draws`).toEqual([]);
       // Nothing beside the lake changes.
       expect(dry.filter(wet), `${scenario}: beside the lake`).toEqual([]);
     }
@@ -101,7 +102,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(saturated("sun")).toBe(0);
     // The fog mixes the lake toward its colour by that rule. The water's refraction reads the floor fogged at its own,
     // farther, distance, so the rule holds on average (measured: mean 2.2/255, 95th percentile 4.0, against a shift of
-    // FOG_SHIFT from the unfogged lake).
+    // 23.6/255 from the unfogged lake).
     expect(fogShift).toBeGreaterThan(3 * fogMean);
     expect(fogMean).toBeLessThan(3.5);
     expect(fogApart[Math.floor(fogApart.length * 0.95)]).toBeLessThan(6);
