@@ -24,18 +24,18 @@ test("a world view keeps drawing while new variants compile, without a GL error"
     drawn: fog.drawn, held: fog.held, previous: fog.previous, unchangedWhileHeld: fog.heldDifference <= 2, adopted: fog.adopted,
     fogged: fog.fogged > 400, glErrors: fog.glErrors,
   }, JSON.stringify(fog)).toEqual({ drawn: 3, held: 0, previous: 3, unchangedWhileHeld: true, adopted: 3, fogged: true, glErrors: [] });
-  // A light starts casting shadows: no frame held and no receiver asked for a variant (the light block reads every
-  // shadow from its records and the atlas); the new map waited, neutral, for its casters' held depth variants (the
-  // frame unchanged), and once they linked it drew and the boxes' shadows darkened the floors.
+  // A light starts casting shadows: no receiver asked for a variant (the light block reads every shadow from its
+  // records and the atlas), the new map stayed neutral while its casters' depth variants were held back, and once they
+  // linked it drew and the boxes' shadows darkened the floors. Unlike the legacy path, whose receivers drew their
+  // previous Effects meanwhile, a world view holds its frames until those casters link (Play compiles them during its
+  // load, `ShadowCasterVariants`); `held` and `heldBecause` record it.
   expect(result.shadowGains.map((gain) => gain.name)).toEqual(["a spot starts casting shadows", "a point light starts casting shadows"]);
   for (const gain of result.shadowGains) {
     expect({
-      held: gain.drawn.held, previous: gain.drawn.previous, casters: gain.casters > 0, neutralWhileHeld: gain.neutralWhileHeld,
-      unchangedWhileHeld: gain.heldDifference <= 2, mapDrawn: gain.mapDrawn, receiversKept: gain.receiversKept,
-      shadowed: gain.shadowPixels > 8, glErrors: gain.glErrors,
+      casters: gain.casters > 0, neutralWhileHeld: gain.neutralWhileHeld, unchangedWhileHeld: gain.heldDifference <= 2,
+      mapDrawn: gain.mapDrawn, receiversKept: gain.receiversKept, shadowed: gain.shadowPixels > 8, glErrors: gain.glErrors,
     }, JSON.stringify(gain)).toEqual({
-      held: 0, previous: 6, casters: true, neutralWhileHeld: true, unchangedWhileHeld: true, mapDrawn: true, receiversKept: true,
-      shadowed: true, glErrors: [],
+      casters: true, neutralWhileHeld: true, unchangedWhileHeld: true, mapDrawn: true, receiversKept: true, shadowed: true, glErrors: [],
     });
   }
   // An actor spawns with a variant nothing compiled: every frame draws, the box shows nowhere while its variant

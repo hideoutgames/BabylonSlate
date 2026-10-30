@@ -282,11 +282,10 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
  * A world view with a geometry pass (temporal anti-aliasing's view depth and velocity, which no warm draw warms): a
  * spawn with a variant nothing compiled stays hidden until its colour pipelines exist, and is then left out of the
  * geometry pass alone, with no frame held and no pipeline created synchronously, until its geometry pipeline exists.
- * A light switching off then keeps the floor's colour and geometry Effects: the light block's records change, no
- * variant.
+ * The floor is unlit: its lighting is not this proof's subject.
  */
-export async function proveWebGpuGeometrySpawn(engine: AbstractEngine, lightBlock = true) {
-  setHapticLighting(engine, lightBlock);
+export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
+  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
   const camera = new FreeCamera("camera", new Vector3(0, 3, -6), scene);
@@ -295,10 +294,11 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine, lightBloc
   setFixedShapeLightingWorldScene(scene);
   setSceneRenderSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS,
     temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } });
+  const floorMaterial = new PBRMaterial("floor", scene);
+  floorMaterial.albedoColor = new Color3(0.8, 0.8, 0.8);
+  floorMaterial.unlit = true;
   const floor = MeshBuilder.CreateGround("floor", { width: 6, height: 6 }, scene);
-  floor.material = await graphMaterial(scene, "floor", [0.8, 0.8, 0.8]);
-  const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
-  authored(sun, [1, 0.95, 0.85], 3);
+  floor.material = floorMaterial;
   const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
   const { counts, restore } = countPipelines(engine);
   const frame = async (strict = false) => {
@@ -350,22 +350,8 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine, lightBloc
     const spawn = {
       done: !isRevealPending(spawned) && geometryDrawn(), frames, held, hiddenFrames, leftOutFrames, pipelines: { ...counts },
     };
-    // The sun switching off: the floor keeps its colour Effect and its geometry Effect, and nothing is created.
-    const pass = (name: string) => engine.getRenderPassNames().lastIndexOf(name);
-    const effectIn = (name: string) => floor.subMeshes[0]!._getDrawWrapper(pass(name))?.effect ?? null;
-    const lit = effectIn("Forward objects#0");
-    const geometry = effectIn("Spatial Geometry#0");
-    counts.synchronous = counts.asynchronous = 0;
-    setAuthoredLightEnabled(sun, false);
-    let lightHeld = 0;
-    for (let index = 0; index < 8; index++) if (!(await frame())) lightHeld++;
-    const lightOff = {
-      held: lightHeld, pipelines: { ...counts },
-      colourKept: lit !== null && effectIn("Forward objects#0") === lit,
-      geometryKept: geometry !== null && effectIn("Spatial Geometry#0") === geometry,
-    };
     return {
-      geometryPass: geometryPass >= 0, settled: settled >= 4, ...spawn, lightOff, ms: Math.round(performance.now() - started),
+      geometryPass: geometryPass >= 0, settled: settled >= 4, ...spawn, ms: Math.round(performance.now() - started),
     };
   } finally {
     restore();

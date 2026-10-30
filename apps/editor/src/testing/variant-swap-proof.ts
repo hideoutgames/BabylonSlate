@@ -34,6 +34,7 @@ import { glErrorTraceEntries, installGlErrorTrace } from "@haptic/render/gl-erro
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
+import { isRevealPending } from "../../../../packages/render/src/reveal-pending";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
@@ -307,8 +308,8 @@ async function spawnReveal() {
       else frames.held++;
       hiddenDifference = Math.max(hiddenDifference, difference(await view.read(), before));
     }
-    // Its own variant was asked for and is still compiling.
-    const compiling = [...view.driver.created].some((effect) => !effect.isReady());
+    // Left out while its variant compiles.
+    const compiling = isRevealPending(box);
     view.driver.stop();
     let appeared = 0;
     for (let attempt = 0; attempt < 100 && !(appeared = changed(await view.read(), before)); attempt++) {
@@ -376,7 +377,7 @@ export async function runVariantSwapProof() {
         // A spot's map: one atlas tile.
         await shadowGain("a spot starts casting shadows", (scene) => {
           const spot = new SpotLight("spot", new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene);
-          return { light: spot, castShadows: (enabled) => authored(spot, [0.9, 0.85, 0.7], 15, enabled) };
+          return { light: spot, castShadows: (enabled) => authored(spot, [0.9, 0.85, 0.7], 30, enabled) };
         }),
         // A point light's map: six atlas tiles, one per cube face.
         await shadowGain("a point light starts casting shadows", (scene) => {

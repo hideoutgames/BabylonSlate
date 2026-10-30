@@ -71,8 +71,12 @@ const WHITE_METAL: Surface = { name: "white metal", baseColor: [1, 1, 1], metall
 const MATTE: Surface = { name: "matte", baseColor: [0.8, 0.8, 0.8], metallic: 0, specular: 0, roughness: 0.6, environmentInfluence: 1 };
 /** MATTE without its diffuse colour: the two differ by the diffuse light alone, their specular being the same. */
 const BLACK: Surface = { ...MATTE, name: "black", baseColor: [0, 0, 0] };
-/** A Material's base colour is authored in display space; the surface lights it decoded (Babylon's 2.2 power). */
-const linearBase = (surface: Surface) => surface.baseColor.map((channel) => channel ** 2.2);
+/**
+ * A Material's base colour is authored in display space and lit decoded: Babylon's 2.2 power, or the exact sRGB curve on
+ * an Engine with exact conversions (the app's WebGPU Engine).
+ */
+const linearBase = (surface: Surface, exact: boolean) => surface.baseColor.map((channel) =>
+  !exact ? channel ** 2.2 : channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
 /** A white metal at the smoothest roughness: F0 = 1, so environment and rect light reflections arrive unscaled. */
 const MIRROR: Surface = { name: "mirror", baseColor: [1, 1, 1], metallic: 1, specular: 0.5, roughness: 0, environmentInfluence: 1 };
 
@@ -190,9 +194,10 @@ function directLight(P: Vector3, N: Vector3, eye: Vector3, baseColor: readonly n
 
 /**
  * A Lambertian receiver's irradiance from a rect of unit radiance, as the block's LTC evaluates it with the identity
- * transform: the polygon's vector form factor (each edge's angle times its normalised cross product, over 2π), then
- * the sphere approximation of horizon clipping ((|F|² + F.N) / (|F| + 1)); zero behind the emitting side. Corners in
- * the block's order: centre + width - height, - width - height, - width + height, + width + height.
+ * transform: the polygon's vector form factor F (each edge's angle times its normalised cross product, over 2π), then
+ * the sphere approximation of horizon clipping ((|F|² + Fz) / (|F| + 1)); zero behind the emitting side. Corners in the
+ * block's order: centre + width - height, - width - height, - width + height, + width + height. The LTC frame is
+ * Babylon's left-handed one (T1, -N × T1, N), so Fz is F against -N in world space.
  */
 function rectFormFactor(P: Vector3, N: Vector3, corners: Vector3[]): number {
   const [c0, c1, , c3] = corners as [Vector3, Vector3, Vector3, Vector3];
@@ -209,7 +214,7 @@ function rectFormFactor(P: Vector3, N: Vector3, corners: Vector3[]): number {
   }
   form.scaleInPlace(1 / (2 * Math.PI));
   const length = form.length();
-  return Math.max((length * length + Vector3.Dot(form, N)) / (length + 1), 0);
+  return Math.max((length * length - Vector3.Dot(form, N)) / (length + 1), 0);
 }
 
 export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2") {
@@ -393,7 +398,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     };
 
     // Direct light against the oracle: MATTE everywhere, no environment (its scale zero, so the block adds none).
-    const analytic: { name: string; first: number[]; pixels: number[]; expected: (Rgb | null)[] }[] = [];
+    const analytic: { name: string; pixels: number[]; expected: (Rgb | null)[] }[] = [];
     const analyticPoses: { name: string; apply: () => void }[] = [
       { name: "all lights", apply: () => undefined },
       { name: "two off", apply: () => { setAuthoredLightEnabled(points[1]!, false); setAuthoredLightEnabled(spots[1]!, false); } },
@@ -405,10 +410,9 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       restore(matte);
       scene.iblIntensity = 0;
       pose.apply();
-      const first = await draw();
       analytic.push({
-        name: pose.name, first, pixels: await draw(),
-        expected: flat((point, normal) => directLight(point, normal, eye, linearBase(MATTE), MATTE.roughness, lights)),
+        name: pose.name, pixels: await draw(),
+        expected: flat((point, normal) => directLight(point, normal, eye, linearBase(MATTE, engine.useExactSrgbConversions), MATTE.roughness, lights)),
       });
     }
 
@@ -432,7 +436,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       const major = sizes.indexOf(sorted[0]!);
       return { face: major * 2 + (axes[major]! > 0 ? 0 : 1), margin: sorted[0]! / sorted[1]! };
     };
-    const mirrors: { name: string; first: number[]; pixels: number[]; expected: ({ face: number; margin: number } | null)[] }[] = [];
+    const mirrors: { name: string; pixels: number[]; expected: ({ face: number; margin: number } | null)[] }[] = [];
     const mirrorPoses: { name: string; apply: () => void }[] = [
       { name: "faces", apply: () => undefined },
       { name: "rotated faces", apply: () => { faces.rotationY = 1.1; } },
@@ -452,8 +456,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       scene.environmentTexture = faces;
       pose.apply();
       scene.markAllMaterialsAsDirty(Constants.MATERIAL_TextureDirtyFlag);
-      const first = await draw();
-      mirrors.push({ name: pose.name, first, pixels: await draw(), expected: flat(reflectedFace) });
+      mirrors.push({ name: pose.name, pixels: await draw(), expected: flat(reflectedFace) });
     }
     // The furnace: in a uniform cube a rough white metal reflects exactly the cube's colour (the multi-scatter term
     // restores what the single-scatter table loses), and MATTE adds its diffuse colour times the cube's irradiance

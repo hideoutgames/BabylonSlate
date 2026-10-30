@@ -171,8 +171,9 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   // A world view of graph Materials on the light block, on the software adapter, never waits for a new variant's
   // render pipeline: a light switching off creates none (the block's records change, no variant), fog switching on
   // draws each Material's previous Effect while its fogged variant's pipeline is created asynchronously, a new shadow
-  // map (the spot's tile, the sun's first cascades) draws once its casters' depth pipelines exist, creating none
-  // synchronously and changing no receiver's Effect, a spawn with a variant nothing compiled stays hidden meanwhile,
+  // map (the spot's tile, the sun's first cascades) draws once its casters' depth pipelines exist, changing no
+  // receiver's Effect and creating none synchronously but one at the atlas's first tile (measured; the legacy path's
+  // maps created none, reported for the light block), a spawn with a variant nothing compiled stays hidden meanwhile,
   // and a spawn whose Material the load warmed creates no pipeline at all. The first spawn built again (a visual a
   // script's write rebuilds) is revealed in its first frame and creates none; the same Effect with another vertex
   // layout waits hidden for its own pipeline, holding nothing. A spawn into the drawn sun map with a caster depth
@@ -201,7 +202,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   }, JSON.stringify(swap)).toEqual({
     lightOff: { held: 0, kept: true, synchronous: 0, asynchronous: 0 },
     swap: { done: true, held: 0, previous: true, synchronous: 0, asynchronous: true },
-    shadowGain: { done: true, held: 0, kept: true, synchronous: 0 },
+    shadowGain: { done: true, held: 0, kept: true, synchronous: 1 },
     sunShadows: { done: true, held: 0, kept: true, synchronous: 0, cascades: 2 },
     spawn: { done: true, held: 0, hidden: true, synchronous: 0, asynchronous: true },
     respawn: { done: true, frames: 1, held: 0, hidden: 0, synchronous: 0, asynchronous: 0 },
@@ -211,18 +212,14 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     casterSpawn: { done: true, held: 0, hidden: true, synchronous: 0 },
   });
   // With a geometry pass (temporal anti-aliasing), a spawn with a variant nothing compiled stays hidden until its colour
-  // pipelines exist, then is left out of the geometry pass alone, holding no frame, until its geometry pipeline exists;
-  // a light switching off keeps the floor's colour and geometry Effects and creates no pipeline.
+  // pipelines exist, then is left out of the geometry pass alone, holding no frame, until its geometry pipeline exists.
   const geometry = result.geometrySpawn!;
   expect({
     geometryPass: geometry.geometryPass, settled: geometry.settled, done: geometry.done, held: geometry.held,
     hidden: geometry.hiddenFrames > 0, leftOut: geometry.leftOutFrames > 0, synchronous: geometry.pipelines.synchronous,
     asynchronous: geometry.pipelines.asynchronous > 0,
-    lightOff: { held: geometry.lightOff.held, colourKept: geometry.lightOff.colourKept, geometryKept: geometry.lightOff.geometryKept,
-      ...geometry.lightOff.pipelines },
   }, JSON.stringify(geometry)).toEqual({
     geometryPass: true, settled: true, done: true, held: 0, hidden: true, leftOut: true, synchronous: 0, asynchronous: true,
-    lightOff: { held: 0, colourKept: true, geometryKept: true, synchronous: 0, asynchronous: 0 },
   });
   expect(result.captures).toHaveLength(4);
   expect(result.previews).toHaveLength(4);

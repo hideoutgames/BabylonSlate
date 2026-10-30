@@ -207,7 +207,7 @@ export async function runWebGpuProof() {
       );
       if (backend === "webgpu") {
         variantSwap = await proveWebGpuVariantSwap(engine);
-        geometrySpawn = await proveWebGpuGeometrySpawn(engine, false);
+        geometrySpawn = await proveWebGpuGeometrySpawn(engine);
       }
     } finally {
       engine.dispose();
