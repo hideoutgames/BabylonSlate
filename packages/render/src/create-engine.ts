@@ -3220,10 +3220,12 @@ function initializeEngine(
           (particleService?.holdsPlayingComponents() ?? false);
         // Full Quality captures prepare their views in the starting state, so their variants share its Effects; manual
         // captures not yet requested are rehearsed in its frames, which draw again until they have drawn (a rehearsal
-        // only draws inside the view's frame, so waiting for it without drawing would never end).
+        // only draws inside the view's frame, so waiting for it without drawing would never end), as they do for a
+        // spawnable system that became ready after the first.
         const draw = createStartingStateDraw(scene,
           () => !renderTargetCaptures.preparing() && !(particleService?.spawnableSystemsPending() ?? false),
-          { draws, onDrawn: releaseStaged, drawAgain: () => renderTargetCaptures.rehearsalPending() });
+          { draws, onDrawn: releaseStaged, drawAgain: () =>
+            renderTargetCaptures.rehearsalPending() || (particleService?.spawnableSystemsUndrawn() ?? false) });
         startingDraw = draw;
         renderTargetCaptures.rehearseManualCaptures(() => !draw.done);
       }
