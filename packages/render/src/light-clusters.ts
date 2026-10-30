@@ -58,6 +58,30 @@ export function buildLightClusters(
   header.set([view[2]!, view[6]!, view[10]!, view[14]!], 16);
   header.set([near, logScale, 1, 0], 20);
   const slice = (depth: number) => Math.min(CLUSTER_SLICES - 1, Math.max(0, Math.floor(Math.log(depth / near) * logScale)));
+  // A perspective camera's clusters are frustum pieces: each is tested against the light's sphere through its view
+  // space box. An orthographic camera's keep the screen and depth bounds alone.
+  const p = projection.m;
+  const perspective = p[11] !== 0;
+  const sliceNear = (index: number) => near * Math.exp(index / logScale);
+  const clusterReaches = (tx: number, ty: number, s: number, x: number, y: number, z: number, r: number) => {
+    const z0 = sliceNear(s);
+    const z1 = s === CLUSTER_SLICES - 1 ? Infinity : sliceNear(s + 1);
+    const dz = z < z0 ? z0 - z : z > z1 ? z - z1 : 0;
+    if (dz >= r) return false;
+    // The box's x and y over the slice's depth range (finite: the last slice tests up to the sphere's far side).
+    const zFar = Math.min(z1, z + r);
+    const axis = (tile: number, count: number, scale: number, shift: number, centre: number) => {
+      // The tile's two edges at the two depths; the box spans their extremes.
+      const low = ((tile / count) * 2 - 1 - shift) / scale;
+      const high = (((tile + 1) / count) * 2 - 1 - shift) / scale;
+      const min = Math.min(low * z0, low * zFar, high * z0, high * zFar);
+      const max = Math.max(low * z0, low * zFar, high * z0, high * zFar);
+      return centre < min ? min - centre : centre > max ? centre - max : 0;
+    };
+    const dx = axis(tx, CLUSTER_TILES_X, p[0]!, p[8]!, x);
+    const dy = axis(ty, CLUSTER_TILES_Y, p[5]!, p[9]!, y);
+    return dx * dx + dy * dy + dz * dz < r * r;
+  };
   for (const light of lights) {
     const bit = light.kind === "point" ? light.index : light.kind === "spot" ? CLUSTER_SPOT_BIT + light.index : CLUSTER_RECT_BIT + light.index;
     const word = light.kind === "point" ? 0 : 1;
@@ -89,6 +113,7 @@ export function buildLightClusters(
     for (let s = s0; s <= s1; s++)
       for (let ty = ty0; ty <= ty1; ty++)
         for (let tx = tx0; tx <= tx1; tx++) {
+          if (perspective && !clusterReaches(tx, ty, s, center.x, center.y, center.z, r)) continue;
           const cluster = (s * CLUSTER_TILES_Y + ty) * CLUSTER_TILES_X + tx;
           masks[cluster * 2 + word] = (masks[cluster * 2 + word]! | flag) >>> 0;
         }

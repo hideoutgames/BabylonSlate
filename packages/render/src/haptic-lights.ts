@@ -96,7 +96,8 @@ type SceneLights = {
   shadowed: ShadowedLight[]; sun: DirectionalLight | null; sunWritten: AtlasCascadedShadowGenerator | null;
   shadowViews: Float32Array; sunShadow: Float32Array;
   /** The clusters' block as written (`HAPTIC_CLUSTERS_GLSL`), its GPU buffer and the local lights it was built from. */
-  clusterWords: Uint32Array; clusterBuffer: DataBuffer | null; clusterLights: ClusterLight[];
+  clusterWords: Float32Array; clusterMasks: Uint32Array; clusterHeader: Float32Array; clusterBuffer: DataBuffer | null;
+  clusterLights: ClusterLight[];
 };
 const scenes = new WeakMap<Scene, SceneLights>();
 const directional = new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8);
@@ -125,13 +126,14 @@ function sceneLights(scene: Scene): SceneLights {
     buffer.create();
     // Rect area lights read Babylon's LTC tables, always bound, so a rect light arriving compiles nothing.
     const releaseLookup = retainAreaLightLookup(scene);
-    const clusterWords = new Uint32Array(CLUSTER_BLOCK_WORDS);
+    // Uploaded as raw words through a Float32Array view, so no mask passes through a JavaScript number.
+    const clusterWords = new Float32Array(CLUSTER_BLOCK_WORDS);
     lights = {
       buffer, rects: [], layers: [], limits: [], shadowed: [], sun: null, sunWritten: null,
       shadowViews: new Float32Array(HAPTIC_SHADOW_VIEWS * HAPTIC_SHADOW_VIEW_VEC4S * 4), sunShadow: new Float32Array(16),
-      // Uploaded as raw words: a Float32Array view, so no mask passes through a JavaScript number.
-      clusterWords, clusterBuffer: scene.getEngine().createUniformBuffer(new Float32Array(clusterWords.buffer), "HapticClusters"),
-      clusterLights: [],
+      clusterWords, clusterMasks: new Uint32Array(clusterWords.buffer, CLUSTER_HEADER_FLOATS * 4),
+      clusterHeader: clusterWords.subarray(0, CLUSTER_HEADER_FLOATS),
+      clusterBuffer: scene.getEngine().createUniformBuffer(clusterWords, "HapticClusters"), clusterLights: [],
     };
     scenes.set(scene, lights);
     // A map draws after the block's write, with the views it is then sampled by.
@@ -150,7 +152,7 @@ function sceneLights(scene: Scene): SceneLights {
     });
     const engine = scene.getEngine();
     const restored = engine.onContextRestoredObservable.add(() => {
-      state.clusterBuffer = engine.createUniformBuffer(new Float32Array(state.clusterWords.buffer), "HapticClusters");
+      state.clusterBuffer = engine.createUniformBuffer(state.clusterWords, "HapticClusters");
     });
     scene.onDisposeObservable.addOnce(() => {
       scene.onActiveCameraChanged.remove(cameraChanged);
@@ -166,10 +168,8 @@ function sceneLights(scene: Scene): SceneLights {
 
 /** Builds `state`'s clusters for the Scene's active camera from its local lights as last written, and uploads them. */
 function writeClusters(scene: Scene, state: SceneLights): void {
-  const words = state.clusterWords;
-  buildLightClusters(new Uint32Array(words.buffer, CLUSTER_HEADER_FLOATS * 4), new Float32Array(words.buffer, 0, CLUSTER_HEADER_FLOATS),
-    state.clusterLights, scene.activeCamera, scene.floatingOriginOffset);
-  if (state.clusterBuffer) scene.getEngine().updateUniformBuffer(state.clusterBuffer, new Float32Array(words.buffer));
+  buildLightClusters(state.clusterMasks, state.clusterHeader, state.clusterLights, scene.activeCamera, scene.floatingOriginOffset);
+  if (state.clusterBuffer) scene.getEngine().updateUniformBuffer(state.clusterBuffer, state.clusterWords);
 }
 
 /** Bind the clusters' block for a draw with `effect`, which reads it. */
