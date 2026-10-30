@@ -61,7 +61,7 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
     camera.maxZ = 200;
     scene.activeCamera = camera;
     setSceneBindsPreviousEffects(scene);
-    allowSceneScreenShadows(scene);
+    allowSceneScreenShadows(scene, () => true);
     const settings = (mode: RenderMode, screenShadows: ScreenShadowsQuality) => setSceneRenderSettings(scene, {
       mode, quality: normalizeRenderingQuality({}),
       // One coarse cascade: about 4 texels per metre, which misses the plank's and the contacts' shadows.

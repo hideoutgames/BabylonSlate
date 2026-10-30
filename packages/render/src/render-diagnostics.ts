@@ -1,4 +1,3 @@
-import { spatialEffectsUnsupported } from "./spatial-effects";
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { readEngineDrawCalls } from "./draw-calls";
 import { managedRenderReservations } from "./managed-render-resources";
@@ -174,7 +173,6 @@ export function createRenderDiagnostics(
         ...deviceTextureLimits(resolveSceneRenderingQuality(scene).textures.byteBudget),
         ...(shadows?.limits() ?? []),
         ...sceneEffectsQualityLimits(scene),
-        ...(state.effectsPlan?.screenShadows && spatialEffectsUnsupported(scene) ? ["screen shadows: device capability"] : []),
       ],
       adapter: engineAdapterInfo(engine),
       drawCalls: readEngineDrawCalls(engine),
