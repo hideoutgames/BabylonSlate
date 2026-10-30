@@ -67,16 +67,15 @@ import {
   applyShadowAdmission,
   cameraDistanceSquared,
   planShadowAdmission,
-  predictShadowStarts,
   readShadowAdmissionBudget,
   type ShadowAdmissionBudget,
   type ShadowAdmissionSnapshot,
-  type ShadowStartPrediction,
 } from "./shadow-admission-plan";
 import {
   NEUTRAL_DARKNESS,
   applyShadowSettings,
   createShadowGenerator,
+  detachShadowGenerator,
   fitLocalShadowDepth,
   neutralUntilRendered,
   shadowAllocationCheckpoint,
@@ -85,14 +84,12 @@ import {
   type ShadowMapSlot,
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
-import { detachShadowGenerator, ShadowPredictionMaps } from "./shadow-prediction-maps";
 import { isAtlasShadow, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
-export type { ShadowAdmissionSnapshot, ShadowStartPrediction } from "./shadow-admission-plan";
+export type { ShadowAdmissionSnapshot } from "./shadow-admission-plan";
 export type { ViewShadows } from "./shadow-view-maps";
-export { PREDICTION_MAP_SIZE } from "./shadow-prediction-maps";
 
 const controllers = new WeakMap<Scene, SceneShadowController>();
 
@@ -189,19 +186,15 @@ export class SceneShadowController {
   private readonly maps: ShadowMapContext;
   /** Views with their own sun maps. */
   private readonly views: ShadowViewMaps;
-  /** Prediction maps by light kind (`predictionMap`), and the scene's shadow reservation. */
-  private readonly predictions: ShadowPredictionMaps;
   /** The light block's path: maps of each atlas kind that hold their casters' depth variants (`warmCasterVariants`). */
   private readonly casterVariants: ShadowCasterVariants;
   constructor(scene: Scene) {
     this.scene = scene;
     this.maps = { scene, spatial: this.spatial, casters: this.meshes, slots: this.slots, counters: this.counters };
     this.views = new ShadowViewMaps(this.entries, this.maps);
-    this.predictions = new ShadowPredictionMaps(this.maps, () => this.planSettings);
     this.casterVariants = new ShadowCasterVariants(this.maps);
     const engine = scene.getEngine();
     const restored = engine.onContextRestoredObservable.add(() => {
-      this.predictions.release();
       this.casterVariants.dispose();
       this.disposeParkedMaps();
       for (const entry of this.entries.values()) {
@@ -288,7 +281,6 @@ export class SceneShadowController {
       this.views.releaseAll();
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.disposeParkedMaps();
-      this.predictions.dispose();
       this.casterVariants.dispose();
       this.entries.clear();
       this.meshes.clear();
@@ -397,26 +389,6 @@ export class SceneShadowController {
     return entry?.standby ? null : (entry?.generator ?? null);
   }
   /**
-   * Lit local lights the last sync left without an admitted map but within `margin` (a distance ratio) of one: of the
-   * relevant area's edge, or, with every local map taken, of the farthest holder's ranking distance (its incumbent
-   * bonus included) at no lower priority. Each names the map whose defines its admission gives its receivers (its own
-   * standby map, `borrowed` null; or an admitted map of its kind with these settings) and the holder it would take a
-   * map from. A light that would take a map from a holder of its kind is left out (the map moves, and the exchange
-   * keeps every receiver's defines); one no admitted map shares a kind with is `firstOfKind`.
-   */
-  nearShadowStarts(margin: number): ShadowStartPrediction[] {
-    const settings = this.planSettings;
-    if (!settings?.enabled || this.scene.activeCamera !== this.selectionCamera) return [];
-    return predictShadowStarts(this.entries, settings, margin);
-  }
-  /**
-   * Null: the variant predictions' map of a light's kind. The light block's Materials hold no shadow defines to
-   * predict, and a map would hold an atlas tile.
-   */
-  predictionMap(): ShadowGenerator | null {
-    return null;
-  }
-  /**
    * Asks every caster for its depth variant of each kind of atlas map (the sun's cascades, a
    * spot light's tile, a point light's faces) ahead of that kind's first shadow start, which then compiles none
    * (`ShadowCasterVariants`; Play's world presentation, in its loading frames, as its starting state poses the casters).
@@ -427,14 +399,6 @@ export class SceneShadowController {
     const settings = this.planSettings;
     if (settings?.enabled) this.casterVariants.warm(settings);
     else this.casterVariants.dispose();
-  }
-  /** Disposes the prediction maps `release` picks (all by default), and gives their bytes back. */
-  releasePredictionMaps(release: (map: ShadowGenerator) => boolean = () => true): void {
-    this.predictions.release(release);
-  }
-  /** The prediction maps held now. */
-  get heldPredictionMaps(): readonly ShadowGenerator[] {
-    return this.predictions.generators;
   }
   /** Admitted or standby map still attached to the light, which receivers bind. */
   boundGenerator(light: Light): ShadowGenerator | null {
@@ -858,12 +822,9 @@ export class SceneShadowController {
       else parkedBytes += bytes;
     }
     this.views.yieldTo(admitted.bytes + standby.bytes);
-    this.predictions.reserved = {
+    reserveSceneShadows(this.scene, {
       bytes: admitted.bytes + standby.bytes + parkedBytes, passes: admitted.passes, samplers: admitted.samplers + standby.samplers,
-    };
-    // Prediction maps keep only room the real maps leave, and go with the settings they were built with.
-    this.predictions.retainWithin(settingsKey(), standbyBudget);
-    this.predictions.reserve();
+    });
     // One scene-wide light invalidation covers every retained generator's defines.
     let materialsDirty = false;
     for (const entry of this.entries.values()) {
@@ -982,9 +943,7 @@ export class SceneShadowController {
     }
     for (const held of this.parked.values())
       live.bytes += reservedShadowBytes(held.generator, held.key.mapSize, budget);
-    // With the prediction maps' bytes (they draw no pass a frame shows).
-    this.predictions.reserved = { ...live };
-    this.predictions.reserve();
+    reserveSceneShadows(scene, live);
     // The restored holders' residency runs from their own admission, not from a move back.
     if (restoring)
       for (const entry of this.entries.values()) {

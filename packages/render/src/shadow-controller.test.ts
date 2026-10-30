@@ -161,7 +161,6 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect(shadowAtlasBytes(scene)).toBe(0);
     expect(shadowAtlasTexture(scene).getRenderSize()).toBe(1);
-    expect(controller.predictionMap()).toBeNull();
   });
   it("excludes collider display segments without excluding authored meshes below the collider", () => {
     const { scene, controller } = fixture();
