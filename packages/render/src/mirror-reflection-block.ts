@@ -12,8 +12,7 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
 import "@babylonjs/core/ShadersWGSL/ShadersInclude/helperFunctions";
-import { isMirrorSurfaceMesh, mirrorReflectionBinding } from "./mirror-surface-state";
-import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
+import { existingMirrorFallbackTexture, isMirrorSurfaceMesh, mirrorReflectionBinding } from "./mirror-surface-state";
 
 const scratchOffset = new Matrix();
 const scratchMatrix = new Matrix();
@@ -70,8 +69,8 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
         effect.setMatrix(this.matrix, scratchMatrix);
       }
     } else {
-      const placeholder = existingShadowSamplerPlaceholders(scene)?.plain;
-      if (placeholder) effect.setTexture(this.sampler, placeholder);
+      const fallback = existingMirrorFallbackTexture(scene);
+      if (fallback) effect.setTexture(this.sampler, fallback);
       effect.setMatrix(this.matrix, Matrix.IdentityReadOnly);
     }
     effect.setFloat4(this.parameters, texture ? 1 : 0, binding.gammaSpace ? 1 : 0, 0, 0);
