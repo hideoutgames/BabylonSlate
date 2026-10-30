@@ -255,6 +255,33 @@ export function createPrivateShadowAtlas(scene: Scene, edge: number): PrivateSha
   }
 }
 
+/** The private atlases whose tile clear `prepareTileClear` has drawn. */
+const preparedClears = new WeakSet<RenderTargetTexture>();
+
+/**
+ * On WebGPU a tile's scissored clear draws Babylon's clear quad, whose render pipeline for the atlas's format the first
+ * such clear creates synchronously, blocking a frame. Draws one into `atlas` (the Scene atlas's format) once the quad's
+ * shader has compiled, so the pipeline exists before the Scene atlas's first tile clears; true once it has (at once on
+ * WebGL2, which clears without a pipeline).
+ */
+export function prepareTileClear(atlas: PrivateShadowAtlas): boolean {
+  const target = atlas.target;
+  const engine = target.getScene()!.getEngine();
+  if (!engine.isWebGPU || preparedClears.has(target)) return true;
+  const renderTarget = target.renderTarget;
+  if (!renderTarget || !tileClearsReady(engine)) return false;
+  engine.bindFramebuffer(renderTarget);
+  engine.enableScissor(0, 0, 1, 1);
+  try {
+    engine.clear(null, false, true, false);
+  } finally {
+    engine.disableScissor();
+    engine.unBindFramebuffer(renderTarget);
+  }
+  preparedClears.add(target);
+  return true;
+}
+
 /** Runs `build` with the atlas maps it makes placed in `atlas` rather than the Scene's atlas. */
 export function placeInPrivateAtlas<T>(atlas: PrivateShadowAtlas, build: () => T): T {
   privateAtlas = atlas;

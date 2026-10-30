@@ -206,7 +206,10 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       scene.iblIntensity * environment.level);
     const box = environment as CubeTexture;
     if (box.boundingBoxSize) {
-      effect.setFloat4("hapticEnvironmentBoxPosition", box.boundingBoxPosition.x, box.boundingBoxPosition.y, box.boundingBoxPosition.z, 0);
+      // Relative to the floating origin, as the surface's world position is (the app's WebGPU Engine's).
+      const origin = scene.floatingOriginOffset;
+      effect.setFloat4("hapticEnvironmentBoxPosition", box.boundingBoxPosition.x - origin.x, box.boundingBoxPosition.y - origin.y,
+        box.boundingBoxPosition.z - origin.z, 0);
       effect.setFloat4("hapticEnvironmentBoxSize", box.boundingBoxSize.x, box.boundingBoxSize.y, box.boundingBoxSize.z, 0);
     }
     const harmonics = renderingHarmonics(environment.sphericalPolynomial);
