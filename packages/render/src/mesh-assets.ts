@@ -1,3 +1,4 @@
+import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
 import {
   type AbstractMesh,
   type Material,
@@ -306,6 +307,19 @@ export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void>
   return pending.length ? Promise.all(pending).then(() => undefined) : undefined;
 }
 
+/**
+ * Draws `mesh` with its albedo binding. A pooled visual's leaf cannot draw a per-mesh binding, so it leaves the pool
+ * for a mesh of its own under the visual, which draws the visual's binding.
+ */
+function drawAlbedo(mesh: AbstractMesh, binding: AlbedoBinding): NodeMaterial {
+  const material = setUnlitMaterial(mesh, binding.key, binding.unlit);
+  if (pooledLeafOf(mesh)) {
+    const own = setActorMeshMaterial(mesh, material);
+    if (own) applyMaterialBounds(own);
+  }
+  return material;
+}
+
 /** A sprite's key: alpha-tested (blended while it fades), culled, fogged. */
 const SPRITE_MATERIAL: UnlitMaterialKey = { textured: true, backFaceCulling: true, fog: true, role: "world" };
 /** A tilemap chunk's: readable from either side, without fog, in the atlas's exact display colours. */
@@ -334,7 +348,7 @@ export function applySpriteVisibility(mesh: AbstractMesh, visibility: number): v
 export function restoreAlbedoMaterial(mesh: AbstractMesh): boolean {
   const binding = albedoBindings.get(mesh);
   if (!binding?.material) return false;
-  binding.material = setUnlitMaterial(mesh, binding.key, binding.unlit);
+  binding.material = drawAlbedo(mesh, binding);
   applyMaterialBounds(mesh);
   return true;
 }
@@ -405,7 +419,7 @@ export function applyAlbedoTexture(
     // Preparation may finish after an authored assignment. Update only our
     // retained binding in that case; the borrowed material remains attached.
     // Otherwise the borrowed material keeps drawing; `restoreAlbedoMaterial` reapplies these values.
-    binding.material = publishToMesh ? setUnlitMaterial(mesh, binding.key, binding.unlit) : unlitMaterial(scene, binding.key);
+    binding.material = publishToMesh ? drawAlbedo(mesh, binding) : unlitMaterial(scene, binding.key);
     const previous = binding.lease;
     binding.lease = next; binding.pending = undefined;
     previous?.release();

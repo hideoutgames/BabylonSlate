@@ -1,4 +1,5 @@
-import type { AbstractMesh, Scene, SubMesh } from "@babylonjs/core";
+import { InstancedMesh, type AbstractMesh, type Scene, type SubMesh } from "@babylonjs/core";
+import { setMeshRenderingGroup } from "./instance-pool";
 import { sortingLayerSortKey } from "@haptic/core";
 
 /**
@@ -131,7 +132,9 @@ export function applyWorldVisualGroup(
   }
   for (const child of mesh.getChildMeshes()) {
     if (isEditorHelperBillboard(child)) continue;
-    child.renderingGroupId = RENDERING_GROUP.world;
+    // A pool member draws in its group's rendering group (its own setter warns and does nothing).
+    if (child instanceof InstancedMesh) setMeshRenderingGroup(child, RENDERING_GROUP.world);
+    else child.renderingGroupId = RENDERING_GROUP.world;
   }
 }
 
