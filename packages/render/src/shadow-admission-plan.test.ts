@@ -39,12 +39,12 @@ function plan(lights: (SpotLight | PointLight | DirectionalLight)[], atlasEdge: 
 }
 
 describe("Shadow admission into the shadow atlas", () => {
-  it("sizes the atlas by the quality level's byte budget, within the texture limit and the device class's cap", () => {
+  it("sizes the atlas by the quality level's byte budget within the texture limit, on a phone too", () => {
     const engine = { getCaps: () => ({ maxTextureSize: 16384 }) } as unknown as AbstractEngine;
     expect((["low", "medium", "high", "ultra"] as const).map((profile) => shadowAtlasEdge(engine, profile))).toEqual([4096, 4096, 8192, 8192]);
     expect(shadowAtlasEdge({ getCaps: () => ({ maxTextureSize: 4096 }) } as unknown as AbstractEngine, "ultra")).toBe(4096);
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)", maxTouchPoints: 5 });
-    expect(shadowAtlasEdge(engine, "ultra")).toBe(2048);
+    expect((["low", "medium", "high", "ultra"] as const).map((profile) => shadowAtlasEdge(engine, profile))).toEqual([4096, 4096, 8192, 8192]);
   });
 
   it("admits spot maps by the atlas's area and counts the atlas's bytes once", () => {
