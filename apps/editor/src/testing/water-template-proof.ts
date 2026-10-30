@@ -4,7 +4,7 @@
  * floor beside a red pole, in a few scenarios that each exercise one part of the look: the sun from above over
  * shallows, deep water, a grazing view toward the horizon, a view toward the sun (its glints), linear fog, and an
  * environment cube. Each scenario captures the scene without water and with it, and where each pixel's view ray meets
- * the lake's rest plane (its distance, or -1 where it misses the lake).
+ * the lake's rest plane: its distance and how far inside the lake's edge it lies (both -1 where it misses the lake).
  */
 import {
   Color3, Color4, DirectionalLight, Engine, FreeCamera, Matrix, MeshBuilder, RawCubeTexture, Scene, StandardMaterial, Vector3,
@@ -88,10 +88,11 @@ export async function runWaterTemplateProof(backend: "webgl2" | "webgpu" = "webg
     };
     /**
      * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): the distance along the view ray to the
-     * lake's rest plane where it meets the lake in front of the pole, else -1.
+     * lake's rest plane where it meets the lake in front of the pole, and how far inside the lake's edge, else -1.
      */
-    const lakeDistances = () => {
+    const lakeHits = () => {
       const distances: number[] = [];
+      const insets: number[] = [];
       for (let row = 0; row < canvas.height; row++) {
         const y = engine.isWebGPU ? row + 0.5 : canvas.height - row - 0.5;
         for (let column = 0; column < canvas.width; column++) {
@@ -100,10 +101,12 @@ export async function runWaterTemplateProof(backend: "webgl2" | "webgpu" = "webg
           const hit = ray.origin.add(ray.direction.scale(distance));
           const onLake = distance > 0 && Math.abs(hit.x) < LAKE / 2 && Math.abs(hit.z) < LAKE / 2;
           const pole = scene.pickWithRay(ray, (mesh) => mesh.name === "pole");
-          distances.push(onLake && !(pole?.hit && pole.distance < distance) ? distance : -1);
+          const visible = onLake && !(pole?.hit && pole.distance < distance);
+          distances.push(visible ? distance : -1);
+          insets.push(visible ? LAKE / 2 - Math.max(Math.abs(hit.x), Math.abs(hit.z)) : -1);
         }
       }
-      return distances;
+      return { distances, insets };
     };
     const body = normalizeWaterBody({ width: LAKE, length: LAKE, resolution: 32 });
     const view = (scenario: Scenario) => {
@@ -126,17 +129,19 @@ export async function runWaterTemplateProof(backend: "webgl2" | "webgpu" = "webg
     };
     const captures: { scenario: Scenario; water: "none" | "graph"; material: string; pixels: number[] }[] = [];
     const distances: Partial<Record<Scenario, number[]>> = {};
+    const insets: Partial<Record<Scenario, number[]>> = {};
     for (const scenario of SCENARIOS) {
       view(scenario);
       captures.push({ scenario, water: "none", material: "", pixels: await draw() });
-      distances[scenario] = lakeDistances();
+      ({ distances: distances[scenario], insets: insets[scenario] } = lakeHits());
       const lake = createWaterMesh(scene, "lake", body, createDefaultWaterDefinition(), builtInWaterMaterial(scene));
       captures.push({ scenario, water: "graph", material: lake.material?.getClassName() ?? "", pixels: await draw() });
       lake.dispose();
     }
     graph.dispose();
     return {
-      width: canvas.width, height: canvas.height, captures, distances: distances as Record<Scenario, number[]>, fog: FOG,
+      width: canvas.width, height: canvas.height, captures, distances: distances as Record<Scenario, number[]>,
+      insets: insets as Record<Scenario, number[]>, fog: FOG,
       exactSrgb: engine.useExactSrgbConversions,
     };
   } finally {

@@ -51,47 +51,59 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     for (const scenario of ["sun", "deep", "grazing", "glint", "fog", "environment"] as const) {
       const none = capture(scenario, "none"), water = capture(scenario, "graph");
       expect(water.material, scenario).toBe("NodeMaterial");
-      // The water draws over the lake and nowhere else: a pixel changes where the view ray meets the lake.
       const wet = (pixel: number) => Math.max(...rgb(water.pixels, pixel).map((value, channel) => Math.abs(value - none.pixels[pixel * 4 + channel]!))) > 3;
       const lake = settled(result.distances[scenario], true);
       const dry = settled(result.distances[scenario], false);
       lakes[scenario] = lake;
-      report[scenario] = { lake: lake.length, dryLake: lake.filter((pixel) => !wet(pixel)).length, dry: dry.length, wetDry: dry.filter(wet).length };
+      // Two metres inside its edge (where the water fades out over the bank) the water changes every pixel, in the
+      // scenarios whose water does not resemble its background (fog and the sky cube's reflection come close to it).
+      const open = lake.filter((pixel) => result.insets[scenario][pixel]! >= 2);
+      report[scenario] = { lake: lake.length, open: open.length, dryOpen: open.filter((pixel) => !wet(pixel)).length, dry: dry.length, wetDry: dry.filter(wet).length };
       expect(lake.length, scenario).toBeGreaterThan(width * height / 4);
-      expect(lake.filter((pixel) => !wet(pixel)), `${scenario}: the lake draws`).toEqual([]);
-      expect(dry.filter(wet), `${scenario}: nothing beside the lake changes`).toEqual([]);
+      if (["sun", "deep", "grazing", "glint"].includes(scenario)) expect(open.filter((pixel) => !wet(pixel)), `${scenario}: the lake draws`).toEqual([]);
+      // Nothing beside the lake changes.
+      expect(dry.filter(wet), `${scenario}: beside the lake`).toEqual([]);
     }
     const mean = (scenario: Scenario, value: (color: number[]) => number) =>
       lakes[scenario]!.reduce((sum, pixel) => sum + value(rgb(capture(scenario, "graph").pixels, pixel)), 0) / lakes[scenario]!.length;
     const luminance = (color: number[]) => 0.2126 * toLinear(color[0]!) + 0.7152 * toLinear(color[1]!) + 0.0722 * toLinear(color[2]!);
-    // Shallow water shows its sand floor: deep water is darker and bluer.
-    const shallow = { luminance: mean("sun", luminance), warmth: mean("sun", ([r, , b]) => r! - b!) };
-    const deep = { luminance: mean("deep", luminance), warmth: mean("deep", ([r, , b]) => r! - b!) };
-    // The environment cube (orange above, pale around) warms the reflection.
-    const environment = { warmth: mean("environment", ([r, , b]) => r! - b!) };
-    // Toward the sun, its glints saturate.
-    const glint = lakes.glint!.filter((pixel) => Math.max(...rgb(capture("glint", "graph").pixels, pixel)) >= 250).length;
-    const sunGlint = lakes.sun!.filter((pixel) => Math.max(...rgb(capture("sun", "graph").pixels, pixel)) >= 250).length;
+    const warmth = (color: number[]) => color[0]! - color[2]!;
+    const shallow = { luminance: mean("sun", luminance), warmth: mean("sun", warmth) };
+    const deep = { luminance: mean("deep", luminance), warmth: mean("deep", warmth) };
+    const environment = { warmth: mean("environment", warmth) };
+    const saturated = (scenario: Scenario) => lakes[scenario]!.filter((pixel) => Math.max(...rgb(capture(scenario, "graph").pixels, pixel)) >= 250).length;
     // Fog: each lake pixel is the unfogged lake's (the sun scenario's view) mixed toward the fog colour by Babylon PBR's
     // rule, the linear factor (fog end minus distance over its span) decoded, in linear colour.
     const fogApart = lakes.fog!.map((pixel) => {
       const distance = result.distances.fog[pixel]!;
       const factor = toLinear(255 * Math.min(Math.max((result.fog.end - distance) / (result.fog.end - result.fog.start), 0), 1));
       return Math.max(...rgb(capture("sun", "graph").pixels, pixel).map((value, channel) => {
-        const fogged = toDisplay(toLinear(255 * result.fog.color[channel]!) + (toLinear(value) - toLinear(255 * result.fog.color[channel]!)) * factor);
-        return Math.abs(capture("fog", "graph").pixels[pixel * 4 + channel]! - fogged);
+        const fog = toLinear(255 * result.fog.color[channel]!);
+        return Math.abs(capture("fog", "graph").pixels[pixel * 4 + channel]! - toDisplay(fog + (toLinear(value) - fog) * factor));
       }));
     }).sort((a, b) => a - b);
+    const fogMean = fogApart.reduce((sum, value) => sum + value, 0) / fogApart.length;
+    const fogShift = lakes.fog!.reduce((sum, pixel) => sum + Math.max(...rgb(capture("fog", "graph").pixels, pixel).map((value, channel) =>
+      Math.abs(value - capture("sun", "graph").pixels[pixel * 4 + channel]!))), 0) / lakes.fog!.length;
     report.look = {
-      shallow, deep, environment, glint, sunGlint,
-      fog: { mean: fogApart.reduce((sum, value) => sum + value, 0) / fogApart.length, p95: fogApart[Math.floor(fogApart.length * 0.95)], largest: fogApart.at(-1) },
+      shallow, deep, environment, glint: saturated("glint"), sunGlint: saturated("sun"),
+      fog: { mean: fogMean, p95: fogApart[Math.floor(fogApart.length * 0.95)], largest: fogApart.at(-1), shift: fogShift },
     };
     await testInfo.attach(`water-template-report-${backend}`, { body: JSON.stringify(report), contentType: "application/json" });
+    // Shallow water shows its sand floor: deep water is darker and bluer (measured: luminance 0.29 against 0.49, red
+    // minus blue -57 against 8).
     expect(deep.luminance).toBeLessThan(shallow.luminance * 0.8);
-    expect(deep.warmth).toBeLessThan(shallow.warmth - 10);
-    expect(environment.warmth).toBeGreaterThan(shallow.warmth + 10);
-    expect(glint).toBeGreaterThan(20);
-    expect(sunGlint).toBeLessThan(glint / 4);
-    expect(fogApart.at(-1)).toBeLessThan(4);
+    expect(deep.warmth).toBeLessThan(shallow.warmth - 30);
+    // The environment cube (orange above, pale around) warms the reflection (measured: red minus blue 46).
+    expect(environment.warmth).toBeGreaterThan(shallow.warmth + 20);
+    // Toward the sun its glints saturate (measured: 105 pixels and more); from above with the sun behind, none do.
+    expect(saturated("glint")).toBeGreaterThan(40);
+    expect(saturated("sun")).toBe(0);
+    // The fog mixes the lake toward its colour by that rule. The water's refraction reads the floor fogged at its own,
+    // farther, distance, so the rule holds on average (measured: mean 2.2/255, 95th percentile 4.0, against a shift of
+    // FOG_SHIFT from the unfogged lake).
+    expect(fogShift).toBeGreaterThan(3 * fogMean);
+    expect(fogMean).toBeLessThan(3.5);
+    expect(fogApart[Math.floor(fogApart.length * 0.95)]).toBeLessThan(6);
   });
 }
