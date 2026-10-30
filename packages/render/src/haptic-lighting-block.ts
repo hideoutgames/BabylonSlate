@@ -188,15 +188,14 @@ export class HapticLightingBlock extends NodeMaterialBlock {
 
   override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
     super.updateUniformsAndSamples(state, material, defines, uniformBuffers);
-    uniformBuffers.push("HapticLights");
-    if (defines["HAPTIC_LIGHT_LOOP_PROOF"]) uniformBuffers.push("HapticClusters");
+    uniformBuffers.push("HapticLights", "HapticClusters");
   }
 
   override bind(effect: Effect, _nodeMaterial: NodeMaterial, mesh?: Mesh): void {
     if (!mesh) return;
     const scene = mesh.getScene();
     bindHapticLights(scene, effect);
-    if (lightLoopProofScenes.has(scene)) bindHapticClusters(scene, effect);
+    bindHapticClusters(scene, effect);
     effect.setTexture("hapticAreaLtc1Sampler", scene._ltcTextures?.LTC1 ?? null);
     effect.setTexture("hapticAreaLtc2Sampler", scene._ltcTextures?.LTC2 ?? null);
     effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
@@ -262,7 +261,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       if (!wgsl) state.samplers.push(HAPTIC_SHADOW_ATLAS_DEPTH);
     }
     state._emitFunction("hapticLights", wgsl ? HAPTIC_LIGHTS_WGSL : HAPTIC_LIGHTS_GLSL, "// HapticLights");
-    state._emitFunction("hapticClusters", `#ifdef HAPTIC_LIGHT_LOOP_PROOF\n${wgsl ? HAPTIC_CLUSTERS_WGSL : HAPTIC_CLUSTERS_GLSL}#endif\n`, "// HapticClusters");
+    state._emitFunction("hapticClusters", wgsl ? HAPTIC_CLUSTERS_WGSL : HAPTIC_CLUSTERS_GLSL, "// HapticClusters");
     state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(wgsl)}\n#endif\n`, "// CEL");
     state._emitFunction("hapticLightingFunctions", wgsl ? HAPTIC_LIGHTING_FUNCTIONS_WGSL : HAPTIC_LIGHTING_FUNCTIONS_GLSL, "// Haptic lighting");
     for (const output of this._outputs) state.compilationString += `${state._declareOutput(output)} = ${wgsl ? "vec3f" : "vec3"}(0.0);\n`;

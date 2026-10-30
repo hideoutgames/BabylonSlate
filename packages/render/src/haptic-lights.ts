@@ -168,10 +168,22 @@ function sceneLights(scene: Scene): SceneLights {
   return lights;
 }
 
+/** Scenes whose loops visit every admitted light (`setHapticLightCulling`). */
+const unculledScenes = new WeakSet<Scene>();
+
+/** Test builds: whether `scene`'s light loops visit only their cluster's lights (the default) or every admitted one. */
+export function setHapticLightCulling(scene: Scene, enabled: boolean): void {
+  if (enabled) unculledScenes.delete(scene);
+  else unculledScenes.add(scene);
+  writeClusters(scene, sceneLights(scene));
+}
+
 /** Builds `state`'s clusters for the Scene's active camera from its local lights as last written, and uploads them. */
 function writeClusters(scene: Scene, state: SceneLights): void {
   state.clusterCamera = scene.activeCamera;
-  buildLightClusters(state.clusterMasks, state.clusterHeader, state.clusterLights, scene.activeCamera, scene.floatingOriginOffset);
+  // No camera: a header that sends every position to every light.
+  const camera = unculledScenes.has(scene) ? null : scene.activeCamera;
+  buildLightClusters(state.clusterMasks, state.clusterHeader, state.clusterLights, camera, scene.floatingOriginOffset);
   if (state.clusterBuffer) scene.getEngine().updateUniformBuffer(state.clusterBuffer, state.clusterWords);
 }
 
