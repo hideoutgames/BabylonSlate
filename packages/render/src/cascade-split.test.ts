@@ -75,7 +75,7 @@ afterEach(() => {
 
 /** A scene whose sun the controller draws as a three-cascade atlas map over 250 m at `profile`. */
 function sunScene(profile: ShadowProfile, mode = Camera.PERSPECTIVE_CAMERA) {
-  const engine = new NullEngine({ renderWidth: 512, renderHeight: 256, textureSize: 256, lockstepMaxSteps: 1 });
+  const engine = new NullEngine({ renderWidth: 512, renderHeight: 256, textureSize: 256, deterministicLockstep: false, lockstepMaxSteps: 1 });
   engines.push(engine);
   Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16, maxTextureSize: 4096, textureHalfFloatRender: true });
   engine._features.supportCSM = true;
