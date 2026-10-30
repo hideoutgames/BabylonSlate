@@ -18,7 +18,46 @@ export function featureTestCheckCommands(sceneName: string, mode: FeatureTestChe
   return ["ft_stats"];
 }
 
-export type FeatureTestCheckMode = "quick" | "full" | "benchmark";
+export type FeatureTestCheckMode = "quick" | "full" | "benchmark" | "breakdown";
+
+/** Scenes a Breakdown measures unless every scene is asked for: the GPU-heaviest. */
+export const FEATURE_TEST_BREAKDOWN_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "FT_World");
+
+/**
+ * Steps a Breakdown measures per scene, each on top of the project quality: one feature off (or one cost lowered) at
+ * a time, so the frame-time change against the baselines is that feature's share of a GPU-bound frame, without timer
+ * queries. After each step `quality reset` and its `restore` commands undo it. The second baseline shows drift
+ * (thermal throttling, background work) across the run.
+ */
+export const FEATURE_TEST_BREAKDOWN_STEPS: readonly { label: string; commands: readonly string[]; restore?: readonly string[] }[] = [
+  { label: "baseline", commands: [] },
+  { label: "shadows off", commands: ["quality shadows enabled off"] },
+  { label: "shadows medium", commands: ["quality shadows medium"] },
+  { label: "water refraction off", commands: ["quality water refraction off"] },
+  { label: "water reflections sky", commands: ["quality water reflections sky"] },
+  { label: "water detail low", commands: ["quality water shadingDetail low"] },
+  { label: "water detail medium", commands: ["quality water shadingDetail medium"] },
+  { label: "post low", commands: ["quality postprocessing low"] },
+  { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"] },
+  { label: "SSR off", commands: ["quality postprocessing reflections off"] },
+  { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"] },
+  { label: "post off", commands: ["postprocessing off"], restore: ["postprocessing on"] },
+  { label: "captures off", commands: ["rendertargets off"], restore: ["rendertargets on"] },
+  { label: "resolution 0.5", commands: ["quality resolution scale 0.5"] },
+  { label: "baseline again", commands: [] },
+];
+
+/** A Breakdown step's frame-time change against the mean of the two baselines' medians, or null when unmeasured. */
+export function breakdownDelta(
+  samples: readonly FeatureTestBenchmarkSample[],
+  sample: FeatureTestBenchmarkSample,
+): { ms: number; percent: number } | null {
+  const baselines = samples.filter((entry) => (entry.label === "baseline" || entry.label === "baseline again") && entry.frames?.medianMs);
+  if (!baselines.length || !sample.frames?.medianMs) return null;
+  const base = baselines.reduce((total, entry) => total + entry.frames!.medianMs!, 0) / baselines.length;
+  const ms = sample.frames.medianMs - base;
+  return { ms, percent: (ms / base) * 100 };
+}
 
 /**
  * Performance profiles a Benchmark sweeps per scene: each quality tier. A
@@ -51,6 +90,8 @@ export interface FrameStats {
   frames: number;
   durationMs: number;
   fps: number;
+  /** Median frame interval; absent in reports saved before it was recorded. */
+  medianMs?: number;
   p95Ms: number;
   maxMs: number;
   /** Frame intervals longer than 100 ms. */
@@ -185,6 +226,7 @@ export function frameStats(intervals: readonly number[]): FrameStats | null {
     frames: intervals.length,
     durationMs,
     fps: durationMs > 0 ? (intervals.length * 1000) / durationMs : 0,
+    medianMs: sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2,
     p95Ms: sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)],
     maxMs: sorted[sorted.length - 1],
     stalls: intervals.filter((value) => value > 100).length,
@@ -330,8 +372,8 @@ async function checkScene(
     result.play.runtimeFps = play.runtimeFps();
     result.play.snapshot = play.snapshot();
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
-    if (mode === "benchmark") {
-      await benchmarkProfiles(scene.name, play, run, deps, signal, limits, result.play.benchmark);
+    if (mode === "benchmark" || mode === "breakdown") {
+      await benchmarkProfiles(scene.name, mode, play, run, deps, signal, limits, result.play.benchmark);
       for (const sample of result.play.benchmark) {
         for (const failure of sample.failed) result.problems.push(`${sample.label}: ${failure}`);
       }
@@ -419,12 +461,13 @@ async function viewDrawsSteadily(play: PlayProbe, deps: FeatureTestCheckDeps, si
 }
 
 /**
- * Sweeps FEATURE_TEST_BENCHMARK_PROFILES on the running scene with the frame
- * cap lifted into `samples`, one as each profile finishes, then restores the
+ * Sweeps FEATURE_TEST_BENCHMARK_PROFILES (a Benchmark) or FEATURE_TEST_BREAKDOWN_STEPS (a Breakdown, undoing each step
+ * after it) on the running scene with the frame cap lifted into `samples`, one as each finishes, then restores the
  * session's quality, render path and cap.
  */
 async function benchmarkProfiles(
   sceneName: string,
+  mode: "benchmark" | "breakdown",
   play: PlayProbe,
   run: (line: string) => Promise<FeatureTestCheckCommandResult>,
   deps: FeatureTestCheckDeps,
@@ -434,10 +477,19 @@ async function benchmarkProfiles(
 ): Promise<void> {
   const cap = /(\d+)/.exec((await run("framecap")).output)?.[1];
   await run(`framecap ${BENCHMARK_FRAME_CAP}`);
+  const steps: readonly { label: string; commands: readonly string[]; restore?: readonly string[] }[] =
+    mode === "breakdown" ? FEATURE_TEST_BREAKDOWN_STEPS : FEATURE_TEST_BENCHMARK_PROFILES;
+  const pendingRestore: string[] = [];
+  const restore = async () => {
+    if (mode !== "breakdown") return;
+    await run("quality reset");
+    for (const line of pendingRestore.splice(0)) await run(line);
+  };
   try {
-    for (const profile of FEATURE_TEST_BENCHMARK_PROFILES) {
-      deps.onProgress?.(`${sceneName}: benchmarking ${profile.label}`);
+    for (const profile of steps) {
+      deps.onProgress?.(`${sceneName}: ${mode === "breakdown" ? "measuring" : "benchmarking"} ${profile.label}`);
       const failed: string[] = [];
+      if (profile.restore) pendingRestore.push(...profile.restore);
       for (const line of profile.commands) {
         const command = await run(line);
         if (!command.success) failed.push(`${line} failed: ${sentence(command.output || "no output")}`);
@@ -472,10 +524,12 @@ async function benchmarkProfiles(
         failed,
       });
       if (!steady) break;
+      await restore();
     }
   } finally {
     if (!signal.aborted) {
       await run("quality reset");
+      for (const line of pendingRestore.splice(0)) await run(line);
       await run(`framecap ${cap ?? 60}`);
     }
   }

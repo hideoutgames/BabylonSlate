@@ -108,6 +108,37 @@ describe("createCommandRegistry", () => {
     ]);
   });
 
+  it("turns post-processing and every-frame captures off and on again, in debug registries only", () => {
+    const host = recordingHost();
+    host.setPostProcessing = (enabled) => host.calls.push(`post:${enabled}`);
+    host.setRenderTargetCaptures = (enabled) => host.calls.push(`captures:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    expect(debug.execute("postprocessing off", host)).toEqual({ success: true, output: "postprocessing off" });
+    expect(debug.execute("postprocessing on", host)).toEqual({ success: true, output: "postprocessing on" });
+    expect(debug.execute("rendertargets off", host)).toEqual({ success: true, output: "rendertargets off" });
+    expect(debug.execute("rendertargets on", host)).toEqual({ success: true, output: "rendertargets on" });
+    expect(release.execute("postprocessing off", host).success).toBe(false);
+    expect(release.execute("rendertargets off", host).success).toBe(false);
+    expect(host.calls).toEqual(["post:false", "post:true", "captures:false", "captures:true"]);
+  });
+
+  it("turns each post-processing effect a tier allows off and back on until a reset", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: false });
+    registry.execute("quality ultra", host);
+    const effects = () => JSON.parse(registry.execute("quality postprocessing", host).output.replace(/^quality postprocessing \S+ /, "")) as Record<string, unknown>;
+    for (const effect of ["ambientOcclusion", "reflections", "volumetricLighting"]) {
+      expect(registry.execute(`quality postprocessing ${effect} off`, host).success).toBe(true);
+      expect(effects()[effect]).toBe(false);
+    }
+    expect(registry.execute("quality postprocessing ambientOcclusion maybe", host).success).toBe(false);
+    expect(registry.execute("quality postprocessing resolutionScale off", host).success).toBe(false);
+    // A reset returns the group to the project's (Medium) effects.
+    registry.execute("quality postprocessing reset", host);
+    expect(effects()).toMatchObject({ ambientOcclusion: true, reflections: true });
+  });
+
   it("runs core commands in every registry", () => {
     const host = recordingHost();
     const registry = createCommandRegistry({ includeDebug: false });

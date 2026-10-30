@@ -12,6 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@haptic/ui/components/dialog";
+import { Checkbox } from "@haptic/ui/components/checkbox";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { Textarea } from "@haptic/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { useActiveDocumentId, useDocumentActions } from "../context/document-context";
@@ -25,6 +27,7 @@ import {
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
 import {
+  FEATURE_TEST_BREAKDOWN_SCENES,
   FEATURE_TEST_CHECK_SCENES,
   frameStats,
   runFeatureTestCheck,
@@ -74,7 +77,10 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
   benchmark: "Plays every Feature Test scene and measures each quality tier with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
+  breakdown: "Plays FT_World and turns one feature off at a time (shadows, water, post-processing effects, captures, half resolution), measuring each with the frame cap lifted. The frame-time change shows what each feature costs this device's GPU. A few minutes per scene; keep the device awake and plugged in.",
 };
+
+const MODES = ["quick", "full", "benchmark", "breakdown"] as const satisfies readonly FeatureTestCheckMode[];
 
 /** How often a running check samples what the editor holds, so a crash's report shows memory climbing. */
 const RESOURCE_SAMPLE_MS = 2_000;
@@ -128,6 +134,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
   const activeDocumentId = useActiveDocumentId();
   const { requestPlay, playFromScene, setPlayFromScene, sessionOwner } = usePlay();
   const [mode, setMode] = useState<FeatureTestCheckMode>("quick");
+  const [breakdownAllScenes, setBreakdownAllScenes] = useState(false);
   const [phase, setPhase] = useState<Phase>(unfinishedPhase);
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
   const abortRef = useRef<AbortController | null>(null);
@@ -157,7 +164,9 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     const sampler = setInterval(() => { void sample(); }, RESOURCE_SAMPLE_MS);
     const active = activeRef.current;
     const current = FEATURE_TEST_CHECK_SCENES.find((scene) => `scene:${scene.path}` === active);
-    const scenes = mode === "quick" ? [current ?? FEATURE_TEST_CHECK_SCENES[0]] : FEATURE_TEST_CHECK_SCENES;
+    const scenes = mode === "quick" ? [current ?? FEATURE_TEST_CHECK_SCENES[0]]
+      : mode === "breakdown" && !breakdownAllScenes ? FEATURE_TEST_BREAKDOWN_SCENES
+        : FEATURE_TEST_CHECK_SCENES;
     const pageErrors: string[] = [];
     const onError = (event: ErrorEvent) => { pageErrors.push(event.message || String(event.error)); };
     const onRejection = (event: PromiseRejectionEvent) => {
@@ -203,7 +212,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       if (abortRef.current === controller) abortRef.current = null;
       onOpenChange(true);
     }
-  }, [mode, onOpenChange, openDocument]);
+  }, [mode, breakdownAllScenes, onOpenChange, openDocument]);
 
   const copy = async (text: string) => {
     setCopied(await copyText(text) ? "copied" : "failed");
@@ -245,18 +254,32 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
             className="min-h-48 flex-1 font-mono text-xs"
           />
         ) : (
-          <ToggleGroup
-            variant="outline"
-            size="sm"
-            spacing={1}
-            value={[mode]}
-            onValueChange={(value) => { if (value[0] === "quick" || value[0] === "full" || value[0] === "benchmark") setMode(value[0]); }}
-            aria-label="Check Scope"
-          >
-            <ToggleGroupItem value="quick" data-testid="feature-test-check-quick">Quick (Current Scene)</ToggleGroupItem>
-            <ToggleGroupItem value="full" data-testid="feature-test-check-full">Full (All Scenes)</ToggleGroupItem>
-            <ToggleGroupItem value="benchmark" data-testid="feature-test-check-benchmark">Benchmark</ToggleGroupItem>
-          </ToggleGroup>
+          <>
+            <ToggleGroup
+              variant="outline"
+              size="sm"
+              spacing={1}
+              value={[mode]}
+              onValueChange={(value) => { const next = MODES.find((entry) => entry === value[0]); if (next) setMode(next); }}
+              aria-label="Check Scope"
+            >
+              <ToggleGroupItem value="quick" data-testid="feature-test-check-quick">Quick (Current Scene)</ToggleGroupItem>
+              <ToggleGroupItem value="full" data-testid="feature-test-check-full">Full (All Scenes)</ToggleGroupItem>
+              <ToggleGroupItem value="benchmark" data-testid="feature-test-check-benchmark">Benchmark</ToggleGroupItem>
+              <ToggleGroupItem value="breakdown" data-testid="feature-test-check-breakdown">Breakdown</ToggleGroupItem>
+            </ToggleGroup>
+            {mode === "breakdown" ? (
+              <Field orientation="horizontal" className="items-center">
+                <Checkbox
+                  id="feature-test-check-breakdown-all"
+                  checked={breakdownAllScenes}
+                  data-testid="feature-test-check-breakdown-all"
+                  onCheckedChange={(checked) => setBreakdownAllScenes(checked === true)}
+                />
+                <FieldLabel htmlFor="feature-test-check-breakdown-all" className="flex-1 font-normal">All Scenes</FieldLabel>
+              </Field>
+            ) : null}
+          </>
         )}
         <DialogFooter>
           {phase.kind === "done" ? (

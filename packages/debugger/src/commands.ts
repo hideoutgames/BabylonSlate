@@ -1,4 +1,4 @@
-import { QUALITY_GROUPS, QUALITY_LEVELS, WATER_QUALITY_FIELDS, type QualityGroup } from "@haptic/core";
+import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, WATER_QUALITY_FIELDS, type QualityGroup } from "@haptic/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,
@@ -38,6 +38,8 @@ export const DEBUG_COMMAND_NAMES = [
   "showbounds",
   "actorboundingbox",
   "wireframe",
+  "postprocessing",
+  "rendertargets",
   "pause",
   "resume",
   "unpause",
@@ -133,7 +135,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: group ? `quality ${group}` : "quality", tier: "core", category: "engine",
       description: "Query, set or reset rendering scalability",
       parameters: [
-        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : group === "geometry" ? ["lod", "distance"] : group === "water" ? WATER_QUALITY_FIELDS : [])] },
+        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : group === "geometry" ? ["lod", "distance"] : group === "water" ? WATER_QUALITY_FIELDS : group === "postprocessing" ? POST_PROCESSING_EFFECT_FIELDS : [])] },
         { name: "value", type: "string", optional: true },
       ],
       run: (args, host) => host.quality(group, args.choice as string | undefined, args.value as string | undefined),
@@ -198,6 +200,10 @@ export function builtinCommands(): RegisteredCommand[] {
       host.setShowBounds?.(enabled),
     ),
     flagCommand("wireframe", (host, enabled) => host.setWireframe?.(enabled)),
+    flagCommand("postprocessing", (host, enabled) => host.setPostProcessing?.(enabled),
+      "Turn the Play view's post-processing on or off as a whole, to measure its cost"),
+    flagCommand("rendertargets", (host, enabled) => host.setRenderTargetCaptures?.(enabled),
+      "Suspend or resume every-frame Render Target Captures, to measure their cost; manual captures still draw"),
     flagCommand(
       "freecam",
       (host, enabled) => host.setFreeCam?.(enabled),

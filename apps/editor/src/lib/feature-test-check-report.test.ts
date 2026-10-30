@@ -79,6 +79,29 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Highest tier at 60 fps: high · at 30 fps: ultra");
   });
 
+  it("tabulates a breakdown's steps with each one's change against the baselines", () => {
+    const sample = (label: string, medianMs: number): FeatureTestBenchmarkSample => ({
+      label, frames: { frames: 100, durationMs: 4000, fps: 1000 / medianMs, medianMs, p95Ms: medianMs + 8, maxMs: medianMs + 10, stalls: 0 },
+      runtimeFps: null, cpuMs: 14.2, gpuMs: null, drawCalls: 618, resolution: "1180x788@1.00", failed: [],
+    });
+    const report: FeatureTestCheckReport = {
+      mode: "breakdown", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],
+      scenes: [{
+        name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
+        editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [],
+          benchmark: [sample("baseline", 38), sample("post off", 30), sample("baseline again", 42)], logs: [] },
+        session: null,
+      }],
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    expect(lines[0]).toMatch(/^Haptic Feature Test Check \(Breakdown\)/);
+    expect(lines).toContain("  Breakdown (frame cap lifted; change against the mean of both baselines):");
+    expect(lines).toContain("    post off              33    30.0ms   38ms    -10.0ms -25%     14.2ms  618    1180x788@1.00");
+    expect(lines).toContain("    baseline again        24    42.0ms   50ms    +2.0ms +5%       14.2ms  618    1180x788@1.00");
+    expect(lines.some((line) => line.includes("Highest tier"))).toBe(false);
+  });
+
   it("shows an editor load failure's error and the viewport's GPU when Play never ran", () => {
     const report: FeatureTestCheckReport = {
       mode: "quick", startedAt: 0, durationMs: 15_400, cancelled: false, pageErrors: [],

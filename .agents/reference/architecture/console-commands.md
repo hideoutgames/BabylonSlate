@@ -29,7 +29,7 @@ Built-in Play/export console command catalog, its principles, host wiring and us
 | Command | Behavior |
 | --- | --- |
 | `changescene <scene>` | Same path as `ctx.changeScene`; guid or display name from the Play scene library |
-| `quality [tier\|reset]` and `quality shadows\|resolution\|textures\|geometry\|water\|postprocessing\|lighting …` | Shared `RenderingQualitySession`; session overrides via `setScalability`; water fields from `WATER_QUALITY_FIELDS`; cleared at next Play |
+| `quality [tier\|reset]` and `quality shadows\|resolution\|textures\|geometry\|water\|postprocessing\|lighting …` | Shared `RenderingQualitySession`; session overrides via `setScalability`; water fields from `WATER_QUALITY_FIELDS`, post-processing effect flags from `POST_PROCESSING_EFFECT_FIELDS`; cleared at next Play |
 | `framecap [fps]` | Render cap only; fixed simulation step and input polling unchanged. Initial value from project `playFrameCap` |
 | `volume [0..1]` | `setGlobalVolume` (same as the graph node) |
 | `quit` | `runtime.stop()`, then a `sessionEnded` command: editor Play ends its session through the Stop path, Preview Build closes, a standalone player stops itself. Also runs from `ExecuteConsoleCommand` |
@@ -44,6 +44,7 @@ Built-in Play/export console command catalog, its principles, host wiring and us
 | `freecam [on\|off]` | Detached debug camera; simulation keeps ticking; pointer/WASD stop feeding the input ring, gamepad still forwards. Off, `changescene` or possess restore. Never writes actor transforms |
 | `showfps`, `stat unit\|memory\|draws\|threads`, `lightsdebug` | Open Stats HUD / highlight row; `threads` means bridge traffic, not OS threads |
 | `wireframe`, `showbounds` / `actorboundingbox`, `showcollision` / `debugphysics` | Play-scene overlays in the world rendering group (depth-tested). Collision uses `listDebugColliders()`; each physics-enabled Scene Layer draws in its own overlay scene |
+| `postprocessing`, `rendertargets` | Cost measurement (the Feature Test Check's Breakdown): the Play handle's `setPostProcessingEnabled`; `RenderTargetCaptures.setEveryFrameSuspended`, which skips every-frame captures' draws and keeps their outputs, targets and views (manual requests still draw) |
 | `shownav` / `shownavdebug`, `showpathfinding`, `shownavagent` | Navmesh, crowd paths and agent telemetry from live crowd state |
 | `behaviourtreedebug`, `showaudiodebug` | Live BT inspector; DOM voice overlay (not Babylon GUI) that keeps drawing while paused |
 | `dumpactors`, `inspect [name\|guid]`, `possess`, `destroyactor`, `dumplog`, `snapshot start\|stop` | Inspect data; possess/destroy by GUID or unique name (ambiguous names fail); trace recording |
@@ -52,7 +53,7 @@ The visualization commands stay off the Debug menu; the console arms them.
 
 ## Worker → main commands
 
-`sessionPaused`, `setScalability`, `setGlobalVolume`, `setFreeCam`, `setWireframe` / `setShowBounds` / `setShowCollision` / `setShowNav` / `setShowAudioDebug`, `debugColliders` (one per physics world, tagged `layerId` for layers), `setShowFps` / `setStat`.
+`sessionPaused`, `setScalability`, `setGlobalVolume`, `setFreeCam`, `setWireframe` / `setShowBounds` / `setShowCollision` / `setShowNav` / `setShowAudioDebug`, `setPostProcessingDebug` / `setRenderTargetCapturesDebug`, `debugColliders` (one per physics world, tagged `layerId` for layers), `setShowFps` / `setStat`.
 
 ## Autocomplete
 

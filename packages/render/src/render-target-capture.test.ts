@@ -79,6 +79,29 @@ it("manual capture allocates only on demand, coalesces requests and preserves th
   expect(scene.activeCamera).toBe(camera);
 });
 
+it("suspends every-frame captures without releasing them, while manual requests still draw", () => {
+  const { captures, draws, settings, root } = host();
+  const output = captures.acquireTexture("texture")!.resource;
+  captures.configure("capture", { ...settings, captureEveryFrame: true }, () => root);
+  captures.render();
+  expect(draws).toHaveLength(1);
+  const published = output.getInternalTexture();
+  captures.setEveryFrameSuspended(true);
+  captures.render(); captures.render();
+  expect(draws).toHaveLength(1);
+  // The output keeps its last image and storage while suspended.
+  expect(output.getInternalTexture()).toBe(published);
+  captures.configure("manual", { ...settings, renderTargetGuid: "other", captureEveryFrame: false }, () => root);
+  captures.setAssets(new Map([["target", { mode: "SceneColor", width: 16, height: 8 }], ["other", { mode: "SceneColor", width: 16, height: 8 }]]),
+    new Map([["texture", { renderTargetGuid: "target" }]]));
+  captures.request("manual"); captures.render();
+  expect(draws).toHaveLength(2);
+  captures.setEveryFrameSuspended(false);
+  captures.render();
+  // The every-frame capture draws again; the manual one waits for its next request.
+  expect(draws).toHaveLength(3);
+});
+
 it("publishes nothing and keeps a manual request while its draw waits for a compiling pipeline", () => {
   const { captures, draws } = host();
   const output = captures.acquireTexture("texture")!.resource;
