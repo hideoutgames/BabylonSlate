@@ -10,7 +10,7 @@ import {
   type AbstractMesh,
   type Light,
   type Scene,
-  type Camera,
+  Camera,
 } from "@babylonjs/core";
 import type { ShadowSettings } from "@haptic/core";
 import { AtlasCascadedShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator } from "./shadow-atlas";
@@ -28,6 +28,7 @@ import { awaitsFirstDraw, isWarmShadowRender, setAwaitingFirstDraw } from "./sha
 import { isRevealPending } from "./reveal-pending";
 import { listsHiddenCaster } from "./shadow-caster-warm";
 import { type EffectiveShadowBias, type LocalShadowLight, type ShadowEntry as Entry } from "./shadow-entry";
+import { CASCADE_LOG_ANCHOR, CASCADE_UNIFORM_LAMBDA, cascadeSplit } from "./cascade-split";
 
 // Every Babylon 9.29 shadow filter returns fully lit at darkness 1.
 export const NEUTRAL_DARKNESS = 1;
@@ -105,6 +106,25 @@ function atlasShadowGenerator(
 }
 
 /**
+ * Sets the sun's split for the camera it is drawn for (`cascadeSplit`): a log split from CASCADE_LOG_ANCHOR at Medium
+ * and above, Babylon's near-uniform mix at Low, for orthographic cameras and where cascade 0 would miss the eye.
+ * Babylon's setters only mark the breaks dirty when a value changes.
+ */
+function applyCascadeSplit(generator: CascadedShadowGenerator, settings: ShadowSettings): void {
+  const camera = generator.camera ?? generator.getLight().getScene().activeCamera;
+  if (!camera) return;
+  // The projection Babylon slices: its frustum corners come from the camera's transformation matrix.
+  const m = camera.getProjectionMatrix().m;
+  const fov = camera.mode === Camera.PERSPECTIVE_CAMERA ? 2 * Math.atan(1 / Math.abs(m[5]!)) : null;
+  const split = cascadeSplit({
+    fov, aspect: Math.abs(m[5]! / m[0]!), near: camera.minZ, far: camera.maxZ, distance: generator.shadowMaxZ, cascades: generator.numCascades,
+    tile: generator.mapSize, anchor: settings.profile === "low" ? null : CASCADE_LOG_ANCHOR,
+  });
+  generator.lambda = split.lambda;
+  generator.setMinMaxDistance(split.minDistance, 1);
+}
+
+/**
  * Constructs one admitted map with every hook the controller relies on:
  * receiver defines, automatic bias, culled caster lists and draw counters.
  * `view` keys a sun map to a view's camera (attachView); null is the scene
@@ -134,7 +154,7 @@ export function createShadowGenerator(
   if (generator instanceof CascadedShadowGenerator) {
     // An atlas sun is built with its count, which may be one; Babylon's setter allows two at least.
     generator.stabilizeCascades = true;
-    generator.lambda = 0.7;
+    generator.lambda = CASCADE_UNIFORM_LAMBDA;
     generator.shadowMaxZ = settings.distance;
     generator.cascadeBlendPercentage = 0.05;
     generator.autoCalcDepthBounds = false;
@@ -171,7 +191,10 @@ export function createShadowGenerator(
   });
   if (generator instanceof CascadedShadowGenerator)
     map?.onBeforeBindObservable.add(
-      () => generator.splitFrustum(),
+      () => {
+        applyCascadeSplit(generator, slot.entry.settings!);
+        generator.splitFrustum();
+      },
       -1,
       true,
     );
