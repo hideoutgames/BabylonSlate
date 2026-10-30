@@ -28,7 +28,7 @@ import {
   type FixedSeatCandidate,
 } from "./fixed-light-seats";
 import { forwardLightBudget } from "./forward-light-budget";
-import { lightSamplerCost, MATERIAL_SAMPLER_RESERVE } from "./light-sampler-budget";
+import { lightSamplerCost } from "./light-sampler-budget";
 import {
   isGlobalLight,
   lightsInCreationOrder,
@@ -108,16 +108,6 @@ export function fixedShapeLightingActive(scene: Scene): boolean {
 /** The Scene's slot table, or null where fixed-shape lighting has not admitted lights. */
 export function fixedLightSlotTable(scene: Scene): FixedLightSlotTable | null {
   return fixedShapeLightingActive(scene) ? (states.get(scene)?.table ?? null) : null;
-}
-
-/**
- * Samplers a lit Material may bind itself while the Engine uses fixed-shape
- * lighting: a fixed layout can spend all the lighting headroom on every lit
- * draw, which leaves the material reserve. Null while the switch is off.
- */
-export function fixedShapeMaterialSamplerBudget(engine: AbstractEngine): number | null {
-  if (!enabledEngines.has(engine)) return null;
-  return Math.min(engine.getCaps().maxTexturesImageUnits, MATERIAL_SAMPLER_RESERVE);
 }
 
 function fixedLightKind(light: Light): FixedLightKind | null {
