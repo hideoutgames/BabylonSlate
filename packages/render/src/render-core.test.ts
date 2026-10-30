@@ -183,17 +183,22 @@ describe("render scheduler", () => {
     expect(scheduler.shouldRenderReadyOwners(1017)).toBe(true);
   });
 
-  it("leaves the main thread free after a frame that held it, for as long up to a second", () => {
+  it("leaves the main thread free after frames that held it in a row, for as long up to a second", () => {
     const scheduler = new RenderScheduler();
     scheduler.acquireContinuous("play");
-    // Software GL: the frame's own work ends at 150 ms, then the browser holds the thread for the GPU until 3300 ms.
+    // Software GL: each frame's own work ends 150 ms in, then the browser holds the thread for the GPU about 3 s. One
+    // such gap may be a long task after the frame; from the second in a row the next frame waits.
     scheduler.noteRendered(0, 150);
-    expect([scheduler.shouldRender(3300), scheduler.shouldRender(4299), scheduler.shouldRender(4300)]).toEqual([false, false, true]);
-    // A frame whose next callback comes at the display's pace is not held back.
-    scheduler.noteRendered(4300, 4310);
-    expect(scheduler.shouldRender(4317)).toBe(true);
+    expect(scheduler.shouldRender(3300)).toBe(true);
+    scheduler.noteRendered(3300, 3450);
+    expect([scheduler.shouldRender(6600), scheduler.shouldRender(7599), scheduler.shouldRender(7600)]).toEqual([false, false, true]);
+    // A frame whose next callback comes at the display's pace is not held back, and ends the run.
+    scheduler.noteRendered(7600, 7610);
+    expect(scheduler.shouldRender(7617)).toBe(true);
+    scheduler.noteRendered(7617, 7627);
+    expect(scheduler.shouldRender(9000)).toBe(true);
     // Time spent paused after a frame is not read as the frame holding the thread.
-    scheduler.noteRendered(5000, 5010);
+    scheduler.noteRendered(9000, 9010);
     scheduler.setPaused(true);
     scheduler.setPaused(false);
     expect(scheduler.shouldRender(60_000)).toBe(true);

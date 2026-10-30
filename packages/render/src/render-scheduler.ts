@@ -14,7 +14,8 @@ function nowMs(): number {
 /**
  * A rendered frame whose next callback comes this long after its work ended held the main thread past its own work: on
  * software GL with software compositing the browser waits there for the GPU to finish the frame (seconds for a large
- * world). A frame on a 60 Hz display is well under it.
+ * world). A frame on a 60 Hz display is well under it. One such frame may be a long task after it; two in a row hold
+ * frames back.
  */
 const HELD_THREAD_MS = 500;
 /** The most a held frame leaves the main thread free for, so a suspension read as a held frame costs one short pause. */
@@ -44,6 +45,8 @@ export class RenderScheduler {
   private lastFrameMs = 0;
   /** A frame rendered since the last gate check: the next check reads how long the thread was held after it. */
   private awaitingNextCheck = false;
+  /** Frames in a row that held the main thread past their own work. */
+  private heldFrames = 0;
   /** Until when frames hold back after a frame held the main thread (`HELD_THREAD_MS`). */
   private heldYieldUntil = 0;
   private renderedFrames = 0;
@@ -81,18 +84,18 @@ export class RenderScheduler {
     if (value !== this.paused) {
       this.lastRenderAt = null;
       this.nextRenderAt = null;
-      this.awaitingNextCheck = false;
+      this.forgetHeldThread();
     }
     this.paused = value;
   }
 
   setVisible(value: boolean): void {
-    if (value !== this.visible) this.awaitingNextCheck = false;
+    if (value !== this.visible) this.forgetHeldThread();
     this.visible = value;
   }
 
   setDocumentVisible(value: boolean): void {
-    if (value !== this.documentVisible) this.awaitingNextCheck = false;
+    if (value !== this.documentVisible) this.forgetHeldThread();
     this.documentVisible = value;
   }
 
@@ -171,16 +174,22 @@ export class RenderScheduler {
   }
 
   /**
-   * A frame that held the main thread after its own work (software GL with software compositing waits there for the
-   * GPU to finish the frame) leaves it free for as long, up to a limit, before the next frame: back to back, such frames
-   * starve every other task of the page (input, timers, worker replies, a test driver's commands). Read once, at the
-   * first check after the frame.
+   * Frames that hold the main thread after their own work (software GL with software compositing waits there for the
+   * GPU to finish each frame), back to back, starve every other task of the page (input, timers, worker replies, a test
+   * driver's commands): from the second in a row, each leaves the thread free for as long, up to a limit, before the
+   * next frame. Read once, at the first check after the frame.
    */
   private readHeldThread(now: number): void {
     if (!this.awaitingNextCheck || this.lastFrameEndedAt === null) return;
     this.awaitingNextCheck = false;
     const held = now - this.lastFrameEndedAt;
-    if (held >= HELD_THREAD_MS) this.heldYieldUntil = now + Math.min(held, HELD_THREAD_YIELD_MAX_MS);
+    this.heldFrames = held >= HELD_THREAD_MS ? this.heldFrames + 1 : 0;
+    if (this.heldFrames >= 2) this.heldYieldUntil = now + Math.min(held, HELD_THREAD_YIELD_MAX_MS);
+  }
+
+  private forgetHeldThread(): void {
+    this.awaitingNextCheck = false;
+    this.heldFrames = 0;
   }
 
   /** `now` is when the frame began (its cadence slot); `endedAt` when its work finished. */
