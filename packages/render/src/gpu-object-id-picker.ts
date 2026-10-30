@@ -1,5 +1,5 @@
 import type { AbstractMesh, Material, Observable, Plane, Scene } from "@babylonjs/core";
-import { Camera, Constants, Frustum, Matrix, Mesh } from "@babylonjs/core";
+import { Camera, Constants, Frustum, InstancedMesh, Matrix, Mesh, Ray } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
@@ -100,6 +100,48 @@ function warnFallback(cause: string, detail: string): void {
 function nameMeshes(meshes: readonly AbstractMesh[]): string {
   const shown = meshes.slice(0, 3).map((mesh) => mesh.name || "(unnamed)").join(", ");
   return meshes.length > 3 ? `${shown} and ${meshes.length - 3} more` : shown;
+}
+
+/**
+ * The pickable meshes and, after them, the sources of their regular instances: a batch of instances draws in one call
+ * under its source's id, whether the source is pickable or not (a hidden source draws only its instances).
+ */
+function numberedMeshes(meshes: readonly AbstractMesh[]): AbstractMesh[] {
+  const numbered = [...meshes];
+  const listed = new Set(numbered);
+  for (const mesh of meshes) {
+    if (!(mesh instanceof InstancedMesh) || listed.has(mesh.sourceMesh)) continue;
+    listed.add(mesh.sourceMesh);
+    numbered.push(mesh.sourceMesh);
+  }
+  return numbered;
+}
+
+/**
+ * The mesh a hit on `hit`'s id stands for. A mesh with instances among `candidates` drew them under its id, so a ray
+ * through the tapped pixel's centre, against its geometry where each of them and it (when pickable) stand, finds the
+ * one the pixel shows: the batch draws no geometry the ray cannot meet. Undefined (the CPU pick) when the ray meets
+ * none of them.
+ */
+function resolveBatchHit(hit: AbstractMesh, candidates: readonly AbstractMesh[], pickable: ReadonlySet<AbstractMesh>, tap: Tap): AbstractMesh | undefined {
+  const batch = candidates.filter((mesh) => mesh instanceof InstancedMesh && mesh.sourceMesh === hit);
+  if (batch.length === 0) return pickable.has(hit) ? hit : undefined;
+  if (pickable.has(hit) && candidates.includes(hit)) batch.push(hit);
+  const ray = Ray.Zero();
+  ray.update(tap.px + 0.5, tap.py + 0.5, tap.width, tap.height, Matrix.IdentityReadOnly, tap.view, tap.projection);
+  let nearest: AbstractMesh | undefined;
+  let distance = Infinity;
+  const inverse = new Matrix();
+  for (const mesh of batch) {
+    // `intersects` takes the ray in the mesh's own space, as `Scene.pickWithRay` passes it, and answers in world units.
+    mesh.computeWorldMatrix().invertToRef(inverse);
+    const info = mesh.intersects(Ray.Transform(ray, inverse), false);
+    if (info.hit && info.distance < distance) {
+      distance = info.distance;
+      nearest = mesh;
+    }
+  }
+  return nearest;
 }
 
 /**
@@ -460,12 +502,13 @@ class ScenePicker {
       const engine = scene.getEngine();
       const meshes = gpuPickableMeshes(scene);
       if (meshes.length === 0) return null;
-      if (meshes.length >= 0xffffff) {
-        warnFallback("capacity", `${meshes.length} pickable meshes exceed the 24-bit id range`);
+      const numbered = numberedMeshes(meshes);
+      if (numbered.length >= 0xffffff) {
+        warnFallback("capacity", `${numbered.length} pickable meshes exceed the 24-bit id range`);
         return undefined;
       }
-      // Ids number every pickable mesh, so an id means the same mesh whichever subset is drawn.
-      const ids = new Map<AbstractMesh, number>(meshes.map((mesh, index) => [mesh, index + 1]));
+      // Ids number every pickable mesh and instance source, so an id means the same mesh whichever subset is drawn.
+      const ids = new Map<AbstractMesh, number>(numbered.map((mesh, index) => [mesh, index + 1]));
       // Only meshes that can reach this pixel are drawn and awaited; the others cannot change its result.
       const candidates = pickCandidates(scene, meshes, pickFrustumPlanes(tap.view, tap.projection, tap.px, tap.py, tap.width, tap.height));
       if (candidates.length === 0) return null;
@@ -506,7 +549,11 @@ class ScenePicker {
       await engine._readTexturePixels(texture, 1, 1, -1, 0, pixel, true, true, 0, 0);
       if (this.disposed) return undefined;
       const id = decodeObjectId(pixel);
-      return id === 0 ? null : meshes[id - 1] ?? null;
+      const hit = id === 0 ? undefined : numbered[id - 1];
+      if (!hit) return null;
+      const resolved = resolveBatchHit(hit, candidates, new Set(meshes), tap);
+      if (!resolved) warnFallback("instances", `the ray through the tapped pixel meets none of "${hit.name}"'s drawn instances`);
+      return resolved;
     } catch (error) {
       // Hand this tap to the CPU ray; the next one starts from a fresh pass.
       warnFallback("exception", `the pick pass failed: ${error instanceof Error ? error.message : String(error)}`);

@@ -157,6 +157,12 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
  * Per shadow quality level, the smallest caster a sun cascade after the first draws: its bounding sphere's diameter in
  * that cascade's texels. A smaller one's shadow is too small to resolve there; the first cascade draws every caster.
  */
+/**
+ * Per shadow quality level, how many of the sun's last cascades get a tile of half the map size's edge: far cascades
+ * cover more ground per texel anyway, and their shadows are seen small. The first cascade always keeps the full size.
+ */
+export const SHADOW_HALF_TILE_CASCADES = { low: 0, medium: 1, high: 1, ultra: 2 } as const satisfies Record<ShadowProfile, number>;
+
 export const SHADOW_FAR_CASTER_MIN_TEXELS = { low: 3, medium: 2, high: 1.5, ultra: 1 } as const satisfies Record<ShadowProfile, number>;
 
 /** Conservative admission policy; these are not device performance measurements. */

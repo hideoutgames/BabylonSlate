@@ -6,7 +6,6 @@ import {
   type AbstractEngine,
   type AbstractMesh,
   type Effect,
-  type InstancedMesh,
   type Scene,
   type SubMesh,
 } from "@babylonjs/core";
@@ -15,6 +14,7 @@ import {
 } from "./webgpu-pipeline-deferral";
 import { variantSwapsTolerated } from "./variant-swaps";
 import { effectDrawnOn } from "./first-draw-stats";
+import { drawingMesh } from "./instance-source";
 
 /**
  * First draws of new variants in a world view's steady frames, and on WebGPU their render pipelines.
@@ -259,21 +259,21 @@ export function requestPipelineWarm(mesh: AbstractMesh): void {
   const state = warmupActive(mesh.getScene().getEngine());
   // A mesh the view does not draw (a light's or camera's helper) needs no pipeline.
   if (!state || !mesh.isEnabled() || !mesh.isVisible) return;
-  state.requests.add(mesh.getClassName() === "InstancedMesh" ? (mesh as InstancedMesh).sourceMesh : mesh);
+  state.requests.add(drawingMesh(mesh));
 }
 
 /**
  * Whether `mesh` may draw without its first draws waiting for pipelines: always where pipelines are not deferred, and
- * otherwise once its last warm draws all found theirs.
+ * otherwise once its last warm draws all found theirs (an instance's: its source's, which the warm draws).
  */
 export function pipelinesWarm(mesh: AbstractMesh): boolean {
   const state = warmupActive(mesh.getScene().getEngine());
-  return !state || state.meshWarm.get(mesh) === true;
+  return !state || state.meshWarm.get(drawingMesh(mesh)) === true;
 }
 
 /** Whether `mesh`'s last warm draws all found their pipelines, whatever the current round. */
 export function pipelinesWarmed(mesh: AbstractMesh): boolean {
-  return states.get(mesh.getScene().getEngine())?.meshWarm.get(mesh) === true;
+  return states.get(mesh.getScene().getEngine())?.meshWarm.get(drawingMesh(mesh)) === true;
 }
 
 /** The warm pass id standing in for `renderPassId`. */

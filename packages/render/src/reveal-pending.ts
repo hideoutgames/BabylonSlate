@@ -1,4 +1,5 @@
 import type { AbstractMesh, Material, Node, Scene } from "@babylonjs/core";
+import { drawingMesh } from "./instance-source";
 
 /**
  * Meshes a world view does not draw yet: each had nothing to draw (a spawned mesh, or one whose Material changed)
@@ -64,9 +65,14 @@ export function isPipelineWarmupMesh(mesh: AbstractMesh): boolean {
   return warmOnly.has(mesh);
 }
 
-/** Whether `mesh` has drawn with its current Material: such a mesh is never hidden. */
+/**
+ * Whether `mesh` has drawn with its current Material: such a mesh is never hidden. An instance has when its source,
+ * whose batch draws it, has.
+ */
 export function hasDrawn(mesh: AbstractMesh): boolean {
-  return drawnWith.has(mesh) && drawnWith.get(mesh) === (mesh.material ?? null);
+  const drawn = (probed: AbstractMesh) => drawnWith.has(probed) && drawnWith.get(probed) === (probed.material ?? null);
+  const source = drawingMesh(mesh);
+  return drawn(mesh) || (source !== mesh && drawn(source));
 }
 
 /** A probe found `mesh` ready to draw with its current Material. */

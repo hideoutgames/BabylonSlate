@@ -1,4 +1,4 @@
-import { DirectionalLight, PointLight, SpotLight, Vector3, type AbstractMesh, type Light, type ShadowGenerator } from "@babylonjs/core";
+import { DirectionalLight, InstancedMesh, Mesh, PointLight, SpotLight, Vector3, type AbstractMesh, type Light, type ShadowGenerator } from "@babylonjs/core";
 import type { ShadowSettings } from "@haptic/core";
 import {
   beginManagedRenderAllocation,
@@ -12,12 +12,35 @@ import {
   SHADOW_ATLAS_BYTES_PER_TEXEL,
   type PrivateShadowAtlas,
 } from "./shadow-atlas";
+import { drawnMaterialVariants } from "./drawn-variants";
 import { createDetachedShadowGenerator, type ShadowMapContext } from "./shadow-map-factory";
 
 /** The maps' tiles (a map's kind, format and filter shape its casters' depth variants, never its size). */
 const TILE = 64;
 /** Their atlas: room for four cascades, a spot light's tile and a point light's six faces. */
 const EDGE = 4 * TILE;
+
+/**
+ * The depth variants `generator` draws a regular-instance batch with, asked of its source's submeshes: an instance
+ * the instanced one, a source the ones it draws (`drawnMaterialVariants`). The map's own check asks for the variant
+ * of the frame's visible instances, which outside a frame are none, so it would compile the plain one only.
+ */
+function batchVariantsReady(generator: ShadowGenerator, caster: InstancedMesh | Mesh): boolean {
+  const source = caster instanceof InstancedMesh ? caster.sourceMesh : caster;
+  const instancing = source.getEngine().getCaps().instancedArrays;
+  const drawn = drawnMaterialVariants(source);
+  const plain = !instancing || (caster === source && drawn.plain);
+  const instanced = instancing && (caster !== source || drawn.instanced);
+  let ready = true;
+  for (const subMesh of source.subMeshes ?? []) {
+    const material = subMesh.getMaterial();
+    if (!material || subMesh.verticesCount === 0) continue;
+    const transparent = material.needAlphaBlendingForMesh(source);
+    if (plain) ready = generator.isReady(subMesh, false, transparent) && ready;
+    if (instanced) ready = generator.isReady(subMesh, true, transparent) && ready;
+  }
+  return ready;
+}
 
 /**
  * Lighting plan: on the light block's path a light's first shadow map of a kind (the sun's cascades, a spot light's
@@ -107,7 +130,9 @@ export class ShadowCasterVariants {
         for (const caster of casters) {
           // A variant reads the caster's world matrix (non-uniform scaling), which a frame computes before its maps draw.
           caster.computeWorldMatrix();
-          if (!map.customIsReadyFunction!(caster, 0, true)) waiting.add(caster);
+          const ready = caster instanceof InstancedMesh || (caster instanceof Mesh && caster.hasInstances)
+            ? batchVariantsReady(generator, caster) : map.customIsReadyFunction!(caster, 0, true);
+          if (!ready) waiting.add(caster);
         }
       }
     } finally {

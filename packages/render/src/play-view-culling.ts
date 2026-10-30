@@ -1,4 +1,4 @@
-import { Mesh, type AbstractMesh, type Scene } from "@babylonjs/core";
+import { InstancedMesh, Mesh, type AbstractMesh, type Scene } from "@babylonjs/core";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { isSkyboxMesh } from "./skybox";
 
@@ -13,7 +13,7 @@ import { isSkyboxMesh } from "./skybox";
  * debug overlays), meshes without geometry (they draw nothing), skyboxes and infinite-distance meshes, meshes whose
  * vertices can leave their bind-pose bounds (skinning, morph targets, lattice deformers, baked vertex animation,
  * padded material bounds), thin instances (Babylon's bounds cover the source mesh only unless refreshed) and water
- * (displaced in its vertex shader).
+ * (displaced in its vertex shader); a regular instance as its source.
  */
 
 const alwaysDrawn = new WeakSet<AbstractMesh>();
@@ -24,12 +24,16 @@ export function drawWhateverTheView(mesh: AbstractMesh): void {
   mesh.alwaysSelectAsActiveMesh = true;
 }
 
-/** Whether the cull must draw `mesh` whatever the view. */
+/**
+ * Whether the cull must draw `mesh` whatever the view. A regular instance is culled by its own bounds (its source's
+ * geometry through its world matrix) unless its source's vertices can leave them.
+ */
 export function keepsDrawingOutsideView(mesh: AbstractMesh): boolean {
   if (alwaysDrawn.has(mesh) || mesh.infiniteDistance || isSkyboxMesh(mesh)) return true;
-  if (!(mesh instanceof Mesh) || mesh.getTotalVertices() === 0) return true;
-  if (mesh.hasThinInstances || (mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true) return true;
-  return hasDeformingShadowBounds(mesh);
+  const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+  if (!(source instanceof Mesh) || source.getTotalVertices() === 0) return true;
+  if (source.hasThinInstances || (source.metadata as { slateWater?: unknown } | null)?.slateWater === true) return true;
+  return hasDeformingShadowBounds(source);
 }
 
 /** Per culled Scene, the meshes already settled (each is settled once). */
