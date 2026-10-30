@@ -22,10 +22,10 @@ import { deviceProfile } from "./device-profile";
 import { ShadowAtlasAllocator, type ShadowAtlasTile } from "./shadow-atlas-allocator";
 
 /**
- * Lighting plan: the light block's shadows (`HapticLightingBlock`) live in one depth-only texture per Scene, the shadow
+ * The light block's shadows (`HapticLightingBlock`) live in one depth-only texture per Scene, the shadow
  * atlas, whose tiles each hold one light's shadow. Each shadowed light keeps a Babylon shadow generator and its own
  * render target object, whose framebuffer is the atlas's: Babylon's caster drawing (depth wrappers, bones, morph targets,
- * instances, alpha test) is unchanged, drawn into the light's tile. Behind the lighting plan's Engine switch.
+ * instances, alpha test) is unchanged, drawn into the light's tile.
  */
 
 /** Bytes per texel of the atlas: 32-bit depth, its only attachment. */

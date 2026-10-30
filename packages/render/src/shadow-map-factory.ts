@@ -92,7 +92,7 @@ export function shadowAllocationCheckpoint(
 
 /**
  * A spot map, a point light's faces or the sun's cascades (keyed to `camera`, a view's, when given) as tiles of the
- * lighting plan's atlas; a full atlas fails the allocation, which the controller retries smaller.
+ * shadow atlas; a full atlas fails the allocation, which the controller retries smaller.
  */
 function atlasShadowGenerator(
   light: SpotLight | PointLight | DirectionalLight, mapSize: number, cascades: number, atlasEdge: number, camera?: Camera,
@@ -109,7 +109,7 @@ function atlasShadowGenerator(
  * receiver defines, automatic bias, culled caster lists and draw counters.
  * `view` keys a sun map to a view's camera (attachView); null is the scene
  * view's map, which receivers of every other camera bind. `atlasEdge`: the
- * lighting plan's atlas the maps are tiles of (`ShadowAdmissionBudget.atlasEdge`).
+ * shadow atlas the maps are tiles of (`ShadowAdmissionBudget.atlasEdge`).
  */
 export function createShadowGenerator(
   context: ShadowMapContext,

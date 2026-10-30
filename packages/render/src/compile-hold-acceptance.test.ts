@@ -1966,13 +1966,13 @@ async function editorView() {
 }
 
 /**
- * The lighting plan's CI gate: after the first presented frame, lights switched,
+ * The lighting CI gate: after the first presented frame, lights switched,
  * spawned, recoloured, moved, removed and pushed past the light block's maximum, shadows started for each kind of atlas
  * map (the sun's cascades, a spot light's tile, a point light's faces), moved, stopped and started again, and a spawn of
  * an actor the level holds, compile no shader, wait on no WebGPU pipeline and create none in a shadow pass. A merge gate:
  * CI's unit job runs it.
  */
-describe("the lighting plan's CI gate", () => {
+describe("the lighting CI gate", () => {
   const actors = () => [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])];
   /** The gameplay script: Effects each step compiled. */
   const play = async (world: PlayWorld) => {

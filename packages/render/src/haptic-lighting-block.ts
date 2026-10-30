@@ -104,7 +104,7 @@ function environmentCube(scene: Scene): BaseTexture | null {
 }
 
 /**
- * Lit surface shading for graph Materials (lighting plan): every light from the `HapticLights` block and the
+ * Lit surface shading for graph Materials: every light from the `HapticLights` block and the
  * Scene's environment cube, through one lighting function (`haptic-lighting-shader.ts`). No Babylon light block
  * is involved, so a Material drawing with it compiles no light defines and no light change recompiles it. CEL is
  * the `HAPTIC_CEL` define, set from the Scene's render mode: a mode change recompiles, as a settings change may.

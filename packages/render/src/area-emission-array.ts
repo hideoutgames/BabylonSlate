@@ -12,7 +12,7 @@ type Layers = { texture: RawTexture2DArray; keys: string[]; wanted: string; leas
 const scenes = new WeakMap<Scene, Layers>();
 const emissions = new WeakMap<Light, AreaEmissionPixels>();
 
-/** The prepared emission a rect light draws with on the lighting plan's path, which keeps no texture per light. */
+/** The prepared emission a rect light draws with on the light block, which keeps no texture per light. */
 export function setRectLightEmission(light: Light, pixels: AreaEmissionPixels | undefined): void {
   if (pixels) emissions.set(light, pixels);
   else emissions.delete(light);

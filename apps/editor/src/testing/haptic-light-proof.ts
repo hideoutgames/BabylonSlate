@@ -1,5 +1,5 @@
 /**
- * Test-build-only proof of the lighting plan's HapticLightingBlock on the real GPU, through the Forward FrameGraph:
+ * Test-build-only proof of HapticLightingBlock on the real GPU, through the Forward FrameGraph:
  * graph Materials drawn with the block against expectations derived here from the block's model rather than from
  * another renderer (its BRDF evaluated per pixel for the punctual lights, mirrors and white metals in cubes of known
  * colours, rect lights' form factors and mirror images), its CEL define, its Effects across light changes in both
