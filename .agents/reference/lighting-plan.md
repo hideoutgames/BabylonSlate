@@ -152,6 +152,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 8 Track B PR 1: `ScenePbrLightingBlock`, `SceneReflectionBlock`, `CelLightBlock`, the CEL graph swap (`cel-surface.ts`, `display-color-block.ts`), the blocks' helpers (`node-shadow-view.ts`, `scene-light-samplers.ts`) and `cel-shader.ts`'s patches of Babylon's light functions are deleted; the viewport's Unlit mode toggles only the light block.
 
+   Phase 8 Track B PR 2: `SceneRendering.celReflections`, which only the CEL graph swap read, is deleted; the render settings' listeners hear render-mode changes only.
+
    Phase 8 PR (previous-Effect gate): whether a world view draws a Material's previous Effect while its changed variant compiles is its own mark (`setSceneBindsPreviousEffects` in `variant-swaps.ts`, set by `createEngine` for world Scenes), no longer the fixed-shape light hooks being installed, so deleting fixed-shape lighting keeps it. Every previous Effect qualifies (no seat-bound Effect exists on the block's path), and no sampler placeholders are allocated for it.
 9. **Later, decided separately**: fewer material variants (texture presence and similar defines as always-bound defaults), measured on its own.
 
