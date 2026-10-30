@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
 import {
-  breakdownDelta, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_STEPS, frameStats, runFeatureTestCheck,
+  breakdownDelta, counterStats, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_STEPS, frameBound, frameStats,
+  runFeatureTestCheck, settingsChanges, vsyncShares,
   type FeatureTestBenchmarkSample, type FeatureTestCheckDeps,
 } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
@@ -201,24 +202,28 @@ describe("runFeatureTestCheck", () => {
     expect(editor.commands).not.toContain("ft_stats");
   });
 
-  it("measures each breakdown step on its own, undoing it before the next, between two baselines", async () => {
+  it("measures each breakdown step on its own at the 60 fps cap, undoing it before the next, between baselines", async () => {
     const editor = fakeEditor({});
     const report = await runFeatureTestCheck({
       mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal,
     });
     const samples = report.scenes[0]!.play.benchmark;
     expect(samples.map((sample) => sample.label)).toEqual(FEATURE_TEST_BREAKDOWN_STEPS.map((step) => step.label));
-    expect(samples[0]!.label).toBe("baseline");
-    expect(samples.at(-1)!.label).toBe("baseline again");
+    // A baseline opens and closes the sweep, and one follows every four steps.
+    expect(samples.filter((sample) => sample.baseline).map((sample) => sample.label))
+      .toEqual(["baseline 1", "baseline 2", "baseline 3", "baseline 4", "baseline 5"]);
+    expect(samples[0]!.baseline && samples.at(-1)!.baseline).toBe(true);
     // Each step is sampled after its own commands only: the previous step was undone first.
     const commands = editor.commands;
     const at = (line: string) => commands.indexOf(line);
     expect(at("quality shadows enabled off")).toBeLessThan(at("quality shadows medium"));
     expect(commands.slice(at("quality shadows enabled off") + 1, at("quality shadows medium"))).toEqual(["quality reset"]);
     expect(commands.slice(at("postprocessing off") + 1, at("rendertargets off"))).toEqual(["quality reset", "postprocessing on"]);
-    expect(commands.slice(at("rendertargets off") + 1, at("quality resolution scale 0.5"))).toEqual(["quality reset", "rendertargets on"]);
+    // Baseline 4 sits between them; it changes nothing and is undone by a reset too.
+    expect(commands.slice(at("rendertargets off") + 1, at("quality resolution scale 0.5"))).toEqual(["quality reset", "rendertargets on", "quality reset"]);
     expect(editor.sampled.find((sample) => sample.after === "postprocessing off")).toBeDefined();
-    expect(commands.slice(0, 2)).toEqual(["framecap", "framecap 240"]);
+    // iOS paces frames to the display: a lifted cap only queues frames behind the GPU.
+    expect(commands.slice(0, 2)).toEqual(["framecap", "framecap 60"]);
     expect(commands.slice(-2)).toEqual(["quality reset", "framecap 30"]);
   });
 
@@ -267,22 +272,167 @@ describe("runFeatureTestCheck", () => {
   });
 });
 
+describe("breakdown settling", () => {
+  /** A Play whose shaders keep being first drawn (and compiling) until `quietAt` after each command. */
+  const compilingFor = (ms: number) => {
+    let firstDraws = 0;
+    let busyUntil = 0;
+    let commandsSeen = 0;
+    const editor = fakeEditor({}, (now) => {
+      if (editor && editor.commands.length !== commandsSeen) { commandsSeen = editor.commands.length; busyUntil = now + ms; }
+      if (now < busyUntil) firstDraws += 1;
+    });
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      compiling: () => (editor.deps.now() < busyUntil ? 2 : 0),
+      play: () => {
+        const play = editor.deps.play();
+        return play && {
+          ...play,
+          snapshot: () => ({ ...play.snapshot(), rendering: { firstDraws: { draws: firstDraws }, cpuMs: 10, gpuMs: null, width: 100, height: 100, scalingLevel: 1 } as unknown as RenderDiagnostics }),
+        };
+      },
+    };
+    return { editor, deps };
+  };
+
+  it("samples a step only after shaders stopped being first drawn and compiling for the quiet time", async () => {
+    const { editor, deps } = compilingFor(12_000);
+    const issued = new Map<string, number>();
+    const tracked = { ...deps, sleep: async (ms: number, signal: AbortSignal) => {
+      const last = editor.commands.at(-1);
+      if (last && !issued.has(last)) issued.set(last, deps.now());
+      await deps.sleep(ms, signal);
+    } };
+    const report = await runFeatureTestCheck({ mode: "breakdown", scenes: [scene("FT_World")], deps: tracked, signal: new AbortController().signal });
+    const sampledAt = editor.sampled.find((sample) => sample.after === "quality shadows enabled off")!.now;
+    // 12 s of first draws and compiles, then the 3 s quiet time.
+    expect(sampledAt - issued.get("quality shadows enabled off")!).toBeGreaterThanOrEqual(15_000);
+    const shadows = report.scenes[0]!.play.benchmark.find((sample) => sample.label === "shadows off")!;
+    expect(shadows.unsettled).toMatchObject({ firstDraws: 0, compiling: 0 });
+    // 12 s busy, then the 3 s quiet time, within one 250 ms poll.
+    expect(shadows.unsettled!.settleMs).toBeGreaterThanOrEqual(14_750);
+    expect(shadows.failed).toEqual([]);
+  });
+
+  it("flags a step whose shaders never settle within the bound, and still samples it", async () => {
+    const { deps } = compilingFor(Number.POSITIVE_INFINITY);
+    const report = await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_World")], deps, signal: new AbortController().signal, timeouts: { profileCompileMs: 10_000 },
+    });
+    const first = report.scenes[0]!.play.benchmark[0]!;
+    expect(first.failed).toEqual(["Shaders were still first drawn or compiling after 10 s; this step's frames include them."]);
+    expect(first.unsettled!.compiling).toBeGreaterThan(0);
+  });
+});
+
+describe("draw sampling", () => {
+  // A static view's planar reflection draws on alternate frames: one frame's count is off by its whole draw count.
+  const alternating = (deps: FeatureTestCheckDeps): FeatureTestCheckDeps => {
+    let reads = 0;
+    return {
+      ...deps,
+      play: () => {
+        const play = deps.play();
+        return play && { ...play, snapshot: () => ({ ...play.snapshot(), drawCalls: reads++ % 2 ? 605 : 544 }) };
+      },
+      sampleFrames: async (durationMs, signal) => {
+        const frames = await deps.sampleFrames(durationMs, signal);
+        await deps.sleep(durationMs, signal);
+        return frames;
+      },
+    };
+  };
+
+  it("records Play's per-frame counters over the sample window, not one frame's", async () => {
+    const editor = fakeEditor({});
+    const report = await runFeatureTestCheck({
+      mode: "quick", scenes: [scene("FT_World")], deps: alternating(editor.deps), signal: new AbortController().signal,
+    });
+    const counters = report.scenes[0].play.counters!;
+    expect(counters.draws).toMatchObject({ min: 544, max: 605 });
+    expect(counters.draws!.samples).toBeGreaterThanOrEqual(2);
+    // This fake reports no rendering diagnostics in Quick mode, so there is no frame cost to sample.
+    expect(counters.cpuMs).toBeNull();
+  });
+
+  it("gives each benchmark step its median counters and their range", async () => {
+    const editor = fakeEditor({}, undefined, () => ({ drawn: 1, held: 0 }));
+    const report = await runFeatureTestCheck({
+      mode: "benchmark", scenes: [scene("FT_World")], deps: alternating(editor.deps), signal: new AbortController().signal,
+    });
+    for (const sample of report.scenes[0].play.benchmark) {
+      expect(sample.draws).toMatchObject({ min: 544, max: 605 });
+      expect(sample.drawCalls).toBe(sample.draws!.median);
+      expect(sample.cpuMs).toBe(4);
+      expect(sample.cpu).toMatchObject({ median: 4 });
+    }
+  });
+
+  it("summarises the samples by their median and range, and nothing without one", () => {
+    expect(counterStats([605, 544, 605, 544])).toEqual({ median: 574.5, min: 544, max: 605, samples: 4 });
+    expect(counterStats([544, 605, 544])).toEqual({ median: 544, min: 544, max: 605, samples: 3 });
+    expect(counterStats([])).toBeNull();
+  });
+});
+
 describe("breakdownDelta", () => {
-  const sample = (label: string, medianMs?: number): FeatureTestBenchmarkSample => ({
-    label, frames: medianMs === undefined ? null : { frames: 100, durationMs: 4000, fps: 25, medianMs, p95Ms: 46, maxMs: 50, stalls: 0 },
+  const sample = (label: string, meanMs?: number, baseline = label.startsWith("baseline")): FeatureTestBenchmarkSample => ({
+    label, baseline,
+    frames: meanMs === undefined ? null : { frames: 100, durationMs: meanMs * 100, fps: 1000 / meanMs, medianMs: 33.3, meanMs, p95Ms: 46, maxMs: 50, stalls: 0 },
     runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
   });
 
-  it("measures a step against the mean of both baselines, so drift between them is shared", () => {
-    const samples = [sample("baseline", 38), sample("shadows off", 30), sample("baseline again", 42)];
+  it("measures a step's mean frame time against the baselines around it, so drift is shared", () => {
+    const samples = [sample("baseline 1", 38), sample("shadows off", 30), sample("baseline 2", 42), sample("post off", 30), sample("baseline 3", 46)];
     expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -10, percent: -25 });
-    expect(breakdownDelta(samples, samples[2]!)).toEqual({ ms: 2, percent: 5 });
+    // Against baselines 2 and 3, not the first: drift since the start is not counted as the step's.
+    expect(breakdownDelta(samples, samples[3]!)).toEqual({ ms: -14, percent: -31.818181818181817 });
+    // A baseline's change is its drift against the first.
+    expect(breakdownDelta(samples, samples[4]!)!.ms).toBe(8);
+    expect(breakdownDelta(samples, samples[0]!)!.ms).toBe(0);
   });
 
-  it("uses the baseline that was measured, and reports nothing without one or without frames", () => {
-    expect(breakdownDelta([sample("baseline", 40), sample("post off", 30)], sample("post off", 30))).toEqual({ ms: -10, percent: -25 });
-    expect(breakdownDelta([sample("baseline"), sample("post off", 30)], sample("post off", 30))).toBeNull();
-    expect(breakdownDelta([sample("baseline", 40)], sample("post off"))).toBeNull();
+  it("uses the baselines that were measured, and reports nothing without one or without frames", () => {
+    const one = [sample("baseline 1", 40), sample("post off", 30), sample("baseline 2")];
+    expect(breakdownDelta(one, one[1]!)).toEqual({ ms: -10, percent: -25 });
+    const none = [sample("baseline 1"), sample("post off", 30)];
+    expect(breakdownDelta(none, none[1]!)).toBeNull();
+    const unmeasured = [sample("baseline 1", 40), sample("post off")];
+    expect(breakdownDelta(unmeasured, unmeasured[1]!)).toBeNull();
+  });
+
+  it("reads reports saved before interleaved baselines and mean frame times", () => {
+    const old = (label: string, medianMs: number): FeatureTestBenchmarkSample => ({
+      label, frames: { frames: 0, durationMs: 0, fps: 0, medianMs, p95Ms: 46, maxMs: 50, stalls: 0 },
+      runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
+    });
+    const samples = [old("baseline", 38), old("shadows off", 30), old("baseline again", 42)];
+    expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -10, percent: -25 });
+  });
+});
+
+describe("frame pacing", () => {
+  it("shares frames by how many 60 Hz display intervals they lasted", () => {
+    expect(vsyncShares([16.7, 33.3, 33.4, 50, 66.7, 120, 15, 34])).toEqual([0.25, 0.375, 0.125, 0.25]);
+    expect(vsyncShares([])).toEqual([0, 0, 0, 0]);
+    expect(frameStats([16.7, 33.3, 33.3, 66.7])).toMatchObject({ meanMs: 37.5, vsync: [0.25, 0.5, 0, 0.25] });
+  });
+
+  it("calls a frame vsync-bound at the cap, GPU-bound well past the CPU cost, CPU-bound otherwise", () => {
+    const at = (meanMs: number) => frameStats(Array.from({ length: 10 }, () => meanMs));
+    expect(frameBound(at(16.7), 10)).toBe("vsync");
+    expect(frameBound(at(40), 14)).toBe("gpu");
+    expect(frameBound(at(40), 30)).toBe("cpu");
+    expect(frameBound(at(40), null)).toBeNull();
+    expect(frameBound(null, 14)).toBeNull();
+  });
+
+  it("lists the render settings two fingerprints differ in", () => {
+    const base = { shadows: "high 2048", "water.reflections": "planar", "post.enabled": "true" };
+    expect(settingsChanges(base, { ...base, "water.reflections": "sky" })).toEqual(["water.reflections=sky"]);
+    expect(settingsChanges(base, base)).toEqual([]);
+    expect(settingsChanges(undefined, base)).toEqual([]);
   });
 });
 

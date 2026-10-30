@@ -587,6 +587,13 @@ export class WaterSceneCopyGraph {
     registry.set(this.passId, this.entry);
   }
 
+  /** Declares that the own opaque pass, when there is one, samples `handle` (the objects' screen shadows). */
+  readsInOpaquePass(handle: FrameGraphTextureHandle): void {
+    if (!this.ownOpaque) return;
+    this.ownOpaque.dependencies ??= new Set();
+    this.ownOpaque.dependencies.add(handle);
+  }
+
   /** The registered "Forward transparent" render pass id. */
   get renderPassId(): number { return this.passId; }
 

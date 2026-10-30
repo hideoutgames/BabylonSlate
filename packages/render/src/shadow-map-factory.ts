@@ -12,8 +12,8 @@ import {
   type Scene,
   Camera,
 } from "@babylonjs/core";
-import { SHADOW_FAR_CASTER_MIN_TEXELS, type ShadowSettings } from "@haptic/core";
-import { AtlasCascadedShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator } from "./shadow-atlas";
+import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
+import { AtlasCascadedShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
@@ -98,9 +98,10 @@ export function shadowAllocationCheckpoint(
  */
 function atlasShadowGenerator(
   light: SpotLight | PointLight | DirectionalLight, mapSize: number, cascades: number, atlasEdge: number, camera?: Camera,
+  halved = 0,
 ): ShadowGenerator {
   const generator = light instanceof DirectionalLight
-    ? createAtlasCascadedShadowGenerator(light, mapSize, cascades, atlasEdge, camera)
+    ? createAtlasCascadedShadowGenerator(light, mapSize, cascades, atlasEdge, camera, halved)
     : createAtlasShadowGenerator(light, mapSize, atlasEdge);
   if (!generator) throw new Error(`The shadow atlas has no room for ${light.name}'s ${mapSize}-texel tiles.`);
   return generator;
@@ -149,7 +150,8 @@ export function createShadowGenerator(
   // A view's map is keyed to its camera; the scene view's to the null camera.
   const camera = view ?? undefined;
   // The controller registers directional, point and spot lights only.
-  const generator = atlasShadowGenerator(entry.light as LocalShadowLight | DirectionalLight, mapSize, settings.cascades, atlasEdge, camera);
+  const generator = atlasShadowGenerator(entry.light as LocalShadowLight | DirectionalLight, mapSize, settings.cascades, atlasEdge, camera,
+    SHADOW_HALF_TILE_CASCADES[settings.profile]);
   const slot = { entry, view: view !== null };
   context.slots.set(generator, slot);
   if (generator instanceof CascadedShadowGenerator) {
@@ -217,13 +219,14 @@ export function createShadowGenerator(
     const projection = generator instanceof CascadedShadowGenerator
       ? generator.getCascadeProjectionMatrix(layer)
       : generator.projectionMatrix;
-    const size = map.getSize();
+    // The pass's own tile: a far cascade's may be smaller than the first's (`cascadeTileSizes`).
+    const tile = shadowTileSize(generator, layer);
     const matrix = projection?.m;
     biasInput.width = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0;
     biasInput.height = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0;
     biasInput.depth = matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0;
-    biasInput.mapWidth = size.width;
-    biasInput.mapHeight = size.height;
+    biasInput.mapWidth = tile;
+    biasInput.mapHeight = tile;
     biasInput.filter = generator.usePercentageCloserFiltering ? "pcf"
       : generator.useContactHardeningShadow ? "pcss" : "none";
     biasInput.filterQuality = generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
@@ -309,7 +312,7 @@ export function createShadowGenerator(
       // A cascade after the first leaves out a caster too small to resolve in its texels, judged by the whole mesh's
       // bounds (a thin-instance batch's include its instances); deforming bounds are not the caster's.
       const minTexels = layer > 0 && generator instanceof AtlasCascadedShadowGenerator ? generator.farCasterMinTexels : 0;
-      const size = minTexels ? generator.getShadowMap()!.getSize().width : 0;
+      const size = minTexels ? shadowTileSize(generator, layer) : 0;
       let kept = 0;
       for (const mesh of casters)
         if ((!isRevealPending(mesh) || listsHiddenCaster(generator, mesh)) &&

@@ -30,6 +30,7 @@ const options: Partial<Record<keyof ShadowSettings, Record<string, string>>> = {
   localLightMode: { auto: "Auto", manual: "Manual" },
   filter: { pcf: "PCF", pcss: "Contact Hardening (PCSS)" },
   filterQuality: { low: "Low", medium: "Medium", high: "High" },
+  screenShadows: { off: "Off", low: "Low", medium: "Medium", high: "High" },
   mapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048", 4096: "4096" },
   localMapSize: {
     256: "256",
@@ -87,6 +88,12 @@ const fields: {
     key: "softness",
     label: "Contact Hardening Size",
     description: "PCSS light size. Larger values widen the penumbra.",
+  },
+  {
+    key: "screenShadows",
+    label: "Screen-Space Shadows",
+    description:
+      "Adds the sun's small contact shadows the shadow map misses, near the camera. Uses a depth pass. PBR only.",
   },
   {
     key: "depthBias",

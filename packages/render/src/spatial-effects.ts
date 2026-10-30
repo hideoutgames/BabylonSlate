@@ -123,7 +123,8 @@ export function spatialEffectsUnsupported(scene: Scene): string | undefined {
 
 /** The plan has at least one stage composed by the spatial geometry chain. */
 export function hasSpatialEffects(plan: SceneEffectsPlan | null): plan is SceneEffectsPlan {
-  return !!plan && !!(plan.ambientOcclusion || plan.reflections || plan.volumetricLighting || plan.temporalAntiAliasing);
+  return !!plan && !!(plan.ambientOcclusion || plan.reflections || plan.volumetricLighting || plan.temporalAntiAliasing ||
+    plan.screenShadows);
 }
 
 /** Reserve MRTs, color/depth and effect targets before any native allocation.
@@ -156,6 +157,8 @@ export function reserveSpatialEffects(
   // Half-float velocity and two half-float history targets; native adds the
   // resolve pass input.
   if (plan.temporalAntiAliasing) bytes += pixels * (native ? 32 : 24);
+  // Screen-Space Shadows' RG16F target.
+  if (plan.screenShadows) bytes += pixels * 4;
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 
@@ -207,7 +210,7 @@ function storedFragment(fragment: string, wgsl: boolean): string {
  * takes no uniform buffers, so a fragment that reads one (the light block's) is drawn from the shader store instead,
  * where stages of the same source share one Effect (Babylon reports its compile failure to the first of them only).
  */
-function customWrapper(
+export function customWrapper(
   scene: Scene,
   name: string,
   fragment: string,

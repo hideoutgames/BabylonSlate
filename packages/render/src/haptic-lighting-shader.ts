@@ -464,6 +464,28 @@ export const HAPTIC_LIGHTING_FUNCTIONS_GLSL = `
 int hapticLoopVisited = 0;
 int hapticLoopReached = 0;
 #endif
+#ifdef HAPTIC_SCREEN_SHADOWS
+// The sun's lit share from Screen-Space Shadows at this pixel (\`hapticScreenShadowLit\`), set before the direct lights.
+float hapticScreenLit = 1.0;
+// The screen shadows of this draw's pass (\`hapticScreenShadowSampler\`: R the sun's lit share, G the eye distance of the
+// surface marched from; \`hapticScreenShadowTerms.x\` 0 where the pass has none, a placeholder then bound), for the surface
+// at P only: a fragment at another distance (behind glass or water, or anything the depth did not hold) keeps 1.
+float hapticScreenShadowLit(vec3 P, vec3 eye) {
+  if (hapticScreenShadowTerms.x < 0.5) return 1.0;
+  ivec2 last = textureSize(hapticScreenShadowSampler, 0) - 1;
+  vec2 texel = texelFetch(hapticScreenShadowSampler, clamp(ivec2(gl_FragCoord.xy), ivec2(0), last), 0).rg;
+  float distance = length(eye - P);
+  return abs(distance - texel.y) < 0.004 * distance + 0.01 ? texel.x : 1.0;
+}
+
+// Where the sun's cascades darken to (the first cascade's darkness; a map awaiting its first draw is neutral), as far as
+// the screen shadows say the sun is blocked.
+float hapticSunScreenShadow() {
+  vec4 cascades = hapticSunShadow[0];
+  float darkness = cascades.x > 0.5 ? hapticShadowViews[int(cascades.w) * ${HAPTIC_SHADOW_VIEW_VEC4S} + 5].x : 1.0;
+  return mix(darkness, 1.0, hapticScreenLit);
+}
+#endif
 // The masks of the cluster holding world position P (\`light-clusters.ts\`): every light outside the clusters' view.
 uvec2 hapticClusterMask(vec3 P) {
   vec4 slices = hapticClusterHeader[5];
@@ -634,7 +656,12 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     vec3 L = normalize(-hapticDirectional[i * 2].xyz);
     float NdotL = hapticSaturateEps(dot(N, L));
     vec4 record = hapticDirectional[i * 2 + 1];
+#ifdef HAPTIC_SCREEN_SHADOWS
+    // The cascades and the screen shadows each block the sun; the darker wins, so neither doubles the other.
+    vec3 color = record.rgb * (record.w > 0.5 ? min(hapticSunShadowFactor(P, dPdx, dPdy), hapticSunScreenShadow()) : 1.0);
+#else
     vec3 color = record.rgb * (record.w > 0.5 ? hapticSunShadowFactor(P, dPdx, dPdy) : 1.0);
+#endif
     diffuse += color * (NdotL / HAPTIC_PI);
     specular += hapticSpecular(surface, N, V, L, NdotL, surface.roughness) * color;
   }
@@ -869,6 +896,9 @@ vec3 hapticBrdf = hapticBrdfLookup(hapticS.NdotV, hapticS.roughness);
 vec3 hapticEnergy = vec3(1.0) + hapticS.F0 * (1.0 / hapticBrdf.y - 1.0);
 vec3 hapticDiffuseLight = vec3(0.0);
 vec3 hapticSpecularLight = vec3(0.0);
+#ifdef HAPTIC_SCREEN_SHADOWS
+hapticScreenLit = hapticScreenShadowLit(hapticP, ${input.cameraPosition});
+#endif
 hapticDirectLights(hapticS, hapticP, hapticN, hapticV, hapticDiffuseLight, hapticSpecularLight);
 ${output.diffuseDirect} = hapticDiffuseLight * hapticS.diffuse;
 ${output.specularDirect} = max(hapticSpecularLight, vec3(0.0)) * hapticEnergy;
@@ -900,6 +930,23 @@ const HAPTIC_EPSILON: f32 = 0.0000001;
 #ifdef HAPTIC_LIGHT_LOOP_PROOF
 var<private> hapticLoopVisited: i32 = 0;
 var<private> hapticLoopReached: i32 = 0;
+#endif
+#ifdef HAPTIC_SCREEN_SHADOWS
+var<private> hapticScreenLit: f32 = 1.0;
+fn hapticScreenShadowLit(P: vec3f, eye: vec3f) -> f32 {
+  if (uniforms.hapticScreenShadowTerms.x < 0.5) { return 1.0; }
+  let last = vec2i(textureDimensions(hapticScreenShadowSampler, 0)) - 1;
+  let texel = textureLoad(hapticScreenShadowSampler, clamp(vec2i(fragmentInputs.position.xy), vec2i(0), last), 0).rg;
+  let distance = length(eye - P);
+  return select(1.0, texel.x, abs(distance - texel.y) < 0.004 * distance + 0.01);
+}
+
+fn hapticSunScreenShadow() -> f32 {
+  let cascades = HapticLights.hapticSunShadow[0];
+  var darkness = 1.0;
+  if (cascades.x > 0.5) { darkness = HapticLights.hapticShadowViews[i32(cascades.w) * ${HAPTIC_SHADOW_VIEW_VEC4S} + 5].x; }
+  return mix(darkness, 1.0, hapticScreenLit);
+}
 #endif
 fn hapticClusterMask(P: vec3f) -> vec2u {
   let slices = HapticClusters.hapticClusterHeader[5];
@@ -1050,7 +1097,11 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
     let NdotL = hapticSaturateEps(dot(N, L));
     let record = HapticLights.hapticDirectional[i * 2 + 1];
     var color = record.rgb;
+#ifdef HAPTIC_SCREEN_SHADOWS
+    if (record.w > 0.5) { color *= min(hapticSunShadowFactor(P, dPdx, dPdy), hapticSunScreenShadow()); }
+#else
     if (record.w > 0.5) { color *= hapticSunShadowFactor(P, dPdx, dPdy); }
+#endif
     *diffuse += color * (NdotL / HAPTIC_PI);
     *specular += hapticSpecular(surface, N, V, L, NdotL, surface.roughness) * color;
   }
@@ -1272,6 +1323,9 @@ let hapticBrdf = hapticBrdfLookup(hapticS.NdotV, hapticS.roughness);
 let hapticEnergy = vec3f(1.0) + hapticS.F0 * (1.0 / hapticBrdf.y - 1.0);
 var hapticDiffuseLight = vec3f(0.0);
 var hapticSpecularLight = vec3f(0.0);
+#ifdef HAPTIC_SCREEN_SHADOWS
+hapticScreenLit = hapticScreenShadowLit(hapticP, ${input.cameraPosition});
+#endif
 hapticDirectLights(hapticS, hapticP, hapticN, hapticV, &hapticDiffuseLight, &hapticSpecularLight);
 ${output.diffuseDirect} = hapticDiffuseLight * hapticS.diffuse;
 ${output.specularDirect} = max(hapticSpecularLight, vec3f(0.0)) * hapticEnergy;

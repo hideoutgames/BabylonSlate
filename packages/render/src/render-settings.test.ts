@@ -8,7 +8,7 @@ import {
 } from "@haptic/core";
 import {
   applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneEffectsQualityLimits, sceneRenderingSettings, sceneWaterQuality, setSceneEffectsEnabled,
-  sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings,
+  allowSceneScreenShadows, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings,
 } from "./render-settings";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 
@@ -198,6 +198,39 @@ it("replans screen-space effects when the session quality tier changes and repor
   updateSceneRenderingSettings(scene);
   expect(state.effectsPlan).toBeNull();
   expect(sceneEffectsQualityLimits(scene)).toEqual(["post processing quality skips ambient occlusion, reflections"]);
+});
+
+it("plans Screen-Space Shadows only for a world view's Scene, and tells listeners when they start and stop", () => {
+  const scene = fixture();
+  const state = sceneRenderingSettings(scene);
+  const seen: boolean[] = [];
+  state.listeners.add(() => seen.push(state.effectsPlan?.screenShadows != null));
+  // High shadows ask for Medium screen shadows; a Scene not marked as a world view's plans none.
+  state.qualityOverrides = qualityPresetPatch("high");
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan?.screenShadows ?? null).toBeNull();
+  // A device that cannot draw the depth pass plans none either, and says so.
+  let supported = false;
+  allowSceneScreenShadows(scene, () => supported);
+  expect(state.effectsPlan?.screenShadows ?? null).toBeNull();
+  expect(sceneEffectsQualityLimits(scene)).toEqual(["screen shadows: device capability"]);
+  supported = true;
+  updateSceneRenderingSettings(scene);
+  // Enabled at any level, they add the depth pass themselves.
+  expect(state.effectsPlan?.screenShadows).toBe("medium");
+  expect(sceneEffectsQualityLimits(scene)).toEqual([]);
+  // Medium shadows leave them off.
+  state.qualityOverrides = qualityPresetPatch("medium");
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan).toBeNull();
+  state.qualityOverrides = qualityPresetPatch("ultra");
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan?.screenShadows).toBe("high");
+  state.qualityOverrides = qualityPresetPatch("low");
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan).toBeNull();
+  // On at High, off at Medium, on at Ultra, off at Low: one call each time they start or stop.
+  expect(seen).toEqual([true, false, true, false]);
 });
 
 it("tells listeners of each render-mode change once, after the plan is current, and of nothing else", () => {

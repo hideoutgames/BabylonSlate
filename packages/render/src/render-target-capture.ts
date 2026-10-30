@@ -322,6 +322,10 @@ export class RenderTargetCaptures {
   setEveryFrameSuspended(suspended: boolean): void {
     this.everyFrameSuspended = suspended;
   }
+  /** Whether every-frame captures are suspended (`setEveryFrameSuspended`). */
+  isEveryFrameSuspended(): boolean {
+    return this.everyFrameSuspended;
+  }
   /**
    * Runs from the scene view's `onBeforeRender`: draws Fast captures now and
    * queues this frame's Full Quality captures, which the view's graph draws

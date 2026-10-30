@@ -73,7 +73,8 @@ import type {
 import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled } from "./render-settings";
+import { spatialEffectsUnsupported } from "./spatial-effects";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows } from "./render-settings";
 import { environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -445,6 +446,8 @@ function initializeEngine(
   // The editor world view, Play and the exported player draw previous Effects while a changed variant compiles;
   // Prefab Preview (with its studio lights) waits for the new one.
   if (!presentRtt && !options.previewLighting) setSceneBindsPreviousEffects(scene);
+  // Only a world view (the editor's, Play's, the player's) marches Screen-Space Shadows; previews keep them off.
+  if (!presentRtt && !options.previewLighting) allowSceneScreenShadows(scene, () => !spatialEffectsUnsupported(scene));
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so a
@@ -1009,6 +1012,25 @@ function initializeEngine(
       resolutionScale,
       onDiagnostic: (diagnostic) => options.onPostProcessDiagnostic?.(diagnostic),
     });
+  };
+  /** `RenderDiagnostics.settings`: what the Feature Test Check's Breakdown steps change, as effective now. */
+  const breakdownSettings = (): Record<string, string> => {
+    const quality = resolveSceneRenderingQuality(scene);
+    const water = sceneWaterQualityDeviceClamp(scene).quality;
+    const { shadows, postprocessing: post } = quality;
+    return {
+      shadows: shadows.enabled ? `${shadows.profile} ${shadows.mapSize}` : "off",
+      "water.refraction": String(water.refraction),
+      "water.reflections": water.reflections,
+      "water.shadingDetail": water.shadingDetail,
+      "post.scale": String(post.resolutionScale),
+      "post.ambientOcclusion": String(post.ambientOcclusion),
+      "post.reflections": String(post.reflections),
+      "post.volumetricLighting": String(post.volumetricLighting),
+      "post.enabled": String(postProcessingEnabled),
+      captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
+      "resolution.scale": String(quality.resolution.scale),
+    };
   };
   const setPostProcessingEnabled = (enabled: boolean) => {
     postProcessingEnabled = enabled;
@@ -1677,7 +1699,7 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), firstDraws: firstDraws?.stats() ?? null, presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+    ))(), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,

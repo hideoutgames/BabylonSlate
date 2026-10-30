@@ -21,9 +21,14 @@ it("culls Play's meshes by view, except those whose bounds do not hold or that t
   thin.thinInstanceAdd(Matrix.Translation(10, 0, 0));
   const skinned = MeshBuilder.CreateBox("skinned", {}, scene);
   skinned.skeleton = new Skeleton("skeleton", "skeleton", scene);
+  // A glTF node instance: a regular instance draws its source's geometry through its own world matrix.
+  const instance = plain.createInstance("instance");
+  const skinnedInstance = skinned.createInstance("skinned instance");
+  const meshes = [plain, emitter, particles, thin, skinned, instance, skinnedInstance];
   // Intermediate marks every mesh it constructs; the next cull settles them.
-  expect([plain, emitter, particles, thin, skinned].every((mesh) => mesh.alwaysSelectAsActiveMesh)).toBe(true);
+  expect(meshes.every((mesh) => mesh.alwaysSelectAsActiveMesh)).toBe(true);
   settlePlayViewCulling(scene);
-  expect(Object.fromEntries([plain, emitter, particles, thin, skinned].map((mesh) => [mesh.name, mesh.alwaysSelectAsActiveMesh])))
-    .toEqual({ plain: false, emitter: true, particles: true, thin: true, skinned: true });
+  expect(Object.fromEntries(meshes.map((mesh) => [mesh.name, mesh.alwaysSelectAsActiveMesh]))).toEqual({
+    plain: false, emitter: true, particles: true, thin: true, skinned: true, instance: false, "skinned instance": true,
+  });
 });

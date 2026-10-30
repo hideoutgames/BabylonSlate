@@ -22,6 +22,12 @@ export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 export type RenderDiagnostics = {
   /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere and on WebGPU. */
   firstDraws?: FirstDrawStats | null;
+  /**
+   * A compact fingerprint of the effective settings the Feature Test Check's Breakdown steps change (`field: value`):
+   * shadows, device-clamped water refraction, reflections and shading detail, post-processing tier flags and whether
+   * post-processing runs, every-frame captures, resolution scale. A step that changes more than its own fields shows.
+   */
+  settings?: Record<string, string>;
   /** View-owned draw/copy counts. A held draw never replaces the visible bitmap.
    * Phase timing is enabled by requesting diagnostics, independently of GPU timers. */
   presentation?: {
