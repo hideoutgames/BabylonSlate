@@ -1,4 +1,5 @@
 import {
+  CascadedShadowGenerator,
   DirectionalLight,
   MeshBuilder,
   NullEngine,
@@ -31,6 +32,8 @@ function fixture() {
     textureHalfFloatRender: true,
     textureHalfFloatLinearFiltering: true,
   });
+  // Every shipped Engine (WebGL2, WebGPU) draws cascades; the sun's atlas map is one.
+  engine._features.supportCSM = true;
   const scene = new Scene(engine);
   scene.activeCamera = new UniversalCamera(
     "camera",
@@ -62,9 +65,12 @@ describe("opt-in shadow evidence capture", () => {
     const controller = sceneShadowController(scene);
     controller.register(light, true);
     controller.sync();
-    const generator = controller.generator(light)!;
-    generator.getTransformMatrix();
-    const updateProjection = vi.spyOn(generator, "getTransformMatrix");
+    const generator = controller.generator(light)! as CascadedShadowGenerator;
+    // The sun is an atlas cascade map, whose cascade projection exists once it has drawn.
+    scene.render();
+    const projection = generator.getCascadeProjectionMatrix(0)!.clone();
+    const updateProjection = vi.spyOn(generator, "getCascadeTransformMatrix");
+    const splitFrustum = vi.spyOn(generator, "splitFrustum");
     const renderMap = vi.spyOn(generator.getShadowMap()!, "render");
 
     const evidence = captureShadowDiagnostics(scene, {
@@ -90,12 +96,16 @@ describe("opt-in shadow evidence capture", () => {
         currentBias: { depth: 0.002, normalWorld: 0.007 },
       },
     });
+    expect(evidence.lights[0]!.generator).toMatchObject({ type: "CascadedShadowGenerator", cascades: 1 });
     const footprint =
       evidence.lights[0]!.generator!.projections[0]!.orthographicExtents!;
-    expect(footprint.width).toBeCloseTo(20);
-    expect(footprint.height).toBeCloseTo(20);
-    expect(footprint.depth).toBeCloseTo(20);
+    // The drawn cascade's orthographic box, read from its projection as it stands.
+    expect(footprint.width).toBeCloseTo(2 / Math.abs(projection.m[0]!));
+    expect(footprint.height).toBeCloseTo(2 / Math.abs(projection.m[5]!));
+    expect(footprint.depth).toBeCloseTo(2 / Math.abs(projection.m[10]!));
+    expect(footprint.width).toBeGreaterThan(0);
     expect(updateProjection).not.toHaveBeenCalled();
+    expect(splitFrustum).not.toHaveBeenCalled();
     expect(renderMap).not.toHaveBeenCalled();
     // Captured evidence must remain attached to its original settings/draw.
     generator.bias = 0.01;

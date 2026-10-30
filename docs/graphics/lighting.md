@@ -34,7 +34,7 @@ Only one directional light lights a scene at a time: the first enabled one in th
 | **Color**, **Intensity** | New lights use white at intensity 1. **Light Kind** switches between Point, Spot and Directional. |
 | **Cast Shadows** | Off for new lights. See [Shadows](shadows.md). |
 | **Shadow Priority** | Which lights keep their shadows when the shadow budget is full. |
-| **Range** | Point and spot only. Default 10. |
+| **Range** | Point and spot only. Default 10. Light falls off with the square of the distance and fades to nothing at Range, on every surface in PBR and CEL. |
 | **Inner Angle**, **Outer Angle** | Spot only, in degrees. Defaults 30 and 45. |
 
 For a textured **Rectangular Area Light**, pick a Texture in **Emission Texture**. The editor prepares its emission data automatically; the light stays off until it is ready.
@@ -52,12 +52,12 @@ Light icons in the viewport show each light's state:
 Each scene can light a limited number of local (point, spot and area) lights at once. Set it in **Project Settings > Rendering > Scalability**:
 
 - **Local Light Budget Mode**: **Auto** follows the Lighting quality level (4, 16, 64 or 256 lights from Low to Ultra). **Manual** lets you set **Local Light Budget**.
-- The directional sun and fill lights use separate slots.
+- The directional sun and one fill light use separate slots.
 - The device's GPU can lower the budget further.
 
 When more local lights are on than the budget allows, Haptic keeps the lights nearest the camera and switches the rest off until the camera moves closer to them. Disabled lights and lights with zero intensity do not count. Their **Enabled** setting is not changed.
 
-A different mix of light kinds needs new shaders the first time. On WebGL2 the objects on screen keep their previous shaders until the new ones are ready, so the change shows a few frames late; on WebGPU the view can pause. The kind is the light type (point, spot or area) and whether the light has a shadow map, so a shadowed and an unshadowed spot are different kinds. Haptic therefore prefers to switch a light for one of the same kind, including when you switch a light off. A nearer light of another kind can stay off: it takes a place only once it is more than 1.25 times nearer the camera than the light it would replace.
+Turning lights on or off, adding, moving or removing them, and starting or stopping their shadows never builds a new shader, so each change shows in the next frame. Each device also has a light capacity: desktops draw up to 32 point, 16 spot, 4 area and 4 directional lights at once, plus one fill; phones and tablets half as many. Lights past it show a yellow icon.
 
 ## Environment lighting
 
@@ -108,7 +108,7 @@ When **Render Mode** is **CEL**, **Project Settings > Rendering > CEL Shading** 
 | **Outlines**, **Outline Color**, **Outline Width** | On, near black, 1 px | Silhouette outlines on eligible geometry. |
 | **Outline Distance Fade**, **Outline Fade Start**, **Outline Fade End** | Off, 50, 100 | Shrinks outlines with camera distance. |
 
-Bands and shadow edges are always hard steps. For per-actor outlines, use the [Outline](../components/outline.md) component; see [Geometry](geometry.md#outlines).
+Bands and shadow edges are always hard steps. **Emissive** and fog apply to CEL surfaces as they do in PBR. For per-actor outlines, use the [Outline](../components/outline.md) component; see [Geometry](geometry.md#outlines).
 
 **Real-Time Reflections** in **Post Processing** is one setting for both render modes. With it on, CEL surfaces reflect as their Materials do in PBR: metal and smooth surfaces reflect, unlit surfaces never do. A Material reflects from its own **Metallic** and **Roughness** inputs, whether those come from values or textures.
 

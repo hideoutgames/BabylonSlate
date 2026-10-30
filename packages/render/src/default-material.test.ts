@@ -16,6 +16,7 @@ import {
   installEngineDefaultMaterial,
   isEngineDefaultMaterial,
 } from "./default-material";
+import { HapticLightingBlock } from "./haptic-lighting-block";
 import { createPrimitiveMesh } from "./scene-loader";
 import { applySceneEnvironment } from "./scene-illumination";
 import { createDefaultScene } from "@haptic/core";
@@ -53,7 +54,10 @@ describe("engine default material", () => {
     scene.defaultMaterial = material;
     // Its shaders load asynchronously.
     await vi.waitFor(() => expect(material.isReadyForSubMesh(box, box.subMeshes[0]!)).toBe(true));
-    expect(box.subMeshes[0]!.effect?.defines).toMatch(/LIGHT0/);
+    // Lit by the light block: it reads the lights from their uniform buffer and compiles no light defines.
+    expect(material.attachedBlocks.some((block) => block instanceof HapticLightingBlock)).toBe(true);
+    expect(box.subMeshes[0]!.effect?.defines).not.toMatch(/#define LIGHT\d/);
+    expect(material.compiledShaders).toContain("uniform HapticLights");
   });
 
   it("gives a mesh whose scaling turns non-uniform after its first readiness check the program of one that starts so", async () => {

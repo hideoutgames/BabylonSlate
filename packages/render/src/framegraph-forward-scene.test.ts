@@ -48,6 +48,9 @@ import {
 } from "./render-settings";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
+import { AtlasCascadedShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
+import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
+import { VOLUME_SHADOW_CODE } from "./volumetric-lights";
 import { configureCutoutSorting } from "./sorting";
 
 const engines: NullEngine[] = [];
@@ -64,6 +67,12 @@ function captureRenderFrame<T>(engine: AbstractEngine, draw: () => T) {
     scope.dispose();
   }
 }
+
+/**
+ * The Scene's object renderers but the light block's one-texel shadow atlas stand-in, which the first lighting sync
+ * makes and the Scene keeps: the graph's own tasks' renderers.
+ */
+const graphRenderers = (scene: Scene) => scene.objectRenderers.filter((renderer) => renderer.name !== "hapticShadowAtlasPlaceholder");
 
 function host(engine = new NullEngine()) {
   if (!engines.includes(engine)) engines.push(engine);
@@ -261,7 +270,6 @@ it("rejects foreign and disposed cameras without changing or rendering either sc
 
 it("restores floating-origin matrices, viewport and shadow flags when object readiness throws", async () => {
   const engine = new NullEngine();
-  vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
   vi.spyOn(engine, "getCreationOptions").mockReturnValue({
     useLargeWorldRendering: true,
   });
@@ -275,7 +283,7 @@ it("restores floating-origin matrices, viewport and shadow flags when object rea
   const projection = Array.from(scene.getProjectionMatrix().asArray());
   MeshBuilder.CreateBox("new candidate", {}, scene);
   const light = new PointLight("light", Vector3.Up(), scene);
-  scene.objectRenderers[0]!.customIsReadyFunction = () => {
+  graphRenderers(scene)[0]!.customIsReadyFunction = () => {
     expect(FloatingOriginCurrentScene.getScene()).toBe(scene);
     expect(scene.getSceneUniformBuffer()).not.toBe(ubo);
     throw new Error("object readiness failed");
@@ -296,7 +304,7 @@ it("restores floating-origin matrices, viewport and shadow flags when object rea
   expect(FloatingOriginCurrentScene.getScene).toBe(previousScene);
   expect(FloatingOriginCurrentScene.eyeAtCamera).toBe(false);
   expect(light.shadowEnabled).toBe(true);
-  expect(scene.objectRenderers).toHaveLength(0);
+  expect(graphRenderers(scene)).toHaveLength(0);
   expect(() => sibling.scene.render()).not.toThrow();
   graph.dispose();
 });
@@ -382,7 +390,7 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   const { scene, camera } = host(new NullEngine(options));
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  const renderer = scene.objectRenderers[0]!;
+  const renderer = graphRenderers(scene)[0]!;
   const probe = vi.spyOn(renderer, "isReadyForRendering");
   // NullEngine owns no canvas; its options are the actual backbuffer boundary.
   options.renderWidth = 96;
@@ -393,7 +401,7 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(probe).toHaveBeenLastCalledWith(96, 72);
-  expect(scene.objectRenderers).toEqual([renderer]);
+  expect(graphRenderers(scene)).toEqual([renderer]);
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();
 });
@@ -924,18 +932,18 @@ it("skips the Fog Volume geometry and march while none is in front of the camera
 /** Records what the volumetric march binds: per-slot light positions and shadow kinds, the slot count and textures. */
 function marchBindings() {
   const float4 = vi.spyOn(Effect.prototype, "setFloat4");
-  const float2 = vi.spyOn(Effect.prototype, "setFloat2");
   const float = vi.spyOn(Effect.prototype, "setFloat");
-  const texture = vi.spyOn(Effect.prototype, "setTexture");
+  const depth = vi.spyOn(Effect.prototype, "setDepthStencilTexture");
   const named = <T extends unknown[]>(spy: { mock: { calls: T[] } }, name: string) =>
     spy.mock.calls.filter((call) => call[0] === name).map((call) => call.slice(1));
   return {
-    clear: () => { for (const spy of [float4, float2, float, texture]) spy.mockClear(); },
+    clear: () => { for (const spy of [float4, float, depth]) spy.mockClear(); },
     position: (slot: number) => named(float4, `volumePosition${slot}`),
-    /** [kind, cascades] per bind: 0 none, 1 compare, 2 cube, 3 packed cube, 4 cascades. */
+    /** [kind, views] per bind: 0 none, 1 compare, 2 cube, 3 cascades (`VOLUME_SHADOW_CODE`). */
     shadow: (slot: number) => named(float4, `volumeShadow${slot}`).map((values) => values.slice(0, 2)),
     count: () => named(float, "volumeLightCount").map(([count]) => count),
-    texture: (name: string) => named(texture, name).map(([value]) => value),
+    /** The shadow atlas, or its stand-in, each bind sampled. */
+    atlas: () => named(depth, HAPTIC_SHADOW_ATLAS).map(([value]) => value),
     /** The Effects the march bound its first slot on. */
     marches: () => new Set(float4.mock.calls.flatMap((call, index) => call[0] === "volumePosition0" ? [float4.mock.contexts[index]] : [])),
   };
@@ -1022,15 +1030,14 @@ it("binds whichever light is nearest to a running march's slot without a rebuild
   graph.dispose();
 });
 
-/** A Fog Volume host whose volumetric march samples a shadowed sun's map. */
+/** A Fog Volume host whose volumetric march samples a shadowed sun's tile of the shadow atlas. */
 async function shadowedFogHost() {
   let sun: DirectionalLight | undefined;
   const host = await fogHost({}, undefined, (scene) => {
-    // WebGL2 and WebGPU compare shadow maps in the sampler; NullEngine reports WebGL1's Poisson fallback.
-    Object.assign(scene.getEngine()._features, { supportShadowSamplers: true });
+    // The sun's atlas map is cascaded, as every WebGL2 and WebGPU Engine supports.
+    scene.getEngine()._features.supportCSM = true;
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256 }) });
     sun = new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene);
-    // Without uniform buffers (NullEngine) the sun's shadow uniforms go through the last lit draw's Effect.
     const receiver = MeshBuilder.CreatePlane("receiver", { size: 2 }, scene);
     receiver.position.z = 1;
     receiver.material = new StandardMaterial("receiver", scene);
@@ -1039,23 +1046,23 @@ async function shadowedFogHost() {
     controller.sync();
   });
   const controller = sceneShadowController(host.scene);
-  expect(controller.generator(sun!)?.usePercentageCloserFiltering).toBe(true);
+  expect(controller.generator(sun!)).toBeInstanceOf(AtlasCascadedShadowGenerator);
   return { ...host, sun: sun!, controller };
 }
 
-it("draws a running fog march's shadowed light with its map, and unshadowed with a placeholder once the map goes, without re-planning", async () => {
-  const { camera, graph, skipped, sun, controller } = await shadowedFogHost();
+it("draws a running fog march's shadowed light with its tiles, and unshadowed with the atlas's stand-in once the map goes, without re-planning", async () => {
+  const { scene, camera, graph, skipped, sun, controller } = await shadowedFogHost();
   const builds = graph.diagnostics().graphBuilds;
   const bindings = marchBindings();
   expect(skipped()).toEqual([]);
   const marches = bindings.marches();
-  // The shadowed sun ranks into the first slot (a directional light's type is 0), which samples its single map by
-  // comparison; the slot's other samplers take placeholders.
+  // The shadowed sun ranks into the first slot (a directional light's type is 0), which samples its one cascade's
+  // view of the atlas.
   expect(bindings.position(0).map((position) => position[3])).toEqual([0]);
-  expect(bindings.shadow(0)).toEqual([[1, 1]]);
-  const placeholder = bindings.texture("shadowTextureCube0")[0];
-  expect(placeholder).toBeDefined();
-  expect(bindings.texture("shadowTexture0")).toEqual([]);
+  expect(bindings.shadow(0)).toEqual([[VOLUME_SHADOW_CODE.cascades, 1]]);
+  const atlas = shadowAtlasTexture(scene);
+  expect(atlas.name).toBe(HAPTIC_SHADOW_ATLAS);
+  expect(bindings.atlas()).toEqual([atlas]);
   controller.register(sun, false);
   controller.sync();
   expect(controller.generator(sun)).toBeNull();
@@ -1063,10 +1070,12 @@ it("draws a running fog march's shadowed light with its map, and unshadowed with
   await graph.prepare(camera);
   bindings.clear();
   expect(skipped()).toEqual([]);
-  expect(bindings.shadow(0)).toEqual([[0, 0]]);
-  // The slot's comparison sampler takes a placeholder: the released map is never bound again.
-  expect(bindings.texture("shadowTexture0")).toHaveLength(1);
-  expect(bindings.texture("shadowTexture0")[0]).not.toBe(placeholder);
+  expect(bindings.shadow(0)).toEqual([[VOLUME_SHADOW_CODE.none, 0]]);
+  // The emptied atlas is released, so the march samples its stand-in: the released atlas is never bound again.
+  expect(atlas.getInternalTexture()).toBeNull();
+  expect(bindings.atlas()).toHaveLength(1);
+  expect(bindings.atlas()[0]).not.toBe(atlas);
+  expect(bindings.atlas()[0]).toBe(shadowAtlasTexture(scene));
   expect(bindings.marches()).toEqual(marches);
   expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
@@ -1085,7 +1094,7 @@ it("draws a fog march that wakes inside a frame with the shadow kinds its lights
   const bindings = marchBindings();
   scene.onBeforeRenderObservable.addOnce(() => { camera.rotation.y = 0; });
   expect(skipped()).toEqual([]);
-  expect(bindings.shadow(0)).toEqual([[0, 0]]);
+  expect(bindings.shadow(0)).toEqual([[VOLUME_SHADOW_CODE.none, 0]]);
   expect(graph.readiness(camera)).not.toMatchObject({ preparationRequired: true });
   expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
@@ -1095,7 +1104,10 @@ it("keeps drawing a running fog march in the frame in which shadow admission dro
   const { scene, camera, graph, skipped, sun, controller } = await shadowedFogHost();
   const builds = graph.diagnostics().graphBuilds;
   expect(skipped()).toEqual([]);
-  // Shadow admission also runs inside the frame, after the view's check: the slot binds the sun unshadowed.
+  const atlas = shadowAtlasTexture(scene);
+  // Shadow admission also runs inside the frame, after the view's check and the light block's write: the slot binds
+  // the sun as the block holds it, as the frame's surfaces draw it, in a frame that is not presented. It samples the
+  // emptied atlas's stand-in, never the released atlas.
   const bindings = marchBindings();
   scene.onBeforeRenderObservable.addOnce(() => {
     controller.register(sun, false);
@@ -1103,9 +1115,14 @@ it("keeps drawing a running fog march in the frame in which shadow admission dro
   });
   expect(skipped({ path: "frameGraph", rendered: false })).toEqual([]);
   expect(controller.generator(sun)).toBeNull();
-  expect(bindings.shadow(0)).toEqual([[0, 0]]);
+  expect(bindings.shadow(0)).toEqual([[VOLUME_SHADOW_CODE.cascades, 1]]);
+  expect(bindings.atlas()).toHaveLength(1);
+  expect(bindings.atlas()[0]).not.toBe(atlas);
+  // The next preparation writes the block again: the slot draws the sun unshadowed.
   await graph.prepare(camera);
+  bindings.clear();
   expect(skipped()).toEqual([]);
+  expect(bindings.shadow(0)).toEqual([[VOLUME_SHADOW_CODE.none, 0]]);
   expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
 });

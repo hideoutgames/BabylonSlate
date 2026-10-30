@@ -4,7 +4,6 @@ import {
   Mesh,
   MeshBuilder,
   PBRMaterial,
-  PBRMetallicRoughnessBlock,
   RawTexture,
   StandardMaterial,
   Vector3,
@@ -20,11 +19,14 @@ import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
 } from "@haptic/shader-graph";
+import { HapticLightingBlock } from "./haptic-lighting-block";
+import { hapticLightBuffer } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
 import { createTestEngine } from "./create-null-engine";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { installPreviewEnvironment } from "./preview-environment";
+import { syncSceneLighting } from "./scene-lighting";
 import { applySceneToBabylonScene } from "./scene-loader";
 import { isSkyboxMesh } from "./skybox";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
@@ -51,6 +53,14 @@ function compiledPbr(scene: Scene) {
   if (!compiled.ok) throw new Error("Fixture material did not compile");
   compiled.material.allowShaderHotSwapping = false;
   return compiled.material;
+}
+
+/** The light block's counts (sun, point, spot, rect) and fill presence, as the next frame draws them. */
+function blockLights(scene: Scene): number[] {
+  syncSceneLighting(scene);
+  const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+  const read = (name: string, length: number) => [...buffer._bufferData.subarray(buffer._uniformLocations[name]!, buffer._uniformLocations[name]! + length)];
+  return [...read("hapticCounts", 4), read("hapticFillDirection", 4)[3]!];
 }
 
 async function shaderDefines(scene: Scene, mesh: Mesh): Promise<string> {
@@ -132,9 +142,11 @@ describe("ViewportShadingOverlay", () => {
           expect(material.wireframe).toBe(false);
           expect(material.disableLighting).toBe(true);
           expect(material.isFrozen).toBe(true);
+          // A graph surface draws Unlit through its light block, with the Scene's lights off.
           const surfaceDefines = await shaderDefines(scene, surface);
-          if (mode === "unlit") expect(surfaceDefines).toContain("#define UNLIT");
-          else expect(surfaceDefines).not.toContain("#define UNLIT");
+          if (mode === "unlit") expect(surfaceDefines).toContain("#define HAPTIC_UNLIT");
+          else expect(surfaceDefines).not.toContain("#define HAPTIC_UNLIT");
+          expect(scene.lightsEnabled).toBe(mode !== "unlit");
           expect(surface.material.wireframe).toBe(mode === "wireframe");
         }
       } finally {
@@ -179,11 +191,7 @@ describe("ViewportShadingOverlay", () => {
         ready = true;
 
         const defines = await shaderDefines(scene, mesh);
-        if (nextMode === "unlit") expect(defines).toContain("#define UNLIT");
-        else {
-          expect(defines).not.toContain("#define UNLIT");
-          expect(defines).toContain("#define LIGHT0");
-        }
+        expect(defines.includes("#define HAPTIC_UNLIT")).toBe(nextMode === "unlit");
         expect(material.isFrozen).toBe(true);
         expect(material.allowShaderHotSwapping).toBe(true);
         expect(scene.blockMaterialDirtyMechanism).toBe(true);
@@ -205,14 +213,12 @@ describe("ViewportShadingOverlay", () => {
       material.freeze();
       scene.blockMaterialDirtyMechanism = true;
       overlay.apply();
-      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      expect(await shaderDefines(scene, mesh)).toContain("#define HAPTIC_UNLIT");
+      expect(blockLights(scene)).toEqual([0, 0, 0, 0, 0]);
       overlay.setMode("pbr");
-      const defines = await shaderDefines(scene, mesh);
-      expect(defines).not.toContain("#define UNLIT");
-      expect(defines).toContain("#define LIGHT0");
-      expect(mesh.subMeshes[0]!.effect!.fragmentSourceCode).toContain(
-        "vLightData0",
-      );
+      expect(await shaderDefines(scene, mesh)).not.toContain("#define HAPTIC_UNLIT");
+      // The block lights it again: the fill is back in its records.
+      expect(blockLights(scene)).toEqual([0, 0, 0, 0, 1]);
       expect(material.isFrozen).toBe(true);
     } finally {
       engine.dispose();
@@ -234,20 +240,22 @@ describe("ViewportShadingOverlay", () => {
         material.allowShaderHotSwapping = false;
         mesh.material = material;
         material.freeze();
-        expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
+        // A graph's light block draws Unlit by its own define; Babylon's PBR material by its own.
+        const unlit = kind === "compiled" ? "#define HAPTIC_UNLIT" : "#define UNLIT";
+        expect(await shaderDefines(scene, mesh)).not.toContain(unlit);
         const overlay = new ViewportShadingOverlay(scene);
         scene.blockMaterialDirtyMechanism = true;
         overlay.setMode("unlit");
-        expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+        expect(await shaderDefines(scene, mesh)).toContain(unlit);
         expect(material.isFrozen).toBe(true);
         expect(scene.blockMaterialDirtyMechanism).toBe(true);
         overlay.apply();
-        expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+        expect(await shaderDefines(scene, mesh)).toContain(unlit);
         overlay.setMode("wireframe");
-        expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
+        expect(await shaderDefines(scene, mesh)).not.toContain(unlit);
         expect(material.wireframe).toBe(true);
         overlay.setMode("pbr");
-        expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
+        expect(await shaderDefines(scene, mesh)).not.toContain(unlit);
         expect(material.wireframe).toBe(false);
         expect(material.isFrozen).toBe(true);
         expect(mesh.material).toBe(material);
@@ -266,22 +274,22 @@ describe("ViewportShadingOverlay", () => {
       const mesh = MeshBuilder.CreateBox("late-model", {}, scene);
       const authored = compiledPbr(scene);
       const block = authored.attachedBlocks.find(
-        (candidate): candidate is PBRMetallicRoughnessBlock =>
-          candidate instanceof PBRMetallicRoughnessBlock,
+        (candidate): candidate is HapticLightingBlock =>
+          candidate instanceof HapticLightingBlock,
       )!;
       block.unlit = true;
       mesh.material = authored;
       overlay.apply();
-      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      expect(await shaderDefines(scene, mesh)).toContain("#define HAPTIC_UNLIT");
       overlay.setMode("pbr");
-      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      expect(await shaderDefines(scene, mesh)).toContain("#define HAPTIC_UNLIT");
       overlay.setMode("unlit");
       const replacement = compiledPbr(scene);
       mesh.material = replacement;
       overlay.apply();
-      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      expect(await shaderDefines(scene, mesh)).toContain("#define HAPTIC_UNLIT");
       overlay.setMode("pbr");
-      expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
+      expect(await shaderDefines(scene, mesh)).not.toContain("#define HAPTIC_UNLIT");
       expect(mesh.material).toBe(replacement);
       expect(block.unlit).toBe(true);
     } finally {

@@ -11,11 +11,12 @@ import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SceneOutlineHost } from "./scene-outline-host";
-import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
+import { managedRenderReservations } from "./managed-render-resources";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { sceneShadowController } from "./shadow-controller";
+import { AtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { configureEditorRenderingGroups } from "./sorting";
 import { createWaterMesh } from "./water-mesh";
@@ -268,15 +269,18 @@ it("retries a failed Full Quality preparation at most once a second and warns on
 /**
  * A scene view over a box on a floor under a cascaded, shadowed sun and an
  * unranged shadowed spot, with one Full Quality capture far from the scene
- * camera, with a different lens and clip range.
+ * camera, with a different lens and clip range. The shadow atlas's edge is the
+ * device's texture limit: 1024 texels by default, with room for every map and
+ * the capture's own sun cascades; NullEngine's own 512 leaves one 256-texel
+ * tile beside the scene view's three.
  */
-function shadowedHost() {
+function shadowedHost(maxTextureSize = 1024) {
   const options = new NullEngineOptions();
   options.renderWidth = 96;
   options.renderHeight = 64;
   const engine = adaptNullEngineFrameGraph(new NullEngine(options));
   engines.push(engine);
-  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16 });
+  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16, maxTextureSize });
   enableHeadlessCascades(engine);
   const allocate = engine.createRenderTargetTexture.bind(engine);
   engine.createRenderTargetTexture = (size, creation) => {
@@ -332,7 +336,8 @@ function passes(generator: ShadowGenerator): () => number {
 
 it("draws a Full Quality capture's own sun maps, fitted to its camera, and leaves the scene view's maps as they were", async () => {
   const { scene, camera, sun, spot, controller, view, captures, captureCamera } = shadowedHost();
-  const main = controller.generator(sun) as CascadedShadowGenerator;
+  const main = controller.generator(sun) as AtlasCascadedShadowGenerator;
+  expect(main).toBeInstanceOf(AtlasCascadedShadowGenerator);
   const local = controller.generator(spot)!;
   const mainPasses = passes(main), localPasses = passes(local);
   // Each frame executes the scene view's graph and, inside its frame, the capture's.
@@ -340,13 +345,15 @@ it("draws a Full Quality capture's own sun maps, fitted to its camera, and leave
   const executes = vi.spyOn(FrameGraph.prototype, "execute");
   await untilPublished(scene, view, captures);
   const capture = captureCamera()!;
-  // The capture's sun map is the controller's, keyed to the capture camera, with the scene map's allocation.
-  const own = sun.getShadowGenerator(capture) as CascadedShadowGenerator;
-  expect(own).toBeInstanceOf(CascadedShadowGenerator);
+  // The capture's sun map is the controller's, keyed to the capture camera, with the scene map's allocation: cascade
+  // tiles of the same atlas, of their own.
+  const own = sun.getShadowGenerator(capture) as AtlasCascadedShadowGenerator;
+  expect(own).toBeInstanceOf(AtlasCascadedShadowGenerator);
   expect(own).toBe(controller.viewBoundGenerator(sun, capture));
   expect(own.camera).toBe(capture);
   expect(own.numCascades).toBe(main.numCascades);
   expect(own.getShadowMap()!.getSize()).toEqual(main.getShadowMap()!.getSize());
+  expect(own.tiles.some((tile) => main.tiles.some((held) => held.x === tile.x && held.y === tile.y))).toBe(false);
   // The scene view keeps binding its own map; the spot map is shared.
   expect(sun.getShadowGenerator()).toBe(main);
   expect(spot.getShadowGenerators()?.size).toBe(1);
@@ -372,9 +379,9 @@ it("draws a Full Quality capture's own sun maps, fitted to its camera, and leave
 });
 
 it("lets a Full Quality capture whose own sun map does not fit sample the scene view's, without rebuilding materials each frame", async () => {
-  const { engine, scene, sun, controller, view, captures, captureCamera } = shadowedHost();
-  // Room for the capture's own targets, not for a copy of the sun map (256² × 4 layers × 6 bytes while it builds).
-  limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1024 ** 2);
+  // The scene view's two sun cascades and spot tile leave one 256-texel tile of the 512-texel atlas, short of the
+  // mirror's two at the smallest map size.
+  const { scene, sun, controller, view, captures, captureCamera } = shadowedHost(512);
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   await untilPublished(scene, view, captures);
   const capture = captureCamera()!;
@@ -384,42 +391,54 @@ it("lets a Full Quality capture whose own sun map does not fit sample the scene 
   const dirty = vi.spyOn(sun, "_markMeshesAsLightDirty");
   for (let frame = 0; frame < 4; frame++) expect(view.render()).toMatchObject({ rendered: true });
   expect(dirty).not.toHaveBeenCalled();
-  expect(warn.mock.calls.filter(([message]) => String(message).includes("main camera's map"))).toHaveLength(1);
+  expect(warn.mock.calls.filter(([message]) => String(message).includes("main camera's map: its own map does not fit the shadow atlas")))
+    .toHaveLength(1);
   view.dispose();
 });
 
-it("releases a Full Quality capture's own sun maps and their ledger charge on quality change, removal and scene change", async () => {
-  const { engine, scene, sun, view, captures, lens, settings, captureCamera } = shadowedHost();
-  const viewShadowBytes = () => managedRenderReservations(engine).categoryBytes.shadow;
+it("releases a Full Quality capture's own sun maps on quality change, removal and scene change, charging the ledger nothing", async () => {
+  const { engine, scene, sun, controller, view, captures, lens, settings, captureCamera } = shadowedHost();
+  const shadowBytes = () => managedRenderReservations(engine).categoryBytes.shadow ?? 0;
+  /** Passes drawn by the scene view's maps alone. */
+  let scenePasses = 0;
+  let own: AtlasCascadedShadowGenerator;
+  const published = async () => {
+    await untilPublished(scene, view, captures);
+    own = sun.getShadowGenerator(captureCamera()!) as AtlasCascadedShadowGenerator;
+    expect(own).toBeInstanceOf(AtlasCascadedShadowGenerator);
+    expect(own.getShadowMap()).not.toBeNull();
+    expect(controller.metrics().passes).toBe(scenePasses + own.numCascades);
+  };
   await untilPublished(scene, view, captures);
-  let own = sun.getShadowGenerator(captureCamera()!)!;
-  expect(own.getShadowMap()).not.toBeNull();
-  expect(viewShadowBytes()).toBeGreaterThan(0);
+  scenePasses = controller.metrics().passes - (sun.getShadowGenerator(captureCamera()!) as CascadedShadowGenerator).numCascades;
+  // The mirror is tiles of the scene's atlas, which holds their memory: the ledger charges it nothing of its own.
+  const sceneBytes = shadowBytes();
+  await published();
+  expect(shadowBytes()).toBe(sceneBytes);
   const released = async () => {
     await captures.whenReleased();
     expect(own.getShadowMap()).toBeNull();
     expect(sun.getShadowGenerator(captureCamera()!)).toBeNull();
-    expect(viewShadowBytes()).toBe(0);
+    expect(controller.metrics().passes).toBe(scenePasses);
+    expect(shadowBytes()).toBe(sceneBytes);
   };
   captures.configure("capture", { ...settings, quality: "fast" }, () => lens);
   await released();
 
   captures.configure("capture", settings, () => lens);
-  await untilPublished(scene, view, captures);
-  own = sun.getShadowGenerator(captureCamera()!)!;
+  await published();
   captures.removeActor("capture");
   await captures.whenReleased();
-  expect(own.getShadowMap()).toBeNull();
-  expect(viewShadowBytes()).toBe(0);
+  expect(own!.getShadowMap()).toBeNull();
+  expect(controller.metrics().passes).toBe(scenePasses);
 
   captures.configure("capture", settings, () => lens);
-  await untilPublished(scene, view, captures);
-  own = sun.getShadowGenerator(captureCamera()!)!;
+  await published();
   view.dispose();
   await view.whenReleased();
   scene.dispose();
   await captures.whenReleased();
-  expect(own.getShadowMap()).toBeNull();
+  expect(own!.getShadowMap()).toBeNull();
   expect(managedRenderReservations(engine)).toMatchObject({ shadowBytes: 0, resourceBytes: 0, pendingBytes: 0 });
 });
 

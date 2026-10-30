@@ -1,4 +1,4 @@
-import { VOLUME_MAX_CASCADES, VOLUME_SHADOW_CODE, volumeShadowIndex, volumeSlotSamples } from "./volumetric-lights";
+import { VOLUME_SHADOW_CODE } from "./volumetric-lights";
 import { MAX_FOG_VOLUMES } from "./fog-volumes";
 import { HAPTIC_SHADOW_ATLAS, hapticShadowGlsl, hapticShadowWgsl } from "./haptic-lighting-shader";
 import { HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL } from "./haptic-lights";
@@ -6,18 +6,14 @@ import { HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL } from "./haptic-lights";
 /**
  * One bounded single-scattering shader, emitted for both native shader languages. It has `slots` light slots whatever
  * lights are near: each reads its light's type, shadow kind (`VOLUME_SHADOW_CODE`) and view or cascade count from
- * uniforms, and the march skips the slots past `volumeLightCount`, so only settings change the shader. `lightBlock`:
- * the lighting plan's path, where the slots' shadows are the light block's views of its atlas (`HapticLights`), not
- * maps of their own.
+ * uniforms, and the march skips the slots past `volumeLightCount`, so only settings change the shader. The slots'
+ * shadows are the light block's views of its atlas (`HapticLights`).
  */
 export function volumetricShader(
   wgsl: boolean,
   slots: number,
   steps: number,
-  halfZ: boolean,
-  reverseZ: boolean,
   localVolumes = false,
-  lightBlock = false,
 ): string {
   const v2 = wgsl ? "vec2f" : "vec2",
     v3 = wgsl ? "vec3f" : "vec3",
@@ -34,10 +30,10 @@ export function volumetricShader(
     wgsl
       ? uniform(`array<${type}, ${count}>`, name)
       : `uniform ${type} ${name}[${count}];`;
-  const texture = (name: string, kind = "2d") =>
+  const texture = (name: string) =>
     wgsl
-      ? `var ${name}: texture_${kind}<f32>; var ${name}Sampler: sampler;`
-      : `uniform ${kind === "cube" ? "samplerCube" : "sampler2D"} ${name};`;
+      ? `var ${name}: texture_2d<f32>; var ${name}Sampler: sampler;`
+      : `uniform sampler2D ${name};`;
   const sample = (name: string, uv: string) =>
     wgsl
       ? `textureSampleLevel(${name}, ${name}Sampler, ${uv}, 0.0)`
@@ -151,87 +147,25 @@ ${loop("volume", u("fogVolumeCount"))} {
 }
 `;
   }
-  const integerOf = (value: string) => (wgsl ? `i32(${value})` : `int(${value})`);
-  /** Projects `p` with `matrix` and compares the depth there, in `sampler` (a 2D array's `layer` when given). */
-  const compareTail = (matrix: string, sampler: string, layer?: string) => {
-    const sampleCompare = wgsl
-      ? `textureSampleCompareLevel(${sampler}, ${sampler}Sampler, coord.xy, ${layer ? `${layer},` : ""} coord.z)`
-      : `texture(${sampler}, ${layer ? `vec4(coord.xy, float(${layer}), coord.z)` : "coord"})`;
-    return `${decl(v4, "projected", `${matrix} * ${v4}(p - ${u("volumeShadowOffset")}, 1.0)`)}
-if (projected.w <= 0.0) { return 1.0; }
-${decl(v3, "clip", "projected.xyz / projected.w")}
-${decl(v3, "coord", `${v3}(clip.xy * 0.5 + ${v2}(0.5), ${halfZ ? "clip.z" : "clip.z * 0.5 + 0.5"})`)}
-if (coord.x < 0.0 || coord.x > 1.0 || coord.y < 0.0 || coord.y > 1.0 || coord.z < 0.0 || coord.z > 1.0) { return 1.0; }
-coord.z = clamp(coord.z ${reverseZ ? "+" : "-"} 0.0001, 0.0, 1.0);
-return ${sampleCompare};`;
-  };
   const code = VOLUME_SHADOW_CODE;
-  if (lightBlock) {
-    header += wgsl
-      ? `${HAPTIC_LIGHTS_WGSL}var ${HAPTIC_SHADOW_ATLAS}Sampler: sampler_comparison; var ${HAPTIC_SHADOW_ATLAS}: texture_depth_2d;\n`
-      : `${HAPTIC_LIGHTS_GLSL}uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n`;
-    // A slot's shadow (\`volumeShadow\`: kind, views, first view): a spot light's view, a point light's faces or the
-    // sun's cascades, as the block draws them, at a position of the march (world space; the block's are rebased). On a
-    // line of their own: Babylon splits a line's statements, which would end a comment after the uniforms at its first
-    // semicolon.
-    functions += "\n" + (wgsl ? hapticShadowWgsl(false) : hapticShadowGlsl(false)) + fn("volumeLightShadow", [[v4, "shadow"], [v3, "p"], [v3, "lightPosition"]], f, `
+  header += wgsl
+    ? `${HAPTIC_LIGHTS_WGSL}var ${HAPTIC_SHADOW_ATLAS}Sampler: sampler_comparison; var ${HAPTIC_SHADOW_ATLAS}: texture_depth_2d;\n`
+    : `${HAPTIC_LIGHTS_GLSL}uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n`;
+  // A slot's shadow (\`volumeShadow\`: kind, views, first view): a spot light's view, a point light's faces or the
+  // sun's cascades, as the block draws them, at a position of the march (world space; the block's are rebased). On a
+  // line of their own: Babylon splits a line's statements, which would end a comment after the uniforms at its first
+  // semicolon.
+  functions += "\n" + (wgsl ? hapticShadowWgsl(false) : hapticShadowGlsl(false)) + fn("volumeLightShadow", [[v4, "shadow"], [v3, "p"], [v3, "lightPosition"]], f, `
 ${decl(v3, "P", `p - ${u("volumeShadowOffset")}`)}
 if (shadow.x < ${code.compare - 0.5}) { return 1.0; }
 if (shadow.x < ${code.compare + 0.5}) { return hapticShadow(shadow.z, P, ${v3}(0.0), ${v3}(0.0)); }
 if (shadow.x < ${code.cube + 0.5}) { return hapticPointShadow(${v4}(shadow.z, shadow.y, 0.0, 0.0), p - lightPosition, P); }
 return hapticSunShadowFactor(P, ${v3}(0.0), ${v3}(0.0));`);
-  }
-  /** Slot `i`'s shadow from its light's own map, declaring the slot's samplers: a kind per sampler. */
-  const mapVisibility = (i: number): string => {
-    // Each kind has its own sampler (and the index Babylon binds it under), so no sampler ever changes type.
-    const compare = `shadowTexture${volumeShadowIndex(i, "compare")}`;
-    const cube = `shadowTexture${volumeShadowIndex(i, "cube")}`;
-    header += field(m4, `lightMatrix${volumeShadowIndex(i, "compare")}`);
-    header += wgsl
-      ? `var ${compare}: texture_depth_2d; var ${compare}Sampler: sampler_comparison;`
-      : `uniform highp sampler2DShadow ${compare};`;
-    header += texture(cube, "cube");
-    const kind = `${u(`volumeShadow${i}`)}.x`;
-    const sampledCube = wgsl
-      ? `textureSampleLevel(${cube}, ${cube}Sampler, direction * ${v3}(1.0,-1.0,1.0), 0.0)`
-      : `textureCube(${cube}, direction * ${v3}(1.0,-1.0,1.0))`;
-    let visibility = `if (${kind} < ${code.compare - 0.5}) { return 1.0; }
-if (${kind} < ${code.compare + 0.5}) {
-${compareTail(u(`lightMatrix${volumeShadowIndex(i, "compare")}`), compare)}
-}
-if (${kind} < ${code.packedCube + 0.5}) {
-${decl(v3, "direction", `p - ${u(`volumePosition${i}`)}.xyz`)}
-${decl(f, "metric", `(length(direction) + ${u(`volumeDepth${i}`)}.x) / max(${u(`volumeDepth${i}`)}.y, 0.0001)`)}
-${decl(v4, "stored", sampledCube)}
-${decl(f, "depth", "stored.r")}
-if (${kind} > ${code.cube + 0.5}) { depth = dot(stored, ${v4}(1.0/16581375.0,1.0/65025.0,1.0/255.0,1.0)); }
-if (metric > depth) { return 0.0; }
-return 1.0;
-}
-`;
-    if (volumeSlotSamples(i, "cascades")) {
-      const cascades = `shadowTexture${volumeShadowIndex(i, "cascades")}`;
-      const matrices = `lightMatrix${volumeShadowIndex(i, "cascades")}`;
-      const splits = `viewFrustumZ${volumeShadowIndex(i, "cascades")}`;
-      header += array(m4, matrices, VOLUME_MAX_CASCADES) + array(f, splits, VOLUME_MAX_CASCADES);
-      header += wgsl
-        ? `var ${cascades}: texture_depth_2d_array; var ${cascades}Sampler: sampler_comparison;`
-        : `uniform highp sampler2DArrayShadow ${cascades};`;
-      // The cascade count is a uniform too: the last split the map covers ends its reach.
-      visibility += `${decl(integer, "cascades", integerOf(`${u(`volumeShadow${i}`)}.y + 0.5`))}
-${decl(integer, "layer", "0")}
-${Array.from({ length: VOLUME_MAX_CASCADES - 1 }, (_, n) => `if (cascades > ${n + 1} && viewZ > ${u(splits)}[${n}]) { layer = ${n + 1}; }`).join("\n")}
-${decl(integer, "last", "max(cascades - 1, 0)")}
-if (viewZ > ${u(splits)}[last]) { return 1.0; }
-${compareTail(`${u(matrices)}[layer]`, cascades, "layer")}`;
-    } else visibility += "return 1.0;";
-    return visibility;
-  };
   for (let i = 0; i < slots; i++) {
     for (const name of ["volumePosition", "volumeDirection", "volumeColor"])
       header += field(v4, `${name}${i}`);
     header += field(v2, `volumeCone${i}`) + field(v2, `volumeDepth${i}`) + field(v4, `volumeShadow${i}`);
-    // A slot's shadow: the light block's view on its path, else its light's map in the slot's samplers.
+    // A slot's shadow: its light's views of the atlas, as the light block holds them.
     functions += fn(
       `visibility${i}`,
       [
@@ -239,7 +173,7 @@ ${compareTail(`${u(matrices)}[layer]`, cascades, "layer")}`;
         [f, "viewZ"],
       ],
       f,
-      lightBlock ? `return volumeLightShadow(${u(`volumeShadow${i}`)}, p, ${u(`volumePosition${i}`)}.xyz);` : mapVisibility(i),
+      `return volumeLightShadow(${u(`volumeShadow${i}`)}, p, ${u(`volumePosition${i}`)}.xyz);`,
     );
     // Slots past the lights taking part this frame are skipped: one uniform branch per step.
     lighting += `if (${u("volumeLightCount")} > ${i}.5) {

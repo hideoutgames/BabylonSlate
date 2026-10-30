@@ -7,7 +7,6 @@ import {
   type Camera,
 } from "@babylonjs/core";
 import { SHADOW_CAPACITY_PROFILES, type ShadowSettings } from "@haptic/core";
-import { hapticLightingActive } from "./haptic-lights";
 import { isDirectionalLightExcluded } from "./light-policy";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import type { LocalShadowLight } from "./reusable-shadow-generator";
@@ -140,7 +139,7 @@ export function readShadowAdmissionBudget(
     cascadedBytesPerTexel: shadowBytesPerTexel(scene.getEngine(), true),
     maxTextureSize: caps.maxTextureSize,
     maxCubemapTextureSize: caps.maxCubemapTextureSize,
-    atlasEdge: hapticLightingActive(scene) ? shadowAtlasEdge(scene.getEngine(), settings.profile) : 0,
+    atlasEdge: shadowAtlasEdge(scene.getEngine(), settings.profile),
   };
 }
 
@@ -280,12 +279,12 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     admitted.bytes += atlasEdge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
   let atlasArea = 0;
   // The sun, admitted first, leaves the atlas room for the local maps planned into it at the level's size (a point
-  // light's six faces).
+  // light's six faces), at most half the atlas: local maps past that halve or wait, never the sun's shadow.
   let localTiles = 0;
   for (const decision of planned)
     if (!(decision.entry.light instanceof DirectionalLight) && atlasTileEdge(decision.entry.light, atlasEdge))
       localTiles += admissionPasses(decision.entry.light, settings);
-  const localReserve = localTiles * Math.min(settings.localMapSize, atlasEdge) ** 2;
+  const localReserve = Math.min(localTiles * Math.min(settings.localMapSize, atlasEdge) ** 2, atlasEdge ** 2 / 2);
   // Admitted totals never exceed the planned ones, so every planned entry still
   // fits the local, pass and sampler budgets; only memory or atlas space can reject it here.
   for (const decision of planned) {

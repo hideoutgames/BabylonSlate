@@ -6,7 +6,9 @@ import type { BaseTexture, InternalTexture, RenderTargetWrapper, Scene } from "@
  * Scene (the ResourceCache's) reach it only through a Material or the environment, so
  * `scene.textures` alone would miss them. A render target holds more than its colour texture: its
  * depth/stencil texture and every attachment of a multi render target are separate native textures
- * the Engine caches, so they are held with it. Reading never creates a texture.
+ * the Engine caches, so they are held with it. The rect area-light LTC tables are built once per Engine and
+ * shared by reference count (`retainAreaLightLookup`); a Scene holds them while its `_ltcTextures` slot
+ * points at them. Reading never creates a texture.
  */
 export function internalTexturesHeldByScene(scene: Scene): Set<InternalTexture> {
   const held = new Set<InternalTexture>();
@@ -23,5 +25,7 @@ export function internalTexturesHeldByScene(scene: Scene): Set<InternalTexture> 
   for (const material of scene.materials) for (const texture of material.getActiveTextures()) hold(texture);
   hold(scene.environmentTexture);
   hold(scene.environmentBRDFTexture);
+  hold(scene._ltcTextures?.LTC1);
+  hold(scene._ltcTextures?.LTC2);
   return held;
 }

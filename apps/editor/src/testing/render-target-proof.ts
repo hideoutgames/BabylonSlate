@@ -222,6 +222,13 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
     await sampleMaterial("Material After Feedback");
     captures.clear();
     captures.dispose();
-    return { results, retainedBytes: managedRenderReservations(engine).reservedBytes, mainCameraPreserved: scene.activeCamera === main };
+    const mainCameraPreserved = scene.activeCamera === main;
+    // The light block's lookup tables are the Scenes' until they go, at WebGPU's next end-of-frame drain.
+    materialScene.dispose();
+    scene.dispose();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    engine.beginFrame();
+    engine.endFrame();
+    return { results, retainedBytes: managedRenderReservations(engine).reservedBytes, mainCameraPreserved };
   } finally { library.dispose(); materialScene.dispose(); captures.dispose(); scene.dispose(); engine.dispose(); canvas.remove(); }
 }

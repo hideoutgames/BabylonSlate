@@ -541,10 +541,6 @@ async function captureSunShadows(engine: AbstractEngine, mode: "pbr" | "cel") {
     intensity: 2, castShadows: enabled,
   });
   setShadows(true);
-  const native = new PBRMaterial("native receiver", scene);
-  native.albedoColor = new Color3(0.05, 0.55, 0.12);
-  native.metallic = 0;
-  native.roughness = 1;
   setSceneRenderSettings(scene, { mode, shadows: normalizeShadowSettings({
     cascades: 2, mapSize: 256, autoBias: false, normalBias: 0.02,
     depthBias: 0.0001, distance: 25,
@@ -557,7 +553,10 @@ async function captureSunShadows(engine: AbstractEngine, mode: "pbr" | "cel") {
   if (!compiled.ok || (await compiled.ready).some((entry) => entry.severity === "error"))
     throw new Error("Shadow surface did not compile");
   try {
-    for (const [index, material] of [native, compiled.material].entries()) {
+    // Both receivers draw the graph Material: the sun's cascades are atlas tiles, which only the light block samples
+    // (no surface the engine draws is a native lit Material).
+    for (const index of [0, 1]) {
+      const material = compiled.material;
       const x = index === 0 ? -1.5 : 1.5;
       const floor = MeshBuilder.CreateGround(`receiver-${index}`, { width: 3, height: 6 }, scene);
       floor.position.x = x;
@@ -569,7 +568,7 @@ async function captureSunShadows(engine: AbstractEngine, mode: "pbr" | "cel") {
     setSceneRenderSettings(scene);
     const read = async () => {
       for (let frame = 0; frame < 3; frame++) {
-        // The first native render applies shadow admission. Await the shader
+        // The first render applies shadow admission. Await the shader
         // variants it dirtied before each subsequent fixture frame.
         await scene.whenReadyAsync(true);
         engine.beginFrame();

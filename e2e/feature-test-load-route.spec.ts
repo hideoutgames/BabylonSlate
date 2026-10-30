@@ -31,11 +31,9 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  * Env: HAPTIC_PERF_SCENES (comma list, default main), HAPTIC_PERF_BACKEND (webgl2|webgpu, default the project's
  *      WebGL2), HAPTIC_RENDER_NATIVE_GPU=1 (keep the project's launch arguments: perf-gpu), HAPTIC_PERF_SETTLE_MS
  *      (default 8000: how long after ready the settled window keeps counting), HAPTIC_PERF_LABEL, HAPTIC_PERF_OUT
- *      (extra report path), HAPTIC_PERF_LIGHTING=haptic (graph Materials, and built-in water, draw with the lighting
- *      plan's block from the Engine's first load).
+ *      (extra report path).
  */
 const ENABLED = process.env.HAPTIC_PERF_LOAD === "1";
-const HAPTIC_LIGHTING = process.env.HAPTIC_PERF_LIGHTING === "haptic";
 const BACKEND = process.env.HAPTIC_PERF_BACKEND === "webgpu" ? "webgpu" : process.env.HAPTIC_PERF_BACKEND === "webgl2" ? "webgl2" : null;
 const NATIVE_GPU = process.env.HAPTIC_RENDER_NATIVE_GPU === "1";
 const SETTLE_MS = Number(process.env.HAPTIC_PERF_SETTLE_MS ?? 8_000);
@@ -623,8 +621,6 @@ test("FeatureTest cold-load route", async ({ page }, testInfo) => {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await installHooks(page);
   await seedEngineSettings(page);
-  // Read by test builds when the project Engine starts (TEST_HAPTIC_LIGHTING_KEY, apps/editor/src/lib/project-engine.ts).
-  if (HAPTIC_LIGHTING) await page.evaluate(() => localStorage.setItem("haptic:test-haptic-lighting", "on"));
   await setPhase(page, "create");
   const hooksStart = await take(page);
   const createToInteractiveMs = await createFeatureTestProject(page);

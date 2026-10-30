@@ -31,7 +31,7 @@ Open **Project Settings > Rendering > Shadows**. The defaults below are the High
 | **Shadow Distance Fade** | 0.1 | Fades the far edge over this fraction of the distance. 0 turns fading off. |
 | **Directional Map Size** | 2048 | Resolution per cascade, 256 to 4096. |
 | **Shadow Cascades** | 4 | Splits directional coverage, 1 to 4, to keep detail near the camera. |
-| **Shadow Filter** | PCF | **PCF** softens edges. **Contact Hardening (PCSS)** adds a contact-hardening penumbra, in PBR only. |
+| **Shadow Filter** | PCF | **PCF** softens edges. **Contact Hardening (PCSS)** adds a contact-hardening penumbra, in PBR only; flat ground under the sun stays free of its own shadow. |
 | **Shadow Filter Quality** | High | Low, Medium or High. Higher uses more texture samples. |
 | **Contact Hardening Size** | 0.05 | PCSS light size. Larger values widen the penumbra. |
 | **Shadow Depth Bias** | 0.0001 | Depth offset. High values detach shadows from surfaces. |

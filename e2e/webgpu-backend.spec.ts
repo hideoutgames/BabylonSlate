@@ -172,8 +172,9 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   // render pipeline: a light switching off creates none (the block's records change, no variant), fog switching on
   // draws each Material's previous Effect while its fogged variant's pipeline is created asynchronously, a new shadow
   // map (the spot's tile, the atlas's first, and the sun's first cascades) draws once its casters' depth pipelines
-  // exist, changing no receiver's Effect and creating none synchronously (the load warmed the tiles' clear), a spawn
-  // with a variant nothing compiled stays hidden meanwhile,
+  // exist, changing no receiver's Effect and creating none synchronously (the load warmed the tiles' clear, and the
+  // sun shadow captures before it drew this Engine's atlas), a spawn with a variant nothing compiled stays hidden
+  // meanwhile,
   // and a spawn whose Material the load warmed creates no pipeline at all. The first spawn built again (a visual a
   // script's write rebuilds) is revealed in its first frame and creates none; the same Effect with another vertex
   // layout waits hidden for its own pipeline, holding nothing. A spawn into the drawn sun map with a caster depth

@@ -283,7 +283,7 @@ export function predictLightVariants(scene: Scene, passes: readonly PredictionPa
     // controller's prediction map of the light's kind stands in for it in a warm render: it has the current settings,
     // as a standby map has, so its format and its casters' depth variants are the standby map's.
     if (plan.casters && !target.map && pipelinesDeferred(engine))
-      target.map = keepingWrapperMarks(scene, () => controller?.predictionMap(light) ?? null) ?? undefined;
+      target.map = keepingWrapperMarks(scene, () => controller?.predictionMap() ?? null) ?? undefined;
     return withPredictedEffects(engine, () => withSceneReadinessState(scene, () => probe(scene, target, passes, state, plan, controller)));
   };
   target.complete = withSceneSignalsHeld(scene, () => target.admission === "forward"
@@ -317,7 +317,7 @@ function shadowProbe(controller: SceneShadowController | null, start: ShadowStar
   run: (plan: Probe) => boolean): boolean {
   if (!start.firstOfKind) return run(shadowStart(controller, start, null));
   // Building a map marks its light's receivers light-dirty; this one is taken off the light at once.
-  const map = keepingWrapperMarks(prediction.scene, () => controller?.predictionMap(start.light) ?? null);
+  const map = keepingWrapperMarks(prediction.scene, () => controller?.predictionMap() ?? null);
   if (!map) return true;
   prediction.map = map;
   return run(shadowStart(controller, start, map));

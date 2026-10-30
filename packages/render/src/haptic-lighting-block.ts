@@ -110,6 +110,9 @@ function environmentCube(scene: Scene): BaseTexture | null {
  * the `HAPTIC_CEL` define, set from the Scene's render mode: a mode change recompiles, as a settings change may.
  */
 export class HapticLightingBlock extends NodeMaterialBlock {
+  /** Draws Base Color as it is, with no light (the editor's Unlit viewport mode, `HAPTIC_UNLIT`); set before a re-prepare. */
+  unlit = false;
+
   constructor(name: string) {
     super(name, NodeMaterialBlockTargets.Fragment);
     this.registerInput("worldPosition", NodeMaterialBlockConnectionPointTypes.Vector4, false, NodeMaterialBlockTargets.Fragment);
@@ -152,6 +155,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     // CEL lights with the cube's irradiance polynomial alone (`bindCelSettings`), so its programs ignore the cube.
     const environment = cel ? null : environmentCube(scene);
     defines.setValue("HAPTIC_CEL", cel, true);
+    defines.setValue("HAPTIC_UNLIT", this.unlit, true);
     // A different cube format or projection is a settings change, which may compile; lights never are.
     defines.setValue("HAPTIC_ENVIRONMENT", !!environment, true);
     defines.setValue("HAPTIC_ENVIRONMENT_RGBD", !!environment?.isRGBD, true);
@@ -247,6 +251,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(wgsl)}\n#endif\n`, "// CEL");
     state._emitFunction("hapticLightingFunctions", wgsl ? HAPTIC_LIGHTING_FUNCTIONS_WGSL : HAPTIC_LIGHTING_FUNCTIONS_GLSL, "// Haptic lighting");
     for (const output of this._outputs) state.compilationString += `${state._declareOutput(output)} = ${wgsl ? "vec3f" : "vec3"}(0.0);\n`;
+    state.compilationString += `#ifdef HAPTIC_UNLIT\n${this.diffuseDirect.associatedVariableName} = ${this.baseColor.associatedVariableName};\n#else\n`;
     state.compilationString += (wgsl ? hapticLightingWgsl : hapticLightingGlsl)({
       worldPosition: this.worldPosition.associatedVariableName,
       worldNormal: this.worldNormal.associatedVariableName,
@@ -263,6 +268,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       diffuseIndirect: this.diffuseIndirect.associatedVariableName,
       specularIndirect: this.specularIndirect.associatedVariableName,
     });
+    state.compilationString += "\n#endif\n";
     return this;
   }
 }

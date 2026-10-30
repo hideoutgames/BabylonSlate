@@ -4,7 +4,9 @@ import {
   syncDirectionalLightPolicy,
   syncForwardLightPolicy,
 } from "./light-policy";
-import { forwardLightBudget } from "./forward-light-budget";
+import { deviceProfile } from "./device-profile";
+import { HapticLightingBlock } from "./haptic-lighting-block";
+import { hapticLightBuffer } from "./haptic-lights";
 import { restoreSceneLightOrder, sortReceiverLightSources } from "./forward-light-slots";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -14,15 +16,13 @@ import {
   MaterialDefines,
   MaterialHelper,
   MeshBuilder,
-  type Mesh,
   NullEngine,
   NullEngineOptions,
+  type NodeMaterial,
   PBRMaterial,
   PointLight,
-  RawTexture,
   RectAreaLight,
   Scene,
-  ShadowGenerator,
   SpotLight,
   StandardMaterial,
   TransformNode,
@@ -37,7 +37,8 @@ import {
 } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { setupDefaultViewport } from "./viewport";
-import { sceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
+import { sceneShadowController } from "./shadow-controller";
+import { AtlasShadowGenerator } from "./shadow-atlas";
 import { ViewportShadingOverlay } from "./viewport-shading-mode";
 import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { retainAreaLightLookup } from "./area-light-resources";
@@ -48,11 +49,10 @@ afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
-function host(viewport = true, uniformBuffers = true) {
+function host(viewport = true) {
   const options = new NullEngineOptions();
-  // Babylon's headless WebGL2/multiview option supplies its real CPU-side UBO
-  // boundary. Default NullEngine models the non-UBO four-light fallback.
-  options.enableMultiview = uniformBuffers;
+  // Babylon's headless WebGL2/multiview option, as a shipped WebGL2 Engine.
+  options.enableMultiview = true;
   const engine = new NullEngine(options);
   engines.push(engine);
   const scene = new Scene(engine);
@@ -94,6 +94,23 @@ it("applies local lighting scalability without suppressing the sun and restores 
   expect(locals.every((light) => light.isEnabled())).toBe(true);
 });
 
+/** The light block's counts (sun, point, spot, rect) and fill presence, as the next frame draws them. */
+function blockLights(scene: Scene): number[] {
+  syncSceneLighting(scene);
+  return [...blockRead(scene, "hapticCounts", 0, 4), blockRead(scene, "hapticFillDirection", 3, 1)[0]!];
+}
+
+/** The first point light record's shadow: its first shadow view and face count. */
+function pointShadow(scene: Scene): number[] {
+  return blockRead(scene, "hapticPoint", 8, 2);
+}
+
+function blockRead(scene: Scene, name: string, from: number, length: number): number[] {
+  const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+  const start = buffer._uniformLocations[name]! + from;
+  return [...buffer._bufferData.subarray(start, start + length)];
+}
+
 function beginFrame(scene: Scene) {
   scene.incrementRenderId();
   scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -122,52 +139,13 @@ function shaderLights(
 }
 
 describe("scene material lighting", () => {
-  it("admits textured rectangles within shared sampler headroom and restores them without changing authored state", () => {
-    const scene = host(false);
-    scene.getEngine().getCaps().maxTexturesImageUnits = 12;
-    scene.onDisposeObservable.addOnce(retainAreaLightLookup(scene));
-    const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
-    const areas = Array.from({ length: 4 }, (_, index) => {
-      const light = new RectAreaLight(`area-${index}`, Vector3.Zero(), 2, 2, scene);
-      light.emissionTexture = texture;
-      return light;
-    });
-    const uniform = new RectAreaLight("uniform", Vector3.Zero(), 2, 2, scene);
-    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
-    syncSceneLighting(scene);
-    expect(areas.filter((light) => light.isEnabled())).toHaveLength(2);
-    expect(uniform.isEnabled()).toBe(true);
-    expect(sun.isEnabled()).toBe(true);
-    expect(sceneLightingLimits(scene).join()).toContain("4/4 lighting samplers, 2 limited by sampler headroom");
-    scene.getEngine().getCaps().maxTexturesImageUnits = 16;
-    syncSceneLighting(scene);
-    expect(areas.every((light) => light.isEnabled())).toBe(true);
-    expect(areas.every((light) => light.emissionTexture === texture)).toBe(true);
-    expect(sceneLightingLimits(scene)).toEqual([]);
-  });
-
-  it("retains a bounded four-light fallback when uniform buffers are unavailable", () => {
-    const scene = host(false, false);
-    const lamps = lights(scene, 6);
-    const material = new StandardMaterial("non-ubo", scene);
-    syncSceneLighting(scene);
-    expect(forwardLightBudget(scene.getEngine())).toMatchObject({
-      slots: 4,
-      source: "non-ubo",
-    });
-    const defines = shaderLights(scene, material);
-    expect(defines.LIGHT3).toBe(true);
-    expect(defines.LIGHT4).not.toBe(true);
-    expect(material.maxSimultaneousLights).toBe(4);
-    expect(lamps.filter(isForwardLightExcluded)).toHaveLength(2);
-  });
-
   it.each(["pbr", "cel"] as const)(
-    "bounds native and graph %s shader slots independently of shadows",
+    "bounds the lights the block admits by this device's maximum independently of shadows in %s",
     (mode) => {
       const scene = host(false);
       updateSceneRenderingSettings(scene, { mode });
-      const lamps = lights(scene, 16);
+      const maximum = deviceProfile().lightMaximum.point;
+      const lamps = lights(scene, maximum + 8);
       const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
       if (!lowered.ok) throw new Error("Fixture material did not lower");
       const compiled = compileMaterialPlan(lowered.plan, {
@@ -175,31 +153,16 @@ describe("scene material lighting", () => {
         name: "bounded-surface",
       });
       if (!compiled.ok) throw new Error("Fixture material did not compile");
-      const pbr = new PBRMaterial("native-pbr", scene);
-      const standard = new StandardMaterial("native-standard", scene);
-      const materials = [
-        compiled.material,
-        pbr,
-        standard,
-      ];
-      const budget = forwardLightBudget(scene.getEngine());
-      // NullEngine's absent GL query uses the documented WebGL2 minimum, leaving
-      // nine slots after the three native binding reservations.
-      expect(budget.slots).toBe(9);
-      for (const material of materials) {
-        const defines = shaderLights(scene, material);
-        expect(material.maxSimultaneousLights).toBe(9);
-        expect(defines.LIGHT8).toBe(true);
-        expect(defines.LIGHT9).not.toBe(true);
-        expect(defines.MAXLIGHTCOUNT).toBe(9);
-      }
-      expect(lamps.filter(isForwardLightExcluded)).toHaveLength(7);
+      syncSceneLighting(scene);
+      // The block has no shader slots: the graph reads every admitted light from it.
+      expect(blockLights(scene)).toEqual([0, maximum, 0, 0, 0]);
+      expect(lamps.filter(isForwardLightExcluded)).toEqual(lamps.slice(maximum));
       expect(lamps.every((light) => !light.getShadowGenerator())).toBe(true);
       expect(sceneLightingLimits(scene)[0]).toContain(
-        "9/16 requested lights admitted",
+        `Light block: ${maximum}/${maximum + 8} requested lights admitted`,
       );
       expect(createRenderDiagnostics(scene, () => 0)().qualityLimits).toEqual(
-        expect.arrayContaining([expect.stringContaining("9 shader slots")]),
+        expect.arrayContaining([expect.stringContaining(`at most ${maximum} point`)]),
       );
     },
   );
@@ -208,6 +171,8 @@ describe("scene material lighting", () => {
     const scene = host(false);
     const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
     scene.activeCamera = camera;
+    // Nine local lights for ten lamps.
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 9 } }) });
     const lamps = lights(scene, 10);
     lamps.forEach((light, index) => light.position.set(index * 10, 0, 0));
     const material = new StandardMaterial("receiver", scene);
@@ -360,12 +325,11 @@ describe("scene material lighting", () => {
     expect(second.isEnabled()).toBe(true);
   });
 
-  it("includes the fifth and sixth scene lights in the default material shader", () => {
+  it("lights the default material with the fifth and sixth scene lights from the block", () => {
     const scene = host();
     lights(scene, 6);
-    const defines = shaderLights(scene, scene.defaultMaterial as PBRMaterial);
-    expect(defines.LIGHT4).toBe(true);
-    expect(defines.LIGHT5).toBe(true);
+    expect((scene.defaultMaterial as NodeMaterial).attachedBlocks.some((block) => block instanceof HapticLightingBlock)).toBe(true);
+    expect(blockLights(scene)).toEqual([0, 6, 0, 0, 0]);
   });
 
   it("uses all scene lights in compiled surface graphs and late imported materials", () => {
@@ -378,27 +342,19 @@ describe("scene material lighting", () => {
       name: "surface",
     });
     if (!compiled.ok) throw new Error("Fixture material did not compile");
-    const materials = [
-      compiled.material,
+    expect(compiled.material.attachedBlocks.some((block) => block instanceof HapticLightingBlock)).toBe(true);
+    expect(blockLights(scene)).toEqual([0, 6, 0, 0, 0]);
+    // Babylon's own materials keep its lights, one shader slot each.
+    for (const material of [
       new PBRMaterial("imported", scene),
       new StandardMaterial("imported-standard", scene),
-    ];
-    for (const material of materials) {
+    ]) {
       expect(shaderLights(scene, material).LIGHT5).toBe(true);
     }
   });
 
-  it("expands a frozen NodeMaterial shader when lights arrive after its graph was built", async () => {
+  it("lights a frozen graph Material with lights that arrive or leave after it compiled, keeping its Effect", async () => {
     const scene = host();
-    // NullEngine cannot upload the BRDF lookup. Mock that texture readiness
-    // boundary while retaining the real PBR block and generated shader.
-    scene.environmentBRDFTexture = RawTexture.CreateRGBATexture(
-      new Uint8Array([255, 255, 255, 255]),
-      1,
-      1,
-      scene,
-    );
-    vi.spyOn(scene.environmentBRDFTexture, "isReady").mockReturnValue(true);
     lights(scene, 3);
     const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
     if (!lowered.ok) throw new Error("Fixture material did not lower");
@@ -412,50 +368,33 @@ describe("scene material lighting", () => {
     const mesh = MeshBuilder.CreateBox("receiver", {}, scene);
     mesh.material = material;
     material.freeze();
-    await vi.waitFor(() =>
-      expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true),
-    );
-    expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
-    expect(mesh.subMeshes[0]!.effect?.defines).not.toContain("#define LIGHT5");
+    const drawn = async () => {
+      beginFrame(scene);
+      await vi.waitFor(() =>
+        expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true),
+      );
+      return mesh.subMeshes[0]!.effect;
+    };
+    const effect = await drawn();
+    expect(effect?.defines).not.toMatch(/#define LIGHT\d/);
+    expect(blockLights(scene)[1]).toBe(3);
 
     const added = lights(scene, 3);
-    beginFrame(scene);
-    await vi.waitFor(() =>
-      expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true),
-    );
-    expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
-    expect(mesh.subMeshes[0]!.effect?.defines).toContain("#define LIGHT5");
-    // The UBO path reads the sixth block member rather than a standalone
-    // vLightData5 uniform. Assert actual point-light evaluation uses it.
-    expect(mesh.subMeshes[0]!.effect?.fragmentSourceCode).toContain(
-      "computePointAndSpotPreLightingInfo(light5.vLightData",
-    );
+    expect(await drawn()).toBe(effect);
+    expect(blockLights(scene)[1]).toBe(6);
 
     added[2]!.dispose();
-    beginFrame(scene);
-    await vi.waitFor(() =>
-      expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true),
-    );
-    expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
-    expect(mesh.subMeshes[0]!.effect?.defines).not.toContain("#define LIGHT5");
+    expect(await drawn()).toBe(effect);
+    expect(blockLights(scene)[1]).toBe(5);
     expect(material.isFrozen).toBe(true);
   });
 
-  it.each(["pbr", "cel"] as const)("refreshes frozen %s graph shadow defines after allocation and enabled changes", async (mode) => {
+  it.each(["pbr", "cel"] as const)("shadows a frozen %s graph from the block after allocation and enabled changes, keeping its Effect", async (mode) => {
     const scene = host(false);
-    const engine = scene.getEngine();
-    // Babylon 9.29 NullEngine omits attaching its cube InternalTexture to the
-    // wrapper. Complete that headless allocation boundary, keeping real maps.
-    const createCube = engine.createRenderTargetCubeTexture.bind(engine);
-    engine.createRenderTargetCubeTexture = (...args) => {
-      const target = createCube(...args);
-      target.setTexture(engine.getLoadedTexturesCache().at(-1)!);
-      return target;
-    };
+    // A point light's map is six tiles of the shadow atlas, which a NullEngine's 512 texel texture limit cannot hold.
+    scene.getEngine().getCaps().maxTextureSize = 4096;
     scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 1, -10), scene);
     updateSceneRenderingSettings(scene, { mode });
-    scene.environmentBRDFTexture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
-    vi.spyOn(scene.environmentBRDFTexture, "isReady").mockReturnValue(true);
     const light = new PointLight("key", new Vector3(0, 3, -4), scene);
     const controller = sceneShadowController(scene);
     controller.register(light, true);
@@ -473,15 +412,19 @@ describe("scene material lighting", () => {
     controller.sync();
     material.allowShaderHotSwapping = false;
     material.freeze();
+    let effect: unknown;
     const check = async (shadowed: boolean) => {
       beginFrame(scene);
       await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true));
-      const defines = mesh.subMeshes[0]!.effect!.defines;
-      expect(defines).toContain("#define LIGHT0");
-      expect(defines.includes("#define SHADOW0")).toBe(shadowed);
+      effect ??= mesh.subMeshes[0]!.effect;
+      // A light's shadow is its record's first shadow view and face count, -1 and 0 for none; no define follows it.
+      expect(mesh.subMeshes[0]!.effect).toBe(effect);
+      expect(pointShadow(scene)).toEqual(shadowed ? [expect.any(Number), 6] : [-1, 0]);
+      if (shadowed) expect(pointShadow(scene)[0]).toBeGreaterThanOrEqual(0);
       expect(material.isFrozen).toBe(true);
     };
     await check(true);
+    expect(controller.generator(light)).toBeInstanceOf(AtlasShadowGenerator);
     controller.register(light, false);
     controller.sync();
     await check(false);
@@ -591,10 +534,8 @@ describe("scene material lighting", () => {
     expect(pbr.unlit).toBe(true);
   });
 
-  describe("Forward budget swaps", () => {
-    // Nine shader slots; ten lamps 10 m apart. The first sync drops lamp 9 and
-    // orders the admitted lamps points first, then spots, each in creation
-    // order. With the camera at x = 90 the budget drops lamp 0 and admits lamp 9.
+  describe("receiver light order", () => {
+    // Ten lamps 10 m apart; the lamp at each index of `spots` is a spot light.
     function swapFixture(spots: readonly number[] = [], x = (index: number) => index * 10) {
       const scene = host(false);
       const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
@@ -614,199 +555,6 @@ describe("scene material lighting", () => {
       expect(part.materialDefines!.isDirty).toBe(false);
       return { scene, camera, lamps, material, receiver, part };
     }
-    // A frozen material skips re-preparation only once its effect is ready.
-    const ready = (mesh: Mesh, material: Material) =>
-      vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true));
-    // Re-prepare from the current light order to see which defines it yields.
-    const prepared = (mesh: Mesh, material: Material) => {
-      mesh._markSubMeshesAsLightDirty();
-      material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
-      return mesh.subMeshes[0]!.materialDefines!.toString();
-    };
-    const slotKinds = (defines: string) =>
-      Array.from({ length: 9 }, (_, index) =>
-        defines.includes(`#define SPOTLIGHT${index}\n`)
-          ? "spot"
-          : defines.includes(`#define POINTLIGHT${index}\n`)
-            ? "point"
-            : "none",
-      );
-    const points = (count: number) => Array.from({ length: count }, () => "point");
-
-    it("puts the admitted light in the dropped light's slot without dirtying or recompiling receivers when the slot defines match", async () => {
-      const { scene, camera, lamps, material, receiver, part } = swapFixture([4]);
-      material.freeze();
-      await ready(receiver, material);
-      const effect = part.effect;
-      const defines = part.materialDefines!.toString();
-      const invalidate = vi.spyOn(material, "markAsDirty");
-      camera.position.x = 90;
-      beginFrame(scene);
-      expect(isForwardLightExcluded(lamps[0]!)).toBe(true);
-      // Every other light keeps its index, so the spot stays in the last slot.
-      expect(receiver.lightSources).toEqual([9, 1, 2, 3, 5, 6, 7, 8, 4].map((index) => lamps[index]));
-      expect(part.materialDefines!.isDirty).toBe(false);
-      expect(invalidate).not.toHaveBeenCalled();
-      expect(material.isFrozen).toBe(true);
-      // Re-preparing from the new order asks only for the compiled effect.
-      material.unfreeze();
-      const create = vi.spyOn(scene.getEngine(), "createEffect");
-      expect(prepared(receiver, material)).toBe(defines);
-      expect(create).toHaveBeenCalled();
-      expect(create.mock.results.every(({ value }) => value === effect)).toBe(true);
-      expect(part.effect).toBe(effect);
-      // A mesh added later builds its order from scene.lights and matches.
-      const later = MeshBuilder.CreateBox("later", {}, scene);
-      later.material = material;
-      expect(later.lightSources).toEqual(receiver.lightSources);
-      // Diagnostics keep listing lights in creation order.
-      expect(shadowLightDiagnostics(scene).map(({ name }) => name)).toEqual(
-        lamps.map(({ name }) => name),
-      );
-    });
-
-    it("keeps the admitted mix of slot kinds while a light of another kind is at most FORWARD_KIND_CHANGE_DISTANCE_RATIO times nearer", async () => {
-      const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 4]);
-      material.freeze();
-      await ready(receiver, material);
-      const defines = part.materialDefines!.toString();
-      // The spot at x = 0 is farthest, but only 90 / 80 times as far as the nearest point it would keep out.
-      camera.position.x = 90;
-      beginFrame(scene);
-      expect(isForwardLightExcluded(lamps[1]!)).toBe(true);
-      expect(isForwardLightExcluded(lamps[0]!)).toBe(false);
-      // The admitted point takes the dropped point's slot: no receiver changes.
-      expect(receiver.lightSources).toEqual([9, 2, 3, 5, 6, 7, 8, 0, 4].map((index) => lamps[index]));
-      expect(part.materialDefines!.isDirty).toBe(false);
-      expect(part.materialDefines!.toString()).toBe(defines);
-    });
-
-    it("changes the admitted kinds back only past the same margin", () => {
-      // A spot at x = 0 against points from x = 50 to 130.
-      const { scene, camera, lamps } = swapFixture([0, 4], (index) => (index ? 40 + index * 10 : 0));
-      const spotAdmittedAt = (x: number) => {
-        camera.position.x = x;
-        beginFrame(scene);
-        return !isForwardLightExcluded(lamps[0]!);
-      };
-      expect([130, 60, 50, 60, 70, 100].map(spotAdmittedAt)).toEqual([false, false, true, true, true, false]);
-    });
-
-    it("hands a switched-off light's place to the next light of its kind within the margin", () => {
-      const scene = host(false);
-      scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
-      const points = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90].map((x) => new PointLight(`point-${x}`, new Vector3(x, 3, 0), scene));
-      const near = new SpotLight("near spot", new Vector3(5, 3, 0), Vector3.Down(), 1, 1, scene);
-      const far = new SpotLight("far spot", new Vector3(95, 3, 0), Vector3.Down(), 1, 1, scene);
-      MeshBuilder.CreateBox("receiver", {}, scene).material = new StandardMaterial("receiver", scene);
-      syncSceneLighting(scene);
-      // Nine slots: the near spot and the eight nearest points.
-      expect(isForwardLightExcluded(far)).toBe(true);
-      setAuthoredLightEnabled(near, false);
-      beginFrame(scene);
-      // The far spot is 95 / 80 times as far as the nearest point it keeps out.
-      expect(isForwardLightExcluded(far)).toBe(false);
-      expect(isForwardLightExcluded(points[8]!)).toBe(true);
-    });
-
-    it("counts a light with a shadow map as another kind than one without", () => {
-      const { scene, camera, lamps, receiver } = swapFixture([0, 9]);
-      receiver.receiveShadows = true;
-      new ShadowGenerator(64, lamps[0] as SpotLight).addShadowCaster(MeshBuilder.CreateBox("caster", {}, scene));
-      beginFrame(scene);
-      // The shadowed spot is now farthest, but only 48 / 42 times as far as the unshadowed spot it would admit.
-      camera.position.x = 48;
-      beginFrame(scene);
-      expect(isForwardLightExcluded(lamps[0]!)).toBe(false);
-      expect(isForwardLightExcluded(lamps[9]!)).toBe(true);
-    });
-
-    it("re-sorts the admitted lights by slot kind and refreshes frozen receivers when the slot defines differ", async () => {
-      // The spot at x = 0 ends up 130 / 80 times as far as the nearest point it would keep out.
-      const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 4], (index) => (index ? 40 + index * 10 : 0));
-      material.freeze();
-      await ready(receiver, material);
-      expect(slotKinds(part.materialDefines!.toString())).toEqual([...points(7), "spot", "spot"]);
-      camera.position.x = 130;
-      beginFrame(scene);
-      // The admitted point joins the points; the remaining spot moves to the end.
-      expect(receiver.lightSources).toEqual([1, 2, 3, 5, 6, 7, 8, 9, 4].map((index) => lamps[index]));
-      material.isReadyForSubMesh(receiver, part);
-      expect(slotKinds(part.materialDefines!.toString())).toEqual([...points(8), "spot"]);
-      expect(material.isFrozen).toBe(true);
-    });
-
-    it("rebuilds the shader a revisited light set compiled before, after a chain of different-kind swaps", () => {
-      const scene = host(false);
-      const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
-      scene.activeCamera = camera;
-      // Two spot and two point corner lamps; six points near the centre stay
-      // admitted. With the camera opposite a corner, that corner is farthest
-      // and the nine-slot budget drops it.
-      const corners = [new Vector3(40, 3, 40), new Vector3(-40, 3, 40), new Vector3(-40, 3, -40), new Vector3(40, 3, -40)];
-      const lamps = corners.map((position, index) =>
-        index < 2
-          ? new SpotLight(`corner-${index}`, position, Vector3.Down(), 1, 1, scene)
-          : new PointLight(`corner-${index}`, position, scene));
-      for (let index = 0; index < 6; index++) new PointLight(`centre-${index}`, new Vector3(index - 2.5, 3, 0), scene);
-      const material = new StandardMaterial("receiver", scene);
-      const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
-      receiver.material = material;
-      const part = receiver.subMeshes[0]!;
-      syncSceneLighting(scene);
-      const exclude = (corner: number) => {
-        camera.position.copyFrom(corners[corner]!).scaleInPlace(-1);
-        beginFrame(scene);
-        expect(isForwardLightExcluded(lamps[corner]!)).toBe(true);
-        material.isReadyForSubMesh(receiver, part);
-        return { defines: part.materialDefines!.toString(), effect: part.effect };
-      };
-      const first = exclude(0);
-      exclude(1); // spot for spot
-      exclude(2); // spot for point
-      const revisit = exclude(0); // point for spot: the first light set again
-      expect(revisit.defines).toBe(first.defines);
-      expect(revisit.effect).toBe(first.effect);
-    });
-
-    it("refreshes a frozen receiver the admitted light excludes, which only loses the dropped light", async () => {
-      const { scene, camera, lamps, material, receiver } = swapFixture([4]);
-      const excluded = MeshBuilder.CreateBox("excluded", {}, scene);
-      excluded.material = material;
-      lamps[9]!.excludedMeshes.push(excluded);
-      material.freeze();
-      await ready(receiver, material);
-      await ready(excluded, material);
-      camera.position.x = 90;
-      beginFrame(scene);
-      expect(receiver.lightSources).toEqual([1, 2, 3, 5, 6, 7, 8, 9, 4].map((index) => lamps[index]));
-      expect(excluded.lightSources).toEqual([1, 2, 3, 5, 6, 7, 8, 4].map((index) => lamps[index]));
-      material.isReadyForSubMesh(excluded, excluded.subMeshes[0]!);
-      // Its later lights moved down one slot, so its shader must follow.
-      expect(slotKinds(excluded.subMeshes[0]!.materialDefines!.toString())).toEqual([...points(7), "spot", "none"]);
-      expect(material.isFrozen).toBe(true);
-    });
-
-    it("refreshes frozen receivers when the dropped light still has a shadow map", async () => {
-      const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 9]);
-      receiver.receiveShadows = true;
-      const generator = new ShadowGenerator(64, lamps[0] as SpotLight);
-      generator.addShadowCaster(MeshBuilder.CreateBox("caster", {}, scene));
-      beginFrame(scene);
-      material.freeze();
-      await ready(receiver, material);
-      // The spot follows the eight points.
-      expect(part.materialDefines!.toString()).toContain("#define SHADOW8\n");
-      camera.position.x = 90;
-      beginFrame(scene);
-      // A standby map stays attached to the dropped light; the admitted spot has none.
-      expect(lamps[0]!.getShadowGenerator()).toBe(generator);
-      expect(receiver.lightSources[8]).toBe(lamps[9]);
-      material.isReadyForSubMesh(receiver, part);
-      const defines = part.materialDefines!.toString();
-      expect(defines).toContain("#define SPOTLIGHT8\n");
-      expect(defines).not.toContain("#define SHADOW8\n");
-    });
 
     it("re-sorts a receiver to scene order without dirtying it when only lights with one slot signature move", () => {
       const { scene, lamps, material, receiver, part } = swapFixture([4]);
@@ -838,37 +586,6 @@ describe("scene material lighting", () => {
       expect(scene.lights.map((light) => light.name)).toEqual(["a", "e", "b", "c"]);
       expect(restoreSceneLightOrder(scene, order)).toBe(false);
     });
-
-    it("hands an exchange back to Babylon when the admitted light's parent is the dropped light", async () => {
-      const scene = host(false);
-      const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
-      scene.activeCamera = camera;
-      const lamps = Array.from(
-        { length: 9 },
-        (_, index) => new PointLight(`lamp-${index}`, new Vector3(index * 10, 3, 0), scene),
-      );
-      const child = new PointLight("child", new Vector3(95, -3, 0), scene);
-      child.parent = lamps[0]!;
-      const material = new StandardMaterial("receiver", scene);
-      const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
-      receiver.material = material;
-      syncSceneLighting(scene);
-      expect(isForwardLightExcluded(child)).toBe(true);
-      material.freeze();
-      await ready(receiver, material);
-      camera.position.x = 95;
-      beginFrame(scene);
-      // Dropping lamp 0 also disables its child, so neither lights the receiver.
-      expect(isForwardLightExcluded(lamps[0]!)).toBe(true);
-      expect(child.isEnabled()).toBe(false);
-      expect(receiver.lightSources).toEqual(lamps.slice(1));
-      // The undone exchange leaves the lit lamps first, then the two unlit ones.
-      expect(scene.lights).toEqual([...lamps.slice(1), lamps[0], child]);
-      material.isReadyForSubMesh(receiver, receiver.subMeshes[0]!);
-      expect(slotKinds(receiver.subMeshes[0]!.materialDefines!.toString())).toEqual(
-        [...Array.from({ length: 8 }, () => "point"), "none"],
-      );
-    });
   });
 
   it("restores all lights after adding them while the viewport is unlit", () => {
@@ -879,9 +596,8 @@ describe("scene material lighting", () => {
     overlay.setMode("unlit");
     lights(scene, 6);
     beginFrame(scene);
+    expect(blockLights(scene)).toEqual([0, 0, 0, 0, 0]);
     overlay.setMode("pbr");
-    expect(
-      shaderLights(scene, scene.defaultMaterial as PBRMaterial).LIGHT5,
-    ).toBe(true);
+    expect(blockLights(scene)).toEqual([0, 6, 0, 0, 0]);
   });
 });

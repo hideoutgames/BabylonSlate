@@ -41,7 +41,6 @@ import {
   applyAuthoredLightProperties,
   compileMaterialPlan,
   createAppWebGpuEngine,
-  setHapticLighting,
   setSceneRenderSettings,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
@@ -232,8 +231,6 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
     return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
   };
-  // Graph Materials compile with the block.
-  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   const releases: (() => void)[] = [];
   try {
@@ -681,7 +678,6 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     };
   } finally {
     for (const release of releases) release();
-    setHapticLighting(engine, false);
     scene.dispose();
     engine.dispose();
     canvas.remove();

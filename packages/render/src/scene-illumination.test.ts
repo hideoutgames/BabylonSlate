@@ -21,6 +21,9 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
+import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
+import { managedRenderReservations } from "./managed-render-resources";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator } from "./shadow-atlas";
 import { setupDefaultViewport } from "./viewport";
 import {
   AUTHORED_CAMERA_PREFIX,
@@ -42,6 +45,17 @@ function createHandle() {
   const handle = createTestEngine();
   handles.push(handle);
   return handle;
+}
+
+/**
+ * What a shipped Engine (WebGL2, WebGPU) gives the shadow atlas: textures large enough for a sun's cascades beside local
+ * maps, and cascades with hardware depth comparison (the sun's atlas map is cascaded).
+ */
+function shippedShadowEngine(scene: Scene): void {
+  const engine = scene.getEngine();
+  engine.getCaps().maxTextureSize = 4096;
+  engine._features.supportCSM = true;
+  engine._features.supportShadowSamplers = true;
 }
 
 function sceneWith(
@@ -155,7 +169,10 @@ it("keeps multiple rectangular emitters on a mesh actor through edits, attachmen
   expect(scene.getLightByName(light.name)).toBeNull();
   syncAuthoredIllumination(scene, sceneWith([]));
   expect(scene.lights.filter((entry) => entry instanceof RectAreaLight)).toHaveLength(0);
-  expect(scene._ltcTextures).toBeUndefined();
+  expect(scene.transformNodes.filter((node) => node.name.startsWith("authoredAreaLight:"))).toHaveLength(0);
+  // Only the light block's lookup tables remain, bound for a rect light arriving later.
+  expect(scene._ltcTextures).toBeDefined();
+  expect(managedRenderReservations(scene.getEngine()).categoryBytes.areaLight).toBe(AREA_LIGHT_LOOKUP_BYTES);
 });
 
 
@@ -622,7 +639,7 @@ describe("syncAuthoredIllumination", () => {
 
   it("allocates directional and local shadow lights independently", () => {
     const { scene } = createHandle();
-    scene.getEngine().getCaps().maxTextureSize = 4096;
+    shippedShadowEngine(scene);
     const diagnostics: string[] = [];
     syncAuthoredIllumination(
       scene,
@@ -646,17 +663,19 @@ describe("syncAuthoredIllumination", () => {
     );
     const key = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}key`);
     const bounce = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}bounce`);
-    expect(key?.getShadowGenerator()).toBeInstanceOf(ShadowGenerator);
+    // Both are tiles of the Scene's shadow atlas: the sun's cascades and the spot light's map.
+    expect(key?.getShadowGenerator()).toBeInstanceOf(AtlasCascadedShadowGenerator);
     expect(
       (key!.getShadowGenerator() as ShadowGenerator).getShadowMap()?.getSize()
         .width,
     ).toBe(2048);
-    expect(bounce?.getShadowGenerator()).toBeInstanceOf(ShadowGenerator);
+    expect(bounce?.getShadowGenerator()).toBeInstanceOf(AtlasShadowGenerator);
     expect(diagnostics).toEqual([]);
   });
 
   it("keeps game meshes on the shadow map and excludes helpers", () => {
     const { scene } = createHandle();
+    shippedShadowEngine(scene);
     const cube = MeshBuilder.CreateBox("cube", { size: 1.5 }, scene);
     const ground = MeshBuilder.CreateGround("ground", { width: 10, height: 10 }, scene);
     const origin = MeshBuilder.CreateSphere("editorActor:sun", { diameter: 0.75 }, scene);
@@ -727,8 +746,9 @@ describe("syncAuthoredIllumination", () => {
     }
   });
 
-  it("uses PCF, bias, frustum falloff, and auto Z bounds on directional shadows", () => {
+  it("uses PCF, bias, frustum falloff, and fixed cascade depth bounds on directional shadows", () => {
     const { scene } = createHandle();
+    shippedShadowEngine(scene);
     const data = sceneWith([
         lightActor("key", {
           lightKind: "directional",
@@ -740,17 +760,18 @@ describe("syncAuthoredIllumination", () => {
     const key = scene.getLightByName(
       `${AUTHORED_LIGHT_PREFIX}key`,
     ) as DirectionalLight;
-    const generator = key.getShadowGenerator() as ShadowGenerator;
-    // PCF is requested; NullEngine / WebGL1 falls back to Poisson.
-    expect(
-      generator.usePercentageCloserFiltering || generator.usePoissonSampling,
-    ).toBe(true);
+    const generator = key.getShadowGenerator() as AtlasCascadedShadowGenerator;
+    expect(generator).toBeInstanceOf(AtlasCascadedShadowGenerator);
+    expect(generator.usePercentageCloserFiltering).toBe(true);
     expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_HIGH);
     expect(generator.bias).toBeCloseTo(0.0001);
     expect(generator.normalBias).toBeCloseTo(0.005);
     expect(generator.frustumEdgeFalloff).toBe(0);
-    expect(key.autoCalcShadowZBounds).toBe(false);
-    expect(key.customProjectionMatrixBuilder).toBeTypeOf("function");
+    // The cascades fit the camera's frustum within the shadow distance, not the casters' depth range or a custom
+    // projection (the single-map fallback's).
+    expect(generator.autoCalcDepthBounds).toBe(false);
+    expect(generator.stabilizeCascades).toBe(true);
+    expect(key.customProjectionMatrixBuilder).toBeUndefined();
     for (const [filterQuality, expected] of [
       ["low", ShadowGenerator.QUALITY_LOW],
       ["medium", ShadowGenerator.QUALITY_MEDIUM],
@@ -765,6 +786,7 @@ describe("syncAuthoredIllumination", () => {
 
   it("disables the shadow map when authored shadows are off", () => {
     const { scene } = createHandle();
+    shippedShadowEngine(scene);
     const data = sceneWith([
       lightActor("key", {
         lightKind: "directional",
@@ -838,6 +860,7 @@ describe("syncAuthoredIllumination", () => {
 
   it("does not give hemispheric fill a shadow map", () => {
     const { scene } = createHandle();
+    shippedShadowEngine(scene);
     syncAuthoredIllumination(
       scene,
       sceneWith([

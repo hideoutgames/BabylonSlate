@@ -92,7 +92,11 @@ export function previewPhysicsScene(): SerializedScene {
   return scene;
 }
 
-/** The last two lights must contribute pixels, beyond Babylon's four-light default. */
+/**
+ * The last two lights must contribute pixels, beyond Babylon's four-light default. Point lights, whose records the
+ * light block holds 32 of on desktop; it holds one Hemispheric Fill Light, so extra fills draw nothing by design.
+ * All six share one position (the editor camera's side, above), so the two green ones rank fifth and sixth.
+ */
 export function previewManyLightsScene(): SerializedScene {
   const scene = createDefaultScene();
   scene.settings.environmentColor = [0, 0, 0];
@@ -106,15 +110,18 @@ export function previewManyLightsScene(): SerializedScene {
   for (let index = 0; index < 6; index += 1) {
     scene.actors.push(
       createActor(`light-${index}`, `Light ${index + 1}`, {
+        transform: { ...identitySerializedTransform(), position: [0, 4, -6] },
         components: [
           {
-            id: `fill-${index}`,
-            classId: "HemisphericFillLightComponent",
+            id: `point-${index}`,
+            classId: "LightComponent",
             properties: {
+              lightKind: "point",
               enabled: true,
+              castShadows: false,
               color: index < 4 ? [1, 0, 0] : [0, 1, 0],
-              groundColor: index < 4 ? [1, 0, 0] : [0, 1, 0],
-              intensity: index < 4 ? 0.01 : 1,
+              intensity: index < 4 ? 0.01 : 16,
+              range: 40,
             },
           },
         ],

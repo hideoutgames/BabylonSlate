@@ -86,7 +86,6 @@ import {
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
 import { detachShadowGenerator, ShadowPredictionMaps } from "./shadow-prediction-maps";
-import { hapticLightingActive } from "./haptic-lights";
 import { isAtlasShadow, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
 
@@ -411,26 +410,19 @@ export class SceneShadowController {
     return predictShadowStarts(this.entries, settings, margin);
   }
   /**
-   * A map of `light`'s kind (spot or point) for a variant prediction of a first shadow start of that kind, or, on
-   * WebGPU, of an admission bringing a standby map back (whose casters' depth pipelines its warm render creates): built
-   * as an admitted map is, with the current settings, at `PREDICTION_MAP_SIZE`, listing the scene's casters, and taken
-   * off the light at once (a map the light holds stays attached), so no receiver binds it, no admission counts it and
-   * it never renders a frame. One per kind, aimed at the light it predicts. Its bytes join the scene's shadow reservation only while room remains after the
-   * real maps, which release it when they need that room. Null when shadows are off or there is no room.
+   * Null: the variant predictions' map of a light's kind. The light block's Materials hold no shadow defines to
+   * predict, and a map would hold an atlas tile.
    */
-  predictionMap(light: Light): ShadowGenerator | null {
-    // The light block's Materials hold no shadow defines to predict, and a map would hold an atlas tile.
-    if (hapticLightingActive(this.scene)) return null;
-    return this.predictions.map(light);
+  predictionMap(): ShadowGenerator | null {
+    return null;
   }
   /**
-   * On the light block's path, asks every caster for its depth variant of each kind of atlas map (the sun's cascades, a
+   * Asks every caster for its depth variant of each kind of atlas map (the sun's cascades, a
    * spot light's tile, a point light's faces) ahead of that kind's first shadow start, which then compiles none
    * (`ShadowCasterVariants`; Play's world presentation, in its loading frames, as its starting state poses the casters).
    * New shadow settings ask again.
    */
   warmCasterVariants(): void {
-    if (!hapticLightingActive(this.scene)) return;
     if (!this.planSettings) this.sync();
     const settings = this.planSettings;
     if (settings?.enabled) this.casterVariants.warm(settings);

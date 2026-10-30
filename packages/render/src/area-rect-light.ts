@@ -3,9 +3,8 @@ import { type AreaRectLightBinding } from "@haptic/core";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { setAuthoredLightEnabled } from "./light-policy";
 import type { MeshAssetContext } from "./mesh-assets";
-import { areaEmissionResourceKey, retainAreaEmissionTexture } from "./area-emission-resource";
+import { areaEmissionResourceKey } from "./area-emission-resource";
 import { setRectLightEmission } from "./area-emission-array";
-import { hapticLightingActive } from "./haptic-lights";
 
 /** 9.29 adds this key without rebuilding when an existing light slot changes type. */
 export class OwnedRectAreaLight extends RectAreaLight {
@@ -34,8 +33,6 @@ export class AreaRectLightOwner {
   private disposed = false;
   private dirty = true;
   private enabled: boolean | undefined;
-  private emissionKey: string | undefined;
-  private releaseEmission?: () => void;
   private emissionError?: string;
   private readonly onDiagnostic?: (message: string) => void;
 
@@ -49,8 +46,6 @@ export class AreaRectLightOwner {
     this.light.parent = this.adapter;
     this.light.onDisposeObservable.addOnce(() => {
       this.disposed = true;
-      this.light.emissionTexture = null;
-      this.releaseEmission?.();
       this.adapter.dispose();
       releaseLookup();
     });
@@ -70,21 +65,9 @@ export class AreaRectLightOwner {
     this.light.diffuse = Color3.FromArray(properties.color);
     this.light.intensity = properties.intensity;
     const pixels = properties.textureGuid ? emissions?.get(properties.textureGuid) : undefined;
-    const key = pixels ? areaEmissionResourceKey(pixels) : undefined;
     this.emissionError = properties.textureGuid && !pixels ? `Processed area-light emission texture is unavailable: ${properties.textureGuid}. Open the Texture and choose Prepare Emission.` : undefined;
-    // The lighting plan's path draws emissions from one texture array; it keeps no texture per light.
-    if (hapticLightingActive(this.light.getScene())) setRectLightEmission(this.light, this.emissionError ? undefined : pixels);
-    else if (!this.emissionError && key !== this.emissionKey) {
-      try {
-        const next = pixels ? retainAreaEmissionTexture(this.light.getScene().getEngine(), pixels) : undefined;
-        this.light.emissionTexture = next?.texture ?? null;
-        // Native 9.29 waits for onLoad, which has already fired for RawTexture.
-        this.light._markMeshesAsLightDirty();
-        this.releaseEmission?.();
-        this.releaseEmission = next?.release;
-        this.emissionKey = key;
-      } catch (error) { this.emissionError = error instanceof Error ? error.message : String(error); }
-    }
+    // The light block draws emissions from one texture array; the owner keeps no texture per light.
+    setRectLightEmission(this.light, this.emissionError ? undefined : pixels);
     this.dirty = true;
     this.enabled = undefined;
     // The owner is deliberately unshadowed. No shadow generator is registered.

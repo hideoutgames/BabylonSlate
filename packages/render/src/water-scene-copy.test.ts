@@ -22,6 +22,7 @@ import {
   normalizeRenderingQuality,
   normalizeWaterBody,
 } from "@haptic/core";
+import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import { COMPILE_AHEAD_LIMIT } from "./driver-compile";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
@@ -210,7 +211,9 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   // Water opaque draws through Forward objects' renderer: one pass id and one readiness probe serve both.
-  expect(scene.objectRenderers.map((renderer) => renderer.name).sort()).toEqual(["Forward objects", "Forward transparent"]);
+  // (The Scene's other object renderer is the light block's one-texel shadow atlas stand-in.)
+  expect(scene.objectRenderers.map((renderer) => renderer.name).sort())
+    .toEqual(["Forward objects", "Forward transparent", "hapticShadowAtlasPlaceholder"]);
   // The split switches the output clear too, so it decides before that clear runs.
   expect(graph.taskNames()).toEqual([
     "Forward admitted shadows", "Forward cull", "Water split", "Forward clear",
@@ -806,13 +809,16 @@ it("charges the copy and own pair to the water ledger and releases them with the
   expect(managedRenderReservations(engine).categoryBytes.water).toBe(copyBytes + width * height * 8);
   graph.dispose();
   await graph.whenReleased();
-  expect(managedRenderReservations(engine)).toMatchObject({ resourceBytes: 0, pendingBytes: 0 });
+  // Only the light block's area-light lookup tables, which the Scene keeps, stay charged.
+  expect(managedRenderReservations(engine)).toMatchObject({ resourceBytes: AREA_LIGHT_LOOKUP_BYTES, pendingBytes: 0 });
+  expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(AREA_LIGHT_LOOKUP_BYTES);
 });
 
 it("degrades to the plain graph with a warning when the shared budget refuses the copy", async () => {
   const { engine, scene, camera } = host();
   lake(scene);
-  limitManagedRenderBytes(engine, 1024);
+  // Room for the light block's area-light lookup tables and 1 KiB more, far short of the copy.
+  limitManagedRenderBytes(engine, AREA_LIGHT_LOOKUP_BYTES + 1024);
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });

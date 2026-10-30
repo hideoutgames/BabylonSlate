@@ -435,6 +435,14 @@ export class SceneRenderCoordinator {
     if (this.disposed || this.scene.isDisposed || !camera)
       return { path: "frameGraph", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     flushSceneLatticeDeformers(this.scene);
+    // A validated frame of a view that draws steady frames (a frame report's) refuses a pending swap, yet only a
+    // tolerant round admits the new variant (WebGPU: once its warm draws found its pipeline, or unused for
+    // `UNUSED_WARM_MS`), and such frames repeat until one draws. It first probes as a steady frame does, so the swap
+    // completes and the strict probe below sees the new variant.
+    if (validatePresentation && this.graph.warmsVariants && this.toleratesVariantSwaps()) {
+      this.graph.recheckVariantSwaps();
+      probeVariantSwaps(true, () => this.graph.sceneStrictlyReady(camera));
+    }
     if (!this.graph.sceneStrictlyReady(camera)) {
       this.compileHold = this.holdsForCompiles(holding, this.advanceReadiness(camera));
       return { path: "frameGraph", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };

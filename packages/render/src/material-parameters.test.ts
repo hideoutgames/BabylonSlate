@@ -108,10 +108,10 @@ describe("material parameter bindings", () => {
     });
     if (!compiled.ok) throw new Error("Compile failed");
     disposers.push(compiled.dispose);
-    const pbr = compiled.material.getBlockByName(
-      "color_pbr",
-    ) as import("@babylonjs/core").PBRMetallicRoughnessBlock;
-    expect(pbr.baseColor.connectedPoint?.ownerBlock.getClassName()).toBe(
+    const lighting = compiled.material.getBlockByName(
+      "color_lighting",
+    ) as import("./haptic-lighting-block").HapticLightingBlock;
+    expect(lighting.baseColor.connectedPoint?.ownerBlock.getClassName()).toBe(
       "VectorSplitterBlock",
     );
     expect(

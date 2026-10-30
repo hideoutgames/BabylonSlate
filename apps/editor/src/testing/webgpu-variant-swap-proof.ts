@@ -31,7 +31,7 @@ import {
 } from "@babylonjs/core";
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
-import { applyAuthoredLightProperties, setHapticLighting, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
@@ -94,8 +94,6 @@ function countPipelines(engine: AbstractEngine) {
  * light that can cast shadows.
  */
 export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
-  // Graph Materials compile with the light block.
-  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
   const camera = new FreeCamera("camera", new Vector3(0, 4, -7), scene);
@@ -280,7 +278,6 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
     restore();
     coordinator.dispose();
     scene.dispose();
-    setHapticLighting(engine, false);
   }
 }
 
@@ -291,7 +288,6 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
  * The floor is unlit: its lighting is not this proof's subject.
  */
 export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
-  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
   const camera = new FreeCamera("camera", new Vector3(0, 3, -6), scene);
@@ -365,6 +361,5 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
     restore();
     coordinator.dispose();
     scene.dispose();
-    setHapticLighting(engine, false);
   }
 }

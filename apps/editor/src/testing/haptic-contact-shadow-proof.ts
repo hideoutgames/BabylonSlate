@@ -28,7 +28,7 @@ import {
   type RenderMode,
   type ShadowSettings,
 } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setHapticLighting, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
@@ -52,8 +52,6 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
     return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
   };
   const scene = new Scene(engine);
-  // The switch picks the lighting block when a Material compiles, and the atlas when a shadow map is made.
-  setHapticLighting(engine, true);
   try {
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
     const camera = new FreeCamera("camera", new Vector3(0, 3.6, -7), scene);
@@ -157,7 +155,6 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
     graph.dispose();
     return { width: canvas.width, height: canvas.height, captures, blocked };
   } finally {
-    setHapticLighting(engine, false);
     scene.dispose();
     engine.dispose();
     canvas.remove();

@@ -14,13 +14,12 @@ import {
   lowerMaterialDocument,
 } from "@haptic/shader-graph";
 import {
-  DEFAULT_RENDER_EFFECTS,
   normalizeCelShadingSettings,
   normalizeEnvironmentLightingSettings,
-  normalizeRenderingQuality,
 } from "@haptic/core";
 import { celFunctions } from "./cel-shader";
 import { compileMaterialPlan } from "./material-compiler";
+import { HapticLightingBlock } from "./haptic-lighting-block";
 import { sceneRenderingSettings } from "./render-settings";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { ResourceCache } from "./resource-cache";
@@ -118,7 +117,7 @@ describe("CEL render mode", () => {
     compiled.dispose();
   });
 
-  it("fogs a CEL graph by the one rule, in linear between its display colour and output", async () => {
+  it("fogs a CEL graph by the one rule, in linear as a PBR graph", async () => {
     const scene = host();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
     scene.fogMode = Scene.FOGMODE_LINEAR;
@@ -126,13 +125,16 @@ describe("CEL render mode", () => {
     const compiled = await defaultGraph(scene, "graph-fog");
     const material = compiled.material;
     expect(material.compiledShaders).toContain("return toLinearSpace(CalcFogFactor(viewPosition, sceneFogInfo));");
-    expect(material.compiledShaders).toMatch(/= toGammaSpace\(fogKeep\w* \* toLinearSpace\(\w+\.rgb\) \+ \(1\.0 - fogKeep\w*\) \* sceneFogColor\.rgb\);/);
+    // CEL is a define of the lit graph, whose colour is linear: it fogs toward the linear fog colour, as PBR does.
+    expect(material.compiledShaders).toMatch(/= fogKeep\w* \* \w+\.rgb \+ \(1\.0 - fogKeep\w*\) \* sceneFogColor\.rgb;/);
+    expect(material.compiledShaders).not.toMatch(/toGammaSpace\(fogKeep/);
     const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
     mesh.material = material;
     await material.forceCompilationAsync(mesh);
     const subMesh = mesh.subMeshes[0]!;
     expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
     expect(subMesh.effect!.defines).toMatch(/^#define FOG$/m);
+    expect(subMesh.effect!.defines).toMatch(/^#define HAPTIC_CEL$/m);
     compiled.dispose();
   });
 
@@ -158,22 +160,23 @@ describe("CEL render mode", () => {
     mesh.material = material;
     for (let i = 0; i < 6; i++)
       new PointLight(`light-${i}`, new Vector3(i, 3, 0), scene);
+    const blocks = material.attachedBlocks.slice();
+    expect(blocks.some((block) => block instanceof HapticLightingBlock)).toBe(true);
+    // Whether the Effect the mesh draws with once ready is CEL's, after a render-mode change re-prepared its defines.
+    const drawsCel = async () => {
+      scene.incrementRenderId();
+      await material.forceCompilationAsync(mesh);
+      await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true));
+      return /^#define HAPTIC_CEL$/m.test(mesh.subMeshes[0]!.effect!.defines);
+    };
+    expect(await drawsCel()).toBe(false);
     material.freeze();
-    // First activation loads CEL blocks asynchronously. Rapid switches must
-    // settle on the last request rather than lose a build or mix graph roots.
+    // Rapid switches settle on the last request.
     setSceneRenderSettings(scene, { mode: "cel" });
     setSceneRenderSettings(scene, { mode: "pbr" });
-    await vi.waitFor(() =>
-      expect(material.compiledShaders).toContain("pbrBlockAlbedoOpacity"),
-    );
+    expect(await drawsCel()).toBe(false);
     setSceneRenderSettings(scene, { mode: "cel" });
-    // NullEngine's non-UBO path admits four conventional lights.
-    expect(material.maxSimultaneousLights).toBe(4);
-    await vi.waitFor(() =>
-      expect(material.compiledShaders).toContain("slateCelSurfaceLight"),
-    );
-    expect(material.compiledShaders).not.toContain("pbrBlockAlbedoOpacity");
-    material.freeze();
+    expect(await drawsCel()).toBe(true);
     expect(
       compiled.setParameter("Tint", {
         kind: "color",
@@ -181,17 +184,15 @@ describe("CEL render mode", () => {
       }),
     ).toBe(true);
     setSceneRenderSettings(scene, { mode: "pbr" });
-    await vi.waitFor(() =>
-      expect(material.compiledShaders).toContain("pbrBlockAlbedoOpacity"),
-    );
+    expect(await drawsCel()).toBe(false);
     expect(mesh.material).toBe(material);
     expect(material.isFrozen).toBe(true);
     const tint = material.getBlockByName("baseColor") as InputBlock;
     expect(tint.value.asArray()).toEqual([0.1, 0.4, 0.8, 1]);
     setSceneRenderSettings(scene, { mode: "cel" });
-    await vi.waitFor(() =>
-      expect(material.compiledShaders).toContain("slateCelSurfaceLight"),
-    );
+    expect(await drawsCel()).toBe(true);
+    // One graph draws both modes: no block was swapped.
+    expect(material.attachedBlocks).toEqual(blocks);
     expect(mesh.material).toBe(material);
     expect(material.isFrozen).toBe(true);
     expect(material.getBlockByName("baseColor")).toBe(tint);
@@ -204,38 +205,6 @@ describe("CEL render mode", () => {
     expect(tint.value.asArray()).toEqual([0.8, 0.2, 0.1, 1]);
     compiled.dispose();
     expect(sceneRenderingSettings(scene).listeners.size).toBe(0);
-  });
-
-  it("connects a CEL graph's reflectivity only while reflections run", async () => {
-    const scene = host();
-    const doc = createDefaultMaterialDocument();
-    Object.assign(doc.nodes.find((node) => node.id === "output")!.properties, { "default:metallic": [1], "default:roughness": [0.25] });
-    const lowered = lowerMaterialDocument(doc);
-    if (!lowered.ok) throw new Error("Invalid fixture");
-    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "metal" });
-    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
-    expect(await compiled.ready).toEqual([]);
-    const material = compiled.material;
-    const errors: string[] = [];
-    material.onBuildErrorObservable.add((error) => errors.push(error));
-    MeshBuilder.CreateBox("actor", {}, scene).material = material;
-    const quality = normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } });
-    const render = (enabled: boolean) => setSceneRenderSettings(scene, {
-      mode: "cel", quality, cel: normalizeCelShadingSettings({}),
-      effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled } },
-    });
-    // The F0 mix of the geometry reflectivity write, present only with base color connected.
-    const reflective = "mix(vec3(0.04)";
-    render(false);
-    await vi.waitFor(() => expect(material.compiledShaders).toContain("slateCelSurfaceLight"));
-    expect(material.compiledShaders).not.toContain(reflective);
-    render(true);
-    await vi.waitFor(() => expect(material.compiledShaders).toContain(reflective));
-    expect(material.compiledShaders).toContain("slateCelSurfaceLight");
-    render(false);
-    await vi.waitFor(() => expect(material.compiledShaders).not.toContain(reflective));
-    expect(errors).toEqual([]);
-    compiled.dispose();
   });
 
   it("resolves scene overrides without leaking them between scenes or into PBR", () => {

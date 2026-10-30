@@ -11,6 +11,7 @@ import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync, type EditorSceneSyncOptions } from "./editor-scene-sync";
 import { DirectionalLight, Mesh, StandardMaterial } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
+import { AtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createEditorCamera } from "./editor-camera";
 import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./glb-test-fixtures";
@@ -782,6 +783,8 @@ describe("adopting a replaced visual that has child actors", () => {
 describe("mesh shadow participation through the editor apply path", () => {
   it("excludes a castShadows:false primitive from the generator renderList", async () => {
     const { sync, scene } = fixture();
+    // The sun's atlas map is cascaded, as every WebGL2 and WebGPU Engine supports.
+    scene.getEngine()._features.supportCSM = true;
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ cascades: 1 }),
     });
@@ -803,7 +806,9 @@ describe("mesh shadow participation through the editor apply path", () => {
     // controller's pending set is populated the way the render loop does.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     controller.sync();
-    const renderList = controller.generator(light)?.getShadowMap()?.renderList ?? [];
+    const generator = controller.generator(light);
+    expect(generator).toBeInstanceOf(AtlasCascadedShadowGenerator);
+    const renderList = generator!.getShadowMap()!.renderList!;
     const casterMesh = sync.meshForActor("caster")!;
     const nonCasterMesh = sync.meshForActor("non-caster")!;
     expect(renderList).toContain(casterMesh);

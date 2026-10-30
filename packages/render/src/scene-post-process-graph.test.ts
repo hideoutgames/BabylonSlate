@@ -14,6 +14,8 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { prepareScenePostProcessPlan } from "./scene-post-process-plan";
+import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
+import { syncSceneLighting } from "./scene-lighting";
 import {
   createScenePostProcessGraph,
   type ScenePostProcessGraph,
@@ -144,7 +146,6 @@ function host(bytes?: number) {
     textureHalfFloatRender: true,
     blendFloat: true,
   });
-  if (bytes !== undefined) limitManagedRenderBytes(engine, bytes);
   // Preserve native graph/material/texture ownership. NullEngine only lacks the
   // WebGL FrameGraph allocation and MRT layout boundaries.
   vi.spyOn(engine, "_createInternalTexture").mockImplementation(
@@ -169,6 +170,11 @@ function host(bytes?: number) {
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 0, -2), scene);
   scene.activeCamera = camera;
+  // The Scene's light block holds its LTC tables from its first lighting sync; `bytes` is the room beside them.
+  if (bytes !== undefined) {
+    syncSceneLighting(scene);
+    limitManagedRenderBytes(engine, AREA_LIGHT_LOOKUP_BYTES + bytes);
+  }
   const library = new MaterialLibrary();
   const graph = new FrameGraph(scene);
   let owned: ScenePostProcessGraph | null = null;
@@ -265,7 +271,7 @@ it("creates no auxiliary resources or Material instances for a disabled stack", 
   expect(h.create(plan)).toEqual({ ok: true, owner: null });
   expect(declare).not.toHaveBeenCalled();
   expect(acquire).not.toHaveBeenCalled();
-  expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
+  expect(managedRenderReservations(h.engine).reservedBytes).toBe(AREA_LIGHT_LOOKUP_BYTES);
 });
 
 it("rejects unsupported depth and a constrained replacement before declaring targets", () => {
@@ -288,7 +294,7 @@ it("rejects unsupported depth and a constrained replacement before declaring tar
     reason: expect.stringMatching(/reservation/),
   });
   expect(declare).not.toHaveBeenCalled();
-  expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
+  expect(managedRenderReservations(h.engine).reservedBytes).toBe(AREA_LIGHT_LOOKUP_BYTES);
 });
 
 it("uses half-float scene depth where 32-bit float targets cannot blend", async () => {
@@ -358,12 +364,15 @@ it("shares one demanded geometry set and isolated Z, reconciles every output, an
   ).toBe(Constants.TEXTURETYPE_FLOAT);
   const totals = managedRenderReservations(h.engine);
   expect(totals.pendingBytes).toBe(0);
-  expect(totals.reservedBytes).toBeLessThanOrEqual(4736);
+  // Beside the light block's LTC tables, which the Scene holds while the block exists.
+  expect(totals.categoryBytes.areaLight).toBe(AREA_LIGHT_LOOKUP_BYTES);
+  expect(totals.reservedBytes - AREA_LIGHT_LOOKUP_BYTES).toBeLessThanOrEqual(4736);
   expect(totals.categoryBytes.geometry).toBe(2560);
   expect(totals.categoryBytes.depth).toBe(1024);
   expect(() => owner.releaseAfterGraphDisposal()).toThrow(/Dispose/);
   await h.retire();
-  expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
+  // The graph's targets go with it; the LTC tables stay with the Scene.
+  expect(managedRenderReservations(h.engine).reservedBytes).toBe(AREA_LIGHT_LOOKUP_BYTES);
 });
 
 it("keeps duplicate entry parameters independent and resets the saved value without an asset mutation", async () => {
@@ -435,11 +444,11 @@ it("retains a failed actual allocation's reservation until the caller disposes t
   expect(() => owner.reconcile()).toThrow(/reserved peak/);
   expect(managedRenderReservations(h.engine)).toMatchObject({
     pendingBytes: 1536,
-    resourceBytes: 0,
+    resourceBytes: AREA_LIGHT_LOOKUP_BYTES,
   });
   expect(beginManagedRenderAllocation(h.engine, 513)).toBeUndefined();
   await h.retire();
-  expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
+  expect(managedRenderReservations(h.engine).reservedBytes).toBe(AREA_LIGHT_LOOKUP_BYTES);
 });
 
 it("retains a partial construction owner and refuses a stale plan without allocations", async () => {
@@ -551,7 +560,7 @@ it.each(["released", "uncertain"] as const)(
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       h.engine.endFrame();
       await gpu;
-      expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
+      expect(managedRenderReservations(h.engine).reservedBytes).toBe(AREA_LIGHT_LOOKUP_BYTES);
     } finally {
       resolveNative();
       confirmRelease();

@@ -2,7 +2,6 @@ import "./texture-quality";
 import "./standard-fog";
 import { lightsInCreationOrder, syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
-import { lightingSamplerCapacity } from "./light-sampler-budget";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty, notifySceneReceiversChanged, sceneSignalsHeld } from "./scene-readiness-signal";
 import {
@@ -10,13 +9,6 @@ import {
   type ShadowReceiverHandoff,
 } from "./shadow-receiver-handoff";
 import { sortReceiverLightSources, type ForwardLightSlotExchange } from "./forward-light-slots";
-import {
-  fixedLightSlotTable,
-  fixedShapeLightingActive,
-  fixedShapeLightingLimits,
-  selectFixedShapeLights,
-} from "./fixed-light-admission";
-import { fixedLightDefinesSignature } from "./fixed-light-binding";
 import {
   LightBlock,
   Material,
@@ -30,7 +22,7 @@ import {
 } from "@babylonjs/core";
 import { CelLightBlock } from "./cel-light-block";
 import { deviceProfile } from "./device-profile";
-import { hapticLightLimits, hapticLightingActive, selectHapticLights, writeHapticLights } from "./haptic-lights";
+import { hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
 
 type LitMaterial = Material & { maxSimultaneousLights: number };
 
@@ -180,13 +172,6 @@ function installSceneLighting(scene: Scene): SceneLighting {
     exchanges: [],
   };
   let budget = forwardLightBudget(scene.getEngine());
-  // The last selection was fixed-shape lighting's per-class admission.
-  let fixedShape = false;
-  let haptic = false;
-  // What seated materials' light defines depend on (fixedLightDefinesSignature), as of the last refresh.
-  let refreshedFixedShape = false;
-  let fixedDefines: unknown[] = [];
-  let nextFixedDefines: unknown[] = [];
   const watchedLights = new Map<Light, Observer<boolean>>();
   const invalidate = () => {
     dirty = true;
@@ -211,20 +196,18 @@ function installSceneLighting(scene: Scene): SceneLighting {
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
     policyToggles = toggled;
-    haptic = hapticLightingActive(scene);
-    fixedShape = !haptic && fixedShapeLightingActive(scene);
     try {
       admission = syncForwardLightPolicy(
         scene,
         budget.slots,
         Math.max(0, sceneRenderingSettings(scene).localLightBudget),
-        haptic ? selectHapticLights : fixedShape ? selectFixedShapeLights : undefined,
+        selectHapticLights,
       );
     } finally {
       policyToggles = undefined;
     }
     // HapticLightingBlock reads the admitted lights from one block, rewritten each frame; its Materials hold no light defines.
-    if (haptic) writeHapticLights(scene);
+    writeHapticLights(scene);
     if (toggled.size) {
       for (const light of toggled)
         if (!isPreservedExchange(light)) {
@@ -247,18 +230,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
       );
     }
     const handoffs = takeShadowReceiverHandoffs(scene);
-    nextFixedDefines.length = 0;
-    const table = fixedShape ? fixedLightSlotTable(scene) : null;
-    if (table) fixedLightDefinesSignature(scene, table, nextFixedDefines);
-    // Seated materials' defines changed (a lit material refreshes, which also
-    // leaves Babylon's path when the switch turns off). Lights moving through
-    // unshadowed seats only rebind.
-    const fixedChanged =
-      refreshedFixedShape !== fixedShape ||
-      nextFixedDefines.length !== fixedDefines.length ||
-      nextFixedDefines.some((entry, index) => entry !== fixedDefines[index]);
     const changed =
-      fixedChanged ||
       sceneLightsEnabled !== scene.lightsEnabled ||
       sceneShadowsEnabled !== scene.shadowsEnabled ||
       nextEnabled.length !== enabledLights.length ||
@@ -272,8 +244,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
       lightCount === scene.lights.length &&
       materialCount === scene.materials.length &&
       (!changed ||
-        (!fixedChanged &&
-          sceneLightsEnabled === scene.lightsEnabled &&
+        (sceneLightsEnabled === scene.lightsEnabled &&
           sceneShadowsEnabled === scene.shadowsEnabled &&
           !handoffs?.invalid &&
           (!!handoffs?.handoffs.length || admission.exchanges.length > 0) &&
@@ -316,8 +287,6 @@ function installSceneLighting(scene: Scene): SceneLighting {
     const previousEnabled = enabledLights;
     enabledLights = nextEnabled;
     nextEnabled = previousEnabled;
-    refreshedFixedShape = fixedShape;
-    [fixedDefines, nextFixedDefines] = [nextFixedDefines, fixedDefines];
     const previousShadowLayout = shadowLayout;
     shadowLayout = nextShadowLayout;
     nextShadowLayout = previousShadowLayout;
@@ -332,9 +301,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     // expands every per-light include this many times before dropping the
     // unused copies, and that JS cost is paid per Effect.
     lightInventory = Math.max(lightInventory, scene.lights.length);
-    // A fixed layout sizes each kind by its own high-water mark, which can
-    // seat more than the total inventory holds now: every seat must expand.
-    const capacity = Math.max(Math.min(budget.slots, Math.max(4, lightInventory)), table?.layout.seats ?? 0);
+    const capacity = Math.min(budget.slots, Math.max(4, lightInventory));
     // Only a different light set or capacity gives receivers other defines. Other refreshes (a material added or
     // retired) leave a program that failed to link failing, so they must not end the Material library's latch.
     const receiversChanged = changed || capacity !== lightCapacity;
@@ -391,21 +358,15 @@ function installSceneLighting(scene: Scene): SceneLighting {
       dirty = true;
     },
     limits: () => {
-      if (fixedShape) return fixedShapeLightingLimits(scene);
       if (!admission.limited.length) return [];
       const limited = `Limited: ${lightsInCreationOrder(admission.limited)
         .slice(0, 16)
         .map((light) => light.name)
         .join(", ")}${admission.limited.length > 16 ? ", …" : ""}`;
       const local = sceneRenderingSettings(scene).localLightBudget;
-      if (haptic) {
-        const maximum = deviceProfile().lightMaximum;
-        return [
-          `Light block: ${admission.admitted}/${admission.requested} requested lights admitted; ${local} scalability local lights; this device draws at most ${maximum.point} point, ${maximum.spot} spot, ${maximum.rect} rect area and ${maximum.directional} directional lights and one fill. ${limited}`,
-        ];
-      }
+      const maximum = deviceProfile().lightMaximum;
       return [
-        `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${local} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved); ${admission.samplers}/${lightingSamplerCapacity(scene)} lighting samplers, ${admission.samplerLimited.length} limited by sampler headroom. ${limited}`,
+        `Light block: ${admission.admitted}/${admission.requested} requested lights admitted; ${local} scalability local lights; this device draws at most ${maximum.point} point, ${maximum.spot} spot, ${maximum.rect} rect area and ${maximum.directional} directional lights and one fill. ${limited}`,
       ];
     },
   };

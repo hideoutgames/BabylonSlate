@@ -79,6 +79,8 @@ Configured in `vitest.workspace.ts`; each project is a thin `vitest.projects.*.t
 
 Physics tests use Havok through `NullEngine`; Havok cases share the initialized WASM module and create independent worlds.
 
+Every `NullEngine` in the `babylon` project draws lit surfaces on the light block, the one lighting path: its setup file (`packages/render/src/test-support/light-block-engine.ts`) reports uniform buffers and stubs the texture array, depth texture and scissor the block's resources need. Editor tests that run the renderer headlessly import it (`@haptic/render/light-block-engine`).
+
 ## Coverage gates
 
 Scope `packages/*/src/**`, gated **per package** at 60% (lines, functions, branches, statements); `@haptic/physics` is 50% lines/functions/statements and 45% branches. Outside the gate: `apps/editor` (Playwright; its jsdom suite OOMs a 4 GB Node heap under v8 coverage, so `pnpm test:coverage` instruments packages without it, then runs editor unit tests without coverage), `apps/player` and `apps/desktop` (export/Preview e2e, source-read host tests), `apps/docs` (VitePress build + unit tests; the link rewriter sends source/non-page/directory links to GitHub and fails the build on a link resolving outside the repository; headings use GitHub ids via `githubHeadingSlug`; `heading-fragments.test.ts` fails on a fragment naming no heading on its target page, which VitePress's dead-link check ignores).

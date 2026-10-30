@@ -29,7 +29,6 @@ import {
   applyAuthoredLightProperties,
   createAppWebGpuEngine,
   MaterialLibrary,
-  setHapticLighting,
   setSceneRenderSettings,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
@@ -253,8 +252,6 @@ export async function runSpatialEffectsProof(
   engine.setSize(96, 72);
   try {
     const captureScene = async () => {
-      // Graph Materials and the march compiled from here on draw with the light block.
-      setHapticLighting(engine, true);
       const scene = new Scene(engine);
       scene.clearColor = new Color4(0, 0, 0, 1);
       const library = new MaterialLibrary();
@@ -484,7 +481,6 @@ export async function runSpatialEffectsProof(
           disabled,
         }] };
       } finally {
-        setHapticLighting(engine, false);
         graph.dispose();
         await graph.whenReleased();
         library.dispose();

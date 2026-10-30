@@ -26,6 +26,7 @@ import { createGizmoHost } from "./gizmo-host";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS } from "./webgpu-pipeline-deferral";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 
 // NullEngine is not WebGPU, so the deferral itself never engages; its scopes are the seam here.
 vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
@@ -327,6 +328,12 @@ describe("effects the driver is still compiling", () => {
   });
 });
 
+/**
+ * The Scene's object renderers but the light block's one-texel shadow atlas stand-in, which the first lighting sync
+ * makes and the Scene keeps: the graph's own tasks' renderers.
+ */
+const graphRenderers = (scene: Scene) => scene.objectRenderers.filter((renderer) => renderer.name !== "hapticShadowAtlasPlaceholder");
+
 function holdGraphInitialization() {
   let entered!: () => void;
   const started = new Promise<void>((resolve) => { entered = resolve; });
@@ -618,7 +625,7 @@ it("restarts camera and resized-output preparation without drawing or releasing 
   const frame = vi.fn();
   scene.onBeforeRenderObservable.add(frame);
   const preparing = renderer.prepare();
-  await vi.waitFor(() => expect(scene.objectRenderers).toHaveLength(1));
+  await vi.waitFor(() => expect(graphRenderers(scene)).toHaveLength(1));
   const replacement = new FreeCamera("replacement", new Vector3(0, 0, -8), scene);
   scene.activeCamera = replacement;
   options.renderWidth = 96;
@@ -630,7 +637,7 @@ it("restarts camera and resized-output preparation without drawing or releasing 
   expect(scene.activeCamera).toBe(replacement);
   expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
   expect(scene.activeCamera).toBe(replacement);
-  expect(scene.objectRenderers).toHaveLength(1);
+  expect(graphRenderers(scene)).toHaveLength(1);
   renderer.dispose();
 });
 
@@ -640,14 +647,14 @@ it("rejects a superseded owner while allowing its replacement to finish preparat
   let current = true;
   scene.addIsReadyCheck({ isReady: () => assetsReady });
   const first = expect(renderer.prepare(() => { if (!current) throw new Error("old owner cancelled"); })).rejects.toThrow("old owner cancelled");
-  await vi.waitFor(() => expect(scene.objectRenderers).toHaveLength(1));
+  await vi.waitFor(() => expect(graphRenderers(scene)).toHaveLength(1));
   current = false;
   renderer.invalidate();
   const replacement = renderer.prepare();
   assetsReady = true;
   await first;
   expect(await replacement).toEqual({ path: "frameGraph" });
-  expect(scene.objectRenderers).toHaveLength(1);
+  expect(graphRenderers(scene)).toHaveLength(1);
   expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
   renderer.dispose();
 });
@@ -658,7 +665,7 @@ it("finishes a current owner's preparation when the graph is invalidated during 
   let assetsReady = false;
   scene.addIsReadyCheck({ isReady: () => assetsReady });
   const preparing = renderer.prepare();
-  await vi.waitFor(() => expect(scene.objectRenderers).toHaveLength(1));
+  await vi.waitFor(() => expect(graphRenderers(scene)).toHaveLength(1));
   renderer.invalidate();
   assetsReady = true;
   expect(await preparing).toEqual({ path: "frameGraph" });
@@ -670,10 +677,10 @@ it("disposes a pending graph without stranding readiness or touching a sibling s
   const { engine, scene, renderer } = host();
   scene.addIsReadyCheck({ isReady: () => false });
   const pending = expect(renderer.prepare()).rejects.toThrow("disposed");
-  await vi.waitFor(() => expect(scene.objectRenderers).toHaveLength(1));
+  await vi.waitFor(() => expect(graphRenderers(scene)).toHaveLength(1));
   renderer.dispose();
   await pending;
-  expect(scene.objectRenderers).toHaveLength(0);
+  expect(graphRenderers(scene)).toHaveLength(0);
   const sibling = new Scene(engine);
   sibling.activeCamera = new FreeCamera("sibling", Vector3.Zero(), sibling);
   expect(() => sibling.render()).not.toThrow();
@@ -690,7 +697,7 @@ it("does not resume native task allocation after disposal during asynchronous in
   release();
   await pending;
   expect(allocate).not.toHaveBeenCalled();
-  expect(scene.objectRenderers).toHaveLength(0);
+  expect(graphRenderers(scene)).toHaveLength(0);
 });
 
 it("rejects a changed output the graph cannot draw without drawing a frame", async () => {
@@ -739,7 +746,7 @@ it("rejects the loading owner at the preparation deadline instead of accepting a
   const clock = virtualClock();
   scene.addIsReadyCheck({ isReady: () => { clock.advance(POLL_MS); return false; } });
   await expect(renderer.prepare()).rejects.toThrow("timed out");
-  expect(scene.objectRenderers).toHaveLength(0);
+  expect(graphRenderers(scene)).toHaveLength(0);
   renderer.dispose();
 });
 
@@ -919,7 +926,7 @@ it("retires pending allocation before the host releases a borrowed target", asyn
   // or draws attachments. Supply the supported-target boundary only.
   vi.spyOn(target, "depthStencilTexture", "get").mockReturnValue(target.getInternalTexture());
   camera.outputRenderTarget = target;
-  const borrowedRenderers = [...scene.objectRenderers];
+  const borrowedRenderers = [...graphRenderers(scene)];
   const { started, release } = holdGraphInitialization();
   const pending = expect(renderer.prepare()).rejects.toThrow("disposed");
   await started;
@@ -931,7 +938,7 @@ it("retires pending allocation before the host releases a borrowed target", asyn
   release();
   await pending;
   await retirement;
-  expect(scene.objectRenderers).toEqual(borrowedRenderers);
+  expect(graphRenderers(scene)).toEqual(borrowedRenderers);
   expect(target.getInternalTexture()).not.toBeNull();
   target.dispose();
 });
@@ -940,7 +947,7 @@ it("retires pending allocation before the host releases a borrowed target", asyn
 it("rejects retirement when owned task cleanup fails instead of permitting target destruction", async () => {
   const { scene, renderer } = host();
   await renderer.prepare();
-  const taskRenderer = scene.objectRenderers[0]!;
+  const taskRenderer = graphRenderers(scene)[0]!;
   const dispose = vi.spyOn(taskRenderer, "dispose").mockImplementationOnce(() => { throw new Error("native cleanup failed"); });
   await expect(renderer.retire()).rejects.toThrow("native cleanup failed");
   dispose.mockRestore();
@@ -952,7 +959,7 @@ it("reports asynchronous retirement cleanup failure without permitting the borro
   const { started, release } = holdGraphInitialization();
   const preparing = expect(renderer.prepare()).rejects.toThrow();
   await started;
-  const taskRenderer = scene.objectRenderers[0]!;
+  const taskRenderer = graphRenderers(scene)[0]!;
   const dispose = vi.spyOn(taskRenderer, "dispose").mockImplementation(() => { throw new Error("pending cleanup failed"); });
   const retirement = expect(renderer.retire()).rejects.toThrow("pending cleanup failed");
   release();
@@ -968,15 +975,15 @@ it("releases replaced stack tasks without a frame and rejects stale facade dispo
   try {
     const first = renderer.attachPostProcess({ scene, camera, library, stack: [], documentFor: () => null });
     await renderer.prepare();
-    const old = scene.objectRenderers[0]!;
+    const old = graphRenderers(scene)[0]!;
     const second = renderer.attachPostProcess({ scene, camera, library, stack: [], documentFor: () => null });
-    expect(scene.objectRenderers).not.toContain(old);
+    expect(graphRenderers(scene)).not.toContain(old);
     await renderer.prepare();
-    const current = scene.objectRenderers[0]!;
+    const current = graphRenderers(scene)[0]!;
     first.dispose();
-    expect(scene.objectRenderers).toContain(current);
+    expect(graphRenderers(scene)).toContain(current);
     second.dispose();
-    expect(scene.objectRenderers).not.toContain(current);
+    expect(graphRenderers(scene)).not.toContain(current);
   } finally { await renderer.retire(); library.dispose(); }
 });
 
@@ -984,7 +991,8 @@ it("releases replaced stack tasks without a frame and rejects stale facade dispo
 it("reports refused graph allocation for an authored stack without attaching camera passes", async () => {
   const { scene, camera, engine, renderer } = host();
   engine.getCaps().depthTextureExtension = true;
-  limitManagedRenderBytes(engine, 1);
+  // Room for the light block's area-light lookup tables, which the first lighting sync retains, and nothing more.
+  limitManagedRenderBytes(engine, AREA_LIGHT_LOOKUP_BYTES + 1);
   const library = new MaterialLibrary();
   const document = createDefaultMaterialDocument("Scene Color", "postProcess");
   try {
@@ -1078,6 +1086,8 @@ it("draws unvalidated frames without acknowledging them and re-probes a scene ch
 it.each(["isReady", "render"] as const)("applies a new shadow profile while %s is waiting for shaders", async (probe) => {
   const { scene, engine, renderer } = host();
   Object.assign(engine.getCaps(), { maxTextureSize: 4096, textureHalfFloatRender: true, textureHalfFloatLinearFiltering: true });
+  // The sun's atlas map is cascaded, as every WebGL2 and WebGPU Engine supports.
+  engine._features.supportCSM = true;
   const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
   const controller = sceneShadowController(scene);
   controller.register(sun, true);
@@ -1141,19 +1151,19 @@ it("holds a frame invalidated during its render callbacks", async () => {
 it("attaches an inactive outline view without allocating or replacing the admitted graph and prevents cross-view reuse", async () => {
   const { scene, engine, renderer } = host();
   await renderer.prepare();
-  const objectRenderer = scene.objectRenderers[0];
+  const objectRenderer = graphRenderers(scene)[0];
   const reservations = managedRenderReservations(engine);
   const view = SharedOutlineOwner.forScene(scene).createView("editor");
   const detach = renderer.attachSharedOutline(view);
   const sibling = new SceneRenderCoordinator(scene);
   expect(() => sibling.attachSharedOutline(view)).toThrow("already attached");
   expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
-  expect(scene.objectRenderers[0]).toBe(objectRenderer);
+  expect(graphRenderers(scene)[0]).toBe(objectRenderer);
   expect(renderer.taskNames().some((name) => name.includes("Shared outlines"))).toBe(false);
   expect(managedRenderReservations(engine)).toEqual(reservations);
   detach();
   expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
-  expect(scene.objectRenderers[0]).toBe(objectRenderer);
+  expect(graphRenderers(scene)[0]).toBe(objectRenderer);
   const detachSibling = sibling.attachSharedOutline(view);
   detachSibling();
   const foreign = new Scene(engine);

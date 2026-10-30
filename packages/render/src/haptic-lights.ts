@@ -9,7 +9,6 @@ import {
   TmpVectors,
   UniformBuffer,
   Vector3,
-  type AbstractEngine,
   type Effect,
   type Light,
   type Scene,
@@ -42,24 +41,6 @@ const SUN_SHADOW_VIEWS = 4;
  * (width correction, height correction, depth correction, light size), the light size a share of the tile.
  */
 export const HAPTIC_SHADOW_VIEW_VEC4S = 7;
-
-const engines = new WeakSet<AbstractEngine>();
-
-/** Switch the light block on an Engine; graph Materials compiled afterwards draw with `HapticLightingBlock`. */
-export function setHapticLighting(engine: AbstractEngine, enabled: boolean): void {
-  if (enabled) engines.add(engine);
-  else engines.delete(engine);
-}
-
-export function hapticLighting(engine: AbstractEngine): boolean {
-  return engines.has(engine);
-}
-
-/** Graph Materials of `scene` draw with the light block: switched on, on an Engine with uniform buffers. */
-export function hapticLightingActive(scene: Scene): boolean {
-  const engine = scene.getEngine();
-  return engines.has(engine) && engine.supportsUniformBuffers;
-}
 
 /** The block's GLSL and WGSL declarations; their layout matches `hapticLightBuffer`. WGSL binds the buffer by the variable's name. */
 export const HAPTIC_LIGHTS_GLSL = `layout(std140) uniform HapticLights {
@@ -296,7 +277,6 @@ function writeShadowViews(scene: Scene, state: SceneLights): void {
  * with none.
  */
 export function writeHapticLights(scene: Scene): void {
-  if (!engines.has(scene.getEngine())) return;
   const state = sceneLights(scene);
   const offset = scene.floatingOriginOffset;
   let fill: HemisphericLight | null = null;

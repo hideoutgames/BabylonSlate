@@ -8,6 +8,7 @@
     "./fbx-import": "./src/convert-fbx-to-glb.ts",
     "./glb-test-fixtures": "./src/glb-test-fixtures.ts",
     "./framegraph-test-fixtures": "./src/framegraph-test-fixtures.ts",
+    "./light-block-engine": "./src/test-support/light-block-engine.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
     "./managed-render-resources": "./src/managed-render-resources.ts",
     "./scene-render-coordinator": "./src/scene-render-coordinator.ts",

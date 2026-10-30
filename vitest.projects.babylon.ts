@@ -7,6 +7,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    // Every NullEngine takes the light block's path as a shipped Engine does (uniform buffers, the atlas's textures).
+    setupFiles: ["./packages/render/src/test-support/light-block-engine.ts"],
     fileParallelism: true,
     maxWorkers: Number(process.env.VITEST_MAX_WORKERS ?? 1),
   },

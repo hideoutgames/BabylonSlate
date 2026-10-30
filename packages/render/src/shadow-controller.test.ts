@@ -2,15 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CascadedShadowGenerator,
   InternalTexture,
-  InternalTextureSource,
   DirectionalLight,
   HemisphericLight,
   MeshBuilder,
   MaterialDefines,
   NullEngine,
   PointLight,
-  RectAreaLight,
-  RawTexture,
   SpotLight,
   RenderTargetTexture,
   Scene,
@@ -20,12 +17,10 @@ import {
   UniversalCamera,
   TransformNode,
   Vector3,
-  type AbstractEngine,
   type Effect,
 } from "@babylonjs/core";
-import { PREDICTION_MAP_SIZE, sceneShadowController } from "./shadow-controller";
+import { sceneShadowController } from "./shadow-controller";
 import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";
-import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { NEUTRAL_DARKNESS } from "./shadow-map-factory";
 import {
@@ -33,17 +28,17 @@ import {
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, SHADOW_CAPACITY_PROFILES } from "@haptic/core";
-import { ENGINE_SHADOW_BUDGET, otherShadowReservations, shadowBytesPerTexel } from "./shadow-admission";
-import { beginManagedRenderAllocation, limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
+import { ENGINE_SHADOW_BUDGET } from "./shadow-admission";
+import { managedRenderReservations } from "./managed-render-resources";
 import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
-import { retainAreaLightLookup } from "./area-light-resources";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
-import { setHapticLighting } from "./haptic-lights";
+import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, isAtlasShadow, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const engine of engines.splice(0)) engine.dispose();
 });
 /** `beforeController` runs on the bare Scene, before anything observes its meshes. */
@@ -57,20 +52,9 @@ function fixture(beforeController?: (scene: Scene) => void) {
     textureHalfFloatRender: true,
     textureHalfFloatLinearFiltering: true,
   });
-  // Babylon 9.29 NullEngine creates cube InternalTextures but leaves them
-  // unattached to the wrapper. Complete that headless GPU boundary so the real
-  // generator can expose dimensions and dispose its allocation like WebGL does.
-  const createCubeTarget = engine.createRenderTargetCubeTexture.bind(engine);
-  engine.createRenderTargetCubeTexture = (...args) => {
-    const target = createCubeTarget(...args);
-    if (!target.texture) {
-      const texture = engine.getLoadedTexturesCache().at(-1);
-      if (!texture)
-        throw new Error("NullEngine cube allocation has no texture");
-      target.setTexture(texture);
-    }
-    return target;
-  };
+  // Every shipped Engine (WebGL2, WebGPU) draws cascades with hardware depth comparison: the sun's atlas map is one.
+  engine._features.supportCSM = true;
+  engine._features.supportShadowSamplers = true;
   // NullEngine also leaves _releaseTexture empty. Match WebGL cache ownership
   // so resource disposal assertions observe the same lifetime as a real GPU.
   engine._releaseTexture = (texture) => {
@@ -102,13 +86,25 @@ function prepareShadowLayers(generator: ShadowGenerator): void {
   map.render();
 }
 
+/** An atlas map's tile sizes, one per cascade or face. */
+const tileSizes = (generator: unknown) => (generator as AtlasCascadedShadowGenerator | AtlasShadowGenerator).tiles.map((tile) => tile.size);
+
+/** A cascade's world texel in a `size`-texel tile: the larger side of its light-space box over the tile. */
+function cascadeTexel(generator: CascadedShadowGenerator, layer: number, size: number): number {
+  const min = generator.getCascadeMinExtents(layer)!;
+  const max = generator.getCascadeMaxExtents(layer)!;
+  return Math.max(max.x - min.x, max.y - min.y) / size;
+}
+
+/** The automatic depth bias of a cascade: a quarter texel over its depth range, for depth-clamped PCF. */
+function cascadeDepthBias(generator: CascadedShadowGenerator, layer: number, size: number, authored: number): number {
+  const depth = generator.getCascadeMaxExtents(layer)!.z - generator.getCascadeMinExtents(layer)!.z;
+  return Math.max(authored, Math.min(0.05, cascadeTexel(generator, layer, size) / 4 / depth / 1.5));
+}
+
 describe("shared shadow lifecycle", () => {
   it("draws the sun's cascades as tiles of the light block's atlas, built with the level's cascade count", () => {
     const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 3, maxLocalLights: 1 }) });
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     controller.register(sun, true);
@@ -129,10 +125,6 @@ describe("shared shadow lifecycle", () => {
 
   it("draws a point light's shadow as six face tiles of the light block's atlas, filtered with PCF", () => {
     const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
-    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
     const lamp = new PointLight("lamp", new Vector3(0, 2, 0), scene);
     controller.register(lamp, true);
     controller.sync();
@@ -148,10 +140,6 @@ describe("shared shadow lifecycle", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     Object.assign(engine.getCaps(), { maxTextureSize: 8192 });
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
-    // NullEngine makes no depth texture.
-    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
     controller.register(spot, true);
     controller.sync();
@@ -172,7 +160,7 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect(shadowAtlasBytes(scene)).toBe(0);
     expect(shadowAtlasTexture(scene).getRenderSize()).toBe(1);
-    expect(controller.predictionMap(spot)).toBeNull();
+    expect(controller.predictionMap()).toBeNull();
   });
   it("excludes collider display segments without excluding authored meshes below the collider", () => {
     const { scene, controller } = fixture();
@@ -201,104 +189,45 @@ describe("shared shadow lifecycle", () => {
   });
   it("admits the Ultra sun at its requested 4096 within the Ultra memory budget", () => {
     const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    engine._features.supportCSM = true;
-    // NullEngine supplies ordinary RTT color storage but has no depth-array GPU
-    // implementation. Complete that I/O boundary while retaining the real CSM
-    // constructor, admission, dimensions, native ownership and disposal.
-    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
-      const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
-      const dimensions = typeof size === "number" ? { width: size, height: size } : size;
-      texture.width = texture.baseWidth = dimensions.width;
-      texture.height = texture.baseHeight = dimensions.height;
-      texture.depth = texture.baseDepth = dimensions.layers ?? 0;
-      texture.is2DArray = texture.depth > 0;
-      texture.format = options.depthTextureFormat ?? 14;
-      texture.isReady = true;
-      engine.getLoadedTexturesCache().push(texture);
-      return texture;
-    });
+    // A desktop texture limit: Ultra's byte budget holds an 8192 atlas, which its four 4096 cascades fill.
+    Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 16384 });
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings(qualityPresetPatch("ultra").shadows) });
     const sun = new DirectionalLight("sun", Vector3.Down(), scene);
     controller.register(sun, true);
     controller.sync();
     expect(controller.generator(sun), JSON.stringify(controller.diagnostics())).not.toBeNull();
-    expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({ status: "active", mapSize: 4096 });
+    expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({ status: "active", mapSize: 4096, reason: null });
+    expect(tileSizes(controller.generator(sun))).toEqual([4096, 4096, 4096, 4096]);
+    expect(controller.metrics().bytes).toBe(8192 ** 2 * 4);
     expect(controller.metrics().bytes).toBeLessThanOrEqual(SHADOW_CAPACITY_PROFILES.ultra.byteBudget);
     expect(sceneRenderingSettings(scene).shadows).toMatchObject({ profile: "ultra", preset: "ultra", mapSize: 4096, cascades: 4, maxLocalLights: 8 });
   });
-  it.each(["medium", "high", "ultra"] as const)("keeps the %s sun at its requested size beside a local shadow light", (level) => {
+  // The sun, admitted first, leaves the atlas room for the planned point light's six faces at the level's local size:
+  // Medium's 4096 atlas keeps 10.5 M texels for its three cascades (1024), High's 8192 atlas 41.9 M for four 2048
+  // cascades, and Ultra's 8192 atlas too little for four 4096 ones (2048).
+  it.each([
+    ["medium", 1024],
+    ["high", 2048],
+    ["ultra", 2048],
+  ] as const)("admits the %s sun beside a local shadow light at the largest cascades the atlas holds after the light's faces (%i)", (level, mapSize) => {
     const { scene, controller } = fixture();
-    enableHeadlessCascades(scene.getEngine());
+    Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 16384 });
     const shadows = normalizeShadowSettings(qualityPresetPatch(level).shadows);
     updateSceneRenderingSettings(scene, { shadows });
     const sun = new DirectionalLight("sun", Vector3.Down(), scene);
     controller.register(sun, true);
     controller.register(new PointLight("point", Vector3.Zero(), scene), true);
     controller.sync();
-    expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({ status: "active", mapSize: shadows.mapSize });
-    expect(controller.diagnostics().find((entry) => entry.name === "point")).toMatchObject({ status: "active" });
+    expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({
+      status: "active",
+      mapSize,
+      reason: mapSize < shadows.mapSize ? "shadow map reduced by shadow atlas space" : null,
+    });
+    expect(tileSizes(controller.generator(sun))).toEqual(Array(shadows.cascades).fill(mapSize));
+    expect(controller.diagnostics().find((entry) => entry.name === "point")).toMatchObject({
+      status: "active", mapSize: shadows.localMapSize, reason: null,
+    });
   });
-  it.each([
-    {
-      ownerSupport: true,
-      latestSupport: false,
-      reason: "Babylon constructor capability",
-    },
-    {
-      ownerSupport: false,
-      latestSupport: true,
-      reason: "device capability",
-    },
-  ])(
-    "keeps directional shadows when CSM is blocked by $reason across engines",
-    ({ ownerSupport, latestSupport, reason }) => {
-      const { scene, controller } = fixture();
-      const owner = scene.getEngine();
-      owner._features.supportCSM = ownerSupport;
-      updateSceneRenderingSettings(scene, {
-        shadows: normalizeShadowSettings({ mapSize: 512, cascades: 4 }),
-      });
-      const authored = structuredClone(sceneRenderingSettings(scene).shadows);
-      const light = new DirectionalLight("sun", Vector3.Down(), scene);
-      controller.register(light, true);
-      const latest = new NullEngine();
-      engines.push(latest);
-      latest._features.supportCSM = latestSupport;
-
-      controller.sync();
-      const generator = controller.generator(light);
-      expect(generator).not.toBeNull();
-      expect(generator).not.toBeInstanceOf(CascadedShadowGenerator);
-      expect(controller.status(light)).toBe("active");
-      expect(controller.diagnostics()[0]).toMatchObject({
-        passes: 1,
-        mapSize: 512,
-        allocationError: null,
-        reason: `cascades: ${reason}; using single-map directional shadows`,
-      });
-      expect(controller.metrics()).toEqual({ bytes: 3 * 1024 ** 2, passes: 1 });
-      const preview = new Scene(owner);
-      expect(otherShadowReservations(preview)).toMatchObject({
-        bytes: 3 * 1024 ** 2,
-        passes: 1,
-      });
-      controller.sync();
-      expect(controller.generator(light)).toBe(generator);
-      expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
-      expect(owner._features.supportCSM).toBe(ownerSupport);
-      expect(latest._features.supportCSM).toBe(latestSupport);
-      prepareShadowLayers(generator!);
-      expect(generator!.bias).toBeGreaterThan(authored.depthBias);
-      expect(generator!.normalBias).toBe(authored.normalBias);
-      expect(controller.effectiveBias(light)[0]).toMatchObject({
-        mode: "directional-auto",
-        depthBias: generator!.bias,
-      });
-      expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
-    },
-  );
-
   it("registers late meshes and releases removed meshes and disabled light allocations", async () => {
     const { scene, controller } = fixture();
     const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
@@ -429,51 +358,52 @@ describe("shared shadow lifecycle", () => {
     );
     expect(casters).toEqual(["receiver"]);
   });
-  it("adapts Low to admitted map dimensions and updates projection and allocation in the current draw", () => {
+  it("adapts Low to admitted tile dimensions and updates projection and allocation in the current draw", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     engine.getCaps().maxTextureSize = 256;
-    // The Low tier with one 1024 map over 80 m, so texel sizes stay round numbers.
+    // The Low tier with one 1024 cascade over 80 m.
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ ...qualityPresetPatch("low").shadows, preset: "custom", distance: 80, mapSize: 1024, cascades: 1 }),
     });
+    const authored = structuredClone(sceneRenderingSettings(scene).shadows);
     const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
     controller.register(light, true);
     controller.sync();
-    const generator = controller.generator(light)!;
-    expect(generator.getShadowMap()!.getSize().width).toBe(256);
-    expect(generator.usePoissonSampling).toBe(true);
+    const generator = controller.generator(light) as CascadedShadowGenerator;
+    // The texture limit bounds the atlas, and its one tile with it.
+    expect(tileSizes(generator)).toEqual([256]);
+    expect(controller.diagnostics([light])[0]).toMatchObject({ mapSize: 256, effectiveFilter: "pcf" });
     prepareShadowLayers(generator);
-    // Reciprocal extents come from Babylon's Float32 projection matrices.
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.625, 7);
-    expect(generator.bias).toBeCloseTo(0.0078125, 8);
+    const near = cascadeTexel(generator, 0, 256);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(near, 7);
+    expect(generator.bias).toBeGreaterThan(authored.depthBias);
+    expect(generator.bias).toBeCloseTo(cascadeDepthBias(generator, 0, 256, authored.depthBias), 8);
     expect(generator.normalBias).toBe(0.005);
     expect(sceneRenderingSettings(scene).shadows.mapSize).toBe(1024);
 
+    // A longer shadow distance refits the same tile over more of the world in the next draw.
     updateSceneRenderingSettings(scene, {
       shadows: { ...sceneRenderingSettings(scene).shadows, distance: 160 },
     });
     controller.sync();
     prepareShadowLayers(generator);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(1.25, 7);
-    // Poisson uses its effective radius, not requested PCF quality.
-    generator.blurScale = 0.5;
-    prepareShadowLayers(generator);
-    expect(generator.bias).toBeCloseTo(0.001953125, 8);
-
-    engine.getCaps().maxTextureSize = 4096;
-    controller.sync();
-    // Admission keeps an existing allocation stable until a request change or
-    // context recovery; expanding a capability limit alone must not cause churn.
     expect(controller.generator(light)).toBe(generator);
+    const far = cascadeTexel(generator, 0, 256);
+    expect(far).toBeGreaterThan(near);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(far, 7);
+    expect(generator.bias).toBeCloseTo(cascadeDepthBias(generator, 0, 256, authored.depthBias), 8);
+
+    // A restored context with a larger texture limit rebuilds the map at its requested size.
+    engine.getCaps().maxTextureSize = 4096;
     engine.onContextRestoredObservable.notifyObservers(engine);
     controller.sync();
-    const recovered = controller.generator(light)!;
+    const recovered = controller.generator(light) as CascadedShadowGenerator;
     expect(recovered).not.toBe(generator);
-    expect(recovered.getShadowMap()!.getSize().width).toBe(1024);
+    expect(tileSizes(recovered)).toEqual([1024]);
     prepareShadowLayers(recovered);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.3125, 7);
-    expect(recovered.bias).toBeCloseTo(0.001953125, 8);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(cascadeTexel(recovered, 0, 1024), 7);
+    expect(recovered.bias).toBeCloseTo(cascadeDepthBias(recovered, 0, 1024, authored.depthBias), 8);
   });
 
   it("reads the replacement camera projection before deriving directional bias", () => {
@@ -484,9 +414,10 @@ describe("shared shadow lifecycle", () => {
     const light = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     controller.register(light, true);
     controller.sync();
-    const generator = controller.generator(light)!;
+    const generator = controller.generator(light) as CascadedShadowGenerator;
     prepareShadowLayers(generator);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(20 / 512, 7);
+    const perspective = cascadeTexel(generator, 0, 512);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(perspective, 7);
     const replacement = new UniversalCamera("orthographic", new Vector3(4, 3, -8), scene);
     replacement.mode = 1;
     replacement.orthoLeft = -40;
@@ -497,12 +428,14 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     prepareShadowLayers(generator);
     expect(controller.generator(light)).toBe(generator);
-    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(80 / 512, 7);
+    // The cascade fits the replacement's 80-unit-wide view, not the perspective camera's.
+    const orthographic = cascadeTexel(generator, 0, 512);
+    expect(orthographic).not.toBeCloseTo(perspective, 3);
+    expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(orthographic, 7);
   });
 
   it("derives each cascade from its current extents and restores exact manual bias", () => {
     const { scene, controller } = fixture();
-    enableHeadlessCascades(scene.getEngine());
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({
         cascades: 2, distance: 40, mapSize: 1024, filterQuality: "low",
@@ -608,7 +541,6 @@ describe("shared shadow lifecycle", () => {
     },
   ])("gives a receiver the defines of a fresh one after the cascaded sun leaves its slot: $name", ({ slot, lights }) => {
     const { scene, controller } = fixture();
-    enableHeadlessCascades(scene.getEngine());
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 1024, filterQuality: "low" }),
     });
@@ -792,13 +724,12 @@ describe("shared shadow lifecycle", () => {
     } finally { clock.mockRestore(); }
   });
 
-  it.each([true, false])(
-    "keeps the retained sun's caster bounds and limits current across a local handoff (cascades supported: %s)",
-    (cascaded) => {
+  it(
+    "keeps the retained sun's caster bounds and limits current across a local handoff",
+    () => {
       const clock = vi.spyOn(performance, "now").mockReturnValue(0);
       try {
         const { scene, controller } = fixture();
-        if (cascaded) enableHeadlessCascades(scene.getEngine());
         // The sun's requested map exceeds the device size, so admission reduces it.
         scene.getEngine().getCaps().maxTextureSize = 1024;
         updateSceneRenderingSettings(scene, {
@@ -815,10 +746,9 @@ describe("shared shadow lifecycle", () => {
         controller.sync();
         const generator = controller.generator(sun)!;
         const local = controller.generator(near)!;
-        expect(generator instanceof CascadedShadowGenerator).toBe(cascaded);
+        expect(generator).toBeInstanceOf(AtlasCascadedShadowGenerator);
         const sunReason = controller.diagnostics([sun])[0]!.reason;
         expect(sunReason).toContain("shadow map reduced");
-        if (!cascaded) expect(sunReason).toContain("cascades: device capability");
         scene.activeCamera!.position.x = 40;
         caster.position.x = 60;
         caster.computeWorldMatrix(true);
@@ -830,8 +760,7 @@ describe("shared shadow lifecycle", () => {
         expect(controller.generator(sun)).toBe(generator);
         expect(controller.diagnostics([sun, far]).map(({ status, reason }) => ({ status, reason })))
           .toEqual([{ status: "active", reason: sunReason }, { status: "active", reason: null }]);
-        if (cascaded)
-          expect((generator as CascadedShadowGenerator).shadowCastersBoundingInfo.maximum.x).toBeGreaterThan(60);
+        expect((generator as CascadedShadowGenerator).shadowCastersBoundingInfo.maximum.x).toBeGreaterThan(60);
       } finally { clock.mockRestore(); }
     },
   );
@@ -902,7 +831,8 @@ describe("shared shadow lifecycle", () => {
       receiver.material.isReadyForSubMesh(receiver, part);
       const defines = part.materialDefines!.toString();
       expect(defines).toContain("SHADOW0");
-      const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+      // A new map would place atlas tiles.
+      const allocate = vi.spyOn(ShadowAtlasAllocator.prototype, "allocate");
       const dispose = vi.spyOn(generator, "dispose");
       const dirty = vi.spyOn(receiver, "_markSubMeshesAsLightDirty");
       scene.activeCamera!.position.x = 50;
@@ -958,7 +888,8 @@ describe("shared shadow lifecycle", () => {
     map.onClearObservable.add(() => clears++);
     for (let frame = 0; frame < 3; frame++) scene.render();
     expect(clears).toBeLessThanOrEqual(6);
-    const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+    // A new map would place atlas tiles.
+    const allocate = vi.spyOn(ShadowAtlasAllocator.prototype, "allocate");
     const next = new PointLight("next", new Vector3(1005, 0, 0), scene);
     next.range = 10;
     controller.register(next, true);
@@ -992,7 +923,8 @@ describe("shared shadow lifecycle", () => {
 
   it("keeps the map of a light the Forward budget dropped on standby until the light returns", () => {
     const { scene, controller, shadowed, generator, dispose } = forwardDroppedStandby();
-    const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+    // A new map would place atlas tiles.
+    const allocate = vi.spyOn(ShadowAtlasAllocator.prototype, "allocate");
     expect(controller.generator(shadowed)).toBeNull();
     expect(shadowed.getShadowGenerator()).toBe(generator);
     expect(generator.getDarkness()).toBe(1);
@@ -1065,33 +997,37 @@ describe("shared shadow lifecycle", () => {
     expect(rejected.getShadowGenerator()).toBe(rejectedMap);
   });
 
-  it("frees standby maps before reducing an admitted map after an allocation failure", () => {
+  it("frees standby maps before reducing an admitted map that finds no room in the atlas", () => {
     const { scene, controller } = fixture();
+    // A 2048 atlas: a point light's six 512 tiles take two of its four 1024 quadrants.
+    scene.getEngine().getCaps().maxTextureSize = 2048;
     updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 2, localMapSize: 512 }),
+      shadows: normalizeShadowSettings({ cascades: 3, mapSize: 1024, maxLocalLights: 1, localMapSize: 512 }),
     });
     scene.activeCamera!.position.set(0, 0, 0);
     const point = new PointLight("point", new Vector3(5, 0, 0), scene);
     point.range = 10;
     controller.register(point, true);
     controller.sync();
-    const standby = controller.generator(point)!.getShadowMap()!;
+    const standby = controller.generator(point)!;
+    expect(tileSizes(standby)).toEqual(Array(6).fill(512));
     scene.activeCamera!.position.x = 1000;
     controller.sync();
-    expect(point.getShadowGenerator()).not.toBeNull();
-    // A spot light cannot take the cube; its own construction fails once.
-    const spot = new SpotLight("spot", new Vector3(1005, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
-    spot.range = 10;
-    controller.register(spot, true);
-    vi.spyOn(scene.getEngine(), "createRenderTargetTexture").mockImplementationOnce(() => {
-      throw new Error("driver allocation failed");
-    });
+    expect(controller.generator(point)).toBeNull();
+    expect(point.getShadowGenerator()).toBe(standby);
+    // The sun's three 1024 cascades fit the atlas's area, but only two fit beside the standby tiles.
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    const placement = vi.spyOn(ShadowAtlasAllocator.prototype, "allocate");
     controller.sync();
-    expect(controller.status(spot)).toBe("active");
-    expect(controller.generator(spot)?.getShadowMap()?.getRenderSize()).toBe(512);
-    expect(controller.diagnostics([spot])[0]!.reason).toBeNull();
+    // The first placement found no third quadrant; the retry, with the standby tiles freed, did.
+    expect(placement.mock.results.filter(({ value }) => value === null)).toHaveLength(1);
+    placement.mockRestore();
+    expect(controller.status(sun)).toBe("active");
+    expect(tileSizes(controller.generator(sun))).toEqual([1024, 1024, 1024]);
+    expect(controller.diagnostics([sun])[0]!.reason).toBeNull();
     expect(point.getShadowGenerator()).toBeNull();
-    expect(scene.textures).not.toContain(standby);
+    expect(standby.getShadowMap()).toBeNull();
   });
 
   it("releases a standby map when its light no longer requests shadows", () => {
@@ -1111,12 +1047,11 @@ describe("shared shadow lifecycle", () => {
     expect(scene.textures).not.toContain(map);
     expect(controller.metrics()).toEqual({ passes: 0, bytes: 0 });
   });
-  it("admits point cube memory and faces before construction, then lowers cost after Manual 16 and a Low preset", () => {
+  it("admits point lights' six face tiles by atlas area before construction, then lowers cost after a Low preset", () => {
     const { scene, controller } = fixture();
-    const allocation = vi.spyOn(
-      scene.getEngine(),
-      "createRenderTargetCubeTexture",
-    );
+    // A desktop texture limit: Ultra's 8192 atlas.
+    Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 16384 });
+    const placement = vi.spyOn(ShadowAtlasAllocator.prototype, "allocate");
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({
         profile: "ultra",
@@ -1130,27 +1065,29 @@ describe("shared shadow lifecycle", () => {
     );
     points.forEach((light) => controller.register(light, true));
     controller.sync();
+    // Ultra's 52 passes hold eight lights' six faces; each halves its tiles until they fit the area the earlier
+    // lights leave in the atlas.
     const active = points.filter((light) => controller.generator(light));
     expect(active).toHaveLength(8);
-    expect(allocation).toHaveBeenCalledTimes(8);
-    expect(controller.metrics().passes).toBe(48);
+    expect(active.map((light) => tileSizes(controller.generator(light))[0])).toEqual([2048, 2048, 1024, 1024, 512, 512, 256, 256]);
+    // Every tile was placed at its first try: admission sized it before construction.
+    expect(placement.mock.results.map(({ value }) => value !== null)).toEqual(Array(48).fill(true));
+    expect(controller.metrics()).toEqual({ passes: 48, bytes: 8192 ** 2 * 4 });
     expect(controller.metrics().bytes).toBeLessThanOrEqual(SHADOW_CAPACITY_PROFILES.ultra.byteBudget);
-    expect(controller.limits()).toContain(
-      "point shadows: Poisson filter fallback",
-    );
+    expect(controller.limits()).not.toContain("point shadows: Poisson filter fallback");
     controller.sync();
-    expect(allocation).toHaveBeenCalledTimes(8);
+    expect(placement).toHaveBeenCalledTimes(48);
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ profile: "low", maxLocalLights: 16 }),
     });
     controller.sync();
+    // Low's eight passes hold one light's six faces, in its 4096 atlas.
     expect(points.filter((light) => controller.generator(light))).toHaveLength(
       1,
     );
-    expect(controller.metrics().passes).toBe(6);
-    expect(controller.metrics().bytes).toBe(18 * 1024 ** 2);
+    expect(controller.metrics()).toEqual({ passes: 6, bytes: 4096 ** 2 * 4 });
   });
-  it("charges spot shadows by one face and reserves sampler headroom for materials", () => {
+  it("charges spot shadows by one face each and no material sampler", () => {
     const { scene, controller } = fixture();
     const caps = scene.getEngine().getCaps();
     caps.maxTexturesImageUnits = 32;
@@ -1176,35 +1113,17 @@ describe("shared shadow lifecycle", () => {
     lights.forEach((light) => controller.register(light, true));
     controller.sync();
     expect(controller.metrics().passes).toBe(16);
+    // The light block samples every tile through the atlas, always bound: fewer texture units admit as many.
     caps.maxTexturesImageUnits = 11;
     controller.sync();
-    expect(controller.metrics().passes).toBe(3);
-    expect(
-      controller
-        .diagnostics()
-        .filter((light) => light.reason === "material sampler headroom"),
-    ).toHaveLength(13);
-  });
-  it("shares material sampler headroom with rectangular LTC and emission bindings", () => {
-    const { scene, controller } = fixture();
-    scene.getEngine().getCaps().maxTexturesImageUnits = 12;
-    scene.onDisposeObservable.addOnce(retainAreaLightLookup(scene));
-    const area = new RectAreaLight("emitter", Vector3.Zero(), 2, 2, scene);
-    area.emissionTexture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ profile: "ultra", maxLocalLights: 4, localMapSize: 256 }) });
-    for (let index = 0; index < 4; index++) controller.register(new SpotLight(`spot-${index}`, Vector3.Zero(), Vector3.Forward(), Math.PI / 2, 1, scene), true);
-    controller.sync();
-    expect(controller.metrics().passes).toBe(1);
-    area.emissionTexture = null;
-    controller.sync();
-    expect(controller.metrics().passes).toBe(2);
-    area.setEnabled(false);
-    controller.sync();
-    expect(controller.metrics().passes).toBe(4);
+    expect(controller.metrics().passes).toBe(16);
+    expect(controller.diagnostics().filter((light) => light.reason !== null)).toEqual([]);
   });
   it("shares the Engine allowance with previews and releases reservations on scene disposal", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
+    // A desktop texture limit: each Scene's Ultra atlas is 8192, whose area holds eight point lights' faces.
+    Object.assign(engine.getCaps(), { maxTextureSize: 16384 });
     const preview = new Scene(engine);
     preview.activeCamera = new UniversalCamera(
       "preview-camera",
@@ -1236,6 +1155,8 @@ describe("shared shadow lifecycle", () => {
     expect(
       controller.metrics().bytes + previewController.metrics().bytes,
     ).toBeLessThanOrEqual(ENGINE_SHADOW_BUDGET.bytes);
+    // The Engine's 64 passes leave the preview two lights' faces beside the scene's 48.
+    expect(controller.metrics().passes).toBe(48);
     expect(previewController.metrics().passes).toBe(12);
     scene.dispose();
     previewController.sync();
@@ -1253,19 +1174,18 @@ describe("shared shadow lifecycle", () => {
     const baselineWrappers = [...engine._renderTargetWrapperCache];
     const baselineResizeObservers = engine.onResizeObservable.observers.length;
     const baselineRenderPasses = engine.getRenderPassNames().filter(Boolean);
-    const allocation = vi.spyOn(engine, "createRenderTargetCubeTexture");
+    // The first tile makes the atlas, so each attempt makes it again.
+    const allocation = vi.spyOn(engine, "createRenderTargetTexture");
     for (let attempt = 0; attempt < 3; attempt++)
       allocation.mockImplementationOnce((...args) => {
-        // Unpatched NullEngine registers a wrapper and a cube texture it never
-        // attaches: a driver rejection after upload leaves both orphaned.
-        NullEngine.prototype.createRenderTargetCubeTexture.apply(engine, args);
+        // A driver rejection after upload leaves the registered wrapper orphaned.
+        NullEngine.prototype.createRenderTargetTexture.apply(engine, args);
         throw new Error("allocation failed");
       });
     controller.sync();
     expect(controller.metrics()).toEqual({ bytes: 0, passes: 0 });
-    expect(allocation.mock.calls.map(([size]) => size)).toEqual([
-      1024, 512, 256,
-    ]);
+    // One attempt at each size from 1024 to the 256 floor.
+    expect(allocation).toHaveBeenCalledTimes(3);
     expect(scene.textures).toEqual(baselineTextures);
     expect(engine.getLoadedTexturesCache()).toEqual(baselineInternals);
     expect(engine._renderTargetWrapperCache).toEqual(baselineWrappers);
@@ -1285,12 +1205,10 @@ describe("shared shadow lifecycle", () => {
     engine.onContextRestoredObservable.notifyObservers(engine);
     controller.sync();
     expect(controller.generator(light)).not.toBeNull();
-    expect(controller.generator(light)?.getShadowMap()?.getRenderSize()).toBe(
-      1024,
-    );
+    expect(tileSizes(controller.generator(light))[0]).toBe(1024);
     expect(controller.generator(fallback)).toBeNull();
   });
-  it("releases a partially allocated cube before retrying smaller without changing authored settings", async () => {
+  it("releases a partially allocated atlas before retrying smaller without changing authored settings", async () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     const preview = new RenderTargetTexture("existing-preview", 256, scene);
@@ -1302,28 +1220,31 @@ describe("shared shadow lifecycle", () => {
     const authored = structuredClone(sceneRenderingSettings(scene).shadows);
     const light = new PointLight("point", Vector3.Zero(), scene);
     controller.register(light, true);
-    const allocate = engine.createRenderTargetCubeTexture.bind(engine);
+    // The first tile makes the atlas: the driver rejects it once it is complete.
+    const allocate = engine.createRenderTargetTexture.bind(engine);
     let orphanDispose: ReturnType<typeof vi.spyOn> | undefined;
     const allocation = vi
-      .spyOn(engine, "createRenderTargetCubeTexture")
+      .spyOn(engine, "createRenderTargetTexture")
       .mockImplementationOnce((...args) => {
         const orphan = allocate(...args);
-        orphanDispose = vi.spyOn(orphan.texture!, "dispose");
-        throw new Error("driver rejected completed cube");
+        orphanDispose = vi.spyOn(orphan, "dispose");
+        throw new Error("driver rejected completed atlas");
       });
     controller.sync();
     const retained = controller.generator(light);
-    expect(retained?.getShadowMap()?.getRenderSize()).toBe(512);
-    expect(controller.metrics()).toEqual({ bytes: 18 * 1024 ** 2, passes: 6 });
+    expect(tileSizes(retained)).toEqual(Array(6).fill(512));
+    expect(controller.metrics()).toEqual({ bytes: shadowAtlasBytes(scene), passes: 6 });
+    expect(shadowAtlasBytes(scene)).toBe(4096 ** 2 * 4);
     expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
     expect(
       controller.diagnostics().find((entry) => entry.name === "point"),
     ).toMatchObject({
       status: "active",
       reason: "shadow map reduced after allocation failure",
-      allocationError: "driver rejected completed cube",
+      allocationError: "driver rejected completed atlas",
     });
-    expect(allocation.mock.calls.map(([size]) => size)).toEqual([1024, 512]);
+    // The atlas was made again for the 512 tiles.
+    expect(allocation).toHaveBeenCalledTimes(2);
     expect(orphanDispose).toHaveBeenCalledTimes(1);
     controller.sync();
     expect(controller.generator(light)).toBe(retained);
@@ -1340,14 +1261,10 @@ describe("shared shadow lifecycle", () => {
     );
     light.setEnabled(true);
     controller.sync();
-    expect(controller.generator(light)?.getShadowMap()?.getRenderSize()).toBe(
-      512,
-    );
+    expect(tileSizes(controller.generator(light))[0]).toBe(512);
     engine.onContextRestoredObservable.notifyObservers(engine);
     controller.sync();
-    expect(controller.generator(light)?.getShadowMap()?.getRenderSize()).toBe(
-      1024,
-    );
+    expect(tileSizes(controller.generator(light))[0]).toBe(1024);
     const restoreObservers =
       engine.onContextRestoredObservable.observers.length;
     scene.dispose();
@@ -1360,13 +1277,12 @@ describe("shared shadow lifecycle", () => {
     const { scene, controller } = fixture();
     const light = new PointLight("point", Vector3.Zero(), scene);
     controller.register(light, true);
-    const allocation = vi
-      .spyOn(scene.getEngine(), "createRenderTargetCubeTexture")
+    // The first tile makes the atlas, which the driver rejects once.
+    vi.spyOn(scene.getEngine(), "createRenderTargetTexture")
       .mockImplementationOnce(() => {
         throw new Error("driver allocation failed");
       });
     controller.sync();
-    expect(allocation.mock.calls.map(([size]) => size)).toEqual([1024, 512]);
     expect(controller.diagnostics([light])[0]).toMatchObject({
       status: "active",
       reason: "shadow map reduced after allocation failure",
@@ -1374,20 +1290,19 @@ describe("shared shadow lifecycle", () => {
       mapSize: 512,
     });
     // The failure was keyed to the 1024 request; a 2048 request is new and
-    // no longer limited by it. Memory admission alone halves a 2048 cube.
+    // no longer limited by it. The atlas's area alone halves its six faces.
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, localMapSize: 2048 }),
     });
     controller.sync();
-    expect(allocation.mock.calls.map(([size]) => size)).toEqual([1024, 512, 1024]);
     expect(controller.diagnostics([light])[0]).toMatchObject({
       status: "active",
-      reason: "shadow map reduced by memory or texture capability",
+      reason: "shadow map reduced by shadow atlas space",
       allocationError: null,
       mapSize: 1024,
     });
   });
-  it("releases a non-throwing WebGL allocation failure and retains the validated smaller cube", () => {
+  it("releases a non-throwing WebGL allocation failure and retains the validated smaller tiles", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     const authored = structuredClone(sceneRenderingSettings(scene).shadows);
@@ -1429,40 +1344,46 @@ describe("shared shadow lifecycle", () => {
     };
     const engineGl = Object.getOwnPropertyDescriptor(engine, "_gl");
     Object.defineProperty(engine, "_gl", { configurable: true, value: gl });
-    const allocate = engine.createRenderTargetCubeTexture.bind(engine);
+    // The first tile makes the atlas: a framebuffer whose only attachment is its depth texture.
+    const allocate = engine.createRenderTargetTexture.bind(engine);
     let rejectedDispose: ReturnType<typeof vi.spyOn> | undefined;
     const allocation = vi
-      .spyOn(engine, "createRenderTargetCubeTexture")
-      .mockImplementation((...args) => {
-        const target = allocate(...args);
+      .spyOn(engine, "createRenderTargetTexture")
+      .mockImplementation((size, options) => {
+        const target = allocate(size, options);
+        // As WebGL makes it: NullEngine adds a colour texture even without a colour attachment.
+        if (typeof options === "object" && options.noColorAttachment) target.releaseTextures();
         const targetFramebuffer = {};
-        const depth = {};
-        Object.assign(target, {
-          _framebuffer: targetFramebuffer,
-          _depthStencilBuffer: depth,
-        });
+        Object.assign(target, { _framebuffer: targetFramebuffer });
         framebuffers.add(targetFramebuffer);
-        renderbuffers.add(depth);
-        textures.add(target.texture!._hardwareTexture!.underlyingResource);
         if (!rejectedDispose) {
-          rejectedDispose = vi.spyOn(target.texture!, "dispose");
-          // Babylon still returns a ready InternalTexture when the driver reports
-          // OOM through its error flag instead of throwing from texImage2D.
+          rejectedDispose = vi.spyOn(target, "dispose");
+          // Babylon still returns a ready target when the driver reports OOM
+          // through its error flag instead of throwing from texImage2D.
           errors.push(gl.OUT_OF_MEMORY);
         }
         return target;
       });
+    const allocateDepth = engine.createDepthStencilTexture.bind(engine);
+    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((...args) => {
+      const texture = allocateDepth(...args);
+      const resource = {};
+      textures.add(resource);
+      texture._hardwareTexture = { underlyingResource: resource } as InternalTexture["_hardwareTexture"];
+      return texture;
+    });
     try {
       controller.sync();
       const retained = controller.generator(light);
-      expect(retained?.getShadowMap()?.getRenderSize()).toBe(512);
-      expect(allocation.mock.calls.map(([size]) => size)).toEqual([1024, 512]);
+      expect(tileSizes(retained)).toEqual(Array(6).fill(512));
+      // The atlas was made again for the 512 tiles.
+      expect(allocation).toHaveBeenCalledTimes(2);
       expect(rejectedDispose).toHaveBeenCalledTimes(1);
       expect(controller.diagnostics()[0]).toMatchObject({
         status: "active",
         allocationError: "Shadow allocation WebGL errors: 0x505",
       });
-      expect(controller.metrics()).toEqual({ bytes: 18 * 1024 ** 2, passes: 6 });
+      expect(controller.metrics()).toEqual({ bytes: shadowAtlasBytes(scene), passes: 6 });
       expect(sceneRenderingSettings(scene).shadows).toEqual(authored);
       expect(framebuffer).toBe(previousFramebuffer);
       const errorReads = gl.getError.mock.calls.length;
@@ -1481,10 +1402,11 @@ describe("shared shadow lifecycle", () => {
     const engine = scene.getEngine();
     const light = new PointLight("point", Vector3.Zero(), scene);
     controller.register(light, true);
-    const allocate = engine.createRenderTargetCubeTexture.bind(engine);
+    // The first tile makes the atlas.
+    const allocate = engine.createRenderTargetTexture.bind(engine);
     let restoreFailedDispose: (() => void) | undefined;
     const allocation = vi
-      .spyOn(engine, "createRenderTargetCubeTexture")
+      .spyOn(engine, "createRenderTargetTexture")
       .mockImplementationOnce((...args) => {
         const target = allocate(...args);
         const failedDispose = vi
@@ -1512,77 +1434,11 @@ function cascadeFit(generator: CascadedShadowGenerator): number[][] {
   return Array.from({ length: generator.numCascades }, (_, layer) => [...generator.getCascadeTransformMatrix(layer)!.m]);
 }
 
-describe("prediction maps", () => {
-  /** A scene whose camera sits at the origin, with a spot light a prediction map of its kind is built for. */
-  function predicting() {
-    const { scene, controller } = fixture();
-    scene.activeCamera!.position.set(0, 0, 0);
-    const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
-    receiver.material = new StandardMaterial("receiver", scene);
-    controller.setParticipation(receiver, { castShadows: true, receiveShadows: true });
-    const spot = new SpotLight("spot", new Vector3(0, 3, 6), Vector3.Down(), Math.PI / 2, 1, scene);
-    // A sync takes the scene's shadow settings, which a prediction map is built with.
-    controller.sync();
-    const engine = scene.getEngine();
-    return { scene, controller, spot, engine, bytes: PREDICTION_MAP_SIZE ** 2 * shadowBytesPerTexel(engine) };
-  }
-
-  /** A shadowed point light near the camera, which takes the scene's one local map once registered. */
-  function nearPoint(scene: Scene) {
-    const point = new PointLight("point", new Vector3(5, 0, 0), scene);
-    point.range = 10;
-    return point;
-  }
-
-  it.each([[-1, false], [0, true]])("is built only into the room the real maps leave (%i bytes to spare)", (spare, built) => {
-    const { scene, controller, spot, engine, bytes } = predicting();
-    controller.register(nearPoint(scene), true);
-    controller.sync();
-    expect(controller.metrics().bytes).toBeGreaterThan(0);
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + bytes + spare);
-    expect({ built: controller.predictionMap(spot) !== null, held: controller.heldPredictionMaps.length })
-      .toEqual({ built, held: built ? 1 : 0 });
-  });
-
-  it("goes when a sync needs its room for a real map", () => {
-    // Calibration: the bytes the point's map takes.
-    const calibration = predicting();
-    calibration.controller.register(nearPoint(calibration.scene), true);
-    calibration.controller.sync();
-    const pointBytes = calibration.controller.metrics().bytes;
-    const { scene, controller, spot, engine, bytes } = predicting();
-    // Room for the point's map, or for the prediction map, not for both.
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + pointBytes + bytes - 1);
-    const map = controller.predictionMap(spot)!;
-    const dispose = vi.spyOn(map, "dispose");
-    const point = nearPoint(scene);
-    controller.register(point, true);
-    controller.sync();
-    expect({ point: controller.generator(point) !== null, held: controller.heldPredictionMaps.length, disposed: dispose.mock.calls.length,
-      withinLimit: managedRenderReservations(engine).reservedBytes <= managedRenderReservations(engine).limit })
-      .toEqual({ point: true, held: 0, disposed: 1, withinLimit: true });
-  });
-
-  it.each([
-    ["new shadow settings", ({ scene, controller }: ReturnType<typeof predicting>) => {
-      updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, filterQuality: "low" }) });
-      controller.sync();
-    }],
-    ["a restored context", ({ engine }: ReturnType<typeof predicting>) => engine.onContextRestoredObservable.notifyObservers(engine)],
-    ["the Scene's disposal", ({ scene }: ReturnType<typeof predicting>) => scene.dispose()],
-  ] as const)("goes with %s", (_name, change) => {
-    const context = predicting();
-    const map = context.controller.predictionMap(context.spot)!;
-    const dispose = vi.spyOn(map, "dispose");
-    change(context);
-    expect({ held: context.controller.heldPredictionMaps.length, disposed: dispose.mock.calls.length }).toEqual({ held: 0, disposed: 1 });
-  });
-});
-
 describe("maps a tried change takes", () => {
   /** A sun casting onto a box, its map built and drawn, and a snapshot taken to try a change that keeps the maps it takes. */
-  function tried() {
+  function tried(maxTextureSize = 4096) {
     const { scene, controller } = fixture();
+    scene.getEngine().getCaps().maxTextureSize = maxTextureSize;
     const box = MeshBuilder.CreateBox("box", {}, scene);
     controller.setParticipation(box, { castShadows: true, receiveShadows: true });
     const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
@@ -1624,14 +1480,14 @@ describe("maps a tried change takes", () => {
   });
 
   it("keeps a taken map only in the room the admitted maps leave", () => {
-    // Room for one sun map: switching the sun off makes the second directional light the sun, whose map needs it.
-    const context = tried();
+    // A 2048 atlas, which one sun map's 2048 tile fills: switching the sun off makes the second directional light the
+    // sun, whose map needs the tile the taken map holds.
+    const context = tried(2048);
     const { scene, controller, sun, map, snapshot } = context;
-    const engine = scene.getEngine();
+    expect(tileSizes(map)).toEqual([2048]);
     const second = new DirectionalLight("second", new Vector3(1, -1, 0), scene);
     controller.register(second, true);
     controller.sync();
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes);
     sun.setEnabled(false);
     controller.sync();
     const applied = { second: controller.generator(second) !== null, parked: map.getShadowMap() !== null };
@@ -1639,8 +1495,8 @@ describe("maps a tried change takes", () => {
     controller.restoreAdmission(snapshot);
     const restored = controller.generator(sun);
     expect({ applied, restored: restored !== null && restored !== map, second: controller.generator(second),
-      withinLimit: managedRenderReservations(engine).reservedBytes <= managedRenderReservations(engine).limit })
-      .toEqual({ applied: { second: true, parked: false }, restored: true, second: null, withinLimit: true });
+      atlas: shadowAtlasBytes(scene) })
+      .toEqual({ applied: { second: true, parked: false }, restored: true, second: null, atlas: 2048 ** 2 * 4 });
   });
 });
 
@@ -1648,9 +1504,6 @@ describe("atlas caster variants", () => {
   it.each([1, 2])("hold each atlas kind's caster depth variant that a first shadow start then draws with (%i cascades)", async (cascades) => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades, maxLocalLights: 2 }) });
     // Posed with a non-uniform scale, as a level's floor is: its variant reads its world matrix.
     const crate = MeshBuilder.CreateBox("crate", { size: 1 }, scene);
@@ -1692,9 +1545,6 @@ describe("atlas caster variants", () => {
   it("asks a caster whose Material draws its depth through a wrapper until it holds its variants, then no more", async () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     // Authored World Position Offset and lattice deformation draw a caster's depth through a standalone wrapper of a
     // variant Material that no other pass draws: its first ask compiles that Material, a later one the depth variant,
     // which the wrapper holds itself.
@@ -1717,19 +1567,12 @@ describe("atlas caster variants", () => {
     expect(asked).not.toHaveBeenCalled();
   });
 
-  it("asks again for new shadow settings, and holds nothing off the light block's path", async () => {
+  it("asks again for new shadow settings", async () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     MeshBuilder.CreateBox("crate", { size: 1 }, scene);
     const variants = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
       .filter((effect) => /SM_LIGHTTYPE/.test(effect.defines));
-    controller.warmCasterVariants();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    controller.sync();
-    expect(variants()).toEqual([]);
-    setHapticLighting(engine, true);
     controller.warmCasterVariants();
     await new Promise((resolve) => setTimeout(resolve, 0));
     controller.sync();
@@ -1749,16 +1592,12 @@ describe("view sun shadow maps", () => {
   const atlasSun = (cascades: number) => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades, maxLocalLights: 1 }) });
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     controller.register(sun, true);
     controller.sync();
     return { scene, engine, controller, sun, capture: new UniversalCamera("capture", new Vector3(20, 6, 20), scene) };
   };
-  const tileSizes = (generator: unknown) => (generator as AtlasCascadedShadowGenerator).tiles.map((tile) => tile.size);
 
   it("gives a capture its own sun cascades as tiles of the light block's atlas, which charge nothing and go with the claim", async () => {
     const { scene, engine, controller, sun, capture } = atlasSun(2);
@@ -1826,39 +1665,8 @@ describe("view sun shadow maps", () => {
     expect([high!.getShadowMap(), sun.getShadowGenerator(capture)]).toEqual([null, null]);
     expect(shadowAtlasBytes(scene)).toBe(0);
   });
-  it("binds a single sun map with the box it was drawn with, whichever camera binds it", () => {
-    const { scene, controller } = fixture();
-    updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings({ cascades: 1, distance: 10, mapSize: 512 }),
-    });
-    const light = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(light, true);
-    controller.sync();
-    const generator = controller.generator(light)!;
-    prepareShadowLayers(generator);
-    const drawn = [...generator.getTransformMatrix().m];
-    // A later pass for a camera far away (a Render Target Capture) binds the
-    // map: it samples the image drawn around the scene camera.
-    const sceneCamera = scene.activeCamera!;
-    scene.activeCamera = new UniversalCamera("far", new Vector3(200, 2, 300), scene);
-    scene.incrementRenderId();
-    expect([...generator.getTransformMatrix().m]).toEqual(drawn);
-    // A draw that throws after binding its map, before fitting it, leaves later bindings on that box too.
-    const observers = generator.getShadowMap()!.onBeforeRenderObservable;
-    const failure = observers.add(() => { throw new Error("draw failed"); }, undefined, true);
-    expect(() => prepareShadowLayers(generator)).toThrow("draw failed");
-    observers.remove(failure);
-    scene.incrementRenderId();
-    expect([...generator.getTransformMatrix().m]).toEqual(drawn);
-    // Its next draw fits the camera it is drawn for.
-    prepareShadowLayers(generator);
-    expect([...generator.getTransformMatrix().m]).not.toEqual(drawn);
-    scene.activeCamera = sceneCamera;
-  });
-
   it("mirrors each admitted sun map for an attached view, fitted to that view's camera, and shares local maps", async () => {
     const { scene, controller } = fixture();
-    enableHeadlessCascades(scene.getEngine());
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 512, localMapSize: 256, maxLocalLights: 1 }),
     });
@@ -1872,27 +1680,23 @@ describe("view sun shadow maps", () => {
     const local = controller.generator(spot)!;
     const capture = new UniversalCamera("capture", new Vector3(120, 6, 90), scene);
     capture.setTarget(new Vector3(120, 0, 100));
-    const before = managedRenderReservations(scene.getEngine()).reservedBytes;
     const metrics = controller.metrics();
     const view = controller.attachView(capture);
     const own = controller.viewBoundGenerator(sun, capture) as CascadedShadowGenerator;
-    // Stats count the view's two cascades of 512² (half-float red colour plus depth: 6 bytes a texel).
-    expect(controller.metrics()).toEqual({ passes: metrics.passes + 2, bytes: metrics.bytes + 2 * 512 ** 2 * 6 });
-    // The ledger holds the four layers CSM constructs first (WebGPU frees that texture at the frame's end).
-    expect(managedRenderReservations(scene.getEngine()).categoryBytes.shadow).toBe(4 * 512 ** 2 * 6);
-    // A map of the scene map's kind, size and cascades, keyed to the capture camera.
-    expect(own).toBeInstanceOf(CascadedShadowGenerator);
+    // Stats count the view's two cascades; their tiles' bytes are the atlas's.
+    expect(controller.metrics()).toEqual({ passes: metrics.passes + 2, bytes: metrics.bytes });
+    // A map of the scene map's kind, tile size and cascades, keyed to the capture camera.
+    expect(own).toBeInstanceOf(AtlasCascadedShadowGenerator);
     expect(own).not.toBe(main);
     expect(own.camera).toBe(capture);
     expect(own.numCascades).toBe(2);
-    expect(own.getShadowMap()!.getSize().width).toBe(main.getShadowMap()!.getSize().width);
+    expect(tileSizes(own)).toEqual(tileSizes(main));
     expect(own.getShadowMap()!.renderList).toContain(caster);
     expect(sun.getShadowGenerator(capture)).toBe(own);
     expect(sun.getShadowGenerator()).toBe(main);
     // Point and spot maps do not depend on the view: it shares the scene's.
     expect(controller.viewBoundGenerator(spot, capture)).toBe(local);
     expect(unsupportedManagedShadows(scene)).toBeUndefined();
-    expect(managedRenderReservations(scene.getEngine()).reservedBytes).toBeGreaterThan(before);
     // Each map fits its own camera; drawing one leaves the other's fit alone.
     prepareShadowLayers(main);
     const mainFit = cascadeFit(main);
@@ -1905,47 +1709,13 @@ describe("view sun shadow maps", () => {
     await view.release();
     expect(sun.getShadowGenerator(capture)).toBeNull();
     expect(own.getShadowMap()).toBeNull();
-    expect(managedRenderReservations(scene.getEngine()).reservedBytes).toBe(before);
     // A camera-keyed map the controller does not own is still rejected.
     new ShadowGenerator(256, sun, undefined, capture);
     expect(unsupportedManagedShadows(scene)).toBe("Unmanaged shadow allocations are not supported.");
   });
 
-  it("fits a view's single sun map to its camera and keeps the scene map's box", () => {
+  it("replaces a view's map with the scene map's allocation and releases it with the view", async () => {
     const { scene, controller } = fixture();
-    updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings(qualityPresetPatch("low").shadows),
-    });
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    const main = controller.generator(sun)!;
-    const capture = new UniversalCamera("capture", new Vector3(300, 2, 300), scene);
-    controller.attachView(capture);
-    const own = controller.viewBoundGenerator(sun, capture)!;
-    expect(own).not.toBe(main);
-    expect(own).not.toBeInstanceOf(CascadedShadowGenerator);
-    prepareShadowLayers(main);
-    const mainBox = [...main.getTransformMatrix().m];
-    // The capture's map draws in the capture's pass, with the capture camera active.
-    const sceneCamera = scene.activeCamera!;
-    scene.activeCamera = capture;
-    prepareShadowLayers(own);
-    const ownBox = [...own.getTransformMatrix().m];
-    expect(ownBox).not.toEqual(mainBox);
-    // The scene view binds its map after the capture's draw, and the capture binds its own.
-    scene.activeCamera = sceneCamera;
-    scene.incrementRenderId();
-    expect([...main.getTransformMatrix().m]).toEqual(mainBox);
-    expect([...own.getTransformMatrix().m]).toEqual(ownBox);
-    // The view's map is fitted to the capture camera even when drawn under another.
-    prepareShadowLayers(own);
-    expect([...own.getTransformMatrix().m]).toEqual(ownBox);
-  });
-
-  it("replaces a view's map with the scene map's allocation and releases it, and its ledger charge, with the view", async () => {
-    const { scene, controller } = fixture();
-    enableHeadlessCascades(scene.getEngine());
     const engine = scene.getEngine();
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 512 }),
@@ -1964,8 +1734,8 @@ describe("view sun shadow maps", () => {
     const second = controller.viewBoundGenerator(sun, capture)!;
     expect(second).not.toBe(first);
     expect(first.getShadowMap()).toBeNull();
-    expect(second).not.toBeInstanceOf(CascadedShadowGenerator);
-    expect(second.getShadowMap()!.getSize().width).toBe(controller.generator(sun)!.getShadowMap()!.getSize().width);
+    expect((second as CascadedShadowGenerator).numCascades).toBe(1);
+    expect(tileSizes(second)).toEqual(tileSizes(controller.generator(sun)));
     // Turning the sun's shadows off removes the view's map too.
     controller.register(sun, false);
     controller.sync();
@@ -1986,369 +1756,10 @@ describe("view sun shadow maps", () => {
     await view.release();
     expect(third.getShadowMap()).toBeNull();
     expect(sun.getShadowGenerator(capture)).toBeNull();
-    // Only the scene view's own map remains charged.
+    // A view's maps never charge the shared ledger.
     expect(managedRenderReservations(engine)).toMatchObject({ resourceBytes: 0, pendingBytes: 0 });
     // A released view gets no new maps.
     controller.sync();
     expect(sun.getShadowGenerator(capture)).toBeNull();
-  });
-
-  it("never shrinks the scene view's sun map for the ledger room views hold", () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
-    controller.attachView(capture);
-    expect(controller.viewBoundGenerator(sun, capture)!.getShadowMap()!.getSize().width).toBe(512);
-    // 3 MiB each now (512² × 12 bytes). A 1024 scene map (12 MiB) fits only in the view's room.
-    const limit = managedRenderReservations(engine).reservedBytes + 8 * 1024 ** 2;
-    limitManagedRenderBytes(engine, limit);
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 1024 }) });
-    controller.sync();
-    const main = controller.generator(sun)!;
-    expect(main.getShadowMap()!.getSize().width).toBe(1024);
-    // The view mirrors the new map with what is left.
-    const own = controller.viewBoundGenerator(sun, capture)!;
-    expect(own).not.toBe(main);
-    expect(own.getShadowMap()!.getSize().width).toBe(256);
-    expect(managedRenderReservations(engine).reservedBytes).toBeLessThanOrEqual(limit);
-  });
-
-  /** Disposed textures stay allocated until the frame's end, as on WebGPU (the ledger's deferred releases). */
-  function deferReleasesLikeWebGpu(engine: AbstractEngine) {
-    Object.defineProperty(engine, "isWebGPU", { value: true, configurable: true });
-    return async () => {
-      // Releases register for the next end frame from a microtask.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      engine.endFrame();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    };
-  }
-  const mapWidth = (generator: { getShadowMap(): RenderTargetTexture | null } | null | undefined) =>
-    generator?.getShadowMap()?.getSize().width;
-
-  it("waits for a released view's WebGPU drain before mirroring for its replacement, at full size", async () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
-    const first = controller.attachView(capture);
-    expect(mapWidth(sun.getShadowGenerator(capture))).toBe(512);
-    // 1 MiB to spare: a second 512² view map (3 MiB) fits only once the first has gone.
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1024 ** 2);
-    const endFrame = deferReleasesLikeWebGpu(engine);
-    // Switching the capture's quality, re-enabling it or changing its target retires its view and makes a new one.
-    const released = first.release();
-    controller.attachView(capture);
-    controller.sync();
-    // Until the old map's texture is destroyed the capture binds the scene view's map, rather than settle smaller.
-    expect(sun.getShadowGenerator(capture)).toBeNull();
-    expect(controller.viewBoundGenerator(sun, capture)).toBe(controller.generator(sun));
-    await endFrame();
-    await released;
-    controller.sync();
-    expect(mapWidth(sun.getShadowGenerator(capture))).toBe(512);
-  });
-
-  it("re-mirrors a view map that yielded to the scene view's maps only after its WebGPU drain", async () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
-    controller.attachView(capture);
-    const own = sun.getShadowGenerator(capture)!;
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 8 * 1024 ** 2);
-    const endFrame = deferReleasesLikeWebGpu(engine);
-    // The scene map grows into the view's room: the view's map yields at once, but its texture lives to the frame's end.
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 1024 }) });
-    controller.sync();
-    expect(mapWidth(controller.generator(sun))).toBe(1024);
-    expect(own.getShadowMap()).toBeNull();
-    expect(sun.getShadowGenerator(capture)).toBeNull();
-    await endFrame();
-    controller.sync();
-    expect(mapWidth(sun.getShadowGenerator(capture))).toBe(256);
-  });
-
-  it("yields only as many view maps as the scene view's maps need, largest first", () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512, maxLocalLights: 1, localMapSize: 256 }),
-    });
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    const large = new UniversalCamera("large", new Vector3(20, 6, 20), scene);
-    controller.attachView(large);
-    const largeMap = sun.getShadowGenerator(large)!;
-    // 1 MiB left: the second view's mirror fits only at 256² (0.75 MiB).
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1024 ** 2);
-    const small = new UniversalCamera("small", new Vector3(-20, 6, -20), scene);
-    controller.attachView(small);
-    const smallMap = sun.getShadowGenerator(small)!;
-    expect([mapWidth(largeMap), mapWidth(smallMap)]).toEqual([512, 256]);
-    // A spot map (0.75 MiB) needs half a MiB more than is free. The smaller view map would cover it, but the
-    // larger one yields first, and that is enough: the smaller one stays.
-    const spot = new SpotLight("spot", new Vector3(0, 4, -4), new Vector3(0, -1, 0.5), 1, 1, scene);
-    controller.register(spot, true);
-    controller.sync();
-    expect(mapWidth(controller.generator(spot))).toBe(256);
-    expect(largeMap.getShadowMap()).toBeNull();
-    expect(sun.getShadowGenerator(small)).toBe(smallMap);
-    expect(mapWidth(smallMap)).toBe(256);
-    // The yielded view mirrors again from what is left.
-    expect(mapWidth(sun.getShadowGenerator(large))).toBe(256);
-  });
-
-  it("releases a standby local map rather than make a view's sun map yield the room it holds", () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512, maxLocalLights: 2, localMapSize: 256 }),
-    });
-    scene.activeCamera!.position.set(0, 0, 0);
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    const point = new PointLight("point", new Vector3(5, 0, 0), scene);
-    point.range = 10;
-    controller.register(sun, true);
-    controller.register(point, true);
-    controller.sync();
-    expect(point.getShadowGenerator()).not.toBeNull();
-    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
-    controller.attachView(capture);
-    const own = sun.getShadowGenerator(capture)!;
-    expect(mapWidth(own)).toBe(512);
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 512 * 1024);
-    // The camera leaves the point light (its cube map, 4.5 MiB, could stand by) for a spot light that needs a map:
-    // keeping both fits only in the room the capture's sun map holds.
-    scene.activeCamera!.position.x = 1000;
-    const spot = new SpotLight("spot", new Vector3(1005, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
-    spot.range = 10;
-    controller.register(spot, true);
-    controller.sync();
-    expect(controller.generator(spot)).not.toBeNull();
-    expect(point.getShadowGenerator()).toBeNull();
-    expect(sun.getShadowGenerator(capture)).toBe(own);
-    expect(mapWidth(own)).toBe(512);
-  });
-
-  it("keeps the room a yielded view map will mirror into free of standby local maps while its WebGPU drain is pending", async () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512, maxLocalLights: 2, localMapSize: 256 }),
-    });
-    scene.activeCamera!.position.set(0, 0, 0);
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
-    controller.attachView(capture);
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 3 * 1024 ** 2);
-    const endFrame = deferReleasesLikeWebGpu(engine);
-    // A point light's cube map (4.5 MiB) takes room the capture's sun map (3 MiB) holds: it yields, and mirrors
-    // again only once its texture is destroyed at the frame's end.
-    const point = new PointLight("point", new Vector3(5, 0, 0), scene);
-    point.range = 10;
-    controller.register(point, true);
-    controller.sync();
-    expect(point.getShadowGenerator()).not.toBeNull();
-    expect(sun.getShadowGenerator(capture)).toBeNull();
-    // Before that, the camera leaves the point light for a spot light. The point's map could stand by in the
-    // room the capture is about to mirror into; it is released instead.
-    scene.activeCamera!.position.x = 1000;
-    const spot = new SpotLight("spot", new Vector3(1005, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
-    spot.range = 10;
-    controller.register(spot, true);
-    controller.sync();
-    expect(controller.generator(spot)).not.toBeNull();
-    expect(point.getShadowGenerator()).toBeNull();
-    await endFrame();
-    controller.sync();
-    expect(mapWidth(sun.getShadowGenerator(capture))).toBe(512);
-  });
-
-  it("waits for another Scene's pending view map drain on the same Engine before mirroring", async () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    const shadows = normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 });
-    updateSceneRenderingSettings(scene, { shadows });
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    controller.attachView(new UniversalCamera("capture", new Vector3(20, 6, 20), scene));
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1024 ** 2);
-    const endFrame = deferReleasesLikeWebGpu(engine);
-    // Opening another scene closes this one: its capture's sun map lives until the frame's end.
-    scene.dispose();
-    const next = new Scene(engine);
-    next.activeCamera = new UniversalCamera("camera", new Vector3(0, 2, -10), next);
-    updateSceneRenderingSettings(next, { shadows });
-    const nextController = sceneShadowController(next);
-    const nextSun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), next);
-    nextController.register(nextSun, true);
-    nextController.sync();
-    const nextCapture = new UniversalCamera("capture", new Vector3(20, 6, 20), next);
-    nextController.attachView(nextCapture);
-    nextController.sync();
-    // The new capture binds its scene's map until the old texture has gone, rather than settle smaller.
-    expect(nextSun.getShadowGenerator(nextCapture)).toBeNull();
-    expect(nextController.viewBoundGenerator(nextSun, nextCapture)).toBe(nextController.generator(nextSun));
-    await endFrame();
-    nextController.sync();
-    expect(mapWidth(nextSun.getShadowGenerator(nextCapture))).toBe(512);
-  });
-
-  it("lets a refused mirror ask again as soon as pending view map drains settle", async () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    const first = controller.attachView(new UniversalCamera("first", new Vector3(20, 6, 20), scene));
-    // Less than the smallest mirror is left for a second capture.
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 512 * 1024);
-    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const second = new UniversalCamera("second", new Vector3(-20, 6, -20), scene);
-      controller.attachView(second);
-      expect(sun.getShadowGenerator(second)).toBeNull();
-      const endFrame = deferReleasesLikeWebGpu(engine);
-      // The first capture goes; once its texture is destroyed the second asks again, without waiting its second out.
-      const released = first.release();
-      controller.sync();
-      expect(sun.getShadowGenerator(second)).toBeNull();
-      await endFrame();
-      await released;
-      controller.sync();
-      expect(mapWidth(sun.getShadowGenerator(second))).toBe(512);
-      expect(warn).toHaveBeenCalledTimes(1);
-    } finally {
-      warn.mockRestore();
-      clock.mockRestore();
-    }
-  });
-
-  it("releases standby maps for a refused mirror's retry only when its smallest size would then fit", () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
-    updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 512, maxLocalLights: 2, localMapSize: 256 }),
-    });
-    const camera = scene.activeCamera!;
-    camera.position.set(0, 0, 0);
-    const sun = new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene);
-    const spot = new SpotLight("spot", new Vector3(5, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
-    spot.range = 10;
-    controller.register(sun, true);
-    controller.register(spot, true);
-    controller.sync();
-    // A quarter MiB free; another owner holds 1 MiB more. The smallest cascaded mirror needs 1.5 MiB (four 256² layers).
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1.25 * 1024 ** 2);
-    const other = beginManagedRenderAllocation(engine, 1024 ** 2)!;
-    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
-      controller.attachView(capture);
-      expect(sun.getShadowGenerator(capture)).toBeNull();
-      // The camera leaves the spot light: its map (0.75 MiB) stands by.
-      camera.position.x = 1000;
-      controller.sync();
-      const standby = spot.getShadowGenerator()!;
-      expect(standby).not.toBeNull();
-      // Releasing it would still leave too little for the smallest mirror: each retry keeps it.
-      for (const now of [1_500, 3_000, 4_500]) {
-        clock.mockReturnValue(now);
-        controller.sync();
-        expect(spot.getShadowGenerator()).toBe(standby);
-        expect(sun.getShadowGenerator(capture)).toBeNull();
-      }
-      // With the other owner's room back, the standby map is what stands between the retry and its smallest size.
-      other.release();
-      clock.mockReturnValue(6_000);
-      controller.sync();
-      expect(spot.getShadowGenerator()).toBeNull();
-      expect(mapWidth(sun.getShadowGenerator(capture))).toBe(256);
-      expect(warn).toHaveBeenCalledTimes(1);
-    } finally {
-      warn.mockRestore();
-      clock.mockRestore();
-    }
-  });
-
-  it("lets a view whose own sun map does not fit bind the scene view's map, warning once", () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 64 * 1024 ** 2);
-    // Another owner's targets leave less than the smallest view map (256² × 12 bytes).
-    const other = beginManagedRenderAllocation(engine, 64 * 1024 ** 2 - 512 * 1024)!;
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-    try {
-      const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
-      controller.attachView(capture);
-      controller.sync();
-      controller.sync();
-      expect(sun.getShadowGenerator(capture)).toBeNull();
-      expect(controller.viewBoundGenerator(sun, capture)).toBe(controller.generator(sun));
-      expect(warn).toHaveBeenCalledTimes(1);
-      // That owner releases its targets: a later sync asks again.
-      other.release();
-      controller.sync();
-      expect(sun.getShadowGenerator(capture)).toBeNull();
-      clock.mockReturnValue(1_500);
-      controller.sync();
-      expect(sun.getShadowGenerator(capture)!.getShadowMap()!.getSize().width)
-        .toBe(controller.generator(sun)!.getShadowMap()!.getSize().width);
-      expect(warn).toHaveBeenCalledTimes(1);
-    } finally {
-      clock.mockRestore();
-      warn.mockRestore();
-    }
-  });
-
-  it("retries a view map whose construction failed at half size on a later sync", () => {
-    const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
-    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
-    controller.register(sun, true);
-    controller.sync();
-    const allocate = engine.createRenderTargetTexture.bind(engine);
-    const failure = vi.spyOn(engine, "createRenderTargetTexture").mockImplementationOnce(() => {
-      throw new Error("driver allocation failed");
-    });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
-      controller.attachView(capture);
-      // Its reservation drains first (on WebGPU, at the frame's end): no smaller map in the same sync.
-      expect(failure).toHaveBeenCalledTimes(1);
-      expect(sun.getShadowGenerator(capture)).toBeNull();
-      failure.mockImplementation(allocate);
-      controller.sync();
-      expect(sun.getShadowGenerator(capture)!.getShadowMap()!.getSize().width).toBe(256);
-      expect(warn).not.toHaveBeenCalled();
-    } finally {
-      failure.mockRestore();
-      warn.mockRestore();
-    }
   });
 });

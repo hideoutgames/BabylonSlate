@@ -2,7 +2,6 @@ import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import {
   AddBlock,
   BonesBlock,
-  ClampBlock,
   ColorSplitterBlock,
   MorphTargetsBlock,
   MultiplyBlock,
@@ -21,7 +20,6 @@ import {
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
   RemapBlock,
-  ScaleBlock,
   TextureBlock,
   VectorMergerBlock,
   VectorSplitterBlock,
@@ -61,15 +59,11 @@ import { OwnedPostProcess } from "./owned-post-process";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { createMaterialParameterBindings } from "./material-parameters";
 import { syncSceneLighting } from "./scene-lighting";
-import { installCelSurface } from "./cel-surface";
 import { retainEnvironmentSample } from "./environment-lighting";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
-import { SceneReflectionBlock } from "./scene-reflection-block";
 import { FlatNormalBlock } from "./flat-normal-block";
 import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geometry-surface-output-block";
-import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { HapticLightingBlock, followRenderMode } from "./haptic-lighting-block";
-import { hapticLightingActive } from "./haptic-lights";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@haptic/bridge";
@@ -716,10 +710,8 @@ export function compileMaterialPlan(
     }
     for (const node of outputNodes) material.addOutputNode(node);
     if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary && plan.shadingModel !== "unlit") {
-      const surface = outputNodes.find((node) => node instanceof FragmentOutputBlock);
-      // HapticLightingBlock's CEL is a define; Babylon's blocks swap in a CEL graph.
-      if (hapticLightingActive(scene)) followRenderMode(material);
-      else if (surface) installCelSurface(material, plan, surface, created, plumbing, outputPoint);
+      // CEL is HapticLightingBlock's define, set from the Scene's render mode.
+      followRenderMode(material);
     }
   } catch (error) {
     diagnostics.push({
@@ -1579,86 +1571,31 @@ function attachSurfaceShading(
     : null;
   specular?.connectTo(fragment.geometrySpecular);
 
-  // The surface's direct and environment light (scaled by Environment Influence), from the lighting plan's block
-  // or Babylon's PBR block.
-  let lit: NodeMaterialConnectionPoint;
-  let alpha: NodeMaterialConnectionPoint | null;
-  let indirect: NodeMaterialConnectionPoint;
-  if (hapticLightingActive(options.scene)) {
-    const lighting = new HapticLightingBlock(`${options.name}_lighting`);
-    created.push(lighting);
-    plumbing.worldPosition?.connectTo(lighting.worldPosition);
-    plumbing.worldNormal4?.connectTo(lighting.worldNormal);
-    plumbing.cameraPosition?.connectTo(lighting.cameraPosition);
-    surfaceColor.connectTo(lighting.baseColor);
-    // The Material Output's own defaults, for a plan that leaves a channel out.
-    const constant = (value: number, suffix: string) => {
-      const block = createConstantBlock(`${options.name}_${suffix}`, "float", [value]);
-      created.push(block);
-      return block.output;
-    };
-    (metallic ?? constant(0, "metallicDefault")).connectTo(lighting.metallic);
-    (roughness ?? constant(0.5, "roughnessDefault")).connectTo(lighting.roughness);
-    normal?.connectTo(lighting.normal);
-    influence?.connectTo(lighting.environmentInfluence);
-    specular?.connectTo(lighting.specular);
-    alpha = opacity;
-    lit = addColor(lighting.diffuseDirect, lighting.specularDirect, "litColor");
-    indirect = addColor(lighting.diffuseIndirect, lighting.specularIndirect, "environmentColor");
-  } else {
-    const pbr = new ScenePbrLightingBlock(`${options.name}_pbr`);
-    pbr.useAlphaBlending = plan.blendMode === "translucent" || plan.blendMode === "additive";
-    alpha = pbr.alpha;
-    const reflection = new SceneReflectionBlock(`${options.name}_reflection`);
-    plumbing.position?.connectTo(reflection.position);
-    plumbing.world?.connectTo(reflection.world);
-    reflection.reflection.connectTo(pbr.reflection);
-    created.push(reflection);
-    created.push(pbr);
-    plumbing.worldPosition?.connectTo(pbr.worldPosition);
-    plumbing.worldNormal4?.connectTo(pbr.worldNormal);
-    plumbing.view?.connectTo(pbr.view);
-    plumbing.cameraPosition?.connectTo(pbr.cameraPosition);
-    surfaceColor.connectTo(pbr.baseColor);
-    if (metallic) metallic.connectTo(pbr.metallic);
-    if (roughness) roughness.connectTo(pbr.roughness);
-    if (normal) {
-      // PBR registers a Vector 4 perturbed normal; the authored channel is a
-      // Vector 3 direction, so widen it with a zero w.
-      const widen = new VectorMergerBlock(`${options.name}_normalWiden`);
-      created.push(widen);
-      normal.connectTo(widen.xyzIn);
-      widen.xyzw.connectTo(pbr.perturbedNormal);
-    }
-    if (opacity) opacity.connectTo(pbr.opacity);
-    // Babylon's block derives F0 from a constant index of refraction, ((n - 1) / (n + 1))^2; lowering warns of a
-    // Specular that is not constant (`material.specularConstant`).
-    if (specular && specularOperand?.kind === "constant") {
-      const reflectance = Math.sqrt(0.08 * Math.min(Math.max(specularOperand.value[0]!, 0), 1));
-      const ior = createConstantBlock(`${options.name}_indexOfRefraction`, "float", [(1 + reflectance) / (1 - reflectance)]);
-      created.push(ior);
-      ior.output.connectTo(pbr.indexOfRefraction);
-    }
-    // pbr.lighting has already passed through image processing and must not be
-    // used for linear emission or fog composition.
-    lit = addColor(addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor"), pbr.specularDir, "litColor");
-    indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
-    if (influence) {
-      const clamp = new ClampBlock(`${options.name}_environmentInfluenceClamp`);
-      clamp.minimum = 0;
-      clamp.maximum = 1;
-      const scale = new ScaleBlock(`${options.name}_environmentInfluenceScale`);
-      created.push(clamp, scale);
-      influence.connectTo(clamp.value);
-      clamp.output.connectTo(scale.factor);
-      indirect.connectTo(scale.input);
-      indirect = scale.output;
-    }
-  }
+  // The surface's direct and environment light (scaled by Environment Influence), from the lighting plan's block.
+  const lighting = new HapticLightingBlock(`${options.name}_lighting`);
+  created.push(lighting);
+  plumbing.worldPosition?.connectTo(lighting.worldPosition);
+  plumbing.worldNormal4?.connectTo(lighting.worldNormal);
+  plumbing.cameraPosition?.connectTo(lighting.cameraPosition);
+  surfaceColor.connectTo(lighting.baseColor);
+  // The Material Output's own defaults, for a plan that leaves a channel out.
+  const constant = (value: number, suffix: string) => {
+    const block = createConstantBlock(`${options.name}_${suffix}`, "float", [value]);
+    created.push(block);
+    return block.output;
+  };
+  (metallic ?? constant(0, "metallicDefault")).connectTo(lighting.metallic);
+  (roughness ?? constant(0.5, "roughnessDefault")).connectTo(lighting.roughness);
+  normal?.connectTo(lighting.normal);
+  influence?.connectTo(lighting.environmentInfluence);
+  specular?.connectTo(lighting.specular);
+  const alpha = opacity;
+  const lit = addColor(lighting.diffuseDirect, lighting.specularDirect, "litColor");
+  const indirect = addColor(lighting.diffuseIndirect, lighting.specularIndirect, "environmentColor");
 
   // These are the linear contributions supported by our surface compiler.
-  const lighting = addColor(lit, indirect, "totalLighting");
-  const color = emissive ? addColor(lighting, emissive, "surfaceEmission") : lighting;
+  const total = addColor(lit, indirect, "totalLighting");
+  const color = emissive ? addColor(total, emissive, "surfaceEmission") : total;
   const shown = alpha ? covered(color, alpha) : { color, alpha };
   writeLinearSurfaceColor(applyFog(shown.color), fragment, options.name, created);
   shown.alpha?.connectTo(fragment.a);

@@ -1,7 +1,8 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PBRMetallicRoughnessBlock, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
+import { HapticLightingBlock } from "./haptic-lighting-block";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -65,7 +66,6 @@ import { findSceneReflectionProbes } from "./reflection-probes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import * as waterMesh from "./water-mesh";
-import type { WaterVariantRequest } from "./water-material";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
 
@@ -733,7 +733,7 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
     const state = { ready: true, linked: true, error: "" };
-    const effect = { isReady: () => state.linked, getCompilationError: () => state.error } as unknown as Effect;
+    const effect = { isReady: () => state.linked, getCompilationError: () => state.error, getEngine: () => engine } as unknown as Effect;
     const create = engine.createEffect.bind(engine) as unknown as (...args: unknown[]) => Effect;
     vi.spyOn(engine, "createEffect").mockImplementation(((name: unknown, ...rest: unknown[]) =>
       name === "lit-variant" ? effect : create(name, ...rest)) as unknown as typeof engine.createEffect);
@@ -968,29 +968,38 @@ describe("Play createEngine view", () => {
     }
   }
 
-  /**
-   * Every built-in water variant requested while `work` runs: one per define change of a render pass, each a compile
-   * unless an equal variant exists. Effects the Engine replaces are dropped from its cache, so this, not the cache,
-   * shows a variant that compiled and was superseded within a frame.
-   */
-  async function waterRequestsDuring(work: () => Promise<void>): Promise<WaterVariantRequest[]> {
-    const requests: WaterVariantRequest[] = [];
-    const globals = globalThis as Record<string, unknown>;
-    globals.__slateWaterCompileLog = requests;
-    try { await work(); } finally { delete globals.__slateWaterCompileLog; }
-    return requests;
+  /** The defines of every built-in water graph effect (`builtInWaterMaterial`) the Engine has compiled so far. */
+  function compiledGraphWater(engine: NullEngine): string[] {
+    return Object.values((engine as unknown as { _compiledEffects: Record<string, { defines?: string }> })._compiledEffects)
+      .map((effect) => effect.defines ?? "").filter((defines) => /^#define SLATE_WATER_SURFACE$/m.test(defines));
   }
 
   /**
-   * The new body's variants differ from every compiled one, so a request without Blend would be a compile nothing draws,
-   * and a pass asked twice for one body's variant would compile twice.
+   * Every built-in water graph variant compiled while `work` runs, with the render pass that asked for it: one per new
+   * define set, as Babylon shares an equal variant. Effects the Engine replaces are dropped from its cache, so this, not
+   * the cache, shows a variant that compiled and was superseded within a frame.
    */
-  function expectEveryRequestBlends(requests: readonly WaterVariantRequest[]): void {
-    expect(requests.length).toBeGreaterThan(0);
-    expect(requests.filter((request) => !request.blend).map((request) => request.mesh)).toEqual([]);
-    const perPass = new Map<string, number>();
-    for (const request of requests) perPass.set(`${request.mesh}|${request.pass}`, (perPass.get(`${request.mesh}|${request.pass}`) ?? 0) + 1);
-    expect([...perPass].filter(([, count]) => count > 1).map(([key]) => key)).toEqual([]);
+  async function waterCompilesDuring(engine: NullEngine, work: () => Promise<void>): Promise<{ defines: string; pass: number }[]> {
+    const compiles: { defines: string; pass: number }[] = [];
+    const seen = new WeakSet(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects));
+    const create = engine.createEffect.bind(engine) as unknown as (...args: unknown[]) => Effect;
+    const spy = vi.spyOn(engine, "createEffect").mockImplementation(((...args: unknown[]) => {
+      const effect = create(...args);
+      if (!seen.has(effect) && /^#define SLATE_WATER_SURFACE$/m.test(effect.defines)) compiles.push({ defines: effect.defines, pass: engine.currentRenderPassId });
+      seen.add(effect);
+      return effect;
+    }) as unknown as typeof engine.createEffect);
+    try { await work(); } finally { spy.mockRestore(); }
+    return compiles;
+  }
+
+  /**
+   * The new body blends its neighbour too, so every variant both draw changes: a compile without Blend would be one
+   * nothing draws once the water update has seen them.
+   */
+  function expectEveryCompileBlends(compiles: readonly { defines: string; pass: number }[]): void {
+    expect(compiles.length).toBeGreaterThan(0);
+    expect(compiles.filter(({ defines }) => !/^#define SLATE_WATER_BLEND$/m.test(defines)).map(({ pass }) => pass)).toEqual([]);
   }
 
   it("compiles a water body added beside another once, with Blend, though no prewarm runs", async () => {
@@ -1005,15 +1014,14 @@ describe("Play createEngine view", () => {
     handle.loadScene({ ...createDefaultScene(), actors: [lake("west", "calm", 0)] });
     await handle.prewarmSceneMaterials();
     await settleFrames(engine);
-    const before = compiledWater(engine);
-    expect(before.length).toBeGreaterThan(0);
+    expect(compiledGraphWater(engine).length).toBeGreaterThan(0);
     // The editor's Drop and Inspector edits reach the viewport as `loadScene` with the next document, with no prewarm.
     // The new lake sits within the blend distance, so both draw with Blend once the water update has seen them.
-    const requests = await waterRequestsDuring(async () => {
+    const compiles = await waterCompilesDuring(engine, async () => {
       handle.loadScene({ ...createDefaultScene(), actors: [lake("west", "calm", 0), lake("east", "glitter", 16)] });
       await settleFrames(engine);
     });
-    expectEveryRequestBlends(requests);
+    expectEveryCompileBlends(compiles);
   });
 
   // Without a fog volume the render loop's settle covers the published water; with one, publication waits for the graph's
@@ -1041,17 +1049,16 @@ describe("Play createEngine view", () => {
     pose([3], 1);
     await handle.prewarmSceneMaterials();
     await settleFrames(engine);
-    const before = compiledWater(engine);
-    expect(before.length).toBeGreaterThan(0);
+    expect(compiledGraphWater(engine).length).toBeGreaterThan(0);
     handle.applyCommand({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 1 });
-    const requests = await waterRequestsDuring(async () => {
+    const compiles = await waterCompilesDuring(engine, async () => {
       lake(4, "glitter", 16, true);
       if (fog) handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "lake-4", volumes: fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]) });
       await handle.prepareSceneStream([4], new AbortController().signal, undefined, { actorGuid: "stream", streamLoadId: 1 });
       pose([3, 4], 2);
       await settleFrames(engine);
     });
-    expectEveryRequestBlends(requests);
+    expectEveryCompileBlends(compiles);
   });
 
   it("leaves water that spawns while the world loads to the load's own settle, not to the frames that only draw a layer", async () => {
@@ -2053,7 +2060,7 @@ describe("Play createEngine view", () => {
     ).toBe(true);
     const lights = [...handle.scene.lights];
     const defaultUnlit = () => (handle.scene.defaultMaterial as NodeMaterial).attachedBlocks
-      .find((block): block is PBRMetallicRoughnessBlock => block instanceof PBRMetallicRoughnessBlock)?.unlit;
+      .find((block): block is HapticLightingBlock => block instanceof HapticLightingBlock)?.unlit;
     handle.editor!.setViewportShadingMode("unlit");
     expect(handle.scene.lightsEnabled).toBe(false);
     expect(defaultUnlit()).toBe(true);
