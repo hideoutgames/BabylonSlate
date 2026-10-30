@@ -4,24 +4,11 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
-/**
- * How far built-in water's graph Material may draw from its plugin, per scenario: the mean, over the pixels either
- * water covers, of each pixel's largest channel difference, and the 95th percentile of it (0 to 255). Measured on both
- * backends, with headroom; tightened as the remaining differences close. Both fog by one rule (Babylon PBR's), so fog
- * keeps the tightest bound.
- */
-type Scenario = Awaited<ReturnType<typeof runWaterTemplateProof>>["captures"][number]["scenario"];
-const BOUNDS: Record<Scenario, { mean: number; p95: number }> = {
-  sun: { mean: 4, p95: 6 },
-  deep: { mean: 8, p95: 12 },
-  grazing: { mean: 5, p95: 8 },
-  glint: { mean: 5, p95: 8 },
-  fog: { mean: 4, p95: 6 },
-  environment: { mean: 4, p95: 6 },
-};
+type Result = Awaited<ReturnType<typeof runWaterTemplateProof>>;
+type Scenario = Result["captures"][number]["scenario"];
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`Built-in water's graph Material draws as its plugin does, on ${backend}`, async ({ page }, testInfo) => {
+  test(`Built-in water's graph Material draws the lake's look on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -33,33 +20,91 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await page.waitForFunction(() => typeof (window as unknown as { __waterTemplateProof?: unknown }).__waterTemplateProof === "function");
     const result = await page.evaluate((backend) =>
       (window as unknown as { __waterTemplateProof: typeof runWaterTemplateProof }).__waterTemplateProof(backend), backend);
+    await testInfo.attach(`water-template-${backend}`, { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
+    const { width, height } = result;
+    const toLinear = (display: number) => {
+      const value = display / 255;
+      return !result.exactSrgb ? value ** 2.2 : value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    };
+    const toDisplay = (linear: number) => {
+      const value = Math.min(Math.max(linear, 0), 1);
+      return 255 * (!result.exactSrgb ? value ** (1 / 2.2) : value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055);
+    };
+    const capture = (scenario: Scenario, water: "none" | "graph") =>
+      result.captures.find((entry) => entry.scenario === scenario && entry.water === water)!;
+    const rgb = (pixels: number[], pixel: number) => [pixels[pixel * 4]!, pixels[pixel * 4 + 1]!, pixels[pixel * 4 + 2]!];
+    /** Pixels on the lake (`distances` ≥ 0) whose 3×3 neighbourhood is too, or off it with every neighbour off it. */
+    const settled = (distances: number[], onLake: boolean) => {
+      const pixels: number[] = [];
+      for (let row = 1; row < height - 1; row++)
+        for (let column = 1; column < width - 1; column++) {
+          let uniform = true;
+          for (let dy = -1; dy <= 1 && uniform; dy++)
+            for (let dx = -1; dx <= 1; dx++) if ((distances[(row + dy) * width + column + dx]! >= 0) !== onLake) uniform = false;
+          if (uniform) pixels.push(row * width + column);
+        }
+      return pixels;
+    };
     const report: Record<string, unknown> = {};
-    for (const scenario of Object.keys(BOUNDS) as Scenario[]) {
-      const capture = (water: string) => result.captures.find((entry) => entry.scenario === scenario && entry.water === water)!;
-      const none = capture("none").pixels, builtIn = capture("builtIn"), graph = capture("graph");
-      expect([builtIn.material, graph.material], scenario).toEqual(["PBRMaterial", "NodeMaterial"]);
-      // Where each water drew: the frame without water changed there.
-      const wet = (pixels: number[], index: number) =>
-        Math.abs(pixels[index]! - none[index]!) + Math.abs(pixels[index + 1]! - none[index + 1]!) + Math.abs(pixels[index + 2]! - none[index + 2]!) > 9;
-      let both = 0, either = 0;
-      const apart: number[] = [];
-      for (let index = 0; index < none.length; index += 4) {
-        const plugin = wet(builtIn.pixels, index), template = wet(graph.pixels, index);
-        if (plugin && template) both++;
-        if (!plugin && !template) continue;
-        either++;
-        apart.push(Math.max(...[0, 1, 2].map((channel) => Math.abs(graph.pixels[index + channel]! - builtIn.pixels[index + channel]!))));
-      }
-      apart.sort((a, b) => a - b);
-      const mean = apart.reduce((sum, value) => sum + value, 0) / apart.length, p95 = apart[Math.floor(apart.length * 0.95)]!;
-      report[scenario] = { covered: either, overlap: both / either, mean, p95 };
-      // The water covers most of the frame, the same pixels with either drawing.
-      expect(either, scenario).toBeGreaterThan(result.width * result.height / 3);
-      expect(both / either, scenario).toBeGreaterThan(0.97);
-      expect(mean, scenario).toBeLessThan(BOUNDS[scenario].mean);
-      expect(p95, scenario).toBeLessThan(BOUNDS[scenario].p95);
+    const lakes: Partial<Record<Scenario, number[]>> = {};
+    for (const scenario of ["sun", "deep", "grazing", "glint", "fog", "environment"] as const) {
+      const none = capture(scenario, "none"), water = capture(scenario, "graph");
+      expect(water.material, scenario).toBe("NodeMaterial");
+      const wet = (pixel: number) => Math.max(...rgb(water.pixels, pixel).map((value, channel) => Math.abs(value - none.pixels[pixel * 4 + channel]!))) > 3;
+      const lake = settled(result.distances[scenario], true);
+      const dry = settled(result.distances[scenario], false);
+      lakes[scenario] = lake;
+      // Two metres inside its edge (where the water fades out over the bank) and within 25 m (beyond, the far water
+      // fades toward what lies behind it) the water changes every pixel, in the scenarios whose water does not resemble
+      // its background: fog, the sky cube's reflection and the glare toward the sun come close to it in places.
+      const open = lake.filter((pixel) => result.insets[scenario][pixel]! >= 2 && result.distances[scenario][pixel]! <= 25);
+      report[scenario] = { lake: lake.length, open: open.length, dryOpen: open.filter((pixel) => !wet(pixel)).length, dry: dry.length, wetDry: dry.filter(wet).length };
+      expect(lake.length, scenario).toBeGreaterThan(width * height / 4);
+      if (["sun", "deep", "grazing"].includes(scenario)) expect(open.filter((pixel) => !wet(pixel)), `${scenario}: the lake draws`).toEqual([]);
+      // Nothing beside the lake changes.
+      expect(dry.filter(wet), `${scenario}: beside the lake`).toEqual([]);
     }
-    await testInfo.attach(`water-template-${backend}`, { body: JSON.stringify({ report, result }), contentType: "application/json" });
+    const mean = (scenario: Scenario, value: (color: number[]) => number) =>
+      lakes[scenario]!.reduce((sum, pixel) => sum + value(rgb(capture(scenario, "graph").pixels, pixel)), 0) / lakes[scenario]!.length;
+    const luminance = (color: number[]) => 0.2126 * toLinear(color[0]!) + 0.7152 * toLinear(color[1]!) + 0.0722 * toLinear(color[2]!);
+    const warmth = (color: number[]) => color[0]! - color[2]!;
+    const shallow = { luminance: mean("sun", luminance), warmth: mean("sun", warmth) };
+    const deep = { luminance: mean("deep", luminance), warmth: mean("deep", warmth) };
+    const environment = { warmth: mean("environment", warmth) };
+    const saturated = (scenario: Scenario) => lakes[scenario]!.filter((pixel) => Math.max(...rgb(capture(scenario, "graph").pixels, pixel)) >= 250).length;
+    // Fog: each lake pixel is the unfogged lake's (the sun scenario's view) mixed toward the fog colour by Babylon PBR's
+    // rule, the linear factor (fog end minus distance over its span) decoded, in linear colour.
+    const fogApart = lakes.fog!.map((pixel) => {
+      const distance = result.distances.fog[pixel]!;
+      const factor = toLinear(255 * Math.min(Math.max((result.fog.end - distance) / (result.fog.end - result.fog.start), 0), 1));
+      return Math.max(...rgb(capture("sun", "graph").pixels, pixel).map((value, channel) => {
+        const fog = toLinear(255 * result.fog.color[channel]!);
+        return Math.abs(capture("fog", "graph").pixels[pixel * 4 + channel]! - toDisplay(fog + (toLinear(value) - fog) * factor));
+      }));
+    }).sort((a, b) => a - b);
+    const fogMean = fogApart.reduce((sum, value) => sum + value, 0) / fogApart.length;
+    const fogShift = lakes.fog!.reduce((sum, pixel) => sum + Math.max(...rgb(capture("fog", "graph").pixels, pixel).map((value, channel) =>
+      Math.abs(value - capture("sun", "graph").pixels[pixel * 4 + channel]!))), 0) / lakes.fog!.length;
+    report.look = {
+      shallow, deep, environment, glint: saturated("glint"), sunGlint: saturated("sun"),
+      fog: { mean: fogMean, p95: fogApart[Math.floor(fogApart.length * 0.95)], largest: fogApart.at(-1), shift: fogShift },
+    };
+    await testInfo.attach(`water-template-report-${backend}`, { body: JSON.stringify(report), contentType: "application/json" });
+    // Shallow water shows its sand floor: deep water is darker and bluer (measured: luminance 0.29 against 0.49, red
+    // minus blue -57 against 8).
+    expect(deep.luminance).toBeLessThan(shallow.luminance * 0.8);
+    expect(deep.warmth).toBeLessThan(shallow.warmth - 30);
+    // The environment cube (orange above, pale around) warms the reflection (measured: red minus blue 46).
+    expect(environment.warmth).toBeGreaterThan(shallow.warmth + 20);
+    // Toward the sun its glints saturate (measured: 105 pixels and more); from above with the sun behind, none do.
+    expect(saturated("glint")).toBeGreaterThan(40);
+    expect(saturated("sun")).toBe(0);
+    // The fog mixes the lake toward its colour by that rule. The water's refraction reads the floor fogged at its own,
+    // farther, distance, so the rule holds on average (measured: mean 2.2/255, 95th percentile 4.0, against a shift of
+    // 23.6/255 from the unfogged lake).
+    expect(fogShift).toBeGreaterThan(3 * fogMean);
+    expect(fogMean).toBeLessThan(3.5);
+    expect(fogApart[Math.floor(fogApart.length * 0.95)]).toBeLessThan(6);
   });
 }

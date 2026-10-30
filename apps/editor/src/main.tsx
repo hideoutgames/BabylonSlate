@@ -77,11 +77,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("webgpuProof")
 ) {
-  void import("./testing/webgpu-proof").then(({ runWebGpuProof, runWebGpuPredictedAdmissionsProof }) => {
-    Object.assign(window, {
-      __hapticWebGpuProof: runWebGpuProof,
-      __hapticWebGpuPredictedAdmissionsProof: runWebGpuPredictedAdmissionsProof,
-    });
+  void import("./testing/webgpu-proof").then(({ runWebGpuProof }) => {
+    Object.assign(window, { __hapticWebGpuProof: runWebGpuProof });
   });
 } else {
   // Pixel probes read view canvases; a directly presented view writes its image into its canvas first.
