@@ -15,7 +15,7 @@ Open **Project Settings > Rendering > Post Processing**. Every effect is off in 
 | **Vignette** | **Vignette Weight** (1.5), **Vignette Color** (black) | Darkens the frame edges. |
 | **Color Grading** | **LUT Texture** | Remaps final colours through a lookup table. |
 | **FXAA** | None | Full-screen edge anti-aliasing. |
-| **Temporal Anti-Aliasing** | **Temporal Blend** (0.1), **Jitter Samples** (8) | Blends jittered frames to smooth edges and effect noise. Fast motion can ghost. |
+| **Temporal Anti-Aliasing** | **Temporal Blend** (0.1), **Jitter Samples** (8) | Blends jittered frames to smooth edges and effect noise. Shadow edges are filtered with a slightly different pattern each frame, so they also blend smoother. Fast motion can ghost. |
 | **FSR Upscaling** | **Render Scale** (0.67), **Sharpness** (0.2) | Renders at a lower resolution, then upscales and sharpens with AMD FSR 1. |
 
 For **Color Grading**, use a horizontal strip of square slices, such as 256×16 or 1024×32. Open the Texture and set **Usage** to **Color Grading LUT** so it stays uncompressed.

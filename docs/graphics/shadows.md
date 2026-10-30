@@ -64,6 +64,8 @@ At Low, when the camera's far clip is short, and for orthographic cameras, casca
 
 With **Contact Hardening (PCSS)**, the sun's penumbrae near the camera are narrower than with an even split, because each texel covers less ground.
 
+With **Temporal Anti-Aliasing** on, shadow edges are filtered with a slightly different pattern each frame and blend smoother over time. The shadow itself does not move. Captures, mirrors and reflection probes keep the fixed pattern.
+
 ## Override shadows in a scene
 
 1. Open the scene and clear the selection so the **Inspector** shows the scene's settings.
