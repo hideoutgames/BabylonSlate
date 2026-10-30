@@ -138,7 +138,7 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
     const capture = async (name: string) => {
       captures.push({ name, pixels: await draw(), screenShadows: reads() });
       planned.push([name, sceneRenderingSettings(scene).effectsPlan?.screenShadows ?? null, [
-        ...graph.taskNames(), `unsupported:${spatialEffectsUnsupported(scene) ?? "no"}`, `blend:${compiled.material.needAlphaBlending()}`,
+        ...graph.taskNames(), `unsupported:${spatialEffectsUnsupported(scene) ?? "no"}`, `mode:${compiled.material.transparencyMode}`,
         ...((floor.subMeshes[0] as unknown as { _drawWrappers: ({ effect?: { defines: string } } | undefined)[] })._drawWrappers ?? [])
           .map((wrapper, index) => `${index}:${/HAPTIC_SCREEN_SHADOWS/.test(wrapper?.effect?.defines ?? "")}:${/HAPTIC_CEL/.test(wrapper?.effect?.defines ?? "")}`),
       ]]);

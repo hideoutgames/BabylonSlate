@@ -1,6 +1,7 @@
 import {
   Constants,
   GetEnvironmentBRDFTexture,
+  Material,
   NodeMaterialBlock,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialBlockTargets,
@@ -91,13 +92,14 @@ function celMode(scene: Scene): boolean {
 
 /**
  * Whether `material` reads Screen-Space Shadows on `mesh` (`HAPTIC_SCREEN_SHADOWS`): while the Scene's plan carries them
- * (a world view's PBR Scene whose device draws the spatial geometry pass), for an opaque lit surface that is not water;
- * a blended or water surface is not what the depth holds. Scene-level as the warm-up compiles what the graph draws; a
+ * (a world view's PBR Scene whose device draws the spatial geometry pass), for an opaque or masked lit surface (the
+ * compiler's transparency mode) that is not water: a blended or water surface is not what the depth holds. Scene-level as the warm-up compiles what the graph draws; a
  * settings change, never a light change, flips it.
  */
 function screenShadows(scene: Scene, material: NodeMaterial, mesh: AbstractMesh, unlit: boolean): boolean {
   return sceneRenderingSettings(scene).effectsPlan?.screenShadows != null && !spatialEffectsUnsupported(scene) &&
-    !unlit && !material.needAlphaBlending() && !isWaterSurfaceMesh(mesh);
+    !unlit && material.transparencyMode !== Material.MATERIAL_ALPHABLEND &&
+    material.transparencyMode !== Material.MATERIAL_ALPHATESTANDBLEND && !isWaterSurfaceMesh(mesh);
 }
 
 const screenShadowEffects = new WeakMap<Effect, boolean>();
