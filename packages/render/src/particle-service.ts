@@ -222,6 +222,8 @@ export class ParticleService {
   private readonly waitingToStart = new Set<LiveComponent>();
   /** Programs of the systems the load prepared for its starting-state draw, kept compiled (`releaseSpawnableSystems`). */
   private readonly retainedPrograms: Effect[] = [];
+  /** Systems a starting-state draw drew unstarted (`drawingUnstartedSystems`). */
+  private readonly drawnUnstarted = new WeakSet<IParticleSystem>();
 
   constructor(options: {
     scene: Scene;
@@ -463,6 +465,18 @@ export class ParticleService {
   }
 
   /**
+   * Whether a system `prepareSpawnableSystems` prepared is ready but no starting-state draw has drawn it: one that became
+   * ready after its first draw, which only a further draw of it completes.
+   */
+  spawnableSystemsUndrawn(): boolean {
+    for (const entry of this.live.values()) {
+      if (!entry.warm || entry.state === "failed") continue;
+      if (entry.systems.some((record) => !record.pending && record.system.isReady() && !this.drawnUnstarted.has(record.system))) return true;
+    }
+    return false;
+  }
+
+  /**
    * Retires the systems `prepareSpawnableSystems` prepared, keeping their programs compiled (one reference each) until
    * the next load's or the session's end, as the starting state's Effects are: a spawn then neither compiles nor
    * first-draws them.
@@ -495,6 +509,7 @@ export class ParticleService {
       const system = record.system as ParticleSystem | GPUParticleSystem;
       if (record.started || record.pending || system.isStarted() || !system.isReady()) continue;
       warmed.push({ system, speed: system.updateSpeed, paused: system.paused, prewarm: system.preWarmCycles, emit: system.manualEmitCount });
+      this.drawnUnstarted.add(system);
       system.updateSpeed = 0;
       system.paused = false;
       system.preWarmCycles = 0;
