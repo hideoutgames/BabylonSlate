@@ -20,6 +20,7 @@ import {
   PointLight,
   Scene,
   SpotLight,
+  StandardMaterial,
   Vector3,
   VertexBuffer,
   type AbstractEngine,
@@ -294,9 +295,10 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
   setFixedShapeLightingWorldScene(scene);
   setSceneRenderSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS,
     temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } });
-  const floorMaterial = new PBRMaterial("floor", scene);
-  floorMaterial.albedoColor = new Color3(0.8, 0.8, 0.8);
-  floorMaterial.unlit = true;
+  // Unlit, and of another kind than the spawn's Material, so the spawn's variants are new.
+  const floorMaterial = new StandardMaterial("floor", scene);
+  floorMaterial.disableLighting = true;
+  floorMaterial.emissiveColor = new Color3(0.8, 0.8, 0.8);
   const floor = MeshBuilder.CreateGround("floor", { width: 6, height: 6 }, scene);
   floor.material = floorMaterial;
   const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
