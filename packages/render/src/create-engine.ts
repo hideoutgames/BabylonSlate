@@ -53,7 +53,6 @@ import type { SpawnableLight } from "./spawnable-lights";
 import { reserveSceneLightInventory } from "./scene-lighting";
 import { createLoadRehearsal, type LoadRehearsal, type LoadRehearsalReport } from "./load-rehearsal";
 import { estimateTextureMemory } from "./texture-memory-estimate";
-import { releaseLightPredictions } from "./variant-prediction";
 import { nativePreparationForEngine } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineOptions, EngineView, Material } from "@babylonjs/core";
@@ -2631,10 +2630,9 @@ function initializeEngine(
         const sceneLoadId = command.sceneLoadId;
         instanceCompileHold = () => worldLoading && sceneLoadId === worldLoadId;
         worldRenderer.invalidate();
-        // A presented load's rehearsal ends here: the next level keeps none of its Effects, nor its predictions.
+        // A presented load's rehearsal ends here: the next level keeps none of its Effects.
         endLoadRehearsal();
         releaseStaged();
-        releaseLightPredictions(scene);
         cancelPresentation(new Error("Scene loading was superseded."), "world");
       }
       // A failed load never reaches the warm-up that ends its hold.
