@@ -1,5 +1,5 @@
 import {
-  Color3, Color4, DirectionalLight, Engine, FreeCamera, HemisphericLight, Mesh, MeshBuilder, Quaternion, StandardMaterial, Scene,
+  Color3, Color4, DirectionalLight, Engine, FreeCamera, HemisphericLight, Mesh, MeshBuilder, Quaternion, Scene,
   Vector3, type AbstractEngine, type BaseTexture, type Material,
 } from "@babylonjs/core";
 import {
@@ -7,8 +7,8 @@ import {
   normalizeShadowSettings, normalizeWaterBody, type RenderTargetCaptureQuality,
 } from "@haptic/core";
 import {
-  applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh,
-  RenderTargetCaptures, setHapticLighting, setSceneWaterTime,
+  applyAuthoredLightProperties, builtInWaterMaterial, compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine,
+  createWaterMesh, RenderTargetCaptures, setHapticLighting, setSceneWaterTime,
 } from "@haptic/render";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { updateSceneRenderingSettings } from "@haptic/render/render-settings";
@@ -17,6 +17,19 @@ import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaul
 
 const QUALITIES: readonly RenderTargetCaptureQuality[] = ["fast", "fullQuality"];
 type Backend = "webgl2" | "webgpu";
+
+/** A rough graph Material of one colour, drawn with the lighting plan's light block. */
+async function matte(scene: Scene, name: string, color: Color3): Promise<Material> {
+  const doc = createDefaultMaterialDocument(name);
+  doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [color.r, color.g, color.b];
+  doc.nodes.find((node) => node.id === "output")!.properties[materialPinDefaultPropertyKey("roughness")] = [1];
+  const lowered = lowerMaterialDocument(doc);
+  if (!lowered.ok) throw new Error(`${name} did not lower`);
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name });
+  if (!compiled.ok) throw new Error(`${name} did not compile`);
+  await compiled.ready;
+  return compiled.material;
+}
 
 /**
  * A scene view over a flat, still lake on a red bed, plus a Fast and a Full
@@ -31,6 +44,8 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
     ? await createAppWebGpuEngine(canvas)
     : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(size, size);
+  // Graph Materials and built-in water compiled from here on draw with the light block.
+  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.55, 0.7, 0.9, 1);
   configureEditorRenderingGroups(scene);
@@ -45,13 +60,10 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
   scene.activeCamera = camera;
   new HemisphericLight("Sky", new Vector3(0.3, 1, -0.2), scene);
   const bed = MeshBuilder.CreateBox("Bed", { width: 10, height: 0.2, depth: 10 }, scene);
-  const red = new StandardMaterial("Red Bed", scene);
-  red.diffuseColor = new Color3(0.9, 0.12, 0.08);
-  bed.material = red;
+  bed.material = await matte(scene, "Red Bed", new Color3(0.9, 0.12, 0.08));
   bed.position.y = -1.2;
   const pier = MeshBuilder.CreateBox("Pier", { width: 1, height: 3, depth: 1 }, scene);
-  const grey = new StandardMaterial("Grey Pier", scene);
-  grey.diffuseColor = new Color3(0.7, 0.7, 0.7);
+  const grey = await matte(scene, "Grey Pier", new Color3(0.7, 0.7, 0.7));
   pier.material = grey;
   pier.position.set(1.5, 0, 1);
   for (let index = 0; index < boxes; index++) {
@@ -60,7 +72,7 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
     box.position.set((index % 20) * 0.5 - 5, 0.6 + Math.floor(index / 20) * 0.5, 4 + (index % 3));
   }
   createWaterMesh(scene, "Lake", normalizeWaterBody({ width: 10, length: 10, resolution: 32 }),
-    { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0, detailWaves: 0, refraction: 0.35 });
+    { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0, detailWaves: 0, refraction: 0.35 }, builtInWaterMaterial(scene));
   // A still surface: both views shade the same water.
   setSceneWaterTime(scene, 0);
   const view = new SceneRenderCoordinator(scene);
@@ -105,8 +117,13 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     await released;
-    const retainedBytes = managedRenderReservations(engine).reservedBytes;
+    // The light block's lookup tables are the Scene's until it goes, at WebGPU's next end-of-frame drain.
     scene.dispose();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    engine.beginFrame();
+    engine.endFrame();
+    const retainedBytes = managedRenderReservations(engine).reservedBytes;
+    setHapticLighting(engine, false);
     engine.dispose();
     canvas.remove();
     return retainedBytes;
@@ -189,11 +206,11 @@ const SHADOW_FAR_VIEW = new Vector3(0, 7, -214);
 
 /**
  * A pillar yard on a pale ground under a shadowed sun, rendered by the
- * production scene view, with one Full Quality capture over the yard.
- * `lightBlock`: the lighting plan's path, graph Materials drawn with its light
- * block and shadows in its atlas; else Standard materials. Numeric primitives only.
+ * production scene view, with one Full Quality capture over the yard: graph
+ * Materials drawn with the light block, shadows in its atlas. Numeric
+ * primitives only.
  */
-async function shadowHost(backend: Backend, size: number, lightBlock: boolean) {
+async function shadowHost(backend: Backend, size: number) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   document.getElementById("root")!.append(canvas);
@@ -205,24 +222,7 @@ async function shadowHost(backend: Backend, size: number, lightBlock: boolean) {
   scene.clearColor = new Color4(0.55, 0.7, 0.9, 1);
   configureEditorRenderingGroups(scene);
   // Graph Materials compiled from here on draw with the light block.
-  setHapticLighting(engine, lightBlock);
-  const matte = async (name: string, color: Color3): Promise<Material> => {
-    if (!lightBlock) {
-      const material = new StandardMaterial(name, scene);
-      material.diffuseColor = color;
-      material.specularColor = Color3.Black();
-      return material;
-    }
-    const doc = createDefaultMaterialDocument(name);
-    doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [color.r, color.g, color.b];
-    doc.nodes.find((node) => node.id === "output")!.properties[materialPinDefaultPropertyKey("roughness")] = [1];
-    const lowered = lowerMaterialDocument(doc);
-    if (!lowered.ok) throw new Error(`${name} did not lower`);
-    const compiled = compileMaterialPlan(lowered.plan, { scene, name });
-    if (!compiled.ok) throw new Error(`${name} did not compile`);
-    await compiled.ready;
-    return compiled.material;
-  };
+  setHapticLighting(engine, true);
   const camera = new FreeCamera("Main Camera", SHADOW_FAR_VIEW.clone(), scene);
   camera.rotationQuaternion = SHADOW_LENS.rotation.clone();
   camera.fov = 50 * Math.PI / 180;
@@ -230,13 +230,13 @@ async function shadowHost(backend: Backend, size: number, lightBlock: boolean) {
   camera.maxZ = 100;
   scene.activeCamera = camera;
   new HemisphericLight("Sky", new Vector3(0, 1, 0), scene).intensity = 0.35;
-  // Low and behind the yard, so long shadows fall toward the lens. The light block's diffuse divides by π, as PBR's does.
+  // Low and behind the yard, so long shadows fall toward the lens. The light block's diffuse divides by π.
   const sun = new DirectionalLight("Sun", new Vector3(0.35, -0.75, -0.8), scene);
-  const sunIntensity = lightBlock ? 1.4 * Math.PI : 1.4;
+  const sunIntensity = 1.4 * Math.PI;
   applyAuthoredLightProperties(sun, { intensity: sunIntensity, color: [1, 1, 1], castShadows: true });
   const ground = MeshBuilder.CreateGround("Ground", { width: 600, height: 600 }, scene);
-  ground.material = await matte("Pale Ground", new Color3(0.85, 0.85, 0.8));
-  const grey = await matte("Grey Pillar", new Color3(0.6, 0.6, 0.65));
+  ground.material = await matte(scene, "Pale Ground", new Color3(0.85, 0.85, 0.8));
+  const grey = await matte(scene, "Grey Pillar", new Color3(0.6, 0.6, 0.65));
   for (const [x, z, height] of [[-5, 4, 5], [-2, 7, 6], [1, 3, 4], [4, 6, 6], [7, 2, 5], [-7, 9, 6], [2, 10, 7]] as const) {
     const pillar = MeshBuilder.CreateBox(`Pillar ${x} ${z}`, { width: 1.2, height, depth: 1.2 }, scene);
     pillar.material = grey;
@@ -297,8 +297,7 @@ async function shadowHost(backend: Backend, size: number, lightBlock: boolean) {
  * A Full Quality capture over a pillar yard far from the scene camera, against
  * the scene view's own image after its camera moves to the capture's pose and
  * lens: the sun shadows in view must be the ones that view draws. Cascaded and
- * single-map (Low) sun shadows, with Standard materials and on the light
- * block's path (its atlas). `shadowContrast` is how much the reference
+ * single-map (Low) sun shadows, in the light block's atlas. `shadowContrast` is how much the reference
  * changes without sun shadows, so a match cannot come from shadows missing in both.
  */
 export async function runRenderTargetShadowProof(backend: Backend) {
@@ -308,44 +307,41 @@ export async function runRenderTargetShadowProof(backend: Backend) {
     ["cascaded", normalizeShadowSettings({ cascades: 2, distance: 50, mapSize: 1024 })],
     ["low", normalizeShadowSettings({ profile: "low" })],
   ] as const;
-  let effectiveBackend = "";
-  let mainCameraPreserved = true;
-  let retainedBytes = 0;
-  for (const lightBlock of [false, true]) {
-    const host = await shadowHost(backend, size, lightBlock);
-    try {
-      for (const [label, shadows] of shadowSettings) {
-        updateSceneRenderingSettings(host.scene, { shadows });
-        host.camera.position.copyFrom(SHADOW_FAR_VIEW);
-        // A fresh capture, so it publishes only images drawn with this case's settings.
-        host.configure(false);
-        host.configure(true);
-        await host.settle(() => host.captures.diagnostics().every((entry) => entry.published), `${label} capture`);
-        host.frame(); host.frame();
-        const capture = await readCapture(host.output, size);
-        host.configure(false);
-        host.camera.position.copyFrom(SHADOW_LENS.position);
-        await host.settle(() => true, `${label} view at the capture pose`);
-        host.frame(); host.frame();
-        const reference = await readView(host.engine, backend, size);
-        applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: false });
-        await host.settle(() => true, `${label} view without sun shadows`);
-        host.frame(); host.frame();
-        const unshadowed = await readView(host.engine, backend, size);
-        applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: true });
-        cases[lightBlock ? `light block ${label}` : label] = {
-          fullQuality: meanError(reference, capture), shadowContrast: meanError(reference, unshadowed),
-        };
-      }
-      effectiveBackend = host.engine.isWebGPU ? "webgpu" : "webgl2";
-      mainCameraPreserved &&= host.scene.activeCamera === host.camera;
-    } catch (error) {
-      await host.dispose().catch(() => {});
-      throw error;
+  const host = await shadowHost(backend, size);
+  try {
+    for (const [label, shadows] of shadowSettings) {
+      updateSceneRenderingSettings(host.scene, { shadows });
+      host.camera.position.copyFrom(SHADOW_FAR_VIEW);
+      // A fresh capture, so it publishes only images drawn with this case's settings.
+      host.configure(false);
+      host.configure(true);
+      await host.settle(() => host.captures.diagnostics().every((entry) => entry.published), `${label} capture`);
+      host.frame(); host.frame();
+      const capture = await readCapture(host.output, size);
+      host.configure(false);
+      host.camera.position.copyFrom(SHADOW_LENS.position);
+      await host.settle(() => true, `${label} view at the capture pose`);
+      host.frame(); host.frame();
+      const reference = await readView(host.engine, backend, size);
+      applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: false });
+      await host.settle(() => true, `${label} view without sun shadows`);
+      host.frame(); host.frame();
+      const unshadowed = await readView(host.engine, backend, size);
+      applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: true });
+      cases[label] = {
+        fullQuality: meanError(reference, capture), shadowContrast: meanError(reference, unshadowed),
+      };
     }
-    retainedBytes += await host.dispose();
+    return {
+      effectiveBackend: host.engine.isWebGPU ? "webgpu" : "webgl2",
+      cases,
+      mainCameraPreserved: host.scene.activeCamera === host.camera,
+      retainedBytes: await host.dispose(),
+    };
+  } catch (error) {
+    await host.dispose().catch(() => {});
+    throw error;
   }
-  return { effectiveBackend, cases, mainCameraPreserved, retainedBytes };
 }
 
 /**

@@ -257,10 +257,10 @@ for (const backend of ["webgl2"] as const) {
   });
 }
 
-// On the light block's path the march reads each light's views of the shadow atlas (its WGSL twin too): its fog matches
-// the legacy march's on the lights' own maps, and the occluder still cuts the beam.
+// The march reads each light's views of the shadow atlas (its WGSL twin too): the occluder cuts the beam exactly where
+// the view's rays cross its shadow, and the fog elsewhere is the unshadowed light's.
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`volumetric shadows on the light block's path match the legacy path's on ${backend}`, async ({ page }, testInfo) => {
+  test(`volumetric shadows cut the beam where the occluder shadows it on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -282,15 +282,42 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await testInfo.attach("volumetric-shadow-pixels", { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(result.reservations.reservedBytes).toBe(0);
-    const [legacy, block] = result.volumetricShadowCaptures;
-    expect([legacy?.lightBlock, block?.lightBlock]).toEqual([false, true]);
+    expect(result.volumetricShadowCaptures).toHaveLength(1);
+    const { off, shadowed, open, beam } = result.volumetricShadowCaptures[0]!;
     const brighter = (a: number[], b: number[], by: number) => a.filter((value, i) => i % 4 === 0 && value > b[i]! + by).length;
-    for (const capture of [legacy!, block!]) {
-      const path = capture.lightBlock ? "light block" : "legacy";
-      expect(brighter(capture.shadowed, capture.off, 8), `${path}: the beam fogs the view`).toBeGreaterThan(20);
-      expect(brighter(capture.open, capture.shadowed, 3), `${path}: the occluder's shadow cuts the beam`).toBeGreaterThan(20);
-    }
-    expect(pixelDifference(legacy!.shadowed, block!.shadowed), "the light block's shadowed fog").toBeLessThan(1);
-    expect(pixelDifference(legacy!.open, block!.open), "unshadowed fog").toBeLessThan(0.5);
+    expect(brighter(shadowed, off, 8), "the beam fogs the view").toBeGreaterThan(20);
+    /**
+     * Pixels whose view ray, and each neighbour's, passes `test`: given how far it runs through the beam's shadow up to
+     * the surface and in the march step past it (the march may sample there). Neighbours too, as the march's coarser
+     * buffer blends a pixel with them.
+     */
+    const settled = (test: (shadowed: number, beyond: number) => boolean) => {
+      const pixels: number[] = [];
+      for (let row = 2; row < beam.height - 2; row++)
+        for (let column = 2; column < beam.width - 2; column++) {
+          let all = true;
+          for (let dy = -2; dy <= 2 && all; dy++)
+            for (let dx = -2; dx <= 2 && all; dx++) {
+              const at = (row + dy) * beam.width + column + dx;
+              all = test(beam.shadowed[at]!, beam.shadowedBeyond[at]!);
+            }
+          if (all) pixels.push(row * beam.width + column);
+        }
+      return pixels;
+    };
+    const largest = (pixel: number) => Math.max(...[0, 1, 2].map((channel) => Math.abs(shadowed[pixel * 4 + channel]! - open[pixel * 4 + channel]!)));
+    // Rays that never enter the shadow, through the lit beam or past it: the same fog with and without the shadow.
+    const unshadowed = settled((shadow, beyond) => shadow === 0 && beyond === 0);
+    const unshadowedApart = unshadowed.filter((pixel) => largest(pixel) > 1);
+    // Rays that run through a metre or more of the shadow: darker than with the shadow off.
+    const cut = settled((shadow) => shadow >= 1);
+    const cutLit = cut.filter((pixel) => open[pixel * 4]! - shadowed[pixel * 4]! <= 3);
+    await testInfo.attach("volumetric-shadow-mask", {
+      body: JSON.stringify({ unshadowed: unshadowed.length, unshadowedApart, cut: cut.length, cutLit }), contentType: "application/json",
+    });
+    expect(unshadowed.length, "rays clear of the shadow").toBeGreaterThan(1000);
+    expect(unshadowedApart, "fog clear of the shadow is the unshadowed light's").toEqual([]);
+    expect(cut.length, "rays through the shadow").toBeGreaterThan(100);
+    expect(cutLit, "the occluder's shadow cuts the beam").toEqual([]);
   });
 }

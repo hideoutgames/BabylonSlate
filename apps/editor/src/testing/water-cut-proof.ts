@@ -66,6 +66,8 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     ? await createAppWebGpuEngine(canvas)
     : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const order = readbackChannelOrder(engine.isWebGPU);
+  // Graph Materials compile with the lighting plan's block.
+  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   try {
     // One depth buffer across rendering groups, as the editor's scenes keep it: the water's scene copy needs it.
@@ -100,8 +102,6 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     const centre = new Vector3(1.5, 0, 0);
     const captures: { material: string; cut: boolean; pixels: number[] }[] = [];
     for (const kind of MATERIALS) {
-      // The switch picks the lighting block when a Material compiles.
-      setHapticLighting(engine, kind === "lit");
       const lowered = lowerMaterialDocument(waterDocument(kind));
       if (!lowered.ok) throw new Error(`${kind} did not lower`);
       const compiled = compileMaterialPlan(lowered.plan, { scene, name: kind });
@@ -120,7 +120,6 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     // The water starter, lit by HapticLightingBlock: every water node compiles and draws on this backend, and in the
     // scene effects' geometry pass, which it leaves its normal and reflectivity out of. Medium, the default tier, skips
     // Real-Time Reflections.
-    setHapticLighting(engine, true);
     setSceneRenderSettings(scene, {
       mode: "pbr", shadows, effects: normalizeRenderEffectsSettings({ ambientOcclusion: { enabled: true }, reflections: { enabled: true } }),
       quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),
