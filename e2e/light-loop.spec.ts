@@ -56,6 +56,5 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(reached).toBeLessThan(12);
     // The clusters cut most of the iterations a pixel spends on lights out of its reach.
     expect(clustered).toBeLessThan(visited / 2);
-    console.log(`light loop on ${backend}: visited ${visited.toFixed(2)}, reached ${reached.toFixed(2)}, clustered ${clustered.toFixed(2)}`);
   });
 }

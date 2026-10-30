@@ -9,6 +9,7 @@ import {
   TmpVectors,
   UniformBuffer,
   Vector3,
+  type Camera,
   type DataBuffer,
   type Effect,
   type Light,
@@ -98,6 +99,8 @@ type SceneLights = {
   /** The clusters' block as written (`HAPTIC_CLUSTERS_GLSL`), its GPU buffer and the local lights it was built from. */
   clusterWords: Float32Array; clusterMasks: Uint32Array; clusterHeader: Float32Array; clusterBuffer: DataBuffer | null;
   clusterLights: ClusterLight[];
+  /** The camera the clusters were last built for; another active camera rebuilds them at its first bind. */
+  clusterCamera: Camera | null;
 };
 const scenes = new WeakMap<Scene, SceneLights>();
 const directional = new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8);
@@ -134,6 +137,7 @@ function sceneLights(scene: Scene): SceneLights {
       clusterWords, clusterMasks: new Uint32Array(clusterWords.buffer, CLUSTER_HEADER_FLOATS * 4),
       clusterHeader: clusterWords.subarray(0, CLUSTER_HEADER_FLOATS),
       clusterBuffer: scene.getEngine().createUniformBuffer(clusterWords, "HapticClusters"), clusterLights: [],
+      clusterCamera: null,
     };
     scenes.set(scene, lights);
     // A map draws after the block's write, with the views it is then sampled by.
@@ -144,8 +148,6 @@ function sceneLights(scene: Scene): SceneLights {
     });
     // A view with its own sun map (a Full Quality capture's) draws with it, and the scene view with its own after.
     const cameraChanged = scene.onActiveCameraChanged.add(() => {
-      // The clusters follow the rendering camera (a capture's); masks built for another camera stay correct, only coarser.
-      writeClusters(scene, state);
       if (!state.sun || sunShadowMap(scene, state.sun) === state.sunWritten) return;
       writeShadowViews(scene, state);
       state.buffer.update();
@@ -168,13 +170,18 @@ function sceneLights(scene: Scene): SceneLights {
 
 /** Builds `state`'s clusters for the Scene's active camera from its local lights as last written, and uploads them. */
 function writeClusters(scene: Scene, state: SceneLights): void {
+  state.clusterCamera = scene.activeCamera;
   buildLightClusters(state.clusterMasks, state.clusterHeader, state.clusterLights, scene.activeCamera, scene.floatingOriginOffset);
   if (state.clusterBuffer) scene.getEngine().updateUniformBuffer(state.clusterBuffer, state.clusterWords);
 }
 
 /** Bind the clusters' block for a draw with `effect`, which reads it. */
 export function bindHapticClusters(scene: Scene, effect: Effect): void {
-  const buffer = sceneLights(scene).clusterBuffer;
+  const state = sceneLights(scene);
+  // The clusters follow the rendering camera (a capture's), built at its first draw; masks built for another camera
+  // stay correct, only coarser.
+  if (state.clusterCamera !== scene.activeCamera) writeClusters(scene, state);
+  const buffer = state.clusterBuffer;
   if (buffer) effect.bindUniformBuffer(buffer, "HapticClusters");
 }
 
