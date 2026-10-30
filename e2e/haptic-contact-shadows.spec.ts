@@ -58,7 +58,7 @@ function lightShare(drawn: number[], open: number[], unlit: number[], pixel: num
 }
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`Contact Hardening on the light block draws Babylon's PCSS from the shadow atlas on ${backend}`, async ({ page }, testInfo) => {
+  test(`Contact Hardening on the light block draws from the shadow atlas, as Babylon's PCSS for local lights and against the receiver's plane for the sun, on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -125,6 +125,14 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(point.umbra).toBeGreaterThan(400);
     expect(point.openShadowed).toBe(0);
     expect(point.umbraShare).toBeLessThan(1 / 3);
+    // The sun's cascades compare against the receiver's plane, so the floor does not shadow itself as under Babylon's
+    // PCSS: three pixels from the outline the open floor is as lit as without the shadow, and the shadowed floor keeps
+    // under half the light (measured: 0.41 and 0.40).
+    const sunMask = (report["sun mask"] as Record<number, { umbra: number; umbraShare: number; open: number; openShadowed: number }>)[3]!;
+    expect(sun.shadowed).toBeGreaterThan(300);
+    expect(sunMask.umbra).toBeGreaterThan(150);
+    expect(sunMask.openShadowed).toBe(0);
+    expect(sunMask.umbraShare).toBeLessThan(0.5);
     // CEL draws Contact Hardening as PCF.
     expect(report.cel).toEqual({ differing: 0 });
   });
