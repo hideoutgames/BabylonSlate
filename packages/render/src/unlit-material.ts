@@ -404,6 +404,17 @@ export function copyMaterialOf(target: AbstractMesh, source: AbstractMesh): void
   else target.material = source.material;
 }
 
+/** Captures how `mesh` draws now (its unlit Material and binding, or its other material) and returns its restore. */
+export function materialRestore(mesh: AbstractMesh): () => void {
+  const material = mesh.material;
+  const instance = material && instanceOf.get(material);
+  if (instance && hasUnlitBinding(mesh)) {
+    const binding = unlitBinding(mesh);
+    return () => { setUnlitMaterial(mesh, instance.key, binding); };
+  }
+  return () => { mesh.material = material; };
+}
+
 /** Whether `mesh` has an unlit binding (`setUnlitMaterial`). */
 export function isUnlitMesh(mesh: AbstractMesh): boolean {
   return hasUnlitBinding(mesh) && isUnlitMaterial(mesh.material);
