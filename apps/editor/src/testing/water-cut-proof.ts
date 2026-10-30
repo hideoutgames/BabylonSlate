@@ -11,7 +11,7 @@ import {
 } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import {
-  compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setHapticLighting, setSceneRenderSettings, updateSceneWater,
+  compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setSceneRenderSettings, updateSceneWater,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialDocument } from "@haptic/shader-graph";
@@ -66,8 +66,6 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     ? await createAppWebGpuEngine(canvas)
     : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const order = readbackChannelOrder(engine.isWebGPU);
-  // Graph Materials compile with the lighting plan's block.
-  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   try {
     // One depth buffer across rendering groups, as the editor's scenes keep it: the water's scene copy needs it.
@@ -185,7 +183,6 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     graph.dispose();
     return { width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, geometryEffects, starterPixels, starterCopied, fogDirect, fogThrough, glintPixels };
   } finally {
-    setHapticLighting(engine, false);
     scene.dispose();
     engine.dispose();
     canvas.remove();

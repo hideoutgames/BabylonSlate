@@ -4,8 +4,6 @@ import {
   DirectionalLight,
   FreeCamera,
   HemisphericLight,
-  InternalTexture,
-  InternalTextureSource,
   MeshBuilder,
   NullEngine,
   PointLight,
@@ -24,7 +22,7 @@ import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } fro
 import { retainAreaLightLookup } from "./area-light-resources";
 import { CelLightBlock } from "./cel-light-block";
 import { HapticLightingBlock } from "./haptic-lighting-block";
-import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, setHapticLighting } from "./haptic-lights";
+import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer } from "./haptic-lights";
 import { isForwardLightExcluded } from "./light-policy";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { compileMaterialPlan } from "./material-compiler";
@@ -44,13 +42,10 @@ afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
-/** A NullEngine Scene that reports uniform buffers, as WebGL2 does, and makes the texture arrays and depth textures it cannot. */
+/** A NullEngine Scene (the light block's shape, `test-support/light-block-engine.ts`). */
 function host() {
   const engine = new NullEngine();
   engines.push(engine);
-  vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
-  vi.spyOn(engine, "createRawTexture2DArray").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.Raw2DArray));
-  vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
   const scene = new Scene(engine);
   new FreeCamera("camera", new Vector3(0, 0, -5), scene);
   return { engine, scene };
@@ -78,9 +73,8 @@ async function drawnDefines(scene: Scene, mesh: Mesh, material: NodeMaterial): P
 
 describe("HapticLightingBlock and the HapticLights block", () => {
   it("lights PBR graphs from the light block, with no light define, so no light change recompiles them", async () => {
-    const { engine, scene } = host();
+    const { scene } = host();
     new PointLight("lamp", new Vector3(0, 2, 0), scene);
-    setHapticLighting(engine, true);
     const { mesh, material } = await litBox(scene);
     expect(material.attachedBlocks.some((block) => block instanceof HapticLightingBlock)).toBe(true);
     expect(material.attachedBlocks.some((block) => block instanceof ScenePbrLightingBlock)).toBe(false);
@@ -97,9 +91,8 @@ describe("HapticLightingBlock and the HapticLights block", () => {
   });
 
   it("draws CEL as a define of the same graph, which a render-mode change re-prepares even when frozen", async () => {
-    const { engine, scene } = host();
+    const { scene } = host();
     new PointLight("lamp", new Vector3(0, 2, 0), scene);
-    setHapticLighting(engine, true);
     setSceneRenderSettings(scene, { mode: "cel" });
     const { mesh, material } = await litBox(scene);
     const lighting = material.attachedBlocks.find((block) => block instanceof HapticLightingBlock);
@@ -118,8 +111,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
   });
 
   it("binds every texture a program declares, as WebGPU needs: the split-sum table in both modes, the cube only where declared", async () => {
-    const { engine, scene } = host();
-    setHapticLighting(engine, true);
+    const { scene } = host();
     const { mesh, material } = await litBox(scene);
     // A Scene without an environment cube compiles no cube sampler.
     expect(material.compiledShaders).toMatch(/#if defined\(HAPTIC_ENVIRONMENT\)\s+uniform samplerCube hapticEnvironmentSampler;/);
@@ -135,8 +127,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
   });
 
   it("binds the shadow atlas to every draw, compared and read plainly, and whether the drawn mesh receives shadows", async () => {
-    const { engine, scene } = host();
-    setHapticLighting(engine, true);
+    const { scene } = host();
     const { mesh, material } = await litBox(scene);
     await drawnDefines(scene, mesh, material);
     const effect = mesh.subMeshes[0]!.effect!, atlases: unknown[] = [], receivers: number[] = [];
@@ -156,7 +147,6 @@ describe("HapticLightingBlock and the HapticLights block", () => {
 
   it("reads the atlas plainly on WebGL2 through a sampler object without compare on its own unit, which a texture bound there next does without", async () => {
     const { engine, scene } = host();
-    setHapticLighting(engine, true);
     const { mesh, material } = await litBox(scene);
     await drawnDefines(scene, mesh, material);
     // The WebGL2 context's sampler objects, which NullEngine has none of.
@@ -188,17 +178,8 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(bound.get(plain)).toBeNull();
   });
 
-  it("leaves graphs on Babylon's PBR block while the switch is off", async () => {
-    const { scene } = host();
-    new PointLight("lamp", new Vector3(0, 2, 0), scene);
-    const { mesh, material } = await litBox(scene);
-    expect(material.attachedBlocks.some((block) => block instanceof ScenePbrLightingBlock)).toBe(true);
-    expect(await drawnDefines(scene, mesh, material)).toEqual(expect.arrayContaining(["#define LIGHT0"]));
-  });
-
   it("writes the Scene's lights as records, the first hemispheric light as the fill and rect lights by their half extents", async () => {
-    const { engine, scene } = host();
-    setHapticLighting(engine, true);
+    const { scene } = host();
     const fill = new HemisphericLight("fill", Vector3.Up(), scene);
     fill.diffuse = new Color3(0.5, 0.5, 1);
     fill.groundColor = new Color3(0.2, 0.1, 0);
@@ -239,7 +220,6 @@ describe("HapticLightingBlock and the HapticLights block", () => {
 
   it("names each spot light's shadow view of the atlas in its record, after the sun's: its transform, tile, darkness, filter and Contact Hardening's terms", () => {
     const { engine, scene } = host();
-    setHapticLighting(engine, true);
     // WebGL2's compare samplers, which Babylon needs for PCF and Contact Hardening (NullEngine has none).
     engine._features.supportShadowSamplers = true;
     const spots = [0, 1, 2].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene));
@@ -279,7 +259,6 @@ describe("HapticLightingBlock and the HapticLights block", () => {
 
   it("writes the shadowed sun's cascades as views, and how the block chooses between them, as they were last drawn", () => {
     const { engine, scene } = host();
-    setHapticLighting(engine, true);
     engine._features.supportCSM = true;
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     const generator = createAtlasCascadedShadowGenerator(sun, EDGE / 4, 3, EDGE)!;
@@ -300,9 +279,6 @@ describe("HapticLightingBlock and the HapticLights block", () => {
       [0, 0, 0.25, texel, 0, 2, 1, 0], [0.25, 0, 0.25, texel, 0, 2, 1, 0], [0, 0.25, 0.25, texel, 0, 2, 1, 0],
     ]);
     // Drawn, the views and splits are the ones the cascades were drawn with, and the block takes them at once.
-    // NullEngine has no scissor.
-    vi.spyOn(engine, "enableScissor").mockImplementation(() => {});
-    vi.spyOn(engine, "disableScissor").mockImplementation(() => {});
     scene.incrementRenderId();
     scene.updateTransformMatrix(true);
     generator.getShadowMap()!.render();
@@ -324,8 +300,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
   });
 
   it("draws a point light's shadow as six face tiles of the atlas, in Babylon's face order, filtered with PCF", () => {
-    const { engine, scene } = host();
-    setHapticLighting(engine, true);
+    const { scene } = host();
     const lamp = new PointLight("lamp", new Vector3(0, 2, 0), scene);
     const generator = createAtlasShadowGenerator(lamp, EDGE / 4, EDGE)!;
     generator.usePercentageCloserFiltering = true;
@@ -338,8 +313,6 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     // Its record's shadow: the first view after the sun's and six faces.
     expect(read("hapticPoint", 8, 4)).toEqual([4, 6, 0, 0]);
     // Drawn, each face's view is the one Babylon drew that face with: face 2 looks down.
-    vi.spyOn(engine, "enableScissor").mockImplementation(() => {});
-    vi.spyOn(engine, "disableScissor").mockImplementation(() => {});
     generator.getShadowMap()!.render();
     const below = Vector3.TransformCoordinates(new Vector3(0, 0, 0), generator.drawnViews[2]!);
     const above = Vector3.TransformCoordinates(new Vector3(0, 0, 0), generator.drawnViews[3]!);
@@ -350,7 +323,6 @@ describe("HapticLightingBlock and the HapticLights block", () => {
 
   it("writes the sun's cascades of the camera rendering: a view's own map while it draws, the scene view's after", () => {
     const { engine, scene } = host();
-    setHapticLighting(engine, true);
     engine._features.supportCSM = true;
     const main = scene.activeCamera!;
     const capture = new FreeCamera("capture", new Vector3(20, 6, 20), scene);
@@ -385,8 +357,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
   });
 
   it("makes the atlas again after a failed shadow allocation released it with the first tile", () => {
-    const { engine, scene } = host();
-    setHapticLighting(engine, true);
+    const { scene } = host();
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene);
     const placeholder = shadowAtlasTexture(scene);
     // As a failed allocation check releases what the attempt made.
@@ -406,8 +377,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
   });
 
   it("draws the lights nearest the camera within the Local Light Budget and this device's maximum, and reports the rest", () => {
-    const { engine, scene } = host();
-    setHapticLighting(engine, true);
+    const { scene } = host();
     const lamps = Array.from({ length: 20 }, (_, index) => new PointLight(`lamp ${index}`, new Vector3(0, 0, index + 1), scene));
     const sun = new DirectionalLight("sun", new Vector3(0, -1, 0), scene);
     new DirectionalLight("second sun", new Vector3(0, -1, 0), scene);
@@ -441,9 +411,8 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(sceneLightingLimits(scene).join()).toMatch(/Limited: second fill$/);
   });
 
-  it("draws the preview studio rig whole, as the legacy path does: one directional key and one fill", () => {
-    const { engine, scene } = host();
-    setHapticLighting(engine, true);
+  it("draws the preview studio rig whole: one directional key and one fill", () => {
+    const { scene } = host();
     createPreviewLighting(scene);
     syncSceneLighting(scene);
     const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
@@ -454,8 +423,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
   });
 
   it("gives each distinct rect light emission a layer of one array, rebuilt only when the set changes", () => {
-    const { engine, scene } = host();
-    setHapticLighting(engine, true);
+    const { scene } = host();
     retainAreaLightLookup(scene);
     const emission = (hash: string) =>
       ({ metadata: { processor: "test", pixelsHash: hash, width: 1, height: 1 }, rgba: new Uint8Array(4) }) as unknown as AreaEmissionPixels;

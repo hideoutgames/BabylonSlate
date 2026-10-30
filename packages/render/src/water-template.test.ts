@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FreeCamera, InternalTexture, InternalTextureSource, NullEngine, PBRMaterial, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { FreeCamera, NullEngine, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
-import { setHapticLighting } from "./haptic-lights";
 import { createWaterMesh, isBuiltInWaterMesh } from "./water-mesh";
 import { meshWaterNodeSurface } from "./water-node-blocks";
 import { builtInWaterMaterial } from "./water-template";
@@ -9,32 +8,18 @@ import { builtInWaterMaterial } from "./water-template";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
 
-/** A NullEngine Scene that reports uniform buffers, as WebGL2 does, and makes the texture arrays and depth textures it cannot. */
 function host() {
   const engine = new NullEngine();
-  vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
-  vi.spyOn(engine, "createRawTexture2DArray").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.Raw2DArray));
-  vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
   const scene = new Scene(engine);
   new FreeCamera("camera", new Vector3(0, 6, -12), scene);
-  disposers.push(() => { setHapticLighting(engine, false); scene.dispose(); engine.dispose(); });
-  return { engine, scene };
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  return { scene };
 }
 
 describe("Built-in water's graph Material", () => {
-  it("is null while graph Materials draw with Babylon's lighting, so built-in water keeps its plugin", () => {
+  it("is one water starter Material per Scene, shared by every body as built-in water", async () => {
     const { scene } = host();
-    expect(builtInWaterMaterial(scene)).toBeNull();
-    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
-    expect(lake.material).toBeInstanceOf(PBRMaterial);
-    expect(isBuiltInWaterMesh(lake)).toBe(true);
-  });
-
-  it("is one water starter Material per Scene under the lighting block, shared by every body as built-in water", async () => {
-    const { engine, scene } = host();
-    setHapticLighting(engine, true);
-    const material = builtInWaterMaterial(scene)!;
-    expect(material).not.toBeNull();
+    const material = builtInWaterMaterial(scene);
     expect(builtInWaterMaterial(scene)).toBe(material);
     const body = normalizeWaterBody({ resolution: 8 });
     const lake = createWaterMesh(scene, "lake", body, createDefaultWaterDefinition(), material);

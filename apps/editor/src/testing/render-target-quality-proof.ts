@@ -8,7 +8,7 @@ import {
 } from "@haptic/core";
 import {
   applyAuthoredLightProperties, builtInWaterMaterial, compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine,
-  createWaterMesh, RenderTargetCaptures, setHapticLighting, setSceneWaterTime,
+  createWaterMesh, RenderTargetCaptures, setSceneWaterTime,
 } from "@haptic/render";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { updateSceneRenderingSettings } from "@haptic/render/render-settings";
@@ -44,8 +44,6 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
     ? await createAppWebGpuEngine(canvas)
     : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(size, size);
-  // Graph Materials and built-in water compiled from here on draw with the light block.
-  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.55, 0.7, 0.9, 1);
   configureEditorRenderingGroups(scene);
@@ -123,7 +121,6 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
     engine.beginFrame();
     engine.endFrame();
     const retainedBytes = managedRenderReservations(engine).reservedBytes;
-    setHapticLighting(engine, false);
     engine.dispose();
     canvas.remove();
     return retainedBytes;
@@ -221,8 +218,6 @@ async function shadowHost(backend: Backend, size: number) {
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.55, 0.7, 0.9, 1);
   configureEditorRenderingGroups(scene);
-  // Graph Materials compiled from here on draw with the light block.
-  setHapticLighting(engine, true);
   const camera = new FreeCamera("Main Camera", SHADOW_FAR_VIEW.clone(), scene);
   camera.rotationQuaternion = SHADOW_LENS.rotation.clone();
   camera.fov = 50 * Math.PI / 180;
@@ -285,7 +280,6 @@ async function shadowHost(backend: Backend, size: number) {
     engine.beginFrame();
     engine.endFrame();
     const retainedBytes = managedRenderReservations(engine).reservedBytes;
-    setHapticLighting(engine, false);
     engine.dispose();
     canvas.remove();
     return retainedBytes;

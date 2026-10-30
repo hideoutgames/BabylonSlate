@@ -14,6 +14,7 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { prepareScenePostProcessPlan } from "./scene-post-process-plan";
+import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import {
   createScenePostProcessGraph,
   type ScenePostProcessGraph,
@@ -358,12 +359,15 @@ it("shares one demanded geometry set and isolated Z, reconciles every output, an
   ).toBe(Constants.TEXTURETYPE_FLOAT);
   const totals = managedRenderReservations(h.engine);
   expect(totals.pendingBytes).toBe(0);
-  expect(totals.reservedBytes).toBeLessThanOrEqual(4736);
+  // Beside the light block's LTC tables, which the Scene holds while the block exists.
+  expect(totals.categoryBytes.areaLight).toBe(AREA_LIGHT_LOOKUP_BYTES);
+  expect(totals.reservedBytes - AREA_LIGHT_LOOKUP_BYTES).toBeLessThanOrEqual(4736);
   expect(totals.categoryBytes.geometry).toBe(2560);
   expect(totals.categoryBytes.depth).toBe(1024);
   expect(() => owner.releaseAfterGraphDisposal()).toThrow(/Dispose/);
   await h.retire();
-  expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
+  // The graph's targets go with it; the LTC tables stay with the Scene.
+  expect(managedRenderReservations(h.engine).reservedBytes).toBe(AREA_LIGHT_LOOKUP_BYTES);
 });
 
 it("keeps duplicate entry parameters independent and resets the saved value without an asset mutation", async () => {

@@ -39,7 +39,6 @@ import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
-import { setHapticLighting } from "./haptic-lights";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, isAtlasShadow, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
 
 const engines: NullEngine[] = [];
@@ -107,8 +106,6 @@ describe("shared shadow lifecycle", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     enableHeadlessCascades(engine);
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 3, maxLocalLights: 1 }) });
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     controller.register(sun, true);
@@ -129,10 +126,6 @@ describe("shared shadow lifecycle", () => {
 
   it("draws a point light's shadow as six face tiles of the light block's atlas, filtered with PCF", () => {
     const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
-    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
     const lamp = new PointLight("lamp", new Vector3(0, 2, 0), scene);
     controller.register(lamp, true);
     controller.sync();
@@ -148,10 +141,6 @@ describe("shared shadow lifecycle", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     Object.assign(engine.getCaps(), { maxTextureSize: 8192 });
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
-    // NullEngine makes no depth texture.
-    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
     controller.register(spot, true);
     controller.sync();
@@ -1649,8 +1638,6 @@ describe("atlas caster variants", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     enableHeadlessCascades(engine);
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades, maxLocalLights: 2 }) });
     // Posed with a non-uniform scale, as a level's floor is: its variant reads its world matrix.
     const crate = MeshBuilder.CreateBox("crate", { size: 1 }, scene);
@@ -1693,8 +1680,6 @@ describe("atlas caster variants", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     enableHeadlessCascades(engine);
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     // Authored World Position Offset and lattice deformation draw a caster's depth through a standalone wrapper of a
     // variant Material that no other pass draws: its first ask compiles that Material, a later one the depth variant,
     // which the wrapper holds itself.
@@ -1717,19 +1702,13 @@ describe("atlas caster variants", () => {
     expect(asked).not.toHaveBeenCalled();
   });
 
-  it("asks again for new shadow settings, and holds nothing off the light block's path", async () => {
+  it("asks again for new shadow settings", async () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     enableHeadlessCascades(engine);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     MeshBuilder.CreateBox("crate", { size: 1 }, scene);
     const variants = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
       .filter((effect) => /SM_LIGHTTYPE/.test(effect.defines));
-    controller.warmCasterVariants();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    controller.sync();
-    expect(variants()).toEqual([]);
-    setHapticLighting(engine, true);
     controller.warmCasterVariants();
     await new Promise((resolve) => setTimeout(resolve, 0));
     controller.sync();
@@ -1750,8 +1729,6 @@ describe("view sun shadow maps", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
     enableHeadlessCascades(engine);
-    setHapticLighting(engine, true);
-    vi.spyOn(engine, "supportsUniformBuffers", "get").mockReturnValue(true);
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades, maxLocalLights: 1 }) });
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     controller.register(sun, true);

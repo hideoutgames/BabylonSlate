@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type ClampBlock, type Effect, type InputBlock, type NodeMaterialConnectionPoint, type MorphTargetsBlock, type Rotate2dBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, FragmentOutputBlock, type ClampBlock, type Effect, type InputBlock, type NodeMaterialConnectionPoint, type MorphTargetsBlock, type Rotate2dBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -10,6 +10,7 @@ import {
   type MaterialDocument,
 } from "@haptic/shader-graph";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
+import { HapticLightingBlock } from "./haptic-lighting-block";
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
@@ -87,15 +88,15 @@ it("scales only indirect surface lighting with a live Environment Influence para
   const result = compileMaterialPlan(planFor(doc), { scene, name: "influence" });
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   expect(await result.ready).toEqual([]);
-  const scale = result.material.getBlockByName("influence_environmentInfluenceScale") as ScaleBlock;
-  expect(scale.input.connectedPoint?.ownerBlock.name).toBe("influence_environmentColor");
+  // The light block scales its environment terms by the input; its direct terms leave it out.
+  const lighting = result.material.getBlockByName("influence_lighting") as HapticLightingBlock;
+  expect(lighting.environmentInfluence.connectedPoint?.ownerBlock.name).toBe("environmentWeight");
   expect(result.setParameter("Environment Weight", { kind: "float", value: 0.6 })).toBe(true);
   expect(result.material.getBlockByName("environmentWeight")).toHaveProperty("value", 0.6);
-  expect(result.material.compiledShaders).toContain("finalDiffuse=diffuseBase");
   result.dispose();
 });
 
-it("turns a constant Specular into Babylon's index of refraction, and warns when it is not constant", async () => {
+it("gives the light block a Specular other than the default, constant or not", async () => {
   const scene = host();
   const doc = createDefaultMaterialDocument();
   const output = doc.nodes.find((node) => node.type === "output.surface")!;
@@ -103,20 +104,24 @@ it("turns a constant Specular into Babylon's index of refraction, and warns when
   const result = compileMaterialPlan(planFor(doc), { scene, name: "water" });
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   expect(await result.ready).toEqual([]);
-  // F0 = 0.08 x 0.255 = 0.0204, water's: an index of refraction of 1.333.
-  const ior = result.material.getBlockByName("water_indexOfRefraction") as InputBlock;
-  expect(ior.value).toBeCloseTo(1.3333, 3);
+  const specular = (result.material.getBlockByName("water_lighting") as HapticLightingBlock).specular.connectedPoint?.ownerBlock as InputBlock;
+  expect(specular.value).toBeCloseTo(0.255, 6);
   result.dispose();
 
   doc.nodes.push({ id: "shine", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Shine", value: [0.3] } });
   doc.edges.push({ id: "shine-output", sourceNodeId: "shine", sourcePinId: "out", targetNodeId: output.id, targetPinId: "specular" });
   const lowered = lowerMaterialDocument(doc);
   if (!lowered.ok) throw new Error("did not lower");
-  expect(lowered.diagnostics).toEqual([expect.objectContaining({ code: "material.specularConstant", severity: "warning", nodeId: output.id })]);
+  expect(lowered.diagnostics).toEqual([]);
   const live = compileMaterialPlan(lowered.plan, { scene, name: "shiny" });
   if (!live.ok) throw new Error(JSON.stringify(live.diagnostics));
-  expect(live.material.getBlockByName("shiny_indexOfRefraction")).toBeNull();
+  expect((live.material.getBlockByName("shiny_lighting") as HapticLightingBlock).specular.connectedPoint?.ownerBlock.name).toBe("shine");
   live.dispose();
+  // The default reflectance is the block's own: no input.
+  const plain = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "plain" });
+  if (!plain.ok) throw new Error(JSON.stringify(plain.diagnostics));
+  expect((plain.material.getBlockByName("plain_lighting") as HapticLightingBlock).specular.isConnected).toBe(false);
+  plain.dispose();
 });
 
 /** Base Color driven by a Multiply so the graph is not a bare constant. */
@@ -434,7 +439,7 @@ describe("material compiler", () => {
     expect(result.material.mode).toBe(2);
     expect(
       result.material.attachedBlocks.some(
-        (block) => block instanceof PBRMetallicRoughnessBlock,
+        (block) => block instanceof HapticLightingBlock,
       ),
     ).toBe(false);
     expect(
@@ -796,7 +801,7 @@ describe("material compiler", () => {
     ).toBe(true);
   });
 
-  it("uses a PBR block for the pbr shading model", () => {
+  it("lights the pbr shading model with the light block", () => {
     const scene = host();
     const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {
       scene,
@@ -807,12 +812,12 @@ describe("material compiler", () => {
     disposers.push(() => result.material.dispose());
     expect(
       result.material.attachedBlocks.some(
-        (block) => block instanceof PBRMetallicRoughnessBlock,
+        (block) => block instanceof HapticLightingBlock,
       ),
     ).toBe(true);
   });
 
-  it("skips the PBR block for an unlit material", () => {
+  it("skips the light block for an unlit material", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();
     doc.shadingModel = "unlit";
@@ -822,7 +827,7 @@ describe("material compiler", () => {
     disposers.push(() => result.material.dispose());
     expect(
       result.material.attachedBlocks.some(
-        (block) => block instanceof PBRMetallicRoughnessBlock,
+        (block) => block instanceof HapticLightingBlock,
       ),
     ).toBe(false);
   });
@@ -866,8 +871,8 @@ describe("material compiler", () => {
       const result = compileMaterialPlan(planFor(doc), { scene, name: "test" });
       if (!result.ok) throw new Error("Fresnel material did not compile");
       disposers.push(() => result.material.dispose());
-      const pbr = result.material.attachedBlocks.find((block) => block instanceof PBRMetallicRoughnessBlock) as PBRMetallicRoughnessBlock;
-      return (facing: number) => evaluate(pbr.metallic.connectedPoint!, facing);
+      const lighting = result.material.attachedBlocks.find((block) => block instanceof HapticLightingBlock) as HapticLightingBlock;
+      return (facing: number) => evaluate(lighting.metallic.connectedPoint!, facing);
     };
 
     const tight = rim({ "default:power": [3] });

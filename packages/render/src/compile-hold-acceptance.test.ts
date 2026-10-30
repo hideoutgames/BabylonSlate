@@ -36,8 +36,6 @@ import {
   ArcRotateCamera,
   Constants,
   DirectionalLight,
-  InternalTexture,
-  InternalTextureSource,
   Mesh,
   MeshBuilder,
   NullEngine,
@@ -83,7 +81,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { setFixedShapeLightingEnabled, setFixedShapeLightingWorldScene } from "./fixed-light-admission";
 import { isForwardLightExcluded, nearForwardAdmissions, setAuthoredLightEnabled } from "./light-policy";
-import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, setHapticLighting } from "./haptic-lights";
+import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
@@ -148,8 +146,6 @@ vi.mock("./variant-prediction", async (importOriginal) => {
   };
 });
 let predictAhead = false;
-// A case on the lighting plan's path switches its Play Engine to the light block (`setHapticLighting`) before the load.
-let lightingBlock = false;
 const {
   beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred, effectDrawn: actualEffectDrawn,
   deferredPipelinesStalled: actualDeferredPipelinesStalled, capturePipelineTarget: actualCapturePipelineTarget,
@@ -191,7 +187,6 @@ afterEach(() => {
   vi.mocked(capturePipelineTarget).mockImplementation(actualCapturePipelineTarget);
   rehearseLoad = false;
   predictAhead = false;
-  lightingBlock = false;
   frameMs = FRAME_MS;
 });
 
@@ -518,20 +513,6 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
   cleanups.push(() => vi.useRealTimers());
   const engine = headlessEngine();
-  if (lightingBlock) {
-    setHapticLighting(engine, true);
-    // The block's rect light emissions are layers of one texture array, which NullEngine cannot make: one uploaded at once.
-    vi.spyOn(engine, "createRawTexture2DArray").mockImplementation(() => {
-      const texture = new InternalTexture(engine, InternalTextureSource.Raw2DArray);
-      texture.isReady = true;
-      return texture;
-    });
-    // Nor the shadow atlas's depth texture.
-    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation(() => new InternalTexture(engine, InternalTextureSource.DepthStencil));
-    // Nor scissor its tiles' clears.
-    vi.spyOn(engine, "enableScissor").mockImplementation(() => {});
-    vi.spyOn(engine, "disableScissor").mockImplementation(() => {});
-  }
   const driver = driverModel(engine, model);
   const holds: boolean[] = [];
   const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -2851,11 +2832,11 @@ async function editorView(options: { fixedShape?: boolean; native?: boolean } = 
 }
 
 /**
- * The lighting plan's CI gate on its path (`setHapticLighting`): after the first presented frame, lights switched,
+ * The lighting plan's CI gate: after the first presented frame, lights switched,
  * spawned, recoloured, moved, removed and pushed past the light block's maximum, shadows started for each kind of atlas
  * map (the sun's cascades, a spot light's tile, a point light's faces), moved, stopped and started again, and a spawn of
- * an actor the level holds, compile no shader, wait on no WebGPU pipeline and create none in a shadow pass. It becomes
- * a merge gate when the path becomes the default (Phase 7).
+ * an actor the level holds, compile no shader, wait on no WebGPU pipeline and create none in a shadow pass. A merge gate:
+ * CI's unit job runs it.
  */
 describe("the lighting plan's CI gate", () => {
   const actors = () => [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])];
@@ -2890,7 +2871,6 @@ describe("the lighting plan's CI gate", () => {
   };
 
   it.each(MODELS)("lights change mid-game without compiling a shader or waiting on a pipeline: %s", async (model) => {
-    lightingBlock = true;
     const world = playWorld(model, actors());
     await settle(world);
     world.driver.arm();
@@ -2911,14 +2891,6 @@ describe("the lighting plan's CI gate", () => {
       compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, lightDefines: 0,
       counts: [1, points, 1, 0], atlas: [true, true, true],
     });
-  });
-
-  it("the same script compiles mid-game on the legacy path", async () => {
-    const world = playWorld("sync", actors());
-    await settle(world);
-    world.driver.arm();
-    const compiled = await play(world);
-    expect(Object.values(compiled).reduce((sum, count) => sum + count, 0), JSON.stringify(compiled)).toBeGreaterThan(0);
   });
 });
 
