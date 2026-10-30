@@ -157,7 +157,6 @@ export function finishBlend(s: Surface, inputs: BlendInputs): void {
     const j = inputs.partners[k];
     partners[k] = j === undefined ? null : inputs.index.bodies[j]!.definition;
   }
-  if (s.plugin) s.plugin.partners = partners;
   if (s.nodes) s.nodes.partners = partners;
 }
 

@@ -10,6 +10,7 @@ import { createWaterRemovalMesh } from "./water-removal-mesh";
 import type { WaterField } from "./water-field";
 import { placeholderField } from "./water-material";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
+import { builtInWaterMaterial } from "./water-template";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
@@ -203,7 +204,7 @@ describe("Water material nodes", () => {
     const result = compile(scene, graph(["waterWaves", "waterColors"], [["waterWaves", "offset", "worldPositionOffset"], ["waterColors", "shallowColor", "baseColor"]]));
     expect(await result.ready).toEqual([]);
     const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 24, length: 24, resolution: 16 }), own, result.material);
-    const neighbour = createWaterMesh(scene, "neighbour", normalizeWaterBody({ width: 24, length: 24, resolution: 16 }), red);
+    const neighbour = createWaterMesh(scene, "neighbour", normalizeWaterBody({ width: 24, length: 24, resolution: 16 }), red, builtInWaterMaterial(scene));
     neighbour.position.set(18, 0, 0);
     updateSceneWater(scene);
     expect(await definesFor(result.material, lake)).toMatch(/^#define SLATE_WATER_NODE_BLEND$/m);

@@ -1,16 +1,15 @@
 /**
- * Assembled water shader source per language: the plugin's vertex and fragment injections, the outline pass's
- * displacement and the Water Waves node's sources. `toWgsl` translates the GLSL-shaped chunks.
+ * Assembled water shader source per language: the Water Waves node's sources and the Water Cut block's blend cull.
+ * `toWgsl` translates the GLSL-shaped chunks.
  */
 import { ShaderLanguage } from "@babylonjs/core";
 import { WATER_FFT_CASCADES_MAX, WATER_FOAM_WEIGHTS } from "@haptic/core";
 import {
-  cutSource, fftHelpers, fftTurnIn, fftTurnOut, fftTurnTensor, FOAM_FAR_PATCHES, HELPERS, ifFft, objectHelpers, REMOVAL_HELPER, SHADING_SLOPE_CAP,
-  spectrumHelpers, spectrumNormalSource, spectrumRealisticSource, spectrumVertexSource, subsurfaceSource,
+  fftHelpers, fftTurnIn, fftTurnOut, fftTurnTensor, FOAM_FAR_PATCHES, ifFft, SHADING_SLOPE_CAP, spectrumHelpers, spectrumNormalSource,
+  spectrumVertexSource, subsurfaceSource,
 } from "./water-shader-chunks";
 import {
-  COLOR_LOCALS, COLOR_UNIFORMS, EDGE_FOAM_CALM, f, FFT, FFT_CASCADE_UNIFORMS, FFT_UNIFORMS, REFLECTS_OBJECTS, REFRACTION, SAMPLES_COPY, SPECTRUM_FOAM_SCALE,
-  WATER_BLEND_DEFINE, WATER_EFFECTS_GEOMETRY_DEFINE, WATER_GPU_WAVES_DEFINE,
+  EDGE_FOAM_CALM, f, FFT_CASCADE_UNIFORMS, FFT_UNIFORMS, SPECTRUM_FOAM_SCALE, WATER_BLEND_DEFINE, WATER_GPU_WAVES_DEFINE,
 } from "./water-shader-defines";
 
 /**
@@ -20,41 +19,38 @@ import {
  * Writes the displaced world position (the clip position, fog, shadows and clip planes follow it) and leaves the height
  * and offset for the varyings in `swvH` / `swvD`, so the fragment finds its rest point and contacts see the rendered
  * height. `slateWaterGridOffset` (xyz) is the world-space translation of the rest grid since its positions were uploaded
- * (Global Water's recentre, `waterGridOffset`): it is added before the rest point is taken, so the spectrum, bank terms
- * and `vPositionW` all see the translated grid. GLSL-shaped: `A.` attributes, `U.` uniforms, `S.` the view matrix's
- * owner and `O.` outputs are bound per language, then `toWgsl` translates it. Other passes that draw built-in water with
- * their own vertex shader (the shared outline mask) include the same displacement through `waterOutlineVertexSource`,
- * without the material's `vPositionW` output. `normal` (a Custom Material's Water Waves node, `waterWaveBlockSource`)
- * also leaves `swvNormal` (`spectrumNormalSource`), which the built-in fragment shader derives per pixel for itself;
- * `distance` is the eye-distance expression the spectrum's LOD reads.
+ * (Global Water's recentre, `waterGridOffset`): it is added before the rest point is taken, so the spectrum and bank terms
+ * all see the translated grid. GLSL-shaped: `A.` attributes and `U.` uniforms are bound per language, then `toWgsl`
+ * translates it. It also leaves `swvNormal` (`spectrumNormalSource`); `distance` is the eye-distance expression the
+ * spectrum's LOD reads.
  */
-function vertexWaveSource(materialOutputs: boolean, normal = false, distance = "abs((S.view * worldPos).z)"): string {
+function vertexWaveSource(distance: string): string {
   return `
 #ifdef ${WATER_GPU_WAVES_DEFINE}
 float swvSpacing = A.slateWaterData.x;
 worldPos = vec4(worldPos.xyz + U.slateWaterGridOffset.xyz, worldPos.w);
 vec2 swvRest = worldPos.xz;
 float swvH = 0.0;
-vec2 swvD = vec2(0.0);${spectrumVertexSource(distance, normal)}
+vec2 swvD = vec2(0.0);${spectrumVertexSource(distance, true)}
 float swvFade = U.slateWaterSwellInfo.x;
 #ifdef ${WATER_BLEND_DEFINE}
 swvFade = swvFade * A.slateWaterBlend.y;
 #endif
 float swvBankT = clamp(A.slateWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
-float swvGain = mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));${normal ? spectrumNormalSource() : ""}
+float swvGain = mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));${spectrumNormalSource()}
 #ifdef ${WATER_BLEND_DEFINE}
 swvH = swvH * A.slateWaterBlend.x;
 swvD = swvD * A.slateWaterBlend.y;
 #endif
 swvD = swvD * swvGain;
-worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);${materialOutputs ? "\nO.vPositionW = worldPos.xyz;" : ""}
+worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);
 #endif
 `;
 }
 
 /**
  * Blending surfaces on the GPU path cull vertices this many of their own grid spacings, plus `BLEND_CULL_MARGIN` metres,
- * inside water they never draw (`VERTEX_VARYINGS`). A triangle's other vertices are at most √2 spacings away, and both
+ * inside water they never draw (`waterBlendCullSource`). A triangle's other vertices are at most √2 spacings away, and both
  * the ownership margin and the bank distance change by about a metre per metre (the margin's fit is approximate, hence
  * the slack), so they lie in that water too.
  */
@@ -65,36 +61,7 @@ const BLEND_CULL = `if (min(A.slateWaterData.y, A.slateWaterBlend.z) < -(${f(BLE
 }`;
 
 /**
- * Varyings at CUSTOM_VERTEX_MAIN_END, which runs after the world-position hook: GPU waves pass their own height and
- * offset, so the attribute copy must not overwrite them. `SW_CLIP_POSITION` is the clip position, bound per language.
- */
-const VERTEX_VARYINGS = `
-#ifdef ${WATER_GPU_WAVES_DEFINE}
-O.vSlateWater = vec4(swvH, A.slateWaterData.yzw);
-O.vSlateWaterFlow = vec4(A.slateWaterFlow.xz, swvD);
-#else
-O.vSlateWater = A.slateWaterData;
-O.vSlateWaterFlow = vec4(A.slateWaterFlow.xz, A.slateWaterOffset);
-#endif
-O.vSlateWaterBaseNormal = A.slateWaterBaseNormal;
-#ifdef ${WATER_BLEND_DEFINE}
-O.vSlateWaterBlend = A.slateWaterBlend;
-O.vSlateWaterBlendColors = A.slateWaterBlendColors;
-#ifdef ${WATER_GPU_WAVES_DEFINE}
-// Water this blending surface never draws (a neighbour's share, or past the blended shoreline) is discarded fragment by
-// fragment, but only after the whole look has run on it, and where it overlaps the neighbour's surface the depth test
-// cannot reject it. A vertex deeper in it than \`BLEND_CULL_CELLS\` of its own spacing plus \`BLEND_CULL_MARGIN\` metres
-// belongs only to triangles all of whose vertices lie in it too (by the same attribute: both fields are distances), so
-// every fragment of those triangles would discard: its clip depth moves past the far side of the clip volume (x, y and w
-// unchanged, so the triangles it starts clip to within their own outline) and they rasterize nothing, in the depth
-// pre-pass and the colour pass alike.
-${BLEND_CULL}
-#endif
-#endif
-`;
-
-/**
- * The blend cull of `VERTEX_VARYINGS` for the Water Cut block's vertex program, which the graph's Water Waves node
+ * The blend cull for the Water Cut block's vertex program, which the graph's Water Waves node
  * displaces (GPU waves only: there `slateWaterData.x` is the grid spacing).
  */
 export function waterBlendCullSource(wgsl: boolean): string {
@@ -102,22 +69,9 @@ export function waterBlendCullSource(wgsl: boolean): string {
     .replace(/\bSW_CLIP_POSITION\b/g, wgsl ? "vertexOutputs.position" : "gl_Position")}\n#endif\n`;
 }
 
-/**
- * Binds the GLSL-shaped `A.` / `U.` / `O.` prefixes for one language, and `S.` (the view matrix's owner: the scene
- * uniform buffer in a material, plain uniforms in the outline mask) to `scene`'s WGSL prefix.
- */
-function bindVertexSource(code: string, wgsl: boolean, scene = "scene."): string {
-  return code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bA\./g, wgsl ? "vertexInputs." : "").replace(/\bO\./g, wgsl ? "vertexOutputs." : "")
-    .replace(/\bS\./g, wgsl ? scene : "");
-}
-
-/** Vertex hooks for one language: the spectrum's sampler (with GPU waves), the displacement and the varyings. */
-export function waterVertexSource(language: ShaderLanguage): { definitions: string; worldPosition: string; end: string } {
-  const wgsl = language === ShaderLanguage.WGSL;
-  const definitions = `\n#ifdef ${WATER_GPU_WAVES_DEFINE}${fftHelpers(wgsl)}#endif\n`;
-  return wgsl
-    ? { definitions, worldPosition: bindVertexSource(toWgsl(vertexWaveSource(true)), true), end: bindVertexSource(toWgsl(VERTEX_VARYINGS), true).replace(/\bSW_CLIP_POSITION\b/g, "vertexOutputs.position") }
-    : { definitions, worldPosition: bindVertexSource(vertexWaveSource(true), false), end: bindVertexSource(VERTEX_VARYINGS, false).replace(/\bSW_CLIP_POSITION\b/g, "gl_Position") };
+/** Binds the GLSL-shaped `A.` / `U.` prefixes for one language. */
+function bindVertexSource(code: string, wgsl: boolean): string {
+  return code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bA\./g, wgsl ? "vertexInputs." : "");
 }
 
 /**
@@ -130,43 +84,9 @@ export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = ["slateWaterSwellIn
  * Material's Water Waves and Water Foam nodes (`WaterVertexWaves.bind`).
  */
 export const WATER_CLOCK_UNIFORM = "slateWaterClock";
-/** `vertexWaveDefines` per blend state (off, on) and spectrum cascades (1-3): built once. */
-export const VERTEX_WAVE_DEFINES: ReadonlyArray<ReadonlyArray<readonly string[]>> = [false, true].map((blend) =>
-  Array.from({ length: WATER_FFT_CASCADES_MAX + 1 }, (_, cascades) => [
-    `#define ${WATER_GPU_WAVES_DEFINE}`, `#define ${FFT} ${Math.max(1, cascades)}`, ...(blend ? [`#define ${WATER_BLEND_DEFINE}`] : []),
-  ]));
-/** `vertexWaveAttributes` per blend state (off, on). */
-export const VERTEX_WAVE_ATTRIBUTES: ReadonlyArray<readonly string[]> = [["slateWaterData"], ["slateWaterData", "slateWaterBlend"]];
-
-/**
- * The displacement for another pass's vertex shader that computes a `worldPos` vec4 from the same world matrix and has a
- * `view` matrix uniform (the shared outline mask): declarations of its attribute, uniforms and the spectrum's sampler,
- * and the displacement to insert after `worldPos`. Both compile only under `SLATE_WATER_GPU_WAVES`, so the pass's other
- * programs are unchanged.
- */
-export function waterOutlineVertexSource(language: ShaderLanguage): { declarations: string; displacement: string } {
-  const key = language === ShaderLanguage.WGSL ? "wgsl" : "glsl";
-  let source = outlineVertexSources.get(key);
-  if (!source) outlineVertexSources.set(key, source = buildOutlineVertexSource(language));
-  return source;
-}
-const outlineVertexSources = new Map<string, { declarations: string; displacement: string }>();
-function buildOutlineVertexSource(language: ShaderLanguage): { declarations: string; displacement: string } {
-  const wgsl = language === ShaderLanguage.WGSL;
-  const uniforms = WATER_VERTEX_WAVE_UNIFORMS.map((name) => (wgsl ? `uniform ${name}: vec4f;` : `uniform vec4 ${name};`)).join("\n");
-  const attribute = wgsl ? "attribute slateWaterData: vec4f;" : "attribute vec4 slateWaterData;";
-  const blend = `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "attribute slateWaterBlend: vec4f;" : "attribute vec4 slateWaterBlend;"}\n#endif`;
-  const displacement = vertexWaveSource(false);
-  return {
-    declarations: `\n${stripShaderComments(`#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${blend}\n${uniforms}${fftHelpers(wgsl)}#endif`)}\n`,
-    displacement: `\n${stripShaderComments(bindVertexSource(wgsl ? toWgsl(displacement) : displacement, wgsl, "uniforms."))}\n`,
-  };
-}
-
 const blockWaveSources = new Map<ShaderLanguage, string>();
 /**
- * The Water Waves node's vertex code for one language: `vertexWaveSource` with the normal, bound and translated like the
- * plugin's, its eye distance from `slateWaterEye` (the camera's world position relative to the rest positions). It reads
+ * The Water Waves node's vertex code for one language: `vertexWaveSource`, bound and translated, its eye distance from `slateWaterEye` (the camera's world position relative to the rest positions). It reads
  * and writes a `worldPos` vec4 (rest point in, displaced point out) and leaves `swvH` (height), `swvD` (horizontal offset)
  * and `swvNormal`, under `SLATE_WATER_GPU_WAVES`; it reads `slateWaterData` and `slateWaterBaseNormal`, and under
  * `SLATE_WATER_BLEND` `slateWaterBlend`, as attributes. Built once.
@@ -174,7 +94,7 @@ const blockWaveSources = new Map<ShaderLanguage, string>();
 export function waterWaveBlockSource(language: ShaderLanguage): string {
   let source = blockWaveSources.get(language);
   if (!source) {
-    const wgsl = language === ShaderLanguage.WGSL, code = vertexWaveSource(false, true, "length(worldPos.xyz - U.slateWaterEye.xyz)");
+    const wgsl = language === ShaderLanguage.WGSL, code = vertexWaveSource("length(worldPos.xyz - U.slateWaterEye.xyz)");
     blockWaveSources.set(language, source = stripShaderComments(bindVertexSource(wgsl ? toWgsl(code) : code, wgsl)));
   }
   return source;
@@ -215,10 +135,9 @@ ${out} = vec2(swvGain * swvDs, swvHs);
 
 /**
  * The Water Waves node's fragment code: the spectrum at this pixel's rest point (`rest`, the interpolated undisplaced
- * world position plus the grid offset), every cascade through its mips as built-in water samples it
- * (`spectrumSurfaceSource`): the displaced surface's normal over the mesh's base normal (`base`), the height, and
+ * world position plus the grid offset), every cascade through its mips: the displaced surface's normal over the mesh's base normal (`base`), the height, and
  * FFT-Ocean's crest foam from the persistent turbulence with the asset's Crest Foam and Foam Amount, and the subsurface
- * light built-in water draws (`subsurfaceSource`). Writes `swnNormal`, `swnHeight`, `swnFoam`, `swnSubsurface` and
+ * light (`subsurfaceSource`). Writes `swnNormal`, `swnHeight`, `swnFoam`, `swnSubsurface` and
  * `swnEdgeTurbulence` (the turbulence past the crest threshold, which edge foam reads: `edgeFoamHelpers`).
  * GLSL-shaped with `U.`; `varying` is the bound `WATER_NODE_VARYING`.
  */
@@ -322,189 +241,6 @@ export function toWgsl(source: string): string {
 }
 
 /**
- * CUSTOM_FRAGMENT_BEFORE_FOG. The colour pass first discards removed water (`swRemoved`, see `cutSource`): the look's
- * derivatives ran with every fragment of the quad alive, and nothing from here on takes one.
- *
- * Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied blend, fog and image
- * processing. In an 8-bit display target, light brighter than the coverage raises it instead of clipping, and the raised
- * coverage hides that much more of the background behind the blend. With the refracted copy (`swBehindCopy`: the copy at this
- * pixel, the background the blend would show) the share it hides is added back as refracted light, and the coverage
- * solves for that too (per channel, (light − copy · a) / (1 − copy)): glints, foam and bright reflections over shallows
- * add to the bed seen through them instead of replacing it with a darker ring. Without the copy the raise stays as it is
- * (the least coverage that keeps the light from clipping). In Scene Linear (`IMAGEPROCESSINGPOSTPROCESS`, a half-float
- * target that never clips at 1) coverage is the water's own and nothing is raised.
- *
- * The refracted scene (`swRefracted`; `SLATE_WATER_REFRACTION`) is light from behind the surface, already fogged by its
- * own materials. Its share `swRefractedWeight` is, per channel, how much of the background the output keeps (through the
- * absorption, the Fresnel, foam and edge fade, plus the raised coverage's copy). With the copy the water covers that
- * share too, so Babylon's fog below would fog the background again and add its fog colour over it: the refracted light
- * is pre-divided by the fog factor, less the fog colour at its share, so the background keeps its own fog only. The
- * factor is the weight Babylon's PBR fog mixes with (`toLinearSpace(CalcFogFactor())` under `PBR`, which water materials
- * are), the one rule graph Materials fog by too (`sceneFogKeep`); Water Scene Color pre-divides the same way.
- */
-function beforeFogSource(wgsl: boolean): string {
-  const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4", f1 = wgsl ? "f32" : "float";
-  const declare = (type: string, name: string, value: string) => (wgsl ? `var ${name}: ${type} = ${value};` : `${type} ${name} = ${value};`);
-  const brightest = (c: string) => `max(${c}.r, max(${c}.g, ${c}.b))`;
-  return [
-    // Removed water leaves the colour pass here, after every derivative of the look (the depth pre-pass left in `cutSource`).
-    "#ifndef DEPTHPREPASS",
-    "if (swRemoved) { discard; }",
-    "#endif",
-    // Realistic coverage, before the refracted light takes its fog: the raise below can add to it.
-    "#ifdef IMAGEPROCESSINGPOSTPROCESS",
-    declare(f1, "swCover", "clamp(finalColor.a, 0.02, 1.0)"),
-    `#elif defined(${REFRACTION})`,
-    declare(v3, "swBehindCopy", "swSceneColor(swScreenUv)"),
-    declare(v3, "swNeed", `(finalColor.rgb + swRefracted - swBehindCopy * finalColor.a) / max(${v3}(1.0) - swBehindCopy, ${v3}(0.001))`),
-    declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("swNeed")}), 0.02, 1.0)`),
-    declare(f1, "swRaised", "max(swCover - finalColor.a, 0.0)"),
-    "swRefracted += swBehindCopy * swRaised;",
-    `swRefractedWeight += ${v3}(swRaised);`,
-    "#else",
-    declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("finalColor")}), 0.02, 1.0)`),
-    "#endif",
-    `#ifdef ${REFRACTION}`,
-    declare(v3, "swRefractedOut", "swRefracted"),
-    "#ifdef FOG",
-    declare(f1, "swFogKeep", "max(toLinearSpace(CalcFogFactor()), 0.01)"),
-    `swRefractedOut = (swRefracted - ${wgsl ? "uniforms." : ""}vFogColor * ((1.0 - swFogKeep) * swRefractedWeight)) / swFogKeep;`,
-    "#endif",
-    "#endif",
-    `#ifdef ${REFRACTION}`,
-    `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
-    "#endif",
-    `finalColor = ${v4}(finalColor.rgb / swCover, swCover);`,
-    `#if ${SAMPLES_COPY}`,
-    `finalColor = ${v4}(mix(finalColor.rgb, swHorC, swHorW), mix(finalColor.a, 1.0, swHorW));`,
-    "#endif",
-    // Open-water edges fade out (`swOpenFade`).
-    "finalColor.a *= swOpenFade;",
-  ].join("\n");
-}
-
-/**
- * One more read of the contact field or the terrain field at an explicit level, legal in any control flow (Realistic's
- * wake taps, the four-tap shoreline).
- */
-const CONTACT_TAP_GLSL = "vec4 swContactAt(vec2 uv) { return texture2DLodEXT(slateWaterContactSampler, uv, 0.0); }\n"
-  + "vec4 swFieldTapAt(vec2 uv) { return texture2DLodEXT(slateWaterFieldSampler, uv, 0.0); }\n";
-const CONTACT_TAP_WGSL = "fn swContactAt(uv: vec2f) -> vec4f { return textureSampleLevel(slateWaterContactSampler, slateWaterContactSamplerSampler, uv, 0.0); }\n"
-  + "fn swFieldTapAt(uv: vec2f) -> vec4f { return textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, uv, 0.0); }\n";
-
-/**
- * The look sources read the asset's colours through the cut code's blended locals (`COLOR_LOCALS`) and its wave height
- * through the blended swell scale, so a blending surface shades as the mixed body (a plain surface folds both away).
- */
-function blendColors(source: string): string {
-  let out = source.replace(/\bU\.slateWaterWaves\.x\b/g, "(U.slateWaterWaves.x * swBlendH)");
-  COLOR_UNIFORMS.forEach((name, i) => { out = out.replace(new RegExp(`\\bU\\.${name}\\b`, "g"), COLOR_LOCALS[i]!); });
-  return out;
-}
-
-export function waterShaderSource(language: ShaderLanguage): { helpers: string; cut: string; main: string } {
-  const wgsl = language === ShaderLanguage.WGSL;
-  const bind = (code: string) => code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bIN\./g, wgsl ? "fragmentInputs." : "").replace(/\bS\./g, wgsl ? "scene." : "")
-    // The fragment's framebuffer position (on render targets both backends store rows in the same order as uv).
-    .replace(/\bSW_FRAG_COORD\b/g, wgsl ? "fragmentInputs.position" : "gl_FragCoord")
-    .replace(/\bSW_TO_LINEAR\(/g, wgsl ? "toLinearSpaceVec3(" : "toLinearSpace(");
-  const samplerDeclaration = wgsl
-    ? "var slateWaterFieldSamplerSampler: sampler;\nvar slateWaterFieldSampler: texture_2d<f32>;\nvar slateWaterContactSamplerSampler: sampler;\nvar slateWaterContactSampler: texture_2d<f32>;\n"
-    : "uniform sampler2D slateWaterFieldSampler;\nuniform sampler2D slateWaterContactSampler;\n";
-  // Written by the realistic main code and read inside Babylon's reflectivity block (a separate function).
-  const roughnessGlobals = wgsl
-    ? "var<private> swSlopeVariance: f32 = 0.0;\nvar<private> swMatte: f32 = 0.0;\nvar<private> swSharp: f32 = 1.0;\nvar<private> swReflKeep: f32 = 1.0;\n"
-    : "float swSlopeVariance = 0.0;\nfloat swMatte = 0.0;\nfloat swSharp = 1.0;\nfloat swReflKeep = 1.0;\n";
-  return wgsl
-    ? {
-      helpers: samplerDeclaration + roughnessGlobals + toWgsl(HELPERS + REMOVAL_HELPER) + CONTACT_TAP_WGSL + objectHelpers(true) + fftHelpers(true) + spectrumHelpers(true),
-      cut: bind(toWgsl(cutSource(true))), main: bind(toWgsl(blendColors(spectrumRealisticSource()))),
-    }
-    : {
-      helpers: samplerDeclaration + roughnessGlobals + HELPERS + REMOVAL_HELPER + CONTACT_TAP_GLSL + objectHelpers(false) + fftHelpers(false) + spectrumHelpers(false),
-      cut: bind(cutSource(false)), main: bind(blendColors(spectrumRealisticSource())),
-    };
-}
-
-type VertexPoint = "CUSTOM_VERTEX_DEFINITIONS" | "CUSTOM_VERTEX_UPDATE_WORLDPOS" | "CUSTOM_VERTEX_MAIN_END";
-const FRAGMENT_POINTS = [
-  "CUSTOM_FRAGMENT_DEFINITIONS", "CUSTOM_FRAGMENT_UPDATE_ALPHA", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS",
-  "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION", "CUSTOM_FRAGMENT_BEFORE_FOG", "CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR",
-] as const;
-/** The code a stage injects into the PBR shader, by injection point. */
-function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage): Record<string, string> {
-  const wgsl = language === ShaderLanguage.WGSL;
-  const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4";
-  // Babylon's shader processors are line-based: every attribute, varying and sampler needs its own line.
-  const varying = (type: string, name: string) => (wgsl ? `varying ${name}: ${type};` : `varying ${type} ${name};`) + "\n";
-  // vSlateWaterFlow packs the world current (x, z) and the Gerstner offset (Dx, Dz), so the fragment finds its rest point.
-  const varyings = varying(v4, "vSlateWater") + varying(v4, "vSlateWaterFlow") + varying(v3, "vSlateWaterBaseNormal")
-    + `#ifdef ${WATER_BLEND_DEFINE}\n` + varying(v4, "vSlateWaterBlend") + varying(wgsl ? "vec2f" : "vec2", "vSlateWaterBlendColors") + "#endif\n";
-  const blendAttribute = `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "attribute slateWaterBlend: vec4f;" : "attribute vec4 slateWaterBlend;"}\n`
-    + `${wgsl ? "attribute slateWaterBlendColors: vec2f;" : "attribute vec2 slateWaterBlendColors;"}\n#endif\n`;
-  if (stage === "vertex") {
-    const vertex = waterVertexSource(language);
-    return {
-      CUSTOM_VERTEX_DEFINITIONS: (wgsl
-        ? "attribute slateWaterData: vec4f;\nattribute slateWaterFlow: vec3f;\nattribute slateWaterBaseNormal: vec3f;\nattribute slateWaterOffset: vec2f;\n"
-        : "attribute vec4 slateWaterData;\nattribute vec3 slateWaterFlow;\nattribute vec3 slateWaterBaseNormal;\nattribute vec2 slateWaterOffset;\n") + blendAttribute + varyings + vertex.definitions,
-      CUSTOM_VERTEX_UPDATE_WORLDPOS: vertex.worldPosition,
-      CUSTOM_VERTEX_MAIN_END: vertex.end,
-    } satisfies Record<VertexPoint, string>;
-  }
-  const source = waterShaderSource(language);
-  return {
-    CUSTOM_FRAGMENT_DEFINITIONS: varyings + source.helpers,
-    CUSTOM_FRAGMENT_UPDATE_ALPHA: source.cut,
-    CUSTOM_FRAGMENT_BEFORE_LIGHTS: source.main,
-    // Realistic: filtered chop widens the GGX lobe with distance, and foam is fully rough.
-    CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS:
-      "metallicRoughness.g = mix(sqrt(sqrt(metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * swSharp + 2.0 * swSlopeVariance)), 1.0, swMatte);",
-    // Foam and the mesh edge hide the mirror; without an environment, the analytic scene sky (`swSkyRefl`) stands in.
-    // Reflected objects (screen-space or planar) replace the sky or environment where found, with the water's own
-    // Fresnel and Reflection Strength.
-    CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: [
-      "finalEmissive += swEmissive;",
-      "#ifdef REFLECTION",
-      // The facet's own reflectance (`swFres`, the environment BRDF of the facet normal) replaces Babylon's, which the
-      // lifted shading normal would dim toward the horizon; rays leaving below the horizon keep less (`swReflKeep`).
-      `finalRadianceScaled = reflectionOut.environmentRadiance.rgb * (${wgsl ? "uniforms." : ""}vLightingIntensity.z * swFres * swReflKeep);`,
-      `#if ${REFLECTS_OBJECTS}`,
-      `finalRadianceScaled = mix(finalRadianceScaled, swObjRefl.rgb * (swFres * ${wgsl ? "uniforms." : ""}slateWaterDeep.w), swObjRefl.a);`,
-      "#endif",
-      "finalRadianceScaled *= swGloss;",
-      "#else",
-      `#if ${REFLECTS_OBJECTS}`,
-      `finalEmissive += mix(swSkyRefl * swReflKeep, swObjRefl.rgb * ${wgsl ? "uniforms." : ""}slateWaterDeep.w, swObjRefl.a) * (swFres * swGloss);`,
-      "#else",
-      "finalEmissive += swSkyRefl * (swFres * swGloss * swReflKeep);",
-      "#endif",
-      "#endif",
-      "#ifdef SPECULARTERM",
-      // The sun's lobe is dimmed close by (where facet glints carry it), log-compressed where bright, and far away
-      // broken into glitter (see the sun in `realisticSource`).
-      "finalSpecularScaled *= swGloss * swSunReach * swSpecKeep;",
-      `finalSpecularScaled *= log(1.0 + dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001);`,
-      // The glitter's weight rises smoothly with the lobe's luminance (a threshold on it drew an outline around every contour of the slope).
-      `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * 0.6 * dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) + 0.15));`,
-      "#endif",
-    ].join("\n"),
-    CUSTOM_FRAGMENT_BEFORE_FOG: beforeFogSource(wgsl),
-    // Just before Babylon's geometry writes (`pbrBlockPrePass`); see `WATER_EFFECTS_GEOMETRY_DEFINE`. A zero normal is
-    // no surface to the occlusion march, and zero F0 none to Real-Time Reflections (unlit PBR writes none already).
-    CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: [
-      `#ifdef ${WATER_EFFECTS_GEOMETRY_DEFINE}`,
-      `normalW = ${v3}(0.0);`,
-      "#ifndef UNLIT",
-      `specularEnvironmentR0 = ${v3}(0.0);`,
-      "#endif",
-      "finalColor.a = max(finalColor.a, swEdgeFade * swOpenFade);",
-      "#endif",
-    ].join("\n"),
-  } satisfies Record<(typeof FRAGMENT_POINTS)[number], string>;
-}
-
-/**
  * Removes `//` comments and blank lines from generated shader code. The source has no string literals, block comments
  * or line continuations, so the first `//` of a line always starts a comment; directives keep their own lines.
  */
@@ -516,24 +252,4 @@ export function stripShaderComments(source: string): string {
     if (code) lines.push(code);
   }
   return lines.join("\n");
-}
-
-const injections = new Map<string, Readonly<Record<string, string>>>();
-/**
- * `waterInjection`'s points with comments stripped, built once per stage and language. Babylon collects the fragment's
- * point names when the plugin is added (no compile yet), so the fragment builds on the first read of a value.
- */
-export function injectionFor(stage: "vertex" | "fragment", language: ShaderLanguage): Readonly<Record<string, string>> {
-  const key = `${stage}:${language === ShaderLanguage.WGSL ? "wgsl" : "glsl"}`;
-  let injection = injections.get(key);
-  if (!injection) {
-    const build = () => Object.fromEntries(Object.entries(waterInjection(stage, language)).map(([point, code]) => [point, stripShaderComments(code)]));
-    injection = stage === "fragment" ? lazyInjection(FRAGMENT_POINTS, build) : Object.freeze(build());
-    injections.set(key, injection);
-  }
-  return injection;
-}
-function lazyInjection(points: readonly string[], build: () => Record<string, string>): Readonly<Record<string, string>> {
-  let built: Record<string, string> | undefined;
-  return Object.defineProperties({}, Object.fromEntries(points.map((point) => [point, { enumerable: true, get: () => (built ??= build())[point] }])));
 }

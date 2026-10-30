@@ -5,13 +5,10 @@ import {
   NullEngine,
   NullEngineOptions,
   ParticleSystem,
-  PBRMaterial,
   Scene,
-  ScenePerformancePriority,
   StandardMaterial,
   TransformNode,
-  type Effect,
-  type UniformBuffer,
+  Effect,
   Vector3,
 } from "@babylonjs/core";
 import { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
@@ -29,10 +26,10 @@ import { limitManagedRenderBytes, managedRenderReservations } from "./managed-re
 import { updateSceneRenderingSettings } from "./render-settings";
 import { prewarmSceneMaterials } from "./scene-perf";
 import { configureEditorRenderingGroups } from "./sorting";
-import type { WaterMaterialPlugin } from "./water-material";
-import { createWaterMesh, isBuiltInWaterMesh, setWaterGpuWaves } from "./water-mesh";
+import { createWaterMesh, isBuiltInWaterMesh, updateSceneWater } from "./water-mesh";
 import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 import { completeRawUploads } from "./test-support/null-engine-uploads";
+import { builtInWaterMaterial } from "./water-template";
 
 const DEFAULT_TASKS = [
   "Forward admitted shadows",
@@ -76,6 +73,8 @@ function host({ sharedDepth = true, options = new NullEngineOptions() } = {}) {
   });
   vi.spyOn(engine, "createMultipleRenderTarget").mockImplementation((size) =>
     engine._createHardwareRenderTargetWrapper(true, false, size));
+  // Water's readiness waits on its terrain and contact fields' raw uploads.
+  completeRawUploads(engine);
   const scene = new Scene(engine);
   if (sharedDepth) configureEditorRenderingGroups(scene);
   const camera = new FreeCamera("camera", new Vector3(0, 6, -12), scene);
@@ -88,7 +87,7 @@ function host({ sharedDepth = true, options = new NullEngineOptions() } = {}) {
 const noCopyQuality = () => normalizeRenderingQuality({ water: { refraction: false, reflections: "sky" } });
 
 function lake(scene: Scene, water = createDefaultWaterDefinition()): Mesh {
-  return createWaterMesh(scene, "lake", normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), water);
+  return createWaterMesh(scene, "lake", normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), water, builtInWaterMaterial(scene));
 }
 
 function box(scene: Scene, name: string, alpha = 1): Mesh {
@@ -172,9 +171,7 @@ function frames(graph: ForwardSceneFrameGraph, run: () => void) {
 it("keeps the default five-task graph when no built-in water could sample a copy", async () => {
   const { scene, camera } = host();
   box(scene, "opaque");
-  // The readiness probe waits on the surface's contact field.
-  completeRawUploads(scene.getEngine() as NullEngine);
-  // A custom-material water surface has no WaterMaterialPlugin and cannot sample the copy.
+  // A custom-material water surface without water nodes cannot sample the copy.
   createWaterMesh(scene, "custom", normalizeWaterBody({ resolution: 8 }), undefined, new StandardMaterial("custom", scene));
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
@@ -324,33 +321,9 @@ it("jitters the transparent pass like the opaque draw under temporal anti-aliasi
   graph.dispose();
 });
 
-it("plans no copy for water whose asset samples none of the features the quality runs", async () => {
-  const { engine, scene, camera } = host();
-  // Refraction 0 never samples the copy; Object Reflections only sample it under a screen-space march.
-  const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: true });
-  const waterDraws = drawnBy(scene, water);
-  // Refraction with Sky Only reflections: nothing is planned, reserved or allocated.
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "sky" } }) });
-  const graph = new ForwardSceneFrameGraph(scene);
-  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.taskNames()).toEqual(DEFAULT_TASKS);
-  expect(graph.waterSceneCopyDiagnostics()).toBeNull();
-  expect(managedRenderReservations(engine).categoryBytes.water).toBe(0);
-  await settle(graph, camera);
-  waterDraws.length = 0;
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
-  expect(new Set(waterDraws)).toEqual(new Set(["Forward objects depth pre-pass → output", "Forward objects → output"]));
-  // Screen Space reflections march the copy: the same water now plans it.
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "high" } }) });
-  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
-  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.taskNames()).toContain("Water scene copy");
-  graph.dispose();
-});
-
 it("plans no copy for disabled copy-sampling water, authored off or under a deactivated actor, and re-plans when it is enabled", async () => {
   const { engine, scene, camera } = host();
-  createWaterMesh(scene, "authored off", normalizeWaterBody({ width: 4, length: 4, resolution: 8, enabled: false }), createDefaultWaterDefinition());
+  createWaterMesh(scene, "authored off", normalizeWaterBody({ width: 4, length: 4, resolution: 8, enabled: false }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
   const actor = new TransformNode("actor", scene);
   actor.setEnabled(false);
   lake(scene).parent = actor;
@@ -423,71 +396,16 @@ it("registers the transparent pass before its first readiness probe and unregist
   expect(waterSceneCopyForPass(scene, second)).toBeNull();
 });
 
-it("compiles refraction and the screen-space march only into the copy's pass, for the features each asset asks for", async () => {
-  const { scene, camera } = host();
-  const quality = (profile: "low" | "medium" | "high") =>
-    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile } }) });
-  quality("high");
-  const sampling = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0.35, objectReflections: true });
-  const plain = createWaterMesh(scene, "plain", normalizeWaterBody({ width: 4, length: 4, resolution: 8 }),
-    { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: false });
-  plain.position.x = 1;
-  const graph = new ForwardSceneFrameGraph(scene);
-  /** Compiled defines of `mesh` in render pass `pass` ("" before that pass has an effect). */
-  const compiled = (mesh: Mesh, pass: number) => mesh.subMeshes[0]!._getDrawWrapper(pass)?.effect?.defines ?? "";
-  const plan = async () => {
-    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    await settle(graph, camera);
-    return graph.waterSceneCopyDiagnostics()?.renderPassId ?? null;
-  };
-  // High: Refraction and a 16-step Screen Space march, only where the asset asks and only in the copy's pass.
-  const high = (await plan())!;
-  expect(compiled(sampling, high)).toContain("#define SLATE_WATER_REFRACTION\n");
-  expect(compiled(sampling, high)).toContain("#define SLATE_WATER_SSR\n");
-  expect(compiled(sampling, high)).toContain("#define SLATE_WATER_SSR_STEPS 16\n");
-  expect(compiled(plain, high)).not.toContain("SLATE_WATER_REFRACTION\n");
-  expect(compiled(plain, high)).not.toContain("SLATE_WATER_SSR\n");
-  // The main object pass never draws copy-sampling water (the transparent pass does): it compiles nothing for it, and
-  // neither feature for water that samples no copy.
-  const objectsPass = () => scene.objectRenderers.filter((renderer) => renderer.name === "Forward objects").at(-1)!.renderPassId;
-  const objects = objectsPass();
-  expect(compiled(sampling, objects)).toBe("");
-  expect(compiled(plain, objects)).toContain("#define SLATE_WATER\n");
-  expect(compiled(plain, objects)).not.toContain("SLATE_WATER_REFRACTION\n");
-  expect(compiled(plain, objects)).not.toContain("SLATE_WATER_SSR\n");
-  // Planar's march on water that is not flat: Medium 12 steps, Low 6.
-  quality("medium");
-  const medium = (await plan())!;
-  expect(compiled(sampling, medium)).toContain("#define SLATE_WATER_SSR_STEPS 12\n");
-  quality("low");
-  const low = (await plan())!;
-  expect(compiled(sampling, low)).toContain("#define SLATE_WATER_SSR_STEPS 6\n");
-  // Refraction with Sky Only reflections compiles no march.
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "sky" } }) });
-  const sky = (await plan())!;
-  expect(compiled(sampling, sky)).toContain("#define SLATE_WATER_REFRACTION\n");
-  expect(compiled(sampling, sky)).not.toContain("SLATE_WATER_SSR\n");
-  expect(compiled(sampling, sky)).toContain("#define SLATE_WATER_SSR_STEPS 0\n");
-  // Without Water Refraction, reflecting the sky only, no copy is planned and the water compiles neither feature.
-  updateSceneRenderingSettings(scene, { quality: noCopyQuality() });
-  expect(await plan()).toBeNull();
-  for (const pass of [objectsPass(), camera.renderPassId]) {
-    expect(compiled(sampling, pass)).not.toContain("SLATE_WATER_REFRACTION\n");
-    expect(compiled(sampling, pass)).not.toContain("SLATE_WATER_SSR\n");
-  }
-  graph.dispose();
-});
-
 /** The kind of a water effect, from its defines: depth pre-pass, or colour with or without the scene copy's features. */
 function waterVariant(defines: string): string {
   if (defines.includes("#define DEPTHPREPASS\n")) return "depth";
-  return defines.includes("#define SLATE_WATER_REFRACTION\n") ? "colour with copy" : "colour without copy";
+  return defines.includes("#define SLATE_WATER_NODE_COPY\n") ? "colour with copy" : "colour without copy";
 }
 
 /** Every water variant the engine has compiled. */
 function compiledWaterVariants(engine: NullEngine): string[] {
   const effects = (engine as unknown as { _compiledEffects: Record<string, { defines: string }> })._compiledEffects;
-  return Object.values(effects).filter((effect) => /#define SLATE_WATER\n/.test(effect.defines ?? ""))
+  return Object.values(effects).filter((effect) => /^#define SLATE_WATER_SURFACE$/m.test(effect.defines ?? ""))
     .map((effect) => waterVariant(effect.defines)).sort();
 }
 
@@ -576,7 +494,7 @@ function holdWaterLinks(engine: NullEngine) {
   const createEffect = engine.createEffect.bind(engine);
   vi.spyOn(engine, "createEffect").mockImplementation((...args) => {
     const effect = createEffect(...args);
-    if (!held.includes(effect) && /#define SLATE_WATER\n/.test(effect.defines)) {
+    if (!held.includes(effect) && /^#define SLATE_WATER_SURFACE$/m.test(effect.defines)) {
       held.push(effect);
       if (!holding) released.add(effect);
       const isReady = effect.isReady.bind(effect);
@@ -598,21 +516,20 @@ function holdWaterLinks(engine: NullEngine) {
 }
 
 /**
- * A body that refracts and reflects objects, one that only refracts with CPU-displaced vertices and one that only
- * refracts, side by side, warmed as a load warms: three bodies whose variants all differ and all sample the scene copy.
+ * A level body that refracts and mirrors objects (the planar reflection), one that only refracts and a tilted one that
+ * marches its object reflections, side by side, warmed as a load warms: three bodies whose variants all differ and all
+ * sample the scene copy.
  */
 async function threeWaterBodies(scene: Scene): Promise<Mesh[]> {
   const refracting = { ...createDefaultWaterDefinition(), objectReflections: false };
-  const looks = [createDefaultWaterDefinition(), refracting, refracting];
+  const looks = [createDefaultWaterDefinition(), refracting, createDefaultWaterDefinition()];
   const bodies = looks.map((water, index) => {
-    const mesh = createWaterMesh(scene, `water-${index}`, normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), { ...water });
+    const mesh = createWaterMesh(scene, `water-${index}`, normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), { ...water }, builtInWaterMaterial(scene));
     mesh.position.x = (index - 1) * 4;
     return mesh;
   });
-  setWaterGpuWaves(bodies[1]!, false);
-  // The switch holds the material's previous program back until its next bind (its vertex layout changed); nothing has
-  // drawn the previous one here, so it keeps hot swapping like the others.
-  bodies[1]!.material!.allowShaderHotSwapping = true;
+  bodies[2]!.rotation.z = 0.1;
+  updateSceneWater(scene);
   await prewarmSceneMaterials(scene, undefined, isBuiltInWaterMesh);
   return bodies;
 }
@@ -642,8 +559,9 @@ it("links the next water bodies' variants while the first still links, a bounded
   await vi.waitFor(() => expect(links.requested().length).toBeGreaterThan(pending));
   links.releaseAll();
   expect(await prepared).toEqual({ path: "frameGraph" });
-  // Each body's two variants, once each: nothing linked that no pass draws.
-  expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "colour with copy", "colour with copy", "depth", "depth", "depth"]);
+  // Each body's two variants, once each: nothing linked that no pass draws. The two level bodies' depth pre-passes are
+  // one variant (the mirror is a colour feature), which Babylon shares.
+  expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "colour with copy", "colour with copy", "depth", "depth"]);
   // The next readiness episode links ahead again: fog changes every body's variants (outside Scene observables, so
   // the change marks readiness dirty itself).
   const episode = links.requested().length;
@@ -701,10 +619,10 @@ it.each([["transparent", false], ["geometry", true]] as const)(
     /** Whether the pass holds `mesh`'s fog variant. */
     const fogged = (mesh: Mesh) => /#define FOG\n/.test(mesh.subMeshes[0]!._getDrawWrapper(pass)?.effect?.defines ?? "");
     expect([fogged(first!), fogged(second!)]).toEqual([false, false]);
-    /** Whether the pass's fog variant of a GPU-displaced body (first) or the CPU-displaced second body was requested. */
+    /** Whether the pass's fog variant of the mirroring first body or the second body, which mirrors nothing, was requested. */
     const fogLinked = (second: boolean) => links.requestedDefines().some((defines) =>
       defines.includes("#define FOG\n") && defines.includes("#define PREPASS\n") === geometry
-      && !defines.includes("#define DEPTHPREPASS\n") && defines.includes("#define SLATE_WATER_GPU_WAVES\n") === !second);
+      && !defines.includes("#define DEPTHPREPASS\n") && defines.includes("#define SLATE_WATER_NODE_PLANAR\n") === !second);
     // Fog gives every body new variants before the load is ready (outside Scene observables, so the change marks
     // readiness dirty itself) and the links requested so far finish. The probe waits on the first body's new
     // variant, and the second body's link ahead again meanwhile; both keep their previous variants until then.
@@ -728,43 +646,12 @@ it("names only water with the built-in material as built-in, so a Custom Materia
   expect(isBuiltInWaterMesh(box(scene, "crate"))).toBe(false);
 });
 
-it("keeps frozen Play water's colour draw on its full variant when a tilt re-prepares it without a readiness probe", async () => {
-  const { engine, scene, camera } = host();
-  scene.performancePriority = ScenePerformancePriority.Intermediate;
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "ultra" } }) });
-  const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0.35, objectReflections: true });
-  const material = water.material as PBRMaterial;
-  const plugin = material.pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
-  /** Each completed water draw: colour writes, whether the effect is the depth-only variant, and the planar define. */
-  const draws: string[] = [];
-  water.onAfterRenderObservable.add(() => {
-    const defines = water.subMeshes[0]!.effect?.defines ?? "";
-    const variant = defines.includes("#define DEPTHPREPASS\n") ? "depth-only" : "full";
-    draws.push(`${engine.getColorWrite() ? "colour" : "depth"}:${variant}:${defines.includes("#define SLATE_WATER_PLANAR\n") ? "planar" : "no planar"}`);
-  });
-  const graph = new ForwardSceneFrameGraph(scene);
-  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  await settle(graph, camera);
-  const frame = () => {
-    draws.length = 0;
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
-    return [...draws];
-  };
-  expect(frame()).toEqual(["depth:depth-only:planar", "colour:full:planar"]);
-  expect(material.isFrozen).toBe(true);
-  // A volume tilted out of level drops the planar reflection (water-mesh sets `flat`): the defines change and the
-  // frozen material is marked dirty with no readiness probe. Each draw re-prepares its own variant.
-  plugin.flat = false;
-  for (let i = 0; i < 3; i++) expect(frame()).toEqual(["depth:depth-only:no planar", "colour:full:no planar"]);
-  graph.dispose();
-});
-
 it("follows a backbuffer resize in place, keeping every task and render pass id", async () => {
   const options = new NullEngineOptions();
   options.renderWidth = 320;
   options.renderHeight = 200;
   const { engine, scene, camera } = host({ options });
-  const water = lake(scene);
+  lake(scene);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   await settle(graph, camera);
@@ -791,9 +678,9 @@ it("follows a backbuffer resize in place, keeping every task and render pass id"
   expect(managedRenderReservations(engine)).toMatchObject({ pendingBytes: 0 });
   expect(managedRenderReservations(engine).categoryBytes.water).toBe(192 * 120 * 8 + 256 * 160 * 8);
   // Water reads the copy's size on every draw, so its refraction and march follow the resize without recompiling.
-  const binds = vi.spyOn((water.material as unknown as { _uniformBuffer: UniformBuffer })._uniformBuffer, "updateFloat4");
+  const binds = vi.spyOn(Effect.prototype, "setFloat4");
   await settle(graph, camera);
-  const screens = binds.mock.calls.filter(([name]) => name === "slateWaterScreen");
+  const screens = binds.mock.calls.filter(([name]) => name === "slateWaterNodeScreen");
   expect(screens.length).toBeGreaterThan(0);
   expect(screens.at(-1)!.slice(1, 3)).toEqual([1 / 256, 1 / 160]);
   graph.dispose();

@@ -4,6 +4,7 @@ import { normalizeWaterBody } from "@haptic/core";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createWaterMesh } from "./water-mesh";
+import { builtInWaterMaterial } from "./water-template";
 
 function deferred() {
   let resolve!: () => void;
@@ -58,7 +59,7 @@ describe("streamed render resource preparation", () => {
   it("warms Custom Material water but leaves built-in water to the graph's probe under its real pass", async () => {
     const f = fixture();
     const body = normalizeWaterBody({ width: 8, length: 8, resolution: 8 });
-    const builtIn = createWaterMesh(f.scene, "built-in water", body);
+    const builtIn = createWaterMesh(f.scene, "built-in water", body, undefined, builtInWaterMaterial(f.scene));
     const custom = createWaterMesh(f.scene, "custom water", body, undefined, new StandardMaterial("custom water", f.scene));
     for (const [slot, mesh] of [[2, builtIn], [3, custom]] as const) {
       f.binding.meshes.set(slot, mesh);

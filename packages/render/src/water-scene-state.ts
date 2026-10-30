@@ -97,19 +97,12 @@ export type WaterLighting = {
 
 export const linearScratch = new Color3(), gammaScratch = new Color3(), absorbScratch = new Float64Array(4);
 /**
- * A Shallow Color channel's relative absorption through clear water (see `WaterMaterialPlugin.absorption`): the optical
+ * A Shallow Color channel's relative absorption through clear water (`waterAbsorption`): the optical
  * depth that leaves the channel at its share of the brightest, over a small common floor. A cyan Shallow Color thus
  * absorbs red many times faster than blue and green a few times faster, as clear sea water does, so shallows over sand
  * turn turquoise and deeper water blue rather than green.
  */
 const absorbCoefficient = (channel: number, top: number) => top > 0 ? 0.2 - Math.log(Math.max(channel / top, 0.02)) : 1;
-/**
- * The gentler absorption the light through thin crests sees (`slateWaterThrough`): Beer-Lambert's −ln of the linear
- * channel plus a constant that keeps the channels' ratios mild (the fastest at most `GLOW_RATIO_CAP` times the
- * slowest), so the crest glow takes Shallow Color's hue without turning neon.
- */
-export const glowCoefficient = (channel: number) => 0.6 - Math.log(Math.max(channel, 1e-3));
-export const GLOW_RATIO_CAP = 5;
 
 function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
   let ar = 0, ag = 0, ab = 0, hr = 0, hg = 0, hb = 0, hemispheres = 0;
@@ -187,8 +180,7 @@ export function waterBodyLight(ambient: ArrayLike<number>, light: Pick<WaterLigh
 }
 
 /**
- * `waterBodyLight` of `water` in `scene` this frame, as built-in water lights its colour (`slateWaterLight.w`), for a
- * Custom Material's Water Colors node. `reflective`: the water reflects an environment or skybox cube.
+ * `waterBodyLight` of `water` in `scene` this frame, for the Water Colors node. `reflective`: the water reflects an environment or skybox cube.
  */
 export function sceneWaterBodyLight(scene: Scene, water: WaterDefinition, reflective: boolean): number {
   const lighting = sceneWaterBindingData(scene).lighting;
@@ -225,7 +217,7 @@ const NO_REMOVALS: WaterRemovalCandidate[] = [];
  */
 /**
  * The scene's water lighting this render (`sceneWaterLighting`): the sun, ambient and the analytic sky and horizon the
- * water nodes reflect without an environment, and its haze constants. Shared with built-in water; read-only.
+ * water nodes reflect without an environment, and its haze constants. Read-only.
  */
 export function sceneWaterNodeLighting(scene: Scene): Readonly<Pick<WaterLighting, "sun" | "sunColor" | "sky" | "horizon" | "sunShape" | "haze">> {
   return sceneWaterBindingData(scene).lighting;

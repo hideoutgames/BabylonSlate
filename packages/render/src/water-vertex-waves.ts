@@ -1,6 +1,6 @@
 /**
- * GPU wave displacement shared by the water material, other passes (outline mask) and Custom Material water: grid
- * offsets, the spectrum's vertex uniforms and `WaterVertexWaves` for surfaces without a `WaterMaterialPlugin`.
+ * GPU wave displacement for water drawn by a Material with a Water Waves node: grid offsets, the spectrum's vertex
+ * uniforms and `WaterVertexWaves`.
  */
 import { BaseTexture, Vector3, type AbstractMesh, Scene } from "@babylonjs/core";
 import { WATER_FFT_CASCADES_MAX, waterBankFadeLength, waterFoamScale, waterSpectrum, type WaterBodyProperties, type WaterDefinition } from "@haptic/core";
@@ -19,7 +19,7 @@ const foamDrift = { x: 0, z: 0 };
 /**
  * Registers `offset` (local X, Z; read live) as the translation of `mesh`'s uploaded rest positions: Global Water
  * recentres by moving this instead of re-uploading its grid. It is per mesh, not per material, and `slateWaterGridOffset`
- * carries it to the vertex shaders of the material and of other passes (`bindVertexWaves`).
+ * carries it to the Water Waves node's vertex shader (`WaterVertexWaves.bind`).
  */
 export function setWaterGridOffsetSource(mesh: AbstractMesh, offset: Float64Array): void {
   gridOffsets.set(mesh, offset);
@@ -75,9 +75,7 @@ export function waterSpectrumUniforms(scene: Scene, water: WaterDefinition, scal
 /**
  * Sets `WATER_VERTEX_WAVE_UNIFORMS` and the spectrum's texture: the grid offset (world X/Z translation of the uploaded
  * rest grid), the bank fade length and the spectrum's uniforms (`waterSpectrumUniforms`), with a placeholder texture
- * until the spectrum is ready. The material plugin binds them to another pass's effect (`WaterMaterialPlugin.bindVertexWaves`)
- * and a surface without a plugin binds them to its Custom Material (`WaterVertexWaves.bind`), so both displace
- * identically.
+ * until the spectrum is ready. A surface binds them to its Material (`WaterVertexWaves.bind`).
  */
 export function bindWaterVertexUniforms(
   sink: WaterUniformSink, scene: Scene, grid: ArrayLike<number>, bankFade: number, spectrum: Float32Array, band: WaterFftResult | null,
@@ -91,10 +89,10 @@ export function bindWaterVertexUniforms(
 }
 
 /**
- * The waves of a water surface that has no `WaterMaterialPlugin`: Custom Material water whose graph holds a Water Waves
- * node (`WaterWavesBlock`). The node's vertex stage displaces the surface's static rest grid with the same source as
- * built-in shading (`waterWaveBlockSource`) from the same uniforms (`bindWaterVertexUniforms`), here from the surface's
- * own definition, body and clock; the water mesh keeps `time` current.
+ * The waves of a water surface whose Material holds a Water Waves node (`WaterWavesBlock`), built-in water's starter
+ * included. The node's vertex stage displaces the surface's static rest grid (`waterWaveBlockSource`) from these
+ * uniforms (`bindWaterVertexUniforms`), from the surface's own definition, body and clock; the water mesh keeps `time`
+ * current.
  */
 export class WaterVertexWaves {
   /** The surface's water clock in seconds. */

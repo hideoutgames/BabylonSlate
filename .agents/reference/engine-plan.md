@@ -373,7 +373,6 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Lighting on the A16:
   - Measure the light block's per-pixel cost at the Feature Test's light count, and the Feature Test on the A16 iPad and an iPhone. Light culling (per-cluster light lists) is the remedy if the loops cost too much.
   - An unexplained `RangeError: Maximum call stack size exceeded` hit the Feature Test's main Play load on the A16 iPad, around the WebGL context loss there. The Feature Test Check records page errors, so a run on the light block can show whether it remains.
-- Built-in water's `WaterMaterialPlugin` is unreachable (built-in water draws the water starter); it goes with the code keyed to it (`isBuiltInWaterMesh`'s plugin check, `getPlugin("SlateWater")`, `WaterReflection`'s `PBRMaterial`).
 - Fewer material variants, decided separately and measured on its own: texture presence and similar defines as always-bound defaults.
 - Environment quality: `.hdr` import converted to a cube at import (a low-dynamic-range sky lights flatly). Reflection probes capture after edits, at load or on demand, never per frame (each capture is six scene renders of CPU draw work); static actors of streamed scenes are not yet captured.
 
