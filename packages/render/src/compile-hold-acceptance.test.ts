@@ -1993,6 +1993,13 @@ describe("the lighting CI gate", () => {
   const painting = (texture: Texture, overrides: Partial<UnlitBinding> = {}): UnlitBinding =>
     ({ texture, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false, ...overrides });
   /** The gameplay script: Effects each step compiled. */
+  /** The script's Painter 2D surface, red, in front of the crate. */
+  const placePainter = (world: PlayWorld) => {
+    const painter = MeshBuilder.CreatePlane("gate-painter", { size: 2 }, world.handle.scene);
+    painter.position.set(0, 1, 2);
+    setUnlitMaterial(painter, painterKey, painting(canvas(world.handle.scene, [255, 0, 0, 255])));
+    return painter;
+  };
   const play = async (world: PlayWorld, painter: Mesh) => {
     const steps: Array<[string, () => void]> = [
       ["a point light switches off", () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))],
@@ -2059,13 +2066,14 @@ describe("the lighting CI gate", () => {
     world.handle.setRenderSettings(normalizeRenderProjectSettings({
       effects: { temporalAntiAliasing: { enabled: true } }, shadows: { screenShadows: "high" },
     }));
+    const painter = placePainter(world);
     await settle(world);
     const tasks = world.handle.renderTaskNames();
     const screenEffects = () => Object.values(compiledEffects(world.engine)).filter((effect) => /^#define HAPTIC_SCREEN_SHADOWS$/m.test(effect.defines));
     const before = screenEffects();
     world.driver.arm();
     const builds = vi.spyOn(FrameGraph.prototype, "buildAsync");
-    const compiled = await play(world);
+    const compiled = await play(world, painter);
     expect({
       compiled, pipelines: world.driver.pipelines.size, synchronous: world.driver.synchronous.size, builds: builds.mock.calls.length,
       marched: tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1), tasks: world.handle.renderTaskNames(),
