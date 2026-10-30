@@ -3213,10 +3213,11 @@ function initializeEngine(
           scene.lights.some((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX)) ||
           (particleService?.holdsPlayingComponents() ?? false);
         // Full Quality captures prepare their views in the starting state, so their variants share its Effects; manual
-        // captures not yet requested are rehearsed in its frames, and it settles once they have drawn.
+        // captures not yet requested are rehearsed in its frames, which draw again until they have drawn (a rehearsal
+        // only draws inside the view's frame, so waiting for it without drawing would never end).
         const draw = createStartingStateDraw(scene,
-          () => !renderTargetCaptures.preparing() && !renderTargetCaptures.rehearsalPending() &&
-            !(particleService?.spawnableSystemsPending() ?? false), { draws, onDrawn: releaseStaged });
+          () => !renderTargetCaptures.preparing() && !(particleService?.spawnableSystemsPending() ?? false),
+          { draws, onDrawn: releaseStaged, drawAgain: () => renderTargetCaptures.rehearsalPending() });
         startingDraw = draw;
         renderTargetCaptures.rehearseManualCaptures(() => !draw.done);
       }
