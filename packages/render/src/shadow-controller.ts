@@ -18,6 +18,7 @@ import {
   type Camera,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
+import { setMeshReceivesShadows } from "./instance-pool";
 import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
   effectiveShadowSettings,
@@ -477,7 +478,7 @@ export class SceneShadowController {
         continue;
       }
       if (!participatesInShadows(mesh)) {
-        mesh.receiveShadows = false;
+        setMeshReceivesShadows(mesh, false);
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
           this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
@@ -485,7 +486,8 @@ export class SceneShadowController {
         continue;
       }
       const participation = authoredShadowParticipation(mesh);
-      mesh.receiveShadows = participation.receiveShadows !== false;
+      // A pool member receives as its group does: it moves to the group that matches.
+      setMeshReceivesShadows(mesh, participation.receiveShadows !== false);
       if (participation.castShadows === false || neverCastsShadows(mesh)) {
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);

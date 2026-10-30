@@ -1,3 +1,4 @@
+import { createPooledPrimitiveVisual } from "./pooled-primitive-visual";
 import { createWaterMesh } from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
@@ -469,7 +470,22 @@ export function createPlayMesh(
   if (isPlayHelperMeshKind(meshKind)) {
     return finishPlayWorldMesh(createPlayHelperMesh(scene, slotId, name, meshKind, binding, targets, illuminationPart));
   }
-  return finishPlayWorldMesh(createPrimitiveMesh(scene, name, meshKind));
+  const pooled = poolsPlayPrimitive(binding, slotId, name) ? createPooledPrimitiveVisual(scene, name, meshKind) : null;
+  return finishPlayWorldMesh(pooled ?? createPrimitiveMesh(scene, name, meshKind));
+}
+
+/**
+ * Whether the primitive visual `name` of `slotId` may draw through the instance pool: the slot binds no deformer (a
+ * lattice reads the mesh's own vertices) and the visual sorts by no explicit layer or order (an `alphaIndex` is per
+ * mesh, which a group's batch cannot keep).
+ */
+function poolsPlayPrimitive(binding: SnapshotSceneBinding | undefined, slotId: number, name: string): boolean {
+  if (binding?.deformers.get(slotId)) return false;
+  const sorted = (sorting: { sortingLayer?: string | null; orderInLayer?: number | null } | undefined) =>
+    sorting?.sortingLayer != null || sorting?.orderInLayer != null;
+  const parts = binding?.meshParts.get(slotId);
+  if (name === `actor-${slotId}`) return !sorted(binding?.meshSorting.get(slotId)) && !sorted(parts?.[0]);
+  return !sorted(parts?.find((part) => playComponentMeshName(slotId, part.componentId) === name));
 }
 
 function finishPlayWorldMesh(mesh: Mesh): Mesh {
