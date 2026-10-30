@@ -163,7 +163,7 @@ export interface AuthoredMaterialVariant {
 export type AuthoredOutlineVariant = AuthoredMaterialVariant;
 /** A Material's variants: its auxiliary passes' and its water variant (`acquireWaterVariant`). */
 type AuthoredVariantKind = AuthoredSurfaceVariant | "water";
-const authoredVariantFactories = new WeakMap<Material, (kind: AuthoredVariantKind) => AuthoredMaterialVariant>();
+const authoredVariantFactories = new WeakMap<Material, (kind: AuthoredSurfaceVariant) => AuthoredMaterialVariant | undefined>();
 /** Each water variant's base Material (`acquireWaterVariant`). */
 const waterVariantBases = new WeakMap<Material, Material>();
 const waterVariantFactories = new WeakMap<Material, () => AuthoredMaterialVariant>();
@@ -201,6 +201,63 @@ export function ensureAuthoredShadowDepthWrapper(source: Material): boolean {
   install.ensure();
   return true;
 }
+/** A Material's registered variants (`registerAuthoredVariants`): its shadow wrapper's release, and unregistration. */
+export interface AuthoredVariantRegistration {
+  /** Settles once every shadow wrapper this registration installed has released its variant. */
+  shadowReleased: () => Promise<void>;
+  /** Forgets the variants and releases the shadow wrapper. Idempotent. */
+  unregister: () => void;
+}
+
+/**
+ * Registers the auxiliary-pass variants of a Material (outline, capture, shadow depth), for the passes that ask for them
+ * (`acquireAuthoredMaterialVariant`), and the authored shadow-depth wrapper over its shadow-depth variant: installed
+ * permanently by `ensureAuthoredShadowDepthWrapper`, or while a lattice cage needs it. The compiler registers its own
+ * Surface Materials; the unlit Material (`unlit-material.ts`) registers its instances.
+ */
+export function registerAuthoredVariants(
+  material: Material,
+  acquire: (kind: AuthoredSurfaceVariant) => AuthoredMaterialVariant | undefined,
+): AuthoredVariantRegistration {
+  let shadow: { wrapper: AuthoredShadowDepthWrapper; variant: AuthoredMaterialVariant } | undefined;
+  let shadowReleased: Promise<void> | undefined;
+  let permanentShadow = false, shadowCages = 0;
+  const releaseShadow = () => {
+    if (!shadow) return;
+    const retained = shadow;
+    shadow = undefined;
+    if (material.shadowDepthWrapper === retained.wrapper) material.shadowDepthWrapper = null;
+    retained.wrapper.dispose();
+    const retirement = retained.wrapper.whenReleased().then(() => retained.variant.release());
+    shadowReleased = Promise.all([shadowReleased, retirement]).then(() => {});
+    void shadowReleased.catch((error: unknown) => console.warn(`[render] Authored shadow material release failed: ${String(error)}`));
+  };
+  const installShadow = () => {
+    if (shadow || material.shadowDepthWrapper) return;
+    const variant = acquire("shadowDepth");
+    if (!variant) return;
+    const wrapper = new AuthoredShadowDepthWrapper(variant.compiled.material);
+    // Until a deformation needs it permanently, only cages use it: a mesh without one draws its own geometry.
+    markCageShadowWrapper(wrapper, () => !permanentShadow);
+    shadow = { wrapper, variant };
+    material.shadowDepthWrapper = wrapper;
+  };
+  authoredVariantFactories.set(material, acquire);
+  authoredShadowFactories.set(material, {
+    ensure: () => { installShadow(); permanentShadow = true; },
+    acquire: () => { installShadow(); shadowCages++; },
+    release: () => { if (shadowCages > 0 && --shadowCages === 0 && !permanentShadow) releaseShadow(); },
+  });
+  return {
+    shadowReleased: () => Promise.resolve(shadowReleased),
+    unregister: () => {
+      if (authoredVariantFactories.get(material) === acquire) authoredVariantFactories.delete(material);
+      authoredShadowFactories.delete(material);
+      releaseShadow();
+    },
+  };
+}
+
 registerLatticeShadowAdapter((material) => {
   const factory = authoredShadowFactories.get(material);
   if (!factory) return false;
@@ -1057,19 +1114,7 @@ export function compileMaterialPlan(
     if (value) for (const variant of variants.values()) variant.compiled.setParameter(name, value);
     return true;
   };
-  let shadow: { wrapper: AuthoredShadowDepthWrapper; variant: AuthoredMaterialVariant } | undefined;
-  let shadowReleased: Promise<void> | undefined;
-  let permanentShadow = false, shadowCages = 0;
-  const releaseShadow = () => {
-    if (!shadow) return;
-    const retained = shadow;
-    shadow = undefined;
-    if (material.shadowDepthWrapper === retained.wrapper) material.shadowDepthWrapper = null;
-    retained.wrapper.dispose();
-    const retirement = retained.wrapper.whenReleased().then(() => retained.variant.release());
-    shadowReleased = Promise.all([shadowReleased, retirement]).then(() => {});
-    void shadowReleased.catch((error: unknown) => console.warn(`[render] Authored shadow material release failed: ${String(error)}`));
-  };
+  let registration: AuthoredVariantRegistration | undefined;
   if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary) {
     const acquireVariant = (kind: AuthoredVariantKind): AuthoredMaterialVariant => {
       if (disposed) throw new Error("Cannot retain a disposed authored material.");
@@ -1101,30 +1146,14 @@ export function compileMaterialPlan(
         }
       } };
     };
-    authoredVariantFactories.set(material, acquireVariant);
+    const variantRegistration = registration = registerAuthoredVariants(material, acquireVariant);
     if (plan.domain === "surface" && !options.water) waterVariantFactories.set(material, () => acquireVariant("water"));
-    const installShadow = () => {
-      if (shadow || material.shadowDepthWrapper) return;
-      const variant = acquireAuthoredMaterialVariant(material, "shadowDepth")!;
-      const wrapper = new AuthoredShadowDepthWrapper(variant.compiled.material);
-      // Until a deformation needs it permanently, only cages use it: a mesh without one draws its own geometry.
-      markCageShadowWrapper(wrapper, () => !permanentShadow);
-      shadow = { wrapper, variant };
-      material.shadowDepthWrapper = wrapper;
-    };
-    authoredShadowFactories.set(material, {
-      ensure: () => { installShadow(); permanentShadow = true; },
-      acquire: () => { installShadow(); shadowCages++; },
-      release: () => { if (shadowCages > 0 && --shadowCages === 0 && !permanentShadow) releaseShadow(); },
-    });
     // Static opaque surfaces retain Babylon's cheap native/cached path. Water never casts, so a water variant needs none.
     if (!options.water && (!isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null) || plan.blendMode === "masked"))
       ensureAuthoredShadowDepthWrapper(material);
     material.onDisposeObservable.addOnce(() => {
-      authoredVariantFactories.delete(material);
       waterVariantFactories.delete(material);
-      authoredShadowFactories.delete(material);
-      releaseShadow();
+      variantRegistration.unregister();
     });
   }
   // The NodeMaterial stays quarantined until every owned compile-time pass
@@ -1133,13 +1162,11 @@ export function compileMaterialPlan(
   const disposeCompiled = () => {
     if (disposed) return;
     disposed = true;
-    authoredVariantFactories.delete(material);
     waterVariantFactories.delete(material);
     // A water mesh still holding this generation's water variant (its library entry retired without a successor)
     // falls back as a mesh holding the retired generation does; its holder's release finds the variant disposed.
     variants.get("water")?.compiled.dispose();
-    authoredShadowFactories.delete(material);
-    releaseShadow();
+    registration?.unregister();
     finishShaderCheck();
     if (buildState === "pending") {
       buildState = "failed";
@@ -1174,7 +1201,7 @@ export function compileMaterialPlan(
     dispose: disposeCompiled,
     whenReleased: () => {
       disposeCompiled();
-      return Promise.all([released, shadowReleased]).then(() => {});
+      return Promise.all([released, registration?.shadowReleased()]).then(() => {});
     },
   };
 }
