@@ -224,7 +224,7 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
     },
     {
       id: "create-material-instance" as const,
-      label: "Create Material Instance",
+      label: "Create Instance",
       icon: <PaintbrushIcon />,
       onSelect: () => {
         if (busy) return;

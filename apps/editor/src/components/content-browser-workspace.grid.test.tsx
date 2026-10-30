@@ -1615,11 +1615,12 @@ describe("ContentBrowserWorkspace creating assets", () => {
     await createAsset("Material", "Rock");
     const rock = registry.list().find((asset) => asset.header.name === "Rock")!;
     fireEvent.contextMenu(await screen.findByTestId(`content-item-${rock.path}`));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Create Material Instance" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create Instance" }));
 
     await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "MaterialInstance")).toBe(true));
     const instance = registry.list().find((asset) => asset.header.type === "MaterialInstance")!;
-    expect(instance.path.startsWith("assets/Looks/")).toBe(true);
+    expect(instance.header.name).toBe("Rock_Instance");
+    expect(instance.path).toBe("assets/Looks/Rock_Instance.matinst.hasset");
     expect(await screen.findByTestId(`content-item-${instance.path}`)).toBeTruthy();
     expect(docs.noteAssetsCreated).toHaveBeenCalledTimes(3);
     expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();
