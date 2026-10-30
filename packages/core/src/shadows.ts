@@ -209,11 +209,6 @@ export interface ShadowMapSizeCap {
   mapSize: number;
   localMapSize: number;
 }
-/**
- * Phones and tablets: a lost rendering context on an iPad showed the medium level's 2048 cascades and 1024 point
- * cube (about 168 MB) are more than mobile WebKit keeps beside the rest of a scene.
- */
-export const MOBILE_SHADOW_MAP_CAP: ShadowMapSizeCap = { mapSize: 1024, localMapSize: 512 };
 export function effectiveShadowSettings(
   requested: ShadowSettings,
   supportsCascades = true,

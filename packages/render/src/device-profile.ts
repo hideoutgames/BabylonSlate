@@ -1,4 +1,4 @@
-import { MOBILE_SHADOW_MAP_CAP, type ShadowMapSizeCap } from "@haptic/core";
+import type { ShadowMapSizeCap } from "@haptic/core";
 import { TEXTURE_BYTE_CEILING } from "./perf-ceilings";
 
 type DeviceNavigator = Pick<Navigator, "userAgent" | "maxTouchPoints">;
@@ -38,17 +38,14 @@ const DESKTOP: DeviceProfile = {
 };
 
 /**
- * Phones and tablets: WKWebView kills a page past its memory limit, so maps and textures stay at the Medium level's
- * (the A16 iPad's). The light block draws half the desktop's lights, which a mobile GPU loops over in every lit pixel, and its shadow
- * atlas holds the capped maps (16 MiB).
+ * Phones and tablets: the desktop's shadow and light limits, so the quality level alone sizes their shadows and
+ * lights. Only textures stay lower: WKWebView kills a page past its memory limit, and the texture cache is the
+ * largest share a scene holds.
  */
 const MOBILE: DeviceProfile = {
+  ...DESKTOP,
   mobile: true,
-  shadowMapCap: MOBILE_SHADOW_MAP_CAP,
   textureByteCeiling: 768 * MIB,
-  areaEmissionLayers: 2,
-  lightMaximum: { directional: 2, point: 16, spot: 8, rect: 2 },
-  shadowAtlasCap: 2048,
 };
 
 /**
