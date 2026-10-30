@@ -413,7 +413,7 @@ export class SceneShadowController {
    * Null: the variant predictions' map of a light's kind. The light block's Materials hold no shadow defines to
    * predict, and a map would hold an atlas tile.
    */
-  predictionMap(_light: Light): ShadowGenerator | null {
+  predictionMap(): ShadowGenerator | null {
     return null;
   }
   /**

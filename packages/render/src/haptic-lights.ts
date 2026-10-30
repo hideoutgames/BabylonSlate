@@ -9,7 +9,6 @@ import {
   TmpVectors,
   UniformBuffer,
   Vector3,
-  type AbstractEngine,
   type Effect,
   type Light,
   type Scene,

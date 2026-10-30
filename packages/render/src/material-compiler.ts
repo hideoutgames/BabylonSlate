@@ -2,7 +2,6 @@ import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import {
   AddBlock,
   BonesBlock,
-  ClampBlock,
   ColorSplitterBlock,
   MorphTargetsBlock,
   MultiplyBlock,
@@ -21,7 +20,6 @@ import {
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
   RemapBlock,
-  ScaleBlock,
   TextureBlock,
   VectorMergerBlock,
   VectorSplitterBlock,
