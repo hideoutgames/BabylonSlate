@@ -4,6 +4,7 @@ import {
   RawTexture,
   Texture,
   TextureBlock,
+  type Material,
   type NodeMaterial,
 } from "@babylonjs/core";
 import type { MaterialParameterValue } from "@haptic/bridge";
@@ -32,6 +33,18 @@ export function validMaterialParameterValue(
       );
     }
   }
+}
+
+/** Per compiled Material: how many times a parameter value, texture or deferred texture load has changed it. */
+const parameterRevisions = new WeakMap<NodeMaterial, number>();
+
+/**
+ * The parameter revision of a Material compiled from a plan (`createMaterialParameterBindings`), or undefined for any
+ * other Material. It counts every applied value change, texture assignment and deferred texture load, so a reader that
+ * caches what the Material draws can tell an unchanged Material from an edited one.
+ */
+export function materialParameterRevision(material: Material): number | undefined {
+  return parameterRevisions.get(material as NodeMaterial);
 }
 
 /** Bind authored parameter names to uniforms and to every sample of a Texture Parameter. */
@@ -87,8 +100,10 @@ export function createMaterialParameterBindings(
     return emptyTexture;
   };
 
+  parameterRevisions.set(material, 0);
   const dirty = (textures = false): void => {
     if (disposed) return;
+    parameterRevisions.set(material, (parameterRevisions.get(material) ?? 0) + 1);
     const scene = material.getScene();
     // A new texture assignment or its deferred load changes material defines
     // and readiness; reopen the cached strict probe.
