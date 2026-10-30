@@ -91,6 +91,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       jittered: result.captures.map((entry) => [entry.name, entry.jittered]),
       amplitudeZeroDiffers: differ(capture(result, "amplitude 0").pixels, capture(result, "fixed").pixels),
       fixedAgainDiffers: differ(capture(result, "fixed again").pixels, capture(result, "fixed").pixels),
+      fixedUmbraMax: Math.max(...umbra.map((pixel) => fixed[pixel]!)),
+      fixedLitMin: Math.min(...lit.map((pixel) => fixed[pixel]!)),
       averagedUmbraMax: Math.max(...umbra.map((pixel) => averaged[pixel]!)),
       averagedLitMin: Math.min(...lit.map((pixel) => averaged[pixel]!)),
       temporal: backend === "webgl2" ? (() => {

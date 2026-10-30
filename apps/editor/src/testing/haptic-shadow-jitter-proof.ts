@@ -51,10 +51,11 @@ export async function runHapticShadowJitterProof(backend: "webgl2" | "webgpu", t
     scene.activeCamera = camera;
     setSceneBindsPreviousEffects(scene);
     const effects = normalizeRenderEffectsSettings(undefined);
-    // One cascade from a 256-texel map over 24 m: about 11 texels per metre, several pixels each at the box.
+    // One cascade from a 256-texel map over 24 m, about 6 texels per metre (two to three pixels each at the box), at Low
+    // filter quality: one bilinear comparison, whose texel staircase the fixed pattern draws plainly.
     const settings = () => setSceneRenderSettings(scene, {
       mode: "pbr", effects, quality: normalizeRenderingQuality({}),
-      shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256, distance: 24, filterQuality: "medium", depthBias: 0.0008 }),
+      shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256, distance: 24, filterQuality: "low", depthBias: 0.0008 }),
     });
     settings();
 
@@ -92,8 +93,8 @@ export async function runHapticShadowJitterProof(backend: "webgl2" | "webgpu", t
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
     };
-    /** Whether the floor's program carries the jitter's define. */
-    const jittered = () => /^#define HAPTIC_SHADOW_JITTER$/m.test(floor.subMeshes[0]!.effect?.defines ?? "");
+    /** Whether the program the surface last drew with carries the jitter's define. */
+    const jittered = () => /^#define HAPTIC_SHADOW_JITTER$/m.test(compiled.material.getEffect()?.defines ?? "");
     await draw();
     const generator = sun.getShadowGenerator() as CascadedShadowGenerator | null;
     for (let frame = 0; frame < 60 && generator?.getDarkness() !== 0; frame++) await draw();
