@@ -9,6 +9,7 @@ import {
 } from "@haptic/core";
 import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
+import { acquireWaterVariant, waterVariantBase, type AuthoredMaterialVariant } from "./material-compiler";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
 import { contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterVertexWaves } from "./water-material";
@@ -365,7 +366,7 @@ export function markBuiltInWaterMaterial(material: Material): void {
 export function isBuiltInWaterMesh(mesh: AbstractMesh): boolean {
   if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
   const surface = surfaceByMesh.get(mesh);
-  return surface !== undefined && mesh.material !== null && builtInMaterials.has(mesh.material);
+  return surface !== undefined && mesh.material !== null && builtInMaterials.has(waterVariantBase(mesh.material));
 }
 
 /**
@@ -437,9 +438,42 @@ function setSurfaceGpu(s: Surface, enabled: boolean): void {
  */
 function syncCustomMaterial(s: Surface): void {
   if (s.mesh.material === s.material) return;
+  holdWaterVariant(s, s.mesh.material);
   s.material = s.mesh.material;
   setSurfaceGpu(s, materialHasWaterWaves(s.material));
   syncNodeSurface(s);
+}
+
+/**
+ * Draws `material`'s water variant (`acquireWaterVariant`: the same graph with built-in water's cut and, translucent, its
+ * coverage) on the surface's mesh, holding it while the mesh draws it; `material` may be a base Material or another
+ * variant of one. A Material the compiler did not build draws as it is.
+ */
+function holdWaterVariant(s: Surface, material: Material | null): void {
+  if (s.variant && material === s.variant.compiled.material) return;
+  let next: AuthoredMaterialVariant | null = null;
+  try {
+    next = material ? acquireWaterVariant(waterVariantBase(material)) ?? null : null;
+  } catch (error) {
+    // A retired generation or a variant that cannot link: the owner retires the generation and rebinds the mesh.
+    console.warn(`[render] Water variant unavailable for ${material?.name ?? "material"}: ${String(error)}`);
+  }
+  const previous = s.variant;
+  s.variant = next;
+  s.mesh.material = next?.compiled.material ?? material;
+  void previous?.release().catch((error: unknown) => console.warn(`[render] Water variant release failed: ${String(error)}`));
+}
+
+/**
+ * Moves a water mesh to `material` (a library rebind's next generation) and its water variant at once, before any draw
+ * or readiness probe can see the base on it. False for other meshes.
+ */
+export function rebindWaterMeshMaterial(mesh: AbstractMesh, material: Material): boolean {
+  const surface = surfaceByMesh.get(mesh);
+  if (!surface) return false;
+  mesh.material = material;
+  syncCustomMaterial(surface);
+  return true;
 }
 
 /** A Custom Material's scene-copy use follows its graph. */
@@ -450,8 +484,8 @@ function syncNodeSurface(s: Surface): void {
 }
 
 /**
- * Builds the surface's terrain and contact fields. Every surface has them: its Material's water nodes and every
- * Material's cut (`WaterCutBlock`: land above the water) read them.
+ * Builds the surface's terrain and contact fields. Every surface has them: its Material's water nodes and its water
+ * variant's cut (`WaterCutBlock`: land above the water) read them.
  */
 function attachFields(surface: Surface): void {
   const { mesh, water, body } = surface, scene = mesh.getScene();
@@ -553,12 +587,11 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     intersectGridOffset(mesh, gridOffset, ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo);
   // A Material with a Water Waves node displaces the rest grid on the GPU; any other gets displaced vertices.
   const waves = materialHasWaterWaves(material) ? new WaterVertexWaves(water, body) : null;
-  mesh.material = material;
   setMeshVertexWaves(mesh, waves);
   const empty = new Float32Array();
   const surface: Surface = {
     mesh, water, body, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), gpu: waves !== null,
-    waves, material,
+    waves, material: null, variant: null,
     layoutState: new Float64Array(LAYOUT_STATE).fill(NaN), gridX: new Float64Array(), gridZ: new Float64Array(),
     restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), gridOffset, placed: new Float64Array(16).fill(NaN), time: null, version: 0,
     qualityRevision: NaN, density: 1, drawn: true,
@@ -573,6 +606,9 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     const observer = scene.onBeforeRenderObservable.add(() => updateSceneWater(scene));
     scene.onDisposeObservable.addOnce(() => { scene.onBeforeRenderObservable.remove(observer); surfaces.delete(scene); deleteSceneWaterClock(scene); });
   }
+  // The mesh draws the Material's water variant, never the base (`holdWaterVariant`).
+  holdWaterVariant(surface, material);
+  surface.material = mesh.material;
   entries.add(surface);
   surfaceByMesh.set(mesh, surface);
   // Any pass that draws the surface (views, captures, depth pre-pass) keeps its CPU work running next frame.
@@ -583,6 +619,9 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     markBlendDirty(surface);
     countCopyIntent(scene, surface.copyCounted, -1);
     surface.copyCounted = 0;
+    const variant = surface.variant;
+    surface.variant = null;
+    void variant?.release().catch((error: unknown) => console.warn(`[render] Water variant release failed: ${String(error)}`));
   });
   refreshSurface(surface, sceneWaterTime(scene));
   attachFields(surface);
