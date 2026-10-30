@@ -486,6 +486,14 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
     return this.ends;
   }
 
+  /** Per cascade as last drawn: its far end in view depth and the map texels per world metre across its tile. */
+  get cascadeDensity(): { end: number; texelsPerMetre: number }[] {
+    return this.ends.map((end, index) => {
+      const width = (this.getCascadeMaxExtents(index)?.x ?? 0) - (this.getCascadeMinExtents(index)?.x ?? 0);
+      return { end, texelsPerMetre: width > 0 ? this.mapSize / width : 0 };
+    });
+  }
+
   /** Per cascade, its length in view depth as last drawn (Babylon's `frustumLengths`), over which it blends into the next. */
   get cascadeLengths(): readonly number[] {
     return this.lengths;

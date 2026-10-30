@@ -43,7 +43,7 @@ function diagnostics(lights: boolean): RenderDiagnostics {
   return {
     cpuMs: 1.25, gpuMs: null, gpuStatus: "pending", width: 640, height: 360, shadowDrawCalls: 0,
     readbackMs: null, autoLod: { meshes: 0, reduced: 0 }, qualityLimits: [],
-    shadowLights: lights ? [{ name: "Sun", illumination: "included", status: "active", mapSize: 1024, passes: 1 }] : [],
+    shadowLights: lights ? [{ name: "Sun", illumination: "included", status: "active", mapSize: 1024, passes: 1, cascades: [] }] : [],
   } as unknown as RenderDiagnostics;
 }
 
