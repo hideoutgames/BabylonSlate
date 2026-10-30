@@ -23,18 +23,20 @@ function keepsVertices(mesh: AbstractMesh, material: Material): boolean {
  * Whether `mesh` can only draw inside its bounding box, so a pick pixel its bounds miss is a pixel
  * it cannot cover. Anything the GPU may place elsewhere answers false and is always drawn:
  * skinned, morphed, baked-animation, lattice-deformed and padded-bounds meshes (the shadow
- * policy's deforming set), water, thin instances, regular-instance batches, LOD chains, meshes
- * whose world matrix follows the camera or whose bounds are not kept in sync, anything drawn as
- * points or lines, and any material that is not Babylon's stock vertex stage or a compiled static
- * surface.
+ * policy's deforming set), water, thin instances, LOD chains, meshes whose world matrix follows
+ * the camera or whose bounds are not kept in sync, anything drawn as points or lines, and any
+ * material that is not Babylon's stock vertex stage or a compiled static surface. A regular
+ * instance draws its source's geometry through its own world matrix, so its source decides the
+ * rest; a batch draws only the instances (and source) submitted, so each certifies its own.
  */
 export function boundsCertifyDrawnGeometry(mesh: AbstractMesh): boolean {
-  if (mesh.doNotSyncBoundingInfo || mesh._masterMesh || mesh instanceof InstancedMesh || mesh instanceof LinesMesh) return false;
-  if (mesh instanceof Mesh && (mesh.instances.length > 0 || mesh.hasThinInstances || mesh.getLODLevels().length > 0)) return false;
-  if (hasDeformingShadowBounds(mesh) || isWater(mesh)) return false;
+  if (mesh.doNotSyncBoundingInfo || mesh._masterMesh || mesh instanceof LinesMesh) return false;
+  const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+  if (source instanceof Mesh && (source.hasThinInstances || source.getLODLevels().length > 0)) return false;
+  if (hasDeformingShadowBounds(source) || isWater(source)) return false;
   for (let node: Node | null = mesh; node; node = node.parent)
     if (node instanceof TransformNode && node.isWorldMatrixCameraDependent()) return false;
-  return keepsVertices(mesh, mesh.material ?? mesh.getScene().defaultMaterial);
+  return keepsVertices(source, source.material ?? source.getScene().defaultMaterial);
 }
 
 /** The mesh's world box, brought up to date the way drawing would, meets the frustum; corrupt bounds rule nothing out. */

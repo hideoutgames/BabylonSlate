@@ -65,6 +65,19 @@ describe("pickCandidates", () => {
     expect(candidates(mover)).toEqual(["mover"]);
   });
 
+  it("rules out each end of a regular-instance batch by its own bounds", () => {
+    const { box, candidates } = fixture();
+    // A glTF node instance: the instance draws its source's geometry through its own world matrix.
+    const source = box("source", 50);
+    const near = source.createInstance("on the ray");
+    near.position.x = 0;
+    near.computeWorldMatrix(true);
+    const far = source.createInstance("beside");
+    far.position.x = -50;
+    far.computeWorldMatrix(true);
+    expect(candidates(source, near, far)).toEqual(["on the ray"]);
+  });
+
   it("treats a PBR surface like a standard one", () => {
     const { scene, box, candidates } = fixture();
     const pbr = box("pbr", 50);
@@ -147,12 +160,14 @@ describe("pickCandidates", () => {
       expect(context.candidates(mesh)).toEqual(["deformed"]);
     });
 
-    it("keeps both ends of a regular-instance batch", () => {
-      const { box, candidates } = fixture();
+    it("keeps an instance of a source whose vertices can leave its bounds", () => {
+      const { scene, box, candidates } = fixture();
       const source = box("source", 50);
+      source.skeleton = new Skeleton("rig", "rig", scene);
       const instance = source.createInstance("instance");
       instance.position.x = -50;
-      expect(candidates(source, instance)).toEqual(["source", "instance"]);
+      instance.computeWorldMatrix(true);
+      expect(candidates(instance)).toEqual(["instance"]);
     });
 
     it("keeps the level-of-detail meshes that borrow their master's bounds", () => {

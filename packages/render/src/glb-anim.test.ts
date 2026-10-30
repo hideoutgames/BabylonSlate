@@ -7,6 +7,7 @@ import {
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
 } from "./anim-apply";
+import { markInstanceSource } from "./instance-source";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -533,5 +534,26 @@ describe("prepareInstanceMaterials compiles the variants Babylon draws", () => {
 
   it("compiles a mesh with instances plain and instanced", async () => {
     expect(await compiledVariants((part) => { part.createInstance("copy"); })).toEqual(["plain", "instanced"]);
+  });
+
+  it("compiles the source of instances outside the model once, instanced only when it draws only its instances", async () => {
+    const { engine, scene } = createTestEngine();
+    engine.getCaps().instancedArrays = true;
+    try {
+      // A hidden source no model holds, two of whose instances this model holds.
+      const source = MeshBuilder.CreateBox("source", {}, scene);
+      source.isVisible = false;
+      const material = source.material = new StandardMaterial("surface", scene);
+      const root = new Mesh("model", scene);
+      for (const name of ["left", "right"]) source.createInstance(name).parent = root;
+      const compile = vi.spyOn(material, "forceCompilationAsync").mockResolvedValue();
+      const variants = () => compile.mock.calls.map(([mesh, options]) => `${mesh.name} ${options?.useInstances ? "instanced" : "plain"}`);
+      await prepareInstanceMaterials(root, () => {}, new Promise<never>(() => {}));
+      expect(variants()).toEqual(["source plain", "source instanced"]);
+      compile.mockClear();
+      markInstanceSource(source);
+      await prepareInstanceMaterials(root, () => {}, new Promise<never>(() => {}));
+      expect(variants()).toEqual(["source instanced"]);
+    } finally { scene.dispose(); engine.dispose(); }
   });
 });
