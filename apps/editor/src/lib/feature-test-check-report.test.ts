@@ -68,15 +68,15 @@ describe("formatFeatureTestCheckReport", () => {
     const report: FeatureTestCheckReport = {
       mode: "benchmark", startedAt: 0, durationMs: 600_000, cancelled: false, pageErrors: [],
       scenes: [
-        scene("light", [sample("low · forward", 60, 18), sample("medium · forward", 60, 19), sample("high · forward", 58, 22),
-          sample("ultra · forward", 40, 30), sample("medium · fixed lights", 57, 22)]),
-        scene("heavy", [sample("low · forward", 59, 20), sample("medium · forward", 35, 40), sample("high · forward", 25, 60),
-          sample("ultra · forward", 20, 80), sample("medium · fixed lights", 24, 61)]),
+        scene("light", [sample("low", 60, 18), sample("medium", 60, 19), sample("high", 58, 22),
+          sample("ultra", 40, 30)]),
+        scene("heavy", [sample("low", 59, 20), sample("medium", 35, 40), sample("high", 25, 60),
+          sample("ultra", 20, 80)]),
       ],
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
-    expect(lines).toContain("Benchmark: highest tier every benchmarked scene holds at 60 fps: low · forward · at 30 fps: medium · forward (2/2 scenes benchmarked)");
-    expect(lines).toContain("  Highest tier at 60 fps: high · forward · at 30 fps: ultra · forward");
+    expect(lines).toContain("Benchmark: highest tier every benchmarked scene holds at 60 fps: low · at 30 fps: medium (2/2 scenes benchmarked)");
+    expect(lines).toContain("  Highest tier at 60 fps: high · at 30 fps: ultra");
   });
 
   it("shows an editor load failure's error and the viewport's GPU when Play never ran", () => {

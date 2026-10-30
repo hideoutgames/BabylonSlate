@@ -124,15 +124,6 @@ export { createBackendEngineSession, type BackendEngineSession, type BackendEngi
 export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibility";
 
 export { sceneRenderingPipeline } from "./scene-rendering-pipeline";
-export {
-  fixedLightSlotTable,
-  fixedShapeMaterialSamplerBudget,
-  isFixedShapeLightingEnabled,
-  setFixedShapeLightingEnabled,
-  type FixedLightSlotTable,
-} from "./fixed-light-admission";
-export type { FixedLightSeat } from "./fixed-light-seats";
-export { fixedShapeLightGuard, setFixedShapeLightGuard, type FixedLightGuard } from "./fixed-light-binding";
 export * from "./shared-outline";
 export { CommandSourcePreparation, commandSourceGuids, type CommandSourceLoader, type CommandFontMode, type CommandFontModes } from "./command-source-preparation";
 export * from "./shared-outline-task";

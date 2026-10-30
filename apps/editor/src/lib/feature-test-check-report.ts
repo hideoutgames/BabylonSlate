@@ -116,10 +116,10 @@ function meets(sample: FeatureTestBenchmarkSample | undefined, target: FrameTarg
   return Boolean(sample?.frames && !sample.failed.length && sample.frames.fps >= target.fps && sample.frames.p95Ms <= target.p95Ms);
 }
 
-/** Highest forward quality tier that meets `target` in every sweep, or null. */
+/** Highest quality tier that meets `target` in every sweep, or null. */
 function bestProfile(sweeps: ReadonlyArray<readonly FeatureTestBenchmarkSample[]>, target: FrameTarget): string | null {
   let best: string | null = null;
-  for (const { label } of FEATURE_TEST_BENCHMARK_PROFILES.filter((profile) => profile.label.endsWith("forward"))) {
+  for (const { label } of FEATURE_TEST_BENCHMARK_PROFILES) {
     if (sweeps.every((sweep) => meets(sweep.find((sample) => sample.label === label), target))) best = label;
   }
   return best;

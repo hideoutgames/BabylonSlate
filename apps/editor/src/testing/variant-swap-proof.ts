@@ -33,6 +33,7 @@ import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/re
 import { glErrorTraceEntries, installGlErrorTrace } from "@haptic/render/gl-error-trace";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
+import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { isRevealPending } from "../../../../packages/render/src/reveal-pending";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
@@ -65,6 +66,7 @@ async function worldView() {
   camera.maxZ = 40;
   scene.activeCamera = camera;
   setFixedShapeLightingWorldScene(scene);
+  setSceneBindsPreviousEffects(scene);
   setSceneRenderSettings(scene, {
     mode: "pbr",
     quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } }),

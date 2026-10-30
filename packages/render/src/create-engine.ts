@@ -36,12 +36,8 @@ import { applyPostProcessParameterCommand } from "./post-process-parameter-comma
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
-import {
-  isFixedShapeLightingEnabled,
-  setFixedShapeLightingEnabled,
-  setFixedShapeLightingWorldScene,
-} from "./fixed-light-admission";
-import { fixedShapeLightGuard, setFixedShapeLightGuard, type FixedLightGuard } from "./fixed-light-binding";
+import { setFixedShapeLightingWorldScene } from "./fixed-light-admission";
+import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
 import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-host";
 import { markLatticeComponentRoot } from "./lattice-deformer";
@@ -427,14 +423,6 @@ function initializeEngine(
   trackFirstDraws(engine);
   const firstDraws = options.playMode ? openFirstDrawStats(engine) : null;
   onRollback(() => firstDraws?.close());
-  // Console `fixedlights` switches the shared Engine; the state it found comes back when this view goes.
-  let fixedShapeLightingBefore: { enabled: boolean; guard: FixedLightGuard } | null = null;
-  const restoreFixedShapeLighting = () => {
-    if (!fixedShapeLightingBefore) return;
-    setFixedShapeLightGuard(engine, fixedShapeLightingBefore.guard);
-    setFixedShapeLightingEnabled(engine, fixedShapeLightingBefore.enabled);
-    fixedShapeLightingBefore = null;
-  };
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: mainThreadDecoding,
     ...ktx2Runtime,
@@ -455,9 +443,12 @@ function initializeEngine(
   const heldEngineViews = registeredView && options.playMode ? holdOtherEngineViews(engine, canvas) : [];
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
-  // The editor world view, Play and the exported player; Prefab Preview (with its studio lights) keeps the legacy
-  // lighting path.
-  if (!presentRtt && !options.previewLighting) setFixedShapeLightingWorldScene(scene);
+  // The editor world view, Play and the exported player draw previous Effects while a changed variant compiles;
+  // Prefab Preview (with its studio lights) waits for the new one.
+  if (!presentRtt && !options.previewLighting) {
+    setFixedShapeLightingWorldScene(scene);
+    setSceneBindsPreviousEffects(scene);
+  }
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so a
@@ -2335,7 +2326,6 @@ function initializeEngine(
       firstDraws?.close();
       releaseStaged();
       releaseMainThreadDecoding?.();
-      restoreFixedShapeLighting();
       engine.stopRenderLoop(renderLoop);
       // Bounded cleanup reporting (`bounded`) stays separate from confirmed
       // actual native release (`actual`): an uncertain report never proves a
@@ -2821,12 +2811,6 @@ function initializeEngine(
       if (command.type === "setScalability" && options.playMode) runtimeScalability?.enqueue(command.transaction);
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
-      if (command.type === "setFixedShapeLighting" && options.playMode) {
-        fixedShapeLightingBefore ??= { enabled: isFixedShapeLightingEnabled(engine), guard: fixedShapeLightGuard(engine) };
-        setFixedShapeLightGuard(engine, command.guard);
-        setFixedShapeLightingEnabled(engine, command.enabled);
-        scheduler.invalidate("asset");
-      }
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
         scheduler.invalidate("snapshot");

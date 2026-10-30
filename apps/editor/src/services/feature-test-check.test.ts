@@ -164,10 +164,10 @@ describe("runFeatureTestCheck", () => {
       onStep: (step, partial) => steps.push({ step, profiles: partial.scenes[0]?.play.benchmark.map((sample) => sample.label) ?? [], scenes: partial.scenes.length }),
     });
     expect(steps[0]).toEqual({ step: "main: opening in the editor", profiles: [], scenes: 1 });
-    expect(steps.find((entry) => entry.step === "main: benchmarking high · forward")?.profiles).toEqual(["low · forward", "medium · forward"]);
+    expect(steps.find((entry) => entry.step === "main: benchmarking high")?.profiles).toEqual(["low", "medium"]);
     // Cancelled during `high`: the finished profiles stay in the report.
     expect(report.cancelled).toBe(true);
-    expect(report.scenes[0].play.benchmark.map((sample) => sample.label)).toEqual(["low · forward", "medium · forward"]);
+    expect(report.scenes[0].play.benchmark.map((sample) => sample.label)).toEqual(["low", "medium"]);
   });
 
   it("stops Play and returns the partial report when cancelled", async () => {
@@ -193,21 +193,21 @@ describe("runFeatureTestCheck", () => {
     expect(main.passed).toBe(true);
     expect(main.play.benchmark.map((sample) => sample.label)).toEqual(FEATURE_TEST_BENCHMARK_PROFILES.map((profile) => profile.label));
     expect(editor.commands.slice(0, 2)).toEqual(["framecap", "framecap 240"]);
-    expect(editor.commands.slice(-3)).toEqual(["fixedlights reset", "quality reset", "framecap 30"]);
-    expect(editor.commands).toContain("fixedlights branch");
+    expect(editor.commands.slice(-2)).toEqual(["quality reset", "framecap 30"]);
+    expect(editor.commands).toContain("quality ultra");
     expect(editor.commands).not.toContain("ft_stats");
   });
 
   it("samples a recompiling profile only once the view draws without held frames, within a bound", async () => {
-    // `quality high` holds the view for 20 s of new shaders; `fixedlights multiply` never stops holding.
+    // `quality medium` holds the view for 20 s of new shaders; `quality high` never stops holding.
     const counts = { drawn: 0, held: 0 };
     const issuedAt = new Map<string, number>();
     let heldUntil = -1;
     const editor = fakeEditor({}, undefined, (now, commands) => {
       const last = commands.at(-1) ?? "";
-      if (!issuedAt.has(last) && (last === "quality high" || last === "fixedlights multiply")) {
+      if (!issuedAt.has(last) && (last === "quality medium" || last === "quality high")) {
         issuedAt.set(last, now);
-        heldUntil = last === "quality high" ? now + 20_000 : Number.POSITIVE_INFINITY;
+        heldUntil = last === "quality medium" ? now + 20_000 : Number.POSITIVE_INFINITY;
       }
       if (now < heldUntil) counts.held++;
       else counts.drawn++;
@@ -216,16 +216,16 @@ describe("runFeatureTestCheck", () => {
     const report = await runFeatureTestCheck({
       mode: "benchmark", scenes: [scene("main")], deps: editor.deps, signal: new AbortController().signal,
     });
-    const sampledAt = editor.sampled.find((sample) => sample.after === "quality high")!.now;
+    const sampledAt = editor.sampled.find((sample) => sample.after === "quality medium")!.now;
     // Held 20 s, then steady draws and the 3 s settle.
-    expect(sampledAt - issuedAt.get("quality high")!).toBeGreaterThanOrEqual(23_000);
+    expect(sampledAt - issuedAt.get("quality medium")!).toBeGreaterThanOrEqual(23_000);
     const benchmark = report.scenes[0]!.play.benchmark;
-    expect(benchmark.find((sample) => sample.label === "high · forward")!.failed).toEqual([]);
-    expect(benchmark.find((sample) => sample.label === "medium · fixed lights")!.failed)
+    expect(benchmark.find((sample) => sample.label === "medium")!.failed).toEqual([]);
+    expect(benchmark.find((sample) => sample.label === "high")!.failed)
       .toEqual(["The view did not draw steadily within 90 s; the remaining profiles were skipped."]);
     // Nothing more piles onto a view that stopped drawing; the session settings are still restored.
-    expect(benchmark.at(-1)!.label).toBe("medium · fixed lights");
-    expect(editor.commands).not.toContain("fixedlights branch");
-    expect(editor.commands.slice(-3)).toEqual(["fixedlights reset", "quality reset", "framecap 30"]);
+    expect(benchmark.at(-1)!.label).toBe("high");
+    expect(editor.commands).not.toContain("quality ultra");
+    expect(editor.commands.slice(-2)).toEqual(["quality reset", "framecap 30"]);
   });
 });
