@@ -7,8 +7,9 @@
  *
  * Cascade 0 is drawn for the slice [anchor, end 0], not from the near plane; a stabilized cascade's bounding sphere
  * still covers everything nearer when it contains the camera's eye, which holds when k² · q ≥ 1 (k: the frustum's
- * corner slope, hypot(tanX, tanY); q: end 0 / anchor). Below LOG_SPLIT_MARGIN, and for orthographic cameras, the split
- * stays Babylon's mix from the near plane.
+ * corner slope, hypot(tanX, tanY); q: end 0 / anchor). Below LOG_SPLIT_MARGIN, for orthographic cameras, and where the
+ * anchored first cascade would end later than the mix's (a short shadow range), the split stays Babylon's mix from the
+ * near plane.
  */
 
 /** The near distance the log split starts from, in metres. */
@@ -56,8 +57,11 @@ export function cascadeSplit(input: CascadeSplitInput): CascadeSplit {
   const tanY = input.fov === null ? 0 : Math.tan(input.fov / 2);
   const k = Math.hypot(tanY * input.aspect, tanY);
   const anchor = input.anchor;
+  const q = anchor === null ? 0 : (end / anchor) ** (1 / cascades);
+  // Over a short range (a near far plane) the anchored first cascade can end later than the mix's: keep the mix there.
+  const mixEnd = CASCADE_UNIFORM_LAMBDA * (near * (end / near) ** (1 / cascades) - near - (end - near) / cascades) + near + (end - near) / cascades;
   const logSplit = input.fov !== null && anchor !== null && anchor > near && anchor < end
-    && k * k * (end / anchor) ** (1 / cascades) >= LOG_SPLIT_MARGIN;
+    && k * k * q >= LOG_SPLIT_MARGIN && anchor * q < mixEnd;
   const minDistance = logSplit ? (anchor - near) / (far - near) : 0;
   const lambda = logSplit ? 1 : CASCADE_UNIFORM_LAMBDA;
   const start = near + minDistance * (far - near);

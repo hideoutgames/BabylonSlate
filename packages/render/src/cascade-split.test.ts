@@ -52,6 +52,8 @@ describe("cascadeSplit", () => {
     ["a narrow view", { fov: 0.3, aspect: 1 }],
     ["an anchor at or before the near plane", { near: 4 }],
     ["an anchor beyond the shadow distance", { distance: 3 }],
+    // Over 40 m the anchored first cascade would end at 12.6 m, the mix's at 7.4 m.
+    ["a short range, where the log split's first cascade ends later", { far: 40, cascades: 2 }],
   ])("keeps Babylon's mix from the near plane for %s", (_, change) => {
     const split = cascadeSplit({ ...VIEW, distance: 250, cascades: 3, tile: 2048, anchor: 4, ...change });
     expect(split).toMatchObject({ minDistance: 0, lambda: 0.7 });
@@ -60,9 +62,9 @@ describe("cascadeSplit", () => {
   it("splits up to the camera's far plane when the shadow distance lies beyond it, and up to the distance when the far plane is infinite", () => {
     const base = { ...VIEW, cascades: 2, tile: 1024, anchor: 4 };
     expect(cascadeSplit({ ...base, far: 100, distance: 250 }).ends.at(-1)).toBeCloseTo(100, 9);
-    const infinite = cascadeSplit({ ...base, far: 0, distance: 64 });
-    expect(infinite.ends).toEqual([16, 64].map((end) => expect.closeTo(end, 9)));
-    expect(infinite.minDistance).toBeCloseTo((4 - 0.1) / (64 - 0.1), 12);
+    const infinite = cascadeSplit({ ...base, cascades: 3, far: 0, distance: 250 });
+    infinite.ends.forEach((end, index) => expect(end).toBeCloseTo([15.874, 62.996, 250][index]!, 2));
+    expect(infinite.minDistance).toBeCloseTo((4 - 0.1) / (250 - 0.1), 12);
   });
 });
 
