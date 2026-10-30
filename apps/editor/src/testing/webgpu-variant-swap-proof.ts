@@ -35,6 +35,7 @@ import { applyAuthoredLightProperties, setHapticLighting, setSceneRenderSettings
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
+import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { isRevealPending } from "../../../../packages/render/src/reveal-pending";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
@@ -161,6 +162,11 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
   try {
     await coordinator.prepare();
     for (let attempt = 0; attempt < 300; attempt++) if (coordinator.isReady() && await frame(true) && await frame(true)) break;
+    // As Play's loading frames: each kind of shadow map's caster depth variants, and the atlas tiles' clear.
+    for (let index = 0; index < 30; index++) {
+      findSceneShadowController(scene)?.warmCasterVariants();
+      await frame(true);
+    }
     // Steady frames: the view now tolerates swaps and warms new variants' pipelines.
     for (let index = 0; index < 4; index++) await frame();
 
@@ -182,8 +188,8 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
       () => { if (kept(before)) previousFrames++; },
     );
 
-    // The spot starts casting shadows: the floors keep their Effects (the block reads the atlas), and the new map
-    // samples neutrally until its casters' depth pipelines exist, then draws.
+    // The spot starts casting shadows, the atlas's first tile: the floors keep their Effects (the block reads the
+    // atlas), and the new map samples neutrally until its casters' depth pipelines exist, then draws.
     const unshadowed = floors.map(drawnEffect);
     authored(spot, [0.9, 0.85, 0.7], 6, true);
     const shadowGain = await step(() => (spot.getShadowGenerator() as ShadowGenerator | null)?.getDarkness() === 0);
