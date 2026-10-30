@@ -49,7 +49,7 @@ it("adds the Scene Linear and Display Color stages for PBR only", () => {
     ambientOcclusion: null, reflections: null, volumetricLighting: null, upscale: null,
     bloom: null,
     imageProcessing: { sceneLinear: true, vignette: null, colorGrading: null },
-    fxaa: false, temporalAntiAliasing: null,
+    fxaa: false, temporalAntiAliasing: null, screenShadows: null,
   });
   // CEL is display-space by construction: the linear stage never applies.
   expect(planSceneEffects(linear, "cel")).toBeNull();
@@ -68,7 +68,7 @@ it("keeps CEL effects display-space with identity processing", () => {
     ambientOcclusion: null, reflections: null, volumetricLighting: null, upscale: null,
     bloom: { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 },
     imageProcessing: null,
-    fxaa: false, temporalAntiAliasing: null,
+    fxaa: false, temporalAntiAliasing: null, screenShadows: null,
   });
 });
 
@@ -142,6 +142,19 @@ it("plans an FSR chain on its own and renders it at the scaled size", () => {
   }
   expect(planSceneEffects(effects({ upscaling: { ...upscaling, renderScale: 1 } }), "pbr")).toBeNull();
   expect(upscaledRenderSize(null, 1920, 1080)).toEqual({ width: 1920, height: 1080 });
+});
+
+it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-processing off, and keys their level", () => {
+  const plain = effects();
+  expect(planSceneEffects(plain, "pbr", true, { screenShadows: "off" })).toBeNull();
+  expect(planSceneEffects(plain, "pbr", true, { screenShadows: "medium" })).toMatchObject({
+    screenShadows: "medium", bloom: null, imageProcessing: null, fxaa: false, temporalAntiAliasing: null,
+  });
+  expect(planSceneEffects(plain, "cel", true, { screenShadows: "medium" })).toBeNull();
+  expect(planSceneEffects(plain, "pbr", false, { screenShadows: "medium" })).toBeNull();
+  const keys = (["off", "low", "high"] as const).map((screenShadows) => sceneEffectsKey(plain, "pbr", true, { screenShadows }));
+  expect(new Set(keys).size).toBe(3);
+  expect(sceneEffectsKey(plain, "cel", true, { screenShadows: "high" })).toBe(sceneEffectsKey(plain, "cel", true));
 });
 
 it("plans nothing while the post-processing toggle is off", () => {

@@ -727,6 +727,14 @@ function placeLights(ctx: FeatureTestContext): void {
       zone.at(6 + dx!, 1.5, -1 + dz!), { scale: [0.6, 2, 0.6] }));
   });
 
+  // Small props resting on the floor under the sun (front middle): their contact shadows are finer than the sun's map
+  // texels, which Screen-Space Shadows fill in from Medium quality up.
+  add(primitive("ft-render-contact-plank", "Contact Shadow Plank", "box", zone.at(-1, 0.03, 3), {
+    materialGuid: surface, scale: [1.2, 0.04, 0.3], rotationDeg: [0, 20, 0],
+  }));
+  add(primitive("ft-render-contact-crate", "Contact Shadow Crate", "box", zone.at(0.8, 0.225, 3.4), { materialGuid: surface, scale: [0.3, 0.3, 0.3] }));
+  add(primitive("ft-render-contact-pole", "Contact Shadow Pole", "cylinder", zone.at(1.8, 0.6, 2.8), { scale: [0.06, 0.8, 0.06] }));
+
   // Unshadowed colour lights over a row of spheres (back).
   const colors: Vec3[] = [[1, 0.25, 0.2], [0.3, 1, 0.35], [0.3, 0.45, 1]];
   colors.forEach((color, index) => {

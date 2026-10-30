@@ -76,3 +76,22 @@ it("keeps independent scene overrides and resets to live project shadow distance
   expect(distance().disabled).toBe(true);
   expect(distance().value).toBe("350");
 });
+it("overrides Screen-Space Shadows for a scene and shows the project level", async () => {
+  const written: ShadowOverrides[] = [];
+  function Fields() {
+    const [overrides, setOverrides] = useState<ShadowOverrides>({});
+    return <ShadowSettingsFields project={normalizeShadowSettings({ profile: "high" })} overrides={overrides}
+      onChange={(next) => { written.push(next); setOverrides(next); }} />;
+  }
+  render(<Fields />);
+  const field = () => screen.getByLabelText("Screen-Space Shadows");
+  expect(field().textContent).toMatch(/^Medium/);
+  expect(field()).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Override Screen-Space Shadows" }));
+  fireEvent.click(field());
+  const off = await screen.findByRole("option", { name: "Off" });
+  fireEvent.pointerDown(off);
+  fireEvent.click(off);
+  await waitFor(() => expect(written.at(-1)).toMatchObject({ screenShadows: "off" }));
+  expect(field().textContent).toMatch(/^Off/);
+});

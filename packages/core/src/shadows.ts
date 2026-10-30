@@ -1,5 +1,11 @@
 /** Authored shadow settings. Device limits never mutate these values. */
 export type ShadowProfile = "low" | "medium" | "high" | "ultra";
+/**
+ * Screen-Space Shadows: the sun's contact shadows marched over the view's depth, from off to high (more steps, a longer
+ * march and a farther fade).
+ */
+export type ScreenShadowsQuality = "off" | "low" | "medium" | "high";
+export const SCREEN_SHADOWS_QUALITIES: readonly ScreenShadowsQuality[] = ["off", "low", "medium", "high"];
 export interface ShadowSettings {
   /** UI provenance; profile remains the admission tier when this is Custom. */
   preset?: ShadowProfile | "custom";
@@ -21,6 +27,7 @@ export interface ShadowSettings {
   localLightMode: "auto" | "manual";
   maxLocalLights: number;
   localMapSize: number;
+  screenShadows: ScreenShadowsQuality;
 }
 export type ShadowOverrides = Partial<ShadowSettings>;
 const SHADOW_PROFILE_COMMON = {
@@ -36,6 +43,7 @@ const SHADOW_PROFILE_COMMON = {
 export const SHADOW_PROFILES = {
   low: {
     ...SHADOW_PROFILE_COMMON,
+    screenShadows: "off",
     distance: 120,
     mapSize: 2048,
     cascades: 2,
@@ -45,6 +53,7 @@ export const SHADOW_PROFILES = {
   },
   medium: {
     ...SHADOW_PROFILE_COMMON,
+    screenShadows: "off",
     distance: 250,
     mapSize: 2048,
     cascades: 3,
@@ -54,6 +63,7 @@ export const SHADOW_PROFILES = {
   },
   high: {
     ...SHADOW_PROFILE_COMMON,
+    screenShadows: "medium",
     distance: 350,
     mapSize: 2048,
     cascades: 4,
@@ -63,6 +73,7 @@ export const SHADOW_PROFILES = {
   },
   ultra: {
     ...SHADOW_PROFILE_COMMON,
+    screenShadows: "high",
     distance: 600,
     mapSize: 4096,
     cascades: 4,
@@ -79,8 +90,8 @@ export const SHADOW_PROFILES = {
  * never edited, so they load as the level's current values instead of turning Custom.
  */
 const SUPERSEDED_SHADOW_PROFILES: Partial<Record<ShadowProfile, Omit<ShadowSettings, "profile" | "preset">>> = {
-  low: { ...SHADOW_PROFILE_COMMON, distance: 80, mapSize: 1024, cascades: 1, filterQuality: "low", localMapSize: 512, maxLocalLights: 1 },
-  medium: { ...SHADOW_PROFILE_COMMON, distance: 200, mapSize: 2048, cascades: 2, filterQuality: "medium", localMapSize: 1024, maxLocalLights: 2 },
+  low: { ...SHADOW_PROFILE_COMMON, distance: 80, mapSize: 1024, cascades: 1, filterQuality: "low", localMapSize: 512, maxLocalLights: 1, screenShadows: "off" },
+  medium: { ...SHADOW_PROFILE_COMMON, distance: 200, mapSize: 2048, cascades: 2, filterQuality: "medium", localMapSize: 1024, maxLocalLights: 2, screenShadows: "off" },
 };
 export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
   profile: "medium",
@@ -116,6 +127,8 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
     result.profile = source.profile as ShadowProfile;
   if (source.filter === "pcf" || source.filter === "pcss")
     result.filter = source.filter;
+  if (typeof source.screenShadows === "string" && (SCREEN_SHADOWS_QUALITIES as readonly string[]).includes(source.screenShadows))
+    result.screenShadows = source.screenShadows as ScreenShadowsQuality;
   if (
     source.filterQuality === "low" ||
     source.filterQuality === "medium" ||
@@ -244,6 +257,10 @@ export function effectiveShadowSettings(
   if (mode === "cel" && settings.filter === "pcss") {
     settings.filter = "pcf";
     limits.push("filter: hard CEL shadows");
+  }
+  if (mode === "cel" && settings.screenShadows !== "off") {
+    settings.screenShadows = "off";
+    limits.push("screen shadows: not in CEL");
   }
   return { settings, limits };
 }

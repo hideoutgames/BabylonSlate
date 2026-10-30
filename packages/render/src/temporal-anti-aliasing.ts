@@ -93,6 +93,11 @@ export class TemporalJitter {
     return [(this.previousX - this.x) * 0.5, (this.previousY - this.y) * 0.5];
   }
 
+  /** This frame's sample of the jitter sequence (1 to the sample count), as the last `projection` advanced it. */
+  get sampleIndex(): number {
+    return this.index;
+  }
+
   /** The camera's projection offset by this frame's sub-pixel jitter. */
   projection(): Matrix {
     const frame = this.scene.getFrameId();
