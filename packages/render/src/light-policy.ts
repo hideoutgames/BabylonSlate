@@ -8,15 +8,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 
-import {
-  canonicalizeForwardLightSlots,
-  exchangeForwardLightSlots,
-  forwardSlotClass,
-  NO_FORWARD_LIGHT_SLOT_EXCHANGES,
-  settleForwardLightSlots,
-  type ForwardLightSlotExchange,
-} from "./forward-light-slots";
-import { lightingSamplerCapacity, lightSamplerCost, lightSamplerCount } from "./light-sampler-budget";
+import { lightingSamplerCapacity } from "./light-sampler-budget";
 
 const authoredEnabled = new WeakMap<
   Light,
@@ -34,24 +26,10 @@ const scratchCandidateSet = new Set<Light>();
 const scratchDistances = new Map<Light, number>();
 const scratchLights: Light[] = [];
 const scratchAuthored: boolean[] = [];
-const scratchBudget: BudgetChange[] = [];
-const scratchLeaving: Light[] = [];
-const scratchEntering: Light[] = [];
-const scratchRanked = new Set<Light>();
-const scratchStable = new Set<Light>();
-const scratchKinds = new Map<Light, string>();
-const scratchQuotas = new Map<string, number>();
-const scratchOrder: Light[] = [];
-const scratchRest: Light[] = [];
-
-/** How this sync's budget selection changed a light's Forward limit. */
-const BudgetChange = { None: 0, Dropped: 1, Admitted: 2 } as const;
-type BudgetChange = (typeof BudgetChange)[keyof typeof BudgetChange];
 
 /**
- * Creation order: the stable "authored" order of a Scene's lights. The Forward
- * policy reorders `scene.lights` to keep shader slots, so order-sensitive
- * readers (diagnostics) sort by this instead.
+ * Creation order: the stable "authored" order of a Scene's lights, which
+ * order-sensitive readers (diagnostics) sort by.
  */
 export function compareLightCreation(a: Light, b: Light): number {
   return a.uniqueId - b.uniqueId;
@@ -138,12 +116,11 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
 export type ForwardLightCapacity = { lights: number; locals: number; samplers: number };
 
 /**
- * Replaces the ranked, kind-keeping selection of `syncForwardLightPolicy`
- * (the light block's admission, `selectHapticLights`). It ranks `candidates` (the
- * eligible lights) itself, pushes the lights it leaves out to `limited`, and
- * those the sampler headroom leaves out also to `samplerLimited`, and returns
- * the lights it admits with the lighting samplers they use. Everything after
- * the selection (slot exchanges, canonical order, toggles) stays the same.
+ * The selection of `syncForwardLightPolicy` (the light block's admission,
+ * `selectHapticLights`). It ranks `candidates` (the eligible lights) itself,
+ * pushes the lights it leaves out to `limited`, and those the sampler headroom
+ * leaves out also to `samplerLimited`, and returns the lights it admits with
+ * the lighting samplers they use. The policy then toggles the lights.
  */
 export type ForwardLightSelection = (
   scene: Scene,
@@ -154,20 +131,18 @@ export type ForwardLightSelection = (
   samplerLimited: Light[],
 ) => { admitted: Iterable<Light>; samplers: number };
 
-/** Scene-local conventional selection; authored Enabled and priority are retained. */
+/** Scene-local selection; authored Enabled and priority are retained. */
 export function syncForwardLightPolicy(
   scene: Scene,
   slots: number,
-  localSlots = Number.MAX_SAFE_INTEGER,
-  select?: ForwardLightSelection,
+  localSlots: number,
+  select: ForwardLightSelection,
 ): {
   requested: number;
   admitted: number;
   limited: Light[];
   samplerLimited: Light[];
   samplers: number;
-  /** Lights that took a dropped light's shader index during this sync. */
-  exchanges: readonly ForwardLightSlotExchange[];
 } {
   syncDirectionalLightPolicy(scene);
   const previous = forwardSelections.get(scene) ?? new Set<Light>();
@@ -182,37 +157,17 @@ export function syncForwardLightPolicy(
   const selected = previous;
   const limited: Light[] = [];
   const samplerLimited: Light[] = [];
-  let samplers: number;
-  if (select) {
-    const selection = select(scene, candidates, previous, capacity, limited, samplerLimited);
-    selected.clear();
-    for (const light of selection.admitted) selected.add(light);
-    samplers = selection.samplers;
-  } else {
-    if (
-      candidates.length > capacity.lights ||
-      countLocals(candidates) > capacity.locals ||
-      lightSamplerCount(candidates) > capacity.samplers
-    ) {
-      sortLightsByAdmission(scene, candidates, previous);
-      // Light sorting re-sorts every receiver.
-      if (!scene.requireLightSorting)
-        keepAdmittedSlotKinds(scene, candidates, previous, capacity);
-    }
-    selected.clear();
-    samplers = admit(candidates, capacity, selected, limited, samplerLimited);
-  }
+  const selection = select(scene, candidates, previous, capacity, limited, samplerLimited);
+  selected.clear();
+  for (const light of selection.admitted) selected.add(light);
   // Decide every light before toggling any, so receivers can be prepared for
   // the whole change. Fill the candidate set once, and only when needed.
   const candidateSet = scratchCandidateSet;
   candidateSet.clear();
   const lights = scratchLights;
   const authored = scratchAuthored;
-  const budget = scratchBudget;
-  let exchanges: readonly ForwardLightSlotExchange[];
   try {
     for (const light of scene.lights) {
-      const wasLimited = forwardExcluded.has(light);
       const isLimited = isForwardEligible(light) && !selected.has(light);
       if (isLimited) {
         forwardExcluded.add(light);
@@ -221,32 +176,12 @@ export function syncForwardLightPolicy(
       } else forwardExcluded.delete(light);
       lights.push(light);
       authored.push(isAuthoredLightEnabled(light));
-      budget.push(
-        isLimited === wasLimited
-          ? BudgetChange.None
-          : isLimited
-            ? BudgetChange.Dropped
-            : BudgetChange.Admitted,
-      );
     }
-    const transition = exchangeSlots(scene, lights, authored, budget);
-    exchanges = transition.exchanges;
     for (let index = 0; index < lights.length; index++)
       applyEnabled(lights[index]!, authored[index]!);
-    settleForwardLightSlots(scene, exchanges);
-    // Receivers refresh unless every toggle was a preserved exchange; then the
-    // canonical order makes their defines a function of the admitted set.
-    if (
-      transition.leaving + transition.entering > 0 &&
-      (exchanges.length !== transition.leaving ||
-        exchanges.length !== transition.entering ||
-        exchanges.some(({ preserved }) => !preserved))
-    )
-      canonicalizeForwardLightSlots(scene, (light) => !isGlobalLight(light));
   } finally {
     lights.length = 0;
     authored.length = 0;
-    budget.length = 0;
     candidates.length = 0;
     candidateSet.clear();
   }
@@ -256,190 +191,12 @@ export function syncForwardLightPolicy(
     admitted: selected.size,
     limited,
     samplerLimited,
-    samplers,
-    exchanges,
+    samplers: selection.samplers,
   };
-}
-
-/**
- * The budget's selection: admits `candidates` in order while the shader slots,
- * the local-light budget and the lighting samplers allow. Returns the samplers
- * the admitted lights use.
- */
-function admit(
-  candidates: readonly Light[],
-  capacity: ForwardLightCapacity,
-  selected: Set<Light>,
-  limited?: Light[],
-  samplerLimited?: Light[],
-): number {
-  let selectedLocals = 0;
-  let samplers = 0, hasArea = false;
-  for (const light of candidates) {
-    const authoredLocal = !isGlobalLight(light);
-    const samplerCost = lightSamplerCost(light, hasArea);
-    if (selected.size >= capacity.lights || (authoredLocal && selectedLocals >= capacity.locals))
-      limited?.push(light);
-    else if (samplers + samplerCost > capacity.samplers) {
-      limited?.push(light);
-      samplerLimited?.push(light);
-    } else {
-      selected.add(light);
-      samplers += samplerCost;
-      hasArea ||= light instanceof RectAreaLight;
-      if (authoredLocal) selectedLocals++;
-    }
-  }
-  return samplers;
-}
-
-/**
- * How much nearer the camera a light of another slot kind must be before the
- * Forward budget changes which kinds it admits: it keeps its current mix
- * unless that would keep a light more than this many times farther away than
- * the nearest light it leaves out instead, so a nearer light of another kind
- * can stay off until it is this much nearer. Every lit material compiles a new
- * shader the first time the admitted kinds change (a point admitted for a
- * shadowed spot); a swap between lights of one kind compiles nothing. Going
- * back takes the same margin, so the mix does not flip at a boundary. (A light
- * priority makes Babylon sort lights per mesh, `requireLightSorting`, which
- * this policy leaves alone.)
- */
-export const FORWARD_KIND_CHANGE_DISTANCE_RATIO = 1.25;
-
-/**
- * When the ranked selection would change the admitted local lights' mix of
- * slot kinds (`forwardSlotClass`: a bound shadow map, then the light's type
- * and other per-light defines; a forward-dropped light keeps its standby map),
- * reorder `candidates` so each kind first fills as many places as it held
- * before (its nearest lights by rank), unless that keeps a light more than
- * FORWARD_KIND_CHANGE_DISTANCE_RATIO times farther than the light the ranked
- * selection would admit in its place.
- */
-function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: ReadonlySet<Light>, capacity: ForwardLightCapacity): void {
-  if (!previous.size) return;
-  const ranked = scratchRanked;
-  const stable = scratchStable;
-  const kinds = scratchKinds;
-  const quotas = scratchQuotas;
-  try {
-    admit(candidates, capacity, ranked);
-    // Most syncs keep their selection, and every unchanged one ends here.
-    let unchanged = ranked.size === previous.size;
-    for (const light of ranked) if (unchanged && !previous.has(light)) unchanged = false;
-    if (unchanged) return;
-    const kind = (light: Light) => {
-      let value = kinds.get(light);
-      if (value === undefined) kinds.set(light, (value = forwardSlotClass(scene, light)));
-      return value;
-    };
-    const change = (set: ReadonlySet<Light>, light: Light, delta: number) => {
-      if (set.has(light) && !isGlobalLight(light)) quotas.set(kind(light), (quotas.get(kind(light)) ?? 0) + delta);
-    };
-    for (const light of previous) change(previous, light, 1);
-    for (const light of ranked) change(ranked, light, -1);
-    let sameKinds = true;
-    for (const count of quotas.values()) if (count !== 0) sameKinds = false;
-    if (sameKinds) return;
-    // Places per kind the previous selection held, also those of lights no longer
-    // eligible: a disabled spot hands its place to the next spot, not a point.
-    quotas.clear();
-    for (const light of previous) change(previous, light, 1);
-    const order = scratchOrder;
-    const rest = scratchRest;
-    for (const light of candidates) {
-      const quota = !isGlobalLight(light) ? (quotas.get(kind(light)) ?? 0) : 1;
-      if (quota > 0) {
-        if (!isGlobalLight(light)) quotas.set(kind(light), quota - 1);
-        order.push(light);
-      } else rest.push(light);
-    }
-    order.push(...rest);
-    admit(order, capacity, stable);
-    // The nearest light only the ranked selection admits, the farthest only the stable one keeps.
-    let entering: Light | undefined;
-    let kept: Light | undefined;
-    for (const light of candidates) {
-      if (!entering && ranked.has(light) && !stable.has(light)) entering = light;
-      if (stable.has(light) && !ranked.has(light)) kept = light;
-    }
-    if (!kept) return;
-    const camera = scene.activeCamera;
-    if (entering && camera) {
-      const distance = (light: Light) => rankingDistanceSquared(light, camera);
-      if (distance(kept) > distance(entering) * FORWARD_KIND_CHANGE_DISTANCE_RATIO ** 2) return;
-    }
-    candidates.length = 0;
-    candidates.push(...order);
-  } finally {
-    ranked.clear();
-    stable.clear();
-    kinds.clear();
-    quotas.clear();
-    scratchOrder.length = 0;
-    scratchRest.length = 0;
-  }
-}
-
-type SlotTransition = {
-  exchanges: readonly ForwardLightSlotExchange[];
-  /** Local lights the budget turns off and on in this sync. */
-  leaving: number;
-  entering: number;
-};
-const NO_SLOT_TRANSITION: SlotTransition = { exchanges: NO_FORWARD_LIGHT_SLOT_EXCHANGES, leaving: 0, entering: 0 };
-
-/**
- * Lights the budget admits this sync take the shader indices of those it
- * drops. Authored Enabled, intensity and parent changes keep Babylon's order.
- */
-function exchangeSlots(
-  scene: Scene,
-  lights: readonly Light[],
-  authored: readonly boolean[],
-  budget: readonly BudgetChange[],
-): SlotTransition {
-  // Babylon re-sorts a scene that requires light sorting whenever a light is
-  // added or removed.
-  if (scene.requireLightSorting)
-    return NO_SLOT_TRANSITION;
-  const leaving = scratchLeaving;
-  const entering = scratchEntering;
-  try {
-    for (let index = 0; index < lights.length; index++) {
-      const light = lights[index]!;
-      // The first enabled sun in scene order illuminates; never move a sun
-      // or fill (the budget keeps both ahead of every local light anyway).
-      if (budget[index] === BudgetChange.None || isGlobalLight(light)) continue;
-      const lit = light.isEnabled();
-      const next =
-        effectiveEnabled(light, authored[index]!) &&
-        (!light.parent || light.parent.isEnabled());
-      if (budget[index] === BudgetChange.Dropped && lit && !next) leaving.push(light);
-      else if (budget[index] === BudgetChange.Admitted && !lit && next) entering.push(light);
-    }
-    // Removal alone keeps every remaining light's relative order.
-    return {
-      exchanges: entering.length
-        ? exchangeForwardLightSlots(scene, leaving, entering)
-        : NO_FORWARD_LIGHT_SLOT_EXCHANGES,
-      leaving: leaving.length,
-      entering: entering.length,
-    };
-  } finally {
-    leaving.length = 0;
-    entering.length = 0;
-  }
 }
 
 function isForwardEligible(light: Light): boolean {
   return isIlluminatingLight(light) && !excluded.has(light);
-}
-
-function countLocals(lights: readonly Light[]): number {
-  let count = 0;
-  for (const light of lights) if (!isGlobalLight(light)) count++;
-  return count;
 }
 
 export function isGlobalLight(light: Light): boolean {
