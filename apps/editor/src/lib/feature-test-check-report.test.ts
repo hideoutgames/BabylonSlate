@@ -97,12 +97,12 @@ describe("formatFeatureTestCheckReport", () => {
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines[0]).toMatch(/^Haptic Feature Test Check \(Breakdown\)/);
     expect(lines).toContain("  Breakdown (frame cap lifted; change against the mean of both baselines):");
-    expect(lines).toContain("    post off              33    30.0ms   38ms    -10.0ms -25%     14.2ms  618           1180x788@1.00");
-    expect(lines).toContain("    baseline again        24    42.0ms   50ms    +2.0ms +5%       14.2ms  618           1180x788@1.00");
+    expect(lines).toContain("    post off              33    30.0ms   38ms    -10.0ms -25%     14.2ms              618           1180x788@1.00");
+    expect(lines).toContain("    baseline again        24    42.0ms   50ms    +2.0ms +5%       14.2ms              618           1180x788@1.00");
     expect(lines.some((line) => line.includes("Highest tier"))).toBe(false);
   });
 
-  it("shows a sample's mean draw calls with their range when frames differ", () => {
+  it("shows the counters' medians with their ranges when frames differ", () => {
     const report: FeatureTestCheckReport = {
       mode: "breakdown", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],
       scenes: [{
@@ -110,10 +110,11 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null,
           snapshot: { drawCalls: 605, meshes: 80, textures: 30, accountedBytes: 0, rendering: null },
-          draws: { mean: 574.5, min: 544, max: 605, samples: 10 }, firstDraws: null, commands: [],
+          counters: { draws: { median: 575, min: 544, max: 605, samples: 10 }, cpuMs: null, gpuMs: null }, firstDraws: null, commands: [],
           benchmark: [{
             label: "baseline", frames: { frames: 100, durationMs: 4000, fps: 25, medianMs: 40, p95Ms: 46, maxMs: 50, stalls: 0 },
-            runtimeFps: null, cpuMs: 14.2, gpuMs: null, drawCalls: 575, draws: { mean: 574.5, min: 544, max: 605, samples: 10 },
+            runtimeFps: null, cpuMs: 14.2, gpuMs: null, drawCalls: 575, draws: { median: 575, min: 544, max: 605, samples: 10 },
+            cpu: { median: 14.2, min: 13.1, max: 16.0, samples: 10 },
             resolution: "1180x788@1.00", failed: [],
           }], logs: [] },
         session: null,
@@ -121,7 +122,7 @@ describe("formatFeatureTestCheckReport", () => {
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines.some((line) => line.startsWith("  Render: draws 575 (544-605) · meshes 80"))).toBe(true);
-    expect(lines.some((line) => line.includes("14.2ms  575 (544-605) 1180x788@1.00"))).toBe(true);
+    expect(lines.some((line) => line.includes("14.2 (13.1-16.0)ms  575 (544-605) 1180x788@1.00"))).toBe(true);
   });
 
   it("shows an editor load failure's error and the viewport's GPU when Play never ran", () => {

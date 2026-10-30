@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
 import {
-  breakdownDelta, drawStats, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_STEPS, frameStats, runFeatureTestCheck,
+  breakdownDelta, counterStats, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_STEPS, frameStats, runFeatureTestCheck,
   type FeatureTestBenchmarkSample, type FeatureTestCheckDeps,
 } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
@@ -285,33 +285,35 @@ describe("draw sampling", () => {
     };
   };
 
-  it("records Play's draw calls per frame over the sample window, not one frame's", async () => {
+  it("records Play's per-frame counters over the sample window, not one frame's", async () => {
     const editor = fakeEditor({});
     const report = await runFeatureTestCheck({
       mode: "quick", scenes: [scene("FT_World")], deps: alternating(editor.deps), signal: new AbortController().signal,
     });
-    const draws = report.scenes[0].play.draws!;
-    expect(draws.min).toBe(544);
-    expect(draws.max).toBe(605);
-    expect(draws.samples).toBeGreaterThanOrEqual(2);
-    expect(draws.mean).toBeGreaterThan(544);
-    expect(draws.mean).toBeLessThan(605);
+    const counters = report.scenes[0].play.counters!;
+    expect(counters.draws).toMatchObject({ min: 544, max: 605 });
+    expect(counters.draws!.samples).toBeGreaterThanOrEqual(2);
+    // This fake reports no rendering diagnostics in Quick mode, so there is no frame cost to sample.
+    expect(counters.cpuMs).toBeNull();
   });
 
-  it("gives each benchmark step its mean draw calls and their range", async () => {
+  it("gives each benchmark step its median counters and their range", async () => {
     const editor = fakeEditor({}, undefined, () => ({ drawn: 1, held: 0 }));
     const report = await runFeatureTestCheck({
       mode: "benchmark", scenes: [scene("FT_World")], deps: alternating(editor.deps), signal: new AbortController().signal,
     });
     for (const sample of report.scenes[0].play.benchmark) {
       expect(sample.draws).toMatchObject({ min: 544, max: 605 });
-      expect(sample.drawCalls).toBe(Math.round(sample.draws!.mean));
+      expect(sample.drawCalls).toBe(sample.draws!.median);
+      expect(sample.cpuMs).toBe(4);
+      expect(sample.cpu).toMatchObject({ median: 4 });
     }
   });
 
-  it("summarises the samples, and nothing without one", () => {
-    expect(drawStats([544, 605, 544, 605])).toEqual({ mean: 574.5, min: 544, max: 605, samples: 4 });
-    expect(drawStats([])).toBeNull();
+  it("summarises the samples by their median and range, and nothing without one", () => {
+    expect(counterStats([605, 544, 605, 544])).toEqual({ median: 574.5, min: 544, max: 605, samples: 4 });
+    expect(counterStats([544, 605, 544])).toEqual({ median: 544, min: 544, max: 605, samples: 3 });
+    expect(counterStats([])).toBeNull();
   });
 });
 

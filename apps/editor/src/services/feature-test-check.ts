@@ -78,26 +78,36 @@ export interface FeatureTestBenchmarkSample {
   label: string;
   frames: FrameStats | null;
   runtimeFps: number | null;
-  /** Mean CPU and GPU frame cost while sampling; GPU is null where timer queries are unavailable. */
+  /** Median CPU and GPU frame cost while sampling (the mean in reports saved before `cpu`); GPU is null where timer queries are unavailable. */
   cpuMs: number | null;
   gpuMs: number | null;
-  /** Mean draw calls per frame while sampling (the frame at the end of the sample in reports saved before `draws`). */
+  /** Median draw calls per frame while sampling (the frame at the end of the sample in reports saved before `draws`). */
   drawCalls: number;
-  /** Draw calls per frame while sampling; absent in reports saved before it was recorded. */
-  draws?: DrawStats;
+  /** The per-frame counters while sampling; absent in reports saved before they were recorded. */
+  draws?: CounterStats;
+  cpu?: CounterStats | null;
+  gpu?: CounterStats | null;
   resolution: string | null;
   failed: string[];
 }
 
 /**
- * Draw calls per frame over a sample window, read every half second. One frame's count is not representative: a pass
- * that draws on alternate frames (a static view's planar reflection) moves it by its whole draw count.
+ * A per-frame counter (draw calls, CPU or GPU frame cost) over a sample window, read every half second. One frame's
+ * value is not representative: a pass that draws on alternate frames (a static view's planar reflection) moves the draw
+ * count by its whole draw count.
  */
-export interface DrawStats {
-  mean: number;
+export interface CounterStats {
+  median: number;
   min: number;
   max: number;
   samples: number;
+}
+
+/** Play's per-frame counters while it was sampled. */
+export interface PlayCounters {
+  draws: CounterStats | null;
+  cpuMs: CounterStats | null;
+  gpuMs: CounterStats | null;
 }
 
 export interface FrameStats {
@@ -138,8 +148,8 @@ export interface FeatureTestCheckSceneResult {
     frames: FrameStats | null;
     runtimeFps: number | null;
     snapshot: ReturnType<PlayProbe["snapshot"]> | null;
-    /** Draw calls per frame while Play was sampled; absent in reports saved before it was recorded. */
-    draws?: DrawStats | null;
+    /** Play's per-frame counters while it was sampled; absent in reports saved before they were recorded. */
+    counters?: PlayCounters | null;
     /** Shaders first drawn after the scene presented, read when its commands finished (WebGL2 only). */
     firstDraws: NonNullable<RenderDiagnostics["firstDraws"]> | null;
     commands: FeatureTestCheckCommandResult[];
@@ -386,7 +396,7 @@ async function checkScene(
     deps.onProgress?.(`${scene.name}: measuring Play`);
     const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
     result.play.frames = sampled.frames;
-    result.play.draws = sampled.draws;
+    result.play.counters = { draws: sampled.draws, cpuMs: sampled.cpu, gpuMs: sampled.gpu };
     result.play.runtimeFps = play.runtimeFps();
     result.play.snapshot = play.snapshot();
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
@@ -524,10 +534,12 @@ async function benchmarkProfiles(
         label: profile.label,
         frames: sampled.frames,
         runtimeFps: play.runtimeFps(),
-        cpuMs: sampled.cpuMs,
-        gpuMs: sampled.gpuMs,
-        drawCalls: sampled.draws ? Math.round(sampled.draws.mean) : snapshot.drawCalls,
+        cpuMs: sampled.cpu?.median ?? null,
+        gpuMs: sampled.gpu?.median ?? null,
+        drawCalls: sampled.draws?.median ?? snapshot.drawCalls,
         draws: sampled.draws ?? undefined,
+        cpu: sampled.cpu,
+        gpu: sampled.gpu,
         resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
         failed,
       });
@@ -546,7 +558,7 @@ async function benchmarkProfiles(
 /** Reads the per-frame counters every half second while `frames` samples the frame intervals. */
 async function sampleWithCounters(
   play: PlayProbe, frames: Promise<FrameStats | null>, deps: FeatureTestCheckDeps, signal: AbortSignal,
-): Promise<{ frames: FrameStats | null; draws: DrawStats | null; cpuMs: number | null; gpuMs: number | null }> {
+): Promise<{ frames: FrameStats | null; draws: CounterStats | null; cpu: CounterStats | null; gpu: CounterStats | null }> {
   const cpu: number[] = [];
   const gpu: number[] = [];
   const draws: number[] = [];
@@ -561,16 +573,16 @@ async function sampleWithCounters(
     }
     await Promise.race([done, deps.sleep(500, signal)]);
   }
-  return { frames: await done, draws: drawStats(draws), cpuMs: mean(cpu), gpuMs: mean(gpu) };
+  return { frames: await done, draws: counterStats(draws), cpu: counterStats(cpu), gpu: counterStats(gpu) };
 }
 
-export function drawStats(values: readonly number[]): DrawStats | null {
+/** The median, minimum and maximum of a counter's samples, or null without one. */
+export function counterStats(values: readonly number[]): CounterStats | null {
   if (!values.length) return null;
-  return { mean: mean(values)!, min: Math.min(...values), max: Math.max(...values), samples: values.length };
-}
-
-function mean(values: readonly number[]): number | null {
-  return values.length ? values.reduce((total, value) => total + value, 0) / values.length : null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = sorted.length >> 1;
+  const median = sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
+  return { median, min: sorted[0]!, max: sorted.at(-1)!, samples: sorted.length };
 }
 
 /** Ends `text` with exactly one full stop. */
