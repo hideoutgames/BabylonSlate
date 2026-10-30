@@ -73,7 +73,7 @@ import type {
 import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled } from "./render-settings";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows } from "./render-settings";
 import { environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -445,6 +445,8 @@ function initializeEngine(
   // The editor world view, Play and the exported player draw previous Effects while a changed variant compiles;
   // Prefab Preview (with its studio lights) waits for the new one.
   if (!presentRtt && !options.previewLighting) setSceneBindsPreviousEffects(scene);
+  // Only a world view (the editor's, Play's, the player's) marches Screen-Space Shadows; previews keep them off.
+  if (!presentRtt && !options.previewLighting) allowSceneScreenShadows(scene);
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so a

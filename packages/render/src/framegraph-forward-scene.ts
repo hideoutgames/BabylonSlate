@@ -1100,6 +1100,14 @@ export class ForwardSceneFrameGraph {
         // Temporal anti-aliasing jitters the scene draw with its geometry pass,
         // including the water split's transparent pass, which draws over the
         // jittered opaque depth and samples the jittered scene copy.
+        // Screen-Space Shadows draw before the objects, which read them (as does the water split's own opaque pass, which
+        // draws through the objects' renderer and so its render pass).
+        const screenShadows = this.effectsGraph?.spatial?.screenShadows;
+        if (screenShadows) {
+          screenShadows.registerPass(this.objects.objectRenderer.renderPassId);
+          this.objects.setOwnedTextureDependencies("screenShadows", [screenShadows.output]);
+          this.water?.readsInOpaquePass(screenShadows.output);
+        }
         const jitter = this.effectsGraph?.spatial?.jitter;
         jitter?.jitterRenderer(this.objects.objectRenderer);
         if (this.water) jitter?.jitterRenderer(this.water.transparent.objectRenderer);
@@ -1122,6 +1130,7 @@ export class ForwardSceneFrameGraph {
         if (this.effectsGraph?.spatial) {
           this.graph.addTask(this.effectsGraph.spatial.clear);
           this.graph.addTask(this.effectsGraph.spatial.geometry);
+          if (this.effectsGraph.spatial.screenShadows) this.graph.addTask(this.effectsGraph.spatial.screenShadows.task);
         }
         if (this.water && !this.water.splitsClear) this.graph.addTask(this.water.split);
         this.graph.addTask(this.objects);

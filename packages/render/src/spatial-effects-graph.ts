@@ -14,6 +14,7 @@ import {
 } from "./spatial-effects";
 import type { SceneEffectsPlan } from "./scene-effects";
 import type { TemporalJitter } from "./temporal-anti-aliasing";
+import { ScreenShadowsGraph } from "./screen-shadows";
 import {
   releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderCategory,
@@ -108,6 +109,8 @@ export class SpatialEffectsGraph {
   /** Present with temporal anti-aliasing; jitters the geometry pass already.
    * The view's main object renderer must be registered by its owner. */
   readonly jitter?: TemporalJitter;
+  /** Screen-Space Shadows: a pass after the geometry pass that the owner adds before its objects (`screen-shadows.ts`). */
+  readonly screenShadows?: ScreenShadowsGraph;
   private readonly lease: ManagedRenderLease;
   private readonly handles: {
     handle: FrameGraphTextureHandle;
@@ -235,6 +238,11 @@ export class SpatialEffectsGraph {
       for (const stage of stages) unattached.add(stage);
       this.jitter = stages.find((stage) => stage.history)?.history;
       this.jitter?.jitterRenderer(this.geometry.objectRenderer);
+      if (plan.screenShadows) {
+        this.screenShadows = new ScreenShadowsGraph(graph, camera, plan.screenShadows, this.geometry.geometryViewDepthTexture,
+          width, height, this.jitter, this.compileFailure);
+        this.handles.push({ handle: this.screenShadows.output, category: "geometry" });
+      }
       const inputs: FrameGraphTextureHandle[] = [];
       for (const stage of stages) {
         inputs.push(source);
@@ -285,9 +293,12 @@ export class SpatialEffectsGraph {
       task.disabled = idle !== undefined && skipped;
       if (!task.disabled && task.stage.geometry) geometryRead = true;
     }
+    // Screen-Space Shadows read the depth every frame, whatever the lights.
+    if (this.screenShadows) geometryRead = true;
     this.geometry.disabled = this.clear.disabled = !geometryRead;
   }
   reconcile(): void {
+    this.screenShadows?.reconcile(this.graph);
     if (this.committed) return;
     this.lease.commit(
       this.handles.map(({ handle, category }) => {
@@ -307,18 +318,19 @@ export class SpatialEffectsGraph {
     if (this.disposed) return;
     this.jitter?.dispose();
     for (const task of this.tasks) task.dispose();
+    this.screenShadows?.dispose();
     if (this.geometry) unregisterSpatialGeometryPass(this.graph.scene, this.geometry.objectRenderer.renderPassId);
     this.geometry?.dispose();
     this.clear?.dispose();
     this.disposed = true;
   }
   whenDisposed(): Promise<void> {
-    return Promise.all(this.tasks.map((task) => task.whenDisposed())).then(
+    return Promise.all([...this.tasks.map((task) => task.whenDisposed()), this.screenShadows?.whenDisposed()]).then(
       () => {},
     );
   }
   whenReleased(): Promise<void> {
-    return Promise.all(this.tasks.map((task) => task.whenReleased())).then(
+    return Promise.all([...this.tasks.map((task) => task.whenReleased()), this.screenShadows?.whenReleased()]).then(
       () => {},
     );
   }

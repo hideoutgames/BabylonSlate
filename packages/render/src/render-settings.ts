@@ -91,8 +91,12 @@ type SceneRendering = {
   effectsKey: string;
   /** Renderable chain for the live settings; null means no owned passes. */
   effectsPlan: SceneEffectsPlan | null;
-  /** Called when `mode` changes, after the plan is current. */
+  /** Notified when the light block's scene-level defines change (`followLightingDefines`), after the plan is current. */
   listeners: Set<(mode: RenderMode) => void>;
+  /** The key of those defines as last planned. */
+  lightingDefines: string;
+  /** A world view's Scene (`allowSceneScreenShadows`): only its plan carries Screen-Space Shadows. */
+  screenShadowsAllowed: boolean;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
 /** Scenes whose project quality resolves through another Scene (SceneLayers follow the world). */
@@ -153,6 +157,8 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       colorGradingTexture: null,
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
+      lightingDefines: "pbr|false",
+      screenShadowsAllowed: false,
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -203,14 +209,12 @@ export function updateSceneRenderingSettings(
     ...normalizeCelShadingOverrides(state.runtimeOverrides.cel),
   });
   state.effects = normalizeRenderEffectsSettings(resolved.effects);
-  const modeChanged = mode !== state.mode;
   state.mode = mode;
   // A newly requested LUT publishes asynchronously and replans once ready.
   state.colorGrading.sync(
     state.effectsEnabled && state.effects.colorGrading.enabled ? state.effects.colorGrading.lutTextureGuid : null,
   );
   replanSceneEffects(state);
-  if (modeChanged) for (const listener of state.listeners) listener(mode);
   syncImageProcessingMode(scene, state);
 }
 
@@ -219,9 +223,26 @@ function replanSceneEffects(state: SceneRendering): void {
     fogVolumesPresent: state.fogVolumesPresent,
     colorGradingTexture: state.colorGradingTexture,
     allowed: state.effectAllowances,
+    screenShadows: state.screenShadowsAllowed && state.shadows.enabled ? state.shadows.screenShadows : "off",
   };
   state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs);
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
+  // The light block's scene-level defines: the render mode and whether Screen-Space Shadows are read.
+  const lightingDefines = `${state.mode}|${state.effectsPlan?.screenShadows != null}`;
+  if (lightingDefines === state.lightingDefines) return;
+  state.lightingDefines = lightingDefines;
+  for (const listener of state.listeners) listener(state.mode);
+}
+
+/**
+ * Marks `scene` as a world view's (the editor viewport's or Play's), whose plan may carry Screen-Space Shadows. Previews,
+ * thumbnails, Scene Layers and every other Scene keep them off: their draws bind the placeholder.
+ */
+export function allowSceneScreenShadows(scene: Scene): void {
+  const state = sceneRenderingSettings(scene);
+  if (state.screenShadowsAllowed) return;
+  state.screenShadowsAllowed = true;
+  replanSceneEffects(state);
 }
 
 /** Project-enabled screen-space effects that the quality tier skips, for diagnostics. */

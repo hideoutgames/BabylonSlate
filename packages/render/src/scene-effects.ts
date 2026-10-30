@@ -5,6 +5,7 @@ import type {
   RenderEffectsSettings,
   RenderEffectsToneMapping,
   RenderMode,
+  ScreenShadowsQuality,
 } from "@haptic/core";
 
 /** Display Color stage inputs. The vignette also runs in Legacy Display and
@@ -32,6 +33,8 @@ export interface SceneEffectsInputs {
    * Omitted allows every effect the project enables.
    */
   allowed?: Pick<PostProcessingQuality, PostProcessingEffectField>;
+  /** Screen-Space Shadows' level from the resolved shadow settings (off in CEL and without shadows). */
+  screenShadows?: ScreenShadowsQuality;
 }
 
 /** Composed effect chain: authored stack output → ambient occlusion →
@@ -49,6 +52,11 @@ export interface SceneEffectsPlan {
   volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
   /** The chain renders at `renderScale`, then FSR 1 restores the output size. */
   upscale: RenderEffectsSettings["upscaling"] | null;
+  /**
+   * Screen-Space Shadows' level: a march over the spatial geometry pass's depth before the objects draw. It needs that
+   * pass, so it alone makes the plan, and adds the pass when no other effect would.
+   */
+  screenShadows: Exclude<ScreenShadowsQuality, "off"> | null;
 }
 
 /** Internal render size of a chain whose plan upscales to `width`×`height`. */
@@ -103,9 +111,11 @@ export function planSceneEffects(
     : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
   const upscale = effects.upscaling.enabled && effects.upscaling.renderScale < 1 ? effects.upscaling : null;
   // sceneLinear always yields imageProcessing, so it needs no separate term.
-  if (!bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting && !upscale)
+  const screenShadows = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? inputs.screenShadows : null;
+  if (!bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting && !upscale &&
+    !screenShadows)
     return null;
-  return { sceneLinear, bloom, imageProcessing, fxaa, temporalAntiAliasing, ambientOcclusion, reflections, volumetricLighting, upscale };
+  return { sceneLinear, bloom, imageProcessing, fxaa, temporalAntiAliasing, ambientOcclusion, reflections, volumetricLighting, upscale, screenShadows };
 }
 
 const TONE_MAPPING_TYPES: Record<RenderEffectsToneMapping, number> = {
@@ -180,5 +190,6 @@ export function sceneEffectsKey(
   const skipped = allowed
     ? `:skip${allowed.ambientOcclusion ? "" : "O"}${allowed.reflections ? "" : "R"}${allowed.volumetricLighting ? "" : "V"}`
     : "";
-  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}`;
+  const screen = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? `:screen${inputs.screenShadows}` : "";
+  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
 }
