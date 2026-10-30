@@ -11,9 +11,8 @@ import {
  * WebGPU warm renders of shadow maps. Babylon's shadow pass creates a missing render pipeline synchronously at its
  * draw, so a map's casters' depth pipelines are created ahead by rendering the map inside a warm deferral scope that
  * admits only its own render passes (`renderPassIds`: one per cascade of a cascaded map, per face of a cube map): every
- * draw is skipped, and every missing pipeline starts creating asynchronously, with the map's own target state. A
- * variant prediction's prediction map renders so (`variant-prediction.ts`), as does a map awaiting its first draw
- * (`firstDrawPipelinesReady`).
+ * draw is skipped, and every missing pipeline starts creating asynchronously, with the map's own target state. A map
+ * awaiting its first draw renders so (`firstDrawPipelinesReady`).
  */
 
 /**
