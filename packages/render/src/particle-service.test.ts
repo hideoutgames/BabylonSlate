@@ -1,4 +1,4 @@
-import { GPUParticleSystem, Mesh, MeshBuilder, NodeMaterial, NodeMaterialModes, ParticleSystem, Scene } from "@babylonjs/core";
+import { FreeCamera, GPUParticleSystem, Mesh, MeshBuilder, NodeMaterial, NodeMaterialModes, ParticleSystem, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   normalizeParticleEmitterPayload,
@@ -375,6 +375,81 @@ describe("ParticleService", () => {
     system.animate(true);
     expect(system.getActiveCount()).toBe(5);
     expect(system.manualEmitCount).toBe(0);
+    service.dispose();
+  });
+
+  it("draws a paused Play load's unstarted systems in the starting-state frame, then leaves them unstarted", async () => {
+    const { scene, service, assign } = host();
+    service.setLibrary(library({ "em-1": basic() }));
+    // Play's load: the service is paused until gameplay, so its systems wait to start.
+    service.setPaused(true);
+    assign();
+    expect(service.holdsPlayingComponents()).toBe(true);
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(service.playbackState("fx", "particle-1")).toBe("playing"));
+    expect(system.isStarted()).toBe(false);
+    // The stand-in Material compiles nothing: the system is as ready as a compiled one.
+    vi.spyOn(system, "isReady").mockReturnValue(true);
+    const drawing = service.drawingUnstartedSystems(() => ({
+      started: system.isStarted(), paused: system.paused, speed: system.updateSpeed, particles: system.getActiveCount(),
+    }));
+    // It draws in that frame, at zero speed, with the one particle a CPU system needs to draw its program...
+    expect(drawing).toEqual({ started: true, paused: false, speed: 0, particles: 1 });
+    // ...and is left as the load had it: unstarted, paused, empty, without a queued emission.
+    expect([system.isStarted(), system.paused, system.getActiveCount(), system.manualEmitCount, system.updateSpeed]).toEqual([false, true, 0, -1, 0]);
+    service.setPaused(false);
+    expect(system.isStarted()).toBe(true);
+    expect(system.updateSpeed).toBe(PARTICLE_UPDATE_SPEED);
+    service.dispose();
+  });
+
+  /** What a system's simulation holds: start, pause, speeds, queued emission, live particles, emission time and buffers. */
+  const simulation = (system: ParticleSystem | GPUParticleSystem) => {
+    const internals = system as unknown as Record<string, unknown>;
+    return {
+      started: system.isStarted(), stopped: (system as unknown as { _stopped: boolean })._stopped, paused: system.paused, speed: system.updateSpeed,
+      prewarm: system.preWarmCycles, emit: system.manualEmitCount, active: system.getActiveCount(),
+      frame: internals._actualFrame, ...(system instanceof GPUParticleSystem
+        ? { accumulated: internals._accumulatedCount, write: internals._writePointer, source: internals._sourceBuffer ?? null, target: internals._targetBuffer ?? null }
+        : { excess: internals._newPartsExcess, particles: (internals._particles as unknown[]).length }),
+    };
+  };
+
+  it("leaves a CPU and a GPU system the starting-state frame drew as they were", async () => {
+    for (const gpu of [false, true]) {
+      const { scene, service, assign } = host({ gpu });
+      service.setLibrary(library({ "em-1": basic({ emitter: { prewarm: 1 } }) }));
+      service.setPaused(true);
+      assign();
+      await vi.waitFor(() => expect(service.playbackState("fx", "particle-1")).toBe("playing"));
+      const system = scene.particleSystems[0] as ParticleSystem | GPUParticleSystem;
+      expect(system instanceof GPUParticleSystem).toBe(gpu);
+      vi.spyOn(system, "isReady").mockReturnValue(true);
+      const before = simulation(system);
+      let during: ReturnType<typeof simulation> | undefined;
+      service.drawingUnstartedSystems(() => { during = simulation(system); });
+      // It drew started at zero speed, without prewarm...
+      expect(during).toMatchObject({ started: true, paused: false, speed: 0, prewarm: 0 });
+      // ...and its simulation is the load's again: unstarted, no particles, no emission time or buffers.
+      expect(simulation(system)).toEqual(before);
+      service.dispose();
+    }
+  });
+
+  it("draws nothing differently for systems already started: a paused Simulation's particles stay as they are", async () => {
+    const { scene, service, assign } = host();
+    service.setLibrary(library({ "em-1": basic() }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    system.manualEmitCount = 3;
+    system.animate(true);
+    service.setPaused(true);
+    const before = simulation(system);
+    scene.activeCamera = new FreeCamera("camera", new Vector3(0, 0, -5), scene);
+    service.drawingUnstartedSystems(() => { scene.render(); });
+    expect(simulation(system)).toEqual(before);
+    expect(before).toMatchObject({ started: true, paused: true, active: 3 });
     service.dispose();
   });
 
