@@ -12,11 +12,10 @@ import {
   SHADOW_ATLAS_BYTES_PER_TEXEL,
   type PrivateShadowAtlas,
 } from "./shadow-atlas";
-import type { ShadowMapContext } from "./shadow-map-factory";
-import { createDetachedShadowGenerator, PREDICTION_MAP_SIZE } from "./shadow-prediction-maps";
+import { createDetachedShadowGenerator, type ShadowMapContext } from "./shadow-map-factory";
 
 /** The maps' tiles (a map's kind, format and filter shape its casters' depth variants, never its size). */
-const TILE = PREDICTION_MAP_SIZE;
+const TILE = 64;
 /** Their atlas: room for four cascades, a spot light's tile and a point light's six faces. */
 const EDGE = 4 * TILE;
 

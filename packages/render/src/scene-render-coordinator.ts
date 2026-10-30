@@ -12,7 +12,6 @@ import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
 import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapsTolerated } from "./variant-swaps";
-import { predictLightVariants } from "./variant-prediction";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
 } from "./stall-deadline";
@@ -416,10 +415,7 @@ export class SceneRenderCoordinator {
     // validates a presentation waits for every requested variant.
     const tolerate = !validatePresentation && this.toleratesVariantSwaps();
     if (tolerate) this.graph.recheckVariantSwaps();
-    const result = probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation, tolerate));
-    // After a drawn steady frame, outside it: compile ahead what a light about to be admitted asks for.
-    if (tolerate && result.rendered) predictLightVariants(this.scene, this.graph.predictionPasses());
-    return result;
+    return probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation, tolerate));
   }
 
   private renderFrame(

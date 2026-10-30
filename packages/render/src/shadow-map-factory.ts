@@ -384,3 +384,48 @@ export function applyShadowSettings(
     generator.autoBias = settings.autoBias;
   }
 }
+
+/**
+ * A map for `light` built as an admitted map is (`createShadowGenerator`, with `settings`, `mapSize` and, for a tile of
+ * an `atlasEdge`-texel atlas, its edge) that no admission counts and no receiver binds: out of the controller's slots,
+ * off the light, and out of the Scene's texture list (views count the Scene's textures, and one added would ask each
+ * for a strict readiness probe). It awaits no first draw. A light's own map stays attached.
+ */
+export function createDetachedShadowGenerator(
+  maps: ShadowMapContext, light: Entry["light"], settings: ShadowSettings, mapSize: number, atlasEdge = 0,
+): ShadowGenerator {
+  const entry: Entry = {
+    light, requested: true, priority: 0, generator: null, key: null, settings, mapSize,
+    reason: null, failedKey: "", recovery: null, resetAllocation: false, status: "disabled", standby: false,
+    admittedAt: -Infinity, distanceSquared: 0, effectiveBias: [],
+  };
+  const scene = maps.scene as unknown as { _blockEntityCollection: boolean };
+  const blocked = scene._blockEntityCollection;
+  scene._blockEntityCollection = true;
+  // A light holding a standby map keeps it: a new generator replaces its light's map for the same camera key.
+  const attached = light._shadowGenerators;
+  const holding = attached ? [...attached] : [];
+  let generator: ShadowGenerator;
+  try {
+    generator = createShadowGenerator(maps, entry, mapSize, settings, null, undefined, atlasEdge);
+  } finally {
+    scene._blockEntityCollection = blocked;
+  }
+  maps.slots.delete(generator);
+  detachShadowGenerator(generator);
+  if (attached && holding.length) {
+    light._shadowGenerators = attached;
+    for (const [camera, owner] of holding) attached.set(camera, owner);
+  }
+  setAwaitingFirstDraw(generator, false);
+  return generator;
+}
+
+/** Takes `generator` off its light, so receivers never bind it (`light.getShadowGenerator()` does not return it). */
+export function detachShadowGenerator(generator: ShadowGenerator): void {
+  const light = generator.getLight();
+  const generators = light._shadowGenerators;
+  if (!generators) return;
+  for (const [camera, attached] of generators) if (attached === generator) generators.delete(camera);
+  if (!generators.size) light._shadowGenerators = null;
+}

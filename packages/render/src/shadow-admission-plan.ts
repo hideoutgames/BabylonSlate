@@ -1,7 +1,6 @@
 import {
   DirectionalLight,
   Vector3,
-  type ShadowGenerator,
   type Light,
   type Scene,
   type Camera,
@@ -27,19 +26,6 @@ import {
   type ShadowLightStatus,
 } from "./shadow-entry";
 
-/** A light near a shadow map, as `nearShadowStarts` predicts its start. */
-export type ShadowStartPrediction = {
-  light: Light;
-  /**
-   * An admitted map of its kind whose defines its own would give receivers; null when it holds a standby map, or when
-   * no admitted map shares its kind (`firstOfKind`: `predictionMap` stands in).
-   */
-  borrowed: ShadowGenerator | null;
-  /** No map of its kind is admitted: its start would build the first. */
-  firstOfKind: boolean;
-  /** The holder it would take a map from, whose receivers lose that shadow. */
-  displaced: Light | null;
-};
 /**
  * The admission history a sync ranks by (its camera, which lights hold a map and since when) at `at`, as a load
  * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
@@ -381,44 +367,4 @@ export function applyShadowAdmission(plan: ShadowAdmissionPlan): void {
       entry.resetAllocation = false;
     }
   }
-}
-
-/** `SceneShadowController.nearShadowStarts` under the effective settings the last sync admitted by. */
-export function predictShadowStarts(
-  entries: ReadonlyMap<Light, Entry>,
-  settings: ShadowSettings,
-  margin: number,
-): ShadowStartPrediction[] {
-  const key = JSON.stringify(settings);
-  const kind = (entry: Entry) => `${entry.light.getClassName()}:${entry.light.needCube()}`;
-  const holders = [...entries.values()].filter((entry) =>
-    entry.status === "active" && entry.generator && !entry.standby && !(entry.light instanceof DirectionalLight));
-  const rank = (entry: Entry) => entry.distanceSquared / SHADOW_INCUMBENT_DISTANCE_BONUS;
-  let farthest: Entry | undefined;
-  for (const holder of holders)
-    if (!farthest || holder.priority < farthest.priority || (holder.priority === farthest.priority && rank(holder) > rank(farthest)))
-      farthest = holder;
-  const full = holders.length >= settings.maxLocalLights;
-  const starts: Array<ShadowStartPrediction & { distanceSquared: number }> = [];
-  for (const entry of entries.values()) {
-    if (entry.light instanceof DirectionalLight || !entry.light.isEnabled() || entry.light.intensity <= 0) continue;
-    const outside = entry.status === "outside-relevant-area";
-    if (!outside && !(entry.status === "budget-limited" && entry.reason === "local light capacity")) continue;
-    if (outside && entry.distanceSquared > ((settings.distance + entry.light.range) * margin) ** 2) continue;
-    let displaced: Entry | undefined;
-    if (full) {
-      if (!farthest || entry.priority < farthest.priority ||
-        (entry.priority === farthest.priority && entry.distanceSquared > rank(farthest) * margin ** 2)) continue;
-      if (!entry.generator && kind(farthest) === kind(entry) && JSON.stringify(farthest.settings) === key) continue;
-      displaced = farthest;
-    }
-    const borrowed = entry.generator ? null : holders.find((holder) => holder !== displaced && kind(holder) === kind(entry) &&
-      JSON.stringify(holder.settings) === key && (holder.generator!.getShadowMap()?.renderList?.length ?? 0) > 0)?.generator;
-    starts.push({
-      light: entry.light, borrowed: borrowed ?? null, firstOfKind: borrowed === undefined,
-      displaced: displaced?.light ?? null, distanceSquared: entry.distanceSquared,
-    });
-  }
-  return starts.sort((a, b) => a.distanceSquared - b.distanceSquared)
-    .map(({ light, borrowed, firstOfKind, displaced }) => ({ light, borrowed, firstOfKind, displaced }));
 }
