@@ -18,7 +18,7 @@ Open **Project Settings > Rendering > Post Processing**. Every effect is off in 
 | **Temporal Anti-Aliasing** | **Temporal Blend** (0.1), **Jitter Samples** (8) | Blends jittered frames to smooth edges and effect noise. Fast motion can ghost. |
 | **FSR Upscaling** | **Render Scale** (0.67), **Sharpness** (0.2) | Renders at a lower resolution, then upscales and sharpens with AMD FSR 1. |
 
-Ambient occlusion, reflections, volumetric fog and temporal anti-aliasing draw a depth pass of the scene. [Screen-Space Shadows](shadows.md#screen-space-shadows) use the same pass. At Low they run only with one of these effects; at Medium and High they add the pass when none is on.
+Ambient occlusion, reflections, volumetric fog and temporal anti-aliasing draw a depth pass of the scene. [Screen-Space Shadows](shadows.md#screen-space-shadows) use the same pass, or add it when none of these is on.
 
 For **Color Grading**, use a horizontal strip of square slices, such as 256×16 or 1024×32. Open the Texture and set **Usage** to **Color Grading LUT** so it stays uncompressed.
 

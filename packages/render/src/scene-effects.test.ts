@@ -151,19 +151,6 @@ it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-pr
     screenShadows: "medium", bloom: null, imageProcessing: null, fxaa: false, temporalAntiAliasing: null,
   });
   expect(planSceneEffects(plain, "cel", true, { screenShadows: "medium" })).toBeNull();
-  // Low never adds the depth pass: it needs an effect that draws it every frame.
-  expect(planSceneEffects(plain, "pbr", true, { screenShadows: "low" })).toBeNull();
-  expect(planSceneEffects(plain, "pbr", true, { screenShadows: "low", fogVolumesPresent: true })?.screenShadows).toBeNull();
-  for (const depth of [
-    { temporalAntiAliasing: { ...plain.temporalAntiAliasing, enabled: true } },
-    { ambientOcclusion: { ...plain.ambientOcclusion, enabled: true } },
-    { reflections: { ...plain.reflections, enabled: true } },
-    { volumetricLighting: { ...plain.volumetricLighting, enabled: true } },
-  ]) expect(planSceneEffects(effects(depth), "pbr", true, { screenShadows: "low" })?.screenShadows).toBe("low");
-  // An effect the quality tier skips draws no pass.
-  expect(planSceneEffects(effects({ ambientOcclusion: { ...plain.ambientOcclusion, enabled: true } }), "pbr", true, {
-    screenShadows: "low", allowed: { ambientOcclusion: false, reflections: true, volumetricLighting: true },
-  })).toBeNull();
   expect(planSceneEffects(plain, "pbr", false, { screenShadows: "medium" })).toBeNull();
   const keys = (["off", "low", "high"] as const).map((screenShadows) => sceneEffectsKey(plain, "pbr", true, { screenShadows }));
   expect(new Set(keys).size).toBe(3);

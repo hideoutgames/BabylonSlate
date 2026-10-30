@@ -252,10 +252,8 @@ export function allowSceneScreenShadows(scene: Scene, supported: () => boolean):
 export function sceneEffectsQualityLimits(scene: Scene): string[] {
   const state = sceneRenderingSettings(scene);
   if (!state.effectsEnabled) return [];
-  const requested = state.screenShadowsSupported !== null && state.mode === "pbr" && state.shadows.enabled &&
-    state.shadows.screenShadows !== "off";
-  const device = !requested ? [] : !state.screenShadowsSupported!() ? ["screen shadows: device capability"]
-    : state.effectsPlan?.screenShadows == null ? ["screen shadows: Low runs only with an effect's depth pass"] : [];
+  const device = state.screenShadowsSupported && !state.screenShadowsSupported() && state.mode === "pbr" &&
+    state.shadows.enabled && state.shadows.screenShadows !== "off" ? ["screen shadows: device capability"] : [];
   const { effects, effectAllowances: allowed } = state;
   const pbr = state.mode === "pbr";
   const skipped = [

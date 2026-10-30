@@ -213,13 +213,8 @@ it("plans Screen-Space Shadows only for a world view's Scene, and tells listener
   allowSceneScreenShadows(scene, () => supported);
   expect(state.effectsPlan?.screenShadows ?? null).toBeNull();
   expect(sceneEffectsQualityLimits(scene)).toEqual(["screen shadows: device capability"]);
-  // Medium's Low adds no depth pass of its own: it waits for an effect that draws one.
   supported = true;
   updateSceneRenderingSettings(scene);
-  expect(state.effectsPlan?.screenShadows ?? null).toBeNull();
-  expect(sceneEffectsQualityLimits(scene)).toEqual(["screen shadows: Low runs only with an effect's depth pass"]);
-  const temporal = { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { ...DEFAULT_RENDER_EFFECTS.temporalAntiAliasing, enabled: true } };
-  updateSceneRenderingSettings(scene, { mode: "pbr", effects: temporal });
   expect(state.effectsPlan?.screenShadows).toBe("low");
   expect(sceneEffectsQualityLimits(scene)).toEqual([]);
   state.qualityOverrides = qualityPresetPatch("ultra");
@@ -227,7 +222,7 @@ it("plans Screen-Space Shadows only for a world view's Scene, and tells listener
   expect(state.effectsPlan?.screenShadows).toBe("high");
   state.qualityOverrides = qualityPresetPatch("low");
   updateSceneRenderingSettings(scene);
-  expect(state.effectsPlan?.screenShadows ?? null).toBeNull();
+  expect(state.effectsPlan).toBeNull();
   // On, a level change (no call: the define is only whether they are read), off.
   expect(seen).toEqual([true, false]);
 });
