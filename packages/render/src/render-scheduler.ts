@@ -12,6 +12,15 @@ function nowMs(): number {
 }
 
 /**
+ * A rendered frame whose next callback comes this long after its work ended held the main thread past its own work: on
+ * software GL with software compositing the browser waits there for the GPU to finish the frame (seconds for a large
+ * world). A frame on a 60 Hz display is well under it.
+ */
+const HELD_THREAD_MS = 500;
+/** The most a held frame leaves the main thread free for, so a suspension read as a held frame costs one short pause. */
+const HELD_THREAD_YIELD_MAX_MS = 1000;
+
+/**
  * Dirty-driven render scheduler with refcounted continuous-render leases.
  * Visible editor viewports always render continuously plus a frame cap; freeze
  * when paused, not visible, obstructed, or resizing.
@@ -33,6 +42,10 @@ export class RenderScheduler {
   /** When the last frame ended and how long it took, for ready owners' yield under a load. */
   private lastFrameEndedAt: number | null = null;
   private lastFrameMs = 0;
+  /** A frame rendered since the last gate check: the next check reads how long the thread was held after it. */
+  private awaitingNextCheck = false;
+  /** Until when frames hold back after a frame held the main thread (`HELD_THREAD_MS`). */
+  private heldYieldUntil = 0;
   private renderedFrames = 0;
   private invalidations = 0;
   private lastSecond = nowMs();
@@ -68,15 +81,18 @@ export class RenderScheduler {
     if (value !== this.paused) {
       this.lastRenderAt = null;
       this.nextRenderAt = null;
+      this.awaitingNextCheck = false;
     }
     this.paused = value;
   }
 
   setVisible(value: boolean): void {
+    if (value !== this.visible) this.awaitingNextCheck = false;
     this.visible = value;
   }
 
   setDocumentVisible(value: boolean): void {
+    if (value !== this.documentVisible) this.awaitingNextCheck = false;
     this.documentVisible = value;
   }
 
@@ -130,11 +146,14 @@ export class RenderScheduler {
    * starve the load's own work of the thread; a frame that fits its cadence is not held back.
    */
   shouldRenderReadyOwners(now: number = nowMs()): boolean {
+    this.readHeldThread(now);
     if (this.lastFrameEndedAt !== null && now < this.lastFrameEndedAt + this.lastFrameMs) return false;
     return this.shouldRender(now, true);
   }
 
   shouldRender(now: number = nowMs(), loadingOwners = false): boolean {
+    this.readHeldThread(now);
+    if (now < this.heldYieldUntil) return false;
     if (this.paused && !this.pausedFrameRequested) return false;
     if (!this.documentVisible || !this.visible || this.resizing) return false;
     if (!loadingOwners && (this.obstructed || this.obstructionLeases > 0)) return false;
@@ -151,10 +170,24 @@ export class RenderScheduler {
     return true;
   }
 
+  /**
+   * A frame that held the main thread after its own work (software GL with software compositing waits there for the
+   * GPU to finish the frame) leaves it free for as long, up to a limit, before the next frame: back to back, such frames
+   * starve every other task of the page (input, timers, worker replies, a test driver's commands). Read once, at the
+   * first check after the frame.
+   */
+  private readHeldThread(now: number): void {
+    if (!this.awaitingNextCheck || this.lastFrameEndedAt === null) return;
+    this.awaitingNextCheck = false;
+    const held = now - this.lastFrameEndedAt;
+    if (held >= HELD_THREAD_MS) this.heldYieldUntil = now + Math.min(held, HELD_THREAD_YIELD_MAX_MS);
+  }
+
   /** `now` is when the frame began (its cadence slot); `endedAt` when its work finished. */
   noteRendered(now: number = nowMs(), endedAt: number = now): void {
     this.lastFrameEndedAt = endedAt;
     this.lastFrameMs = Math.max(0, endedAt - now);
+    this.awaitingNextCheck = true;
     this.rollStats();
     this.dirty = false;
     this.pausedFrameRequested = false;

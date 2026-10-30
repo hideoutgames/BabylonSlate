@@ -152,5 +152,4 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 - Authored World Position Offset in the atlas depth pass.
 - WebGPU shadow-pass pipelines created synchronously, until the CI gate proves the warm-ups unneeded.
 - NodeMaterial block API changes at the next Babylon upgrade (pinned; an upgrade re-checks the block).
-- On software WebGL2 the Feature Test's main Play load on the block's path finishes, then the page stops answering within seconds (`e2e/feature-test-smoke.spec.ts` with `haptic:test-haptic-lighting` on; found on `main` after Phase 6 PR 6). Phase 7 must resolve it, as the smoke then runs this path.
 - An unexplained `RangeError: Maximum call stack size exceeded` in the Feature Test's main Play load on the A16 iPad, around the WebGL context loss there; no stack yet. The Feature Test Check now records page errors and samples, so a later run on the new path can show whether it remains.

@@ -183,6 +183,22 @@ describe("render scheduler", () => {
     expect(scheduler.shouldRenderReadyOwners(1017)).toBe(true);
   });
 
+  it("leaves the main thread free after a frame that held it, for as long up to a second", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.acquireContinuous("play");
+    // Software GL: the frame's own work ends at 150 ms, then the browser holds the thread for the GPU until 3300 ms.
+    scheduler.noteRendered(0, 150);
+    expect([scheduler.shouldRender(3300), scheduler.shouldRender(4299), scheduler.shouldRender(4300)]).toEqual([false, false, true]);
+    // A frame whose next callback comes at the display's pace is not held back.
+    scheduler.noteRendered(4300, 4310);
+    expect(scheduler.shouldRender(4317)).toBe(true);
+    // Time spent paused after a frame is not read as the frame holding the thread.
+    scheduler.noteRendered(5000, 5010);
+    scheduler.setPaused(true);
+    scheduler.setPaused(false);
+    expect(scheduler.shouldRender(60_000)).toBe(true);
+  });
+
   it("does not catch up when a cap change lands on a fractional deadline", () => {
     const scheduler = new RenderScheduler();
     scheduler.acquireContinuous("play");
