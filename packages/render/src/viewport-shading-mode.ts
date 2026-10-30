@@ -5,6 +5,7 @@ import {
   PBRMetallicRoughnessBlock,
   type Scene,
 } from "@babylonjs/core";
+import { HapticLightingBlock } from "./haptic-lighting-block";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
 
@@ -20,7 +21,7 @@ type ShadingRestore = {
   pointsCloud: boolean;
   unlit?: boolean;
   disableLighting?: boolean;
-  pbrBlocks: { block: PBRMetallicRoughnessBlock; unlit: boolean }[];
+  pbrBlocks: { block: PBRMetallicRoughnessBlock | HapticLightingBlock; unlit: boolean }[];
 };
 
 /** Viewport modes restyle authored world meshes only, never editor or debug helpers. */
@@ -92,8 +93,8 @@ export class ViewportShadingOverlay {
         material instanceof NodeMaterial
           ? material.attachedBlocks
               .filter(
-                (block): block is PBRMetallicRoughnessBlock =>
-                  block instanceof PBRMetallicRoughnessBlock,
+                (block): block is PBRMetallicRoughnessBlock | HapticLightingBlock =>
+                  block instanceof PBRMetallicRoughnessBlock || block instanceof HapticLightingBlock,
               )
               .map((block) => ({ block, unlit: block.unlit }))
           : [],

@@ -32,7 +32,10 @@ class FakeCanvas {
   }
 }
 
-/** The textures a Basic 3D Play session creates: default sky cube, the engine default material's checker and the sun's shadow map. */
+/**
+ * The textures a Basic 3D Play session creates: default sky cube, the engine default material's checker, the light
+ * block's area-light lookup tables and the sun's shadow atlas.
+ */
 describe("textures across a Play cycle", () => {
   const handles: Array<{ dispose: () => void }> = [];
   const engines: NullEngine[] = [];
@@ -121,8 +124,7 @@ describe("textures across a Play cycle", () => {
       const before = new Set(engine.getLoadedTexturesCache());
       const play = startPlay(engine);
       await frames(engine, 6);
-      // The sun's shadow map and its depth are among what the session created.
-      console.log("DBG", JSON.stringify(engine.getLoadedTexturesCache().filter((t) => !before.has(t) && t._references > 0).map((t) => [describeEngineTexture(engine, t).name, t.baseWidth, t.isCube])));
+      // The sun's shadow atlas and its depth are among what the session created.
       expect(retained(engine, before).length).toBeGreaterThanOrEqual(2);
       play.dispose();
       await play.whenReleased();

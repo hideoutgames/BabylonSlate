@@ -11,7 +11,7 @@ import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SceneOutlineHost } from "./scene-outline-host";
-import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
+import { managedRenderReservations } from "./managed-render-resources";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";

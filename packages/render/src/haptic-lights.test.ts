@@ -30,6 +30,7 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { createPreviewLighting } from "./preview-lighting";
+import { ViewportShadingOverlay } from "./viewport-shading-mode";
 import { createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 import { shadowAllocationCheckpoint } from "./shadow-map-factory";
 
@@ -88,6 +89,19 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     scene.lights[0]!.setEnabled(false);
     expect(await drawnDefines(scene, mesh, material)).toEqual(defines);
     expect(mesh.subMeshes[0]!.effect).toBe(effect);
+  });
+
+  it("draws Base Color alone under the Unlit viewport mode, frozen or not, and lights again after it", async () => {
+    const { scene } = host();
+    new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    const { mesh, material } = await litBox(scene);
+    material.freeze();
+    const overlay = new ViewportShadingOverlay(scene);
+    overlay.setMode("unlit");
+    expect(await drawnDefines(scene, mesh, material)).toContain("#define HAPTIC_UNLIT");
+    overlay.setMode("pbr");
+    expect(await drawnDefines(scene, mesh, material)).not.toContain("#define HAPTIC_UNLIT");
+    expect(scene.lightsEnabled).toBe(true);
   });
 
   it("draws CEL as a define of the same graph, which a render-mode change re-prepares even when frozen", async () => {
