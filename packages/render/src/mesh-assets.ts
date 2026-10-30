@@ -16,7 +16,6 @@ import { skyboxMeshPreparation } from "./skybox";
 import { foliagePreparation } from "./foliage-mesh";
 import { authoredMaterialInstancePreparation } from "./authored-material-instance";
 import { setUnlitMaterial, unlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
-import { setUnlitBinding } from "./unlit-material-blocks";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -360,11 +359,10 @@ export function applyAlbedoTexture(
   }
   binding.alwaysBlend = options.alwaysBlend === true;
   if (options.tilemap) binding.key = TILEMAP_MATERIAL;
-  /** Rebinds the mesh's unlit values: its own draw when it draws the unlit Material, its retained ones otherwise. */
+  /** Rebinds the mesh's unlit values: its draw when it draws them, otherwise only the values a restore reapplies. */
   const rebind = (texture: Texture | CubeTexture | null) => {
     binding!.unlit = albedoUnlitBinding(texture, binding!.alwaysBlend);
     if (binding!.material && mesh.material === binding!.material) binding!.material = setUnlitMaterial(mesh, binding!.key, binding!.unlit);
-    else setUnlitBinding(mesh, binding!.unlit);
   };
   if (binding.unlit.blend !== binding.alwaysBlend) rebind(binding.unlit.texture as Texture | CubeTexture | null);
   if (!textureGuid) {
@@ -406,11 +404,8 @@ export function applyAlbedoTexture(
     binding.unlit = albedoUnlitBinding(next.resource, binding.alwaysBlend);
     // Preparation may finish after an authored assignment. Update only our
     // retained binding in that case; the borrowed material remains attached.
-    if (publishToMesh) binding.material = setUnlitMaterial(mesh, binding.key, binding.unlit);
-    else {
-      binding.material ??= unlitMaterial(scene, binding.key);
-      setUnlitBinding(mesh, binding.unlit);
-    }
+    // Otherwise the borrowed material keeps drawing; `restoreAlbedoMaterial` reapplies these values.
+    binding.material = publishToMesh ? setUnlitMaterial(mesh, binding.key, binding.unlit) : unlitMaterial(scene, binding.key);
     const previous = binding.lease;
     binding.lease = next; binding.pending = undefined;
     previous?.release();

@@ -271,7 +271,6 @@ describe("applyAlbedoTexture", () => {
       next.resource.onLoadObservable.notifyObservers(next.resource as never);
       await next.ready;
       expect(f.mesh.material).toBe(f.authored);
-      expect(unlitBinding(f.mesh).texture).toBe(next.resource);
       f.assign(null);
       expect(f.mesh.material).toBe(f.auto);
       expect(unlitBinding(f.mesh).texture).toBe(next.resource);

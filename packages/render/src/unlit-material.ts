@@ -71,7 +71,7 @@ function atlasImageProcessing(scene: Scene): AtlasImageProcessing {
   return configuration;
 }
 
-type UnlitInstance = { material: NodeMaterial; meshes: Set<AbstractMesh> };
+type UnlitInstance = { material: NodeMaterial; key: UnlitMaterialKey; meshes: Set<AbstractMesh> };
 const instances = new WeakMap<Scene, Map<string, UnlitInstance>>();
 const instanceOf = new WeakMap<Material, UnlitInstance>();
 
@@ -300,7 +300,7 @@ function instanceId(key: UnlitMaterialKey): string {
 
 function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
   const material = createNodeMaterial(scene, `unlit:${key.role}${key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}`);
-  const instance: UnlitInstance = { material, meshes: new Set() };
+  const instance: UnlitInstance = { material, key: { ...key }, meshes: new Set() };
   material.backFaceCulling = key.backFaceCulling;
   material.fogEnabled = key.fog;
   if (key.imageProcessing === "atlas") material.imageProcessingConfiguration = atlasImageProcessing(scene);
@@ -395,6 +395,13 @@ export function setUnlitMaterial(mesh: AbstractMesh, key: UnlitMaterialKey, bind
     });
   }
   return material;
+}
+
+/** Draws `target` as `source` draws: its unlit Material and binding, or its other material. */
+export function copyMaterialOf(target: AbstractMesh, source: AbstractMesh): void {
+  const instance = source.material && instanceOf.get(source.material);
+  if (instance && hasUnlitBinding(source)) setUnlitMaterial(target, instance.key, unlitBinding(source));
+  else target.material = source.material;
 }
 
 /** Whether `mesh` has an unlit binding (`setUnlitMaterial`). */

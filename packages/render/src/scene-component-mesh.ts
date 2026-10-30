@@ -28,7 +28,7 @@ import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext }
 import { attachMeshCollisionDashes } from "./mesh-collision-dashes";
 import { createMirrorSurfaceMesh } from "./mirrors";
 import { createOverlayPanelMesh } from "./overlay-panel-mesh";
-import { createOverlayTextureQuad, createOverlayUnlitMaterial } from "./overlay-texture-quad";
+import { applyOverlayUnlitMaterial, createOverlayTextureQuad } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { createPainter2DMesh } from "./painter2d-mesh";
 import { parentStreamingComponentOf, stringProp, type SceneActorSource } from "./scene-visual-classify";
@@ -307,9 +307,7 @@ function createComponentMesh(
   }
   if (component.classId === "2DMaterialComponent") {
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const bundle = new VisualBundle();
-    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
-    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
+    applyOverlayUnlitMaterial(mesh);
     const guid = stringProp(component.properties.materialGuid);
     if (guid && assets?.resolveMaterial) {
       const compiled = assets.resolveMaterial(guid, { scene, unlit: true });
@@ -335,9 +333,7 @@ function createComponentMesh(
   }
   if (component.classId === "2DButtonComponent") {
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const bundle = new VisualBundle();
-    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
-    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
+    applyOverlayUnlitMaterial(mesh);
     return mesh;
   }
   if (isUIControl2DClass(component.classId)) return createUIControl2DMesh(scene, name, component, assets, component.id);

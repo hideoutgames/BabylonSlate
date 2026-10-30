@@ -72,6 +72,6 @@ it("loads authored multipliers in editor visuals and fades both joystick surface
   const visual = joystick2DMesh(joystick)!;
   expect(overlayVisualStyle(joystick).opacity).toBe(0.5);
   expect(overlayVisualStyle(visual.thumb).opacity).toBe(0.5);
-  expect(visual.fallbacks.background.alpha).toBe(0.35);
-  expect(visual.fallbacks.joystick.alpha).toBe(0.85);
+  expect(visual.fallbacks.background.binding.alpha).toBe(0.35);
+  expect(visual.fallbacks.joystick.binding.alpha).toBe(0.85);
 });
