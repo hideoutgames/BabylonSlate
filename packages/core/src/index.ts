@@ -21,7 +21,6 @@ export * from "./project";
 export * from "./tags";
 export * from "./cel-shading";
 export * from "./shadows";
-export * from "./fixed-light-layout";
 export * from "./project-appearance";
 export * from "./document";
 export * from "./editor-only";
