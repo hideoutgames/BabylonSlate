@@ -1,3 +1,85 @@
+diff --git a/Engines/Extensions/engine.multiRender.pure.js b/Engines/Extensions/engine.multiRender.pure.js
+index e33593b25e62a6cb9f47cd552ee314d4b0805236..22f10c03a1f446614259761612624a3191b7e002 100644
+--- a/Engines/Extensions/engine.multiRender.pure.js
++++ b/Engines/Extensions/engine.multiRender.pure.js
+@@ -45,6 +45,8 @@ export function RegisterEnginesExtensionsEngineMultiRender() {
+     };
+     ThinEngine.prototype.bindAttachments = function (attachments) {
+         const gl = this._gl;
++        // Haptic: an explicit bind supersedes a deferred restore (`_deferAttachments`).
++        this._pendingAttachments = null;
+         const textures = this._currentRenderTarget?.textures;
+         this._integerMRTAttachmentsMask = 0;
+         if (textures) {
+@@ -54,8 +56,33 @@ export function RegisterEnginesExtensionsEngineMultiRender() {
+                 }
+             }
+         }
++        // Haptic: draw buffers are state of the bound framebuffer, and every mesh draw of a pass with a geometry
++        // configuration binds and restores them. Skip a call that repeats what that framebuffer already holds.
++        // `_drawBuffersHeld` is dropped wherever Babylon sets them directly or binds without `_currentFramebuffer`.
++        const held = (this._drawBuffersHeld ??= new WeakMap());
++        const key = this._currentFramebuffer ?? this;
++        const last = held.get(key);
++        if (last && last.length === attachments.length && last.every((value, index) => value === attachments[index])) {
++            return;
++        }
++        held.set(key, attachments.slice());
+         gl.drawBuffers(attachments);
+     };
++    /**
++     * Haptic: binds `attachments` before the next draw, clear, framebuffer change or resolve rather than now. A mesh
++     * draw restores its pass's colour attachments after it, and the next mesh draw binds its own again, so on a pass
++     * of multi target effects the restore would toggle the framebuffer's draw buffers twice per draw.
++     */
++    ThinEngine.prototype._deferAttachments = function (attachments) {
++        this._pendingAttachments = attachments;
++    };
++    /** Haptic: binds a deferred restore (`_deferAttachments`), while its framebuffer is still bound. */
++    ThinEngine.prototype._flushAttachments = function () {
++        const pending = this._pendingAttachments;
++        if (pending) {
++            this.bindAttachments(pending);
++        }
++    };
+     ThinEngine.prototype.clearAttachments = function (color, attachments, clearColor, clearDepth, clearStencil = false, stencilClearValue = 0) {
+         const textures = this._currentRenderTarget?.textures;
+         let hasIntegerAttachment = false;
+@@ -336,6 +363,7 @@ export function RegisterEnginesExtensionsEngineMultiRender() {
+         }
+         rtWrapper.setTextures(textures);
+         if (initializeBuffers) {
++            this._drawBuffersHeld = undefined;
+             gl.drawBuffers(attachments);
+         }
+         this._bindUnboundFramebuffer(currentFramebuffer);
+@@ -353,6 +381,7 @@ export function RegisterEnginesExtensionsEngineMultiRender() {
+             rtWrapper._MSAAFramebuffer = framebuffer;
+             if (textureCount > 0 && initializeBuffers) {
+                 this._bindUnboundFramebuffer(framebuffer);
++                this._drawBuffersHeld = undefined;
+                 gl.drawBuffers(attachments);
+                 this._bindUnboundFramebuffer(currentFramebuffer);
+             }
+@@ -404,6 +433,7 @@ export function RegisterEnginesExtensionsEngineMultiRender() {
+                 attachments.push(attachment);
+             }
+             if (initializeBuffers) {
++                this._drawBuffersHeld = undefined;
+                 gl.drawBuffers(attachments);
+             }
+         }
+@@ -440,8 +470,10 @@ export function RegisterEnginesExtensionsEngineMultiRender() {
+         let bufferBits = rtWrapper.resolveMSAAColors ? gl.COLOR_BUFFER_BIT : 0;
+         bufferBits |= rtWrapper._generateDepthBuffer && rtWrapper.resolveMSAADepth ? gl.DEPTH_BUFFER_BIT : 0;
+         bufferBits |= rtWrapper._generateStencilBuffer && rtWrapper.resolveMSAAStencil ? gl.STENCIL_BUFFER_BIT : 0;
++        this._flushAttachments();
+         const attachments = rtWrapper._attachments;
+         const count = attachments.length;
++        this._drawBuffersHeld = undefined;
+         gl.bindFramebuffer(gl.READ_FRAMEBUFFER, rtWrapper._MSAAFramebuffer);
+         gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, rtWrapper._framebuffer);
+         for (let i = 0; i < count; i++) {
 diff --git a/Engines/WebGPU/webgpuCacheRenderPipeline.js b/Engines/WebGPU/webgpuCacheRenderPipeline.js
 index ad74e8e1285c4b11dd438bc3d17f44cf44043d88..935c8ebb843a0c58a473dc33c55d3f5ac16d0c00 100644
 --- a/Engines/WebGPU/webgpuCacheRenderPipeline.js
@@ -35,10 +117,68 @@ index 24b6329cb60c28f279e16018f9a3f5566d8c30b5..82cfaba9ce0c12d963c3b5074fe51494
       * Unbind all textures from the webGL context
       */
 diff --git a/Engines/thinEngine.pure.js b/Engines/thinEngine.pure.js
-index 1b0259a1a514fadb726788114650232754c0287f..1d76e2606711a4de83509a940109fe5419eca330 100644
+index 1b0259a1a514fadb726788114650232754c0287f..1571a975c6b821d3e228e2ec5ca1c1d58d3b1242 100644
 --- a/Engines/thinEngine.pure.js
 +++ b/Engines/thinEngine.pure.js
-@@ -3157,6 +3157,37 @@ export class ThinEngine extends AbstractEngine {
+@@ -728,6 +728,8 @@ export class ThinEngine extends AbstractEngine {
+      * @param stencilClearValue defines the value to use to clear the stencil buffer (default is 0)
+      */
+     clear(color, backBuffer, depth, stencil = false, stencilClearValue = 0) {
++        // Haptic: a deferred attachments restore applies to what the clear writes (`_deferAttachments`).
++        this._pendingAttachments && this._flushAttachments();
+         const useStencilGlobalOnly = this.stencilStateComposer.useStencilGlobalOnly;
+         this.stencilStateComposer.useStencilGlobalOnly = true; // make sure the stencil mask is coming from the global stencil and not from a material (effect) which would currently be in effect
+         this.applyStates();
+@@ -969,6 +971,8 @@ export class ThinEngine extends AbstractEngine {
+      */
+     _bindUnboundFramebuffer(framebuffer) {
+         if (this._currentFramebuffer !== framebuffer) {
++            // Haptic: a deferred attachments restore belongs to the framebuffer being left (`_deferAttachments`).
++            this._pendingAttachments && this._flushAttachments();
+             this._gl.bindFramebuffer(this._gl.FRAMEBUFFER, framebuffer);
+             this._currentFramebuffer = framebuffer;
+         }
+@@ -1030,8 +1034,12 @@ export class ThinEngine extends AbstractEngine {
+         let bufferBits = rtWrapper.resolveMSAAColors ? gl.COLOR_BUFFER_BIT : 0;
+         bufferBits |= rtWrapper._generateDepthBuffer && rtWrapper.resolveMSAADepth ? gl.DEPTH_BUFFER_BIT : 0;
+         bufferBits |= rtWrapper._generateStencilBuffer && rtWrapper.resolveMSAAStencil ? gl.STENCIL_BUFFER_BIT : 0;
++        // Haptic: a deferred restore belongs to the framebuffer bound before the resolve (`_deferAttachments`).
++        this._pendingAttachments && this._flushAttachments();
+         gl.bindFramebuffer(gl.READ_FRAMEBUFFER, rtWrapper._MSAAFramebuffer);
+         gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, rtWrapper._framebuffer);
++        // Haptic: the draw binding is no longer `_currentFramebuffer`'s (`bindAttachments`).
++        this._drawBuffersHeld = undefined;
+         gl.blitFramebuffer(0, 0, texture.width, texture.height, 0, 0, texture.width, texture.height, bufferBits, gl.NEAREST);
+     }
+     /**
+@@ -1562,6 +1570,8 @@ export class ThinEngine extends AbstractEngine {
+      * @param instancesCount defines the number of instances to draw (if instantiation is enabled)
+      */
+     drawElementsType(fillMode, indexStart, indexCount, instancesCount) {
++        // Haptic: a draw that binds no attachments of its own writes the restored ones (`_deferAttachments`).
++        this._pendingAttachments && this._flushAttachments();
+         // Apply states
+         this.applyStates();
+         this._reportDrawCall();
+@@ -1584,6 +1594,8 @@ export class ThinEngine extends AbstractEngine {
+      * @param instancesCount defines the number of instances to draw (if instantiation is enabled)
+      */
+     drawArraysType(fillMode, verticesStart, verticesCount, instancesCount) {
++        // Haptic: as `drawElementsType`.
++        this._pendingAttachments && this._flushAttachments();
+         // Apply states
+         this.applyStates();
+         this._reportDrawCall();
+@@ -2269,6 +2281,8 @@ export class ThinEngine extends AbstractEngine {
+         this._unbindVertexArrayObject();
+         if (bruteForce) {
+             this._currentProgram = null;
++            // Haptic: a restored context's framebuffers hold their default draw buffers (`bindAttachments`).
++            this._drawBuffersHeld = undefined;
+             this.resetTextureCache();
+             this._stencilStateComposer.reset();
+             this._depthCullingState.reset();
+@@ -3157,6 +3171,37 @@ export class ThinEngine extends AbstractEngine {
          this._activeChannel = channel;
          const target = texture ? this._getTextureTarget(texture) : this._gl.TEXTURE_2D;
          this._bindTextureDirectly(target, texture);
@@ -76,7 +216,7 @@ index 1b0259a1a514fadb726788114650232754c0287f..1d76e2606711a4de83509a940109fe54
      }
      /**
       * Unbind all textures from the webGL context
-@@ -3208,6 +3239,7 @@ export class ThinEngine extends AbstractEngine {
+@@ -3208,6 +3253,7 @@ export class ThinEngine extends AbstractEngine {
          return this._gl.REPEAT;
      }
      _setTexture(channel, texture, isPartOfTextureArray = false, depthStencilTexture = false, name = "") {
@@ -214,6 +354,25 @@ index 801aa3c223053ecfb677eb540ffe18ad03b03025..94cc6e2a27e92f4b473d28aef5670062
              this._vertexSourceCode = migratedVertexCode;
              this._fragmentSourceCode = migratedFragmentCode;
              this._prepareEffect(keepExistingPipelineContext);
+diff --git a/Materials/materialHelper.geometryrendering.js b/Materials/materialHelper.geometryrendering.js
+index b9761671c22fab766f67bd1441bc0e1def549869..9fadde6a5d64b1b6a53fa792307372dbb05e62cf 100644
+--- a/Materials/materialHelper.geometryrendering.js
++++ b/Materials/materialHelper.geometryrendering.js
+@@ -116,7 +116,13 @@ export class MaterialHelperGeometryRendering {
+     static _RestoreAttachments(engine) {
+         const configuration = MaterialHelperGeometryRendering._Configurations[engine.currentRenderPassId];
+         if (configuration?._colorAttachments) {
+-            engine.bindAttachments(configuration._colorAttachments);
++            // Haptic: WebGL2 binds the restore with the next draw, clear or framebuffer change (`_deferAttachments`).
++            if (engine._deferAttachments) {
++                engine._deferAttachments(configuration._colorAttachments);
++            }
++            else {
++                engine.bindAttachments(configuration._colorAttachments);
++            }
+         }
+     }
+     /** @internal */
 diff --git a/Materials/shadowDepthWrapper.js b/Materials/shadowDepthWrapper.js
 index 517e24c3ff098b6717db92924b5c4e21332c1f0a..db039329c78de733894dbe71bcaa2c1f7cba58f6 100644
 --- a/Materials/shadowDepthWrapper.js
