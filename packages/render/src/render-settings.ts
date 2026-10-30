@@ -91,8 +91,10 @@ type SceneRendering = {
   effectsKey: string;
   /** Renderable chain for the live settings; null means no owned passes. */
   effectsPlan: SceneEffectsPlan | null;
-  /** Called when `mode` changes, after the plan is current. */
+  /** Notified when the light block's scene-level defines change (`followLightingDefines`). */
   listeners: Set<(mode: RenderMode) => void>;
+  /** The key of those defines as last planned. */
+  lightingDefines: string;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
 /** Scenes whose project quality resolves through another Scene (SceneLayers follow the world). */
@@ -153,6 +155,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       colorGradingTexture: null,
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
+      lightingDefines: "pbr|false",
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -203,14 +206,12 @@ export function updateSceneRenderingSettings(
     ...normalizeCelShadingOverrides(state.runtimeOverrides.cel),
   });
   state.effects = normalizeRenderEffectsSettings(resolved.effects);
-  const modeChanged = mode !== state.mode;
   state.mode = mode;
   // A newly requested LUT publishes asynchronously and replans once ready.
   state.colorGrading.sync(
     state.effectsEnabled && state.effects.colorGrading.enabled ? state.effects.colorGrading.lutTextureGuid : null,
   );
   replanSceneEffects(state);
-  if (modeChanged) for (const listener of state.listeners) listener(mode);
   syncImageProcessingMode(scene, state);
 }
 
@@ -222,6 +223,11 @@ function replanSceneEffects(state: SceneRendering): void {
   };
   state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs);
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
+  // The light block's scene-level defines: the render mode and whether temporal anti-aliasing jitters shadow filters.
+  const lightingDefines = `${state.mode}|${state.effectsPlan?.temporalAntiAliasing != null}`;
+  if (lightingDefines === state.lightingDefines) return;
+  state.lightingDefines = lightingDefines;
+  for (const listener of state.listeners) listener(state.mode);
 }
 
 /** Project-enabled screen-space effects that the quality tier skips, for diagnostics. */

@@ -33,6 +33,7 @@ import {
   hapticLightingWgsl,
 } from "./haptic-lighting-shader";
 import { sceneRenderingSettings } from "./render-settings";
+import { viewTermsForPass, viewTermsForced } from "./haptic-view-inputs";
 import { shadowAtlasTexture } from "./shadow-atlas";
 
 const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
@@ -83,6 +84,26 @@ function renderingHarmonics(polynomial: SphericalPolynomial | null): SphericalHa
 
 function celMode(scene: Scene): boolean {
   return sceneRenderingSettings(scene).mode === "cel";
+}
+
+/**
+ * Whether `scene`'s lit programs jitter their shadow filters (`HAPTIC_SHADOW_JITTER`): while its effects plan has
+ * temporal anti-aliasing, which resolves the jitter's noise. A settings change, never a light change, flips it.
+ */
+function shadowJitter(scene: Scene): boolean {
+  return viewTermsForced(scene) || sceneRenderingSettings(scene).effectsPlan?.temporalAntiAliasing != null;
+}
+
+const jitterEffects = new WeakMap<Effect, boolean>();
+
+/** Whether `effect` jitters its shadow filters; as `celEffect`, a draw binds for its own Effect. */
+function jitterEffect(effect: Effect): boolean {
+  let jitter = jitterEffects.get(effect);
+  if (jitter === undefined) {
+    jitter = /^#define HAPTIC_SHADOW_JITTER$/m.test(effect.defines);
+    jitterEffects.set(effect, jitter);
+  }
+  return jitter;
 }
 
 const celEffects = new WeakMap<Effect, boolean>();
@@ -178,6 +199,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     defines.setValue("HAPTIC_EXACT_SRGB", scene.getEngine().useExactSrgbConversions, true);
     defines.setValue("HAPTIC_TWO_SIDED", !nodeMaterial.backFaceCulling, true);
     defines.setValue("HAPTIC_LIGHT_LOOP_PROOF", lightLoopProofScenes.has(scene), true);
+    defines.setValue("HAPTIC_SHADOW_JITTER", shadowJitter(scene), true);
   }
 
   override isReady(mesh: AbstractMesh): boolean {
@@ -205,6 +227,11 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
     }
     effect.setFloat("hapticShadowReceiver", mesh.receiveShadows ? 1 : 0);
+    if (jitterEffect(effect)) {
+      // The pass drawing now: a temporally jittered one jitters the filters, any other draws the fixed pattern.
+      const terms = viewTermsForPass(scene, scene.getEngine().currentRenderPassId);
+      effect.setFloat4("hapticViewTerms", terms.jitterAmplitude, terms.jitterPhase, 0, 0);
+    }
     // WebGPU draws only with every declared texture bound: the table always, the cube where a program declares it.
     effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
     if (celEffect(effect)) {
@@ -245,6 +272,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     for (const uniform of CEL_UNIFORMS) state._emitUniformFromString(uniform, NodeMaterialBlockConnectionPointTypes.Vector4, "HAPTIC_CEL");
     state._emitUniformFromString("hapticEnvironmentMatrix", NodeMaterialBlockConnectionPointTypes.Matrix);
     state._emitUniformFromString("hapticShadowReceiver", NodeMaterialBlockConnectionPointTypes.Float);
+    state._emitUniformFromString("hapticViewTerms", NodeMaterialBlockConnectionPointTypes.Vector4, "HAPTIC_SHADOW_JITTER");
     state._emitCubeSampler("hapticEnvironmentSampler", "defined(HAPTIC_ENVIRONMENT)");
     state._emit2DSampler("hapticEnvironmentBrdfSampler");
     state._emit2DSampler("hapticAreaLtc1Sampler");
@@ -288,8 +316,11 @@ export class HapticLightingBlock extends NodeMaterialBlock {
 }
 RegisterClass("BABYLON.HapticLightingBlock", HapticLightingBlock);
 
-/** A render-mode change re-prepares `material`'s defines (`HAPTIC_CEL`) on its next draw, frozen or not. */
-export function followRenderMode(material: NodeMaterial): void {
+/**
+ * A settings change that flips the block's scene-level defines (`HAPTIC_CEL`, `HAPTIC_SHADOW_JITTER`) re-prepares
+ * `material`'s defines on its next draw, frozen or not.
+ */
+export function followLightingDefines(material: NodeMaterial): void {
   const listeners = sceneRenderingSettings(material.getScene()).listeners;
   const listener = () => material.markDirty(true);
   listeners.add(listener);
