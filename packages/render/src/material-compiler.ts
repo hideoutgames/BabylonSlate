@@ -104,6 +104,12 @@ export interface CompileMaterialOptions {
   overlay?: boolean;
   /** Internal coverage variant; retains authored deformation and alpha discard. */
   surfaceVariant?: AuthoredSurfaceVariant;
+  /**
+   * Internal water variant (`acquireWaterVariant`): a Surface Material as a water mesh draws it, with built-in water's
+   * cut (removal volumes, land above the water, a blending neighbour's water) and, when translucent, its coverage raise.
+   * The base Material compiles none of them.
+   */
+  water?: boolean;
   /** Internal FrameGraph variant; shared resources are bound by its render pass. */
   logicalSceneBuffers?: boolean;
   /** Editor-only single-quad preview; live particle systems retain Particle mode. */
@@ -155,7 +161,12 @@ export interface AuthoredMaterialVariant {
   release: () => Promise<void>;
 }
 export type AuthoredOutlineVariant = AuthoredMaterialVariant;
-const authoredVariantFactories = new WeakMap<Material, (kind: AuthoredSurfaceVariant) => AuthoredMaterialVariant>();
+/** A Material's variants: its auxiliary passes' and its water variant (`acquireWaterVariant`). */
+type AuthoredVariantKind = AuthoredSurfaceVariant | "water";
+const authoredVariantFactories = new WeakMap<Material, (kind: AuthoredVariantKind) => AuthoredMaterialVariant>();
+/** Each water variant's base Material (`acquireWaterVariant`). */
+const waterVariantBases = new WeakMap<Material, Material>();
+const waterVariantFactories = new WeakMap<Material, () => AuthoredMaterialVariant>();
 const authoredShadowFactories = new WeakMap<Material, { ensure(): void; acquire(): void; release(): void }>();
 /** Only compiler-owned material generations have reproducible authored coverage. */
 export function acquireAuthoredOutlineVariant(source: Material): AuthoredOutlineVariant | undefined {
@@ -163,6 +174,25 @@ export function acquireAuthoredOutlineVariant(source: Material): AuthoredOutline
 }
 export function acquireAuthoredMaterialVariant(source: Material, kind: AuthoredSurfaceVariant): AuthoredMaterialVariant | undefined {
   return authoredVariantFactories.get(source)?.(kind);
+}
+/**
+ * The Material a water mesh draws for the Surface Material `source`: the same graph with built-in water's cut and, when
+ * translucent, its coverage raise (`CompileMaterialOptions.water`), which the base Material compiles without. Shared and
+ * reference-counted per base generation; parameter edits reach it through the base. Its own outline and capture variants
+ * keep the cut. Undefined for Materials the compiler did not build or that are not Surface Materials.
+ */
+export function acquireWaterVariant(source: Material): AuthoredMaterialVariant | undefined {
+  return waterVariantFactories.get(source)?.();
+}
+/** The base Material of a water variant (`acquireWaterVariant`), or `material` itself for any other Material. */
+export function waterVariantBase(material: Material): Material;
+export function waterVariantBase(material: Material | null): Material | null;
+export function waterVariantBase(material: Material | null): Material | null {
+  return material ? waterVariantBases.get(material) ?? material : null;
+}
+/** Whether `material` is a water variant (`acquireWaterVariant`). */
+export function isWaterVariant(material: Material | null | undefined): boolean {
+  return !!material && waterVariantBases.has(material);
 }
 /** Enable final-position shadows when a mesh acquires a runtime deformer. */
 export function ensureAuthoredShadowDepthWrapper(source: Material): boolean {
@@ -663,10 +693,10 @@ export function compileMaterialPlan(
       } else if (color) color.connectTo(fragment.rgba);
       outputNodes.push(fragment);
     } else {
-      // Every Surface Material keeps built-in water's cut where it draws a water mesh (removal volumes, land above the
-      // water, a blending neighbour's water), in every variant; elsewhere it compiles away. It reads the final
-      // displaced position, and the geometry's own waterline: the Water Waves node's vertex height on the GPU path.
-      if (plan.domain === "surface" && plumbing.worldPosition) {
+      // A water variant keeps built-in water's cut (removal volumes, land above the water, a blending neighbour's water),
+      // in each of its own variants (outline, capture). It reads the final displaced position, and the geometry's own
+      // waterline: the Water Waves node's vertex height on the GPU path.
+      if (plan.domain === "surface" && options.water && plumbing.worldPosition) {
         const cut = new WaterCutBlock(`${options.name}_waterCut`);
         plumbing.worldPosition.connectTo(cut.worldPosition);
         if (plumbing.waterWaves) {
@@ -1004,7 +1034,7 @@ export function compileMaterialPlan(
     material,
     options.resolveTexture,
   );
-  const variants = new Map<AuthoredSurfaceVariant, { compiled: CompiledMaterial; references: number }>();
+  const variants = new Map<AuthoredVariantKind, { compiled: CompiledMaterial; references: number }>();
   const setParameter: CompiledMaterial["setParameter"] = (name, value) => {
     if (!parameters.setParameter(name, value)) return false;
     for (const variant of variants.values()) variant.compiled.setParameter(name, value);
@@ -1030,13 +1060,15 @@ export function compileMaterialPlan(
     void shadowReleased.catch((error: unknown) => console.warn(`[render] Authored shadow material release failed: ${String(error)}`));
   };
   if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary) {
-    authoredVariantFactories.set(material, (kind) => {
+    const acquireVariant = (kind: AuthoredVariantKind): AuthoredMaterialVariant => {
       if (disposed) throw new Error("Cannot retain a disposed authored material.");
       let variant = variants.get(kind);
       if (!variant) {
-        // A variant that cannot link would never be ready for its pass (outline, capture, shadow) while the surface
+        // A variant that cannot link would never be ready for its pass (outline, capture, shadow, water) while the surface
         // stays bound, so its failure reaches the owner like the surface's own: the owner retires the generation.
-        const compiled = compileMaterialPlan(plan, { ...options, name: `${options.name}:${kind}`, surfaceVariant: kind });
+        const compiled = kind === "water"
+          ? compileMaterialPlan(plan, { ...options, name: `${options.name}:water`, water: true })
+          : compileMaterialPlan(plan, { ...options, name: `${options.name}:${kind}`, surfaceVariant: kind });
         if (materialCompileFailed(compiled)) throw new Error(compiled.diagnostics.map((entry) => entry.message).join("; "));
         for (const operation of plan.operations) if (operation.nodeType.startsWith("param.") && operation.source.callPath.length === 0) {
           const name = String(operation.properties.name ?? "").trim();
@@ -1045,6 +1077,7 @@ export function compileMaterialPlan(
         }
         variant = { compiled, references: 0 };
         variants.set(kind, variant);
+        if (kind === "water") waterVariantBases.set(compiled.material, material);
       }
       const retained = variant;
       retained.references++;
@@ -1056,7 +1089,9 @@ export function compileMaterialPlan(
           await retained.compiled.whenReleased();
         }
       } };
-    });
+    };
+    authoredVariantFactories.set(material, acquireVariant);
+    if (plan.domain === "surface" && !options.water) waterVariantFactories.set(material, () => acquireVariant("water"));
     const installShadow = () => {
       if (shadow || material.shadowDepthWrapper) return;
       const variant = acquireAuthoredMaterialVariant(material, "shadowDepth")!;
@@ -1069,11 +1104,12 @@ export function compileMaterialPlan(
       acquire: () => { installShadow(); shadowCages++; },
       release: () => { if (shadowCages > 0 && --shadowCages === 0 && !permanentShadow) releaseShadow(); },
     });
-    // Static opaque surfaces retain Babylon's cheap native/cached path.
-    if (!isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null) || plan.blendMode === "masked")
+    // Static opaque surfaces retain Babylon's cheap native/cached path. Water never casts, so a water variant needs none.
+    if (!options.water && (!isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null) || plan.blendMode === "masked"))
       ensureAuthoredShadowDepthWrapper(material);
     material.onDisposeObservable.addOnce(() => {
       authoredVariantFactories.delete(material);
+      waterVariantFactories.delete(material);
       authoredShadowFactories.delete(material);
       releaseShadow();
     });
@@ -1085,6 +1121,10 @@ export function compileMaterialPlan(
     if (disposed) return;
     disposed = true;
     authoredVariantFactories.delete(material);
+    waterVariantFactories.delete(material);
+    // A water mesh still holding this generation's water variant (its library entry retired without a successor)
+    // falls back as a mesh holding the retired generation does; its holder's release finds the variant disposed.
+    variants.get("water")?.compiled.dispose();
     authoredShadowFactories.delete(material);
     releaseShadow();
     finishShaderCheck();
@@ -1505,10 +1545,10 @@ function attachSurfaceShading(
     created.push(fog);
     return fog.output;
   };
-  // Built-in water's coverage raise for a translucent Material on water, before the fog (`WaterCoverageBlock`); it
-  // compiles away on other meshes.
+  // Built-in water's coverage raise for a translucent Material on water, before the fog (`WaterCoverageBlock`): water
+  // variants only.
   const covered = (color: NodeMaterialConnectionPoint, alpha: NodeMaterialConnectionPoint) => {
-    if (options.overlay || plan.domain !== "surface" || plan.blendMode !== "translucent") return { color, alpha };
+    if (options.overlay || !options.water || plan.domain !== "surface" || plan.blendMode !== "translucent") return { color, alpha };
     const coverage = new WaterCoverageBlock(`${options.name}_waterCoverage`);
     created.push(coverage);
     color.connectTo(coverage.color);

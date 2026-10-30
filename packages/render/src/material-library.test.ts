@@ -8,7 +8,9 @@ import {
   type MaterialFunctionDocument,
 } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
-import { acquireAuthoredMaterialVariant, MaterialCompileStalled } from "./material-compiler";
+import { acquireAuthoredMaterialVariant, MaterialCompileStalled, waterVariantBase } from "./material-compiler";
+import { createWaterMesh } from "./water-mesh";
+import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
 import { syncSceneLighting } from "./scene-lighting";
 import { invalidateShadowReceiverHandoffs } from "./shadow-receiver-handoff";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
@@ -219,6 +221,24 @@ describe("material library", () => {
     expect(f.scene.materials).toContain(first.material);
     expect(f.scene.materials).not.toContain(next.material);
     expect(f.cache.resourceStats().leases).toBe(1);
+  });
+
+  it("leaves no water variant or texture lease once a deleted Material's water mesh goes", async () => {
+    const f = textureLibrary();
+    const material = f.library.acquire(f.scene, "material", textureDocument("first"));
+    if (!material.ok) throw new Error("Material did not compile");
+    expect(await material.ready).toEqual([]);
+    const lake = createWaterMesh(f.scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), material.material);
+    const drawn = lake.material!;
+    expect(waterVariantBase(drawn)).toBe(material.material);
+    expect(f.scene.materials).toContain(drawn);
+    // The Material is deleted while the water mesh still draws it: its water variant goes with it.
+    f.library.release(f.scene, "material");
+    expect(f.scene.materials).not.toContain(material.material);
+    expect(f.scene.materials).not.toContain(drawn);
+    lake.dispose();
+    await Promise.resolve();
+    expect(f.cache.resourceStats().leases).toBe(0);
   });
 
   it("settles cancelled material preparation without waiting for a pending texture header", async () => {
