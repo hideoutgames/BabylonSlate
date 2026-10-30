@@ -6,6 +6,7 @@ import {
   type FeatureTestCheckReport,
   type FeatureTestCheckResources,
   type FeatureTestCheckSceneResult,
+  type DrawStats,
   type FrameStats,
 } from "../services/feature-test-check";
 import { clipText, formatDiagnosticEnvironment, type DiagnosticEnvironment } from "./diagnostic-info";
@@ -48,7 +49,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, mode: FeatureTestCheckMo
     const snap = play.snapshot;
     if (snap) {
       const r = snap.rendering;
-      lines.push(`  Render: draws ${snap.drawCalls} · meshes ${snap.meshes} · textures ${snap.textures} · memory ${Math.round(snap.accountedBytes / 1048576)} MB${r ? ` · cpu ${r.cpuMs.toFixed(1)} ms · gpu ${r.gpuMs === null ? r.gpuStatus : `${r.gpuMs.toFixed(1)} ms`} · ${r.width}x${r.height} @${r.scalingLevel.toFixed(2)}` : ""}`);
+      lines.push(`  Render: draws ${drawsText(play.draws, snap.drawCalls)} · meshes ${snap.meshes} · textures ${snap.textures} · memory ${Math.round(snap.accountedBytes / 1048576)} MB${r ? ` · cpu ${r.cpuMs.toFixed(1)} ms · gpu ${r.gpuMs === null ? r.gpuStatus : `${r.gpuMs.toFixed(1)} ms`} · ${r.width}x${r.height} @${r.scalingLevel.toFixed(2)}` : ""}`);
       if (r?.qualityLimits.length) lines.push(`  Quality limits: ${clip(r.qualityLimits.join("; "))}`);
     }
     const first = play.firstDraws;
@@ -64,16 +65,16 @@ function sceneLines(scene: FeatureTestCheckSceneResult, mode: FeatureTestCheckMo
   }
   if (play.benchmark.length && mode === "breakdown") {
     lines.push("  Breakdown (frame cap lifted; change against the mean of both baselines):",
-      `    ${pad("Step", 22)}${pad("fps", 6)}${pad("median", 9)}${pad("p95", 8)}${pad("change", 17)}${pad("cpu", 8)}${pad("draws", 7)}resolution`);
+      `    ${pad("Step", 22)}${pad("fps", 6)}${pad("median", 9)}${pad("p95", 8)}${pad("change", 17)}${pad("cpu", 8)}${pad("draws", 14)}resolution`);
     for (const sample of play.benchmark) {
       const delta = breakdownDelta(play.benchmark, sample);
       const change = delta ? `${delta.ms >= 0 ? "+" : ""}${delta.ms.toFixed(1)}ms ${delta.percent >= 0 ? "+" : ""}${delta.percent.toFixed(0)}%` : "-";
-      lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames?.medianMs !== undefined ? `${sample.frames.medianMs.toFixed(1)}ms` : "-", 9)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(change, 17)}${pad(ms(sample.cpuMs), 8)}${pad(String(sample.drawCalls), 7)}${sample.resolution ?? "-"}`);
+      lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames?.medianMs !== undefined ? `${sample.frames.medianMs.toFixed(1)}ms` : "-", 9)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(change, 17)}${pad(ms(sample.cpuMs), 8)}${pad(drawsText(sample.draws, sample.drawCalls), 14)}${sample.resolution ?? "-"}`);
     }
   } else if (play.benchmark.length) {
-    lines.push("  Benchmark (frame cap lifted):", `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 8)}${pad("gpu", 8)}${pad("draws", 7)}resolution`);
+    lines.push("  Benchmark (frame cap lifted):", `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 8)}${pad("gpu", 8)}${pad("draws", 14)}resolution`);
     for (const sample of play.benchmark) {
-      lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(ms(sample.cpuMs), 8)}${pad(ms(sample.gpuMs), 8)}${pad(String(sample.drawCalls), 7)}${sample.resolution ?? "-"}`);
+      lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(ms(sample.cpuMs), 8)}${pad(ms(sample.gpuMs), 8)}${pad(drawsText(sample.draws, sample.drawCalls), 14)}${sample.resolution ?? "-"}`);
     }
     lines.push(`  Highest tier at 60 fps: ${bestProfile([play.benchmark], SMOOTH) ?? "none"} · at 30 fps: ${bestProfile([play.benchmark], PLAYABLE) ?? "none"}`);
   }
@@ -111,6 +112,13 @@ function resourceLine(sample: FeatureTestCheckResources): string {
 
 function pad(text: string, width: number): string {
   return text.length >= width ? `${text} ` : text.padEnd(width);
+}
+
+/** Mean draw calls per frame with their range, or the one frame's count in reports saved before the range. */
+function drawsText(draws: DrawStats | null | undefined, frame: number): string {
+  if (!draws) return String(frame);
+  const mean = Math.round(draws.mean);
+  return draws.min === draws.max ? String(mean) : `${mean} (${draws.min}-${draws.max})`;
 }
 
 function ms(value: number | null): string {

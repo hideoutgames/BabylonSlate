@@ -81,9 +81,23 @@ export interface FeatureTestBenchmarkSample {
   /** Mean CPU and GPU frame cost while sampling; GPU is null where timer queries are unavailable. */
   cpuMs: number | null;
   gpuMs: number | null;
+  /** Mean draw calls per frame while sampling (the frame at the end of the sample in reports saved before `draws`). */
   drawCalls: number;
+  /** Draw calls per frame while sampling; absent in reports saved before it was recorded. */
+  draws?: DrawStats;
   resolution: string | null;
   failed: string[];
+}
+
+/**
+ * Draw calls per frame over a sample window, read every half second. One frame's count is not representative: a pass
+ * that draws on alternate frames (a static view's planar reflection) moves it by its whole draw count.
+ */
+export interface DrawStats {
+  mean: number;
+  min: number;
+  max: number;
+  samples: number;
 }
 
 export interface FrameStats {
@@ -124,6 +138,8 @@ export interface FeatureTestCheckSceneResult {
     frames: FrameStats | null;
     runtimeFps: number | null;
     snapshot: ReturnType<PlayProbe["snapshot"]> | null;
+    /** Draw calls per frame while Play was sampled; absent in reports saved before it was recorded. */
+    draws?: DrawStats | null;
     /** Shaders first drawn after the scene presented, read when its commands finished (WebGL2 only). */
     firstDraws: NonNullable<RenderDiagnostics["firstDraws"]> | null;
     commands: FeatureTestCheckCommandResult[];
@@ -368,7 +384,9 @@ async function checkScene(
   if (loaded === "loaded" && play) {
     result.play.status = "loaded";
     deps.onProgress?.(`${scene.name}: measuring Play`);
-    result.play.frames = await deps.sampleFrames(limits.playSampleMs, signal);
+    const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
+    result.play.frames = sampled.frames;
+    result.play.draws = sampled.draws;
     result.play.runtimeFps = play.runtimeFps();
     result.play.snapshot = play.snapshot();
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
@@ -499,27 +517,17 @@ async function benchmarkProfiles(
       const steady = await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
       if (!steady) failed.push(`The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`);
       await deps.sleep(limits.profileSettleMs, signal);
-      const cpu: number[] = [];
-      const gpu: number[] = [];
-      let sampling = true;
-      const frames = deps.sampleFrames(limits.playSampleMs, signal).finally(() => { sampling = false; });
-      while (sampling) {
-        const rendering = play.snapshot().rendering;
-        if (rendering) {
-          cpu.push(rendering.cpuMs);
-          if (rendering.gpuMs !== null) gpu.push(rendering.gpuMs);
-        }
-        await Promise.race([frames, deps.sleep(500, signal)]);
-      }
+      const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
       const snapshot = play.snapshot();
       const rendering = snapshot.rendering;
       samples.push({
         label: profile.label,
-        frames: await frames,
+        frames: sampled.frames,
         runtimeFps: play.runtimeFps(),
-        cpuMs: mean(cpu),
-        gpuMs: mean(gpu),
-        drawCalls: snapshot.drawCalls,
+        cpuMs: sampled.cpuMs,
+        gpuMs: sampled.gpuMs,
+        drawCalls: sampled.draws ? Math.round(sampled.draws.mean) : snapshot.drawCalls,
+        draws: sampled.draws ?? undefined,
         resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
         failed,
       });
@@ -533,6 +541,32 @@ async function benchmarkProfiles(
       await run(`framecap ${cap ?? 60}`);
     }
   }
+}
+
+/** Reads the per-frame counters every half second while `frames` samples the frame intervals. */
+async function sampleWithCounters(
+  play: PlayProbe, frames: Promise<FrameStats | null>, deps: FeatureTestCheckDeps, signal: AbortSignal,
+): Promise<{ frames: FrameStats | null; draws: DrawStats | null; cpuMs: number | null; gpuMs: number | null }> {
+  const cpu: number[] = [];
+  const gpu: number[] = [];
+  const draws: number[] = [];
+  let sampling = true;
+  const done = frames.finally(() => { sampling = false; });
+  while (sampling) {
+    const snapshot = play.snapshot();
+    draws.push(snapshot.drawCalls);
+    if (snapshot.rendering) {
+      cpu.push(snapshot.rendering.cpuMs);
+      if (snapshot.rendering.gpuMs !== null) gpu.push(snapshot.rendering.gpuMs);
+    }
+    await Promise.race([done, deps.sleep(500, signal)]);
+  }
+  return { frames: await done, draws: drawStats(draws), cpuMs: mean(cpu), gpuMs: mean(gpu) };
+}
+
+export function drawStats(values: readonly number[]): DrawStats | null {
+  if (!values.length) return null;
+  return { mean: mean(values)!, min: Math.min(...values), max: Math.max(...values), samples: values.length };
 }
 
 function mean(values: readonly number[]): number | null {
