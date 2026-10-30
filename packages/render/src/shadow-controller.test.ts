@@ -3,9 +3,7 @@ import {
   CascadedShadowGenerator,
   InternalTexture,
   DirectionalLight,
-  HemisphericLight,
   MeshBuilder,
-  MaterialDefines,
   NullEngine,
   PointLight,
   SpotLight,
@@ -484,7 +482,7 @@ describe("shared shadow lifecycle", () => {
       .toEqual([{ mode: "manual", depthBias: 0.002, normalBias: 0.025 }, { mode: "manual", depthBias: 0.002, normalBias: 0.025 }]);
     expect(sceneRenderingSettings(scene).shadows).toMatchObject({ autoBias: false, depthBias: 0.002, normalBias: 0.025 });
   });
-  it("selects receiver correction only for automatic directional PCF and invalidates mode changes once", () => {
+  it("invalidates an automatic bias mode change once and keeps the maps", () => {
     const { scene, controller } = fixture();
     scene.getEngine()._features.supportShadowSamplers = true;
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
@@ -494,87 +492,15 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     const directional = controller.generator(sun)!;
     const local = controller.generator(spot)!;
-    const defines = () => {
-      const result = new MaterialDefines() as MaterialDefines & Record<string, unknown>;
-      directional.prepareDefines(result, 0);
-      local.prepareDefines(result, 1);
-      return result;
-    };
-    expect(defines()).toMatchObject({ SLATE_SHADOW_AUTO0: true, SLATE_SHADOW_AUTO1: false });
     const dirty = vi.spyOn(scene, "markAllMaterialsAsDirty");
     updateSceneRenderingSettings(scene, { shadows: { ...sceneRenderingSettings(scene).shadows, autoBias: false } });
     controller.sync();
-    expect(defines()).toMatchObject({ SLATE_SHADOW_AUTO0: false, SLATE_SHADOW_AUTO1: false });
     expect(dirty).toHaveBeenCalled();
     const count = dirty.mock.calls.length;
     controller.sync();
     expect(dirty).toHaveBeenCalledTimes(count);
     expect(controller.generator(sun)).toBe(directional);
     expect(controller.generator(spot)).toBe(local);
-  });
-  // The define text is the Effect cache key: a leftover per-slot define with the
-  // same shader source would link the same program again for a toggled light.
-  it.each([
-    {
-      name: "a hemispheric fill takes the slot",
-      slot: 0,
-      lights: (scene: Scene) => ({
-        sun: new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene),
-        other: new HemisphericLight("fill", Vector3.Up(), scene),
-      }),
-    },
-    {
-      name: "the slot falls beyond the light count",
-      slot: 1,
-      lights: (scene: Scene) => ({
-        other: new HemisphericLight("fill", Vector3.Up(), scene),
-        sun: new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene),
-      }),
-    },
-    {
-      name: "a shadowed spot without cascades takes the slot",
-      slot: 0,
-      lights: (scene: Scene) => ({
-        sun: new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene),
-        other: new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 1, scene),
-      }),
-    },
-  ])("gives a receiver the defines of a fresh one after the cascaded sun leaves its slot: $name", ({ slot, lights }) => {
-    const { scene, controller } = fixture();
-    updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 1024, filterQuality: "low" }),
-    });
-    const addReceiver = (name: string) => {
-      const mesh = MeshBuilder.CreateBox(name, {}, scene);
-      mesh.material = new StandardMaterial(name, scene);
-      controller.setParticipation(mesh, { castShadows: true, receiveShadows: true });
-      controller.sync();
-      return {
-        mesh,
-        defines: () => {
-          // A ready receiver answers from its cache within one render.
-          scene.incrementRenderId();
-          mesh.material!.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
-          return mesh.subMeshes[0]!.materialDefines!.toString();
-        },
-      };
-    };
-    const { sun, other } = lights(scene);
-    controller.register(sun, true);
-    controller.register(other, true);
-    controller.sync();
-    const receiver = addReceiver("receiver");
-    const cascaded = receiver.defines();
-    expect(cascaded).toContain(`#define SLATE_SHADOW_AUTO${slot}\n`);
-    expect(cascaded).toContain(`#define SLATE_SHADOW_FADE${slot} `);
-
-    sun.setEnabled(false);
-    controller.sync();
-    receiver.mesh._markSubMeshesAsLightDirty();
-    const toggled = receiver.defines();
-    expect(toggled).not.toContain(`SLATE_SHADOW_AUTO${slot}`);
-    expect(toggled).not.toContain(`SLATE_SHADOW_FADE${slot}`);
-    expect(toggled).toBe(addReceiver("fresh").defines());
   });
   it("budgets local lights separately and transfers capacity when an owner is disabled", () => {
     const { scene, controller } = fixture();
@@ -1074,7 +1000,6 @@ describe("shared shadow lifecycle", () => {
     expect(placement.mock.results.map(({ value }) => value !== null)).toEqual(Array(48).fill(true));
     expect(controller.metrics()).toEqual({ passes: 48, bytes: 8192 ** 2 * 4 });
     expect(controller.metrics().bytes).toBeLessThanOrEqual(SHADOW_CAPACITY_PROFILES.ultra.byteBudget);
-    expect(controller.limits()).not.toContain("point shadows: Poisson filter fallback");
     controller.sync();
     expect(placement).toHaveBeenCalledTimes(48);
     updateSceneRenderingSettings(scene, {

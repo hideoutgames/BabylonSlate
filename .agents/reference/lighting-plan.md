@@ -156,6 +156,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 8 Track B PR 3: the shadow sampler placeholders (`shadow-sampler-placeholders.ts`) are deleted; a Mirror surface binds its own 1×1 fallback texel (`mirrorFallbackTexture`) while its reflection has not drawn.
 
+   Phase 8 Track B PR 4: the per-slot receiver defines (`SLATE_SHADOW_AUTO{n}`, `SLATE_SHADOW_FADE{n}`: the generators' `prepareDefines` hook and `shadow-slot-defines.ts`) and the Poisson filter's reporting (the bias resolver's `"poisson"` filter, the diagnostics' and the controller's filter name, the controller's Poisson limits) are deleted: the light block sets no light defines and every map filters with PCF or PCSS.
+
    Phase 8 PR (previous-Effect gate): whether a world view draws a Material's previous Effect while its changed variant compiles is its own mark (`setSceneBindsPreviousEffects` in `variant-swaps.ts`, set by `createEngine` for world Scenes), no longer the fixed-shape light hooks being installed, so deleting fixed-shape lighting keeps it. Every previous Effect qualifies (no seat-bound Effect exists on the block's path), and no sampler placeholders are allocated for it.
 
    Phase 8 PR (fixed-shape entry points): nothing turns fixed-shape lighting on. The `fixedlights` console command and its bridge command go, with the Feature Test Check's fixed-light Benchmark profiles (the profiles are now the four quality tiers, labelled by tier), the test builds' localStorage key and the perf route's `HAPTIC_PERF_FIXED_LIGHTS`, the viewport test host's `setFixedShapeLighting`, and the Material editor's sampler-budget warning (`material.samplerBudget`, shader-graph's `sampler-budget.ts`).

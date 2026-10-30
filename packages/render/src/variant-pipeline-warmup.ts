@@ -456,9 +456,6 @@ function copyDefines(source: MaterialDefines): MaterialDefines {
     const value = values[key];
     copy[key] = Array.isArray(value) ? value.slice() : value;
   }
-  // A defines text a hook gave its own builder (`trackShadowSlotDefines`) builds it the same way.
-  const text = Object.getOwnPropertyDescriptor(source, "toString");
-  if (text) Object.defineProperty(copy, "toString", text);
   const defines = copy as unknown as MaterialDefines & { _renderId: number };
   defines._renderId = -1;
   defines.markAsUnprocessed();
