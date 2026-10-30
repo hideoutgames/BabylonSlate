@@ -24,7 +24,6 @@ import { drawnMaterialVariants } from "./drawn-variants";
 import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
-import { bindsAsPreviousEffect } from "./fixed-light-binding";
 import {
   hasDrawn, hideUntilReady, isRevealPending, noteDrawn, noteRevealFailed, noteRevealProbe, replacesDrawnVisual,
 } from "./reveal-pending";
@@ -295,9 +294,8 @@ function drawsSomething(mesh: AbstractMesh): boolean {
 /**
  * Probe the variants `mesh` is drawn with now. The probe never replaces a ready Effect: Babylon's hot swap keeps
  * drawing a submesh's previous Effect while a newly requested variant compiles. Such a mesh is ready only inside
- * `probeVariantSwaps(true, …)` (a world view's steady frames), and only where its previous Effect binds by its own
- * light layout (`bindsAsPreviousEffect`); everywhere else it waits for its new variant. A swap whose new variant
- * failed to compile is over: the mesh is ready, drawing its previous Effect.
+ * `probeVariantSwaps(true, …)` (a world view's steady frames); everywhere else it waits for its new variant. A swap
+ * whose new variant failed to compile is over: the mesh is ready, drawing its previous Effect.
  *
  * A mesh that has never drawn with its Material (a spawn, a changed Material) and has nothing to draw meanwhile is
  * hidden instead inside such a probe (`hideUntilReady`), and every pass's probe of it passes, noting whether its own
@@ -339,10 +337,9 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
           if (wrapper) wrapper._wasPreviouslyReady = false;
           const defines = part.materialDefines;
           if (defines) defines._renderId = -1;
-          // Babylon will not draw a previous Effect after one of its lights was disposed. A view that tolerates
-          // swaps binds such an Effect by its own light layout (`bindLights` in fixed-light-binding.ts), which never
-          // binds a disposed light, so the submesh keeps drawing it.
-          if (defines?._areLightsDisposed && variantSwapsTolerated() && part.effect?.isReady() && bindsAsPreviousEffect(part.effect))
+          // Babylon will not draw a previous Effect after a light was disposed. The light block binds lights as data,
+          // never a disposed light, so in a view that tolerates swaps the submesh keeps drawing it.
+          if (defines?._areLightsDisposed && variantSwapsTolerated() && part.effect?.isReady())
             defines._areLightsDisposed = false;
         }
       }
@@ -390,7 +387,7 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
         if (swapFailed(material)) continue;
         noteVariantSwap();
         requestPipelineWarm(mesh);
-        return variantSwapsTolerated() && bindsAsPreviousEffect(part.effect);
+        return variantSwapsTolerated();
       }
     }
     return true;
