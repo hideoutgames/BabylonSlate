@@ -413,11 +413,10 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(lamps.map(isForwardLightExcluded)).toEqual(lamps.map((_, index) => index >= 12));
     expect([sun.isEnabled(), fill.isEnabled()]).toEqual([true, true]);
     expect(sceneLightingLimits(scene).join()).toContain("Light block: 14/23 requested lights admitted; 12 scalability local lights");
-    // A phone or tablet draws at most half the block's point lights, whatever the budget.
+    // A phone or tablet draws as many as a desktop.
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)", maxTouchPoints: 5 });
     budget(64);
-    expect(counts()).toEqual([1, HAPTIC_LIGHT_MAXIMUM.point / 2, 0, 0]);
-    expect(lamps.filter((lamp) => !isForwardLightExcluded(lamp))).toEqual(lamps.slice(0, HAPTIC_LIGHT_MAXIMUM.point / 2));
+    expect(counts()).toEqual([1, 20, 0, 0]);
     vi.unstubAllGlobals();
     budget(64);
     expect(counts()).toEqual([1, 20, 0, 0]);
