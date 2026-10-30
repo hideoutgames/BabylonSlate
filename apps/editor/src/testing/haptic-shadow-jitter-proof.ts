@@ -1,8 +1,8 @@
 /**
  * Test-build-only oracle for the light block's shadow-filter jitter: a box's sun shadow on a floor from a deliberately
- * coarse map, so the fixed PCF pattern draws a texel staircase along its diagonal edges. Captures the fixed pattern, the
+ * coarse map seen close up, where the fixed PCF pattern draws its texel staircase plainly. Captures the fixed pattern, the
  * jitter's define at amplitude 0, sixteen frames at amplitude 1 (phases 1 to 16) and, on request, real temporal
- * anti-aliasing resolving the jitter, with a ray-cast mask of what blocks the floor's view of the sun.
+ * anti-aliasing resolving the jitter, with each floor pixel's distance from the box's analytic shadow outline.
  */
 import {
   Color4,
@@ -25,7 +25,6 @@ import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/va
 import { forceViewTerms } from "../../../../packages/render/src/haptic-view-inputs";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
-import { floorShadowMask } from "./haptic-contact-shadow-proof";
 
 type Capture = { name: string; pixels: number[]; jittered: boolean };
 
@@ -139,10 +138,9 @@ export async function runHapticShadowJitterProof(backend: "webgl2" | "webgpu", t
       await settle();
       captures.push({ name: "temporal off", pixels: await draw(), jittered: jittered() });
     }
-    const blocked = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, () => sun.direction.normalizeToNew().scaleInPlace(-100));
     const outline = shadowOutlineDistance(scene, camera, canvas, engine.isWebGPU, floor, box, sun.direction.normalizeToNew());
     graph.dispose();
-    return { width: canvas.width, height: canvas.height, captures, blocked, outline };
+    return { width: canvas.width, height: canvas.height, captures, outline };
   } finally {
     scene.dispose();
     engine.dispose();
