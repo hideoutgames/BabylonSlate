@@ -99,8 +99,8 @@ type SceneLights = {
   /** The clusters' block as written (`HAPTIC_CLUSTERS_GLSL`), its GPU buffer and the local lights it was built from. */
   clusterWords: Float32Array; clusterMasks: Uint32Array; clusterHeader: Float32Array; clusterBuffer: DataBuffer | null;
   clusterLights: ClusterLight[];
-  /** The camera the clusters were last built for; another active camera rebuilds them at its first bind. */
-  clusterCamera: Camera | null;
+  /** The camera and frame the clusters were last built for; another rebuilds them at its first bind. */
+  clusterCamera: Camera | null; clusterFrame: number;
 };
 const scenes = new WeakMap<Scene, SceneLights>();
 const directional = new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8);
@@ -137,7 +137,7 @@ function sceneLights(scene: Scene): SceneLights {
       clusterWords, clusterMasks: new Uint32Array(clusterWords.buffer, CLUSTER_HEADER_FLOATS * 4),
       clusterHeader: clusterWords.subarray(0, CLUSTER_HEADER_FLOATS),
       clusterBuffer: scene.getEngine().createUniformBuffer(clusterWords, "HapticClusters"), clusterLights: [],
-      clusterCamera: null,
+      clusterCamera: null, clusterFrame: -1,
     };
     scenes.set(scene, lights);
     // A map draws after the block's write, with the views it is then sampled by.
@@ -175,24 +175,31 @@ const unculledScenes = new WeakSet<Scene>();
 export function setHapticLightCulling(scene: Scene, enabled: boolean): void {
   if (enabled) unculledScenes.delete(scene);
   else unculledScenes.add(scene);
-  writeClusters(scene, sceneLights(scene));
+  sceneLights(scene).clusterFrame = -1;
 }
 
-/** Builds `state`'s clusters for the Scene's active camera from its local lights as last written, and uploads them. */
+/**
+ * Builds `state`'s clusters for the view the Scene is drawing (its current view and projection, the active camera's
+ * depth range) from its local lights as last written, and uploads them. Read, not computed: a camera's matrices update
+ * only where its view sets them. No view (or no culling): a header that sends every position to every light.
+ */
 function writeClusters(scene: Scene, state: SceneLights): void {
-  state.clusterCamera = scene.activeCamera;
-  // No camera: a header that sends every position to every light.
-  const camera = unculledScenes.has(scene) ? null : scene.activeCamera;
-  buildLightClusters(state.clusterMasks, state.clusterHeader, state.clusterLights, camera, scene.floatingOriginOffset);
+  const camera = scene.activeCamera;
+  state.clusterCamera = camera;
+  state.clusterFrame = scene.getRenderId();
+  const view = camera && !unculledScenes.has(scene)
+    ? { view: scene.getViewMatrix(), projection: scene.getProjectionMatrix(), near: camera.minZ, far: camera.maxZ }
+    : null;
+  buildLightClusters(state.clusterMasks, state.clusterHeader, state.clusterLights, view, scene.floatingOriginOffset);
   if (state.clusterBuffer) scene.getEngine().updateUniformBuffer(state.clusterBuffer, state.clusterWords);
 }
 
 /** Bind the clusters' block for a draw with `effect`, which reads it. */
 export function bindHapticClusters(scene: Scene, effect: Effect): void {
   const state = sceneLights(scene);
-  // The clusters follow the rendering camera (a capture's), built at its first draw; masks built for another camera
-  // stay correct, only coarser.
-  if (state.clusterCamera !== scene.activeCamera) writeClusters(scene, state);
+  // The clusters follow the drawing view (a capture's), built at its first draw of each frame; masks built for another
+  // view stay correct, only coarser.
+  if (state.clusterCamera !== scene.activeCamera || state.clusterFrame !== scene.getRenderId()) writeClusters(scene, state);
   const buffer = state.clusterBuffer;
   if (buffer) effect.bindUniformBuffer(buffer, "HapticClusters");
 }
@@ -442,7 +449,8 @@ export function writeHapticLights(scene: Scene): void {
   buffer.updateFloatArray("hapticRect", rect);
   writeShadowViews(scene, state);
   buffer.update();
-  writeClusters(scene, state);
+  // Built from these lights at the frame's first draw, with the view it draws.
+  state.clusterFrame = -1;
 }
 
 /**

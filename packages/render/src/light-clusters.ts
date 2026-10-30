@@ -1,4 +1,4 @@
-import { Matrix, Vector3, type Camera } from "@babylonjs/core";
+import { Matrix, Vector3 } from "@babylonjs/core";
 
 /**
  * Light clusters for the light block: the rendering camera's view volume cut into screen tiles and exponential view
@@ -22,6 +22,9 @@ export const CLUSTER_BLOCK_WORDS = CLUSTER_HEADER_FLOATS + CLUSTER_COUNT * 2;
 export const CLUSTER_SPOT_BIT = 0;
 export const CLUSTER_RECT_BIT = 16;
 
+/** The view the clusters cut: its absolute view and projection matrices and its depth range. */
+export type ClusterView = { view: Matrix; projection: Matrix; near: number; far: number };
+
 /** A local light as the clusters see it: its record's kind and index, and a sphere bounding its reach. */
 export type ClusterLight = { kind: "point" | "spot" | "rect"; index: number; x: number; y: number; z: number; radius: number };
 
@@ -31,26 +34,27 @@ const center = new Vector3();
 const corner = new Vector3();
 
 /**
- * Fills `masks` (two words per cluster) and `header` for `camera` from `lights`, whose positions are relative to the
+ * Fills `masks` (two words per cluster) and `header` for `view` from `lights`, whose positions are relative to the
  * floating origin `offset`, as the block's records are. A rect light reaches every cluster: its records have no range.
+ * Without a view the header sends every position to every light.
  */
 export function buildLightClusters(
   masks: Uint32Array,
   header: Float32Array,
   lights: readonly ClusterLight[],
-  camera: Camera | null,
+  clusterView: ClusterView | null,
   offset: Vector3,
 ): void {
   masks.fill(0);
   header.fill(0);
-  if (!camera) return;
-  // Block positions are relative to the floating origin; the camera's matrices are absolute.
+  if (!clusterView) return;
+  // Block positions are relative to the floating origin; the view's matrices are absolute.
   Matrix.TranslationToRef(offset.x, offset.y, offset.z, relativeView);
-  relativeView.multiplyToRef(camera.getViewMatrix(), relativeView);
-  const projection = camera.getProjectionMatrix();
+  relativeView.multiplyToRef(clusterView.view, relativeView);
+  const projection = clusterView.projection;
   relativeView.multiplyToRef(projection, viewProjection);
-  const near = Math.max(camera.minZ, 1e-4);
-  const far = Math.max(near * 2, Math.min(camera.maxZ > 0 ? camera.maxZ : CLUSTER_FAR_LIMIT, CLUSTER_FAR_LIMIT));
+  const near = Math.max(clusterView.near, 1e-4);
+  const far = Math.max(near * 2, Math.min(clusterView.far > 0 ? clusterView.far : CLUSTER_FAR_LIMIT, CLUSTER_FAR_LIMIT));
   const logScale = CLUSTER_SLICES / Math.log(far / near);
   const view = relativeView.m;
   header.set(viewProjection.m, 0);

@@ -58,7 +58,8 @@ function masksAt(words: Uint32Array, header: Float32Array, x: number, y: number,
 function build(camera: Camera, lights: ClusterLight[]) {
   const masks = new Uint32Array(CLUSTER_COUNT * 2);
   const header = new Float32Array(CLUSTER_HEADER_FLOATS);
-  buildLightClusters(masks, header, lights, camera, Vector3.Zero());
+  buildLightClusters(masks, header, lights,
+    { view: camera.getViewMatrix(), projection: camera.getProjectionMatrix(), near: camera.minZ, far: camera.maxZ }, Vector3.Zero());
   return { masks, header };
 }
 
@@ -107,8 +108,10 @@ describe("light clusters", () => {
     }
   });
 
-  it("disables the lookup without a camera, so every light draws", () => {
-    const { header } = build(null as unknown as Camera, [{ kind: "point", index: 0, x: 0, y: 0, z: 0, radius: 1 }]);
+  it("disables the lookup without a view, so every light draws", () => {
+    const masks = new Uint32Array(CLUSTER_COUNT * 2);
+    const header = new Float32Array(CLUSTER_HEADER_FLOATS).fill(1);
+    buildLightClusters(masks, header, [{ kind: "point", index: 0, x: 0, y: 0, z: 0, radius: 1 }], null, Vector3.Zero());
     expect(header[22]).toBe(0);
   });
 });
