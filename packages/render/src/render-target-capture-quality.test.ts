@@ -21,6 +21,7 @@ import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { configureEditorRenderingGroups } from "./sorting";
 import { createWaterMesh } from "./water-mesh";
 import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
+import { builtInWaterMaterial } from "./water-template";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -54,7 +55,7 @@ function host(quality: RenderTargetCaptureQuality) {
   camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
   const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 4, length: 4, resolution: 8 }),
-    { ...createDefaultWaterDefinition(), refraction: 0.35 });
+    { ...createDefaultWaterDefinition(), refraction: 0.35 }, builtInWaterMaterial(scene));
   const pier = MeshBuilder.CreateBox("pier", {}, scene);
   pier.material = new StandardMaterial("pier", scene);
   pier.position.y = 0.5;
@@ -101,8 +102,8 @@ it("keeps Fast on the lightweight capture pass: no forward view and no water sce
     strictReadinessChecks: 0,
   }]);
   const capturePass = scene.objectRenderers.find((renderer) => renderer.name === "renderTarget:target")!.renderPassId;
-  expect(compiled(lake, capturePass)).toContain("#define SLATE_WATER\n");
-  expect(compiled(lake, capturePass)).not.toContain("SLATE_WATER_REFRACTION\n");
+  expect(compiled(lake, capturePass)).toMatch(/^#define SLATE_WATER_SURFACE$/m);
+  expect(compiled(lake, capturePass)).not.toContain("SLATE_WATER_NODE_COPY\n");
   expect(isMainWaterPass(scene, capturePass)).toBe(false);
   expect(output.getInternalTexture()).toBe(scene.textures.find((texture) => texture.name === "renderTarget:target")!.getInternalTexture());
   view.dispose();
@@ -127,7 +128,7 @@ it("renders Full Quality through the forward pipeline with its own scene copy, w
   const pass = capture!.waterSceneCopyPass!;
   expect(isMainWaterPass(scene, pass)).toBe(true);
   expect(waterSceneCopyForPass(scene, pass)!.invSize).toEqual([1 / 32, 1 / 16]);
-  expect(compiled(lake, pass)).toContain("#define SLATE_WATER_REFRACTION\n");
+  expect(compiled(lake, pass)).toContain("#define SLATE_WATER_NODE_COPY\n");
   // The scene view keeps its own pass, camera and published output.
   const viewObjects = scene.objectRenderers.filter((renderer) => renderer.name === "Forward objects")
     .map((renderer) => renderer.renderPassId);

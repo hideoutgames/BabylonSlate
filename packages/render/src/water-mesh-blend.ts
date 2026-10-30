@@ -119,7 +119,6 @@ export function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
     if (!neighbours.length) {
       if (s.blend) {
         s.blend = null; s.version++;
-        if (s.plugin) { s.plugin.blend = false; s.plugin.partners = NO_PARTNERS; }
         if (s.nodes) s.nodes.partners = NO_PARTNERS;
       }
       s.stage = null;
@@ -155,7 +154,6 @@ export function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
     if (stage) stage.active = false;
     s.blend = { self, reach, key: key.slice(), built: now, restVaries: false, heightScale: 1, partners: [null, null, null] };
     s.version++;
-    if (s.plugin) s.plugin.blend = true;
   }
 }
 

@@ -6,11 +6,12 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { minimumFilter, WATER_CONTACT_FRAME_BUDGET_MS, WATER_CONTACT_LAYER_OFFSETS, WaterContactField } from "./water-contact-field";
 import type { WaterFieldSurface } from "./water-field";
+import { builtInWaterMaterial } from "./water-template";
+import { meshWaterNodeSurface } from "./water-node-blocks";
 
 type ContactView = { data: Uint8Array | null; width: number; height: number; bounds: number[]; range: number; amplitude: number; texture: unknown };
 const view = (field: WaterContactField) => field as unknown as ContactView;
-const contactsOf = (mesh: Mesh) => (mesh.material as unknown as { pluginManager: { _plugins: Array<{ contacts?: WaterContactField | null }> } })
-  .pluginManager._plugins.find((plugin) => plugin.contacts)!.contacts!;
+const contactsOf = (mesh: Mesh) => meshWaterNodeSurface(mesh)!.contacts!;
 
 /** Signed metres per layer at a world X/Z; +range where nothing meets the water. */
 function layers(field: WaterContactField, x: number, z: number): number[] {
@@ -65,7 +66,7 @@ describe("Water contact field", () => {
     post.position.set(6, 0, 0);
     frame();
     setSceneWaterTime(scene, 1.3);
-    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), createDefaultWaterDefinition());
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
     const contacts = contactsOf(lake);
     // Only the post meets the water: open water and the proxy's footprint stay clear at every height.
     for (const [x, z] of [[0, 0], [-6, 4], [-3, -8], [10, 9], [13.2, 0], [14, 4]] as const) {
@@ -260,8 +261,8 @@ describe("Water contact field", () => {
     outside.position.x = 60;
     frame();
     const water = createDefaultWaterDefinition();
-    const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 40, length: 40 }, "ocean"), water);
-    const sea = createWaterMesh(scene, "sea", normalizeWaterBody({}, "global"), water);
+    const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 40, length: 40 }, "ocean"), water, builtInWaterMaterial(scene));
+    const sea = createWaterMesh(scene, "sea", normalizeWaterBody({}, "global"), water, builtInWaterMaterial(scene));
     const [oceanContacts, seaContacts] = [contactsOf(ocean), contactsOf(sea)];
     const step = () => { frame(); clock += 50; updateSceneWater(scene); };
     // Both are built whole when they are created; then each post moves 1.5 m (its waterline at x = 2 and 62).
@@ -491,7 +492,7 @@ describe("Water contact field", () => {
     // A river falling 2 m over 20 m along Z (rest height -z / 10) and a 16 m log along it, 1 m tall around y = 0. Its
     // waves' envelope is about half a metre (contact layers about ±0.19 m around rest), so the log's ends sit clear of them.
     const water = { ...createDefaultWaterDefinition(), waveHeight: 0.21 };
-    const river = createWaterMesh(scene, "river", normalizeWaterBody({ points: [[0, 1, -10], [0, -1, 10]], width: 6 }, "river"), water);
+    const river = createWaterMesh(scene, "river", normalizeWaterBody({ points: [[0, 1, -10], [0, -1, 10]], width: 6 }, "river"), water, builtInWaterMaterial(scene));
     const log = MeshBuilder.CreateBox("log", { width: 1, height: 1, depth: 16 }, scene);
     frame();
     const contacts = contactsOf(river);
@@ -528,7 +529,7 @@ describe("Water contact field", () => {
     const neighbour = MeshBuilder.CreateBox("neighbour", { width: 1, height: 6, depth: 1 }, scene);
     neighbour.position.x = -3;
     frame();
-    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), { ...createDefaultWaterDefinition(), waveHeight: 1 });
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), { ...createDefaultWaterDefinition(), waveHeight: 1 }, builtInWaterMaterial(scene));
     const contacts = contactsOf(lake);
     expect(contacts.texture).not.toBeNull();
     const uploads = [vi.spyOn(engine, "updateRawTexture"), vi.spyOn(engine, "createRawTexture")];
@@ -558,7 +559,7 @@ describe("Water contact field", () => {
     // Two posts far apart need more cells than the lower caps allow at the finest cell size.
     for (const x of [-60, 60]) MeshBuilder.CreateBox(`post ${x}`, { width: 1, height: 6, depth: 1 }, scene).position.x = x;
     frame();
-    const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 200, length: 40 }, "ocean"), createDefaultWaterDefinition());
+    const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 200, length: 40 }, "ocean"), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
     const contacts = contactsOf(ocean);
     const side = (level: QualityLevel) => {
       updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });

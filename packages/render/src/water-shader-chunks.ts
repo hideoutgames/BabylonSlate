@@ -1,35 +1,19 @@
 /**
- * GLSL-shaped source chunks of built-in water's fragment and vertex shading: helpers, refraction, object reflections
+ * GLSL-shaped source chunks of the water nodes' fragment and vertex shading: helpers, refraction, object reflections
  * (screen-space march, planar), the spectrum's surface and its removal cut. `water-shader-source.ts` assembles them.
  */
-import { WATER_FFT_CASCADES_MAX, WATER_FOAM_WEIGHTS } from "@haptic/core";
+import { WATER_FFT_CASCADES_MAX } from "@haptic/core";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA } from "./water-field";
 import { WATER_SCENE_COPY_SKY_DEPTH } from "./water-scene-copy";
 import {
-  BLEND_COLOR_UNIFORMS, BLEND_PARTNERS, COLOR_LOCALS, COLOR_UNIFORMS, EDGE_FOAM_CALM, f, FFT, FFT_CASCADE_UNIFORMS, fromTier, ifDefined, OPEN_EDGE_FADE,
-  OPEN_EDGE_FADE_TERRAIN, PIXEL_SLOPE_CAP, PIXEL_SLOPE_FILTER, PLANAR, REFLECTS_OBJECTS, REFRACTION, REFRACTION_DEPTH_CAP, REFRACTION_FAR, REFRACTION_SHIFT,
-  REFRACTION_SHIFT_PX, SAMPLES_COPY, WATER_REFRACTION_SCALE, SOFT_SHORE_DEPTH, SPECTRUM_FOAM_SCALE, SSR, SSR_REFINE_STEPS, SSR_STEPS, SSR_THICKNESS, TURBIDITY, WATER_BLEND_DEFINE,
-  WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER, WATER_PLANAR_SAMPLER, WATER_SCENE_SAMPLER,
+  BLEND_COLOR_UNIFORMS, BLEND_PARTNERS, COLOR_LOCALS, COLOR_UNIFORMS, f, FFT, FFT_CASCADE_UNIFORMS, OPEN_EDGE_FADE,
+  OPEN_EDGE_FADE_TERRAIN, PIXEL_SLOPE_CAP, PIXEL_SLOPE_FILTER, SOFT_SHORE_DEPTH, SPECTRUM_FOAM_SCALE, SSR_REFINE_STEPS,
+  SSR_STEPS, SSR_THICKNESS, TURBIDITY, WATER_BLEND_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER,
 } from "./water-shader-defines";
 
-/** GLSL-shaped source that also compiles as WGSL after `toWgsl`; see `waterShaderSource`. */
-export const HELPERS = `
-float swHash(vec2 p) {
-  vec3 q = fract(vec3(p.x, p.y, p.x) * 0.1031);
-  q += vec3(dot(q, q.yzx + vec3(33.33)));
-  return fract((q.x + q.y) * q.z);
-}
-float swNoise(vec2 p) {
-  vec2 i = floor(p);
-  vec2 t = fract(p);
-  t = t * t * (vec2(3.0) - 2.0 * t);
-  return mix(mix(swHash(i), swHash(i + vec2(1.0, 0.0)), t.x), mix(swHash(i + vec2(0.0, 1.0)), swHash(i + vec2(1.0, 1.0)), t.x), t.y);
-}
-` + edgeFoamHelpers("sw");
-
 /**
- * Shore and contact foam, shared by built-in water and the Water Foam node (`prefix` names the functions and the
+ * Shore and contact foam, for the Water Foam node and the Water Waves node's edge turbulence (`prefix` names the functions and the
  * caller's `<prefix>Hash` and `<prefix>Noise`), GLSL-shaped for `toWgsl`.
  *
  * `<prefix>EdgeFoamCover(p, amount, crest, foot)` is foam as the open sea draws it, only denser: `crest` is how far the
@@ -72,13 +56,11 @@ float ${prefix}ContactFoamAmount(vec2 p, float t, float dist, float width) {
 `;
 }
 
-
-
 /**
  * Aerial perspective as `swAir` (0 to 1), from the eye's `distance` and what scene fog leaves of it (`keep`, its factor in
  * linear space, 1 without fog): the scene's haze over the water's own exponential haze, plus a ramp to the far plane, from
- * `haze` (`waterHazeConstants`); none in orthographic views (`ortho` is 1). GLSL-shaped. Built-in water and the Water
- * Reflection node share it.
+ * `haze` (`waterHazeConstants`); none in orthographic views (`ortho` is 1). GLSL-shaped. The Water
+ * Reflection node reads it.
  */
 export function aerialPerspectiveSource(distance: string, keep: string, ortho: string, haze: string): string {
   return `
@@ -89,7 +71,7 @@ float swAir = 1.0 - (1.0 - (1.0 - exp(-${distance} * ${haze}.x)) * ${keep} * swA
 /**
  * How far the far sea becomes a level mirror of the horizon sky and melts into it, as `swHaze`, from `swAir` and how
  * grazing the view is (`graze`, 1 − the view direction's height). The shading normal flattens by its square and the
- * Fresnel rises to 1 with it. GLSL-shaped. Built-in water and the Water Reflection node share it.
+ * Fresnel rises to 1 with it. GLSL-shaped. The Water Reflection node reads it.
  */
 export function horizonHazeSource(graze: string): string {
   return `
@@ -103,7 +85,7 @@ float swHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, ${graze})) * (1.0 - sm
  * water stands in for it (its colour and depth, at most one copy texel away, written into `uv` and `sceneZ`), so
  * silhouettes keep refracting instead of dropping a texel-sized block of pixels back to the blended surface. Only there:
  * four depth loads. `waterZ` is the water's view depth, `pixel` the output's 1 / width. GLSL-shaped; reads the copy
- * helpers. Built-in water and the Water Scene Color node share it.
+ * helpers. The Water Scene Color node reads it.
  */
 export function silhouetteFallbackSource(uv: string, sceneZ: string, waterZ: string, pixel: string): string {
   return `
@@ -128,8 +110,8 @@ if (${sceneZ} < ${waterZ} && swCopyTexel.x > ${pixel} * 1.01) {
  * highest crest) the waves cannot move the shoreline, so the stored rest distance stands: steep coasts keep their
  * shoreline, and the full-range depth's 16 cm steps never read as slopes (over a gentle deep floor they drew contour
  * rings of shore foam). Only real terrain takes this path: cells extended past an underwater landscape edge (alpha ramp)
- * have no floor slope to measure. GLSL-shaped; reads `U.slateWaterFieldStep` and `U.slateWaterFieldBounds`. Built-in
- * water and the water nodes share it.
+ * have no floor slope to measure. GLSL-shaped; reads `U.slateWaterFieldStep` and `U.slateWaterFieldBounds`. The
+ * water nodes share it.
  */
 export function shorelineSource(o: { tap: string; uv: string; cond: string; depth: string; shore: string }): string {
   return `
@@ -156,7 +138,7 @@ if (${o.cond}) {
  * (open-water edges, an ocean's outer edge or a lake drawn smaller than its basin, fade out instead of foaming), from
  * the terrain field's known-terrain weight `known`, its `on` weight and shoreline `shore`, the terrain's depth below the
  * surface `terrainDepth` and its slope `slope`, and the body's bank distance `bank` and depth `body`. GLSL-shaped; reads
- * `U.slateWaterFieldInfo`. Built-in water and the water nodes share it.
+ * `U.slateWaterFieldInfo`. The water nodes share it.
  */
 export function waterEdgeSource(o: { known: string; on: string; shore: string; terrainDepth: string; slope: string; bank: string; body: string }): string {
   return `
@@ -175,47 +157,10 @@ float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * swShoreSoft;`;
 }
 
 /**
- * Refraction (`SLATE_WATER_REFRACTION`), right after the bottom estimate: the view ray bends by the surface tilt (in
- * view space), more through thicker water and less far away, and reads the view's scene copy there. A shifted ray
- * that lands on something in front of the water (an object above it) keeps the straight ray, so nothing above the
- * surface leaks into it, and a downsampled copy texel holding a foreground silhouette hands over to a neighbour that lies
- * behind the water. The copy's depth also bounds the bottom estimate (similar triangles along the view ray), so
- * absorption follows whatever actually lies below: the bed shows through shallows, deep water fades to its colour.
- * Orthographic views (`projection[3][3]` is 1) bend by the same view-space amount at every distance, and their view
- * rays are parallel: the bound follows the camera's forward axis instead of the ray through the eye. `scale` shortens
- * the bend and its cap (Realistic: what lies under clear water wobbles with the waves rather than smearing sideways).
- * GLSL-shaped; `SW_FRAG_COORD` and the copy helpers are bound per language.
- */
-function refractionSource(scale = 1): string {
-  return ifDefined(REFRACTION, `
-vec2 swScreenUv = SW_FRAG_COORD.xy * U.slateWaterScreen.xy;
-float swWaterZ = abs((S.view * vec4(IN.vPositionW, 1.0)).z);
-float swSceneZ0 = swSceneDepth(swScreenUv);
-vec2 swRefrSlope = swGradient + swDetailMid * swChopGain;
-vec2 swTiltV = (S.view * vec4(-swRefrSlope.x, 0.0, -swRefrSlope.y, 0.0)).xy;
-float swRefrDepth = min(max(swSceneZ0 - swWaterZ, 0.0), ${f(REFRACTION_DEPTH_CAP)});
-float swOrtho = S.projection[3][3];
-vec2 swRefrShift = swTiltV * vec2(S.projection[0][0], S.projection[1][1]) * (U.slateWaterScreen.z * ${f(REFRACTION_SHIFT * scale)} * swRefrDepth * mix(1.0 / max(swWaterZ, 0.05), 1.0, swOrtho));
-swRefrShift = swRefrShift * min(1.0, mix(${f(REFRACTION_SHIFT_PX[0] * scale)}, ${f(REFRACTION_SHIFT_PX[1] * scale)}, smoothstep(${f(REFRACTION_FAR[0])}, ${f(REFRACTION_FAR[1])}, swWaterZ)) * U.slateWaterScreen.x / max(length(swRefrShift), 0.000001));
-vec2 swRefrUv = swScreenUv + swRefrShift;
-float swSceneZ1 = swSceneDepth(swRefrUv);
-float swLeak = step(swSceneZ1, swWaterZ);
-swRefrUv = mix(swRefrUv, swScreenUv, swLeak);
-float swSceneZ = mix(swSceneZ1, swSceneZ0, swLeak);
-${silhouetteFallbackSource("swRefrUv", "swSceneZ", "swWaterZ", "U.slateWaterScreen.x")}
-vec3 swBackground = swSceneColor(swRefrUv);
-// Where no neighbour lies behind it either, the pixel keeps the blended surface.
-float swRefracts = step(swWaterZ, swSceneZ);
-// Height lost per metre of view depth along this pixel's view ray.
-float swDropPerDepth = mix(abs(S.vEyePosition.y - IN.vPositionW.y) / max(swWaterZ, 0.001), abs(S.view[1][2]), swOrtho);
-swDepth = mix(swDepth, min(swDepth, max(swSceneZ - swWaterZ, 0.0) * swDropPerDepth), swRefracts);`);
-}
-
-/**
  * The view's planar mirror seen along `ray` from `position` (render space, as is `eye`), into `out` (linear colour,
  * coverage), with the mirror's (on, display-encoded, reach) in `planar` and its view-projection in `matrix`; `object`
  * is the distance to the nearest object in the water, within the contact range `range`. GLSL-shaped; reads
- * `swPlanarTexel` and decodes with `SW_TO_LINEAR`. Built-in water and the Water Reflection node share it.
+ * `swPlanarTexel` and decodes with `SW_TO_LINEAR`. The Water Reflection node reads it.
  */
 export function planarLookupSource(position: string, eye: string, ray: string, object: string, range: string, planar: string, matrix: string, out: string): string {
   return `
@@ -238,68 +183,6 @@ export function planarLookupSource(position: string, eye: string, ray: string, o
   vec3 swPlanarColor = swPlanarHit.rgb / max(swPlanarHit.a, 0.001);
   // A point behind the mirrored camera has no projection (its uv would clamp to an edge texel): the sky stays.
   ${out} = vec4(mix(swPlanarColor, SW_TO_LINEAR(swPlanarColor), ${planar}.y), swPlanarHit.a * step(0.000001, swPlanarClip.w));`;
-}
-
-/**
- * Object reflections (`SLATE_WATER_SSR`, `SLATE_WATER_PLANAR`) along `ray` (a world direction): `swObjRefl` holds
- * linear colour and coverage, 0 where nothing was found (the sky or environment reflection stays). The planar
- * reflection looks up where the reflected ray, followed `PLANAR_REACH` times the eye's distance beyond this fragment's
- * eye-relative position, projects through the mirrored view-projection, at the uv the planar browser proof reads back
- * on both backends (0.5 + 0.5·clip.xy/clip.w). On flat water the reflected ray continues the mirrored view ray, so
- * this is the fragment's own mirror point at any reach; on waves the lookup moves with the reflected ray, as the
- * environment and the march do, rather than by a small fixed shift that left wavy water mirror-flat. Near an object in
- * the water (the contact field) the reach shortens toward the object's distance, so its reflection meets it at the
- * waterline, and a lookup carried past the target's edge is pulled back toward the fragment's own mirror point. Its
- * alpha is coverage and display views store it display-encoded. Without it (another body is the view's dominant one), the
- * screen-space march runs. Sharp hits fade out as the surface gets rough.
- */
-function objectReflectionSource(ray: string, roughness: string): string {
-  return `
-#if ${REFLECTS_OBJECTS}
-vec4 swObjRefl = vec4(0.0);
-vec3 swReflRay = ${ray};
-swReflRay = normalize(vec3(swReflRay.x, max(swReflRay.y, 0.02), swReflRay.z));${ifDefined(PLANAR, `
-if (U.slateWaterPlanar.x > 0.5) {${planarLookupSource("IN.vPositionW", "S.vEyePosition.xyz", "swReflRay", "swObject", "U.slateWaterContactInfo.y", "U.slateWaterPlanar", "U.slateWaterPlanarMatrix", "swObjRefl")}
-}`)}${ifDefined(SSR, `
-if (U.slateWaterPlanar.x < 0.5) {
-  swObjRefl = swMarch(IN.vPositionW, swReflRay);
-}`)}
-swObjRefl.a = swObjRefl.a * (1.0 - smoothstep(0.2, 0.45, ${roughness}));
-#endif`;
-}
-
-/**
- * Per-language samplers and helpers of the scene-copy and reflection features, declared only with their defines.
- * Refraction filters the copy's colour; depth is read from the nearest texel (filtered depth would halo silhouettes),
- * and a reflection hit takes its colour from that same texel. All reads use an explicit level, so they are legal in
- * any control flow.
- */
-export function objectHelpers(wgsl: boolean): string {
-  const copy = wgsl ? `
-var ${WATER_SCENE_SAMPLER}Sampler: sampler;
-var ${WATER_SCENE_SAMPLER}: texture_2d<f32>;
-fn swSceneColor(uv: vec2f) -> vec3f { return textureSampleLevel(${WATER_SCENE_SAMPLER}, ${WATER_SCENE_SAMPLER}Sampler, uv, 0.0).rgb; }
-fn swSceneTexel(uv: vec2f) -> vec4f {
-  let swSize = vec2i(textureDimensions(${WATER_SCENE_SAMPLER}, 0));
-  return textureLoad(${WATER_SCENE_SAMPLER}, clamp(vec2i(uv * vec2f(swSize)), vec2i(0), swSize - vec2i(1)), 0);
-}
-fn swSceneDepth(uv: vec2f) -> f32 { return swSceneTexel(uv).a; }
-fn swSceneTexelUv() -> vec2f { return 1.0 / vec2f(textureDimensions(${WATER_SCENE_SAMPLER}, 0)); }` : `
-uniform sampler2D ${WATER_SCENE_SAMPLER};
-vec3 swSceneColor(vec2 uv) { return texture2DLodEXT(${WATER_SCENE_SAMPLER}, uv, 0.0).rgb; }
-vec4 swSceneTexel(vec2 uv) {
-  ivec2 swSize = textureSize(${WATER_SCENE_SAMPLER}, 0);
-  return texelFetch(${WATER_SCENE_SAMPLER}, clamp(ivec2(uv * vec2(swSize)), ivec2(0), swSize - ivec2(1)), 0);
-}
-float swSceneDepth(vec2 uv) { return swSceneTexel(uv).a; }
-vec2 swSceneTexelUv() { return 1.0 / vec2(textureSize(${WATER_SCENE_SAMPLER}, 0)); }`;
-  const planar = wgsl ? `
-var ${WATER_PLANAR_SAMPLER}Sampler: sampler;
-var ${WATER_PLANAR_SAMPLER}: texture_2d<f32>;
-fn swPlanarTexel(uv: vec2f) -> vec4f { return textureSampleLevel(${WATER_PLANAR_SAMPLER}, ${WATER_PLANAR_SAMPLER}Sampler, uv, 0.0); }` : `
-uniform sampler2D ${WATER_PLANAR_SAMPLER};
-vec4 swPlanarTexel(vec2 uv) { return texture2DLodEXT(${WATER_PLANAR_SAMPLER}, uv, 0.0); }`;
-  return `\n#if ${SAMPLES_COPY}${copy}\n#endif${ifDefined(SSR, marchSource(wgsl))}${ifDefined(PLANAR, planar)}\n`;
 }
 
 /** `code` only when the spectrum's cascade `cascades` is compiled in; every directive on its own line. */
@@ -665,7 +548,7 @@ swvD = swvD * (swvSp.x * swvSp.y);`;
  * The displaced surface's normal at the vertex (`swvNormal`, a Custom Material's Water Waves node): the summed slopes
  * through the Jacobian of the offset (FFT-Ocean's J⁻ᵀ∇H with the cross term), scaled as the displacement is (Wave Scale
  * and λ, the bank fade, a blend's height and offset shares), over the rest slope of `slateWaterBaseNormal`. Where the
- * surface folds the determinant is floored, as the built-in fragment floors it.
+ * surface folds the determinant is floored.
  */
 export function spectrumNormalSource(): string {
   return `
@@ -684,222 +567,6 @@ vec2 swvSlope = vec2(swvJzz * swvG.x - swvJxz * swvG.y, swvJxx * swvG.y - swvJxz
 swvSlope = swvSlope / max(1.0, length(swvSlope) / ${f(SHADING_SLOPE_CAP)});
 vec3 swvBase = A.slateWaterBaseNormal;
 vec3 swvNormal = normalize(vec3(swvBase.x / max(swvBase.y, 0.001) - swvSlope.x, 1.0, swvBase.z / max(swvBase.y, 0.001) - swvSlope.y));`;
-}
-
-/**
- * The fragment stage's waves and foam, after FFT-Ocean: every cascade
- * at this fragment's rest point (the field is Lagrangian: detail rides the waves) through its mips. The slope comes from
- * the summed derivatives through the displaced surface's Jacobian (FFT-Ocean's (∂H/∂x / (1 + λ·∂Dx/∂x), …), with the
- * cross term), small cascades fading with eye distance as in the vertex stage. Foam is FFT-Ocean's: each cascade's
- * persistent turbulence (the Jacobian, recovering slowly after a fold) summed, a faded cascade counting as calm, and
- * foam covers where the sum falls below a bias (Crest Foam) — so whitecaps form on folding crests and trail off slowly.
- * Objects meeting the water and shallow shores add their own foam; Foam Amount scales all of it. Depth, absorption,
- * refraction, the soft shoreline and open-water edges follow the other looks.
- */
-function spectrumSurfaceSource(): string {
-  const cascades = Array.from({ length: WATER_FFT_CASCADES_MAX }, (_, c) => {
-    const code = `
-vec4 swSc${c} = U.${FFT_CASCADE_UNIFORMS[c]};
-vec2 swSu${c} = ${fftTurnIn(c, "swRest")} * swSc${c}.x + swSc${c}.yz;
-vec4 swSa${c} = swSpecTap(swSu${c}, ${f(2 * c)});
-vec4 swSb${c} = swSpecTap(swSu${c}, ${f(2 * c + 1)});
-float swSt${c} = swFoamTap(swSu${c}, ${f(c)}).r;
-float swSw${c} = ${c === 0 ? "1.0" : `clamp(swSp.w / max(swSc${c}.x * swEyeDist, 0.000001), 0.0, 1.0)`};
-swSpGrad += ${fftTurnOut(c, `swSb${c}.xy`)} * swSw${c};
-swSpJ += ${fftTurnTensor(c, `vec3(swSb${c}.z, swSa${c}.w, swSb${c}.w)`)} * swSw${c};
-// Turbulence at this body's own scale (the foam pass takes it at Wave Scale 1); a faded cascade counts as calm.
-swFoamSum += ${f(WATER_FOAM_WEIGHTS[c]!)} * (1.0 - swSt${c}) * swSw${c} * swTurbScale;${c === 0 ? `
-swSpLarge = swSa0.y;` : `
-swSpSmall += swSa${c}.y * swSw${c};`}`;
-    return c === 0 ? code : ifFft(code, c + 1);
-  }).join("");
-  return `
-vec2 swWorld = swPosW.xz;
-float swTime = U.slateWaterMotion.x;
-#ifdef ${WATER_BLEND_DEFINE}
-float swBlendH = IN.vSlateWaterBlend.x;
-float swBlendD = IN.vSlateWaterBlend.y;
-#else
-float swBlendH = 1.0;
-float swBlendD = 1.0;
-#endif
-// Filtering footprint on the rest plane under this pixel's view ray (smooth across triangles).
-float swEyeAbove = abs(S.vEyePosition.y - IN.vPositionW.y + IN.vSlateWater.x);
-vec2 swRestXZ = viewDirectionW.xz * (swEyeAbove / max(abs(viewDirectionW.y), 0.001));
-vec2 swFootX = dFdx(swRestXZ);
-vec2 swFootY = dFdy(swRestXZ);
-float swFoot = length(swFootX) + length(swFootY);
-// Aerial perspective (\`slateWaterHaze\`), as every look: what scene fog leaves, plus a ramp to the far plane.
-float swEyeDist = length(S.vEyePosition.xyz - IN.vPositionW);
-#ifdef FOG
-float swAirKeep = max(toLinearSpace(CalcFogFactor()), 0.0);
-#else
-float swAirKeep = 1.0;
-#endif
-${aerialPerspectiveSource("swEyeDist", "swAirKeep", "S.projection[3][3]", "U.slateWaterHaze")}
-// Foam patterns ride the current and drift downwind with the waves (\`waterFoamDrift\`).
-vec2 swFlowed = swWorld - (IN.vSlateWaterFlow.xy + U.slateWaterMotion.yz) * swTime;
-// Rest (Lagrangian) point relative to the floating origin: the interpolated offset is exact on the displaced triangle.
-vec2 swRest = IN.vPositionW.xz - IN.vSlateWaterFlow.zw;
-vec3 swBaseNormal = normalize(IN.vSlateWaterBaseNormal);
-float swBaseX = swBaseNormal.x / max(0.001, swBaseNormal.y);
-float swBaseZ = swBaseNormal.z / max(0.001, swBaseNormal.y);
-// Finite bodies fade the horizontal offset to zero at their banks (\`waterBankGain\`).
-float swFadeLength = max(U.slateWaterSwellInfo.x * swBlendD, 0.000001);
-float swFadeOn = step(0.000001, U.slateWaterSwellInfo.x * swBlendD);
-float swBankT = clamp(IN.vSlateWater.y / swFadeLength, 0.0, 1.0);
-float swGain = mix(1.0, swBankT * swBankT * (3.0 - 2.0 * swBankT), swFadeOn);
-// The spectrum: (Wave Scale while ready, λ, grid size, LOD scale).
-vec4 swSp = U.slateWaterFft;
-float swTurbScale = swSp.x * swGain * swBlendD;
-vec2 swSpGrad = vec2(0.0);
-vec3 swSpJ = vec3(0.0);
-float swSpLarge = 0.0;
-float swSpSmall = 0.0;
-// The weighted foam sum (\`WATER_FOAM_WEIGHTS\`): how far below calm the cascades' turbulence lies, the long waves first.
-float swFoamSum = 0.0;${cascades}
-swSpGrad = swSpGrad * (swSp.x * swBlendH);
-swSpJ = swSpJ * (swSp.x * swSp.y * swGain * swBlendD);
-float swJxx = 1.0 + swSpJ.x;
-float swJxz = swSpJ.y;
-float swJzz = 1.0 + swSpJ.z;
-float swDetJ = swJxx * swJzz - swJxz * swJxz;
-// Where the surface folds the determinant nears zero; a floor keeps those crests' normals from spiking into sparks.
-vec2 swSlope = vec2(swJzz * swSpGrad.x - swJxz * swSpGrad.y, swJxx * swSpGrad.y - swJxz * swSpGrad.x) / max(swDetJ, 0.35);
-swSlope = swSlope / max(1.0, length(swSlope) / ${f(SHADING_SLOPE_CAP)});
-normalW = normalize(vec3(swBaseX - swSlope.x, 1.0, swBaseZ - swSlope.y));
-vec3 swWaveN = normalW;
-// Height of the small cascades over the large one (metres): FFT-Ocean lights the crests of the small waves riding the swell.
-float swSpCrest = (0.2 * swSpLarge + swSpSmall) * swSp.x * swBlendH;
-
-// What meets the water: terrain shoreline and true depth, the body's edges, and objects crossing the surface.
-${waterEdgeSource({ known: "swField.a * swFieldOn", on: "swFieldOn", shore: "swTerrainShore", terrainDepth: "swTerrainDepth", slope: "swShoreSlope", bank: "IN.vSlateWater.y", body: "IN.vSlateWater.z" })}
-float swObject = abs(swContactSigned);
-// Refraction bends by the wave slope (\`refractionSource\` reads these names).
-vec2 swGradient = swSlope;
-vec2 swDetailMid = vec2(0.0);
-float swChopGain = 0.0;${refractionSource(WATER_REFRACTION_SCALE)}
-float swAbsorb = max(0.01, U.slateWaterLook.y);
-
-// Foam. Crests: FFT-Ocean's bias of n − 1 cascades plus Crest Foam's threshold, over the summed turbulence.
-float swFoamAmount = U.slateWaterFoam.w;
-// Past the asset's threshold (\`waterFoamThreshold\`), the sum taken at Wave Scale 1 (\`waterFoamScale\`): Crest Foam's
-// share of a steep sea, none of a gentle one, and a smaller share on calmer bodies.
-float swFoamAt = swFoamSum * U.slateWaterTerms.z;
-float swCrestPast = swFoamAt - U.slateWaterShape.x;
-float swCrestRaw = swCrestPast * ${f(SPECTRUM_FOAM_SCALE)};
-// Fine bubbly breakup drifting with the water, faded before it would alias.
-float swFoamNoise = mix(0.5, swNoise(swFlowed * 0.9) * 0.65 + swNoise(swFlowed * 3.1 + vec2(5.3, 1.9)) * 0.35, 1.0 - smoothstep(0.15, 0.6, swFoot));
-// Many patches away the foam's repeat would show as a grid of the same caps: it fades out there (beyond a kilometre or
-// two for a sea of 20 m waves, a few metres for ripples).
-float swPatchFar = 1.0 - smoothstep(${f(FOAM_FAR_PATCHES[0])}, ${f(FOAM_FAR_PATCHES[1])}, swEyeDist * swSc0.x);
-float swCrestFoam = clamp(swCrestRaw + (swFoamNoise - 0.5) * 0.25, 0.0, 1.0) * clamp(swFoamAmount * 1.6, 0.0, 1.0) * swPatchFar;
-// Surface Foam: thin lingering residue where turbulence is still recovering behind the caps.
-float swResidue = clamp((swFoamAt - U.slateWaterShape.x * 0.5) * 1.5, 0.0, 1.0) * smoothstep(0.45, 0.75, swFoamNoise) * U.slateWaterSunColor.w * 0.6 * swPatchFar;
-// Edges: foam thick at every object's waterline and along shallow shores, thinning outward (\`edgeFoamHelpers\`).
-float swContactStrength = U.slateWaterTerms.x;
-float swContactW = max(0.05, U.slateWaterShape.w);
-float swCollar = swContactFoamAmount(swFlowed, swTime, swObject, swContactW);
-float swShoreFoam = swKnown * (1.0 - swOpenAny) * swShoreFoamAmount(swFlowed, swTime, swTerrainDepth, U.slateWaterMotion.w * 0.35 + 0.08);
-float swEdgeFoam = swEdgeFoamCover(swFlowed, max(swCollar, swShoreFoam) * swContactStrength, max(swCrestPast, ${f(EDGE_FOAM_CALM)}), swFoot);
-float swFoam = clamp(max(max(swCrestFoam, swResidue), swEdgeFoam), 0.0, 1.0);
-`;
-}
-
-/**
- * Realistic spectrum water, after FFT-Ocean's material: lit PBR (unlit at Low) whose body is Deep Color emitted through
- * (1 − Fresnel) with FFT-Ocean's subsurface light (Shallow Color, Subsurface) on the crests of the small waves seen toward
- * the sun from behind, reflection of the environment (or the analytic scene sky) at the facet's own environment BRDF
- * (`fresnelSource`), less where a ray leaves below the horizon, glossy close by and rougher with distance (FFT-Ocean's
- * distance gloss, from Roughness), and white foam lit as rough albedo. Shallow
- * water transmits what lies below through per-channel absorption (Shallow Color, Depth Color Distance), refracted with
- * the scene copy. Everything is premultiplied by coverage (see CUSTOM_FRAGMENT_BEFORE_FOG).
- */
-export function spectrumRealisticSource(): string {
-  return spectrumSurfaceSource() + `
-vec3 swV = viewDirectionW;
-vec3 swL = U.slateWaterSun.xyz;
-vec3 swSun = U.slateWaterSunColor.rgb * U.slateWaterSun.w;
-vec3 swAmb = U.slateWaterLight.rgb;
-float swGraze = 1.0 - clamp(swV.y, 0.0, 1.0);
-${horizonHazeSource("swGraze")}
-normalW = normalize(mix(normalW, swBaseNormal, swHaze * swHaze));
-swSharp = 1.0;
-#if ${SAMPLES_COPY}
-vec3 swHorC = vec3(0.0);
-float swHorW = 0.0;
-#endif
-// Distance gloss: near water is as smooth as Roughness, far water as rough as FFT-Ocean's 0.31 (normal detail its mips
-// average away), plus the shading normal's own variation across the pixel (specular antialiasing).
-float swRoughNear = U.slateWaterOrigin.w;
-float swRoughFar = max(swRoughNear, ${f(WATER_FAR_ROUGHNESS)});
-float swRoughD = mix(swRoughFar, swRoughNear, 1.0 / (1.0 + swEyeDist * ${f(WATER_GLOSS_FALLOFF)}));
-vec3 swFresN = normalW;
-float swNdotV = clamp(dot(swFresN, swV), 0.0, 1.0);${fresnelSource("swRoughD", "swNdotV", "swFresBrdf")}
-float swFres = mix(swFresBrdf, 1.0, swHaze);${slopeVarianceSource("normalW", "swRoughD", "swRoughNear", "swHaze", "swShadeRough")}
-swSlopeVariance = swShadeRoughVar;
-// Reflected rays stay above the horizon (a smooth floor), so the water never mirrors more water; the shading normal
-// becomes the half vector toward that ray, so the environment lookup follows it, while the Fresnel stays the facet's.
-vec3 swRefl = reflect(-swV, normalW);
-float swReflRawY = swRefl.y;${reflectionKeepSource("swReflRawY", "swV.y", "swReflKeepLocal")}
-swReflKeep = swReflKeepLocal;${horizonLiftSource("swRefl", "swV.y")}
-normalW = normalize(swV + normalize(swRefl));
-// Body: Deep Color, lit by the scene (a dim scene keeps a dim sea), with FFT-Ocean's subsurface light (Shallow Color).
-vec3 swLumW = vec3(0.3, 0.59, 0.11);
-float swBodyLight = U.slateWaterLight.w;${subsurfaceSource("swL", "swV", "swWaveN", "swSpCrest", "U.slateWaterLook.w", "swSp.x", "swSss")}
-vec3 swBody = clamp(U.slateWaterDeep.rgb + U.slateWaterShallow.rgb * swSss, vec3(0.0), vec3(1.0)) * swBodyLight;
-// Shallow water: what lies below shows through per-channel absorption (Depth Color Distance; red goes first).${transmittanceSource("swDepth", "swNdotV", "swAbsorb", "U.slateWaterAbsorb.rgb", "U.slateWaterThrough.w", "swTransmitRgb")}${ifDefined(REFRACTION, `
-// No geometry behind the water in the copy (its sky depth): open water transmits nothing.
-swTransmitRgb *= 1.0 - step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
-swRefracts = smoothstep(-0.03, 0.03 + swWaterZ * 0.004, swSceneZ - swWaterZ);`)}
-float swTransmit = dot(swTransmitRgb, swLumW);
-#ifndef REFLECTION
-// No environment or skybox: the analytic sky of the scene (zenith to horizon, warmed around a low sun), blurred by roughness.
-vec3 swSkyDir = normalize(swRefl);
-float swSkyH = 1.0 - clamp(swSkyDir.y, 0.0, 1.0);
-swSkyH = swSkyH * swSkyH * swSkyH;
-vec3 swSkyRefl = mix(U.slateWaterSky.rgb, U.slateWaterHorizon.rgb, swSkyH);
-float swSkyAz = clamp(dot(swSkyDir.xz / max(length(swSkyDir.xz), 0.0001), U.slateWaterSunShape.xy), 0.0, 1.0);
-swSkyAz *= swSkyAz;
-float swAura = max(dot(swSkyDir, swL), 0.0);
-swAura *= swAura;
-swAura *= swAura;
-swAura *= swAura;
-swSkyRefl += swSun * (U.slateWaterSunColor.rgb * (swSkyH * U.slateWaterSunShape.z * (0.25 + 0.35 * swSkyAz)) + vec3(swAura * 0.05));
-swSkyRefl = mix(swSkyRefl, mix(U.slateWaterSky.rgb, U.slateWaterHorizon.rgb, 0.55), smoothstep(0.05, 0.35, sqrt(swSlopeVariance)) * 0.5);
-swSkyRefl *= U.slateWaterDeep.w;
-#endif
-// Foam is a rough white scatterer that hides the mirror, lit by the scene as FFT-Ocean's foam albedo is, with a little
-// of the ambient light of its own so it stays light in shade.
-float swFoamEdge = smoothstep(0.0, 0.2, swBank + 0.02);
-float swGloss = (1.0 - swFoam) * swEdgeFade;
-swMatte = swFoam;
-float swFoamCover = swFoam * swFoamEdge;
-surfaceAlbedo = U.slateWaterFoam.rgb * (swFoamCover * 0.8);
-normalW = normalize(mix(normalW, swFresN, swFoam));
-vec3 swFoamLight = swAmb * 0.25;
-vec3 swEmissive = swBody * (vec3(1.0) - swTransmitRgb) * ((1.0 - swFres) * (1.0 - swFoam) * swEdgeFade)
-  + U.slateWaterFoam.rgb * swFoamLight * swFoamCover;${fromTier(1, "", `
-// Low draws unlit: the sun's highlight and the foam's light come from here.
-vec3 swLowH = normalize(swL + swV);
-float swLowSpec = pow(max(dot(swFresN, swLowH), 0.0), 220.0) * 6.0;
-swEmissive += swSun * (swLowSpec * swGloss);`)}
-float swSunReach = 1.0;
-float swSpecKeep = 1.0;
-float swSpecSquash = 0.15;
-float swSpecMod = 1.0;
-float swSpecModW = 0.0;
-float swWaterA = (1.0 - (1.0 - swFres) * swTransmit) * swEdgeFade;
-alpha = 1.0 - (1.0 - swWaterA) * (1.0 - swFoam * swFoamEdge);${ifDefined(REFRACTION, `
-// The refracted scene replaces the blended background: the copy behind this point through the absorption.
-vec3 swRefracted = swBackground * swTransmitRgb * ((1.0 - swFres) * (1.0 - swFoam) * swEdgeFade * swRefracts);
-vec3 swRefractedWeight = swTransmitRgb * ((1.0 - swFres) * (1.0 - swFoam) * swEdgeFade * swRefracts);
-alpha = mix(alpha, max(alpha, swEdgeFade), swRefracts);`)}
-${objectReflectionSource("normalize(swRefl)", "swShadeRough")}
-#if ${REFLECTS_OBJECTS}
-swObjRefl.a *= smoothstep(-0.01, 0.03, swReflRawY) * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swReflRay)) / max(length(fwidth(swV)), 0.00001)));
-#endif
-`;
 }
 
 export const REMOVAL_HELPER = `

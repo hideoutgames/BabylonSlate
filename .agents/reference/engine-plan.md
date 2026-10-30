@@ -375,7 +375,6 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
   - The light loop at the device's light maximum keeps the lights scene under 60 fps. The documented remedy is light culling (per-cluster light lists built on the CPU); first check that the cost follows the light count rather than resolution, since the loop already skips lights out of range.
   - FT_World is GPU-bound.
   - The main and stress scenes are CPU-bound by their draw counts, far past the Medium draw-call warning.
-- Built-in water's `WaterMaterialPlugin` is unreachable (built-in water draws the water starter); it goes with the code keyed to it (`isBuiltInWaterMesh`'s plugin check, `getPlugin("SlateWater")`, `WaterReflection`'s `PBRMaterial`).
 - Fewer material variants, decided separately and measured on its own: texture presence and similar defines as always-bound defaults.
 - Environment quality: `.hdr` import converted to a cube at import (a low-dynamic-range sky lights flatly). Reflection probes capture after edits, at load or on demand, never per frame (each capture is six scene renders of CPU draw work); static actors of streamed scenes are not yet captured.
 

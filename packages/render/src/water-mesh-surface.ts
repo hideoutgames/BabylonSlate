@@ -6,7 +6,7 @@ import type { Material, Matrix, Mesh, SubMesh, Vector3 } from "@babylonjs/core";
 import type { WaterBodyProperties, WaterDefinition } from "@haptic/core";
 import type { WaterContactField } from "./water-contact-field";
 import type { WaterField } from "./water-field";
-import type { WaterMaterialPlugin, WaterVertexWaves } from "./water-material";
+import type { WaterVertexWaves } from "./water-material";
 import type { BlendRebuild } from "./water-mesh-blend";
 import type { WaterNodeSurface } from "./water-node-blocks";
 
@@ -18,21 +18,17 @@ export const LAYOUT_STATE = 18;
 export const L_VERSION = 12, L_STEP = 13, L_BUDGET = 14, L_CX = 15, L_CZ = 16, L_EXTENT = 17;
 
 export type Surface = {
-  mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; plugin: WaterMaterialPlugin | null;
+  mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties;
   field: WaterField | null; contacts: WaterContactField | null;
   world: Matrix; inverse: Matrix;
   /**
-   * The built-in material displaces the static rest grid in its vertex shader (`SLATE_WATER_GPU_WAVES`), and so does a
-   * Custom Material whose graph holds a Water Waves node (`waves`, `syncCustomMaterial`); other Custom Material water
-   * (and `setWaterGpuWaves(mesh, false)`) uploads CPU-displaced vertices every simulation step.
+   * A Material whose graph holds a Water Waves node displaces the static rest grid in its vertex shader (`waves`,
+   * `syncCustomMaterial`); other water uploads CPU-displaced vertices every simulation step.
    */
   gpu: boolean;
-  /**
-   * Custom Material water on the GPU path: the swell its Water Waves node binds for this mesh (`setMeshVertexWaves`).
-   * Null for built-in water, which has the plugin, and for CPU-path water.
-   */
+  /** Water on the GPU path: the swell its Water Waves node binds for this mesh (`setMeshVertexWaves`); null on the CPU path. */
   waves: WaterVertexWaves | null;
-  /** The Custom Material the path was last chosen for; null for built-in water. */
+  /** The Material the path was last chosen for. */
   material: Material | null;
   /** Inputs of the current grid (`LAYOUT_STATE`); NaN until built. */
   layoutState: Float64Array;
@@ -67,12 +63,8 @@ export type Surface = {
    */
   base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
-  /** World X/Z Gerstner offset per vertex on the CPU path (the built-in shader subtracts it to find each fragment's rest point). */
-  offsets: Float32Array;
   /** World X/Z direction in which each vertex's bank distance grows; the bank fade's gradient follows it. */
   bankGradient: Float32Array;
-  /** Whether the last uploaded offsets were all zero, so calm water skips re-uploading them. */
-  offsetsZero: boolean;
   /** Cells per row of the current grid. */
   layoutColumns: number;
   /** Sub-meshes whose culling bounds were last padded (shadow partitioning may replace them later). */

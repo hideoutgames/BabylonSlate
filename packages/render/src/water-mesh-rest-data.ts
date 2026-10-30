@@ -80,8 +80,7 @@ export function uploadRestData(s: Surface, blended: boolean): void {
     s.mesh.updateVerticesData("slateWaterBlendColors", s.blendColors);
   }
   if (s.gpu) {
-    // A static rest grid: the vertex shader adds every displacement and computes its own offsets.
-    if (!s.offsetsZero) { s.offsets.fill(0); s.offsetsZero = true; s.mesh.updateVerticesData("slateWaterOffset", s.offsets); }
+    // A static rest grid: the vertex shader adds every displacement.
     writeRestPositions(s, 0, s.base.length / 3);
     s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
     s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);

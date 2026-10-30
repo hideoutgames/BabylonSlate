@@ -776,7 +776,7 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
     return this;
   }
   /**
-   * Scene objects over the sky, as built-in water draws them (`objectReflectionSource`): the planar mirror where it is
+   * Scene objects over the sky: the planar mirror where it is
    * this body's, else the march; sharp hits fade as the water gets rough, where the reflected ray leaves below the
    * horizon, and where it turns faster across the screen than the view does (grazing ripples).
    */

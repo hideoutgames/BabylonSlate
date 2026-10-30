@@ -1,7 +1,9 @@
 import { isSceneStreamSlotPending, registerSceneStreamParticle } from "./scene-stream-admission";
 import {
   Mesh,
+  type AbstractEngine,
   type AbstractMesh,
+  type Effect,
   type IParticleSystem,
   type NodeMaterial,
   type NodeParticleSystemSet,
@@ -46,6 +48,8 @@ import {
 import { markSceneReadinessDirty } from "./scene-perf";
 import { applySortingToParticleSystem, resolveSortingLayer, type SortingLayerResolution } from "./sorting";
 import { drawWhateverTheView } from "./play-view-culling";
+import { effectDrawnOn } from "./first-draw-stats";
+import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
 
 export type { ParticleLibrary, ParticleLibraryEmitter } from "@haptic/assets";
 export type ParticleDiagnosticCode =
@@ -156,6 +160,8 @@ type LiveComponent = {
   preparationCheck?: () => void;
   /** Native/resource failure, distinct from a bundle whose authored slots were skipped. */
   preparationFailed?: boolean;
+  /** Play's load: a library system no component plays, prepared for the starting-state draw only (`prepareSpawnableSystems`). */
+  warm?: boolean;
 };
 /** An edit's tier, and whether it needs the whole bundle prepared again. */
 type LibraryChange = { tier: ParticleEmitterChangeTier; bundle: boolean };
@@ -167,6 +173,26 @@ const maxTier = (a: ParticleEmitterChangeTier, b: ParticleEmitterChangeTier): Pa
   TIER_ORDER.indexOf(a) >= TIER_ORDER.indexOf(b) ? a : b;
 const sameContent = (a: unknown, b: unknown): boolean => stableStringify(a ?? null) === stableStringify(b ?? null);
 const NO_CHANGE: LibraryChange = { tier: "none", bundle: false };
+/** The actor of the systems Play's load prepares for its starting-state draw (`prepareSpawnableSystems`). */
+const WARM_ACTOR = "particle-service:spawnable";
+
+/**
+ * Whether every program `system` draws with (its render Effects, a GPU system's update Effect too) has drawn on
+ * `engine`; true where draws are not tracked (WebGPU) or the system holds none yet.
+ */
+function particleProgramsDrawn(engine: AbstractEngine, system: IParticleSystem): boolean {
+  for (const effect of particlePrograms(system)) if (effectDrawnOn(engine, effect) === false) return false;
+  return true;
+}
+
+/** The programs `system` draws with: its render Effects (per pass and blend mode), and a GPU system's update Effect. */
+function particlePrograms(system: IParticleSystem): Set<Effect> {
+  const internals = system as unknown as { _drawWrappers?: ({ effect?: Effect | null } | undefined)[][]; _platform?: { _updateEffect?: Effect } };
+  const effects = new Set<Effect>();
+  for (const wrappers of internals._drawWrappers ?? []) for (const wrapper of wrappers ?? []) if (wrapper?.effect) effects.add(wrapper.effect);
+  if (internals._platform?._updateEffect) effects.add(internals._platform._updateEffect);
+  return effects;
+}
 const BUNDLE_REBUILD: LibraryChange = { tier: "rebuild", bundle: true };
 
 /** Main-thread owner. Each component incarnation and preparation generation owns its callbacks and native bundle. */
@@ -189,6 +215,13 @@ export class ParticleService {
   private paused = false;
   private disposed = false;
   private readonly cancelSceneDispose: () => void;
+  /** Whether a system's programs have drawn on the Engine (`effectDrawnOn`; true where draws are not tracked). */
+  private readonly programsDrawn: (system: IParticleSystem) => boolean;
+  /** This frame's first-draw budget for systems whose programs never drew, and the entries waiting for one. */
+  private firstDrawBudget: number = FIRST_DRAWS_PER_FRAME.webgl2;
+  private readonly waitingToStart = new Set<LiveComponent>();
+  /** Programs of the systems the load prepared for its starting-state draw, kept compiled (`releaseSpawnableSystems`). */
+  private readonly retainedPrograms: Effect[] = [];
 
   constructor(options: {
     scene: Scene;
@@ -203,6 +236,8 @@ export class ParticleService {
     sortingLayers?: () => readonly string[] | undefined;
     /** "global" (Play, player) publishes `particleStats`; "local" (previews) only serves `stats()`. */
     statsScope?: "global" | "local";
+    /** Whether a system's programs have drawn on the Engine; defaults to the Engine's tracked draws. */
+    programsDrawn?: (system: IParticleSystem) => boolean;
   }) {
     this.scene = options.scene;
     this.gpuRequested = options.gpuSupported ?? true;
@@ -212,8 +247,14 @@ export class ParticleService {
     this.sceneForSlot = options.sceneForSlot;
     this.onDiagnostic = options.onDiagnostic;
     this.sortingLayers = options.sortingLayers;
+    const engine = this.scene.getEngine();
+    this.programsDrawn = options.programsDrawn ?? ((system) => particleProgramsDrawn(engine, system));
     const observer = this.scene.onDisposeObservable.addOnce(() => this.dispose());
-    this.cancelSceneDispose = () => this.scene.onDisposeObservable.remove(observer);
+    const frames = this.scene.onBeforeRenderObservable.add(() => this.startWaitingSystems());
+    this.cancelSceneDispose = () => {
+      this.scene.onDisposeObservable.remove(observer);
+      this.scene.onBeforeRenderObservable.remove(frames);
+    };
     this.publishStats();
   }
 
@@ -340,6 +381,7 @@ export class ParticleService {
     let gpuSystems = 0;
     let graphSystems = 0;
     for (const entry of this.live.values()) {
+      if (entry.warm) continue;
       systems += entry.systems.length;
       for (const record of entry.systems) {
         if (record.gpu) gpuSystems += 1;
@@ -384,8 +426,60 @@ export class ParticleService {
 
   /** Play's load: whether a component is to play, so the starting-state draw has particle programs to draw. */
   holdsPlayingComponents(): boolean {
-    for (const entry of this.live.values()) if (entry.desiredPlaying) return true;
+    for (const entry of this.live.values()) if (entry.desiredPlaying || entry.warm) return true;
     return false;
+  }
+
+  /**
+   * Play's load: prepares each system of the library (the load's) that no component plays, the ones a spawn may, on
+   * an emitter of its own at the origin, unstarted, so the starting-state draw draws its programs
+   * (`drawingUnstartedSystems`) and a spawn first-draws none of them. Its diagnostics wait for a component that plays
+   * it. `releaseSpawnableSystems` retires them once that draw is done.
+   */
+  prepareSpawnableSystems(): void {
+    this.releaseSpawnableSystems();
+    this.releaseRetainedPrograms();
+    const played = new Set<string>();
+    for (const entry of this.live.values()) if (entry.command.particleSystemGuid) played.add(entry.command.particleSystemGuid);
+    let slotId = -1;
+    for (const guid of this.library.systems.keys()) {
+      if (played.has(guid)) continue;
+      const command: Assignment = { type: "assignParticle", slotId: slotId--, actorGuid: WARM_ACTOR, componentId: guid, particleSystemGuid: guid, play: true };
+      const entry: LiveComponent = { key: liveKey(WARM_ACTOR, guid), command, desiredPlaying: true, state: "preparing", generation: 0,
+        scene: null, node: null, systems: [], source: null, cancel: [], building: false, warm: true };
+      this.live.set(entry.key, entry);
+      this.prepare(entry);
+    }
+    this.publishStats();
+  }
+
+  /** Whether a system `prepareSpawnableSystems` prepared is still preparing. */
+  spawnableSystemsPending(): boolean {
+    for (const entry of this.live.values()) {
+      if (!entry.warm || entry.state === "failed") continue;
+      if (entry.state === "preparing" || entry.systems.some((record) => record.pending || !record.system.isReady())) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Retires the systems `prepareSpawnableSystems` prepared, keeping their programs compiled (one reference each) until
+   * the next load's or the session's end, as the starting state's Effects are: a spawn then neither compiles nor
+   * first-draws them.
+   */
+  releaseSpawnableSystems(): void {
+    for (const entry of [...this.live.values()]) {
+      if (!entry.warm) continue;
+      for (const record of entry.systems) for (const effect of particlePrograms(record.system)) {
+        effect._refCount += 1;
+        this.retainedPrograms.push(effect);
+      }
+      this.retire(entry);
+    }
+  }
+
+  private releaseRetainedPrograms(): void {
+    for (const effect of this.retainedPrograms.splice(0)) effect.dispose();
   }
 
   /**
@@ -426,6 +520,7 @@ export class ParticleService {
 
   resetSession(): void {
     for (const entry of this.live.values()) this.retire(entry);
+    this.releaseRetainedPrograms();
     this.slotMeshes.clear();
     this.publishStats();
   }
@@ -457,7 +552,13 @@ export class ParticleService {
   }
 
   private hostFor(entry: LiveComponent): Scene | null {
+    if (entry.warm) return this.scene;
     return this.sceneForSlot ? this.sceneForSlot(entry.command.slotId) : this.scene;
+  }
+
+  /** A warm entry's problems are reported when a component plays its system, not at the load. */
+  private diagnose(entry: LiveComponent, diagnostic: ParticleServiceDiagnostic): void {
+    if (!entry.warm) this.onDiagnostic?.(diagnostic);
   }
 
   private current(entry: LiveComponent, generation: number): boolean {
@@ -508,7 +609,7 @@ export class ParticleService {
         const emitter = this.library.emitters.get(guid);
         source.emitters.set(guid, emitter);
         if (!emitter) {
-          this.onDiagnostic?.({ code: "particle.unknown_emitter", message: "Particle Emitter asset is missing; slot skipped.", assetGuid: guid });
+          this.diagnose(entry, { code: "particle.unknown_emitter", message: "Particle Emitter asset is missing; slot skipped.", assetGuid: guid });
           source.skipped.add(guid);
           continue;
         }
@@ -580,7 +681,7 @@ export class ParticleService {
     const label = emitter.kind === "graph" ? "Particle Graph" : "Particle Emitter";
     const materialGuid = particleEmitterMaterialGuid(emitter);
     if (!materialGuid) {
-      this.onDiagnostic?.({ code: "particle.missing_material", assetGuid: guid, message: `${label} has no Material; slot skipped.` });
+      this.diagnose(entry, { code: "particle.missing_material", assetGuid: guid, message: `${label} has no Material; slot skipped.` });
       return null;
     }
     let plan: ParticleBuildPlan | null = null;
@@ -589,7 +690,7 @@ export class ParticleService {
       if (!lowered.ok) {
         const errors = lowered.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
         const first = errors[0];
-        this.onDiagnostic?.({ code: "particle.graph_invalid", assetGuid: guid,
+        this.diagnose(entry, { code: "particle.graph_invalid", assetGuid: guid,
           message: `Particle Graph has ${errors.length} ${errors.length === 1 ? "error" : "errors"}; slot skipped.${first ? ` ${first.message}` : ""}`,
           ...(first?.nodeId ? { nodeId: first.nodeId } : {}), ...(first?.pinId ? { pinId: first.pinId } : {}) });
         return null;
@@ -599,7 +700,7 @@ export class ParticleService {
     const instanceKey = `particle:${this.ownerId}:${entry.key}:${generation}:${slot.index}${slot.rekey ? `:${++this.leaseSerial}` : ""}`;
     const lease = this.acquireMaterial?.(materialGuid, { scene: host, instanceKey }) ?? null;
     if (!lease) {
-      this.onDiagnostic?.({ code: "particle.missing_material", assetGuid: guid,
+      this.diagnose(entry, { code: "particle.missing_material", assetGuid: guid,
         message: `${label} has no usable Material (missing, or not in the Particle domain); slot skipped.` });
       return null;
     }
@@ -654,7 +755,7 @@ export class ParticleService {
       entry.preparationFailed = true;
       if (record) this.disposeSlots([record]);
       lease.release();
-      this.onDiagnostic?.({ code: "particle.apply_failed", assetGuid: guid, message: describeParticleThrow(error) });
+      this.diagnose(entry, { code: "particle.apply_failed", assetGuid: guid, message: describeParticleThrow(error) });
       return null;
     }
   }
@@ -683,7 +784,7 @@ export class ParticleService {
     const realized = realizeParticleGraph(plan, { scene: context.host, name: `particle:${entry.key}:${slot.index}`,
       emitter: context.node, space: context.space });
     if (realized.ok === false) {
-      for (const diagnostic of realized.diagnostics) this.onDiagnostic?.({ ...diagnostic, assetGuid: slot.guid });
+      for (const diagnostic of realized.diagnostics) this.diagnose(entry, { ...diagnostic, assetGuid: slot.guid });
       return null;
     }
     return {
@@ -730,13 +831,33 @@ export class ParticleService {
    * prewarm at `updateSpeed` 0 would simulate nothing and never run again.
    */
   private startSystems(entry: LiveComponent): void {
-    if (this.paused || entry.scene && isSceneStreamSlotPending(entry.scene, entry.command.slotId)) return;
+    if (entry.warm || this.paused || entry.scene && isSceneStreamSlotPending(entry.scene, entry.command.slotId)) return;
+    this.waitingToStart.delete(entry);
     for (const record of entry.systems) {
       // A start observer may Stop or replace the entry.
       if (!this.current(entry, entry.generation) || !entry.desiredPlaying || entry.state !== "playing") break;
       if (record.started || record.pending) continue;
+      // A system whose programs no draw on the Engine has used (one Play's load did not know of) starts within the
+      // frame's first-draw budget, so several spawned in one frame do not first-draw together (WebGL2).
+      if (!this.programsDrawn(record.system)) {
+        if (this.firstDrawBudget <= 0) {
+          this.waitingToStart.add(entry);
+          break;
+        }
+        this.firstDrawBudget -= 1;
+      }
       record.started = true;
       record.system.start(0);
+    }
+  }
+
+  /** Each frame admits `FIRST_DRAWS_PER_FRAME` new systems, then starts the entries that waited, in order. */
+  private startWaitingSystems(): void {
+    this.firstDrawBudget = FIRST_DRAWS_PER_FRAME.webgl2;
+    for (const entry of [...this.waitingToStart]) {
+      if (this.live.get(entry.key) !== entry) this.waitingToStart.delete(entry);
+      else this.startSystems(entry);
+      if (this.firstDrawBudget <= 0) break;
     }
   }
 
@@ -788,7 +909,7 @@ export class ParticleService {
     entry.preparationFailed = true;
     this.releaseBundle(entry);
     entry.state = "failed";
-    this.onDiagnostic?.({ code: "particle.apply_failed", assetGuid: entry.command.particleSystemGuid ?? undefined,
+    this.diagnose(entry, { code: "particle.apply_failed", assetGuid: entry.command.particleSystemGuid ?? undefined,
       message: describeParticleThrow(error) });
     this.publishStats();
   }
@@ -808,7 +929,7 @@ export class ParticleService {
     entry.systems.splice(index, 1);
     this.disposeSlots([record]);
     record.lease.release();
-    if (diagnostic) this.onDiagnostic?.(diagnostic);
+    if (diagnostic) this.diagnose(entry, diagnostic);
     this.afterSlotSkipped(entry, record.emitterGuid);
   }
 

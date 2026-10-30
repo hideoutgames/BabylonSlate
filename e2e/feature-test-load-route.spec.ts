@@ -24,7 +24,7 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  * recorded with its cache key kind (named shader, inline source, or a shadow-depth token), defines, render
  * pass, creation stack, cache hits and release, and the GPU objects it built; the report groups Effects
  * that built the same source, says why they missed the cache, and lists which define changes recompiled
- * one material. Haptic's water compile log (`__slateWaterCompileLog`) is included. Everything is captured
+ * one material. Everything is captured
  * from page-level hooks installed before the editor boots; no editor code is touched. Counts are
  * hardware-independent; times compare only on one machine, backend and build. Never asserts timings.
  *
@@ -48,10 +48,6 @@ if (!NATIVE_GPU)
   });
 
 type Counters = Record<string, number>;
-interface WaterRequest {
-  at: number; mesh: string; pass: number; mainPass: boolean; look: string; refraction: boolean; ssr: boolean; planar: boolean;
-  fft: boolean; blend: boolean; shadows: string[]; depthPrePass: boolean; prePass: boolean; caller: string;
-}
 /** One GPU object build: [time, kind, raw source key, normalized key, body key, water, Effect id or -1, scene ready, phase]. */
 type Creation = [number, string, string, string, string, number, number, number, string];
 interface EffectRow {
@@ -92,14 +88,12 @@ interface Snapshot {
   counters: Counters;
   creations: Creation[];
   effects: EffectRow[];
-  water: WaterRequest[];
 }
 
 /** Page-level hooks, installed before the editor boots. */
 async function installHooks(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const host = globalThis as unknown as Record<string, unknown>;
-    host.__slateWaterCompileLog = [];
     host.__ftLoadPhase = "boot";
     const phase = () => String(host.__ftLoadPhase);
     let readyAt: number | null = null;
@@ -444,7 +438,6 @@ async function installHooks(page: Page): Promise<void> {
           counters: { ...counters },
           creations: creations.slice(),
           effects: effects.map((row) => ({ ...row })),
-          water: JSON.parse(JSON.stringify(host.__slateWaterCompileLog)),
         };
       },
       owners: ownerSnapshot,
@@ -601,18 +594,6 @@ function effectWindow(from: Snapshot, to: Snapshot, owned: Owners, withRows = tr
   };
 }
 
-/** The water compile log in a window: one row per variant request, times relative to the window start. */
-function waterWindow(from: Snapshot, to: Snapshot) {
-  const rows = to.water.slice(from.water.length);
-  const compact = rows.map((row) => ({
-    ms: Math.round(row.at - from.now), mesh: row.mesh, pass: row.pass, main: row.mainPass, look: row.look,
-    refr: row.refraction, ssr: row.ssr, planar: row.planar, fft: row.fft, blend: row.blend,
-    shadows: row.shadows.join(","), depth: row.depthPrePass, prepass: row.prePass,
-  }));
-  const signature = (row: (typeof compact)[number]) => JSON.stringify({ ...row, ms: undefined, mesh: undefined, pass: undefined });
-  return { requests: compact.length, distinctSignatures: new Set(compact.map(signature)).size, requestsDetail: compact.slice(0, 200) };
-}
-
 test.skip(!ENABLED, "FeatureTest cold-load route; set HAPTIC_PERF_LOAD=1 to run it.");
 
 test("FeatureTest cold-load route", async ({ page }, testInfo) => {
@@ -703,8 +684,8 @@ test("FeatureTest cold-load route", async ({ page }, testInfo) => {
       loadRetries,
       backend: await backendNow(),
       liveScenes: settledOwners.scenes,
-      load: { counters: delta(before, ready), gpu: creationWindow(before, ready), effects: effectWindow(before, ready, readyOwners), water: waterWindow(before, ready) },
-      settled: { afterMs: SETTLE_MS, counters: delta(ready, settled), gpu: creationWindow(ready, settled), effects: effectWindow(ready, settled, settledOwners), water: waterWindow(ready, settled) },
+      load: { counters: delta(before, ready), gpu: creationWindow(before, ready), effects: effectWindow(before, ready, readyOwners) },
+      settled: { afterMs: SETTLE_MS, counters: delta(ready, settled), gpu: creationWindow(ready, settled), effects: effectWindow(ready, settled, settledOwners) },
       whole: { counters: delta(before, settled), gpu: creationWindow(before, settled), effects: effectWindow(before, settled, settledOwners, false) },
     };
     write();

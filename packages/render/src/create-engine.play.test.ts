@@ -64,6 +64,7 @@ import { findSceneReflectionProbes } from "./reflection-probes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import * as waterMesh from "./water-mesh";
+import { builtInWaterMaterial } from "./water-template";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
 
@@ -916,10 +917,10 @@ describe("Play createEngine view", () => {
   it("compiles blending water bodies' variants once, with Blend, before the first frame's update", async () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
-    waterMesh.createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }));
+    waterMesh.createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }), undefined, builtInWaterMaterial(handle.scene));
     // Within the blend distance of the first body: both blend once the water update has seen them.
-    waterMesh.createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 })).position.set(16, 0.5, 0);
-    const compiled = () => compiledWater(engine);
+    waterMesh.createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }), undefined, builtInWaterMaterial(handle.scene)).position.set(16, 0.5, 0);
+    const compiled = () => compiledGraphWater(engine);
     await handle.prewarmSceneMaterials();
     const afterLoad = compiled();
     expect(afterLoad.length).toBeGreaterThan(0);
@@ -928,12 +929,6 @@ describe("Play createEngine view", () => {
     for (let index = 0; index < 2; index++) { engine.beginFrame(); renderViews(engine); engine.endFrame(); }
     expect(compiled()).toEqual(afterLoad);
   });
-
-  /** The defines of every built-in water effect the Engine has compiled so far. */
-  function compiledWater(engine: NullEngine): string[] {
-    return Object.values((engine as unknown as { _compiledEffects: Record<string, { defines?: string }> })._compiledEffects)
-      .map((effect) => effect.defines ?? "").filter((defines) => /^#define SLATE_WATER$/m.test(defines));
-  }
 
   /**
    * Two water assets that sample no scene copy, so their bodies draw in the main pass and a graph that is already
@@ -1058,7 +1053,7 @@ describe("Play createEngine view", () => {
     handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
     const first = handle.presentFirstFrame({ layerId: "global", layerLoadId: 1 });
     // Spawn batches keep arriving while the loading world draws nothing; the ready layer keeps drawing meanwhile.
-    waterMesh.createWaterMesh(handle.scene, "lake", normalizeWaterBody({ width: 8, length: 8, resolution: 8 }));
+    waterMesh.createWaterMesh(handle.scene, "lake", normalizeWaterBody({ width: 8, length: 8, resolution: 8 }), undefined, builtInWaterMaterial(handle.scene));
     const settle = vi.spyOn(waterMesh, "settleSceneWater");
     renderViews(engine);
     engine.onEndFrameObservable.notifyObservers(engine);
