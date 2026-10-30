@@ -1977,7 +1977,7 @@ function initializeEngine(
         }
         if (key === "world" && startingDraw && !startingDraw.done) {
           // Drawn is enough: variants its post-draw probe requests draw in a later starting-state frame. Particle
-          // systems that have not started draw their programs in it too.
+          // systems that have not started draw in it too.
           const drawWorld = () => worldRenderer.render(true).rendered;
           startingDraw.frame(() => particleService ? particleService.drawingUnstartedSystems(drawWorld) : drawWorld());
           // Never presented: the loading frame shows the clear colour, as the loading frames before it did.
@@ -3208,8 +3208,12 @@ function initializeEngine(
         const draws = releaseStagedSpawnables !== null || spawnableLights.size > 0 ||
           scene.lights.some((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX)) ||
           (particleService?.holdsPlayingComponents() ?? false);
-        // Full Quality captures prepare their views in the starting state, so their variants share its Effects.
-        startingDraw = createStartingStateDraw(scene, () => !renderTargetCaptures.preparing(), { draws, onDrawn: releaseStaged });
+        // Full Quality captures prepare their views in the starting state, so their variants share its Effects; manual
+        // captures not yet requested are rehearsed in its frames, and it settles once they have drawn.
+        const draw = createStartingStateDraw(scene,
+          () => !renderTargetCaptures.preparing() && !renderTargetCaptures.rehearsalPending(), { draws, onDrawn: releaseStaged });
+        startingDraw = draw;
+        renderTargetCaptures.rehearseManualCaptures(() => !draw.done);
       }
     },
     whenMaterialTexturesReady: async (owner) => {

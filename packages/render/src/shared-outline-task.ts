@@ -155,17 +155,20 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   /**
    * `cull` narrows the strict occluders to those that can affect this frame;
    * readiness keeps the full list so an occluder's program is ready before it
-   * comes into view.
+   * comes into view. A frame drawn without view culling (`skipFrustumClipping`:
+   * Play's starting-state draw) draws the full list, so each occluder's program
+   * has its first draw there rather than when it comes into view.
    */
   private sync(cull = false): void {
     if (this.disposed) return;
     this.view.prepare();
+    const narrow = cull && !this.view.scene.skipFrustumClipping;
     for (const record of this.masks) {
       const active = this.view.active && this.view.groupActive(record.group);
       if (record.clearPass) record.clearPass.disabled = !active;
       if (record.drawPass) record.drawPass.disabled = !active;
       record.objects.camera = this.camera;
-      const meshes = !active ? [] : cull && record.group === "strict"
+      const meshes = !active ? [] : narrow && record.group === "strict"
         ? this.view.strictOccludersFor(this.camera, this.width, this.height)
         : this.view.meshesForGroup(record.group);
       record.objects.objectList = { meshes, particleSystems: [] };

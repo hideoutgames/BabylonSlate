@@ -525,3 +525,40 @@ it("defers periodic and accepted manual captures throughout render-only pause", 
   captures.render();
   expect(draws).toHaveLength(2);
 });
+
+it("rehearses a manual capture not yet requested in Play's starting state, unpublished, keeping its request state", () => {
+  const { scene, captures, draws, engine } = host();
+  engine.getCaps().textureHalfFloatRender = true;
+  vi.spyOn(normalMaterial, "createRenderTargetDepthMaterial").mockImplementation((scene) => new NodeMaterial("Capture Depth Variant", scene));
+  captures.setAssets(new Map([["target", { mode: "DepthPass", width: 16, height: 8 }]]), new Map([["texture", { renderTargetGuid: "target" }]]));
+  const mesh = MeshBuilder.CreateBox("Model", {}, scene); mesh.material = new StandardMaterial("Source", scene);
+  captures.acquireTexture("texture");
+  // A gameplay frame leaves the manual capture alone.
+  captures.render();
+  expect(draws).toHaveLength(0);
+  // Play's starting state draws it once, with its override Material, unpublished; until it draws it is pending.
+  let starting = true;
+  captures.rehearseManualCaptures(() => starting);
+  const ready = vi.mocked(RenderTargetTexture.prototype.isReadyForRendering);
+  ready.mockReturnValueOnce(false);
+  captures.render();
+  expect([draws.length, captures.rehearsalPending()]).toEqual([0, true]);
+  captures.render();
+  expect([draws.length, captures.rehearsalPending()]).toEqual([1, false]);
+  captures.render();
+  expect(draws).toHaveLength(1);
+  starting = false;
+  const target = scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture;
+  expect(mesh.getMaterialForRenderPass(target.renderPassId)?.name).toBe("Capture Depth Variant");
+  expect(captures.diagnostics()[0]).toMatchObject({ published: false });
+  // Nothing was requested, so gameplay still waits for a request, which then captures and publishes.
+  captures.render();
+  expect(draws).toHaveLength(1);
+  captures.request("capture"); captures.render();
+  expect(draws).toHaveLength(2);
+  expect(captures.diagnostics()[0]).toMatchObject({ published: true });
+  // A published output keeps its last capture: a later load's starting state does not draw over it.
+  captures.rehearseManualCaptures(() => true);
+  captures.render();
+  expect(draws).toHaveLength(2);
+});
