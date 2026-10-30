@@ -57,7 +57,7 @@ Each scene can light a limited number of local (point, spot and area) lights at 
 
 When more local lights are on than the budget allows, Haptic keeps the lights nearest the camera and switches the rest off until the camera moves closer to them. Disabled lights and lights with zero intensity do not count. Their **Enabled** setting is not changed.
 
-Turning lights on or off, adding, moving or removing them, and starting or stopping their shadows never builds a new shader, so each change shows in the next frame. Each device also has a light capacity: desktops draw up to 32 point, 16 spot, 4 area and 4 directional lights at once, plus one fill; phones and tablets half as many. Lights past it show a yellow icon.
+Turning lights on or off, adding, moving or removing them, and starting or stopping their shadows never builds a new shader, so each change shows in the next frame. Each device also has a light capacity: up to 32 point, 16 spot, 4 area and 4 directional lights at once, plus one fill, the same on phones and tablets as on desktops. Lights past it show a yellow icon.
 
 ## Environment lighting
 

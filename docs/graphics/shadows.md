@@ -17,7 +17,7 @@ Shadows have a budget separate from the [light budget](lighting.md#light-budget)
 - A limited number of point and spot lights can cast shadows at once. A point light costs six shadow maps, so it is much more expensive than a spot light.
 - When too many lights ask for shadows, lights with a higher **Shadow Priority** win, then the lights nearest the camera. Local lights farther than Shadow Distance plus their Range get no shadow.
 - The device can lower these requests to fit its memory. A light whose shadows are unavailable shows a yellow icon in the viewport.
-- Phones and tablets use at most 1024 for **Directional Map Size** and 512 for **Local Shadow Map Size**, whatever the quality level asks for. Larger maps used more graphics memory than an iPad could keep beside the rest of a scene. The rendering details Play copies list this limit.
+- Phones and tablets get the same shadow limits as desktops: the quality level alone sets map sizes, and at **High** and **Ultra** all shadows share one 8192 × 8192 shadow map (256 MiB), as on a desktop. A device whose graphics can't hold a texture that large uses the largest it can.
 - A Full Quality [Render Target Capture](render-targets.md#quality) draws its own directional shadows, fitted to its view, each captured frame. Point and spot lights share their shadow maps with the camera.
 
 ## Shadow settings
