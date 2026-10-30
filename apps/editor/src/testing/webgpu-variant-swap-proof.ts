@@ -33,7 +33,6 @@ import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSetti
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
-import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
@@ -100,7 +99,6 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
   const camera = new FreeCamera("camera", new Vector3(0, 4, -7), scene);
   camera.setTarget(new Vector3(0, 0.4, 0));
   scene.activeCamera = camera;
-  setFixedShapeLightingWorldScene(scene);
   setSceneBindsPreviousEffects(scene);
   setSceneRenderSettings(scene, {
     mode: "pbr",
@@ -295,7 +293,6 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
   const camera = new FreeCamera("camera", new Vector3(0, 3, -6), scene);
   camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
-  setFixedShapeLightingWorldScene(scene);
   setSceneBindsPreviousEffects(scene);
   setSceneRenderSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS,
     temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } });

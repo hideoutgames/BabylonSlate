@@ -32,7 +32,6 @@ import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocu
 import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
 import { glErrorTraceEntries, installGlErrorTrace } from "@haptic/render/gl-error-trace";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
-import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { isRevealPending } from "../../../../packages/render/src/reveal-pending";
@@ -65,7 +64,6 @@ async function worldView() {
   camera.minZ = 0.1;
   camera.maxZ = 40;
   scene.activeCamera = camera;
-  setFixedShapeLightingWorldScene(scene);
   setSceneBindsPreviousEffects(scene);
   setSceneRenderSettings(scene, {
     mode: "pbr",
