@@ -68,6 +68,19 @@ describe("shadow settings", () => {
     ).toMatchObject({ cascades: 1, filter: "pcf" });
     expect(effectiveShadowSettings(requested).settings.filter).toBe("pcss");
   });
+  it("gives Screen-Space Shadows by level, keeps a valid authored level and turns them off in CEL", () => {
+    expect((["low", "medium", "high", "ultra"] as const).map((profile) => normalizeShadowSettings({ profile }).screenShadows))
+      .toEqual(["off", "low", "medium", "high"]);
+    expect(normalizeShadowOverrides({ screenShadows: "high" })).toEqual({ screenShadows: "high" });
+    expect(normalizeShadowOverrides({ screenShadows: "ultra" })).toEqual({});
+    const requested = normalizeShadowSettings({ profile: "low", screenShadows: "medium" });
+    expect(requested).toMatchObject({ screenShadows: "medium", preset: "custom" });
+    expect(effectiveShadowSettings(requested).settings.screenShadows).toBe("medium");
+    expect(effectiveShadowSettings(requested, true, "cel")).toMatchObject({
+      settings: { screenShadows: "off" }, limits: ["screen shadows: not in CEL"],
+    });
+  });
+
   it("selects Auto capacity by quality without overwriting a saved Manual limit", () => {
     for (const [profile, expected] of [
       ["low", 1],

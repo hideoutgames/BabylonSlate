@@ -2,6 +2,8 @@ import {
   normalizeShadowSettings,
   normalizeShadowOverrides,
   SHADOW_PROFILES,
+  SCREEN_SHADOWS_QUALITIES,
+  type ScreenShadowsQuality,
   type ShadowOverrides,
   type ShadowSettings,
 } from "./shadows";
@@ -685,6 +687,15 @@ export class RenderingQualitySession {
         this.overrides = {
           ...this.overrides,
           shadows: { ...this.overrides.shadows, distance: numeric },
+        };
+      else if (
+        group === "shadows" &&
+        choice === "screen" &&
+        (SCREEN_SHADOWS_QUALITIES as readonly (string | undefined)[]).includes(value)
+      )
+        this.overrides = {
+          ...this.overrides,
+          shadows: { ...this.overrides.shadows, screenShadows: value as ScreenShadowsQuality },
         };
       else if (
         group === "shadows" &&
