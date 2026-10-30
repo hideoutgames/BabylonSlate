@@ -21,6 +21,7 @@ import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
   effectiveShadowSettings,
+  SHADOW_HALF_TILE_CASCADES,
   type ShadowSettings,
 } from "@haptic/core";
 import { sceneRenderingSettings } from "./render-settings";
@@ -573,7 +574,7 @@ export class SceneShadowController {
     const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&
-        matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge)) {
+        matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile])) {
         if (entry.standby) {
           entry.standby = false;
           entry.admittedAt = selectionTime;
@@ -595,7 +596,7 @@ export class SceneShadowController {
       if (entry.status !== "active" || entry.generator || entry.light instanceof DirectionalLight)
         continue;
       const index = donors.findIndex((donor) =>
-        matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge) &&
+        matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile]) &&
         (donor.generator as AtlasShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
       if (index < 0) continue;
       const [donor] = donors.splice(index, 1) as [Entry];
@@ -707,7 +708,7 @@ export class SceneShadowController {
           invalidateShadowReceiverHandoffs(scene);
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
-          entry.key = allocationKey(mapSize, entry.light, settings.cascades, budget.atlasEdge);
+          entry.key = allocationKey(mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile]);
           entry.failedKey = "";
           if (entry.recovery)
             entry.reason = "shadow map reduced after allocation failure";

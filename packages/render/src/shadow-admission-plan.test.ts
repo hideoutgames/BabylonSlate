@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectionalLight, NullEngine, PointLight, Scene, SpotLight, Vector3, type AbstractEngine } from "@babylonjs/core";
-import { normalizeShadowSettings } from "@haptic/core";
+import { normalizeShadowSettings, type ShadowProfile } from "@haptic/core";
 import { planShadowAdmission, type ShadowAdmissionBudget } from "./shadow-admission-plan";
 import { SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge } from "./shadow-atlas";
 import type { ShadowEntry } from "./shadow-entry";
@@ -30,7 +30,10 @@ const budget = (atlasEdge: number): ShadowAdmissionBudget => ({
   bytes: 1024 ** 3, passes: 64, atlasEdge,
 });
 
-function plan(lights: (SpotLight | PointLight | DirectionalLight)[], atlasEdge: number, localMapSize: number, sun = { mapSize: 2048, cascades: 1 }) {
+function plan(
+  lights: (SpotLight | PointLight | DirectionalLight)[], atlasEdge: number, localMapSize: number,
+  sun: { mapSize: number; cascades: number; profile?: ShadowProfile } = { mapSize: 2048, cascades: 1 },
+) {
   const entries = new Map(lights.map((light) => [light, entry(light)]));
   return planShadowAdmission({
     entries, settings: normalizeShadowSettings({ ...sun, maxLocalLights: 8, localMapSize }), camera: null,
@@ -74,21 +77,27 @@ describe("Shadow admission into the shadow atlas", () => {
     // Medium: three 2048 cascades and two 1024 spot tiles fit a 4096 atlas.
     const medium = plan([sun, spots[0]!, spots[1]!], 4096, 1024, { mapSize: 2048, cascades: 3 });
     expect(medium.decisions.map(({ status, mapSize }) => [status, mapSize])).toEqual([["active", 2048], ["active", 1024], ["active", 1024]]);
-    // A point light's six faces count in the room the sun leaves: Medium's three 2048 cascades and one point light's
-    // six 1024 faces need 18.9 Mtexels of a 4096 atlas's 16.8, so the cascades halve.
+    // A point light's six faces count in the room the sun leaves: Medium's cascades (two 2048 tiles and its last at
+    // half that edge, 9.4 Mtexels) and one point light's six 1024 faces (6.3) fit a 4096 atlas's 16.8.
     const lamp = new PointLight("lamp", new Vector3(0, 2, 0), host);
     expect(plan([sun, lamp], 4096, 1024, { mapSize: 2048, cascades: 3 }).decisions.map(({ status, mapSize }) => [status, mapSize]))
-      .toEqual([["active", 1024], ["active", 1024]]);
+      .toEqual([["active", 2048], ["active", 1024]]);
+    // Four 2048 cascades: Medium's, its last at half edge (13.6 Mtexels), halve beside the faces; Ultra's, its last two
+    // at half edge (10.5), fit.
+    const four = (profile: ShadowProfile) =>
+      plan([sun, lamp], 4096, 1024, { mapSize: 2048, cascades: 4, profile }).decisions.map(({ mapSize }) => mapSize);
+    expect([four("medium"), four("ultra")]).toEqual([[1024, 1024], [2048, 1024]]);
   });
 
   it("keeps the sun's cascades when the local maps planned would fill the atlas, leaving them at most half of it", () => {
     const host = scene();
     const sun = new DirectionalLight("sun", new Vector3(0, -1, 0), host);
     const lamps = [0, 1, 2].map((index) => new PointLight(`lamp ${index}`, new Vector3(index * 3, 2, 0), host));
-    // High: three point lights' six 2048 faces (75.5 Mtexels) exceed the 8192 atlas (67.1); the sun keeps its four
-    // 2048 cascades in the half it reserves, two points fill the rest and the third finds no room.
+    // Three point lights' six 2048 faces (75.5 Mtexels) exceed the 8192 atlas (67.1); the sun keeps its four 2048
+    // cascades (its last at half that edge, 13.6) in the half it reserves, two points take 50.3 of the rest and the
+    // third's faces fit at 512.
     expect(plan([sun, ...lamps], 8192, 2048, { mapSize: 2048, cascades: 4 }).decisions.map(({ status, mapSize }) => [status, mapSize]))
-      .toEqual([["active", 2048], ["active", 2048], ["active", 2048], ["budget-limited", 0]]);
+      .toEqual([["active", 2048], ["active", 2048], ["active", 2048], ["active", 512]]);
   });
 
   it("caps a spot map at the atlas's edge", () => {
