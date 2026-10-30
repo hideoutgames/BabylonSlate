@@ -1,6 +1,4 @@
 import {
-  CascadedShadowGenerator,
-  Constants,
   DirectionalLight,
   PointLight,
   SpotLight,
@@ -8,7 +6,6 @@ import {
   type Camera,
   type Effect,
   type Scene,
-  type ShadowGenerator,
 } from "@babylonjs/core";
 import type { VolumetricLightingSettings } from "@haptic/core";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
@@ -19,47 +16,22 @@ import {
   isForwardLightExcluded,
 } from "./light-policy";
 import { shadowAtlasTexture } from "./shadow-atlas";
-import { findSceneShadowController } from "./shadow-controller";
-import type { ShadowSamplerPlaceholders as VolumeShadowPlaceholders } from "./shadow-sampler-placeholders";
 
 export type VolumeLight = DirectionalLight | PointLight | SpotLight;
 export type VolumeShadow = {
   kind: "none" | "cube" | "compare" | "cascades";
-  /** Cascades of a cascaded map; on the light block's path, the light's views (a point light's faces, the sun's cascades). */
+  /** The light's views of the atlas (a spot light's one, a point light's faces, the sun's cascades). */
   cascades: number;
-  packed: boolean;
-  /** On the light block's path, the light's first view. */
+  /** The light's first view. */
   first: number;
 };
 
-/** Babylon's cascaded shadow generator splits at most four cascades; the march's cascade arrays hold that many. */
-export const VOLUME_MAX_CASCADES = 4;
-
 /**
  * What each slot samples this frame (`volumeShadow{i}.x` in the march): the kind is a uniform, so a light change never
- * compiles another march. A cube map stores float depth, or RGBA8-packed depth where float targets are unavailable. On
- * the light block's path a spot light's view is `compare`, a point light's faces `cube` and the sun's cascades
+ * compiles another march. A spot light's view is `compare`, a point light's faces `cube` and the sun's cascades
  * `cascades`.
  */
-export const VOLUME_SHADOW_CODE = { none: 0, compare: 1, cube: 2, packedCube: 3, cascades: 4 } as const;
-
-/**
- * Every slot can compare a single map (sun or spot light) and read a cube map (point light); only the first reads a
- * cascaded map. The one sun that illuminates ranks before every local light, so it always takes the first slot, and
- * the march declares 2 × Max Lights + 2 samplers with its depth (10 at four lights, within the 16 a fragment stage is
- * guaranteed).
- */
-export function volumeSlotSamples(slot: number, kind: VolumeShadow["kind"]): boolean {
-  return kind !== "cascades" || slot === 0;
-}
-
-/**
- * The index Babylon's `bindShadowLight` appends to its uniform and sampler names for a slot's kind: each kind has its
- * own sampler in every slot, so a slot's samplers never change type.
- */
-export function volumeShadowIndex(slot: number, kind: "compare" | "cube" | "cascades"): string {
-  return kind === "compare" ? String(slot) : kind === "cube" ? `Cube${slot}` : `Cascades${slot}`;
-}
+export const VOLUME_SHADOW_CODE = { none: 0, compare: 1, cube: 2, cascades: 3 } as const;
 
 /** The lights taking the march's slots, in slot order (valid below `count`). */
 export interface VolumetricSlots {
@@ -163,74 +135,22 @@ export function fillVolumetricSlots(
   for (let i = count; i < previous; i++) slots.lights[i] = undefined;
 }
 
-/**
- * The map a march drawn for `camera` samples for `light`. Only an admitted map counts: a standby or released one is
- * none, so the march never binds it. A view with its own sun maps (a Full Quality capture, `attachView`) samples the
- * sun map fitted to its camera, whose cascade matrices and splits match its view; one whose mirror the ledger refused
- * samples the scene view's map, as its materials do. Local maps are shared by every view.
- */
-function volumeShadowGenerator(
-  scene: Scene,
-  light: VolumeLight,
-  camera: Camera,
-): ShadowGenerator | null {
-  if (!scene.shadowsEnabled || !light.shadowEnabled) return null;
-  const controller = findSceneShadowController(scene);
-  // viewBoundGenerator alone falls back to the light's bound map, which can be on standby.
-  if (!controller?.generator(light)) return null;
-  return controller.viewBoundGenerator(light, camera);
-}
-
-/** The sampler shape of a light's map, written into `out` (a per-frame caller passes scratch storage). */
-function shadowShape(generator: ShadowGenerator | null, out: VolumeShadow): VolumeShadow {
-  const map = generator?.getShadowMap();
-  if (map?.getInternalTexture() && map.isCube) {
-    out.kind = "cube";
-    out.cascades = 1;
-    out.packed = map.textureType === Constants.TEXTURETYPE_UNSIGNED_BYTE;
-  } else if (
-    generator &&
-    map?.getInternalTexture() &&
-    (generator.usePercentageCloserFiltering ||
-      generator.useContactHardeningShadow)
-  ) {
-    const cascaded = generator instanceof CascadedShadowGenerator;
-    out.kind = cascaded ? "cascades" : "compare";
-    out.cascades = cascaded ? generator.numCascades : 1;
-    out.packed = false;
-  } else {
-    out.kind = "none";
-    out.cascades = 0;
-    out.packed = false;
-  }
-  return out;
-}
-
 const views = { first: 0, count: 0 };
 
-/** A light's shadow on the light block's path, its views of the atlas (`hapticShadowViews`), written into `out`. */
-function blockShadowShape(scene: Scene, light: VolumeLight, out: VolumeShadow): VolumeShadow {
+/** A light's shadow, its views of the atlas (`hapticShadowViews`), written into `out`. */
+function shadowShape(scene: Scene, light: VolumeLight, out: VolumeShadow): VolumeShadow {
   const shadowed = hapticShadowViews(scene, light, views);
   out.kind = !shadowed ? "none" : light instanceof DirectionalLight ? "cascades" : light instanceof SpotLight ? "compare" : "cube";
   out.cascades = shadowed ? views.count : 0;
   out.first = shadowed ? views.first : 0;
-  out.packed = false;
   return out;
 }
 
-export {
-  shadowSamplerPlaceholders as volumeShadowPlaceholders,
-  type ShadowSamplerPlaceholders as VolumeShadowPlaceholders,
-} from "./shadow-sampler-placeholders";
-
 /**
  * Binds the lights to the march's `slotCount` slots, slot by slot, and the count of lights taking part; slots past it
- * are skipped by the march but still bind placeholders. Each slot's shadow kind and map are resolved here, after the
- * graph's shadow task: maps stay controller-owned and can be replaced, stood by or released during admission, and a
- * light whose map is gone (or that the slot cannot sample) draws unshadowed rather than sample a released map. A sun's
- * map is the one fitted to `camera`, the view the march draws (`volumeShadowGenerator`). A march built for the light
- * block (`lightBlock`) reads each light's views of the atlas from the block instead (`volumeShadow{i}`: kind, views,
- * first view), which holds the rendering camera's sun, and binds no maps of its own.
+ * are skipped by the march. Each slot's shadow is resolved here, after the graph's shadow task: its light's views of
+ * the atlas, read from the light block (`volumeShadow{i}`: kind, views, first view), which holds the rendering camera's
+ * sun; a light with no views drawn draws unshadowed.
  */
 export function bindVolumetricLights(
   effect: Effect,
@@ -238,19 +158,14 @@ export function bindVolumetricLights(
   camera: Camera,
   slots: VolumetricSlots,
   slotCount: number,
-  textures: VolumeShadowPlaceholders,
   scratch: VolumeShadow,
-  lightBlock = false,
 ): void {
   const count = Math.min(slots.count, slotCount);
   effect.setFloat("volumeLightCount", count);
-  if (lightBlock) {
-    bindHapticLights(scene, effect);
-    effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
-  }
+  bindHapticLights(scene, effect);
+  effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
   for (let i = 0; i < slotCount; i++) {
     const light = i < count ? slots.lights[i] : undefined;
-    let generator: ShadowGenerator | null = null;
     let kind: VolumeShadow["kind"] = "none";
     if (light) {
       const transformed = light.computeTransformedInformation();
@@ -292,28 +207,9 @@ export function bindVolumetricLights(
       );
       const min = light.getDepthMinZ(camera);
       effect.setFloat2(`volumeDepth${i}`, min, min + light.getDepthMaxZ(camera));
-      if (lightBlock) kind = blockShadowShape(scene, light, scratch).kind;
-      else {
-        generator = volumeShadowGenerator(scene, light, camera);
-        const shape = shadowShape(generator, scratch);
-        if (volumeSlotSamples(i, shape.kind)) kind = shape.kind;
-      }
+      kind = shadowShape(scene, light, scratch).kind;
     }
-    const code = kind === "compare" ? VOLUME_SHADOW_CODE.compare
-      : kind === "cube" ? (scratch.packed ? VOLUME_SHADOW_CODE.packedCube : VOLUME_SHADOW_CODE.cube)
-        : kind === "cascades" ? VOLUME_SHADOW_CODE.cascades : VOLUME_SHADOW_CODE.none;
-    if (lightBlock) {
-      effect.setFloat4(`volumeShadow${i}`, code, kind === "none" ? 0 : scratch.cascades, kind === "none" ? 0 : scratch.first, 0);
-      continue;
-    }
-    effect.setFloat4(`volumeShadow${i}`, code, kind === "cascades" ? scratch.cascades : kind === "none" ? 0 : 1, 0, 0);
-    if (kind === "compare") generator!.bindShadowLight(volumeShadowIndex(i, "compare"), effect);
-    else effect.setTexture(`shadowTexture${volumeShadowIndex(i, "compare")}`, textures.compare);
-    if (kind === "cube") generator!.bindShadowLight(volumeShadowIndex(i, "cube"), effect);
-    else effect.setTexture(`shadowTexture${volumeShadowIndex(i, "cube")}`, textures.cube);
-    if (i === 0) {
-      if (kind === "cascades") generator!.bindShadowLight(volumeShadowIndex(i, "cascades"), effect);
-      else effect.setTexture(`shadowTexture${volumeShadowIndex(i, "cascades")}`, textures.cascades);
-    }
+    const code = VOLUME_SHADOW_CODE[kind];
+    effect.setFloat4(`volumeShadow${i}`, code, kind === "none" ? 0 : scratch.cascades, kind === "none" ? 0 : scratch.first, 0);
   }
 }

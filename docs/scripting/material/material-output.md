@@ -12,7 +12,7 @@ Receives the final surface settings of a material, such as colour, roughness and
 | --- | --- | --- | --- |
 | Base Color | Vector 3 | (0.8, 0.8, 0.8) | Surface colour before lighting. With the Unlit shading model it is the final colour. |
 | Metallic | Float | 0 | 0 is a non-metal and 1 is a metal. PBR shading model only. |
-| Specular | Float | 0.5 | How much a non-metal reflects, from 0 to 1: the reflection head-on is 0.08 times Specular, so the default 0.5 reflects 4% and water about 0.25. Metals reflect their Base Color instead. PBR shading model only. Use a constant value: a connected node draws as the default 0.5, and the Compiler Results say so. |
+| Specular | Float | 0.5 | How much a non-metal reflects, from 0 to 1: the reflection head-on is 0.08 times Specular, so the default 0.5 reflects 4% and water about 0.25. Metals reflect their Base Color instead. PBR shading model only. |
 | Roughness | Float | 0.5 | 0 is a mirror-smooth surface and 1 is fully rough. PBR shading model only. |
 | Environment Influence | Float | 1 | Scales lighting from the environment, from 0 to 1; direct lights and Emissive are unaffected. |
 | Normal | Vector 3 |  | World-space normal used for lighting, such as the output of [**Normal Map**](normal-map.md). When unconnected, the material's Default Normals setting applies. |

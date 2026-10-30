@@ -7,7 +7,6 @@ import {
   type Camera,
 } from "@babylonjs/core";
 import { SHADOW_CAPACITY_PROFILES, type ShadowSettings } from "@haptic/core";
-import { hapticLightingActive } from "./haptic-lights";
 import { isDirectionalLightExcluded } from "./light-policy";
 import { remainingShadowSamplers } from "./light-sampler-budget";
 import type { LocalShadowLight } from "./reusable-shadow-generator";
@@ -140,7 +139,7 @@ export function readShadowAdmissionBudget(
     cascadedBytesPerTexel: shadowBytesPerTexel(scene.getEngine(), true),
     maxTextureSize: caps.maxTextureSize,
     maxCubemapTextureSize: caps.maxCubemapTextureSize,
-    atlasEdge: hapticLightingActive(scene) ? shadowAtlasEdge(scene.getEngine(), settings.profile) : 0,
+    atlasEdge: shadowAtlasEdge(scene.getEngine(), settings.profile),
   };
 }
 

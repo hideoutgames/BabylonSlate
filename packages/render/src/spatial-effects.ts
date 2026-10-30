@@ -22,9 +22,6 @@ import {
   bindVolumetricLights,
   createVolumetricSlots,
   fillVolumetricSlots,
-  volumeShadowIndex,
-  volumeShadowPlaceholders,
-  volumeSlotSamples,
   type VolumeShadow,
 } from "./volumetric-lights";
 import {
@@ -42,7 +39,6 @@ import { beginManagedRenderAllocation } from "./managed-render-resources";
 import { bindFogVolumes, hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import type { EffectCompileFailure } from "./effect-compile-failure";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
-import { hapticLightingActive } from "./haptic-lights";
 
 /** Delay native define setters until all settings/camera flags are configured.
  * Babylon otherwise overwrites (and leaks) each intermediate Effect reference. */
@@ -405,8 +401,6 @@ export function createSpatialStages(
     const volume = plan.volumetricLighting;
     if (volume) {
       const localVolumes = hasFogVolumes(scene);
-      // The lighting plan's path: the slots' shadows are the light block's views of its atlas.
-      const lightBlock = hapticLightingActive(scene);
       // One march per settings: Max Lights slots, each taking any light type and shadow kind through uniforms.
       const slotCount = volume.maxLights;
       const uniforms = [
@@ -419,7 +413,8 @@ export function createSpatialStages(
         "volumeLightCount",
         ...(localVolumes ? ["fogVolumeCount", "fogVolumeInverse", "fogVolumeParameters"] : []),
       ];
-      const samplers = ["depthSampler", ...(lightBlock ? [HAPTIC_SHADOW_ATLAS] : [])];
+      // The slots' shadows are the light block's views of its atlas.
+      const samplers = ["depthSampler", HAPTIC_SHADOW_ATLAS];
       for (let i = 0; i < slotCount; i++) {
         uniforms.push(
           `volumePosition${i}`,
@@ -429,17 +424,7 @@ export function createSpatialStages(
           `volumeDepth${i}`,
           `volumeShadow${i}`,
         );
-        if (lightBlock) continue;
-        uniforms.push(`lightMatrix${volumeShadowIndex(i, "compare")}`);
-        samplers.push(`shadowTexture${volumeShadowIndex(i, "compare")}`, `shadowTexture${volumeShadowIndex(i, "cube")}`);
-        if (volumeSlotSamples(i, "cascades")) {
-          const index = volumeShadowIndex(i, "cascades");
-          uniforms.push(`lightMatrix${index}`, `viewFrustumZ${index}`);
-          samplers.push(`shadowTexture${index}`);
-        }
       }
-      // Created here, outside any pass: the march binds them to the samplers its lights' kinds leave unread.
-      const placeholders = volumeShadowPlaceholders(scene);
       const march = own(
         customWrapper(
           scene,
@@ -448,22 +433,19 @@ export function createSpatialStages(
             engine.isWebGPU,
             slotCount,
             volume.steps,
-            engine.isNDCHalfZRange,
-            engine.useReverseDepthBuffer,
             localVolumes,
-            lightBlock,
           ),
           uniforms,
           samplers,
           failure,
-          lightBlock ? ["HapticLights"] : [],
+          ["HapticLights"],
         ),
       );
       const inverseProjection = Matrix.Identity(),
         inverseView = Matrix.Identity();
       const mainInput = stages.length;
       const slots = createVolumetricSlots();
-      const scratch: VolumeShadow = { kind: "none", cascades: 0, packed: false, first: 0 };
+      const scratch: VolumeShadow = { kind: "none", cascades: 0, first: 0 };
       const idle = () => volumetricMarchIdle(scene, camera, volume, localVolumes);
       stages.push({
         wrapper: march,
@@ -502,7 +484,7 @@ export function createSpatialStages(
           // Selected as the march draws: the frame has moved the camera (inputs, animation) and drawn its shadow
           // maps by now, so the nearest lights and their maps are this frame's.
           fillVolumetricSlots(slots, scene, camera, volume);
-          bindVolumetricLights(effect, scene, camera, slots, slotCount, placeholders, scratch, lightBlock);
+          bindVolumetricLights(effect, scene, camera, slots, slotCount, scratch);
           if (localVolumes) bindFogVolumes(effect, scene, camera, volume.maxDistance);
         },
       });

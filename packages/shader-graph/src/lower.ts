@@ -476,16 +476,6 @@ export function lowerMaterialDocument(
     }
   }
 
-  // Babylon's PBR block, the default renderer's, derives its reflectance from a constant only.
-  const specular = outputs.specular;
-  if (terminal && specular && specular.kind !== "constant" && doc.shadingModel !== "unlit")
-    diagnostics.push({
-      code: "material.specularConstant",
-      message: "Specular draws as its default 0.5 unless it is a constant value.",
-      severity: "warning",
-      nodeId: terminal.id,
-    });
-
   const cost = costOf(operations);
   const header = [
     doc.domain,

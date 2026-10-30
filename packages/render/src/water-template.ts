@@ -1,20 +1,17 @@
 import type { NodeMaterial, Scene } from "@babylonjs/core";
 import { createWaterMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { hapticLightingActive } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
 import { markBuiltInWaterMaterial } from "./water-mesh";
 
 const templates = new WeakMap<Scene, NodeMaterial>();
 
 /**
- * The graph Material built-in water draws with while graph Materials draw with the lighting plan's block
- * (`hapticLightingActive`), else null (built-in water keeps `WaterMaterialPlugin`). It is the water starter
+ * The graph Material built-in water draws with, on the lighting plan's block. It is the water starter
  * (`createWaterMaterialDocument`, what Edit As Material creates), compiled once per Scene and shared by every water
  * mesh without a Custom Material: each mesh's asset, terrain, contacts and blend reach the water nodes through its own
  * `WaterNodeSurface`, and its variants through its own draw wrappers. Disposed with the Scene.
  */
-export function builtInWaterMaterial(scene: Scene): NodeMaterial | null {
-  if (!hapticLightingActive(scene)) return null;
+export function builtInWaterMaterial(scene: Scene): NodeMaterial {
   let material = templates.get(scene);
   if (material) return material;
   const lowered = lowerMaterialDocument(createWaterMaterialDocument("Water"));
