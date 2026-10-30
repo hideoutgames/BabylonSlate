@@ -77,8 +77,9 @@ function sceneLines(scene: FeatureTestCheckSceneResult, mode: FeatureTestCheckMo
     const preserve = first?.settings?.["presentation.preserve"];
     lines.push(
       "  Breakdown (60 fps cap; warm-up until steady, then a baseline before and after every step; each sampled once no shader is first drawn or compiling):",
+      `  preserveDrawingBuffer: ${preserve === undefined ? "unknown" : String(preserve) === "true" ? "on" : "off"} (live)`,
       "  Legend: gpu busy = median (p95) GPU time per frame from fences, unaffected by display pacing · change = gpu busy against the baselines around the step (a baseline's: against the first), or mean frame time where gpu busy is missing (marked *) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed; UNEXPECTED, NOT RESTORED and UNSETTLED mark a sample not to trust",
-      `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"} · preserveDrawingBuffer ${preserve ?? "unknown"}`,
+      `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
       `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("vsync 1/2/3/4+", 16)}${pad("gpu busy", 14)}${pad("change", 18)}${pad("cpu", 8)}${pad("bound", 6)}${pad("draws", 14)}notes`);
     for (const sample of play.benchmark) {
       const delta = breakdownDelta(play.benchmark, sample);

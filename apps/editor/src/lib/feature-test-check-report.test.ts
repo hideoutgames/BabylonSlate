@@ -118,7 +118,8 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("baseline 1")).toMatch(/\+0\.0ms \+0%\* +14\.2ms {2}gpu {3}575 \(544-605\)$/);
     expect(lines.some((line) => line.includes("Highest tier"))).toBe(false);
     // Without fences: no GPU-busy times, and every change is in mean frame time (marked *).
-    expect(lines).toContain("  Timing: no gpu busy (no fences) · preserveDrawingBuffer unknown");
+    expect(lines).toContain("  Timing: no gpu busy (no fences)");
+    expect(lines).toContain("  preserveDrawingBuffer: unknown (live)");
   });
 
   it("shows GPU-busy times and compares them, marks warm-up windows, and states the timing resolution and buffer mode", () => {
@@ -146,7 +147,8 @@ describe("formatFeatureTestCheckReport", () => {
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     const row = (label: string) => lines.find((line) => line.startsWith(`    ${label} `))!;
-    expect(lines).toContain("  Timing: gpu busy polled every 4.2 ms (each frame up to one poll late) · preserveDrawingBuffer false");
+    expect(lines).toContain("  Timing: gpu busy polled every 4.2 ms (each frame up to one poll late)");
+    expect(lines).toContain("  preserveDrawingBuffer: off (live)");
     // 14 against the mean of 20 and 22, though every frame lasted two display intervals.
     expect(row("shadows off")).toMatch(/0\/100\/0\/0 {7}14\.0 \(17\) {5}-7\.0ms -33% {7}8\.0ms/);
     expect(row("baseline 2")).toContain("+2.0ms +10% ");
