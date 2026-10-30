@@ -3,6 +3,7 @@ import { FreeCamera, NullEngine, PointerDragBehavior, Scene, UtilityLayerRendere
 import { createDefaultWaterDefinition, normalizeWaterBody, waterHorizontalEnvelope } from "@haptic/core";
 import { createWaterMesh, updateWaterMeshBody } from "./water-mesh";
 import { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles } from "./water-handles";
+import { builtInWaterMaterial } from "./water-template";
 
 describe("Water shape handles", () => {
   it("resizes finite volumes symmetrically and edits Depth", () => {
@@ -37,7 +38,7 @@ describe("Water shape handles", () => {
     const commits: unknown[] = [];
     try {
       const body = normalizeWaterBody({ width: 10, length: 6 });
-      const mesh = createWaterMesh(scene, "actor:lake", body);
+      const mesh = createWaterMesh(scene, "actor:lake", body, undefined, builtInWaterMaterial(scene));
       mesh.position.set(20, 1, 0);
       // Culling bounds cover the half width plus the Gerstner waves' horizontal reach.
       const reach = waterHorizontalEnvelope(createDefaultWaterDefinition(), body.waveScale), halfWidth = (x: number) => x + reach;

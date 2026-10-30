@@ -8,10 +8,11 @@ import { applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import {
   distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_EDGE_RAMP, WATER_FIELD_MOVE_MS, WATER_FIELD_SHORE_RANGE, WATER_FIELD_TERRAIN_ALPHA, WaterField,
 } from "./water-field";
+import { builtInWaterMaterial } from "./water-template";
+import { meshWaterNodeSurface } from "./water-node-blocks";
 
 type FieldView = { data: Uint8Array; width: number; height: number; bounds: number[]; depthRange?: readonly [number, number]; fineDepthMin: number; fineDepthSpan: number };
-const liveField = (mesh: Mesh) => (mesh.material as unknown as { pluginManager: { _plugins: Array<{ field?: WaterField | null }> } })
-  .pluginManager._plugins.find((plugin) => plugin.field)!.field!;
+const liveField = (mesh: Mesh) => meshWaterNodeSurface(mesh)!.field!;
 const fieldOf = (mesh: Mesh) => liveField(mesh) as unknown as FieldView;
 /** Decoded texel at a world X/Z. */
 function texel(field: FieldView, x: number, z: number) {
@@ -56,7 +57,7 @@ describe("Water field", () => {
       const side = 16, heights = Array.from({ length: (side + 1) ** 2 }, (_, i) => (i % (side + 1)) < side / 2 ? 3 : -4);
       createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: side, heights });
       const water = createDefaultWaterDefinition();
-      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({}, "global"), water);
+      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({}, "global"), water, builtInWaterMaterial(scene));
       const field = fieldOf(ocean);
       const east = texel(field, 15, -10), inland = texel(field, -12, -10);
       expect(east).toMatchObject({ known: true });
@@ -290,7 +291,7 @@ describe("Water field", () => {
     // A frame some time after the last edit (fields refill at most every WATER_FIELD_MOVE_MS while edits keep coming).
     const later = () => { clock += WATER_FIELD_MOVE_MS; updateSceneWater(scene); };
     try {
-      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30 }), createDefaultWaterDefinition());
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30 }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
       const field = liveField(lake);
       expect(field.texture).toBeNull();
       const floor = createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-3) });
@@ -320,7 +321,7 @@ describe("Water field", () => {
     new FreeCamera("camera", new Vector3(0, 30, -30), scene);
     try {
       createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-3) });
-      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), createDefaultWaterDefinition());
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
       expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(3, 0);
       // The field is keyed on the surface bounds, so they must not follow the moving edges frame by frame.
       const uploads = [vi.spyOn(engine, "updateRawTexture"), vi.spyOn(engine, "createRawTexture")];

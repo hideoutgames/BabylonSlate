@@ -113,15 +113,13 @@ function cameraWorld(camera: Camera, local: Vector3, out: Vector3): Vector3 {
 }
 
 /**
- * Water Mesh Density from the project Water quality (device-clamped), re-read only when the quality revision changes;
- * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials. A frozen Custom
- * Material is marked dirty, so its water nodes prepare the new quality's defines (the march, the planar mirror).
+ * Water Mesh Density from the project Water quality (device-clamped), re-read only when the quality revision changes.
+ * A frozen Material is marked dirty, so its water nodes prepare the new quality's defines (the march, the planar mirror).
  */
 export function syncQuality(s: Surface): void {
   const scene = s.mesh.getScene(), revision = sceneWaterQualityRevision(scene);
-  s.plugin?.syncQuality(scene);
   if (revision === s.qualityRevision) return;
-  if (!s.plugin && !Number.isNaN(s.qualityRevision) && s.mesh.material?.isFrozen) s.mesh.material.markDirty(true);
+  if (!Number.isNaN(s.qualityRevision) && s.mesh.material?.isFrozen) s.mesh.material.markDirty(true);
   s.qualityRevision = revision;
   const density = sceneWaterQualityDeviceClamp(scene).quality.meshDensity;
   if (density !== s.density) { s.density = density; s.version++; }
@@ -214,7 +212,7 @@ export function updateLayout(s: Surface, world: Matrix, inverse: Matrix): Layout
   s.normals = new Float32Array(count * 3); s.baseNormals = new Float32Array(count * 3);
   s.data = new Float32Array(count * 4); s.flow = new Float32Array(count * 3);
   s.spacing = new Float32Array(count);
-  s.offsets = new Float32Array(count * 2); s.bankGradient = new Float32Array(count * 2); s.offsetsZero = true;
+  s.bankGradient = new Float32Array(count * 2);
   const base = s.base, worldBase = s.worldBase;
   s.restMin.setAll(Infinity); s.restMax.setAll(-Infinity);
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
@@ -267,7 +265,6 @@ export function updateLayout(s: Surface, world: Matrix, inverse: Matrix): Layout
   mesh.setVerticesData("slateWaterData", s.data, true, 4);
   mesh.setVerticesData("slateWaterFlow", s.flow, true, 3);
   mesh.setVerticesData("slateWaterBaseNormal", s.baseNormals, true, 3);
-  mesh.setVerticesData("slateWaterOffset", s.offsets, true, 2);
   if (s.blend) {
     s.blendData = new Float32Array(count * 4); s.blendColors = new Float32Array(count * 2); s.blendRest = new Float32Array(count * 6);
     mesh.setVerticesData("slateWaterBlend", s.blendData, true, 4);

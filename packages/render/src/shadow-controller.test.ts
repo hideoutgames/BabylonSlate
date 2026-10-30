@@ -34,6 +34,7 @@ import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, isAtlasShadow, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
+import { builtInWaterMaterial } from "./water-template";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -536,7 +537,7 @@ describe("shared shadow lifecycle", () => {
   it("keeps water out of shadow maps even when authored to cast, while it still receives shadows", () => {
     const { scene, controller } = fixture();
     const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.2), scene);
-    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10, resolution: 8 }));
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10, resolution: 8 }), undefined, builtInWaterMaterial(scene));
     const rock = MeshBuilder.CreateBox("rock", {}, scene);
     for (const mesh of [lake, rock]) controller.setParticipation(mesh, { castShadows: true, receiveShadows: true });
     controller.register(sun, true);

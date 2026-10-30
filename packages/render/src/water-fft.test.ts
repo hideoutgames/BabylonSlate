@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Constants, EffectRenderer, FreeCamera, NullEngine, PBRMaterial, Scene, Vector3, Viewport } from "@babylonjs/core";
+import { Constants, EffectRenderer, FreeCamera, NullEngine, Scene, Vector3, Viewport } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, normalizeWaterDefinition, waterSpectrum, type WaterDefinition,
 } from "@haptic/core";
@@ -7,8 +7,9 @@ import { limitManagedRenderBytes, managedRenderReservations } from "./managed-re
 import { sceneWaterQualityDeviceClamp, updateSceneRenderingSettings } from "./render-settings";
 import { WATER_FFT_IDLE_RUNS, WATER_FFT_MAX_SIMULATIONS, waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_BUILD_TEXELS, waterSpectrumLayout } from "./water-fft-spectrum";
-import type { WaterMaterialPlugin } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
+import { meshWaterNodeSurface } from "./water-node-blocks";
+import { builtInWaterMaterial } from "./water-template";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -38,11 +39,10 @@ function quality(scene: Scene, water: FftQuality) {
 const definition = (patch: Partial<WaterDefinition> = {}) =>
   normalizeWaterDefinition({ ...createDefaultWaterDefinition(), waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, ...patch });
 
-/** Built-in water and the definition its material plugin holds (what a water material passes to waterFftForSurface). */
+/** Built-in water and the definition its water nodes hold (what a water material passes to waterFftForSurface). */
 function lake(scene: Scene, asset: WaterDefinition = definition(), name = "lake") {
-  const mesh = createWaterMesh(scene, name, normalizeWaterBody({ width: 6, length: 6, resolution: 8 }), asset);
-  const plugin = (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
-  return { mesh, water: plugin.water };
+  const mesh = createWaterMesh(scene, name, normalizeWaterBody({ width: 6, length: 6, resolution: 8 }), asset, builtInWaterMaterial(scene));
+  return { mesh, water: meshWaterNodeSurface(mesh)!.water };
 }
 
 /**
@@ -293,15 +293,16 @@ it("keeps water flat when the managed ledger cannot admit the spectrum, retries 
   for (let i = 0; i < Math.ceil(3 * 256 * 256 / WATER_FFT_BUILD_TEXELS) + 10; i++) frame(ultra.engine, ultra.scene, [deep]);
   expect(waterFftForSurface(ultra.scene, deep)).toBeNull();
   expect(waterFftDiagnostics(ultra.scene)).toMatchObject({ denied: 1, created: 0, built: 1, simulations: [] });
-  expect(managedRenderReservations(ultra.engine).reservedBytes).toBe(0);
+  expect(managedRenderReservations(ultra.engine).categoryBytes.water).toBe(0);
   // Refusals are not retried every frame.
   for (let i = 0; i < 10; i++) frame(ultra.engine, ultra.scene, [deep]);
   expect(waterFftDiagnostics(ultra.scene).denied).toBe(1);
 
   // Room for one simulation: a refused second spectrum serves its visible water from the idle one.
   const { engine, scene } = host();
-  limitManagedRenderBytes(engine, footprint(64, 1));
   const a = lake(scene, definition(), "a");
+  // The water Material's lighting holds its own resources; the room left is one simulation's.
+  limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + footprint(64, 1));
   await untilReady(engine, scene, [a.water]);
   a.mesh.setEnabled(false);
   const b = lake(scene, definition({ waveDirection: 70 }), "b");

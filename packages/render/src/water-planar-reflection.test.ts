@@ -16,6 +16,7 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { completeRawUploads } from "./test-support/null-engine-uploads";
 import { createWaterMesh } from "./water-mesh";
 import { retainWaterPlanarReflections, waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera } from "./water-planar-reflection";
+import { builtInWaterMaterial } from "./water-template";
 
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
@@ -81,7 +82,7 @@ function host(options: { floatingOrigin?: boolean; eye?: Vector3; target?: Vecto
 
 function lake(scene: Scene, name: string, size: number, at: Vector3, definition: Partial<WaterDefinition> = {}, material?: Material): Mesh {
   const mesh = createWaterMesh(scene, name, normalizeWaterBody({ width: size, length: size, resolution: 8 }),
-    { ...createDefaultWaterDefinition(), ...definition }, material);
+    { ...createDefaultWaterDefinition(), ...definition }, material ?? builtInWaterMaterial(scene));
   mesh.position.copyFrom(at);
   mesh.computeWorldMatrix(true);
   return mesh;
@@ -113,7 +114,7 @@ it("reflects the flat Object Reflections body covering most of the view, whateve
   // Overlapping bodies at different rest heights: blending them would make none flat, so it stays off here.
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("ultra")), water: { blendDistance: 0 } });
   // Ineligible bodies, each covering more of the view than the winner.
-  const river = createWaterMesh(scene, "river", normalizeWaterBody({ width: 30 }, "river"));
+  const river = createWaterMesh(scene, "river", normalizeWaterBody({ width: 30 }, "river"), undefined, builtInWaterMaterial(scene));
   const tilted = lake(scene, "tilted", 60, new Vector3(0, -0.5, 0));
   tilted.rotation.x = 0.2;
   lake(scene, "no object reflections", 60, new Vector3(0, -0.2, 0), { objectReflections: false });
@@ -233,6 +234,8 @@ it("draws a pre-culled opaque list: no water, helpers, lines, blended or submerg
 
 it("allocates nothing until a view's water asks for a reflection that can draw", async () => {
   const { engine, scene, camera, frame } = host();
+  // The Scene's built-in water Material exists before the count: its own observers are not the reflection's.
+  builtInWaterMaterial(scene);
   const observers = scene.onBeforeRenderObservable.observers.length;
   const reflective = lake(scene, "lake", 40, Vector3.Zero(), { objectReflections: false });
   for (let i = 0; i < 3; i++) frame(false);

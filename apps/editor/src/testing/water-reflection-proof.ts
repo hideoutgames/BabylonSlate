@@ -1,8 +1,7 @@
 /**
- * Test-build-only proof of planar reflections on Custom Material water: a red pole standing in a lake, mirrored by
- * built-in water and by a graph Material's Water Reflection node at Planar quality, and by neither at Sky quality, on
- * the real GPU through the Forward FrameGraph. Both lakes share the plugin's planar lookup, so the pole's reflection
- * covers the same pixels.
+ * Test-build-only proof of planar reflections on Custom Material water: a red pole standing in a lake, mirrored by a
+ * graph Material's Water Reflection node at Planar quality and not at Sky quality, on the real GPU through the Forward
+ * FrameGraph.
  */
 import { Color3, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3, type AbstractEngine, type Material } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody, type WaterReflectionMode } from "@haptic/core";
@@ -71,15 +70,13 @@ export async function runWaterReflectionProof(backend: "webgl2" | "webgpu" = "we
     const water = { ...createDefaultWaterDefinition(), objectReflections: true };
     const body = normalizeWaterBody({ width: 30, length: 30, resolution: 16 });
     const mirror = await reflectionMaterial(scene);
-    const captures: { water: "builtIn" | "graph"; reflections: WaterReflectionMode; pixels: number[] }[] = [];
-    for (const kind of ["builtIn", "graph"] as const) {
-      const lake = createWaterMesh(scene, `${kind} lake`, body, water, kind === "graph" ? mirror.material : null);
-      for (const reflections of ["planar", "sky"] as const) {
-        settings(reflections);
-        captures.push({ water: kind, reflections, pixels: await draw() });
-      }
-      lake.dispose();
+    const captures: { reflections: WaterReflectionMode; pixels: number[] }[] = [];
+    const lake = createWaterMesh(scene, "graph lake", body, water, mirror.material);
+    for (const reflections of ["planar", "sky"] as const) {
+      settings(reflections);
+      captures.push({ reflections, pixels: await draw() });
     }
+    lake.dispose();
     graph.dispose();
     mirror.dispose();
     return { width: canvas.width, height: canvas.height, captures };

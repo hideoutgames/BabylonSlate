@@ -1,23 +1,19 @@
 import {
-  Matrix, Mesh, PBRMaterial, Ray, Vector3, VertexBuffer,
+  Matrix, Mesh, Ray, Vector3, VertexBuffer,
   type AbstractMesh, type Material, type PickingInfo, type Scene, type TrianglePickingPredicate,
 } from "@babylonjs/core";
 import {
-  createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex, normalizeWaterBody, normalizeWaterDefinition,
-  waterBankFadeLength, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope, waterMovesSideways, waterSpectrum, waterWaveEnvelope,
-  type WaterBodyProperties, type WaterDefinition,
+  createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex,
+  normalizeWaterBody, normalizeWaterDefinition, waterBankFadeLength, waterEulerianGradient, waterFootprint,
+  waterHorizontalEnvelope, waterSpectrum, waterWaveEnvelope, type WaterBodyProperties, type WaterDefinition,
 } from "@haptic/core";
 import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
-import {
-  applyWaterMaterialScalars, configureWaterMaterial, contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterMaterialPlugin,
-  WaterVertexWaves,
-} from "./water-material";
+import { contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterVertexWaves } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
-import { WaterReflection } from "./water-reflection";
 import { materialSceneCopyUse, setMeshWaterNodeSurface } from "./water-node-blocks";
 import { materialHasWaterWaves } from "./water-waves-block";
 import { advanceBlendRebuild, markBlendDirty, syncSceneBlend } from "./water-mesh-blend";
@@ -36,12 +32,11 @@ let surfaceIds = 0;
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
 /**
- * Enabled built-in (WaterMaterialPlugin) surfaces per Scene whose asset can sample a scene copy, so admission stays
- * O(1) per frame. An in-place asset edit (`updateWaterMeshDefinition`) moves the surface's count to the new values;
- * enabled state (an authored Enabled off, or a deactivated actor) is followed by `syncCopyIntent`.
+ * Enabled surfaces per Scene whose water nodes can sample a scene copy, so admission stays O(1) per frame. An in-place
+ * asset edit (`updateWaterMeshDefinition`) moves the surface's count to the new values; enabled state (an authored
+ * Enabled off, or a deactivated actor) is followed by `syncCopyIntent`.
  */
 const copyIntents = new WeakMap<Scene, { refracting: number; reflecting: number }>();
-const reflections = new WeakMap<Scene, WaterReflection>();
 
 /** Milliseconds a water surface stays disabled before it gives back its terrain and contact textures (GPU memory). */
 export const WATER_RELEASE_DISABLED_MS = 2000;
@@ -58,7 +53,6 @@ export const WATER_RESTORES_PER_FRAME = 2;
  */
 export function updateSceneWater(scene: Scene, early = false): void {
   const time = advanceSceneWaterClock(scene, early);
-  reflections.get(scene)?.sync();
   const entries = surfaces.get(scene);
   if (!entries) return;
   syncSceneBlend(scene, entries);
@@ -99,7 +93,7 @@ export function updateSceneWater(scene: Scene, early = false): void {
     surface.contacts?.update(now);
     // Visible water a spectrum displaces asks for it (it is already known to be drawn or in view); the simulations run
     // once below, after every request.
-    if (surface.plugin || surface.waves) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
+    if (surface.waves) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
   }
   updateSceneWaterFft(scene, time);
 }
@@ -138,7 +132,7 @@ function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boo
   s.boundsDirty = false;
   if (!s.base.length) return;
   // A blending surface can take a rougher neighbour's waves near the seam: pad by its largest swell scale.
-  const blendScale = s.blend ? s.blend.heightScale * (s.plugin?.waveScale ?? s.body.waveScale) : s.body.waveScale;
+  const blendScale = s.blend ? s.blend.heightScale * s.body.waveScale : s.body.waveScale;
   const vertical = waterWaveEnvelope(s.water, blendScale);
   const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, blendScale);
   const m = inverse.m;
@@ -176,8 +170,7 @@ function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boo
  * frames and swaps it in when it is complete.
  */
 function placeSurface(s: Surface, time: number, now: number): void {
-  if (s.plugin) s.plugin.time = time;
-  else if (s.waves) s.waves.time = time;
+  if (s.waves) s.waves.time = time;
   const placed = s.placed, m = s.mesh.computeWorldMatrix(!s.mesh.isSynchronized()).m;
   let linear = false, translated = false;
   for (let i = 0; i < 12; i++) if (placed[i] !== m[i]) { linear = true; break; }
@@ -189,8 +182,7 @@ function placeSurface(s: Surface, time: number, now: number): void {
     s.world.copyFrom(world); world.invertToRef(s.inverse);
     for (let i = 0; i < 16; i++) placed[i] = m[i]!;
     // A level body can take the view's planar reflection; tilting a volume out of level recompiles without it.
-    if (linear && s.plugin) s.plugin.flat = !restVaries(s);
-    else if (linear && s.nodes && s.nodes.flat !== !restVaries(s)) {
+    if (linear && s.nodes && s.nodes.flat !== !restVaries(s)) {
       s.nodes.flat = !s.nodes.flat;
       // A frozen Material prepares its defines (Water Reflection's planar) again only when marked dirty.
       if (s.mesh.material?.isFrozen) s.mesh.material.markDirty(true);
@@ -254,9 +246,9 @@ function animateSurface(s: Surface, time: number): void {
   Vector3.TransformNormalFromFloatsToRef(0, 1, 0, inverse, up);
   Vector3.TransformNormalFromFloatsToRef(1, 0, 0, inverse, across);
   Vector3.TransformNormalFromFloatsToRef(0, 0, 1, inverse, along);
-  const spectrum = waterSpectrum(s.water), scale = s.plugin?.waveScale ?? s.body.waveScale, o = waveOut, blend = s.blend ? s.blendData : null;
+  const spectrum = waterSpectrum(s.water), scale = s.body.waveScale, o = waveOut, blend = s.blend ? s.blendData : null;
   // Finite bodies fade the horizontal offset to zero at their banks, exactly as queries do (`waterBankGain`).
-  const fadeLength = s.body.kind === "global" ? 0 : waterBankFadeLength(s.water, scale), gerstner = waterMovesSideways(spectrum, scale);
+  const fadeLength = s.body.kind === "global" ? 0 : waterBankFadeLength(s.water, scale);
   for (let i = 0; i < s.base.length; i += 3) {
     const x = s.base[i]!, y = s.base[i + 1]!, z = s.base[i + 2]!;
     const d = i / 3 * 4, v = i / 3 * 2;
@@ -265,7 +257,6 @@ function animateSurface(s: Surface, time: number): void {
     const heightScale = blend ? blend[d]! : 1, offsetScale = blend ? blend[d + 1]! : 1;
     evaluateWaterVertex(spectrum, s.worldBase[i]!, s.worldBase[i + 2]!, time, scale, s.data[d + 1]!, fadeLength * offsetScale, s.bankGradient[v]!, s.bankGradient[v + 1]!, o);
     const height = o[0]! * heightScale, offsetX = o[1]! * offsetScale, offsetZ = o[2]! * offsetScale;
-    s.offsets[v] = offsetX; s.offsets[v + 1] = offsetZ;
     s.positions[i] = x + up.x * height + across.x * offsetX + along.x * offsetZ;
     s.positions[i + 1] = y + up.y * height + across.y * offsetX + along.y * offsetZ;
     s.positions[i + 2] = z + up.z * height + across.z * offsetX + along.z * offsetZ;
@@ -279,11 +270,6 @@ function animateSurface(s: Surface, time: number): void {
   s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
   s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
   s.mesh.updateVerticesData("slateWaterData", s.data);
-  // Only built-in shading reads the offsets; calm water uploads its zeros once.
-  if (s.plugin && (gerstner || !s.offsetsZero)) {
-    s.mesh.updateVerticesData("slateWaterOffset", s.offsets);
-    s.offsetsZero = !gerstner;
-  }
   s.time = time;
 }
 
@@ -327,20 +313,19 @@ export function sceneWaterSamplesSceneCopy(scene: Scene, refraction: boolean, sc
 const COPY_REFRACTS = 1, COPY_REFLECTS = 2;
 
 /**
- * Whether `mesh` is water that mirrors scene objects: its asset's Object Reflections is on and it draws built-in water, or
- * a Custom Material with a Water Reflection node. Only such water can take the view's planar reflection.
+ * Whether `mesh` is water that mirrors scene objects: its asset's Object Reflections is on and its Material has a Water
+ * Reflection node. Only such water can take the view's planar reflection.
  */
 export function waterMeshReflectsObjects(mesh: AbstractMesh): boolean {
   const surface = surfaceByMesh.get(mesh);
   return surface !== undefined && (copyUse(surface) & COPY_REFLECTS) !== 0;
 }
 /**
- * A surface's scene-copy use: built-in water's asset (Refraction above 0, Object Reflections), a Custom Material's water
- * nodes (Water Scene Color and Water Depth Fade refract; Water Reflection marches with the asset's Object Reflections).
+ * A surface's scene-copy use: its Material's water nodes (Water Scene Color and Water Depth Fade refract; Water
+ * Reflection marches with the asset's Object Reflections).
  */
 function copyUse(s: Surface): number {
-  if (!s.plugin) return s.nodeCopyUse & (COPY_REFRACTS | (s.water.objectReflections ? COPY_REFLECTS : 0));
-  return (s.water.refraction > 0 ? COPY_REFRACTS : 0) | (s.water.objectReflections ? COPY_REFLECTS : 0);
+  return s.nodeCopyUse & (COPY_REFRACTS | (s.water.objectReflections ? COPY_REFLECTS : 0));
 }
 
 /**
@@ -372,27 +357,26 @@ export function markBuiltInWaterMaterial(material: Material): void {
 }
 
 /**
- * Whether `mesh` is built-in water: the `WaterMaterialPlugin`, or the graph Material that replaces it
- * (`builtInWaterMaterial`), not a Custom Material. Its drawn variant depends on the render pass that draws it (the
+ * Whether `mesh` is built-in water: it draws the water starter's graph Material (`builtInWaterMaterial`), not a Custom
+ * Material. Its drawn variant depends on the render pass that draws it (the
  * scene-copy pass compiles refraction, the others and the depth pre-pass do not), which a mesh-level warm-up or a
  * pre-graph probe cannot know: only the view's graph probes it, under the real pass.
  */
 export function isBuiltInWaterMesh(mesh: AbstractMesh): boolean {
   if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
   const surface = surfaceByMesh.get(mesh);
-  return surface !== undefined && (surface.plugin !== null || (mesh.material !== null && builtInMaterials.has(mesh.material)));
+  return surface !== undefined && mesh.material !== null && builtInMaterials.has(mesh.material);
 }
 
 /**
- * Whether `mesh` is water that can sample the view's scene copy: built-in water whose asset has Refraction above zero
- * while refraction runs, or Object Reflections while a screen-space march runs, or alpha-blended Custom Material water
- * whose water nodes read the copy (`copyUse`; an opaque Material draws before the copy exists). A per-frame check: no
- * allocation.
+ * Whether `mesh` is alpha-blended water whose water nodes read the view's scene copy (`copyUse`: refraction while
+ * refraction runs, Object Reflections while a screen-space march runs; an opaque Material draws before the copy exists).
+ * A per-frame check: no allocation.
  */
 export function waterMeshSamplesSceneCopy(mesh: AbstractMesh, refraction: boolean, screenSpace: boolean): boolean {
   if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
   const surface = surfaceByMesh.get(mesh);
-  if (!surface || (!surface.plugin && (!surface.nodeCopyUse || !mesh.material?.needAlphaBlendingForMesh(mesh)))) return false;
+  if (!surface || !surface.nodeCopyUse || !mesh.material?.needAlphaBlendingForMesh(mesh)) return false;
   const use = copyUse(surface);
   return (refraction && (use & COPY_REFRACTS) !== 0) || (screenSpace && (use & COPY_REFLECTS) !== 0);
 }
@@ -430,18 +414,6 @@ export function updateWaterMeshBody(mesh: Mesh, input: unknown): boolean {
 }
 
 /**
- * Switch a built-in water surface between GPU vertex waves (the default) and CPU-displaced vertices, e.g. for a
- * CPU-vs-GPU parity capture. Custom Material water takes its path from its graph (`syncCustomMaterial`) and is not
- * switched here. Returns false for other meshes.
- */
-export function setWaterGpuWaves(mesh: Mesh, enabled: boolean): boolean {
-  const surface = surfaceByMesh.get(mesh);
-  if (!surface?.plugin) return false;
-  setSurfaceGpu(surface, enabled);
-  return true;
-}
-
-/**
  * Moves a surface between the GPU path (a static rest grid its vertex shader displaces) and the CPU path (vertices
  * displaced and uploaded every simulation step). The vertex data layout changes with the path, so every static
  * attribute is rewritten.
@@ -449,20 +421,9 @@ export function setWaterGpuWaves(mesh: Mesh, enabled: boolean): boolean {
 function setSurfaceGpu(s: Surface, enabled: boolean): void {
   if (s.gpu === enabled) return;
   s.gpu = enabled;
-  if (s.plugin) {
-    s.plugin.gpuWaves = enabled;
-    // The previous shader must never draw the new vertex layout (it would displace CPU-displaced vertices again): skip
-    // the surface while the new variant compiles, then restore shader hot swapping at its first bind.
-    const material = s.mesh.material;
-    if (material?.allowShaderHotSwapping) {
-      material.allowShaderHotSwapping = false;
-      material.onBindObservable.addOnce(() => { material.allowShaderHotSwapping = true; });
-    }
-  } else {
-    // A Custom Material's Water Waves node reads this swell for the mesh it draws.
-    s.waves = enabled ? new WaterVertexWaves(s.water, s.body) : null;
-    setMeshVertexWaves(s.mesh, s.waves);
-  }
+  // The Material's Water Waves node reads this swell for the mesh it draws.
+  s.waves = enabled ? new WaterVertexWaves(s.water, s.body) : null;
+  setMeshVertexWaves(s.mesh, s.waves);
   s.placed.fill(NaN);
   refreshSurface(s, sceneWaterTime(s.mesh.getScene()));
 }
@@ -475,7 +436,7 @@ function setSurfaceGpu(s: Surface, enabled: boolean): void {
  * other path's vertex data. An unchanged material costs one comparison.
  */
 function syncCustomMaterial(s: Surface): void {
-  if (s.plugin || s.mesh.material === s.material) return;
+  if (s.mesh.material === s.material) return;
   s.material = s.mesh.material;
   setSurfaceGpu(s, materialHasWaterWaves(s.material));
   syncNodeSurface(s);
@@ -489,11 +450,11 @@ function syncNodeSurface(s: Surface): void {
 }
 
 /**
- * Builds the surface's terrain and contact fields. Every surface has them: built-in water's look and every Custom
+ * Builds the surface's terrain and contact fields. Every surface has them: its Material's water nodes and every
  * Material's cut (`WaterCutBlock`: land above the water) read them.
  */
 function attachFields(surface: Surface): void {
-  const { mesh, water, body, plugin } = surface, scene = mesh.getScene();
+  const { mesh, water, body } = surface, scene = mesh.getScene();
   const fieldSurface: WaterFieldSurface = {
     mesh, unbounded: body.kind === "global",
     // Read live: `updateWaterMeshDefinition` edits the shared definition in place.
@@ -516,7 +477,6 @@ function attachFields(surface: Surface): void {
   };
   const field = new WaterField(scene, fieldSurface), contacts = new WaterContactField(scene, fieldSurface);
   surface.field = field; surface.contacts = contacts;
-  if (plugin) { plugin.field = field; plugin.contacts = contacts; }
   field.update(true);
   contacts.update(performance.now(), true);
   mesh.onDisposeObservable.addOnce(() => { field.dispose(); contacts.dispose(); });
@@ -524,15 +484,12 @@ function attachFields(surface: Surface): void {
 
 /**
  * Apply an edited Water definition to a built surface without rebuilding it, e.g. while a Details value scrubs.
- * Built-in shading reads the definition on every bind (swell constants with Steepness, Wave Model, Peak Sharpness and
- * Wave Seed, Color Variation, the Refraction amount and the FFT band's Detail Waves gain) and the CPU waves on every
- * resample, so this re-applies the material's own scalars (Roughness, Reflection Strength), re-evaluates once the
- * defines that follow the asset (Wave Model, Stylized Look, a feature term crossing zero, Refraction or Detail Waves
- * crossing zero, Object Reflections), moves the surface's scene-copy intent to the new values, re-pads the culling
- * bounds for the new wave envelopes, refreshes the contact range of both fields and resamples CPU vertices, also under a
- * paused clock. A Wave Length edit changes the grid step, so the placement below builds a new rest grid in place
- * (Global Water too). The scene's water clock keeps running. Returns false, changing nothing, for other meshes and for
- * edits that need a rebuild: Custom Material replaces the shader.
+ * The water nodes read the definition on every bind and the CPU waves on every resample, so this moves the surface's
+ * scene-copy intent to the new values, re-pads the culling bounds for the new wave envelopes, refreshes the contact
+ * range of both fields and resamples CPU vertices, also under a paused clock. A Wave Length edit changes the grid step,
+ * so the placement below builds a new rest grid in place (Global Water too). The scene's water clock keeps running.
+ * Returns false, changing nothing, for other meshes and for edits that need a rebuild: Custom Material replaces the
+ * shader.
  */
 export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
   const surface = surfaceByMesh.get(mesh);
@@ -543,10 +500,6 @@ export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
   Object.assign(water, next);
   // The copy intent counts this surface by its asset's Refraction and Object Reflections.
   syncCopyIntent(scene, surface);
-  if (surface.plugin && mesh.material instanceof PBRMaterial) {
-    applyWaterMaterialScalars(mesh.material, water);
-    surface.plugin.definitionChanged();
-  }
   surface.boundsDirty = true;
   markBlendDirty(surface);
   // A paused clock repeats the cached time, which would otherwise skip the CPU resample.
@@ -584,46 +537,33 @@ function intersectGridOffset(
   return hit;
 }
 
-/** Finite volumes keep fixed bounds; only Global Water Volume follows the camera. */
-export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProperties, definition?: WaterDefinition, customMaterial?: Material | null): Mesh {
+/**
+ * Finite volumes keep fixed bounds; only Global Water Volume follows the camera. `material` draws the surface: the water
+ * starter's (`builtInWaterMaterial`) for built-in water, or a Custom Material.
+ */
+export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProperties, definition: WaterDefinition | undefined, material: Material): Mesh {
   const body = normalizeWaterBody(input, input.kind), water = normalizeWaterDefinition(definition ?? createDefaultWaterDefinition());
   const mesh = new Mesh(name, scene);
   mesh.setEnabled(body.enabled);
   mesh.metadata = { ...(mesh.metadata ?? {}), slateWater: true };
-  let plugin: WaterMaterialPlugin | null = null;
   const gridOffset = new Float64Array(2);
-  // A GPU Global grid is uploaded relative to its snapped centre, which the vertex shader (built-in or a Water Waves node)
-  // adds back: picks undo it, and it is zero for every surface that uploads absolute positions.
+  // A GPU Global grid is uploaded relative to its snapped centre, which the Water Waves node's vertex shader adds back: picks undo it, and it is zero for every surface that uploads absolute positions.
   setWaterGridOffsetSource(mesh, gridOffset);
   mesh.intersects = (ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo) =>
     intersectGridOffset(mesh, gridOffset, ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo);
-  // A Custom Material with a Water Waves node displaces the rest grid on the GPU like built-in shading; any other
-  // Custom Material gets displaced vertices.
-  const waves = customMaterial && materialHasWaterWaves(customMaterial) ? new WaterVertexWaves(water, body) : null;
-  if (customMaterial) {
-    mesh.material = customMaterial;
-    setMeshVertexWaves(mesh, waves);
-  } else {
-    const material = new PBRMaterial(`${name}:water`, scene);
-    configureWaterMaterial(material, water);
-    plugin = new WaterMaterialPlugin(material, water, body);
-    plugin.mesh = mesh;
-    plugin.gpuWaves = true;
-    let reflection = reflections.get(scene);
-    if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
-    reflection.add(material);
-    mesh.material = material;
-    mesh.onDisposeObservable.addOnce(() => material.dispose());
-  }
+  // A Material with a Water Waves node displaces the rest grid on the GPU; any other gets displaced vertices.
+  const waves = materialHasWaterWaves(material) ? new WaterVertexWaves(water, body) : null;
+  mesh.material = material;
+  setMeshVertexWaves(mesh, waves);
   const empty = new Float32Array();
   const surface: Surface = {
-    mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), gpu: plugin !== null || waves !== null,
-    waves, material: customMaterial ?? null,
+    mesh, water, body, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), gpu: waves !== null,
+    waves, material,
     layoutState: new Float64Array(LAYOUT_STATE).fill(NaN), gridX: new Float64Array(), gridZ: new Float64Array(),
     restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), gridOffset, placed: new Float64Array(16).fill(NaN), time: null, version: 0,
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
-    offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, boundsDirty: false,
+    bankGradient: empty, boundedSubMeshes: -1, boundedFirst: null, boundsDirty: false,
     copyCounted: 0, nodes: null, nodeCopyUse: 0, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendColors: empty, blendRest: empty, blendRevision: 0,
     blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), stage: null, layoutColumns: 0, disabledSince: -1, released: false,
   };
@@ -631,13 +571,12 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   if (!entries) {
     entries = new Set(); surfaces.set(scene, entries);
     const observer = scene.onBeforeRenderObservable.add(() => updateSceneWater(scene));
-    scene.onDisposeObservable.addOnce(() => { scene.onBeforeRenderObservable.remove(observer); surfaces.delete(scene); deleteSceneWaterClock(scene); reflections.delete(scene); });
+    scene.onDisposeObservable.addOnce(() => { scene.onBeforeRenderObservable.remove(observer); surfaces.delete(scene); deleteSceneWaterClock(scene); });
   }
   entries.add(surface);
   surfaceByMesh.set(mesh, surface);
   // Any pass that draws the surface (views, captures, depth pre-pass) keeps its CPU work running next frame.
   mesh.onBeforeRenderObservable.add(() => { surface.drawn = true; });
-  syncCopyIntent(scene, surface);
   markBlendDirty(surface);
   mesh.onDisposeObservable.addOnce(() => {
     entries.delete(surface);
@@ -647,10 +586,10 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   });
   refreshSurface(surface, sceneWaterTime(scene));
   attachFields(surface);
-  if (!plugin) {
-    surface.nodes = { water, field: surface.field, contacts: surface.contacts, partners: NO_PARTNERS, flat: !restVaries(surface) };
-    setMeshWaterNodeSurface(mesh, surface.nodes);
-    syncNodeSurface(surface);
-  }
+  surface.nodes = { water, field: surface.field, contacts: surface.contacts, partners: NO_PARTNERS, flat: !restVaries(surface) };
+  setMeshWaterNodeSurface(mesh, surface.nodes);
+  syncNodeSurface(surface);
+  // Counted once the Material's water nodes are known.
+  syncCopyIntent(scene, surface);
   return mesh;
 }

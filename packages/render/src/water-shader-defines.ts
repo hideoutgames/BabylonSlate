@@ -1,12 +1,11 @@
 /**
- * Built-in water's shader defines, sampler and uniform names, and the tuning constants its shader chunks embed.
+ * The water nodes' shader defines, sampler and uniform names, and the tuning constants their shader chunks embed.
  * `water-material.ts` re-exports the public names.
  */
 import { ThinTexture } from "@babylonjs/core";
 import {
-  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, WATER_SPECTRUM_GRAVITY, waterFoamScale, waterFoamThreshold, waterSpectrum, type WaterDefinition,
-  type WaterShadingDetail,
-  type WaterSpectrum,
+  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, WATER_SPECTRUM_GRAVITY, waterFoamScale, waterFoamThreshold,
+  waterSpectrum, type WaterDefinition, type WaterSpectrum,
 } from "@haptic/core";
 
 /**
@@ -22,9 +21,9 @@ export const SOFT_SHORE_DEPTH = 0.4;
 export const REFRACTION_SHIFT_PX = [28, 3] as const;
 export const REFRACTION_FAR = [6, 60] as const;
 /**
- * Built-in water displaces its rest grid with the FFT spectrum in its vertex shader: the mesh uploads a static rest grid
- * and only the spectrum's textures change. Custom Material water keeps CPU-displaced vertices, unless its graph holds a
- * Water Waves node, whose block sets this define for the meshes that have a `WaterVertexWaves`.
+ * A Water Waves node displaces the rest grid with the FFT spectrum in its vertex shader: the mesh uploads a static rest
+ * grid and only the spectrum's textures change. Its block sets this define for the meshes that have a
+ * `WaterVertexWaves`; water drawn by a graph without the node keeps CPU-displaced vertices.
  */
 export const WATER_GPU_WAVES_DEFINE = "SLATE_WATER_GPU_WAVES";
 /**
@@ -36,22 +35,21 @@ export const WATER_GPU_WAVES_DEFINE = "SLATE_WATER_GPU_WAVES";
  */
 export const WATER_BLEND_DEFINE = "SLATE_WATER_BLEND";
 /**
- * Set in the scene effects' geometry pass (`isSpatialGeometryPass`), for built-in water and for any Material on water
+ * Set in the scene effects' geometry pass (`isSpatialGeometryPass`), for any Material on water
  * (`WaterCutBlock`). Water writes no normal or reflectivity there, so ambient occlusion and Real-Time Reflections skip
  * its pixels: its per-pixel wave normals do not match the displaced mesh in the depth buffer, so occlusion would darken
- * it in blotches that move with the view, and water draws its own reflections. Built-in water's coverage there is its
- * edge fades only, not its view-dependent transparency, so the surface (not what lies below it) fills the buffers at
- * every angle; a Material's geometry writes are opaque already.
+ * it in blotches that move with the view, and water draws its own reflections. A Material's geometry writes are
+ * opaque, so the surface (not what lies below it) fills the buffers at every angle.
  */
 export const WATER_EFFECTS_GEOMETRY_DEFINE = "SLATE_WATER_EFFECTS_GEOMETRY";
 /** A Custom Material's Water Colors node mixes toward a blending mesh's colour partners (`WaterColorsBlock`). */
 export const WATER_NODE_BLEND_DEFINE = "SLATE_WATER_NODE_BLEND";
 /** Where a water node graph reads `slateWaterBlend`: its Water Waves node's blend scaling, or its Water Colors node's shares. */
 export const WATER_BLEND_ATTRIBUTE_CONDITION = `defined(${WATER_BLEND_DEFINE}) || defined(${WATER_NODE_BLEND_DEFINE})`;
-/** Colour partners a blending surface mixes toward (`WaterMaterialPlugin.partners`). */
+/** Colour partners a blending surface mixes toward (`WaterNodeSurface.partners`). */
 export const BLEND_PARTNERS = WATER_BLEND_COLOR_PARTNERS;
 /**
- * The colours a blending surface mixes toward, per partner (`WaterMaterialPlugin.partners`), each by its per-vertex
+ * The colours a blending surface mixes toward, per partner (`WaterNodeSurface.partners`), each by its per-vertex
  * colour share: partner k's uniforms are `slateWaterBlendShallow${k}` and so on, in `COLOR_UNIFORMS` order.
  */
 export const BLEND_COLOR_UNIFORMS = Array.from({ length: BLEND_PARTNERS }, (_, k) =>
@@ -59,43 +57,10 @@ export const BLEND_COLOR_UNIFORMS = Array.from({ length: BLEND_PARTNERS }, (_, k
 /** Per-asset colour uniforms the fragment reads through blended locals (`blendColors`), in `BLEND_COLOR_UNIFORMS` order. */
 export const COLOR_UNIFORMS = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterAbsorb", "slateWaterThrough"] as const;
 export const COLOR_LOCALS = ["swShallowU", "swDeepU", "swFoamU", "swAbsorbU", "swThroughU"] as const;
-/**
- * Numeric shading tier, 0-3, from the device-clamped project Water Shading Detail (`WATER_SHADING_TIERS`). Shader terms
- * compile per tier (`#if SLATE_WATER_QUALITY >= n`); terms a tier drops add their slope variance to the filtered
- * roughness, so lower tiers look like filtered higher tiers rather than glassier water.
- */
-export const WATER_QUALITY_DEFINE = "SLATE_WATER_QUALITY";
-export const WATER_SHADING_TIERS: Readonly<Record<WaterShadingDetail, number>> = { low: 0, medium: 1, high: 2, ultra: 3 };
-/** Tier the constructor declares (and that unbound materials compile): High. */
-export const DEFAULT_TIER = WATER_SHADING_TIERS.high;
-export const Q = WATER_QUALITY_DEFINE;
-/**
- * Scene-copy and reflection features. Each compiles only where it can run: device-effective project Water quality,
- * the asset's intent (Refraction above 0, Object Reflections) and, for the two that sample the view's scene copy, a
- * copy registered for the render pass being drawn (`isMainWaterPass`). Classic frames, captures, previews and Low or
- * Medium water therefore compile none of the code they do not run.
- *
- * - `SLATE_WATER_REFRACTION`: the refracted scene copy replaces the blended background.
- * - `SLATE_WATER_SSR`: a screen-space march against the copy's linear depth, `SLATE_WATER_SSR_STEPS` steps
- *   (Reflection Steps, a compile-time loop bound).
- * - `SLATE_WATER_PLANAR`: the view's planar reflection, for flat bodies at Planar quality; a uniform says per draw
- *   whether this body is the view's dominant one (otherwise it marches, when the copy exists, or keeps the sky).
- */
-export const WATER_OBJECT_DEFINES = {
-  refraction: "SLATE_WATER_REFRACTION", screenSpace: "SLATE_WATER_SSR", screenSpaceSteps: "SLATE_WATER_SSR_STEPS", planar: "SLATE_WATER_PLANAR",
-} as const;
-export const { refraction: REFRACTION, screenSpace: SSR, screenSpaceSteps: SSR_STEPS, planar: PLANAR } = WATER_OBJECT_DEFINES;
-/** Sampler of the view's scene copy (rgb linear colour, a linear view depth); one binding serves both features. */
-export const WATER_SCENE_SAMPLER = "slateWaterSceneSampler";
-/** Sampler of the view's planar reflection. */
-export const WATER_PLANAR_SAMPLER = "slateWaterPlanarSampler";
-/** Preprocessor tests for the copy's sampler and for an object reflection term. */
-export const SAMPLES_COPY = `defined(${REFRACTION}) || defined(${SSR})`;
-export const REFLECTS_OBJECTS = `defined(${SSR}) || defined(${PLANAR})`;
+/** The reflection march's step count define (Reflection Steps, a compile-time loop bound). */
+export const SSR_STEPS = "SLATE_WATER_SSR_STEPS";
 /** Binary refinement steps after the march's first hit. */
 export const SSR_REFINE_STEPS = 4;
-/** Longest reflected ray the march follows (world units), shortened to the view's far plane. */
-export const SSR_MAX_DISTANCE = 500;
 /**
  * Thickness (metres) an object is assumed to have behind its visible surface, base plus per metre of view depth (also
  * well above the copy's half-float depth precision): a reflected ray this far behind a surface still hits it.
@@ -111,7 +76,7 @@ export const EMPTY_TEXTURE = new ThinTexture(null);
 export const PLANAR_REACH = 1;
 /** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface, at Refraction 1. */
 export const REFRACTION_SHIFT = 1.2;
-/** How far built-in water's refraction bends of `REFRACTION_SHIFT` and its caps (`refractionSource`), and the Water Scene Color node's with it. */
+/** How far the Water Scene Color node's refraction bends of `REFRACTION_SHIFT` and its caps. */
 export const WATER_REFRACTION_SCALE = 0.55;
 /** Water thickness (metres) beyond which the refracted shift stops growing. */
 export const REFRACTION_DEPTH_CAP = 3;
@@ -160,15 +125,6 @@ export function waterHazeConstants(far: number, out: Float64Array = new Float64A
 /** Realistic: wavelength-neutral scattering per absorption path unit, on top of each channel's absorption. */
 export const TURBIDITY = 1.6;
 
-
-/** `code` from `tier` up, `otherwise` below it; every directive on its own line. Code blocks start with a newline. */
-export function fromTier(tier: number, code: string, otherwise = ""): string {
-  if (tier <= 0) return code;
-  return `\n#if ${Q} >= ${tier}${code}${otherwise ? `\n#else${otherwise}` : ""}\n#endif`;
-}
-export const ifDefined = (define: string, code: string, otherwise = "") => `\n#ifdef ${define}${code}${otherwise ? `\n#else${otherwise}` : ""}\n#endif`;
-
-
 /**
  * Specular antialiasing: a lobe drawn on a normal that varies across the pixel widens by that variation, the per-axis
  * slope variance a Gaussian pixel filter of this variance (pixels²) sees through the slope's screen derivatives
@@ -211,7 +167,7 @@ export const FOAM_DRIFT_SHARE = 0.03;
 /**
  * Velocity (metres per second of water time, world x and z) at which a body's foam patterns drift with its waves: along
  * Wave Direction, `FOAM_DRIFT_SHARE` of the peak wave's phase speed at Wave Speed, scaled by Wave Scale up to 1, so calm
- * water keeps its foam in place. Built-in water and the Water Foam node add it to the current.
+ * water keeps its foam in place. The Water Foam node adds it to the current.
  */
 export function waterFoamDrift(water: WaterDefinition, waveScale: number, out: { x: number; z: number }): { x: number; z: number } {
   const speed = FOAM_DRIFT_SHARE * Math.sqrt(WATER_SPECTRUM_GRAVITY * Math.max(water.waveLength, 0) / (2 * Math.PI)) * water.waveSpeed

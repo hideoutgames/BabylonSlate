@@ -13,7 +13,6 @@ import { acquireAuthoredOutlineVariant, type AuthoredOutlineVariant } from "./ma
 import { isBuiltInMirrorMaterial } from "./mirror-surface-state";
 import { bindMeshLatticeDeformer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { LATTICE_SAMPLER, LATTICE_UNIFORMS } from "./lattice-deformer-shader";
-import { gpuWaterWaves, WATER_FFT_SAMPLER, WATER_VERTEX_WAVE_UNIFORMS } from "./water-material";
 
 type MaskProgram = {
   source: Material; wrapper?: DrawWrapper; variant?: AuthoredOutlineVariant;
@@ -173,10 +172,6 @@ export class SharedOutlineMaskRenderer {
       defines.push("#define BAKED_VERTEX_ANIMATION_TEXTURE");
       if (hardware) attributes.push("bakedVertexAnimationSettingsInstanced");
     }
-    // Built-in water displaces its static rest grid in the vertex shader: the mask applies the same displacement,
-    // including the FFT detail band's when the material samples it and a blending surface's per-vertex scaling.
-    const water = gpuWaterWaves(source, mesh);
-    if (water) { defines.push(...water.vertexWaveDefines()); attributes.push(...water.vertexWaveAttributes()); }
     PrepareStringDefinesForClipPlanes(source, this.view.scene, defines);
     const joined = defines.join("\n");
     let wrapper = subMesh._getDrawWrapper(this.renderer.renderPassId, true)!;
@@ -187,12 +182,12 @@ export class SharedOutlineMaskRenderer {
       if (cpuSkinning) fallbacks.addCPUSkinningFallback(0, mesh);
       const uniforms = ["world", "viewProjection", "view", "selectionId", "tableSize", "discardNonmembers", "alphaCutoff", "coverageAlpha", "coverageMode", "coverageDiffuse", "diffuseMatrix", "opacityMatrix", "opacityOptions",
         "mBones", "boneTextureInfo", "morphTargetInfluences", "morphTargetCount", "morphTargetTextureInfo", "morphTargetTextureIndices",
-        "bakedVertexAnimationSettings", "bakedVertexAnimationTextureSizeInverted", "bakedVertexAnimationTime", ...(water ? WATER_VERTEX_WAVE_UNIFORMS : [])];
+        "bakedVertexAnimationSettings", "bakedVertexAnimationTextureSizeInverted", "bakedVertexAnimationTime"];
       uniforms.push(...LATTICE_UNIFORMS);
       AddClipPlaneUniforms(uniforms);
       wrapper.setEffect(this.view.scene.getEngine().createEffect(SHARED_OUTLINE_MASK_SHADER, {
         attributes, uniformsNames: uniforms, uniformBuffersNames: [],
-        samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture", LATTICE_SAMPLER, ...(water ? [WATER_FFT_SAMPLER] : [])],
+        samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture", LATTICE_SAMPLER],
         defines: joined, fallbacks, onCompiled: null, onError: this.compileFailure?.for(`Shared Outline ${this.group} Mask`) ?? null,
         indexParameters: { maxSimultaneousMorphTargets: morphs },
         shaderLanguage: this.view.scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
@@ -247,7 +242,6 @@ export class SharedOutlineMaskRenderer {
       BindBonesParameters(mesh, effect); BindMorphTargetParameters(mesh, effect);
       if (mesh.morphTargetManager?.isUsingTextureForTargets) mesh.morphTargetManager._bind(effect);
       mesh.bakedVertexAnimationManager?.bind(effect, hardware);
-      gpuWaterWaves(original, mesh)?.bindVertexWaves(effect, this.view.scene, mesh);
       BindClipPlane(effect, original, this.view.scene);
     }
     effect.setFloat("coverageAlpha", original.alpha * effective.visibility);
