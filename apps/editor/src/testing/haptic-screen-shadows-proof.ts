@@ -6,7 +6,6 @@
  * through the glass.
  */
 import {
-  Color3,
   Color4,
   DirectionalLight,
   Engine,
@@ -15,7 +14,6 @@ import {
   MeshBuilder,
   Ray,
   Scene,
-  StandardMaterial,
   Vector3,
   type AbstractEngine,
   type AbstractMesh,
@@ -104,9 +102,16 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
     // A glass pane in front of floor the box's contact shadow lies on: blended, drawn over that floor.
     const glass = MeshBuilder.CreatePlane("glass", { width: 0.9, height: 0.6 }, scene);
     glass.position.set(-1.4, 0.3, -0.2);
-    const glassMaterial = new StandardMaterial("glass", scene);
-    glassMaterial.diffuseColor = new Color3(0.6, 0.8, 1);
-    glassMaterial.alpha = 0.3;
+    const glassDoc = createDefaultMaterialDocument("glass");
+    glassDoc.blendMode = "translucent";
+    glassDoc.nodes.find((node) => node.id === "baseColor")!.properties.value = [0.6, 0.8, 1];
+    glassDoc.nodes.find((node) => node.id === "output")!.properties[materialPinDefaultPropertyKey("opacity")] = [0.3];
+    const loweredGlass = lowerMaterialDocument(glassDoc);
+    if (!loweredGlass.ok) throw new Error("The glass did not lower");
+    const glassCompiled = compileMaterialPlan(loweredGlass.plan, { scene, name: "glass" });
+    if (!glassCompiled.ok) throw new Error("The glass did not compile");
+    await glassCompiled.ready;
+    const glassMaterial = glassCompiled.material;
     glass.material = glassMaterial;
 
     // A grazing sun from behind the casters, toward the camera's left.

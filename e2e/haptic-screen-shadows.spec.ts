@@ -62,6 +62,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const cel = pixels.filter((pixel) => difference(capture(result, "cel off").pixels, capture(result, "cel high").pixels, pixel) > 0);
     const report = {
       reads: result.captures.map((entry) => [entry.name, entry.screenShadows]),
+      contact: pixels.filter((pixel) => lit(pixel) && near(pixel) && mask.contact[pixel]).length,
       missed: missed.length, darkened: darkened.length,
       open: open.length, openChanged: changed(open).length, ramp: ramp.length, rampChanged: changed(ramp).length,
       beyond: beyond.length, beyondChanged: changed(beyond).length, glass: glass.length, glassChanged: changed(glass).length,
