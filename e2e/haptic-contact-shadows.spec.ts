@@ -117,6 +117,15 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     // CEL draws Contact Hardening as PCF.
     expect(report.cel).toEqual({ differing: 0 });
+    // A pebble too small for the sun's second cascade is left out of it and kept in the first; every pixel whose floor
+    // lies within the first cascade is as it is with every caster drawn.
+    const far = result.farCasters;
+    const differing = Array.from({ length: count }, (_, pixel) => pixel).filter((pixel) => difference(far.kept, far.all, pixel) > 0);
+    report.farCasters = { threshold: far.threshold, listedKept: far.listedKept, listedAll: far.listedAll, differing: differing.length };
+    console.log(JSON.stringify(report.farCasters));
+    expect(far.threshold).toBeGreaterThan(0);
+    expect([far.listedKept[1], far.listedAll[1]]).toEqual([false, true]);
+    expect(differing.filter((pixel) => far.depths[pixel]! >= 0 && far.depths[pixel]! < far.firstCascadeEnd)).toEqual([]);
     // A local map stays cached while only the floating render origin moves, and draws what a fresh draw at that pose would.
     for (const light of ["spot", "point"]) {
       const kept = capture(result, `${light} origin moved`), redrawn = capture(result, `${light} origin moved redrawn`);

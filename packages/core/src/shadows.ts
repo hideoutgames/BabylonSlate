@@ -153,6 +153,12 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
   return result;
 }
 
+/**
+ * Per shadow quality level, the smallest caster a sun cascade after the first draws: its bounding sphere's diameter in
+ * that cascade's texels. A smaller one's shadow is too small to resolve there; the first cascade draws every caster.
+ */
+export const SHADOW_FAR_CASTER_MIN_TEXELS = { low: 3, medium: 2, high: 1.5, ultra: 1 } as const satisfies Record<ShadowProfile, number>;
+
 /** Conservative admission policy; these are not device performance measurements. */
 export const SHADOW_CAPACITY_PROFILES = {
   low: { autoLocalLights: 1, byteBudget: 64 * 1024 ** 2, passes: 8 },
