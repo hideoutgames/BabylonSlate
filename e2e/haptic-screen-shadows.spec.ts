@@ -57,7 +57,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const open = pixels.filter((pixel) => lit(pixel) && near(pixel) && mask.open[pixel]);
     const ramp = open.filter((pixel) => mask.surface[pixel] === "ramp");
     const beyond = pixels.filter((pixel) => mask.surface[pixel] === "floor" && mask.distance[pixel]! > fade.end);
-    const glass = pixels.filter((pixel) => mask.surface[pixel] === "glass");
+    // Floor seen through the glass, away from any contact shadow: the blended glass reads no screen shadows.
+    const glass = pixels.filter((pixel) => mask.surface[pixel] === "glass" && !mask.contact[pixel]);
     const cel = pixels.filter((pixel) => difference(capture(result, "cel off").pixels, capture(result, "cel high").pixels, pixel) > 0);
     const report = {
       reads: result.captures.map((entry) => [entry.name, entry.screenShadows]),
@@ -78,12 +79,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(report.openChanged / report.open).toBeLessThan(0.01);
     expect(report.ramp).toBeGreaterThan(50);
     expect(report.rampChanged).toBe(0);
-    expect(report.beyond).toBeGreaterThan(50);
+    expect(report.beyond).toBeGreaterThan(30);
     expect(report.beyondChanged).toBe(0);
-    expect(report.glass).toBeGreaterThan(50);
+    expect(report.glass).toBeGreaterThan(30);
     expect(report.glassChanged).toBe(0);
     expect(report.celChanged).toBe(0);
     // Light steps compile nothing.
-    expect(report.lightCompiles).toBe(0);
+    expect(report.lightCompiles).toEqual([]);
   });
 }

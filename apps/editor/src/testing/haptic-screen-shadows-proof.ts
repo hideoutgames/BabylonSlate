@@ -159,7 +159,8 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
     applyAuthoredLightProperties(sun, { color: [1, 0.95, 0.85], intensity: 3, castShadows: true, range: 40, outerAngle: 70, innerAngle: 40 });
     sun.direction = new Vector3(0.45, -0.32, -0.83).normalize();
     await settle();
-    const lightCompiles = effects() - before;
+    const lightCompiles = Object.keys((engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects).slice(before)
+      .map((key) => key.replace(/\s+/g, " ").slice(0, 160));
     await capture("high again");
     settings("cel", "off");
     await settle(false);
