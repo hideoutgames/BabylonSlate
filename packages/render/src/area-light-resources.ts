@@ -2,12 +2,17 @@ import { Constants, RawTexture, type AbstractEngine, type Scene } from "@babylon
 import { AREA_LIGHT_LTC_BASE64 } from "./resources/area-lights-ltc";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 
-type Lookup = { LTC1: RawTexture; LTC2: RawTexture; references: number; lease: ManagedRenderLease };
+/**
+ * The tables twice: Babylon's native slot (`scene._ltcTextures`, which its RectAreaLight and native materials read) holds
+ * them as two 64 by 64 textures, and the light block reads them stacked in one 64 by 128 texture (`combined`: LTC1's rows,
+ * then LTC2's), one sampler instead of two.
+ */
+type Lookup = { LTC1: RawTexture; LTC2: RawTexture; combined: RawTexture; references: number; lease: ManagedRenderLease };
 const engines = new WeakMap<AbstractEngine, Lookup>();
 const scenes = new WeakMap<Scene, { lookup: Lookup; references: number }>();
 
-/** Native 9.29 encoding: interleaved RGBA half floats for two 64 by 64 tables. */
-function decodeLookup(): [Uint16Array, Uint16Array] {
+/** Native 9.29 encoding: interleaved RGBA half floats for two 64 by 64 tables. Returns both, and both stacked. */
+function decodeLookup(): [Uint16Array, Uint16Array, Uint16Array] {
   const bytes = Uint8Array.from(atob(AREA_LIGHT_LTC_BASE64), (char) => char.charCodeAt(0));
   if (bytes.byteLength !== 64 * 64 * 8 * 2) throw new Error("Invalid bundled area-light lookup data.");
   const source = new DataView(bytes.buffer);
@@ -18,7 +23,15 @@ function decodeLookup(): [Uint16Array, Uint16Array] {
       tables[1][pixel * 4 + channel] = source.getUint16((pixel * 8 + channel + 4) * 2, true);
     }
   }
-  return tables;
+  const combined = new Uint16Array(64 * 128 * 4);
+  combined.set(tables[0]);
+  combined.set(tables[1], 64 * 64 * 4);
+  return [...tables, combined];
+}
+
+/** The light block's stacked tables for `scene` (`retainAreaLightLookup`), or null while no area light holds them. */
+export function areaLightLtcTexture(scene: Scene): RawTexture | null {
+  return scenes.get(scene)?.lookup.combined ?? null;
 }
 
 /** Fill the native scene slot before constructing a light; no CDN or loading frame. */
@@ -34,19 +47,25 @@ export function retainAreaLightLookup(scene: Scene): () => void {
       if (!lease) throw new Error("Rectangular Area Light lookup textures exceed the managed rendering memory budget.");
       let LTC1: RawTexture | undefined;
       let LTC2: RawTexture | undefined;
+      let combined: RawTexture | undefined;
       try {
       const data = decodeLookup();
-      const texture = (index: 0 | 1) => {
-        const result = RawTexture.CreateRGBATexture(data[index], 64, 64, engine, false, false, Constants.TEXTURE_BILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_HALF_FLOAT);
-        result.name = `slate:areaLTC${index + 1}`;
+      const texture = (index: 0 | 1 | 2, name: string) => {
+        const result = RawTexture.CreateRGBATexture(data[index], 64, index === 2 ? 128 : 64, engine, false, false, Constants.TEXTURE_BILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_HALF_FLOAT);
+        result.name = name;
         result.wrapU = result.wrapV = Constants.TEXTURE_CLAMP_ADDRESSMODE;
         result.gammaSpace = false;
         return result;
       };
-      LTC1 = texture(0); LTC2 = texture(1);
-      lease.commit([{ handle: LTC1.getInternalTexture()!, bytes: AREA_LIGHT_LOOKUP_BYTES / 2, category: "areaLight" }, { handle: LTC2.getInternalTexture()!, bytes: AREA_LIGHT_LOOKUP_BYTES / 2, category: "areaLight" }]);
-      lookup = { LTC1, LTC2, references: 0, lease };
-      } catch (error) { LTC1?.dispose(); LTC2?.dispose(); void releaseManagedRenderLeaseAfterDisposal(engine, lease); throw error; }
+      LTC1 = texture(0, "slate:areaLTC1"); LTC2 = texture(1, "slate:areaLTC2"); combined = texture(2, "slate:areaLTC");
+      const table = AREA_LIGHT_LOOKUP_BYTES / 4;
+      lease.commit([
+        { handle: LTC1.getInternalTexture()!, bytes: table, category: "areaLight" },
+        { handle: LTC2.getInternalTexture()!, bytes: table, category: "areaLight" },
+        { handle: combined.getInternalTexture()!, bytes: 2 * table, category: "areaLight" },
+      ]);
+      lookup = { LTC1, LTC2, combined, references: 0, lease };
+      } catch (error) { LTC1?.dispose(); LTC2?.dispose(); combined?.dispose(); void releaseManagedRenderLeaseAfterDisposal(engine, lease); throw error; }
       engines.set(engine, lookup);
     }
     lookup.references++;
@@ -66,8 +85,10 @@ export function retainAreaLightLookup(scene: Scene): () => void {
     engines.delete(scene.getEngine());
     entry!.lookup.LTC1.dispose();
     entry!.lookup.LTC2.dispose();
+    entry!.lookup.combined.dispose();
     void releaseManagedRenderLeaseAfterDisposal(scene.getEngine(), entry!.lookup.lease);
   };
 }
 
-export const AREA_LIGHT_LOOKUP_BYTES = 2 * 64 * 64 * 4 * 2;
+/** Both tables twice (the native pair and the stacked texture), as RGBA half floats. */
+export const AREA_LIGHT_LOOKUP_BYTES = 4 * 64 * 64 * 4 * 2;

@@ -135,7 +135,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
       const effect = mesh.subMeshes[0]!.effect!, bound: string[] = [];
       vi.spyOn(effect, "setTexture").mockImplementation((name) => { bound.push(name); });
       material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
-      expect(bound, mode).toEqual(expect.arrayContaining(["hapticEnvironmentBrdfSampler", "hapticAreaLtc1Sampler", "hapticAreaLtc2Sampler", "hapticAreaEmissionSampler"]));
+      expect(bound, mode).toEqual(expect.arrayContaining(["hapticEnvironmentBrdfSampler", "hapticAreaLtcSampler", "hapticAreaEmissionSampler"]));
       expect(bound, mode).not.toContain("hapticEnvironmentSampler");
     }
   });

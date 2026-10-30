@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Constants, NullEngine, RawTexture, RenderTargetTexture, Scene, StandardMaterial } from "@babylonjs/core";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { retainAreaLightLookup } from "./area-light-resources";
+import { areaLightLtcTexture, retainAreaLightLookup } from "./area-light-resources";
 import { internalTexturesHeldByScene } from "./scene-texture-references";
 
 describe("internalTexturesHeldByScene", () => {
@@ -40,7 +40,7 @@ describe("internalTexturesHeldByScene", () => {
     const other = new Scene(engine);
     const releaseOther = retainAreaLightLookup(other);
     const release = retainAreaLightLookup(scene);
-    const tables = [scene._ltcTextures!.LTC1, scene._ltcTextures!.LTC2].map((texture) => texture.getInternalTexture()!);
+    const tables = [scene._ltcTextures!.LTC1, scene._ltcTextures!.LTC2, areaLightLtcTexture(scene)!].map((texture) => texture.getInternalTexture()!);
 
     // A Scene that keeps the lookup another Scene released still holds it.
     releaseOther();
