@@ -6,6 +6,7 @@
  */
 import {
   Color4,
+  Matrix,
   DirectionalLight,
   Engine,
   FreeCamera,
@@ -133,11 +134,57 @@ export async function runHapticShadowJitterProof(backend: "webgl2" | "webgpu", t
       captures.push({ name: "temporal off", pixels: await draw(), jittered: jittered() });
     }
     const blocked = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, () => sun.direction.normalizeToNew().scaleInPlace(-100));
+    const outline = shadowOutlineDistance(scene, camera, canvas, engine.isWebGPU, floor, box, sun.direction.normalizeToNew());
     graph.dispose();
-    return { width: canvas.width, height: canvas.height, captures, blocked };
+    return { width: canvas.width, height: canvas.height, captures, blocked, outline };
   } finally {
     scene.dispose();
     engine.dispose();
     canvas.remove();
   }
+}
+
+/**
+ * Per pixel, in readPixels' rows, the signed distance in metres on the floor from the box's shadow outline (negative
+ * inside), or null off the floor: the shadow is the box's corners carried along the sun to the floor, a convex polygon.
+ */
+function shadowOutlineDistance(
+  scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, topDown: boolean, floor: AbstractMesh, box: AbstractMesh, direction: Vector3,
+): (number | null)[] {
+  box.computeWorldMatrix(true);
+  const corners = box.getBoundingInfo().boundingBox.vectorsWorld.map((corner) => {
+    const along = corner.y / direction.y;
+    return [corner.x - direction.x * along, corner.z - direction.z * along] as const;
+  });
+  // Andrew's monotone chain: the hull, counter-clockwise.
+  const sorted = [...corners].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: readonly number[], a: readonly number[], b: readonly number[]) => (a[0]! - o[0]!) * (b[1]! - o[1]!) - (a[1]! - o[1]!) * (b[0]! - o[0]!);
+  const half = (points: (readonly [number, number])[]) => {
+    const chain: (readonly [number, number])[] = [];
+    for (const point of points) {
+      while (chain.length >= 2 && cross(chain[chain.length - 2]!, chain[chain.length - 1]!, point) <= 0) chain.pop();
+      chain.push(point);
+    }
+    return chain.slice(0, -1);
+  };
+  const hull = [...half(sorted), ...half([...sorted].reverse())];
+  const distance = (x: number, z: number) => {
+    let nearest = Infinity, inside = true;
+    for (let index = 0; index < hull.length; index++) {
+      const [ax, az] = hull[index]!, [bx, bz] = hull[(index + 1) % hull.length]!;
+      const ex = bx - ax, ez = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez)));
+      nearest = Math.min(nearest, Math.hypot(x - ax - ex * t, z - az - ez * t));
+      if (ex * (z - az) - ez * (x - ax) < 0) inside = false;
+    }
+    return inside ? -nearest : nearest;
+  };
+  const result: (number | null)[] = [];
+  for (let row = 0; row < canvas.height; row++) {
+    const y = topDown ? row + 0.5 : canvas.height - row - 0.5;
+    for (let column = 0; column < canvas.width; column++) {
+      const hit = scene.pickWithRay(scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera), (mesh) => mesh === floor || mesh === box);
+      result.push(hit?.pickedMesh === floor && hit.pickedPoint ? distance(hit.pickedPoint.x, hit.pickedPoint.z) : null);
+    }
+  }
+  return result;
 }

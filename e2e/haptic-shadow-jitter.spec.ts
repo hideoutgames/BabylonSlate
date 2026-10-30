@@ -68,21 +68,35 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const fixed = shares(capture(result, "fixed").pixels, open, count);
     const phases = Array.from({ length: 16 }, (_, index) => shares(capture(result, `phase ${index + 1}`).pixels, open, count));
     const averaged = fixed.map((value, pixel) => (value < 0 ? -1 : phases.reduce((sum, phase) => sum + phase[pixel]!, 0) / phases.length));
-    // The staircase: how far a pixel's share lies from its 3x3 neighbourhood's mean, over the floor near the shadow's
-    // outline (a straight soft edge is close to linear there; a texel staircase is not).
-    const band = Array.from({ length: count }, (_, pixel) => pixel).filter((pixel) => {
+    // Floor pixels whose 3x3 neighbourhood is all floor: a pixel beside the box's silhouette blends with the box
+    // under temporal anti-aliasing.
+    const inner = (pixel: number) => {
       const row = Math.floor(pixel / width), column = pixel % width;
-      if (row < 1 || column < 1 || row >= height - 1 || column >= width - 1 || edge[pixel]! < 1 || edge[pixel]! > 3) return false;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (fixed[pixel + dy * width + dx]! < 0 || blocked[pixel + dy * width + dx]! < 0) return false;
+      if (row < 1 || column < 1 || row >= height - 1 || column >= width - 1) return false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (blocked[pixel + dy * width + dx]! < 0) return false;
       return true;
-    });
-    const staircase = (image: number[]) => band.reduce((sum, pixel) => {
-      let mean = 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) mean += image[pixel + dy * width + dx]!;
-      return sum + Math.abs(image[pixel]! - mean / 9);
-    }, 0) / band.length;
+    };
+    // The staircase: near the outline a straight soft edge's share depends only on the distance from the box's analytic
+    // shadow outline, a texel staircase's also on where along the edge the pixel lies. Pixels within 0.3 m (about two
+    // map texels) are binned by that distance in centimetres; the staircase is their mean deviation from their bin's mean.
+    const band = Array.from({ length: count }, (_, pixel) => pixel)
+      .filter((pixel) => inner(pixel) && fixed[pixel]! >= 0 && Math.abs(result.outline[pixel] ?? Infinity) < 0.3);
+    const staircase = (image: number[]) => {
+      const bins = new Map<number, number[]>();
+      for (const pixel of band) {
+        const bin = Math.round(result.outline[pixel]! * 100);
+        bins.set(bin, [...(bins.get(bin) ?? []), image[pixel]!]);
+      }
+      let deviation = 0;
+      for (const values of bins.values()) {
+        const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+        deviation += values.reduce((sum, value) => sum + Math.abs(value - mean), 0);
+      }
+      return deviation / band.length;
+    };
     // Away from the outline the jitter changes nothing: the umbra stays dark and the open floor lit.
-    const far = (kind: number) => Array.from({ length: count }, (_, pixel) => pixel).filter((pixel) => blocked[pixel] === kind && edge[pixel]! >= 4 && fixed[pixel]! >= 0);
+    const far = (kind: number) => Array.from({ length: count }, (_, pixel) => pixel)
+      .filter((pixel) => blocked[pixel] === kind && edge[pixel]! >= 4 && fixed[pixel]! >= 0 && inner(pixel));
     const umbra = far(1), lit = far(0);
     const differ = (a: number[], b: number[]) => a.filter((value, index) => value !== b[index]).length;
     const report = {
