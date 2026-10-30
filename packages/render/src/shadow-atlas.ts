@@ -304,11 +304,23 @@ export function placeInPrivateAtlas<T>(atlas: PrivateShadowAtlas, build: () => T
   }
 }
 
-/** Allocates `count` tiles of `size` texels in the Scene's `edge`-texel atlas, or none when one does not fit. */
-function place(scene: Scene, size: number, count: number, edge: number): Placement | null {
+/**
+ * The tile edge of each of a sun's `cascades` at map size `size`: the last `halved` take half the edge, never the first
+ * two, which hold the shadows near the camera (the second starts a few metres out), down to the 256-texel floor
+ * admitted maps keep and never more than `size` (a caster-variant stand-in's tiles are smaller still;
+ * `SHADOW_HALF_TILE_CASCADES`).
+ */
+export function cascadeTileSizes(size: number, cascades: number, halved: number): number[] {
+  const first = Math.max(2, cascades - halved);
+  const far = size > 256 ? Math.max(256, size / 2) : size;
+  return Array.from({ length: cascades }, (_, index) => (index < first ? size : far));
+}
+
+/** Allocates tiles of `sizes` texels in the Scene's `edge`-texel atlas, or none when one does not fit. */
+function place(scene: Scene, sizes: readonly number[], edge: number): Placement | null {
   const atlas = privateAtlas ?? sceneAtlas(scene, edge);
   const tiles: ShadowAtlasTile[] = [];
-  for (let index = 0; index < count; index++) {
+  for (const size of sizes) {
     const tile = atlas.tiles.allocate(size);
     if (!tile) {
       for (const placed of tiles) atlas.tiles.free(placed);
@@ -464,7 +476,7 @@ export class AtlasShadowGenerator extends ShadowGenerator implements AtlasShadow
  * six, one per cube face), or null when the atlas has not that many free.
  */
 export function createAtlasShadowGenerator(light: SpotLight | PointLight, size: number, edge: number): AtlasShadowGenerator | null {
-  const placement = place(light.getScene(), size, light.needCube() ? 6 : 1, edge);
+  const placement = place(light.getScene(), Array.from({ length: light.needCube() ? 6 : 1 }, () => size), edge);
   return placement && construct(placement, () => new AtlasShadowGenerator(size, light));
 }
 
@@ -538,6 +550,8 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   protected override _createTargetRenderTexture(): void {
     this.placement ??= placing!;
     if (this.numCascades !== this.placement.tiles.length) throw new Error("An atlas cascade map keeps the cascade count it was built with.");
+    // Each cascade's fit snaps to its own tile's texels (a Babylon patch hunk).
+    (this as unknown as { _cascadeMapSizes: number[] })._cascadeMapSizes = this.placement.tiles.map((tile) => tile.size);
     this.views ??= this.placement.tiles.map(() => Matrix.Identity());
     this.corrections ??= this.placement.tiles.map(() => new Vector3(1, 1, 1));
     this._shadowMap?.dispose();
@@ -581,6 +595,12 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   }
 }
 
+/** The edge in texels of the tile `generator`'s pass `layer` draws (a cascade, a cube face), or its map's for any other. */
+export function shadowTileSize(generator: ShadowGenerator, layer: number): number {
+  if (isAtlasShadow(generator)) return (generator.tiles[layer] ?? generator.tiles[0]!).size;
+  return generator.getShadowMap()?.getSize().width ?? 0;
+}
+
 /** Whether `generator` draws into the atlas. */
 export function isAtlasShadow(generator: unknown): generator is AtlasShadowGenerator | AtlasCascadedShadowGenerator {
   return generator instanceof AtlasShadowGenerator || generator instanceof AtlasCascadedShadowGenerator;
@@ -591,9 +611,9 @@ export function isAtlasShadow(generator: unknown): generator is AtlasShadowGener
  * when the atlas has not that many free.
  */
 export function createAtlasCascadedShadowGenerator(
-  light: DirectionalLight, size: number, cascades: number, edge: number, camera?: Camera,
+  light: DirectionalLight, size: number, cascades: number, edge: number, camera?: Camera, halved = 0,
 ): AtlasCascadedShadowGenerator | null {
-  const placement = place(light.getScene(), size, cascades, edge);
+  const placement = place(light.getScene(), cascadeTileSizes(size, cascades, halved), edge);
   return placement && construct(placement, () => askingLightEngine(light, () => new AtlasCascadedShadowGenerator(size, light, undefined, camera)));
 }
 

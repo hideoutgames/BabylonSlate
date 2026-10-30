@@ -200,6 +200,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // A spot light's, the sun's and a point light's shadows, drawn through the shadow controller and the frame graph
     // into the atlas: a floor pixel whose view of the light the box or the ball blocks draws as with the light off, any
     // other as with the light's shadow switched off, in both render modes, and the shadow compiles nothing.
+    // The sun's last of three cascades at High draws into a tile of half the edge, sampled as the others are.
+    const far = result.shadow["sun far tiles"].tiles;
+    expect(far.at(-1)!, JSON.stringify(far)).toBe(far[0]! / 2);
     for (const [light, { blocked, modes }] of Object.entries(result.shadow)) {
       const settledPixels = settledShadowPixels(blocked, width, height);
       const shadowReport = modes.map(({ mode, atlas, shadowed, unshadowed, unlit, newLitEffects }) => ({

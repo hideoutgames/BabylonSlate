@@ -245,7 +245,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     const quality = normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } });
     // One local shadow and the sun's two cascades, which only the shadow poses cast, biased past the acne a slanting
     // light would show on the floor.
-    const shadows = normalizeShadowSettings({ cascades: 2, maxLocalLights: 1, depthBias: 0.0008 });
+    let shadows = normalizeShadowSettings({ cascades: 2, maxLocalLights: 1, depthBias: 0.0008 });
     const settings = (mode: RenderMode, cel: Partial<CelShadingSettings> = {}) =>
       setSceneRenderSettings(scene, {
         mode, quality, shadows,
@@ -651,6 +651,24 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       }),
       blocked: floorShadowMask(() => sun.direction.normalizeToNew().scaleInPlace(-100)),
     };
+    // The sun's last of three cascades, whose tile at High has half the edge of the others (`SHADOW_HALF_TILE_CASCADES`):
+    // a 9.5-unit shadow distance (an even split, ending 3.4 units out) puts the blockers and their shadows in it, with no
+    // fade, and a low sun from the side casts them where the camera sees them.
+    const twoCascades = shadows;
+    shadows = normalizeShadowSettings({ profile: "high", cascades: 3, mapSize: 4096, distance: 9.5, fadeFraction: 0, maxLocalLights: 1, depthBias: 0.0008 });
+    const farDirection = new Vector3(-0.9, -0.5, 0.2);
+    const sunFarTiles = {
+      modes: await shadowPoses(sun, () => {
+        sun.direction = farDirection.clone();
+        applyAuthoredLightProperties(sun, { color: [1, 0.95, 0.85], intensity: 3, castShadows: true, range: 40, outerAngle: 70, innerAngle: 40 });
+      }),
+      blocked: floorShadowMask(() => farDirection.normalizeToNew().scaleInPlace(-100)),
+      tiles: [] as number[],
+    };
+    // Its map, as the next frame's sync builds it again.
+    await draw();
+    sunFarTiles.tiles = (sun.getShadowGenerator() as unknown as { tiles: { size: number }[] }).tiles.map((tile) => tile.size);
+    shadows = twoCascades;
     // The bulb's faces, the sun's map released.
     const pointShadow = {
       modes: await shadowPoses(bulb, () => {
@@ -659,7 +677,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       }),
       blocked: floorShadowMask((point) => bulb.getAbsolutePosition().subtract(point)),
     };
-    const shadow = { spot: spotShadow, sun: sunShadow, point: pointShadow };
+    const shadow = { spot: spotShadow, sun: sunShadow, "sun far tiles": sunFarTiles, point: pointShadow };
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     const lightDefines = litEffectKeys(engine).filter((key) => /#define LIGHT\d/.test(effects[key]!.defines)).length;
     const celEffects = cel.effects.filter((key) => /#define HAPTIC_CEL/.test(effects[key]!.defines)).length;

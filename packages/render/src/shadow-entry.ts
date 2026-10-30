@@ -57,6 +57,8 @@ export type AllocationKey = {
   readonly cascades: number;
   /** The edge of the shadow atlas a spot map's tile is in, 0 for a map of its own. */
   readonly atlasEdge: number;
+  /** A sun's last cascades with half-edge tiles (`SHADOW_HALF_TILE_CASCADES`); 0 for any other map. */
+  readonly halfTiles: number;
 };
 
 export function allocationKey(
@@ -64,12 +66,14 @@ export function allocationKey(
   light: ShadowLight,
   cascades: number,
   atlasEdge: number,
+  halfTiles = 0,
 ): AllocationKey {
   return {
     mapSize,
     cube: light.needCube(),
     cascades: light instanceof DirectionalLight ? cascades : 1,
     atlasEdge,
+    halfTiles: light instanceof DirectionalLight ? halfTiles : 0,
   };
 }
 
@@ -85,13 +89,15 @@ export function matchesAllocationKey(
   light: ShadowLight,
   cascades: number,
   atlasEdge: number,
+  halfTiles = 0,
 ): boolean {
   return (
     key !== null &&
     sameJsonNumber(key.mapSize, mapSize) &&
     key.cube === light.needCube() &&
     sameJsonNumber(key.cascades, light instanceof DirectionalLight ? cascades : 1) &&
-    key.atlasEdge === atlasEdge
+    key.atlasEdge === atlasEdge &&
+    key.halfTiles === (light instanceof DirectionalLight ? halfTiles : 0)
   );
 }
 

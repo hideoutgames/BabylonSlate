@@ -26,14 +26,14 @@ import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
 } from "./render-settings";
-import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, SHADOW_CAPACITY_PROFILES } from "@haptic/core";
+import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, SHADOW_CAPACITY_PROFILES, SHADOW_HALF_TILE_CASCADES } from "@haptic/core";
 import { ENGINE_SHADOW_BUDGET } from "./shadow-admission";
 import { managedRenderReservations } from "./managed-render-resources";
 import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, isAtlasShadow, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
 import { builtInWaterMaterial } from "./water-template";
 
 const engines: NullEngine[] = [];
@@ -112,8 +112,8 @@ describe("shared shadow lifecycle", () => {
     const generator = sun.getShadowGenerator() as AtlasCascadedShadowGenerator;
     expect(generator).toBeInstanceOf(AtlasCascadedShadowGenerator);
     expect(generator.numCascades).toBe(3);
-    // Medium's three 2048 cascades in its 4096 atlas.
-    expect(generator.tiles.map((tile) => tile.size)).toEqual([2048, 2048, 2048]);
+    // Medium's three 2048 cascades in its 4096 atlas, the last in a tile of half that edge.
+    expect(generator.tiles.map((tile) => tile.size)).toEqual([2048, 2048, 1024]);
     expect(controller.metrics().bytes).toBe(shadowAtlasBytes(scene));
     // One cascade, which Babylon's own count could not be.
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1 }) });
@@ -121,6 +121,36 @@ describe("shared shadow lifecycle", () => {
     const single = sun.getShadowGenerator() as AtlasCascadedShadowGenerator;
     expect(single).not.toBe(generator);
     expect([single.numCascades, single.tiles.length]).toEqual([1, 1]);
+  });
+
+  it("gives a level's last cascades tiles of half the edge, never the first two and never below the floor", () => {
+    expect((["low", "medium", "high", "ultra"] as const).map((level) => cascadeTileSizes(2048, 4, SHADOW_HALF_TILE_CASCADES[level]))).toEqual([
+      [2048, 2048, 2048, 2048], [2048, 2048, 2048, 1024], [2048, 2048, 2048, 1024], [2048, 2048, 1024, 1024],
+    ]);
+    // The first two hold the near shadows; a 256 tile is the floor; a stand-in's smaller tiles stay as they are.
+    expect([cascadeTileSizes(2048, 1, 2), cascadeTileSizes(2048, 2, 2), cascadeTileSizes(2048, 3, 2), cascadeTileSizes(512, 3, 1),
+      cascadeTileSizes(256, 3, 1), cascadeTileSizes(64, 3, 1)])
+      .toEqual([[2048], [2048, 2048], [2048, 2048, 1024], [512, 512, 256], [256, 256, 256], [64, 64, 64]]);
+  });
+
+  it("snaps a cascade drawn into a half-edge tile to that tile's texels as the camera moves", () => {
+    const { scene, controller } = fixture();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 3, maxLocalLights: 1 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const generator = sun.getShadowGenerator() as AtlasCascadedShadowGenerator;
+    const camera = scene.activeCamera!;
+    // Where the world origin lands, in the last cascade's texels: stabilised cascades put it on a texel corner.
+    const originTexels = () => {
+      generator.getShadowMap()!.onBeforeBindObservable.notifyObservers(generator.getShadowMap()!);
+      const origin = Vector3.TransformCoordinates(Vector3.Zero(), generator.getCascadeTransformMatrix(2)!);
+      return [origin.x, origin.y].map((value) => value * generator.tiles[2]!.size / 2);
+    };
+    for (let step = 0; step < 8; step++) {
+      camera.position.x += 0.37;
+      for (const texel of originTexels()) expect(Math.abs(texel - Math.round(texel))).toBeLessThan(1e-3);
+    }
   });
 
   it("builds the sun's cascades while another Engine is the last created, as a model conversion's NullEngine is", () => {
@@ -208,18 +238,20 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect(controller.generator(sun), JSON.stringify(controller.diagnostics())).not.toBeNull();
     expect(controller.diagnostics().find((entry) => entry.name === "sun")).toMatchObject({ status: "active", mapSize: 4096, reason: null });
-    expect(tileSizes(controller.generator(sun))).toEqual([4096, 4096, 4096, 4096]);
+    // Its last two cascades in tiles of half that edge.
+    expect(tileSizes(controller.generator(sun))).toEqual([4096, 4096, 2048, 2048]);
     expect(controller.metrics().bytes).toBe(8192 ** 2 * 4);
     expect(controller.metrics().bytes).toBeLessThanOrEqual(SHADOW_CAPACITY_PROFILES.ultra.byteBudget);
     expect(sceneRenderingSettings(scene).shadows).toMatchObject({ profile: "ultra", preset: "ultra", mapSize: 4096, cascades: 4, maxLocalLights: 8 });
   });
   // The sun, admitted first, leaves the atlas room for the planned point light's six faces at the level's local size:
-  // Medium's 4096 atlas keeps 10.5 M texels for its three cascades (1024), High's 8192 atlas 41.9 M for four 2048
-  // cascades, and Ultra's 8192 atlas too little for four 4096 ones (2048).
+  // Medium's 4096 atlas keeps 10.5 M texels for its three 2048 cascades (9.4 M, the last at half edge), High's 8192
+  // atlas 41.9 M for four 2048 ones (13.6 M), and Ultra's exactly the 41.9 M its four 4096 ones take, its last two at
+  // half edge.
   it.each([
-    ["medium", 1024],
+    ["medium", 2048],
     ["high", 2048],
-    ["ultra", 2048],
+    ["ultra", 4096],
   ] as const)("admits the %s sun beside a local shadow light at the largest cascades the atlas holds after the light's faces (%i)", (level, mapSize) => {
     const { scene, controller } = fixture();
     Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 16384 });
@@ -234,7 +266,7 @@ describe("shared shadow lifecycle", () => {
       mapSize,
       reason: mapSize < shadows.mapSize ? "shadow map reduced by shadow atlas space" : null,
     });
-    expect(tileSizes(controller.generator(sun))).toEqual(Array(shadows.cascades).fill(mapSize));
+    expect(tileSizes(controller.generator(sun))).toEqual(cascadeTileSizes(mapSize, shadows.cascades, SHADOW_HALF_TILE_CASCADES[level]));
     expect(controller.diagnostics().find((entry) => entry.name === "point")).toMatchObject({
       status: "active", mapSize: shadows.localMapSize, reason: null,
     });
@@ -469,7 +501,8 @@ describe("shared shadow lifecycle", () => {
     for (let layer = 0; layer < 2; layer++) {
       const min = generator.getCascadeMinExtents(layer)!;
       const max = generator.getCascadeMaxExtents(layer)!;
-      const texel = Math.max(max.x - min.x, max.y - min.y) / 1024;
+      // Each cascade's own tile.
+      const texel = Math.max(max.x - min.x, max.y - min.y) / tileSizes(generator)[layer]!;
       expect(effective[layer].worldTexelSize).toBeCloseTo(texel, 7);
       expect(effective[layer].depthBias).toBeCloseTo(Math.min(0.05, (texel / 4) / (max.z - min.z) / 1.5), 8);
       expect(effective[layer].normalBias).toBe(0.001);
@@ -940,8 +973,9 @@ describe("shared shadow lifecycle", () => {
     const { scene, controller } = fixture();
     // A 2048 atlas: a point light's six 512 tiles take two of its four 1024 quadrants.
     scene.getEngine().getCaps().maxTextureSize = 2048;
+    // Low keeps every cascade's tile at the map size.
     updateSceneRenderingSettings(scene, {
-      shadows: normalizeShadowSettings({ cascades: 3, mapSize: 1024, maxLocalLights: 1, localMapSize: 512 }),
+      shadows: normalizeShadowSettings({ profile: "low", cascades: 3, mapSize: 1024, maxLocalLights: 1, localMapSize: 512 }),
     });
     scene.activeCamera!.position.set(0, 0, 0);
     const point = new PointLight("point", new Vector3(5, 0, 0), scene);
@@ -1464,7 +1498,8 @@ describe("view sun shadow maps", () => {
   const atlasSun = (cascades: number) => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
-    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades, maxLocalLights: 1 }) });
+    // Low, whose cascades all take tiles of the map size: these fill the atlas exactly.
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ profile: "low", mapSize: 2048, localMapSize: 1024, cascades, maxLocalLights: 1 }) });
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     controller.register(sun, true);
     controller.sync();

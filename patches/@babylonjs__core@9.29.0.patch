@@ -224,6 +224,24 @@ index 1b0259a1a514fadb726788114650232754c0287f..1571a975c6b821d3e228e2ec5ca1c1d5
          // Not ready?
          if (!texture) {
              if (this._boundTexturesCache[channel] != null) {
+diff --git a/Lights/Shadows/cascadedShadowGenerator.pure.js b/Lights/Shadows/cascadedShadowGenerator.pure.js
+index 07e060fe39fa225fb5a2a6c06080d09492431f6d..2c9b02901404b690586b06c7135b54369963bf52 100644
+--- a/Lights/Shadows/cascadedShadowGenerator.pure.js
++++ b/Lights/Shadows/cascadedShadowGenerator.pure.js
+@@ -410,9 +410,11 @@ export class CascadedShadowGenerator extends ShadowGenerator {
+             // Create the rounding matrix, by projecting the world-space origin and determining
+             // the fractional offset in texel space
+             Vector3.TransformCoordinatesToRef(ZeroVec, this._transformMatrices[cascadeIndex], Tmpv1); // tmpv1 = shadowOrigin
+-            Tmpv1.scaleInPlace(this._mapSize / 2);
++            // Haptic: a cascade drawn into a tile of its own size (`_cascadeMapSizes`) snaps to that tile's texels.
++            const cascadeMapSize = this._cascadeMapSizes?.[cascadeIndex] ?? this._mapSize;
++            Tmpv1.scaleInPlace(cascadeMapSize / 2);
+             Tmpv2.copyFromFloats(Math.round(Tmpv1.x), Math.round(Tmpv1.y), Math.round(Tmpv1.z)); // tmpv2 = roundedOrigin
+-            Tmpv2.subtractInPlace(Tmpv1).scaleInPlace(2 / this._mapSize); // tmpv2 = roundOffset
++            Tmpv2.subtractInPlace(Tmpv1).scaleInPlace(2 / cascadeMapSize); // tmpv2 = roundOffset
+             Matrix.TranslationToRef(Tmpv2.x, Tmpv2.y, 0.0, TmpMatrix);
+             this._projectionMatrices[cascadeIndex].multiplyToRef(TmpMatrix, this._projectionMatrices[cascadeIndex]);
+             this._viewMatrices[cascadeIndex].multiplyToRef(this._projectionMatrices[cascadeIndex], this._transformMatrices[cascadeIndex]);
 diff --git a/Materials/Node/Blocks/Input/inputBlock.pure.js b/Materials/Node/Blocks/Input/inputBlock.pure.js
 index af4f41adb3fc89a86ecc1ca868192ba4a754135b..5b9b5dc169279876b20f2359ab70007b6c5a1ea3 100644
 --- a/Materials/Node/Blocks/Input/inputBlock.pure.js

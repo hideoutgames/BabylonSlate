@@ -5,7 +5,7 @@ import {
   type Scene,
   type Camera,
 } from "@babylonjs/core";
-import { SHADOW_CAPACITY_PROFILES, type ShadowSettings } from "@haptic/core";
+import { SHADOW_CAPACITY_PROFILES, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { isDirectionalLightExcluded } from "./light-policy";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -13,7 +13,7 @@ import {
   availableSceneShadowBytes,
   type ShadowCost,
 } from "./shadow-admission";
-import { SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge } from "./shadow-atlas";
+import { cascadeTileSizes, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge } from "./shadow-atlas";
 import {
   admissionPasses,
   allocationRequestKey,
@@ -241,14 +241,17 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
         entry.generator.getShadowMap()?.getSize().width ?? mapSize,
       );
     mapSize = 2 ** Math.floor(Math.log2(mapSize));
-    // A tile per cascade or face.
+    // A tile per cascade or face; a sun's last cascades may take half-edge tiles (`cascadeTileSizes`).
+    const area = (size: number) => directional
+      ? cascadeTileSizes(size, passes, SHADOW_HALF_TILE_CASCADES[settings.profile]).reduce((sum, tile) => sum + tile ** 2, 0)
+      : passes * size ** 2;
     const room = atlasEdge ** 2 - atlasArea - (directional ? localReserve : 0);
-    while (mapSize >= 256 && passes * mapSize ** 2 > room) mapSize /= 2;
+    while (mapSize >= 256 && area(mapSize) > room) mapSize /= 2;
     if (mapSize < 256) {
       decision.reason = "shadow atlas space";
       continue;
     }
-    atlasArea += passes * mapSize ** 2;
+    atlasArea += area(mapSize);
     decision.mapSize = mapSize;
     decision.reason = recovery
       ? "shadow map reduced after allocation failure"
