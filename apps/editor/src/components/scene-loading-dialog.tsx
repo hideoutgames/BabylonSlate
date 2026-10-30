@@ -18,7 +18,7 @@ export type SceneLoadingDialogProps = {
   /** Percent complete, or `null` when the phase has no measurable progress (document reads). */
   progress: number | null;
   phase: SceneLoadingPhase;
-  /** Shown after the phase as `(done/total)`: shader warm-up units, rehearsed light changes. */
+  /** Shown after the phase as `(done/total)`: shader warm-up units. */
   count?: SceneLoadCount;
   onStop?: () => void;
   failed?: boolean;

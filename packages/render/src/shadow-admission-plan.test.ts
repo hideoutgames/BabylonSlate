@@ -35,7 +35,7 @@ function plan(lights: (SpotLight | PointLight | DirectionalLight)[], atlasEdge: 
   const entries = new Map(lights.map((light) => [light, entry(light)]));
   return planShadowAdmission({
     entries, settings: normalizeShadowSettings({ ...sun, maxLocalLights: 8, localMapSize }), camera: null,
-    previousCamera: null, restoring: null, at: 0, budget: budget(atlasEdge), measure: () => 0,
+    previousCamera: null, at: 0, budget: budget(atlasEdge), measure: () => 0,
   });
 }
 

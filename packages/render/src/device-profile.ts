@@ -16,8 +16,6 @@ export interface DeviceProfile {
    * the texture budget turned off in Engine Settings nothing is evicted, here too: that is the user's choice.
    */
   textureByteCeiling: number;
-  /** Play's load rehearsal: whether it rehearses repeats of a kind, and when it ends. */
-  loadRehearsal: { repeats: boolean; ceilingMs: number };
   /** Distinct rect area light emission textures the lighting plan's path holds at once (5.3 MiB each). */
   areaEmissionLayers: number;
   /**
@@ -29,32 +27,25 @@ export interface DeviceProfile {
   shadowAtlasCap: number | null;
 }
 
-/**
- * Desktops and laptops. The rehearsal's ceiling leaves room inside the first presentation's own compile watch, which
- * renews its budget for `SCENE_PREPARATION_CEILING_MS` (300 s) from its start, for the frame it then presents.
- */
+/** Desktops and laptops. */
 const DESKTOP: DeviceProfile = {
   mobile: false,
   shadowMapCap: null,
   textureByteCeiling: TEXTURE_BYTE_CEILING,
-  loadRehearsal: { repeats: true, ceilingMs: 120_000 },
   areaEmissionLayers: 4,
   lightMaximum: { directional: 4, point: 32, spot: 16, rect: 4 },
   shadowAtlasCap: null,
 };
 
 /**
- * Phones and tablets: WKWebView kills a page past its memory limit and iPad WebKit compiles a rehearsal step's
- * variants in ten seconds or more, so maps and textures stay at the Medium level's (the A16 iPad's) and the
- * rehearsal leaves out repeats and ends sooner. What it leaves out compiles when gameplay first makes that change.
- * The light block draws half the desktop's lights, which a mobile GPU loops over in every lit pixel, and its shadow
+ * Phones and tablets: WKWebView kills a page past its memory limit, so maps and textures stay at the Medium level's
+ * (the A16 iPad's). The light block draws half the desktop's lights, which a mobile GPU loops over in every lit pixel, and its shadow
  * atlas holds the capped maps (16 MiB).
  */
 const MOBILE: DeviceProfile = {
   mobile: true,
   shadowMapCap: MOBILE_SHADOW_MAP_CAP,
   textureByteCeiling: 768 * MIB,
-  loadRehearsal: { repeats: false, ceilingMs: 45_000 },
   areaEmissionLayers: 2,
   lightMaximum: { directional: 2, point: 16, spot: 8, rect: 2 },
   shadowAtlasCap: 2048,

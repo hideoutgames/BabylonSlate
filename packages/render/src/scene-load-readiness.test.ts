@@ -101,13 +101,13 @@ describe("runtime scene readiness", () => {
 
 
 describe("blocking runtime loading host", () => {
-  it("shows the shader warm-up's and the light rehearsal's counts, then the first frame", async () => {
+  it("shows the shader warm-up's counts, then the first frame", async () => {
     const shown: string[] = [];
     const readiness = createSceneLoadReadiness({
       handle: {
         whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {},
         prewarmSceneMaterials: async (_owner, onProgress) => { onProgress?.({ done: 0, total: 2 }); onProgress?.({ done: 2, total: 2 }); },
-        presentFirstFrame: async (_owner, onLights) => { onLights?.({ done: 1, total: 3 }); onLights?.(null); },
+        presentFirstFrame: async () => {},
       },
       loading: {
         acquire: () => () => {}, paint: async () => {}, painted: () => {},
@@ -121,8 +121,7 @@ describe("blocking runtime loading host", () => {
     readiness.receive({ type: "sceneRealized", ...identity });
     await vi.waitFor(() => expect(shown.at(-1)).toBe("closed"));
     expect(shown.slice(shown.indexOf("Compiling Shaders"))).toEqual([
-      "Compiling Shaders", "Compiling Shaders 0/2", "Compiling Shaders 2/2", "Presenting First Frame", "Preparing Lights 1/3",
-      "Presenting First Frame", "closed",
+      "Compiling Shaders", "Compiling Shaders 0/2", "Compiling Shaders 2/2", "Presenting First Frame", "closed",
     ]);
   });
 

@@ -68,7 +68,7 @@ export interface PlayContent {
   particleLibrary: ParticleLibrary;
   materialDocuments: Map<string, MaterialDocument>;
   materialFunctions: Map<string, MaterialFunctionDocument>;
-  /** The light parts the startup sources may spawn, which Play's load rehearses. */
+  /** The light parts the startup sources may spawn. */
   spawnableLights: ReadonlyMap<string, SpawnableLight>;
   navmeshBytes: Uint8Array | null;
   sceneNavmeshBytes: ReadonlyMap<string, Uint8Array>;

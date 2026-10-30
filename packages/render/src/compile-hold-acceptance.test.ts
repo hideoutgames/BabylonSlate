@@ -113,21 +113,18 @@ vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
     capturePipelineTarget: vi.fn(actual.capturePipelineTarget),
   };
 });
-// The load's light rehearsal applies and draws its light changes behind the loading screen; a case leaves it out unless
-// it sets `rehearseLoad`, so its cause meets the scene as a load without it would.
-vi.mock("./load-rehearsal", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./load-rehearsal")>();
+// The load draws its starting state without view culling behind the loading screen; a case leaves it out unless it
+// sets `drawStartingState`, so its cause meets the scene as a load without it would.
+vi.mock("./starting-state-draw", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./starting-state-draw")>();
   return {
     ...actual,
-    createLoadRehearsal: vi.fn((...args: Parameters<typeof actual.createLoadRehearsal>) => rehearseLoad
-      ? actual.createLoadRehearsal(...args)
-      : {
-        done: true, frame() {}, check() {}, cancel() {}, release() {},
-        report: () => ({ steps: 0, drawn: 0, omitted: [], timedOut: [], unrestored: [], variants: 0, pipelines: 0, ms: 0 }),
-      }),
+    createStartingStateDraw: vi.fn((...args: Parameters<typeof actual.createStartingStateDraw>) => drawStartingState
+      ? actual.createStartingStateDraw(...args)
+      : { done: true, frame() {}, check() {}, cancel() {}, release() {} }),
   };
 });
-let rehearseLoad = false;
+let drawStartingState = false;
 const {
   beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred, effectDrawn: actualEffectDrawn,
   deferredPipelinesStalled: actualDeferredPipelinesStalled, capturePipelineTarget: actualCapturePipelineTarget,
@@ -167,7 +164,7 @@ afterEach(() => {
   vi.mocked(effectDrawn).mockImplementation(actualEffectDrawn);
   vi.mocked(deferredPipelinesStalled).mockImplementation(actualDeferredPipelinesStalled);
   vi.mocked(capturePipelineTarget).mockImplementation(actualCapturePipelineTarget);
-  rehearseLoad = false;
+  drawStartingState = false;
   frameMs = FRAME_MS;
 });
 
@@ -642,7 +639,7 @@ async function settle(world: PlayWorld): Promise<void> {
   const presented = world.handle.presentFirstFrame();
   let done = false;
   void presented.finally(() => { done = true; });
-  // The load rehearses its light changes in the presentation's loading frames (two or more each).
+  // The load's starting-state draw runs in the presentation's loading frames.
   for (let index = 0; index < 400 && (index < 4 || !done); index++) await world.frame();
   await presented;
   // A few steady frames: shadow maps render once, lighting settles.
@@ -867,7 +864,7 @@ describe("compile holds after the first frame", () => {
     // leaves out, asks its receivers for no new variant (the block reads lights as data), and its map's casters find
     // their depth variants compiled at load (`warmCasterVariants`). On WebGPU their pipelines are created by the map's
     // warm render before it first draws, never by a view's draw or synchronously in the shadow pass.
-    rehearseLoad = true;
+    drawStartingState = true;
     const lights = spec.lights?.() ?? [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])];
     const world = playWorld(model, lights, [], "actor-2", spec.load());
     if (spec.full) updateSceneRenderingSettings(world.handle.scene,
@@ -888,13 +885,11 @@ describe("compile holds after the first frame", () => {
       requesters = effectRequesters(world);
       if (spec.full) expect([10, 11, 12].map((slotId) => isForwardLightExcluded(lightOf(slotId)!))).toEqual([false, false, true]);
     });
-    const rehearsal = world.handle.loadRehearsalStats();
     const map = lightOf(40) ? findSceneShadowController(world.handle.scene)!.generator(lightOf(40)!) : null;
     // The spawned actor's own meshes (its invisible origin and light helper, which the camera pass's scene probe prepares
     // with fresh defines) are a spawn of their own: what the load warmed did not have its light.
     const own = (name: string | undefined) => name === "actor-40" || !!name?.startsWith("actor-40|");
     expect({
-      rehearsed: rehearsal?.timedOut.length === 0 && rehearsal.omitted.length === 0 && rehearsal.unrestored.length === 0,
       // The change took effect while the subject kept its variant: a spawned light is lit (in place of a point when the
       // budget is full) and a shadowed one's map has drawn.
       kept: world.subjectEffect() === before,
@@ -904,148 +899,21 @@ describe("compile holds after the first frame", () => {
       pipelines: record.pipelines,
       synchronous: world.driver.synchronous.size,
       heldFrames: record.heldFrames, holdRaised: record.holdRaised, paused: record.pausedFrames > 0, recovered: record.recovered,
-    }, JSON.stringify({ record, rehearsal })).toEqual({
-      rehearsed: true, kept: true, spawned: true, effects: 0, pipelines: 0, synchronous: 0, heldFrames: 0, holdRaised: false,
+    }, JSON.stringify({ record })).toEqual({
+      kept: true, spawned: true, effects: 0, pipelines: 0, synchronous: 0, heldFrames: 0, holdRaised: false,
       paused: false, recovered: true,
     });
   });
 
-  /**
-   * Each authored light (lit, and whether its shadow map is admitted, with its darkness) and the subject's defines at
-   * the first presented frame and 17 frames later, for a load with or without its rehearsal. The frames run on a 16 ms
-   * clock once loading has drawn six frames, and in both runs afterwards: a residency the load's own admissions began
-   * has not run out by the first presentation, and runs out (250 ms) within the later frames.
-   */
-  async function presentedAdmission(rehearse: boolean, actors: Actor[], configure?: (world: PlayWorld) => void, load = classesLoad([])) {
-    // A fresh world per run: the previous one's Engine, clock and render spy go first.
-    for (const cleanup of cleanups.splice(0).reverse()) cleanup();
-    if (vi.isMockFunction(SceneRenderCoordinator.prototype.render)) vi.mocked(SceneRenderCoordinator.prototype.render).mockRestore();
-    rehearseLoad = rehearse;
-    const world = playWorld("sync", actors, [], "actor-2", load);
-    configure?.(world);
-    const controller = () => findSceneShadowController(world.handle.scene)!;
-    const state = () => ({
-      lights: world.handle.scene.lights.filter((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX))
-        .map((light) => {
-          const map = controller().generator(light);
-          return `${light.name.slice(AUTHORED_LIGHT_PREFIX.length)}:${light.isEnabled() ? "lit" : "off"}${map ? `+map@${map.getDarkness()}` : ""}`;
-        }).sort(),
-      defines: world.subjectEffect()?.defines ?? null,
-    });
-    await withClock(world.handle.prewarmSceneMaterials());
-    const presentation = world.handle.presentFirstFrame();
-    let presented = false;
-    void presentation.finally(() => { presented = true; });
-    for (let index = 0; index < 400 && (index < 4 || !presented); index++) {
-      frameMs = index < 6 ? FRAME_MS : 16;
-      await world.frame();
-    }
-    await presentation;
-    const first = state();
-    frameMs = 16;
-    for (let index = 0; index < 17; index++) await world.frame();
-    return { first, later: state(), rehearsal: world.handle.loadRehearsalStats() };
-  }
-
-  const ADMISSION_SCENARIOS = [
-    ["shadow maps", [
-      spot(12, [-1, 4, 3], { castShadows: true }), spot(10, [0, 4, 0], { castShadows: true }), spot(11, [1, 4, 0.2], { castShadows: true }),
-    ], undefined],
-    ["the Forward light budget", [point(10, [0, 4, 0]), point(11, [1, 4, 0.2]), spot(12, [-1, 4, 0.6])], (world: PlayWorld) =>
-      updateSceneRenderingSettings(world.handle.scene,
-        { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 2 } }) })],
-  ] as const;
-
-  it.each(ADMISSION_SCENARIOS)("a load rehearsal leaves %s as a load without it does", async (_, actors, configure) => {
-    // Admission ranks by history: an admitted light keeps its place against a slightly nearer one. Switching a light
-    // off lets a waiting one take its map or slot; reverting that change must not leave the waiting light admitted.
-    const baseline = await presentedAdmission(false, [...actors], configure);
-    const rehearsed = await presentedAdmission(true, [...actors], configure);
-    expect((rehearsed.rehearsal?.steps ?? 0) > 0, JSON.stringify(rehearsed.rehearsal)).toBe(true);
-    expect({ first: rehearsed.first, later: rehearsed.later }).toEqual({ first: baseline.first, later: baseline.later });
-  });
-
-  it("a load rehearses generic spawned lights only when its scripts may spawn a Class it does not hold", async () => {
-    // Spawner's Spawn Actor names Pickup. Held, Pickup's own lights are known (it has none); not held, Pickup loads on
-    // demand with its spawn, and the load rehearses a point and a spot, each with and without shadows, in its place.
-    const spawner: ScriptBundleEntry = {
-      assetGuid: "spawner", classId: "Spawner", source: 'out = await ctx.spawnActorAsync("Pickup", transform);', anchors: [], entryPoints: [],
-    };
-    const pickup: ScriptBundleEntry = { assetGuid: "pickup", classId: "Pickup", source: "", anchors: [], entryPoints: [] };
-    const steps = async (load: SpawnableLightLoad) =>
-      (await presentedAdmission(true, [point(10, [-1.5, 2.5, -1])], undefined, load)).rehearsal!.steps;
-    const none = await steps(classesLoad([]));
-    const held = await steps(classesLoad([spawner, pickup], [{ guid: "spawner", dependencies: ["pickup"] }]));
-    const unheld = await steps(classesLoad([spawner], [{ guid: "spawner", dependencies: ["pickup"] }]));
-    expect([held - none, unheld - none]).toEqual([0, 4]);
-  });
-
-  it("a load rehearsal reports a change whose revert could not give back a standby shadow map", async () => {
-    // One Forward local slot: the nearer spot takes it from the spot realized first, whose map stays on standby from the
-    // first presentation frame. Its own switch-off releases that map, and nothing rebuilds a standby map, so the
-    // rehearsal says so.
-    rehearseLoad = true;
-    const world = playWorld("sync", [spot(12, [-1, 4, 6], { castShadows: true }), spot(10, [0, 4, 0], { castShadows: true })]);
-    updateSceneRenderingSettings(world.handle.scene,
-      { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 1 } }) });
-    const controller = findSceneShadowController(world.handle.scene)!;
-    const far = world.handle.scene.lights.find((light) => light.name === `${AUTHORED_LIGHT_PREFIX}12`)!;
-    await withClock(world.handle.prewarmSceneMaterials());
-    const presentation = world.handle.presentFirstFrame();
-    let presented = false;
-    void presentation.finally(() => { presented = true; });
-    for (let index = 0; index < 400 && (index < 4 || !presented); index++) await world.frame();
-    await presentation;
-    expect({ map: controller.boundGenerator(far) !== null, unrestored: world.handle.loadRehearsalStats()?.unrestored })
-      .toEqual({ map: false, unrestored: [`${AUTHORED_LIGHT_PREFIX}12 off`] });
-  });
-
-  it("a Play load counts its shader warm-up units and then each light change its rehearsal prepares", async () => {
-    // The world's sun and three lights, each switched off and its shadows toggled: eight changes, shown one by one after
-    // the starting state drew, then the first frame alone.
-    rehearseLoad = true;
+  it("a Play load counts its shader warm-up units", async () => {
     const world = playWorld("sync", [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])]);
     const shaders: string[] = [];
     await withClock(world.handle.prewarmSceneMaterials(undefined, ({ done, total }) => shaders.push(`${done}/${total}`)));
-    const lights: string[] = [];
-    const presentation = world.handle.presentFirstFrame(undefined, (count) => lights.push(count ? `${count.done}/${count.total}` : "frame"));
-    let presented = false;
-    void presentation.finally(() => { presented = true; });
-    for (let index = 0; index < 400 && (index < 4 || !presented); index++) await world.frame();
-    await presentation;
     const total = Number(shaders[0]!.split("/")[1]);
-    expect({ shadersFrom: shaders[0], shadersTo: shaders.at(-1), shaderSteps: shaders.length, lights }).toEqual({
+    expect({ shadersFrom: shaders[0], shadersTo: shaders.at(-1), shaderSteps: shaders.length }).toEqual({
       shadersFrom: `0/${total}`, shadersTo: `${total}/${total}`, shaderSteps: total + 1,
-      lights: ["frame", "1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "8/8", "frame"],
     });
     expect(total).toBeGreaterThan(0);
-  });
-
-  it("a Play load on a phone or tablet leaves out the repeats of a kind it rehearsed", async () => {
-    // The world's sun and three lights: each switched off, and each started casting. The two points are one kind, so
-    // the second's changes are repeats.
-    const rehearsal = async (mobile: boolean) => {
-      // A fresh world per run: the previous one's Engine, clock and render spy go first.
-      for (const cleanup of cleanups.splice(0).reverse()) cleanup();
-      if (vi.isMockFunction(SceneRenderCoordinator.prototype.render)) vi.mocked(SceneRenderCoordinator.prototype.render).mockRestore();
-      if (mobile) {
-        vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)", maxTouchPoints: 5 });
-        cleanups.push(() => vi.unstubAllGlobals());
-      }
-      rehearseLoad = true;
-      const world = playWorld("sync", [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])]);
-      await withClock(world.handle.prewarmSceneMaterials());
-      const presentation = world.handle.presentFirstFrame();
-      let presented = false;
-      void presentation.finally(() => { presented = true; });
-      for (let index = 0; index < 400 && (index < 4 || !presented); index++) await world.frame();
-      await presentation;
-      const { steps, omitted } = world.handle.loadRehearsalStats()!;
-      return { steps, omitted: omitted.map((label) => label.slice(AUTHORED_LIGHT_PREFIX.length)) };
-    };
-    expect([await rehearsal(false), await rehearsal(true)]).toEqual([
-      { steps: 8, omitted: [] }, { steps: 6, omitted: ["11 off", "11 shadows on"] },
-    ]);
   });
 
   it.each(MODELS)("a burst of swaps adopts at most FIRST_DRAWS_PER_FRAME new variants per frame: %s", async (model) => {
@@ -1082,7 +950,7 @@ describe("compile holds after the first frame", () => {
   });
 
   /**
-   * Shadow starts nothing rehearsed: each light's actors before, the light casting, its slot, and whether its map
+   * Shadow starts: each light's actors before, the light casting, its slot, and whether its map
    * renders several passes (a point light's faces, a sun's cascades).
    */
   const shadowStarts = {
@@ -1596,8 +1464,8 @@ describe("compile holds after the first frame", () => {
 
   // WebGL2: a program's first draw holds iPad WebKit, so the load draws what it compiled behind its loading screen.
   it.each(["sync", "parallel"] as const)("a spawned actor's Material the load warmed was drawn by the load, not by its spawn: %s", async (model) => {
-    rehearseLoad = true;
-    // The spawn warm-up's staged box draws in the load rehearsal's starting state, so the spawn draws nothing new.
+    drawStartingState = true;
+    // The spawn warm-up's staged box draws in the load's starting-state draw, so the spawn draws nothing new.
     const world = playWorld(model, [], ["surface-a"]);
     await settle(world);
     const before = world.handle.renderDiagnostics().firstDraws!;
@@ -1610,8 +1478,8 @@ describe("compile holds after the first frame", () => {
 
   it.each(MODELS)("Play culls a mesh outside the camera's view, which the load drew so it needs no first draw in view: %s", async (model) => {
     // Intermediate priority would draw every mesh every frame; Play clears that for meshes whose bounds hold. The
-    // load rehearsal draws without view culling, so the barrel behind the camera draws there first.
-    rehearseLoad = true;
+    // load's starting-state draw draws without view culling, so the barrel behind the camera draws there first.
+    drawStartingState = true;
     const world = playWorld(model, [{ slotId: 20, guid: "barrel", position: [0, 1, -40], assign: { meshAssetGuid: null, meshKind: "box" } }], ["surface-b"]);
     world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-b" });
     const drawn = spawnDraws();

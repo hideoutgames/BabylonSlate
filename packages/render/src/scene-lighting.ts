@@ -47,7 +47,7 @@ function isLitMaterial(material: Material): material is LitMaterial {
   return typeof material.maxSimultaneousLights === "number";
 }
 
-type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[]; reserve: (lights: number) => void };
+type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[] };
 
 // Shadow layout tokens per enabled light: shadowEnabled, generator, area
 // emission texture, area emission readiness.
@@ -121,16 +121,6 @@ function sceneLighting(scene: Scene): SceneLighting {
     lightingByScene.set(scene, lighting);
   }
   return lighting;
-}
-
-/**
- * Raises the Scene's light inventory (the most lights it has held, which sizes every lit Material's light capacity,
- * `MAXLIGHTCOUNT`) to at least `lights`, from the next sync on, as if it had held that many. A Play load that may spawn
- * a light reserves one more than the Scene holds before it compiles anything, so that spawn (and the load rehearsal's
- * stand-in for it) leaves every Material's capacity, and the variants the load compiled, as they are.
- */
-export function reserveSceneLightInventory(scene: Scene, lights: number): void {
-  sceneLighting(scene).reserve(lights);
 }
 
 /**
@@ -349,11 +339,6 @@ function installSceneLighting(scene: Scene): SceneLighting {
   return {
     sync,
     invalidate,
-    reserve: (lights) => {
-      if (lights <= lightInventory) return;
-      lightInventory = lights;
-      dirty = true;
-    },
     limits: () => {
       if (!admission.limited.length) return [];
       const limited = `Limited: ${lightsInCreationOrder(admission.limited)
