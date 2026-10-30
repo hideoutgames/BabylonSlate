@@ -104,22 +104,17 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(["spot", "sun", "point"].map((light) => capture(result, light).atlas)).toEqual([true, true, true]);
     // A few pixels from each shadow's outline the open floor is as lit as without the shadow, and the shadowed floor
     // keeps under a share of the light: Babylon's PCSS lightens a shadow with its blockers' distance (measured: sun 0.41
-    // and 0.40 three pixels in; point 0.29 on WebGL2 and 0.19 on WebGPU two pixels in). The sun's cascades compare
-    // against the receiver's plane, so the floor does not shadow itself as under Babylon's PCSS.
-    const expectations: [string, number, number, number][] = [["sun", 3, 150, 0.5], ["point", 2, 400, 1 / 3]];
+    // and 0.40 three pixels in; spot 0.24 on WebGL2 and 0.20 on WebGPU, point 0.29 and 0.19, two pixels in). The sun's
+    // cascades compare against the receiver's plane, so the floor does not shadow itself as under Babylon's PCSS. The
+    // spot's mask covers its cone, which holds the box's shadow: the ball's lies past the cone's outer angle, where
+    // the spot lights nothing and its shadow is not defined.
+    const expectations: [string, number, number, number][] = [["sun", 3, 150, 0.5], ["spot", 2, 150, 1 / 3], ["point", 2, 400, 1 / 3]];
     for (const [light, ring, umbra, share] of expectations) {
       const band = bandsOf[light]![ring]!;
       expect(band.umbra, light).toBeGreaterThan(umbra);
       expect(band.openShadowed, light).toBe(0);
       expect(band.umbraShare, light).toBeLessThan(share);
     }
-    // The spot light's open floor likewise. On WebGL2 a patch of the ball's shadow keeps the light (measured: 70 of 389
-    // shadowed pixels two pixels in, none on WebGPU); Babylon's own PCSS drew the same patch lit, PCF draws it
-    // shadowed. The rest of the shadow keeps under a third of the light.
-    const spot = bandsOf.spot![2]!;
-    expect(spot.umbra).toBeGreaterThan(300);
-    expect(spot.openShadowed).toBe(0);
-    expect(spot.umbraLit).toBeLessThanOrEqual(spot.umbra / 4);
     // CEL draws Contact Hardening as PCF.
     expect(report.cel).toEqual({ differing: 0 });
   });
