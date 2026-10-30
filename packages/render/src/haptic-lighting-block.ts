@@ -103,6 +103,17 @@ function environmentCube(scene: Scene): BaseTexture | null {
   return texture && texture.isCube && texture.isReadyOrNotBlocking() ? texture : null;
 }
 
+const lightLoopProofScenes = new WeakSet<Scene>();
+
+/**
+ * Test proofs only: the Scene's lit graph Materials draw, instead of their lighting, how many point and spot lights the
+ * loops visited (red) and how many of those were in range (green), 4/255 apart in display space
+ * (`HAPTIC_LIGHT_LOOP_PROOF`). Set before the Materials prepare.
+ */
+export function setHapticLightLoopProof(scene: Scene): void {
+  lightLoopProofScenes.add(scene);
+}
+
 /**
  * Lit surface shading for graph Materials: every light from the `HapticLights` block and the
  * Scene's environment cube, through one lighting function (`haptic-lighting-shader.ts`). No Babylon light block
@@ -166,6 +177,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     defines.setValue("HAPTIC_BRDF_RGBD", !!GetEnvironmentBRDFTexture(scene)?.isRGBD, true);
     defines.setValue("HAPTIC_EXACT_SRGB", scene.getEngine().useExactSrgbConversions, true);
     defines.setValue("HAPTIC_TWO_SIDED", !nodeMaterial.backFaceCulling, true);
+    defines.setValue("HAPTIC_LIGHT_LOOP_PROOF", lightLoopProofScenes.has(scene), true);
   }
 
   override isReady(mesh: AbstractMesh): boolean {

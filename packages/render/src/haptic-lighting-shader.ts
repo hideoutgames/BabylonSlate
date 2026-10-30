@@ -458,6 +458,11 @@ fn hapticSunShadowFactor(P: vec3f, dPdx: vec3f, dPdy: vec3f) -> f32 {
 export const HAPTIC_LIGHTING_FUNCTIONS_GLSL = `
 #define HAPTIC_PI 3.1415926535897932
 #define HAPTIC_EPSILON 0.0000001
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+// Point and spot lights the loops visited, and those in range (\`setHapticLightLoopProof\`).
+int hapticLoopVisited = 0;
+int hapticLoopReached = 0;
+#endif
 float hapticSaturateEps(float x) { return clamp(x, HAPTIC_EPSILON, 1.0); }
 float hapticPow5(float x) { float x2 = x * x; return x2 * x2 * x; }
 // GGX alpha from perceptual roughness, floored so a smooth surface keeps a highlight.
@@ -607,7 +612,13 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     vec4 color = hapticPoint[i * 3 + 1];
     vec3 offset = position.xyz - P;
     float distanceSquared = dot(offset, offset);
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopVisited++;
+#endif
     if (distanceSquared >= color.w * color.w) continue;
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopReached++;
+#endif
     float lightDistance = sqrt(distanceSquared);
     vec3 L = offset / max(lightDistance, HAPTIC_EPSILON);
     float NdotL = hapticSaturateEps(dot(N, L));
@@ -624,7 +635,13 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     vec4 color = hapticSpot[i * 4 + 2];
     vec3 offset = position.xyz - P;
     float distanceSquared = dot(offset, offset);
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopVisited++;
+#endif
     if (distanceSquared >= color.w * color.w) continue;
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopReached++;
+#endif
     float lightDistance = sqrt(distanceSquared);
     vec3 L = offset / max(lightDistance, HAPTIC_EPSILON);
     float NdotL = hapticSaturateEps(dot(N, L));
@@ -682,7 +699,13 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     vec4 color = hapticPoint[i * 3 + 1];
     vec3 offset = hapticPoint[i * 3].xyz - P;
     float distanceSquared = dot(offset, offset);
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopVisited++;
+#endif
     if (distanceSquared >= color.w * color.w) continue;
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopReached++;
+#endif
     vec3 L = normalize(offset);
     float NdotL = max(dot(N, L), 0.0);
     float shadow = slateCelShadowVisibility(hapticPointShadow(hapticPoint[i * 3 + 2], -offset, P));
@@ -694,7 +717,13 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     vec4 color = hapticSpot[i * 4 + 2];
     vec3 offset = hapticSpot[i * 4].xyz - P;
     float distanceSquared = dot(offset, offset);
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopVisited++;
+#endif
     if (distanceSquared >= color.w * color.w) continue;
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopReached++;
+#endif
     vec3 L = normalize(offset);
     float NdotL = max(dot(N, L), 0.0);
     float falloff = hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w, hapticSpot[i * 4 + 3].y);
@@ -808,6 +837,13 @@ vec3 hapticReflectance = (vec3(1.0) - hapticS.F0) * hapticBrdf.x + hapticS.F0 * 
 ${output.specularIndirect} = hapticRadiance(hapticP, hapticN, hapticV, hapticAlpha(hapticS.roughness)) * hapticEnvironmentScale * hapticReflectance * hapticOcclusion * hapticEnergy;
 #endif
 #endif
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+// Visited and in-range light counts, 4/255 apart in display space; nothing else lights the pixel.
+${output.diffuseDirect} = hapticToLinear(vec3(float(hapticLoopVisited), float(hapticLoopReached), 0.0) * (4.0 / 255.0));
+${output.specularDirect} = vec3(0.0);
+${output.diffuseIndirect} = vec3(0.0);
+${output.specularIndirect} = vec3(0.0);
+#endif
 `;
 }
 
@@ -815,6 +851,10 @@ ${output.specularIndirect} = hapticRadiance(hapticP, hapticN, hapticV, hapticAlp
 export const HAPTIC_LIGHTING_FUNCTIONS_WGSL = `
 const HAPTIC_PI: f32 = 3.1415926535897932;
 const HAPTIC_EPSILON: f32 = 0.0000001;
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+var<private> hapticLoopVisited: i32 = 0;
+var<private> hapticLoopReached: i32 = 0;
+#endif
 fn hapticSaturateEps(x: f32) -> f32 { return clamp(x, HAPTIC_EPSILON, 1.0); }
 fn hapticPow5(x: f32) -> f32 { let x2 = x * x; return x2 * x2 * x; }
 fn hapticAlpha(roughness: f32) -> f32 { return roughness * roughness + 0.0005; }
@@ -950,7 +990,13 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
     let color = HapticLights.hapticPoint[i * 3 + 1];
     let offset = position.xyz - P;
     let distanceSquared = dot(offset, offset);
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopVisited++;
+#endif
     if (distanceSquared >= color.w * color.w) { continue; }
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopReached++;
+#endif
     let lightDistance = sqrt(distanceSquared);
     let L = offset / max(lightDistance, HAPTIC_EPSILON);
     let NdotL = hapticSaturateEps(dot(N, L));
@@ -966,7 +1012,13 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
     let color = HapticLights.hapticSpot[i * 4 + 2];
     let offset = position.xyz - P;
     let distanceSquared = dot(offset, offset);
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopVisited++;
+#endif
     if (distanceSquared >= color.w * color.w) { continue; }
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopReached++;
+#endif
     let lightDistance = sqrt(distanceSquared);
     let L = offset / max(lightDistance, HAPTIC_EPSILON);
     let NdotL = hapticSaturateEps(dot(N, L));
@@ -1021,7 +1073,13 @@ fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInflu
     let color = HapticLights.hapticPoint[i * 3 + 1];
     let offset = HapticLights.hapticPoint[i * 3].xyz - P;
     let distanceSquared = dot(offset, offset);
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopVisited++;
+#endif
     if (distanceSquared >= color.w * color.w) { continue; }
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopReached++;
+#endif
     let L = normalize(offset);
     let NdotL = max(dot(N, L), 0.0);
     let shadow = slateCelShadowVisibility(hapticPointShadow(HapticLights.hapticPoint[i * 3 + 2], -offset, P));
@@ -1033,7 +1091,13 @@ fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInflu
     let color = HapticLights.hapticSpot[i * 4 + 2];
     let offset = HapticLights.hapticSpot[i * 4].xyz - P;
     let distanceSquared = dot(offset, offset);
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopVisited++;
+#endif
     if (distanceSquared >= color.w * color.w) { continue; }
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+    hapticLoopReached++;
+#endif
     let L = normalize(offset);
     let NdotL = max(dot(N, L), 0.0);
     let falloff = hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w, HapticLights.hapticSpot[i * 4 + 3].y);
@@ -1137,6 +1201,13 @@ let hapticOcclusion = hapticHorizon * hapticHorizon * clamp((hapticNdotVUnclampe
 let hapticReflectance = (vec3f(1.0) - hapticS.F0) * hapticBrdf.x + hapticS.F0 * hapticBrdf.y;
 ${output.specularIndirect} = hapticRadiance(hapticP, hapticN, hapticV, hapticAlpha(hapticS.roughness)) * hapticEnvironmentScale * hapticReflectance * hapticOcclusion * hapticEnergy;
 #endif
+#endif
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+// Visited and in-range light counts, 4/255 apart in display space; nothing else lights the pixel.
+${output.diffuseDirect} = hapticToLinear(vec3f(f32(hapticLoopVisited), f32(hapticLoopReached), 0.0) * (4.0 / 255.0));
+${output.specularDirect} = vec3f(0.0);
+${output.diffuseIndirect} = vec3f(0.0);
+${output.specularIndirect} = vec3f(0.0);
 #endif
 `;
 }

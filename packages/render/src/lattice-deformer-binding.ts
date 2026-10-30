@@ -61,3 +61,9 @@ let authoredShadowRelease: ((material: Material) => void) | undefined;
 export function registerLatticeShadowAdapter(adapter: (material: Material) => boolean, release?: (material: Material) => void): void { authoredShadowAdapter = adapter; authoredShadowRelease = release; }
 export function ensureLatticeShadowAdapter(material: Material): boolean { return authoredShadowAdapter?.(material) ?? false; }
 export function releaseLatticeShadowAdapter(material: Material): void { authoredShadowRelease?.(material); }
+/** Shadow depth wrappers installed only for lattice cages, each with whether that still holds. */
+const cageShadowWrappers = new WeakMap<object, () => boolean>();
+/** Marks a shadow depth wrapper whose only vertex change is the lattice, applied to meshes with an active cage. */
+export function markCageShadowWrapper(wrapper: object, cageOnly: () => boolean): void { cageShadowWrappers.set(wrapper, cageOnly); }
+/** True when `wrapper` draws a mesh without an active cage as its own geometry, as the stock depth program would. */
+export function isCageOnlyShadowWrapper(wrapper: object): boolean { return cageShadowWrappers.get(wrapper)?.() === true; }

@@ -26,6 +26,7 @@ import { sceneShadowController } from "./shadow-controller";
 import { attachModelLods, generateModelLods } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
+import { createLandscapeMesh, updateLandscapeMesh } from "./landscape-mesh";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 
 const engines: NullEngine[] = [];
@@ -143,7 +144,8 @@ describe("local shadow refresh", () => {
     expect(pending.subMeshes).toBeUndefined();
     controller.setParticipation(pending, { castShadows: true });
     expect(render()).toBe(6);
-    expect(render()).toBe(6); // Unknown geometry remains conservative.
+    // Neither geometry nor parts draws nothing; the geometry it later gets is tracked.
+    expect(render()).toBe(0);
 
     VertexData.CreateBox({}).applyToMesh(pending);
     expect(render()).toBe(6);
@@ -153,6 +155,48 @@ describe("local shadow refresh", () => {
     pending.releaseSubMeshes();
     expect(render()).toBe(6);
     expect(render()).toBe(0);
+  });
+
+  it("caches landscape chunks and refreshes once when sculpting rewrites their heights", async () => {
+    const { scene, material, controller, render } = await fixture();
+    const properties = { width: 4, depth: 4, subdivisions: 2, heights: Array.from({ length: 9 }, () => 0) };
+    const root = createLandscapeMesh(scene, "land", properties);
+    const chunks = root.getChildMeshes() as Mesh[];
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      // Its buffers are updatable, as sculpting rewrites them in place.
+      expect(chunk.getVertexBuffer(VertexBuffer.PositionKind)!.isUpdatable()).toBe(true);
+      chunk.material = material;
+      controller.setParticipation(chunk, { castShadows: true });
+    }
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    updateLandscapeMesh(root, { ...properties, heights: properties.heights.map((_, index) => (index === 4 ? 1 : 0)) });
+    for (const chunk of chunks) chunk.material = material;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    root.dispose();
+  });
+
+  it("caches static thin instances, refreshes for a new placement buffer, and keeps updatable ones live", async () => {
+    const { scene, material, controller, render } = await fixture();
+    const placements = (x: number) => Float32Array.from([...Matrix.Translation(x, 0, 0).m, ...Matrix.Translation(-x, 0, 0).m]);
+    const plants = MeshBuilder.CreateBox("plants", {}, scene);
+    plants.material = material;
+    plants.thinInstanceSetBuffer("matrix", placements(1), 16, true);
+    controller.setParticipation(plants, { castShadows: true });
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    plants.thinInstanceSetBuffer("matrix", placements(2), 16, true);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    plants.thinInstanceCount = 1;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    // An updatable buffer is rewritten in place without notice.
+    plants.thinInstanceSetBuffer("matrix", placements(1), 16, false);
+    expect([render(), render()]).toEqual([6, 6]);
+    plants.dispose();
   });
 
   it("renders the first cube after readiness probes, then reuses unchanged content and allocation", async () => {

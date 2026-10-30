@@ -68,6 +68,15 @@ function chunkData(data: LandscapeProperties, chunk: Omit<Chunk, "mesh">): Verte
   return vertex;
 }
 
+/** Each chunk's own geometry: only `updateLandscapeMesh` writes its updatable buffers, through notified vertex updates. */
+const chunkGeometries = new WeakMap<Mesh, Mesh["geometry"]>();
+
+/** True while `mesh` is a landscape chunk drawing its own geometry, whose updates `geometryRevision` counts. */
+export function hasRevisionTrackedLandscapeGeometry(mesh: Mesh): boolean {
+  const geometry = chunkGeometries.get(mesh);
+  return !!geometry && mesh.geometry === geometry;
+}
+
 export function createLandscapeMesh(scene: Scene, name: string, properties: unknown, assets?: MeshAssetContext): Mesh {
   const data = parseLandscapeProperties(properties);
   const root = new Mesh(name, scene);
@@ -78,6 +87,7 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
     const mesh = new Mesh(`${name}:landscape:${x}:${z}`, scene);
     const chunk = { mesh, x, z, width: Math.min(CHUNK_CELLS, data.subdivisions - x), depth: Math.min(CHUNK_CELLS, data.subdivisions - z) };
     chunkData(data, chunk).applyToMesh(mesh, true);
+    chunkGeometries.set(mesh, mesh.geometry);
     mesh.parent = root;
     mesh.renderingGroupId = RENDERING_GROUP.world;
     mesh.hasVertexAlpha = false;

@@ -19,7 +19,7 @@ import { HelperProgramPlugin } from "./helper-program";
 import { TextureQualityPlugin } from "./texture-quality";
 import { StandardFogPlugin } from "./standard-fog";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
-import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
+import { hasMeshLatticeDeformer, isCageOnlyShadowWrapper } from "./lattice-deformer-binding";
 
 const compiled = new WeakSet<NodeMaterial>();
 const compiledShape = new WeakMap<
@@ -95,6 +95,19 @@ export function hasStockVertexStage(material: Material): boolean {
   );
 }
 
+/**
+ * True when a mesh's thin instances keep their placements: static matrix and attribute buffers, which change only
+ * through `thinInstanceSetBuffer` (a new buffer) or a per-instance setter, both of which the refresh scheduler tracks.
+ */
+export function hasStaticThinInstances(mesh: Mesh): boolean {
+  if (mesh.thinInstanceAllowAutomaticStaticBufferRecreation) return false;
+  const thin = mesh._thinInstanceDataStorage;
+  if (thin.matrixBuffer?.isUpdatable() || thin.previousMatrixBuffer?.isUpdatable()) return false;
+  for (const kind in mesh._userThinInstanceBuffersStorage?.vertexBuffers ?? {})
+    if (mesh._userThinInstanceBuffersStorage.vertexBuffers[kind]?.isUpdatable()) return false;
+  return true;
+}
+
 /** Conservative shape eligibility; the refresh scheduler tracks mutable depth/culling state. */
 export function canCacheShadowMaterial(
   material: Material,
@@ -111,7 +124,7 @@ export function canCacheShadowMaterial(
     source.skeleton ||
     source.morphTargetManager ||
     source.bakedVertexAnimationManager ||
-    source.hasThinInstances ||
+    (source.hasThinInstances && !hasStaticThinInstances(source)) ||
     source.onBeforeRenderObservable.hasObservers() ||
     source.onBeforeBindObservable.hasObservers()
   )
@@ -119,7 +132,8 @@ export function canCacheShadowMaterial(
   if (
     material.alpha !== 1 ||
     source.visibility !== 1 ||
-    material.shadowDepthWrapper ||
+    // A wrapper only cages use draws this mesh, which has none, as the stock depth program does.
+    (material.shadowDepthWrapper && !isCageOnlyShadowWrapper(material.shadowDepthWrapper)) ||
     (material.transparencyMode !== null &&
       material.transparencyMode !== Material.MATERIAL_OPAQUE) ||
     material.needAlphaBlendingForMesh(source) ||
