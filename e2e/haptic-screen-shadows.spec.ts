@@ -64,7 +64,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       missed: missed.length, darkened: darkened.length,
       open: open.length, openChanged: changed(open).length, ramp: ramp.length, rampChanged: changed(ramp).length,
       beyond: beyond.length, beyondChanged: changed(beyond).length, glass: glass.length, glassChanged: changed(glass).length,
-      celChanged: cel.length, lightCompiles: result.lightCompiles,
+      celChanged: cel.length, lightCompiles: result.lightCompiles, planned: result.planned,
     };
     await testInfo.attach(`haptic-screen-shadows-${backend}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
     console.log(JSON.stringify(report));

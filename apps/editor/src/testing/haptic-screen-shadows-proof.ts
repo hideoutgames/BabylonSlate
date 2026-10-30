@@ -32,7 +32,7 @@ import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngin
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { allowSceneScreenShadows } from "../../../../packages/render/src/render-settings";
+import { allowSceneScreenShadows, sceneRenderingSettings } from "../../../../packages/render/src/render-settings";
 import { SCREEN_SHADOW_LEVELS } from "../../../../packages/render/src/screen-shadows";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
@@ -132,7 +132,11 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
       for (let frame = 0; frame < 60 && generator?.getDarkness() !== 0; frame++) await draw();
     };
     const captures: Capture[] = [];
-    const capture = async (name: string) => captures.push({ name, pixels: await draw(), screenShadows: reads() });
+    const planned: Array<[string, string | null, string[]]> = [];
+    const capture = async (name: string) => {
+      captures.push({ name, pixels: await draw(), screenShadows: reads() });
+      planned.push([name, sceneRenderingSettings(scene).effectsPlan?.screenShadows ?? null, graph.taskNames()]);
+    };
     await settle();
     await capture("off");
     settings("pbr", "high");
@@ -162,7 +166,7 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
     const mask = surfaceMask(scene, camera, canvas, engine.isWebGPU, floor, ramp, glass, casters, sun.direction.normalizeToNew().scaleInPlace(-1), reach);
     graph.dispose();
     return {
-      width: canvas.width, height: canvas.height, captures, mask, lightCompiles,
+      width: canvas.width, height: canvas.height, captures, mask, lightCompiles, planned,
       fade: { start: SCREEN_SHADOW_LEVELS.high.fadeStart, end: SCREEN_SHADOW_LEVELS.high.fadeEnd },
     };
   } finally {
