@@ -1,4 +1,5 @@
-import { Matrix, NullEngine, Quaternion, RawTexture2DArray, Scene, Vector3 } from "@babylonjs/core";
+import { Matrix, NullEngine, Quaternion, RawTexture2DArray, Scene, Vector3, type BaseTexture } from "@babylonjs/core";
+import { areaLightLtcTexture } from "./area-light-resources";
 import { areaRectLightBindings, identitySerializedTransform } from "@haptic/core";
 import { describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
@@ -25,7 +26,8 @@ describe("native rectangular area light ownership", () => {
     expect(first.light.emissionTexture).toBeNull();
     expect(rectLightEmission(first.light)).toBe(data);
     expect(rectLightEmission(second.light)).toBe(data);
-    const lookupBytes = 65536;
+    // The native pair and the light block's stacked copy.
+    const lookupBytes = 131072;
     expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(lookupBytes);
     syncSceneLighting(scene);
     const array = areaEmissionTexture(scene);
@@ -78,8 +80,14 @@ describe("native rectangular area light ownership", () => {
     const third = new AreaRectLightOwner(other, "third", binding());
     const lookup = scene._ltcTextures!;
     const dispose = vi.spyOn(lookup.LTC1, "dispose");
+    // The light block samples one texture: LTC1's 64 rows, then LTC2's.
+    const stacked = areaLightLtcTexture(scene)!;
+    const view = (texture: BaseTexture) => texture.getInternalTexture()!._bufferView as Uint16Array;
+    expect([stacked.getSize(), areaLightLtcTexture(other)]).toEqual([{ width: 64, height: 128 }, stacked]);
+    expect(Array.from(view(stacked))).toEqual([...Array.from(view(lookup.LTC1)), ...Array.from(view(lookup.LTC2))]);
+    const disposeStacked = vi.spyOn(stacked, "dispose");
     expect(other._ltcTextures?.LTC1).toBe(lookup.LTC1);
-    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(65536);
+    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(131072);
     first.dispose();
     second.dispose();
     expect(scene.transformNodes).toHaveLength(0);
@@ -90,7 +98,7 @@ describe("native rectangular area light ownership", () => {
     other.dispose();
     expect(dispose).not.toHaveBeenCalled();
     scene.dispose();
-    expect(dispose).toHaveBeenCalledTimes(1);
+    expect([dispose.mock.calls.length, disposeStacked.mock.calls.length]).toEqual([1, 1]);
     expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(0);
     engine.dispose();
   });

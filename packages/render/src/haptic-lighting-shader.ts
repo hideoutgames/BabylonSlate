@@ -605,8 +605,10 @@ hapticArea hapticAreaLight(vec3 P, vec3 N, vec3 V, int i, float roughness) {
   vec3 c2 = center - halfWidth + halfHeight;
   vec3 c3 = center + halfWidth + halfHeight;
   vec2 uv = vec2(roughness, sqrt(1.0 - clamp(dot(N, V), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
-  vec4 t1 = textureLod(hapticAreaLtc1Sampler, uv, 0.0);
-  vec4 t2 = textureLod(hapticAreaLtc2Sampler, uv, 0.0);
+  // The two tables stacked in one texture (\`areaLightLtcTexture\`): LTC1 in the top half, LTC2 in the bottom. A half's
+  // rows end at its last texel's centre, so the bilinear tap never reaches the other table.
+  vec4 t1 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5), 0.0);
+  vec4 t2 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5 + 0.5), 0.0);
   mat3 mInv = mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
   hapticArea area;
   float layer = hapticRect[i * 4 + 3].w;
@@ -1024,8 +1026,8 @@ fn hapticAreaLight(P: vec3f, N: vec3f, V: vec3f, i: i32, roughness: f32) -> hapt
   let c2 = center - halfWidth + halfHeight;
   let c3 = center + halfWidth + halfHeight;
   let uv = vec2f(roughness, sqrt(1.0 - clamp(dot(N, V), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
-  let t1 = textureSampleLevel(hapticAreaLtc1Sampler, hapticAreaLtc1SamplerSampler, uv, 0.0);
-  let t2 = textureSampleLevel(hapticAreaLtc2Sampler, hapticAreaLtc2SamplerSampler, uv, 0.0);
+  let t1 = textureSampleLevel(hapticAreaLtcSampler, hapticAreaLtcSamplerSampler, vec2f(uv.x, uv.y * 0.5), 0.0);
+  let t2 = textureSampleLevel(hapticAreaLtcSampler, hapticAreaLtcSamplerSampler, vec2f(uv.x, uv.y * 0.5 + 0.5), 0.0);
   let mInv = mat3x3f(vec3f(t1.x, 0.0, t1.y), vec3f(0.0, 1.0, 0.0), vec3f(t1.z, 0.0, t1.w));
   let layer = HapticLights.hapticRect[i * 4 + 3].w;
   return hapticArea(hapticLtcEvaluate(N, V, P, mat3x3f(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0), c0, c1, c2, c3, layer),

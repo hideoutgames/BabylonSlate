@@ -20,6 +20,7 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { SphericalHarmonics, type SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { areaEmissionTexture } from "./area-emission-array";
+import { areaLightLtcTexture } from "./area-light-resources";
 import { CEL_UNIFORMS, bindCelSettings, celFunctions } from "./cel-shader";
 import { HAPTIC_CLUSTERS_GLSL, HAPTIC_CLUSTERS_WGSL, HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL, bindHapticClusters, bindHapticLights } from "./haptic-lights";
 import {
@@ -196,8 +197,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     const scene = mesh.getScene();
     bindHapticLights(scene, effect);
     bindHapticClusters(scene, effect);
-    effect.setTexture("hapticAreaLtc1Sampler", scene._ltcTextures?.LTC1 ?? null);
-    effect.setTexture("hapticAreaLtc2Sampler", scene._ltcTextures?.LTC2 ?? null);
+    effect.setTexture("hapticAreaLtcSampler", areaLightLtcTexture(scene));
     effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
     effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
     if (!scene.getEngine().isWebGPU) {
@@ -247,8 +247,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emitUniformFromString("hapticShadowReceiver", NodeMaterialBlockConnectionPointTypes.Float);
     state._emitCubeSampler("hapticEnvironmentSampler", "defined(HAPTIC_ENVIRONMENT)");
     state._emit2DSampler("hapticEnvironmentBrdfSampler");
-    state._emit2DSampler("hapticAreaLtc1Sampler");
-    state._emit2DSampler("hapticAreaLtc2Sampler");
+    state._emit2DSampler("hapticAreaLtcSampler");
     state._emit2DArraySampler("hapticAreaEmissionSampler");
     const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
     // The shadow atlas compares as it samples (`shadow-atlas.ts`); the build state has no helper for a compare sampler.

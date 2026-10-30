@@ -1,4 +1,5 @@
 import type { BaseTexture, InternalTexture, RenderTargetWrapper, Scene } from "@babylonjs/core";
+import { areaLightLtcTexture } from "./area-light-resources";
 
 /**
  * The native textures a Scene still references: every texture registered with it, every texture
@@ -7,8 +8,8 @@ import type { BaseTexture, InternalTexture, RenderTargetWrapper, Scene } from "@
  * `scene.textures` alone would miss them. A render target holds more than its colour texture: its
  * depth/stencil texture and every attachment of a multi render target are separate native textures
  * the Engine caches, so they are held with it. The rect area-light LTC tables are built once per Engine and
- * shared by reference count (`retainAreaLightLookup`); a Scene holds them while its `_ltcTextures` slot
- * points at them. Reading never creates a texture.
+ * shared by reference count (`retainAreaLightLookup`); a Scene holds them, the native pair and the light block's
+ * stacked copy, while it retains them. Reading never creates a texture.
  */
 export function internalTexturesHeldByScene(scene: Scene): Set<InternalTexture> {
   const held = new Set<InternalTexture>();
@@ -27,5 +28,6 @@ export function internalTexturesHeldByScene(scene: Scene): Set<InternalTexture> 
   hold(scene.environmentBRDFTexture);
   hold(scene._ltcTextures?.LTC1);
   hold(scene._ltcTextures?.LTC2);
+  hold(areaLightLtcTexture(scene));
   return held;
 }

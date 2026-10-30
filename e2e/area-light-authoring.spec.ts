@@ -15,6 +15,8 @@ type AuthoringHost = {
 };
 const scene = (page: Page) => page.evaluate(() => (window as unknown as AuthoringHost).__hapticTest.activeSceneContent());
 const areaBytes = (page: Page) => page.evaluate(() => (window as unknown as AuthoringHost).__hapticViewportTest.renderingBaseline()?.render.gpuReservations.categoryBytes.areaLight);
+/** The LTC tables: the native 64 × 64 pair and the light block's stacked 64 × 128 copy, RGBA half floats. */
+const LOOKUP_BYTES = 131_072;
 
 test("rectangular-light authoring, prepared Texture, history, duplication and reopen retain owned resources", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
@@ -42,7 +44,7 @@ test("rectangular-light authoring, prepared Texture, history, duplication and re
   await width.fill("2.5"); await width.press("Enter");
   await page.getByTestId("undo-document").click(); await expect(width).toHaveValue("1");
   await page.getByTestId("redo-document").click(); await expect(width).toHaveValue("2.5");
-  await expect.poll(() => areaBytes(page)).toBe(65_536);
+  await expect.poll(() => areaBytes(page)).toBe(LOOKUP_BYTES);
 
   await openAssetFromBrowser(page, "assets/emission.hasset");
   await page.getByRole("button", { name: "Prepare Emission", exact: true }).click();
@@ -53,17 +55,17 @@ test("rectangular-light authoring, prepared Texture, history, duplication and re
   await page.getByTestId("tree-row-actor:actor-1").click();
   await page.getByTestId(`property-actor-1-${component.id}-textureGuid`).click();
   await page.getByTestId("search-item-emission").click();
-  await expect.poll(() => areaBytes(page)).toBe(65_536 + 5_592_404);
+  await expect.poll(() => areaBytes(page)).toBe(LOOKUP_BYTES + 5_592_404);
   await page.getByTestId("outliner-menu-actor-1").click();
   await page.getByTestId("outliner-duplicate-actor-1").click();
   const emitters = (await scene(page)).actors.filter((actor) => actor.components.some((entry) => entry.classId === "AreaRectLightComponent"));
   expect(emitters).toHaveLength(2);
   for (const actor of emitters) expect(actor.components.find((entry) => entry.classId === "AreaRectLightComponent")?.properties).toMatchObject({ width: 2.5, textureGuid: "emission", enabled: true });
-  await expect.poll(() => areaBytes(page)).toBe(65_536 + 5_592_404);
+  await expect.poll(() => areaBytes(page)).toBe(LOOKUP_BYTES + 5_592_404);
   await page.getByTestId("tree-row-actor:actor-1").click();
   await page.getByTestId(`component-remove-${component.id}`).click();
   expect((await scene(page)).actors.find((actor) => actor.id === "actor-1")!.components.some((entry) => entry.classId === "AreaRectLightComponent")).toBe(false);
-  await expect.poll(() => areaBytes(page)).toBe(65_536 + 5_592_404);
+  await expect.poll(() => areaBytes(page)).toBe(LOOKUP_BYTES + 5_592_404);
   await page.getByTestId("undo-document").click();
   await expect(width).toHaveValue("2.5");
   await saveAllIfEnabled(page);
@@ -74,7 +76,7 @@ test("rectangular-light authoring, prepared Texture, history, duplication and re
   const reopened = (await scene(page)).actors.filter((actor) => actor.components.some((entry) => entry.classId === "AreaRectLightComponent"));
   // Reopen materializes optional identity transforms and null attachments.
   expect(reopened).toEqual(normalizeScene({ actors: emitters }).actors);
-  await expect.poll(() => areaBytes(page)).toBe(65_536 + 5_592_404);
+  await expect.poll(() => areaBytes(page)).toBe(LOOKUP_BYTES + 5_592_404);
   await openAssetFromBrowser(page, "assets/emission.hasset");
   await expect(page.getByRole("button", { name: "Check Emission Data", exact: true })).toBeEnabled();
   expect(errors).toEqual([]);
