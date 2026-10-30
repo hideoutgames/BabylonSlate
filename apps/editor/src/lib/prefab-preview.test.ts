@@ -7,6 +7,8 @@ import {
   editorComponentMeshName,
   editorMeshName,
 } from "@haptic/render";
+// The renderer draws lit surfaces on the light block, as a shipped Engine does.
+import "@haptic/render/light-block-engine";
 import {
   createDefaultScene,
   createDefaultSceneSettings,
