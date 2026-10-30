@@ -289,9 +289,10 @@ function writeShadowViews(scene: Scene, state: SceneLights): void {
 
 /**
  * Write the block from the lights the admission left on (`selectHapticLights`), once per frame, after it. The fill is
- * the admitted hemispheric light. A rect area light's record holds its centre and its half width and half height
- * vectors, as Babylon's does, and the layer of its emission in the texture array (`area-emission-array.ts`), -1 for
- * its flat colour. A Scene with its lights disabled (the Unlit viewport) writes none, as Babylon's materials then light
+ * the admitted hemispheric light. A spot light's record holds its cone's half-angle cosines, the outer beside its
+ * direction and the inner beside its shadow's first view (glTF's cone: full inside the inner, none past the outer). A
+ * rect area light's record holds its centre and its half width and half height vectors, as Babylon's does, and the
+ * layer of its emission in the texture array (`area-emission-array.ts`), -1 for its flat colour. A Scene with its lights disabled (the Unlit viewport) writes none, as Babylon's materials then light
  * with none.
  */
 export function writeHapticLights(scene: Scene): void {
@@ -336,7 +337,7 @@ export function writeHapticLights(scene: Scene): void {
       spot.set([position.x - offset.x, position.y - offset.y, position.z - offset.z, light.radius,
         direction.x, direction.y, direction.z, Math.cos(light.angle * 0.5),
         light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, light.range,
-        shadowed ? shadowed.first : -1, 0, 0, 0], spots * 16);
+        shadowed ? shadowed.first : -1, Math.cos(light.innerAngle * 0.5), 0, 0], spots * 16);
       spots++;
     } else if (light instanceof RectAreaLight) {
       if (rects === HAPTIC_LIGHT_MAXIMUM.rect) continue;

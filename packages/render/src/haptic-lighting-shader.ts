@@ -501,10 +501,12 @@ float hapticRangeFalloff(float distanceSquared, float range) {
   return window * window / max(distanceSquared, HAPTIC_EPSILON);
 }
 
-// A spot light's cone: a spherical Gaussian around its direction, at 1% at the cone's half angle.
-float hapticConeFalloff(vec3 lightDirection, vec3 L, float cosHalfAngle) {
-  float kappa = 6.64385618977 / (1.0 - cosHalfAngle);
-  return exp2(dot(vec4(L, 1.0), vec4(-lightDirection * kappa, -kappa)));
+// A spot light's cone, glTF's (KHR_lights_punctual): full inside the inner half angle, zero past the outer, squared
+// linear in the cosine between.
+float hapticConeFalloff(vec3 lightDirection, vec3 L, float cosOuter, float cosInner) {
+  float scale = 1.0 / max(0.001, cosInner - cosOuter);
+  float cone = clamp(dot(lightDirection, -L) * scale - cosOuter * scale, 0.0, 1.0);
+  return cone * cone;
 }
 
 ${hapticShadowGlsl(true)}// Rect area lights: linearly transformed cosines from Babylon's two 64x64 tables (its ltcHelperFunctions).
@@ -626,7 +628,7 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     float lightDistance = sqrt(distanceSquared);
     vec3 L = offset / max(lightDistance, HAPTIC_EPSILON);
     float NdotL = hapticSaturateEps(dot(N, L));
-    vec3 radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w)
+    vec3 radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w, hapticSpot[i * 4 + 3].y)
       * hapticShadow(hapticSpot[i * 4 + 3].x, P, vec3(0.0), vec3(0.0));
     diffuse += radiance * (NdotL / HAPTIC_PI);
     float roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
@@ -695,8 +697,8 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     if (distanceSquared >= color.w * color.w) continue;
     vec3 L = normalize(offset);
     float NdotL = max(dot(N, L), 0.0);
-    float falloff = hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w);
-    // The cone never reaches zero, so the highlight stops at its half angle.
+    float falloff = hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w, hapticSpot[i * 4 + 3].y);
+    // The highlight stops where the cone does, at its outer angle.
     float inCone = step(direction.w, dot(-L, direction.xyz));
     // CEL's hard shadow edge, as Babylon's CEL light block steps the shadow.
     float shadow = slateCelShadowVisibility(hapticShadow(hapticSpot[i * 4 + 3].x, P, vec3(0.0), vec3(0.0)));
@@ -853,9 +855,10 @@ fn hapticRangeFalloff(distanceSquared: f32, range: f32) -> f32 {
   return window * window / max(distanceSquared, HAPTIC_EPSILON);
 }
 
-fn hapticConeFalloff(lightDirection: vec3f, L: vec3f, cosHalfAngle: f32) -> f32 {
-  let kappa = 6.64385618977 / (1.0 - cosHalfAngle);
-  return exp2(dot(vec4f(L, 1.0), vec4f(-lightDirection * kappa, -kappa)));
+fn hapticConeFalloff(lightDirection: vec3f, L: vec3f, cosOuter: f32, cosInner: f32) -> f32 {
+  let scale = 1.0 / max(0.001, cosInner - cosOuter);
+  let cone = clamp(dot(lightDirection, -L) * scale - cosOuter * scale, 0.0, 1.0);
+  return cone * cone;
 }
 
 ${hapticShadowWgsl(true)}fn hapticLtcEdge(v1: vec3f, v2: vec3f) -> vec3f {
@@ -967,7 +970,7 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
     let lightDistance = sqrt(distanceSquared);
     let L = offset / max(lightDistance, HAPTIC_EPSILON);
     let NdotL = hapticSaturateEps(dot(N, L));
-    let radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w)
+    let radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w, HapticLights.hapticSpot[i * 4 + 3].y)
       * hapticShadow(HapticLights.hapticSpot[i * 4 + 3].x, P, vec3f(0.0), vec3f(0.0));
     *diffuse += radiance * (NdotL / HAPTIC_PI);
     let roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
@@ -1033,7 +1036,7 @@ fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInflu
     if (distanceSquared >= color.w * color.w) { continue; }
     let L = normalize(offset);
     let NdotL = max(dot(N, L), 0.0);
-    let falloff = hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w);
+    let falloff = hapticRangeFalloff(distanceSquared, color.w) * hapticConeFalloff(direction.xyz, L, direction.w, HapticLights.hapticSpot[i * 4 + 3].y);
     let inCone = step(direction.w, dot(-L, direction.xyz));
     let shadow = slateCelShadowVisibility(hapticShadow(HapticLights.hapticSpot[i * 4 + 3].x, P, vec3f(0.0), vec3f(0.0)));
     hapticCelAdd(&result, color.rgb * (NdotL * falloff * shadow), hapticCelHighlight(N, V, L, NdotL, color.rgb) * (inCone * shadow));
