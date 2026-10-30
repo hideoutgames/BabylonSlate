@@ -8,6 +8,7 @@ import {
 import {
   createPrivateShadowAtlas,
   placeInPrivateAtlas,
+  prepareTileClear,
   SHADOW_ATLAS_BYTES_PER_TEXEL,
   type PrivateShadowAtlas,
 } from "./shadow-atlas";
@@ -50,6 +51,8 @@ export class ShadowCasterVariants {
   warm(settings: ShadowSettings): void {
     if (JSON.stringify(settings) !== this.built) this.build(settings);
     this.request(this.context.casters);
+    // The atlas tiles' clear, whose WebGPU pipeline would otherwise be made at the first shadow start.
+    if (this.atlas) prepareTileClear(this.atlas);
   }
   /** A sync: builds the maps again for `settings` when they were built for others, or asks the casters still waiting. */
   follow(settings: ShadowSettings): void {

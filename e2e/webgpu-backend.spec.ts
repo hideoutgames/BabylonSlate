@@ -171,9 +171,9 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   // A world view of graph Materials on the light block, on the software adapter, never waits for a new variant's
   // render pipeline: a light switching off creates none (the block's records change, no variant), fog switching on
   // draws each Material's previous Effect while its fogged variant's pipeline is created asynchronously, a new shadow
-  // map (the spot's tile, the sun's first cascades) draws once its casters' depth pipelines exist, changing no
-  // receiver's Effect and creating none synchronously but one at the atlas's first tile (measured; the legacy path's
-  // maps created none, reported for the light block), a spawn with a variant nothing compiled stays hidden meanwhile,
+  // map (the spot's tile, the atlas's first, and the sun's first cascades) draws once its casters' depth pipelines
+  // exist, changing no receiver's Effect and creating none synchronously (the load warmed the tiles' clear), a spawn
+  // with a variant nothing compiled stays hidden meanwhile,
   // and a spawn whose Material the load warmed creates no pipeline at all. The first spawn built again (a visual a
   // script's write rebuilds) is revealed in its first frame and creates none; the same Effect with another vertex
   // layout waits hidden for its own pipeline, holding nothing. A spawn into the drawn sun map with a caster depth
@@ -202,7 +202,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
   }, JSON.stringify(swap)).toEqual({
     lightOff: { held: 0, kept: true, synchronous: 0, asynchronous: 0 },
     swap: { done: true, held: 0, previous: true, synchronous: 0, asynchronous: true },
-    shadowGain: { done: true, held: 0, kept: true, synchronous: 1 },
+    shadowGain: { done: true, held: 0, kept: true, synchronous: 0 },
     sunShadows: { done: true, held: 0, kept: true, synchronous: 0, cascades: 2 },
     spawn: { done: true, held: 0, hidden: true, synchronous: 0, asynchronous: true },
     respawn: { done: true, frames: 1, held: 0, hidden: 0, synchronous: 0, asynchronous: 0 },

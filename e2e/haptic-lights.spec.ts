@@ -111,16 +111,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // floor and box pixel, the face its reflected direction meets: plain, with the cube rotated, box-projected onto a
     // probe's volume, and both. Where that direction lies near a face's edge the prefiltered cube blends the faces, so
     // only directions whose largest component is 1.25 times the next count; the faces' colours differ by at least
-    // 100/255 in some channel, and the rest is the prefilter's softening (measured: up to 11/255).
-    // On WebGPU a box-projected cube draws as if its box were empty (every mirror shows the -Y face), found by this check
-    // and not yet fixed in the block; WebGPU checks the unprojected poses.
-    const boxProjected = (name: string) => name.includes("box-projected");
+    // 100/255 in some channel, and the rest is the prefilter's softening (measured: up to 11/255). The app's WebGPU
+    // Engine draws relative to a floating origin, which the probe's box must follow as the surface positions do.
     for (const { name, pixels, expected } of result.mirrors) {
       const checked = flat.filter((pixel) => expected[pixel]!.margin >= 1.25);
       const apart = checked.map((pixel) => Math.max(...channels(pixels, pixel).map((value, channel) =>
         Math.abs(value - result.faceColors[expected[pixel]!.face]![channel]!))));
       report[`mirror ${name}`] = { pixels: checked.length, largest: Math.max(...apart), faces: new Set(checked.map((pixel) => expected[pixel]!.face)).size };
-      if (backend === "webgpu" && boxProjected(name)) continue;
       expect(checked.length, name).toBeGreaterThan(2000);
       expect(new Set(checked.map((pixel) => expected[pixel]!.face)).size, name).toBeGreaterThanOrEqual(3);
       expect(apart.filter((value) => value > 12), name).toEqual([]);
