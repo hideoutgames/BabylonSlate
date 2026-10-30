@@ -33,12 +33,12 @@ Preview Build and exported games have no Retry. If their graphics device stops w
 
 **Scalability** sets quality per group: **Shadows**, **Resolution**, **Textures**, **Geometry**, **Water**, **Post Processing** and **Lighting**. Pick a level for all groups with **Overall Quality**, or set groups individually. When groups differ, Overall Quality shows **Custom**. New projects use High.
 
-| Level | Target device | Resolution Scale | Texture Budget | Local lights | Shadow Distance |
-| --- | --- | --- | --- | --- | --- |
-| Low | Budget Android phone | 0.85 | 384 MiB | 6 | 120 |
-| Medium | Apple A16 | 1 | 768 MiB | 32 | 250 |
-| High | Performance desktop | 1 | 1024 MiB | 64 | 350 |
-| Ultra | High-end gaming PC | 1 | 2048 MiB | 256 | 600 |
+| Level | Target device | Resolution Scale | Texture Budget | Local lights | Shadow Distance | Screen-Space Shadows |
+| --- | --- | --- | --- | --- | --- | --- |
+| Low | Budget Android phone | 0.85 | 384 MiB | 6 | 120 | Off |
+| Medium | Apple A16 | 1 | 768 MiB | 32 | 250 | Low |
+| High | Performance desktop | 1 | 1024 MiB | 64 | 350 | Medium |
+| Ultra | High-end gaming PC | 1 | 2048 MiB | 256 | 600 | High |
 
 Targets are guides, not guarantees. Profile on the devices you ship to.
 

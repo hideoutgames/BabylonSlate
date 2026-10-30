@@ -34,6 +34,7 @@ Open **Project Settings > Rendering > Shadows**. The defaults below are the High
 | **Shadow Filter** | PCF | **PCF** softens edges. **Contact Hardening (PCSS)** adds a contact-hardening penumbra, in PBR only; flat ground under the sun stays free of its own shadow. |
 | **Shadow Filter Quality** | High | Low, Medium or High. Higher uses more texture samples. |
 | **Contact Hardening Size** | 0.05 | PCSS light size. Larger values widen the penumbra. |
+| **Screen-Space Shadows** | Medium | **Off**, **Low**, **Medium** or **High**. Adds the sun's small contact shadows the shadow map misses, near the camera. See [Screen-Space Shadows](#screen-space-shadows). |
 | **Shadow Depth Bias** | 0.0001 | Depth offset. High values detach shadows from surfaces. |
 | **Automatic Shadow Bias** | On | Scales directional bias per cascade, with Depth Bias as the minimum. Landscapes also get a normal offset scaled to the shadow resolution, so sculpted terrain does not shadow itself along its edges. |
 | **Shadow Normal Bias** | 0.005 | Normal offset, in world units. |
@@ -47,12 +48,12 @@ CEL projects always use PCF. Bands and shadow edges in CEL are hard steps.
 
 The **Shadows Quality** setting in **Scalability** applies one of these sets. Changing any field afterwards makes it **Custom**.
 
-| Level | Distance | Map size | Cascades | Filter quality | Local shadow lights | Local map size |
-| --- | --- | --- | --- | --- | --- | --- |
-| Low | 120 | 2048 | 2 | Low | 1 | 512 |
-| Medium | 250 | 2048 | 3 | High | 2 | 1024 |
-| High | 350 | 2048 | 4 | High | 4 | 2048 |
-| Ultra | 600 | 4096 | 4 | High | 8 | 2048 |
+| Level | Distance | Map size | Cascades | Filter quality | Local shadow lights | Local map size | Screen-Space Shadows |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Low | 120 | 2048 | 2 | Low | 1 | 512 | Off |
+| Medium | 250 | 2048 | 3 | High | 2 | 1024 | Low |
+| High | 350 | 2048 | 4 | High | 4 | 2048 | Medium |
+| Ultra | 600 | 4096 | 4 | High | 8 | 2048 | High |
 
 Applying a level also resets a Manual **Local Shadow Light Budget** to that level's count.
 
@@ -63,6 +64,23 @@ At Medium, High and Ultra, cascades get longer with distance: the first ends 12 
 At Low, when the camera's far clip is short, and for orthographic cameras, cascades split the distance more evenly.
 
 With **Contact Hardening (PCSS)**, the sun's penumbrae near the camera are narrower than with an even split, because each texel covers less ground.
+
+## Screen-Space Shadows
+
+The sun's shadow map has a limited number of texels, so small objects resting on the ground, thin planks and the contact under a box can come out faint or missing. **Screen-Space Shadows** look at what the camera sees and darken those contacts where something blocks the sun a short way off.
+
+| Level | Reach | Fades out |
+| --- | --- | --- |
+| **Low** | up to 0.35 m, 30 pixels | 12 to 20 m from the camera |
+| **Medium** | up to 0.6 m, 48 pixels | 20 to 35 m |
+| **High** | up to 0.8 m, 64 pixels | 30 to 50 m |
+
+- They apply to the one directional light that casts shadows, in PBR only. CEL has none.
+- They work in the Scene Viewport, Play, Preview Build, exported games and Full Quality [Render Target Captures](render-targets.md#quality). Fast captures, reflection probes, mirrors, previews, thumbnails and Scene Layers do not draw them.
+- They need the scene's depth. When no post-processing effect already draws it, turning them on adds a depth pass, which costs a little GPU time and one more draw per visible object. Turning **Post-Processing** off in the viewport turns them off too.
+- They see only what is on screen: an object leaving the edge of the view stops darkening the ground near it.
+- Opaque and masked surfaces receive them. Translucent surfaces don't, but glass and other translucent surfaces in front of the ground can cast them.
+- Turning them on or off recompiles lit materials once; changing between Low, Medium and High does not.
 
 ## Override shadows in a scene
 
@@ -77,6 +95,8 @@ With **Contact Hardening (PCSS)**, the sun's penumbrae near the camera are narro
 - **Blurry directional shadows:** reduce **Shadow Distance**, add cascades or raise **Directional Map Size**.
 - **Streaks or smeared edges on a surface the light barely touches:** a light skimming a surface stretches each shadow texel along it. Rotate the light so it meets the surface at a wider angle, or sharpen the shadows as above.
 - **A spot or point light has no shadow:** check **Cast Shadows**, the local shadow budget and **Shadow Priority**.
+- **A thin dark line or speck near a slim object:** Screen-Space Shadows assume a surface has some thickness behind it, so a thin pole can darken a little of the ground beside it. Lower **Screen-Space Shadows** or turn them off.
+- **No contact shadows near the camera:** check **Screen-Space Shadows** is above **Off**, the project renders in PBR, and **Post-Processing** is on in the viewport.
 
 ## Control shadows from scripts
 
