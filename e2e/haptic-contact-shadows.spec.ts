@@ -57,7 +57,7 @@ function lightShare(drawn: number[], open: number[], unlit: number[], pixel: num
   return share;
 }
 
-type Band = { umbra: number; umbraShare: number; open: number; openShadowed: number };
+type Band = { umbra: number; umbraShare: number; umbraLit: number[]; open: number; openShadowed: number };
 
 for (const backend of ["webgl2", "webgpu"] as const) {
   test(`Contact Hardening on the light block draws each light's shadow from the shadow atlas where its blockers are, on ${backend}`, async ({ page }, testInfo) => {
@@ -87,6 +87,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         bands[ring] = {
           umbra: umbra.length,
           umbraShare: Math.max(0, ...umbra.map((pixel) => lightShare(drawn, open, unlit, pixel))),
+          umbraLit: umbra.filter((pixel) => lightShare(drawn, open, unlit, pixel) > 1 / 3)
+            .map((pixel) => pixel),
           open: far.length,
           openShadowed: far.filter((pixel) => difference(drawn, open, pixel) > 2).length,
         };
