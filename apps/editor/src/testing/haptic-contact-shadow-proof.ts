@@ -31,7 +31,6 @@ import {
 import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { isAtlasShadow } from "../../../../packages/render/src/shadow-atlas";
@@ -60,8 +59,7 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
     camera.minZ = 0.1;
     camera.maxZ = 40;
     scene.activeCamera = camera;
-    // As Play's world Scene: Babylon's light helpers ask the fixed-shape hooks first.
-    setFixedShapeLightingWorldScene(scene);
+    // As Play's world Scene.
     setSceneBindsPreviousEffects(scene);
     const quality = normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } });
     // One local shadow and the sun's two cascades, biased past the acne a slanting light shows on the floor (as the

@@ -158,6 +158,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 
    Phase 8 PR (fixed-shape entry points): nothing turns fixed-shape lighting on. The `fixedlights` console command and its bridge command go, with the Feature Test Check's fixed-light Benchmark profiles (the profiles are now the four quality tiers, labelled by tier), the test builds' localStorage key and the perf route's `HAPTIC_PERF_FIXED_LIGHTS`, the viewport test host's `setFixedShapeLighting`, and the Material editor's sampler-budget warning (`material.samplerBudget`, shader-graph's `sampler-budget.ts`).
 
+   Phase 8 PR (fixed-shape modules): `fixed-light-admission.ts`, `fixed-light-binding.ts`, `fixed-light-seats.ts`, `fixed-light-shader.ts` and core `fixed-light-layout.ts` go, with the light-neutral defines (`registerLightNeutralPasses`, `keepsLightDefines`; the light-neutral task classes stay) and the Babylon patch's three `_materialLightHooks` hunks in `materialHelper.functions.js`: graph Materials hold no light defines, so nothing on the block's path asked the hooks.
+
    Phase 8 PR (Forward slots): `forward-light-slots.ts` goes. `syncForwardLightPolicy` takes the block's selection (required) and toggles the lights; the slot exchanges, settling, canonical order, `keepAdmittedSlotKinds` and its distance ratio go, as does scene lighting's half of the receiver handoff (`explainedBySlotChanges`, the handoff journal, the shadow-layout tokens) and its receiver re-sort: graph Materials hold no light defines, so `scene.lights` and `lightSources` order no longer matter.
 9. **Later, decided separately**: fewer material variants (texture presence and similar defines as always-bound defaults), measured on its own.
 
