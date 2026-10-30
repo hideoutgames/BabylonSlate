@@ -737,7 +737,7 @@ export class SceneShadowController {
       // Same-kind lights exchange shader light indices, so receivers keep their
       // defines and effects. Otherwise dirty them as construction/disposal would.
       if (JSON.stringify(donor.settings) !== settingsKey() ||
-        !exchangeShadowReceivers(scene, donor.light, entry.light, generator)) {
+        !exchangeShadowReceivers(scene, donor.light, entry.light)) {
         invalidateShadowReceiverHandoffs(scene);
         donor.light._markMeshesAsLightDirty();
         entry.light._markMeshesAsLightDirty();

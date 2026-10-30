@@ -10,6 +10,7 @@ import {
 import { engineBillboardUrl } from "./default-billboard/urls";
 import { RENDERING_GROUP } from "./sorting";
 import { setAuthoredLightEnabled, syncDirectionalLightPolicy, syncForwardLightPolicy } from "./light-policy";
+import { selectHapticLights } from "./haptic-lights";
 import { sceneShadowController } from "./shadow-controller";
 import { updateSceneRenderingSettings } from "./render-settings";
 
@@ -123,7 +124,7 @@ describe("editor billboard", () => {
     second.diffuse.set(0.2, 0.5, 1);
     setAuthoredLightEnabled(first, true);
     setAuthoredLightEnabled(second, true);
-    syncForwardLightPolicy(scene, 1);
+    syncForwardLightPolicy(scene, Number.MAX_SAFE_INTEGER, 1, selectHapticLights);
     const actor = createActor("second", "Second", { components: [{ id: "light", classId: "LightComponent", properties: { enabled: true, color: [0.2, 0.5, 1], castShadows: false } }] });
     const icon = createEditorBillboard(scene, "editorActor:second", "point_light");
     applyEditorBillboardFromActor(icon, actor);
@@ -133,13 +134,13 @@ describe("editor billboard", () => {
     expect(icon.metadata.editorBillboardStatus).toContain("Forward Light Capacity");
 
     second.renderPriority = 20;
-    syncForwardLightPolicy(scene, 1);
+    syncForwardLightPolicy(scene, Number.MAX_SAFE_INTEGER, 1, selectHapticLights);
     scene.onBeforeRenderObservable.notifyObservers(scene);
     expect(second.isEnabled()).toBe(true);
     expect(color()).toEqual([1, 1, 1]);
 
     second.renderPriority = 0;
-    syncForwardLightPolicy(scene, 1);
+    syncForwardLightPolicy(scene, Number.MAX_SAFE_INTEGER, 1, selectHapticLights);
     second.intensity = 0;
     scene.onBeforeRenderObservable.notifyObservers(scene);
     expect(color()).toEqual([1, 0, 0]);

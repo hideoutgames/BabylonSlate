@@ -5,17 +5,11 @@ import { forwardLightBudget } from "./forward-light-budget";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty, notifySceneReceiversChanged } from "./scene-readiness-signal";
 import {
-  takeShadowReceiverHandoffs,
-  type ShadowReceiverHandoff,
-} from "./shadow-receiver-handoff";
-import { sortReceiverLightSources, type ForwardLightSlotExchange } from "./forward-light-slots";
-import {
   LightBlock,
   Material,
   NodeMaterial,
   NodeMaterialModes,
   PBRMetallicRoughnessBlock,
-  RectAreaLight,
   type Light,
   type Observer,
   type Scene,
@@ -43,61 +37,6 @@ function isLitMaterial(material: Material): material is LitMaterial {
 
 type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[]; reserve: (lights: number) => void };
 
-// Shadow layout tokens per enabled light: shadowEnabled, generator, area
-// emission texture, area emission readiness.
-const LAYOUT_STRIDE = 4;
-
-/**
- * Whether index-preserving light changes that left every receiver define
- * unchanged explain every difference between the previous and next
- * snapshots: same-kind shadow map moves since the last sync, which exchanged
- * the lights' shader indices, then this sync's Forward slot exchanges, which
- * put an identical light in a dropped light's index.
- */
-function explainedBySlotChanges(
-  handoffs: readonly ShadowReceiverHandoff[],
-  exchanges: readonly ForwardLightSlotExchange[],
-  lights: readonly Light[],
-  layout: readonly unknown[],
-  nextLights: readonly Light[],
-  nextLayout: readonly unknown[],
-): boolean {
-  const expectedLights = lights.slice();
-  const expected = layout.slice();
-  for (const { from, to, generator } of handoffs) {
-    const a = expectedLights.indexOf(from);
-    const b = expectedLights.indexOf(to);
-    if (
-      a < 0 ||
-      b < 0 ||
-      expected[a * LAYOUT_STRIDE + 1] !== generator ||
-      expected[b * LAYOUT_STRIDE + 1] !== null
-    )
-      return false;
-    expectedLights[a] = to;
-    expectedLights[b] = from;
-    for (let token = 0; token < LAYOUT_STRIDE; token++) {
-      const value = expected[a * LAYOUT_STRIDE + token];
-      expected[a * LAYOUT_STRIDE + token] = expected[b * LAYOUT_STRIDE + token];
-      expected[b * LAYOUT_STRIDE + token] = value;
-    }
-    // The map keeps its shader index; only its light changed places.
-    expected[a * LAYOUT_STRIDE + 1] = generator;
-    expected[b * LAYOUT_STRIDE + 1] = null;
-  }
-  for (const { from, to, preserved } of exchanges) {
-    const index = expectedLights.indexOf(from);
-    if (!preserved || index < 0) return false;
-    // Same slot defines and no shadow map, so the layout tokens stay too.
-    expectedLights[index] = to;
-  }
-  return (
-    expectedLights.length === nextLights.length &&
-    expectedLights.every((light, index) => light === nextLights[index]) &&
-    expected.length === nextLayout.length &&
-    expected.every((token, index) => token === nextLayout[index])
-  );
-}
 const lightingByScene = new WeakMap<Scene, SceneLighting>();
 
 /**
@@ -153,112 +92,55 @@ function installSceneLighting(scene: Scene): SceneLighting {
   let lightInventory = 0;
   // The light capacity of the last refresh (every lit Effect's MAXLIGHTCOUNT).
   let lightCapacity = -1;
-  let enabledLights: Light[] = [];
-  let nextEnabled: Light[] = [];
-  let shadowLayout: unknown[] = [];
-  let nextShadowLayout: unknown[] = [];
+  // The enabled lights, in any order: the block reads them as data, so their order changes no receiver.
+  let enabledLights = new Set<Light>();
+  let nextEnabled = new Set<Light>();
   let admission: ReturnType<typeof syncForwardLightPolicy> = {
     requested: 0,
     admitted: 0,
     limited: [],
     samplerLimited: [],
     samplers: 0,
-    exchanges: [],
   };
   let budget = forwardLightBudget(scene.getEngine());
   const watchedLights = new Map<Light, Observer<boolean>>();
   const invalidate = () => {
     dirty = true;
   };
-  // Enabled changes the Forward policy makes are judged after it returns: a
-  // preserved slot exchange already left every receiver's shader valid.
-  let policyToggles: Set<Light> | undefined;
-  const toggled = new Set<Light>();
-  const watchLight = (light: Light) => () => {
-    if (policyToggles) policyToggles.add(light);
-    else dirty = true;
+  const watchLight = () => {
+    dirty = true;
   };
-  const isPreservedExchange = (light: Light) =>
-    admission.exchanges.some(
-      (exchange) =>
-        exchange.preserved && (exchange.from === light || exchange.to === light),
-    );
 
   const sync = (): void => {
     if (scene.isDisposed) return;
     budget = forwardLightBudget(scene.getEngine());
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
-    policyToggles = toggled;
-    try {
-      admission = syncForwardLightPolicy(
-        scene,
-        budget.slots,
-        Math.max(0, sceneRenderingSettings(scene).localLightBudget),
-        selectHapticLights,
-      );
-    } finally {
-      policyToggles = undefined;
-    }
+    admission = syncForwardLightPolicy(
+      scene,
+      budget.slots,
+      Math.max(0, sceneRenderingSettings(scene).localLightBudget),
+      selectHapticLights,
+    );
     // HapticLightingBlock reads the admitted lights from one block, rewritten each frame; its Materials hold no light defines.
     writeHapticLights(scene);
-    if (toggled.size) {
-      for (const light of toggled)
-        if (!isPreservedExchange(light)) {
-          dirty = true;
-          break;
-        }
-      toggled.clear();
-    }
-    nextEnabled.length = 0;
-    nextShadowLayout.length = 0;
+    nextEnabled.clear();
+    let enabledChanged = false;
     for (const light of scene.lights) {
       if (!light.isEnabled()) continue;
-      nextEnabled.push(light);
-      nextShadowLayout.push(
-        light.shadowEnabled,
-        light.getShadowGenerator(scene.activeCamera) ??
-          light.getShadowGenerator(),
-        light instanceof RectAreaLight ? light.emissionTexture : null,
-        light instanceof RectAreaLight ? light.emissionTexture?.isReady() : false,
-      );
+      nextEnabled.add(light);
+      if (!enabledLights.has(light)) enabledChanged = true;
     }
-    const handoffs = takeShadowReceiverHandoffs(scene);
     const changed =
       sceneLightsEnabled !== scene.lightsEnabled ||
       sceneShadowsEnabled !== scene.shadowsEnabled ||
-      nextEnabled.length !== enabledLights.length ||
-      nextEnabled.some((light, index) => light !== enabledLights[index]) ||
-      nextShadowLayout.length !== shadowLayout.length ||
-      nextShadowLayout.some((entry, index) => entry !== shadowLayout[index]);
+      enabledChanged ||
+      nextEnabled.size !== enabledLights.size;
     // Babylon defers its new-entity observables. These O(1) checks also catch
     // objects constructed immediately before prewarm or the first render.
-    if (
-      !dirty &&
-      lightCount === scene.lights.length &&
-      materialCount === scene.materials.length &&
-      (!changed ||
-        (sceneLightsEnabled === scene.lightsEnabled &&
-          sceneShadowsEnabled === scene.shadowsEnabled &&
-          !handoffs?.invalid &&
-          (!!handoffs?.handoffs.length || admission.exchanges.length > 0) &&
-          explainedBySlotChanges(
-            handoffs?.handoffs ?? [],
-            admission.exchanges,
-            enabledLights,
-            shadowLayout,
-            nextEnabled,
-            nextShadowLayout,
-          )))
-    ) {
-      if (!changed) return;
-      // Receivers already bind the exchanged order with unchanged effects.
-      [enabledLights, nextEnabled] = [nextEnabled, enabledLights];
-      [shadowLayout, nextShadowLayout] = [nextShadowLayout, shadowLayout];
-      return;
-    }
+    if (!dirty && lightCount === scene.lights.length && materialCount === scene.materials.length && !changed) return;
     dirty = false;
-    // Light membership/shadow layout changed; the cached strict readiness
+    // Light membership changed; the cached strict readiness
     // result no longer describes the effects these materials will build.
     markSceneReadinessDirty(scene);
     lightCount = scene.lights.length;
@@ -275,20 +157,12 @@ function installSceneLighting(scene: Scene): SceneLighting {
       if (watchedLights.has(light)) continue;
       watchedLights.set(
         light,
-        light.onEffectiveEnabledStateChangedObservable.add(watchLight(light)),
+        light.onEffectiveEnabledStateChangedObservable.add(watchLight),
       );
     }
     const previousEnabled = enabledLights;
     enabledLights = nextEnabled;
     nextEnabled = previousEnabled;
-    const previousShadowLayout = shadowLayout;
-    shadowLayout = nextShadowLayout;
-    nextShadowLayout = previousShadowLayout;
-    // An authored enable appends its light to each receiver (a re-enabled sun
-    // or fill after every local light): restore scene order so the receiver
-    // asks for the Effects that order compiled before. Light sorting orders
-    // lightSources itself.
-    if (!scene.requireLightSorting) sortReceiverLightSources(scene);
     // Sized by the light inventory, not the enabled count: turning lights on
     // or off and budget swaps keep MAXLIGHTCOUNT, so a receiver whose own
     // lights are unchanged keeps its Effect. Not the slot count either: Babylon
