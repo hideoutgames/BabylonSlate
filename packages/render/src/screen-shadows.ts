@@ -115,9 +115,12 @@ export function screenShadowsPlaceholder(scene: Scene): ThinTexture {
 
 class ScreenShadowsTask extends FrameGraphPostProcessTask {
   private retirement: OwnedEffectRetirement | undefined;
-  constructor(graph: FrameGraph, wrapper: ReturnType<typeof customWrapper>, private readonly depth: FrameGraphTextureHandle,
-    private readonly bind: (effect: Effect) => void) {
+  private readonly depth: FrameGraphTextureHandle;
+  private readonly bind: (effect: Effect) => void;
+  constructor(graph: FrameGraph, wrapper: ReturnType<typeof customWrapper>, depth: FrameGraphTextureHandle, bind: (effect: Effect) => void) {
     super(wrapper.name, graph, wrapper);
+    this.depth = depth;
+    this.bind = bind;
     this.depthTest = false;
   }
   override record() {
