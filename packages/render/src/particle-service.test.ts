@@ -495,6 +495,34 @@ describe("ParticleService", () => {
     service.dispose();
   });
 
+  it("asks the starting-state draw again for a spawnable system that became ready after it drew", async () => {
+    const { scene, service, assign } = host({ programsDrawn: () => true });
+    const ready = vi.spyOn(ParticleSystem.prototype, "isReady").mockReturnValue(false);
+    service.setLibrary({
+      emitters: new Map([["em-1", basic()]]),
+      systems: new Map([
+        ["sys-1", { emitterGuids: ["em-1"], space: "world", previewSkybox: true }],
+        ["sys-2", { emitterGuids: ["em-1"], space: "world", previewSkybox: true }],
+      ]),
+    });
+    service.setPaused(true);
+    assign();
+    // The scene's component plays sys-1; sys-2 is prepared for a spawn.
+    service.prepareSpawnableSystems();
+    await vi.waitFor(() => expect(scene.particleSystems).toHaveLength(2));
+    // The first draw finds it compiling: it waits, and nothing is undrawn yet.
+    service.drawingUnstartedSystems(() => {});
+    expect([service.spawnableSystemsPending(), service.spawnableSystemsUndrawn()]).toEqual([true, false]);
+    // Ready now, it needs a draw of its own...
+    ready.mockReturnValue(true);
+    await vi.waitFor(() => expect(service.spawnableSystemsPending()).toBe(false));
+    expect(service.spawnableSystemsUndrawn()).toBe(true);
+    // ...and once one drew it, none.
+    service.drawingUnstartedSystems(() => {});
+    expect(service.spawnableSystemsUndrawn()).toBe(false);
+    service.dispose();
+  });
+
   it("starts systems whose programs never drew one per frame, and drawn ones at once", async () => {
     const drawn = new Set<unknown>();
     const { scene, service, frame } = host({ programsDrawn: (system) => drawn.has(system) });
