@@ -556,7 +556,7 @@ describe("local shadow refresh", () => {
     const { scene, camera, light, generator, render } = await fixture(true);
     expect(render()).toBe(6);
     expect(render()).toBe(0);
-    const buffer = hapticLightBuffer(scene);
+    const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
     const views = { first: 0, count: 0 };
     const written = () => {
       // Each frame's admission writes the block (`syncSceneLighting`); this fixture draws without the frame graph.
