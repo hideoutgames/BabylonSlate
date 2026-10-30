@@ -126,8 +126,9 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
       }
     };
     const reads = () => /^#define HAPTIC_SCREEN_SHADOWS$/m.test(compiled.material.getEffect()?.defines ?? "");
-    const settle = async () => {
-      for (let frame = 0; frame < 8; frame++) await draw();
+    // A settings change swaps in the new variant once it has compiled; until then the previous one draws.
+    const settle = async (expected = reads()) => {
+      for (let frame = 0; frame < 8 || (reads() !== expected && frame < 240); frame++) await draw();
       const generator = sun.getShadowGenerator() as CascadedShadowGenerator | null;
       for (let frame = 0; frame < 60 && generator?.getDarkness() !== 0; frame++) await draw();
     };
@@ -140,7 +141,7 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
     await settle();
     await capture("off");
     settings("pbr", "high");
-    await settle();
+    await settle(true);
     await capture("high");
     // Lights change without compiling: the sun moves, stops and starts casting.
     const effects = () => Object.keys((engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects).length;
@@ -156,7 +157,7 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
     const lightCompiles = effects() - before;
     await capture("high again");
     settings("cel", "off");
-    await settle();
+    await settle(false);
     await capture("cel off");
     settings("cel", "high");
     await settle();
