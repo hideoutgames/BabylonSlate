@@ -229,7 +229,7 @@ it("plans Screen-Space Shadows only for a world view's Scene, and tells listener
   state.qualityOverrides = qualityPresetPatch("low");
   updateSceneRenderingSettings(scene);
   expect(state.effectsPlan).toBeNull();
-  // On, off at Medium, on again at Ultra (Medium to High changed no define), off at Low.
+  // On at High, off at Medium, on at Ultra, off at Low: one call each time they start or stop.
   expect(seen).toEqual([true, false, true, false]);
 });
 
