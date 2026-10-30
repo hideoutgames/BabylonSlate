@@ -54,8 +54,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       return true;
     };
     const floorPixels = Array.from({ length: count }, (_, pixel) => pixel).filter((pixel) => fixed[pixel]! >= 0 && outline[pixel]);
-    // The outline band: within 0.3 m (about two map texels) of the box's analytic shadow outline.
-    const near = (pixel: number) => Math.abs(outline[pixel]!.distance) < 0.3;
+    // The outline band: within 0.4 m (two and a half map texels: the map's rasterization, the filter and its shift) of the
+    // box's analytic shadow outline.
+    const near = (pixel: number) => Math.abs(outline[pixel]!.distance) < 0.4;
     const band = floorPixels.filter(near);
     const shadowIn = (image: number[]) => band.reduce((sum, pixel) => sum + 1 - image[pixel]!, 0);
     // Away from the outline the jitter changes nothing: the umbra stays dark and the open floor lit.
