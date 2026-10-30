@@ -77,7 +77,6 @@ import { drawsInPass } from "./webgpu-pipeline-deferral";
 import { upsertFogVolumes } from "./fog-volumes";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { setFixedShapeLightingWorldScene } from "./fixed-light-admission";
 import { isForwardLightExcluded, setAuthoredLightEnabled } from "./light-policy";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
@@ -95,6 +94,7 @@ import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
 import { spawnableLightsOfLoad, type SpawnableLightLoad } from "./spawnable-lights";
+import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import {
   beginPipelineDeferral, capturePipelineTarget, deferredPipelinesStalled, effectDrawn, PIPELINE_DEFERRAL_STALL_MS, pipelinesDeferred,
   type PipelineTarget,
@@ -1936,7 +1936,7 @@ async function editorView() {
   const camera = new UniversalCamera("camera", new Vector3(0, 3, -10), scene);
   camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
-  setFixedShapeLightingWorldScene(scene);
+  setSceneBindsPreviousEffects(scene);
   new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
   new PointLight("near", new Vector3(-1.5, 2.5, -1), scene);
   const far = new PointLight("far", new Vector3(1.5, 2.5, -1), scene);

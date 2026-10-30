@@ -20,7 +20,6 @@ import {
   type Observer,
   type Scene,
 } from "@babylonjs/core";
-import { CelLightBlock } from "./cel-light-block";
 import { deviceProfile } from "./device-profile";
 import { hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
 
@@ -35,12 +34,7 @@ function isLitMaterial(material: Material): material is LitMaterial {
     return (
       material.mode === NodeMaterialModes.Material &&
       material.attachedBlocks.some(
-        (block) =>
-          // instanceof, not class name: app subclasses (ScenePbrLightingBlock)
-          // report their own name for NodeMaterial clone round-trips.
-          block instanceof PBRMetallicRoughnessBlock ||
-          block instanceof CelLightBlock ||
-          block instanceof LightBlock,
+        (block) => block instanceof PBRMetallicRoughnessBlock || block instanceof LightBlock,
       )
     );
   }

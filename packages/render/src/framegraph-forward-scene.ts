@@ -34,8 +34,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
-import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
-import { preparePreviousEffectBindings, sceneBindsPreviousEffects } from "./fixed-light-binding";
+import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
 import { registerLightNeutralPasses } from "./light-neutral-tasks";
 import { drawsInPass, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { isRevealPending, revealRound } from "./reveal-pending";
@@ -407,15 +406,13 @@ export class ForwardSceneFrameGraph {
 
   /**
    * WebGPU: the graph's geometry passes keep their Materials' light defines across light changes
-   * (`registerLightNeutralPasses`), so a light change creates no geometry pipeline. Such an Effect may bind a
-   * placeholder for a shadow map its light no longer has, allocated here, outside any pass.
+   * (`registerLightNeutralPasses`), so a light change creates no geometry pipeline.
    */
   private registerLightNeutralGeometry(): void {
     const engine = this.scene.getEngine();
     this.releaseLightNeutral?.();
     this.releaseLightNeutral = undefined;
     if (this.geometryTasks().next().done || !pipelinesDeferred(engine) || !sceneBindsPreviousEffects(this.scene)) return;
-    preparePreviousEffectBindings(this.scene);
     this.releaseLightNeutral = registerLightNeutralPasses(engine, (renderPassId) => {
       for (const task of this.geometryTasks()) if (task.objectRenderer.renderPassIds.includes(renderPassId)) return true;
       return false;
@@ -529,11 +526,6 @@ export class ForwardSceneFrameGraph {
     // the synchronous backstop for mesh/material/light/texture changes.
     this.syncMembership();
     return this.readinessDirtyFlag || this.outlineDirtyFlag;
-  }
-
-  /** A mesh is still drawing a previous Effect while its requested variant compiles. */
-  get variantSwapsPending(): boolean {
-    return this.variantSwaps;
   }
 
   /**

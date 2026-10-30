@@ -21,8 +21,8 @@ import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2Shade
 import { normalizeShadowSettings } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setFixedShapeLightingWorldScene } from "./fixed-light-admission";
-import { emptyLightSeatBuffer, preparePreviousEffectBindings } from "./fixed-light-binding";
-import { existingShadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
+import { emptyLightSeatBuffer } from "./fixed-light-binding";
+import { existingShadowSamplerPlaceholders, shadowSamplerPlaceholders } from "./shadow-sampler-placeholders";
 import { setAuthoredLightEnabled } from "./light-policy";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { syncSceneLighting } from "./scene-lighting";
@@ -133,7 +133,7 @@ describe("binding a previous Effect", () => {
     shadows.register(spot, false);
     sync();
     expect(shadows.generator(spot)).toBeNull();
-    preparePreviousEffectBindings(scene);
+    shadowSamplerPlaceholders(scene);
     const placeholders = existingShadowSamplerPlaceholders(scene)!;
     const bound = bindPrevious(standard, meshes[1]!, previous);
     expect(bound.blocks.get("Light0")).toBe(buffer(spot));

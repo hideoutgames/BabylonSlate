@@ -2,7 +2,6 @@ import {
   Material,
   Mesh,
   NodeMaterial,
-  PBRMetallicRoughnessBlock,
   type Scene,
 } from "@babylonjs/core";
 import { HapticLightingBlock } from "./haptic-lighting-block";
@@ -21,7 +20,7 @@ type ShadingRestore = {
   pointsCloud: boolean;
   unlit?: boolean;
   disableLighting?: boolean;
-  pbrBlocks: { block: PBRMetallicRoughnessBlock | HapticLightingBlock; unlit: boolean }[];
+  lightingBlocks: { block: HapticLightingBlock; unlit: boolean }[];
 };
 
 /** Viewport modes restyle authored world meshes only, never editor or debug helpers. */
@@ -89,13 +88,10 @@ export class ViewportShadingOverlay {
       unlit: "unlit" in lit ? Boolean(lit.unlit) : undefined,
       disableLighting:
         "disableLighting" in lit ? Boolean(lit.disableLighting) : undefined,
-      pbrBlocks:
+      lightingBlocks:
         material instanceof NodeMaterial
           ? material.attachedBlocks
-              .filter(
-                (block): block is PBRMetallicRoughnessBlock | HapticLightingBlock =>
-                  block instanceof PBRMetallicRoughnessBlock || block instanceof HapticLightingBlock,
-              )
+              .filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock)
               .map((block) => ({ block, unlit: block.unlit }))
           : [],
     });
@@ -128,7 +124,7 @@ export class ViewportShadingOverlay {
       material.fillMode !== previousFill ||
       lit.unlit !== previousUnlit ||
       lit.disableLighting !== previousDisableLighting;
-    for (const { block, unlit } of original.pbrBlocks) {
+    for (const { block, unlit } of original.lightingBlocks) {
       const next = this.current === "unlit" ? true : unlit;
       if (block.unlit === next) continue;
       block.unlit = next;

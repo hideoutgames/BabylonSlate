@@ -25,7 +25,6 @@ import { keepsLightDefines } from "./light-neutral-tasks";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import {
   existingShadowSamplerPlaceholders,
-  shadowSamplerPlaceholders,
   type ShadowSamplerPlaceholders,
 } from "./shadow-sampler-placeholders";
 
@@ -436,7 +435,7 @@ export function installFixedLightBinding(scene: Scene, table: FixedLightTableSou
       // Scene lights switched off (the Unlit viewport mode) count as disabled lighting: PBR and Standard surfaces bind
       // no lights then, so an Effect kept with lights would read buffers nothing binds.
       if (keepsLightDefines(scene.getEngine(), mesh, defines, specularSupported, maxSimultaneousLights,
-        disableLighting || !scene.lightsEnabled, !current && sceneBindsPreviousEffects(scene))) return defines._needNormals;
+        disableLighting || !scene.lightsEnabled, !current && scene.getEngine().supportsUniformBuffers)) return defines._needNormals;
       if (!current || disableLighting || !scene.lightsEnabled || !bindsBySeat(scene, defines)) {
         clearSeatDefines(defines);
         return undefined;
@@ -463,35 +462,6 @@ export function installFixedLightBinding(scene: Scene, table: FixedLightTableSou
     },
   };
   (scene as HookedScene)._materialLightHooks = hooks;
-  hookedScenes.add(scene);
-}
-
-const hookedScenes = new WeakSet<Scene>();
-
-/**
- * Whether a world view may draw a Material's previous Effect while its changed variant compiles: the Scene binds such
- * an Effect by its own light layout (these hooks), on an Engine with uniform buffers.
- */
-export function sceneBindsPreviousEffects(scene: Scene): boolean {
-  return hookedScenes.has(scene) && scene.getEngine().supportsUniformBuffers;
-}
-
-/**
- * Whether a world view may draw `effect` as a Material's previous Effect while its changed variant compiles: an Effect
- * on Babylon's light path, which `bindLights` binds by its own light layout with placeholders for whatever its lights
- * no longer supply. A seat-bound Effect (fixed-shape lighting, or one compiled before the switch was turned off) binds
- * its seats from the current table with no placeholders, so its Material waits for the new variant.
- */
-export function bindsAsPreviousEffect(effect: Effect): boolean {
-  return effectLightSeats(effect) === null;
-}
-
-/**
- * Allocates what a previous Effect's bindings may need (the sampler placeholders) before a frame's passes: a render
- * target allocated inside a pass would rebind the framebuffer it draws to.
- */
-export function preparePreviousEffectBindings(scene: Scene): void {
-  if (!scene.isDisposed) shadowSamplerPlaceholders(scene);
 }
 
 /** Light textures a shader light samples, as flags. */
