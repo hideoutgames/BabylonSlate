@@ -12,7 +12,7 @@ import {
 } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import {
-  builtInWaterMaterial, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, setHapticLighting, setSceneRenderSettings,
+  builtInWaterMaterial, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, setSceneRenderSettings,
   setSceneWaterTime, updateSceneWater,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
@@ -45,8 +45,6 @@ export async function runWaterTemplateProof(backend: "webgl2" | "webgpu" = "webg
     ? await createAppWebGpuEngine(canvas)
     : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const order = readbackChannelOrder(engine.isWebGPU);
-  // Graph Materials compile with the lighting plan's block, which built-in water's graph Material needs.
-  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   try {
     // One depth buffer across rendering groups, as the editor's scenes keep it: water's scene copy needs it.
@@ -145,7 +143,6 @@ export async function runWaterTemplateProof(backend: "webgl2" | "webgpu" = "webg
       exactSrgb: engine.useExactSrgbConversions,
     };
   } finally {
-    setHapticLighting(engine, false);
     scene.dispose();
     engine.dispose();
     canvas.remove();

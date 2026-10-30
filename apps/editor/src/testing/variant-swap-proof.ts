@@ -29,7 +29,7 @@ import {
 } from "@babylonjs/core";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
-import { applyAuthoredLightProperties, setHapticLighting, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
 import { glErrorTraceEntries, installGlErrorTrace } from "@haptic/render/gl-error-trace";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
@@ -57,8 +57,6 @@ async function worldView() {
   canvas.height = 72;
   document.getElementById("root")!.append(canvas);
   const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
-  // Graph Materials compile with the light block.
-  setHapticLighting(engine, true);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
   const camera = new FreeCamera("camera", new Vector3(0, 4.5, -7.5), scene);
@@ -137,7 +135,6 @@ async function worldView() {
   const dispose = () => {
     coordinator.dispose();
     scene.dispose();
-    setHapticLighting(engine, false);
     engine.dispose();
     canvas.remove();
   };
