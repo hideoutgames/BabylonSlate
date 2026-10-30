@@ -190,8 +190,8 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
 
 /**
  * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): the surface the view hits first (the glass's
- * pixels report the floor seen through it as "glass"), whether a caster blocks the sun within `reach` of that point
- * (`contact`) or at no distance at all (`open`), and its eye distance.
+ * pixels report the floor seen through it as "glass"), whether a caster or the glass blocks the sun within `reach` of
+ * that point (`contact`) or at no distance at all (`open`), and its eye distance.
  */
 function surfaceMask(
   scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, topDown: boolean, floor: AbstractMesh, ramp: AbstractMesh,
@@ -215,8 +215,9 @@ function surfaceMask(
         continue;
       }
       const start = point.add(toSun.scale(0.002));
-      const blocker = (length: number) =>
-        scene.pickWithRay(new Ray(start, toSun, length), (mesh) => casters.includes(mesh) && mesh !== hit!.pickedMesh)?.hit === true;
+      // The glass is in the geometry pass's depth, so the march finds it as it finds any caster.
+      const blocker = (length: number) => scene.pickWithRay(new Ray(start, toSun, length),
+        (mesh) => (casters.includes(mesh) || mesh === glass) && mesh !== hit!.pickedMesh)?.hit === true;
       mask.contact.push(blocker(reach));
       mask.open.push(!blocker(100));
     }

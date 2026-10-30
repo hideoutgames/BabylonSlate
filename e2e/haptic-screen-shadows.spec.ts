@@ -68,6 +68,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       beyond: beyond.length, beyondChanged: changed(beyond).length, glass: glass.length, glassChanged: changed(glass).length,
       celChanged: cel.length, lightCompiles: result.lightCompiles, planned: result.planned,
     };
+    if (process.env.SCREEN_DUMP) {
+      const fs = await import("node:fs");
+      fs.writeFileSync(`${process.env.SCREEN_DUMP}/screen-${backend}.json`, JSON.stringify({ width: result.width, height: result.height, off, high, mask, openChanged: changed(open) }));
+    }
     await testInfo.attach(`haptic-screen-shadows-${backend}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
     console.log(JSON.stringify(report));
     expect(errors).toEqual([]);
