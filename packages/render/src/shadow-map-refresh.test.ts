@@ -28,6 +28,8 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { createLandscapeMesh, updateLandscapeMesh } from "./landscape-mesh";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { HAPTIC_SHADOW_VIEW_VEC4S, hapticLightBuffer, hapticShadowViews, writeHapticLights } from "./haptic-lights";
+import type { AtlasShadow } from "./shadow-atlas";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -594,14 +596,33 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(6);
   });
 
-  it("refreshes local maps when the actual floating render origin moves", async () => {
-    const { scene, camera, render } = await fixture(true);
+  it("keeps local maps cached while the floating render origin moves, sampled from the new origin", async () => {
+    const { scene, camera, light, generator, render } = await fixture(true);
     expect(render()).toBe(6);
     expect(render()).toBe(0);
+    const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+    const views = { first: 0, count: 0 };
+    const written = () => {
+      // Each frame's admission writes the block (`syncSceneLighting`); this fixture draws without the frame graph.
+      writeHapticLights(scene);
+      expect(hapticShadowViews(scene, light, views)).toBe(true);
+      const at = buffer._uniformLocations["hapticShadowViews"]! + views.first * HAPTIC_SHADOW_VIEW_VEC4S * 4;
+      return [...buffer._bufferData.subarray(at, at + 16)];
+    };
+    const expected = () => {
+      const offset = scene.floatingOriginOffset;
+      const drawn = (generator as unknown as AtlasShadow).drawnViews[0]!;
+      return [...Matrix.Translation(offset.x, offset.y, offset.z).multiply(drawn).m].map(Math.fround);
+    };
+    expect(written()).toEqual(expected());
     const oldOrigin = scene.floatingOriginOffset.clone();
     camera.position.x += 1;
-    expect(render()).toBe(6);
+    // Only the render origin moved: the depth relative to the light is what the map holds.
+    expect(render()).toBe(0);
     expect(scene.floatingOriginOffset.equals(oldOrigin)).toBe(false);
+    // The light block samples the retained depth from the new origin.
+    expect(written()).toEqual(expected());
+    expect(written()).not.toEqual([...Matrix.Translation(oldOrigin.x, oldOrigin.y, oldOrigin.z).multiply((generator as unknown as AtlasShadow).drawnViews[0]!).m].map(Math.fround));
     expect(render()).toBe(0);
   });
 });
