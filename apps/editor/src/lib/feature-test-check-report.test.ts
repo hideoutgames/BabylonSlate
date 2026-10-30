@@ -107,6 +107,7 @@ describe("formatFeatureTestCheckReport", () => {
     const row = (label: string) => lines.find((line) => line.startsWith(`    ${label} `))!;
     expect(lines[0]).toMatch(/^Haptic Feature Test Check \(Breakdown\)/);
     expect(lines.some((line) => line.includes("60 fps cap"))).toBe(true);
+    expect(lines.filter((line) => line.startsWith("  Legend: ")).length).toBe(1);
     // Mean frame time against the baselines around the step; vsync shares; GPU-bound well past the CPU cost.
     expect(row("water reflections sky")).toMatch(/^ {4}water reflections sky 33 {3}30\.0ms {2}38ms {3}10\/80\/5\/5 {7}-10\.0ms -25% {5}14\.2ms {2}gpu {3}575 \(544-605\) water\.reflections=sky$/);
     expect(row("water detail low")).toContain("water.shadingDetail=low · UNEXPECTED: water.reflections=sky");

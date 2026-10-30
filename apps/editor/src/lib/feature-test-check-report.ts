@@ -73,9 +73,8 @@ function sceneLines(scene: FeatureTestCheckSceneResult, mode: FeatureTestCheckMo
   }
   if (play.benchmark.length && mode === "breakdown") {
     lines.push(
-      "  Breakdown (60 fps cap, each step sampled once no shader is first drawn or compiling; change in mean frame time",
-      "  against the baselines around the step, a baseline's against the first; vsync: share of frames lasting 1/2/3/4+",
-      "  display intervals; bound: gpu when frames take over 1.5x the CPU cost, vsync at the cap):",
+      "  Breakdown (60 fps cap; each step sampled once no shader is first drawn or compiling):",
+      "  Legend: change = mean frame time against the baselines around the step (a baseline's: against the first) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed; UNEXPECTED, NOT RESTORED and UNSETTLED mark a sample not to trust",
       `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("vsync 1/2/3/4+", 16)}${pad("change", 17)}${pad("cpu", 8)}${pad("bound", 6)}${pad("draws", 14)}notes`);
     const first = play.benchmark.find(isBreakdownBaseline);
     for (const sample of play.benchmark) {
