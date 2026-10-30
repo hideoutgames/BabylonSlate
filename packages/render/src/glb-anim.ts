@@ -12,6 +12,7 @@ import type {
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { loadModelContainer, parentContainerRoots } from "./model-container";
 import { Scene } from "@babylonjs/core/scene";
@@ -539,7 +540,9 @@ export async function prepareInstanceMaterials(
     ? [...new Set(material.subMaterials.flatMap((child) => child ? materialsOf(child) : []))]
     : [material];
   try {
-    for (const mesh of root.getChildMeshes()) {
+    // An instance draws in its source's batch, which may stand outside `root`: each source compiles once.
+    const batches = new Set(root.getChildMeshes().map((mesh) => mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh));
+    for (const mesh of batches) {
       if (!(mesh instanceof Mesh) || !mesh.getTotalVertices()) continue;
       for (;;) {
         check();

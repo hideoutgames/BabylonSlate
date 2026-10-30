@@ -1448,6 +1448,29 @@ describe("atlas caster variants", () => {
     expect([sun, spot, lamp].map((light) => held.includes(drawnWith(light)))).toEqual([true, true, true]);
   });
 
+  it("holds the instanced depth variant of each atlas kind for a regular-instance batch", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    engine.getCaps().instancedArrays = true;
+    // A glTF node instance and its source: the batch draws instanced, which outside a frame no visible instance says.
+    const source = MeshBuilder.CreateBox("source", { size: 1 }, scene);
+    source.createInstance("copy").position.x = 3;
+    const variants = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
+      .flatMap((effect) => {
+        const kind = /SM_LIGHTTYPE_(\w+)/.exec(effect.defines)?.[1];
+        return kind ? [`${kind} ${/#define INSTANCES\b/.test(effect.defines) ? "instanced" : "plain"}`] : [];
+      }).sort();
+    controller.sync();
+    controller.warmCasterVariants();
+    for (let frame = 0; frame < 3; frame++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      controller.sync();
+    }
+    expect(variants()).toEqual([
+      "DIRECTIONALLIGHT instanced", "DIRECTIONALLIGHT plain", "POINTLIGHT instanced", "POINTLIGHT plain", "SPOTLIGHT instanced", "SPOTLIGHT plain",
+    ]);
+  });
+
   it("asks a caster whose Material draws its depth through a wrapper until it holds its variants, then no more", async () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();

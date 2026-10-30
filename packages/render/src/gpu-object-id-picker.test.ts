@@ -618,6 +618,61 @@ describe("gpuPickMesh", () => {
     expect(FloatingOriginCurrentScene.getScene).toBe(context);
   });
 
+  describe("regular instances, which draw in one batch under their source's id", () => {
+    /** The read-back writes the id the pass gives `mesh`, as the GPU does for the batch `mesh` is the source of. */
+    function batchHit(f: PickFixture, mesh: AbstractMesh) {
+      f.readback.mockImplementation(async (_texture, _width, _height, _face, _level, buffer) => {
+        f.hit(MaterialHelperGeometryRendering.GetConfiguration(f.scene.objectRenderers[0]!.renderPassId)!.objectIdProvider!(mesh));
+        return f.writeHit(buffer!);
+      });
+    }
+    /** An instance of `source` (a glTF node instance) at `x`, `z`. */
+    function instanceOf(source: Mesh, name: string, x: number, z: number) {
+      const instance = source.createInstance(name);
+      instance.position.set(x, 0, z);
+      instance.computeWorldMatrix(true);
+      return instance;
+    }
+
+    it("answers the instance the tapped pixel shows, not the source the batch drew as", async () => {
+      const f = pickFixture();
+      const right = f.meshes[2]!;
+      // In front of every box on the centre pixel's ray, and one beside it.
+      instanceOf(right, "Nearest Instance", 0, -5);
+      instanceOf(right, "Beside Instance", 2.5, -5);
+      batchHit(f, right);
+      expect((await f.tap())?.name).toBe("Nearest Instance");
+      // The source itself, nearer than its instances on the ray, is what the pixel shows.
+      right.position.z = -6;
+      right.computeWorldMatrix(true);
+      expect((await f.tap())?.name).toBe("Right");
+    });
+
+    it("numbers a hidden source, which draws only its instances, and answers the instance", async () => {
+      const f = pickFixture();
+      const source = MeshBuilder.CreateBox("Hidden Source", {}, f.scene);
+      source.material = new StandardMaterial("Hidden Source Material", f.scene);
+      source.isVisible = false;
+      source.isPickable = false;
+      instanceOf(source, "Instance", 0, -5);
+      batchHit(f, source);
+      expect((await f.tap())?.name).toBe("Instance");
+    });
+
+    it("hands the tap to the CPU ray when the pixel's ray meets none of the batch", async () => {
+      const f = pickFixture();
+      const right = f.meshes[2]!;
+      // Morphed, the batch is drawn wherever its bounds stand, and its id at a pixel its bind pose misses is a draw
+      // the ray cannot place.
+      right.morphTargetManager = new MorphTargetManager(f.scene);
+      instanceOf(right, "Beside Instance", 3, -5);
+      f.place(right, 3);
+      batchHit(f, right);
+      expect(await f.tap()).toBeUndefined();
+      expect(f.warn).toHaveBeenCalledWith(expect.stringContaining("meets none of \"Right\"'s drawn instances"));
+    });
+  });
+
   describe("lifecycle", () => {
     it("falls back to the CPU ray after a failed read-back and rebuilds without leaking the failed pass", async () => {
       const f = pickFixture();

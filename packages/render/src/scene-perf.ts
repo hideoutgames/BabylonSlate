@@ -21,6 +21,7 @@ import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 import { drawnMaterialVariants } from "./drawn-variants";
+import { drawingMesh } from "./instance-source";
 import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
@@ -279,10 +280,14 @@ function swapFailed(material: Material): boolean {
   return failed !== undefined;
 }
 
-/** Whether every submesh of `mesh` has a ready Effect in the current pass: something it can draw while it swaps. */
+/**
+ * Whether every submesh of `mesh` has a ready Effect in the current pass: something it can draw while it swaps. An
+ * instance's submeshes hold none: its source's batch draws it with the source's.
+ */
 function drawsSomething(mesh: AbstractMesh): boolean {
-  if (!mesh.subMeshes?.length) return true;
-  for (const part of mesh.subMeshes) {
+  const source = drawingMesh(mesh);
+  if (!source.subMeshes?.length) return true;
+  for (const part of source.subMeshes) {
     const material = part.getMaterial();
     if (!material) continue;
     const wrapper = material._storeEffectOnSubMeshes ? part._drawWrapperOverride ?? part._getDrawWrapper() : material._getDrawWrapper();
