@@ -13,7 +13,6 @@ import {
   type Camera,
 } from "@babylonjs/core";
 import type { ShadowSettings } from "@haptic/core";
-import { ReusableShadowGenerator, type LocalShadowLight } from "./reusable-shadow-generator";
 import { AtlasCascadedShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
@@ -23,14 +22,13 @@ import {
   resolveDirectionalShadowBias,
   type DirectionalShadowBiasInput,
 } from "./shadow-bias";
-import { configureDirectionalShadowProjection, trackDirectionalShadowFit } from "./directional-shadow-projection";
 import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
 import { awaitsFirstDraw, isWarmShadowRender, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { isRevealPending } from "./reveal-pending";
 import { listsHiddenCaster } from "./shadow-caster-warm";
-import { atlasTileEdge, type EffectiveShadowBias, type ShadowEntry as Entry } from "./shadow-entry";
+import { type EffectiveShadowBias, type LocalShadowLight, type ShadowEntry as Entry } from "./shadow-entry";
 
 // Every Babylon 9.29 shadow filter returns fully lit at darkness 1.
 export const NEUTRAL_DARKNESS = 1;
@@ -112,8 +110,7 @@ function atlasShadowGenerator(
  * receiver defines, automatic bias, culled caster lists and draw counters.
  * `view` keys a sun map to a view's camera (attachView); null is the scene
  * view's map, which receivers of every other camera bind. `atlasEdge`: the
- * lighting plan's atlas the maps are tiles of (`ShadowAdmissionBudget.atlasEdge`),
- * 0 for maps of their own.
+ * lighting plan's atlas the maps are tiles of (`ShadowAdmissionBudget.atlasEdge`).
  */
 export function createShadowGenerator(
   context: ShadowMapContext,
@@ -122,7 +119,7 @@ export function createShadowGenerator(
   settings: ShadowSettings,
   view: Camera | null,
   casterBounds: ReturnType<ShadowSpatialIndex["bounds"]> | undefined,
-  atlasEdge = 0,
+  atlasEdge: number,
 ): ShadowGenerator {
   const scene = context.scene;
   const directionalLight = entry.light instanceof DirectionalLight;
@@ -131,24 +128,12 @@ export function createShadowGenerator(
   );
   // A view's map is keyed to its camera; the scene view's to the null camera.
   const camera = view ?? undefined;
-  const generator =
-    atlasTileEdge(entry.light, atlasEdge)
-      ? atlasShadowGenerator(entry.light, mapSize, settings.cascades, atlasEdge, camera)
-      : directionalLight && settings.cascades > 1
-        ? new CascadedShadowGenerator(
-            mapSize,
-            entry.light as DirectionalLight,
-            undefined,
-            camera,
-          )
-        : directionalLight
-          ? new ShadowGenerator(mapSize, entry.light, undefined, camera)
-          : new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
+  // The controller registers directional, point and spot lights only.
+  const generator = atlasShadowGenerator(entry.light as LocalShadowLight | DirectionalLight, mapSize, settings.cascades, atlasEdge, camera);
   const slot = { entry, view: view !== null };
   context.slots.set(generator, slot);
   if (generator instanceof CascadedShadowGenerator) {
     // An atlas sun is built with its count, which may be one; Babylon's setter allows two at least.
-    if (!(generator instanceof AtlasCascadedShadowGenerator)) generator.numCascades = settings.cascades;
     generator.stabilizeCascades = true;
     generator.lambda = 0.7;
     generator.shadowMaxZ = settings.distance;
@@ -161,17 +146,6 @@ export function createShadowGenerator(
         casterBounds.min,
         casterBounds.max,
       );
-  } else if (entry.light instanceof DirectionalLight) {
-    // The light's one builder fits each of its generators to its own camera.
-    if (!view)
-      configureDirectionalShadowProjection(
-        entry.light,
-        scene,
-        settings.distance,
-        mapSize,
-        context.spatial,
-      );
-    trackDirectionalShadowFit(generator);
   }
   applyShadowSettings(generator, settings);
   const prepare = generator.prepareDefines.bind(generator);
@@ -392,7 +366,7 @@ export function applyShadowSettings(
  * for a strict readiness probe). It awaits no first draw. A light's own map stays attached.
  */
 export function createDetachedShadowGenerator(
-  maps: ShadowMapContext, light: Entry["light"], settings: ShadowSettings, mapSize: number, atlasEdge = 0,
+  maps: ShadowMapContext, light: Entry["light"], settings: ShadowSettings, mapSize: number, atlasEdge: number,
 ): ShadowGenerator {
   const entry: Entry = {
     light, requested: true, priority: 0, generator: null, key: null, settings, mapSize,
