@@ -9,7 +9,7 @@ import { WATER_SCENE_COPY_SKY_DEPTH } from "./water-scene-copy";
 import {
   BLEND_COLOR_UNIFORMS, BLEND_PARTNERS, COLOR_LOCALS, COLOR_UNIFORMS, f, FFT, FFT_CASCADE_UNIFORMS, OPEN_EDGE_FADE,
   OPEN_EDGE_FADE_TERRAIN, PIXEL_SLOPE_CAP, PIXEL_SLOPE_FILTER, SOFT_SHORE_DEPTH, SPECTRUM_FOAM_SCALE, SSR_REFINE_STEPS,
-  SSR_STEPS, SSR_THICKNESS, TURBIDITY, WATER_BLEND_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER,
+  SSR_STEPS, SSR_THICKNESS, TURBIDITY, WATER_BLEND_DEFINE, WATER_DETAIL_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER,
 } from "./water-shader-defines";
 
 /**
@@ -20,8 +20,8 @@ import {
  * body's turbulence lies past its Crest Foam threshold (the whitecaps are where it is positive), and `amount` (0 none,
  * 1 all) lowers that threshold, most only at the waterline, so edge foam grows out of the whitecaps' soft streaky
  * shapes and follows the waves. Smooth noise at three scales in flowed world metres (`p`) breaks it into wisps where the
- * waves are calm, each faded where `foot` (metres per pixel) would alias it, and thin foam is partly clear. No cells,
- * so no holes or rows.
+ * waves are calm, each faded where `foot` (metres per pixel) would alias it, and thin foam is partly clear (at Low Water
+ * Shading Detail, `SLATE_WATER_DETAIL` 0, only the broadest scale). No cells, so no holes or rows.
  *
  * `<prefix>ShoreFoamAmount(p, t, depth, width)` is the shore's amount: thick at the waterline, thinning to nothing where the
  * water is about 1.6 `width` deep (between 1 and 2.4 along the shore), with bands that wash in toward the shore, out of
@@ -36,8 +36,10 @@ float ${prefix}EdgeFoamCover(vec2 p, float amount, float crest, float foot) {
   float a = clamp(amount, 0.0, 1.0);
   float detail = 1.0 - smoothstep(0.15, 0.6, foot * 3.0);
   float wisp = 1.0 - smoothstep(0.15, 0.6, foot * 8.0);
-  float soft = ((${prefix}Noise(p * 0.7) - 0.5) * 0.8 + (${prefix}Noise(p * 2.3 + vec2(3.7, 8.1)) - 0.5) * 0.45) * detail
-    + (${prefix}Noise(p * 6.1 + vec2(9.4, 2.6)) - 0.5) * 0.3 * wisp;
+  float soft = (${prefix}Noise(p * 0.7) - 0.5) * 0.8 * detail;
+#if ${WATER_DETAIL_DEFINE} >= 1
+  soft = soft + (${prefix}Noise(p * 2.3 + vec2(3.7, 8.1)) - 0.5) * 0.45 * detail + (${prefix}Noise(p * 6.1 + vec2(9.4, 2.6)) - 0.5) * 0.3 * wisp;
+#endif
   float cover = clamp((crest + soft + mix(-0.35, 0.85, a * sqrt(a))) * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0);
   return cover * (0.55 + 0.45 * a) * smoothstep(0.0, 0.08, a);
 }
@@ -84,11 +86,13 @@ float swHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, ${graze})) * (1.0 - sm
  * depth): there the copy is not what lies behind this point. The nearest neighbouring texel that does lie behind the
  * water stands in for it (its colour and depth, at most one copy texel away, written into `uv` and `sceneZ`), so
  * silhouettes keep refracting instead of dropping a texel-sized block of pixels back to the blended surface. Only there:
- * four depth loads. `waterZ` is the water's view depth, `pixel` the output's 1 / width. GLSL-shaped; reads the copy
- * helpers. The Water Scene Color node reads it.
+ * four depth loads. `waterZ` is the water's view depth, `pixel` the output's 1 / width. High and Ultra Water Shading
+ * Detail only (`SLATE_WATER_DETAIL` 2 and up): below, a silhouette's texel keeps the unbent copy's fallback. GLSL-shaped;
+ * reads the copy helpers. The Water Scene Color node reads it.
  */
 export function silhouetteFallbackSource(uv: string, sceneZ: string, waterZ: string, pixel: string): string {
   return `
+#if ${WATER_DETAIL_DEFINE} >= 2
 vec2 swCopyTexel = swSceneTexelUv();
 if (${sceneZ} < ${waterZ} && swCopyTexel.x > ${pixel} * 1.01) {
   float swBehind = ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)};
@@ -97,7 +101,8 @@ if (${sceneZ} < ${waterZ} && swCopyTexel.x > ${pixel} * 1.01) {
   float swNearZ${k} = swSceneDepth(swNearUv${k});
   if (swNearZ${k} >= ${waterZ} && swNearZ${k} < swBehind) { swBehind = swNearZ${k}; swBehindUv = swNearUv${k}; }`).join("")}
   if (swBehind < ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)}) { ${uv} = swBehindUv; ${sceneZ} = swBehind; }
-}`;
+}
+#endif`;
 }
 
 /**
@@ -110,12 +115,14 @@ if (${sceneZ} < ${waterZ} && swCopyTexel.x > ${pixel} * 1.01) {
  * highest crest) the waves cannot move the shoreline, so the stored rest distance stands: steep coasts keep their
  * shoreline, and the full-range depth's 16 cm steps never read as slopes (over a gentle deep floor they drew contour
  * rings of shore foam). Only real terrain takes this path: cells extended past an underwater landscape edge (alpha ramp)
- * have no floor slope to measure. GLSL-shaped; reads `U.slateWaterFieldStep` and `U.slateWaterFieldBounds`. The
- * water nodes share it.
+ * have no floor slope to measure. At Low Water Shading Detail (`SLATE_WATER_DETAIL` 0) the stored rest distance stands
+ * everywhere, without the four taps, and the shore counts as steep. GLSL-shaped; reads `U.slateWaterFieldStep` and
+ * `U.slateWaterFieldBounds`. The water nodes share it.
  */
 export function shorelineSource(o: { tap: string; uv: string; cond: string; depth: string; shore: string }): string {
   return `
 float swShoreSlope = 1.0;
+#if ${WATER_DETAIL_DEFINE} >= 1
 if (${o.cond}) {
   vec2 swFieldStep = U.slateWaterFieldStep.xy;
   vec4 swTapE = ${o.tap}(${o.uv} + vec2(swFieldStep.x, 0.0));
@@ -128,7 +135,8 @@ if (${o.cond}) {
     1.0 - smoothstep(0.01, 0.07, min(min(swTapE.b, swTapW.b), min(swTapN.b, swTapS.b))));
   ${o.shore} = mix(clamp(${o.depth} / max(length(swTerrainSlope), 0.001), ${f(SHORE[0])}, ${f(SHORE[1])}), ${o.shore}, swFineClamped);
   swShoreSlope = mix(length(swTerrainSlope), 1.0, swFineClamped);
-}`;
+}
+#endif`;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BakedVertexAnimationManager,
   Material,
@@ -12,6 +12,7 @@ import {
   Skeleton,
   StandardMaterial,
   Scene,
+  Texture,
 } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
@@ -21,7 +22,9 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@haptic/shader-graph";
-import { compileMaterialPlan } from "./material-compiler";
+import { compileMaterialPlan, ensureAuthoredShadowDepthWrapper } from "./material-compiler";
+import { ensureLatticeShadowAdapter, releaseLatticeShadowAdapter, setLatticeBinding } from "./lattice-deformer-binding";
+import { ensureNativeLatticeShadowDepthWrapper, releaseNativeLatticeShadowDepthWrapper } from "./native-lattice-shadow";
 import { HelperProgramPlugin, shareHelperProgram } from "./helper-program";
 import { canCacheShadowMaterial, hasStockVertexStage } from "./shadow-material-policy";
 import { TextureQualityPlugin } from "./texture-quality";
@@ -162,6 +165,53 @@ describe("shadow material cache policy", () => {
     expect(
       canCacheShadowMaterial(await compiledMaterial(scene, masked), mesh),
     ).toBe(false);
+  });
+
+  it("keeps a compiler result cacheable after the compiler rebuilds it for a texture that loaded", async () => {
+    const { scene, mesh } = fixture();
+    const document = createDefaultMaterialDocument();
+    document.nodes.push({ id: "mask", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "mask" } });
+    document.edges.push({ id: "mask-emission", sourceNodeId: "mask", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "emissive" });
+    const texture = new Texture(null, scene);
+    const loaded = vi.spyOn(texture, "isReady").mockReturnValue(false);
+    const lowered = lowerMaterialDocument(document);
+    if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+    const result = compileMaterialPlan(lowered.plan, { scene, name: "textured", resolveTexture: () => texture });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    expect(await result.ready).toEqual([]);
+    const material = result.material;
+    expect(canCacheShadowMaterial(material, mesh)).toBe(true);
+    const built = material.buildId;
+    loaded.mockReturnValue(true);
+    const rebuilt = new Promise<void>((resolve) => material.onBuildObservable.addOnce(() => resolve()));
+    texture.onLoadObservable.notifyObservers(texture);
+    await rebuilt;
+    // The same plan at a new build id: its vertex stage is still the stock transform.
+    expect(material.buildId).not.toBe(built);
+    expect(canCacheShadowMaterial(material, mesh)).toBe(true);
+    result.dispose();
+  });
+
+  it("caches meshes without a cage while a cage's lattice wrapper is on their shared material", async () => {
+    const { scene, mesh } = fixture();
+    const caged = MeshBuilder.CreateBox("caged", {}, scene);
+    const cage = { active: true, bindEffect: () => {}, bindBuffer: () => {} };
+    setLatticeBinding(caged, cage);
+    const native = new StandardMaterial("native", scene);
+    const compiled = await compiledMaterial(scene, createDefaultMaterialDocument());
+    expect(ensureNativeLatticeShadowDepthWrapper(native)).toBe(true);
+    expect(ensureLatticeShadowAdapter(compiled)).toBe(true);
+    for (const material of [native, compiled]) {
+      expect(material.shadowDepthWrapper).not.toBeNull();
+      // The wrapper draws a mesh without an active cage as its own geometry; the caged one deforms.
+      expect([canCacheShadowMaterial(material, mesh), canCacheShadowMaterial(material, caged)]).toEqual([true, false]);
+    }
+    // A deformation that keeps the compiler's wrapper for every mesh is no longer the cage's alone.
+    ensureAuthoredShadowDepthWrapper(compiled);
+    expect(canCacheShadowMaterial(compiled, mesh)).toBe(false);
+    releaseLatticeShadowAdapter(compiled);
+    await releaseNativeLatticeShadowDepthWrapper(native);
+    setLatticeBinding(caged);
   });
 
   it("rejects nested-function vertex displacement even with zero bounds padding", async () => {

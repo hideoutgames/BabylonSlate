@@ -78,7 +78,7 @@ import { applyLatticeDeformerPlumbing, LatticeDeformerBlock } from "./lattice-de
 import { WaterCoverageBlock, WaterCutBlock } from "./water-node-blocks";
 import { WaterSurfaceBlock } from "./water-surface-block";
 import { WaterWavesBlock } from "./water-waves-block";
-import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
+import { markCageShadowWrapper, registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
@@ -729,6 +729,8 @@ export function compileMaterialPlan(
   let buildState: CompiledMaterial["buildState"] = "pending";
   let disposed = false;
   let checkingShader = false;
+  // Builds `rebuildWhenReady` started whose build observer has not run yet: the same plan, rebuilt for a loaded texture.
+  let ownRebuilds = 0;
   let shaderTimer: ReturnType<typeof setTimeout> | undefined;
   let shaderProbe: Mesh | null = null;
   let failedShaderEffect: Effect | null = null;
@@ -789,6 +791,8 @@ export function compileMaterialPlan(
   materialBuilds.set(material, ready);
   const errorObserver = material.onBuildErrorObservable.add((message) => {
     buildError = message;
+    // A failed build emits no build notification: the next one is not ours unless `rebuildWhenReady` starts it.
+    ownRebuilds = 0;
     const diagnostic: MaterialDiagnostic = { code: "material.compile.buildFailed", message, severity: "error" };
     if (buildState === "pending") {
       buildState = "failed";
@@ -799,6 +803,11 @@ export function compileMaterialPlan(
   });
   const buildObserver = material.onBuildObservable.add(() => {
     configureSurface();
+    if (ownRebuilds > 0) {
+      ownRebuilds--;
+      // The plan's vertex stage is unchanged, so a cacheable shape stays so at its new build id.
+      if (buildState === "ready" && cacheableShadowShape) registerCacheableShadowMaterial(material);
+    }
     if (buildState === "pending") {
       if (checkingShader) return;
       if (plan.cost.customBlocks > 0 && scene.getEngine().getClassName() !== "NullEngine") {
@@ -948,11 +957,13 @@ export function compileMaterialPlan(
     if (disposed || material.mode === NodeMaterialModes.Particle) return;
     const wasFrozen = material.isFrozen;
     if (wasFrozen) material.unfreeze();
+    ownRebuilds++;
     try {
       material.build();
       configureSurface();
       markCompiledMaterialDirty(material);
     } catch (error) {
+      ownRebuilds = 0;
       // Must not throw into Texture.onLoadObservable / onErrorObservable.
       options.onTextureError?.({
         code: "material.compile.buildFailed",
@@ -1061,6 +1072,8 @@ export function compileMaterialPlan(
       if (shadow || material.shadowDepthWrapper) return;
       const variant = acquireAuthoredMaterialVariant(material, "shadowDepth")!;
       const wrapper = new AuthoredShadowDepthWrapper(variant.compiled.material);
+      // Until a deformation needs it permanently, only cages use it: a mesh without one draws its own geometry.
+      markCageShadowWrapper(wrapper, () => !permanentShadow);
       shadow = { wrapper, variant };
       material.shadowDepthWrapper = wrapper;
     };

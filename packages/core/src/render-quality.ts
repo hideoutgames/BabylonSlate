@@ -51,7 +51,7 @@ export interface GeometryQuality extends QualitySelection {
 }
 export const LOD_DISTANCE_SCALE_MIN = 0.25;
 export const LOD_DISTANCE_SCALE_MAX = 4;
-/** Shader terms compiled into built-in water; one level per project tier. */
+/** How many of the water nodes' costly per-pixel terms any Material with water nodes compiles; one level per project tier. */
 export type WaterShadingDetail = "low" | "medium" | "high" | "ultra";
 export const WATER_SHADING_DETAILS: readonly WaterShadingDetail[] = ["low", "medium", "high", "ultra"];
 /** sky = environment only; screenSpace marches the scene copy; planar mirrors flat bodies. */
@@ -62,7 +62,11 @@ export const WATER_REFLECTION_MODES: readonly WaterReflectionMode[] = ["sky", "s
  * queries sample the same waves on every tier and device.
  */
 export interface WaterQuality extends QualitySelection {
-  /** SLATE_WATER_QUALITY 0..3 (shader terms per tier). */
+  /**
+   * The water nodes' costly per-pixel terms (SLATE_WATER_DETAIL 0..3): Medium drops the refraction's silhouette
+   * fallback, Low also the shoreline under the waves, contact foam and edge foam's finer noise. Never changes
+   * Reflections, Refraction, Reflection Steps or FFT Cascades.
+   */
   shadingDetail: WaterShadingDetail;
   /** Multiplies each body's Surface Resolution; hard vertex caps still apply. */
   meshDensity: number;

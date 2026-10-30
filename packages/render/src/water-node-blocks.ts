@@ -20,7 +20,7 @@ import { waterPlanarReflectionForCamera } from "./water-planar-reflection";
 import { waterRemovalShapeVector } from "./water-removal-mesh";
 import {
   PLANAR_REACH, REFRACTION_DEPTH_CAP, REFRACTION_FAR, REFRACTION_SHIFT as BUILT_IN_REFRACTION_SHIFT, REFRACTION_SHIFT_PX as BUILT_IN_REFRACTION_SHIFT_PX,
-  WATER_EFFECTS_GEOMETRY_DEFINE, WATER_REFRACTION_SCALE,
+  WATER_DETAIL_DEFINE, WATER_DETAIL_LEVELS, WATER_EFFECTS_GEOMETRY_DEFINE, WATER_REFRACTION_SCALE,
 } from "./water-shader-defines";
 import { geometryOutputWrite } from "./geometry-surface-output-block";
 import { SCENE_FOG_COLOR_UNIFORM, bindSceneFog, bindSceneFogColor, emitSceneFogFactor } from "./scene-fog-block";
@@ -225,7 +225,8 @@ const fragCoord = (state: NodeMaterialBuildState) => wgslOf(state) ? "fragmentIn
 
 /**
  * This pixel's terrain tap (`swnField`) and what meets the water there, as built-in water derives it: the shoreline
- * under the waves from four terrain taps (`shorelineSource`, where the asset has waves: `slateWaterFieldStep.w`), and
+ * under the waves from four terrain taps (`shorelineSource`, where the asset has waves: `slateWaterFieldStep.w`, above
+ * Low Water Shading Detail), and
  * from it (`waterEdgeSource`) `swnDepth`, the water below this pixel's surface at `height` (the body's shelving bank,
  * the terrain where it is known), and the edge and open-water fades.
  */
@@ -241,12 +242,17 @@ float swnDepth = swDepth;
 `;
 }
 
-/** Defines every water node block sets: the surface data, the GPU wave path and the pass's scene copy. */
+/**
+ * Defines every water node block sets: the surface data, the GPU wave path, the device-clamped Water Shading Detail
+ * (`WATER_DETAIL_DEFINE`, which follows the Water quality revision as the other quality defines do) and the pass's
+ * scene copy.
+ */
 function prepareSurfaceDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh: AbstractMesh | undefined, copy: boolean): boolean {
   const surface = isWaterSurfaceMesh(mesh);
   defines.setValue(WATER_SURFACE_DEFINE, surface, true);
   defines.setValue(WATER_GPU_WAVES_DEFINE, surface && meshVertexWaves(mesh) !== null, true);
   const scene = material.getScene();
+  defines.setValue(WATER_DETAIL_DEFINE, WATER_DETAIL_LEVELS[sceneWaterQualityDeviceClamp(scene).quality.shadingDetail], true);
   const copied = copy && surface && isMainWaterPass(scene, scene.getEngine().currentRenderPassId);
   if (copy) defines.setValue(WATER_NODE_COPY_DEFINE, copied, true);
   return copied;
@@ -380,6 +386,7 @@ abstract class WaterNodeBlock extends NodeMaterialBlock {
  * Water Waves node); Shore Foam is where the water over known terrain is shallow (Foam Width); Contact Foam is the
  * band around objects crossing the surface (Contact Foam Width), both shaped by the Water Waves block's turbulence as
  * built-in water draws them (`edgeFoamHelpers`). Foam is all of them, as built-in water combines them. Foam Amount scales every mask.
+ * At Low Water Shading Detail there is no Contact Foam, and edge foam keeps only its broadest noise.
  */
 export class WaterFoamBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -444,7 +451,10 @@ vec4 swnTerms = U.${FOAM_UNIFORM};
 vec2 swnFlowed = swnPos.xz - (swnFlow.xz + swnDrift) * swnTime;
 float swnFoot = length(fwidth(swnPos.xz));
 float swnShoreAmount = swnField.w * swnShoreFoamAmount(swnFlowed, swnTime, swnDepth, swnTerms.x * 0.35 + 0.08) * swnTerms.z;
-float swnContactAmount = swnContactFoamAmount(swnFlowed, swnTime, abs(swnContactAt(swnPos.xz, swnHeight)), max(0.05, swnTerms.y)) * swnTerms.z;
+float swnContactAmount = 0.0;
+#if ${WATER_DETAIL_DEFINE} >= 1
+swnContactAmount = swnContactFoamAmount(swnFlowed, swnTime, abs(swnContactAt(swnPos.xz, swnHeight)), max(0.05, swnTerms.y)) * swnTerms.z;
+#endif
 `, wgsl)
       + assign(this.foam, foam, `clamp(max(${crestValue}, swnEdgeFoamCover(swnFlowed, max(swnShoreAmount, swnContactAmount), ${turbulence}, swnFoot)), 0.0, 1.0)`)
       + assign(this.shore, shore, `swnEdgeFoamCover(swnFlowed, swnShoreAmount, ${turbulence}, swnFoot)`)
@@ -549,7 +559,7 @@ RegisterClass("BABYLON.WaterDepthFadeBlock", WaterDepthFadeBlock);
  * Water Scene Color: the view's scene copy behind this pixel (linear colour), bent by the surface's tilt through the
  * water behind it as built-in Refraction bends it (Refraction where connected, else the asset's), never taking anything
  * in front of the water: beside a silhouette, a neighbouring copy texel behind the water stands in, as built-in water's
- * (`silhouetteFallbackSource`). Available is 1 where the colour came from the copy, easing to 0 just behind what is in
+ * (`silhouetteFallbackSource`, at High and Ultra Water Shading Detail). Available is 1 where the colour came from the copy, easing to 0 just behind what is in
  * front of the water as built-in water's refracted share does, and 0 where the pass has none (a material preview, a
  * capture, an opaque Material, Water Refraction off): Color is black there. The copy is fogged already, so in the
  * scene's fog Color comes with the Material's own fog undone (built-in water's pre-division, by the Scene Fog block's
