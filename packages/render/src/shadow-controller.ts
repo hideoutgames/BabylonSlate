@@ -37,7 +37,6 @@ import {
   type ShadowParticipation,
 } from "./shadow-mesh-policy";
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
-import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
