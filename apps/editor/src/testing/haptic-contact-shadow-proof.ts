@@ -134,14 +134,21 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
     };
     const captures: Capture[] = [];
     const blocked: Record<string, number[]> = {};
-    /** `light`'s captures (shadowed, unshadowed, unlit) and its floor mask, `toLight` from a floor point. */
-    const poses = async (light: Light, name: string, toLight: (point: Vector3) => Vector3) => {
+    /**
+     * `light`'s captures (shadowed, unshadowed, unlit) and its floor mask, `toLight` from a floor point, over the floor
+     * its shadow covers (`covered`).
+     */
+    const poses = async (light: Light, name: string, toLight: (point: Vector3) => Vector3, covered?: (point: Vector3) => boolean) => {
       captures.push(await shadowed(light, name), await unshadowed(light, `${name} unshadowed`));
       setAuthoredLightEnabled(light, false);
       captures.push({ name: `${name} unlit`, atlas: false, pixels: await draw() });
-      blocked[name] = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, toLight);
+      blocked[name] = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, toLight, covered);
     };
-    await poses(lamp, "spot", (point) => lamp.getAbsolutePosition().subtract(point));
+    // The spot's physical falloff lights the floor past its cone's half angle (1% there), where its shadow's view
+    // ends and nothing shadows it, as with Babylon's own spot lights: the spot's mask covers its cone.
+    const withinCone = (point: Vector3) =>
+      Vector3.Dot(point.subtract(lamp.getAbsolutePosition()).normalize(), lamp.direction.normalizeToNew()) >= Math.cos(lamp.angle / 2);
+    await poses(lamp, "spot", (point) => lamp.getAbsolutePosition().subtract(point), withinCone);
     await poses(sun, "sun", () => sun.direction.normalizeToNew().scaleInPlace(-100));
     await poses(bulb, "point", (point) => bulb.getAbsolutePosition().subtract(point));
     settings("cel", "pcss");
@@ -161,11 +168,11 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
 /**
  * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's swap chain texture's top-down): 1 where the box or the
  * ball blocks the floor's view of a light (`toLight`: from a floor point to the light), 0 where nothing does, -1 off
- * the floor.
+ * the floor or off the floor the light's shadow covers (`covered`).
  */
 function floorShadowMask(
   scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, topDown: boolean, meshes: AbstractMesh[],
-  toLight: (point: Vector3) => Vector3,
+  toLight: (point: Vector3) => Vector3, covered: (point: Vector3) => boolean = () => true,
 ): number[] {
   const [floor, ...casters] = meshes;
   const mask: number[] = [];
@@ -173,7 +180,7 @@ function floorShadowMask(
     const y = topDown ? row + 0.5 : canvas.height - row - 0.5;
     for (let column = 0; column < canvas.width; column++) {
       const hit = scene.pickWithRay(scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera), (mesh) => meshes.includes(mesh));
-      if (hit?.pickedMesh !== floor || !hit.pickedPoint) {
+      if (hit?.pickedMesh !== floor || !hit.pickedPoint || !covered(hit.pickedPoint)) {
         mask.push(-1);
         continue;
       }
