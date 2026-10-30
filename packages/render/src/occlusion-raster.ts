@@ -11,11 +11,15 @@
  *   texel centres, or a gap between two occluders narrower than a texel, never claims the area beside it. This holds
  *   for an occluder whose screen shape is convex (a box, a wall, a convex hull); a concave one can claim a sliver of a
  *   notch, so concave occluders are split into convex parts.
- * - A max-reduced mip pyramid answers a box's test from at most 2 × 2 texels.
+ * - A max-reduced mip pyramid answers a box's test from at most `TEST_SPAN` × `TEST_SPAN` texels: a coarser level would
+ *   reach further past the box's rectangle, to the next block edge.
  * - Triangles are clipped against the near plane (w ≥ near); a box with any corner at or behind it is visible.
  * - Matrices are Babylon's layout (`Matrix.m`: clip = (x, y, z, 1) · M, translation in m[12..14]), read in doubles,
  *   so a camera far from the origin keeps its precision. Nothing allocates per frame.
  */
+
+/** Texels across, at most, that a box test reads at its level. */
+const TEST_SPAN = 8;
 
 /** Which triangle winding, in screen space, faces the camera; "both" keeps every triangle. */
 export type OcclusionWinding = "clockwise" | "counterClockwise" | "both";
@@ -127,7 +131,7 @@ export class OcclusionBuffer {
     const y0 = Math.floor(top - 0.5) - 1, y1 = Math.ceil(bottom - 0.5) + 1;
     if (x0 < 0 || y0 < 0 || x1 >= this.width || y1 >= this.height) return false;
     let level = 0;
-    while (level + 1 < this.levels.length && ((x1 >> level) - (x0 >> level) > 1 || (y1 >> level) - (y0 >> level) > 1)) level++;
+    while (level + 1 < this.levels.length && ((x1 >> level) - (x0 >> level) >= TEST_SPAN || (y1 >> level) - (y0 >> level) >= TEST_SPAN)) level++;
     const data = this.levels[level]!, levelWidth = this.levelWidths[level]!;
     const limit = nearest - epsilon;
     for (let y = y0 >> level; y <= y1 >> level; y++)
