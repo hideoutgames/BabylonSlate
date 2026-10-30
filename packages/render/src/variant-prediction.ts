@@ -3,7 +3,6 @@ import {
 } from "@babylonjs/core";
 import { drawnMaterialVariants } from "./drawn-variants";
 import { fixedShapeLightingActive } from "./fixed-light-admission";
-import { restoreSceneLightOrder } from "./forward-light-slots";
 import {
   forwardLightSelection,
   isForwardLightExcluded,
@@ -26,8 +25,8 @@ import { beginPipelineDeferral, deferredPipelineCount, pipelinesDeferred, releas
  */
 export const PREDICTION_MARGIN = 1.5;
 /**
- * How much nearer the what-if admission ranks the predicted light: ahead of every light it could displace, past the
- * budget's kind-change margin (`FORWARD_KIND_CHANGE_DISTANCE_RATIO`), so it admits what an approach would.
+ * How much nearer the what-if admission ranks the predicted light: ahead of every light it could displace, so it
+ * admits what an approach would.
  */
 const PREDICTION_PROMOTION = 4;
 /** New Effects predictions compile per Engine frame (`engine.frameId`), shared by every view on it. */
@@ -347,14 +346,12 @@ function shadowStart(controller: SceneShadowController | null, start: ShadowStar
 }
 
 /**
- * Runs `probe` with `light` admitted as the Forward budget would admit it `PREDICTION_PROMOTION` times nearer (its slot
- * exchange or canonical arrangement included), then gives admission back: the selection it favours, the lights'
- * enabled state and their order (as a load rehearsal's revert does). Returns `probe`'s answer, or true when even the
+ * Runs `probe` with `light` admitted as the Forward budget would admit it `PREDICTION_PROMOTION` times nearer, then
+ * gives admission back: the selection it favours and the lights' enabled state (as a load rehearsal's revert does). Returns `probe`'s answer, or true when even the
  * promoted light is not admitted (nothing to predict in this context).
  */
 function whatIfAdmitted(scene: Scene, light: Light, probe: (before: Map<object, readonly Light[]>) => boolean): boolean {
   const selection = forwardLightSelection(scene);
-  const order = [...scene.lights];
   const before = new Map<object, readonly Light[]>();
   for (const mesh of scene.meshes) if (!(mesh instanceof InstancedMesh)) before.set(mesh, mesh.lightSources.slice());
   const marks = wrapperMarks(scene);
@@ -364,8 +361,6 @@ function whatIfAdmitted(scene: Scene, light: Light, probe: (before: Map<object, 
   } finally {
     restoreForwardLightSelection(scene, selection);
     syncSceneLighting(scene);
-    // The lighting sync then takes the restored order as its own, or the next frame's would refresh every receiver.
-    if (restoreSceneLightOrder(scene, order)) syncSceneLighting(scene);
     restoreWrapperMarks(marks, before);
   }
 }

@@ -7,17 +7,6 @@ import {
 } from "@babylonjs/core";
 import { notifySceneReceiversChanged } from "./scene-readiness-signal";
 
-export type ShadowReceiverHandoff = {
-  from: Light;
-  to: Light;
-  generator: object;
-};
-type Journal = { handoffs: ShadowReceiverHandoff[]; invalid: boolean };
-
-// A scene that never syncs its lighting must not retain lights indefinitely.
-const MAX_PENDING_HANDOFFS = 64;
-const journals = new WeakMap<Scene, Journal>();
-
 /** Every per-light input of Babylon 9.29 PrepareDefinesForLight except the generator. */
 export function receiverSignature(light: Light): string {
   const defines: Record<string, unknown> = {};
@@ -48,20 +37,8 @@ export function pinnedLights(scene: Scene): Set<Light> {
   return pinned;
 }
 
-function journal(scene: Scene): Journal {
-  let current = journals.get(scene);
-  if (!current) {
-    current = { handoffs: [], invalid: false };
-    journals.set(scene, current);
-  }
-  return current;
-}
-
-/** A receiver define or shadow-layout change the handoffs cannot explain. */
+/** A receiver define or shadow-layout change a handoff cannot keep. */
 export function invalidateShadowReceiverHandoffs(scene: Scene): void {
-  const current = journal(scene);
-  current.invalid = true;
-  current.handoffs.length = 0;
   // Every caller changed what its receivers bind (a shadow map created, released, moved or retuned).
   notifySceneReceiversChanged(scene);
 }
@@ -72,13 +49,12 @@ export function invalidateShadowReceiverHandoffs(scene: Scene): void {
  * shader light index keeps identical defines, so no material is dirtied and no
  * effect changes; binding follows the new order. Later lightSources rebuilds
  * reproduce the exchange from scene.lights. Returns false without changing
- * anything, and invalidates pending handoffs, when any receiver would change.
+ * anything, and notifies the receivers, when any receiver would change.
  */
 export function exchangeShadowReceivers(
   scene: Scene,
   from: ShadowLight,
   to: ShadowLight,
-  generator: object,
 ): boolean {
   const lights = scene.lights;
   const a = lights.indexOf(from);
@@ -113,20 +89,5 @@ export function exchangeShadowReceivers(
     sources[i] = to;
     sources[j] = from;
   }
-  const current = journal(scene);
-  if (!current.invalid) {
-    if (current.handoffs.length < MAX_PENDING_HANDOFFS)
-      current.handoffs.push({ from, to, generator });
-    else invalidateShadowReceiverHandoffs(scene);
-  }
   return true;
-}
-
-/** Handoffs since the previous call; undefined when none were recorded. */
-export function takeShadowReceiverHandoffs(
-  scene: Scene,
-): Readonly<Journal> | undefined {
-  const current = journals.get(scene);
-  journals.delete(scene);
-  return current;
 }

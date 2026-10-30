@@ -2,7 +2,6 @@ import { DirectionalLight, PointLight, SpotLight, Vector3, type Effect, type Lig
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import { deviceProfile, type DeviceProfile } from "./device-profile";
 import { DriverCompileWatch } from "./driver-compile";
-import { restoreSceneLightOrder } from "./forward-light-slots";
 import {
   forwardLightSelection,
   isAuthoredLightEnabled,
@@ -192,13 +191,11 @@ function priority(template: SpawnableLight): number {
 }
 
 /**
- * The admission history a step's change can move: the Forward light selection, the shadow maps' holders, and the
- * light order (`scene.lights`, which receivers' light slots follow and admission exchanges permute).
+ * The admission history a step's change can move: the Forward light selection and the shadow maps' holders.
  */
 type AdmissionSnapshot = {
   forward: ReadonlySet<Light> | undefined;
   shadows: ShadowAdmissionSnapshot | undefined;
-  lights: readonly Light[];
 };
 
 function snapshotAdmission(scene: Scene): AdmissionSnapshot {
@@ -207,7 +204,6 @@ function snapshotAdmission(scene: Scene): AdmissionSnapshot {
     // A map the step takes from its light waits, parked, for the revert to give it back, rather than being disposed
     // and built again (a sun's cascaded map, which the sun's off and shadows-off steps each take).
     shadows: findSceneShadowController(scene)?.snapshotAdmission({ keepReleasedMaps: true }),
-    lights: [...scene.lights],
   };
 }
 
@@ -216,8 +212,7 @@ function snapshotAdmission(scene: Scene): AdmissionSnapshot {
  * both admissions rank by history (an admitted light keeps its place against a slightly nearer one, a shadow map stays
  * where it was admitted), and the step created its own (a waiting light took the switched-off light's slot or map),
  * so its revert alone would leave that light admitted. Each admits again by the snapshot's history (the shadow maps as
- * of the snapshot's time), which moves the slots and maps back, and the light order its exchanges did not restore
- * goes back too. Later admissions carry on from there as a load that never tried the change would.
+ * of the snapshot's time), which moves the slots and maps back. Later admissions carry on from there as a load that never tried the change would.
  */
 function restoreAdmission(scene: Scene, snapshot: AdmissionSnapshot): boolean {
   if (scene.isDisposed) return true;
@@ -226,7 +221,6 @@ function restoreAdmission(scene: Scene, snapshot: AdmissionSnapshot): boolean {
   const shadows = findSceneShadowController(scene);
   if (snapshot.shadows) shadows?.restoreAdmission(snapshot.shadows);
   syncSceneLighting(scene);
-  restoreSceneLightOrder(scene, snapshot.lights);
   // Every light that held a map holds one again, unless the step released a standby map or a reallocation failed.
   for (const light of snapshot.shadows?.maps.keys() ?? []) if (!shadows?.boundGenerator(light)) return false;
   return true;

@@ -6,8 +6,7 @@ import {
 } from "./light-policy";
 import { deviceProfile } from "./device-profile";
 import { HapticLightingBlock } from "./haptic-lighting-block";
-import { hapticLightBuffer } from "./haptic-lights";
-import { restoreSceneLightOrder, sortReceiverLightSources } from "./forward-light-slots";
+import { hapticLightBuffer, selectHapticLights } from "./haptic-lights";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createRenderDiagnostics } from "./render-diagnostics";
@@ -48,6 +47,11 @@ const engines: NullEngine[] = [];
 afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
+
+/** The block's admission with `locals` local lights (`syncForwardLightPolicy`, as scene lighting runs it). */
+function admitLocals(scene: Scene, locals: number) {
+  return syncForwardLightPolicy(scene, Number.MAX_SAFE_INTEGER, locals, selectHapticLights);
+}
 
 function host(viewport = true) {
   const options = new NullEngineOptions();
@@ -219,21 +223,21 @@ describe("scene material lighting", () => {
       const fixed = new PointLight("fixed", new Vector3(60, 0, 0), scene);
 
       // Before any render, moving is 100 units away despite its local x of 50.
-      syncForwardLightPolicy(scene, 1);
+      admitLocals(scene, 1);
       expect(fixed.isEnabled()).toBe(true);
       expect(isForwardLightExcluded(moving)).toBe(true);
 
       // The excluded light must be reconsidered using its ancestor's new pose,
       // without relying on a render or an enabled light's uniform transfer.
       ancestor.position.x = -69;
-      syncForwardLightPolicy(scene, 1);
+      admitLocals(scene, 1);
       expect(moving.isEnabled()).toBe(true);
       expect(isForwardLightExcluded(fixed)).toBe(true);
 
       // Detachment must also stop using the former parent's cached world pose.
       moving.parent = null;
       fixed.position.x = 10;
-      syncForwardLightPolicy(scene, 1);
+      admitLocals(scene, 1);
       expect(fixed.isEnabled()).toBe(true);
       expect(isForwardLightExcluded(moving)).toBe(true);
     },
@@ -244,19 +248,19 @@ describe("scene material lighting", () => {
     scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
     const left = new PointLight("left", new Vector3(-5, 0, 0), scene);
     const right = new PointLight("right", new Vector3(5, 0, 0), scene);
-    syncForwardLightPolicy(scene, 1);
+    admitLocals(scene, 1);
     expect(left.isEnabled()).toBe(true);
     (scene.activeCamera as UniversalCamera).position.x = 0.1;
-    syncForwardLightPolicy(scene, 1);
+    admitLocals(scene, 1);
     expect(left.isEnabled()).toBe(true);
     expect(isForwardLightExcluded(right)).toBe(true);
-    syncForwardLightPolicy(scene, 2);
+    admitLocals(scene, 2);
     expect(right.isEnabled()).toBe(true);
-    syncForwardLightPolicy(scene, 0);
+    admitLocals(scene, 0);
     expect(left.isEnabled()).toBe(false);
     expect(right.isEnabled()).toBe(false);
     expect(isForwardLightExcluded(left)).toBe(true);
-    syncForwardLightPolicy(scene, 2);
+    admitLocals(scene, 2);
     expect(left.isEnabled()).toBe(true);
     expect(right.isEnabled()).toBe(true);
   });
@@ -267,7 +271,7 @@ describe("scene material lighting", () => {
     const visible = new PointLight("visible", new Vector3(10, 0, 0), scene);
     dark.intensity = 0;
     setAuthoredLightEnabled(dark, true);
-    expect(syncForwardLightPolicy(scene, 1)).toMatchObject({
+    expect(admitLocals(scene, 1)).toMatchObject({
       requested: 1,
       admitted: 1,
     });
@@ -276,34 +280,9 @@ describe("scene material lighting", () => {
     expect(visible.isEnabled()).toBe(true);
     dark.intensity = 1;
     dark.renderPriority = 1;
-    syncForwardLightPolicy(scene, 1);
+    admitLocals(scene, 1);
     expect(dark.isEnabled()).toBe(true);
     expect(isForwardLightExcluded(visible)).toBe(true);
-  });
-
-  it("puts a re-enabled sun back in its scene-order slot so receivers ask for the shader they compiled before", () => {
-    const scene = host(false);
-    scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
-    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
-    const locals = lights(scene, 3);
-    const material = new StandardMaterial("receiver", scene);
-    const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
-    receiver.material = material;
-    const part = receiver.subMeshes[0]!;
-    syncSceneLighting(scene);
-    material.isReadyForSubMesh(receiver, part);
-    const defines = part.materialDefines!.toString();
-    const effect = part.effect;
-    setAuthoredLightEnabled(sun, false);
-    beginFrame(scene);
-    material.isReadyForSubMesh(receiver, part);
-    // Babylon appends a re-enabled light after every light the receiver kept.
-    setAuthoredLightEnabled(sun, true);
-    beginFrame(scene);
-    expect(receiver.lightSources).toEqual([sun, ...locals]);
-    material.isReadyForSubMesh(receiver, part);
-    expect(part.materialDefines!.toString()).toBe(defines);
-    expect(part.effect).toBe(effect);
   });
 
   it("uses one directional light and transfers illumination without changing authored intent", () => {
@@ -532,60 +511,6 @@ describe("scene material lighting", () => {
     expect(pbr.maxSimultaneousLights).toBe(4);
     expect(material.disableLighting).toBe(true);
     expect(pbr.unlit).toBe(true);
-  });
-
-  describe("receiver light order", () => {
-    // Ten lamps 10 m apart; the lamp at each index of `spots` is a spot light.
-    function swapFixture(spots: readonly number[] = [], x = (index: number) => index * 10) {
-      const scene = host(false);
-      const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
-      scene.activeCamera = camera;
-      const lamps = Array.from({ length: 10 }, (_, index) => {
-        const position = new Vector3(x(index), 3, 0);
-        return spots.includes(index)
-          ? new SpotLight(`lamp-${index}`, position, Vector3.Down(), 1, 1, scene)
-          : new PointLight(`lamp-${index}`, position, scene);
-      });
-      const material = new StandardMaterial("receiver", scene);
-      const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
-      receiver.material = material;
-      syncSceneLighting(scene);
-      const part = receiver.subMeshes[0]!;
-      material.isReadyForSubMesh(receiver, part);
-      expect(part.materialDefines!.isDirty).toBe(false);
-      return { scene, camera, lamps, material, receiver, part };
-    }
-
-    it("re-sorts a receiver to scene order without dirtying it when only lights with one slot signature move", () => {
-      const { scene, lamps, material, receiver, part } = swapFixture([4]);
-      const other = MeshBuilder.CreateBox("other", {}, scene);
-      other.material = material;
-      material.isReadyForSubMesh(other, other.subMeshes[0]!);
-      const sources = receiver.lightSources;
-      const order = sources.slice();
-      // Two points trade places in one receiver, two lights of different kinds in the other.
-      [sources[0], sources[1]] = [sources[1]!, sources[0]!];
-      const spot = other.lightSources.indexOf(lamps[4]!);
-      [other.lightSources[0], other.lightSources[spot]] = [other.lightSources[spot]!, other.lightSources[0]!];
-      expect(sortReceiverLightSources(scene)).toBe(true);
-      expect(receiver.lightSources).toEqual(order);
-      expect(other.lightSources).toEqual(order);
-      expect(part.materialDefines!.isDirty).toBe(false);
-      expect(other.subMeshes[0]!.materialDefines!.isDirty).toBe(true);
-    });
-
-    it("restores a recorded light order around a light added since and without one removed since", () => {
-      const scene = host(false);
-      const [a, b, c, d] = ["a", "b", "c", "d"].map((name) => new PointLight(name, Vector3.Zero(), scene));
-      const order = [a!, b!, c!, d!];
-      // Exchanges permuted the lights, d left the scene and e arrived.
-      scene.removeLight(d!);
-      const e = new PointLight("e", Vector3.Zero(), scene);
-      scene.lights.splice(0, scene.lights.length, c!, e, a!, b!);
-      expect(restoreSceneLightOrder(scene, order)).toBe(true);
-      expect(scene.lights.map((light) => light.name)).toEqual(["a", "e", "b", "c"]);
-      expect(restoreSceneLightOrder(scene, order)).toBe(false);
-    });
   });
 
   it("restores all lights after adding them while the viewport is unlit", () => {
