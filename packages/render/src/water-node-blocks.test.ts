@@ -316,6 +316,101 @@ describe("Water material nodes", () => {
   });
 });
 
+/**
+ * `source` as the level of Water Shading Detail draws it: only `#if SLATE_WATER_DETAIL >= n` blocks are evaluated (their
+ * `#else` too), every other directive and line is kept. GLSL Effects keep their conditionals for the driver.
+ */
+function atDetail(source: string, level: number): string {
+  const out: string[] = [], stack: { mine: boolean; parent: boolean; pass: boolean }[] = [];
+  let keep = true;
+  for (const line of source.split("\n")) {
+    const directive = line.trim(), mine = /^#if SLATE_WATER_DETAIL >= (\d)$/.exec(directive);
+    if (mine) { stack.push({ mine: true, parent: keep, pass: level >= Number(mine[1]) }); keep = keep && level >= Number(mine[1]); continue; }
+    if (/^#if/.test(directive)) stack.push({ mine: false, parent: keep, pass: true });
+    const top = stack[stack.length - 1];
+    if (directive === "#else" && top?.mine) { keep = top.parent && !top.pass; continue; }
+    if (directive === "#endif" && top) {
+      stack.pop();
+      if (top.mine) { keep = top.parent; continue; }
+    }
+    if (keep) out.push(line);
+  }
+  return out.join("\n");
+}
+
+describe("Water Shading Detail", () => {
+  const starter = (scene: Scene) => {
+    const result = compile(scene, createWaterMaterialDocument("Sea"));
+    const water = { ...createDefaultWaterDefinition(), objectReflections: true };
+    return { result, lake: createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), water, result.material) };
+  };
+  const detail = (scene: Scene, shadingDetail: "low" | "medium" | "high" | "ultra", reflections: "sky" | "screenSpace" | "planar" = "sky") =>
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { shadingDetail, reflections } }) });
+
+  it.each([
+    // Shoreline taps, contact foam, edge foam's finer octaves, the silhouette fallback.
+    ["low", 0, [false, false, false, false]],
+    ["medium", 1, [true, true, true, false]],
+    ["high", 2, [true, true, true, true]],
+    ["ultra", 3, [true, true, true, true]],
+  ] as const)("at %s draws the water nodes' terms of level %i", async (level, value, terms) => {
+    const scene = host();
+    overlook(scene);
+    detail(scene, level);
+    const { result, lake } = starter(scene);
+    expect(await result.ready).toEqual([]);
+    const effect = await programFor(result.material, lake);
+    expect(effect.defines).toMatch(new RegExp(`^#define SLATE_WATER_DETAIL ${value}$`, "m"));
+    const fragment = atDetail(effect.fragmentSourceCode, value);
+    expect([
+      fragment.includes("swTerrainSlope"),
+      /swnContactAmount = swnContactFoamAmount\(/.test(fragment),
+      fragment.includes("p * 6.1"),
+      fragment.includes("swCopyTexel"),
+    ]).toEqual(terms);
+    // Cheap terms stay at every level: the haze and aerial perspective, the slope-variance roughness, the transmittance
+    // and edge foam's broadest noise.
+    for (const kept of ["swAirOn", "swHaze =", "swnShadePixel", "swnTCosT", "p * 0.7"]) expect(fragment, kept).toContain(kept);
+  });
+
+  it("never overrides the Reflections setting: Low still mirrors the view's planar reflection", async () => {
+    const scene = host();
+    overlook(scene);
+    detail(scene, "low", "planar");
+    const { result, lake } = starter(scene);
+    expect(await result.ready).toEqual([]);
+    updateSceneWater(scene);
+    const defines = await definesFor(result.material, lake);
+    expect(defines).toMatch(/^#define SLATE_WATER_DETAIL 0$/m);
+    expect(defines).toMatch(/^#define SLATE_WATER_NODE_PLANAR$/m);
+  });
+
+  it("compiles nothing while the level is unchanged, a variant for another level and the first again when it returns", async () => {
+    const scene = host();
+    overlook(scene);
+    detail(scene, "medium");
+    const { result, lake } = starter(scene);
+    expect(await result.ready).toEqual([]);
+    const medium = await programFor(result.material, lake);
+    const create = vi.spyOn(scene.getEngine(), "createEffect");
+    for (let frame = 0; frame < 3; frame++) {
+      scene.incrementRenderId();
+      updateSceneWater(scene);
+      expect(result.material.isReadyForSubMesh(lake, lake.subMeshes[0]!)).toBe(true);
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(lake.subMeshes[0]!.effect).toBe(medium);
+    detail(scene, "low");
+    scene.incrementRenderId();
+    const low = await programFor(result.material, lake);
+    expect(low).not.toBe(medium);
+    expect(low.defines).toMatch(/^#define SLATE_WATER_DETAIL 0$/m);
+    detail(scene, "medium");
+    scene.incrementRenderId();
+    expect(await programFor(result.material, lake)).toBe(medium);
+  });
+});
+
 describe("Water Cut", () => {
   const stages = (source: string) => { const [vertex = "", fragment = ""] = source.split("// Fragment shader"); return { vertex, fragment }; };
 

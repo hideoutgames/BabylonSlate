@@ -72,6 +72,7 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 | **FFT Size** | 128 | 256 | 256 | 256 |
 | **FFT Cascades** | 3 | 3 | 3 | 3 |
 
+- **Water Shading Detail** sets how much fine detail the water's shading draws, for built-in water and any Material with water nodes. **High** and **Ultra** draw everything. **Medium** drops the refraction's correction beside the edges of objects in front of the water. **Low** also draws the shoreline at its rest position as waves move, leaves out the foam around objects crossing the water, and draws coarser shore foam. It never changes the other water settings: a Low project with **Planar** reflections still mirrors objects.
 - **Contact Resolution** sets the detail of the foam and rings where objects meet the water. The work of keeping them current is capped per frame and goes to the water nearest the camera first, so around many moving objects foam can trail them by a fraction of a second. Higher values cost more per update and trail longer.
 - **Refraction Resolution** sets the scene copy's scale, shared with Screen Space reflections.
 - **Water Reflections**: **Sky Only** reflects the environment, **Screen Space** also reflects visible objects, and **Planar** mirrors flat water and uses Screen Space elsewhere. **Reflection Steps** and **Planar Resolution** tune them.
