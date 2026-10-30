@@ -1,8 +1,10 @@
+import type { Scene } from "@babylonjs/core/scene";
+
 /**
- * Variant swaps: a Material keeps drawing its previous Effect while a variant a change requested (a light switched
- * off, a shadow lost, a grown light capacity) still compiles, Babylon's `allowShaderHotSwapping`. Readiness probes
- * never replace a drawn Effect. Inside `probeVariantSwaps(true, …)` (a world view's steady frames) a swapping mesh is
- * ready; otherwise (loading, presentation checks, previews) it is not ready until its new variant is drawn.
+ * Variant swaps: a Material keeps drawing its previous Effect while a variant a change requested still compiles,
+ * Babylon's `allowShaderHotSwapping`. Readiness probes never replace a drawn Effect. Inside `probeVariantSwaps(true, …)`
+ * (a world view's steady frames) a swapping mesh is ready; otherwise (loading, presentation checks, previews) it is not
+ * ready until its new variant is drawn.
  */
 let tolerated = false;
 let swaps = 0;
@@ -30,4 +32,19 @@ export function noteVariantSwap(): void {
 /** Monotonic count of swaps probes found; a probe compares it before and after. */
 export function variantSwapCount(): number {
   return swaps;
+}
+
+const previousEffectScenes = new WeakSet<Scene>();
+
+/**
+ * Marks a world Scene (editor world view, Play, the exported player, Preview Build): its world views draw a Material's
+ * previous Effect while its changed variant compiles. Previews and thumbnails wait for the new variant.
+ */
+export function setSceneBindsPreviousEffects(scene: Scene): void {
+  previousEffectScenes.add(scene);
+}
+
+/** Whether a world view of the Scene may draw a Material's previous Effect while its changed variant compiles. */
+export function sceneBindsPreviousEffects(scene: Scene): boolean {
+  return previousEffectScenes.has(scene);
 }

@@ -200,33 +200,29 @@ it("replans screen-space effects when the session quality tier changes and repor
   expect(sceneEffectsQualityLimits(scene)).toEqual(["post processing quality skips ambient occlusion, reflections"]);
 });
 
-it("tells CEL surfaces once per change whether reflections run, after the plan is current", () => {
+it("tells listeners of each render-mode change once, after the plan is current, and of nothing else", () => {
   const scene = fixture();
   const state = sceneRenderingSettings(scene);
-  const seen: [string, boolean, boolean][] = [];
-  state.listeners.add((mode) => seen.push([mode, state.celReflections, state.effectsPlan?.reflections != null]));
+  const seen: [string, boolean][] = [];
+  state.listeners.add((mode) => seen.push([mode, state.effectsPlan?.reflections != null]));
   const effects = { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
   state.qualityOverrides = qualityPresetPatch("high");
-  // Entering CEL with the project's Real-Time Reflections on is one change: a surface rebuilds once, already reflective.
+  // Entering CEL with the project's Real-Time Reflections on: one call, the plan already holding reflections.
   updateSceneRenderingSettings(scene, { mode: "cel", cel: normalizeCelShadingSettings({}), effects });
-  expect(seen).toEqual([["cel", true, true]]);
+  expect(seen).toEqual([["cel", true]]);
   updateSceneRenderingSettings(scene);
-  expect(seen).toHaveLength(1);
-  // The project effect, the quality tier and the session toggle each stop reflections.
+  // The project effect, the quality tier and the session toggle start and stop reflections without a call.
   updateSceneRenderingSettings(scene, { mode: "cel", effects: DEFAULT_RENDER_EFFECTS });
-  expect(seen.at(-1)).toEqual(["cel", false, false]);
+  expect(state.effectsPlan?.reflections ?? null).toBeNull();
   updateSceneRenderingSettings(scene, { mode: "cel", effects });
-  expect(seen.at(-1)).toEqual(["cel", true, true]);
   state.qualityOverrides = qualityPresetPatch("low");
   updateSceneRenderingSettings(scene);
-  expect(seen.at(-1)).toEqual(["cel", false, false]);
   expect(sceneEffectsQualityLimits(scene)).toEqual(["post processing quality skips reflections"]);
   state.qualityOverrides = qualityPresetPatch("high");
   updateSceneRenderingSettings(scene);
   setSceneEffectsEnabled(scene, false);
-  expect(seen.slice(-2)).toEqual([["cel", true, true], ["cel", false, false]]);
   setSceneEffectsEnabled(scene, true);
-  // PBR reflections never mark CEL surfaces reflective.
+  expect(seen).toEqual([["cel", true]]);
   updateSceneRenderingSettings(scene, { mode: "pbr", cel: normalizeCelShadingSettings({}), effects });
-  expect(seen.at(-1)).toEqual(["pbr", false, true]);
+  expect(seen).toEqual([["cel", true], ["pbr", true]]);
 });
