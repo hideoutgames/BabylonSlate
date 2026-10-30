@@ -144,8 +144,7 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
       captures.push({ name: `${name} unlit`, atlas: false, pixels: await draw() });
       blocked[name] = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, toLight, covered);
     };
-    // The spot's physical falloff lights the floor past its cone's half angle (1% there), where its shadow's view
-    // ends and nothing shadows it, as with Babylon's own spot lights: the spot's mask covers its cone.
+    // The spot lights nothing past its cone's outer angle, where its shadow's view ends: the spot's mask covers its cone.
     const withinCone = (point: Vector3) =>
       Vector3.Dot(point.subtract(lamp.getAbsolutePosition()).normalize(), lamp.direction.normalizeToNew()) >= Math.cos(lamp.angle / 2);
     await poses(lamp, "spot", (point) => lamp.getAbsolutePosition().subtract(point), withinCone);

@@ -147,8 +147,8 @@ const lightColor = (light: Light): Rgb => {
 /**
  * The linear colour the block draws at P (normal N, seen from `eye`) for a non-metal with F0 = 0 (MATTE), lit by the
  * enabled punctual lights and the fill, without environment: per light its colour times intensity, the inverse-square
- * falloff windowed to zero at the range and a spot's spherical Gaussian cone (1% at its half angle); the fill mixes
- * ground to sky by the wrapped N.L.
+ * falloff windowed to zero at the range and a spot's glTF cone (full inside its inner angle, zero past its outer, the
+ * cosine's linear step squared between); the fill mixes ground to sky by the wrapped N.L.
  */
 function directLight(P: Vector3, N: Vector3, eye: Vector3, baseColor: readonly number[], roughness: number, lights: Light[]): Rgb {
   const V = eye.subtract(P).normalize();
@@ -181,8 +181,10 @@ function directLight(P: Vector3, N: Vector3, eye: Vector3, baseColor: readonly n
       const window = Math.min(Math.max(1 - ratio * ratio, 0), 1);
       let falloff = window * window / distanceSquared;
       if (light instanceof SpotLight) {
-        const kappa = 6.64385618977 / (1 - Math.cos(light.angle / 2));
-        falloff *= 2 ** (-kappa * (Vector3.Dot(L, light.direction.normalizeToNew()) + 1));
+        const cosOuter = Math.cos(light.angle / 2);
+        const scale = 1 / Math.max(0.001, Math.cos(light.innerAngle / 2) - cosOuter);
+        const cone = Math.min(Math.max((-Vector3.Dot(L, light.direction.normalizeToNew()) - cosOuter) * scale, 0), 1);
+        falloff *= cone * cone;
       }
       const radiance = lightColor(light).map((value) => value * falloff) as Rgb;
       add(diffuse, radiance, NdotL / Math.PI);

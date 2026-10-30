@@ -106,8 +106,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // keeps under a share of the light: Babylon's PCSS lightens a shadow with its blockers' distance (measured: sun 0.41
     // and 0.40 three pixels in; spot 0.24 on WebGL2 and 0.20 on WebGPU, point 0.29 and 0.19, two pixels in). The sun's
     // cascades compare against the receiver's plane, so the floor does not shadow itself as under Babylon's PCSS. The
-    // spot's mask covers its cone, which holds the box's shadow: the ball's lies past the cone's half angle, outside
-    // the shadow's view, where the spot's falloff still lights the floor faintly and nothing shadows it.
+    // spot's mask covers its cone, which holds the box's shadow: the ball's lies past the cone's outer angle, where
+    // the spot lights nothing and its shadow is not defined.
     const expectations: [string, number, number, number][] = [["sun", 3, 150, 0.5], ["spot", 2, 150, 1 / 3], ["point", 2, 400, 1 / 3]];
     for (const [light, ring, umbra, share] of expectations) {
       const band = bandsOf[light]![ring]!;
