@@ -67,4 +67,4 @@ Feature Test is a developer starter that places every engine feature in a few sc
 
 If the app crashes or reloads during a check, choose **Run Feature Test Check…** again: it shows the report up to where the app stopped, with what the editor held at the end, so you can still copy it.
 
-Benchmark plays every scene at each quality level, then with fixed-shape lighting (`fixedlights` in the [console](../debugging/console.md)), and takes about ten minutes; keep the device awake and plugged in.
+Benchmark plays every scene at each quality level and takes about ten minutes; keep the device awake and plugged in.

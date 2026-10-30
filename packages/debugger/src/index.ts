@@ -7,7 +7,6 @@ export type {
   ConsoleCommandHost,
   ConsoleCompleteKind,
   ConsoleCompletionContext,
-  FixedShapeLightingRequest,
   RegisteredCommand,
 } from "./types";
 export {

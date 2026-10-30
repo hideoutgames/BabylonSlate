@@ -21,18 +21,15 @@ export function featureTestCheckCommands(sceneName: string, mode: FeatureTestChe
 export type FeatureTestCheckMode = "quick" | "full" | "benchmark";
 
 /**
- * Performance profiles a Benchmark sweeps per scene: each quality tier, then
- * fixed-shape forward lighting at Medium with each seat guard (compare with
- * "medium · forward"). A profile's commands can rebuild shaders and render
- * targets, so sampling waits for the view to draw again.
+ * Performance profiles a Benchmark sweeps per scene: each quality tier. A
+ * profile's commands can rebuild shaders and render targets, so sampling waits
+ * for the view to draw again.
  */
 export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands: readonly string[] }[] = [
-  { label: "low · forward", commands: ["quality low"] },
-  { label: "medium · forward", commands: ["quality medium"] },
-  { label: "high · forward", commands: ["quality high"] },
-  { label: "ultra · forward", commands: ["quality ultra"] },
-  { label: "medium · fixed lights", commands: ["quality medium", "fixedlights multiply"] },
-  { label: "medium · fixed lights · branch", commands: ["quality medium", "fixedlights branch"] },
+  { label: "low", commands: ["quality low"] },
+  { label: "medium", commands: ["quality medium"] },
+  { label: "high", commands: ["quality high"] },
+  { label: "ultra", commands: ["quality ultra"] },
 ];
 
 /** Above any display refresh, so a Benchmark measures the device rather than the project frame cap. */
@@ -424,7 +421,7 @@ async function viewDrawsSteadily(play: PlayProbe, deps: FeatureTestCheckDeps, si
 /**
  * Sweeps FEATURE_TEST_BENCHMARK_PROFILES on the running scene with the frame
  * cap lifted into `samples`, one as each profile finishes, then restores the
- * session's fixed-shape lighting, quality, render path and cap.
+ * session's quality, render path and cap.
  */
 async function benchmarkProfiles(
   sceneName: string,
@@ -478,7 +475,6 @@ async function benchmarkProfiles(
     }
   } finally {
     if (!signal.aborted) {
-      await run("fixedlights reset");
       await run("quality reset");
       await run(`framecap ${cap ?? 60}`);
     }

@@ -3,15 +3,11 @@ import { fail, ok } from "./parser";
 import type {
   CommandParameter,
   ConsoleCommandHost,
-  FixedShapeLightingRequest,
   RegisteredCommand,
 } from "./types";
 
 /** Upper bound the runtime applies to time dilation. */
 export const MAX_TIME_DILATION = 8;
-
-/** Off; when on, shaders scale each empty light seat away ("multiply") rather than branch around it. */
-const DEFAULT_FIXED_LIGHTS: FixedShapeLightingRequest = { enabled: false, guard: "multiply" };
 
 const FLAG: CommandParameter = {
   name: "enabled",
@@ -24,7 +20,6 @@ export const CORE_COMMAND_NAMES = [
   "changescene",
   "quality",
   ...QUALITY_GROUPS.map((group) => `quality ${group}`),
-  "fixedlights",
   "framecap",
   "volume",
   "quit",
@@ -143,26 +138,6 @@ export function builtinCommands(): RegisteredCommand[] {
       ],
       run: (args, host) => host.quality(group, args.choice as string | undefined, args.value as string | undefined),
     })),
-    {
-      name: "fixedlights",
-      tier: "core",
-      category: "engine",
-      description: "Query or switch fixed-shape forward lighting for the session, and how shaders skip empty light seats",
-      parameters: [
-        { name: "mode", type: "enum", optional: true, enumValues: ["on", "off", "multiply", "branch", "reset"] },
-      ],
-      run(args, host) {
-        if (!host.setFixedShapeLighting) return fail("fixed-shape lighting cannot be switched here");
-        const mode = args.mode as string | undefined;
-        let next = host.getFixedShapeLighting?.() ?? DEFAULT_FIXED_LIGHTS;
-        if (mode === "reset") next = DEFAULT_FIXED_LIGHTS;
-        else if (mode === "on" || mode === "off") next = { ...next, enabled: mode === "on" };
-        else if (mode === "multiply" || mode === "branch") next = { enabled: true, guard: mode };
-        else if (mode !== undefined) return fail(`unknown fixedlights mode: ${mode}`);
-        if (mode !== undefined) host.setFixedShapeLighting(next);
-        return ok(`fixedlights ${next.enabled ? `on (${next.guard})` : "off"}`);
-      },
-    },
     flagCommand("lightsdebug", (host, enabled) => host.setLightsDebug?.(enabled), "Show light illumination and shadow allocation diagnostics"),
     {
       name: "framecap",

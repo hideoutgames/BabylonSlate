@@ -8,8 +8,6 @@ import {
   captureShadowDiagnostics,
   selectionGizmoRoots,
   setDirectViewPresentationEnabled,
-  setFixedShapeLightGuard,
-  setFixedShapeLightingEnabled,
   whenSubmittedWorkDone,
   type EngineHandle,
 } from "@haptic/render";
@@ -49,8 +47,6 @@ export type ViewportTestHost = {
     measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
     /** Direct presentation of a sole view (default on); off copies into the view canvas, for A/B runs. */
     setDirectViewPresentation: (enabled: boolean) => void;
-    /** Fixed-shape forward lighting on the project Engine with that seat guard, or off (null), for A/B runs; false without a view. */
-    setFixedShapeLighting: (guard: "multiply" | "branch" | null) => boolean;
     /** Destroys the project Engine's WebGPU device, as a real loss would; false on WebGL2 or without a view. */
     destroyGraphicsDevice: () => boolean;
     /**
@@ -274,14 +270,6 @@ export function installViewportTestHost({
     },
     setRenderSettings: (settings) => engineRef.current?.setRenderSettings(settings),
     setDirectViewPresentation: (enabled) => setDirectViewPresentationEnabled(enabled),
-    setFixedShapeLighting: (guard) => {
-      const engine = engineRef.current?.engine;
-      if (!engine) return false;
-      if (guard) setFixedShapeLightGuard(engine, guard);
-      setFixedShapeLightingEnabled(engine, guard !== null);
-      engineRef.current?.scheduler.invalidate("asset");
-      return true;
-    },
     engineCount: () => EngineStore.Instances.length,
     destroyGraphicsDevice: () => {
       // Play and Preview Build release this viewport; the project Engine is then the session's.
