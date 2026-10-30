@@ -91,7 +91,8 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * created, such as a Full Quality capture's, have prepared). Its Effects stay compiled until `release`.
  *
  * `draws` says whether there is a reason to draw: the caller passes true when the Scene holds a light or Play may spawn
- * one, or when the spawn warm-up staged meshes for it (shown only until it has drawn, `onDrawn`; on WebGL2 a program's
+ * one, when a particle component is to play (its unstarted systems draw their programs in these frames), or when the
+ * spawn warm-up staged meshes for it (shown only until it has drawn, `onDrawn`; on WebGL2 a program's
  * first draw holds iPad WebKit and no probe sees it). Without one it draws no frame: an extra loading frame steps GPU
  * particles once more, which a paused Simulation's redraw shows. `onDrawn` runs once it has drawn, or when it ends
  * first, for the caller to remove the staged meshes.
