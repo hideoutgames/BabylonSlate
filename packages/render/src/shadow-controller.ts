@@ -25,7 +25,6 @@ import {
 } from "@haptic/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
-import { ReusableShadowGenerator, type LocalShadowLight } from "./reusable-shadow-generator";
 import {
   exchangeShadowReceivers,
   invalidateShadowReceiverHandoffs,
@@ -40,7 +39,6 @@ import {
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
-import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { onMeshRevealed } from "./reveal-pending";
@@ -48,7 +46,6 @@ import { forgetCasterRequests, setShadowCasterReach } from "./shadow-caster-warm
 import {
   availableSceneShadowBytes,
   reserveSceneShadows,
-  shadowBytesPerTexel,
   type ShadowCost,
 } from "./shadow-admission";
 import {
@@ -58,6 +55,7 @@ import {
   generatorPasses,
   matchesAllocationKey,
   type EffectiveShadowBias,
+  type LocalShadowLight,
   type ShadowEntry as Entry,
   type ShadowLightStatus,
 } from "./shadow-entry";
@@ -81,7 +79,7 @@ import {
   type ShadowMapSlot,
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
-import { isAtlasShadow, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
+import { AtlasShadowGenerator, isAtlasShadow, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
@@ -257,7 +255,6 @@ export class SceneShadowController {
       engine.onContextRestoredObservable.remove(restored);
       unwatchReveals();
       setShadowCasterReach(scene, undefined);
-      // Their owners still await the ledger releases through their own claims.
       this.views.releaseAll();
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.casterVariants.dispose();
@@ -354,8 +351,7 @@ export class SceneShadowController {
    * to the camera, so materials drawn for it bind a map fitted to it as a scene
    * view there would fit one. Point and spot maps do not depend on the view and
    * stay shared. The maps follow every sync until the claim is released; each
-   * reserves in the shared rendering ledger (an atlas map's mirror: cascade
-   * tiles of the atlas) and redraws in every pass the view draws.
+   * takes cascade tiles of the atlas and redraws in every pass the view draws.
    */
   attachView(camera: Camera): ViewShadows {
     if (this.scene.isDisposed) return { release: () => Promise.resolve() };
@@ -364,7 +360,7 @@ export class SceneShadowController {
   /**
    * The map a pass drawn for `camera` binds for `light`: the view's own sun
    * map, or else the scene view's map, which receivers drawn for `camera`
-   * fall back to binding (a sun map the ledger refused for the view samples
+   * fall back to binding (a sun map the atlas had no room for samples
    * the scene view's; toggling the light's shadows off for the view instead
    * would rebuild every material's light defines twice a frame).
    */
@@ -429,22 +425,13 @@ export class SceneShadowController {
   /** Faces drawn and bytes held: the scene view's maps and every view's own. */
   metrics(): { passes: number; bytes: number } {
     let passes = 0;
-    // The atlas whole; its tiles hold none of their own.
-    let bytes = shadowAtlasBytes(this.scene);
     this.views.forEachMap((map) => {
       passes += map.passes;
-      bytes += map.attachmentBytes;
     });
-    const held = (generator: ShadowGenerator) => isAtlasShadow(generator) ? 0 :
-      generatorPasses(generator) *
-      (generator.getShadowMap()?.getSize().width ?? 0) ** 2 *
-      shadowBytesPerTexel(this.scene.getEngine(), generator instanceof CascadedShadowGenerator);
-    for (const { generator, standby } of this.entries.values()) {
-      if (!generator) continue;
-      if (!standby) passes += generatorPasses(generator);
-      bytes += held(generator);
-    }
-    return { passes, bytes };
+    for (const { generator, standby } of this.entries.values())
+      if (generator && !standby) passes += generatorPasses(generator);
+    // The atlas whole; its tiles hold none of their own.
+    return { passes, bytes: shadowAtlasBytes(this.scene) };
   }
   /** Whether the Scene lists the mesh; only a mesh that has left needs the search. */
   private listed(mesh: AbstractMesh): boolean {
@@ -558,7 +545,7 @@ export class SceneShadowController {
     const previousCamera = this.selectionCamera;
     this.selectionCamera = camera;
     const selectionTime = performance.now();
-    const budget = readShadowAdmissionBudget(scene, settings, this.views.bytes());
+    const budget = readShadowAdmissionBudget(scene, settings);
     const plan = planShadowAdmission({
       entries: this.entries,
       settings,
@@ -614,7 +601,7 @@ export class SceneShadowController {
         }
         continue;
       }
-      if (entry.status !== "active" && entry.generator instanceof ReusableShadowGenerator &&
+      if (entry.status !== "active" && entry.generator instanceof AtlasShadowGenerator &&
         !entry.resetAllocation)
         donors.push(entry);
       else release(entry);
@@ -629,10 +616,10 @@ export class SceneShadowController {
         continue;
       const index = donors.findIndex((donor) =>
         matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge) &&
-        (donor.generator as ReusableShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
+        (donor.generator as AtlasShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
       if (index < 0) continue;
       const [donor] = donors.splice(index, 1) as [Entry];
-      const generator = donor.generator as ReusableShadowGenerator;
+      const generator = donor.generator as AtlasShadowGenerator;
       generator.moveTo(entry.light as LocalShadowLight);
       // Same-kind lights exchange shader light indices, so receivers keep their
       // defines and effects. Otherwise dirty them as construction/disposal would.
@@ -665,13 +652,8 @@ export class SceneShadowController {
     for (const entry of this.entries.values())
       if (entry.status === "active" && !(entry.light instanceof DirectionalLight)) pooled++;
     const standby: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
-    // Standby maps are optional reuse: they keep only room the views' own maps
-    // do not hold, so retaining one never makes a capture's sun maps yield,
-    // and none the views' missing mirrors will ask for once they may allocate.
-    const standbyBudget = Math.max(
-      0,
-      Math.min(budget.bytes, availableSceneShadowBytes(scene)) - this.views.missingMirrorBytes(settings, admitted.bytes),
-    );
+    // Standby maps are optional reuse within the scene's room.
+    const standbyBudget = Math.max(0, Math.min(budget.bytes, availableSceneShadowBytes(scene)));
     for (const entry of donors.reverse()) {
       const generator = entry.generator!;
       const bytes = reservedShadowBytes(generator, entry.mapSize, budget);
@@ -711,7 +693,6 @@ export class SceneShadowController {
       if (map && map.refreshRate !== RenderTargetTexture.REFRESHRATE_RENDER_ONCE)
         map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     }
-    this.views.yieldTo(admitted.bytes + standby.bytes);
     reserveSceneShadows(this.scene, {
       bytes: admitted.bytes + standby.bytes, passes: admitted.passes, samplers: admitted.samplers + standby.samplers,
     });
@@ -735,22 +716,6 @@ export class SceneShadowController {
           invalidateShadowReceiverHandoffs(scene);
         }
         maintainCascades(entry);
-        if (
-          entry.light instanceof DirectionalLight &&
-          !(entry.generator instanceof CascadedShadowGenerator)
-        ) {
-          if (previousSettings?.distance !== settings.distance) {
-            currentCasters();
-            configureDirectionalShadowProjection(
-              entry.light,
-              scene,
-              settings.distance,
-              mapSize,
-              this.spatial,
-            );
-          }
-          entry.light.forceProjectionMatrixCompute();
-        }
         continue;
       }
       // The first map reads caster state, bounds and spatial queries from here on.
@@ -794,8 +759,7 @@ export class SceneShadowController {
               { cause: error },
             );
           }
-          // Standby maps are optional reuse; free them before reducing an admitted map. The views' atlas maps give way
-          // too, as their ledger maps do (`yieldTo`).
+          // Standby maps are optional reuse; free them before reducing an admitted map. The views' maps give way too.
           let reclaimed = false;
           for (const other of this.entries.values()) {
             if (!other.standby) continue;
