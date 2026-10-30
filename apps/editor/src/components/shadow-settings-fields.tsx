@@ -93,7 +93,7 @@ const fields: {
     key: "screenShadows",
     label: "Screen-Space Shadows",
     description:
-      "Adds the sun's small contact shadows the shadow map misses, near the camera. Uses a depth pass. PBR only.",
+      "Adds the sun's small contact shadows the shadow map misses, near the camera. Low runs only with an effect's depth pass; Medium and High add one. PBR only.",
   },
   {
     key: "depthBias",

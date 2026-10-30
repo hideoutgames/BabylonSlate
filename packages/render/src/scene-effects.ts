@@ -53,8 +53,8 @@ export interface SceneEffectsPlan {
   /** The chain renders at `renderScale`, then FSR 1 restores the output size. */
   upscale: RenderEffectsSettings["upscaling"] | null;
   /**
-   * Screen-Space Shadows' level: a march over the spatial geometry pass's depth before the objects draw. It needs that
-   * pass, so it alone makes the plan, and adds the pass when no other effect would.
+   * Screen-Space Shadows' level: a march over the spatial geometry pass's depth before the objects draw. Medium and High
+   * make the plan alone and add the pass when no other effect draws it; Low runs only where one does.
    */
   screenShadows: Exclude<ScreenShadowsQuality, "off"> | null;
 }
@@ -111,7 +111,12 @@ export function planSceneEffects(
     : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
   const upscale = effects.upscaling.enabled && effects.upscaling.renderScale < 1 ? effects.upscaling : null;
   // sceneLinear always yields imageProcessing, so it needs no separate term.
-  const screenShadows = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? inputs.screenShadows : null;
+  // Low (the Medium tier's) never adds the depth pass: it runs only with an effect that draws it every frame (Fog
+  // Volumes alone idle it while none is in reach).
+  const depthPass = !!(ambientOcclusion || reflections || temporalAntiAliasing ||
+    (effects.volumetricLighting.enabled && allowed?.volumetricLighting !== false));
+  const screenShadows = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" &&
+    (inputs.screenShadows !== "low" || depthPass) ? inputs.screenShadows : null;
   if (!bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting && !upscale &&
     !screenShadows)
     return null;
