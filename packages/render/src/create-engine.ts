@@ -1010,6 +1010,25 @@ function initializeEngine(
       onDiagnostic: (diagnostic) => options.onPostProcessDiagnostic?.(diagnostic),
     });
   };
+  /** `RenderDiagnostics.settings`: what the Feature Test Check's Breakdown steps change, as effective now. */
+  const breakdownSettings = (): Record<string, string> => {
+    const quality = resolveSceneRenderingQuality(scene);
+    const water = sceneWaterQualityDeviceClamp(scene).quality;
+    const { shadows, postprocessing: post } = quality;
+    return {
+      shadows: shadows.enabled ? `${shadows.profile} ${shadows.mapSize}` : "off",
+      "water.refraction": String(water.refraction),
+      "water.reflections": water.reflections,
+      "water.shadingDetail": water.shadingDetail,
+      "post.scale": String(post.resolutionScale),
+      "post.ambientOcclusion": String(post.ambientOcclusion),
+      "post.reflections": String(post.reflections),
+      "post.volumetricLighting": String(post.volumetricLighting),
+      "post.enabled": String(postProcessingEnabled),
+      captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
+      "resolution.scale": String(quality.resolution.scale),
+    };
+  };
   const setPostProcessingEnabled = (enabled: boolean) => {
     postProcessingEnabled = enabled;
     setSceneEffectsEnabled(scene, enabled);
@@ -1677,7 +1696,7 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), firstDraws: firstDraws?.stats() ?? null, presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+    ))(), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
