@@ -1,6 +1,6 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { enableHeadlessCascades } from "./shadow-test-fixtures";
+import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core";
 import {
@@ -57,6 +57,9 @@ describe("textures across a Play cycle", () => {
       depthTextureExtension: true, textureFloatRender: true, textureHalfFloatRender: true,
     });
     enableHeadlessCascades(engine);
+    // A frame drawing a Material's previous Effect allocates the Scene's sampler placeholders, a cube among them,
+    // whose texture NullEngine leaves unattached and so never releases.
+    enableHeadlessCubeTargets(engine);
     engines.push(engine);
     return engine;
   }
@@ -119,6 +122,7 @@ describe("textures across a Play cycle", () => {
       const play = startPlay(engine);
       await frames(engine, 6);
       // The sun's shadow map and its depth are among what the session created.
+      console.log("DBG", JSON.stringify(engine.getLoadedTexturesCache().filter((t) => !before.has(t) && t._references > 0).map((t) => [describeEngineTexture(engine, t).name, t.baseWidth, t.isCube])));
       expect(retained(engine, before).length).toBeGreaterThanOrEqual(2);
       play.dispose();
       await play.whenReleased();

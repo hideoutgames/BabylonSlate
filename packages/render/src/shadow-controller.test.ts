@@ -56,20 +56,9 @@ function fixture(beforeController?: (scene: Scene) => void) {
     textureHalfFloatRender: true,
     textureHalfFloatLinearFiltering: true,
   });
-  // Babylon 9.29 NullEngine creates cube InternalTextures but leaves them
-  // unattached to the wrapper. Complete that headless GPU boundary so the real
-  // generator can expose dimensions and dispose its allocation like WebGL does.
-  const createCubeTarget = engine.createRenderTargetCubeTexture.bind(engine);
-  engine.createRenderTargetCubeTexture = (...args) => {
-    const target = createCubeTarget(...args);
-    if (!target.texture) {
-      const texture = engine.getLoadedTexturesCache().at(-1);
-      if (!texture)
-        throw new Error("NullEngine cube allocation has no texture");
-      target.setTexture(texture);
-    }
-    return target;
-  };
+  // Every shipped Engine (WebGL2, WebGPU) draws cascades with hardware depth comparison: the sun's atlas map is one.
+  engine._features.supportCSM = true;
+  engine._features.supportShadowSamplers = true;
   // NullEngine also leaves _releaseTexture empty. Match WebGL cache ownership
   // so resource disposal assertions observe the same lifetime as a real GPU.
   engine._releaseTexture = (texture) => {

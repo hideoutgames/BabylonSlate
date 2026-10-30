@@ -70,7 +70,9 @@ describe("editor billboard", () => {
   });
 
   it.each(["pbr", "cel"] as const)("distinguishes intentionally unshadowed, limited, active and disabled lights in %s", (mode) => {
-    const { scene } = createHandle();
+    const { engine, scene } = createHandle();
+    // A point light's map is six tiles of the shadow atlas, which a NullEngine's 512 texel texture limit cannot hold.
+    engine.getCaps().maxTextureSize = 4096;
     updateSceneRenderingSettings(scene, { mode, shadows: normalizeShadowSettings({ localLightMode: "manual", maxLocalLights: 0 }) });
     const light = new PointLight("authoredLight:lamp", Vector3.Zero(), scene);
     const controller = sceneShadowController(scene);

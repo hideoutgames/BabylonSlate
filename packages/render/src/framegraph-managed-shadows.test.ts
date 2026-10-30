@@ -1,8 +1,8 @@
 import {
+  CascadedShadowGenerator,
   DirectionalLight,
   Effect,
   FreeCamera,
-  Matrix,
   MeshBuilder,
   NullEngine,
   PointLight,
@@ -18,6 +18,7 @@ import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { sceneShadowController } from "./shadow-controller";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
+import { shadowAtlasTexture, type AtlasShadowGenerator } from "./shadow-atlas";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createColliderVisualMesh } from "./collider-visual";
 import { markSmoothNormalShadowCaster, SMOOTH_CASTER_NORMAL_BIAS_TEXELS } from "./shadow-bias";
@@ -31,15 +32,13 @@ afterEach(() => {
 async function fixture(kind: "point" | "spot" | "sun" = "point") {
   const engine = new NullEngine();
   engines.push(engine);
-  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16 });
-  // The installed NullEngine omits the cube attachment and WebGL MRT hooks.
-  // Complete only those GPU boundaries; all maps, tasks and refresh gates run.
-  const createCube = engine.createRenderTargetCubeTexture.bind(engine);
-  engine.createRenderTargetCubeTexture = (...args) => {
-    const target = createCube(...args);
-    target.setTexture(engine.getLoadedTexturesCache().at(-1)!);
-    return target;
-  };
+  // A shipped Engine's texture limit holds a point light's six tiles in the atlas, and it draws cascades: the sun's
+  // atlas map is one.
+  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16, maxTextureSize: 4096 });
+  engine._features.supportCSM = true;
+  engine._features.supportShadowSamplers = true;
+  // The installed NullEngine omits the WebGL MRT hooks. Complete only those GPU
+  // boundaries; all maps, tasks and refresh gates run.
   vi.spyOn(engine, "buildTextureLayout").mockImplementation(
     (enabled, backbuffer) =>
       backbuffer
@@ -139,19 +138,21 @@ it.each(["point", "spot", "sun"] as const)(
     });
     controller.setParticipation(collider, { castShadows: true });
     controller.sync();
-    const textures = scene.textures.length;
     const references = texture._references;
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    // Preparation may make the light block's shared stand-ins; drawing makes nothing.
+    const textures = scene.textures.length;
     expect(faces()).toBe(0);
     const count = kind === "point" ? 6 : 1;
     expect(render()).toBe(count);
-    expect(render()).toBe(kind === "sun" ? 1 : 0);
+    // Every map, the sun's cascades too, draws once per change of what it holds.
+    expect(render()).toBe(0);
     collider.position.x = 2;
     collider.setEnabled(false);
-    expect(render()).toBe(kind === "sun" ? 1 : 0);
+    expect(render()).toBe(0);
     collider.setEnabled(true);
-    expect(render()).toBe(kind === "sun" ? 1 : 0);
+    expect(render()).toBe(0);
     mesh.position.x = 0.4;
     expect(render()).toBe(count);
     light.position.x += 0.5;
@@ -202,16 +203,22 @@ it.each(["point", "spot"] as const)(
   },
 );
 
+/** The world texel and automatic depth bias the sun's first cascade needs for the projection it holds. */
+function cascadeBias(engine: NullEngine, generator: CascadedShadowGenerator, authoredDepthBias: number) {
+  const m = generator.getCascadeProjectionMatrix(0)!.m;
+  const worldTexelSize = Math.max(2 / Math.abs(m[0]!), 2 / Math.abs(m[5]!)) / 256;
+  const depth = (engine.isNDCHalfZRange ? 1 : 2) / Math.abs(m[10]!);
+  // PCF's quarter-texel raster correction over the depth interval, scaled for depth-clamped hardware depth.
+  return { worldTexelSize, bias: Math.max(authoredDepthBias, Math.min(0.05, (0.25 * worldTexelSize) / depth / 1.5)) };
+}
+
 it("binds current directional projection bias before the managed caster draw without replacing resources", async () => {
   const { engine, scene, camera, light, controller, generator, map, texture, graph, render } =
     await fixture("sun");
-  expect(light).toBeInstanceOf(DirectionalLight);
-  const sun = light as DirectionalLight;
-  let span = 16;
-  sun.customProjectionMatrixBuilder = (_view, _casters, result) => {
-    Matrix.OrthoOffCenterLHToRef(-span / 2, span / 2, -span / 2, span / 2, 0, 80, result, engine.isNDCHalfZRange);
-  };
-  sun.forceProjectionMatrixCompute();
+  expect(generator).toBeInstanceOf(CascadedShadowGenerator);
+  const sun = generator as CascadedShadowGenerator;
+  // A short shadow distance keeps the cascade's texels fine enough for a bias below the guard's ceiling.
+  updateSceneRenderingSettings(scene, { shadows: { ...sceneRenderingSettings(scene).shadows, distance: 10 } });
   const authored = structuredClone(sceneRenderingSettings(scene).shadows);
   const uniforms: Array<[number, number]> = [];
   const setFloat3 = Effect.prototype.setFloat3;
@@ -223,27 +230,31 @@ it("binds current directional projection bias before the managed caster draw wit
   uniforms.length = 0;
   expect(render()).toBe(1);
   expect(uniforms.length).toBeGreaterThan(0);
-  // NullEngine's actual Poisson fallback has a two-texel radius. At a 16-world-
-  // unit footprint / 256 texels / 80-depth interval this needs 0.0015625.
+  const first = cascadeBias(engine, sun, authored.depthBias);
+  // The automatic bias, not the authored floor or the guard's ceiling, is what this draw needs.
+  expect(first.bias).toBeGreaterThan(authored.depthBias);
+  expect(first.bias).toBeLessThan(0.05);
   for (const [bias, normalBias] of uniforms) {
-    expect(bias).toBeCloseTo(0.0015625, 8);
+    expect(bias).toBeCloseTo(first.bias, 8);
     expect(normalBias).toBe(0.005);
   }
   const previousDraw = captureShadowDiagnostics(scene).lights[0].generator!.lastDrawBias;
   expect(previousDraw).toHaveLength(1);
-  span = 32;
+  expect(previousDraw[0].worldTexelSize).toBeCloseTo(first.worldTexelSize, 8);
+  // A wider view refits the cascade over more of the world.
+  camera.fov *= 1.5;
   scene.incrementRenderId();
-  sun.forceProjectionMatrixCompute();
   expect(map.isReadyForRendering()).toBe(true);
-  expect(generator.bias).toBeCloseTo(0.003125, 8);
-  // Native readiness runs the projection/bias callback but never changes the
-  // map's texels; it must not replace the provenance of the previous real draw.
+  // Native readiness never changes the map's texels; it must not replace the
+  // provenance of the previous real draw.
   expect(captureShadowDiagnostics(scene).lights[0].generator!.lastDrawBias).toEqual(previousDraw);
   uniforms.length = 0;
   expect(render()).toBe(1);
   expect(uniforms.length).toBeGreaterThan(0);
-  for (const [bias] of uniforms) expect(bias).toBeCloseTo(0.003125, 8);
-  expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.125, 8);
+  const second = cascadeBias(engine, sun, authored.depthBias);
+  expect(second.worldTexelSize).toBeGreaterThan(first.worldTexelSize);
+  for (const [bias] of uniforms) expect(bias).toBeCloseTo(second.bias, 8);
+  expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(second.worldTexelSize, 8);
   expect(controller.effectiveBias(light)[0].renderId).toBeGreaterThan(previousDraw[0].renderId);
   expect(controller.generator(light)).toBe(generator);
   expect(generator.getShadowMap()).toBe(map);
@@ -254,11 +265,6 @@ it("binds current directional projection bias before the managed caster draw wit
 
 it("insets smooth-normal casters by world texels while other casters keep the authored normal bias", async () => {
   const { engine, scene, camera, mesh, light, controller, generator, graph, render } = await fixture("sun");
-  const sun = light as DirectionalLight;
-  sun.customProjectionMatrixBuilder = (_view, _casters, result) => {
-    Matrix.OrthoOffCenterLHToRef(-8, 8, -8, 8, 0, 80, result, engine.isNDCHalfZRange);
-  };
-  sun.forceProjectionMatrixCompute();
   const terrain = MeshBuilder.CreateGround("terrain", { width: 4, height: 4, subdivisions: 4 }, scene);
   terrain.material = mesh.material;
   markSmoothNormalShadowCaster(terrain);
@@ -276,9 +282,11 @@ it("insets smooth-normal casters by world texels while other casters keep the au
   generator.onAfterShadowMapRenderObservable.add(() => { drawn.set(caster, normalBias); });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   render();
-  // 16 world units over 256 texels.
-  expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(0.0625, 8);
-  expect(drawn.get(terrain)).toBeCloseTo(SMOOTH_CASTER_NORMAL_BIAS_TEXELS * 0.0625, 8);
+  const { worldTexelSize } = cascadeBias(engine, generator as CascadedShadowGenerator, 0);
+  // Three world texels exceed the authored normal bias, so the inset is the smooth caster's own.
+  expect(SMOOTH_CASTER_NORMAL_BIAS_TEXELS * worldTexelSize).toBeGreaterThan(0.005);
+  expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(worldTexelSize, 8);
+  expect(drawn.get(terrain)).toBeCloseTo(SMOOTH_CASTER_NORMAL_BIAS_TEXELS * worldTexelSize, 8);
   expect(drawn.get(mesh)).toBe(0.005);
   graph.dispose();
 });
@@ -396,9 +404,11 @@ it("rechecks admission after scene callbacks so revoked maps are never rendered 
   expect(faces()).toBe(0);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(render()).toBe(0);
+  // With its last tile gone the atlas goes too; the light block samples its one-texel stand-in.
   expect(
     scene.textures.filter((texture) => texture.isRenderTarget),
-  ).toHaveLength(0);
+  ).toEqual([shadowAtlasTexture(scene)]);
+  expect(shadowAtlasTexture(scene).getSize().width).toBe(1);
   graph.dispose();
 });
 
@@ -474,7 +484,8 @@ it("moves the admitted map to a compatible camera handoff within one presented f
   expect(controller.generator(light)).toBeNull();
   expect(scene.lights.filter((light) => light.getShadowGenerator())).toEqual([incoming]);
   expect(controller.metrics().bytes).toBe(bytes);
-  expect(scene.textures.filter((texture) => texture.isRenderTarget)).toEqual([map]);
+  // The moved map keeps its atlas tile: no target is made or released.
+  expect(scene.textures.filter((texture) => texture.isRenderTarget)).toEqual([shadowAtlasTexture(scene), map]);
   expect(allocate).not.toHaveBeenCalled();
   expect(dirty).not.toHaveBeenCalled();
   expect(lightDirty).not.toHaveBeenCalled();
@@ -497,7 +508,9 @@ it("uses normal preparation when a point-light handoff changes cube layout", asy
   controller.sync();
   expect(controller.status(incoming)).toBe("active");
   expect(controller.generator(light)).toBeNull();
-  expect(controller.generator(incoming)?.getShadowMap()?.isCube).toBe(false);
+  // A directed point light draws one face: one atlas tile, not the six its predecessor holds.
+  expect((controller.generator(incoming) as AtlasShadowGenerator).tiles).toHaveLength(1);
+  expect((controller.generator(incoming) as AtlasShadowGenerator).tiles[0]!.size).toBe(256);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
 });
 
@@ -514,7 +527,7 @@ it("settles the material shadow layout before readiness instead of invalidating 
 });
 
 it("skips a later borrowed map revoked by an earlier shadow draw", async () => {
-  const { engine, scene, camera, controller, map, graph, framebuffer } =
+  const { engine, scene, camera, controller, map, graph } =
     await fixture("spot");
   updateSceneRenderingSettings(scene, {
     shadows: normalizeShadowSettings({
@@ -535,18 +548,21 @@ it("skips a later borrowed map revoked by an earlier shadow draw", async () => {
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   const secondGenerator = controller.generator(second)!;
   const secondMap = secondGenerator.getShadowMap()!;
-  const target = secondMap.renderTarget;
-  const bind = framebuffer.getMockImplementation()!;
+  // Both maps are tiles of the one atlas framebuffer: count each map's own binds.
   let revoked = false;
   let secondBinds = 0;
-  framebuffer.mockImplementation((current, ...args) => {
-    if (current === target) secondBinds++;
-    bind(current, ...args);
-    if (!revoked && current === map.renderTarget) {
-      revoked = true;
-      controller.register(second, false);
-      controller.sync();
-    }
+  const bindFirst = map._bindFrameBuffer.bind(map);
+  vi.spyOn(map, "_bindFrameBuffer").mockImplementation((...args) => {
+    bindFirst(...args);
+    if (revoked) return;
+    revoked = true;
+    controller.register(second, false);
+    controller.sync();
+  });
+  const bindSecond = secondMap._bindFrameBuffer.bind(secondMap);
+  vi.spyOn(secondMap, "_bindFrameBuffer").mockImplementation((...args) => {
+    secondBinds++;
+    bindSecond(...args);
   });
   expect(graph.render(camera, false)).toEqual({ path: "frameGraph", rendered: false });
   expect(revoked).toBe(true);
@@ -583,6 +599,8 @@ it("warms the current shadow-enabled receiver layout before drawing a reused gra
     expect(faces()).toBe(before);
     expect(scene.objectRenderers).toContain(renderer);
     expect(light.getShadowGenerator()!.getShadowMap()).toBe(map);
+    // A moved caster redraws the cached cascades only while the light casts shadows.
+    mesh.position.x += 0.1;
     expect(render()).toBe(enabled ? 1 : 0);
   }
   graph.dispose();

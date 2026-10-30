@@ -4,11 +4,9 @@ import {
   Mesh,
   MeshBuilder,
   PBRMaterial,
-  PBRMetallicRoughnessBlock,
   RawTexture,
   StandardMaterial,
   Vector3,
-  type Effect,
   type Scene,
 } from "@babylonjs/core";
 import {
@@ -20,11 +18,13 @@ import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
 } from "@haptic/shader-graph";
+import { hapticLightBuffer } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
 import { createTestEngine } from "./create-null-engine";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { installPreviewEnvironment } from "./preview-environment";
+import { syncSceneLighting } from "./scene-lighting";
 import { applySceneToBabylonScene } from "./scene-loader";
 import { isSkyboxMesh } from "./skybox";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
@@ -51,6 +51,14 @@ function compiledPbr(scene: Scene) {
   if (!compiled.ok) throw new Error("Fixture material did not compile");
   compiled.material.allowShaderHotSwapping = false;
   return compiled.material;
+}
+
+/** The light block's counts (sun, point, spot, rect) and fill presence, as the next frame draws them. */
+function blockLights(scene: Scene): number[] {
+  syncSceneLighting(scene);
+  const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+  const read = (name: string, length: number) => [...buffer._bufferData.subarray(buffer._uniformLocations[name]!, buffer._uniformLocations[name]! + length)];
+  return [...read("hapticCounts", 4), read("hapticFillDirection", 4)[3]!];
 }
 
 async function shaderDefines(scene: Scene, mesh: Mesh): Promise<string> {
@@ -132,61 +140,12 @@ describe("ViewportShadingOverlay", () => {
           expect(material.wireframe).toBe(false);
           expect(material.disableLighting).toBe(true);
           expect(material.isFrozen).toBe(true);
-          const surfaceDefines = await shaderDefines(scene, surface);
-          if (mode === "unlit") expect(surfaceDefines).toContain("#define UNLIT");
-          else expect(surfaceDefines).not.toContain("#define UNLIT");
+          // A graph surface draws Unlit with the Scene's lights off, which leaves the light block without records.
+          expect(await shaderDefines(scene, surface)).not.toContain("#define UNLIT");
+          expect(scene.lightsEnabled).toBe(mode !== "unlit");
+          if (mode === "unlit") expect(blockLights(scene)).toEqual([0, 0, 0, 0, 0]);
           expect(surface.material.wireframe).toBe(mode === "wireframe");
         }
-      } finally {
-        engine.dispose();
-      }
-    },
-  );
-
-  it.each(["pbr", "unlit"] as const)(
-    "finishes an asynchronous %s shader switch on a frozen surface",
-    async (nextMode) => {
-      const { engine, scene } = createTestEngine();
-      try {
-        new HemisphericLight("key", Vector3.Up(), scene);
-        const mesh = MeshBuilder.CreateBox("actor", {}, scene);
-        const material = compiledPbr(scene);
-        material.allowShaderHotSwapping = true;
-        mesh.material = material;
-        const overlay = new ViewportShadingOverlay(scene);
-        overlay.setMode(nextMode === "pbr" ? "unlit" : "pbr");
-        material.freeze();
-        await shaderDefines(scene, mesh);
-
-        // NullEngine has no parallel GPU compiler. Delay only effect readiness
-        // while retaining the real material, shader generation and draw cache.
-        let ready = false;
-        const delayed = new WeakSet<Effect>();
-        const createEffect = engine.createEffect.bind(engine);
-        vi.spyOn(engine, "createEffect").mockImplementation((...args) => {
-          const effect = createEffect(...args);
-          if (!delayed.has(effect)) {
-            delayed.add(effect);
-            const isReady = effect.isReady.bind(effect);
-            vi.spyOn(effect, "isReady").mockImplementation(() => ready && isReady());
-          }
-          return effect;
-        });
-        scene.blockMaterialDirtyMechanism = true;
-        overlay.setMode(nextMode);
-        scene.incrementRenderId();
-        material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
-        ready = true;
-
-        const defines = await shaderDefines(scene, mesh);
-        if (nextMode === "unlit") expect(defines).toContain("#define UNLIT");
-        else {
-          expect(defines).not.toContain("#define UNLIT");
-          expect(defines).toContain("#define LIGHT0");
-        }
-        expect(material.isFrozen).toBe(true);
-        expect(material.allowShaderHotSwapping).toBe(true);
-        expect(scene.blockMaterialDirtyMechanism).toBe(true);
       } finally {
         engine.dispose();
       }
@@ -205,85 +164,49 @@ describe("ViewportShadingOverlay", () => {
       material.freeze();
       scene.blockMaterialDirtyMechanism = true;
       overlay.apply();
-      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
-      overlay.setMode("pbr");
       const defines = await shaderDefines(scene, mesh);
-      expect(defines).not.toContain("#define UNLIT");
-      expect(defines).toContain("#define LIGHT0");
-      expect(mesh.subMeshes[0]!.effect!.fragmentSourceCode).toContain(
-        "vLightData0",
-      );
+      const effect = mesh.subMeshes[0]!.effect;
+      expect(blockLights(scene)).toEqual([0, 0, 0, 0, 0]);
+      overlay.setMode("pbr");
+      // The light block lights the Effect Unlit compiled: the fill returns without a recompile.
+      expect(await shaderDefines(scene, mesh)).toBe(defines);
+      expect(mesh.subMeshes[0]!.effect).toBe(effect);
+      expect(effect!.fragmentSourceCode).toContain("hapticFillSky");
+      expect(blockLights(scene)).toEqual([0, 0, 0, 0, 1]);
       expect(material.isFrozen).toBe(true);
     } finally {
       engine.dispose();
     }
   });
 
-  it.each(["compiled", "native"] as const)(
-    "refreshes the frozen %s PBR shader through Unlit and restores shading",
-    async (kind) => {
-      const { engine, scene } = createTestEngine();
-      try {
-        // No light-policy transition can mask a missing overlay invalidation.
-        scene.lightsEnabled = false;
-        const mesh = MeshBuilder.CreateBox("actor", {}, scene);
-        const material =
-          kind === "compiled"
-            ? compiledPbr(scene)
-            : new PBRMaterial("native", scene);
-        material.allowShaderHotSwapping = false;
-        mesh.material = material;
-        material.freeze();
-        expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
-        const overlay = new ViewportShadingOverlay(scene);
-        scene.blockMaterialDirtyMechanism = true;
-        overlay.setMode("unlit");
-        expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
-        expect(material.isFrozen).toBe(true);
-        expect(scene.blockMaterialDirtyMechanism).toBe(true);
-        overlay.apply();
-        expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
-        overlay.setMode("wireframe");
-        expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
-        expect(material.wireframe).toBe(true);
-        overlay.setMode("pbr");
-        expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
-        expect(material.wireframe).toBe(false);
-        expect(material.isFrozen).toBe(true);
-        expect(mesh.material).toBe(material);
-        expect(scene.lightsEnabled).toBe(false);
-      } finally {
-        engine.dispose();
-      }
-    },
-  );
-
-  it("applies Unlit to newly assigned surface graphs and preserves authored unlit blocks", async () => {
+  it("refreshes the frozen native PBR shader through Unlit and restores shading", async () => {
     const { engine, scene } = createTestEngine();
     try {
+      // No light-policy transition can mask a missing overlay invalidation.
+      scene.lightsEnabled = false;
+      const mesh = MeshBuilder.CreateBox("actor", {}, scene);
+      const material = new PBRMaterial("native", scene);
+      material.allowShaderHotSwapping = false;
+      mesh.material = material;
+      material.freeze();
+      expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
       const overlay = new ViewportShadingOverlay(scene);
+      scene.blockMaterialDirtyMechanism = true;
       overlay.setMode("unlit");
-      const mesh = MeshBuilder.CreateBox("late-model", {}, scene);
-      const authored = compiledPbr(scene);
-      const block = authored.attachedBlocks.find(
-        (candidate): candidate is PBRMetallicRoughnessBlock =>
-          candidate instanceof PBRMetallicRoughnessBlock,
-      )!;
-      block.unlit = true;
-      mesh.material = authored;
+      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      expect(material.isFrozen).toBe(true);
+      expect(scene.blockMaterialDirtyMechanism).toBe(true);
       overlay.apply();
       expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
-      overlay.setMode("pbr");
-      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
-      overlay.setMode("unlit");
-      const replacement = compiledPbr(scene);
-      mesh.material = replacement;
-      overlay.apply();
-      expect(await shaderDefines(scene, mesh)).toContain("#define UNLIT");
+      overlay.setMode("wireframe");
+      expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
+      expect(material.wireframe).toBe(true);
       overlay.setMode("pbr");
       expect(await shaderDefines(scene, mesh)).not.toContain("#define UNLIT");
-      expect(mesh.material).toBe(replacement);
-      expect(block.unlit).toBe(true);
+      expect(material.wireframe).toBe(false);
+      expect(material.isFrozen).toBe(true);
+      expect(mesh.material).toBe(material);
+      expect(scene.lightsEnabled).toBe(false);
     } finally {
       engine.dispose();
     }

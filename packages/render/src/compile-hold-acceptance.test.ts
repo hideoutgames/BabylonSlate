@@ -723,7 +723,7 @@ async function measure(
   const after = world.subjectEffect();
   return {
     effects: created.length,
-    litEffects: created.filter((effect) => /#define LIGHT0\b/.test(effect.defines)).length,
+    litEffects: created.filter((effect) => effect.getUniformBuffersNames().includes("HapticLights")).length,
     heldFrames,
     drawnFrames,
     holdReported,
@@ -1447,7 +1447,11 @@ describe("compile holds after the first frame", () => {
     const barrel: Actor = { slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } };
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), barrel], ["surface-a"], "actor-20");
     world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
-    const record = await measure(world, () => world.place(point(11, [1.5, 2.5, -1], { enabled: false })), () => {
+    const record = await measure(world, () => {
+      const material = world.handle.scene.getMeshByName("actor-20")!.material!;
+      material.backFaceCulling = !material.backFaceCulling;
+      markSceneReadinessDirty(world.handle.scene);
+    }, () => {
       const material = world.handle.scene.getMeshByName("actor-20")!.material!;
       expect(material.getClassName()).toBe("NodeMaterial");
       material.freeze();
@@ -2739,12 +2743,29 @@ describe("compile holds after the first frame", () => {
     world.driver.lagOnly(geometryVariant);
     changeDefines(world, crate!);
     const steady: boolean[] = [];
-    for (let index = 0; index < 3; index++) steady.push((await world.frame()).view?.rendered === true);
+    for (let index = 0; index < 12; index++) { steady.push((await world.frame()).view?.rendered === true); console.log("DBGF", world.driver.created.includes(world.subjectEffect()!), world.driver.created.map((e) => [/#define PREPASS\b/.test(e.defines), world.driver.isPending(e), world.driver.drewWith(e), world.driver.warmPipelines.has(e)]), (world.handle.scene.getMeshByName("actor-2")!.subMeshes[0] as any)._drawWrappers.map((w: any, i: number) => w?.effect ? world.engine.getRenderPassNames()[i] + ":" + world.driver.created.indexOf(w.effect) : null).filter(Boolean).join(",")); }
     const leftOut = world.driver.omitted.size;
+    const { ForwardSceneFrameGraph } = await import("./framegraph-forward-scene");
+    const proto = ForwardSceneFrameGraph.prototype as unknown as Record<string, (...a: unknown[]) => unknown>;
+    for (const name of ["swapsStillPending", "isReady", "unavailable", "probeReady", "graphReady"]) {
+      const original = proto[name]!;
+      proto[name] = function (this: unknown, ...a: unknown[]) { const r = original.apply(this, a); console.log("DBG", name, r); return r; };
+    }
+    const origReady = Mesh.prototype.isReady;
+    Mesh.prototype.isReady = function (this: Mesh, ...a: Parameters<typeof origReady>) { const r = origReady.apply(this, a); if (!r) console.log("DBG mesh", this.name, this.material?.getClassName()); return r; };
+    const sc = world.handle.scene;
+    console.log("DBG maps", sc.lights.map((l) => [l.name, [...(l.getShadowGenerators()?.values() ?? [])].map((g) => g.getShadowMap()?.isReadyForRendering())]));
+    console.log("DBG crate", JSON.stringify(sc.meshes.map((m) => [m.name, m.isEnabled(), (m.subMeshes ?? []).map((p) => [p.materialDefines?.isDirty, p.effect?.isReady(), p.getMaterial()?.getClassName()])])));
     void world.handle.captureFrame().catch(() => {});
     const captured = (await world.frame()).view;
+    console.log("DBG", world.handle.scene.meshes.filter((m) => m.isEnabled() && !m.isReady(true)).map((m) => [m.name, m.material?.getClassName(), m.material?.isReady(m)]));
+    console.log("DBG2", world.handle.scene.meshes.filter((m) => m.isEnabled() && !m.isReady(true)).map((m) => (m.subMeshes ?? []).map((s) => s.getMaterial()?.isReadyForSubMesh(m, s, false))));
     world.driver.release();
-    for (let index = 0; index < 4; index++) await world.frame();
+    for (let index = 0; index < 3; index++) { const v = (await world.frame()).view; console.log("DBGR", index, v?.rendered, v?.reason); }
+    { const fg = (world.view() as any).graph.graph; const sc = world.handle.scene; const eng = world.engine;
+      for (const t of fg.tasks) { if (!t.isReady()) console.log("DBGT", t.name, t.getClassName?.()); }
+      console.log("DBGC", (fg as any)._renderContext._isReady());
+    }
     expect({ steady, leftOut, captured: captured?.rendered, reason: captured?.reason })
       .toEqual({ steady: [true, true, true], leftOut: 1, captured: false, reason: "Render pipelines are compiling." });
   });

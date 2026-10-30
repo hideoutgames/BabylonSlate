@@ -40,14 +40,8 @@ async function fixture(floatingOrigin = false) {
   options.enableMultiview = floatingOrigin;
   const engine = new NullEngine(options);
   engines.push(engine);
-  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16 });
-  // Complete Babylon 9.29 NullEngine's missing cube texture/wrapper attachment.
-  const createCube = engine.createRenderTargetCubeTexture.bind(engine);
-  engine.createRenderTargetCubeTexture = (...args) => {
-    const target = createCube(...args);
-    target.setTexture(engine.getLoadedTexturesCache().at(-1)!);
-    return target;
-  };
+  // A shipped Engine's texture limit holds the point light's six faces as atlas tiles.
+  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16, maxTextureSize: 4096 });
   const scene = new Scene(engine, { useFloatingOrigin: floatingOrigin });
   const camera = new UniversalCamera("camera", new Vector3(0, 2, -10), scene);
   camera.setTarget(Vector3.Zero());
@@ -76,14 +70,11 @@ async function fixture(floatingOrigin = false) {
   controller.sync();
   const generator = controller.generator(light)!;
   const map = generator.getShadowMap()!;
-  const faces = vi.fn();
-  // RTT readiness also emits per-face render observables. Count real framebuffer
-  // bindings instead, including the clears needed after the last caster leaves.
-  const bindFramebuffer = engine.bindFramebuffer.bind(engine);
-  vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, ...args) => {
-    if (target === map.renderTarget) faces();
-    bindFramebuffer(target, ...args);
-  });
+  // RTT readiness also emits per-face render observables. Count the map's real
+  // framebuffer bindings instead, including the clears needed after the last
+  // caster leaves; its tiles share the atlas framebuffer with other maps.
+  const bindFrameBuffer = map._bindFrameBuffer.bind(map);
+  const faces = vi.spyOn(map, "_bindFrameBuffer").mockImplementation((...args) => bindFrameBuffer(...args));
   await material.forceCompilationAsync(mesh);
   await generator.forceCompilationAsync();
   const render = () => {
@@ -436,26 +427,38 @@ describe("local shadow refresh", () => {
     },
   );
 
-  it("invalidates local depth changes while a single-map sun, whose custom projection follows the camera, renders every frame", async () => {
+  it("invalidates local depth changes while the sun's cascades follow the camera", async () => {
     const { scene, camera, light, controller, generator, render } =
       await fixture();
+    const engine = scene.getEngine();
+    // Every shipped Engine draws cascades: the sun's atlas map is one.
+    engine._features.supportCSM = true;
+    engine._features.supportShadowSamplers = true;
     const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
     controller.register(sun, true);
     controller.sync();
     const sunlight = controller.generator(sun)!;
+    expect(sunlight).toBeInstanceOf(CascadedShadowGenerator);
     await sunlight.forceCompilationAsync();
-    const sunDraw = vi.fn();
-    sunlight.getShadowMap()!.onBeforeRenderObservable.add(sunDraw);
-    expect(render()).toBe(6);
-    expect(render()).toBe(0);
-    expect(sunDraw).toHaveBeenCalledTimes(2);
+    const sunMap = sunlight.getShadowMap()!;
+    const bindSun = sunMap._bindFrameBuffer.bind(sunMap);
+    const sunDraw = vi.spyOn(sunMap, "_bindFrameBuffer").mockImplementation((...args) => bindSun(...args));
+    const frame = () => {
+      const before = sunDraw.mock.calls.length;
+      return [render(), sunDraw.mock.calls.length - before];
+    };
+    expect(frame()).toEqual([6, 1]);
+    expect(frame()).toEqual([0, 0]);
+    // The point map's depth ends at the camera's far plane; the cascades refit to the new frustum.
     camera.maxZ = 250;
-    expect(render()).toBe(6);
-    expect(render()).toBe(0);
+    expect(frame()).toEqual([6, 1]);
+    expect(frame()).toEqual([0, 0]);
+    // A camera move refits only the cascades.
     camera.position.x += 1;
-    expect(render()).toBe(0);
-    expect(sunDraw).toHaveBeenCalledTimes(5);
+    expect(frame()).toEqual([0, 1]);
+    expect(frame()).toEqual([0, 0]);
     expect(controller.generator(light)).toBe(generator);
+    expect(controller.generator(sun)).toBe(sunlight);
   });
 
   it("keeps caching automatic LOD casters and refreshes once when the drawn level changes", async () => {

@@ -1,4 +1,4 @@
-import { Matrix, Quaternion, Scene, Vector3 } from "@babylonjs/core";
+import { Matrix, NullEngine, Quaternion, RawTexture2DArray, Scene, Vector3 } from "@babylonjs/core";
 import { areaRectLightBindings, identitySerializedTransform } from "@haptic/core";
 import { describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
@@ -6,6 +6,8 @@ import { AreaRectLightGroup, AreaRectLightOwner } from "./area-rect-light";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
 import { AREA_EMISSION_TEXTURE_BYTES } from "./area-emission-resource";
+import { areaEmissionTexture, rectLightEmission } from "./area-emission-array";
+import { syncSceneLighting } from "./scene-lighting";
 
 function binding() {
   return areaRectLightBindings([{ id: "emitter", classId: "AreaRectLightComponent", properties: { width: 2, height: 3 }, transform: identitySerializedTransform() }])[0]!;
@@ -19,24 +21,37 @@ describe("native rectangular area light ownership", () => {
     const authored = binding(); authored.properties.textureGuid = "texture";
     const first = new AreaRectLightOwner(scene, "first", authored, undefined, emissions);
     const second = new AreaRectLightOwner(scene, "second", authored, undefined, emissions);
-    const texture = first.light.emissionTexture!;
-    const dispose = vi.spyOn(texture, "dispose");
-    expect(second.light.emissionTexture).toBe(texture);
-    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(65536 + AREA_EMISSION_TEXTURE_BYTES);
+    // The owners keep no texture per light: the light block draws both from one layer of its emission array.
+    expect(first.light.emissionTexture).toBeNull();
+    expect(rectLightEmission(first.light)).toBe(data);
+    expect(rectLightEmission(second.light)).toBe(data);
+    const lookupBytes = 65536;
+    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(lookupBytes);
+    syncSceneLighting(scene);
+    const array = areaEmissionTexture(scene);
+    expect([array.name, (array as RawTexture2DArray).depth]).toEqual(["haptic:areaEmission", 1]);
+    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(lookupBytes + AREA_EMISSION_TEXTURE_BYTES);
     first.update(authored, new Map());
     expect(first.light.isEnabled()).toBe(false);
     expect(first.error).toContain("Prepare Emission");
-    expect(dispose).not.toHaveBeenCalled();
+    expect(rectLightEmission(first.light)).toBeUndefined();
     first.update(authored, emissions);
     expect(first.light.isEnabled()).toBe(true);
     first.dispose();
-    expect(dispose).not.toHaveBeenCalled();
+    syncSceneLighting(scene);
+    // The remaining light's emission keeps its layer.
+    expect(areaEmissionTexture(scene)).toBe(array);
+    const dispose = vi.spyOn(array, "dispose");
     second.update(binding());
-    expect(second.light.emissionTexture).toBeNull();
+    expect(rectLightEmission(second.light)).toBeUndefined();
+    syncSceneLighting(scene);
     expect(dispose).toHaveBeenCalledTimes(1);
+    expect(areaEmissionTexture(scene)).not.toBe(array);
+    expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(lookupBytes);
     second.dispose();
+    scene.dispose();
     expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(0);
-    scene.dispose(); engine.dispose();
+    engine.dispose();
   });
   // Play merges a new emission map for every per-slot asset install; each identity change used to invalidate the render graph.
   it("reports an emission refresh only when the emission a binding uses changes", async () => {
@@ -54,8 +69,9 @@ describe("native rectangular area light ownership", () => {
     scene.dispose(); engine.dispose();
   });
 
-  it("shares offline lookup textures across views until the last emitter releases them", () => {
+  it("shares offline lookup textures across views until the last emitter and light block release them", () => {
     const { engine, scene } = createTestEngine();
+    // A view without a lit Material has no light block yet; its emitter retains the tables itself.
     const other = new Scene(engine);
     const first = new AreaRectLightOwner(scene, "first", binding());
     const second = new AreaRectLightOwner(scene, "second", binding());
@@ -65,20 +81,24 @@ describe("native rectangular area light ownership", () => {
     expect(other._ltcTextures?.LTC1).toBe(lookup.LTC1);
     expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(65536);
     first.dispose();
-    expect(dispose).not.toHaveBeenCalled();
     second.dispose();
-    expect(scene._ltcTextures).toBeUndefined();
-    expect(dispose).not.toHaveBeenCalled();
+    expect(scene.transformNodes).toHaveLength(0);
+    // The light block binds the tables while it exists, so a rect light arriving later compiles nothing.
+    expect(scene._ltcTextures).toBe(lookup);
+    third.dispose();
+    expect(other._ltcTextures).toBeUndefined();
     other.dispose();
+    expect(dispose).not.toHaveBeenCalled();
+    scene.dispose();
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(managedRenderReservations(engine).categoryBytes.areaLight).toBe(0);
-    third.dispose();
-    expect(scene.transformNodes).toHaveLength(0);
-    scene.dispose(); engine.dispose();
+    engine.dispose();
   });
 
   it("rejects allocation over the shared budget without leaving partial lights or reservations", () => {
-    const { engine, scene } = createTestEngine();
+    // Before any lit Material builds the light block, the first emitter allocates the lookup tables.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
     limitManagedRenderBytes(engine, 32768);
     expect(() => new AreaRectLightOwner(scene, "limited", binding())).toThrow("memory budget");
     expect(scene.lights).toHaveLength(0);
