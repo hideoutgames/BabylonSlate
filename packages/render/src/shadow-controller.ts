@@ -76,7 +76,7 @@ import {
   type ShadowMapSlot,
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
-import { AtlasShadowGenerator, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
@@ -111,6 +111,7 @@ function shadowLightRow(light: Light, entry?: Entry) {
         : "pcf",
     passes: generator ? generatorPasses(generator) : 0,
     mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
+    cascades: generator instanceof AtlasCascadedShadowGenerator ? generator.cascadeDensity : [],
   };
 }
 

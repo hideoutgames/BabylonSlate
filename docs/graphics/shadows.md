@@ -58,6 +58,14 @@ Applying a level also resets a Manual **Local Shadow Light Budget** to that leve
 
 Beyond the first cascade, an object narrower than the level's smallest far caster, measured in that cascade's shadow texels, casts no directional shadow there: its shadow would be too small to see. The first cascade, nearest the camera, keeps every caster.
 
+### How cascades split the distance
+
+At Medium, High and Ultra, cascades get longer with distance: the first ends 12 to 16 metres from the camera, and each next one is a few times longer, up to **Shadow Distance**. Shadows near the camera get about two to three times the detail of an even split, and the far end keeps its detail. Shadows at some middle distances can be slightly softer than an even split would draw them.
+
+At Low, when the camera's far clip is short, and for orthographic cameras, cascades split the distance more evenly.
+
+With **Contact Hardening (PCSS)**, the sun's penumbrae near the camera are narrower than with an even split, because each texel covers less ground.
+
 ## Override shadows in a scene
 
 1. Open the scene and clear the selection so the **Inspector** shows the scene's settings.

@@ -15,6 +15,7 @@ import {
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";
+import { rebindWaterMeshMaterial } from "./water-mesh";
 import { markSceneReadinessDirty, onSceneReceiversChanged } from "./scene-readiness-signal";
 import { shaderLinkLog } from "./material-glsl-diagnostics";
 import {
@@ -22,6 +23,9 @@ import {
   MaterialCompileStalled,
   materialCompileFailed,
   prewarmMaterial,
+  acquireWaterVariant,
+  type AuthoredMaterialVariant,
+  waterVariantBase,
 } from "./material-compiler";
 
 export interface AcquiredMaterial {
@@ -84,7 +88,10 @@ function cacheKey(
     : instanceKey === undefined ? key : JSON.stringify([key, instanceKey]);
 }
 
-/** Move every mesh, including nested MultiMaterial slots, from one generation to another. */
+/**
+ * Move every mesh, including nested MultiMaterial slots, from one generation to another. A water mesh draws its
+ * Material's water variant (`acquireWaterVariant`), so it moves to the next generation's water variant.
+ */
 function rebindMaterial(scene: Scene, from: Material, to: Material): void {
   const replaceSubmaterials = (material: Material) => {
     if (!(material instanceof MultiMaterial)) return;
@@ -96,6 +103,7 @@ function rebindMaterial(scene: Scene, from: Material, to: Material): void {
   };
   for (const mesh of scene.meshes) {
     if (mesh.material === from) { mesh.material = to; applyMaterialBounds(mesh); }
+    else if (mesh.material && waterVariantBase(mesh.material) === from && rebindWaterMeshMaterial(mesh, to)) applyMaterialBounds(mesh);
     else if (mesh.material) replaceSubmaterials(mesh.material);
   }
 }
@@ -353,6 +361,14 @@ export class MaterialLibrary {
     // Native sample readiness can precede asynchronous byte accounting/admission.
     // Keep the working generation until both compilation and its owned leases settle.
     let cancelPreparation = () => {};
+    // The next generation's water variant, warmed for the water meshes its predecessor's variant draws, held until they
+    // move to it (`publish`) or the generation retires.
+    let warmedWater: AuthoredMaterialVariant | null = null;
+    const releaseWarmedWater = () => {
+      const held = warmedWater;
+      warmedWater = null;
+      void held?.release().catch((error: unknown) => console.warn(`[render] Water variant release failed: ${String(error)}`));
+    };
     const prepared: Promise<readonly MaterialDiagnostic[]> = texturePreparations.length
       ? Promise.all([compiled.ready, Promise.all(texturePreparations)]).then(
           ([diagnostics]) => diagnostics,
@@ -375,9 +391,15 @@ export class MaterialLibrary {
         // fog and transforms were final, and built variants nothing draws. A host
         // that captures right after acquiring asks for it (`warmFirstAcquisition`).
         if (existing || this.options.warmFirstAcquisition) for (const mesh of scene.meshes) {
-          if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || !uses(mesh.material)) continue;
+          if (!(mesh instanceof Mesh) || !mesh.getTotalVertices()) continue;
+          // A water mesh draws its Material's water variant (`acquireWaterVariant`): it warms the next one's.
+          const water = mesh.material !== null && waterVariantBase(mesh.material) !== mesh.material && uses(waterVariantBase(mesh.material));
+          if (!water && !uses(mesh.material)) continue;
           if (retired || scene.isDisposed) return [cancelledDiagnostic()];
-          await prewarmMaterial(compiled.material, mesh);
+          if (water) {
+            warmedWater ??= acquireWaterVariant(compiled.material) ?? null;
+            if (warmedWater) await prewarmMaterial(warmedWater.compiled.material, mesh);
+          } else await prewarmMaterial(compiled.material, mesh);
         }
         return retired || scene.isDisposed ? [cancelledDiagnostic()] : [];
       } catch (error) {
@@ -491,7 +513,10 @@ export class MaterialLibrary {
       material: compiled.material,
       hash,
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
-      dispose: () => { cancelPreparation(); for (const request of pendingParameters.values()) request.cancel(); pendingParameters.clear(); compiled.dispose(); textures.dispose(); },
+      dispose: () => {
+        cancelPreparation(); releaseWarmedWater(); for (const request of pendingParameters.values()) request.cancel(); pendingParameters.clear();
+        compiled.dispose(); textures.dispose();
+      },
       setParameter,
       getParameter: compiled.getParameter,
       resetParameter: (name) => {
@@ -515,6 +540,8 @@ export class MaterialLibrary {
         rebindMaterial(scene, existing.material, candidate.material);
         existing.dispose();
       }
+      // Its water meshes hold the warmed water variant themselves now.
+      releaseWarmedWater();
       entries.set(key, candidate);
     };
     // A first acquisition is not compiled here, so a program the Engine cannot link first surfaces when a readiness

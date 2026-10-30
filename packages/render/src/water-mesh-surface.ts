@@ -4,6 +4,7 @@
  */
 import type { Material, Matrix, Mesh, SubMesh, Vector3 } from "@babylonjs/core";
 import type { WaterBodyProperties, WaterDefinition } from "@haptic/core";
+import type { AuthoredMaterialVariant } from "./material-compiler";
 import type { WaterContactField } from "./water-contact-field";
 import type { WaterField } from "./water-field";
 import type { WaterVertexWaves } from "./water-material";
@@ -30,6 +31,8 @@ export type Surface = {
   waves: WaterVertexWaves | null;
   /** The Material the path was last chosen for. */
   material: Material | null;
+  /** The water variant the mesh draws, held while it does (`holdWaterVariant`). */
+  variant: AuthoredMaterialVariant | null;
   /** Inputs of the current grid (`LAYOUT_STATE`); NaN until built. */
   layoutState: Float64Array;
   /**

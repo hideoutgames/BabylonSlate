@@ -46,7 +46,7 @@ import { encodeRgbaPng } from "./png-encode";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
-import { prewarmMaterial } from "./material-compiler";
+import { prewarmMaterial, waterVariantBase } from "./material-compiler";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
@@ -917,7 +917,10 @@ describe("Play createEngine view", () => {
   it("compiles blending water bodies' variants once, with Blend, before the first frame's update", async () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
-    waterMesh.createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }), undefined, builtInWaterMaterial(handle.scene));
+    const west = waterMesh.createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }), undefined, builtInWaterMaterial(handle.scene));
+    // Water draws the starter's water variant, so the load prepares that, not the starter.
+    expect(west.material).not.toBe(builtInWaterMaterial(handle.scene));
+    expect(waterVariantBase(west.material)).toBe(builtInWaterMaterial(handle.scene));
     // Within the blend distance of the first body: both blend once the water update has seen them.
     waterMesh.createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }), undefined, builtInWaterMaterial(handle.scene)).position.set(16, 0.5, 0);
     const compiled = () => compiledGraphWater(engine);

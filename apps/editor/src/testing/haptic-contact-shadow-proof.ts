@@ -240,7 +240,7 @@ function floorDepths(scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement
  * ball blocks the floor's view of a light (`toLight`: from a floor point to the light), 0 where nothing does, -1 off
  * the floor or off the floor the light's shadow covers (`covered`).
  */
-function floorShadowMask(
+export function floorShadowMask(
   scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, topDown: boolean, meshes: AbstractMesh[],
   toLight: (point: Vector3) => Vector3, covered: (point: Vector3) => boolean = () => true,
 ): number[] {
