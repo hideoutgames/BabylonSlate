@@ -66,12 +66,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       missed: missed.length, darkened: darkened.length,
       open: open.length, openChanged: changed(open).length, ramp: ramp.length, rampChanged: changed(ramp).length,
       beyond: beyond.length, beyondChanged: changed(beyond).length, glass: glass.length, glassChanged: changed(glass).length,
-      celChanged: cel.length, lightCompiles: result.lightCompiles, planned: result.planned,
+      celChanged: cel.length, lightCompiles: result.lightCompiles,
+      // The view's tasks at each capture: the march runs between the geometry pass and the objects only while planned.
+      planned: result.planned,
     };
-    if (process.env.SCREEN_DUMP) {
-      const fs = await import("node:fs");
-      fs.writeFileSync(`${process.env.SCREEN_DUMP}/screen-${backend}.json`, JSON.stringify({ width: result.width, height: result.height, off, high, mask, openChanged: changed(open) }));
-    }
     await testInfo.attach(`haptic-screen-shadows-${backend}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
     console.log(JSON.stringify(report));
     expect(errors).toEqual([]);
@@ -89,6 +87,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(report.glass).toBeGreaterThan(30);
     expect(report.glassChanged).toBe(0);
     expect(report.celChanged).toBe(0);
+    expect(result.planned.map(([name, level, tasks]) => [name, level, tasks.includes("Screen shadows")])).toEqual([
+      ["off", null, false], ["high", "high", true], ["high, sun unshadowed", "high", true], ["high again", "high", true],
+      ["cel off", null, false], ["cel high", null, false],
+    ]);
+    const tasks = result.planned[1]![2];
+    expect(tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1)).toEqual(["Spatial Geometry", "Screen shadows", "Forward objects"]);
     // Light steps compile nothing.
     expect(report.lightCompiles).toEqual([]);
   });
