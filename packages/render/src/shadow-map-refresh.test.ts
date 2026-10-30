@@ -27,7 +27,6 @@ import { attachModelLods, generateModelLods } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
-import { enableHeadlessCascades } from "./shadow-test-fixtures";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -568,7 +567,9 @@ async function cascadedSun() {
   const engine = new NullEngine();
   engines.push(engine);
   Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16 });
-  enableHeadlessCascades(engine);
+  // Every shipped Engine draws cascades with hardware depth comparison: the sun's atlas map is one.
+  engine._features.supportCSM = true;
+  engine._features.supportShadowSamplers = true;
   const scene = new Scene(engine);
   const camera = new UniversalCamera("camera", new Vector3(0, 3, -12), scene);
   camera.setTarget(Vector3.Zero());

@@ -2,15 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CascadedShadowGenerator,
   InternalTexture,
-  InternalTextureSource,
   DirectionalLight,
   HemisphericLight,
   MeshBuilder,
   MaterialDefines,
   NullEngine,
   PointLight,
-  RectAreaLight,
-  RawTexture,
   SpotLight,
   RenderTargetTexture,
   Scene,
@@ -20,12 +17,10 @@ import {
   UniversalCamera,
   TransformNode,
   Vector3,
-  type AbstractEngine,
   type Effect,
 } from "@babylonjs/core";
-import { PREDICTION_MAP_SIZE, sceneShadowController } from "./shadow-controller";
+import { sceneShadowController } from "./shadow-controller";
 import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";
-import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { NEUTRAL_DARKNESS } from "./shadow-map-factory";
 import {
@@ -33,10 +28,9 @@ import {
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, SHADOW_CAPACITY_PROFILES } from "@haptic/core";
-import { ENGINE_SHADOW_BUDGET, otherShadowReservations, shadowBytesPerTexel } from "./shadow-admission";
-import { beginManagedRenderAllocation, limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
+import { ENGINE_SHADOW_BUDGET } from "./shadow-admission";
+import { managedRenderReservations } from "./managed-render-resources";
 import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
-import { retainAreaLightLookup } from "./area-light-resources";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
@@ -110,8 +104,6 @@ function cascadeDepthBias(generator: CascadedShadowGenerator, layer: number, siz
 describe("shared shadow lifecycle", () => {
   it("draws the sun's cascades as tiles of the light block's atlas, built with the level's cascade count", () => {
     const { scene, controller } = fixture();
-    const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 3, maxLocalLights: 1 }) });
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     controller.register(sun, true);
@@ -167,7 +159,7 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect(shadowAtlasBytes(scene)).toBe(0);
     expect(shadowAtlasTexture(scene).getRenderSize()).toBe(1);
-    expect(controller.predictionMap(spot)).toBeNull();
+    expect(controller.predictionMap()).toBeNull();
   });
   it("excludes collider display segments without excluding authored meshes below the collider", () => {
     const { scene, controller } = fixture();
@@ -443,7 +435,6 @@ describe("shared shadow lifecycle", () => {
 
   it("derives each cascade from its current extents and restores exact manual bias", () => {
     const { scene, controller } = fixture();
-    enableHeadlessCascades(scene.getEngine());
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({
         cascades: 2, distance: 40, mapSize: 1024, filterQuality: "low",
@@ -549,7 +540,6 @@ describe("shared shadow lifecycle", () => {
     },
   ])("gives a receiver the defines of a fresh one after the cascaded sun leaves its slot: $name", ({ slot, lights }) => {
     const { scene, controller } = fixture();
-    enableHeadlessCascades(scene.getEngine());
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 1024, filterQuality: "low" }),
     });
@@ -1510,7 +1500,6 @@ describe("atlas caster variants", () => {
   it.each([1, 2])("hold each atlas kind's caster depth variant that a first shadow start then draws with (%i cascades)", async (cascades) => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades, maxLocalLights: 2 }) });
     // Posed with a non-uniform scale, as a level's floor is: its variant reads its world matrix.
     const crate = MeshBuilder.CreateBox("crate", { size: 1 }, scene);
@@ -1552,7 +1541,6 @@ describe("atlas caster variants", () => {
   it("asks a caster whose Material draws its depth through a wrapper until it holds its variants, then no more", async () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
     // Authored World Position Offset and lattice deformation draw a caster's depth through a standalone wrapper of a
     // variant Material that no other pass draws: its first ask compiles that Material, a later one the depth variant,
     // which the wrapper holds itself.
@@ -1578,7 +1566,6 @@ describe("atlas caster variants", () => {
   it("asks again for new shadow settings", async () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
     MeshBuilder.CreateBox("crate", { size: 1 }, scene);
     const variants = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
       .filter((effect) => /SM_LIGHTTYPE/.test(effect.defines));
@@ -1601,7 +1588,6 @@ describe("view sun shadow maps", () => {
   const atlasSun = (cascades: number) => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
-    enableHeadlessCascades(engine);
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades, maxLocalLights: 1 }) });
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     controller.register(sun, true);
