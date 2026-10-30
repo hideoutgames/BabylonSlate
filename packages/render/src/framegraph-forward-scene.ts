@@ -1,3 +1,4 @@
+import { isEditorHelperMesh } from "./helper-mesh";
 import { activeRenderFrameCapture } from "./render-frame-report";
 import { pausedSceneRedrawIssue, renderSceneWithGameTime } from "./scene-game-time";
 import { PostProcessRetirement } from "./post-process-retirement";
@@ -118,6 +119,12 @@ const membershipCounts: readonly ((scene: Scene) => number)[] = [
 class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   /** The output list without hidden meshes when culling is off (its output is then the input list itself). */
   private readonly shown: AbstractMesh[] = [];
+  private readonly world: AbstractMesh[] = [];
+  /**
+   * The output without editor and Play helper visuals (`isEditorHelperMesh`): what the spatial geometry pass draws, so a
+   * collider outline or grid neither darkens ambient occlusion, reflects, nor blocks Screen-Space Shadows' march.
+   */
+  readonly worldObjectList: FrameGraphObjectList = { meshes: this.world, particleSystems: null };
 
   override _execute(): void {
     // Play: the meshes added since the last cull leave Intermediate's always-drawn mark first (`play-view-culling.ts`).
@@ -126,6 +133,7 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     if (!target) {
       super._execute();
       this.leaveOutHidden();
+      this.publishWorld();
       return;
     }
     const engine = this.camera.getEngine();
@@ -140,6 +148,14 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
       engine.restoreDefaultFramebuffer();
     }
     this.leaveOutHidden();
+    this.publishWorld();
+  }
+
+  private publishWorld(): void {
+    const world = this.world;
+    world.length = 0;
+    for (const mesh of this.outputObjectList.meshes ?? []) if (!isEditorHelperMesh(mesh)) world.push(mesh);
+    this.worldObjectList.particleSystems = this.outputObjectList.particleSystems;
   }
 
   /**
@@ -210,7 +226,7 @@ export class ForwardSceneFrameGraph {
   private cleanupFailure: unknown;
   private objects: ManagedShadowObjectRendererTask | undefined;
   private shadows: ManagedShadowsTask | undefined;
-  private cull: FrameGraphCullObjectsTask | undefined;
+  private cull: CameraOutputCullTask | undefined;
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
   private preparedHeight = 0;
@@ -1529,7 +1545,7 @@ export class ForwardSceneFrameGraph {
       geometry.camera = this.objects!.camera;
     }
     if (this.effectsGraph?.spatial) {
-      this.effectsGraph.spatial.geometry.objectList = this.cull!.outputObjectList;
+      this.effectsGraph.spatial.geometry.objectList = this.cull!.worldObjectList;
       this.effectsGraph.spatial.geometry.camera = this.objects!.camera;
     }
   }
