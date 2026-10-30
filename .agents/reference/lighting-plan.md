@@ -151,6 +151,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
    Phase 8 PR (variant prediction): `variant-prediction.ts` and the prediction maps (`shadow-prediction-maps.ts`) go, with the coordinator's post-frame call, the graph's prediction passes, the controller's prediction API, the what-if Forward promotion and the scene signal hold. `createDetachedShadowGenerator` moves to `shadow-map-factory.ts` for `ShadowCasterVariants`; the controller reserves the scene's shadow bytes itself.
 
    Phase 8 Track B PR 1: `ScenePbrLightingBlock`, `SceneReflectionBlock`, `CelLightBlock`, the CEL graph swap (`cel-surface.ts`, `display-color-block.ts`), the blocks' helpers (`node-shadow-view.ts`, `scene-light-samplers.ts`) and `cel-shader.ts`'s patches of Babylon's light functions are deleted; the viewport's Unlit mode toggles only the light block.
+
+   Phase 8 Track B PR 2: `SceneRendering.celReflections`, which only the CEL graph swap read, is deleted; the render settings' listeners hear render-mode changes only.
 9. **Later, decided separately**: fewer material variants (texture presence and similar defines as always-bound defaults), measured on its own.
 
 ## Risks
