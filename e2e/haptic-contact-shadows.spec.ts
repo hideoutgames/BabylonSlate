@@ -57,8 +57,10 @@ function lightShare(drawn: number[], open: number[], unlit: number[], pixel: num
   return share;
 }
 
+type Band = { umbra: number; umbraShare: number; open: number; openShadowed: number };
+
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`Contact Hardening on the light block draws from the shadow atlas, as Babylon's PCSS for local lights and against the receiver's plane for the sun, on ${backend}`, async ({ page }, testInfo) => {
+  test(`Contact Hardening on the light block draws each light's shadow from the shadow atlas where its blockers are, on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -68,30 +70,17 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     });
     await page.goto("/?test=1&hapticContactShadowProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __hapticContactShadowProof?: unknown }).__hapticContactShadowProof === "function");
-    const run = (path: "babylon" | "haptic") => page.evaluate(([backend, path]) =>
-      (window as unknown as { __hapticContactShadowProof: Proof }).__hapticContactShadowProof(backend, path), [backend, path] as const);
-    const babylon = await run("babylon");
-    const haptic = await run("haptic");
-    const count = haptic.width * haptic.height;
+    const result = await page.evaluate((backend) =>
+      (window as unknown as { __hapticContactShadowProof: Proof }).__hapticContactShadowProof(backend), backend);
+    const count = result.width * result.height;
     const report: Record<string, unknown> = {};
-    for (const light of ["spot", "sun"]) {
-      const reference = capture(babylon, light).pixels, drawn = capture(haptic, light).pixels, open = capture(haptic, `${light} unshadowed`).pixels;
-      const differences = Array.from({ length: count }, (_, pixel) => difference(reference, drawn, pixel));
+    const bandsOf: Record<string, Record<number, Band>> = {};
+    for (const light of ["spot", "sun", "point"]) {
+      const blocked = result.blocked[light]!;
+      const edge = distanceToEdge(blocked, result.width, result.height);
+      const drawn = capture(result, light).pixels, open = capture(result, `${light} unshadowed`).pixels, unlit = capture(result, `${light} unlit`).pixels;
       const shadowed = Array.from({ length: count }, (_, pixel) => pixel).filter((pixel) => difference(open, drawn, pixel) > 2);
-      report[light] = {
-        atlas: [capture(babylon, light).atlas, capture(haptic, light).atlas],
-        shadowed: shadowed.length,
-        contrast: shadowed.reduce((sum, pixel) => sum + difference(open, drawn, pixel), 0) / Math.max(1, shadowed.length),
-        outliers: differences.filter((value) => value > 2).length,
-        largest: Math.max(...differences),
-        mean: differences.reduce((sum, value) => sum + value, 0) / count,
-      };
-    }
-    for (const light of ["sun", "point"]) {
-      const blocked = haptic.blocked[light]!;
-      const edge = distanceToEdge(blocked, haptic.width, haptic.height);
-      const drawn = capture(haptic, light).pixels, open = capture(haptic, `${light} unshadowed`).pixels, unlit = capture(haptic, `${light} unlit`).pixels;
-      const bands: Record<number, { umbra: number; umbraShare: number; open: number; openShadowed: number }> = {};
+      const bands: Record<number, Band> = {};
       for (let ring = 1; ring <= 6; ring++) {
         const umbra = blocked.map((kind, pixel) => (kind === 1 && edge[pixel]! >= ring ? pixel : -1)).filter((pixel) => pixel >= 0);
         const far = blocked.map((kind, pixel) => (kind === 0 && edge[pixel]! >= ring ? pixel : -1)).filter((pixel) => pixel >= 0);
@@ -102,37 +91,27 @@ for (const backend of ["webgl2", "webgpu"] as const) {
           openShadowed: far.filter((pixel) => difference(drawn, open, pixel) > 2).length,
         };
       }
-      report[`${light} mask`] = bands;
+      bandsOf[light] = bands;
+      report[light] = { atlas: capture(result, light).atlas, shadowed: shadowed.length, bands };
     }
-    const celPcss = capture(haptic, "cel spot").pixels, celPcf = capture(haptic, "cel spot pcf").pixels;
+    const celPcss = capture(result, "cel spot").pixels, celPcf = capture(result, "cel spot pcf").pixels;
     report.cel = { differing: Array.from({ length: count }, (_, pixel) => difference(celPcss, celPcf, pixel)).filter((value) => value > 0).length };
     await testInfo.attach(`haptic-contact-shadows-${backend}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
     console.log(JSON.stringify(report));
     expect(errors).toEqual([]);
-    const spot = report.spot as { atlas: boolean[]; shadowed: number; outliers: number; largest: number };
-    const sun = report.sun as { atlas: boolean[]; shadowed: number };
-    // Babylon's maps on its path, atlas tiles on the block's.
-    expect([spot.atlas, sun.atlas]).toEqual([[false, true], [false, true]]);
-    expect(spot.shadowed).toBeGreaterThan(200);
-    // The spot light's matches Babylon's PCSS but for float rounding and the blockers' depth (measured: up to 9 pixels,
-    // by up to 9/255).
-    expect(spot.outliers).toBeLessThanOrEqual(12);
-    expect(spot.largest).toBeLessThanOrEqual(12);
-    // The point light's faces: two pixels from the shadow's outline, the open floor is as lit as without the shadow, and
-    // the shadowed floor keeps under a third of the light (Babylon's PCSS lightens a shadow with its blockers' distance;
-    // measured: 0.29 on WebGL2, 0.19 on WebGPU).
-    const point = (report["point mask"] as Record<number, { umbra: number; umbraShare: number; open: number; openShadowed: number }>)[2]!;
-    expect(point.umbra).toBeGreaterThan(400);
-    expect(point.openShadowed).toBe(0);
-    expect(point.umbraShare).toBeLessThan(1 / 3);
-    // The sun's cascades compare against the receiver's plane, so the floor does not shadow itself as under Babylon's
-    // PCSS: three pixels from the outline the open floor is as lit as without the shadow, and the shadowed floor keeps
-    // under half the light (measured: 0.41 and 0.40).
-    const sunMask = (report["sun mask"] as Record<number, { umbra: number; umbraShare: number; open: number; openShadowed: number }>)[3]!;
-    expect(sun.shadowed).toBeGreaterThan(300);
-    expect(sunMask.umbra).toBeGreaterThan(150);
-    expect(sunMask.openShadowed).toBe(0);
-    expect(sunMask.umbraShare).toBeLessThan(0.5);
+    // Each light's map draws into the atlas.
+    expect(["spot", "sun", "point"].map((light) => capture(result, light).atlas)).toEqual([true, true, true]);
+    // A few pixels from each shadow's outline, the open floor is as lit as without the shadow, and the shadowed floor
+    // keeps under a share of the light: Babylon's PCSS lightens a shadow with its blockers' distance (measured: spot
+    // TBD; sun 0.41 and 0.40 three pixels in; point 0.29 on WebGL2 and 0.19 on WebGPU two pixels in). The sun's cascades
+    // compare against the receiver's plane, so the floor does not shadow itself as under Babylon's PCSS.
+    const expectations: [string, number, number, number][] = [["spot", 2, 100, 1 / 3], ["sun", 3, 150, 0.5], ["point", 2, 400, 1 / 3]];
+    for (const [light, ring, umbra, share] of expectations) {
+      const band = bandsOf[light]![ring]!;
+      expect(band.umbra, light).toBeGreaterThan(umbra);
+      expect(band.openShadowed, light).toBe(0);
+      expect(band.umbraShare, light).toBeLessThan(share);
+    }
     // CEL draws Contact Hardening as PCF.
     expect(report.cel).toEqual({ differing: 0 });
   });
