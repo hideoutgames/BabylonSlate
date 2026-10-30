@@ -444,7 +444,7 @@ export class SceneRenderCoordinator {
       probeVariantSwaps(true, () => this.graph.sceneStrictlyReady(camera));
     }
     if (!this.graph.sceneStrictlyReady(camera)) {
-      this.compileHold =this.holdsForCompiles(holding, this.advanceReadiness(camera));
+      this.compileHold = this.holdsForCompiles(holding, this.advanceReadiness(camera));
       return { path: "frameGraph", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     }
     // Dynamic cable bounds must reach shadow admission before its cached caster
