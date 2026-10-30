@@ -122,6 +122,18 @@ describe("shared shadow lifecycle", () => {
     expect([single.numCascades, single.tiles.length]).toEqual([1, 1]);
   });
 
+  it("builds the sun's cascades while another Engine is the last created, as a model conversion's NullEngine is", () => {
+    const { scene, controller } = fixture();
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    // Babylon's cascade constructor asks the last-created Engine, which cannot draw cascades.
+    const conversion = new NullEngine();
+    engines.push(conversion);
+    controller.sync();
+    expect(sun.getShadowGenerator()).toBeInstanceOf(AtlasCascadedShadowGenerator);
+    expect(controller.diagnostics()[0]?.status).toBe("active");
+  });
+
   it("draws a point light's shadow as six face tiles of the light block's atlas, filtered with PCF", () => {
     const { scene, controller } = fixture();
     const lamp = new PointLight("lamp", new Vector3(0, 2, 0), scene);

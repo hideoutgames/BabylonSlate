@@ -59,14 +59,6 @@ export type AllocationKey = {
   readonly atlasEdge: number;
 };
 
-/**
- * The edge of the shadow atlas `light`'s map is a tile of, when the atlas is `atlasEdge` texels
- * (`ShadowAdmissionBudget.atlasEdge`): every shadow light's.
- */
-export function atlasTileEdge(light: ShadowLight, atlasEdge: number): number {
-  return light instanceof SpotLight || light instanceof DirectionalLight || light instanceof PointLight ? atlasEdge : 0;
-}
-
 export function allocationKey(
   mapSize: number,
   light: ShadowLight,
@@ -77,7 +69,7 @@ export function allocationKey(
     mapSize,
     cube: light.needCube(),
     cascades: light instanceof DirectionalLight ? cascades : 1,
-    atlasEdge: atlasTileEdge(light, atlasEdge),
+    atlasEdge,
   };
 }
 
@@ -99,7 +91,7 @@ export function matchesAllocationKey(
     sameJsonNumber(key.mapSize, mapSize) &&
     key.cube === light.needCube() &&
     sameJsonNumber(key.cascades, light instanceof DirectionalLight ? cascades : 1) &&
-    key.atlasEdge === atlasTileEdge(light, atlasEdge)
+    key.atlasEdge === atlasEdge
   );
 }
 
