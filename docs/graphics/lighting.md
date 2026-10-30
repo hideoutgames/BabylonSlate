@@ -52,7 +52,7 @@ Light icons in the viewport show each light's state:
 Each scene can light a limited number of local (point, spot and area) lights at once. Set it in **Project Settings > Rendering > Scalability**:
 
 - **Local Light Budget Mode**: **Auto** follows the Lighting quality level (4, 16, 64 or 256 lights from Low to Ultra). **Manual** lets you set **Local Light Budget**.
-- The directional sun and fill lights use separate slots.
+- The directional sun and one fill light use separate slots.
 - The device's GPU can lower the budget further.
 
 When more local lights are on than the budget allows, Haptic keeps the lights nearest the camera and switches the rest off until the camera moves closer to them. Disabled lights and lights with zero intensity do not count. Their **Enabled** setting is not changed.

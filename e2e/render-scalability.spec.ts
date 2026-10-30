@@ -136,8 +136,9 @@ test("scalability updates budgets, persists Custom and preserves independent set
     contentType: "application/json",
   });
   expect(allocation.shadowPasses).toBe(4);
-  // The Ultra sun at its requested 4096: four cascades of half-float red colour plus 32-bit depth.
-  expect(allocation.shadowMapBytes).toBe(4 * 4096 ** 2 * 6);
+  // The Ultra sun's four cascades are tiles of the Scene's shadow atlas, which holds every byte: Ultra's 8192 atlas of
+  // 32-bit depth, which four 4096 cascades fill (the four passes above are those cascades).
+  expect(allocation.shadowMapBytes).toBe(8192 ** 2 * 4);
   await openRendering(page);
   await expect(value(page, "Render Mode")).toHaveText("CEL");
   await openEnvironment(page);

@@ -182,8 +182,10 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
       await Promise.race([released, new Promise<never>((_, reject) => {
         deadline = window.setTimeout(() => reject(new Error("Prepared but unpresented outline resources did not retire.")), 5_000);
       })]);
-      return { preparedPath: prepared.path, before, allocated,
-        after: managedRenderReservations(engine), retainedRenderers: unpresentedScene.objectRenderers.length };
+      // The light block's one-texel shadow atlas stand-in is the Scene's, made on its first lit compile and disposed with
+      // it (shadow-atlas.ts `shadowAtlasTexture`), so retiring the renderer and outline leaves it: not theirs to release.
+      const retainedRenderers = unpresentedScene.objectRenderers.filter((renderer) => renderer.name !== "hapticShadowAtlasPlaceholder").length;
+      return { preparedPath: prepared.path, before, allocated, after: managedRenderReservations(engine), retainedRenderers };
     } finally {
       window.clearTimeout(deadline);
       unpresentedDetach(); unpresentedView.dispose(); unpresentedRenderer.dispose(); unpresentedScene.dispose();

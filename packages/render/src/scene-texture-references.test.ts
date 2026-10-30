@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Constants, NullEngine, RawTexture, RenderTargetTexture, Scene, StandardMaterial } from "@babylonjs/core";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
+import { retainAreaLightLookup } from "./area-light-resources";
 import { internalTexturesHeldByScene } from "./scene-texture-references";
 
 describe("internalTexturesHeldByScene", () => {
@@ -30,6 +31,23 @@ describe("internalTexturesHeldByScene", () => {
     expect(internalTexturesHeldByScene(scene)).toEqual(
       new Set([registered, sampled, environment, brdf].map((texture) => texture.getInternalTexture())),
     );
+  });
+
+  it("holds the Engine's shared area-light lookup while the Scene retains it, and not after it releases it", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const other = new Scene(engine);
+    const releaseOther = retainAreaLightLookup(other);
+    const release = retainAreaLightLookup(scene);
+    const tables = [scene._ltcTextures!.LTC1, scene._ltcTextures!.LTC2].map((texture) => texture.getInternalTexture()!);
+
+    // A Scene that keeps the lookup another Scene released still holds it.
+    releaseOther();
+    expect(internalTexturesHeldByScene(other)).toEqual(new Set());
+    expect(internalTexturesHeldByScene(scene)).toEqual(new Set(tables));
+    release();
+    expect(internalTexturesHeldByScene(scene)).toEqual(new Set());
   });
 
   it("holds a render target's depth/stencil texture with its colour texture", () => {
