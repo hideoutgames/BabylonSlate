@@ -12,7 +12,6 @@ import type { SceneOutlineSelection } from "./scene-outline-host";
 import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readiness";
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import type { SceneSourceAssets } from "./scene-source-assets";
-import type { LoadRehearsalReport } from "./load-rehearsal";
 import type { nativePreparationForEngine, NativePreparationLimits, NativePreparationPriority } from "./native-preparation";
 import type { AbstractEngine } from "@babylonjs/core";
 import type { RenderDiagnostics } from "./render-diagnostics";
@@ -197,8 +196,6 @@ export interface EngineHandle {
   nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
   /** Play's last load-time warm-up of what it may spawn (`warmSpawnables`): what it compiled for, and how long it took. */
   spawnableWarmStats: () => { materials: number; models: number; ms: number } | null;
-  /** Play's last load rehearsal of its light changes (`createLoadRehearsal`), once it has ended. */
-  loadRehearsalStats: () => LoadRehearsalReport | null;
   /** Release startup source ownership after its actors have retired. */
   releaseInitialSources: () => void;
   /** Refresh owned library unions without resetting live mixer session settings. */
@@ -247,8 +244,7 @@ export interface EngineHandle {
   /** `onProgress` counts the warm-up's units (a Material variant for one mesh) as they compile. */
   prewarmSceneMaterials: (owner?: SceneLayerLoadIdentity, onProgress?: (count: SceneLoadCount) => void) => Promise<void>;
   /** Present one loading frame without resuming normal paused/obstructed drawing. */
-  /** `onLights`: Play's light rehearsal progress while its steps run, then null (the first frame is what remains). */
-  presentFirstFrame: (owner?: SceneLayerLoadIdentity, onLights?: (count: SceneLoadCount | null) => void) => Promise<void>;
+  presentFirstFrame: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   /** Unlock AudioV2 after a user gesture and drain the pre-unlock queue. */
   unlockAudio: () => Promise<void>;
   /** Clear session mixer volumes and stop voices (scene change / Play stop). */
@@ -412,8 +408,8 @@ export interface CreateEngineOptions {
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   /**
    * The light parts the startup sources' Classes may spawn, with the generic kinds when they may spawn a Class they do
-   * not hold (`spawnableLightsOfLoad`). Play's load rehearses one of each kind (`createLoadRehearsal`); later sources
-   * add theirs through `acquireSceneSources`.
+   * not hold (`spawnableLightsOfLoad`). With any, Play's load draws its starting state (`createStartingStateDraw`);
+   * later sources add theirs through `acquireSceneSources`.
    */
   spawnableLights?: SceneSourceAssets["spawnableLights"];
   /** Authored scene post-process stack. */

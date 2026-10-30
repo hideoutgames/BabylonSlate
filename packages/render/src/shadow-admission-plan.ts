@@ -26,16 +26,6 @@ import {
   type ShadowLightStatus,
 } from "./shadow-entry";
 
-/**
- * The admission history a sync ranks by (its camera, which lights hold a map and since when) at `at`, as a load
- * rehearsal takes it before a light change it tries (`snapshotAdmission`) and gives it back once the change is
- * reverted (`restoreAdmission`).
- */
-export type ShadowAdmissionSnapshot = {
-  readonly at: number;
-  readonly camera: Camera | null;
-  readonly maps: ReadonlyMap<Light, { readonly standby: boolean; readonly admittedAt: number }>;
-};
 // Minimum residency bounds camera-driven map churn; priority/camera switches
 // and loss of eligibility still take effect immediately.
 const SHADOW_MIN_RESIDENCY_MS = 250;
@@ -65,10 +55,9 @@ export type ShadowAdmissionInput = {
   readonly entries: ReadonlyMap<Light, Entry>;
   readonly settings: ShadowSettings;
   readonly camera: Camera | null;
-  /** The last sync's selection camera; a restore compares with its snapshot's instead. */
+  /** The last sync's selection camera. */
   readonly previousCamera: Camera | null;
-  readonly restoring: ShadowAdmissionSnapshot | null;
-  /** The selection time: the snapshot's for a restore, otherwise now. */
+  /** The selection time. */
   readonly at: number;
   readonly budget: ShadowAdmissionBudget;
   /** A local light's squared distance to `camera` (`cameraDistanceSquared`); called only with a camera. */
@@ -147,8 +136,8 @@ export function cameraDistanceSquared(light: LocalShadowLight, camera: Camera): 
  * budgets, and an atlas tile's within the atlas's area. `applyShadowAdmission` writes the decisions back.
  */
 export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissionPlan {
-  const { entries, settings, camera, restoring, budget, measure } = input;
-  const cameraChanged = camera !== (restoring ? restoring.camera : input.previousCamera);
+  const { entries, settings, camera, budget, measure } = input;
+  const cameraChanged = camera !== input.previousCamera;
   const selectionTime = input.at;
   const {
     bytes: byteBudget,
@@ -203,16 +192,8 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
   // Nearest relevant lights win independently of brightness. A short minimum
   // residency and squared-distance bonus stabilize camera boundaries without
   // preventing an authored-priority change or a newly possessed camera.
-  // A restored history ranks by the maps its snapshot held, not the ones a reverted change moved.
-  const held = (entry: Entry) => restoring
-    ? restoring.maps.get(entry.light)
-    : entry.generator ? entry : undefined;
-  const incumbent = (entry: Entry) => {
-    const map = held(entry);
-    return Boolean(map && !map.standby && !cameraChanged);
-  };
-  const resident = (entry: Entry) => incumbent(entry) &&
-    selectionTime - held(entry)!.admittedAt < SHADOW_MIN_RESIDENCY_MS;
+  const incumbent = (entry: Entry) => Boolean(entry.generator && !entry.standby && !cameraChanged);
+  const resident = (entry: Entry) => incumbent(entry) && selectionTime - entry.admittedAt < SHADOW_MIN_RESIDENCY_MS;
   // Every candidate was measured above.
   const distance = (decision: ShadowAdmissionDecision) =>
     decision.distanceSquared! / (incumbent(decision.entry) ? SHADOW_INCUMBENT_DISTANCE_BONUS : 1);

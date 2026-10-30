@@ -262,7 +262,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     audioProjectSettings: options.audioProjectSettings,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
-    // What the startup sources' Classes may spawn (Play's load rehearses a light of each kind), or the session's.
+    // What the startup sources' Classes may spawn, or the session's.
     spawnableLights: options.spawnableLights ?? spawnableLightsFromScripts(options.scripts ?? []),
     postProcessStack: options.scene?.settings.postProcessStack,
     postProcessingEnabled: options.postProcessingEnabled,

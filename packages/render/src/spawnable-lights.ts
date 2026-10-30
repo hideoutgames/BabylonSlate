@@ -10,11 +10,10 @@ export type SpawnableLight = { kind: string; properties: AuthoredLightProperties
 /**
  * The light parts the Classes in `scripts` give each actor they spawn (their prefab templates, `components`), keyed by
  * Class and component, as Play's game runtime names them: a Hemispheric Fill Light is `hemispheric`, a Light its Light
- * Kind (`point` when unset). Play's load rehearses one spawned light of each kind among them. Babylon-free, for the
- * hosts' source preparation (`@haptic/render/spawnable-lights`).
+ * Kind (`point` when unset). With any, Play's load draws its starting state (`createStartingStateDraw`). Babylon-free,
+ * for the hosts' source preparation (`@haptic/render/spawnable-lights`).
  *
- * Lights a script adds with Add Component join them (`addedLights`): an added component takes its class's defaults (a
- * script that then sets its Cast Shadows makes a kind the rehearsal does not stand in for).
+ * Lights a script adds with Add Component join them (`addedLights`): an added component takes its class's defaults.
  */
 export function spawnableLightsFromScripts(scripts: Iterable<ScriptBundleEntry>): Map<string, SpawnableLight> {
   const lights = new Map<string, SpawnableLight>();
@@ -92,7 +91,7 @@ function callArguments(source: string, start: number): string[] {
 }
 
 /**
- * What a Class the load cannot see may spawn, rehearsed in its place: a point and a spot light, each with and without
+ * What a Class the load cannot see may spawn, listed in its place: a point and a spot light, each with and without
  * shadows (a Spawn Actor's Class is taken never to carry a directional or hemispheric light).
  */
 export const UNSEEN_CLASS_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map([

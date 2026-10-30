@@ -8,8 +8,8 @@ export interface SceneLayerLoadIdentity {
   layerLoadId: number;
 }
 
-export type SceneLoadPhase = "Preparing Scene" | "Removing Previous Scene" | "Realizing Scene" | "Loading Models" | "Loading Textures" | "Compiling Shaders" | "Preparing Lights" | "Presenting First Frame";
-/** How far a counted phase is: `done` of `total` (shader warm-up units, rehearsed light changes). */
+export type SceneLoadPhase = "Preparing Scene" | "Removing Previous Scene" | "Realizing Scene" | "Loading Models" | "Loading Textures" | "Compiling Shaders" | "Presenting First Frame";
+/** How far a counted phase is: `done` of `total` (shader warm-up units). */
 export interface SceneLoadCount {
   done: number;
   total: number;
@@ -63,8 +63,7 @@ export function createSceneLoadReadiness(options: {
     whenEditorModelsReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
     whenMaterialTexturesReady: (owner?: SceneLayerLoadIdentity) => Promise<void>;
     prewarmSceneMaterials: (owner?: SceneLayerLoadIdentity, onProgress?: (count: SceneLoadCount) => void) => Promise<void>;
-    /** `onLights` reports the light rehearsal's progress while it runs, null once the first frame is what remains. */
-    presentFirstFrame: (owner?: SceneLayerLoadIdentity, onLights?: (count: SceneLoadCount | null) => void) => Promise<void>;
+    presentFirstFrame: (owner?: SceneLayerLoadIdentity) => Promise<void>;
   };
   loading?: LoadingHost;
   activate: (scene: SceneLoadIdentity) => void;
@@ -137,8 +136,7 @@ export function createSceneLoadReadiness(options: {
         progress(scene, 90, "Presenting First Frame");
         await options.loading?.paint(scene.controller.signal);
         if (!isCurrent(scene)) return;
-        await options.handle.presentFirstFrame(scene.layer, (lights) =>
-          progress(scene, 90, lights ? "Preparing Lights" : "Presenting First Frame", lights ?? undefined));
+        await options.handle.presentFirstFrame(scene.layer);
         if (!isCurrent(scene)) return;
         scene.completed = true;
         release(scene, false);
