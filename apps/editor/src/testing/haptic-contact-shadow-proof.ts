@@ -36,7 +36,8 @@ import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-p
 import { isAtlasShadow } from "../../../../packages/render/src/shadow-atlas";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
-type Capture = { name: string; atlas: boolean; pixels: number[] };
+/** `passes`: the light's map passes the capture's frame drew, and `originMoved` whether the render origin moved, where counted. */
+type Capture = { name: string; atlas: boolean; pixels: number[]; passes?: number; originMoved?: boolean };
 
 export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
@@ -45,7 +46,8 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
   document.getElementById("root")!.append(canvas);
   const engine: AbstractEngine = backend === "webgpu"
     ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+    // With the floating render origin, as the app's Engines.
+    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   const order = readbackChannelOrder(engine.isWebGPU);
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
@@ -130,6 +132,31 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
       light.shadowEnabled = true;
       return { name, atlas: false, pixels };
     };
+    /**
+     * `light`'s shadow after the camera, and with it the floating render origin, moved: as the frame after the move drew
+     * it, then with its map drawn again at that pose. The camera returns after.
+     */
+    const originMoved = async (light: Light, name: string): Promise<Capture[]> => {
+      const map = (light.getShadowGenerator() as ShadowGenerator).getShadowMap()!;
+      let passes = 0;
+      const counted = map.onClearObservable.add(() => passes++);
+      const home = camera.position.clone();
+      const origin = scene.floatingOriginOffset.clone();
+      try {
+        camera.position.x += 0.35;
+        const kept = await draw();
+        const keptPasses = passes;
+        const originMoved = !scene.floatingOriginOffset.equals(origin);
+        map.resetRefreshCounter();
+        const redrawn = await draw();
+        return [{ name: `${name} origin moved`, atlas: true, pixels: kept, passes: keptPasses, originMoved },
+          { name: `${name} origin moved redrawn`, atlas: true, pixels: redrawn, passes: passes - keptPasses }];
+      } finally {
+        map.onClearObservable.remove(counted);
+        camera.position.copyFrom(home);
+        await draw();
+      }
+    };
     const captures: Capture[] = [];
     const blocked: Record<string, number[]> = {};
     /**
@@ -137,7 +164,10 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
      * its shadow covers (`covered`).
      */
     const poses = async (light: Light, name: string, toLight: (point: Vector3) => Vector3, covered?: (point: Vector3) => boolean) => {
-      captures.push(await shadowed(light, name), await unshadowed(light, `${name} unshadowed`));
+      captures.push(await shadowed(light, name));
+      // A sun's cascades follow the camera; a local map's depth does not depend on the render origin.
+      if (light !== sun) captures.push(...await originMoved(light, name));
+      captures.push(await unshadowed(light, `${name} unshadowed`));
       setAuthoredLightEnabled(light, false);
       captures.push({ name: `${name} unlit`, atlas: false, pixels: await draw() });
       blocked[name] = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, toLight, covered);
