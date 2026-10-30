@@ -964,8 +964,8 @@ function placeLodLane(ctx: FeatureTestContext): void {
 // FT_Lights scene and project settings
 
 /**
- * Plain lit scene with 48 unshadowed point lights, more than any quality level's light budget admits: the budget's
- * ranking chooses which light each surface draws with, and the scene is the many-lights workload.
+ * Plain lit scene with 48 unshadowed point lights, more than any quality level's local light budget admits: the light
+ * block's ranking chooses which lights draw, and the scene is the many-lights workload.
  */
 async function addLightsScene(ctx: FeatureTestContext): Promise<void> {
   const scene: SerializedScene = createDefaultScene("3d");

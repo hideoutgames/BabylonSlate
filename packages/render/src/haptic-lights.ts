@@ -186,7 +186,7 @@ export const selectHapticLights: ForwardLightSelection = (scene, candidates, pre
     }
     admitted.push(light);
   }
-  return { admitted, samplers: 0 };
+  return admitted;
 };
 
 /** Whether `light` casts shadows this frame. */

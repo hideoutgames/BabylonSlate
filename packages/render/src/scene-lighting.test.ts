@@ -12,8 +12,6 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { createRenderDiagnostics } from "./render-diagnostics";
 import {
   DirectionalLight,
-  MaterialDefines,
-  MaterialHelper,
   MeshBuilder,
   NullEngine,
   NullEngineOptions,
@@ -27,7 +25,6 @@ import {
   TransformNode,
   UniversalCamera,
   Vector3,
-  type Material,
 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -50,7 +47,7 @@ afterEach(() => {
 
 /** The block's admission with `locals` local lights (`syncForwardLightPolicy`, as scene lighting runs it). */
 function admitLocals(scene: Scene, locals: number) {
-  return syncForwardLightPolicy(scene, Number.MAX_SAFE_INTEGER, locals, selectHapticLights);
+  return syncForwardLightPolicy(scene, locals, selectHapticLights);
 }
 
 function host(viewport = true) {
@@ -118,28 +115,6 @@ function blockRead(scene: Scene, name: string, from: number, length: number): nu
 function beginFrame(scene: Scene) {
   scene.incrementRenderId();
   scene.onBeforeRenderObservable.notifyObservers(scene);
-}
-
-function shaderLights(
-  scene: Scene,
-  material: Material & { maxSimultaneousLights: number },
-) {
-  const mesh = MeshBuilder.CreateBox("receiver", {}, scene);
-  mesh.material = material;
-  // The actual Babylon shader light selection is the observable contract: an
-  // existing scene light is useless if the material drops its LIGHT define.
-  beginFrame(scene);
-  const defines = new MaterialDefines() as MaterialDefines &
-    Record<string, unknown>;
-  MaterialHelper.PrepareDefinesForLights(
-    scene,
-    mesh,
-    defines,
-    true,
-    material.maxSimultaneousLights,
-  );
-  mesh.dispose();
-  return defines;
 }
 
 describe("scene material lighting", () => {
@@ -323,13 +298,6 @@ describe("scene material lighting", () => {
     if (!compiled.ok) throw new Error("Fixture material did not compile");
     expect(compiled.material.attachedBlocks.some((block) => block instanceof HapticLightingBlock)).toBe(true);
     expect(blockLights(scene)).toEqual([0, 6, 0, 0, 0]);
-    // Babylon's own materials keep its lights, one shader slot each.
-    for (const material of [
-      new PBRMaterial("imported", scene),
-      new StandardMaterial("imported-standard", scene),
-    ]) {
-      expect(shaderLights(scene, material).LIGHT5).toBe(true);
-    }
   });
 
   it("lights a frozen graph Material with lights that arrive or leave after it compiled, keeping its Effect", async () => {
@@ -419,84 +387,6 @@ describe("scene material lighting", () => {
     await check(false);
     scene.shadowsEnabled = true;
     await check(true);
-  });
-
-  it("refreshes frozen shaders when scene lighting changes", async () => {
-    const scene = host();
-    const lamps = lights(scene, 6);
-    const material = new StandardMaterial("receiver", scene);
-    const mesh = MeshBuilder.CreateBox("receiver", {}, scene);
-    mesh.material = material;
-    beginFrame(scene);
-    material.freeze();
-    await material.forceCompilationAsync(mesh);
-    expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
-    expect(mesh.subMeshes[0]!.materialDefines?.toString()).toContain(
-      "#define LIGHT5",
-    );
-    lamps[5]!.setEnabled(false);
-    beginFrame(scene);
-    await material.forceCompilationAsync(mesh);
-    material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
-    expect(mesh.subMeshes[0]!.materialDefines?.toString()).not.toContain(
-      "#define LIGHT5",
-    );
-    lamps[5]!.setEnabled(true);
-    beginFrame(scene);
-    await material.forceCompilationAsync(mesh);
-    material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
-    expect(mesh.subMeshes[0]!.materialDefines?.toString()).toContain(
-      "#define LIGHT5",
-    );
-    lamps[5]!.dispose();
-    beginFrame(scene);
-    await material.forceCompilationAsync(mesh);
-    material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
-    expect(mesh.subMeshes[0]!.materialDefines?.toString()).not.toContain(
-      "#define LIGHT5",
-    );
-    scene.blockMaterialDirtyMechanism = true;
-    scene.lightsEnabled = false;
-    beginFrame(scene);
-    await material.forceCompilationAsync(mesh);
-    material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
-    expect(mesh.subMeshes[0]!.materialDefines?.toString()).not.toContain(
-      "#define LIGHT0",
-    );
-    scene.lightsEnabled = true;
-    beginFrame(scene);
-    await material.forceCompilationAsync(mesh);
-    material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
-    expect(mesh.subMeshes[0]!.materialDefines?.toString()).toContain(
-      "#define LIGHT4",
-    );
-    expect(material.isFrozen).toBe(true);
-    expect(scene.blockMaterialDirtyMechanism).toBe(true);
-  });
-
-  it("keeps a receiver's Effect when a light it cannot see is turned off, on or removed", async () => {
-    const scene = host();
-    const lamps = lights(scene, 6);
-    const material = new StandardMaterial("receiver", scene);
-    const mesh = MeshBuilder.CreateBox("receiver", {}, scene);
-    mesh.material = material;
-    // Five lamps reach the receiver; the sixth only changes the scene's enabled count.
-    lamps[5]!.excludedMeshes.push(mesh);
-    const compile = async () => {
-      beginFrame(scene);
-      await material.forceCompilationAsync(mesh);
-      material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
-      return mesh.subMeshes[0]!.effect;
-    };
-    const effect = await compile();
-    expect(effect?.defines).toContain("#define LIGHT4");
-    expect(effect?.defines).not.toContain("#define LIGHT5");
-    setAuthoredLightEnabled(lamps[5]!, false);
-    expect(await compile()).toBe(effect);
-    setAuthoredLightEnabled(lamps[5]!, true);
-    expect(await compile()).toBe(effect);
-    lamps[5]!.dispose();
-    expect(await compile()).toBe(effect);
   });
 
   it("keeps unlit materials unchanged", () => {

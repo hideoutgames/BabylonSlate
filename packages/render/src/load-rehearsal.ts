@@ -284,9 +284,7 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * would build its draw wrappers' defines in that step's order, and Babylon keys Effects by the defines text, so the
  * starting state would compile again for it once the step is reverted.
  *
- * `spawnable` lists the light parts Play may spawn: one of each kind is added and removed as a step. Each adds a
- * light to the Scene, so the caller reserves room for one more in the light inventory before the load compiles
- * anything (`reserveSceneLightInventory`), or the step would raise every lit Material's light capacity.
+ * `spawnable` lists the light parts Play may spawn: one of each kind is added and removed as a step.
  *
  * `staged` says the scene shows meshes only for the starting state to draw (the spawn warm-up's, on WebGL2, where a
  * program's first draw holds iPad WebKit and no probe sees it): the starting state then draws even without a step, and

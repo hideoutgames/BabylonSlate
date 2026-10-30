@@ -1,47 +1,19 @@
 import "./texture-quality";
 import "./standard-fog";
 import { lightsInCreationOrder, syncForwardLightPolicy } from "./light-policy";
-import { forwardLightBudget } from "./forward-light-budget";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty, notifySceneReceiversChanged } from "./scene-readiness-signal";
-import {
-  LightBlock,
-  Material,
-  NodeMaterial,
-  NodeMaterialModes,
-  PBRMetallicRoughnessBlock,
-  type Light,
-  type Observer,
-  type Scene,
-} from "@babylonjs/core";
+import type { Light, Observer, Scene } from "@babylonjs/core";
 import { deviceProfile } from "./device-profile";
 import { hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
 
-type LitMaterial = Material & { maxSimultaneousLights: number };
-
-function isLitMaterial(material: Material): material is LitMaterial {
-  if (!("maxSimultaneousLights" in material)) return false;
-  if ("disableLighting" in material && material.disableLighting === true)
-    return false;
-  if ("unlit" in material && material.unlit === true) return false;
-  if (material instanceof NodeMaterial) {
-    return (
-      material.mode === NodeMaterialModes.Material &&
-      material.attachedBlocks.some(
-        (block) => block instanceof PBRMetallicRoughnessBlock || block instanceof LightBlock,
-      )
-    );
-  }
-  return typeof material.maxSimultaneousLights === "number";
-}
-
-type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[]; reserve: (lights: number) => void };
+type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[] };
 
 const lightingByScene = new WeakMap<Scene, SceneLighting>();
 
 /**
- * Bound conventional shader variants before compilation, then select effective
- * lights within that budget without changing authored Enabled values.
+ * Select the effective lights (the light block's admission) without changing
+ * authored Enabled values, and write the block.
  */
 export function syncSceneLighting(scene: Scene): void {
   sceneLighting(scene).sync();
@@ -57,18 +29,9 @@ function sceneLighting(scene: Scene): SceneLighting {
 }
 
 /**
- * Raises the Scene's light inventory (the most lights it has held, which sizes every lit Material's light capacity,
- * `MAXLIGHTCOUNT`) to at least `lights`, from the next sync on, as if it had held that many. A Play load that may spawn
- * a light reserves one more than the Scene holds before it compiles anything, so that spawn (and the load rehearsal's
- * stand-in for it) leaves every Material's capacity, and the variants the load compiled, as they are.
- */
-export function reserveSceneLightInventory(scene: Scene, lights: number): void {
-  sceneLighting(scene).reserve(lights);
-}
-
-/**
- * Re-apply the light-slot capacity at the next sync, e.g. when a material
- * starts using scene lights again. No-op where lighting is not managed.
+ * Treat the next sync as a lighting change (readiness and receivers are told),
+ * e.g. when a material starts using scene lights again. No-op where lighting is
+ * not managed.
  */
 export function invalidateSceneLighting(scene: Scene): void {
   lightingByScene.get(scene)?.invalidate();
@@ -88,10 +51,6 @@ function installSceneLighting(scene: Scene): SceneLighting {
   let materialCount = -1;
   let sceneLightsEnabled = scene.lightsEnabled;
   let sceneShadowsEnabled = scene.shadowsEnabled;
-  // The most lights the Scene has held, enabled or not; it never shrinks.
-  let lightInventory = 0;
-  // The light capacity of the last refresh (every lit Effect's MAXLIGHTCOUNT).
-  let lightCapacity = -1;
   // The enabled lights, in any order: the block reads them as data, so their order changes no receiver.
   let enabledLights = new Set<Light>();
   let nextEnabled = new Set<Light>();
@@ -99,10 +58,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     requested: 0,
     admitted: 0,
     limited: [],
-    samplerLimited: [],
-    samplers: 0,
   };
-  let budget = forwardLightBudget(scene.getEngine());
   const watchedLights = new Map<Light, Observer<boolean>>();
   const invalidate = () => {
     dirty = true;
@@ -113,15 +69,9 @@ function installSceneLighting(scene: Scene): SceneLighting {
 
   const sync = (): void => {
     if (scene.isDisposed) return;
-    budget = forwardLightBudget(scene.getEngine());
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
-    admission = syncForwardLightPolicy(
-      scene,
-      budget.slots,
-      Math.max(0, sceneRenderingSettings(scene).localLightBudget),
-      selectHapticLights,
-    );
+    admission = syncForwardLightPolicy(scene, Math.max(0, sceneRenderingSettings(scene).localLightBudget), selectHapticLights);
     // HapticLightingBlock reads the admitted lights from one block, rewritten each frame; its Materials hold no light defines.
     writeHapticLights(scene);
     nextEnabled.clear();
@@ -163,34 +113,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     const previousEnabled = enabledLights;
     enabledLights = nextEnabled;
     nextEnabled = previousEnabled;
-    // Sized by the light inventory, not the enabled count: turning lights on
-    // or off and budget swaps keep MAXLIGHTCOUNT, so a receiver whose own
-    // lights are unchanged keeps its Effect. Not the slot count either: Babylon
-    // expands every per-light include this many times before dropping the
-    // unused copies, and that JS cost is paid per Effect.
-    lightInventory = Math.max(lightInventory, scene.lights.length);
-    const capacity = Math.min(budget.slots, Math.max(4, lightInventory));
-    // Only a different light set or capacity gives receivers other defines. Other refreshes (a material added or
-    // retired) leave a program that failed to link failing, so they must not end the Material library's latch.
-    const receiversChanged = changed || capacity !== lightCapacity;
-    lightCapacity = capacity;
-    const blocked = scene.blockMaterialDirtyMechanism;
-    scene.blockMaterialDirtyMechanism = false;
-    try {
-      for (const material of scene.materials) {
-        if (!isLitMaterial(material)) continue;
-        if (!changed && material.maxSimultaneousLights === capacity) continue;
-        material.maxSimultaneousLights = capacity;
-        material.markAsDirty(Material.LightDirtyFlag);
-        // Light defines alone do not invalidate a frozen material's cached
-        // readiness, including when a disposed generator removes SHADOW defines.
-        // Preserve its freeze policy while refreshing the shader.
-        material.markDirty();
-      }
-    } finally {
-      scene.blockMaterialDirtyMechanism = blocked;
-    }
-    if (receiversChanged) notifySceneReceiversChanged(scene);
+    if (changed) notifySceneReceiversChanged(scene);
   };
 
   const beforeRender = scene.onBeforeRenderObservable.add(sync);
@@ -217,11 +140,6 @@ function installSceneLighting(scene: Scene): SceneLighting {
   return {
     sync,
     invalidate,
-    reserve: (lights) => {
-      if (lights <= lightInventory) return;
-      lightInventory = lights;
-      dirty = true;
-    },
     limits: () => {
       if (!admission.limited.length) return [];
       const limited = `Limited: ${lightsInCreationOrder(admission.limited)

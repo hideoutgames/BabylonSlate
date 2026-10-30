@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EngineStore, Observable } from "@babylonjs/core";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
-import { forwardLightBudget } from "./forward-light-budget";
 import {
   REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE,
   createAppWebGpuEngine,
@@ -156,57 +155,6 @@ describe("WebGPU project Engine initialization", () => {
       },
     );
   });
-
-  it.each([
-    [12, 8],
-    [44, REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE - 4],
-  ])(
-    "derives the forward light budget of an adapter offering %i uniform buffers from the limit its device was granted (%i slots)",
-    async (offered, expectedSlots) => {
-      const stop = new Error("Stopped after the limits were read");
-      const before = [...EngineStore.Instances];
-      const adapterLimits: Record<string, number> = {
-        maxInterStageShaderVariables: 28,
-        maxUniformBuffersPerShaderStage: offered,
-      };
-      const slots: number[] = [];
-      const { element } = host(async () => ({
-        features: new Set(),
-        limits: adapterLimits,
-        info: {},
-        requestDevice: async (descriptor: GPUDeviceDescriptor) => {
-          const required = { ...descriptor.requiredLimits };
-          // A browser refuses a request above the adapter's limits.
-          for (const [name, value] of Object.entries(required))
-            if ((value ?? 0) > (adapterLimits[name] ?? 0)) throw new Error(`Limit ${name} is not supported.`);
-          // The device gets the WebGPU defaults overlaid with the request.
-          const base = {
-            features: new Set(),
-            limits: { maxUniformBuffersPerShaderStage: 12, ...required },
-            lost: new Promise(() => {}),
-            addEventListener() {},
-            destroy() {},
-          };
-          // Babylon derives its caps from the limits, then creates its first
-          // device resource; stop there with the Engine's caps in place.
-          return new Proxy(base, {
-            get(target, property) {
-              // Not a thenable: the device is awaited as a request result.
-              if (typeof property === "symbol" || property === "then" || property in target)
-                return Reflect.get(target, property);
-              return () => {
-                const engine = EngineStore.Instances.find((candidate) => !before.includes(candidate))!;
-                slots.push(forwardLightBudget(engine).slots);
-                throw stop;
-              };
-            },
-          });
-        },
-      }));
-      await expect(createAppWebGpuEngine(element)).rejects.toBe(stop);
-      expect(slots).toEqual([expectedSlots]);
-    },
-  );
 
   it("does not allocate or request an adapter for an already cancelled transition", async () => {
     const requestAdapter = vi.fn(async () => null);

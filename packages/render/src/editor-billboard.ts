@@ -196,7 +196,7 @@ export function applyEditorBillboardFromActor(
     const status = disabled
       ? "Disabled: This Light Is Disabled Or Does Not Illuminate."
       : illuminationLimited
-        ? "Limited: Requested Illumination Exceeds This Device's Forward Light Capacity."
+        ? "Limited: Exceeds This Device's Light Limit Or The Local Light Budget."
       : shadowsMissing
         ? "Limited: Requested Shadows Are Unavailable."
         : "Active: This Light Is Operating As Configured.";

@@ -7,7 +7,6 @@ import {
 } from "@babylonjs/core";
 import { SHADOW_CAPACITY_PROFILES, type ShadowSettings } from "@haptic/core";
 import { isDirectionalLightExcluded } from "./light-policy";
-import { remainingShadowSamplers } from "./light-sampler-budget";
 import type { LocalShadowLight } from "./reusable-shadow-generator";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -19,7 +18,6 @@ import {
 import { SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge } from "./shadow-atlas";
 import {
   admissionPasses,
-  admissionSamplers,
   allocationRequestKey,
   atlasTileEdge,
   type ShadowEntry as Entry,
@@ -46,7 +44,6 @@ const SHADOW_INCUMBENT_DISTANCE_BONUS = 1.15;
 export type ShadowAdmissionBudget = {
   readonly bytes: number;
   readonly passes: number;
-  readonly samplers: number;
   /** Per texel and layer of a local or single sun map, and of a cascaded sun map. */
   readonly bytesPerTexel: number;
   readonly cascadedBytesPerTexel: number;
@@ -89,12 +86,12 @@ export type ShadowAdmissionDecision = {
 export type ShadowAdmissionPlan = {
   /** In entry order. */
   readonly decisions: readonly ShadowAdmissionDecision[];
-  /** Sun first, then by rank, within the count, pass and sampler budgets; memory-rejected entries stay "budget-limited". */
+  /** Sun first, then by rank, within the count and pass budgets; memory-rejected entries stay "budget-limited". */
   readonly planned: readonly Entry[];
   readonly admitted: ShadowCost;
 };
 
-/** The shared ledger's room for this scene's maps, and the device's sampler headroom and texture caps. */
+/** The shared ledger's room for this scene's maps, and the device's texture caps. */
 export function readShadowAdmissionBudget(
   scene: Scene,
   settings: ShadowSettings,
@@ -116,11 +113,9 @@ export function readShadowAdmissionBudget(
     0,
     Math.min(profile.passes, ENGINE_SHADOW_BUDGET.passes - other.passes),
   );
-  const samplerBudget = remainingShadowSamplers(scene);
   return {
     bytes: byteBudget,
     passes: passBudget,
-    samplers: samplerBudget,
     bytesPerTexel: shadowBytesPerTexel(scene.getEngine()),
     cascadedBytesPerTexel: shadowBytesPerTexel(scene.getEngine(), true),
     maxTextureSize: caps.maxTextureSize,
@@ -143,7 +138,7 @@ export function cameraDistanceSquared(light: LocalShadowLight, camera: Camera): 
 
 /**
  * Which lights hold a map, and at what size, without writing to the entries: ranked by priority, residency and camera
- * distance (an incumbent's bonus included), the sun first, then within the light count, pass, sampler and memory
+ * distance (an incumbent's bonus included), the sun first, then within the light count, pass and memory
  * budgets, and an atlas tile's within the atlas's area. `applyShadowAdmission` writes the decisions back.
  */
 export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissionPlan {
@@ -153,7 +148,6 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
   const {
     bytes: byteBudget,
     passes: passBudget,
-    samplers: samplerBudget,
   } = budget;
   const measureDistance = (decision: ShadowAdmissionDecision) => {
     const light = decision.entry.light;
@@ -223,7 +217,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
       distance(a) - distance(b) ||
       a.entry.light.uniqueId - b.entry.light.uniqueId,
   );
-  const admitted: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
+  const admitted: ShadowCost = { bytes: 0, passes: 0 };
   const atlasEdge = budget.atlasEdge;
   const reserveLocalMaps =
     settings.maxLocalLights > 0 &&
@@ -236,24 +230,19 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
   );
   let plannedLocal = 0;
   let plannedPasses = 0;
-  let plannedSamplers = 0;
   let remainingLocalFaces = 0;
   const planned = candidates.filter((decision) => {
     const light = decision.entry.light;
     const directional = light instanceof DirectionalLight;
     const passes = admissionPasses(light, settings);
-    const samplers = admissionSamplers(light, settings, atlasEdge);
     decision.reason =
       !directional && plannedLocal >= settings.maxLocalLights
         ? "local light capacity"
         : plannedPasses + passes > passBudget
           ? "shadow face/pass budget"
-          : plannedSamplers + samplers > samplerBudget
-            ? "material sampler headroom"
-            : null;
+          : null;
     if (decision.reason) return false;
     plannedPasses += passes;
-    plannedSamplers += samplers;
     if (!directional) {
       plannedLocal += 1;
       if (!atlasTileEdge(light, atlasEdge)) remainingLocalFaces += passes;
@@ -272,12 +261,11 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
       localTiles += admissionPasses(decision.entry.light, settings);
   const localReserve = Math.min(localTiles * Math.min(settings.localMapSize, atlasEdge) ** 2, atlasEdge ** 2 / 2);
   // Admitted totals never exceed the planned ones, so every planned entry still
-  // fits the local, pass and sampler budgets; only memory or atlas space can reject it here.
+  // fits the local and pass budgets; only memory or atlas space can reject it here.
   for (const decision of planned) {
     const entry = decision.entry;
     const directional = entry.light instanceof DirectionalLight;
     const passes = admissionPasses(entry.light, settings);
-    const samplers = admissionSamplers(entry.light, settings, atlasEdge);
     const atlased = atlasTileEdge(entry.light, atlasEdge) > 0;
     const requestedSize = directional
       ? settings.mapSize
@@ -349,7 +337,6 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     decision.status = "active";
     admitted.bytes += peakPasses * mapSize ** 2 * bytesPerTexel;
     admitted.passes += passes;
-    admitted.samplers += samplers;
   }
   return { decisions, planned: planned.map((decision) => decision.entry), admitted };
 }

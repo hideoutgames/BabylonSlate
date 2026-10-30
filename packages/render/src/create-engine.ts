@@ -50,7 +50,6 @@ import { warmSpawnables } from "./spawnable-warm";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import type { SpawnableLight } from "./spawnable-lights";
-import { reserveSceneLightInventory } from "./scene-lighting";
 import { createLoadRehearsal, type LoadRehearsal, type LoadRehearsalReport } from "./load-rehearsal";
 import { estimateTextureMemory } from "./texture-memory-estimate";
 import { nativePreparationForEngine } from "./native-preparation";
@@ -3207,11 +3206,8 @@ function initializeEngine(
       // A previous load's rehearsal stops first (its Effects go after the warm-ups below, which may share them): an
       // applied step's stand-in light would count in the Scene's lights.
       if (!owner && options.playMode) loadRehearsal?.cancel();
-      // The light parts Play may spawn, which its load rehearses. Its lit Materials compile for one more light than the
-      // Scene holds from the start, the spawned light's: a spawn of one light then changes no Material's light capacity,
-      // and the warm-ups and the rehearsal's other changes compile at the capacity the game draws with.
+      // The light parts Play may spawn, which its load rehearses.
       const spawnable = !owner && options.playMode ? [...spawnableLights.values()] : [];
-      if (spawnable.length) reserveSceneLightInventory(scope.target, scope.target.lights.length + 1);
       applyRenderingQuality();
       // Water's blend and placement (flat) are otherwise first settled by the first frame's update, after the shader
       // warm-up and the graph's probes compiled every variant without them: each then compiles twice. Copy intent is

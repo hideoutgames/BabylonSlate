@@ -100,13 +100,9 @@ export async function createAppWebGpuEngine(
 const DEFAULT_UNIFORM_BUFFERS_PER_SHADER_STAGE = 12;
 
 /**
- * Highest `maxUniformBuffersPerShaderStage` the Engine asks for. Babylon binds
- * one uniform buffer per light in the vertex shader, and the forward light
- * budget is this limit less four (`forwardLightBudget`), so 20 gives 16 slots:
- * the Medium tier's 16 local lights, and every light of the Feature Test main
- * scene (9) with room to spare. The cap also keeps a Metal adapter that offers 44 from admitting
- * 40-light shaders at High and Ultra, which would be well beyond the 11 to 13
- * slots that WebGL2 desktops give. Babylon's known light bindings cover 32.
+ * Highest `maxUniformBuffersPerShaderStage` the Engine asks for. Every light
+ * is in one block (`HapticLights`), so this no longer bounds the light count;
+ * it leaves room for Babylon's per-draw and per-Material blocks beside it.
  */
 export const REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE = 20;
 
@@ -122,9 +118,7 @@ export const REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE = 20;
  * - `maxUniformBuffersPerShaderStage` up to
  *   {@link REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE}, only when the adapter
  *   offers more than the default 12. D3D12 adapters report 12, so they keep
- *   the default; Metal reports more (44 on Apple GPUs). The default's 8 light
- *   slots made lights swap by camera distance in scenes with more, and each
- *   swap recompiled every lit material.
+ *   the default; Metal reports more (44 on Apple GPUs).
  */
 function adapterRequiredLimits(
   supported: GPUSupportedLimits | undefined,

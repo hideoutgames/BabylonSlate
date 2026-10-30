@@ -8,7 +8,6 @@ import {
   type Scene,
 } from "@babylonjs/core";
 
-import { lightingSamplerCapacity } from "./light-sampler-budget";
 
 const authoredEnabled = new WeakMap<
   Light,
@@ -112,15 +111,14 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
   }
 }
 
-/** What the Forward budget may admit in one sync. */
-export type ForwardLightCapacity = { lights: number; locals: number; samplers: number };
+/** What the selection may admit in one sync: the scalability local lights. */
+export type ForwardLightCapacity = { locals: number };
 
 /**
  * The selection of `syncForwardLightPolicy` (the light block's admission,
  * `selectHapticLights`). It ranks `candidates` (the eligible lights) itself,
- * pushes the lights it leaves out to `limited`, and those the sampler headroom
- * leaves out also to `samplerLimited`, and returns the lights it admits with
- * the lighting samplers they use. The policy then toggles the lights.
+ * pushes the lights it leaves out to `limited`, and returns the lights it
+ * admits. The policy then toggles the lights.
  */
 export type ForwardLightSelection = (
   scene: Scene,
@@ -128,8 +126,7 @@ export type ForwardLightSelection = (
   previous: ReadonlySet<Light>,
   capacity: Readonly<ForwardLightCapacity>,
   limited: Light[],
-  samplerLimited: Light[],
-) => { admitted: Iterable<Light>; samplers: number };
+) => Iterable<Light>;
 
 /**
  * The scene's last Forward light selection, which its next selection favours (a copy; undefined before the first).
@@ -150,32 +147,24 @@ export function restoreForwardLightSelection(scene: Scene, selection: ReadonlySe
 /** Scene-local selection; authored Enabled and priority are retained. */
 export function syncForwardLightPolicy(
   scene: Scene,
-  slots: number,
   localSlots: number,
   select: ForwardLightSelection,
 ): {
   requested: number;
   admitted: number;
   limited: Light[];
-  samplerLimited: Light[];
-  samplers: number;
 } {
   syncDirectionalLightPolicy(scene);
   const previous = forwardSelections.get(scene) ?? new Set<Light>();
   const candidates = scratchCandidates;
   candidates.length = 0;
   for (const light of scene.lights) if (isForwardEligible(light)) candidates.push(light);
-  const capacity: ForwardLightCapacity = {
-    lights: Math.max(0, Math.floor(slots)),
-    locals: Math.max(0, Math.floor(localSlots)),
-    samplers: lightingSamplerCapacity(scene),
-  };
+  const capacity: ForwardLightCapacity = { locals: Math.max(0, Math.floor(localSlots)) };
   const selected = previous;
   const limited: Light[] = [];
-  const samplerLimited: Light[] = [];
-  const selection = select(scene, candidates, previous, capacity, limited, samplerLimited);
+  const admitted = select(scene, candidates, previous, capacity, limited);
   selected.clear();
-  for (const light of selection.admitted) selected.add(light);
+  for (const light of admitted) selected.add(light);
   // Decide every light before toggling any, so receivers can be prepared for
   // the whole change. Fill the candidate set once, and only when needed.
   const candidateSet = scratchCandidateSet;
@@ -206,8 +195,6 @@ export function syncForwardLightPolicy(
     requested: selected.size + limited.length,
     admitted: selected.size,
     limited,
-    samplerLimited,
-    samplers: selection.samplers,
   };
 }
 

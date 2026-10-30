@@ -161,6 +161,8 @@ Each phase is one PR, or a short series, merged into `main` before the next star
    Phase 8 PR (fixed-shape modules): `fixed-light-admission.ts`, `fixed-light-binding.ts`, `fixed-light-seats.ts`, `fixed-light-shader.ts` and core `fixed-light-layout.ts` go, with the light-neutral defines (`registerLightNeutralPasses`, `keepsLightDefines`; the light-neutral task classes stay) and the Babylon patch's three `_materialLightHooks` hunks in `materialHelper.functions.js`: graph Materials hold no light defines, so nothing on the block's path asked the hooks.
 
    Phase 8 PR (Forward slots): `forward-light-slots.ts` goes. `syncForwardLightPolicy` takes the block's selection (required) and toggles the lights; the slot exchanges, settling, canonical order, `keepAdmittedSlotKinds` and its distance ratio go, as does scene lighting's half of the receiver handoff (`explainedBySlotChanges`, the handoff journal, the shadow-layout tokens) and its receiver re-sort: graph Materials hold no light defines, so `scene.lights` and `lightSources` order no longer matter.
+
+   Phase 8 PR (budgets): `forward-light-budget.ts` and `light-sampler-budget.ts` go. The selection's capacity is the scalability local lights alone; scene lighting no longer sets lit Materials' light capacity (`maxSimultaneousLights`) or refreshes them, and `reserveSceneLightInventory` goes; shadow admission has no sampler dimension (`admissionSamplers`, `ShadowCost.samplers`, "material sampler headroom"), as every map is an atlas tile; the editor billboard's limited-light status names the device's light limit and the Local Light Budget.
 9. **Later, decided separately**: fewer material variants (texture presence and similar defines as always-bound defaults), measured on its own.
 
 ## Risks

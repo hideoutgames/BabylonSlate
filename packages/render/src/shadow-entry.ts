@@ -110,12 +110,6 @@ export function admissionPasses(light: ShadowLight, settings: ShadowSettings): n
       : 1;
 }
 
-/** Material samplers admission charges a light under the effective settings: none for an atlas tile, always bound. */
-export function admissionSamplers(light: ShadowLight, settings: ShadowSettings, atlasEdge = 0): number {
-  if (atlasTileEdge(light, atlasEdge)) return 0;
-  return settings.filter === "pcss" && !light.needCube() ? 2 : 1;
-}
-
 /** Faces a live generator renders: its cascades, a cube's six, otherwise one. */
 export function generatorPasses(generator: ShadowGenerator): number {
   return generator instanceof CascadedShadowGenerator

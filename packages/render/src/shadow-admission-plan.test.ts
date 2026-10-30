@@ -25,9 +25,9 @@ function entry(light: SpotLight | PointLight | DirectionalLight): ShadowEntry {
   };
 }
 
-/** Room for every map but the atlas's area, and no material sampler to spare. */
+/** Room for every map but the atlas's area. */
 const budget = (atlasEdge: number): ShadowAdmissionBudget => ({
-  bytes: 1024 ** 3, passes: 64, samplers: 0, bytesPerTexel: 12, cascadedBytesPerTexel: 6,
+  bytes: 1024 ** 3, passes: 64, bytesPerTexel: 12, cascadedBytesPerTexel: 6,
   maxTextureSize: 16384, maxCubemapTextureSize: 16384, atlasEdge,
 });
 
@@ -48,7 +48,7 @@ describe("Shadow admission into the lighting plan's atlas", () => {
     expect(shadowAtlasEdge(engine, "ultra")).toBe(2048);
   });
 
-  it("admits spot maps by the atlas's area, with no material sampler, and counts the atlas's bytes once", () => {
+  it("admits spot maps by the atlas's area and counts the atlas's bytes once", () => {
     const host = scene();
     const spots = [0, 1, 2, 3, 4].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), Vector3.Down(), 1, 2, host));
     const lamp = new PointLight("lamp", new Vector3(0, 2, 0), host);
@@ -60,7 +60,6 @@ describe("Shadow admission into the lighting plan's atlas", () => {
       ["budget-limited", "shadow atlas space", 0],
     ]);
     expect(admitted.bytes).toBe(2048 ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL);
-    expect(admitted.samplers).toBe(0);
   });
 
   it("admits the sun's cascades as tiles, leaving room for the local maps planned into the atlas", () => {
@@ -73,10 +72,9 @@ describe("Shadow admission into the lighting plan's atlas", () => {
     expect(ultra.decisions[0]!.reason).toBe("shadow map reduced by shadow atlas space");
     // Alone, the sun takes the whole atlas.
     expect(plan([sun], 8192, 2048, { mapSize: 4096, cascades: 4 }).decisions.map(({ mapSize, reason }) => [mapSize, reason])).toEqual([[4096, null]]);
-    // Medium: three 2048 cascades and two 1024 spot tiles fit a 4096 atlas, with no sampler.
+    // Medium: three 2048 cascades and two 1024 spot tiles fit a 4096 atlas.
     const medium = plan([sun, spots[0]!, spots[1]!], 4096, 1024, { mapSize: 2048, cascades: 3 });
     expect(medium.decisions.map(({ status, mapSize }) => [status, mapSize])).toEqual([["active", 2048], ["active", 1024], ["active", 1024]]);
-    expect(medium.admitted.samplers).toBe(0);
     // A point light's six faces count in the room the sun leaves: Medium's three 2048 cascades and one point light's
     // six 1024 faces need 18.9 Mtexels of a 4096 atlas's 16.8, so the cascades halve.
     const lamp = new PointLight("lamp", new Vector3(0, 2, 0), host);
@@ -94,15 +92,11 @@ describe("Shadow admission into the lighting plan's atlas", () => {
       .toEqual([["active", 2048], ["active", 2048], ["active", 2048], ["budget-limited", 0]]);
   });
 
-  it("caps a spot map at the atlas's edge, and counts no atlas without a spot map in it", () => {
+  it("caps a spot map at the atlas's edge", () => {
     const host = scene();
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, host);
     expect(plan([spot], 1024, 2048).decisions.map(({ mapSize, reason }) => [mapSize, reason])).toEqual([
       [1024, "shadow map reduced by shadow atlas space"],
     ]);
-    // Off the lighting plan's path a spot map is a map of its own.
-    const legacy = plan([spot], 0, 1024);
-    expect(legacy.decisions.map(({ reason }) => reason)).toEqual(["material sampler headroom"]);
-    expect(legacy.admitted.bytes).toBe(0);
   });
 });
