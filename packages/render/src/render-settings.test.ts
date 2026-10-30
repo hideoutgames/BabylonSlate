@@ -229,8 +229,8 @@ it("plans Screen-Space Shadows only for a world view's Scene, and tells listener
   state.qualityOverrides = qualityPresetPatch("low");
   updateSceneRenderingSettings(scene);
   expect(state.effectsPlan).toBeNull();
-  // On, a level change (no call: the define is only whether they are read), off.
-  expect(seen).toEqual([true, false]);
+  // On, off at Medium, on again at Ultra (Medium to High changed no define), off at Low.
+  expect(seen).toEqual([true, false, true, false]);
 });
 
 it("tells listeners of each render-mode change once, after the plan is current, and of nothing else", () => {
