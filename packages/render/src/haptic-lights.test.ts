@@ -205,6 +205,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     lamp.range = 7;
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), new Vector3(0, -2, 0), Math.PI / 2, 2, scene);
     spot.range = 9;
+    spot.innerAngle = Math.PI / 3;
     new PointLight("dark", new Vector3(0, 0, 0), scene).intensity = 0;
     // A Babylon rect light without the tables in place would fetch them.
     retainAreaLightLookup(scene);
@@ -219,7 +220,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(read("hapticFillGround", 3).map((value) => Math.round(value * 10) / 10)).toEqual([0.4, 0.2, 0]);
     expect(read("hapticDirectional", 8)).toEqual([0, -2, 0, sun.radius, 3, 3, 3, 0].map(Math.fround));
     expect(read("hapticPoint", 12)).toEqual([1, 2, 3, lamp.radius, 1, 1, 1, 7, -1, 0, 0, 0].map(Math.fround));
-    expect(read("hapticSpot", 16).map((value) => Math.round(value * 1000) / 1000)).toEqual([0, 4, 0, 0, 0, -1, 0, 0.707, 1, 1, 1, 9, -1, 0, 0, 0]);
+    expect(read("hapticSpot", 16).map((value) => Math.round(value * 1000) / 1000)).toEqual([0, 4, 0, 0, 0, -1, 0, 0.707, 1, 1, 1, 9, -1, 0.866, 0, 0]);
     const scaled = Math.fround(panel.getScaledIntensity());
     // No emission: layer -1, its flat colour.
     expect(read("hapticRect", 16)).toEqual([1, 2, 3, 0, 2, 0, 0, 0, 0, 1, 0, 0, scaled, scaled, scaled, -1]);
