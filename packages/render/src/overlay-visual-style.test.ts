@@ -25,8 +25,8 @@ it("binds distinct tints through a shared frozen native material without changin
   for (const mesh of [first, second]) { await material.forceCompilationAsync(mesh); expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true); }
   material.freeze();
   for (const mesh of [first, second, first]) {
-    const effect = mesh.subMeshes[0]!.effect!;
-    const write = vi.spyOn(effect, "setFloat4");
+    // A shipped Engine has uniform buffers, so the tint is written to the material's buffer for each mesh's draw.
+    const write = vi.spyOn(material["_uniformBuffer"], "updateFloat4");
     material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
     expect(write).toHaveBeenCalledWith("slateOverlayTint", ...(mesh === first ? [1, 0.5, 0.25, 0.2] : [0.25, 1, 0.5, 0.8]));
     write.mockRestore();
