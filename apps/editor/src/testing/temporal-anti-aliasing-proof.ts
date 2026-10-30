@@ -1,6 +1,7 @@
 import {
   Color3,
   Color4,
+  DirectionalLight,
   Engine,
   FreeCamera,
   MeshBuilder,
@@ -12,6 +13,7 @@ import { normalizeRenderEffectsSettings } from "@haptic/core";
 import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
+import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 96;
@@ -111,7 +113,26 @@ export async function runTemporalAntiAliasingProof(backend: "webgl2" | "webgpu")
       const panned = await read();
       await toggle(false);
       const pannedReference = await read();
-      captures.push({ off, on, next, moved, movedReference, panned, pannedReference, projectionRestored: restored });
+      // A regular instance, as the instance pool draws one, moving every frame: shadow maps and the colour pass draw
+      // its batch before the geometry pass, which must still find last frame's matrix to write its velocity.
+      const source = MeshBuilder.CreatePlane("Temporal Instance Source", { size: 1 }, scene);
+      source.material = material;
+      source.isVisible = false;
+      const mover = source.createInstance("Temporal Mover");
+      mover.position.set(-2.2, -1.2, 0);
+      // A shadow-casting sun, synced each frame as Play's frame does: its map draws the batch first.
+      const shadows = sceneShadowController(scene);
+      shadows.register(new DirectionalLight("Temporal Sun", new Vector3(0.2, -1, 0.4), scene), true);
+      await toggle(true);
+      await frames(8, () => shadows.sync());
+      await frames(16, () => { mover.position.x += 0.06; shadows.sync(); });
+      const shadowed = !!scene.lights.at(-1)?.getShadowGenerator();
+      const instanced = await read();
+      await toggle(false);
+      const instancedReference = await read();
+      captures.push({
+        off, on, next, moved, movedReference, panned, pannedReference, instanced, instancedReference, shadowed, projectionRestored: restored,
+      });
     } finally {
       graph.dispose();
       await graph.whenReleased();

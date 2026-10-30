@@ -69,6 +69,8 @@ for (const backend of ["webgl2"] as const) {
       expect(trailPixels(capture.moved, capture.movedReference, result.width), "a moved surface leaves no trail").toBe(0);
       expect(difference(capture.moved, capture.movedReference).mean, "a moved surface resolves").toBeLessThan(6);
       expect(difference(capture.panned, capture.pannedReference).mean, "history follows camera motion").toBeLessThan(5);
+      console.log("DIFF", capture.shadowed, JSON.stringify(difference(capture.instanced, capture.instancedReference)));
+      expect(difference(capture.instanced, capture.instancedReference).mean, "history follows a moving instance").toBeLessThan(5);
     }
   });
 }

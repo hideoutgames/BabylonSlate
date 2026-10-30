@@ -25,6 +25,7 @@ import {
   retireOwnedEffect,
   type OwnedEffectRetirement,
 } from "./owned-effect-retirement";
+import { scopePreviousWorldMatricesToVelocity } from "./velocity-previous-matrices";
 
 class SpatialTask extends FrameGraphPostProcessTask {
   private retirement: OwnedEffectRetirement | undefined;
@@ -115,6 +116,8 @@ export class SpatialEffectsGraph {
   }[] = [];
   private disposed = false;
   private committed = false;
+  /** Releases the previous world matrices' scope to this geometry pass (`velocity-previous-matrices.ts`). */
+  private releaseVelocityScope: (() => void) | undefined;
   private released: Promise<void> | undefined;
 
   constructor(
@@ -221,6 +224,7 @@ export class SpatialEffectsGraph {
           textureFormat: Constants.TEXTUREFORMAT_RGBA,
         });
         buffers.velocitySampler = this.geometry.geometryLinearVelocityTexture;
+        this.releaseVelocityScope = scopePreviousWorldMatricesToVelocity(graph.scene, this.geometry.objectRenderer);
       }
       for (const handle of Object.values(buffers))
         this.handles.push({ handle, category: "geometry" });
@@ -305,6 +309,7 @@ export class SpatialEffectsGraph {
   }
   disposeTasks(): void {
     if (this.disposed) return;
+    this.releaseVelocityScope?.();
     this.jitter?.dispose();
     for (const task of this.tasks) task.dispose();
     if (this.geometry) unregisterSpatialGeometryPass(this.graph.scene, this.geometry.objectRenderer.renderPassId);
