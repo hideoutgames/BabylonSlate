@@ -8,6 +8,8 @@ import {
 import type { ShadowSettings } from "@haptic/core";
 
 export type ShadowLight = DirectionalLight | PointLight | SpotLight;
+/** A light whose map is a local atlas map, which can move between lights of its kind. */
+export type LocalShadowLight = PointLight | SpotLight;
 export type EffectiveShadowBias = {
   layer: number;
   cameraId: string | null;
@@ -69,7 +71,7 @@ export function allocationKey(
   mapSize: number,
   light: ShadowLight,
   cascades: number,
-  atlasEdge = 0,
+  atlasEdge: number,
 ): AllocationKey {
   return {
     mapSize,
@@ -90,7 +92,7 @@ export function matchesAllocationKey(
   mapSize: number,
   light: ShadowLight,
   cascades: number,
-  atlasEdge = 0,
+  atlasEdge: number,
 ): boolean {
   return (
     key !== null &&
