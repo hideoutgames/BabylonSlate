@@ -38,6 +38,7 @@ import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, isAtlasShadow, shad
 
 const engines: NullEngine[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const engine of engines.splice(0)) engine.dispose();
 });
 /** `beforeController` runs on the bare Scene, before anything observes its meshes. */
@@ -830,7 +831,8 @@ describe("shared shadow lifecycle", () => {
       receiver.material.isReadyForSubMesh(receiver, part);
       const defines = part.materialDefines!.toString();
       expect(defines).toContain("SHADOW0");
-      const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+      // A new map would place atlas tiles.
+      const allocate = vi.spyOn(ShadowAtlasAllocator.prototype, "allocate");
       const dispose = vi.spyOn(generator, "dispose");
       const dirty = vi.spyOn(receiver, "_markSubMeshesAsLightDirty");
       scene.activeCamera!.position.x = 50;
@@ -886,7 +888,8 @@ describe("shared shadow lifecycle", () => {
     map.onClearObservable.add(() => clears++);
     for (let frame = 0; frame < 3; frame++) scene.render();
     expect(clears).toBeLessThanOrEqual(6);
-    const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+    // A new map would place atlas tiles.
+    const allocate = vi.spyOn(ShadowAtlasAllocator.prototype, "allocate");
     const next = new PointLight("next", new Vector3(1005, 0, 0), scene);
     next.range = 10;
     controller.register(next, true);
@@ -920,7 +923,8 @@ describe("shared shadow lifecycle", () => {
 
   it("keeps the map of a light the Forward budget dropped on standby until the light returns", () => {
     const { scene, controller, shadowed, generator, dispose } = forwardDroppedStandby();
-    const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+    // A new map would place atlas tiles.
+    const allocate = vi.spyOn(ShadowAtlasAllocator.prototype, "allocate");
     expect(controller.generator(shadowed)).toBeNull();
     expect(shadowed.getShadowGenerator()).toBe(generator);
     expect(generator.getDarkness()).toBe(1);

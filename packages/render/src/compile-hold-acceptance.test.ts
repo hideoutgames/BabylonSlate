@@ -2025,6 +2025,28 @@ describe("compile holds after the first frame", () => {
       .toEqual({ steady: [true, true, true], leftOut: 1, captured: false, reason: "Render pipelines are compiling." });
   });
 
+  it.each([
+    ["right after the change, before a steady frame probes it", 0],
+    ["while a steady frame draws the previous variant", 1],
+  ] as const)("a frame report requested %s settles and the view draws again: webgpu", async (_when, steadyFrames) => {
+    // A report's frames validate their presentation, so they refuse the swap; only a steady frame's probe completes
+    // it, and none runs while the report is pending. The report's frames probe as a steady frame does first.
+    const world = playWorld("webgpu", []);
+    const [crate] = ownMaterials(world, "actor-2");
+    await settle(world);
+    const normalForward = () => /#define FORCENORMALFORWARD\b/.test(world.subjectEffect()?.defines ?? "");
+    changeDefines(world, crate!);
+    for (let index = 0; index < steadyFrames; index++) await world.frame();
+    const swapping = !normalForward();
+    let report = "pending";
+    void world.handle.captureFrame().then(() => { report = "settled"; }, (error: unknown) => { report = String(error); });
+    const frames: boolean[] = [];
+    // A variant no warm draw used meanwhile is admitted once `UNUSED_WARM_MS` passed (five 100 ms frames).
+    for (let index = 0; index < 10; index++) frames.push((await world.frame()).view?.rendered === true);
+    expect({ swapping, report, drawsAgain: frames.slice(-3), newVariant: normalForward() }, JSON.stringify(frames))
+      .toEqual({ swapping: true, report: "settled", drawsAgain: [true, true, true], newVariant: true });
+  });
+
 });
 
 /** Prepared area emission pixels, as the derived chunk holds them. */

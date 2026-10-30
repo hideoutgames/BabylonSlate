@@ -84,6 +84,16 @@ describe("Shadow admission into the lighting plan's atlas", () => {
       .toEqual([["active", 1024], ["active", 1024]]);
   });
 
+  it("keeps the sun's cascades when the local maps planned would fill the atlas, leaving them at most half of it", () => {
+    const host = scene();
+    const sun = new DirectionalLight("sun", new Vector3(0, -1, 0), host);
+    const lamps = [0, 1, 2].map((index) => new PointLight(`lamp ${index}`, new Vector3(index * 3, 2, 0), host));
+    // High: three point lights' six 2048 faces (75.5 Mtexels) exceed the 8192 atlas (67.1); the sun keeps its four
+    // 2048 cascades in the half it reserves, two points fill the rest and the third finds no room.
+    expect(plan([sun, ...lamps], 8192, 2048, { mapSize: 2048, cascades: 4 }).decisions.map(({ status, mapSize }) => [status, mapSize]))
+      .toEqual([["active", 2048], ["active", 2048], ["active", 2048], ["budget-limited", 0]]);
+  });
+
   it("caps a spot map at the atlas's edge, and counts no atlas without a spot map in it", () => {
     const host = scene();
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, host);
