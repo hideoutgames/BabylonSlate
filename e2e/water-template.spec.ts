@@ -20,6 +20,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await page.waitForFunction(() => typeof (window as unknown as { __waterTemplateProof?: unknown }).__waterTemplateProof === "function");
     const result = await page.evaluate((backend) =>
       (window as unknown as { __waterTemplateProof: typeof runWaterTemplateProof }).__waterTemplateProof(backend), backend);
+    await testInfo.attach(`water-template-${backend}`, { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
     const { width, height } = result;
     const toLinear = (display: number) => {
@@ -85,7 +86,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       shallow, deep, environment, glint, sunGlint,
       fog: { mean: fogApart.reduce((sum, value) => sum + value, 0) / fogApart.length, p95: fogApart[Math.floor(fogApart.length * 0.95)], largest: fogApart.at(-1) },
     };
-    await testInfo.attach(`water-template-${backend}`, { body: JSON.stringify({ report, result }), contentType: "application/json" });
+    await testInfo.attach(`water-template-report-${backend}`, { body: JSON.stringify(report), contentType: "application/json" });
     expect(deep.luminance).toBeLessThan(shallow.luminance * 0.8);
     expect(deep.warmth).toBeLessThan(shallow.warmth - 10);
     expect(environment.warmth).toBeGreaterThan(shallow.warmth + 10);

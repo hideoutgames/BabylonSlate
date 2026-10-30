@@ -20,7 +20,6 @@ import {
   PointLight,
   Scene,
   SpotLight,
-  StandardMaterial,
   Vector3,
   VertexBuffer,
   type AbstractEngine,
@@ -295,10 +294,9 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
   setFixedShapeLightingWorldScene(scene);
   setSceneRenderSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS,
     temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } });
-  // Unlit, and of another kind than the spawn's Material, so the spawn's variants are new.
-  const floorMaterial = new StandardMaterial("floor", scene);
-  floorMaterial.disableLighting = true;
-  floorMaterial.emissiveColor = new Color3(0.8, 0.8, 0.8);
+  const floorMaterial = new PBRMaterial("floor", scene);
+  floorMaterial.albedoColor = new Color3(0.8, 0.8, 0.8);
+  floorMaterial.unlit = true;
   const floor = MeshBuilder.CreateGround("floor", { width: 6, height: 6 }, scene);
   floor.material = floorMaterial;
   const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
@@ -326,10 +324,12 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
     let settled = 0;
     for (let index = 0; index < FRAME_LIMIT && settled < 4; index++) settled = await frame() ? settled + 1 : 0;
     const geometryPass = engine.getRenderPassNames().lastIndexOf("Spatial Geometry#0");
-    // Unlit: a colour and a geometry variant no other mesh draws with.
+    // Unlit like the floor, but two-sided: a colour and a geometry variant no other mesh draws with.
     const material = new PBRMaterial("spawned", scene);
     material.albedoColor = new Color3(0.1, 0.8, 0.2);
     material.unlit = true;
+    material.backFaceCulling = false;
+    material.twoSidedLighting = true;
     const spawned = MeshBuilder.CreateBox("spawned", { size: 0.6 }, scene);
     spawned.position.y = 0.3;
     spawned.material = material;
