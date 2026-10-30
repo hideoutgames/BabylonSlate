@@ -1,4 +1,4 @@
-import { DEFAULT_SHADOW_SETTINGS, RENDER_QUALITY_PROFILES } from "@haptic/core";
+import { DEFAULT_SHADOW_SETTINGS, RENDER_QUALITY_PROFILES, SCREEN_SHADOWS_QUALITIES } from "@haptic/core";
 import type { EngineEnum, EngineStruct } from "./engine-types";
 import type { StructField } from "./type-assets";
 
@@ -13,6 +13,7 @@ export const SCALABILITY_ENUMS: EngineEnum[] = [
   enumeration("LightBudgetMode", ["auto", "manual"]),
   enumeration("ShadowFilter", ["pcf", "pcss"]),
   enumeration("ShadowFilterQuality", ["low", "medium", "high"]),
+  enumeration("ScreenShadowsQuality", [...SCREEN_SHADOWS_QUALITIES]),
   enumeration("CelLightMixing", ["strongest", "additive", "blend"]),
   enumeration("ToneMapping", ["none", "standard", "aces", "neutral"]),
   enumeration("ColorPipeline", ["legacyDisplay", "sceneLinear"]),
@@ -48,7 +49,8 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
     number("mapSize", shadows.mapSize), number("cascades", shadows.cascades), choice("filter", "ShadowFilter", shadows.filter),
     choice("filterQuality", "ShadowFilterQuality", shadows.filterQuality), number("softness", shadows.softness), bool("autoBias", shadows.autoBias),
     number("depthBias", shadows.depthBias), number("normalBias", shadows.normalBias), choice("localLightMode", "LightBudgetMode", shadows.localLightMode),
-    number("maxLocalLights", shadows.maxLocalLights), number("localMapSize", shadows.localMapSize)]),
+    number("maxLocalLights", shadows.maxLocalLights), number("localMapSize", shadows.localMapSize),
+    choice("screenShadows", "ScreenShadowsQuality", shadows.screenShadows)]),
   define("CelShading", [number("shadowBands", 3), number("shadowThreshold", 0.5), number("shadowStrength", 0.65), bool("specularEnabled", true),
     number("specularStrength", 0.2), number("specularSize", 0.2), number("lightColorInfluence", 1), choice("lightMixing", "CelLightMixing", "strongest"),
     bool("outlinesEnabled", true), field("outlineColor", "color", { x: 0.03, y: 0.03, z: 0.03, w: 1 }), number("outlineWidth", 1),

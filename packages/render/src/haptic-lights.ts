@@ -205,6 +205,11 @@ export function bindHapticClusters(scene: Scene, effect: Effect): void {
 }
 
 /** `scene`'s light block, as the shaders read it. */
+/** The sun casting the block's sun shadow as last written (`writeHapticLights`), or null. */
+export function hapticShadowedSun(scene: Scene): DirectionalLight | null {
+  return scenes.get(scene)?.sun ?? null;
+}
+
 export function hapticLightBuffer(scene: Scene): UniformBuffer {
   return sceneLights(scene).buffer;
 }

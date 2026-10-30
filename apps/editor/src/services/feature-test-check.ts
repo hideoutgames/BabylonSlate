@@ -23,40 +23,112 @@ export type FeatureTestCheckMode = "quick" | "full" | "benchmark" | "breakdown";
 /** Scenes a Breakdown measures unless every scene is asked for: the GPU-heaviest. */
 export const FEATURE_TEST_BREAKDOWN_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "FT_World");
 
+/** A Breakdown step: its commands, what undoes them besides `quality reset`, and the render settings it may change. */
+export interface FeatureTestBreakdownStep {
+  label: string;
+  commands: readonly string[];
+  restore?: readonly string[];
+  /** A baseline: the project quality, nothing changed. */
+  baseline?: boolean;
+  /** Render-settings fingerprint fields (`RenderDiagnostics.settings`) the step may change; any other change is flagged. */
+  fields?: readonly string[];
+}
+
+const POST_FIELDS = ["post.scale", "post.ambientOcclusion", "post.reflections", "post.volumetricLighting"] as const;
+const baseline = (n: number): FeatureTestBreakdownStep => ({ label: `baseline ${n}`, commands: [], baseline: true });
+
 /**
  * Steps a Breakdown measures per scene, each on top of the project quality: one feature off (or one cost lowered) at
- * a time, so the frame-time change against the baselines is that feature's share of a GPU-bound frame, without timer
- * queries. After each step `quality reset` and its `restore` commands undo it. The second baseline shows drift
- * (thermal throttling, background work) across the run.
+ * a time, so the frame-time change against the baselines around it is that feature's share of a GPU-bound frame,
+ * without timer queries. After each step `quality reset` and its `restore` commands undo it. A baseline every four
+ * steps shows drift (thermal throttling, background work), and each step is measured against the two around it.
  */
-export const FEATURE_TEST_BREAKDOWN_STEPS: readonly { label: string; commands: readonly string[]; restore?: readonly string[] }[] = [
-  { label: "baseline", commands: [] },
-  { label: "shadows off", commands: ["quality shadows enabled off"] },
-  { label: "shadows medium", commands: ["quality shadows medium"] },
-  { label: "water refraction off", commands: ["quality water refraction off"] },
-  { label: "water reflections sky", commands: ["quality water reflections sky"] },
-  { label: "water detail low", commands: ["quality water shadingDetail low"] },
-  { label: "water detail medium", commands: ["quality water shadingDetail medium"] },
-  { label: "post low", commands: ["quality postprocessing low"] },
-  { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"] },
-  { label: "SSR off", commands: ["quality postprocessing reflections off"] },
-  { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"] },
-  { label: "post off", commands: ["postprocessing off"], restore: ["postprocessing on"] },
-  { label: "captures off", commands: ["rendertargets off"], restore: ["rendertargets on"] },
-  { label: "resolution 0.5", commands: ["quality resolution scale 0.5"] },
-  { label: "baseline again", commands: [] },
+export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] = [
+  baseline(1),
+  { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows"] },
+  { label: "shadows medium", commands: ["quality shadows medium"], fields: ["shadows"] },
+  { label: "water refraction off", commands: ["quality water refraction off"], fields: ["water.refraction"] },
+  { label: "water reflections sky", commands: ["quality water reflections sky"], fields: ["water.reflections"] },
+  baseline(2),
+  { label: "water detail low", commands: ["quality water shadingDetail low"], fields: ["water.shadingDetail"] },
+  { label: "water detail medium", commands: ["quality water shadingDetail medium"], fields: ["water.shadingDetail"] },
+  { label: "post low", commands: ["quality postprocessing low"], fields: POST_FIELDS },
+  { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"] },
+  baseline(3),
+  { label: "SSR off", commands: ["quality postprocessing reflections off"], fields: ["post.reflections"] },
+  { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"], fields: ["post.volumetricLighting"] },
+  { label: "post off", commands: ["postprocessing off"], restore: ["postprocessing on"], fields: ["post.enabled"] },
+  { label: "captures off", commands: ["rendertargets off"], restore: ["rendertargets on"], fields: ["captures"] },
+  baseline(4),
+  { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale"] },
+  baseline(5),
 ];
 
-/** A Breakdown step's frame-time change against the mean of the two baselines' medians, or null when unmeasured. */
+/** Whether a sample is a Breakdown baseline (reports saved before `baseline` name theirs "baseline" and "baseline again"). */
+export function isBreakdownBaseline(sample: FeatureTestBenchmarkSample): boolean {
+  return sample.baseline ?? (sample.label === "baseline" || sample.label === "baseline again");
+}
+
+/**
+ * A sample's mean frame interval: the window over its frames. The median snaps to a multiple of the display's refresh
+ * interval (a vsync-paced frame lasts 16.7, 33.3 or 50 ms, nothing between), so a few frames moving between two of
+ * them jump it by a whole interval; the mean moves in proportion. Reports saved before `meanMs` fall back to it here.
+ */
+export function meanFrameMs(frames: FrameStats | null): number | null {
+  if (!frames) return null;
+  return frames.meanMs ?? (frames.frames > 0 ? frames.durationMs / frames.frames : frames.medianMs ?? null);
+}
+
+/**
+ * A Breakdown step's change in mean frame interval against the baselines around it (the mean of the nearest before
+ * and after), or null when unmeasured. A baseline is measured against the first baseline: its change is the drift.
+ */
 export function breakdownDelta(
   samples: readonly FeatureTestBenchmarkSample[],
   sample: FeatureTestBenchmarkSample,
 ): { ms: number; percent: number } | null {
-  const baselines = samples.filter((entry) => (entry.label === "baseline" || entry.label === "baseline again") && entry.frames?.medianMs);
-  if (!baselines.length || !sample.frames?.medianMs) return null;
-  const base = baselines.reduce((total, entry) => total + entry.frames!.medianMs!, 0) / baselines.length;
-  const ms = sample.frames.medianMs - base;
+  const value = meanFrameMs(sample.frames);
+  const index = samples.indexOf(sample);
+  if (value === null || index < 0) return null;
+  const measured = (entry: FeatureTestBenchmarkSample) => isBreakdownBaseline(entry) && meanFrameMs(entry.frames) !== null;
+  let references: FeatureTestBenchmarkSample[];
+  if (isBreakdownBaseline(sample)) {
+    const first = samples.find(measured);
+    references = first ? [first] : [];
+  } else {
+    const before = samples.slice(0, index).reverse().find(measured);
+    const after = samples.slice(index + 1).find(measured);
+    references = [before, after].filter((entry): entry is FeatureTestBenchmarkSample => entry !== undefined);
+  }
+  if (!references.length) return null;
+  const base = references.reduce((total, entry) => total + meanFrameMs(entry.frames)!, 0) / references.length;
+  const ms = value - base;
   return { ms, percent: (ms / base) * 100 };
+}
+
+/** The display interval a Breakdown's 60 fps cap paces frames to. */
+export const VSYNC_MS = 1000 / 60;
+
+/**
+ * What limits a sample's frames: `vsync` when the mean frame interval is within 15% of the 60 Hz interval (the cap,
+ * not the device), `gpu` when it is more than half again the CPU frame cost (the CPU waits on the GPU), otherwise
+ * `cpu`; null without frames or CPU cost.
+ */
+export function frameBound(frames: FrameStats | null, cpuMs: number | null): "vsync" | "gpu" | "cpu" | null {
+  const mean = meanFrameMs(frames);
+  if (mean === null || cpuMs === null) return null;
+  if (mean <= VSYNC_MS * 1.15) return "vsync";
+  return mean > cpuMs * 1.5 ? "gpu" : "cpu";
+}
+
+/** Render-settings fingerprint fields that differ between two snapshots, as `field=value` of `after`. */
+export function settingsChanges(
+  before: Readonly<Record<string, string>> | undefined,
+  after: Readonly<Record<string, string>> | undefined,
+): string[] {
+  if (!before || !after) return [];
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+  return keys.filter((key) => before[key] !== after[key]).map((key) => `${key}=${after[key] ?? "-"}`);
 }
 
 /**
@@ -73,6 +145,12 @@ export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands
 
 /** Above any display refresh, so a Benchmark measures the device rather than the project frame cap. */
 const BENCHMARK_FRAME_CAP = 240;
+/**
+ * A Breakdown samples at the normal 60 fps cap. iOS Safari paces requestAnimationFrame to the display, so a lifted cap
+ * gains no frames there; it only lets submitted frames queue behind a busy GPU, which made frames slower than capped
+ * Play and drift during the run.
+ */
+const BREAKDOWN_FRAME_CAP = 60;
 
 export interface FeatureTestBenchmarkSample {
   label: string;
@@ -89,6 +167,12 @@ export interface FeatureTestBenchmarkSample {
   gpu?: CounterStats | null;
   resolution: string | null;
   failed: string[];
+  /** A Breakdown baseline; absent in reports saved before interleaved baselines. */
+  baseline?: boolean;
+  /** The step's render-settings fingerprint (`RenderDiagnostics.settings`) while sampled. */
+  settings?: Record<string, string>;
+  /** Shaders first drawn and Effects compiling during the sample (both should be 0), and how long settling took. */
+  unsettled?: { firstDraws: number; compiling: number; settleMs: number };
 }
 
 /**
@@ -116,6 +200,10 @@ export interface FrameStats {
   fps: number;
   /** Median frame interval; absent in reports saved before it was recorded. */
   medianMs?: number;
+  /** Mean frame interval (durationMs / frames); absent in reports saved before it was recorded. */
+  meanMs?: number;
+  /** Shares of frames lasting about 1, 2, 3 and 4 or more 60 Hz intervals; absent in reports saved before it was recorded. */
+  vsync?: [number, number, number, number];
   p95Ms: number;
   maxMs: number;
   /** Frame intervals longer than 100 ms. */
@@ -210,6 +298,8 @@ export interface FeatureTestCheckDeps {
   sessionIdle: () => boolean;
   onSessionClosed: (listener: (result: PlaySessionResult) => void) => () => void;
   sampleFrames: (durationMs: number, signal: AbortSignal) => Promise<FrameStats | null>;
+  /** Shader programs still compiling across every Engine; absent where unknown. */
+  compiling?: () => number;
   now: () => number;
   sleep: (ms: number, signal: AbortSignal) => Promise<void>;
   onProgress?: (message: string) => void;
@@ -221,7 +311,7 @@ export interface FeatureTestCheckTimeouts {
   playCloseMs: number;
   commandMs: number;
   releaseMs: number;
-  /** Wait after a profile change for shaders and render targets to settle. */
+  /** Quiet time, with no shader first drawn and none compiling, a profile waits for before it samples. */
   profileSettleMs: number;
   /** Most a profile waits for the view to draw again without held frames, before the settle; past it, the sweep stops. */
   profileCompileMs: number;
@@ -253,10 +343,19 @@ export function frameStats(intervals: readonly number[]): FrameStats | null {
     durationMs,
     fps: durationMs > 0 ? (intervals.length * 1000) / durationMs : 0,
     medianMs: sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2,
+    meanMs: durationMs / intervals.length,
+    vsync: vsyncShares(intervals),
     p95Ms: sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)],
     maxMs: sorted[sorted.length - 1],
     stalls: intervals.filter((value) => value > 100).length,
   };
+}
+
+/** Shares of `intervals` lasting about 1, 2, 3 and 4 or more 60 Hz display intervals. */
+export function vsyncShares(intervals: readonly number[]): [number, number, number, number] {
+  const counts: [number, number, number, number] = [0, 0, 0, 0];
+  for (const interval of intervals) counts[Math.min(3, Math.max(0, Math.round(interval / VSYNC_MS) - 1))] += 1;
+  return counts.map((count) => (intervals.length ? count / intervals.length : 0)) as [number, number, number, number];
 }
 
 function timeout<T>(promise: Promise<T>, ms: number, deps: FeatureTestCheckDeps, signal: AbortSignal): Promise<T | "timeout"> {
@@ -489,9 +588,31 @@ async function viewDrawsSteadily(play: PlayProbe, deps: FeatureTestCheckDeps, si
 }
 
 /**
- * Sweeps FEATURE_TEST_BENCHMARK_PROFILES (a Benchmark) or FEATURE_TEST_BREAKDOWN_STEPS (a Breakdown, undoing each step
- * after it) on the running scene with the frame cap lifted into `samples`, one as each finishes, then restores the
- * session's quality, render path and cap.
+ * Waits, bounded by `ms`, until no shader has been first drawn and none compiled for `quietMs`, so a sample measures
+ * the step and not the variants it asked for. Shaders first drawn are read from `RenderDiagnostics.firstDraws` (WebGL2
+ * only) and compiling Effects from `deps.compiling`; with neither, it waits `quietMs`. Returns how long it waited and
+ * whether it went quiet.
+ */
+async function settleView(
+  play: PlayProbe, deps: FeatureTestCheckDeps, signal: AbortSignal, quietMs: number, ms: number,
+): Promise<{ quiet: boolean; ms: number }> {
+  const started = deps.now();
+  let last: number | null = null;
+  let quietSince = started;
+  const quiet = await waitFor(deps, signal, ms, () => {
+    const draws = play.snapshot().rendering?.firstDraws?.draws ?? 0;
+    const busy = (deps.compiling?.() ?? 0) > 0 || (last !== null && draws !== last);
+    last = draws;
+    if (busy) quietSince = deps.now();
+    return deps.now() - quietSince >= quietMs ? true : null;
+  });
+  return { quiet: quiet === true, ms: deps.now() - started };
+}
+
+/**
+ * Sweeps FEATURE_TEST_BENCHMARK_PROFILES (a Benchmark, frame cap lifted) or FEATURE_TEST_BREAKDOWN_STEPS (a Breakdown at
+ * the normal cap, undoing each step after it) on the running scene into `samples`, one as each finishes, then
+ * restores the session's quality, render path and cap.
  */
 async function benchmarkProfiles(
   sceneName: string,
@@ -504,9 +625,8 @@ async function benchmarkProfiles(
   samples: FeatureTestBenchmarkSample[],
 ): Promise<void> {
   const cap = /(\d+)/.exec((await run("framecap")).output)?.[1];
-  await run(`framecap ${BENCHMARK_FRAME_CAP}`);
-  const steps: readonly { label: string; commands: readonly string[]; restore?: readonly string[] }[] =
-    mode === "breakdown" ? FEATURE_TEST_BREAKDOWN_STEPS : FEATURE_TEST_BENCHMARK_PROFILES;
+  await run(`framecap ${mode === "breakdown" ? BREAKDOWN_FRAME_CAP : BENCHMARK_FRAME_CAP}`);
+  const steps: readonly FeatureTestBreakdownStep[] = mode === "breakdown" ? FEATURE_TEST_BREAKDOWN_STEPS : FEATURE_TEST_BENCHMARK_PROFILES;
   const pendingRestore: string[] = [];
   const restore = async () => {
     if (mode !== "breakdown") return;
@@ -526,7 +646,13 @@ async function benchmarkProfiles(
       // sweep: more changes on top would only pile up work and memory.
       const steady = await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
       if (!steady) failed.push(`The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`);
-      await deps.sleep(limits.profileSettleMs, signal);
+      // The view draws again, but the variants a step asked for may still be first drawing or compiling: sampling
+      // them would measure their compiles, not the step.
+      const settled = steady
+        ? await settleView(play, deps, signal, limits.profileSettleMs, limits.profileCompileMs)
+        : { quiet: true, ms: 0 };
+      if (!settled.quiet) failed.push(`Shaders were still first drawn or compiling after ${seconds(limits.profileCompileMs)}; this step's frames include them.`);
+      const firstDrawsBefore = play.snapshot().rendering?.firstDraws?.draws ?? 0;
       const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
       const snapshot = play.snapshot();
       const rendering = snapshot.rendering;
@@ -542,6 +668,11 @@ async function benchmarkProfiles(
         gpu: sampled.gpu,
         resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
         failed,
+        ...(mode === "breakdown" ? {
+          baseline: profile.baseline === true,
+          ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),
+          unsettled: { firstDraws: (rendering?.firstDraws?.draws ?? 0) - firstDrawsBefore, compiling: sampled.compiling, settleMs: settled.ms },
+        } : {}),
       });
       if (!steady) break;
       await restore();
@@ -558,7 +689,8 @@ async function benchmarkProfiles(
 /** Reads the per-frame counters every half second while `frames` samples the frame intervals. */
 async function sampleWithCounters(
   play: PlayProbe, frames: Promise<FrameStats | null>, deps: FeatureTestCheckDeps, signal: AbortSignal,
-): Promise<{ frames: FrameStats | null; draws: CounterStats | null; cpu: CounterStats | null; gpu: CounterStats | null }> {
+): Promise<{ frames: FrameStats | null; draws: CounterStats | null; cpu: CounterStats | null; gpu: CounterStats | null; compiling: number }> {
+  let compiling = 0;
   const cpu: number[] = [];
   const gpu: number[] = [];
   const draws: number[] = [];
@@ -567,13 +699,14 @@ async function sampleWithCounters(
   while (sampling) {
     const snapshot = play.snapshot();
     draws.push(snapshot.drawCalls);
+    compiling = Math.max(compiling, deps.compiling?.() ?? 0);
     if (snapshot.rendering) {
       cpu.push(snapshot.rendering.cpuMs);
       if (snapshot.rendering.gpuMs !== null) gpu.push(snapshot.rendering.gpuMs);
     }
     await Promise.race([done, deps.sleep(500, signal)]);
   }
-  return { frames: await done, draws: counterStats(draws), cpu: counterStats(cpu), gpu: counterStats(gpu) };
+  return { frames: await done, draws: counterStats(draws), cpu: counterStats(cpu), gpu: counterStats(gpu), compiling };
 }
 
 /** The median, minimum and maximum of a counter's samples, or null without one. */

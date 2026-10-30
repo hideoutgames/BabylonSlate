@@ -19,6 +19,7 @@ export const SCALABILITY_FIELD_OWNERS = {
     localLightMode: "shadows",
     maxLocalLights: "shadows",
     localMapSize: "shadows",
+    screenShadows: "shadows",
   },
   resolution: {
     scale: "resolution",

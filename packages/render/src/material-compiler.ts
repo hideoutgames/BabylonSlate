@@ -63,7 +63,7 @@ import { retainEnvironmentSample } from "./environment-lighting";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { FlatNormalBlock } from "./flat-normal-block";
 import { GeometrySurfaceOutputBlock, connectGeometrySurfaceOutput } from "./geometry-surface-output-block";
-import { HapticLightingBlock, followRenderMode } from "./haptic-lighting-block";
+import { HapticLightingBlock, followLightingDefines } from "./haptic-lighting-block";
 import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@haptic/bridge";
@@ -740,8 +740,8 @@ export function compileMaterialPlan(
     }
     for (const node of outputNodes) material.addOutputNode(node);
     if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary && plan.shadingModel !== "unlit") {
-      // CEL is HapticLightingBlock's define, set from the Scene's render mode.
-      followRenderMode(material);
+      // CEL and Screen-Space Shadows are HapticLightingBlock's scene-level defines, set from the Scene's settings.
+      followLightingDefines(material);
     }
   } catch (error) {
     diagnostics.push({

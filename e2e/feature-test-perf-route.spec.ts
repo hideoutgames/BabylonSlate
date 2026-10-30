@@ -24,6 +24,7 @@ import {
  *      HAPTIC_PERF_WARMUP_MS (default 10000), HAPTIC_PERF_SETTLE_MS (default 5000),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),
  *      HAPTIC_PERF_FRAMECAP (Play console `framecap`), HAPTIC_PERF_VIEWPORT_CAP (Engine Settings),
+ *      HAPTIC_PERF_COMMANDS (further Play console commands after the quality, separated by `;`),
  *      HAPTIC_PERF_REOPEN (default 1: also time reload + reopen), HAPTIC_PERF_LABEL,
  *      HAPTIC_PERF_OUT (absolute path that also receives the JSON report).
  */
@@ -38,6 +39,7 @@ const WARMUP_MS = number("HAPTIC_PERF_WARMUP_MS", 10_000);
 const SETTLE_MS = number("HAPTIC_PERF_SETTLE_MS", 5_000);
 const QUALITY = process.env.HAPTIC_PERF_QUALITY ?? null;
 const FRAMECAP = process.env.HAPTIC_PERF_FRAMECAP ?? null;
+const COMMANDS = (process.env.HAPTIC_PERF_COMMANDS ?? "").split(";").map((command) => command.trim()).filter(Boolean);
 const REOPEN = process.env.HAPTIC_PERF_REOPEN !== "0";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
@@ -200,6 +202,7 @@ async function measurePlay(page: Page, cdp: CDPSession) {
     await runConsoleCommand(page, "quality resolution reset");
   }
   if (FRAMECAP) await runConsoleCommand(page, `framecap ${FRAMECAP}`);
+  for (const command of COMMANDS) await runConsoleCommand(page, command);
   await page.waitForTimeout(WARMUP_MS);
   const windows = [];
   for (let index = 0; index < SAMPLES; index += 1) {

@@ -66,10 +66,11 @@ import {
 } from "@haptic/bridge";
 import {
   areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality,
-  parseText2DProperties, parseText3DProperties,
+  normalizeRenderProjectSettings, parseText2DProperties, parseText3DProperties,
 } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { rectLightEmission } from "./area-emission-array";
 import { createEngine } from "./create-engine";
@@ -1750,6 +1751,8 @@ describe("compile holds after the first frame", () => {
     // frames leave it undrawn. Its first draws miss every mesh's pipeline at once, so they hold as a new graph's do.
     const world = playWorld("webgpu", []);
     Object.assign(world.engine.getCaps(), { texelFetch: true });
+    // Fog Volumes alone: Screen-Space Shadows would keep the geometry pass drawing every frame.
+    updateSceneRenderingSettings(world.handle.scene, undefined, undefined, { screenShadows: "off" });
     const fog = new TransformNode("fog", world.handle.scene);
     fog.position.z = 5_000;
     upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
@@ -1808,6 +1811,8 @@ describe("compile holds after the first frame", () => {
     // coming within reach again draws that new variant first; an idle pass is forgotten, so it holds as a first draw.
     const world = playWorld("webgpu", []);
     Object.assign(world.engine.getCaps(), { texelFetch: true });
+    // Fog Volumes alone: Screen-Space Shadows would keep the geometry pass drawing every frame.
+    updateSceneRenderingSettings(world.handle.scene, undefined, undefined, { screenShadows: "off" });
     const fog = new TransformNode("fog", world.handle.scene);
     upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
     const [crate] = ownMaterials(world, "actor-2");
@@ -2024,6 +2029,30 @@ describe("the lighting CI gate", () => {
     }).toEqual({
       compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, lightDefines: 0,
       counts: [1, points, 1, 0], atlas: [true, true, true],
+    });
+  });
+
+  it.each(MODELS)("with Screen-Space Shadows at High and temporal anti-aliasing on, lights change without compiling or rebuilding the view: %s", async (model) => {
+    const world = playWorld(model, actors());
+    // Spatial effects need texel fetches, which the headless Engine leaves off.
+    Object.assign(world.engine.getCaps(), { texelFetch: true });
+    world.handle.setRenderSettings(normalizeRenderProjectSettings({
+      effects: { temporalAntiAliasing: { enabled: true } }, shadows: { screenShadows: "high" },
+    }));
+    await settle(world);
+    const tasks = world.handle.renderTaskNames();
+    const screenEffects = () => Object.values(compiledEffects(world.engine)).filter((effect) => /^#define HAPTIC_SCREEN_SHADOWS$/m.test(effect.defines));
+    const before = screenEffects();
+    world.driver.arm();
+    const builds = vi.spyOn(FrameGraph.prototype, "buildAsync");
+    const compiled = await play(world);
+    expect({
+      compiled, pipelines: world.driver.pipelines.size, synchronous: world.driver.synchronous.size, builds: builds.mock.calls.length,
+      marched: tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1), tasks: world.handle.renderTaskNames(),
+      reading: before.length > 0, sameReaders: screenEffects(),
+    }).toEqual({
+      compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, builds: 0,
+      marched: ["Spatial Geometry", "Screen shadows", "Forward objects"], tasks, reading: true, sameReaders: before,
     });
   });
 });
