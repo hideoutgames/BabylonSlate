@@ -382,6 +382,48 @@ export class ParticleService {
     return false;
   }
 
+  /** Play's load: whether a component is to play, so the starting-state draw has particle programs to draw. */
+  holdsPlayingComponents(): boolean {
+    for (const entry of this.live.values()) if (entry.desiredPlaying) return true;
+    return false;
+  }
+
+  /**
+   * Play's starting-state draw (behind its loading screen): runs `draw` with every prepared system that has not
+   * started drawing too, so each draws its programs (a GPU system's update and render, a CPU system's render) before
+   * gameplay does. A program's first draw holds iPad WebKit WebGL2 (`first-draw-stats.ts`), and the systems start only
+   * once the load ends, all in the same frame. Each draws at zero speed, emitting nothing (a CPU system one particle,
+   * as it draws only live ones), and is reset afterwards, unstarted: gameplay starts, prewarms and emits as before.
+   */
+  drawingUnstartedSystems<T>(draw: () => T): T {
+    const warmed: Array<{ system: ParticleSystem | GPUParticleSystem; speed: number; paused: boolean; prewarm: number; emit: number }> = [];
+    for (const entry of this.live.values()) for (const record of entry.systems) {
+      const system = record.system as ParticleSystem | GPUParticleSystem;
+      if (record.started || record.pending || system.isStarted() || !system.isReady()) continue;
+      warmed.push({ system, speed: system.updateSpeed, paused: system.paused, prewarm: system.preWarmCycles, emit: system.manualEmitCount });
+      system.updateSpeed = 0;
+      system.paused = false;
+      system.preWarmCycles = 0;
+      (system as unknown as { _started: boolean })._started = true;
+      if (!record.gpu) {
+        system.manualEmitCount = 1;
+        system.animate();
+      }
+    }
+    try {
+      return draw();
+    } finally {
+      for (const { system, speed, paused, prewarm, emit } of warmed) {
+        system.reset();
+        (system as unknown as { _started: boolean })._started = false;
+        system.manualEmitCount = emit;
+        system.updateSpeed = speed;
+        system.paused = paused;
+        system.preWarmCycles = prewarm;
+      }
+    }
+  }
+
   resetSession(): void {
     for (const entry of this.live.values()) this.retire(entry);
     this.slotMeshes.clear();

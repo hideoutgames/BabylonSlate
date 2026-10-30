@@ -378,6 +378,31 @@ describe("ParticleService", () => {
     service.dispose();
   });
 
+  it("draws a paused Play load's unstarted systems in the starting-state frame, then leaves them unstarted", async () => {
+    const { scene, service, assign } = host();
+    service.setLibrary(library({ "em-1": basic() }));
+    // Play's load: the service is paused until gameplay, so its systems wait to start.
+    service.setPaused(true);
+    assign();
+    expect(service.holdsPlayingComponents()).toBe(true);
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(service.playbackState("fx", "particle-1")).toBe("playing"));
+    expect(system.isStarted()).toBe(false);
+    // The stand-in Material compiles nothing: the system is as ready as a compiled one.
+    vi.spyOn(system, "isReady").mockReturnValue(true);
+    const drawing = service.drawingUnstartedSystems(() => ({
+      started: system.isStarted(), paused: system.paused, speed: system.updateSpeed, particles: system.getActiveCount(),
+    }));
+    // It draws in that frame, at zero speed, with the one particle a CPU system needs to draw its program...
+    expect(drawing).toEqual({ started: true, paused: false, speed: 0, particles: 1 });
+    // ...and is left as the load had it: unstarted, paused, empty, without a queued emission.
+    expect([system.isStarted(), system.paused, system.getActiveCount(), system.manualEmitCount, system.updateSpeed]).toEqual([false, true, 0, -1, 0]);
+    service.setPaused(false);
+    expect(system.isStarted()).toBe(true);
+    expect(system.updateSpeed).toBe(PARTICLE_UPDATE_SPEED);
+    service.dispose();
+  });
+
   it("re-prepares the bundle for a Capacity edit and keeps its play state", async () => {
     const { scene, service, leases, assign } = host();
     service.updateLibrary(library({ "em-1": basic() }));

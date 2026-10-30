@@ -1976,8 +1976,10 @@ function initializeEngine(
           return;
         }
         if (key === "world" && startingDraw && !startingDraw.done) {
-          // Drawn is enough: variants its post-draw probe requests draw in a later starting-state frame.
-          startingDraw.frame(() => worldRenderer.render(true).rendered);
+          // Drawn is enough: variants its post-draw probe requests draw in a later starting-state frame. Particle
+          // systems that have not started draw their programs in it too.
+          const drawWorld = () => worldRenderer.render(true).rendered;
+          startingDraw.frame(() => particleService ? particleService.drawingUnstartedSystems(drawWorld) : drawWorld());
           // Never presented: the loading frame shows the clear colour, as the loading frames before it did.
           engine.clear(scene.clearColor, true, true, true);
           pending.restart?.();
@@ -3199,11 +3201,13 @@ function initializeEngine(
       else await worldRenderer.prepare(scope.assert);
       scope.assert();
       // Play draws its starting state without view culling in the world presentation's loading frames, before the
-      // first presented one, when the Scene holds a light, Play may spawn one, or the spawn warm-up staged meshes.
+      // first presented one, when the Scene holds a light, Play may spawn one, the spawn warm-up staged meshes, or a
+      // particle component is to play (its systems draw their programs there, before gameplay starts them).
       if (!owner && options.playMode) {
         endStartingDraw();
         const draws = releaseStagedSpawnables !== null || spawnableLights.size > 0 ||
-          scene.lights.some((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX));
+          scene.lights.some((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX)) ||
+          (particleService?.holdsPlayingComponents() ?? false);
         // Full Quality captures prepare their views in the starting state, so their variants share its Effects.
         startingDraw = createStartingStateDraw(scene, () => !renderTargetCaptures.preparing(), { draws, onDrawn: releaseStaged });
       }
