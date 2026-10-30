@@ -54,8 +54,9 @@ export async function runCascadeShimmerProof(backend: "webgl2" | "webgpu") {
     setSceneRenderSettings(scene, {
       mode: "pbr",
       quality: normalizeRenderingQuality({}),
-      // Medium's three cascades over 250 m, biased past the acne a slanting sun shows on the floor.
-      shadows: normalizeShadowSettings({ profile: "medium", depthBias: 0.0008 }),
+      // Medium's three cascades over 250 m with Automatic Shadow Bias's defaults: acne on the open floor would show as
+      // misplaced shadow far from any outline.
+      shadows: normalizeShadowSettings({ profile: "medium" }),
     });
 
     const doc = createDefaultMaterialDocument("rough dielectric");
