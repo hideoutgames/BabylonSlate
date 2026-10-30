@@ -36,7 +36,8 @@ export type InstancingIneligibility =
   | "deforming" | "thinInstances" | "levelsOfDetail" | "instanced" | "drawHooks" | "partitioned" | "sorted"
   | "blended" | "vertexStage" | "fillMode";
 
-function materialIneligibility(mesh: AbstractMesh, material: Material): InstancingIneligibility | null {
+/** Why a group cannot draw `material` on `mesh`'s geometry (blending, fill mode, vertex stage), or null. */
+export function materialIneligibility(mesh: AbstractMesh, material: Material): InstancingIneligibility | null {
   if (material instanceof MultiMaterial) {
     for (const part of material.subMaterials) {
       const reason = part ? materialIneligibility(mesh, part) : null;
@@ -174,6 +175,45 @@ export class SceneInstancePool {
     return this.memberGroups.get(member)?.source;
   }
 
+  /** `member`'s group key, or undefined for a mesh outside the pool. */
+  keyOf(member: InstancedMesh): InstanceGroupKey | undefined {
+    return this.memberGroups.get(member)?.key;
+  }
+
+  /** Re-keys `member` with `change` applied to its key (`rekey`). */
+  update(member: InstancedMesh, change: Partial<Omit<InstanceGroupKey, "geometry">>): void {
+    const key = this.memberGroups.get(member)?.key;
+    if (!key) throw new Error(`"${member.name}" is not a member of the instance pool`);
+    this.rekey(member, { ...key, ...change });
+  }
+
+  /**
+   * Replaces `member` with a mesh of its own (the group's geometry, Material, receiving and rendering group) in its
+   * place: same name, parent, transform, visibility, picking and metadata. For what a group cannot draw (a deformer, a
+   * blended or World Position Offset Material); the caller refreshes what keyed the member (`onVisualChanged`).
+   */
+  eject(member: InstancedMesh): Mesh {
+    const group = this.memberGroups.get(member);
+    if (!group) throw new Error(`"${member.name}" is not a member of the instance pool`);
+    const { key } = group;
+    const mesh = key.geometry.build(this.scene, member.name);
+    mesh.setEnabled(true);
+    mesh.material = key.material;
+    mesh.receiveShadows = key.receiveShadows;
+    mesh.renderingGroupId = key.renderingGroupId;
+    mesh.parent = member.parent;
+    mesh.position.copyFrom(member.position);
+    if (member.rotationQuaternion) mesh.rotationQuaternion = member.rotationQuaternion.clone();
+    else mesh.rotation.copyFrom(member.rotation);
+    mesh.scaling.copyFrom(member.scaling);
+    mesh.isVisible = member.isVisible;
+    mesh.isPickable = member.isPickable;
+    mesh.layerMask = member.layerMask;
+    mesh.metadata = member.metadata;
+    member.dispose();
+    return mesh;
+  }
+
   /** Counts a mesh the routing left unpooled for `reason`. */
   noteUnpooled(reason: InstancingIneligibility): void {
     this.unpooled[reason] = (this.unpooled[reason] ?? 0) + 1;
@@ -274,6 +314,42 @@ function configureSource(source: Mesh, key: InstanceGroupKey): void {
 }
 
 const pools = new WeakMap<Scene, SceneInstancePool>();
+const instancing = new WeakSet<Scene>();
+
+/** Turns automatic instancing on or off for visuals built in `scene` from now on (off by default). */
+export function setSceneInstancing(scene: Scene, enabled: boolean): void {
+  if (enabled) instancing.add(scene);
+  else instancing.delete(scene);
+}
+
+/** Whether visuals built in `scene` draw through its instance pool (`setSceneInstancing`). */
+export function sceneInstancing(scene: Scene): boolean {
+  return instancing.has(scene);
+}
+
+/** The pool member `mesh` is, if it is one. */
+function poolMember(mesh: AbstractMesh): { pool: SceneInstancePool; member: InstancedMesh } | undefined {
+  if (!(mesh instanceof InstancedMesh) || !isInstancePoolSource(mesh.sourceMesh)) return undefined;
+  const pool = pools.get(mesh.getScene());
+  return pool?.keyOf(mesh) ? { pool, member: mesh } : undefined;
+}
+
+/**
+ * Sets whether `mesh` receives shadows: a pool member by moving it to the group that does (its own setter warns and
+ * does nothing), any other mesh directly.
+ */
+export function setMeshReceivesShadows(mesh: AbstractMesh, receives: boolean): void {
+  const pooled = poolMember(mesh);
+  if (pooled) pooled.pool.update(pooled.member, { receiveShadows: receives });
+  else mesh.receiveShadows = receives;
+}
+
+/** Sets `mesh`'s rendering group: a pool member by moving it to the group drawn in it, any other mesh directly. */
+export function setMeshRenderingGroup(mesh: AbstractMesh, renderingGroupId: number): void {
+  const pooled = poolMember(mesh);
+  if (pooled) pooled.pool.update(pooled.member, { renderingGroupId });
+  else mesh.renderingGroupId = renderingGroupId;
+}
 
 /** `scene`'s instance pool, created on first use and disposed with the Scene. */
 export function sceneInstancePool(scene: Scene): SceneInstancePool {

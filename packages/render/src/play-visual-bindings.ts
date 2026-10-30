@@ -11,6 +11,7 @@ import type { SceneOutlineHost } from "./scene-outline-host";
 import type { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isSceneStreamSlotPending } from "./scene-stream-admission";
 import { meshForPlayComponent, type SnapshotSceneBinding } from "./snapshot-apply";
+import { ejectPooledLeaf, onPooledLeafEjected } from "./pooled-visuals";
 import { visualMeshes } from "./visual-meshes";
 
 /** What Play's per-slot visual bindings read from the Engine handle being built. */
@@ -50,6 +51,7 @@ export function createPlayVisualBindings({
   };
   const outlineActorBySlot = new Map<number, string>();
   const deformerActorBySlot = new Map<number, string>();
+  let ejectingForDeformers = false;
   const refreshRuntimeDeformers = (slotId: number, refreshGeometry = true) => {
     if (options.editor) return;
     const root = worldSlotRoot(slotId);
@@ -66,6 +68,16 @@ export function createPlayVisualBindings({
       if (target) markLatticeComponentRoot(target);
     }
     if (!authored) return;
+    // A deformer reads the mesh's own vertices, which a pool group's batch does not have: its targets leave the pool
+    // first (this refresh follows the new meshes, so the eject's own refresh is skipped).
+    ejectingForDeformers = true;
+    try {
+      ejectPooledLeaf(root);
+      for (const part of binding.meshParts.get(slotId) ?? []) {
+        const target = meshForPlayComponent(binding, slotId, part.componentId);
+        if (target) ejectPooledLeaf(target);
+      }
+    } finally { ejectingForDeformers = false; }
     deformerHost.setActor(authored.actorId, authored.bindings,
       (id) => meshForPlayComponent(binding, slotId, id), refreshGeometry);
     deformerActorBySlot.set(slotId, authored.actorId);
@@ -139,6 +151,15 @@ export function createPlayVisualBindings({
     refreshRuntimeFogVolumes(slotId);
     refreshRuntimeReflectionProbes(slotId);
   };
+  // A visual whose pooled leaf left the pool (a Material no group draws) draws a new mesh: what keyed the leaf follows.
+  onPooledLeafEjected(scene, (root) => {
+    if (ejectingForDeformers) return;
+    for (let node: BabylonNode | null = root; node; node = node.parent) {
+      if (!binding.meshes.hasRoot(node as AbstractMesh)) continue;
+      for (const [slotId, slotRoot] of binding.meshes) if (slotRoot === node) binding.onVisualChanged?.(slotId);
+      return;
+    }
+  });
 
   /**
    * Applies the slot visual commands; returns false when `command` is a stale
