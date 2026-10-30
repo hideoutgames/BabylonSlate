@@ -166,15 +166,18 @@ float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradien
 // and tap compares against the receiver's plane there, as the view's PCF does, where Babylon's PCSS compares against the
 // receiver's own depth: a flat receiver does not shadow itself. Without it, the blockers' mean distance is Babylon's.
 #ifdef HAPTIC_SHADOW_JITTER
-// Interleaved gradient noise at fragment coordinates \`p\`, stepped by the temporal jitter's sample index (\`hapticViewTerms\`:
-// amplitude, phase), and the PCF kernel's shift: up to half a texel each way at amplitude 1, none at 0. The shift's second
-// axis reads the noise at the swapped coordinates; an offset of the same coordinates would only shift the first's value.
-float hapticShadowNoise(vec2 p) {
-  return fract(52.9829189 * fract(dot(p + 5.588238 * hapticViewTerms.y, vec2(0.06711056, 0.00583715))));
+// The shadow filters' per-frame noise (\`hapticViewTerms\`: amplitude, phase, the temporal jitter's sample index): interleaved
+// gradient noise at the fragment rotates the R2 sequence's \`phase\`th point, so each pixel's shifts over the jitter's
+// samples cover the texel evenly and neighbouring pixels differ. The PCF kernel's shift is up to half a texel each way at
+// amplitude 1, none at 0; Contact Hardening's disc turns by the first axis.
+vec2 hapticShadowNoise() {
+  vec2 weights = vec2(0.06711056, 0.00583715);
+  vec2 noise = fract(52.9829189 * fract(vec2(dot(gl_FragCoord.xy, weights), dot(gl_FragCoord.yx, weights))));
+  return fract(noise + hapticViewTerms.y * vec2(0.7548777, 0.5698403));
 }
 
 vec2 hapticShadowShift() {
-  return hapticViewTerms.x * (vec2(hapticShadowNoise(gl_FragCoord.xy), hapticShadowNoise(gl_FragCoord.yx)) - 0.5);
+  return hapticViewTerms.x * (hapticShadowNoise() - 0.5);
 }
 #endif
 ${poissonGlsl("hapticPoisson32", POISSON_32)}${poissonGlsl("hapticPoisson64", POISSON_64)}
@@ -216,7 +219,7 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
   vec2 radius = (distance + 10.0 / size) * contact.w * size * correction;
 #ifdef HAPTIC_SHADOW_JITTER
   // Under temporal anti-aliasing the disc turns by the frame's noise instead of the position's hash.
-  float angle = mix(fract(sin(dot(clip.xy, vec2(12.9898, 78.233))) * 43758.5453) * 3.1415926, 6.2831853 * hapticShadowNoise(gl_FragCoord.xy),
+  float angle = mix(fract(sin(dot(clip.xy, vec2(12.9898, 78.233))) * 43758.5453) * 3.1415926, 6.2831853 * hapticShadowNoise().x,
     hapticViewTerms.x);
 #else
   float angle = fract(sin(dot(clip.xy, vec2(12.9898, 78.233))) * 43758.5453) * 3.1415926;
@@ -385,13 +388,15 @@ fn hapticPlaneTap(tile: vec4f, tap: vec2f, origin: vec2f, depth: f32, gradient: 
 }
 
 #ifdef HAPTIC_SHADOW_JITTER
-fn hapticShadowNoise(p: vec2f) -> f32 {
-  return fract(52.9829189 * fract(dot(p + 5.588238 * uniforms.hapticViewTerms.y, vec2f(0.06711056, 0.00583715))));
+fn hapticShadowNoise() -> vec2f {
+  let weights = vec2f(0.06711056, 0.00583715);
+  let p = fragmentInputs.position.xy;
+  let noise = fract(52.9829189 * fract(vec2f(dot(p, weights), dot(p.yx, weights))));
+  return fract(noise + uniforms.hapticViewTerms.y * vec2f(0.7548777, 0.5698403));
 }
 
 fn hapticShadowShift() -> vec2f {
-  let p = fragmentInputs.position.xy;
-  return uniforms.hapticViewTerms.x * (vec2f(hapticShadowNoise(p), hapticShadowNoise(p.yx)) - 0.5);
+  return uniforms.hapticViewTerms.x * (hapticShadowNoise() - 0.5);
 }
 #endif
 ${poissonWgsl("hapticPoisson32", POISSON_32)}${poissonWgsl("hapticPoisson64", POISSON_64)}
@@ -431,7 +436,7 @@ fn hapticContactLit(tile: vec4f, shading: vec4f, contact: vec4f, clip: vec4f, de
   let distance = sum / blockers * select(1.0, contact.z, cascade);
   let radius = (distance + 10.0 / size) * contact.w * size * correction;
 #ifdef HAPTIC_SHADOW_JITTER
-  let angle = mix(fract(sin(dot(clip.xy, vec2f(12.9898, 78.233))) * 43758.5453) * 3.1415926, 6.2831853 * hapticShadowNoise(fragmentInputs.position.xy),
+  let angle = mix(fract(sin(dot(clip.xy, vec2f(12.9898, 78.233))) * 43758.5453) * 3.1415926, 6.2831853 * hapticShadowNoise().x,
     uniforms.hapticViewTerms.x);
 #else
   let angle = fract(sin(dot(clip.xy, vec2f(12.9898, 78.233))) * 43758.5453) * 3.1415926;
