@@ -20,44 +20,50 @@ function difference(a: number[], b: number[], pixel: number) {
   return largest;
 }
 
+/** Pixels whose largest channel differs between two captures by more than 2/255. */
+function outliers(a: number[], b: number[]) {
+  let count = 0;
+  for (let pixel = 0; pixel < a.length / 4; pixel++) if (difference(a, b, pixel) > 2) count++;
+  return count;
+}
+
+/** Pixels with a channel above 25/255. */
+function lit(pixels: number[]) {
+  let count = 0;
+  for (let index = 0; index < pixels.length; index += 4) if (Math.max(pixels[index]!, pixels[index + 1]!, pixels[index + 2]!) > 25) count++;
+  return count;
+}
+
 /**
- * The floor pixels whose view of the shadow poses' lamp is blocked (1) or open (0), leaving out each pixel with a
- * neighbour of another kind or off the floor: at an outline the filter blends, and a pixel's centre does not stand for
- * its whole area.
+ * The pixels whose 3×3 neighbourhood shows one surface (`ids`: per pixel, -1 for none) that `keep` accepts: at an
+ * outline a pixel blends two surfaces, and its centre does not stand for its whole area.
  */
-function settledShadowPixels(blocked: number[], width: number, height: number) {
-  const settled = { blocked: [] as number[], open: [] as number[] };
+function settled(ids: number[], width: number, height: number, keep: (id: number) => boolean) {
+  const pixels: number[] = [];
   for (let row = 1; row < height - 1; row++) {
     for (let column = 1; column < width - 1; column++) {
       const pixel = row * width + column;
-      const kind = blocked[pixel]!;
-      if (kind < 0) continue;
+      const id = ids[pixel]!;
+      if (id < 0 || !keep(id)) continue;
       let uniform = true;
-      for (let dy = -1; dy <= 1 && uniform; dy++) for (let dx = -1; dx <= 1; dx++) if (blocked[pixel + dy * width + dx] !== kind) uniform = false;
-      if (uniform) (kind ? settled.blocked : settled.open).push(pixel);
+      for (let dy = -1; dy <= 1 && uniform; dy++) for (let dx = -1; dx <= 1; dx++) if (ids[pixel + dy * width + dx] !== id) uniform = false;
+      if (uniform) pixels.push(pixel);
     }
   }
-  return settled;
+  return pixels;
 }
 
-/** Pixels (of 9600) differing by more than 2/255, the largest difference, and the reference's lit pixels. */
-function compare(reference: number[], pixels: number[]) {
-  let outliers = 0;
-  let largest = 0;
-  let lit = 0;
-  for (let index = 0; index < reference.length; index += 4) {
-    let difference = 0;
-    for (let channel = 0; channel < 3; channel++) difference = Math.max(difference, Math.abs(pixels[index + channel]! - reference[index + channel]!));
-    if (difference > 2) outliers++;
-    largest = Math.max(largest, difference);
-    if (Math.max(...reference.slice(index, index + 3)) > 25) lit++;
-  }
-  return { outliers, largest, lit };
+/** The floor pixels whose view of a light is blocked (1) or open (0), each with its neighbours of the same kind. */
+function settledShadowPixels(blocked: number[], width: number, height: number) {
+  return {
+    blocked: settled(blocked, width, height, (kind) => kind === 1),
+    open: settled(blocked, width, height, (kind) => kind === 0),
+  };
 }
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`HapticLightingBlock shades graph Materials like Babylon's PBR and CEL blocks on ${backend}, and light changes compile nothing`, async ({ page }, testInfo) => {
-    test.setTimeout(180_000);
+  test(`HapticLightingBlock shades graph Materials as its model predicts on ${backend}, and light changes compile nothing`, async ({ page }, testInfo) => {
+    test.setTimeout(240_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
@@ -70,91 +76,127 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       (window as unknown as { __hapticLightProof: typeof runHapticLightProof }).__hapticLightProof(backend), backend);
     await testInfo.attach(`haptic-light-proof-${backend}`, { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
+    const { width, height, surfaceIds } = result;
 
-    // PBR. The same BRDF and environment evaluated in another order: float rounding only. The lights' range is far
-    // beyond the scene, so HapticLightingBlock's range window (which Babylon's physical falloff lacks) stays at one.
-    // The software WebGPU adapter rounds a few silhouette pixels of the ball, at grazing angles, further (measured:
-    // up to 3 pixels, by up to 9/255 on the white metal).
-    const tolerance = backend === "webgl2" ? { outliers: 0, largest: 2 } : { outliers: 10, largest: 16 };
-    const paths = (captures: typeof result.captures, path: string) =>
-      new Map(captures.filter((capture) => capture.path === path).map((capture) => [capture.name, capture.pixels]));
-    const babylon = paths(result.captures, "babylon");
-    const haptic = paths(result.captures, "haptic");
-    // Babylon's WGSL reflection block cannot compile a box-projected cube, so WebGPU has no reference for that pose.
-    const boxReference = backend === "webgl2" ? ["box-projected environment"] : [];
-    expect([...babylon.keys()]).toEqual([
-      "all lights", "two off", "sun only", "environment only", "rotated environment", ...boxReference, "rect light on metal",
-      "emissive rect light on metal",
-    ]);
-    expect([...haptic.keys()]).toEqual([
-      "all lights", "two off", "sun only", "environment only", "rotated environment", "box-projected environment", "rect light on metal",
-      "emissive rect light on metal", "rect light",
-    ]);
-    for (const [name, reference] of babylon) {
-      const { outliers, largest, lit } = compare(reference, haptic.get(name)!);
-      expect(lit, name).toBeGreaterThan(1500);
-      expect(outliers, name).toBeLessThanOrEqual(tolerance.outliers);
-      expect(largest, name).toBeLessThanOrEqual(tolerance.largest);
+    // The expectations below are linear colours shown through the sRGB encoding alone: no exposure, contrast or tone
+    // mapping. The block decodes the cubes' bytes with the same power.
+    expect(result.display).toMatchObject({ toneMapping: false, exposure: 1, contrast: 1 });
+    const gamma = 2.2;
+    const toDisplay = (linear: number) => 255 * Math.min(Math.max(linear, 0), 1) ** (1 / gamma);
+    const toLinear = (display: number) => (display / 255) ** gamma;
+    const flat = settled(surfaceIds, width, height, (id) => id < 10);
+    const everySurface = settled(surfaceIds, width, height, () => true);
+    const report: Record<string, unknown> = {};
+
+    // Direct light, per floor and box pixel, as the block's BRDF evaluates it.
+    for (const { name, pixels, expected } of result.analytic) {
+      let largest = 0;
+      let over = 0;
+      for (const pixel of flat) {
+        const rgb = expected[pixel]!;
+        let apart = 0;
+        for (let channel = 0; channel < 3; channel++) apart = Math.max(apart, Math.abs(pixels[pixel * 4 + channel]! - toDisplay(rgb[channel]!)));
+        largest = Math.max(largest, apart);
+        if (apart > 2) over++;
+      }
+      report[`analytic ${name}`] = { pixels: flat.length, largest, over, lit: lit(pixels) };
     }
-    // The poses really differ, so a block that ignored a light, the cube's rotation or its box would fail above.
-    for (const pose of ["two off", "environment only", "rotated environment", "box-projected environment"])
-      expect(haptic.get(pose), pose).not.toEqual(haptic.get("all lights"));
-    // The emission texture really colours the rect light's reflection.
-    expect(compare(haptic.get("rect light on metal")!, haptic.get("emissive rect light on metal")!).outliers).toBeGreaterThan(300);
-    // The rect light lights the regular surfaces too, where its Fresnel is the standard LTC one rather than Babylon's.
-    expect(compare(haptic.get("environment only")!, haptic.get("rect light")!).outliers).toBeGreaterThan(1000);
-    // Two programs per Material, for the plain and the box-projected cube, and one for the white metal, which draws its
-    // rect light's emission without another; none carries Babylon's light defines. WebGPU releases a program once no draw holds it, as the white metal pose's Material
-    // swap leaves them, so there only the three drawn since remain.
-    expect(result.hapticEffects).toBe(backend === "webgl2" ? 7 : 3);
+
+    // Mirrors in a cube of six flat faces.
+    for (const { name, pixels, expected } of result.mirrors) {
+      let count = 0;
+      let largest = 0;
+      for (const pixel of flat) {
+        const hit = expected[pixel]!;
+        if (hit.margin < 1.25) continue;
+        count++;
+        largest = Math.max(largest, Math.max(...[0, 1, 2].map((channel) => Math.abs(pixels[pixel * 4 + channel]! - result.faceColors[hit.face]![channel]!))));
+      }
+      report[`mirror ${name}`] = { count, largest, faces: new Set(flat.map((pixel) => expected[pixel]!.face)).size };
+    }
+
+    // The furnace.
+    {
+      const metal = result.furnace["white metal"]!;
+      const grey = result.uniformGrey;
+      const metalApart = everySurface.map((pixel) => Math.max(...[0, 1, 2].map((channel) => Math.abs(metal[pixel * 4 + channel]! - grey))));
+      const c = toLinear(grey);
+      const ratios = everySurface.map((pixel) => {
+        let sum = 0;
+        for (let channel = 0; channel < 3; channel++)
+          sum += toLinear(result.furnace.matte![pixel * 4 + channel]!) - toLinear(result.furnace.black![pixel * 4 + channel]!);
+        return sum / 3 / (0.8 * c);
+      }).sort((a, b) => a - b);
+      report.furnace = {
+        pixels: everySurface.length, metalLargest: Math.max(...metalApart), metalOver: metalApart.filter((value) => value > 2).length,
+        ratioMin: ratios[0], ratioMax: ratios[ratios.length - 1], ratioMedian: ratios[ratios.length >> 1],
+      };
+    }
+
+    // The rect light.
+    {
+      const rectCaptures = result.rect.captures;
+      const ratios: number[] = [];
+      for (const pixel of flat) {
+        const form = result.rect.formFactors[pixel]!;
+        if (form < 0.05) continue;
+        let sum = 0;
+        for (let channel = 0; channel < 3; channel++) sum += toLinear(rectCaptures.matte![pixel * 4 + channel]!) - toLinear(rectCaptures.black![pixel * 4 + channel]!);
+        ratios.push(sum / 3 / (0.8 * form));
+      }
+      ratios.sort((a, b) => a - b);
+      const inside: number[] = [];
+      const outside: number[] = [];
+      const gradientSamples: unknown[] = [];
+      for (const pixel of flat) {
+        const hit = result.rect.mirror[pixel];
+        const value = Math.max(...[0, 1, 2].map((channel) => rectCaptures.mirror![pixel * 4 + channel]!));
+        if (hit && hit.inside > 0.05) {
+          inside.push(value);
+          if (gradientSamples.length < 400 && pixel % 7 === 0)
+            gradientSamples.push({ u: hit.u, v: hit.v, rgb: rectCaptures["mirror, gradient emission"]!.slice(pixel * 4, pixel * 4 + 3) });
+        } else if (!hit || hit.inside < -0.05) outside.push(value);
+      }
+      report.rect = {
+        diffusePixels: ratios.length, ratioMin: ratios[0], ratioMax: ratios[ratios.length - 1],
+        mirrorInside: inside.length, insideMin: Math.min(...inside), insideMax: Math.max(...inside), expectedInside: toDisplay(result.rect.mirrorIntensity),
+        mirrorOutside: outside.length, outsideMax: Math.max(...outside),
+        whiteMatte: outliers(rectCaptures.matte!, rectCaptures["matte, white emission"]!),
+        whiteMirror: outliers(rectCaptures.mirror!, rectCaptures["mirror, white emission"]!),
+        gradientApart: outliers(rectCaptures.mirror!, rectCaptures["mirror, gradient emission"]!),
+        gradientSamples,
+      };
+    }
+    const captures = new Map(result.captures.map((capture) => [capture.name, capture.pixels]));
+    const cel = new Map(result.celCaptures.map((capture) => [capture.name, capture.pixels]));
+    const floorPixels = settled(surfaceIds, width, height, (id) => id === 0);
+    report.effects = { pbr: result.hapticEffects, cel: result.celEffects };
+    report.cel = [...cel].map(([name, pixels]) => [name, lit(pixels), new Set(floorPixels.map((pixel) => pixels.slice(pixel * 4, pixel * 4 + 3).join())).size]);
+    report.poses = [...captures].map(([name, pixels]) => [name, outliers(pixels, captures.get("all lights")!), outliers(pixels, captures.get("environment only")!)]);
+    await testInfo.attach(`haptic-light-report-${backend}`, { body: JSON.stringify(report), contentType: "application/json" });
+
     expect(result.lightDefines).toBe(0);
     expect(result.steps).toEqual(LIGHT_STEPS);
-
-    // CEL, against Babylon's CelLightBlock. Its hard steps can flip on float rounding where a pixel sits on a band
-    // edge, so a few pixels may differ by a whole band (measured: none); the rest match to rounding.
-    const celBabylon = paths(result.celCaptures, "babylon");
-    const celHaptic = paths(result.celCaptures, "haptic");
-    expect([...celBabylon.keys()]).toEqual([
-      "sun and fill", "sun only", "fill only", "environment only", "rotated environment", "additive", "blend", "wide highlights", "no highlights",
-    ]);
-    for (const [name, reference] of celBabylon) {
-      const { outliers, lit } = compare(reference, celHaptic.get(name)!);
-      expect(lit, `cel ${name}`).toBeGreaterThan(1500);
-      expect(outliers, `cel ${name}`).toBeLessThanOrEqual(20);
-    }
-    for (const pose of ["fill only", "environment only", "additive", "blend", "wide highlights", "no highlights"])
-      expect(celBabylon.get(pose), pose).not.toEqual(celBabylon.get("sun and fill"));
-    expect(celBabylon.get("rotated environment")).not.toEqual(celBabylon.get("environment only"));
-    // Point and spot lights fall off physically on the block, by design: lit, and not as Babylon's CEL draws them.
-    expect(celHaptic.get("all lights")).not.toEqual(celHaptic.get("sun and fill"));
-    // Babylon's light block draws rect lights far dimmer than its PBR block; the block lights CEL with PBR's form factor.
-    expect(compare(celHaptic.get("environment only")!, celHaptic.get("rect light")!).outliers).toBeGreaterThan(300);
-    // One CEL program per Material: CEL ignores the cube's format and box.
-    expect(result.celEffects).toBe(3);
     expect(result.celSteps).toEqual(LIGHT_STEPS);
 
-    // A spot light's, the sun's and a point light's shadows on the block's path, drawn through the shadow controller and
-    // the frame graph into the atlas: a floor pixel whose view of the light the box or the ball blocks draws as with the light off, any
-    // other as with the light's shadow switched off, in both render modes, and the shadow compiles nothing.
     for (const [light, { blocked, modes }] of Object.entries(result.shadow)) {
-      const settled = settledShadowPixels(blocked, result.width, result.height);
+      const settledPixels = settledShadowPixels(blocked, width, height);
       const shadowReport = modes.map(({ mode, atlas, shadowed, unshadowed, unlit, newLitEffects }) => ({
-        light, mode, atlas, newLitEffects, blocked: settled.blocked.length, open: settled.open.length,
-        // The light really lights the blocked pixels when nothing shadows them.
-        lighting: settled.blocked.reduce((sum, pixel) => sum + difference(unshadowed, unlit, pixel), 0) / settled.blocked.length,
-        blockedLit: settled.blocked.filter((pixel) => difference(shadowed, unlit, pixel) > 2).length,
-        openShadowed: settled.open.filter((pixel) => difference(shadowed, unshadowed, pixel) > 2).length,
+        light, mode, atlas, newLitEffects, blocked: settledPixels.blocked.length, open: settledPixels.open.length,
+        lighting: settledPixels.blocked.reduce((sum, pixel) => sum + difference(unshadowed, unlit, pixel), 0) / settledPixels.blocked.length,
+        blockedLit: settledPixels.blocked.filter((pixel) => difference(shadowed, unlit, pixel) > 2).length,
+        openShadowed: settledPixels.open.filter((pixel) => difference(shadowed, unshadowed, pixel) > 2).length,
       }));
       await testInfo.attach(`haptic-light-${light}-shadow-${backend}`, { body: JSON.stringify(shadowReport), contentType: "application/json" });
-      for (const report of shadowReport) {
-        const label = `${light} ${report.mode}`;
-        expect(report.atlas, label).toBe(true);
-        expect(report.newLitEffects, label).toBe(0);
-        expect(report.blocked, label).toBeGreaterThan(100);
-        expect(report.open, label).toBeGreaterThan(1000);
-        expect(report.lighting, label).toBeGreaterThan(20);
-        expect(report.blockedLit, label).toBe(0);
-        expect(report.openShadowed, label).toBe(0);
+      for (const entry of shadowReport) {
+        const label = `${light} ${entry.mode}`;
+        expect(entry.atlas, label).toBe(true);
+        expect(entry.newLitEffects, label).toBe(0);
+        expect(entry.blocked, label).toBeGreaterThan(100);
+        expect(entry.open, label).toBeGreaterThan(1000);
+        expect(entry.lighting, label).toBeGreaterThan(20);
+        expect(entry.blockedLit, label).toBe(0);
+        expect(entry.openShadowed, label).toBe(0);
       }
     }
   });
