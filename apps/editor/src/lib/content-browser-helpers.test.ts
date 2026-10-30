@@ -1737,12 +1737,13 @@ describe("content-browser-helpers", () => {
     expect(
       contentBrowserContextActions({ assetCount: 1, folderCount: 0, singleAssetType: "Texture" }),
     ).not.toContain("create-material-instance");
-    const taken = new Set(["Rock Instance", "Rock Instance 2"]);
-    expect(materialInstanceNameFor("Rock", (name) => taken.has(name))).toBe("Rock Instance 3");
+    expect(materialInstanceNameFor("Rock", () => false)).toBe("Rock_Instance");
+    const taken = new Set(["Rock_Instance", "Rock_Instance_1"]);
+    expect(materialInstanceNameFor("Rock", (name) => taken.has(name))).toBe("Rock_Instance_2");
     const result = buildMaterialInstanceAssetResult(
       { guid: "rock", payload: { domain: "postProcess" } },
       "rock-inst",
-      "Rock Instance",
+      "Rock_Instance",
     );
     expect(result).toMatchObject({
       type: "MaterialInstance",

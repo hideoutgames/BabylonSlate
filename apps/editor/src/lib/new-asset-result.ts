@@ -390,14 +390,14 @@ export function buildMaterialInstanceAssetResult(
   };
 }
 
-/** `<Parent> Instance`, then `<Parent> Instance 2`, … until `taken` rejects none. */
+/** `<Parent>_Instance`, then `<Parent>_Instance_1`, … (the `_N` copy names) until `taken` rejects none. */
 export function materialInstanceNameFor(
   parentName: string,
   taken: (name: string) => boolean,
 ): string {
-  const base = `${parentName} Instance`;
+  const base = `${parentName}_Instance`;
   let name = base;
-  for (let index = 2; taken(name); index += 1) name = `${base} ${index}`;
+  for (let index = 1; taken(name); index += 1) name = `${base}_${index}`;
   return name;
 }
 
