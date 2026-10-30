@@ -1,5 +1,5 @@
 import {
-  Constants, CreateLines, FreeCamera, Matrix, MeshBuilder, NullEngine, NullEngineOptions, ObjectRenderer, RenderTargetTexture,
+  Color3, Constants, CreateLines, DirectionalLight, FreeCamera, Matrix, MeshBuilder, NullEngine, NullEngineOptions, ObjectRenderer, RawTexture, RenderTargetTexture,
   Scene, StandardMaterial, Vector3, Viewport, type AbstractMesh, type Camera, type Material, type Mesh,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
@@ -323,18 +323,83 @@ it("leases its target under the water category, resizes in place and frees idle 
   expect(waterPlanarReflectionDiagnostics(scene)).toBeNull();
 });
 
-it("redraws on every render while the view moves and every other render while it is static", () => {
+it("redraws on every render while the view moves and reuses its draw while a static view's content is unchanged", () => {
   const { scene, camera, draws, frame } = host();
   lake(scene, "lake", 40, Vector3.Zero());
+  MeshBuilder.CreateBox("boat", {}, scene).position.set(0, 1, 10);
   frame();
   for (let i = 0; i < 4; i++) {
     camera.position.x += 0.1;
     expect(frame()).not.toBeNull();
   }
   expect(draws).toHaveLength(4);
-  for (let i = 0; i < 6; i++) expect(frame()).not.toBeNull();
-  expect(draws).toHaveLength(7);
-  expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ draws: 7, reusedFrames: 3 });
+  for (let i = 0; i < 20; i++) expect(frame()).not.toBeNull();
+  expect(draws).toHaveLength(4);
+  expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ draws: 4, reusedFrames: 20 });
+});
+
+/** A static view over a lake reflecting a boat, its first draw done. */
+function settledView() {
+  const view = host();
+  lake(view.scene, "lake", 40, Vector3.Zero());
+  const boat = MeshBuilder.CreateBox("boat", {}, view.scene);
+  boat.position.set(0, 1, 10);
+  view.frame();
+  /** Draws over `renders` more renders. */
+  const drawsOver = (renders: number) => {
+    const before = view.draws.length;
+    for (let i = 0; i < renders; i++) expect(view.frame()).not.toBeNull();
+    return view.draws.length - before;
+  };
+  expect(drawsOver(4)).toBe(1);
+  return { ...view, boat, drawsOver };
+}
+
+it("redraws a static view once when a reflected mesh moves, then reuses it again", () => {
+  const { boat, draws, drawsOver } = settledView();
+  // A transform set between renders is applied when the scene's render id moves on: the next render draws it.
+  boat.position.x += 1;
+  expect(drawsOver(2)).toBe(1);
+  expect(draws.at(-1)!.meshes).toContain(boat);
+  expect(drawsOver(10)).toBe(0);
+  // Hiding it changes what the pass draws.
+  boat.isVisible = false;
+  expect(drawsOver(10)).toBe(1);
+});
+
+it("redraws a static view once for a light, environment, fog or material change", () => {
+  const { scene, boat, drawsOver } = settledView();
+  const sun = new DirectionalLight("sun", new Vector3(0, -1, 0.5), scene);
+  expect(drawsOver(10)).toBe(1);
+  sun.intensity = 2;
+  expect(drawsOver(10)).toBe(1);
+  sun.direction = new Vector3(0.3, -1, 0);
+  expect(drawsOver(10)).toBe(1);
+  scene.fogMode = Scene.FOGMODE_EXP;
+  expect(drawsOver(10)).toBe(1);
+  scene.environmentIntensity = 0.5;
+  expect(drawsOver(10)).toBe(1);
+  const paint = new StandardMaterial("paint", scene);
+  boat.material = paint;
+  expect(drawsOver(10)).toBe(1);
+  paint.diffuseColor = new Color3(1, 0, 0);
+  expect(drawsOver(10)).toBe(1);
+  expect(drawsOver(10)).toBe(0);
+});
+
+it("keeps redrawing every other render while reflected content can change on its own", () => {
+  const { scene, boat, drawsOver } = settledView();
+  // A render hook can change the mesh at any render.
+  const hook = boat.onBeforeRenderObservable.add(() => {});
+  expect(drawsOver(10)).toBe(5);
+  boat.onBeforeRenderObservable.remove(hook);
+  expect(drawsOver(10)).toBe(1);
+  expect(drawsOver(10)).toBe(0);
+  // A texture updated in place.
+  const screen = new StandardMaterial("screen", scene);
+  screen.diffuseTexture = RawTexture.CreateRGBATexture(new Uint8Array(16), 2, 2, scene);
+  boat.material = screen;
+  expect(drawsOver(10)).toBe(5);
 });
 
 it("counts its windows in the view's own renders, so frame-capped and paused views keep their reflection", () => {
@@ -355,12 +420,16 @@ it("counts its windows in the view's own renders, so frame-capped and paused vie
   expect(frame()).not.toBeNull();
   expect(draws).toHaveLength(7);
   expect(waterBytes(engine)).toBe(bytes);
-  // A static view under the cap still redraws every other render, not every other engine frame.
+  // A static view under the cap reuses its draw, and a change redraws it at its next render, not engine frame.
   for (let i = 0; i < 4; i++) {
     skip(4);
     expect(frame()).not.toBeNull();
   }
-  expect(draws).toHaveLength(9);
+  expect(draws).toHaveLength(7);
+  MeshBuilder.CreateBox("boat", {}, scene).position.set(0, 1, 10);
+  skip(4);
+  expect(frame()).not.toBeNull();
+  expect(draws).toHaveLength(8);
 });
 
 it.each(["readiness", "draw"] as const)("restores the view's rendering state after a real mirror pass, and after one that throws during %s", async (stage) => {
