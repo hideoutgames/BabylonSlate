@@ -11,8 +11,7 @@ import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
-import { preparePreviousEffectBindings, sceneBindsPreviousEffects } from "./fixed-light-binding";
-import { probeVariantSwaps, variantSwapsTolerated } from "./variant-swaps";
+import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapsTolerated } from "./variant-swaps";
 import { predictLightVariants } from "./variant-prediction";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
@@ -453,9 +452,6 @@ export class SceneRenderCoordinator {
     flushDynamicRuntimeMeshes(this.scene);
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
-    // A swapping Material may bind placeholders for maps its previous Effect samples: allocate them before the passes,
-    // after the probe that may have found the swap first (a light Forward admission excluded this frame).
-    if (this.graph.variantSwapsPending && variantSwapsTolerated()) preparePreviousEffectBindings(this.scene);
     // Like a scene that is not ready yet, a frame that skipped draws for
     // pipelines still compiling draws nothing until they exist.
     if (this.deferral?.waiting())
