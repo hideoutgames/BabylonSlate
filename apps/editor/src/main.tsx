@@ -52,6 +52,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/cascade-shimmer-proof").then(({ runCascadeShimmerProof }) => Object.assign(window, { __cascadeShimmerProof: runCascadeShimmerProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterCutProof")) {
   void import("./testing/water-cut-proof").then(({ runWaterCutProof }) => Object.assign(window, { __waterCutProof: runWaterCutProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterSeamProof")) {
+  void import("./testing/water-seam-proof").then(({ runWaterSeamProof }) => Object.assign(window, { __waterSeamProof: runWaterSeamProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterReflectionProof")) {
   void import("./testing/water-reflection-proof").then(({ runWaterReflectionProof }) => Object.assign(window, { __waterReflectionProof: runWaterReflectionProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterTemplateProof")) {

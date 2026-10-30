@@ -171,7 +171,7 @@ export function updateLayout(s: Surface, world: Matrix, inverse: Matrix): Layout
     cx = Math.round(local.x * sx / step) * step / sx; cz = Math.round(local.z * sz / step) * step / sz;
   }
   // Finite layouts depend only on the body and the volume's rotation/scale, so the camera never reshapes them. A blending
-  // finite body extends its grid toward finite neighbours (`SurfaceBlend.reach`): the blended union reaches past it.
+  // finite body extends its grid toward finite neighbours, or past its per-pixel seam (`SurfaceBlend.reach`).
   const reach = s.blend?.reach ?? 0, ex = reach / sx, ez = reach / sz;
   const state = s.layoutState;
   let shape = true;
