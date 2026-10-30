@@ -187,6 +187,14 @@ class AtlasTileTarget extends RenderTargetTexture {
 /** Called once a Scene's atlas map has drawn (`watchShadowDraws`). */
 const drawWatchers = new WeakMap<Scene, () => void>();
 
+/** Atlas map draws per Scene (`sceneShadowDraws`). */
+const drawCounts = new WeakMap<Scene, number>();
+
+/** How many times the Scene's atlas maps have drawn: a changed count means sampled shadows may differ. */
+export function sceneShadowDraws(scene: Scene): number {
+  return drawCounts.get(scene) ?? 0;
+}
+
 /** Calls `drawn` each time one of the Scene's atlas maps has drawn, after all its tiles: their views have changed. */
 export function watchShadowDraws(scene: Scene, drawn: () => void): void {
   drawWatchers.set(scene, drawn);
@@ -227,7 +235,10 @@ function drawIntoTiles(map: AtlasTileTarget, edge: number, drawing: (pass: numbe
       engine.disableScissor();
     }
   });
-  map.onAfterUnbindObservable.add(() => drawWatchers.get(scene)?.());
+  map.onAfterUnbindObservable.add(() => {
+    drawCounts.set(scene, (drawCounts.get(scene) ?? 0) + 1);
+    drawWatchers.get(scene)?.();
+  });
 }
 
 type Placement = { atlas: Atlas; tiles: ShadowAtlasTile[] };
@@ -484,6 +495,14 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   /** Per cascade, its far end in view depth from the camera it was last drawn for (Babylon's `viewFrustumZ`). */
   get cascadeEnds(): readonly number[] {
     return this.ends;
+  }
+
+  /** Per cascade as last drawn: its far end in view depth and the map texels per world metre across its tile. */
+  get cascadeDensity(): { end: number; texelsPerMetre: number }[] {
+    return this.ends.map((end, index) => {
+      const width = (this.getCascadeMaxExtents(index)?.x ?? 0) - (this.getCascadeMinExtents(index)?.x ?? 0);
+      return { end, texelsPerMetre: width > 0 ? this.mapSize / width : 0 };
+    });
   }
 
   /** Per cascade, its length in view depth as last drawn (Babylon's `frustumLengths`), over which it blends into the next. */

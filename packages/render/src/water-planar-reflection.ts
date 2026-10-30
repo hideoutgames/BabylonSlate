@@ -11,8 +11,11 @@
  * (`waterPlanarReflectionForCamera`) while the device-effective Reflections are Planar; only views of a scene
  * retained by `retainWaterPlanarReflections` (SceneRenderCoordinator) can ever draw one, so previews,
  * thumbnails and Render Target Captures never do. A view allocates its target only when an eligible body is
- * visible, draws on every render while its camera moves and every other render while it is static, and frees the
- * target's storage after `RELEASE_RENDERS` renders unused. Every window counts the owner's own renders, never
+ * visible, draws on every render while its camera moves, and frees the target's storage after `RELEASE_RENDERS`
+ * renders unused. A static view reuses its draw for as long as nothing it reflects changes (`ReflectedContent`: the
+ * culled meshes, their placement, geometry and materials, and the scene's lights, shadow draws, environment, fog and
+ * render settings); a change redraws at most every `STATIC_REDRAW_INTERVAL` renders, and content that changes on its
+ * own (skinning, time-driven materials, textures updated in place) keeps that cadence while it is reflected. Every window counts the owner's own renders, never
  * engine frames, so frame caps, paused views and display refresh rates do not change them. The owner's per-frame
  * work allocates nothing; once every view is idle its observers detach.
  *
@@ -38,6 +41,7 @@ import {
   resizePlanarMirrorTarget, type MirrorPlane, type PlanarMirrorTargetState,
 } from "./planar-mirror";
 import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
+import { ReflectedContent } from "./reflected-content";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { waterMeshReflectsObjects, waterMeshRestVaries } from "./water-mesh";
@@ -86,7 +90,10 @@ export interface WaterPlanarReflectionDiagnostics {
 const DEMAND_RENDERS = 4;
 /** Scene renders a target may go unused before its storage is freed, so brief occlusion never reallocates. */
 const RELEASE_RENDERS = 120;
-/** A static view redraws every this many of its renders (scene content may still move). */
+/**
+ * A static view whose reflected content changed redraws at most every this many of its renders: content that changes
+ * every frame (an animation, a time-driven material) costs no more than every other render.
+ */
 const STATIC_REDRAW_INTERVAL = 2;
 /** Eyes closer than this to the rest plane (or below it) get no reflection: the mirror degenerates. */
 const MIN_EYE_HEIGHT = 1e-3;
@@ -114,6 +121,10 @@ type Target = PlanarMirrorTargetState & {
   drawnRender: number;
   /** Body of the last draw; null forces the next render to draw (new, resized or reallocated storage). */
   drawnMesh: AbstractMesh | null;
+  /** What the pass draws, followed every render; `dirty` holds a change until a draw shows it. */
+  content: ReflectedContent;
+  /** Something the pass draws may have changed since the last draw, or the last draw skipped a mesh not yet ready. */
+  dirty: boolean;
   ready: boolean;
   meshes: AbstractMesh[];
   result: Result | null;
@@ -202,9 +213,14 @@ class WaterPlanarReflections {
   private readonly drawPass = () => {
     const target = this.drawTarget!;
     beginPlanarMirrorPassState(this.scene.getEngine());
-    // The first draw waits for every reflected material; later draws skip any mesh that is not ready.
-    if (!target.ready) target.ready = target.texture.isReadyForRendering();
-    if (target.ready) { target.texture.render(false); this.drew = true; }
+    // The first draw waits for every reflected material; later draws skip any mesh that is not ready, and stay dirty
+    // until a draw has drawn every one.
+    let complete = false;
+    if (!target.ready) complete = target.ready = target.texture.isReadyForRendering();
+    if (!target.ready) return;
+    target.texture.render(false);
+    this.drew = true;
+    target.dirty = !(complete || target.texture.isReadyForRendering());
   };
   // Scratch, reused every frame.
   private readonly projection = new Matrix();
@@ -331,15 +347,17 @@ class WaterPlanarReflections {
     view.active = tick;
     if (!this.mirror(camera, planeY, target)) return false;
     target.mirror.mirrorView.multiplyToRef(target.projection, this.nextViewProjection);
-    if (target.result && target.drawnMesh === mesh && target.drawn.equals(this.nextViewProjection) &&
-      view.renders - target.drawnRender < STATIC_REDRAW_INTERVAL) {
-      this.reusedFrames++;
-      return true;
-    }
-    // Cull with the mirror camera's ordinary frustum, its near plane replaced by the water plane.
+    // Cull with the mirror camera's ordinary frustum, its near plane replaced by the water plane, and follow what the
+    // pass would draw: a static view reuses its draw until something there changes.
     target.mirror.mirrorView.multiplyToRef(this.projection, this.cullViewProjection);
     clipFrustumAtMirror(this.cullViewProjection, this.plane, this.reflectionPlanes);
     collectPlanarMirrorMeshes(scene, target.meshes, camera.layerMask, this.reflectionPlanes, this.excluded);
+    if (target.content.changed(scene, target.meshes)) target.dirty = true;
+    if (target.result && target.drawnMesh === mesh && target.drawn.equals(this.nextViewProjection) &&
+      (!target.dirty || view.renders - target.drawnRender < STATIC_REDRAW_INTERVAL)) {
+      this.reusedFrames++;
+      return true;
+    }
     target.mirror.minZ = camera.minZ;
     target.mirror.maxZ = camera.maxZ;
     target.mirror.getViewMatrix(true);
@@ -462,7 +480,7 @@ class WaterPlanarReflections {
       width, height, type, waterResources, TRANSPARENT);
     if (!base) return null;
     const target: Target = Object.assign(base, {
-      drawn: new Matrix(), drawnRender: -Infinity, drawnMesh: null, ready: false,
+      drawn: new Matrix(), drawnRender: -Infinity, drawnMesh: null, content: new ReflectedContent(), dirty: true, ready: false,
       meshes: base.texture.renderList!, result: null,
     });
     view.target = target;
@@ -480,6 +498,7 @@ class WaterPlanarReflections {
     if (!target) return;
     view.valid = -1;
     view.target = null;
+    target.content.dispose();
     disposePlanarMirrorTarget(this.scene, target);
   }
 

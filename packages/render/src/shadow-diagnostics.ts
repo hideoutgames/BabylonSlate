@@ -16,6 +16,7 @@ import { sceneRenderingSettings } from "./render-settings";
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { lightsInCreationOrder } from "./light-policy";
 import { findSceneShadowController } from "./shadow-controller";
+import { AtlasCascadedShadowGenerator } from "./shadow-atlas";
 
 /** Caller-supplied provenance is deliberately not inferred from an adapter name. */
 export interface ShadowDiagnosticOptions {
@@ -264,6 +265,7 @@ export function captureShadowDiagnostics(
                     generator instanceof CascadedShadowGenerator
                       ? generator.getCascadeProjectionMatrix(layer)
                       : generator.projectionMatrix;
+                  const extents = orthographicExtents(projection, engine.isNDCHalfZRange);
                   return {
                     layer,
                     scope: map?.isCube ? "last-rendered-cube-face" : "layer",
@@ -273,10 +275,12 @@ export function captureShadowDiagnostics(
                         ? generator.getCascadeViewMatrix(layer)
                         : generator.viewMatrix,
                     ),
-                    orthographicExtents: orthographicExtents(
-                      projection,
-                      engine.isNDCHalfZRange,
-                    ),
+                    orthographicExtents: extents,
+                    // A cascade's far end in view depth and its tile's texels per world metre, as last drawn.
+                    cascadeEnd: generator instanceof AtlasCascadedShadowGenerator ? finite(generator.cascadeEnds[layer]) : null,
+                    texelsPerMetre: generator instanceof CascadedShadowGenerator && extents?.width
+                      ? finite(generator.mapSize / extents.width)
+                      : null,
                   };
                 },
               ),
