@@ -1,6 +1,6 @@
 /**
  * Test-build-only proof of built-in water's graph Material (`builtInWaterMaterial`, the water starter) on the real GPU,
- * through the Forward FrameGraph, with graph Materials on the lighting plan's light block. One still lake over a sand
+ * through the Forward FrameGraph, with graph Materials on the light block. One still lake over a sand
  * floor beside a red pole, in a few scenarios that each exercise one part of the look: the sun from above over
  * shallows, deep water, a grazing view toward the horizon, a view toward the sun (its glints), linear fog, and an
  * environment cube. Each scenario captures the scene without water and with it, and where each pixel's view ray meets

@@ -1,6 +1,6 @@
 /**
  * Test-build-only proof, on a real WebGPU device (the software adapter in CI), that a world view of graph Materials on
- * the lighting plan's light block keeps drawing while new variants' render pipelines are created: a light switching off
+ * the light block keeps drawing while new variants' render pipelines are created: a light switching off
  * creates none, fog switching on draws each Material's previous Effect until its new variant's pipeline exists, a new
  * shadow map (a spot's tile, the sun's first cascades) samples neutrally until its casters' pipelines exist, a spawn
  * with a variant nothing compiled stays hidden until its pipelines exist (into a drawn shadow map, its caster depth

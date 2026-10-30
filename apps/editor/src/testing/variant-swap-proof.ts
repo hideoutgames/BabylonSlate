@@ -1,6 +1,6 @@
 /**
  * Test-build-only proof, on the real GPU, that a world view keeps drawing while new variants compile, with graph
- * Materials on the lighting plan's light block: a Material draws its previous Effect while a variant a change asked
+ * Materials on the light block: a Material draws its previous Effect while a variant a change asked
  * for (fog switched on) compiles, without a GL error; a light that starts casting shadows changes no receiver's Effect
  * and its map samples neutrally until its casters' depth variants have compiled; a spawn with a variant nothing
  * compiled stays hidden until it has; and a spawn whose Material Play's load warmed links no program.

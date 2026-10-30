@@ -6,7 +6,7 @@ import { markBuiltInWaterMaterial } from "./water-mesh";
 const templates = new WeakMap<Scene, NodeMaterial>();
 
 /**
- * The graph Material built-in water draws with, on the lighting plan's block. It is the water starter
+ * The graph Material built-in water draws with, on the light block. It is the water starter
  * (`createWaterMaterialDocument`, what Edit As Material creates), compiled once per Scene and shared by every water
  * mesh without a Custom Material: each mesh's asset, terrain, contacts and blend reach the water nodes through its own
  * `WaterNodeSurface`, and its variants through its own draw wrappers. Disposed with the Scene.

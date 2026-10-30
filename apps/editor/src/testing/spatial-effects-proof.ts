@@ -230,7 +230,7 @@ function beamLengths(scene: Scene, camera: FreeCamera, engine: AbstractEngine, m
 }
 
 /**
- * Actual numeric pixels from authored materials and scene lights, without editor chrome, on the lighting plan's light
+ * Actual numeric pixels from authored materials and scene lights, without editor chrome, on the light
  * block. `volumetricShadows`: the shadowed fog spot light without and with volumetric lighting, its shadow cast and not,
  * over unlit surfaces, with how far each pixel's view ray runs through the beam's shadowed and open parts.
  */

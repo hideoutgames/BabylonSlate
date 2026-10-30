@@ -18,7 +18,7 @@ import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaul
 const QUALITIES: readonly RenderTargetCaptureQuality[] = ["fast", "fullQuality"];
 type Backend = "webgl2" | "webgpu";
 
-/** A rough graph Material of one colour, drawn with the lighting plan's light block. */
+/** A rough graph Material of one colour, drawn with the light block. */
 async function matte(scene: Scene, name: string, color: Color3): Promise<Material> {
   const doc = createDefaultMaterialDocument(name);
   doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [color.r, color.g, color.b];

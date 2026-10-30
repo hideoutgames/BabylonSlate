@@ -33,9 +33,8 @@ export type ShadowAdmissionBudget = {
   readonly bytes: number;
   readonly passes: number;
   /**
-   * The lighting plan's shadow atlas edge (`shadowAtlasEdge`) while graph Materials draw with its light block, else 0.
-   * Its spot maps are tiles of the atlas, admitted by its area; the atlas, allocated whole, takes its bytes from
-   * `bytes` once one is.
+   * The shadow atlas edge (`shadowAtlasEdge`). Spot, point and sun maps are tiles of the atlas, admitted by its
+   * area; the atlas, allocated whole, takes its bytes from `bytes` once one is.
    */
   readonly atlasEdge: number;
 };
