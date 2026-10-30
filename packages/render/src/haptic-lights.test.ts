@@ -4,8 +4,10 @@ import {
   DirectionalLight,
   FreeCamera,
   HemisphericLight,
+  LightBlock,
   MeshBuilder,
   NullEngine,
+  PBRMetallicRoughnessBlock,
   PointLight,
   RectAreaLight,
   Scene,
@@ -20,7 +22,6 @@ import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
-import { CelLightBlock } from "./cel-light-block";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer } from "./haptic-lights";
 import { isForwardLightExcluded } from "./light-policy";
@@ -28,7 +29,6 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { compileMaterialPlan } from "./material-compiler";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
-import { ScenePbrLightingBlock } from "./scene-pbr-lighting-block";
 import { createPreviewLighting } from "./preview-lighting";
 import { ViewportShadingOverlay } from "./viewport-shading-mode";
 import { createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
@@ -78,7 +78,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     new PointLight("lamp", new Vector3(0, 2, 0), scene);
     const { mesh, material } = await litBox(scene);
     expect(material.attachedBlocks.some((block) => block instanceof HapticLightingBlock)).toBe(true);
-    expect(material.attachedBlocks.some((block) => block instanceof ScenePbrLightingBlock)).toBe(false);
+    expect(material.attachedBlocks.some((block) => block instanceof PBRMetallicRoughnessBlock)).toBe(false);
     const defines = await drawnDefines(scene, mesh, material);
     expect(defines.some((line) => /#define LIGHT\d/.test(line))).toBe(false);
     expect(material.compiledShaders).toContain("uniform HapticLights");
@@ -111,7 +111,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const { mesh, material } = await litBox(scene);
     const lighting = material.attachedBlocks.find((block) => block instanceof HapticLightingBlock);
     expect(lighting).toBeDefined();
-    expect(material.attachedBlocks.some((block) => block instanceof CelLightBlock)).toBe(false);
+    expect(material.attachedBlocks.some((block) => block instanceof LightBlock)).toBe(false);
     const cel = await drawnDefines(scene, mesh, material);
     expect(cel).toContain("#define HAPTIC_CEL");
     expect(cel.some((line) => /#define (LIGHT\d|HAPTIC_ENVIRONMENT)/.test(line))).toBe(false);
