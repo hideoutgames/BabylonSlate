@@ -27,8 +27,7 @@ function entry(light: SpotLight | PointLight | DirectionalLight): ShadowEntry {
 
 /** Room for every map but the atlas's area. */
 const budget = (atlasEdge: number): ShadowAdmissionBudget => ({
-  bytes: 1024 ** 3, passes: 64, bytesPerTexel: 12, cascadedBytesPerTexel: 6,
-  maxTextureSize: 16384, maxCubemapTextureSize: 16384, atlasEdge,
+  bytes: 1024 ** 3, passes: 64, atlasEdge,
 });
 
 function plan(lights: (SpotLight | PointLight | DirectionalLight)[], atlasEdge: number, localMapSize: number, sun = { mapSize: 2048, cascades: 1 }) {

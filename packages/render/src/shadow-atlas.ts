@@ -570,5 +570,21 @@ export function createAtlasCascadedShadowGenerator(
   light: DirectionalLight, size: number, cascades: number, edge: number, camera?: Camera,
 ): AtlasCascadedShadowGenerator | null {
   const placement = place(light.getScene(), size, cascades, edge);
-  return placement && construct(placement, () => new AtlasCascadedShadowGenerator(size, light, undefined, camera));
+  return placement && construct(placement, () => askingLightEngine(light, () => new AtlasCascadedShadowGenerator(size, light, undefined, camera)));
+}
+
+/**
+ * Runs `build` with Babylon 9.29's `CascadedShadowGenerator.IsSupported`, which its constructor checks, asking
+ * `light`'s Engine. Babylon asks the last-created Engine, which a model conversion's NullEngine (OBJ, FBX, STL) is
+ * while it runs, and the rejected constructor throws, failing the sun's shadow until a settings change.
+ */
+function askingLightEngine<T>(light: DirectionalLight, build: () => T): T {
+  const descriptor = Object.getOwnPropertyDescriptor(CascadedShadowGenerator, "IsSupported")!;
+  const supported = light.getScene().getEngine()._features.supportCSM;
+  Object.defineProperty(CascadedShadowGenerator, "IsSupported", { configurable: true, get: () => supported });
+  try {
+    return build();
+  } finally {
+    Object.defineProperty(CascadedShadowGenerator, "IsSupported", descriptor);
+  }
 }

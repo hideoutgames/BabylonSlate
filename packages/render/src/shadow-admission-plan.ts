@@ -11,14 +11,12 @@ import {
   ENGINE_SHADOW_BUDGET,
   otherShadowReservations,
   availableSceneShadowBytes,
-  shadowBytesPerTexel,
   type ShadowCost,
 } from "./shadow-admission";
 import { SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge } from "./shadow-atlas";
 import {
   admissionPasses,
   allocationRequestKey,
-  atlasTileEdge,
   type LocalShadowLight,
   type ShadowEntry as Entry,
   type ShadowLightStatus,
@@ -30,15 +28,10 @@ const SHADOW_MIN_RESIDENCY_MS = 250;
 /** A map holder ranks this much nearer (squared distance divided by it), so a slightly nearer light cannot take its map. */
 const SHADOW_INCUMBENT_DISTANCE_BONUS = 1.15;
 
-/** The room a sync admits maps into: the shared ledger and the device's caps. */
+/** The room a sync admits maps into: the shared ledger and the shadow atlas. */
 export type ShadowAdmissionBudget = {
   readonly bytes: number;
   readonly passes: number;
-  /** Per texel and layer of a local or single sun map, and of a cascaded sun map. */
-  readonly bytesPerTexel: number;
-  readonly cascadedBytesPerTexel: number;
-  readonly maxTextureSize: number;
-  readonly maxCubemapTextureSize: number;
   /**
    * The lighting plan's shadow atlas edge (`shadowAtlasEdge`) while graph Materials draw with its light block, else 0.
    * Its spot maps are tiles of the atlas, admitted by its area; the atlas, allocated whole, takes its bytes from
@@ -80,12 +73,11 @@ export type ShadowAdmissionPlan = {
   readonly admitted: ShadowCost;
 };
 
-/** The shared ledger's room for this scene's maps, and the device's texture caps. */
+/** The shared ledger's room for this scene's maps, and the shadow atlas's edge. */
 export function readShadowAdmissionBudget(
   scene: Scene,
   settings: ShadowSettings,
 ): ShadowAdmissionBudget {
-  const caps = scene.getEngine().getCaps();
   const profile = SHADOW_CAPACITY_PROFILES[settings.profile];
   const other = otherShadowReservations(scene);
   const byteBudget = Math.max(
@@ -103,10 +95,6 @@ export function readShadowAdmissionBudget(
   return {
     bytes: byteBudget,
     passes: passBudget,
-    bytesPerTexel: shadowBytesPerTexel(scene.getEngine()),
-    cascadedBytesPerTexel: shadowBytesPerTexel(scene.getEngine(), true),
-    maxTextureSize: caps.maxTextureSize,
-    maxCubemapTextureSize: caps.maxCubemapTextureSize,
     atlasEdge: shadowAtlasEdge(scene.getEngine(), settings.profile),
   };
 }
@@ -125,17 +113,14 @@ export function cameraDistanceSquared(light: LocalShadowLight, camera: Camera): 
 
 /**
  * Which lights hold a map, and at what size, without writing to the entries: ranked by priority, residency and camera
- * distance (an incumbent's bonus included), the sun first, then within the light count, pass and memory
- * budgets, and an atlas tile's within the atlas's area. `applyShadowAdmission` writes the decisions back.
+ * distance (an incumbent's bonus included), the sun first, then within the light count and pass
+ * budgets and the atlas's area. `applyShadowAdmission` writes the decisions back.
  */
 export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissionPlan {
   const { entries, settings, camera, budget, measure } = input;
   const cameraChanged = camera !== input.previousCamera;
   const selectionTime = input.at;
-  const {
-    bytes: byteBudget,
-    passes: passBudget,
-  } = budget;
+  const passBudget = budget.passes;
   const measureDistance = (decision: ShadowAdmissionDecision) => {
     const light = decision.entry.light;
     decision.distanceSquared = camera && !(light instanceof DirectionalLight) ? measure(light) : 0;
@@ -198,9 +183,6 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
   );
   const admitted: ShadowCost = { bytes: 0, passes: 0 };
   const atlasEdge = budget.atlasEdge;
-  const reserveLocalMaps =
-    settings.maxLocalLights > 0 &&
-    candidates.some((decision) => !(decision.entry.light instanceof DirectionalLight) && !atlasTileEdge(decision.entry.light, atlasEdge));
   // Reserve the single sun before local maps regardless of local priorities.
   candidates.sort(
     (a, b) =>
@@ -209,7 +191,6 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
   );
   let plannedLocal = 0;
   let plannedPasses = 0;
-  let remainingLocalFaces = 0;
   const planned = candidates.filter((decision) => {
     const light = decision.entry.light;
     const directional = light instanceof DirectionalLight;
@@ -222,38 +203,32 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
           : null;
     if (decision.reason) return false;
     plannedPasses += passes;
-    if (!directional) {
-      plannedLocal += 1;
-      if (!atlasTileEdge(light, atlasEdge)) remainingLocalFaces += passes;
-    }
+    if (!directional) plannedLocal += 1;
     return true;
   });
-  // The atlas is allocated whole for its first tile: the other maps share the bytes it leaves.
-  if (planned.some((decision) => atlasTileEdge(decision.entry.light, atlasEdge)))
+  // The atlas is allocated whole for its first tile.
+  if (planned.length > 0)
     admitted.bytes += atlasEdge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
   let atlasArea = 0;
   // The sun, admitted first, leaves the atlas room for the local maps planned into it at the level's size (a point
   // light's six faces), at most half the atlas: local maps past that halve or wait, never the sun's shadow.
   let localTiles = 0;
   for (const decision of planned)
-    if (!(decision.entry.light instanceof DirectionalLight) && atlasTileEdge(decision.entry.light, atlasEdge))
+    if (!(decision.entry.light instanceof DirectionalLight))
       localTiles += admissionPasses(decision.entry.light, settings);
   const localReserve = Math.min(localTiles * Math.min(settings.localMapSize, atlasEdge) ** 2, atlasEdge ** 2 / 2);
   // Admitted totals never exceed the planned ones, so every planned entry still
-  // fits the local and pass budgets; only memory or atlas space can reject it here.
+  // fits the local and pass budgets; only atlas space can reject it here.
   for (const decision of planned) {
     const entry = decision.entry;
     const directional = entry.light instanceof DirectionalLight;
     const passes = admissionPasses(entry.light, settings);
-    const atlased = atlasTileEdge(entry.light, atlasEdge) > 0;
     const requestedSize = directional
       ? settings.mapSize
       : settings.localMapSize;
     // A recovery keyed to other settings no longer limits the map.
     const recovery = decision.dropRecovery ? null : entry.recovery;
-    let mapSize = Math.min(requestedSize, atlased ? atlasEdge : budget.maxTextureSize);
-    if (entry.light.needCube())
-      mapSize = Math.min(mapSize, budget.maxCubemapTextureSize);
+    let mapSize = Math.min(requestedSize, atlasEdge);
     if (recovery) mapSize = Math.min(mapSize, recovery.mapSize);
     if (
       entry.generator &&
@@ -267,54 +242,19 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
         entry.generator.getShadowMap()?.getSize().width ?? mapSize,
       );
     mapSize = 2 ** Math.floor(Math.log2(mapSize));
-    if (atlased) {
-      // A tile per cascade or face.
-      const room = atlasEdge ** 2 - atlasArea - (directional ? localReserve : 0);
-      while (mapSize >= 256 && passes * mapSize ** 2 > room) mapSize /= 2;
-      if (mapSize < 256) {
-        decision.reason = "shadow atlas space";
-        continue;
-      }
-      atlasArea += passes * mapSize ** 2;
-      decision.mapSize = mapSize;
-      decision.reason = recovery
-        ? "shadow map reduced after allocation failure"
-        : mapSize < requestedSize ? "shadow map reduced by shadow atlas space" : null;
-      decision.status = "active";
-      admitted.passes += passes;
-      continue;
-    }
-    // CSM constructs four layers before applying an authored lower count.
-    // Admit that temporary peak as well as the final attachments.
-    const cascaded = directional && settings.cascades > 1;
-    const peakPasses = cascaded ? 4 : passes;
-    const bytesPerTexel = cascaded ? budget.cascadedBytesPerTexel : budget.bytesPerTexel;
-    const availableBytes = Math.min(
-      byteBudget - admitted.bytes,
-      directional
-        ? reserveLocalMaps
-          ? byteBudget / 2
-          : byteBudget
-        : ((byteBudget - admitted.bytes) * passes) / remainingLocalFaces,
-    );
-    if (!directional) remainingLocalFaces -= passes;
-    while (
-      mapSize >= 256 &&
-      peakPasses * mapSize ** 2 * bytesPerTexel > availableBytes
-    )
-      mapSize /= 2;
+    // A tile per cascade or face.
+    const room = atlasEdge ** 2 - atlasArea - (directional ? localReserve : 0);
+    while (mapSize >= 256 && passes * mapSize ** 2 > room) mapSize /= 2;
     if (mapSize < 256) {
-      decision.reason = "shadow attachment memory budget";
+      decision.reason = "shadow atlas space";
       continue;
     }
+    atlasArea += passes * mapSize ** 2;
     decision.mapSize = mapSize;
     decision.reason = recovery
       ? "shadow map reduced after allocation failure"
-      : mapSize < requestedSize
-        ? "shadow map reduced by memory or texture capability"
-        : null;
+      : mapSize < requestedSize ? "shadow map reduced by shadow atlas space" : null;
     decision.status = "active";
-    admitted.bytes += peakPasses * mapSize ** 2 * bytesPerTexel;
     admitted.passes += passes;
   }
   return { decisions, planned: planned.map((decision) => decision.entry), admitted };

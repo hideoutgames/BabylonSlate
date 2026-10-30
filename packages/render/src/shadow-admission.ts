@@ -10,21 +10,6 @@ const reservations = new WeakMap<AbstractEngine, Map<Scene, ShadowCost>>();
 // shared managed lighting byte allowance; neither is total GPU memory.
 export const ENGINE_SHADOW_BUDGET = { bytes: 768 * 1024 ** 2, passes: 64 };
 
-/**
- * Babylon's shadow colour target (half, float or byte channels; red for a cascaded map, RGBA otherwise) plus its
- * 32-bit depth texture, per texel and layer.
- */
-export function shadowBytesPerTexel(engine: AbstractEngine, cascaded = false): number {
-  const caps = engine.getCaps();
-  const channel =
-    caps.textureHalfFloatRender && caps.textureHalfFloatLinearFiltering
-      ? 2
-      : caps.textureFloatRender && caps.textureFloatLinearFiltering
-        ? 4
-        : 1;
-  return channel * (cascaded ? 1 : 4) + 4;
-}
-
 export function otherShadowReservations(scene: Scene): ShadowCost {
   const total = { bytes: 0, passes: 0 };
   for (const [client, cost] of reservations.get(scene.getEngine()) ?? []) {

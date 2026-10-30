@@ -63,7 +63,6 @@ import {
   cameraDistanceSquared,
   planShadowAdmission,
   readShadowAdmissionBudget,
-  type ShadowAdmissionBudget,
 } from "./shadow-admission-plan";
 import {
   NEUTRAL_DARKNESS,
@@ -77,7 +76,7 @@ import {
   type ShadowMapSlot,
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
-import { AtlasShadowGenerator, isAtlasShadow, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
+import { AtlasShadowGenerator, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
@@ -517,21 +516,9 @@ export class SceneShadowController {
     const state = sceneRenderingSettings(scene);
     const requested = state.shadows;
     const engineSupportsCascades = scene.getEngine()._features.supportCSM;
-    // Babylon 9.29's constructor also checks its static last-created-engine
-    // capability. Match both gates before admission; a rejected CSM constructor
-    // cannot be recovered by trying smaller cascaded maps.
-    const constructorSupportsCascades = CascadedShadowGenerator.IsSupported;
-    const cascadeFallback =
-      requested.cascades <= 1
-        ? null
-        : !engineSupportsCascades
-          ? "cascades: device capability; using single-map directional shadows"
-          : !constructorSupportsCascades
-            ? "cascades: Babylon constructor capability; using single-map directional shadows"
-            : null;
     const { settings } = effectiveShadowSettings(
       requested,
-      engineSupportsCascades && constructorSupportsCascades,
+      engineSupportsCascades,
       state.mode,
       deviceProfile().shadowMapCap,
     );
@@ -564,12 +551,6 @@ export class SceneShadowController {
           casterBounds.min,
           casterBounds.max,
         );
-    };
-    const applyCascadeFallback = (entry: Entry) => {
-      if (entry.light instanceof DirectionalLight && cascadeFallback)
-        entry.reason = entry.reason
-          ? `${cascadeFallback}; ${entry.reason}`
-          : cascadeFallback;
     };
     // Only map moves and standby retention compare serialized settings.
     let serializedSettings: string | undefined;
@@ -649,13 +630,11 @@ export class SceneShadowController {
     let pooled = 0;
     for (const entry of this.entries.values())
       if (entry.status === "active" && !(entry.light instanceof DirectionalLight)) pooled++;
-    const standby: ShadowCost = { bytes: 0, passes: 0 };
     // Standby maps are optional reuse within the scene's room.
     const standbyBudget = Math.max(0, Math.min(budget.bytes, availableSceneShadowBytes(scene)));
     for (const entry of donors.reverse()) {
       const generator = entry.generator!;
-      const bytes = reservedShadowBytes(generator, entry.mapSize, budget);
-      // The Forward light budget dropped this light for camera distance: it is
+      // The light block's selection dropped this light for camera distance: it is
       // camera-rejected like a budget-limited one. Releasing its map would
       // dispose the generator, and readmission would rebuild every caster's
       // depth effect. Its "disabled" status hides a withdrawn request, so
@@ -671,13 +650,12 @@ export class SceneShadowController {
           !forwardLimited) ||
         JSON.stringify(entry.settings) !== settingsKey() ||
         pooled >= settings.maxLocalLights ||
-        admitted.bytes + standby.bytes + bytes > standbyBudget
+        admitted.bytes > standbyBudget
       ) {
         release(entry);
         continue;
       }
       pooled++;
-      standby.bytes += bytes;
       if (entry.standby) continue;
       entry.standby = true;
       entry.effectiveBias.length = 0;
@@ -689,7 +667,7 @@ export class SceneShadowController {
         map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     }
     reserveSceneShadows(this.scene, {
-      bytes: admitted.bytes + standby.bytes, passes: admitted.passes,
+      bytes: admitted.bytes, passes: admitted.passes,
     });
     // One scene-wide light invalidation covers every retained generator's defines.
     let materialsDirty = false;
@@ -778,15 +756,11 @@ export class SceneShadowController {
       }
       if (entry.generator) entry.status = "active";
     }
-    // Failed constructors own no allocation. Retain conservative CSM creation
-    // headroom for live generators so another client cannot consume it mid-sync.
-    // The atlas is counted whole, once, while it holds a map.
+    // Failed constructors own no allocation. The atlas is counted whole, once, while it holds a map.
     releaseEmptyShadowAtlas(scene);
     const live: ShadowCost = { bytes: shadowAtlasBytes(scene), passes: 0 };
     for (const entry of this.entries.values()) {
       if (!entry.generator) continue;
-      applyCascadeFallback(entry);
-      live.bytes += reservedShadowBytes(entry.generator, entry.mapSize, budget);
       if (!entry.standby) live.passes += generatorPasses(entry.generator);
     }
     reserveSceneShadows(scene, live);
@@ -812,17 +786,6 @@ export class SceneShadowController {
     for (const entry of this.entries.values()) if (entry.generator) return true;
     return false;
   }
-}
-
-/** What a live map reserves: a cascaded map's four-layer construction peak (Babylon builds four, then the authored count), otherwise its faces. */
-/** A map's bytes: none for an atlas tile, whose bytes are the atlas's. */
-function reservedShadowBytes(generator: ShadowGenerator, mapSize: number, budget: ShadowAdmissionBudget): number {
-  if (isAtlasShadow(generator)) return 0;
-  return (generator instanceof CascadedShadowGenerator ? 4 : generatorPasses(generator)) * mapSize ** 2 * texelBytes(generator, budget);
-}
-
-function texelBytes(generator: ShadowGenerator, budget: ShadowAdmissionBudget): number {
-  return generator instanceof CascadedShadowGenerator ? budget.cascadedBytesPerTexel : budget.bytesPerTexel;
 }
 
 /** Whether a caster at `mesh` can draw into `generator`'s map: a local light's within its range (its cone unchecked), a sun's always. */
