@@ -836,11 +836,11 @@ describe("shared shadow lifecycle", () => {
     const shadowed = new PointLight("shadowed", new Vector3(5, 0, 0), scene);
     const nearer = new PointLight("nearer", new Vector3(1, 0, 0), scene);
     controller.register(shadowed, true);
-    syncForwardLightPolicy(scene, Number.MAX_SAFE_INTEGER, 2, selectHapticLights);
+    syncForwardLightPolicy(scene, 2, selectHapticLights);
     controller.sync();
     const generator = controller.generator(shadowed)!;
     const dispose = vi.spyOn(generator, "dispose");
-    syncForwardLightPolicy(scene, Number.MAX_SAFE_INTEGER, 1, selectHapticLights);
+    syncForwardLightPolicy(scene, 1, selectHapticLights);
     controller.sync();
     expect(shadowed.isEnabled()).toBe(false);
     expect(nearer.isEnabled()).toBe(true);
@@ -858,7 +858,7 @@ describe("shared shadow lifecycle", () => {
     expect(controller.metrics().bytes).toBeGreaterThan(0);
     expect(dispose).not.toHaveBeenCalled();
     // Capacity returns: the same map is admitted again, neutral until redrawn.
-    syncForwardLightPolicy(scene, Number.MAX_SAFE_INTEGER, 2, selectHapticLights);
+    syncForwardLightPolicy(scene, 2, selectHapticLights);
     controller.sync();
     expect(controller.generator(shadowed)).toBe(generator);
     expect(controller.status(shadowed)).toBe("active");
@@ -913,7 +913,7 @@ describe("shared shadow lifecycle", () => {
     const winner = new PointLight("winner", new Vector3(-1001, 0, 0), scene);
     winner.range = 10;
     controller.register(winner, true);
-    syncForwardLightPolicy(scene, Number.MAX_SAFE_INTEGER, 3, selectHapticLights);
+    syncForwardLightPolicy(scene, 3, selectHapticLights);
     controller.sync();
     expect(isForwardLightExcluded(dropped)).toBe(true);
     expect(controller.status(rejected)).toBe("outside-relevant-area");

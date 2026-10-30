@@ -514,12 +514,10 @@ it("uses normal preparation when a point-light handoff changes cube layout", asy
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
 });
 
-it("settles the material shadow layout before readiness instead of invalidating the first presented frame", async () => {
+it("prepares and presents a shadowed first frame without dirtying a Material", async () => {
   const { scene, camera, mesh, graph } = await fixture("spot");
   const dirty = vi.spyOn(mesh.material!, "markDirty");
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(dirty).toHaveBeenCalled();
-  dirty.mockClear();
   expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
   expect(dirty).not.toHaveBeenCalled();
   expect(scene.activeCamera).toBe(camera);

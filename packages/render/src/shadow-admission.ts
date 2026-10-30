@@ -4,7 +4,7 @@ import {
   reserveManagedShadowBytes,
 } from "./managed-lighting-resources";
 
-export type ShadowCost = { bytes: number; passes: number; samplers: number };
+export type ShadowCost = { bytes: number; passes: number };
 const reservations = new WeakMap<AbstractEngine, Map<Scene, ShadowCost>>();
 // Per-Engine shadow category ceiling. Cluster textures additionally consume the
 // shared managed lighting byte allowance; neither is total GPU memory.
@@ -26,7 +26,7 @@ export function shadowBytesPerTexel(engine: AbstractEngine, cascaded = false): n
 }
 
 export function otherShadowReservations(scene: Scene): ShadowCost {
-  const total = { bytes: 0, passes: 0, samplers: 0 };
+  const total = { bytes: 0, passes: 0 };
   for (const [client, cost] of reservations.get(scene.getEngine()) ?? []) {
     if (client === scene) continue;
     total.bytes += cost.bytes;

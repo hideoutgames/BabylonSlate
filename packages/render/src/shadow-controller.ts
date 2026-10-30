@@ -48,7 +48,6 @@ import {
   type ShadowCost,
 } from "./shadow-admission";
 import {
-  admissionSamplers,
   allocationKey,
   allocationRequestKey,
   generatorPasses,
@@ -262,7 +261,7 @@ export class SceneShadowController {
       this.pending.clear();
       this.refresh.dispose();
       this.spatial.dispose();
-      reserveSceneShadows(scene, { bytes: 0, passes: 0, samplers: 0 });
+      reserveSceneShadows(scene, { bytes: 0, passes: 0 });
       controllers.delete(scene);
     });
   }
@@ -645,18 +644,17 @@ export class SceneShadowController {
       neutralUntilRendered(generator);
     }
     // Remaining donors keep their receiver defines on standby while the pool,
-    // memory and sampler budgets allow; authored, eligibility and settings
+    // memory budgets allow; authored, eligibility and settings
     // changes still release immediately.
     let pooled = 0;
     for (const entry of this.entries.values())
       if (entry.status === "active" && !(entry.light instanceof DirectionalLight)) pooled++;
-    const standby: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
+    const standby: ShadowCost = { bytes: 0, passes: 0 };
     // Standby maps are optional reuse within the scene's room.
     const standbyBudget = Math.max(0, Math.min(budget.bytes, availableSceneShadowBytes(scene)));
     for (const entry of donors.reverse()) {
       const generator = entry.generator!;
       const bytes = reservedShadowBytes(generator, entry.mapSize, budget);
-      const samplers = admissionSamplers(entry.light, settings, budget.atlasEdge);
       // The Forward light budget dropped this light for camera distance: it is
       // camera-rejected like a budget-limited one. Releasing its map would
       // dispose the generator, and readmission would rebuild every caster's
@@ -673,15 +671,13 @@ export class SceneShadowController {
           !forwardLimited) ||
         JSON.stringify(entry.settings) !== settingsKey() ||
         pooled >= settings.maxLocalLights ||
-        admitted.bytes + standby.bytes + bytes > standbyBudget ||
-        admitted.samplers + standby.samplers + samplers > budget.samplers
+        admitted.bytes + standby.bytes + bytes > standbyBudget
       ) {
         release(entry);
         continue;
       }
       pooled++;
       standby.bytes += bytes;
-      standby.samplers += samplers;
       if (entry.standby) continue;
       entry.standby = true;
       entry.effectiveBias.length = 0;
@@ -693,7 +689,7 @@ export class SceneShadowController {
         map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     }
     reserveSceneShadows(this.scene, {
-      bytes: admitted.bytes + standby.bytes, passes: admitted.passes, samplers: admitted.samplers + standby.samplers,
+      bytes: admitted.bytes + standby.bytes, passes: admitted.passes,
     });
     // One scene-wide light invalidation covers every retained generator's defines.
     let materialsDirty = false;
@@ -786,7 +782,7 @@ export class SceneShadowController {
     // headroom for live generators so another client cannot consume it mid-sync.
     // The atlas is counted whole, once, while it holds a map.
     releaseEmptyShadowAtlas(scene);
-    const live: ShadowCost = { bytes: shadowAtlasBytes(scene), passes: 0, samplers: 0 };
+    const live: ShadowCost = { bytes: shadowAtlasBytes(scene), passes: 0 };
     for (const entry of this.entries.values()) {
       if (!entry.generator) continue;
       applyCascadeFallback(entry);
