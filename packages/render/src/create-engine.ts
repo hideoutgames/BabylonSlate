@@ -342,10 +342,11 @@ const PRESERVE_DRAWING_BUFFER_KEY = "haptic.debug.preserveDrawingBuffer";
 
 /**
  * Whether the project Engine keeps its drawing buffer between presentations: on unless the `preservebuffer off` debug
- * command turned it off. Every read of the Engine canvas (a view's copy, the direct presenter's held image, the read
- * sync of test builds) happens in the task that drew the frame, so presentation by swap (off) loses nothing; off is a
- * debug comparison on a device (WebKit may present a preserved buffer by copying, which can back up behind the
- * compositor). It is a context attribute, so it applies when the project Engine is next created (an editor reload).
+ * command turned it off. Off is a debug comparison on a device only (WebKit may present a preserved buffer by
+ * copying, which can back up behind the compositor): the Engine's own reads (a view's copy, the direct presenter's held
+ * image) happen in the task that drew the frame, but in a frame the Engine skips (the frame cap, a held frame) the
+ * canvas reads back blank, which fails the direct presentation e2e probe that samples every animation frame. It is a
+ * context attribute, so it applies when the project Engine is next created (an editor reload).
  */
 export function preserveDrawingBufferSetting(): boolean {
   try {
