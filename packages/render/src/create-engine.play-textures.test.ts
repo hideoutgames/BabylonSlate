@@ -1,6 +1,6 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
+import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core";
 import {
@@ -60,9 +60,6 @@ describe("textures across a Play cycle", () => {
       depthTextureExtension: true, textureFloatRender: true, textureHalfFloatRender: true,
     });
     enableHeadlessCascades(engine);
-    // A frame drawing a Material's previous Effect allocates the Scene's sampler placeholders, a cube among them,
-    // whose texture NullEngine leaves unattached and so never releases.
-    enableHeadlessCubeTargets(engine);
     engines.push(engine);
     return engine;
   }
