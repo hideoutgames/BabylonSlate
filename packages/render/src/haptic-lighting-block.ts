@@ -1,6 +1,7 @@
 import {
   Constants,
   GetEnvironmentBRDFTexture,
+  Material,
   NodeMaterialBlock,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialBlockTargets,
@@ -34,6 +35,9 @@ import {
   hapticLightingWgsl,
 } from "./haptic-lighting-shader";
 import { sceneRenderingSettings } from "./render-settings";
+import { screenShadowsForPass, screenShadowsPlaceholder } from "./screen-shadows";
+import { spatialEffectsUnsupported } from "./spatial-effects";
+import { isWaterSurfaceMesh } from "./water-surface-block";
 import { shadowAtlasTexture } from "./shadow-atlas";
 
 const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
@@ -84,6 +88,30 @@ function renderingHarmonics(polynomial: SphericalPolynomial | null): SphericalHa
 
 function celMode(scene: Scene): boolean {
   return sceneRenderingSettings(scene).mode === "cel";
+}
+
+/**
+ * Whether `material` reads Screen-Space Shadows on `mesh` (`HAPTIC_SCREEN_SHADOWS`): while the Scene's plan carries them
+ * (a world view's PBR Scene whose device draws the spatial geometry pass), for an opaque or masked lit surface (the
+ * compiler's transparency mode) that is not water: a blended or water surface is not what the depth holds. Scene-level as the warm-up compiles what the graph draws; a
+ * settings change, never a light change, flips it.
+ */
+function screenShadows(scene: Scene, material: NodeMaterial, mesh: AbstractMesh, unlit: boolean): boolean {
+  return sceneRenderingSettings(scene).effectsPlan?.screenShadows != null && !spatialEffectsUnsupported(scene) &&
+    !unlit && material.transparencyMode !== Material.MATERIAL_ALPHABLEND &&
+    material.transparencyMode !== Material.MATERIAL_ALPHATESTANDBLEND && !isWaterSurfaceMesh(mesh);
+}
+
+const screenShadowEffects = new WeakMap<Effect, boolean>();
+
+/** Whether `effect` reads the screen shadows; as `celEffect`, a draw binds for its own Effect. */
+function screenShadowEffect(effect: Effect): boolean {
+  let reads = screenShadowEffects.get(effect);
+  if (reads === undefined) {
+    reads = /^#define HAPTIC_SCREEN_SHADOWS$/m.test(effect.defines);
+    screenShadowEffects.set(effect, reads);
+  }
+  return reads;
 }
 
 const celEffects = new WeakMap<Effect, boolean>();
@@ -179,6 +207,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     defines.setValue("HAPTIC_EXACT_SRGB", scene.getEngine().useExactSrgbConversions, true);
     defines.setValue("HAPTIC_TWO_SIDED", !nodeMaterial.backFaceCulling, true);
     defines.setValue("HAPTIC_LIGHT_LOOP_PROOF", lightLoopProofScenes.has(scene), true);
+    defines.setValue("HAPTIC_SCREEN_SHADOWS", screenShadows(scene, nodeMaterial, mesh, this.unlit), true);
   }
 
   override isReady(mesh: AbstractMesh): boolean {
@@ -205,6 +234,12 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
     }
     effect.setFloat("hapticShadowReceiver", mesh.receiveShadows ? 1 : 0);
+    if (screenShadowEffect(effect)) {
+      // This pass's screen shadows (a planned view's objects pass), else the placeholder and the read off.
+      const screen = screenShadowsForPass(scene, scene.getEngine().currentRenderPassId);
+      effect.setTexture("hapticScreenShadowSampler", screen ?? screenShadowsPlaceholder(scene));
+      effect.setFloat4("hapticScreenShadowTerms", screen && mesh.receiveShadows ? 1 : 0, 0, 0, 0);
+    }
     // WebGPU draws only with every declared texture bound: the table always, the cube where a program declares it.
     effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
     if (celEffect(effect)) {
@@ -245,6 +280,8 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     for (const uniform of CEL_UNIFORMS) state._emitUniformFromString(uniform, NodeMaterialBlockConnectionPointTypes.Vector4, "HAPTIC_CEL");
     state._emitUniformFromString("hapticEnvironmentMatrix", NodeMaterialBlockConnectionPointTypes.Matrix);
     state._emitUniformFromString("hapticShadowReceiver", NodeMaterialBlockConnectionPointTypes.Float);
+    state._emitUniformFromString("hapticScreenShadowTerms", NodeMaterialBlockConnectionPointTypes.Vector4, "HAPTIC_SCREEN_SHADOWS");
+    state._emit2DSampler("hapticScreenShadowSampler", "defined(HAPTIC_SCREEN_SHADOWS)");
     state._emitCubeSampler("hapticEnvironmentSampler", "defined(HAPTIC_ENVIRONMENT)");
     state._emit2DSampler("hapticEnvironmentBrdfSampler");
     state._emit2DSampler("hapticAreaLtcSampler");
@@ -287,8 +324,11 @@ export class HapticLightingBlock extends NodeMaterialBlock {
 }
 RegisterClass("BABYLON.HapticLightingBlock", HapticLightingBlock);
 
-/** A render-mode change re-prepares `material`'s defines (`HAPTIC_CEL`) on its next draw, frozen or not. */
-export function followRenderMode(material: NodeMaterial): void {
+/**
+ * A settings change that flips the block's scene-level defines (`HAPTIC_CEL`, `HAPTIC_SCREEN_SHADOWS`) re-prepares
+ * `material`'s defines on its next draw, frozen or not.
+ */
+export function followLightingDefines(material: NodeMaterial): void {
   const listeners = sceneRenderingSettings(material.getScene()).listeners;
   const listener = () => material.markDirty(true);
   listeners.add(listener);

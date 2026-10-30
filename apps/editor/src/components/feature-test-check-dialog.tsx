@@ -77,13 +77,23 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
   benchmark: "Plays every Feature Test scene and measures each quality tier with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
-  breakdown: "Plays FT_World and turns one feature off at a time (shadows, water, post-processing effects, captures, half resolution), measuring each with the frame cap lifted. The frame-time change shows what each feature costs this device's GPU. A few minutes per scene; keep the device awake and plugged in.",
+  breakdown: "Plays FT_World and turns one feature off at a time (shadows, water, post-processing effects, captures, half resolution), measuring each at 60 fps once its shaders are ready, between baselines. The frame-time change shows what each feature costs this device's GPU. A few minutes per scene; keep the device awake and plugged in.",
 };
 
 const MODES = ["quick", "full", "benchmark", "breakdown"] as const satisfies readonly FeatureTestCheckMode[];
 
 /** How often a running check samples what the editor holds, so a crash's report shows memory climbing. */
 const RESOURCE_SAMPLE_MS = 2_000;
+
+/** Shader programs every Engine holds that are still compiling: a Breakdown step samples only once none are. */
+function compilingEffects(): number {
+  let compiling = 0;
+  for (const engine of EngineStore.Instances) {
+    const compiled = (engine as AbstractEngine & { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
+    for (const effect of Object.values(compiled)) if (!effect.isReady()) compiling += 1;
+  }
+  return compiling;
+}
 
 /** Shader programs, textures and memory every Engine holds now, and the Play view's drawn and held frames. */
 async function sampleCheckResources(atMs: number, step: string): Promise<FeatureTestCheckResources> {
@@ -186,6 +196,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       sessionIdle: () => playRef.current.sessionOwner.canStart(),
       onSessionClosed: onPlaySessionClosed,
       sampleFrames,
+      compiling: compilingEffects,
       now: () => performance.now(),
       sleep,
       onProgress: (message) => setPhase({ kind: "running", message }),
