@@ -72,17 +72,24 @@ function sceneLines(scene: FeatureTestCheckSceneResult, mode: FeatureTestCheckMo
     lines.push(`  > ${command.line}: ${command.success ? "ok" : "FAILED"} in ${s(command.ms)}${command.output ? ` · ${clip(command.output, 160)}` : ""}`);
   }
   if (play.benchmark.length && mode === "breakdown") {
-    lines.push(
-      "  Breakdown (60 fps cap; each step sampled once no shader is first drawn or compiling):",
-      "  Legend: change = mean frame time against the baselines around the step (a baseline's: against the first) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed; UNEXPECTED, NOT RESTORED and UNSETTLED mark a sample not to trust",
-      `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("vsync 1/2/3/4+", 16)}${pad("change", 17)}${pad("cpu", 8)}${pad("bound", 6)}${pad("draws", 14)}notes`);
     const first = play.benchmark.find(isBreakdownBaseline);
+    const timed = play.benchmark.find((sample) => sample.gpuBusy);
+    const preserve = first?.settings?.["presentation.preserve"];
+    lines.push(
+      "  Breakdown (60 fps cap; warm-up until steady, then a baseline before and after every step; each sampled once no shader is first drawn or compiling):",
+      "  Legend: gpu busy = median (p95) GPU time per frame from fences, unaffected by display pacing · change = gpu busy against the baselines around the step (a baseline's: against the first), or mean frame time where gpu busy is missing (marked *) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed; UNEXPECTED, NOT RESTORED and UNSETTLED mark a sample not to trust",
+      `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"} · preserveDrawingBuffer ${preserve ?? "unknown"}`,
+      `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("vsync 1/2/3/4+", 16)}${pad("gpu busy", 14)}${pad("change", 18)}${pad("cpu", 8)}${pad("bound", 6)}${pad("draws", 14)}notes`);
     for (const sample of play.benchmark) {
       const delta = breakdownDelta(play.benchmark, sample);
-      const change = delta ? `${delta.ms >= 0 ? "+" : ""}${delta.ms.toFixed(1)}ms ${delta.percent >= 0 ? "+" : ""}${delta.percent.toFixed(0)}%` : "-";
+      const change = delta
+        ? `${delta.ms >= 0 ? "+" : ""}${delta.ms.toFixed(1)}ms ${delta.percent >= 0 ? "+" : ""}${delta.percent.toFixed(0)}%${delta.basis === "frame" ? "*" : ""}`
+        : "-";
       const mean = meanFrameMs(sample.frames);
       const vsync = sample.frames?.vsync?.map((share) => (share * 100).toFixed(0)).join("/") ?? "-";
-      lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(vsync, 16)}${pad(change, 17)}${pad(ms(sample.cpuMs), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${breakdownNotes(sample, first)}`.trimEnd());
+      const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
+      const notes = [sample.warmup ? "warm-up" : "", breakdownNotes(sample, first)].filter(Boolean).join(" · ");
+      lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(vsync, 16)}${pad(busy, 14)}${pad(change, 18)}${pad(ms(sample.cpuMs), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${notes}`.trimEnd());
     }
   } else if (play.benchmark.length) {
     lines.push("  Benchmark (frame cap lifted):", `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 20)}${pad("gpu", 20)}${pad("draws", 14)}resolution`);
@@ -141,7 +148,7 @@ function breakdownNotes(sample: FeatureTestBenchmarkSample, first: FeatureTestBe
     const changes = settingsChanges(first.settings, sample.settings);
     const fields = FEATURE_TEST_BREAKDOWN_STEPS.find((step) => step.label === sample.label)?.fields ?? [];
     const field = (change: string) => change.slice(0, change.indexOf("="));
-    if (isBreakdownBaseline(sample)) {
+    if (isBreakdownBaseline(sample) || sample.warmup) {
       if (changes.length) notes.push(`NOT RESTORED: ${changes.join(", ")}`);
     } else {
       const own = changes.filter((change) => fields.includes(field(change)));

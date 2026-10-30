@@ -109,14 +109,48 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines.some((line) => line.includes("60 fps cap"))).toBe(true);
     expect(lines.filter((line) => line.startsWith("  Legend: ")).length).toBe(1);
     // Mean frame time against the baselines around the step; vsync shares; GPU-bound well past the CPU cost.
-    expect(row("water reflections sky")).toMatch(/^ {4}water reflections sky 33 {3}30\.0ms {2}38ms {3}10\/80\/5\/5 {7}-10\.0ms -25% {5}14\.2ms {2}gpu {3}575 \(544-605\) water\.reflections=sky$/);
+    expect(row("water reflections sky")).toMatch(/^ {4}water reflections sky 33 {3}30\.0ms {2}38ms {3}10\/80\/5\/5 {7}- {13}-10\.0ms -25%\* {5}14\.2ms {2}gpu {3}575 \(544-605\) water\.reflections=sky$/);
     expect(row("water detail low")).toContain("water.shadingDetail=low · UNEXPECTED: water.reflections=sky");
     expect(row("water detail medium")).toContain("vsync");
     expect(row("water detail medium")).toContain("UNSETTLED: 3 first drawn, 1 compiling · no setting changed");
-    expect(row("baseline 2")).toContain("+4.0ms +11%");
+    expect(row("baseline 2")).toContain("+4.0ms +11%*");
     expect(row("baseline 2")).toContain("NOT RESTORED: post.enabled=false");
-    expect(row("baseline 1")).toMatch(/\+0\.0ms \+0% +14\.2ms {2}gpu {3}575 \(544-605\)$/);
+    expect(row("baseline 1")).toMatch(/\+0\.0ms \+0%\* +14\.2ms {2}gpu {3}575 \(544-605\)$/);
     expect(lines.some((line) => line.includes("Highest tier"))).toBe(false);
+    // Without fences: no GPU-busy times, and every change is in mean frame time (marked *).
+    expect(lines).toContain("  Timing: no gpu busy (no fences) · preserveDrawingBuffer unknown");
+  });
+
+  it("shows GPU-busy times and compares them, marks warm-up windows, and states the timing resolution and buffer mode", () => {
+    const settings = { shadows: "high 2048", "presentation.preserve": "false" };
+    const sample = (label: string, busyMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
+      label, baseline: label.startsWith("baseline"),
+      frames: { frames: 100, durationMs: 3330, fps: 30, medianMs: 33.3, meanMs: 33.3, p95Ms: 34, maxMs: 40, stalls: 0, vsync: [0, 1, 0, 0] },
+      runtimeFps: null, cpuMs: 8, gpuMs: null, drawCalls: 575, resolution: "1180x788@1.00", failed: [], settings,
+      gpuBusy: { frames: 150, medianMs: busyMs, p95Ms: busyMs + 3, pollMs: 4.2, skipped: 0 }, ...extra,
+    });
+    const report: FeatureTestCheckReport = {
+      mode: "breakdown", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],
+      scenes: [{
+        name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
+        editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [],
+          benchmark: [
+            sample("warm-up 1", 26, { baseline: false, warmup: true }),
+            sample("baseline 1", 20),
+            sample("shadows off", 14, { settings: { ...settings, shadows: "off" } }),
+            sample("baseline 2", 22),
+          ], logs: [] },
+        session: null,
+      }],
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    const row = (label: string) => lines.find((line) => line.startsWith(`    ${label} `))!;
+    expect(lines).toContain("  Timing: gpu busy polled every 4.2 ms (each frame up to one poll late) · preserveDrawingBuffer false");
+    // 14 against the mean of 20 and 22, though every frame lasted two display intervals.
+    expect(row("shadows off")).toMatch(/0\/100\/0\/0 {7}14\.0 \(17\) {5}-7\.0ms -33% {7}8\.0ms/);
+    expect(row("baseline 2")).toContain("+2.0ms +10% ");
+    expect(row("warm-up 1")).toMatch(/26\.0 \(29\) {5}- .*warm-up$/);
   });
 
   it("shows the counters' medians with their ranges when frames differ", () => {

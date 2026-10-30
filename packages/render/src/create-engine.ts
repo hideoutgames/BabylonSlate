@@ -49,6 +49,7 @@ import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
+import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import type { SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
@@ -327,13 +328,41 @@ export const PIPELINE_HOLD_PAUSE_DELAY_MS = 250;
  */
 function projectEngineOptions(): EngineOptions {
   return {
-    preserveDrawingBuffer: true,
+    preserveDrawingBuffer: preserveDrawingBufferSetting(),
     stencil: true,
     adaptToDeviceRatio: false,
     antialias: false,
     useLargeWorldRendering: true,
     useExactSrgbConversions: true,
   };
+}
+
+/** Browser storage key of the `preservebuffer` debug setting. */
+const PRESERVE_DRAWING_BUFFER_KEY = "haptic.debug.preserveDrawingBuffer";
+
+/**
+ * Whether the project Engine keeps its drawing buffer between presentations: on unless the `preservebuffer off` debug
+ * command turned it off. Every read of the Engine canvas (a view's copy, the direct presenter's held image, the read
+ * sync of test builds) happens in the task that drew the frame, so presentation by swap (off) loses nothing; off is a
+ * debug comparison on a device (WebKit may present a preserved buffer by copying, which can back up behind the
+ * compositor). It is a context attribute, so it applies when the project Engine is next created (an editor reload).
+ */
+export function preserveDrawingBufferSetting(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(PRESERVE_DRAWING_BUFFER_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+/** Debug (`preservebuffer on|off`): store the setting for the next project Engine. */
+export function setPreserveDrawingBufferSetting(enabled: boolean): void {
+  try {
+    if (enabled) globalThis.localStorage?.removeItem(PRESERVE_DRAWING_BUFFER_KEY);
+    else globalThis.localStorage?.setItem(PRESERVE_DRAWING_BUFFER_KEY, "off");
+  } catch {
+    // Storage unavailable (a private window): the setting stays on.
+  }
 }
 
 /** Frames with no layer still presenting share this set instead of building one. */
@@ -1030,6 +1059,9 @@ function initializeEngine(
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
       "resolution.scale": String(quality.resolution.scale),
+      // The live context's attribute, not the stored setting: the setting applies to the next Engine.
+      "presentation.preserve": engine.isWebGPU ? "n/a"
+        : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
     };
   };
   const setPostProcessingEnabled = (enabled: boolean) => {
@@ -1699,7 +1731,8 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+    ))(), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
+      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
@@ -2819,6 +2852,11 @@ function initializeEngine(
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
       if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
+      if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
+      if (command.type === "setGpuBusyProbeDebug") {
+        const probe = engineGpuBusyProbe(engine);
+        if (command.enabled) probe?.start(); else probe?.stop();
+      }
       if (command.type === "setRenderTargetCapturesDebug") {
         renderTargetCaptures.setEveryFrameSuspended(!command.enabled);
         scheduler.invalidate("asset");
