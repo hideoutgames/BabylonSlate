@@ -1010,6 +1010,13 @@ function initializeEngine(
       onDiagnostic: (diagnostic) => options.onPostProcessDiagnostic?.(diagnostic),
     });
   };
+  const setPostProcessingEnabled = (enabled: boolean) => {
+    postProcessingEnabled = enabled;
+    setSceneEffectsEnabled(scene, enabled);
+    rebuildPostProcessStack();
+    sceneLayerCompositor?.refreshPostProcess();
+    scheduler.invalidate("asset");
+  };
 
   let appliedQuality: ReturnType<typeof resolveRenderingQuality> | undefined;
   let appliedEffectsKey: string | undefined;
@@ -2789,6 +2796,11 @@ function initializeEngine(
       if (command.type === "setScalability" && options.playMode) runtimeScalability?.enqueue(command.transaction);
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
+      if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
+      if (command.type === "setRenderTargetCapturesDebug") {
+        renderTargetCaptures.setEveryFrameSuspended(!command.enabled);
+        scheduler.invalidate("asset");
+      }
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
         scheduler.invalidate("snapshot");
@@ -3135,13 +3147,7 @@ function initializeEngine(
       })),
     ownedScenes: () => [scene, ...(sceneLayerCompositor?.ownedScenes() ?? [])],
     assignedMaterialGuids: () => listAssignedMaterialGuids(binding),
-    setPostProcessingEnabled: (enabled: boolean) => {
-      postProcessingEnabled = enabled;
-      setSceneEffectsEnabled(scene, enabled);
-      rebuildPostProcessStack();
-      sceneLayerCompositor?.refreshPostProcess();
-      scheduler.invalidate("asset");
-    },
+    setPostProcessingEnabled,
     setLocalQualityOverrides: (overrides) => {
       sceneRenderingSettings(scene).localQualityOverrides = overrides;
       setSceneRenderSettings(scene);

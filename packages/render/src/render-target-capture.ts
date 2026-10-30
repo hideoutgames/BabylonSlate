@@ -197,6 +197,8 @@ export class RenderTargetCaptures {
   private readonly beforeRender: Observer<Scene>;
   private readonly releaseAuxiliaryViews: () => void;
   private disposed = false;
+  /** Every-frame captures skip their draws while set (`setEveryFrameSuspended`); manual requests still draw. */
+  private everyFrameSuspended = false;
   /** Whether manual captures not yet requested draw unpublished now (`rehearseManualCaptures`). */
   private rehearsing: () => boolean = () => false;
   /** Outputs rehearsed this starting state, and those tried and not yet drawn. */
@@ -314,6 +316,13 @@ export class RenderTargetCaptures {
     return { resource: texture, key: `renderTargetTexture:${guid}`, release() {} };
   }
   /**
+   * Debug (the `rendertargets` console command): suspends every-frame captures, which keep their outputs, targets and
+   * views and publish nothing until resumed; manual captures still draw when requested.
+   */
+  setEveryFrameSuspended(suspended: boolean): void {
+    this.everyFrameSuspended = suspended;
+  }
+  /**
    * Runs from the scene view's `onBeforeRender`: draws Fast captures now and
    * queues this frame's Full Quality captures, which the view's graph draws
    * after Babylon's evaluation (`drawSceneAuxiliaryViews`).
@@ -328,6 +337,7 @@ export class RenderTargetCaptures {
       const settings = capture.settings;
       const guid = settings.renderTargetGuid;
       if (!settings.enabled || !guid || this.frameOwners.has(guid)) continue;
+      if (this.everyFrameSuspended && settings.captureEveryFrame) continue;
       const definition = this.definitions.get(guid);
       if (!definition) continue;
       const root = capture.root();

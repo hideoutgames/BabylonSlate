@@ -151,6 +151,8 @@ export interface PostProcessingQuality extends QualitySelection {
   volumetricLighting: boolean;
 }
 export type PostProcessingEffectField = "ambientOcclusion" | "reflections" | "volumetricLighting";
+/** The effects a tier allows; also the console names for `quality postprocessing <effect> on|off`. */
+export const POST_PROCESSING_EFFECT_FIELDS: readonly PostProcessingEffectField[] = ["ambientOcclusion", "reflections", "volumetricLighting"];
 export interface LightingQuality extends QualitySelection {
   localLightMode: "auto" | "manual";
   maxLocalLights: number;
@@ -642,6 +644,15 @@ export class RenderingQualitySession {
         this.overrides = {
           ...this.overrides,
           water: { ...this.overrides.water, ...water },
+        };
+      else if (
+        group === "postprocessing" &&
+        (POST_PROCESSING_EFFECT_FIELDS as readonly string[]).includes(choice) &&
+        (value === "on" || value === "off")
+      )
+        this.overrides = {
+          ...this.overrides,
+          postprocessing: { ...this.overrides.postprocessing, [choice]: value === "on" },
         };
       else if (
         group === "lighting" &&
