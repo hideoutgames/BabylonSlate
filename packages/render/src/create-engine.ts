@@ -36,12 +36,7 @@ import { applyPostProcessParameterCommand } from "./post-process-parameter-comma
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
-import {
-  isFixedShapeLightingEnabled,
-  setFixedShapeLightingEnabled,
-  setFixedShapeLightingWorldScene,
-} from "./fixed-light-admission";
-import { fixedShapeLightGuard, setFixedShapeLightGuard, type FixedLightGuard } from "./fixed-light-binding";
+import { setFixedShapeLightingWorldScene } from "./fixed-light-admission";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
 import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-host";
@@ -428,14 +423,6 @@ function initializeEngine(
   trackFirstDraws(engine);
   const firstDraws = options.playMode ? openFirstDrawStats(engine) : null;
   onRollback(() => firstDraws?.close());
-  // Console `fixedlights` switches the shared Engine; the state it found comes back when this view goes.
-  let fixedShapeLightingBefore: { enabled: boolean; guard: FixedLightGuard } | null = null;
-  const restoreFixedShapeLighting = () => {
-    if (!fixedShapeLightingBefore) return;
-    setFixedShapeLightGuard(engine, fixedShapeLightingBefore.guard);
-    setFixedShapeLightingEnabled(engine, fixedShapeLightingBefore.enabled);
-    fixedShapeLightingBefore = null;
-  };
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: mainThreadDecoding,
     ...ktx2Runtime,
@@ -2339,7 +2326,6 @@ function initializeEngine(
       firstDraws?.close();
       releaseStaged();
       releaseMainThreadDecoding?.();
-      restoreFixedShapeLighting();
       engine.stopRenderLoop(renderLoop);
       // Bounded cleanup reporting (`bounded`) stays separate from confirmed
       // actual native release (`actual`): an uncertain report never proves a
@@ -2825,12 +2811,6 @@ function initializeEngine(
       if (command.type === "setScalability" && options.playMode) runtimeScalability?.enqueue(command.transaction);
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
-      if (command.type === "setFixedShapeLighting" && options.playMode) {
-        fixedShapeLightingBefore ??= { enabled: isFixedShapeLightingEnabled(engine), guard: fixedShapeLightGuard(engine) };
-        setFixedShapeLightGuard(engine, command.guard);
-        setFixedShapeLightingEnabled(engine, command.enabled);
-        scheduler.invalidate("asset");
-      }
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
         scheduler.invalidate("snapshot");

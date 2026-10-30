@@ -35,7 +35,6 @@ The game keeps running while the console is open, and pressing the game does not
 | `quality water` | tier or `reset`; setting and value | Water rendering quality, or one water setting (see below). Buoyancy is unaffected. |  |
 | `quality postprocessing` | tier or `reset` | Post-processing quality. |  |
 | `quality lighting` | tier or `reset`; `budget` N or `auto` | Lighting quality and the number of local lights. |  |
-| `fixedlights` | `on`, `off`, `multiply`, `branch` or `reset` | Turns fixed-shape lighting on or off for the session. With it on, built-in materials compile their shaders once for the scene's lights, so a light turning on or off or changing places does not recompile them. When they do recompile (for example for more lights than they were built for), the view keeps its last image until the new shaders are ready instead of drawing the old ones. `multiply` and `branch` turn it on and choose how shaders skip unused light slots (`multiply` is the default). No argument prints the current state; Play restores the editor's state when it stops. |  |
 | `framecap` | fps | Limits the frame rate. 0 or less uses 60. |  |
 | `volume` | 0 to 1 | Sets the master volume, like [Set Global Volume](../scripting/class/set-global-volume.md). |  |
 | `quit` |  | Stops the session. Play and Preview Build close and return to the editor; an exported game stops running. |  |
