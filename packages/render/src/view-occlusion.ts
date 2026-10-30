@@ -36,8 +36,11 @@ export interface OccluderShape {
 
 /** Triangles drawn as occluders per frame, the largest on screen first. */
 export const OCCLUDER_TRIANGLE_BUDGET = 3000;
-/** An occluder smaller than this many buffer texels across is not drawn. */
-const MIN_OCCLUDER_TEXELS = 6;
+/**
+ * An occluder whose bounding sphere's radius spans fewer buffer texels is not drawn: small ones cost a raster and an
+ * erosion each and seldom hide a whole box (until the tuning pass measures it on device).
+ */
+const MIN_OCCLUDER_TEXELS = 16;
 const BUFFER_WIDTH = 256;
 const BUFFER_HEIGHT = 128;
 
@@ -108,8 +111,27 @@ export interface ViewOcclusionDiagnostics {
   ms: number;
 }
 
-// A box's twelve triangles over corners numbered x + 2y + 4z, and a plane's two over its four corners at z min.
-const BOX_INDICES = [0, 2, 3, 0, 3, 1, 4, 5, 7, 4, 7, 6, 0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3, 0, 4, 6, 0, 6, 2, 1, 3, 7, 1, 7, 5];
+/**
+ * A box's twelve triangles over corners numbered x + 2y + 4z, each wound counter-clockwise seen from outside the box
+ * (its edges' cross product points out), so a face toward the camera has one screen winding: clockwise for Babylon's
+ * left-handed view and projection and an unmirrored world matrix, flipped by each mirror (`ViewOcclusion.frontWinding`).
+ * Only front faces draw: they cover the box's silhouette, nearer than its back.
+ */
+const BOX_INDICES = boxIndices();
+
+function boxIndices(): number[] {
+  const corner = (index: number) => [index & 1, (index >> 1) & 1, (index >> 2) & 1];
+  const indices: number[] = [];
+  for (const [a, b, c, d, axis, sign] of [
+    [0, 2, 6, 4, 0, -1], [1, 3, 7, 5, 0, 1], [0, 1, 5, 4, 1, -1], [2, 3, 7, 6, 1, 1], [0, 1, 3, 2, 2, -1], [4, 5, 7, 6, 2, 1],
+  ] as const) {
+    const [pa, pb, pc] = [corner(a), corner(b), corner(c)];
+    const u = pb.map((value, index) => value - pa[index]!), v = pc.map((value, index) => value - pa[index]!);
+    const normal = [u[1]! * v[2]! - u[2]! * v[1]!, u[2]! * v[0]! - u[0]! * v[2]!, u[0]! * v[1]! - u[1]! * v[0]!];
+    indices.push(...(normal[axis]! * sign > 0 ? [a, b, c, a, c, d] : [a, c, b, a, d, c]));
+  }
+  return indices;
+}
 
 /** One world view's occlusion buffer and filtered list (no allocation per frame once warm). */
 export class ViewOcclusion {
@@ -119,6 +141,8 @@ export class ViewOcclusion {
   private readonly coverage: number[] = [];
   private readonly order: number[] = [];
   private readonly matrix = new Float64Array(16);
+  /** The sign the view and projection give a world triangle's screen winding (positive: Babylon's left-handed own). */
+  private viewParity = 1;
   private readonly corners = new Float64Array(24);
   private readonly flat = new Float64Array(24);
   readonly diagnostics: ViewOcclusionDiagnostics = { tested: 0, culled: 0, occluders: 0, triangles: 0, ms: 0 };
@@ -189,7 +213,7 @@ export class ViewOcclusion {
       corners[corner * 3 + 2] = corner & 4 ? shape.max[2] : shape.min[2];
     }
     if (!shape.singleSided) {
-      this.buffer.rasterize(corners, BOX_INDICES, world);
+      this.buffer.rasterize(corners, BOX_INDICES, world, this.viewParity * determinant3(world) > 0 ? "clockwise" : "counterClockwise");
       return 12;
     }
     // A plane: its two largest axes span it, at the middle of the third.
@@ -230,9 +254,10 @@ export class ViewOcclusion {
     return diagnostics.culled > 0 ? kept : meshes;
   }
 
-  /** The camera's view times its projection, in doubles. */
+  /** The camera's view times its projection, in doubles, and the winding parity they give. */
   private viewProjection(camera: Camera): void {
     const view = camera.getViewMatrix().m, projection = camera.getProjectionMatrix().m, out = this.matrix;
+    this.viewParity = Math.sign(determinant3(view) * projection[0]! * projection[5]! * projection[11]!) || 1;
     for (let row = 0; row < 4; row++)
       for (let column = 0; column < 4; column++) {
         let sum = 0;
@@ -243,6 +268,11 @@ export class ViewOcclusion {
 }
 
 const PLANE_INDICES = [0, 1, 3, 0, 3, 2];
+
+/** The determinant of a Babylon matrix's upper 3 × 3 (negative for a mirror). */
+function determinant3(m: ArrayLike<number>): number {
+  return m[0]! * (m[5]! * m[10]! - m[6]! * m[9]!) - m[1]! * (m[4]! * m[10]! - m[6]! * m[8]!) + m[2]! * (m[4]! * m[9]! - m[5]! * m[8]!);
+}
 
 /** Whether `mesh`, an occluder in the view's list, hides what is behind it this frame. */
 function occludes(mesh: AbstractMesh): boolean {

@@ -23,11 +23,13 @@ afterEach(() => {
 });
 
 /** A camera at the origin looking down +Z, a 9 m wall 5 m ahead, and boxes behind and beside it. */
-function view() {
+function view({ rightHanded = false } = {}) {
   const engine = new NullEngine({ renderWidth: 512, renderHeight: 256, textureSize: 256, deterministicLockstep: false, lockstepMaxSteps: 1 });
   engines.push(engine);
   const scene = new Scene(engine);
+  scene.useRightHandedSystem = rightHanded;
   const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
+  if (rightHanded) camera.setTarget(new Vector3(0, 0, 5));
   camera.minZ = 0.1;
   camera.maxZ = 1000;
   scene.activeCamera = camera;
@@ -82,7 +84,8 @@ describe("ViewOcclusion", () => {
     expect(names(kept)).toEqual(["wall", "beside"]);
     expect(kept).not.toBe(meshes);
     expect(meshes).toEqual(input);
-    expect(occlusion.diagnostics).toMatchObject({ tested: 3, culled: 1, occluders: 3, triangles: 36 });
+    // The far crate is too small on screen to draw as an occluder.
+    expect(occlusion.diagnostics).toMatchObject({ tested: 3, culled: 1, occluders: 2, triangles: 24 });
   });
 
   it("returns the input list itself when nothing is hidden", () => {
@@ -189,6 +192,19 @@ describe("ViewOcclusion", () => {
     expect(names(tracked.filter())).not.toContain("hidden");
     // WebGPU: draws are not tracked (a warm draw creates a pipeline whatever the cull lists), so the rule never applies.
     expect(withFreshEffect(view())).not.toContain("hidden");
+  });
+
+  it.each<[string, boolean, (setup: ReturnType<typeof view>) => void]>([
+    ["", false, () => {}],
+    [" mirrored", false, ({ wall }) => { wall.scaling.x = -6; }],
+    [" in a right-handed scene", true, () => {}],
+  ])("draws a box occluder's front faces only%s: the buffer holds its near side", (_, rightHanded, change) => {
+    const setup = view({ rightHanded });
+    change(setup);
+    expect(names(setup.filter())).not.toContain("hidden");
+    // The wall's faces toward the camera lie 4.85 m away, its back 5.15 m.
+    const buffer = (setup.occlusion as unknown as { buffer: { depthAt(x: number, y: number): number } }).buffer;
+    expect(buffer.depthAt(128, 64)).toBeCloseTo(4.85, 3);
   });
 
   it("draws the largest occluders first, up to the triangle budget", () => {
