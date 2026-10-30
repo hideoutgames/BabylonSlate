@@ -5,7 +5,7 @@
 import { ThinTexture } from "@babylonjs/core";
 import {
   WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, WATER_SPECTRUM_GRAVITY, waterFoamScale, waterFoamThreshold,
-  waterSpectrum, type WaterDefinition, type WaterSpectrum,
+  waterSpectrum, type WaterDefinition, type WaterShadingDetail, type WaterSpectrum,
 } from "@haptic/core";
 
 /**
@@ -42,6 +42,16 @@ export const WATER_BLEND_DEFINE = "SLATE_WATER_BLEND";
  * opaque, so the surface (not what lies below it) fills the buffers at every angle.
  */
 export const WATER_EFFECTS_GEOMETRY_DEFINE = "SLATE_WATER_EFFECTS_GEOMETRY";
+/**
+ * The device-clamped project Water Shading Detail as a level, 0 (Low) to 3 (Ultra), which every water node block sets
+ * (`#if SLATE_WATER_DETAIL >= n`). It scales only the water nodes' costliest per-pixel terms: Medium drops Water Scene
+ * Color's silhouette fallback (four depth loads), Low also the four-tap shoreline under the waves (Water Foam's and
+ * Water Depth Fade's), the contact foam's tap and pattern and edge foam's two finer noise octaves. High and Ultra draw
+ * every term. Reflections, Refraction, Reflection Steps and FFT Cascades are settings of their own, which it never
+ * overrides.
+ */
+export const WATER_DETAIL_DEFINE = "SLATE_WATER_DETAIL";
+export const WATER_DETAIL_LEVELS: Readonly<Record<WaterShadingDetail, number>> = { low: 0, medium: 1, high: 2, ultra: 3 };
 /** A Custom Material's Water Colors node mixes toward a blending mesh's colour partners (`WaterColorsBlock`). */
 export const WATER_NODE_BLEND_DEFINE = "SLATE_WATER_NODE_BLEND";
 /** Where a water node graph reads `slateWaterBlend`: its Water Waves node's blend scaling, or its Water Colors node's shares. */
