@@ -64,6 +64,7 @@ describe("ParticleService", () => {
     sortingLayers?: () => readonly string[] | undefined;
     /** Transform-feedback caps: GPU slots are built, but NullEngine never draws them. */
     gpu?: boolean;
+    programsDrawn?: (system: unknown) => boolean;
   } = {}) {
     const handle = createTestEngine();
     handles.push(handle);
@@ -92,6 +93,7 @@ describe("ParticleService", () => {
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
       statsScope: options.statsScope,
       sortingLayers: options.sortingLayers,
+      programsDrawn: options.programsDrawn,
     });
     const assign = (slotId = 1, play = true) => service.handleCommand({ type: "assignParticle", slotId, actorGuid: "fx",
       componentId: "particle-1", particleSystemGuid: "sys-1", play });
@@ -450,6 +452,73 @@ describe("ParticleService", () => {
     service.drawingUnstartedSystems(() => { scene.render(); });
     expect(simulation(system)).toEqual(before);
     expect(before).toMatchObject({ started: true, paused: true, active: 3 });
+    service.dispose();
+  });
+
+  it("prepares the systems a spawn may play for the starting-state draw, then retires them keeping their programs", async () => {
+    const { scene, service, assign, diagnostics } = host({ programsDrawn: () => true });
+    // The stand-in Material compiles nothing: systems are as ready as compiled ones.
+    vi.spyOn(ParticleSystem.prototype, "isReady").mockReturnValue(true);
+    service.setLibrary({
+      emitters: new Map([["em-1", basic()], ["em-2", basic({ render: { materialGuid: "missing" } })], ["em-3", basic()]]),
+      systems: new Map([
+        ["sys-1", { emitterGuids: ["em-1"], space: "world", previewSkybox: true }],
+        ["sys-2", { emitterGuids: ["em-3", "em-2"], space: "world", previewSkybox: true }],
+      ]),
+    });
+    service.setPaused(true);
+    assign();
+    service.prepareSpawnableSystems();
+    // The scene's component plays sys-1; sys-2, which only a spawn may play, is prepared too, out of the stats.
+    expect(scene.particleSystems).toHaveLength(2);
+    expect(service.stats().systems).toBe(1);
+    expect(service.holdsPlayingComponents()).toBe(true);
+    await vi.waitFor(() => expect(service.spawnableSystemsPending()).toBe(false));
+    // Its skipped slot reports only when a component plays it.
+    expect(diagnostics).toEqual([]);
+    const [, warm] = scene.particleSystems as ParticleSystem[];
+    expect(service.drawingUnstartedSystems(() => warm!.isStarted())).toBe(true);
+    // Gameplay never starts it; the release retires it and keeps its programs compiled.
+    const program = { _refCount: 1, dispose: vi.fn() };
+    (warm as unknown as { _drawWrappers: unknown[][] })._drawWrappers = [[{ effect: program, dispose: () => {} }]];
+    service.setPaused(false);
+    expect(warm!.isStarted()).toBe(false);
+    service.releaseSpawnableSystems();
+    expect(scene.particleSystems).toHaveLength(1);
+    expect(program._refCount).toBe(2);
+    // A spawn of it right after the load starts at once.
+    service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: "spawned", componentId: "particle-1", particleSystemGuid: "sys-2", play: true });
+    await vi.waitFor(() => expect(service.playbackState("spawned", "particle-1")).toBe("playing"));
+    expect((scene.particleSystems.at(-1) as ParticleSystem).isStarted()).toBe(true);
+    service.resetSession();
+    expect(program.dispose).toHaveBeenCalledTimes(1);
+    service.dispose();
+  });
+
+  it("starts systems whose programs never drew one per frame, and drawn ones at once", async () => {
+    const drawn = new Set<unknown>();
+    const { scene, service, frame } = host({ programsDrawn: (system) => drawn.has(system) });
+    service.setLibrary(library({ "em-1": basic() }));
+    service.setPaused(true);
+    for (const actor of ["a", "b", "c"])
+      service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: actor, componentId: "particle-1", particleSystemGuid: "sys-1", play: true });
+    await vi.waitFor(() => expect(["a", "b", "c"].map((actor) => service.playbackState(actor, "particle-1"))).toEqual(["playing", "playing", "playing"]));
+    const systems = scene.particleSystems as ParticleSystem[];
+    const started = () => systems.filter((system) => system.isStarted()).length;
+    service.setPaused(false);
+    expect(started()).toBe(1);
+    frame();
+    expect(started()).toBe(2);
+    frame();
+    expect(started()).toBe(3);
+    // Programs that have drawn need no budget.
+    service.setPaused(true);
+    for (const actor of ["d", "e"])
+      service.handleCommand({ type: "assignParticle", slotId: 1, actorGuid: actor, componentId: "particle-1", particleSystemGuid: "sys-1", play: true });
+    await vi.waitFor(() => expect(service.playbackState("e", "particle-1")).toBe("playing"));
+    for (const system of scene.particleSystems) drawn.add(system);
+    service.setPaused(false);
+    expect(scene.particleSystems.filter((system) => system.isStarted())).toHaveLength(5);
     service.dispose();
   });
 

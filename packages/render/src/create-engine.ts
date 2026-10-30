@@ -505,6 +505,7 @@ function initializeEngine(
     // Its Effects go with its load: Play keeps one Scene across loads, which would otherwise keep every level's.
     startingDraw.release();
     startingDraw = null;
+    particleService?.releaseSpawnableSystems();
   };
   const frameOwners = new Map<string, PendingPresentation>();
   const presentationKey = (owner?: SceneLayerLoadIdentity) => owner ? `layer:${owner.layerId}` : "world";
@@ -1740,6 +1741,7 @@ function initializeEngine(
   const presentationReady = (pending: PendingPresentation) => {
     try {
       if (!pending.owner && startingDraw && !startingDraw.done) startingDraw.check();
+      if (!pending.owner && startingDraw?.done) particleService?.releaseSpawnableSystems();
       // The light block's path: each kind of shadow map's caster depth variants, ahead of its first shadow start, for
       // the casters as the starting state poses them.
       if (!pending.owner && options.playMode) findSceneShadowController(scene)?.warmCasterVariants();
@@ -3205,13 +3207,16 @@ function initializeEngine(
       // particle component is to play (its systems draw their programs there, before gameplay starts them).
       if (!owner && options.playMode) {
         endStartingDraw();
+        // The systems a spawn may play draw their programs in it too, and are retired once it is done.
+        particleService?.prepareSpawnableSystems();
         const draws = releaseStagedSpawnables !== null || spawnableLights.size > 0 ||
           scene.lights.some((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX)) ||
           (particleService?.holdsPlayingComponents() ?? false);
         // Full Quality captures prepare their views in the starting state, so their variants share its Effects; manual
         // captures not yet requested are rehearsed in its frames, and it settles once they have drawn.
         const draw = createStartingStateDraw(scene,
-          () => !renderTargetCaptures.preparing() && !renderTargetCaptures.rehearsalPending(), { draws, onDrawn: releaseStaged });
+          () => !renderTargetCaptures.preparing() && !renderTargetCaptures.rehearsalPending() &&
+            !(particleService?.spawnableSystemsPending() ?? false), { draws, onDrawn: releaseStaged });
         startingDraw = draw;
         renderTargetCaptures.rehearseManualCaptures(() => !draw.done);
       }
