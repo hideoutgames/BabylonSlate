@@ -11,8 +11,7 @@ import { withDrawingState } from "./engine-drawing-state";
 
 /**
  * One texel of each shadow and light-texture sampler type, bound to a sampler no real texture of its type is bound
- * to: the volumetric march's slots a light's kind does not read, and a receiver drawing its previous Effect whose
- * shader light no longer has the map or texture it was compiled for (`bindLights` in fixed-light-binding.ts). A WebGPU
+ * to: the volumetric march's slots a light's kind does not read. A WebGPU
  * bind group needs a texture of the declared type in every binding, and WebGL2 must not leave a released map (or a
  * texture of another type or comparison mode) behind on a unit. Each reads as an empty shadow map, filled as Babylon
  * clears one (white, depth at the far plane, the same comparison function), so a shader light sampling one is lit:

@@ -139,7 +139,7 @@ export type ForwardLightCapacity = { lights: number; locals: number; samplers: n
 
 /**
  * Replaces the ranked, kind-keeping selection of `syncForwardLightPolicy`
- * (fixed-shape lighting's per-class admission). It ranks `candidates` (the
+ * (the light block's admission, `selectHapticLights`). It ranks `candidates` (the
  * eligible lights) itself, pushes the lights it leaves out to `limited`, and
  * those the sampler headroom leaves out also to `samplerLimited`, and returns
  * the lights it admits with the lighting samplers they use. Everything after

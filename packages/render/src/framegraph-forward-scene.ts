@@ -34,9 +34,8 @@ import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
-import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
-import { registerLightNeutralPasses } from "./light-neutral-tasks";
-import { drawsInPass, pipelinesDeferred } from "./webgpu-pipeline-deferral";
+import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
+import { drawsInPass } from "./webgpu-pipeline-deferral";
 import { isRevealPending, revealRound } from "./reveal-pending";
 import { withPipelineWarmupRound } from "./variant-pipeline-warmup";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
@@ -178,8 +177,6 @@ export class ForwardSceneFrameGraph {
   private readonly drawnGeometryPasses = new Set<number>();
   /** Each geometry render pass id's `drawsInPass` count at the last complete frame. */
   private readonly geometryDraws = new Map<number, number>();
-  /** Releases the prepared graph's light-neutral geometry passes. */
-  private releaseLightNeutral: (() => void) | undefined;
   /** Effects this graph's readiness probes requested and that were not ready when their probe ended. */
   readonly requestedEffects = new Set<Effect>();
 
@@ -402,21 +399,6 @@ export class ForwardSceneFrameGraph {
   /** The prepared graph's geometry tasks (the spatial effects' and the authored post-process chain's geometry buffers). */
   private *geometryTasks(): Generator<LogicalGeometryTask> {
     for (const task of this.graph?.tasks ?? []) if (task instanceof LogicalGeometryTask) yield task;
-  }
-
-  /**
-   * WebGPU: the graph's geometry passes keep their Materials' light defines across light changes
-   * (`registerLightNeutralPasses`), so a light change creates no geometry pipeline.
-   */
-  private registerLightNeutralGeometry(): void {
-    const engine = this.scene.getEngine();
-    this.releaseLightNeutral?.();
-    this.releaseLightNeutral = undefined;
-    if (this.geometryTasks().next().done || !pipelinesDeferred(engine) || !sceneBindsPreviousEffects(this.scene)) return;
-    this.releaseLightNeutral = registerLightNeutralPasses(engine, (renderPassId) => {
-      for (const task of this.geometryTasks()) if (task.objectRenderer.renderPassIds.includes(renderPassId)) return true;
-      return false;
-    });
   }
 
   /**
@@ -1167,7 +1149,6 @@ export class ForwardSceneFrameGraph {
           }
           this.graph.addTask(this.outputCopy);
         }
-        this.registerLightNeutralGeometry();
       }
       this.assignCamera(camera);
       this.syncSceneInputs();
@@ -1564,8 +1545,6 @@ export class ForwardSceneFrameGraph {
     this.admittedCamera = undefined;
     this.drawnGeometryPasses.clear();
     this.geometryDraws.clear();
-    this.releaseLightNeutral?.();
-    this.releaseLightNeutral = undefined;
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();

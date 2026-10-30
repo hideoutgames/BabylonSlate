@@ -50,7 +50,6 @@ import { setRectLightEmission } from "../../../../packages/render/src/area-emiss
 import { retainAreaLightLookup } from "../../../../packages/render/src/area-light-resources";
 import { OwnedRectAreaLight } from "../../../../packages/render/src/area-rect-light";
 import { retainFilteredEnvironment } from "../../../../packages/render/src/environment-prefilter";
-import { setFixedShapeLightingWorldScene } from "../../../../packages/render/src/fixed-light-admission";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { isAtlasShadow } from "../../../../packages/render/src/shadow-atlas";
@@ -241,8 +240,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     camera.minZ = 0.1;
     camera.maxZ = 40;
     scene.activeCamera = camera;
-    // As Play's world Scene: Babylon's light helpers ask the fixed-shape hooks first.
-    setFixedShapeLightingWorldScene(scene);
+    // As Play's world Scene.
     setSceneBindsPreviousEffects(scene);
     const quality = normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 16 } });
     // One local shadow and the sun's two cascades, which only the shadow poses cast, biased past the acne a slanting
