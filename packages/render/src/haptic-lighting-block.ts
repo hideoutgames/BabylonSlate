@@ -5,6 +5,8 @@ import {
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialBlockTargets,
   ShaderLanguage,
+  ThinEngine,
+  type AbstractEngine,
   type AbstractMesh,
   type BaseTexture,
   type CubeTexture,
@@ -24,6 +26,7 @@ import {
   HAPTIC_IRRADIANCE_KEYS,
   HAPTIC_IRRADIANCE_UNIFORMS,
   HAPTIC_SHADOW_ATLAS,
+  HAPTIC_SHADOW_ATLAS_DEPTH,
   HAPTIC_LIGHTING_FUNCTIONS_GLSL,
   HAPTIC_LIGHTING_FUNCTIONS_WGSL,
   hapticLightingGlsl,
@@ -35,6 +38,36 @@ import { shadowAtlasTexture } from "./shadow-atlas";
 const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
 
 const harmonicsByPolynomial = new WeakMap<SphericalPolynomial, SphericalHarmonics>();
+
+/** Engines that bind the plain depth read's sampler object (`plainDepthSampler`). */
+const plainDepthEngines = new WeakSet<AbstractEngine>();
+
+/**
+ * WebGL2: the shadow atlas read without compare beside its compare sampler (`HAPTIC_SHADOW_ATLAS_DEPTH`, the same depth
+ * texture on another unit): Babylon's patched engine binds that uniform's unit a sampler object without compare,
+ * nearest-filtered (a float depth texture filters only through compare), and every other unit none
+ * (`_samplerObjectFor`). Made again after a lost context.
+ */
+function plainDepthSampler(engine: AbstractEngine): void {
+  if (plainDepthEngines.has(engine) || !(engine instanceof ThinEngine) || engine.webGLVersion < 2) return;
+  const gl = engine._gl as WebGL2RenderingContext;
+  if (typeof gl?.createSampler !== "function") return;
+  plainDepthEngines.add(engine);
+  let sampler: WebGLSampler | null = null;
+  engine.onContextLostObservable.add(() => { sampler = null; });
+  engine._samplerObjectFor = (name) => {
+    if (name !== HAPTIC_SHADOW_ATLAS_DEPTH) return null;
+    if (!sampler) {
+      sampler = gl.createSampler();
+      gl.samplerParameteri(sampler, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.samplerParameteri(sampler, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.samplerParameteri(sampler, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.samplerParameteri(sampler, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.samplerParameteri(sampler, gl.TEXTURE_COMPARE_MODE, gl.NONE);
+    }
+    return sampler;
+  };
+}
 
 /** The harmonics Babylon's PBR lights with: converted from the cube's polynomial and pre-scaled, once per polynomial. */
 function renderingHarmonics(polynomial: SphericalPolynomial | null): SphericalHarmonics | null {
@@ -150,6 +183,10 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     effect.setTexture("hapticAreaLtc2Sampler", scene._ltcTextures?.LTC2 ?? null);
     effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
     effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
+    if (!scene.getEngine().isWebGPU) {
+      plainDepthSampler(scene.getEngine());
+      effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
+    }
     effect.setFloat("hapticShadowReceiver", mesh.receiveShadows ? 1 : 0);
     // WebGPU draws only with every declared texture bound: the table always, the cube where a program declares it.
     effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
@@ -195,11 +232,13 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emit2DArraySampler("hapticAreaEmissionSampler");
     const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
     // The shadow atlas compares as it samples (`shadow-atlas.ts`); the build state has no helper for a compare sampler.
+    // GLSL also reads it plainly for Contact Hardening's blocker search, WGSL loads from the compare binding's texture.
     if (!state.samplers.includes(HAPTIC_SHADOW_ATLAS)) {
       state._samplerDeclaration += wgsl
         ? `var ${HAPTIC_SHADOW_ATLAS}Sampler: sampler_comparison;\nvar ${HAPTIC_SHADOW_ATLAS}: texture_depth_2d;\n`
-        : `uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n`;
+        : `uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\nuniform highp sampler2D ${HAPTIC_SHADOW_ATLAS_DEPTH};\n`;
       state.samplers.push(HAPTIC_SHADOW_ATLAS);
+      if (!wgsl) state.samplers.push(HAPTIC_SHADOW_ATLAS_DEPTH);
     }
     state._emitFunction("hapticLights", wgsl ? HAPTIC_LIGHTS_WGSL : HAPTIC_LIGHTS_GLSL, "// HapticLights");
     state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(wgsl)}\n#endif\n`, "// CEL");
