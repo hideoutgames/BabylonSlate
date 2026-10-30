@@ -130,6 +130,10 @@ function tileClearsReady(engine: AbstractEngine): boolean {
 class AtlasTileTarget extends RenderTargetTexture {
   private readonly atlas: RenderTargetTexture;
   readonly tiles: readonly ShadowAtlasTile[];
+  /** Per layer, whether a render leaves its tile as it is (`AtlasCascadedShadowGenerator.keepCascade`). */
+  readonly keptLayers: boolean[];
+  /** Per layer, whether its last pass left a caster out that was not ready: it draws again, kept or not. */
+  readonly incompleteLayers: boolean[];
 
   constructor(name: string, atlas: RenderTargetTexture, tiles: readonly ShadowAtlasTile[]) {
     const size = tiles[0]!.size;
@@ -138,7 +142,21 @@ class AtlasTileTarget extends RenderTargetTexture {
       { generateMipMaps: false, doNotChangeAspectRatio: true, noColorAttachment: true, delayAllocation: true });
     this.atlas = atlas;
     this.tiles = tiles;
+    this.keptLayers = tiles.map(() => false);
+    this.incompleteLayers = tiles.map(() => false);
     this.share();
+    // A kept layer's pass is left out whole: no bind, no clear of its tile, no casters. Babylon 9.29 declares the pass
+    // private, so it is replaced on the instance.
+    const target = this as unknown as { _renderToTarget(face: number, post: boolean, dump: boolean, layer?: number): void };
+    const renderLayer = target._renderToTarget.bind(this);
+    target._renderToTarget = (face, post, dump, layer = 0) => {
+      if (this.keepsLayer(layer)) return;
+      const counted = this.currentRefreshId !== -1;
+      renderLayer(face, post, dump, layer);
+      // The object renderer resets the refresh counter for a caster that is not ready, which this pass left out. After
+      // an earlier pass's reset this one's cannot be told apart, so it counts as incomplete too.
+      this.incompleteLayers[layer] = !counted || this.currentRefreshId === -1;
+    };
   }
 
   private share(): void {
@@ -161,12 +179,32 @@ class AtlasTileTarget extends RenderTargetTexture {
     return { width: this.tiles[0]!.size, height: this.tiles[0]!.size };
   }
 
+  /** Whether the next render draws every layer: a refresh asked for from outside the map's own schedule. */
+  private redrawAll = true;
+
+  /** Kept layers are drawn only after `refreshKeeping`: any other refresh (a new or resumed map, a caster) draws all. */
+  override resetRefreshCounter(): void {
+    this.redrawAll = true;
+    super.resetRefreshCounter();
+  }
+
+  /** Asks for a render that leaves the kept layers as they are (`keptLayers`). */
+  refreshKeeping(): void {
+    super.resetRefreshCounter();
+  }
+
+  /** Whether the next render leaves `layer` as it is. */
+  keepsLayer(layer: number): boolean {
+    return this.keptLayers[layer]! && !this.incompleteLayers[layer] && !this.redrawAll;
+  }
+
   override render(useCameraPostProcess?: boolean, dumpForDebug?: boolean): void {
     if (!tileClearsReady(this.getScene()!.getEngine())) {
       this.resetRefreshCounter();
       return;
     }
     super.render(useCameraPostProcess, dumpForDebug);
+    this.redrawAll = false;
   }
 
   override releaseInternalTexture(): void {
@@ -457,6 +495,15 @@ export function createAtlasShadowGenerator(light: SpotLight | PointLight, size: 
   return placement && construct(placement, () => new AtlasShadowGenerator(size, light));
 }
 
+/** A cascade's fit as its tile was drawn (`AtlasCascadedShadowGenerator.keepCascades`). */
+type DrawnCascade = { valid: boolean; transform: Matrix; view: Matrix; projection: Matrix; min: Vector3; max: Vector3 };
+
+/** Babylon 9.29's private per-cascade fit of a cascaded generator, which its native receivers read. */
+type CascadeFit = {
+  _viewSpaceFrustumsZ: number[]; _frustumLengths: number[]; _cascadeMinExtents: Vector3[]; _cascadeMaxExtents: Vector3[];
+  _transformMatrices: Matrix[]; _transformMatricesAsArray: Float32Array; _viewMatrices: Matrix[]; _projectionMatrices: Matrix[];
+};
+
 /**
  * The sun's cascaded shadow generator drawing each cascade into its own tile of the Scene's atlas, built with its
  * cascade count (`createAtlasCascadedShadowGenerator`), which a change of count rebuilds. Disposing it frees the tiles.
@@ -468,6 +515,10 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   private readonly lengths: number[] = [];
   private readonly depth = new Vector4(0, 0, 0, 0);
   declare private corrections: Vector3[];
+  /** Per cascade, the fit its tile was last drawn with, which a kept cascade is sampled with (`keepCascades`). */
+  declare private drawn: DrawnCascade[];
+  /** The splits, depth plane and corrections are recorded by a render's first drawn pass. */
+  private recorded = false;
   /** The share of the shadow distance's far end over which the shadow fades out (`ShadowSettings.fadeFraction`). */
   fadeFraction = 0;
   /** Automatic bias (`ShadowSettings.autoBias`): receivers compare against their own plane (receiver-plane PCF). */
@@ -511,10 +562,53 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
     super._initializeGenerator();
   }
 
+  /** The view-projection cascade `index` was last drawn with, or null before its first draw. */
+  drawnCascade(index: number): Matrix | null {
+    const drawn = this.drawn[index];
+    return drawn?.valid ? drawn.transform : null;
+  }
+
+  /**
+   * Leaves the cascades `kept` names as they are at the map's next render, which draws only the others, and samples
+   * them with the fit they were drawn with, which `ShadowMapRefresh` found unchanged: Babylon refits every cascade
+   * as the map binds, and its native receivers read the generator's fit.
+   */
+  keepCascades(kept: readonly boolean[]): void {
+    const map = this._shadowMap as AtlasTileTarget;
+    for (let index = 0; index < this.drawn.length; index++) map.keptLayers[index] = !!kept[index] && this.drawn[index]!.valid;
+    this.restoreKept();
+  }
+
+  /** Asks for a render that draws only the cascades not kept (`keepCascades`). */
+  refreshCascades(): void {
+    (this._shadowMap as AtlasTileTarget).refreshKeeping();
+  }
+
+  private restoreKept(): void {
+    const map = this._shadowMap as AtlasTileTarget | null;
+    if (!map) return;
+    const csm = this as unknown as CascadeFit;
+    for (let index = 0; index < this.drawn.length; index++) {
+      const drawn = this.drawn[index]!;
+      if (!drawn.valid || !map.keepsLayer(index)) continue;
+      csm._transformMatrices[index]!.copyFrom(drawn.transform);
+      drawn.transform.copyToArray(csm._transformMatricesAsArray, index * 16);
+      csm._viewMatrices[index]!.copyFrom(drawn.view);
+      csm._projectionMatrices[index]!.copyFrom(drawn.projection);
+      csm._cascadeMinExtents[index]!.copyFrom(drawn.min);
+      csm._cascadeMaxExtents[index]!.copyFrom(drawn.max);
+    }
+  }
+
   protected override _createTargetRenderTexture(): void {
     this.placement ??= placing!;
     if (this.numCascades !== this.placement.tiles.length) throw new Error("An atlas cascade map keeps the cascade count it was built with.");
     this.views ??= this.placement.tiles.map(() => Matrix.Identity());
+    this.drawn ??= this.placement.tiles.map(() => ({
+      valid: false, transform: Matrix.Identity(), view: Matrix.Identity(), projection: Matrix.Identity(), min: new Vector3(), max: new Vector3(),
+    }));
+    // A new map holds no tile content of this generator's.
+    for (const drawn of this.drawn) drawn.valid = false;
     this.corrections ??= this.placement.tiles.map(() => new Vector3(1, 1, 1));
     this._shadowMap?.dispose();
     const map = new AtlasTileTarget(`${this._light.name}_shadowTiles`, this.placement.atlas.target, this.placement.tiles);
@@ -524,13 +618,24 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
 
   protected override _initializeShadowMap(): void {
     super._initializeShadowMap();
-    const csm = this as unknown as {
-      _viewSpaceFrustumsZ: number[]; _frustumLengths: number[]; _cascadeMinExtents: Vector3[]; _cascadeMaxExtents: Vector3[];
-    };
+    const csm = this as unknown as CascadeFit;
+    // After Babylon's refit (its own observer, added first), kept cascades go back to the fit they were drawn with.
+    this._shadowMap!.onBeforeBindObservable.add(() => {
+      this.recorded = false;
+      this.restoreKept();
+    });
     drawIntoTiles(this._shadowMap as AtlasTileTarget, this.placement.atlas.tiles.edge, (cascade) => {
       this.views[cascade]!.copyFrom(this.getCascadeTransformMatrix(cascade)!);
-      // The splits the cascades are drawn for, computed as the map binds.
-      if (cascade === 0) {
+      const drawn = this.drawn[cascade]!;
+      drawn.transform.copyFrom(this.getCascadeTransformMatrix(cascade)!);
+      drawn.view.copyFrom(csm._viewMatrices[cascade]!);
+      drawn.projection.copyFrom(csm._projectionMatrices[cascade]!);
+      drawn.min.copyFrom(csm._cascadeMinExtents[cascade]!);
+      drawn.max.copyFrom(csm._cascadeMaxExtents[cascade]!);
+      drawn.valid = true;
+      // The splits the cascades are drawn for, computed as the map binds, recorded by the first pass a render draws.
+      if (!this.recorded) {
+        this.recorded = true;
         this.ends.splice(0, Infinity, ...csm._viewSpaceFrustumsZ);
         this.lengths.splice(0, Infinity, ...csm._frustumLengths);
         const camera = this._getCamera();

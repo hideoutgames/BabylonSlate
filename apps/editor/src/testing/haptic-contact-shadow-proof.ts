@@ -133,17 +133,17 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
       return { name, atlas: false, pixels };
     };
     /**
-     * `light`'s shadow after the camera, and with it the floating render origin, moved: as the frame after the move drew
-     * it, then with its map drawn again at that pose. The camera returns after.
+     * `light`'s shadow after the camera, and with it the floating render origin, moved by `step`: as the frame after the
+     * move drew it, then with its map drawn again at that pose. The camera returns after.
      */
-    const originMoved = async (light: Light, name: string): Promise<Capture[]> => {
+    const originMoved = async (light: Light, name: string, step: number): Promise<Capture[]> => {
       const map = (light.getShadowGenerator() as ShadowGenerator).getShadowMap()!;
       let passes = 0;
       const counted = map.onClearObservable.add(() => passes++);
       const home = camera.position.clone();
       const origin = scene.floatingOriginOffset.clone();
       try {
-        camera.position.x += 0.35;
+        camera.position.x += step;
         const kept = await draw();
         const keptPasses = passes;
         const originMoved = !scene.floatingOriginOffset.equals(origin);
@@ -165,8 +165,9 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
      */
     const poses = async (light: Light, name: string, toLight: (point: Vector3) => Vector3, covered?: (point: Vector3) => boolean) => {
       captures.push(await shadowed(light, name));
-      // A sun's cascades follow the camera; a local map's depth does not depend on the render origin.
-      if (light !== sun) captures.push(...await originMoved(light, name));
+      // A local map's depth does not depend on the render origin; a sun's cascades follow the camera, snapped to their
+      // texels, so a move well within a texel keeps them.
+      captures.push(...await originMoved(light, name, light === sun ? 1e-4 : 0.35));
       captures.push(await unshadowed(light, `${name} unshadowed`));
       setAuthoredLightEnabled(light, false);
       captures.push({ name: `${name} unlit`, atlas: false, pixels: await draw() });

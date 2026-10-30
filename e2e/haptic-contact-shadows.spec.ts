@@ -117,10 +117,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     // CEL draws Contact Hardening as PCF.
     expect(report.cel).toEqual({ differing: 0 });
-    // A local map stays cached while only the floating render origin moves, and draws what a fresh draw at that pose would.
-    for (const light of ["spot", "point"]) {
+    // A local map stays cached while only the floating render origin moves, and the sun's cascades through a camera move
+    // within a texel of their fit; each draws what a fresh draw at that pose would.
+    for (const light of ["spot", "point", "sun"]) {
       const kept = capture(result, `${light} origin moved`), redrawn = capture(result, `${light} origin moved redrawn`);
-      expect([kept.originMoved, kept.passes, redrawn.passes], light).toEqual([true, 0, light === "point" ? 6 : 1]);
+      expect([kept.originMoved, kept.passes, redrawn.passes], light).toEqual([true, 0, { spot: 1, point: 6, sun: 2 }[light]]);
       const differing = Array.from({ length: count }, (_, pixel) => difference(kept.pixels, redrawn.pixels, pixel)).filter((value) => value > 0);
       expect(differing, light).toEqual([]);
     }

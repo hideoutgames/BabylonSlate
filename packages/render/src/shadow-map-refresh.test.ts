@@ -664,16 +664,27 @@ async function cascadedSun() {
   await material.forceCompilationAsync(near);
   await generator.forceCompilationAsync();
   let binds = 0;
+  /** The cascades the last frame drew, by layer. */
+  let drawnLayers: number[] = [];
   const bindFramebuffer = engine.bindFramebuffer.bind(engine);
   vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, ...args) => {
-    if (target === map.renderTarget) binds++;
+    if (target === map.renderTarget) {
+      binds++;
+      drawnLayers.push((map as unknown as { _currentLayer: number })._currentLayer);
+    }
     bindFramebuffer(target, ...args);
   });
   /** Times the sun map was drawn (every cascade) by one scene frame. */
   const render = () => {
     const before = binds;
+    drawnLayers = [];
     scene.render();
     return (binds - before) / generator.numCascades;
+  };
+  /** The cascades one scene frame draws. */
+  const cascadesDrawn = () => {
+    render();
+    return drawnLayers;
   };
   /** A render feeds the next frame's snapshot once (its derived bias), then the map stays cached. */
   const settle = () => {
@@ -682,7 +693,7 @@ async function cascadedSun() {
   };
   expect(render()).toBeGreaterThan(0);
   settle();
-  return { scene, camera, sun, map, near, distant, render, settle };
+  return { scene, camera, sun, map, generator, near, distant, render, cascadesDrawn, settle };
 }
 
 describe("cascaded sun refresh", () => {
@@ -707,17 +718,18 @@ describe("cascaded sun refresh", () => {
     },
   );
 
-  it("redraws when a readiness probe left the cascades fitted to another pose", async () => {
-    const { camera, map, render, settle } = await cascadedSun();
+  it("keeps the cascades through a readiness probe under another pose, and the fit they were drawn with", async () => {
+    const { camera, map, generator, render } = await cascadedSun();
+    const drawn = [0, 1].map((cascade) => generator.getCascadeTransformMatrix(cascade)!.clone());
     const home = camera.position.clone();
-    // A probe (here under a moved camera, as another view's would be) refits the
-    // cascades the receivers use without drawing the retained depth again.
+    // A probe (here under a moved camera, as another view's would be) refits the cascades as it binds, which native
+    // receivers read, without drawing the retained depth again: the kept cascades get the fit they were drawn with back.
     camera.position.x += 5;
     map.isReadyForRendering();
+    expect([0, 1].map((cascade) => generator.getCascadeTransformMatrix(cascade)!.equals(drawn[cascade]!))).toEqual([true, true]);
     camera.position.copyFrom(home);
-    expect(render()).toBe(1);
-    settle();
     expect(render()).toBe(0);
+    expect([0, 1].map((cascade) => generator.getCascadeTransformMatrix(cascade)!.equals(drawn[cascade]!))).toEqual([true, true]);
   });
 
   it("redraws every frame while a caster that changes without notice reaches a cascade", async () => {
@@ -727,6 +739,61 @@ describe("cascaded sun refresh", () => {
     near.onBeforeRenderObservable.remove(hook);
     settle();
     expect(render()).toBe(0);
+  });
+
+  it("draws only the cascades a moving caster can reach", async () => {
+    const { scene, generator, cascadesDrawn, settle } = await cascadedSun();
+    // Far down the view, beyond the near cascade's split, inside the far one.
+    const far = MeshBuilder.CreateBox("far caster", {}, scene);
+    far.material = (scene.getMeshByName("near caster")!).material;
+    far.position.set(0, 1, 30);
+    sceneShadowController(scene).setParticipation(far, { castShadows: true });
+    cascadesDrawn();
+    settle();
+    const reaches = (cascade: number) => {
+      const m = generator.getCascadeTransformMatrix(cascade)!;
+      const p = Vector3.TransformCoordinates(far.position, m);
+      return Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1;
+    };
+    expect([reaches(0), reaches(1)]).toEqual([false, true]);
+    far.position.x += 0.5;
+    expect(cascadesDrawn()).toEqual([1]);
+    settle();
+    expect(cascadesDrawn()).toEqual([]);
+  });
+
+  it("keeps the cascades through a camera move within a texel of their fit, and draws those it moves out of", async () => {
+    const { camera, generator, cascadesDrawn } = await cascadedSun();
+    const drawn = [0, 1].map((cascade) => generator.getCascadeTransformMatrix(cascade)!.clone());
+    // Stabilised cascades snap their fit to the tile's texels: far less than a texel moves no fit.
+    camera.position.x += 1e-5;
+    expect(cascadesDrawn()).toEqual([]);
+    expect([0, 1].map((cascade) => generator.getCascadeTransformMatrix(cascade)!.equals(drawn[cascade]!))).toEqual([true, true]);
+    camera.position.x += 3;
+    expect(cascadesDrawn()).toEqual([0, 1]);
+  });
+
+  it("draws every cascade for a refresh asked for outside its schedule", async () => {
+    const { map, cascadesDrawn } = await cascadedSun();
+    // A new caster's reveal, a resumed map: Babylon's own refresh.
+    map.resetRefreshCounter();
+    expect(cascadesDrawn()).toEqual([0, 1]);
+    expect(cascadesDrawn()).toEqual([]);
+  });
+
+  it("draws a kept cascade again after a pass that left a caster out", async () => {
+    const { near, map, cascadesDrawn, settle } = await cascadedSun();
+    near.position.z += 0.5;
+    // The caster's depth Effect is not ready for the pass that draws the change: the object renderer leaves it out.
+    const ready = map.customIsReadyFunction!;
+    map.customIsReadyFunction = (mesh, ...rest) => mesh !== near && ready(mesh, ...rest);
+    const first = cascadesDrawn();
+    expect(first.length).toBeGreaterThan(0);
+    expect(map.currentRefreshId).toBe(-1);
+    map.customIsReadyFunction = ready;
+    // Nothing changed since, yet those passes draw again, now with the caster.
+    expect(cascadesDrawn()).toEqual(first);
+    settle();
   });
 
   it("ignores casters no cascade can reach, whether static or hooked, and skinned ones beyond the shadow distance", async () => {

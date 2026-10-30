@@ -13,6 +13,7 @@ import {
   type ShadowGenerator,
   type Vector3,
 } from "@babylonjs/core";
+import { AtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { canCacheShadowMaterial } from "./shadow-material-policy";
 import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
@@ -66,8 +67,9 @@ function reachesCascade(
   scales: Float64Array,
   center: Vector3,
   radius: number,
+  only?: number,
 ): boolean {
-  for (let cascade = 0; cascade < matrices.length; cascade++) {
+  for (let cascade = only ?? 0; cascade < (only === undefined ? matrices.length : only + 1); cascade++) {
     const m = matrices[cascade]!;
     const x = center.x * m[0]! + center.y * m[4]! + center.z * m[8]! + m[12]!;
     const y = center.x * m[1]! + center.y * m[5]! + center.z * m[9]! + m[13]!;
@@ -75,6 +77,19 @@ function reachesCascade(
     if (!(Math.abs(x) > 1 + radius * scales[2 * cascade]! || Math.abs(y) > 1 + radius * scales[2 * cascade + 1]!)) return true;
   }
   return false;
+}
+
+/**
+ * Whether a cascade's fit `now` covers what its tile drawn with `drawn` holds: the same light-space rectangle within a
+ * sixteenth of a texel of a `size`-texel tile, for positions up to `reach` from the world origin. Depth is not
+ * compared: a kept cascade is sampled with the fit it was drawn with, its depth included.
+ */
+function coversAsDrawn(drawn: ArrayLike<number>, now: ArrayLike<number>, size: number, reach: number): boolean {
+  let axes = 0;
+  for (const index of [0, 4, 8, 1, 5, 9]) axes = Math.max(axes, Math.abs(drawn[index]! - now[index]!));
+  const offset = Math.max(Math.abs(drawn[12]! - now[12]!), Math.abs(drawn[13]! - now[13]!));
+  // Negated: a non-finite difference does not cover.
+  return !(3 * axes * reach + offset > 2 / size / 16);
 }
 
 /**
@@ -91,6 +106,11 @@ export class ShadowMapRefresh {
   private readonly cascadeMatrices: ArrayLike<number>[] = [];
   private readonly cascadeScales = new Float64Array(8);
   private readonly drawnFits = new WeakMap<RenderTargetTexture, DrawnFit>();
+  /** Per atlas sun, each cascade's casters as last tracked (`trackAtlasCascades`), and per-cascade scratch. */
+  private readonly cascadeStates = new WeakMap<AtlasCascadedShadowGenerator, Snapshot[]>();
+  private readonly cascadeDirty: boolean[] = [false, false, false, false];
+  private readonly cascadeLive: boolean[] = [false, false, false, false];
+  private readonly keptCascades: boolean[] = [false, false, false, false];
   private readonly maps = new WeakMap<ShadowGenerator, Snapshot>();
   /** Drawn level of each visible automatic-LOD caster for the scene camera. */
   private readonly lodLevels = new Map<AbstractMesh, number>();
@@ -314,7 +334,11 @@ export class ShadowMapRefresh {
       (light instanceof DirectionalLight && !cascadedSun) ||
       !!light.customProjectionMatrixBuilder ||
       !!generator.customShaderOptions;
-    if (!continuous && cascadedSun) {
+    const atlasSun = cascadedSun instanceof AtlasCascadedShadowGenerator ? cascadedSun : null;
+    if (atlasSun) {
+      if (continuous) atlasSun.keepCascades(this.keptCascades.fill(false, 0, atlasSun.numCascades));
+      else continuous = this.trackAtlasCascades(atlasSun, state);
+    } else if (!continuous && cascadedSun) {
       continuous = this.trackCascades(cascadedSun, map, state);
     } else if (!continuous) {
       // A local map re-renders once when a caster within its range changes,
@@ -338,7 +362,11 @@ export class ShadowMapRefresh {
       ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME
       : RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     if (map.refreshRate !== rate) map.refreshRate = rate;
-    else if (!continuous && state.changed) map.resetRefreshCounter();
+    else if (!continuous && state.changed) {
+      // A sun's refresh leaves the cascades it keeps as they are.
+      if (atlasSun) atlasSun.refreshCascades();
+      else map.resetRefreshCounter();
+    }
     // No completion observer: readiness probes also emit onAfterUnbind without
     // drawing. Babylon consumes the refresh only at its real target-render gate,
     // and retries automatically when a caster's shader is not ready.
@@ -422,6 +450,99 @@ export class ShadowMapRefresh {
       if (level !== undefined) state.value(level);
     }
     return false;
+  }
+
+  /**
+   * Tracks a sun's cascades one by one, and reports whether one of them reaches content that changes without a tracked
+   * state change (it draws every frame). A cascade draws again only when the map's own state changed (the light, its
+   * settings, the camera or its splits), when the fit a render would draw it with now no longer covers what its tile
+   * holds, or when a caster that can reach it changed, entered or left; the others are kept (`keepCascades`), sampled
+   * with the fit they were drawn with. Babylon's stabilised cascades snap their fit to the tile's texels, so a camera
+   * move within a texel of a cascade leaves its fit, and the cascade, as they are.
+   */
+  private trackAtlasCascades(generator: AtlasCascadedShadowGenerator, state: Snapshot): boolean {
+    const camera: Camera | null = generator.camera ?? generator.getLight().getScene().activeCamera;
+    state.value(camera);
+    state.value(camera?.minZ);
+    state.value(camera?.maxZ);
+    state.value(generator.numCascades);
+    state.value(generator.lambda);
+    state.value(generator.shadowMaxZ);
+    state.value(generator.stabilizeCascades);
+    state.value(generator.depthClamp);
+    const mapChanged = state.changed;
+    // The fit a render would draw with now: Babylon refits every cascade as the map binds.
+    const fit = generator as unknown as { _breaksAreDirty: boolean; _splitFrustum(): void; _computeMatrices(): void };
+    if (fit._breaksAreDirty) fit._splitFrustum();
+    fit._computeMatrices();
+    const count = generator.numCascades;
+    let states = this.cascadeStates.get(generator);
+    if (!states) this.cascadeStates.set(generator, (states = []));
+    while (states.length < count) states.push(new Snapshot());
+    const matrices = this.cascadeMatrices;
+    matrices.length = 0;
+    const eye = camera?.globalPosition;
+    // Casters lie within the shadow distance of the camera: the reach over which a fit's axes are compared.
+    const reach = (eye ? Math.max(Math.abs(eye.x), Math.abs(eye.y), Math.abs(eye.z)) : 0) + generator.shadowMaxZ;
+    const dirty = this.cascadeDirty;
+    const live = this.cascadeLive;
+    for (let cascade = 0; cascade < count; cascade++) {
+      const m = generator.getCascadeTransformMatrix(cascade)!.m;
+      this.cascadeScales[2 * cascade] = Math.hypot(m[0]!, m[4]!, m[8]!);
+      this.cascadeScales[2 * cascade + 1] = Math.hypot(m[1]!, m[5]!, m[9]!);
+      matrices.push(m);
+      const drawn = generator.drawnCascade(cascade);
+      dirty[cascade] = mapChanged || !drawn || !coversAsDrawn(drawn.m, m, generator.tiles[cascade]!.size, reach);
+      live[cascade] = false;
+      states[cascade]!.begin();
+    }
+    const orthographic = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA;
+    for (const [mesh, record] of this.casters) {
+      const sphere = mesh.getBoundingInfo().boundingSphere;
+      const center = sphere.centerWorld;
+      const radius = sphere.radiusWorld;
+      let reached = false;
+      for (let cascade = 0; cascade < count; cascade++) {
+        if (!reachesCascade(matrices, this.cascadeScales, center, radius, cascade)) continue;
+        reached = true;
+        if (record.unsafe) {
+          live[cascade] = true;
+          continue;
+        }
+        const cascadeState = states[cascade]!;
+        cascadeState.value(mesh);
+        cascadeState.value(record.revision);
+        const level = this.lodLevels.get(mesh);
+        if (level !== undefined) cascadeState.value(level);
+      }
+      if (reached || !record.unsafe || !hasDeformingShadowBounds(mesh)) continue;
+      // Deforming geometry is drawn into the cascades whatever its bounds: no plane culls it, and its skin can leave
+      // its bind-pose bounds anywhere. So a visible one within the shadow distance of the camera (or near a rectangle)
+      // reaches, into any cascade; any other caster out of reach is not drawn.
+      if (!reachesCascade(matrices, this.cascadeScales, center, 2 * radius) && eye && !orthographic) {
+        const limit = generator.shadowMaxZ + 2 * radius;
+        const dx = center.x - eye.x;
+        const dy = center.y - eye.y;
+        const dz = center.z - eye.z;
+        // Not negated: a non-finite distance reaches.
+        if (dx * dx + dy * dy + dz * dz > limit * limit) continue;
+      }
+      live.fill(true, 0, count);
+    }
+    let changed = false;
+    let continuous = false;
+    const kept = this.keptCascades;
+    for (let cascade = 0; cascade < count; cascade++) {
+      states[cascade]!.end();
+      if (states[cascade]!.changed || live[cascade]) dirty[cascade] = true;
+      if (live[cascade]) continuous = true;
+      if (dirty[cascade]) changed = true;
+      kept[cascade] = !dirty[cascade];
+    }
+    kept.fill(false, count);
+    generator.keepCascades(kept);
+    if (changed) state.changed = true;
+    return continuous;
   }
 
   /** The cascade matrices of the map's last actual pass, kept by a clear observer. */
