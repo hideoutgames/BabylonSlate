@@ -8,7 +8,7 @@ import {
 } from "@haptic/core";
 import {
   applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneEffectsQualityLimits, sceneRenderingSettings, sceneWaterQuality, setSceneEffectsEnabled,
-  sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings,
+  allowSceneScreenShadows, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings,
 } from "./render-settings";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 
@@ -198,6 +198,26 @@ it("replans screen-space effects when the session quality tier changes and repor
   updateSceneRenderingSettings(scene);
   expect(state.effectsPlan).toBeNull();
   expect(sceneEffectsQualityLimits(scene)).toEqual(["post processing quality skips ambient occlusion, reflections"]);
+});
+
+it("plans Screen-Space Shadows only for a world view's Scene, and tells listeners when they start and stop", () => {
+  const scene = fixture();
+  const state = sceneRenderingSettings(scene);
+  const seen: boolean[] = [];
+  state.listeners.add(() => seen.push(state.effectsPlan?.screenShadows != null));
+  // Medium shadows ask for Low screen shadows; a Scene not marked as a world view's plans none.
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan?.screenShadows ?? null).toBeNull();
+  allowSceneScreenShadows(scene);
+  expect(state.effectsPlan?.screenShadows).toBe("low");
+  state.qualityOverrides = qualityPresetPatch("ultra");
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan?.screenShadows).toBe("high");
+  state.qualityOverrides = qualityPresetPatch("low");
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan).toBeNull();
+  // On, a level change (no call: the define is only whether they are read), off.
+  expect(seen).toEqual([true, false]);
 });
 
 it("tells listeners of each render-mode change once, after the plan is current, and of nothing else", () => {
