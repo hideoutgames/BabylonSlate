@@ -4,11 +4,13 @@ import {
   Color4,
   Engine,
   FreeCamera,
+  Matrix,
   MeshBuilder,
   PBRMaterial,
   Scene,
   SpotLight,
   StandardMaterial,
+  type AbstractEngine,
   type Material,
   type Mesh,
   TransformNode,
@@ -166,10 +168,72 @@ async function captureReflections(
   };
 }
 
+/** The proof's fog spot light: at (0, 3, 0) aiming down, a 90-degree cone of range 12. */
+const FOG_LIGHT = { position: new Vector3(0, 3, 0), cosHalfAngle: Math.cos(Math.PI / 4), range: 12 };
+/** The beam occluder's box, 2 x 0.2 x 2 centred at (0, 1.5, 0). */
+const OCCLUDER = { min: new Vector3(-1, 1.4, -1), max: new Vector3(1, 1.6, 1) };
+
+/** Whether the segment from `from` to `to` passes through the occluder's box (the slab test). */
+function crossesOccluder(from: Vector3, to: Vector3): boolean {
+  let enter = 0;
+  let leave = 1;
+  for (const axis of ["x", "y", "z"] as const) {
+    const delta = to[axis] - from[axis];
+    if (Math.abs(delta) < 1e-9) {
+      if (from[axis] < OCCLUDER.min[axis] || from[axis] > OCCLUDER.max[axis]) return false;
+      continue;
+    }
+    let near = (OCCLUDER.min[axis] - from[axis]) / delta;
+    let far = (OCCLUDER.max[axis] - from[axis]) / delta;
+    if (near > far) [near, far] = [far, near];
+    enter = Math.max(enter, near);
+    leave = Math.min(leave, far);
+    if (enter > leave) return false;
+  }
+  return true;
+}
+
 /**
- * Actual numeric pixels from authored materials and scene lights, without editor chrome. `volumetricShadows`: the
- * shadowed fog spot light without and with volumetric lighting, its shadow cast and not, on the legacy path and on the
- * light block's (its views of the shadow atlas), over unlit surfaces both paths draw alike.
+ * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): how far the camera's ray travels through the
+ * fog light's cone where the occluder blocks the light (`shadowed`), in metres, up to the march's distance or the
+ * first surface, and through it in the march step past that surface
+ * (`shadowedBeyond`: the march's samples lie a step apart, so its last one may lie up to a step beyond the surface).
+ */
+function beamLengths(scene: Scene, camera: FreeCamera, engine: AbstractEngine, maxDistance: number, marchStep: number) {
+  const width = engine.getRenderWidth();
+  const height = engine.getRenderHeight();
+  const shadowed: number[] = [];
+  const shadowedBeyond: number[] = [];
+  const step = 0.01;
+  for (let row = 0; row < height; row++) {
+    const y = engine.isWebGPU ? row + 0.5 : height - row - 0.5;
+    for (let column = 0; column < width; column++) {
+      const ray = scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera);
+      const hit = scene.pickWithRay(ray);
+      const surface = Math.min(hit?.hit ? hit.distance : Infinity, maxDistance);
+      const end = Math.min(surface + marchStep, maxDistance);
+      let inShadow = 0;
+      let beyond = 0;
+      for (let distance = step / 2; distance < end; distance += step) {
+        const point = ray.origin.add(ray.direction.scale(distance));
+        const toPoint = point.subtract(FOG_LIGHT.position);
+        const length = toPoint.length();
+        if (length >= FOG_LIGHT.range || -toPoint.y / length < FOG_LIGHT.cosHalfAngle) continue;
+        if (!crossesOccluder(point, FOG_LIGHT.position)) continue;
+        if (distance < surface) inShadow += step;
+        else beyond += step;
+      }
+      shadowed.push(Math.round(inShadow * 100) / 100);
+      shadowedBeyond.push(Math.round(beyond * 100) / 100);
+    }
+  }
+  return { width, height, shadowed, shadowedBeyond };
+}
+
+/**
+ * Actual numeric pixels from authored materials and scene lights, without editor chrome, on the lighting plan's light
+ * block. `volumetricShadows`: the shadowed fog spot light without and with volumetric lighting, its shadow cast and not,
+ * over unlit surfaces, with how far each pixel's view ray runs through the beam's shadowed and open parts.
  */
 export async function runSpatialEffectsProof(
   backend: "webgl2" | "webgpu",
@@ -188,9 +252,9 @@ export async function runSpatialEffectsProof(
         });
   engine.setSize(96, 72);
   try {
-    const captureScene = async (lightBlock = false) => {
+    const captureScene = async () => {
       // Graph Materials and the march compiled from here on draw with the light block.
-      setHapticLighting(engine, lightBlock);
+      setHapticLighting(engine, true);
       const scene = new Scene(engine);
       scene.clearColor = new Color4(0, 0, 0, 1);
       const library = new MaterialLibrary();
@@ -265,7 +329,7 @@ export async function runSpatialEffectsProof(
       if (kind === "combined" || kind === "volumetricShadows") {
         light = new SpotLight(
           "Fog Light",
-          new Vector3(0, 3, 0),
+          FOG_LIGHT.position.clone(),
           Vector3.Down(),
           Math.PI / 2,
           1,
@@ -283,7 +347,7 @@ export async function runSpatialEffectsProof(
           { width: 2, height: 0.2, depth: 2 },
           scene,
         );
-        blocker.position.y = 1.5;
+        blocker.position.copyFrom(OCCLUDER.min.add(OCCLUDER.max).scale(0.5));
         blocker.material = black;
       }
       const effects = normalizeRenderEffectsSettings({
@@ -377,7 +441,9 @@ export async function runSpatialEffectsProof(
           const shadowed = await draw();
           applyAuthoredLightProperties(light, { intensity: 20, range: 12, outerAngle: 90, innerAngle: 60, castShadows: false });
           const open = await draw();
-          return { volumetricShadowCaptures: [{ lightBlock, off, shadowed, open }] };
+          const { maxDistance, steps } = effects.volumetricLighting;
+          const beam = beamLengths(scene, camera, engine, maxDistance, maxDistance / steps);
+          return { volumetricShadowCaptures: [{ off, shadowed, open, beam }] };
         }
         const off = await draw();
         effects.reflections.enabled = true;
@@ -430,8 +496,7 @@ export async function runSpatialEffectsProof(
         engine.endFrame();
       }
     };
-    // Volumetric shadows draw the scene on both paths.
-    const scenes = kind === "volumetricShadows" ? [await captureScene(false), await captureScene(true)] : [await captureScene()];
+    const scenes = [await captureScene()];
     return {
       captures: scenes.flatMap((scene) => scene.captures ?? []),
       fogCaptures: scenes.flatMap((scene) => scene.fogCaptures ?? []),
