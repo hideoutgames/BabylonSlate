@@ -71,6 +71,8 @@ const WHITE_METAL: Surface = { name: "white metal", baseColor: [1, 1, 1], metall
 const MATTE: Surface = { name: "matte", baseColor: [0.8, 0.8, 0.8], metallic: 0, specular: 0, roughness: 0.6, environmentInfluence: 1 };
 /** MATTE without its diffuse colour: the two differ by the diffuse light alone, their specular being the same. */
 const BLACK: Surface = { ...MATTE, name: "black", baseColor: [0, 0, 0] };
+/** A Material's base colour is authored in display space; the surface lights it decoded (Babylon's 2.2 power). */
+const linearBase = (surface: Surface) => surface.baseColor.map((channel) => channel ** 2.2);
 /** A white metal at the smoothest roughness: F0 = 1, so environment and rect light reflections arrive unscaled. */
 const MIRROR: Surface = { name: "mirror", baseColor: [1, 1, 1], metallic: 1, specular: 0.5, roughness: 0, environmentInfluence: 1 };
 
@@ -360,6 +362,9 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
      * ball, -1 none), a surface id (the floor 0, each box face its own, the ball 10) and, on the floor and the box,
      * the point and its flat normal.
      */
+    // After a frame, which computes the camera's matrices.
+    restore(surfaces);
+    await draw();
     const geometry: { mesh: number; surface: number; point?: Vector3; normal?: Vector3 }[] = [];
     for (let row = 0; row < canvas.height; row++) {
       const y = engine.isWebGPU ? row + 0.5 : canvas.height - row - 0.5;
@@ -402,7 +407,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       pose.apply();
       analytic.push({
         name: pose.name, pixels: await draw(),
-        expected: flat((point, normal) => directLight(point, normal, eye, MATTE.baseColor, MATTE.roughness, lights)),
+        expected: flat((point, normal) => directLight(point, normal, eye, linearBase(MATTE), MATTE.roughness, lights)),
       });
     }
 

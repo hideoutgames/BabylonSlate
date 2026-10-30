@@ -125,7 +125,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         let sum = 0;
         for (let channel = 0; channel < 3; channel++)
           sum += toLinear(result.furnace.matte![pixel * 4 + channel]!) - toLinear(result.furnace.black![pixel * 4 + channel]!);
-        return sum / 3 / (0.8 * c);
+        return sum / 3 / (0.8 ** 2.2 * c);
       }).sort((a, b) => a - b);
       report.furnace = {
         pixels: everySurface.length, metalLargest: Math.max(...metalApart), metalOver: metalApart.filter((value) => value > 2).length,
@@ -142,7 +142,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         if (form < 0.05) continue;
         let sum = 0;
         for (let channel = 0; channel < 3; channel++) sum += toLinear(rectCaptures.matte![pixel * 4 + channel]!) - toLinear(rectCaptures.black![pixel * 4 + channel]!);
-        ratios.push(sum / 3 / (0.8 * form));
+        ratios.push(sum / 3 / (0.8 ** 2.2 * form));
       }
       ratios.sort((a, b) => a - b);
       const inside: number[] = [];
