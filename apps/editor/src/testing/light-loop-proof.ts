@@ -83,8 +83,9 @@ export async function runLightLoopProof(backend: "webgl2" | "webgpu" = "webgl2")
       }
       return { visited, reached };
     };
-    const admitted = lights.filter((light) => light.isEnabled() && !isForwardLightExcluded(light));
     const pbr = await draw();
+    // The frame's admission (the nearest 32).
+    const admitted = lights.filter((light) => light.isEnabled() && !isForwardLightExcluded(light));
     // The admitted lights reaching each sample pixel's floor point, counted on the CPU, at the pixel's centre.
     const samples: { pixel: number; reached: number }[] = [];
     for (let y = SAMPLE_STEP / 2; y < canvas.height; y += SAMPLE_STEP) {
