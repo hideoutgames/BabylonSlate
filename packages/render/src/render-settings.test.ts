@@ -205,7 +205,8 @@ it("plans Screen-Space Shadows only for a world view's Scene, and tells listener
   const state = sceneRenderingSettings(scene);
   const seen: boolean[] = [];
   state.listeners.add(() => seen.push(state.effectsPlan?.screenShadows != null));
-  // Medium shadows ask for Low screen shadows; a Scene not marked as a world view's plans none.
+  // High shadows ask for Medium screen shadows; a Scene not marked as a world view's plans none.
+  state.qualityOverrides = qualityPresetPatch("high");
   updateSceneRenderingSettings(scene);
   expect(state.effectsPlan?.screenShadows ?? null).toBeNull();
   // A device that cannot draw the depth pass plans none either, and says so.
@@ -215,8 +216,13 @@ it("plans Screen-Space Shadows only for a world view's Scene, and tells listener
   expect(sceneEffectsQualityLimits(scene)).toEqual(["screen shadows: device capability"]);
   supported = true;
   updateSceneRenderingSettings(scene);
-  expect(state.effectsPlan?.screenShadows).toBe("low");
+  // Enabled at any level, they add the depth pass themselves.
+  expect(state.effectsPlan?.screenShadows).toBe("medium");
   expect(sceneEffectsQualityLimits(scene)).toEqual([]);
+  // Medium shadows leave them off.
+  state.qualityOverrides = qualityPresetPatch("medium");
+  updateSceneRenderingSettings(scene);
+  expect(state.effectsPlan).toBeNull();
   state.qualityOverrides = qualityPresetPatch("ultra");
   updateSceneRenderingSettings(scene);
   expect(state.effectsPlan?.screenShadows).toBe("high");

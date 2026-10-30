@@ -53,7 +53,7 @@ export const SHADOW_PROFILES = {
   },
   medium: {
     ...SHADOW_PROFILE_COMMON,
-    screenShadows: "low",
+    screenShadows: "off",
     distance: 250,
     mapSize: 2048,
     cascades: 3,
@@ -91,7 +91,7 @@ export const SHADOW_PROFILES = {
  */
 const SUPERSEDED_SHADOW_PROFILES: Partial<Record<ShadowProfile, Omit<ShadowSettings, "profile" | "preset">>> = {
   low: { ...SHADOW_PROFILE_COMMON, distance: 80, mapSize: 1024, cascades: 1, filterQuality: "low", localMapSize: 512, maxLocalLights: 1, screenShadows: "off" },
-  medium: { ...SHADOW_PROFILE_COMMON, distance: 200, mapSize: 2048, cascades: 2, filterQuality: "medium", localMapSize: 1024, maxLocalLights: 2, screenShadows: "low" },
+  medium: { ...SHADOW_PROFILE_COMMON, distance: 200, mapSize: 2048, cascades: 2, filterQuality: "medium", localMapSize: 1024, maxLocalLights: 2, screenShadows: "off" },
 };
 export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
   profile: "medium",

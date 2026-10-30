@@ -51,7 +51,7 @@ The **Shadows Quality** setting in **Scalability** applies one of these sets. Ch
 | Level | Distance | Map size | Cascades | Filter quality | Local shadow lights | Local map size | Screen-Space Shadows |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Low | 120 | 2048 | 2 | Low | 1 | 512 | Off |
-| Medium | 250 | 2048 | 3 | High | 2 | 1024 | Low |
+| Medium | 250 | 2048 | 3 | High | 2 | 1024 | Off |
 | High | 350 | 2048 | 4 | High | 4 | 2048 | Medium |
 | Ultra | 600 | 4096 | 4 | High | 8 | 2048 | High |
 

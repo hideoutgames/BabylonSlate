@@ -36,7 +36,7 @@ Preview Build and exported games have no Retry. If their graphics device stops w
 | Level | Target device | Resolution Scale | Texture Budget | Local lights | Shadow Distance | Screen-Space Shadows |
 | --- | --- | --- | --- | --- | --- | --- |
 | Low | Budget Android phone | 0.85 | 384 MiB | 6 | 120 | Off |
-| Medium | Apple A16 | 1 | 768 MiB | 32 | 250 | Low |
+| Medium | Apple A16 | 1 | 768 MiB | 32 | 250 | Off |
 | High | Performance desktop | 1 | 1024 MiB | 64 | 350 | Medium |
 | Ultra | High-end gaming PC | 1 | 2048 MiB | 256 | 600 | High |
 

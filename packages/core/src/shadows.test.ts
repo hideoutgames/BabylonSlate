@@ -70,7 +70,7 @@ describe("shadow settings", () => {
   });
   it("gives Screen-Space Shadows by level, keeps a valid authored level and turns them off in CEL", () => {
     expect((["low", "medium", "high", "ultra"] as const).map((profile) => normalizeShadowSettings({ profile }).screenShadows))
-      .toEqual(["off", "low", "medium", "high"]);
+      .toEqual(["off", "off", "medium", "high"]);
     expect(normalizeShadowOverrides({ screenShadows: "high" })).toEqual({ screenShadows: "high" });
     expect(normalizeShadowOverrides({ screenShadows: "ultra" })).toEqual({});
     const requested = normalizeShadowSettings({ profile: "low", screenShadows: "medium" });
