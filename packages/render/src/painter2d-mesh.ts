@@ -1,6 +1,10 @@
-import { Color3, CreatePlaneVertexData, DynamicTexture, MeshBuilder, StandardMaterial, Texture, type Mesh, type Scene } from "@babylonjs/core";
+import { CreatePlaneVertexData, DynamicTexture, MeshBuilder, Texture, type Mesh, type Scene } from "@babylonjs/core";
 import { painterRevision, painterTextureSize, parsePainter2DProperties, type Painter2DProperties, type PainterColor, type PainterCommand, type PainterPathSegment } from "@haptic/core";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+
+/** The painter's canvas, blended, from both sides, fogged with the world. */
+const PAINTER_MATERIAL: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: true, role: "world" };
 
 type PaintContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 function rgba([r, g, b, a]: PainterColor): string { return `rgba(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},${a})`; }
@@ -76,23 +80,17 @@ function textureSizeFor(scene: Scene, properties: Painter2DProperties): { width:
 export function createPainter2DMesh(scene: Scene, name: string, value: unknown): Mesh {
   const properties = parsePainter2DProperties(value);
   const mesh = MeshBuilder.CreatePlane(name, { width: properties.width, height: properties.height }, scene);
-  const material = new StandardMaterial(`${name}-painter`, scene);
-  material.disableLighting = true;
-  material.emissiveColor = Color3.White();
-  material.diffuseColor = Color3.White();
-  material.backFaceCulling = false;
-  material.useAlphaFromDiffuseTexture = true;
-  material.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
-  mesh.material = material;
   mesh.metadata = { ...(mesh.metadata ?? {}), painter2d: true };
   let texture: DynamicTexture | undefined;
-  mesh.onDisposeObservable.addOnce(() => { visuals.delete(mesh); material.dispose(); texture?.dispose(); });
+  mesh.onDisposeObservable.addOnce(() => { visuals.delete(mesh); texture?.dispose(); });
   try {
     texture = new DynamicTexture(`${name}-painter-canvas`, textureSizeFor(scene, properties), scene, false, Texture.BILINEAR_SAMPLINGMODE);
     texture.hasAlpha = true;
     texture.wrapU = Texture.CLAMP_ADDRESSMODE;
     texture.wrapV = Texture.CLAMP_ADDRESSMODE;
-    material.diffuseTexture = texture;
+    setUnlitMaterial(mesh, PAINTER_MATERIAL, {
+      texture, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
+    });
     visuals.set(mesh, { texture, properties });
     updatePainter2DMesh(mesh, value);
     applyOverlayVisualStyle(mesh, value);

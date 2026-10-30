@@ -44,11 +44,13 @@ import {
   Matrix,
   PBRMaterial,
   PointLight,
+  RawTexture,
   RenderTargetTexture,
   Scene,
   ShadowGenerator,
   StandardMaterial,
   SubMesh,
+  Texture,
   TransformNode,
   UniversalCamera,
   Vector3,
@@ -96,6 +98,7 @@ import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
 import { spawnableLightsOfLoad, type SpawnableLightLoad } from "./spawnable-lights";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
+import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
 import {
   beginPipelineDeferral, capturePipelineTarget, deferredPipelinesStalled, effectDrawn, PIPELINE_DEFERRAL_STALL_MS, pipelinesDeferred,
   type PipelineTarget,
@@ -1979,8 +1982,18 @@ async function editorView() {
  */
 describe("the lighting CI gate", () => {
   const actors = () => [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])];
+  /** A Painter 2D surface: the unlit Material, textured and blended (`painter2d-mesh.ts`). */
+  const painterKey: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: true, role: "world" };
+  const canvas = (scene: Scene, rgba: number[]) => {
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array(rgba), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+    // NullEngine never uploads, so its textures never report ready.
+    texture.isReady = () => true;
+    return texture;
+  };
+  const painting = (texture: Texture, overrides: Partial<UnlitBinding> = {}): UnlitBinding =>
+    ({ texture, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false, ...overrides });
   /** The gameplay script: Effects each step compiled. */
-  const play = async (world: PlayWorld) => {
+  const play = async (world: PlayWorld, painter: Mesh) => {
     const steps: Array<[string, () => void]> = [
       ["a point light switches off", () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))],
       ["it switches back on", () => world.place(point(11, [1.5, 2.5, -1]))],
@@ -1998,6 +2011,10 @@ describe("the lighting CI gate", () => {
       ["more point lights spawn than the block draws", () =>
         world.place(...Array.from({ length: 40 }, (_, index) => point(100 + index, [-10 + (index % 10) * 2, 2.5, Math.floor(index / 10) * 3])))],
       ["an actor the level holds spawns", () => world.place({ slotId: 200, guid: "crate-2", position: [2, 1, 0], assign: { meshAssetGuid: null, meshKind: "box" } })],
+      ["a painter repaints onto another canvas and fades", () => {
+        setUnlitMaterial(painter, painterKey, painting(canvas(world.handle.scene, [0, 128, 255, 128]), { color: [0.5, 1, 1] }));
+        painter.visibility = 0.5;
+      }],
     ];
     const compiled: Record<string, number> = {};
     for (const [name, step] of steps) {
@@ -2011,9 +2028,12 @@ describe("the lighting CI gate", () => {
 
   it.each(MODELS)("lights change mid-game without compiling a shader or waiting on a pipeline: %s", async (model) => {
     const world = playWorld(model, actors());
+    const painter = MeshBuilder.CreatePlane("gate-painter", { size: 2 }, world.handle.scene);
+    painter.position.set(0, 1, 2);
+    setUnlitMaterial(painter, painterKey, painting(canvas(world.handle.scene, [255, 0, 0, 255])));
     await settle(world);
     world.driver.arm();
-    const compiled = await play(world);
+    const compiled = await play(world, painter);
     const lightDefines = Object.values(compiledEffects(world.engine)).filter((effect) => /#define LIGHT0\b/.test(effect.defines));
     // The block drew the script's lights: the sun, the spot and as many of the 42 points left as the Local Light Budget
     // leaves beside the spot, up to the block's maximum.
