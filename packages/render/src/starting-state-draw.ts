@@ -17,7 +17,7 @@ export interface StartingStateDraw {
   readonly done: boolean;
   /**
    * A loading frame in which the view is ready to draw: draws with `draw` (true once it drew) while the meshes hold an
-   * Effect no frame of this draw drew, and, after its first draw, waits for `settled`.
+   * Effect no frame of this draw drew or `drawAgain` holds, and, after its first draw, waits for `settled`.
    */
   frame(draw: () => boolean): void;
   /** Ends a draw that has waited `STARTING_STATE_DRAW_MS` without compile progress, or reached its ceiling. */
@@ -95,10 +95,12 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * spawn warm-up staged meshes for it (shown only until it has drawn, `onDrawn`; on WebGL2 a program's
  * first draw holds iPad WebKit and no probe sees it). Without one it draws no frame: an extra loading frame steps GPU
  * particles once more, which a paused Simulation's redraw shows. `onDrawn` runs once it has drawn, or when it ends
- * first, for the caller to remove the staged meshes.
+ * first, for the caller to remove the staged meshes. `drawAgain` holds while something only a further frame of it can
+ * complete waits (a manual capture's rehearsal, drawn inside the view's frame, that its variants left undrawn): it
+ * draws again, as for an undrawn Effect, rather than wait for `settled`, which no frame without a draw would change.
  */
 export function createStartingStateDraw(
-  scene: Scene, settled: () => boolean, options: { draws: boolean; onDrawn?: () => void },
+  scene: Scene, settled: () => boolean, options: { draws: boolean; onDrawn?: () => void; drawAgain?: () => boolean },
 ): StartingStateDraw {
   const engine = scene.getEngine();
   const effects = effectRetainer(scene);
@@ -146,7 +148,7 @@ export function createStartingStateDraw(
       if (drawing) {
         // Views the first draw created prepare on their own; wait for them without drawing.
         if (drew && !settled()) return;
-        const result = drawUndrawn(() => withoutViewCulling(scene, viewDraw), !drew);
+        const result = drawUndrawn(() => withoutViewCulling(scene, viewDraw), !drew || (options.drawAgain?.() ?? false));
         if (result === "drew") drew = true;
         if (result !== "none") return;
       }

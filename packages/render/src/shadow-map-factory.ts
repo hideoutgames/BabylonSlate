@@ -12,9 +12,10 @@ import {
   type Scene,
   Camera,
 } from "@babylonjs/core";
-import type { ShadowSettings } from "@haptic/core";
+import { SHADOW_FAR_CASTER_MIN_TEXELS, type ShadowSettings } from "@haptic/core";
 import { AtlasCascadedShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
+import { castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
 import {
   casterNormalBias,
@@ -305,10 +306,16 @@ export function createShadowGenerator(
       const light = generator.getLight();
       const range = !directionalLight && "range" in light && Number.isFinite(light.range) ? light.range as number : undefined;
       const position = range === undefined ? undefined : (light as LocalShadowLight).getAbsolutePosition();
+      // A cascade after the first leaves out a caster too small to resolve in its texels, judged by the whole mesh's
+      // bounds (a thin-instance batch's include its instances); deforming bounds are not the caster's.
+      const minTexels = layer > 0 && generator instanceof AtlasCascadedShadowGenerator ? generator.farCasterMinTexels : 0;
+      const size = minTexels ? generator.getShadowMap()!.getSize().width : 0;
       let kept = 0;
       for (const mesh of casters)
         if ((!isRevealPending(mesh) || listsHiddenCaster(generator, mesh)) &&
-          (!position || casterWithinShadowRange(mesh, position, range!))) casters[kept++] = mesh;
+          (!position || casterWithinShadowRange(mesh, position, range!)) &&
+          (!minTexels || hasDeformingShadowBounds(mesh) ||
+            castsIntoCascade(transform.m, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels))) casters[kept++] = mesh;
       casters.length = kept;
       return casters;
     };
@@ -364,6 +371,7 @@ export function applyShadowSettings(
   if (generator instanceof AtlasCascadedShadowGenerator) {
     generator.fadeFraction = settings.fadeFraction;
     generator.autoBias = settings.autoBias;
+    generator.farCasterMinTexels = SHADOW_FAR_CASTER_MIN_TEXELS[settings.profile];
   }
 }
 

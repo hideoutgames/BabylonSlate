@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
-import { FEATURE_TEST_BENCHMARK_PROFILES, runFeatureTestCheck, type FeatureTestCheckDeps } from "./feature-test-check";
+import {
+  breakdownDelta, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_STEPS, frameStats, runFeatureTestCheck,
+  type FeatureTestBenchmarkSample, type FeatureTestCheckDeps,
+} from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe } from "./runtime-probes";
 import type { RenderDiagnostics } from "@haptic/render";
@@ -198,6 +201,40 @@ describe("runFeatureTestCheck", () => {
     expect(editor.commands).not.toContain("ft_stats");
   });
 
+  it("measures each breakdown step on its own, undoing it before the next, between two baselines", async () => {
+    const editor = fakeEditor({});
+    const report = await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal,
+    });
+    const samples = report.scenes[0]!.play.benchmark;
+    expect(samples.map((sample) => sample.label)).toEqual(FEATURE_TEST_BREAKDOWN_STEPS.map((step) => step.label));
+    expect(samples[0]!.label).toBe("baseline");
+    expect(samples.at(-1)!.label).toBe("baseline again");
+    // Each step is sampled after its own commands only: the previous step was undone first.
+    const commands = editor.commands;
+    const at = (line: string) => commands.indexOf(line);
+    expect(at("quality shadows enabled off")).toBeLessThan(at("quality shadows medium"));
+    expect(commands.slice(at("quality shadows enabled off") + 1, at("quality shadows medium"))).toEqual(["quality reset"]);
+    expect(commands.slice(at("postprocessing off") + 1, at("rendertargets off"))).toEqual(["quality reset", "postprocessing on"]);
+    expect(commands.slice(at("rendertargets off") + 1, at("quality resolution scale 0.5"))).toEqual(["quality reset", "rendertargets on"]);
+    expect(editor.sampled.find((sample) => sample.after === "postprocessing off")).toBeDefined();
+    expect(commands.slice(0, 2)).toEqual(["framecap", "framecap 240"]);
+    expect(commands.slice(-2)).toEqual(["quality reset", "framecap 30"]);
+  });
+
+  it("restores a step's toggle when the sweep stops at it", async () => {
+    const controller = new AbortController();
+    const editor = fakeEditor({}, undefined, (_now, commands) => commands.includes("rendertargets off")
+      ? { drawn: 0, held: commands.length }
+      : { drawn: commands.length * 10 + _now, held: 0 });
+    await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: controller.signal,
+    });
+    // `captures off` never draws steadily: the sweep stops there and still turns captures back on.
+    expect(editor.commands).not.toContain("quality resolution scale 0.5");
+    expect(editor.commands.slice(-3)).toEqual(["quality reset", "rendertargets on", "framecap 30"]);
+  });
+
   it("samples a recompiling profile only once the view draws without held frames, within a bound", async () => {
     // `quality medium` holds the view for 20 s of new shaders; `quality high` never stops holding.
     const counts = { drawn: 0, held: 0 };
@@ -227,5 +264,31 @@ describe("runFeatureTestCheck", () => {
     expect(benchmark.at(-1)!.label).toBe("high");
     expect(editor.commands).not.toContain("quality ultra");
     expect(editor.commands.slice(-2)).toEqual(["quality reset", "framecap 30"]);
+  });
+});
+
+describe("breakdownDelta", () => {
+  const sample = (label: string, medianMs?: number): FeatureTestBenchmarkSample => ({
+    label, frames: medianMs === undefined ? null : { frames: 100, durationMs: 4000, fps: 25, medianMs, p95Ms: 46, maxMs: 50, stalls: 0 },
+    runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
+  });
+
+  it("measures a step against the mean of both baselines, so drift between them is shared", () => {
+    const samples = [sample("baseline", 38), sample("shadows off", 30), sample("baseline again", 42)];
+    expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -10, percent: -25 });
+    expect(breakdownDelta(samples, samples[2]!)).toEqual({ ms: 2, percent: 5 });
+  });
+
+  it("uses the baseline that was measured, and reports nothing without one or without frames", () => {
+    expect(breakdownDelta([sample("baseline", 40), sample("post off", 30)], sample("post off", 30))).toEqual({ ms: -10, percent: -25 });
+    expect(breakdownDelta([sample("baseline"), sample("post off", 30)], sample("post off", 30))).toBeNull();
+    expect(breakdownDelta([sample("baseline", 40)], sample("post off"))).toBeNull();
+  });
+});
+
+describe("frameStats", () => {
+  it("reports the median interval of an odd and an even count", () => {
+    expect(frameStats([10, 30, 20])!.medianMs).toBe(20);
+    expect(frameStats([10, 40, 20, 30])!.medianMs).toBe(25);
   });
 });

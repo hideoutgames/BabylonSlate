@@ -20,7 +20,7 @@ import {
   VertexBuffer,
   VertexData,
 } from "@babylonjs/core";
-import { DynamicRuntimeMeshGeometry, normalizeShadowSettings } from "@haptic/core";
+import { DynamicRuntimeMeshGeometry, normalizeShadowSettings, SHADOW_FAR_CASTER_MIN_TEXELS } from "@haptic/core";
 import { applyDynamicRuntimeMeshUpdate, createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { sceneShadowController } from "./shadow-controller";
 import { attachModelLods, generateModelLods } from "./model-lod";
@@ -28,6 +28,7 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { createLandscapeMesh, updateLandscapeMesh } from "./landscape-mesh";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import type { AtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { HAPTIC_SHADOW_VIEW_VEC4S, hapticLightBuffer, hapticShadowViews, writeHapticLights } from "./haptic-lights";
 import type { AtlasShadow } from "./shadow-atlas";
 
@@ -682,7 +683,7 @@ async function cascadedSun() {
   };
   expect(render()).toBeGreaterThan(0);
   settle();
-  return { scene, camera, sun, map, near, distant, render, settle };
+  return { scene, camera, sun, map, generator, material, near, distant, render, settle };
 }
 
 describe("cascaded sun refresh", () => {
@@ -727,6 +728,55 @@ describe("cascaded sun refresh", () => {
     near.onBeforeRenderObservable.remove(hook);
     settle();
     expect(render()).toBe(0);
+  });
+
+  describe("small far casters", () => {
+    /** The fixture with a box of `size` at `position` casting. */
+    async function withCaster(size: number, position: Vector3) {
+      const sun = await cascadedSun();
+      const caster = MeshBuilder.CreateBox(`caster ${size}`, { size }, sun.scene);
+      caster.material = sun.material;
+      caster.position.copyFrom(position);
+      sceneShadowController(sun.scene).setParticipation(caster, { castShadows: true });
+      sun.render();
+      sun.settle();
+      const listed = (layer: number) => {
+        const map = sun.map;
+        return [...(map.getCustomRenderList!(layer, map.renderList!, map.renderList!.length) ?? [])].includes(caster);
+      };
+      return { ...sun, caster, listed };
+    }
+    // Beyond the first cascade's split, inside the second (as the per-cascade caster above).
+    const far = new Vector3(0, 1, 30);
+
+    it("leaves a caster too small for a later cascade's texels out of it, and keeps it in the first", async () => {
+      const { caster, generator, listed } = await withCaster(0.04, far);
+      expect((generator as AtlasCascadedShadowGenerator).farCasterMinTexels).toBe(SHADOW_FAR_CASTER_MIN_TEXELS.medium);
+      expect(listed(1)).toBe(false);
+      // Near the camera it reaches the first cascade, which draws every caster.
+      caster.position.set(2, 1, 0);
+      caster.computeWorldMatrix(true);
+      expect(listed(0)).toBe(true);
+      // With no threshold it is drawn where it reaches.
+      (generator as AtlasCascadedShadowGenerator).farCasterMinTexels = 0;
+      caster.position.copyFrom(far);
+      caster.computeWorldMatrix(true);
+      expect(listed(1)).toBe(true);
+    });
+
+    it("keeps a large far caster in the later cascade", async () => {
+      const { listed } = await withCaster(2, far);
+      expect(listed(1)).toBe(true);
+    });
+
+    it("redraws nothing for a small far caster that moves, and redraws for a large one", async () => {
+      const small = await withCaster(0.04, far);
+      small.caster.position.x += 0.5;
+      expect(small.render()).toBe(0);
+      const large = await withCaster(2, far);
+      large.caster.position.x += 0.5;
+      expect(large.render()).toBeGreaterThan(0);
+    });
   });
 
   it("ignores casters no cascade can reach, whether static or hooked, and skinned ones beyond the shadow distance", async () => {

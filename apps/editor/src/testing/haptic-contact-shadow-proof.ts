@@ -33,7 +33,7 @@ import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene"
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
-import { isAtlasShadow } from "../../../../packages/render/src/shadow-atlas";
+import { isAtlasShadow, type AtlasCascadedShadowGenerator } from "../../../../packages/render/src/shadow-atlas";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 /** `passes`: the light's map passes the capture's frame drew, and `originMoved` whether the render origin moved, where counted. */
@@ -163,8 +163,11 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
      * `light`'s captures (shadowed, unshadowed, unlit) and its floor mask, `toLight` from a floor point, over the floor
      * its shadow covers (`covered`).
      */
+    /** The sun's cascade splits as its pose drew them. */
+    let sunSplits: number[] = [];
     const poses = async (light: Light, name: string, toLight: (point: Vector3) => Vector3, covered?: (point: Vector3) => boolean) => {
       captures.push(await shadowed(light, name));
+      if (light === sun) sunSplits = [...(sun.getShadowGenerator() as AtlasCascadedShadowGenerator).cascadeEnds];
       // A sun's cascades follow the camera; a local map's depth does not depend on the render origin.
       if (light !== sun) captures.push(...await originMoved(light, name));
       captures.push(await unshadowed(light, `${name} unshadowed`));
@@ -182,13 +185,54 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
     captures.push(await shadowed(lamp, "cel spot"));
     settings("cel", "pcf");
     captures.push(await shadowed(lamp, "cel spot pcf"));
+    // A pebble beyond the first cascade's split, too small for the second cascade's texels. The sun's shadow with the
+    // quality level's smallest far caster, then with every caster drawn.
+    settings("pbr", "pcss");
+    // Where the second cascade is fitted: the middle of its slice of the view (the first cascade's covers the floor),
+    // above the floor there. It is placed before it first draws, as a new mesh casts once a view has drawn it.
+    const middle = camera.position.add(camera.getDirection(Vector3.Forward()).scale((sunSplits[0]! + sunSplits[1]!) / 2));
+    const pebble = MeshBuilder.CreateBox("pebble", { size: 0.01 }, scene);
+    pebble.material = compiled.material;
+    pebble.position.set(middle.x, 1, middle.z);
+    await shadowed(sun, "sun far casters");
+    const cascades = sun.getShadowGenerator() as AtlasCascadedShadowGenerator;
+    const map = cascades.getShadowMap()!;
+    const listed = () => [0, 1].map((layer) => (map.getCustomRenderList!(layer, map.renderList!, map.renderList!.length) ?? []).includes(pebble));
+    const threshold = cascades.farCasterMinTexels;
+    map.resetRefreshCounter();
+    const kept = { pixels: await draw() };
+    const listedKept = listed();
+    // Every sync applies the level's value: held at none for this draw.
+    Object.defineProperty(cascades, "farCasterMinTexels", { configurable: true, get: () => 0, set: () => {} });
+    map.resetRefreshCounter();
+    const all = await draw();
+    const listedAll = listed();
+    Object.defineProperty(cascades, "farCasterMinTexels", { configurable: true, writable: true, value: threshold });
+    const farCasters = {
+      threshold, listedKept, listedAll, firstCascadeEnd: cascades.cascadeEnds[0]!, kept: kept.pixels, all,
+      depths: floorDepths(scene, camera, canvas, engine.isWebGPU, floor),
+    };
     graph.dispose();
-    return { width: canvas.width, height: canvas.height, captures, blocked };
+    return { width: canvas.width, height: canvas.height, captures, blocked, farCasters };
   } finally {
     scene.dispose();
     engine.dispose();
     canvas.remove();
   }
+}
+
+/** Per pixel, in readPixels' rows (as `floorShadowMask`), the camera's view depth of the floor seen there, or -1. */
+function floorDepths(scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, topDown: boolean, floor: AbstractMesh): number[] {
+  const forward = camera.getDirection(Vector3.Forward());
+  const depths: number[] = [];
+  for (let row = 0; row < canvas.height; row++) {
+    const y = topDown ? row + 0.5 : canvas.height - row - 0.5;
+    for (let column = 0; column < canvas.width; column++) {
+      const hit = scene.pickWithRay(scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera), (mesh) => mesh === floor);
+      depths.push(hit?.pickedPoint ? Vector3.Dot(hit.pickedPoint.subtract(camera.position), forward) : -1);
+    }
+  }
+  return depths;
 }
 
 /**

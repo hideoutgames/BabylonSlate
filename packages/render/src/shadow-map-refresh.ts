@@ -13,6 +13,8 @@ import {
   type ShadowGenerator,
   type Vector3,
 } from "@babylonjs/core";
+import { AtlasCascadedShadowGenerator } from "./shadow-atlas";
+import { castsIntoCascade } from "./shadow-caster-size";
 import { canCacheShadowMaterial } from "./shadow-material-policy";
 import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
@@ -74,6 +76,25 @@ function reachesCascade(
     // Negated so a non-finite value stays inside, never wrongly outside.
     if (!(Math.abs(x) > 1 + radius * scales[2 * cascade]! || Math.abs(y) > 1 + radius * scales[2 * cascade + 1]!)) return true;
   }
+  return false;
+}
+
+/**
+ * Whether a caster's bounding sphere reaches a cascade that draws it: the first whatever its size, a later one when it
+ * is not too small for its texels (`castsIntoCascade`, the caster list's own test).
+ */
+function drawnIntoCascade(
+  matrices: readonly ArrayLike<number>[],
+  scales: Float64Array,
+  center: Vector3,
+  radius: number,
+  size: number,
+  minTexels: number,
+): boolean {
+  if (!minTexels) return reachesCascade(matrices, scales, center, radius);
+  for (let cascade = 0; cascade < matrices.length; cascade++)
+    if (reachesCascade([matrices[cascade]!], scales.subarray(2 * cascade), center, radius) &&
+      (cascade === 0 || castsIntoCascade(matrices[cascade]!, radius, size, minTexels))) return true;
   return false;
 }
 
@@ -372,6 +393,9 @@ export class ShadowMapRefresh {
     state.value(generator.shadowMaxZ);
     state.value(generator.stabilizeCascades);
     state.value(generator.depthClamp);
+    const minTexels = generator instanceof AtlasCascadedShadowGenerator ? generator.farCasterMinTexels : 0;
+    state.value(minTexels);
+    const size = minTexels ? map.getSize().width : 0;
     // The held fit places each cascade for the reach test. It is stale only
     // after a camera or light change, which renders the map this frame anyway.
     const drawn = this.drawnFit(generator, map);
@@ -399,7 +423,7 @@ export class ShadowMapRefresh {
         const sphere = mesh.getBoundingInfo().boundingSphere;
         const center = sphere.centerWorld;
         const radius = sphere.radiusWorld;
-        if (!reachesCascade(matrices, this.cascadeScales, center, radius)) {
+        if (!drawnIntoCascade(matrices, this.cascadeScales, center, radius, size, minTexels)) {
           // Deforming geometry is drawn into the cascades whatever its bounds: no
           // plane culls it, and its skin can leave its bind-pose bounds anywhere.
           // So a visible one within the shadow distance of the camera (or near a

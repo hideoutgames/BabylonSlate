@@ -1060,6 +1060,10 @@ export type CommandMessage =
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
   | { type: "setScalability"; transaction: ScalabilityTransaction }
   | { type: "setLightsDebug"; enabled: boolean }
+  /** Debug: the Play view's post-processing as a whole (the `postprocessing` console command). */
+  | { type: "setPostProcessingDebug"; enabled: boolean }
+  /** Debug: whether every-frame Render Target Captures draw (the `rendertargets` console command). */
+  | { type: "setRenderTargetCapturesDebug"; enabled: boolean }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }
   | { type: "setStat"; name: string; enabled: boolean }

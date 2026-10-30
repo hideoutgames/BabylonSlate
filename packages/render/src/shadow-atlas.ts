@@ -483,6 +483,11 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   fadeFraction = 0;
   /** Automatic bias (`ShadowSettings.autoBias`): receivers compare against their own plane (receiver-plane PCF). */
   autoBias = false;
+  /**
+   * The smallest caster a cascade after the first draws, its bounding sphere's diameter in that cascade's texels
+   * (`SHADOW_FAR_CASTER_MIN_TEXELS` of the shadow quality level; `castsIntoCascade`); 0 draws every caster.
+   */
+  farCasterMinTexels = 0;
 
   get tiles(): readonly ShadowAtlasTile[] {
     return this.placement.tiles;

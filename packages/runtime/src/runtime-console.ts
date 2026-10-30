@@ -164,6 +164,8 @@ export class RuntimeConsole {
       changeScene: (scene) => host.sceneRealizer().change(scene),
       quality: (group, choice, value) => host.scalability().executeQuality(group, choice, value),
       setLightsDebug: (enabled) => host.emit({ type: "setLightsDebug", enabled }),
+      setPostProcessing: (enabled) => host.emit({ type: "setPostProcessingDebug", enabled: Boolean(enabled) }),
+      setRenderTargetCaptures: (enabled) => host.emit({ type: "setRenderTargetCapturesDebug", enabled: Boolean(enabled) }),
       setFrameCap: (fps) => {
         host.requestScalability({ kind: "patch", frameCap: fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP });
       },

@@ -1,5 +1,7 @@
 import {
+  breakdownDelta,
   FEATURE_TEST_BENCHMARK_PROFILES,
+  type FeatureTestCheckMode,
   type FeatureTestBenchmarkSample,
   type FeatureTestCheckReport,
   type FeatureTestCheckResources,
@@ -13,7 +15,7 @@ type LongFrame = NonNullable<FeatureTestCheckSceneResult["play"]["firstDraws"]>[
 
 const MAX_LOG_LINES = 8;
 const MAX_LONG_FRAMES = 4;
-const MODE_LABELS = { quick: "Quick", full: "Full", benchmark: "Benchmark" } as const;
+const MODE_LABELS = { quick: "Quick", full: "Full", benchmark: "Benchmark", breakdown: "Breakdown" } as const;
 
 const clip = clipText;
 
@@ -32,7 +34,7 @@ function frames(stats: FrameStats | null): string {
   return `${stats.fps.toFixed(0)} fps (p95 ${stats.p95Ms.toFixed(0)} ms, max ${stats.maxMs.toFixed(0)} ms, ${stats.stalls} stalls >100 ms)`;
 }
 
-function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
+function sceneLines(scene: FeatureTestCheckSceneResult, mode: FeatureTestCheckMode): string[] {
   const lines = [`[${scene.passed ? "PASS" : "FAIL"}] ${scene.name}`];
   for (const problem of scene.problems) lines.push(`  ! ${problem}`);
   const editor = scene.editor;
@@ -60,7 +62,15 @@ function sceneLines(scene: FeatureTestCheckSceneResult): string[] {
   for (const command of play.commands) {
     lines.push(`  > ${command.line}: ${command.success ? "ok" : "FAILED"} in ${s(command.ms)}${command.output ? ` · ${clip(command.output, 160)}` : ""}`);
   }
-  if (play.benchmark.length) {
+  if (play.benchmark.length && mode === "breakdown") {
+    lines.push("  Breakdown (frame cap lifted; change against the mean of both baselines):",
+      `    ${pad("Step", 22)}${pad("fps", 6)}${pad("median", 9)}${pad("p95", 8)}${pad("change", 17)}${pad("cpu", 8)}${pad("draws", 7)}resolution`);
+    for (const sample of play.benchmark) {
+      const delta = breakdownDelta(play.benchmark, sample);
+      const change = delta ? `${delta.ms >= 0 ? "+" : ""}${delta.ms.toFixed(1)}ms ${delta.percent >= 0 ? "+" : ""}${delta.percent.toFixed(0)}%` : "-";
+      lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames?.medianMs !== undefined ? `${sample.frames.medianMs.toFixed(1)}ms` : "-", 9)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(change, 17)}${pad(ms(sample.cpuMs), 8)}${pad(String(sample.drawCalls), 7)}${sample.resolution ?? "-"}`);
+    }
+  } else if (play.benchmark.length) {
     lines.push("  Benchmark (frame cap lifted):", `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 8)}${pad("gpu", 8)}${pad("draws", 7)}resolution`);
     for (const sample of play.benchmark) {
       lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(ms(sample.cpuMs), 8)}${pad(ms(sample.gpuMs), 8)}${pad(String(sample.drawCalls), 7)}${sample.resolution ?? "-"}`);
@@ -146,7 +156,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
       : "Benchmark: no scene reached Play");
   }
   lines.push("");
-  for (const scene of report.scenes) lines.push(...sceneLines(scene), "");
+  for (const scene of report.scenes) lines.push(...sceneLines(scene, report.mode), "");
   if (report.pageErrors.length) {
     lines.push(`Page errors (${report.pageErrors.length}):`);
     for (const error of report.pageErrors.slice(0, MAX_LOG_LINES)) lines.push(`  ${clip(error)}`);

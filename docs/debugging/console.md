@@ -33,7 +33,7 @@ The game keeps running while the console is open, and pressing the game does not
 | `quality textures` | tier or `reset` | Texture quality. |  |
 | `quality geometry` | tier or `reset`; `lod` `on`/`off`; `distance` 0.25 to 4 | Geometry quality, automatic Model LOD and its switch distance scale. |  |
 | `quality water` | tier or `reset`; setting and value | Water rendering quality, or one water setting (see below). Buoyancy is unaffected. |  |
-| `quality postprocessing` | tier or `reset` | Post-processing quality. |  |
+| `quality postprocessing` | tier or `reset`; `ambientOcclusion`, `reflections` or `volumetricLighting` `on`/`off` | Post-processing quality, or whether the tier allows one effect. An effect still runs only where the project turns it on. |  |
 | `quality lighting` | tier or `reset`; `budget` N or `auto` | Lighting quality and the number of local lights. |  |
 | `framecap` | fps | Limits the frame rate. 0 or less uses 60. |  |
 | `volume` | 0 to 1 | Sets the master volume, like [Set Global Volume](../scripting/class/set-global-volume.md). |  |
@@ -53,6 +53,8 @@ The game keeps running while the console is open, and pressing the game does not
 | `stat threads` | `on`/`off` | Adds message traffic, actor count and tick count to Stats. | Yes |
 | `lightsdebug` | `on`/`off` | Shows which lights illuminate and which cast shadows. | Yes |
 | `wireframe` | `on`/`off` | Draws meshes as wireframes. | Yes |
+| `postprocessing` | `on`/`off` | Turns all post-processing off or back on, to measure what it costs. | Yes |
+| `rendertargets` | `on`/`off` | Pauses or resumes Render Target Captures that capture every frame, to measure what they cost. Their textures keep their last image; manual captures still capture when asked. | Yes |
 | `showbounds` | `on`/`off` | Draws the bounding box of each mesh. | Yes |
 | `actorboundingbox` | `on`/`off` | Same as `showbounds`. | Yes |
 | `showcollision` | `on`/`off` | Draws the physics collision shapes. | Yes |

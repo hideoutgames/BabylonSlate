@@ -3,10 +3,11 @@ import {
   Constants, FreeCamera, Material, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RawTexture, RenderTargetTexture,
   Scene, StandardMaterial, Vector3,
 } from "@babylonjs/core";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { createDefaultRenderTargetCaptureProperties } from "@haptic/core";
 import { RenderTargetCaptures } from "./render-target-capture";
+import { createStartingStateDraw } from "./starting-state-draw";
 import { beginManagedRenderAllocation, managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
 import * as normalMaterial from "./render-target-normal-material";
@@ -77,6 +78,29 @@ it("manual capture allocates only on demand, coalesces requests and preserves th
   expect(output.isRenderTarget).toBe(false);
   expect(scene.customRenderTargets).toEqual([]);
   expect(scene.activeCamera).toBe(camera);
+});
+
+it("suspends every-frame captures without releasing them, while manual requests still draw", () => {
+  const { captures, draws, settings, root } = host();
+  const output = captures.acquireTexture("texture")!.resource;
+  captures.configure("capture", { ...settings, captureEveryFrame: true }, () => root);
+  captures.render();
+  expect(draws).toHaveLength(1);
+  const published = output.getInternalTexture();
+  captures.setEveryFrameSuspended(true);
+  captures.render(); captures.render();
+  expect(draws).toHaveLength(1);
+  // The output keeps its last image and storage while suspended.
+  expect(output.getInternalTexture()).toBe(published);
+  captures.configure("manual", { ...settings, renderTargetGuid: "other", captureEveryFrame: false }, () => root);
+  captures.setAssets(new Map([["target", { mode: "SceneColor", width: 16, height: 8 }], ["other", { mode: "SceneColor", width: 16, height: 8 }]]),
+    new Map([["texture", { renderTargetGuid: "target" }]]));
+  captures.request("manual"); captures.render();
+  expect(draws).toHaveLength(2);
+  captures.setEveryFrameSuspended(false);
+  captures.render();
+  // The every-frame capture draws again; the manual one waits for its next request.
+  expect(draws).toHaveLength(3);
 });
 
 it("publishes nothing and keeps a manual request while its draw waits for a compiling pipeline", () => {
@@ -524,6 +548,53 @@ it("defers periodic and accepted manual captures throughout render-only pause", 
   expect(draws).toHaveLength(2);
   captures.render();
   expect(draws).toHaveLength(2);
+});
+
+describe("a rehearsal whose first try does not draw, in Play's starting state", () => {
+  /**
+   * The starting state as Play wires it: its frames draw the view, whose frame draws the captures, and they draw again
+   * while a rehearsal waits (`drawAgain`).
+   */
+  function startingState() {
+    const setup = host();
+    const { scene, captures, engine } = setup;
+    engine.getCaps().textureHalfFloatRender = true;
+    vi.spyOn(normalMaterial, "createRenderTargetDepthMaterial").mockImplementation((scene) => new NodeMaterial("Capture Depth Variant", scene));
+    captures.setAssets(new Map([["target", { mode: "DepthPass", width: 16, height: 8 }]]), new Map([["texture", { renderTargetGuid: "target" }]]));
+    const mesh = MeshBuilder.CreateBox("Model", {}, scene); mesh.material = new StandardMaterial("Source", scene);
+    captures.acquireTexture("texture");
+    const draw = createStartingStateDraw(scene, () => !captures.preparing(), { draws: true, drawAgain: () => captures.rehearsalPending() });
+    captures.rehearseManualCaptures(() => !draw.done);
+    let views = 0;
+    const frame = () => draw.frame(() => {
+      views++;
+      captures.render();
+      return true;
+    });
+    return { ...setup, draw, frame, views: () => views };
+  }
+
+  it("tries it again in the next frame, which draws the view again, until it has drawn", () => {
+    const { draws, draw, frame, views, captures } = startingState();
+    // Its override Material's variant is still compiling for the first try.
+    vi.mocked(RenderTargetTexture.prototype.isReadyForRendering).mockReturnValueOnce(false);
+    frame();
+    expect([views(), draws.length, captures.rehearsalPending(), draw.done]).toEqual([1, 0, true, false]);
+    frame();
+    expect([views(), draws.length, captures.rehearsalPending()]).toEqual([2, 1, false]);
+  });
+
+  it("ends within a frame of the rehearsal drawing, and waits no longer for one", () => {
+    const { draws, draw, frame, views } = startingState();
+    const ready = vi.mocked(RenderTargetTexture.prototype.isReadyForRendering);
+    // Three tries find its variants compiling; the fourth draws.
+    ready.mockReturnValueOnce(false).mockReturnValueOnce(false).mockReturnValueOnce(false);
+    for (let index = 0; index < 4; index++) frame();
+    expect([views(), draws.length, draw.done]).toEqual([4, 1, false]);
+    // Nothing undrawn and nothing waiting: the next frame ends it without drawing.
+    frame();
+    expect([views(), draw.done]).toEqual([4, true]);
+  });
 });
 
 it("rehearses a manual capture not yet requested in Play's starting state, unpublished, keeping its request state", () => {

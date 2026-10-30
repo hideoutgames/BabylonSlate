@@ -48,6 +48,8 @@ export type ConsoleCommandHost = {
   setBehaviourTreeDebug?(enabled: boolean): void;
   setShowAudioDebug?(enabled: boolean): void;
   setLightsDebug?(enabled: boolean): void;
+  setPostProcessing?(enabled: boolean): void;
+  setRenderTargetCaptures?(enabled: boolean): void;
   dumpActors?(): string;
   inspectActor?(query: string): string;
   possessActorCamera?(query: string): CommandResult;
