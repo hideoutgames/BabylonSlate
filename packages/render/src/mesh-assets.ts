@@ -1,3 +1,4 @@
+import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
 import { enableOverlayVisualMaterial } from "./overlay-visual-style";
 import {
   Color3,
@@ -341,6 +342,11 @@ export function restoreAlbedoMaterial(mesh: AbstractMesh): boolean {
   mesh.material = material;
   applyMaterialBounds(mesh);
   syncAlbedoTransparency(mesh, material);
+  // After its blend is decided: a blended construction material draws unpooled.
+  if (pooledLeafOf(mesh)) {
+    const own = setActorMeshMaterial(mesh, material);
+    if (own) applyMaterialBounds(own);
+  }
   return true;
 }
 
@@ -419,6 +425,7 @@ export function applyAlbedoTexture(
       mesh.material = material;
       enableOverlayVisualMaterial(mesh);
       syncAlbedoTransparency(mesh, material);
+      if (pooledLeafOf(mesh)) setActorMeshMaterial(mesh, material);
       // Babylon samples a texture with an identity matrix straight from the UVs
       // (DIFFUSEDIRECTUV / EMISSIVEDIRECTUV) and any other through the matrix, a
       // different shader. A KTX2 is flipped on its wrapper, a PNG is not, so

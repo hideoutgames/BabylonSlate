@@ -1,3 +1,4 @@
+import { setActorMeshMaterial } from "./pooled-visuals";
 import type { Material, Mesh, Scene } from "@babylonjs/core";
 import type { CommandMessage } from "@haptic/bridge";
 import { applyMaterialBounds } from "./material-bounds";
@@ -227,7 +228,7 @@ export function applyMaterialToActorMeshes(
     if (onlyComponentId !== undefined && componentId !== onlyComponentId) continue;
     const guid = assignedMaterialGuid(binding, slotId, componentId);
     if (guid === null) {
-      if (!restoreAlbedoMaterial(target)) target.material = null;
+      if (!restoreAlbedoMaterial(target)) setActorMeshMaterial(target, null);
       continue;
     }
     if (!guid) continue;
@@ -238,7 +239,12 @@ export function applyMaterialToActorMeshes(
       guid,
       componentId,
     );
-    if (material) { target.material = material; applyMaterialBounds(target); }
+    if (material) {
+      // A Material no pool group can draw (World Position Offset pads its bounds) gives the visual a mesh of its own.
+      const own = setActorMeshMaterial(target, material);
+      applyMaterialBounds(target);
+      if (own) applyMaterialBounds(own);
+    }
   }
 }
 
