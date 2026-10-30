@@ -66,7 +66,7 @@ import {
 } from "@haptic/bridge";
 import {
   areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality,
-  parseText2DProperties, parseText3DProperties,
+  normalizeRenderProjectSettings, parseText2DProperties, parseText3DProperties,
 } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
@@ -2025,6 +2025,17 @@ describe("the lighting CI gate", () => {
       compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, lightDefines: 0,
       counts: [1, points, 1, 0], atlas: [true, true, true],
     });
+  });
+
+  it.each(MODELS)("with temporal anti-aliasing jittering the shadow filters, lights still change without compiling: %s", async (model) => {
+    const world = playWorld(model, actors());
+    world.handle.setRenderSettings(normalizeRenderProjectSettings({ effects: { temporalAntiAliasing: { enabled: true } } }));
+    await settle(world);
+    world.driver.arm();
+    const compiled = await play(world);
+    const jittered = Object.values(compiledEffects(world.engine)).filter((effect) => /^#define HAPTIC_SHADOW_JITTER$/m.test(effect.defines));
+    expect({ compiled, pipelines: world.driver.pipelines.size, synchronous: world.driver.synchronous.size, jittered: jittered.length > 0 })
+      .toEqual({ compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, jittered: true });
   });
 });
 

@@ -200,7 +200,7 @@ it("replans screen-space effects when the session quality tier changes and repor
   expect(sceneEffectsQualityLimits(scene)).toEqual(["post processing quality skips ambient occlusion, reflections"]);
 });
 
-it("tells listeners of each render-mode change once, after the plan is current, and of nothing else", () => {
+it("tells listeners of each change to the light block's scene-level defines once, after the plan is current, and of nothing else", () => {
   const scene = fixture();
   const state = sceneRenderingSettings(scene);
   const seen: [string, boolean][] = [];
@@ -225,4 +225,11 @@ it("tells listeners of each render-mode change once, after the plan is current, 
   expect(seen).toEqual([["cel", true]]);
   updateSceneRenderingSettings(scene, { mode: "pbr", cel: normalizeCelShadingSettings({}), effects });
   expect(seen).toEqual([["cel", true], ["pbr", true]]);
+  // Temporal anti-aliasing jitters the shadow filters: starting and stopping it is one call each.
+  const temporal = { ...effects, temporalAntiAliasing: { ...effects.temporalAntiAliasing, enabled: true } };
+  updateSceneRenderingSettings(scene, { mode: "pbr", effects: temporal });
+  updateSceneRenderingSettings(scene, { mode: "pbr", effects: { ...temporal, temporalAntiAliasing: { ...temporal.temporalAntiAliasing, blend: 0.2 } } });
+  expect(seen).toEqual([["cel", true], ["pbr", true], ["pbr", true]]);
+  setSceneEffectsEnabled(scene, false);
+  expect(seen).toEqual([["cel", true], ["pbr", true], ["pbr", true], ["pbr", false]]);
 });
