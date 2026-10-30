@@ -81,25 +81,6 @@ describe("directional automatic shadow bias", () => {
     }
   });
 
-  it("uses the effective Poisson radius independently of requested quality", () => {
-    for (const filterQuality of ["low", "high"] as const) {
-      const effective = resolveDirectionalShadowBias({
-        ...projection,
-        filter: "poisson",
-        filterQuality,
-        poissonRadiusTexels: 2,
-      });
-      expect(effective.bias).toBeCloseTo(0.002, 12);
-    }
-    expect(
-      resolveDirectionalShadowBias({
-        ...projection,
-        filter: "poisson",
-        poissonRadiusTexels: 1,
-      }).bias,
-    ).toBeCloseTo(0.001, 12);
-  });
-
   it("preserves authored floors and never increases normal inset at coarse resolutions", () => {
     const authored = Object.freeze({
       ...projection,

@@ -6,12 +6,10 @@ export type DirectionalShadowBiasInput = {
   /** Actual allocation dimensions, after admission and allocation recovery. */
   mapWidth: number;
   mapHeight: number;
-  filter: "pcf" | "pcss" | "poisson" | "none";
+  filter: "pcf" | "pcss" | "none";
   filterQuality: "low" | "medium" | "high";
   /** Effective native CSM depth clamp, not merely the requested setting. */
   depthClamp: boolean;
-  /** Native blurScale controls the Poisson sample radius in texels. */
-  poissonRadiusTexels?: number;
   authoredDepthBias: number;
   authoredNormalBias: number;
 };
@@ -104,12 +102,7 @@ export function resolveDirectionalShadowBias(
   // (one quarter of a world texel), independent of that receiver kernel.
   // PCSS quality changes sample
   // count, not a fixed filter width, so it uses only the base raster correction.
-  // Poisson quality is ignored by Babylon; its radius is controlled by blurScale.
-  const footprint =
-    input.filter === "poisson"
-        ? Math.max(1, 2 * nonNegativeFinite(input.poissonRadiusTexels ?? 2))
-        : 1;
-  const normalizedCorrection = ((input.filter === "pcf" ? 0.25 : 0.5) * footprint * worldTexelSize) / input.depth;
+  const normalizedCorrection = ((input.filter === "pcf" ? 0.25 : 0.5) * worldTexelSize) / input.depth;
   // Match the authored native-depth range for pathological/recovering extents.
   // This is a numerical guard, not a guarantee for arbitrary thin geometry.
   result.bias = Math.max(
