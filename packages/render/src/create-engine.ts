@@ -1,3 +1,4 @@
+import { setSceneInstancing } from "./instance-pool";
 import { applyGamepadRumble } from "./gamepad-rumble";
 import { applyDeviceVibration } from "./device-vibration";
 import { drainEngineAfterRelease } from "./idle-engine-drain";
@@ -559,6 +560,8 @@ function initializeEngine(
     scene.autoClear = true;
     // Intermediate also draws every mesh whatever the camera's view; Play culls the ones whose bounds hold.
     onRollback(installPlayViewCulling(scene));
+    // Primitives that share geometry and Material draw as one batch of instances (`instance-pool.ts`).
+    setSceneInstancing(scene, true);
     configureEditorRenderingGroups(scene);
   } else {
     scene.performancePriority = ScenePerformancePriority.BackwardCompatible;

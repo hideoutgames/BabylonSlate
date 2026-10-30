@@ -89,6 +89,8 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isAtlasShadow } from "./shadow-atlas";
 import { findSceneShadowController } from "./shadow-controller";
 import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
+import { sceneInstancePool } from "./instance-pool";
+import { pooledLeafOf } from "./pooled-visuals";
 import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
@@ -487,11 +489,16 @@ const classesLoad = (scripts: ScriptBundleEntry[], assets: SpawnableLightLoad["a
  * the snapshot, as the game worker poses them. `load` is the startup sources' compiled Classes and dependencies, whose
  * lights it may spawn.
  */
-function playWorld(model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2", load = classesLoad([])) {
+function playWorld(
+  model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2", load = classesLoad([]),
+  { instancing = false }: { instancing?: boolean } = {},
+) {
   // Preparation polls every 16 ms and the Play pause waits 250 ms: both run on this clock.
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
   cleanups.push(() => vi.useRealTimers());
   const engine = headlessEngine();
+  // Play pools primitives where the Engine instances in hardware (`sceneInstancing`).
+  if (instancing) engine.getCaps().instancedArrays = true;
   const driver = driverModel(engine, model);
   const holds: boolean[] = [];
   const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -1980,6 +1987,53 @@ async function editorView() {
  * an actor the level holds, compile no shader, wait on no WebGPU pipeline and create none in a shadow pass. A merge gate:
  * CI's unit job runs it.
  */
+describe("pooled primitives", () => {
+  const box = (slotId: number, position: Vec3): Actor =>
+    ({ slotId, guid: `box-${slotId}`, position, assign: { meshAssetGuid: null, meshKind: "box" } });
+  /** What a cause compiled and held, with the pool's groups and members after it. */
+  const expectNothingCompiled = (world: PlayWorld, record: CauseRecord) => expect({
+    effects: record.effects, pipelines: record.pipelines + record.warmPipelines, synchronous: world.driver.synchronous.size,
+    heldFrames: record.heldFrames, holdRaised: record.holdRaised, recovered: record.recovered,
+  }, JSON.stringify(record)).toEqual({ effects: 0, pipelines: 0, synchronous: 0, heldFrames: 0, holdRaised: false, recovered: true });
+
+  it.each(MODELS)("twenty boxes spawned into the load's drawn group compile nothing: %s", async (model) => {
+    // The floor and crate are boxes of the engine default Material: one group, its instanced variants drawn by the load.
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1])], [], "actor-2", classesLoad([]), { instancing: true });
+    const pool = sceneInstancePool(world.handle.scene);
+    const record = await measure(world, () => world.place(...Array.from({ length: 20 }, (_, index) =>
+      box(30 + index, [-4 + (index % 5) * 2, 1, -2 + Math.floor(index / 5) * 1.5]))));
+    expectNothingCompiled(world, record);
+    expect(pool.diagnostics()).toMatchObject({ groups: 1, pooled: 22 });
+  });
+
+  it.each(MODELS)("a box whose Material changes to one another group draws compiles nothing: %s", async (model) => {
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
+      { instancing: true });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    const record = await measure(world, () => world.handle.applyCommand({ type: "assignMaterial", slotId: 2, materialAssetGuid: "surface-a" }));
+    expectNothingCompiled(world, record);
+    expect(pooledLeafOf(world.handle.scene.getMeshByName("actor-2")!)?.sourceMesh)
+      .toBe(pooledLeafOf(world.handle.scene.getMeshByName("actor-20")!)?.sourceMesh);
+  });
+
+  it.each(MODELS)("the last member of a drawn group despawned and spawned again compiles nothing: %s", async (model) => {
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
+      { instancing: true });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    await settle(world);
+    const pool = sceneInstancePool(world.handle.scene);
+    world.remove(20);
+    await world.frame();
+    expect(pool.diagnostics()).toMatchObject({ groups: 1, retained: 1 });
+    const record = await measure(world, () => {
+      world.place(box(20, [2, 1, 1]));
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    });
+    expectNothingCompiled(world, record);
+    expect(pool.diagnostics()).toMatchObject({ groups: 2, retained: 0 });
+  });
+});
+
 describe("the lighting CI gate", () => {
   const actors = () => [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])];
   /** A Painter 2D surface: the unlit Material, textured and blended (`painter2d-mesh.ts`). */

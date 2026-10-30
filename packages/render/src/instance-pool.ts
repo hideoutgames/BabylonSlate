@@ -1,5 +1,5 @@
 import { InstancedMesh, Material, Mesh, MultiMaterial, type AbstractMesh, type Scene } from "@babylonjs/core";
-import { hasStockVertexStage } from "./shadow-material-policy";
+import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { markInstanceSource } from "./instance-source";
 import { hasDrawn } from "./reveal-pending";
@@ -48,7 +48,7 @@ export function materialIneligibility(mesh: AbstractMesh, material: Material): I
   if (material.needAlphaBlendingForMesh(mesh)) return "blended";
   if (material.fillMode !== Material.TriangleFillMode || material.wireframe || material.pointsCloud) return "fillMode";
   // World Position Offset and other authored vertex stages: an instance's bounds and the CPU pick must stay exact.
-  return hasStockVertexStage(material) ? null : "vertexStage";
+  return hasStockOrPlannedVertexStage(material) ? null : "vertexStage";
 }
 
 /**
@@ -278,6 +278,9 @@ export class SceneInstancePool {
   /** An empty group that drew is kept for a respawn (within `RETAINED_EMPTY_GROUPS`); one that never drew goes. */
   private emptied(group: InstanceGroup): void {
     if (group.members.size || !this.groups.has(group.id)) return;
+    // Its batch drew where a pass's draw wrapper holds a ready Effect, whether or not a probe noted a member drawn.
+    group.drawn ||= (group.source.subMeshes ?? []).some((part) =>
+      part._drawWrappers.some((wrapper) => !!wrapper?.effect?.isReady()));
     if (!group.drawn) {
       this.dispose(group);
       return;
@@ -322,9 +325,12 @@ export function setSceneInstancing(scene: Scene, enabled: boolean): void {
   else instancing.delete(scene);
 }
 
-/** Whether visuals built in `scene` draw through its instance pool (`setSceneInstancing`). */
+/**
+ * Whether visuals built in `scene` draw through its instance pool (`setSceneInstancing`), which needs hardware
+ * instancing: without it Babylon draws each instance on its own, which a pool would only add to.
+ */
 export function sceneInstancing(scene: Scene): boolean {
-  return instancing.has(scene);
+  return instancing.has(scene) && scene.getEngine().getCaps().instancedArrays;
 }
 
 /** The pool member `mesh` is, if it is one. */
