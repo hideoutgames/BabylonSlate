@@ -38,7 +38,6 @@ import {
   type ShadowParticipation,
 } from "./shadow-mesh-policy";
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
-import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
 import { ShadowMapRefresh } from "./shadow-map-refresh";

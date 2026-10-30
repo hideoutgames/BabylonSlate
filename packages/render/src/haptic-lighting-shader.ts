@@ -74,9 +74,9 @@ export function hapticShadowGlsl(surface: boolean): string {
 // without a view (index < 0), outside its frustum and on a mesh that does not receive shadows. Babylon's PCF at the
 // view's filter quality (0 low, 1 medium, 2 high: its computeShadowWithPCF1, 3 and 5): one, four or nine weighted
 // bilinear compare taps, each kept a texel inside the view's tile so a neighbouring tile never bleeds in. A sun cascade
-// with automatic bias compares each tap against the receiver's plane, as the legacy path's receiver-plane PCF does
-// (\`shadow-receiver.ts\`), from the position's change across the pixel (\`dPdx\`, \`dPdy\`, taken where control flow is
-// uniform); low quality then compares four texel centres, as one bilinear comparison takes one depth.
+// with automatic bias compares each tap against the receiver's plane, from the position's change across the pixel
+// (\`dPdx\`, \`dPdy\`, taken where control flow is uniform); low quality then compares four texel centres, as one
+// bilinear comparison takes one depth.
 float hapticShadowTap(vec4 tile, vec2 texel, float depth) {
   return textureLod(hapticShadowAtlas, vec3(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), depth), 0.0);
 }
