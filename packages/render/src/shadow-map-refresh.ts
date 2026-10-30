@@ -236,10 +236,9 @@ export class ShadowMapRefresh {
     }
     const state = this.sceneState;
     state.begin();
+    // Not the floating origin: a shadow pass offsets the casters and the light's view alike, so the depth it draws is
+    // the same, and the light block applies the current origin to the views it samples with each frame.
     state.value(scene.activeCamera);
-    state.value(scene.floatingOriginOffset.x);
-    state.value(scene.floatingOriginOffset.y);
-    state.value(scene.floatingOriginOffset.z);
     state.value(scene.forceWireframe);
     state.value(scene.forcePointsCloud);
     state.value(scene.useRightHandedSystem);

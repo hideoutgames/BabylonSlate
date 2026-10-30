@@ -117,5 +117,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     // CEL draws Contact Hardening as PCF.
     expect(report.cel).toEqual({ differing: 0 });
+    // A local map stays cached while only the floating render origin moves, and draws what a fresh draw at that pose would.
+    for (const light of ["spot", "point"]) {
+      const kept = capture(result, `${light} origin moved`), redrawn = capture(result, `${light} origin moved redrawn`);
+      expect([kept.originMoved, kept.passes, redrawn.passes], light).toEqual([true, 0, light === "point" ? 6 : 1]);
+      const differing = Array.from({ length: count }, (_, pixel) => difference(kept.pixels, redrawn.pixels, pixel)).filter((value) => value > 0);
+      expect(differing, light).toEqual([]);
+    }
   });
 }
