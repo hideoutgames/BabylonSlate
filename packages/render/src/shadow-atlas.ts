@@ -7,17 +7,18 @@ import {
   Vector3,
   Vector4,
   Viewport,
+  ShadowGenerator,
   type AbstractEngine,
   type Camera,
   type DirectionalLight,
   type Effect,
+  type Light,
   type PointLight,
   type Scene,
   type SpotLight,
 } from "@babylonjs/core";
 import { SHADOW_CAPACITY_PROFILES, type ShadowProfile } from "@haptic/core";
 import { deviceProfile } from "./device-profile";
-import { ReusableShadowGenerator } from "./reusable-shadow-generator";
 import { ShadowAtlasAllocator, type ShadowAtlasTile } from "./shadow-atlas-allocator";
 
 /**
@@ -324,9 +325,10 @@ function construct<T>(placement: Placement, build: () => T): T {
  * A spot or point light's shadow generator drawing into its tiles of the Scene's atlas: a spot light's one, a point
  * light's six, one per cube face in Babylon's order (+X, -X, -Y, +Y, +Z, -Z), each a 90-degree view drawn and sampled
  * as a spot light's is. Made only while that many tiles of its size are free (`createAtlasShadowGenerator`). It moves
- * between lights of its kind as its legacy counterpart does (`moveTo`), keeping its tiles; disposing it frees them.
+ * between lights of its kind (`moveTo`), keeping its tiles, render target, pass ids and casters' draw wrappers, so an
+ * admission change needs no construction, disposal or shader loading; disposing it frees its tiles.
  */
-export class AtlasShadowGenerator extends ReusableShadowGenerator implements AtlasShadow {
+export class AtlasShadowGenerator extends ShadowGenerator implements AtlasShadow {
   // Set while Babylon's constructor builds the map, before field initializers would run.
   declare private placement: Placement;
   declare private views: Matrix[];
@@ -335,6 +337,40 @@ export class AtlasShadowGenerator extends ReusableShadowGenerator implements Atl
 
   get tiles(): readonly ShadowAtlasTile[] {
     return this.placement.tiles;
+  }
+
+  canMoveTo(light: SpotLight | PointLight): boolean {
+    const current = this._light;
+    return (
+      light !== current &&
+      light.getScene() === current.getScene() &&
+      light.getTypeID() === current.getTypeID() &&
+      light.needCube() === current.needCube() &&
+      !light.getShadowGenerators()?.size
+    );
+  }
+
+  /**
+   * Babylon 9.29 reads the owning light live everywhere except its transform cache. Receivers are not dirtied; the
+   * caller owns their transition.
+   */
+  moveTo(light: SpotLight | PointLight): void {
+    if (!this.canMoveTo(light))
+      throw new Error("A shadow map can only move to an unshadowed light of the same kind.");
+    const previous: Light = this._light;
+    const generators = previous._shadowGenerators;
+    if (generators) {
+      for (const [camera, generator] of generators)
+        if (generator === this) generators.delete(camera);
+      // Match ShadowGenerator.dispose: an empty map stands for none.
+      if (!generators.size) previous._shadowGenerators = null;
+    }
+    (light._shadowGenerators ??= new Map()).set(this.camera, this);
+    this._light = light;
+    this.id = light.id;
+    this._currentRenderId = -1;
+    this._cachedPosition.setAll(Number.MAX_VALUE);
+    this._cachedDirection.setAll(Number.MAX_VALUE);
   }
 
   /** The first tile, in texels of the atlas. */

@@ -48,3 +48,6 @@ apps/editor/public/build-manifest.json
 
 # Claude Code agent worktrees (local only; .claude/skills is tracked)
 .claude/worktrees/
+
+# TypeScript incremental build state
+*.tsbuildinfo

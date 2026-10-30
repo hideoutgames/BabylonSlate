@@ -8,7 +8,6 @@ import {
 import { SHADOW_CAPACITY_PROFILES, type ShadowSettings } from "@haptic/core";
 import { isDirectionalLightExcluded } from "./light-policy";
 import { remainingShadowSamplers } from "./light-sampler-budget";
-import type { LocalShadowLight } from "./reusable-shadow-generator";
 import {
   ENGINE_SHADOW_BUDGET,
   otherShadowReservations,
@@ -22,6 +21,7 @@ import {
   admissionSamplers,
   allocationRequestKey,
   atlasTileEdge,
+  type LocalShadowLight,
   type ShadowEntry as Entry,
   type ShadowLightStatus,
 } from "./shadow-entry";
@@ -87,7 +87,6 @@ export type ShadowAdmissionPlan = {
 export function readShadowAdmissionBudget(
   scene: Scene,
   settings: ShadowSettings,
-  viewMapBytes: number,
 ): ShadowAdmissionBudget {
   const caps = scene.getEngine().getCaps();
   const profile = SHADOW_CAPACITY_PROFILES[settings.profile];
@@ -97,8 +96,7 @@ export function readShadowAdmissionBudget(
     Math.min(
       profile.byteBudget,
       ENGINE_SHADOW_BUDGET.bytes - other.bytes,
-      // View maps never cost the scene view's: they give way below.
-      availableSceneShadowBytes(scene) + viewMapBytes,
+      availableSceneShadowBytes(scene),
     ),
   );
   const passBudget = Math.max(
