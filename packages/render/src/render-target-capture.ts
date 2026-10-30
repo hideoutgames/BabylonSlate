@@ -197,6 +197,11 @@ export class RenderTargetCaptures {
   private readonly beforeRender: Observer<Scene>;
   private readonly releaseAuxiliaryViews: () => void;
   private disposed = false;
+  /** Whether manual captures not yet requested draw unpublished now (`rehearseManualCaptures`). */
+  private rehearsing: () => boolean = () => false;
+  /** Outputs rehearsed this starting state, and those tried and not yet drawn. */
+  private readonly rehearsed = new Set<string>();
+  private readonly pendingRehearsals = new Set<string>();
   private readonly position = new Vector3();
   private readonly rotation = new Quaternion();
   private readonly scale = new Vector3();
@@ -330,7 +335,10 @@ export class RenderTargetCaptures {
       // A staged producer cannot claim a loaded sibling's shared asset output.
       // Eligible producers retain stable actor insertion order.
       this.frameOwners.add(guid);
-      if (!settings.captureEveryFrame && !capture.requested) continue;
+      // Play's starting-state draw rehearses a manual capture not yet requested: it draws once, unpublished, so its
+      // variants (a data capture's override Materials) compile and first draw behind the loading screen.
+      const rehearsal = !settings.captureEveryFrame && !capture.requested;
+      if (rehearsal && (!this.rehearsing() || this.rehearsed.has(guid))) continue;
       const actorWorld = root?.computeWorldMatrix(true) ?? capture.fallback!;
       capture.local.multiplyToRef(actorWorld, this.world);
       if (!this.world.decompose(this.scale, this.rotation, this.position)) continue;
@@ -340,6 +348,9 @@ export class RenderTargetCaptures {
       const quality = normalizeRenderTargetPayload(definition).mode === "SceneColor" ? settings.quality : "fast";
       const target = this.ensureTarget(guid, definition, actorId, capture.camera, quality);
       if (!target) continue;
+      // A published output keeps what its last capture showed; Full Quality views prepare in the starting state.
+      if (rehearsal && (target.published || target.fullQuality)) continue;
+      if (rehearsal) this.pendingRehearsals.add(guid);
       if (target.fullQuality) {
         // Here, before the scene view's graph runs: a new map dirties lighting
         // state the graph's own frame must not see change.
@@ -356,7 +367,7 @@ export class RenderTargetCaptures {
       // A manual Fast colour capture draws here, before the frame's shadow maps: one that would publish a new map
       // whose first draw, or a drawn map whose new casters, a steady frame held back for their pipelines waits one
       // frame, in which those maps draw with every caster.
-      if (!settings.captureEveryFrame && !target.depth && !target.normals && !capture.waitedForShadows &&
+      if (!rehearsal && !settings.captureEveryFrame && !target.depth && !target.normals && !capture.waitedForShadows &&
         this.shadowsHeldBack()) {
         capture.waitedForShadows = true;
         setFirstDrawsUrgent(this.scene, true);
@@ -408,6 +419,11 @@ export class RenderTargetCaptures {
         skipped = deferral?.close() ?? 0;
       }
       if (!drawn || skipped) continue;
+      if (rehearsal) {
+        this.pendingRehearsals.delete(guid);
+        this.rehearsed.add(guid);
+        continue;
+      }
       if (target.spare) {
         const previous = { texture: target.texture, lease: target.lease };
         target.texture = target.spare.texture;
@@ -416,6 +432,20 @@ export class RenderTargetCaptures {
       }
       this.published(capture, target);
     }
+  }
+  /**
+   * Play's starting state: while `active` holds, a manual capture not yet requested is rehearsed: it draws once into
+   * its output, unpublished (its consumers keep the fallback), keeping its request state, so its variants (a data
+   * capture's override Materials) compile and first draw behind the loading screen.
+   */
+  rehearseManualCaptures(active: () => boolean): void {
+    this.rehearsing = active;
+    this.rehearsed.clear();
+    this.pendingRehearsals.clear();
+  }
+  /** A rehearsal tried and not yet drawn (its variants are preparing). */
+  rehearsalPending(): boolean {
+    return this.pendingRehearsals.size > 0;
   }
   /**
    * Whether a Full Quality capture's own view is preparing its graph and variants. A view whose preparation failed (a

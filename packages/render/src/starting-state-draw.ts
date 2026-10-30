@@ -128,8 +128,9 @@ export function createStartingStateDraw(
     for (const effect of held) if (!drawnEffects.has(effect)) undrawn = true;
     if (!undrawn) return "none";
     if (!draw()) return "waiting";
-    // Only what the meshes held as it drew: Effects its post-draw probe requested draw in the next ready frame.
-    for (const effect of held) drawnEffects.add(effect);
+    // Only what the meshes held as it drew, and was ready to: Effects its post-draw probe requested, or still
+    // compiling (a capture's new override Material), draw in the next ready frame. A failed one never will.
+    for (const effect of held) if (effect.isReady() || effect.getCompilationError()) drawnEffects.add(effect);
     return "drew";
   };
   return {
