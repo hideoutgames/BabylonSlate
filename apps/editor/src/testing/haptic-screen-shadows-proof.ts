@@ -34,6 +34,7 @@ import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaul
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { allowSceneScreenShadows, sceneRenderingSettings } from "../../../../packages/render/src/render-settings";
 import { SCREEN_SHADOW_LEVELS } from "../../../../packages/render/src/screen-shadows";
+import { spatialEffectsUnsupported } from "../../../../packages/render/src/spatial-effects";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Capture = { name: string; pixels: number[]; screenShadows: boolean };
@@ -136,7 +137,11 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
     const planned: Array<[string, string | null, string[]]> = [];
     const capture = async (name: string) => {
       captures.push({ name, pixels: await draw(), screenShadows: reads() });
-      planned.push([name, sceneRenderingSettings(scene).effectsPlan?.screenShadows ?? null, graph.taskNames()]);
+      planned.push([name, sceneRenderingSettings(scene).effectsPlan?.screenShadows ?? null, [
+        ...graph.taskNames(), `unsupported:${spatialEffectsUnsupported(scene) ?? "no"}`, `blend:${compiled.material.needAlphaBlending()}`,
+        ...((floor.subMeshes[0] as unknown as { _drawWrappers: ({ effect?: { defines: string } } | undefined)[] })._drawWrappers ?? [])
+          .map((wrapper, index) => `${index}:${/HAPTIC_SCREEN_SHADOWS/.test(wrapper?.effect?.defines ?? "")}:${/HAPTIC_CEL/.test(wrapper?.effect?.defines ?? "")}`),
+      ]]);
     };
     await settle();
     await capture("off");
