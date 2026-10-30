@@ -65,7 +65,7 @@ class AtlasImageProcessing extends ImageProcessingConfiguration {
 const atlasConfigurations = new WeakMap<Scene, AtlasImageProcessing>();
 
 /** The Scene's tilemap atlas image processing (`UnlitMaterialKey.imageProcessing`). */
-function atlasImageProcessing(scene: Scene): AtlasImageProcessing {
+export function atlasImageProcessing(scene: Scene): AtlasImageProcessing {
   let configuration = atlasConfigurations.get(scene);
   if (!configuration) atlasConfigurations.set(scene, (configuration = new AtlasImageProcessing(scene.imageProcessingConfiguration)));
   return configuration;
