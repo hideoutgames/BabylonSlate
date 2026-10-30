@@ -156,4 +156,5 @@ Each phase is one PR, or a short series, merged into `main` before the next star
 - Authored World Position Offset in the atlas depth pass.
 - WebGPU shadow-pass pipelines created synchronously, until the CI gate proves the warm-ups unneeded.
 - NodeMaterial block API changes at the next Babylon upgrade (pinned; an upgrade re-checks the block).
+- Contact Hardening on WebGL2 leaves a patch of a spot light's shadow lit in `e2e/haptic-contact-shadows.spec.ts` (the ball's, about a fifth of its shadowed floor pixels), as Babylon's own PCSS did; PCF and WebGPU shadow it. Unexplained.
 - An unexplained `RangeError: Maximum call stack size exceeded` in the Feature Test's main Play load on the A16 iPad, around the WebGL context loss there; no stack yet. The Feature Test Check now records page errors and samples, so a later run on the new path can show whether it remains.
