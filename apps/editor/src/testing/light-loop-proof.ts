@@ -2,7 +2,8 @@
  * Test-build-only measurement of the light block's per-pixel light loops on the real GPU, through the Forward
  * FrameGraph: the Feature Test's lights grid (48 unshadowed point lights 3 m apart, 4.5 m range) under the camera's
  * view, drawn with `HAPTIC_LIGHT_LOOP_PROOF` (`setHapticLightLoopProof`), so each floor pixel shows how many point and
- * spot lights its loops visited and how many of those were in range. Sample pixels are picked on the CPU to count the
+ * spot lights its loops visited, how many of those were in range, and how many its light cluster lists
+ * (`light-clusters.ts`). Sample pixels are picked on the CPU to count the
  * admitted lights that reach them independently of the shader. Light culling is judged by the gap between the two.
  */
 import { Color4, Engine, FreeCamera, MeshBuilder, PointLight, Scene, Vector3, type AbstractEngine } from "@babylonjs/core";
@@ -77,11 +78,13 @@ export async function runLightLoopProof(backend: "webgl2" | "webgpu" = "webgl2")
       // Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): the counts, 4/255 apart.
       const visited: number[] = [];
       const reached: number[] = [];
+      const clustered: number[] = [];
       for (let index = 0; index < rgba.length; index += 4) {
         visited.push(Math.round(rgba[index]! / 4));
         reached.push(Math.round(rgba[index + 1]! / 4));
+        clustered.push(Math.round(rgba[index + 2]! / 4));
       }
-      return { visited, reached };
+      return { visited, reached, clustered };
     };
     const pbr = await draw();
     // The frame's admission (the nearest 32).

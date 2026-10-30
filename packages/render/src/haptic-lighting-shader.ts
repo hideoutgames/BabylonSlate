@@ -1,4 +1,5 @@
 import { HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S } from "./haptic-lights";
+import { CLUSTER_SLICES, CLUSTER_TILES_X, CLUSTER_TILES_Y } from "./light-clusters";
 
 /**
  * The lighting function of `HapticLightingBlock`, in GLSL and WGSL twins that change together: a metallic-roughness
@@ -463,6 +464,27 @@ export const HAPTIC_LIGHTING_FUNCTIONS_GLSL = `
 int hapticLoopVisited = 0;
 int hapticLoopReached = 0;
 #endif
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+// The masks of the cluster holding world position P (\`light-clusters.ts\`): every light outside the clusters' view.
+uvec2 hapticClusterMask(vec3 P) {
+  vec4 slices = hapticClusterHeader[5];
+  float depth = dot(hapticClusterHeader[4].xyz, P) + hapticClusterHeader[4].w;
+  vec4 clip = mat4(hapticClusterHeader[0], hapticClusterHeader[1], hapticClusterHeader[2], hapticClusterHeader[3]) * vec4(P, 1.0);
+  if (slices.z < 0.5 || clip.w <= 0.0 || depth < slices.x) return uvec2(0xffffffffu);
+  vec2 ndc = clip.xy / clip.w;
+  if (abs(ndc.x) > 1.0 || abs(ndc.y) > 1.0) return uvec2(0xffffffffu);
+  ivec2 tile = clamp(ivec2((ndc * 0.5 + 0.5) * vec2(${CLUSTER_TILES_X}.0, ${CLUSTER_TILES_Y}.0)), ivec2(0), ivec2(${CLUSTER_TILES_X - 1}, ${CLUSTER_TILES_Y - 1}));
+  int slice = clamp(int(floor(log(depth / slices.x) * slices.y)), 0, ${CLUSTER_SLICES - 1});
+  int cluster = (slice * ${CLUSTER_TILES_Y} + tile.y) * ${CLUSTER_TILES_X} + tile.x;
+  uvec4 masks = hapticClusterMasks[cluster / 2];
+  return (cluster % 2) == 0 ? masks.xy : masks.zw;
+}
+int hapticBitCount(uint bits) {
+  int count = 0;
+  for (int i = 0; i < 32; i++) count += int((bits >> uint(i)) & 1u);
+  return count;
+}
+#endif
 float hapticSaturateEps(float x) { return clamp(x, HAPTIC_EPSILON, 1.0); }
 float hapticPow5(float x) { float x2 = x * x; return x2 * x2 * x; }
 // GGX alpha from perceptual roughness, floored so a smooth surface keeps a highlight.
@@ -838,8 +860,10 @@ ${output.specularIndirect} = hapticRadiance(hapticP, hapticN, hapticV, hapticAlp
 #endif
 #endif
 #ifdef HAPTIC_LIGHT_LOOP_PROOF
-// Visited and in-range light counts, 4/255 apart in display space; nothing else lights the pixel.
-${output.diffuseDirect} = hapticToLinear(vec3(float(hapticLoopVisited), float(hapticLoopReached), 0.0) * (4.0 / 255.0));
+// Visited, in-range and in-cluster light counts, 4/255 apart in display space; nothing else lights the pixel.
+uvec2 hapticProofMask = hapticClusterMask(hapticP);
+float hapticProofCluster = float(hapticBitCount(hapticProofMask.x) + hapticBitCount(hapticProofMask.y & 0xffffu));
+${output.diffuseDirect} = hapticToLinear(vec3(float(hapticLoopVisited), float(hapticLoopReached), hapticProofCluster) * (4.0 / 255.0));
 ${output.specularDirect} = vec3(0.0);
 ${output.diffuseIndirect} = vec3(0.0);
 ${output.specularIndirect} = vec3(0.0);
@@ -854,6 +878,23 @@ const HAPTIC_EPSILON: f32 = 0.0000001;
 #ifdef HAPTIC_LIGHT_LOOP_PROOF
 var<private> hapticLoopVisited: i32 = 0;
 var<private> hapticLoopReached: i32 = 0;
+#endif
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
+fn hapticClusterMask(P: vec3f) -> vec2u {
+  let slices = HapticClusters.hapticClusterHeader[5];
+  let row = HapticClusters.hapticClusterHeader[4];
+  let depth = dot(row.xyz, P) + row.w;
+  let clip = mat4x4f(HapticClusters.hapticClusterHeader[0], HapticClusters.hapticClusterHeader[1], HapticClusters.hapticClusterHeader[2],
+    HapticClusters.hapticClusterHeader[3]) * vec4f(P, 1.0);
+  if (slices.z < 0.5 || clip.w <= 0.0 || depth < slices.x) { return vec2u(0xffffffffu); }
+  let ndc = clip.xy / clip.w;
+  if (abs(ndc.x) > 1.0 || abs(ndc.y) > 1.0) { return vec2u(0xffffffffu); }
+  let tile = clamp(vec2i((ndc * 0.5 + 0.5) * vec2f(${CLUSTER_TILES_X}.0, ${CLUSTER_TILES_Y}.0)), vec2i(0), vec2i(${CLUSTER_TILES_X - 1}, ${CLUSTER_TILES_Y - 1}));
+  let slice = clamp(i32(floor(log(depth / slices.x) * slices.y)), 0, ${CLUSTER_SLICES - 1});
+  let cluster = (slice * ${CLUSTER_TILES_Y} + tile.y) * ${CLUSTER_TILES_X} + tile.x;
+  let masks = HapticClusters.hapticClusterMasks[cluster / 2];
+  return select(masks.zw, masks.xy, cluster % 2 == 0);
+}
 #endif
 fn hapticSaturateEps(x: f32) -> f32 { return clamp(x, HAPTIC_EPSILON, 1.0); }
 fn hapticPow5(x: f32) -> f32 { let x2 = x * x; return x2 * x2 * x; }
@@ -1203,8 +1244,10 @@ ${output.specularIndirect} = hapticRadiance(hapticP, hapticN, hapticV, hapticAlp
 #endif
 #endif
 #ifdef HAPTIC_LIGHT_LOOP_PROOF
-// Visited and in-range light counts, 4/255 apart in display space; nothing else lights the pixel.
-${output.diffuseDirect} = hapticToLinear(vec3f(f32(hapticLoopVisited), f32(hapticLoopReached), 0.0) * (4.0 / 255.0));
+// Visited, in-range and in-cluster light counts, 4/255 apart in display space; nothing else lights the pixel.
+let hapticProofMask = hapticClusterMask(hapticP);
+let hapticProofCluster = f32(countOneBits(hapticProofMask.x) + countOneBits(hapticProofMask.y & 0xffffu));
+${output.diffuseDirect} = hapticToLinear(vec3f(f32(hapticLoopVisited), f32(hapticLoopReached), hapticProofCluster) * (4.0 / 255.0));
 ${output.specularDirect} = vec3f(0.0);
 ${output.diffuseIndirect} = vec3f(0.0);
 ${output.specularIndirect} = vec3f(0.0);

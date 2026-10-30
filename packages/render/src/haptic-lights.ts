@@ -9,6 +9,7 @@ import {
   TmpVectors,
   UniformBuffer,
   Vector3,
+  type DataBuffer,
   type Effect,
   type Light,
   type Scene,
@@ -17,6 +18,7 @@ import { rectLightEmission, syncAreaEmissionLayers } from "./area-emission-array
 import { retainAreaLightLookup } from "./area-light-resources";
 import { deviceProfile } from "./device-profile";
 import { isIlluminatingLight, sortLightsByAdmission, type ForwardLightSelection } from "./light-policy";
+import { CLUSTER_BLOCK_WORDS, CLUSTER_COUNT, CLUSTER_HEADER_FLOATS, buildLightClusters, type ClusterLight } from "./light-clusters";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowAtlasTexture, watchShadowDraws } from "./shadow-atlas";
 
 /**
@@ -56,6 +58,21 @@ vec4 hapticShadowViews[${HAPTIC_SHADOW_VIEWS * HAPTIC_SHADOW_VIEW_VEC4S}];
 vec4 hapticSunShadow[4];
 };
 `;
+/**
+ * The light clusters' block (`light-clusters.ts`): the header, then two mask words per cluster. Its own block, as the
+ * light block has no room for it, and one buffer, so a view always reads masks with the header they were built for.
+ */
+export const HAPTIC_CLUSTERS_GLSL = `layout(std140) uniform HapticClusters {
+vec4 hapticClusterHeader[${CLUSTER_HEADER_FLOATS / 4}];
+uvec4 hapticClusterMasks[${CLUSTER_COUNT / 2}];
+};
+`;
+export const HAPTIC_CLUSTERS_WGSL = `struct HapticClustersBlock {
+hapticClusterHeader: array<vec4f, ${CLUSTER_HEADER_FLOATS / 4}>,
+hapticClusterMasks: array<vec4u, ${CLUSTER_COUNT / 2}>,
+};
+var<uniform> HapticClusters : HapticClustersBlock;
+`;
 export const HAPTIC_LIGHTS_WGSL = `struct HapticLightsBlock {
 hapticCounts: vec4f,
 hapticFillDirection: vec4f,
@@ -78,6 +95,8 @@ type SceneLights = {
   /** The shadowed sun this frame and the map of it last written, the rendering camera's (`sunShadowMap`). */
   shadowed: ShadowedLight[]; sun: DirectionalLight | null; sunWritten: AtlasCascadedShadowGenerator | null;
   shadowViews: Float32Array; sunShadow: Float32Array;
+  /** The clusters' block as written (`HAPTIC_CLUSTERS_GLSL`), its GPU buffer and the local lights it was built from. */
+  clusterWords: Uint32Array; clusterBuffer: DataBuffer | null; clusterLights: ClusterLight[];
 };
 const scenes = new WeakMap<Scene, SceneLights>();
 const directional = new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8);
@@ -106,9 +125,13 @@ function sceneLights(scene: Scene): SceneLights {
     buffer.create();
     // Rect area lights read Babylon's LTC tables, always bound, so a rect light arriving compiles nothing.
     const releaseLookup = retainAreaLightLookup(scene);
+    const clusterWords = new Uint32Array(CLUSTER_BLOCK_WORDS);
     lights = {
       buffer, rects: [], layers: [], limits: [], shadowed: [], sun: null, sunWritten: null,
       shadowViews: new Float32Array(HAPTIC_SHADOW_VIEWS * HAPTIC_SHADOW_VIEW_VEC4S * 4), sunShadow: new Float32Array(16),
+      // Uploaded as raw words: a Float32Array view, so no mask passes through a JavaScript number.
+      clusterWords, clusterBuffer: scene.getEngine().createUniformBuffer(new Float32Array(clusterWords.buffer), "HapticClusters"),
+      clusterLights: [],
     };
     scenes.set(scene, lights);
     // A map draws after the block's write, with the views it is then sampled by.
@@ -119,17 +142,40 @@ function sceneLights(scene: Scene): SceneLights {
     });
     // A view with its own sun map (a Full Quality capture's) draws with it, and the scene view with its own after.
     const cameraChanged = scene.onActiveCameraChanged.add(() => {
+      // The clusters follow the rendering camera (a capture's); masks built for another camera stay correct, only coarser.
+      writeClusters(scene, state);
       if (!state.sun || sunShadowMap(scene, state.sun) === state.sunWritten) return;
       writeShadowViews(scene, state);
       state.buffer.update();
     });
+    const engine = scene.getEngine();
+    const restored = engine.onContextRestoredObservable.add(() => {
+      state.clusterBuffer = engine.createUniformBuffer(new Float32Array(state.clusterWords.buffer), "HapticClusters");
+    });
     scene.onDisposeObservable.addOnce(() => {
       scene.onActiveCameraChanged.remove(cameraChanged);
+      engine.onContextRestoredObservable.remove(restored);
       buffer.dispose();
+      if (state.clusterBuffer) engine._releaseBuffer(state.clusterBuffer);
+      state.clusterBuffer = null;
       releaseLookup();
     });
   }
   return lights;
+}
+
+/** Builds `state`'s clusters for the Scene's active camera from its local lights as last written, and uploads them. */
+function writeClusters(scene: Scene, state: SceneLights): void {
+  const words = state.clusterWords;
+  buildLightClusters(new Uint32Array(words.buffer, CLUSTER_HEADER_FLOATS * 4), new Float32Array(words.buffer, 0, CLUSTER_HEADER_FLOATS),
+    state.clusterLights, scene.activeCamera, scene.floatingOriginOffset);
+  if (state.clusterBuffer) scene.getEngine().updateUniformBuffer(state.clusterBuffer, new Float32Array(words.buffer));
+}
+
+/** Bind the clusters' block for a draw with `effect`, which reads it. */
+export function bindHapticClusters(scene: Scene, effect: Effect): void {
+  const buffer = sceneLights(scene).clusterBuffer;
+  if (buffer) effect.bindUniformBuffer(buffer, "HapticClusters");
 }
 
 /** `scene`'s light block, as the shaders read it. */
@@ -288,6 +334,8 @@ export function writeHapticLights(scene: Scene): void {
   state.rects.length = 0;
   state.shadowed.length = 0;
   state.sun = null;
+  const clusters = state.clusterLights;
+  clusters.length = 0;
   // The admission keeps within the block's records; the checks below hold them whatever it admitted.
   if (scene.lightsEnabled) for (const light of scene.lights) {
     if (!light.isEnabled() || !isIlluminatingLight(light)) continue;
@@ -318,6 +366,7 @@ export function writeHapticLights(scene: Scene): void {
         direction.x, direction.y, direction.z, Math.cos(light.angle * 0.5),
         light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, light.range,
         shadowed ? shadowed.first : -1, Math.cos(light.innerAngle * 0.5), 0, 0], spots * 16);
+      clusters.push({ kind: "spot", index: spots, x: position.x - offset.x, y: position.y - offset.y, z: position.z - offset.z, radius: light.range });
       spots++;
     } else if (light instanceof RectAreaLight) {
       if (rects === HAPTIC_LIGHT_MAXIMUM.rect) continue;
@@ -329,6 +378,7 @@ export function writeHapticLights(scene: Scene): void {
       rect.set([position.x - offset.x, position.y - offset.y, position.z - offset.z, 0, width.x, width.y, width.z, 0,
         height.x, height.y, height.z, 0, light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, -1], rects * 16);
       state.rects.push(light);
+      clusters.push({ kind: "rect", index: rects, x: 0, y: 0, z: 0, radius: Infinity });
       rects++;
     } else if (light instanceof PointLight) {
       if (points === HAPTIC_LIGHT_MAXIMUM.point) continue;
@@ -343,6 +393,7 @@ export function writeHapticLights(scene: Scene): void {
       point.set([position.x - offset.x, position.y - offset.y, position.z - offset.z, light.radius,
         light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, light.range,
         shadowed ? shadowed.first : -1, shadowed?.shadow.tiles.length ?? 0, 0, 0], points * 12);
+      clusters.push({ kind: "point", index: points, x: position.x - offset.x, y: position.y - offset.y, z: position.z - offset.z, radius: light.range });
       points++;
     }
   }
@@ -372,6 +423,7 @@ export function writeHapticLights(scene: Scene): void {
   buffer.updateFloatArray("hapticRect", rect);
   writeShadowViews(scene, state);
   buffer.update();
+  writeClusters(scene, state);
 }
 
 /**
