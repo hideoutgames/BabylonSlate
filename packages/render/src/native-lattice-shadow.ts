@@ -6,6 +6,7 @@ import {
 import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
 import { applyLatticeDeformerPlumbing } from "./lattice-deformer-block";
+import { markCageShadowWrapper } from "./lattice-deformer-binding";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
@@ -136,6 +137,7 @@ export function ensureNativeLatticeShadowDepthWrapper(source: Material): boolean
   if (!(source instanceof StandardMaterial || source instanceof PBRBaseMaterial)) return false;
   if (source.shadowDepthWrapper) throw new Error(`Lattice shadows cannot replace a custom shadow wrapper on "${source.name}".`);
   const wrapper = new NativeLatticeShadowDepthWrapper(source);
+  markCageShadowWrapper(wrapper, () => true);
   const observer = source.onDisposeObservable.addOnce(() => release(source, true));
   retained.set(source, { wrapper, references: 1, detach: () => source.onDisposeObservable.remove(observer) });
   source.shadowDepthWrapper = wrapper;
