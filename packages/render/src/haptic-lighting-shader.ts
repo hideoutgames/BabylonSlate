@@ -464,7 +464,6 @@ export const HAPTIC_LIGHTING_FUNCTIONS_GLSL = `
 int hapticLoopVisited = 0;
 int hapticLoopReached = 0;
 #endif
-#ifdef HAPTIC_LIGHT_LOOP_PROOF
 // The masks of the cluster holding world position P (\`light-clusters.ts\`): every light outside the clusters' view.
 uvec2 hapticClusterMask(vec3 P) {
   vec4 slices = hapticClusterHeader[5];
@@ -479,6 +478,15 @@ uvec2 hapticClusterMask(vec3 P) {
   uvec4 masks = hapticClusterMasks[cluster / 2];
   return (cluster % 2) == 0 ? masks.xy : masks.zw;
 }
+// A mask's lights among the first \`count\` records.
+uint hapticClusterLights(uint mask, int count) { return count >= 32 ? mask : mask & ((1u << uint(count)) - 1u); }
+// The lowest light of \`bits\`, taken out of them: lights visit in record order, as an unculled loop's.
+int hapticNextLight(inout uint bits) {
+  uint low = bits & (~bits + 1u);
+  bits ^= low;
+  return int(log2(float(low)) + 0.5);
+}
+#ifdef HAPTIC_LIGHT_LOOP_PROOF
 int hapticBitCount(uint bits) {
   int count = 0;
   for (int i = 0; i < 32; i++) count += int((bits >> uint(i)) & 1u);
@@ -628,8 +636,12 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     diffuse += color * (NdotL / HAPTIC_PI);
     specular += hapticSpecular(surface, N, V, L, NdotL, surface.roughness) * color;
   }
-  for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.point}; i++) {
-    if (i >= int(hapticCounts.y)) break;
+  // Only the lights of P's cluster (\`light-clusters.ts\`).
+  uvec2 clusterMask = hapticClusterMask(P);
+  uint points = hapticClusterLights(clusterMask.x, int(hapticCounts.y));
+  for (int n = 0; n < ${HAPTIC_LIGHT_MAXIMUM.point}; n++) {
+    if (points == 0u) break;
+    int i = hapticNextLight(points);
     vec4 position = hapticPoint[i * 3];
     vec4 color = hapticPoint[i * 3 + 1];
     vec3 offset = position.xyz - P;
@@ -650,8 +662,10 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     float roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
   }
-  for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
-    if (i >= int(hapticCounts.z)) break;
+  uint spots = hapticClusterLights(clusterMask.y & 0xffffu, int(hapticCounts.z));
+  for (int n = 0; n < ${HAPTIC_LIGHT_MAXIMUM.spot}; n++) {
+    if (spots == 0u) break;
+    int i = hapticNextLight(spots);
     vec4 position = hapticSpot[i * 4];
     vec4 direction = hapticSpot[i * 4 + 1];
     vec4 color = hapticSpot[i * 4 + 2];
@@ -716,8 +730,12 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     float shadow = record.w > 0.5 ? slateCelShadowVisibility(hapticSunShadowFactor(P, dPdx, dPdy)) : 1.0;
     hapticCelAdd(result, color * (NdotL * shadow), hapticCelHighlight(N, V, L, NdotL, color) * shadow);
   }
-  for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.point}; i++) {
-    if (i >= int(hapticCounts.y)) break;
+  // Only the lights of P's cluster (\`light-clusters.ts\`).
+  uvec2 clusterMask = hapticClusterMask(P);
+  uint points = hapticClusterLights(clusterMask.x, int(hapticCounts.y));
+  for (int n = 0; n < ${HAPTIC_LIGHT_MAXIMUM.point}; n++) {
+    if (points == 0u) break;
+    int i = hapticNextLight(points);
     vec4 color = hapticPoint[i * 3 + 1];
     vec3 offset = hapticPoint[i * 3].xyz - P;
     float distanceSquared = dot(offset, offset);
@@ -733,8 +751,10 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     float shadow = slateCelShadowVisibility(hapticPointShadow(hapticPoint[i * 3 + 2], -offset, P));
     hapticCelAdd(result, color.rgb * (NdotL * hapticRangeFalloff(distanceSquared, color.w) * shadow), hapticCelHighlight(N, V, L, NdotL, color.rgb) * shadow);
   }
-  for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
-    if (i >= int(hapticCounts.z)) break;
+  uint spots = hapticClusterLights(clusterMask.y & 0xffffu, int(hapticCounts.z));
+  for (int n = 0; n < ${HAPTIC_LIGHT_MAXIMUM.spot}; n++) {
+    if (spots == 0u) break;
+    int i = hapticNextLight(spots);
     vec4 direction = hapticSpot[i * 4 + 1];
     vec4 color = hapticSpot[i * 4 + 2];
     vec3 offset = hapticSpot[i * 4].xyz - P;
@@ -879,7 +899,6 @@ const HAPTIC_EPSILON: f32 = 0.0000001;
 var<private> hapticLoopVisited: i32 = 0;
 var<private> hapticLoopReached: i32 = 0;
 #endif
-#ifdef HAPTIC_LIGHT_LOOP_PROOF
 fn hapticClusterMask(P: vec3f) -> vec2u {
   let slices = HapticClusters.hapticClusterHeader[5];
   let row = HapticClusters.hapticClusterHeader[4];
@@ -895,7 +914,15 @@ fn hapticClusterMask(P: vec3f) -> vec2u {
   let masks = HapticClusters.hapticClusterMasks[cluster / 2];
   return select(masks.zw, masks.xy, cluster % 2 == 0);
 }
-#endif
+fn hapticClusterLights(mask: u32, count: i32) -> u32 {
+  if (count >= 32) { return mask; }
+  return mask & ((1u << u32(count)) - 1u);
+}
+fn hapticNextLight(bits: ptr<function, u32>) -> i32 {
+  let i = i32(firstTrailingBit(*bits));
+  *bits &= *bits - 1u;
+  return i;
+}
 fn hapticSaturateEps(x: f32) -> f32 { return clamp(x, HAPTIC_EPSILON, 1.0); }
 fn hapticPow5(x: f32) -> f32 { let x2 = x * x; return x2 * x2 * x; }
 fn hapticAlpha(roughness: f32) -> f32 { return roughness * roughness + 0.0005; }
@@ -1025,8 +1052,12 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
     *diffuse += color * (NdotL / HAPTIC_PI);
     *specular += hapticSpecular(surface, N, V, L, NdotL, surface.roughness) * color;
   }
-  for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.point}; i++) {
-    if (i >= i32(HapticLights.hapticCounts.y)) { break; }
+  // Only the lights of P's cluster (\`light-clusters.ts\`).
+  let clusterMask = hapticClusterMask(P);
+  var points = hapticClusterLights(clusterMask.x, i32(HapticLights.hapticCounts.y));
+  for (var n: i32 = 0; n < ${HAPTIC_LIGHT_MAXIMUM.point}; n++) {
+    if (points == 0u) { break; }
+    let i = hapticNextLight(&points);
     let position = HapticLights.hapticPoint[i * 3];
     let color = HapticLights.hapticPoint[i * 3 + 1];
     let offset = position.xyz - P;
@@ -1046,8 +1077,10 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
     let roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     *specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
   }
-  for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
-    if (i >= i32(HapticLights.hapticCounts.z)) { break; }
+  var spots = hapticClusterLights(clusterMask.y & 0xffffu, i32(HapticLights.hapticCounts.z));
+  for (var n: i32 = 0; n < ${HAPTIC_LIGHT_MAXIMUM.spot}; n++) {
+    if (spots == 0u) { break; }
+    let i = hapticNextLight(&spots);
     let position = HapticLights.hapticSpot[i * 4];
     let direction = HapticLights.hapticSpot[i * 4 + 1];
     let color = HapticLights.hapticSpot[i * 4 + 2];
@@ -1109,8 +1142,12 @@ fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInflu
     if (record.w > 0.5) { shadow = slateCelShadowVisibility(hapticSunShadowFactor(P, dPdx, dPdy)); }
     hapticCelAdd(&result, color * (NdotL * shadow), hapticCelHighlight(N, V, L, NdotL, color) * shadow);
   }
-  for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.point}; i++) {
-    if (i >= i32(HapticLights.hapticCounts.y)) { break; }
+  // Only the lights of P's cluster (\`light-clusters.ts\`).
+  let clusterMask = hapticClusterMask(P);
+  var points = hapticClusterLights(clusterMask.x, i32(HapticLights.hapticCounts.y));
+  for (var n: i32 = 0; n < ${HAPTIC_LIGHT_MAXIMUM.point}; n++) {
+    if (points == 0u) { break; }
+    let i = hapticNextLight(&points);
     let color = HapticLights.hapticPoint[i * 3 + 1];
     let offset = HapticLights.hapticPoint[i * 3].xyz - P;
     let distanceSquared = dot(offset, offset);
@@ -1126,8 +1163,10 @@ fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInflu
     let shadow = slateCelShadowVisibility(hapticPointShadow(HapticLights.hapticPoint[i * 3 + 2], -offset, P));
     hapticCelAdd(&result, color.rgb * (NdotL * hapticRangeFalloff(distanceSquared, color.w) * shadow), hapticCelHighlight(N, V, L, NdotL, color.rgb) * shadow);
   }
-  for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.spot}; i++) {
-    if (i >= i32(HapticLights.hapticCounts.z)) { break; }
+  var spots = hapticClusterLights(clusterMask.y & 0xffffu, i32(HapticLights.hapticCounts.z));
+  for (var n: i32 = 0; n < ${HAPTIC_LIGHT_MAXIMUM.spot}; n++) {
+    if (spots == 0u) { break; }
+    let i = hapticNextLight(&spots);
     let direction = HapticLights.hapticSpot[i * 4 + 1];
     let color = HapticLights.hapticSpot[i * 4 + 2];
     let offset = HapticLights.hapticSpot[i * 4].xyz - P;
