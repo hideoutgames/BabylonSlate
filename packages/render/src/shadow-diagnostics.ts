@@ -76,7 +76,6 @@ function orthographicExtents(projection: Matrix | null, halfZ: boolean) {
 function filterName(generator: ShadowGenerator) {
   if (generator.usePercentageCloserFiltering) return "pcf";
   if (generator.useContactHardeningShadow) return "pcss";
-  if (generator.usePoissonSampling) return "poisson";
   if (generator.filter === ShadowGenerator.FILTER_NONE) return "none";
   return `native-${generator.filter}`;
 }

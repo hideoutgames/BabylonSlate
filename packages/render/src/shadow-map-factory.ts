@@ -17,7 +17,6 @@ import { ReusableShadowGenerator, type LocalShadowLight } from "./reusable-shado
 import { AtlasCascadedShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
-import { trackShadowSlotDefines } from "./shadow-slot-defines";
 import {
   casterNormalBias,
   resolveDirectionalShadowBias,
@@ -174,18 +173,6 @@ export function createShadowGenerator(
     trackDirectionalShadowFit(generator);
   }
   applyShadowSettings(generator, settings);
-  const prepare = generator.prepareDefines.bind(generator);
-  generator.prepareDefines = (defines, lightIndex) => {
-    prepare(defines, lightIndex);
-    // Both values come from the generator in the slot now: a slot's previous
-    // cascaded map must not leave its fade behind.
-    defines[`SLATE_SHADOW_AUTO${lightIndex}`] =
-      directionalLight && slot.entry.settings!.autoBias && generator.usePercentageCloserFiltering;
-    defines[`SLATE_SHADOW_FADE${lightIndex}`] =
-      generator instanceof CascadedShadowGenerator && slot.entry.settings!.fadeFraction;
-    defines.rebuild();
-    trackShadowSlotDefines(defines, lightIndex);
-  };
   validateAllocation(generator);
   const map = generator.getShadowMap();
   // The new map's list is empty and the casters are unique, so skip
@@ -223,7 +210,7 @@ export function createShadowGenerator(
   // The resolver reads its input synchronously; each map reuses one.
   const biasInput: DirectionalShadowBiasInput = {
     width: 0, height: 0, depth: 0, mapWidth: 0, mapHeight: 0, filter: "none", filterQuality: "low",
-    poissonRadiusTexels: 0, depthClamp: false, authoredDepthBias: 0, authoredNormalBias: 0,
+    depthClamp: false, authoredDepthBias: 0, authoredNormalBias: 0,
   };
   map?.onBeforeRenderObservable.add((layer) => {
     clearedForDraw = false;
@@ -240,11 +227,9 @@ export function createShadowGenerator(
     biasInput.mapWidth = size.width;
     biasInput.mapHeight = size.height;
     biasInput.filter = generator.usePercentageCloserFiltering ? "pcf"
-      : generator.useContactHardeningShadow ? "pcss"
-        : generator.usePoissonSampling ? "poisson" : "none";
+      : generator.useContactHardeningShadow ? "pcss" : "none";
     biasInput.filterQuality = generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
       : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low";
-    biasInput.poissonRadiusTexels = generator.blurScale;
     biasInput.depthClamp = generator instanceof CascadedShadowGenerator && generator.depthClamp;
     biasInput.authoredDepthBias = settings.depthBias;
     biasInput.authoredNormalBias = settings.normalBias;

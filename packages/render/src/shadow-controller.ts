@@ -111,11 +111,9 @@ function shadowLightRow(light: Light, entry?: Entry) {
       : null,
     effectiveFilter: !generator
       ? null
-      : generator.usePoissonSampling
-        ? "poisson"
-        : generator.useContactHardeningShadow
-          ? "pcss"
-          : "pcf",
+      : generator.useContactHardeningShadow
+        ? "pcss"
+        : "pcf",
     passes: generator ? generatorPasses(generator) : 0,
     mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
   };
@@ -424,15 +422,8 @@ export class SceneShadowController {
   }
   limits(): string[] {
     const limits = new Set<string>();
-    for (const entry of this.entries.values()) {
+    for (const entry of this.entries.values())
       if (entry.reason) limits.add(entry.reason);
-      if (!entry.standby && entry.generator?.usePoissonSampling)
-        limits.add(
-          entry.light.needCube()
-            ? "point shadows: Poisson filter fallback"
-            : "shadows: Poisson filter capability fallback",
-        );
-    }
     return [...limits];
   }
   /** Faces drawn and bytes held: the scene view's maps and every view's own. */
