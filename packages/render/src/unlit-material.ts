@@ -112,11 +112,16 @@ function buildSurface(material: NodeMaterial, textured: boolean, blocks: NodeMat
   }
   color.output.connectTo(surface.vertexColor);
   finalPosition.connectTo(surface.worldPosition);
+  // Per vertex, as Standard's fog distance and view depth are.
+  const viewPosition = new TransformBlock(`${NAME}_viewPos`);
+  finalPosition.connectTo(viewPosition.vector);
+  view.output.connectTo(viewPosition.transform);
   const fog = new SceneFogBlock(`${NAME}_fog`);
   fog.displaySpace = true;
   surface.rgb.connectTo(fog.input);
   finalPosition.connectTo(fog.worldPosition);
   view.output.connectTo(fog.view);
+  viewPosition.output.connectTo(fog.viewPosition);
   // Standard's colour carries its alpha through fog and image processing, which leave it as it is.
   const merge = new ColorMergerBlock(`${NAME}_rgba`);
   fog.output.connectTo(merge.rgbIn);
@@ -128,9 +133,8 @@ function buildSurface(material: NodeMaterial, textured: boolean, blocks: NodeMat
   imageProcessing.output.connectTo(finish.input);
   const output = new UnlitOutputBlock(`${NAME}_output`);
   finish.output.connectTo(output.rgba);
-  finalPosition.connectTo(output.geometryPosition);
+  viewPosition.output.connectTo(output.geometryViewPosition);
   surface.faceNormal.connectTo(output.geometryNormal);
-  view.output.connectTo(output.geometryView);
   const camera = new InputBlock(`${NAME}_camera`);
   camera.setAsSystemValue(NodeMaterialSystemValues.CameraParameters);
   camera.output.connectTo(output.geometryCamera);
@@ -140,7 +144,7 @@ function buildSurface(material: NodeMaterial, textured: boolean, blocks: NodeMat
   viewProjection.output.connectTo(velocity.viewProjection);
   velocity.current.connectTo(output.velocityCurrent);
   velocity.previous.connectTo(output.velocityPrevious);
-  blocks.push(surface, fog, merge, imageProcessing, finish, output, camera, velocity);
+  blocks.push(surface, fog, merge, imageProcessing, finish, output, viewPosition, camera, velocity);
   material.addOutputNode(vertexOutput);
   material.addOutputNode(output);
 }

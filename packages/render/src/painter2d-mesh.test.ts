@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { DynamicTexture, StandardMaterial } from "@babylonjs/core";
+import type { DynamicTexture } from "@babylonjs/core";
+import { unlitBinding } from "./unlit-material-blocks";
 import { createTestEngine } from "./create-null-engine";
 import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
 
@@ -31,7 +32,7 @@ describe("Painter2D mesh", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const mesh = createPainter2DMesh(handle.scene, "painter", { width: 2, height: 1, pixelsPerUnit: 100 });
-    const texture = (mesh.material as StandardMaterial).diffuseTexture as DynamicTexture;
+    const texture = unlitBinding(mesh).texture as DynamicTexture;
     const extent = () => {
       mesh.refreshBoundingInfo();
       const box = mesh.getBoundingInfo().boundingBox;

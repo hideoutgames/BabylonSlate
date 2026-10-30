@@ -243,16 +243,15 @@ RegisterClass("BABYLON.UnlitVelocityBlock", UnlitVelocityBlock);
 export class UnlitOutputBlock extends FragmentOutputBlock {
   constructor(name: string) {
     super(name);
-    this.registerInput("geometryPosition", Types.Vector4);
+    /** View-space position, transformed per vertex as Standard's `vViewPos` is. */
+    this.registerInput("geometryViewPosition", Types.Vector4);
     this.registerInput("geometryNormal", Types.Vector3);
-    this.registerInput("geometryView", Types.Matrix);
     this.registerInput("geometryCamera", Types.Vector4);
     this.registerInput("velocityCurrent", Types.Vector4);
     this.registerInput("velocityPrevious", Types.Vector4);
   }
-  get geometryPosition() { return this.getInputByName("geometryPosition")!; }
+  get geometryViewPosition() { return this.getInputByName("geometryViewPosition")!; }
   get geometryNormal() { return this.getInputByName("geometryNormal")!; }
-  get geometryView() { return this.getInputByName("geometryView")!; }
   get geometryCamera() { return this.getInputByName("geometryCamera")!; }
   get velocityCurrent() { return this.getInputByName("velocityCurrent")!; }
   get velocityPrevious() { return this.getInputByName("velocityPrevious")!; }
@@ -267,7 +266,7 @@ export class UnlitOutputBlock extends FragmentOutputBlock {
     const color = this.rgba.isConnected ? this.rgba.associatedVariableName : "";
     const info = state._getFreeVariableName("unlitGeometryInfo");
     const normal = state._getFreeVariableName("unlitGeometryNormal");
-    const view = this.geometryView.associatedVariableName, position = this.geometryPosition.associatedVariableName;
+    const viewPosition = this.geometryViewPosition.associatedVariableName;
     const camera = this.geometryCamera.associatedVariableName;
     const current = this.velocityCurrent.associatedVariableName, previous = this.velocityPrevious.associatedVariableName;
     const frontFacing = wgsl ? "fragmentInputs.frontFacing" : "gl_FrontFacing";
@@ -278,8 +277,8 @@ export class UnlitOutputBlock extends FragmentOutputBlock {
       + `if (${u}${U.geometry}.z > 0.5 && !${frontFacing}) { ${normal} = -${normal}; }\n#endif\n`;
     for (const [define, value] of [
       ["PREPASS_OBJECT_ID", `encodeObjectId(${u}objectId) * ${info}`],
-      ["PREPASS_DEPTH", `${vec4}((${view} * ${position}).z, 0.0, 0.0, ${info})`],
-      ["PREPASS_NORMALIZED_VIEW_DEPTH", `${vec4}(((${view} * ${position}).z - ${camera}.y) / (${camera}.z - ${camera}.y), 0.0, 0.0, ${info})`],
+      ["PREPASS_DEPTH", `${vec4}(${viewPosition}.z, 0.0, 0.0, ${info})`],
+      ["PREPASS_NORMALIZED_VIEW_DEPTH", `${vec4}((${viewPosition}.z - ${camera}.y) / (${camera}.z - ${camera}.y), 0.0, 0.0, ${info})`],
       ["PREPASS_WORLD_NORMAL", `${vec4}(${normal} * 0.5 + 0.5, ${info})`],
       ["PREPASS_REFLECTIVITY", `${vec4}(0.0, 0.0, 0.0, 1.0) * ${info}`],
       ["PREPASS_VELOCITY_LINEAR", `${vec4}(${vec2}(0.5) * ((${previous}.xy / ${previous}.w) - (${current}.xy / ${current}.w)), 0.0, ${info})`],

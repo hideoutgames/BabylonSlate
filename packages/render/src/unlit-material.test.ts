@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  Engine, MeshBuilder, NullEngine, RawTexture, Scene, Texture, VertexBuffer, type Mesh,
+  MeshBuilder, NullEngine, RawTexture, Scene, Texture, VertexBuffer, type AbstractEngine, type Mesh,
   type NodeMaterial,
 } from "@babylonjs/core";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
@@ -44,7 +44,7 @@ async function ready(material: NodeMaterial, mesh: Mesh): Promise<void> {
   await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true));
 }
 
-function effectCount(engine: Engine | NullEngine): number {
+function effectCount(engine: AbstractEngine): number {
   return Object.keys((engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects).length;
 }
 

@@ -62,11 +62,14 @@ export class SceneFogBlock extends NodeMaterialBlock {
     this.registerInput("input", Types.Color3);
     this.registerInput("worldPosition", Types.Vector4);
     this.registerInput("view", Types.Matrix);
+    /** Optional: the view-space position transformed per vertex, as Standard's `vFogDistance` is; used in place of view × world position. */
+    this.registerInput("viewPosition", Types.Vector4, true);
     this.registerOutput("output", Types.Color3);
   }
   get input() { return this._inputs[0]!; }
   get worldPosition() { return this._inputs[1]!; }
   get view() { return this._inputs[2]!; }
+  get viewPosition() { return this._inputs[3]!; }
   get output() { return this._outputs[0]!; }
   override getClassName(): string { return "SceneFogBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
@@ -92,7 +95,8 @@ export class SceneFogBlock extends NodeMaterialBlock {
     const linear = this.displaySpace ? `${wgsl ? "toLinearSpaceVec3" : "toLinearSpace"}(${input}.rgb)` : `${input}.rgb`;
     const fogged = `${keep} * ${linear} + (1.0 - ${keep}) * ${wgsl ? "uniforms." : ""}${SCENE_FOG_COLOR_UNIFORM}.rgb`;
     state.compilationString += `${state._declareOutput(this.output)} = ${input}.rgb;\n#ifdef FOG\n`
-      + `${state._declareLocalVar(keep, Types.Float)} = sceneFogKeep((${this.view.associatedVariableName} * vec4${wgsl ? "f" : ""}(${this.worldPosition.associatedVariableName}.xyz, 1.0)).xyz);\n`
+      + `${state._declareLocalVar(keep, Types.Float)} = sceneFogKeep(${this.viewPosition.isConnected ? this.viewPosition.associatedVariableName
+        : `(${this.view.associatedVariableName} * vec4${wgsl ? "f" : ""}(${this.worldPosition.associatedVariableName}.xyz, 1.0))`}.xyz);\n`
       + `${output} = ${this.displaySpace ? `${wgsl ? "toGammaSpaceVec3" : "toGammaSpace"}(${fogged})` : fogged};\n#endif\n`;
     return this;
   }
