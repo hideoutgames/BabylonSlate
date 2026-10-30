@@ -93,10 +93,13 @@ async function worldView() {
     return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
   };
   /** One frame: a steady frame (`steady`), or one that validates its presentation (strict, as loading draws). */
+  const reasons = new Set<string>();
   const frame = (steady: boolean) => {
     engine.beginFrame();
     try {
-      return coordinator.render(!steady).rendered;
+      const result = coordinator.render(!steady);
+      if (!result.rendered && result.reason) reasons.add(result.reason);
+      return result.rendered;
     } finally {
       engine.endFrame();
     }
@@ -143,7 +146,7 @@ async function worldView() {
     stop: () => { holding = false; held.clear(); },
     created,
   };
-  return { engine, scene, coordinator, materials, frame, settle, read, drawnEffects, driver, dispose };
+  return { engine, scene, coordinator, materials, frame, settle, read, drawnEffects, driver, reasons, dispose };
 }
 
 const authored = (light: Light, color: number[], intensity: number, castShadows = false) =>
@@ -245,6 +248,7 @@ async function shadowGain(name: string, caster: (scene: Scene) => { light: Light
     const before = view.drawnEffects();
     const errorsBefore = glErrorTraceEntries().length;
     const drawn = { held: 0, previous: 0 };
+    view.reasons.clear();
     view.driver.hold();
     castShadows(true);
     let heldDifference = 0;
@@ -264,7 +268,7 @@ async function shadowGain(name: string, caster: (scene: Scene) => { light: Light
       await pause();
     }
     return {
-      name, drawn, casters, neutralWhileHeld, mapDrawn: map?.getDarkness() === 0,
+      name, drawn, heldBecause: [...view.reasons], casters, neutralWhileHeld, mapDrawn: map?.getDarkness() === 0,
       receiversKept: view.drawnEffects().every((effect, at) => effect === before[at]),
       heldDifference, shadowPixels, glErrors: glErrorsSince(errorsBefore),
     };
@@ -303,8 +307,8 @@ async function spawnReveal() {
       else frames.held++;
       hiddenDifference = Math.max(hiddenDifference, difference(await view.read(), before));
     }
-    const effect = () => box.subMeshes[0]!._getDrawWrapper(view.engine.getRenderPassNames().lastIndexOf("Forward objects#0"))?.effect ?? null;
-    const compiling = !!effect() && view.driver.created.has(effect()!) && !effect()!.isReady();
+    // Its own variant was asked for and is still compiling.
+    const compiling = [...view.driver.created].some((effect) => !effect.isReady());
     view.driver.stop();
     let appeared = 0;
     for (let attempt = 0; attempt < 100 && !(appeared = changed(await view.read(), before)); attempt++) {
@@ -372,7 +376,7 @@ export async function runVariantSwapProof() {
         // A spot's map: one atlas tile.
         await shadowGain("a spot starts casting shadows", (scene) => {
           const spot = new SpotLight("spot", new Vector3(0, 3.2, -0.4), new Vector3(0.05, -1, 0.2), 1.2, 2, scene);
-          return { light: spot, castShadows: (enabled) => authored(spot, [0.9, 0.85, 0.7], 6, enabled) };
+          return { light: spot, castShadows: (enabled) => authored(spot, [0.9, 0.85, 0.7], 15, enabled) };
         }),
         // A point light's map: six atlas tiles, one per cube face.
         await shadowGain("a point light starts casting shadows", (scene) => {

@@ -285,8 +285,8 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
  * A light switching off then keeps the floor's colour and geometry Effects: the light block's records change, no
  * variant.
  */
-export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
-  setHapticLighting(engine, true);
+export async function proveWebGpuGeometrySpawn(engine: AbstractEngine, lightBlock = true) {
+  setHapticLighting(engine, lightBlock);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
   const camera = new FreeCamera("camera", new Vector3(0, 3, -6), scene);
