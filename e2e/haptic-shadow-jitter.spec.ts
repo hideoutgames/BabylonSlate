@@ -77,14 +77,15 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       return true;
     };
     // The staircase: near the outline a straight soft edge's share depends only on the distance from the box's analytic
-    // shadow outline, a texel staircase's also on where along the edge the pixel lies. Pixels within 0.3 m (about two
-    // map texels) are binned by that distance in centimetres; the staircase is their mean deviation from their bin's mean.
+    // shadow outline edge it lies by, a texel staircase's also on where along that edge the pixel lies. Pixels within
+    // 0.3 m (about two map texels) are binned by edge and distance in centimetres; the staircase is their mean deviation
+    // from their bin's mean.
     const band = Array.from({ length: count }, (_, pixel) => pixel)
-      .filter((pixel) => inner(pixel) && fixed[pixel]! >= 0 && Math.abs(result.outline[pixel] ?? Infinity) < 0.3);
+      .filter((pixel) => inner(pixel) && fixed[pixel]! >= 0 && Math.abs(result.outline[pixel]?.distance ?? Infinity) < 0.3);
     const staircase = (image: number[]) => {
-      const bins = new Map<number, number[]>();
+      const bins = new Map<string, number[]>();
       for (const pixel of band) {
-        const bin = Math.round(result.outline[pixel]! * 100);
+        const bin = `${result.outline[pixel]!.edge} ${Math.round(result.outline[pixel]!.distance * 100)}`;
         bins.set(bin, [...(bins.get(bin) ?? []), image[pixel]!]);
       }
       let deviation = 0;

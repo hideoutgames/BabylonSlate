@@ -146,11 +146,12 @@ export async function runHapticShadowJitterProof(backend: "webgl2" | "webgpu", t
 
 /**
  * Per pixel, in readPixels' rows, the signed distance in metres on the floor from the box's shadow outline (negative
- * inside), or null off the floor: the shadow is the box's corners carried along the sun to the floor, a convex polygon.
+ * inside) and the outline edge nearest, or null off the floor: the shadow is the box's corners carried along the sun to
+ * the floor, a convex polygon.
  */
 function shadowOutlineDistance(
   scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, topDown: boolean, floor: AbstractMesh, box: AbstractMesh, direction: Vector3,
-): (number | null)[] {
+): ({ distance: number; edge: number } | null)[] {
   box.computeWorldMatrix(true);
   const corners = box.getBoundingInfo().boundingBox.vectorsWorld.map((corner) => {
     const along = corner.y / direction.y;
@@ -169,16 +170,17 @@ function shadowOutlineDistance(
   };
   const hull = [...half(sorted), ...half([...sorted].reverse())];
   const distance = (x: number, z: number) => {
-    let nearest = Infinity, inside = true;
+    let nearest = Infinity, edge = -1, inside = true;
     for (let index = 0; index < hull.length; index++) {
       const [ax, az] = hull[index]!, [bx, bz] = hull[(index + 1) % hull.length]!;
       const ex = bx - ax, ez = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez)));
-      nearest = Math.min(nearest, Math.hypot(x - ax - ex * t, z - az - ez * t));
+      const along = Math.hypot(x - ax - ex * t, z - az - ez * t);
+      if (along < nearest) [nearest, edge] = [along, index];
       if (ex * (z - az) - ez * (x - ax) < 0) inside = false;
     }
-    return inside ? -nearest : nearest;
+    return { distance: inside ? -nearest : nearest, edge };
   };
-  const result: (number | null)[] = [];
+  const result: ({ distance: number; edge: number } | null)[] = [];
   for (let row = 0; row < canvas.height; row++) {
     const y = topDown ? row + 0.5 : canvas.height - row - 0.5;
     for (let column = 0; column < canvas.width; column++) {
