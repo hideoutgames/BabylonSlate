@@ -39,7 +39,7 @@ function plan(lights: (SpotLight | PointLight | DirectionalLight)[], atlasEdge: 
   });
 }
 
-describe("Shadow admission into the lighting plan's atlas", () => {
+describe("Shadow admission into the shadow atlas", () => {
   it("sizes the atlas by the quality level's byte budget, within the texture limit and the device class's cap", () => {
     const engine = { getCaps: () => ({ maxTextureSize: 16384 }) } as unknown as AbstractEngine;
     expect((["low", "medium", "high", "ultra"] as const).map((profile) => shadowAtlasEdge(engine, profile))).toEqual([4096, 4096, 8192, 8192]);

@@ -120,7 +120,10 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 
 ### Lighting and cameras
 
-- Lit materials share a bounded per-GPU light capacity; over capacity, selection keeps global lights, explicit priority and nearby lights with hysteresis (excluded light billboards turn yellow). Shadow admission is a separate budget.
+- Lights are data: one lighting function reads every light from one per-Scene uniform block and every shadow from one atlas. It lights every surface on WebGL2 and WebGPU, so no light change compiles a shader ([render.md](architecture/render.md#lighting-and-shadows)).
+  - Reason: Babylon bakes each light's type, shadow and filter into a receiver's defines. A switch, shadow start or spawn would be a new program, which a load either compiles ahead (minutes on iPad WebKit) or leaves to gameplay (hitches).
+  - The block draws at most a per-device maximum of each light type, within the Local Light Budget. Past either, selection keeps global lights, explicit priority and nearby lights with hysteresis, and excluded light billboards turn yellow.
+  - Shadow admission is a separate budget: the atlas's area.
 - `LightComponent` kinds: point, directional, spot. `HemisphericFillLightComponent` is separate; `AreaRectLightComponent` is world-only and unshadowed. No implicit hemispheric light is planted; PBR with no lights and no IBL is dark by design. Viewport Unlit is a session overlay.
 - Direction is actor world rotation × Babylon forward `(0, 0, 1)`; hemispheric fill uses world +Y; scale never aims a light.
 - Light/camera sync is incremental (`authoredLight:<actorId>` / `authoredCamera:<actorId>`, updated in place). Play applies the same properties; white Play lights are a bug.
@@ -356,7 +359,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 ## Dependency upgrade policy
 
-- Babylon packages are pinned to one exact version across editor, player, render and physics, with a repository patch; an upgrade is its own change that re-applies the patch and re-checks particle, material and WebGPU behaviour.
+- Babylon packages are pinned to one exact version across editor, player, render and physics, with a repository patch; an upgrade is its own change that re-applies the patch and re-checks particle, material, light block and WebGPU behaviour.
 - Add a dependency only when it removes real risk; record the rejected alternative. Settled choices: `dockview-react` 8 (touch docking), `@xyflow/react` 12, Vitest 4, Playwright, `zod` 4, `fflate`, `fast-check`, Rapier deterministic 2D, recast-navigation core/generators, `d3-hierarchy` (not `elkjs`), CodeMirror 6 loaded lazily (not Monaco), `meshoptimizer`, `earcut` injected.
 - Deliberately absent: Comlink on the hot path, `planck.js`, `@recast-navigation/babylon`, `@babylonjs/addons` / `@babylonjs/materials`, a list virtualizer library.
 - Vendored, never fetched from a CDN: `coi-serviceworker.js` (locally modified), the Basis encoder and KTX2 transcoder set, Havok wasm.
@@ -367,7 +370,11 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Hardware-only device checks: the Working Copy / `NSFileCoordinator` Swift plugin, cold-launch reopen on iPad for both storage tiers, Capacitor write timings, WKWebView `Error.stack` parsing, and Play holding 60 fps on the A16.
 - Water performance qualification: confirm the many-body CPU savings on the A16 iPad (Medium) and a budget Android phone (Low).
 - Mid-game compiles still holding the picture or blocking: on WebGPU, a depth variant a drawn shadow map's caster has not drawn (a Material swap whose colour variant is ready, a mesh's first instances: created synchronously in the shadow pass, since leaving the caster out would drop its shadow), a geometry pass's first draws (holding the view: an effect or quality change switched mid-game, a Fog Volume coming within reach), spatial-effect and other post-process passes after a graph build (a quality step), and a drawn Effect needing a pipeline for a state no draw has used; in steady frames a mesh whose geometry variant is new (a spawn, a Material change; a light change only for the surfaces above) shows spatial-effect artefacts for a few frames instead. A spawn whose variant the load's warm-up missed (skinned, morphed or instanced meshes, a Material changed at runtime) appears a few frames late, as one actor once every variant its meshes draw with is ready. The first draw of each new program on iPad WebKit WebGL2 still blocks its thread (about 100 ms each) for anything the load did not draw or warm; spreading first draws across frames bounds how many land in one frame, nothing removes them. A new map waits for its casters' pipelines before its first draw. Still open: a first directional map and, on WebGL2, the first draw itself.
-- Data-driven lighting (decided, in phases: [lighting-plan.md](lighting-plan.md)): one lighting function, reading every light from one uniform block and every local shadow from one atlas, lights every surface on WebGL2 and WebGPU, so no light change compiles a shader. Reason: Babylon bakes each light's type, shadow and filter into a receiver's defines, so a switch, shadow start or spawn is a new program, which a load either rehearses (minutes on iPad WebKit) or leaves to gameplay (hitches). It replaces legacy Forward's per-light path and fixed-shape lighting, and with them the load rehearsal's light steps, the admission predictions and the light inventory reservation. Its open check is the loop's per-pixel cost on the A16 iPad.
+- Lighting on the A16:
+  - Measure the light block's per-pixel cost at the Feature Test's light count, and the Feature Test on the A16 iPad and an iPhone. Light culling (per-cluster light lists) is the remedy if the loops cost too much.
+  - An unexplained `RangeError: Maximum call stack size exceeded` hit the Feature Test's main Play load on the A16 iPad, around the WebGL context loss there. The Feature Test Check records page errors, so a run on the light block can show whether it remains.
+- Built-in water's `WaterMaterialPlugin` is unreachable (built-in water draws the water starter); it goes with the code keyed to it (`isBuiltInWaterMesh`'s plugin check, `getPlugin("SlateWater")`, `WaterReflection`'s `PBRMaterial`).
+- Fewer material variants, decided separately and measured on its own: texture presence and similar defines as always-bound defaults.
 - Environment quality: `.hdr` import converted to a cube at import (a low-dynamic-range sky lights flatly). Reflection probes capture after edits, at load or on demand, never per frame (each capture is six scene renders of CPU draw work); static actors of streamed scenes are not yet captured.
 
 ## Key risks
@@ -379,6 +386,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Blob-URL module import and `Error.stack` parsing inside WKWebView underpin scripting and the session report.
 - Scoped storage through external file providers (stale bookmarks, coordination) and many small writes across the Capacitor bridge; mitigated by dirty-only saves, the blob store and debounced writes (one file per asset, no pack format).
 - Fonts can fail silently: Bitmap 2D Text rasterizes once, so a face that loads late, or a CSS stack that leaves out the Font, draws a fallback with no error. Play and the player hold text until its faces load, and a cold-load browser test checks laid-out advances in Play and Preview Build ([fonts.md](architecture/fonts.md#cold-load)).
+- The light block is Haptic's own shader over Babylon's NodeMaterial block API. Its GLSL and WGSL twins, and the atlas sampling, must stay in parity; tiles can bleed under PCF and PCSS kernels, and seams can show between a point light's six tiles.
 - Two physics backends can drift; run shared scenario shapes against both.
 - Tilemap chunk rebuild cost per stroke; Recast crowd determinism across builds; the 2D axis remap sign.
 - ExecuteJavaScript runs with full worker privileges; disclosure on import is the mitigation.

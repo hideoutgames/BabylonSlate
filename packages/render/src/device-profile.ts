@@ -16,14 +16,14 @@ export interface DeviceProfile {
    * the texture budget turned off in Engine Settings nothing is evicted, here too: that is the user's choice.
    */
   textureByteCeiling: number;
-  /** Distinct rect area light emission textures the lighting plan's path holds at once (5.3 MiB each). */
+  /** Distinct rect area light emission textures the light block holds at once (5.3 MiB each). */
   areaEmissionLayers: number;
   /**
-   * The most lights of each type the lighting plan's light block draws at once (at most `HAPTIC_LIGHT_MAXIMUM`): every
+   * The most lights of each type the light block draws at once (at most `HAPTIC_LIGHT_MAXIMUM`): every
    * lit pixel loops over the lights in use. Lights past it are ranked out as the Local Light Budget ranks them.
    */
   lightMaximum: { directional: number; point: number; spot: number; rect: number };
-  /** The lighting plan's shadow atlas edge ceiling in texels (`shadowAtlasEdge`), or null for none. */
+  /** The shadow atlas edge ceiling in texels (`shadowAtlasEdge`), or null for none. */
   shadowAtlasCap: number | null;
 }
 

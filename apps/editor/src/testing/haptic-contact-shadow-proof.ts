@@ -1,5 +1,5 @@
 /**
- * Test-build-only oracle for Contact Hardening (PCSS) on the lighting plan's light block: a spot light's, the sun's and
+ * Test-build-only oracle for Contact Hardening (PCSS) on the light block: a spot light's, the sun's and
  * a point light's shadows drawn from the shadow atlas by HapticLightingBlock, on the real GPU through the Forward
  * FrameGraph, each with ray-cast masks of what blocks the floor's view of the light, and CEL's, which draws it as PCF.
  */

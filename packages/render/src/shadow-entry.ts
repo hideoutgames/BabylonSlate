@@ -60,8 +60,8 @@ export type AllocationKey = {
 };
 
 /**
- * The edge of the shadow atlas `light`'s map is a tile of while the lighting plan's atlas is `atlasEdge` texels
- * (`ShadowAdmissionBudget.atlasEdge`, 0 off its path): every shadow light's but a capture's own sun maps.
+ * The edge of the shadow atlas `light`'s map is a tile of, when the atlas is `atlasEdge` texels
+ * (`ShadowAdmissionBudget.atlasEdge`): every shadow light's.
  */
 export function atlasTileEdge(light: ShadowLight, atlasEdge: number): number {
   return light instanceof SpotLight || light instanceof DirectionalLight || light instanceof PointLight ? atlasEdge : 0;

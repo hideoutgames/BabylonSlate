@@ -1571,7 +1571,7 @@ function attachSurfaceShading(
     : null;
   specular?.connectTo(fragment.geometrySpecular);
 
-  // The surface's direct and environment light (scaled by Environment Influence), from the lighting plan's block.
+  // The surface's direct and environment light (scaled by Environment Influence), from the light block.
   const lighting = new HapticLightingBlock(`${options.name}_lighting`);
   created.push(lighting);
   plumbing.worldPosition?.connectTo(lighting.worldPosition);
