@@ -1,6 +1,11 @@
 import {
   breakdownDelta,
   FEATURE_TEST_BENCHMARK_PROFILES,
+  FEATURE_TEST_BREAKDOWN_STEPS,
+  frameBound,
+  isBreakdownBaseline,
+  meanFrameMs,
+  settingsChanges,
   type FeatureTestCheckMode,
   type FeatureTestBenchmarkSample,
   type FeatureTestCheckReport,
@@ -67,12 +72,18 @@ function sceneLines(scene: FeatureTestCheckSceneResult, mode: FeatureTestCheckMo
     lines.push(`  > ${command.line}: ${command.success ? "ok" : "FAILED"} in ${s(command.ms)}${command.output ? ` · ${clip(command.output, 160)}` : ""}`);
   }
   if (play.benchmark.length && mode === "breakdown") {
-    lines.push("  Breakdown (frame cap lifted; change against the mean of both baselines):",
-      `    ${pad("Step", 22)}${pad("fps", 6)}${pad("median", 9)}${pad("p95", 8)}${pad("change", 17)}${pad("cpu", 20)}${pad("draws", 14)}resolution`);
+    lines.push(
+      "  Breakdown (60 fps cap, each step sampled once no shader is first drawn or compiling; change in mean frame time",
+      "  against the baselines around the step, a baseline's against the first; vsync: share of frames lasting 1/2/3/4+",
+      "  display intervals; bound: gpu when frames take over 1.5x the CPU cost, vsync at the cap):",
+      `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("vsync 1/2/3/4+", 16)}${pad("change", 17)}${pad("cpu", 8)}${pad("bound", 6)}${pad("draws", 14)}notes`);
+    const first = play.benchmark.find(isBreakdownBaseline);
     for (const sample of play.benchmark) {
       const delta = breakdownDelta(play.benchmark, sample);
       const change = delta ? `${delta.ms >= 0 ? "+" : ""}${delta.ms.toFixed(1)}ms ${delta.percent >= 0 ? "+" : ""}${delta.percent.toFixed(0)}%` : "-";
-      lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames?.medianMs !== undefined ? `${sample.frames.medianMs.toFixed(1)}ms` : "-", 9)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(change, 17)}${pad(msText(sample.cpu, sample.cpuMs), 20)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${sample.resolution ?? "-"}`);
+      const mean = meanFrameMs(sample.frames);
+      const vsync = sample.frames?.vsync?.map((share) => (share * 100).toFixed(0)).join("/") ?? "-";
+      lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(vsync, 16)}${pad(change, 17)}${pad(ms(sample.cpuMs), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${breakdownNotes(sample, first)}`.trimEnd());
     }
   } else if (play.benchmark.length) {
     lines.push("  Benchmark (frame cap lifted):", `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 20)}${pad("gpu", 20)}${pad("draws", 14)}resolution`);
@@ -115,6 +126,33 @@ function resourceLine(sample: FeatureTestCheckResources): string {
 
 function pad(text: string, width: number): string {
   return text.length >= width ? `${text} ` : text.padEnd(width);
+}
+
+/**
+ * A Breakdown step's flags: shaders first drawn or compiling while it sampled, the settings it changed against the
+ * first baseline (UNEXPECTED for a field outside its own; a baseline that differs was NOT RESTORED), or that it changed
+ * nothing (its setting already had that value).
+ */
+function breakdownNotes(sample: FeatureTestBenchmarkSample, first: FeatureTestBenchmarkSample | undefined): string {
+  const notes: string[] = [];
+  const unsettled = sample.unsettled;
+  if (unsettled && (unsettled.firstDraws > 0 || unsettled.compiling > 0))
+    notes.push(`UNSETTLED: ${unsettled.firstDraws} first drawn, ${unsettled.compiling} compiling`);
+  if (first?.settings && sample.settings && sample !== first) {
+    const changes = settingsChanges(first.settings, sample.settings);
+    const fields = FEATURE_TEST_BREAKDOWN_STEPS.find((step) => step.label === sample.label)?.fields ?? [];
+    const field = (change: string) => change.slice(0, change.indexOf("="));
+    if (isBreakdownBaseline(sample)) {
+      if (changes.length) notes.push(`NOT RESTORED: ${changes.join(", ")}`);
+    } else {
+      const own = changes.filter((change) => fields.includes(field(change)));
+      const other = changes.filter((change) => !fields.includes(field(change)));
+      if (own.length) notes.push(own.join(", "));
+      else notes.push("no setting changed");
+      if (other.length) notes.push(`UNEXPECTED: ${other.join(", ")}`);
+    }
+  }
+  return notes.join(" · ");
 }
 
 /** A counter's median over the sample, with its range when the samples differ. */

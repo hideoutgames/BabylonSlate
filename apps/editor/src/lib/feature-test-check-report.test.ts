@@ -79,10 +79,13 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Highest tier at 60 fps: high · at 30 fps: ultra");
   });
 
-  it("tabulates a breakdown's steps with each one's change against the baselines", () => {
-    const sample = (label: string, medianMs: number): FeatureTestBenchmarkSample => ({
-      label, frames: { frames: 100, durationMs: 4000, fps: 1000 / medianMs, medianMs, p95Ms: medianMs + 8, maxMs: medianMs + 10, stalls: 0 },
-      runtimeFps: null, cpuMs: 14.2, gpuMs: null, drawCalls: 618, resolution: "1180x788@1.00", failed: [],
+  it("tabulates a breakdown's steps: mean-based change, vsync shares, bound and setting flags", () => {
+    const settings = { shadows: "high 2048", "water.reflections": "planar", "water.shadingDetail": "medium", "post.enabled": "true" };
+    const sample = (label: string, meanMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
+      label, baseline: label.startsWith("baseline"),
+      frames: { frames: 100, durationMs: meanMs * 100, fps: 1000 / meanMs, medianMs: 33.3, meanMs, p95Ms: meanMs + 8, maxMs: meanMs + 10, stalls: 0, vsync: [0.1, 0.8, 0.05, 0.05] },
+      runtimeFps: null, cpuMs: 14.2, gpuMs: null, drawCalls: 575, draws: { median: 575, min: 544, max: 605, samples: 10 },
+      resolution: "1180x788@1.00", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, ...extra,
     });
     const report: FeatureTestCheckReport = {
       mode: "breakdown", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],
@@ -90,21 +93,34 @@ describe("formatFeatureTestCheckReport", () => {
         name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [],
-          benchmark: [sample("baseline", 38), sample("post off", 30), sample("baseline again", 42)], logs: [] },
+          benchmark: [
+            sample("baseline 1", 38),
+            sample("water reflections sky", 30, { settings: { ...settings, "water.reflections": "sky" } }),
+            sample("water detail low", 36, { settings: { ...settings, "water.shadingDetail": "low", "water.reflections": "sky" } }),
+            sample("water detail medium", 16.7, { cpuMs: 10, unsettled: { firstDraws: 3, compiling: 1, settleMs: 90_000 } }),
+            sample("baseline 2", 42, { settings: { ...settings, "post.enabled": "false" } }),
+          ], logs: [] },
         session: null,
       }],
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    const row = (label: string) => lines.find((line) => line.startsWith(`    ${label} `))!;
     expect(lines[0]).toMatch(/^Haptic Feature Test Check \(Breakdown\)/);
-    expect(lines).toContain("  Breakdown (frame cap lifted; change against the mean of both baselines):");
-    expect(lines).toContain("    post off              33    30.0ms   38ms    -10.0ms -25%     14.2ms              618           1180x788@1.00");
-    expect(lines).toContain("    baseline again        24    42.0ms   50ms    +2.0ms +5%       14.2ms              618           1180x788@1.00");
+    expect(lines.some((line) => line.includes("60 fps cap"))).toBe(true);
+    // Mean frame time against the baselines around the step; vsync shares; GPU-bound well past the CPU cost.
+    expect(row("water reflections sky")).toMatch(/^ {4}water reflections sky 33 {3}30\.0ms {2}38ms {3}10\/80\/5\/5 {7}-10\.0ms -25% {5}14\.2ms {2}gpu {3}575 \(544-605\) water\.reflections=sky$/);
+    expect(row("water detail low")).toContain("water.shadingDetail=low · UNEXPECTED: water.reflections=sky");
+    expect(row("water detail medium")).toContain("vsync");
+    expect(row("water detail medium")).toContain("UNSETTLED: 3 first drawn, 1 compiling · no setting changed");
+    expect(row("baseline 2")).toContain("+4.0ms +11%");
+    expect(row("baseline 2")).toContain("NOT RESTORED: post.enabled=false");
+    expect(row("baseline 1")).toMatch(/\+0\.0ms \+0% +14\.2ms {2}gpu {3}575 \(544-605\)$/);
     expect(lines.some((line) => line.includes("Highest tier"))).toBe(false);
   });
 
   it("shows the counters' medians with their ranges when frames differ", () => {
     const report: FeatureTestCheckReport = {
-      mode: "breakdown", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],
+      mode: "benchmark", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],
       scenes: [{
         name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
@@ -122,7 +138,7 @@ describe("formatFeatureTestCheckReport", () => {
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines.some((line) => line.startsWith("  Render: draws 575 (544-605) · meshes 80"))).toBe(true);
-    expect(lines.some((line) => line.includes("14.2 (13.1-16.0)ms  575 (544-605) 1180x788@1.00"))).toBe(true);
+    expect(lines.some((line) => line.includes("14.2 (13.1-16.0)ms  -                   575 (544-605) 1180x788@1.00"))).toBe(true);
   });
 
   it("shows an editor load failure's error and the viewport's GPU when Play never ran", () => {
