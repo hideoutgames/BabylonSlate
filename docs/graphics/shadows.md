@@ -48,14 +48,16 @@ CEL projects always use PCF. Bands and shadow edges in CEL are hard steps.
 
 The **Shadows Quality** setting in **Scalability** applies one of these sets. Changing any field afterwards makes it **Custom**.
 
-| Level | Distance | Map size | Cascades | Filter quality | Local shadow lights | Local map size | Smallest far caster | Screen-Space Shadows |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Low | 120 | 2048 | 2 | Low | 1 | 512 | 3 texels | Off |
-| Medium | 250 | 2048 | 3 | High | 2 | 1024 | 2 texels | Off |
-| High | 350 | 2048 | 4 | High | 4 | 2048 | 1.5 texels | Medium |
-| Ultra | 600 | 4096 | 4 | High | 8 | 2048 | 1 texel | High |
+| Level | Distance | Map size | Cascades | Half-size far cascades | Filter quality | Local shadow lights | Local map size | Smallest far caster | Screen-Space Shadows |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Low | 120 | 2048 | 2 | 0 | Low | 1 | 512 | 3 texels | Off |
+| Medium | 250 | 2048 | 3 | 1 | High | 2 | 1024 | 2 texels | Off |
+| High | 350 | 2048 | 4 | 1 | High | 4 | 2048 | 1.5 texels | Medium |
+| Ultra | 600 | 4096 | 4 | 2 | High | 8 | 2048 | 1 texel | High |
 
 Applying a level also resets a Manual **Local Shadow Light Budget** to that level's count.
+
+The last cascades, those farthest from the camera, use half the **Directional Map Size** in each direction (never below 256, and never the first two cascades): far shadows are seen small, and the room they leave goes to closer shadows and local lights.
 
 Beyond the first cascade, an object narrower than the level's smallest far caster, measured in that cascade's shadow texels, casts no directional shadow there: its shadow would be too small to see. The first cascade, nearest the camera, keeps every caster.
 
