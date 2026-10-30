@@ -22,7 +22,7 @@ import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-o
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import {
   UnlitFinishBlock, UnlitOutputBlock, UnlitSurfaceBlock, UnlitUvBlock, UnlitVelocityBlock, hasUnlitBinding,
-  setUnlitBinding, unlitBinding, type UnlitBinding,
+  markPerMeshBindingMaterial, setUnlitBinding, unlitBinding, type UnlitBinding,
 } from "./unlit-material-blocks";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 
@@ -362,6 +362,7 @@ function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
     if (map?.get(instanceId(key)) === instance) map.delete(instanceId(key));
   });
   instanceOf.set(material, instance);
+  markPerMeshBindingMaterial(material);
   return instance;
 }
 

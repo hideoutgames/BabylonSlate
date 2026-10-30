@@ -1,4 +1,5 @@
-import type { AbstractMesh, BaseTexture, IParticleSystem, Light, Scene } from "@babylonjs/core";
+import { InstancedMesh, type AbstractMesh, type BaseTexture, type IParticleSystem, type Light, type Scene } from "@babylonjs/core";
+import { isInstancePoolSource } from "./instance-pool";
 import type { CommandMessage } from "@haptic/bridge";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { particleDrawOrderRevision } from "./sorting";
@@ -50,7 +51,11 @@ export function admittedSceneMeshes(scene: Scene): AbstractMesh[] | undefined {
   for (const [slot, root] of scope.binding.meshes) {
     if (scope.slots.has(slot) || root.isDisposed() || root.getScene() !== scene) continue;
     meshes.add(root);
-    for (const child of root.getChildMeshes()) meshes.add(child);
+    for (const child of root.getChildMeshes()) {
+      meshes.add(child);
+      // A pool member draws in its group source's batch, which stands outside every slot.
+      if (child instanceof InstancedMesh && isInstancePoolSource(child.sourceMesh)) meshes.add(child.sourceMesh);
+    }
   }
   const result = [...meshes];
   scope.cached = { meshes: result, meshSet: meshes, meshCount: scene.meshes.length, slotCount: scope.binding.meshes.size, newestMesh };
