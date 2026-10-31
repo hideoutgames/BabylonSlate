@@ -92,7 +92,9 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isAtlasShadow } from "./shadow-atlas";
 import { findSceneShadowController } from "./shadow-controller";
 import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
-import { sceneInstancePool } from "./instance-pool";
+import { sceneInstancePool, setDeferredPipelineInstancing } from "./instance-pool";
+import { drawingMesh, isInstanceSource } from "./instance-source";
+import { POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
 import { pooledLeafOf } from "./pooled-visuals";
 import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
@@ -502,6 +504,35 @@ const classesLoad = (scripts: ScriptBundleEntry[], assets: SpawnableLightLoad["a
  * pooling on (`sceneInstancing`). Off while the pooled run of every case is brought up (`HAPTIC_GATE_INSTANCING=1`).
  */
 const INSTANCING_BY_DEFAULT = process.env.HAPTIC_GATE_INSTANCING === "1";
+/**
+ * WebGPU cases that still draw unpooled under `HAPTIC_GATE_INSTANCING` (by name without their driver model), until
+ * each subsystem resolves a pool member to its group source; every other WebGPU case pools too
+ * (`setDeferredPipelineInstancing`). `HAPTIC_GATE_WEBGPU_POOL=1` pools these as well.
+ */
+const WEBGPU_UNPOOLED_CASES: ReadonlySet<string> = new Set<string>([
+  // Geometry pass.
+  "a geometry pass whose complete frames drew nothing holds for its first draws",
+  "a steady frame whose deferral counts a geometry pass's left-out draws holds and reports the hold",
+  "an invalidated view holds for its geometry pass's next draws",
+  "with a geometry pass, a spawned actor is revealed with no frame held and fills the geometry buffers once its pipeline exists",
+  "with a geometry pass, an actor's Material changes with no frame held and fills the geometry buffers once its pipeline exists",
+  // Frame reports.
+  "a frame report requested right after the change, before a steady frame probes it settles and the view draws again",
+  "a frame report requested while a steady frame draws the previous variant settles and the view draws again",
+  "a frame report's frame never leaves a geometry draw out",
+  // Remaining holds and lookups.
+  "a Fog Volume pass that went idle holds again for its next draws",
+  "an Anti-Aliasing change mid-game compiles no Material and holds as a quality change does",
+  "a lookup whose preparation throws leaves no deferral scope open, and the mesh still appears",
+  "a mesh whose Effect drew only with another vertex layout waits hidden for its own pipeline, holding nothing",
+]);
+const WEBGPU_POOL_ALL = process.env.HAPTIC_GATE_WEBGPU_POOL === "1";
+
+/** The mesh whose render observables fire for actor `name`'s drawn surface: its own, or a pooled leaf's source's batch. */
+function surfaceDraws(scene: Scene, name: string): Mesh {
+  const leaf = scene.getMeshByName(`${name}${POOLED_LEAF_SUFFIX}`);
+  return (leaf ? drawingMesh(leaf) : scene.getMeshByName(name)) as Mesh;
+}
 
 function playWorld(
   model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2", load = classesLoad([]),
@@ -513,6 +544,11 @@ function playWorld(
   const engine = headlessEngine();
   // Play pools primitives where the Engine instances in hardware (`sceneInstancing`).
   if (instancing) engine.getCaps().instancedArrays = true;
+  const caseName = expect.getState().currentTestName?.split(" > ").at(-1)?.replace(/: webgpu$/, "");
+  if (instancing && model === "webgpu" && (WEBGPU_POOL_ALL || caseName === undefined || !WEBGPU_UNPOOLED_CASES.has(caseName))) {
+    setDeferredPipelineInstancing(true);
+    cleanups.push(() => setDeferredPipelineInstancing(false));
+  }
   const driver = driverModel(engine, model);
   const holds: boolean[] = [];
   const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -1243,6 +1279,11 @@ describe("compile holds after the first frame", () => {
     // every frame (as a script's text is), whose depth pipelines exist: each draws in the map's one render of that frame.
     const { world, frame, rendersIn, instancedBox, castInto } = await newCasterWorld();
     for (let index = 0; index < 4; index++) await frame();
+    // The plain depth pipeline exists once a plain box has cast (the world's pooled boxes cast instanced).
+    const earlier = MeshBuilder.CreateBox("earlier plain caster", { size: 0.5 }, world.handle.scene);
+    earlier.position.set(-1, 0.25, -1);
+    noteDrawn(earlier);
+    for (let index = 0; index < 12 && !castInto(earlier); index++) await frame();
     const plain = MeshBuilder.CreateBox("plain caster", { size: 0.5 }, world.handle.scene);
     plain.position.set(1, 0.25, -1);
     // Never hidden, as a mesh whose Material keeps the Effect it draws with on itself (a script's text) is not.
@@ -1363,7 +1404,7 @@ describe("compile holds after the first frame", () => {
     const box = unlitBox([40, 0.25, 40]);
     /** Per capture draw of the floor: whether the spot's map held the box (after it: a render hook would redraw it). */
     const captured: boolean[] = [];
-    (scene.getMeshByName("actor-1") as Mesh).onAfterRenderObservable.add(() => {
+    surfaceDraws(scene, "actor-1").onAfterRenderObservable.add(() => {
       if (scene.activeCamera?.name === "renderTargetCapture:camera") captured.push(castInto(box));
     });
     for (let index = 0; index < 6; index++) await frame();
@@ -1411,7 +1452,7 @@ describe("compile holds after the first frame", () => {
     const map = () => scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}10`)!.getShadowGenerator() as ShadowGenerator | null;
     /** Per capture draw of the floor: whether the spot's map had drawn (none while it casts no shadows). */
     const captured: boolean[] = [];
-    (scene.getMeshByName("actor-1") as Mesh).onBeforeRenderObservable.add(() => {
+    surfaceDraws(scene, "actor-1").onBeforeRenderObservable.add(() => {
       if (scene.activeCamera?.name !== "renderTargetCapture:camera") return;
       const generator = map();
       captured.push(!!generator && !awaitsFirstDraw(generator) && generator.getDarkness() === 0);
@@ -2635,12 +2676,21 @@ describe("a visual re-sent every tick", () => {
     ? spot(10, [0, 6, -4], { castShadows: true, intensity }) : sun({ castShadows: true, intensity });
   const shadowMapOf = (world: PlayWorld, kind: "spot" | "sun") => world.handle.scene.lights
     .find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${kind === "spot" ? 10 : 3}`)!.getShadowGenerator() as ShadowGenerator;
+  /**
+   * What a draw of `mesh` drew: the mesh, or a pool group's source's shown members (its batch), or the member Babylon
+   * draws on its own through its source (`replacement`).
+   */
+  const drewWith = (drawn: Set<AbstractMesh>, mesh: Mesh, replacement?: AbstractMesh) => {
+    if (replacement) drawn.add(replacement);
+    else if (isInstanceSource(mesh)) for (const member of mesh.instances) { if (member.isEnabled() && member.isVisible) drawn.add(member); }
+    else drawn.add(mesh);
+  };
   /** Records the meshes a real (not skipped) draw into `map` drew, until cleared. */
   const castsInto = (world: PlayWorld, map: ShadowGenerator) => {
     const cast = new Set<AbstractMesh>();
     let before = 0;
     map.onBeforeShadowMapRenderMeshObservable.add(() => { before = world.driver.draws(); });
-    map.onAfterShadowMapRenderMeshObservable.add((mesh) => { if (world.driver.draws() > before) cast.add(mesh); });
+    map.onAfterShadowMapRenderMeshObservable.add((mesh) => { if (world.driver.draws() > before) drewWith(cast, mesh as Mesh); });
     return cast;
   };
   /** Records the meshes the view drew (warm draws only create pipelines), until cleared. */
@@ -2648,7 +2698,7 @@ describe("a visual re-sent every tick", () => {
     const drawn = new Set<AbstractMesh>();
     const render = Mesh.prototype.render;
     vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
-      if (!this.getScene().getEngine().getCurrentRenderPassName().startsWith("warm ")) drawn.add(this);
+      if (!this.getScene().getEngine().getCurrentRenderPassName().startsWith("warm ")) drewWith(drawn, this, args[2] ?? undefined);
       return render.apply(this, args);
     });
     return drawn;
