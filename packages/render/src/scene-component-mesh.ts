@@ -3,7 +3,7 @@
  * here at build time must also change the component's kind in `scene-visual-fingerprint.ts`, or edits to it never
  * rebuild the mesh. `scene-loader.ts` re-exports the public names.
  */
-import { Color3, Mesh, MeshBuilder, StandardMaterial, Vector3, type Scene } from "@babylonjs/core";
+import { Color3, Mesh, MeshBuilder, Vector3, type Scene } from "@babylonjs/core";
 import {
   isOverlayLayoutClass, isUIControl2DClass, MIRROR_CLASS_ID, normalizeWaterBody, overlayPanelDestFromScale,
   parseCableProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,
@@ -21,7 +21,7 @@ import { createFogVolumeGuide, createReflectionProbeGuide } from "./fog-volume-g
 import { createFoliageMesh } from "./foliage-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createModelActorRoot } from "./glb-anim";
-import { shareHelperProgram } from "./helper-program";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 import { createJoystick2DMesh } from "./joystick2d-mesh";
 import { createLandscapeMesh } from "./landscape-mesh";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
@@ -42,7 +42,6 @@ import { createText2DMesh } from "./text2d-mesh";
 import { createText3DMesh } from "./text3d-mesh";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { createUIControl2DMesh } from "./ui-controls2d-mesh";
-import { VisualBundle } from "./visual-bundle";
 import { createWaterMesh } from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
@@ -94,17 +93,15 @@ function buildPrimitiveMesh(scene: Scene, name: string, meshKind: string | null 
   }
 }
 
+const PIVOT_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: true, fog: false, role: "helper" };
+
 function createPivotMarkerMesh(scene: Scene, name: string): Mesh {
   const root = MeshBuilder.CreateSphere(name, { diameter: 0.14 }, scene);
   root.isPickable = true;
-  const bundle = new VisualBundle();
-  root.onDisposeObservable.addOnce(() => bundle.dispose());
-  const material = bundle.ownMaterial(shareHelperProgram(new StandardMaterial(`${name}-pivot`, scene)));
-  material.disableLighting = true;
-  material.emissiveColor = new Color3(0.92, 0.93, 0.96);
-  material.diffuseColor = Color3.Black();
-  material.specularColor = Color3.Black();
-  root.material = material;
+  // A pale marker, front faces only; editor helpers draw without fog.
+  setUnlitMaterial(root, PIVOT_MATERIAL, {
+    texture: null, color: [0.92, 0.93, 0.96], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+  });
   const axes: Array<{
     suffix: string;
     end: Vector3;

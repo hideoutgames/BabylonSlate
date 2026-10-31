@@ -22,7 +22,7 @@ import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-o
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import {
   UnlitFinishBlock, UnlitOutputBlock, UnlitSurfaceBlock, UnlitUvBlock, UnlitVelocityBlock, hasUnlitBinding,
-  markPerMeshBindingMaterial, setUnlitBinding, unlitBinding, type UnlitBinding,
+  markPerMeshBindingMaterial, setMaterialUnlitBinding, setUnlitBinding, unlitBinding, type UnlitBinding,
 } from "./unlit-material-blocks";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 
@@ -42,6 +42,8 @@ export type UnlitMaterialKey = {
   role: "world" | "helper" | "preview";
   /** The Scene's image processing (the default), or a tilemap atlas's exact display colours (`atlasImageProcessing`). */
   imageProcessing?: "scene" | "atlas";
+  /** Draws its triangles' edges (a debug overlay's). */
+  wireframe?: boolean;
 };
 
 /**
@@ -295,21 +297,24 @@ function createVariant(owner: NodeMaterial, textured: boolean, kind: AuthoredSur
 }
 
 function instanceId(key: UnlitMaterialKey): string {
-  return JSON.stringify([key.textured, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene"]);
+  return JSON.stringify([key.textured, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene", key.wireframe === true]);
 }
 
-function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
+function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): UnlitInstance {
   const material = createNodeMaterial(scene, `unlit:${key.role}${key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}`);
   const instance: UnlitInstance = { material, key: { ...key }, meshes: new Set() };
-  // Shared by every mesh with its key: a mesh disposed with its materials (`dispose(false, true)`) leaves it to the
-  // others. The Scene disposes it, after notifying its dispose observers.
-  let sceneDisposing = false;
-  scene.onDisposeObservable.addOnce(() => { sceneDisposing = true; });
-  const dispose = material.dispose.bind(material);
-  material.dispose = (...args: Parameters<NodeMaterial["dispose"]>) => { if (sceneDisposing) dispose(...args); };
+  if (!owned) {
+    // Shared by every mesh with its key: a mesh disposed with its materials (`dispose(false, true)`) leaves it to the
+    // others. The Scene disposes it, after notifying its dispose observers.
+    let sceneDisposing = false;
+    scene.onDisposeObservable.addOnce(() => { sceneDisposing = true; });
+    const dispose = material.dispose.bind(material);
+    material.dispose = (...args: Parameters<NodeMaterial["dispose"]>) => { if (sceneDisposing) dispose(...args); };
+  }
   material.backFaceCulling = key.backFaceCulling;
   material.fogEnabled = key.fog;
   if (key.imageProcessing === "atlas") material.imageProcessingConfiguration = atlasImageProcessing(scene);
+  if (key.wireframe) material.wireframe = true;
   material.needAlphaBlending = () => false;
   material.needAlphaTesting = () => false;
   material.needAlphaBlendingForMesh = (mesh) => unlitNeedsBlending(mesh);
@@ -374,6 +379,16 @@ export function unlitMaterial(scene: Scene, key: UnlitMaterialKey): NodeMaterial
   let instance = map.get(id);
   if (!instance) map.set(id, (instance = createInstance(scene, key)));
   return instance.material;
+}
+
+/**
+ * An unlit Material of its own, whose binding every mesh drawing it shares: for owners that swap whole materials on
+ * their meshes, as Babylon's gizmos do on hover. Its owner disposes it; it shares the program of its key's texturing.
+ */
+export function ownedUnlitMaterial(scene: Scene, key: UnlitMaterialKey, binding: UnlitBinding): NodeMaterial {
+  const { material } = createInstance(scene, key, true);
+  setMaterialUnlitBinding(material, binding);
+  return material;
 }
 
 /** Whether `material` is an unlit Material instance. */

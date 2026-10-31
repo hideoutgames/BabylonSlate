@@ -1,4 +1,4 @@
-import { DirectionalLight, Mesh, PointLight, StandardMaterial, Texture, TransformNode, Vector3 } from "@babylonjs/core";
+import { DirectionalLight, Mesh, PointLight, Texture, TransformNode, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, normalizeShadowSettings } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
@@ -9,6 +9,8 @@ import {
 } from "./editor-billboard";
 import { engineBillboardUrl } from "./default-billboard/urls";
 import { RENDERING_GROUP } from "./sorting";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 import { setAuthoredLightEnabled, syncDirectionalLightPolicy, syncForwardLightPolicy } from "./light-policy";
 import { selectHapticLights } from "./haptic-lights";
 import { sceneShadowController } from "./shadow-controller";
@@ -42,11 +44,13 @@ describe("editor billboard", () => {
     expect(
       (mesh.metadata as { editorBillboard?: string }).editorBillboard,
     ).toBe("point_light");
-    const material = mesh.material as StandardMaterial;
-    expect(material.disableLighting).toBe(true);
-    expect(material.backFaceCulling).toBe(false);
-    const texture = material.diffuseTexture as Texture;
-    expect(material.emissiveTexture).toBeNull();
+    expect(isUnlitMaterial(mesh.material)).toBe(true);
+    expect(mesh.material!.backFaceCulling).toBe(false);
+    // Editor helpers draw without fog.
+    expect(mesh.material!.fogEnabled).toBe(false);
+    const binding = unlitBinding(mesh);
+    expect(binding.blend).toBe(true);
+    const texture = binding.texture as Texture;
     expect(texture.url).toContain(engineBillboardUrl("point_light").slice(1));
     expect(mesh.renderingGroupId).toBe(RENDERING_GROUP.foreground);
   });
@@ -65,8 +69,7 @@ describe("editor billboard", () => {
         ],
       });
     applyEditorBillboardFromActor(mesh, actor);
-    const material = mesh.material as StandardMaterial;
-    expect(material.emissiveColor.asArray()).toEqual([1, 1, 1]);
+    expect(unlitBinding(mesh).color).toEqual([1, 1, 1]);
     expect(actor.components[0]?.properties.color).toEqual([0.2, 0.5, 1]);
   });
 
@@ -79,7 +82,7 @@ describe("editor billboard", () => {
     const controller = sceneShadowController(scene);
     const actor = createActor("lamp", "Lamp", { components: [{ id: "light", classId: "LightComponent", properties: { color: [1, 0.3, 0.1], castShadows: false } }] });
     const mesh = createEditorBillboard(scene, "editorActor:lamp", "point_light");
-    const color = () => (mesh.material as StandardMaterial).emissiveColor.asArray();
+    const color = () => unlitBinding(mesh).color;
     controller.register(light, false);
     applyEditorBillboardFromActor(mesh, actor);
     scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -104,14 +107,14 @@ describe("editor billboard", () => {
     setAuthoredLightEnabled(second, true);
     const icon = createEditorBillboard(scene, "editorActor:second", "directional_light");
     applyEditorBillboardFromActor(icon, createActor("second", "Second", { components: [{ id: "light", classId: "LightComponent", properties: { enabled: true, lightKind: "directional", castShadows: true } }] }));
-    const material = icon.material as StandardMaterial;
-    expect(material.emissiveColor.asArray()).toEqual([1, 0, 0]);
+    const color = () => unlitBinding(icon).color;
+    expect(color()).toEqual([1, 0, 0]);
     expect(second.isEnabled()).toBe(false);
     setAuthoredLightEnabled(first, false);
     syncDirectionalLightPolicy(scene);
     scene.onBeforeRenderObservable.notifyObservers(scene);
     expect(second.isEnabled()).toBe(true);
-    expect(material.emissiveColor.asArray()).toEqual([1, 1, 0]);
+    expect(color()).toEqual([1, 1, 0]);
     icon.dispose();
   });
 
@@ -128,7 +131,7 @@ describe("editor billboard", () => {
     const actor = createActor("second", "Second", { components: [{ id: "light", classId: "LightComponent", properties: { enabled: true, color: [0.2, 0.5, 1], castShadows: false } }] });
     const icon = createEditorBillboard(scene, "editorActor:second", "point_light");
     applyEditorBillboardFromActor(icon, actor);
-    const color = () => (icon.material as StandardMaterial).emissiveColor.asArray();
+    const color = () => unlitBinding(icon).color;
     expect(second.isEnabled()).toBe(false);
     expect(color()).toEqual([1, 1, 0]);
     expect(icon.metadata.editorBillboardStatus).toContain("Light Limit Or The Local Light Budget");
@@ -164,20 +167,22 @@ describe("editor billboard", () => {
     const addedCount = scene.onNewLightAddedObservable.observers.length;
     const resolve = vi.spyOn(scene, "getLightByName");
     applyEditorBillboardFromActor(icon, actor);
-    const material = icon.material as StandardMaterial;
-    const writeColor = vi.spyOn(material.emissiveColor, "copyFrom");
+    // A tint write replaces the binding's colour.
+    const color = () => unlitBinding(icon).color;
     const frame = () => scene.onBeforeRenderObservable.notifyObservers(scene);
     frame();
+    const unchanged = color();
     frame();
     expect(resolve).toHaveBeenCalledTimes(1);
-    expect(writeColor).not.toHaveBeenCalled();
+    expect(color()).toBe(unchanged);
     light.intensity = 0;
     frame();
-    expect(material.emissiveColor.asArray()).toEqual([1, 0, 0]);
+    const disabled = color();
+    expect(disabled).toEqual([1, 0, 0]);
     expect(icon.metadata.editorBillboardStatus).toContain("Disabled:");
     frame();
     expect(resolve).toHaveBeenCalledTimes(1);
-    expect(writeColor).toHaveBeenCalledTimes(1);
+    expect(color()).toBe(disabled);
 
     applyEditorBillboardFromActor(icon, actor);
     await vi.waitFor(() => {
@@ -187,7 +192,7 @@ describe("editor billboard", () => {
     });
     light.intensity = 1;
     frame();
-    expect(material.emissiveColor.asArray()).toEqual([1, 1, 1]);
+    expect(color()).toEqual([1, 1, 1]);
     expect(icon.metadata.editorBillboardStatus).toContain("Active:");
     expect(resolve).toHaveBeenCalledTimes(2);
     icon.dispose();
@@ -204,7 +209,7 @@ describe("editor billboard", () => {
     const actor = createActor("lamp", "Lamp", { components: [
       { id: "light", classId: "LightComponent", properties: { castShadows: false } },
     ] });
-    const color = () => (icon.material as StandardMaterial).emissiveColor.asArray();
+    const color = () => unlitBinding(icon).color;
     const frame = () => scene.onBeforeRenderObservable.notifyObservers(scene);
     const other = new PointLight("authoredLight:other", Vector3.Zero(), scene);
     const resolve = vi.spyOn(scene, "getLightByName");
@@ -231,7 +236,7 @@ describe("editor billboard", () => {
     const actor = createActor("lamp", "Lamp", { components: [
       { id: "light", classId: "LightComponent", properties: { enabled: false } },
     ] });
-    const color = () => (icon.material as StandardMaterial).emissiveColor.asArray();
+    const color = () => unlitBinding(icon).color;
     const frame = () => scene.onBeforeRenderObservable.notifyObservers(scene);
     applyEditorBillboardFromActor(icon, actor);
     expect(color()).toEqual([1, 0, 0]);

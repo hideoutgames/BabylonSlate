@@ -5,20 +5,20 @@ import {
   Mesh,
   Quaternion,
   Scene,
-  StandardMaterial,
   Vector3,
   type VertexData,
 } from "@babylonjs/core";
 import { convexHullEdges } from "@haptic/assets";
 import type { ColliderShape } from "@haptic/physics";
-import { shareHelperProgram } from "./helper-program";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 import { RENDERING_GROUP } from "./sorting";
 
 export const COLLIDER_DASH_SIZE = 0.12;
 export const COLLIDER_GAP_SIZE = 0.08;
 export const COLLIDER_DASH_THICKNESS = 0.018;
 export const COLLIDER_COLOR = new Color3(0.85, 0.9, 0.4);
-const materialsByScene = new WeakMap<Scene, Map<string, StandardMaterial>>();
+/** Solid dashes from both sides; editor helpers draw without fog. */
+const COLLIDER_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "helper" };
 
 export function isColliderVisualMesh(mesh: Mesh): boolean {
   return Boolean(
@@ -47,7 +47,6 @@ export function createDashedEdgesMesh(
   root.metadata = { ...(root.metadata ?? {}), editorColliderVisual: true };
   root.isPickable = options?.pickable === true;
   root.renderingGroupId = RENDERING_GROUP.world;
-  const material = colliderMaterial(scene, color);
   const dashes: VertexData[] = [];
   for (const [from, to] of edges) {
     addDashedEdge(dashes, from, to);
@@ -63,7 +62,9 @@ export function createDashedEdgesMesh(
   // Mark the actual renderable segments, not an entire subtree: authored
   // component meshes can also be parented beneath a collider visual root.
   dash.metadata = { ...dash.metadata, editorColliderVisual: true };
-  dash.material = material;
+  setUnlitMaterial(dash, COLLIDER_MATERIAL, {
+    texture: null, color: [color.r, color.g, color.b], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+  });
   dash.isPickable = options?.pickable === true;
   dash.renderingGroupId = RENDERING_GROUP.world;
   return root;
@@ -77,31 +78,6 @@ export function createColliderVisualMesh(
   options?: { pickable?: boolean },
 ): Mesh {
   return createDashedEdgesMesh(scene, name, shapeEdges(shape), color, options);
-}
-
-function colorKey(color: Color3): string {
-  return `${color.r.toFixed(3)},${color.g.toFixed(3)},${color.b.toFixed(3)}`;
-}
-
-function colliderMaterial(scene: Scene, color: Color3): StandardMaterial {
-  let byColor = materialsByScene.get(scene);
-  if (!byColor) {
-    byColor = new Map();
-    materialsByScene.set(scene, byColor);
-  }
-  const key = colorKey(color);
-  const existing = byColor.get(key);
-  if (existing) return existing;
-  const material = shareHelperProgram(new StandardMaterial(`colliderDash:${key}`, scene));
-  material.disableLighting = true;
-  material.disableDepthWrite = false;
-  material.backFaceCulling = false;
-  material.emissiveColor = color.clone();
-  material.diffuseColor = Color3.Black();
-  material.specularColor = Color3.Black();
-  material.alpha = 1;
-  byColor.set(key, material);
-  return material;
 }
 
 function addDashedEdge(

@@ -9,6 +9,8 @@ import {
   Vector3,
   type AbstractMesh,
   type Camera,
+  type Material,
+  type NodeMaterial,
   type Scene,
   type StandardMaterial,
 } from "@babylonjs/core";
@@ -16,6 +18,7 @@ import type { ViewportMode } from "@haptic/core";
 import { mapCanvasPointer, type PointerCanvasSize } from "./pick-coords";
 import type { RenderScheduler } from "./render-scheduler";
 import { createOverlayTransformBox } from "./overlay-transform-box";
+import { ownedUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
 
@@ -241,28 +244,62 @@ function brighten(color: Color3, amount = 0.38): Color3 {
   );
 }
 
+/** Gizmo handles from both sides, without fog: editor helpers draw unfogged. */
+const GIZMO_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "helper" };
+
+/** The material slots Babylon's gizmos swap on their meshes for idle, hover and disabled. */
+interface GizmoMaterialSlots {
+  _coloredMaterial: StandardMaterial | NodeMaterial;
+  _hoverMaterial: StandardMaterial | NodeMaterial;
+  _disableMaterial: StandardMaterial | NodeMaterial;
+}
+const SLOTS = ["_coloredMaterial", "_hoverMaterial", "_disableMaterial"] as const;
+
+/** Babylon's gizmo axis caches: the materials each handle's meshes swap between. */
+interface GizmoAxisCache {
+  material: Material;
+  hoverMaterial: Material;
+  disableMaterial: Material;
+}
+
+function gizmoUnlitMaterial(scene: Scene, color: Color3, alpha: number): NodeMaterial {
+  const material = ownedUnlitMaterial(scene, GIZMO_MATERIAL, {
+    texture: null, color: [color.r, color.g, color.b], alpha, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+  });
+  // Babylon's gizmos copy the material's `diffuseColor` to their line meshes.
+  (material as unknown as { diffuseColor: Color3 }).diffuseColor = color.clone();
+  return material;
+}
+
+/**
+ * Gives a gizmo's idle, hover and disabled slots unlit Materials of their own (each its colour and alpha), recording
+ * which Standard material each replaces for the meshes and axis caches still holding it.
+ */
 function styleUnlitAxis(
-  colored: StandardMaterial,
-  hover: StandardMaterial,
+  gizmo: object,
+  replaced: Map<Material, Material>,
   color: Color3,
   alpha = 1,
   hoverAlpha = alpha,
 ): void {
-  const hoverColor = brighten(color);
-  for (const [material, fill, materialAlpha] of [
-    [colored, color, alpha],
-    [hover, hoverColor, hoverAlpha],
-  ] as const) {
-    material.disableLighting = true;
-    material.emissiveColor = fill.clone();
-    material.diffuseColor = fill.clone();
-    material.specularColor = Color3.Black();
-    material.alpha = materialAlpha;
-    material.backFaceCulling = false;
+  const slots = gizmo as unknown as GizmoMaterialSlots;
+  const disabled = slots._disableMaterial as StandardMaterial;
+  const fills: Record<(typeof SLOTS)[number], [Color3, number]> = {
+    _coloredMaterial: [color, alpha],
+    _hoverMaterial: [brighten(color), hoverAlpha],
+    _disableMaterial: [disabled.diffuseColor, disabled.alpha],
+  };
+  for (const slot of SLOTS) {
+    const previous = slots[slot];
+    const [fill, fillAlpha] = fills[slot];
+    const material = gizmoUnlitMaterial(previous.getScene(), fill, fillAlpha);
+    replaced.set(previous, material);
+    slots[slot] = material;
   }
 }
 
 function styleEditorGizmos(
+  layer: UtilityLayerRenderer,
   position: PositionGizmo,
   rotation: RotationGizmo,
   scale: ScaleGizmo,
@@ -290,36 +327,29 @@ function styleEditorGizmos(
       scaleAxis: scale.zGizmo,
     },
   ] as const;
+  const replaced = new Map<Material, Material>();
   for (const axis of axes) {
-    styleUnlitAxis(
-      axis.drag.coloredMaterial,
-      axis.drag.hoverMaterial,
-      axis.color,
-    );
-    styleUnlitAxis(axis.rot.coloredMaterial, axis.rot.hoverMaterial, axis.color);
-    styleUnlitAxis(
-      axis.scaleAxis.coloredMaterial,
-      axis.scaleAxis.hoverMaterial,
-      axis.color,
-    );
-    styleUnlitAxis(
-      axis.plane.coloredMaterial,
-      axis.plane.hoverMaterial,
-      axis.color,
-      GIZMO_PLANAR_IDLE_ALPHA,
-      GIZMO_PLANAR_HOVER_ALPHA,
-    );
+    styleUnlitAxis(axis.drag, replaced, axis.color);
+    styleUnlitAxis(axis.rot, replaced, axis.color);
+    styleUnlitAxis(axis.scaleAxis, replaced, axis.color);
+    styleUnlitAxis(axis.plane, replaced, axis.color, GIZMO_PLANAR_IDLE_ALPHA, GIZMO_PLANAR_HOVER_ALPHA);
   }
-  styleUnlitAxis(
-    scale.coloredMaterial,
-    scale.hoverMaterial,
-    GIZMO_UNIFORM_COLOR,
-  );
-  styleUnlitAxis(
-    scale.uniformScaleGizmo.coloredMaterial,
-    scale.uniformScaleGizmo.hoverMaterial,
-    GIZMO_UNIFORM_COLOR,
-  );
+  styleUnlitAxis(scale, replaced, GIZMO_UNIFORM_COLOR);
+  styleUnlitAxis(scale.uniformScaleGizmo, replaced, GIZMO_UNIFORM_COLOR);
+  // The parent gizmos' axis caches and the handle meshes hold the Standard materials they were built with.
+  for (const gizmo of [position, rotation, scale]) {
+    const caches = (gizmo as unknown as { _gizmoAxisCache: Map<unknown, GizmoAxisCache> })._gizmoAxisCache;
+    for (const cache of caches.values()) {
+      cache.material = replaced.get(cache.material) ?? cache.material;
+      cache.hoverMaterial = replaced.get(cache.hoverMaterial) ?? cache.hoverMaterial;
+      cache.disableMaterial = replaced.get(cache.disableMaterial) ?? cache.disableMaterial;
+    }
+  }
+  for (const mesh of layer.utilityLayerScene.meshes) {
+    const material = mesh.material && replaced.get(mesh.material);
+    if (material) mesh.material = material;
+  }
+  for (const previous of replaced.keys()) previous.dispose();
 }
 
 function isLeafMesh(mesh: AbstractMesh): boolean {
@@ -434,7 +464,7 @@ export function createGizmoHost(
   // Snapped scale steps linearly (1.1, 1.2, …) instead of compounding.
   scale.incrementalSnap = true;
   position.planarGizmoEnabled = true;
-  styleEditorGizmos(position, rotation, scale);
+  styleEditorGizmos(layer, position, rotation, scale);
 
   let tool: GizmoTool = options.tool ?? "translate";
   let mode: ViewportMode = options.mode ?? "3d";
