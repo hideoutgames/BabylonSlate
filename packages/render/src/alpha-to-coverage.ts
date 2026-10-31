@@ -52,8 +52,8 @@ function install(): void {
   const prototype = Material.prototype as unknown as { _afterBind: AfterBind };
   const afterBind = prototype._afterBind;
   prototype._afterBind = function (this: Material, mesh, effect, subMesh) {
-    const engine = this.getScene().getEngine() as CoverageEngine;
-    engine.setAlphaToCoverage?.(drawsAlphaCoverage(engine, this, mesh));
+    const engine = this.getScene().getEngine();
+    setCoverage(engine, drawsAlphaCoverage(engine, this, mesh));
     afterBind.call(this, mesh, effect, subMesh);
   };
 }
@@ -85,7 +85,16 @@ export function coverageClip(state: NodeMaterialBuildState, value: string, cutof
  * blended draw that binds none (sprites, particles), which set their own alpha mode.
  */
 export function endAlphaToCoverage(engine: AbstractEngine): void {
-  (engine as CoverageEngine).setAlphaToCoverage?.(false);
+  setCoverage(engine, false);
+}
+
+/**
+ * Sets `engine`'s alpha-to-coverage only when it changes. A context starts with it off, so draws that never write coverage
+ * make no GL call at all (Babylon's own cache still issues the first `disable` on each context).
+ */
+function setCoverage(engine: AbstractEngine, enable: boolean): void {
+  const coverage = engine as CoverageEngine;
+  if ((coverage.getAlphaToCoverage?.() ?? false) !== enable) coverage.setAlphaToCoverage?.(enable);
 }
 
 /** Ends alpha-to-coverage whenever `engine` starts blending: a blended draw never also writes coverage. */
