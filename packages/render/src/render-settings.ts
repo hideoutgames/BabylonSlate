@@ -363,7 +363,7 @@ const FULL_QUALITY_TEXTURE_ANISOTROPY = 16;
  * full detail (no Auto LOD). Its project settings still resolve through the
  * Scene it follows (`followSceneRenderSettings`).
  */
-export function useFullRenderQuality(scene: Scene): void {
+export function pinFullRenderQuality(scene: Scene): void {
   const state = sceneRenderingSettings(scene);
   state.textureAnisotropy = Math.min(FULL_QUALITY_TEXTURE_ANISOTROPY, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   state.textureLodBias = 0;

@@ -412,7 +412,7 @@ function levelForCoverage(binding: LodBinding, coverage: number, previous: numbe
 
 function selectLevel(binding: LodBinding, camera: Camera, commit: boolean): number {
   const scene = binding.master.getScene();
-  // A Scene's own Geometry quality: SceneLayers keep full detail (`useFullRenderQuality`).
+  // A Scene's own Geometry quality: SceneLayers keep full detail (`pinFullRenderQuality`).
   const settings = sceneRenderingSettings(scene);
   if (!settings.autoLod) {
     if (commit) binding.current.delete(camera);

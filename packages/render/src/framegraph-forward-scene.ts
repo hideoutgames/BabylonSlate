@@ -253,6 +253,8 @@ export class ForwardSceneFrameGraph {
   private preparedHeight = 0;
   private outputColor: InternalTexture | null = null;
   private outputDepth: InternalTexture | null = null;
+  /** The graph's handles of an imported output pair, which a replaced pair is imported under again. */
+  private outputHandles: { color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle } | null = null;
   private pending: Promise<ForwardSceneGraphResult> | undefined;
   private disposed = false;
   private failure: string | undefined;
@@ -996,9 +998,13 @@ export class ForwardSceneFrameGraph {
       // Everything drawn into an FSR chain, water copy included, runs at its
       // internal size.
       const renderSize = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, output.width, output.height);
+      // A replaced imported output pair (Play's world target after a resize) is imported again under the same
+      // handles below, so the graph rebuilds in place as it does for a backbuffer resize.
+      const replacedOutput = this.outputColor !== output.color || this.outputDepth !== output.depth;
+      const reimport = replacedOutput && this.outputHandles !== null && output.color !== null && output.depth !== null;
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-        this.outputColor !== output.color || this.outputDepth !== output.depth ||
+        replacedOutput && !reimport ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask || this.ownScene) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
         this.releaseGraph();
@@ -1027,16 +1033,17 @@ export class ForwardSceneFrameGraph {
         const depth = output.depth
           ? textures.importTexture("Forward output depth", output.depth)
           : backbufferDepthStencilTextureHandle;
+        this.outputHandles = output.color && output.depth ? { color, depth } : null;
         if (output.depth) {
-          const borrowedDepth = output.depth;
           const createTarget = textures.createRenderTarget.bind(textures);
           // Babylon 9.29 retains imported color attachments for its wrappers,
           // but not depth. Each owned wrapper must retain borrowed depth too,
           // since wrapper.dispose releases both. Scope this to this graph only.
           textures.createRenderTarget = (...args) => {
             const target = createTarget(...args);
+            const borrowedDepth = this.outputDepth;
             if (
-              target.renderTargetWrapper?.depthStencilTexture === borrowedDepth
+              borrowedDepth && target.renderTargetWrapper?.depthStencilTexture === borrowedDepth
             )
               borrowedDepth.incrementReferences();
             return target;
@@ -1209,10 +1216,18 @@ export class ForwardSceneFrameGraph {
           this.graph.addTask(this.outputCopy);
         }
       }
+      const reimported = reimport && this.graph !== undefined && this.outputHandles !== null;
+      if (reimported) {
+        const textures = this.graph!.textureManager;
+        textures.importTexture("Forward output color", output.color!, this.outputHandles!.color);
+        textures.importTexture("Forward output depth", output.depth!, this.outputHandles!.depth);
+        this.outputColor = output.color;
+        this.outputDepth = output.depth;
+      }
       this.assignCamera(camera);
       this.syncSceneInputs();
       const { width, height } = output;
-      if (width !== this.preparedWidth || height !== this.preparedHeight) {
+      if (reimported || width !== this.preparedWidth || height !== this.preparedHeight) {
         // Babylon buildAsync preserves External entries, including the old
         // default-backbuffer dimensions. Refresh them through the public API
         // before tasks record their viewport dimensions for the resized frame.
@@ -1650,6 +1665,7 @@ export class ForwardSceneFrameGraph {
     this.cull = undefined;
     this.graph = undefined;
     this.outputColor = this.outputDepth = null;
+    this.outputHandles = null;
     this.preparedWidth = this.preparedHeight = 0;
   }
 }

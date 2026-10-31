@@ -24,7 +24,7 @@ import {
   generateModelLods,
   isAutoLodMaster,
 } from "./model-lod";
-import { followSceneRenderSettings, updateSceneRenderingSettings, useFullRenderQuality } from "./render-settings";
+import { followSceneRenderSettings, updateSceneRenderingSettings, pinFullRenderQuality } from "./render-settings";
 import { participatesInShadows } from "./shadow-mesh-policy";
 import { visualMeshes } from "./visual-meshes";
 
@@ -316,7 +316,7 @@ describe("automatic model LOD", () => {
     handles.push(owner);
     updateSceneRenderingSettings(owner.scene, { quality: normalizeRenderingQuality({ geometry: { autoLod: true, lodDistanceScale: 0.25 } }) });
     followSceneRenderSettings(scene, owner.scene);
-    useFullRenderQuality(scene);
+    pinFullRenderQuality(scene);
     expect(scene.customLODSelector!(master, new FreeCamera("fresh", camera.position.clone(), scene))).toBe(master);
   });
 

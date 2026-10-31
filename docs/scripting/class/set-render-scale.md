@@ -23,4 +23,5 @@ Sets a fixed render scale and turns off dynamic resolution.
 ## Notes
 
 - Scale runs from 0.25 to 1, where 1 renders at full resolution. Values outside that range are clamped.
+- Scales the world only. [Scene Layers](../../scenes/scene-layers.md) keep full resolution.
 - Applies to the current session only and does not change project settings.

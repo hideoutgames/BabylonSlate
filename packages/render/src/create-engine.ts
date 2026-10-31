@@ -78,7 +78,7 @@ import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, useFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows } from "./render-settings";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows } from "./render-settings";
 import { environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -2752,10 +2752,10 @@ function initializeEngine(
       if (command.type === "sceneLayerCreate") {
         const layer = sceneLayerCompositor?.create(command);
         // Layers follow the world view's project settings (Water) but keep full
-        // quality whatever the tier (`useFullRenderQuality`).
+        // quality whatever the tier (`pinFullRenderQuality`).
         if (layer) {
           followSceneRenderSettings(layer.scene, scene);
-          useFullRenderQuality(layer.scene);
+          pinFullRenderQuality(layer.scene);
           setSceneGameTimePaused(layer.scene, gameTimePaused || heldForPipelines());
         }
         syncOverlayLayer(command.layerId);

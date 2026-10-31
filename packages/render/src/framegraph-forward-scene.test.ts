@@ -3,6 +3,7 @@ import { beginRenderFrameCapture } from "./render-frame-report";
 import {
   type AbstractEngine,
   Animation,
+  Constants,
   DirectionalLight,
   Effect,
   PrecisionDate,
@@ -41,6 +42,7 @@ import {
 } from "@haptic/core";
 import { upsertFogVolumes } from "./fog-volumes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { ParticleService } from "./particle-service";
 import {
   setSceneEffectsEnabled,
@@ -404,6 +406,44 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   expect(graphRenderers(scene)).toEqual([renderer]);
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();
+});
+
+it("imports a replaced output target under its handles and keeps the object renderer, as a backbuffer resize does", async () => {
+  // Depth textures sized and sampled as a GPU's are.
+  const { scene, camera } = host(adaptNullEngineFrameGraph(new NullEngine()));
+  const target = (width: number, height: number) => {
+    const texture = new RenderTargetTexture("world output", { width, height }, scene, false, true);
+    texture.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
+    return texture;
+  };
+  const first = target(80, 64);
+  camera.outputRenderTarget = first;
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const second = target(48, 40);
+  // Each target owns an ObjectRenderer of its own; the graph's is the one created by its preparation.
+  const before = graphRenderers(scene);
+  const renderer = before.find((entry) => entry.name === "Forward objects")!;
+  expect(renderer).toBeDefined();
+  camera.outputRenderTarget = second;
+  expect(graph.render(camera)).toMatchObject({ rendered: false, reason: expect.stringContaining("preparation") });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // The kept tasks now draw into the replaced pair.
+  const tasks = (graph as unknown as { graph: FrameGraph }).graph.tasks;
+  const objects = tasks.find((task) => task.name === "Forward objects")!;
+  const pass = objects.passes[0] as unknown as { _frameGraphRenderTarget: { renderTargetWrapper?: { texture: unknown; depthStencilTexture: unknown } } };
+  const wrapper = pass._frameGraphRenderTarget.renderTargetWrapper;
+  expect(wrapper?.texture).toBe(second.getInternalTexture());
+  expect(wrapper?.depthStencilTexture).toBe(second.depthStencilTexture);
+  expect(graphRenderers(scene)).toEqual(before);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  // An output that stops being imported (the backbuffer again) still builds a new graph.
+  camera.outputRenderTarget = null;
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graphRenderers(scene)).not.toContain(renderer);
+  graph.dispose();
+  first.dispose();
+  second.dispose();
 });
 
 it("draws Play particle systems on graph frames", async () => {

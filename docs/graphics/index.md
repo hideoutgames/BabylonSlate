@@ -42,7 +42,8 @@ Preview Build and exported games have no Retry. If their graphics device stops w
 
 Targets are guides, not guarantees. Profile on the devices you ship to.
 
-- **Resolution Scale**, **Dynamic Resolution**, **Minimum Resolution Scale** and **Dynamic Resolution Target FPS** trade sharpness for frame rate. Dynamic Resolution is on below Ultra.
+- **Resolution Scale**, **Dynamic Resolution**, **Minimum Resolution Scale** and **Dynamic Resolution Target FPS** trade sharpness for frame rate. Dynamic Resolution is on below Ultra. They scale the world only: the game's output keeps the screen's device resolution.
+- Scalability never lowers [Scene Layers](../scenes/scene-layers.md): they keep full resolution and quality on every level.
 - **Texture LOD Bias**, **Texture Anisotropy** and **Texture Budget (MiB)** control texture detail and memory. Unused textures are released above the budget.
 - **Auto LOD** and **LOD Distance Scale** control simplified model levels. See [Models](models.md#automatic-lod).
 - **Occlusion Culling** skips objects hidden behind walls and other solid shapes. It is off on every level. See [Occlusion culling](#occlusion-culling).

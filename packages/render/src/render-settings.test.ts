@@ -8,7 +8,7 @@ import {
 } from "@haptic/core";
 import {
   applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneEffectsQualityLimits, sceneRenderingSettings, sceneWaterQuality, setSceneEffectsEnabled,
-  allowSceneScreenShadows, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings, useFullRenderQuality,
+  allowSceneScreenShadows, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings, pinFullRenderQuality,
 } from "./render-settings";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 
@@ -135,7 +135,7 @@ it("keeps a full-quality Scene (a SceneLayer) at the device's highest texture an
   const early = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layer);
   updateSceneRenderingSettings(world, tier("low"));
   followSceneRenderSettings(layer, world);
-  useFullRenderQuality(layer);
+  pinFullRenderQuality(layer);
   const late = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layer);
   updateSceneRenderingSettings(world, tier("ultra"));
   updateSceneRenderingSettings(world, tier("low"));

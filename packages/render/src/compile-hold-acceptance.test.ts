@@ -517,6 +517,9 @@ function playWorld(
     spawnableLights: spawnableLightsOfLoad(load),
   });
   cleanups.push(() => handle.dispose());
+  // The frame model's slow frames would step dynamic resolution, and each step resizes Play's world target, which
+  // needs a preparation; keep the render scale fixed (resizes have cases of their own).
+  handle.setLocalQualityOverrides({ resolution: { scale: 1, minScale: 1, dynamic: false } });
   handle.loadScene(createDefaultScene(), { sceneAssetGuid: "scene" });
   const world: Actor[] = [
     { slotId: 1, guid: "floor", position: [0, 0, 0], scale: [12, 0.2, 12], assign: { meshAssetGuid: null, meshKind: "box" } },
