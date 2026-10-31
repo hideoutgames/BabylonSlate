@@ -86,6 +86,7 @@ import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { setSceneOcclusionCulling } from "./view-occlusion";
 import { isAtlasShadow } from "./shadow-atlas";
 import { findSceneShadowController } from "./shadow-controller";
 import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
@@ -2091,6 +2092,32 @@ describe("the lighting CI gate", () => {
     }).toEqual({
       compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, builds: 0,
       marched: ["Spatial Geometry", "Screen shadows", "Forward objects"], tasks, reading: true, sameReaders: before,
+    });
+  });
+
+  it.each(MODELS)("with occlusion culling forced on and the crate hidden behind a wall, lights change without compiling: %s", async (model) => {
+    // A wall between the camera and the crate (the lights' receiver), standing in front of the camera's whole view of it.
+    const wall: Actor = { slotId: 20, guid: "wall", position: [0, 2, -5], scale: [6, 4, 0.2], assign: { meshAssetGuid: null, meshKind: "box" } };
+    const world = playWorld(model, [...actors(), wall]);
+    setSceneOcclusionCulling(world.handle.scene, true);
+    const painter = placePainter(world);
+    await settle(world);
+    world.driver.arm();
+    const compiled = await play(world, painter);
+    const crate = world.handle.scene.getMeshByName("actor-2")!;
+    const hidden = world.view().occlusionDiagnostics()!.culled;
+    // The wall moves aside: the crate, lit by every light the script changed, draws again.
+    const before = world.driver.created.length;
+    world.move(20, [30, 2, -5]);
+    for (let index = 0; index < 4; index++) await world.frame();
+    expect({
+      compiled, pipelines: world.driver.pipelines.size, synchronous: world.driver.synchronous.size,
+      // Occlusion left Babylon's own state alone.
+      crateShown: crate.isEnabled() && crate.isVisible, hidden: hidden > 0,
+      reappeared: world.driver.created.length - before, culledAfter: world.view().occlusionDiagnostics()!.culled,
+    }).toEqual({
+      compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0,
+      crateShown: true, hidden: true, reappeared: 0, culledAfter: 0,
     });
   });
 });
