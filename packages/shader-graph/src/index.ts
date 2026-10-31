@@ -109,7 +109,7 @@ export {
   type MaterialPreviewState,
   type MaterialPreviewStatus,
 } from "./preview-state";
-export { isMaterialParameterNode, materialParameterName, validateMaterialParameterNames } from "./parameters";
+export { isMaterialParameterNode, isPerInstanceParameter, materialParameterName, validateMaterialParameterNames } from "./parameters";
 export { customGlslInterface, customGlslInterfaceError, customGlslFunctionBodyError, newCustomGlslProperties, type CustomGlslPin } from "./custom-glsl";
 export { materialGradientStops, type MaterialGradientStop } from "./gradient";
 export * from "./vector-mask";
