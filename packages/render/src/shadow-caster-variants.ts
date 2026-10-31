@@ -21,8 +21,8 @@ const TILE = 64;
 const EDGE = 4 * TILE;
 
 /**
- * The depth variants `generator` draws a regular-instance batch with, asked of its source's submeshes: an instance
- * the instanced one, a source the ones it draws (`drawnMaterialVariants`). The map's own check asks for the variant
+ * The depth variants `generator` draws a regular-instance batch with, asked of the caster's own submeshes (an
+ * instance's read its own scaling): an instance the instanced one, a source the ones it draws (`drawnMaterialVariants`). The map's own check asks for the variant
  * of the frame's visible instances, which outside a frame are none, so it would compile the plain one only.
  */
 function batchVariantsReady(generator: ShadowGenerator, caster: InstancedMesh | Mesh): boolean {
@@ -32,7 +32,8 @@ function batchVariantsReady(generator: ShadowGenerator, caster: InstancedMesh | 
   const plain = !instancing || (caster === source && drawn.plain);
   const instanced = instancing && (caster !== source || drawn.instanced);
   let ready = true;
-  for (const subMesh of source.subMeshes ?? []) {
+  // An instance's own submeshes, as the map draws it: its defines read the instance (its scaling), not the source.
+  for (const subMesh of caster.subMeshes ?? []) {
     const material = subMesh.getMaterial();
     if (!material || subMesh.verticesCount === 0) continue;
     const transparent = material.needAlphaBlendingForMesh(source);

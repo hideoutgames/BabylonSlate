@@ -94,6 +94,17 @@ export function hasStockVertexStage(material: Material): boolean {
 }
 
 /**
+ * `hasStockVertexStage`, or a compiled surface whose first build is still pending and whose plan has the stock vertex
+ * stage (`plannedStockVertexStage`, set by the compiler before the build): grouping by it need not wait for the build.
+ */
+export function hasStockOrPlannedVertexStage(material: Material): boolean {
+  if (hasStockVertexStage(material)) return true;
+  if (!(material instanceof NodeMaterial) || compiled.has(material)) return false;
+  if (material.pluginManager?._plugins.some((plugin) => !nativePlugins.has(plugin.constructor))) return false;
+  return (material.metadata as { plannedStockVertexStage?: boolean } | null)?.plannedStockVertexStage === true;
+}
+
+/**
  * True when a mesh's thin instances keep their placements: static matrix and attribute buffers, which change only
  * through `thinInstanceSetBuffer` (a new buffer) or a per-instance setter, both of which the refresh scheduler tracks.
  */
