@@ -18,8 +18,8 @@ import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 const WIDTH = 96;
 const HEIGHT = 64;
 
-/** One configuration's frames: two consecutive captures of a static camera and the scene pass's sample count. */
-export type AntiAliasingCapture = { label: string; samples: number; first: number[]; second: number[] };
+/** One configuration's frames: two consecutive captures of a static camera, the scene pass's sample count and the view's tasks. */
+export type AntiAliasingCapture = { label: string; samples: number; tasks: string[]; first: number[]; second: number[] };
 
 /**
  * A static camera over white unlit panels with long diagonal edges on black, drawn as a world view at each
@@ -35,6 +35,9 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
     : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(WIDTH, HEIGHT);
   const captures: AntiAliasingCapture[] = [];
+  // WebGL errors (a refused blit raises INVALID_OPERATION without logging).
+  const glErrors: number[] = [];
+  const gl = (engine as unknown as { _gl?: WebGL2RenderingContext })._gl;
   try {
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0, 0, 0, 1);
@@ -74,6 +77,7 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
         } finally {
           engine.endFrame();
         }
+        for (let error = gl?.getError(); gl && error !== gl.NO_ERROR; error = gl.getError()) glErrors.push(error!);
         if (rendered) break;
         if (performance.now() > deadline) throw new Error("Anti-aliasing presentation timed out");
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
@@ -91,7 +95,7 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
         await frame();
         const first = await frame();
         const second = await frame();
-        captures.push({ label, samples: sceneMultisampleCount(scene), first, second });
+        captures.push({ label, samples: sceneMultisampleCount(scene), tasks: graph.taskNames(), first, second });
       }
     } finally {
       graph.dispose();
@@ -101,7 +105,7 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
       engine.beginFrame();
       engine.endFrame();
     }
-    return { width: WIDTH, captures, reservations: managedRenderReservations(engine) };
+    return { width: WIDTH, captures, glErrors, reservations: managedRenderReservations(engine) };
   } finally {
     engine.dispose();
     canvas.remove();
