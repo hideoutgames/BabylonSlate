@@ -31,7 +31,7 @@ The game keeps running while the console is open, and pressing the game does not
 | `quality shadows` | tier or `reset`; `budget` N or `auto`; `distance` N; `enabled` `on`/`off`; `screen` `off`/`low`/`medium`/`high` | Shadow quality, the number of shadowed lights, shadow distance (1 to 1,000,000), shadows on or off, and Screen-Space Shadows. |  |
 | `quality resolution` | tier or `reset`; `scale` 0.25 to 1 | Render resolution quality, or a fixed fraction of the output size. |  |
 | `quality textures` | tier or `reset` | Texture quality. |  |
-| `quality geometry` | tier or `reset`; `lod` `on`/`off`; `distance` 0.25 to 4 | Geometry quality, automatic Model LOD and its switch distance scale. |  |
+| `quality geometry` | tier or `reset`; `lod` `on`/`off`; `distance` 0.25 to 4; `occlusion` `on`/`off` | Geometry quality: automatic Model LOD, its switch distance scale, and occlusion culling. |  |
 | `quality water` | tier or `reset`; setting and value | Water rendering quality, or one water setting (see below). Buoyancy is unaffected. |  |
 | `quality postprocessing` | tier or `reset`; `ambientOcclusion`, `reflections` or `volumetricLighting` `on`/`off` | Post-processing quality, or whether the tier allows one effect. An effect still runs only where the project turns it on. |  |
 | `quality lighting` | tier or `reset`; `budget` N or `auto` | Lighting quality and the number of local lights. |  |

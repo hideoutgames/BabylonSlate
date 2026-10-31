@@ -12,6 +12,7 @@ import { effectiveShadowSettings } from "@haptic/core";
 import { resolveSceneRenderingQuality, sceneEffectsQualityLimits, sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
+import { sceneOcclusionDiagnostics } from "./view-occlusion";
 import type { RenderScheduler } from "./render-scheduler";
 import type { FirstDrawStats } from "./first-draw-stats";
 
@@ -111,6 +112,8 @@ export type RenderDiagnostics = {
   drawCalls: number;
   /** Visible automatic-LOD meshes, how many draw a simplified level, and the triangles that saves. */
   autoLod: ReturnType<typeof autoLodDiagnostics>;
+  /** The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms); null while it does not cull. */
+  occlusion: { tested: number; culled: number; occluders: number; triangles: number; ms: number } | null;
   /** Live scene resource counts; cachedTextures is the Engine texture cache. */
   resources: {
     meshes: number;
@@ -183,6 +186,7 @@ export function createRenderDiagnostics(
       adapter: engineAdapterInfo(engine),
       drawCalls: readEngineDrawCalls(engine),
       autoLod: autoLodDiagnostics(scene),
+      occlusion: occlusionCounts(scene),
       resources: {
         meshes: liveMeshCount(scene),
         materials: scene.materials.length,
@@ -225,4 +229,9 @@ export function lightsDebugText(diagnostics: RenderDiagnostics): string | null {
           light.cascades.length ? `; cascades ${light.cascades.map((cascade) => `${cascade.end.toFixed(1)} m @ ${Math.round(cascade.texelsPerMetre)}/m`).join(", ")}` : ""}`,
     )
     .join("\n");
+}
+
+function occlusionCounts(scene: Scene): RenderDiagnostics["occlusion"] {
+  const last = sceneOcclusionDiagnostics(scene);
+  return last && { tested: last.tested, culled: last.culled, occluders: last.occluders, triangles: last.triangles, ms: last.ms };
 }
