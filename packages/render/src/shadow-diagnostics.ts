@@ -16,7 +16,8 @@ import { sceneRenderingSettings } from "./render-settings";
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { lightsInCreationOrder } from "./light-policy";
 import { findSceneShadowController } from "./shadow-controller";
-import { AtlasCascadedShadowGenerator } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator } from "./shadow-atlas";
+import { shadowFilterFetches, shadowViewTexelRatios } from "./shadow-filter";
 
 /** Caller-supplied provenance is deliberately not inferred from an adapter name. */
 export interface ShadowDiagnosticOptions {
@@ -173,6 +174,9 @@ export function captureShadowDiagnostics(
     requestedShadows: { ...state.shadows },
     lights: lights.map((light, index) => {
       const generator = controller?.generator(light);
+      const receiverPlane = !!generator && state.shadows.autoBias && light instanceof DirectionalLight && generator.usePercentageCloserFiltering;
+      const quality = generator?.filteringQuality === ShadowGenerator.QUALITY_LOW ? "low"
+        : generator?.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "high";
       const map = generator?.getShadowMap();
       const dimensions = map?.getSize();
       const shadowLight =
@@ -233,8 +237,10 @@ export function captureShadowDiagnostics(
               filter: filterName(generator),
               filteringQuality: generator.filteringQuality,
               autoBias: state.shadows.autoBias,
-              receiverCorrection: state.shadows.autoBias && light instanceof DirectionalLight && generator.usePercentageCloserFiltering
-                ? { method: "pcf-receiver-plane", extraTextureFetches: generator.filteringQuality === ShadowGenerator.QUALITY_LOW ? 3 : 0 }
+              receiverCorrection: receiverPlane ? { method: "pcf-receiver-plane" } : null,
+              // Per shaded pixel, per view (cascade or tile) as last drawn: the kernel each view filters with.
+              textureFetches: generator.usePercentageCloserFiltering && (generator instanceof AtlasShadowGenerator || generator instanceof AtlasCascadedShadowGenerator)
+                ? shadowViewTexelRatios(generator).map((ratio) => shadowFilterFetches(quality, ratio, receiverPlane))
                 : null,
               // For CSM these scalars may be restored after drawing; never label
               // them as the value that was used by every cascade.

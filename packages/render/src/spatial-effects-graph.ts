@@ -181,7 +181,8 @@ export class SpatialEffectsGraph {
           type: Constants.PREPASS_DEPTH_TEXTURE_TYPE,
           // Spatial support already requires float and half-float rendering.
           textureType: geometryDepthTextureType(graph.scene.getEngine().getCaps())!,
-          textureFormat: Constants.TEXTUREFORMAT_R,
+          // Screen-Space Shadows read the caster mark beside the depth (`GeometrySurfaceOutputBlock`).
+          textureFormat: plan.screenShadows ? Constants.TEXTUREFORMAT_RG : Constants.TEXTUREFORMAT_R,
         },
       ];
       const buffers: Record<string, FrameGraphTextureHandle> = {

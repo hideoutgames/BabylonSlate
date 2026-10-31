@@ -355,6 +355,11 @@ export class AtlasShadowGenerator extends ShadowGenerator implements AtlasShadow
   // Set while Babylon's constructor builds the map, before field initializers would run.
   declare private placement: Placement;
   declare private views: Matrix[];
+  /**
+   * The map size the shadow quality level asks of a local light (`applyShadowSettings`), against which the filter holds
+   * its width in the world when admission gave the tiles less (`shadowKernelScale`); 0 is the tiles' own.
+   */
+  filterReferenceSize = 0;
   private drawn = false;
   private readonly range = new Vector2(0, 1);
 

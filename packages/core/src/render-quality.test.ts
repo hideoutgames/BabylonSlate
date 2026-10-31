@@ -38,6 +38,16 @@ describe("rendering quality sessions", () => {
       mapSize: 4096,
     });
   });
+  it("sets the shadow filter quality from the console and refuses one that does not exist", () => {
+    const session = new RenderingQualitySession({ shadows: { profile: "high" } });
+    expect(session.effective().shadows.filterQuality).toBe("high");
+    expect(session.execute("shadows", "filter", "medium").success).toBe(true);
+    expect(session.effective().shadows.filterQuality).toBe("medium");
+    expect(session.execute("shadows", "filter", "ultra").success).toBe(false);
+    expect(session.effective().shadows.filterQuality).toBe("medium");
+    session.execute("shadows", "reset");
+    expect(session.effective().shadows.filterQuality).toBe("high");
+  });
   it("sets Screen-Space Shadows from the console and refuses a level that does not exist", () => {
     const session = new RenderingQualitySession({ shadows: { profile: "high" } });
     expect(session.effective().shadows.screenShadows).toBe("medium");
