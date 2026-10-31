@@ -61,7 +61,7 @@ test("Play says the editor is out of date and offers Reload when a newer deploy 
   await page.getByTestId("play-preview").click();
   await expect(page.getByTestId("preview-session-report")).toBeVisible({ timeout: 30_000 });
   for (const toggle of await page.getByTestId("session-report-group-toggle").all()) await toggle.click();
-  await expect(page.getByTestId("session-report-row").filter({ hasText: "The editor is out of date" })).toHaveCount(1);
+  await expect(page.getByTestId("session-report-row").filter({ hasText: "This editor is out of date: a newer Preview replaced its files. Reload to continue." })).toHaveCount(1);
   // Reload loads the deployed build into this tab.
   await page.context().unroute(`${origin}/`, deployed);
   await page.evaluate(() => { (window as unknown as { beforeReload?: boolean }).beforeReload = true; });

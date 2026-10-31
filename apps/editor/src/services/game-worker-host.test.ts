@@ -119,3 +119,11 @@ it("leaves a started worker's uncaught errors to its own runtime diagnostics", (
   FakeWorker.instance.onerror?.({ message: "TypeError: x is undefined", preventDefault() {} } as unknown as ErrorEvent);
   expect(failures).toEqual([]);
 });
+
+it("names the failure when the worker's script could not be fetched, which reports a bare error event", () => {
+  const host = createGameWorkerHost();
+  const failures: string[] = [];
+  host.onFailure((message) => failures.push(message));
+  FakeWorker.instance.onerror?.({ preventDefault() {} } as unknown as ErrorEvent);
+  expect(failures).toEqual(["The Play worker failed to start: its module could not be loaded"]);
+});

@@ -553,7 +553,7 @@ describe.each(["worker", "in-process"] as const)(
         await vi.waitFor(() => expect(onFatalDiagnostic).toHaveBeenCalledOnce());
         expect(stopped?.diagnostics).toEqual([expect.objectContaining({
           code: "editor.build.replaced", severity: "error",
-          message: expect.stringMatching(/^The editor is out of date: .*Reload the editor to Play\. \(The Play worker failed to start: Failed to fetch a worker script\.\)$/),
+          message: "This editor is out of date: a newer Preview replaced its files. Reload to continue. (The Play worker failed to start: Failed to fetch a worker script.)",
         })]);
       } finally { build.replaced = false; }
     });

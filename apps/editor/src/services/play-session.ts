@@ -645,7 +645,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       void editorBuildReplaced().catch(() => false).then((replaced) => {
         if (stopped) return;
         const message = replaced
-          ? `The editor is out of date: a newer version was published while it was open, so Play could not load. Reload the editor to Play. (${cause})`
+          ? `This editor is out of date: a newer Preview replaced its files. Reload to continue. (${cause})`
           : cause;
         hostDiagnostics.push({ code: replaced ? EDITOR_BUILD_REPLACED_CODE : "runtime.worker.failed", severity: "error", message, frameId: 0 });
         try {
