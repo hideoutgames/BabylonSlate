@@ -138,6 +138,25 @@ describe("rekey", () => {
     expect(() => pool.rekey(stranger, key())).toThrow("not a member");
   });
 
+  it("gives a member the instance buffers its group's source registered, joining or moving in", () => {
+    const { scene, pool, key } = fixture();
+    // A buffer an owner (the shared outline's identity stream) registered on a source that already draws a member.
+    const first = pool.join(key(), "first");
+    first.sourceMesh.registerInstancedBuffer("identity", 1);
+    first.instancedBuffers.identity = 7;
+    const joined = pool.join(key(), "joined");
+    const other = new StandardMaterial("other", scene);
+    const moving = pool.join(key({ material: other }), "moving");
+    pool.rekey(moving, key());
+    expect([joined.instancedBuffers, moving.instancedBuffers]).toEqual([{ identity: null }, { identity: null }]);
+    // Moving back out keeps its own value of a buffer both sources have.
+    moving.sourceMesh.registerInstancedBuffer("identity", 1);
+    moving.instancedBuffers.identity = 3;
+    pool.rekey(moving, key({ material: other }));
+    pool.rekey(moving, key());
+    expect(moving.instancedBuffers.identity).toBe(3);
+  });
+
   it("relies on Babylon's InstancedMesh keeping its source in `_sourceMesh` (review when the pin moves)", () => {
     const { scene } = fixture();
     const source = MeshBuilder.CreateBox("source", {}, scene);
