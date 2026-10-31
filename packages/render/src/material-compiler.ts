@@ -361,7 +361,9 @@ export function compileMaterialPlan(
   });
   if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
   if (auxiliary) material.allowShaderHotSwapping = false;
-  material.metadata = { boundsPadding: plan.boundsPadding ?? 0, materialDomain: plan.domain };
+  // `plannedStockVertexStage`: its plan's vertex stage is Babylon's own (identity World Position Offset, no custom
+  // blocks), known before the build that `hasStockVertexStage` waits for (`instance-pool.ts` groups by it at once).
+  material.metadata = { boundsPadding: plan.boundsPadding ?? 0, materialDomain: plan.domain, plannedStockVertexStage: cacheableShadowShape };
   const configureSurface = () => {
     if (auxiliary) {
       material.backFaceCulling = plan.twoSided !== true;
