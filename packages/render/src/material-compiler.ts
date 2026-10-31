@@ -1,4 +1,5 @@
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
+import { CoverageClipBlock, registerAlphaToCoverage } from "./alpha-to-coverage";
 import {
   AddBlock,
   BonesBlock,
@@ -6,7 +7,6 @@ import {
   MorphTargetsBlock,
   MultiplyBlock,
   Constants,
-  DiscardBlock,
   FragmentOutputBlock,
   ImageProcessingBlock,
   InputBlock,
@@ -372,6 +372,7 @@ export function compileMaterialPlan(
       material.alphaMode = Constants.ALPHA_DISABLE;
     } else {
       applyAuthoredSurfaceBlend(material, plan);
+      if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text") registerAlphaToCoverage(material);
       if (options.overlay) { material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false; }
       syncSceneLighting(scene);
     }
@@ -799,7 +800,9 @@ export function compileMaterialPlan(
         outputNodes.push(createGeometryCaptureOutput(scene, options.surfaceVariant === "captureDepth", created, plumbing));
       } else outputNodes.push(attachSurfaceShading(plan, options, created, plumbing, outputPoint));
       if (plan.blendMode === "masked") {
-        const discard = new DiscardBlock(`${options.name}_alphaClip`);
+        // The colour variant writes alpha-to-coverage under MSAA (`alpha-to-coverage.ts`); pass variants only discard.
+        const discard = new CoverageClipBlock(`${options.name}_alphaClip`);
+        discard.coverage = !auxiliary && !options.water && !options.overlay;
         const cutoff = createConstantBlock(`${options.name}_alphaCutoff`, "float", [plan.alphaCutoff]);
         const mask = outputPoint(plan.outputs.alphaClip ? "alphaClip" : "opacity", `${options.name}_clipMask`, false);
         mask?.connectTo(discard.value);

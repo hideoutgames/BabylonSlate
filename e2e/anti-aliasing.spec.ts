@@ -23,7 +23,7 @@ function partialPixels(pixels: number[]) {
 }
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`a static camera draws identical frames and MSAA smooths geometric edges on ${backend}`, async ({ page }, testInfo) => {
+  test(`a static camera draws identical frames and MSAA smooths geometric and alpha-tested edges on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(90_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -45,13 +45,14 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.reservations.reservedBytes).toBe(0);
     const capture = Object.fromEntries(result.captures.map((entry) => [entry.label, entry]));
     // WebGPU multisamples at 4 only.
-    expect(result.captures.map((entry) => entry.samples)).toEqual([1, 4, backend === "webgpu" ? 4 : 2, 1, 4, 1]);
+    expect(result.captures.map((entry) => entry.samples)).toEqual([1, 4, backend === "webgpu" ? 4 : 2, 1, 4, 1, 4, 1, 4]);
     for (const entry of result.captures) {
       expect(entry.first.some((value, i) => i % 4 === 0 && value > 200), `${entry.label}: visible surfaces`).toBe(true);
       // No jitter: a static camera's consecutive frames are the same image, pixel for pixel.
       expect(difference(entry.first, entry.second).max, `${entry.label}: consecutive frames are identical`).toBe(0);
     }
-    for (const [aliased, smoothed] of [["off", "msaa4"], ["off", "msaa2"], ["chain off", "chain msaa4"]] as const) {
+    // The cutout's edges are alpha-test edges: MSAA alone leaves them hard, alpha-to-coverage smooths them.
+    for (const [aliased, smoothed] of [["off", "msaa4"], ["off", "msaa2"], ["chain off", "chain msaa4"], ["cutout off", "cutout msaa4"]] as const) {
       expect(partialPixels(capture[aliased]!.first), `${aliased}: aliased edges`).toBeLessThan(8);
       expect(partialPixels(capture[smoothed]!.first), `${smoothed}: smoothed edges`).toBeGreaterThan(40);
       // Multisampling smooths edges only: the image stays in place.

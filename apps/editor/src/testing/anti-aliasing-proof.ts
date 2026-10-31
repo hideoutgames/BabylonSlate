@@ -5,7 +5,9 @@ import {
   FreeCamera,
   MeshBuilder,
   PBRMaterial,
+  RawTexture,
   Scene,
+  Texture,
   Vector3,
 } from "@babylonjs/core";
 import { normalizeRenderEffectsSettings, normalizeRenderingQuality, type AntiAliasingMode } from "@haptic/core";
@@ -13,6 +15,7 @@ import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { allowSceneScreenShadows, sceneMultisampleCount } from "../../../../packages/render/src/render-settings";
+import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 96;
@@ -53,6 +56,22 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
     const triangle = MeshBuilder.CreateDisc("Anti-Aliasing Triangle", { radius: 1.2, tessellation: 3 }, scene);
     triangle.position.set(1.8, 0.2, 0);
     triangle.material = material;
+    // An alpha-tested quad: a 4 × 4 texture opaque in its centre 2 × 2, filtered, cut at 0.5, so every edge it shows
+    // is an alpha-test edge inside the quad.
+    const alpha = new Uint8Array(4 * 4 * 4).fill(255);
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) alpha[(y * 4 + x) * 4 + 3] = x > 0 && x < 3 && y > 0 && y < 3 ? 255 : 0;
+    const cutout = RawTexture.CreateRGBATexture(alpha, 4, 4, scene, false, false, Texture.BILINEAR_SAMPLINGMODE);
+    cutout.hasAlpha = true;
+    const quad = MeshBuilder.CreatePlane("Anti-Aliasing Cutout", { size: 4 }, scene);
+    quad.rotation.z = 0.35;
+    setUnlitMaterial(quad, { textured: true, backFaceCulling: false, fog: false, role: "world" }, {
+      texture: cutout, color: [1, 1, 1], alpha: 1, cutoff: 0.5, blend: false, textureAlpha: true, twoSided: false,
+    });
+    const show = (cutoutOnly: boolean) => {
+      panel.setEnabled(!cutoutOnly);
+      triangle.setEnabled(!cutoutOnly);
+      quad.setEnabled(cutoutOnly);
+    };
     const graph = new ForwardSceneFrameGraph(scene);
     const apply = async (antiAliasing: AntiAliasingMode, chain: boolean) => {
       const effects = normalizeRenderEffectsSettings(chain ? { vignette: { enabled: true, weight: 0.01 } } : undefined);
@@ -83,10 +102,12 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
       return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), readbackChannelOrder(engine.isWebGPU));
     };
     try {
-      for (const [label, mode, chain] of [
-        ["off", "off", false], ["msaa4", "msaa4", false], ["msaa2", "msaa2", false],
-        ["chain off", "off", true], ["chain msaa4", "msaa4", true], ["off again", "off", false],
+      for (const [label, mode, chain, cutoutOnly] of [
+        ["off", "off", false, false], ["msaa4", "msaa4", false, false], ["msaa2", "msaa2", false, false],
+        ["chain off", "off", true, false], ["chain msaa4", "msaa4", true, false],
+        ["cutout off", "off", false, true], ["cutout msaa4", "msaa4", false, true], ["off again", "off", false, false], ["msaa4 last", "msaa4", false, false],
       ] as const) {
+        show(cutoutOnly);
         await apply(mode, chain);
         await frame();
         const first = await frame();
@@ -95,6 +116,10 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
       }
     } finally {
       graph.dispose();
+      // WebGPU destroys disposed targets at the end of its next frame, which the release waits for from a microtask on.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      engine.beginFrame();
+      engine.endFrame();
       await graph.whenReleased();
       scene.dispose();
       await new Promise<void>((resolve) => setTimeout(resolve, 0));

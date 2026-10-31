@@ -57,6 +57,7 @@ An **Allow** switch never turns an effect on; the effect also has to be on in **
 | **FXAA** | Draws one sample per pixel, then blurs edges in a full-screen pass, even when the project's **FXAA** effect is off. Cheapest, slightly soft. |
 | **Off** | No anti-aliasing beyond the project's **FXAA** effect. |
 
+- Under MSAA, alpha-tested surfaces (Materials with **Blend Mode** set to **Masked**, and cut-out sprites and tiles) use alpha-to-coverage: the edges of their cut-outs, such as leaves and fences, are smoothed like geometric edges.
 - MSAA costs GPU memory and time in proportion to the samples. Lower it first on a device that struggles.
 - Effects that read the scene's depth, such as water and Screen-Space Shadows, see one real surface depth at every pixel, never a blend of the surfaces along an edge.
 - Render Target Captures, previews and thumbnails always draw one sample per pixel.
