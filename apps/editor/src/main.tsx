@@ -52,6 +52,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/cascade-shimmer-proof").then(({ runCascadeShimmerProof }) => Object.assign(window, { __cascadeShimmerProof: runCascadeShimmerProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("occlusionCullingProof")) {
   void import("./testing/occlusion-culling-proof").then(({ runOcclusionCullingProof }) => Object.assign(window, { __occlusionCullingProof: runOcclusionCullingProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("instanceParametersProof")) {
+  void import("./testing/instance-parameters-proof").then(({ runInstanceParametersProof }) => Object.assign(window, { __instanceParametersProof: runInstanceParametersProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("instancingParityProof")) {
   void import("./testing/instancing-parity-proof").then(({ runInstancingParityProof }) => Object.assign(window, { __instancingParityProof: runInstancingParityProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("hapticScreenShadowsProof")) {
