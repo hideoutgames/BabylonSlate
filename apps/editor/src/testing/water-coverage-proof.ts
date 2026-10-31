@@ -1,7 +1,7 @@
 /**
  * Test-build-only proof that blended water covers the whole frame on the real GPU: Global Water with an Ocean and a Lake
  * at its height out in the far field, where Global Water's grid cells are hundreds of metres wide, drawn through the
- * Forward FrameGraph in opaque unlit colours (Global green, the Ocean blue, the Lake cyan) over a magenta background, at
+ * Forward FrameGraph in opaque unlit colours on the GPU waves path (Global green, the Ocean blue, the Lake cyan) over a magenta background, at
  * each Water Mesh Density. The cameras look down far enough that water fills the frame to its top edge, so any background
  * is a hole: a fragment no body keeps.
  */
@@ -25,7 +25,7 @@ const CAMERAS: ReadonlyArray<{ position: readonly [number, number, number]; targ
   { position: [0, 600, 0], target: [100, SEA, 500] },
 ];
 
-/** An opaque unlit Material of one colour. */
+/** An opaque unlit Material of one colour on the GPU waves path. */
 async function colour(scene: Scene, name: string, rgb: readonly number[]) {
   const doc = createDefaultMaterialDocument(name);
   doc.shadingModel = "unlit";
@@ -34,6 +34,10 @@ async function colour(scene: Scene, name: string, rgb: readonly number[]) {
   const output = doc.nodes.find((node) => node.id === "output")!.properties;
   output[materialPinDefaultPropertyKey("baseColor")] = [0, 0, 0];
   output[materialPinDefaultPropertyKey("emissive")] = [...rgb];
+  // A Water Waves node puts the surface on the GPU waves path, as the built-in water's is: the vertex stage displaces
+  // the rest grid and culls blended vertices deep inside water the surface never draws.
+  doc.nodes.push({ id: "waves", type: "input.waterWaves", position: { x: 0, y: 0 }, properties: {} });
+  doc.edges.push({ id: "offset", sourceNodeId: "waves", sourcePinId: "offset", targetNodeId: "output", targetPinId: "worldPositionOffset" });
   const lowered = lowerMaterialDocument(doc);
   if (!lowered.ok) throw new Error(`${name} did not lower`);
   const compiled = compileMaterialPlan(lowered.plan, { scene, name });
