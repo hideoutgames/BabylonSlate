@@ -37,6 +37,7 @@ import {
   Constants,
   DirectionalLight,
   Mesh,
+  InstancedMesh,
   MeshBuilder,
   NullEngine,
   NullEngineOptions,
@@ -2118,6 +2119,23 @@ describe("pooled primitives", () => {
     });
     expectNothingCompiled(world, record);
     expect(pool.diagnostics()).toMatchObject({ groups: 2, retained: 0 });
+  });
+  it.each(POOLED_MODELS)("a second instance of a static model spawned after the first drew compiles nothing: %s", async (model) => {
+    // A rigid model's leaf draws as a member of a group of its container geometry (`poolModelLeaves`).
+    const statue = (slotId: number, position: Vec3): Actor =>
+      ({ slotId, guid: `statue-${slotId}`, position, assign: { meshAssetGuid: "statue", meshKind: null } });
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1])], [], "actor-2", classesLoad([]), { instancing: true });
+    world.handle.setMeshAssets({ modelBytes: new Map([["statue", encodeTriangleGlb()]]) });
+    world.place(statue(20, [2, 1, 1]));
+    await settle(world);
+    const pool = sceneInstancePool(world.handle.scene);
+    const pooled = pool.diagnostics().pooled;
+    const record = await measure(world, () => world.place(statue(21, [-2, 1, 1])));
+    expectNothingCompiled(world, record);
+    const leaves = ["actor-20", "actor-21"].map((name) => world.handle.scene.getMeshByName(name)!.getChildMeshes(false)
+      .find((mesh): mesh is InstancedMesh => mesh instanceof InstancedMesh && mesh.isVisible));
+    expect({ joined: pool.diagnostics().pooled - pooled, shared: !!leaves[0] && leaves[0].sourceMesh === leaves[1]?.sourceMesh })
+      .toEqual({ joined: 1, shared: true });
   });
 });
 
