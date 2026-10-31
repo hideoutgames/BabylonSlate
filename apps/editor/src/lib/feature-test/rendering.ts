@@ -627,7 +627,7 @@ function primitive(
   return actor(id, name, tf(position, { rotationDeg: options.rotationDeg, scale: options.scale }), [mesh]);
 }
 
-function text3d(id: string, name: string, position: Vec3, text: string, options: { size: number; color: Vec3; fontAssetGuid: string | null; rotationDeg?: Vec3 }): SerializedActor {
+function text3d(id: string, name: string, position: Vec3, text: string, options: { size: number; color: Vec3; fontAssetGuid: string | null; rotationDeg?: Vec3; castShadows?: boolean }): SerializedActor {
   return actor(id, name, tf(position, { rotationDeg: options.rotationDeg }), [
     comp(`${id}-text`, "Text3DComponent", {
       text,
@@ -635,6 +635,8 @@ function text3d(id: string, name: string, position: Vec3, text: string, options:
       color: options.color,
       alignment: "center",
       fontAssetGuid: options.fontAssetGuid,
+      // Unlit 3D Text casts no shadow unless Cast Shadows is set.
+      ...(options.castShadows !== undefined ? { castShadows: options.castShadows } : {}),
     }),
   ]);
 }
@@ -871,6 +873,9 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
   }));
   add(text3d("ft-render-text-bundled", "Bundled ASCII Text", zone.at(3, 2.4, 9), "Text3D Bundled ASCII", {
     size: 0.55, color: [0.6, 1, 0.7], fontAssetGuid: null,
+  }));
+  add(text3d("ft-render-text-shadow", "Shadow Casting Text", zone.at(3, 1.4, 9), "Text3D Casts Shadows", {
+    size: 0.55, color: [1, 0.85, 0.5], fontAssetGuid: null, castShadows: true,
   }));
 
   // Top-down orthographic view of the zone: `possess "Effects Ortho Camera"`.

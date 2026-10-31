@@ -778,6 +778,37 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("leaves unlit visuals out of shadow maps unless their Cast Shadows is set", async () => {
+    const commands: CommandMessage[] = [];
+    const visual = (id: string, classId: string, properties: Record<string, unknown>) =>
+      createActor(id, id, { components: [{ id: `${id}-comp`, classId, properties }] });
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/unlit.scene.hasset",
+        scene: {
+          name: "Unlit",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [
+            visual("label", "Text3DComponent", { text: "Hi" }),
+            visual("lit-label", "Text3DComponent", { text: "Hi", castShadows: true }),
+            visual("sprite", "SpriteComponent", { assetGuid: null }),
+            visual("crate", "MeshComponent", { meshKind: "box" }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    await runtime.realizePlayWorld();
+    // A one-visual actor draws on its optimized actor mesh: its shadow flags ride the assignment, not a part.
+    const casts = Object.fromEntries(commands.flatMap((command) => command.type === "assignMesh" && command.primaryComponentId
+      ? [[command.primaryComponentId, command.castShadows]] : []));
+    expect(casts).toMatchObject({ "label-comp": false, "lit-label-comp": true, "sprite-comp": false, "crate-comp": true });
+    runtime.stop();
+  });
+
   it("emits light and Default Camera properties on assignMesh", async () => {
     const commands: CommandMessage[] = [];
     const settings = createDefaultSceneSettings();

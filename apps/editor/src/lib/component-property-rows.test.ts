@@ -534,6 +534,18 @@ describe("componentPropertyRows", () => {
     });
   });
 
+  it("shows unlit Sprites, Tilemaps and 3D Text not casting shadows until Cast Shadows is set", () => {
+    const castRow = (classId: string, properties: Record<string, unknown>) =>
+      rowsFor({ id: "visual", classId, properties }).rows.find((row) => row.id.endsWith("-castShadows"));
+    for (const classId of ["SpriteComponent", "TilemapComponent", "Text3DComponent"]) {
+      const defaults = defaultPropertiesFor(classId);
+      expect(castRow(classId, defaults)).toMatchObject({ kind: "boolean", label: "Cast Shadows", value: false, defaultValue: false });
+      expect(castRow(classId, { ...defaults, castShadows: true })).toMatchObject({ value: true, defaultValue: false });
+    }
+    // Lit meshes still cast by default.
+    expect(castRow("MeshComponent", defaultPropertiesFor("MeshComponent"))).toMatchObject({ value: true });
+  });
+
   it("uses Sprite and Tilemap pickers plus project sorting layers", () => {
     const sprite = rowsFor({
       id: "sprite",
