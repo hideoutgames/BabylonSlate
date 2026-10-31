@@ -2100,10 +2100,10 @@ describe("the lighting CI gate", () => {
     const wall: Actor = { slotId: 20, guid: "wall", position: [0, 2, -5], scale: [6, 4, 0.2], assign: { meshAssetGuid: null, meshKind: "box" } };
     const world = playWorld(model, [...actors(), wall]);
     setSceneOcclusionCulling(world.handle.scene, true);
-    const painter = placePainter(world);
+    const surfaces = unlitSurfaces(world);
     await settle(world);
     world.driver.arm();
-    const compiled = await play(world, painter);
+    const compiled = await play(world, surfaces);
     const crate = world.handle.scene.getMeshByName("actor-2")!;
     const hidden = world.view().occlusionDiagnostics()!.culled;
     // The wall moves aside: the crate, lit by every light the script changed, draws again.
