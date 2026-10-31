@@ -68,8 +68,9 @@ describe("formatFeatureTestCheckReport", () => {
     const report: FeatureTestCheckReport = {
       mode: "benchmark", startedAt: 0, durationMs: 600_000, cancelled: false, pageErrors: [],
       scenes: [
+        // The light scene's samples ran with two frames in flight, skipping 1, 0, 2 and 9 renders.
         scene("light", [sample("low", 60, 18), sample("medium", 60, 19), sample("high", 58, 22),
-          sample("ultra", 40, 30)]),
+          sample("ultra", 40, 30)].map((entry, index) => ({ ...entry, framesInFlight: { mode: 2 as const, skipped: [1, 0, 2, 9][index]! } }))),
         scene("heavy", [sample("low", 59, 20), sample("medium", 35, 40), sample("high", 25, 60),
           sample("ultra", 20, 80)]),
       ],
@@ -77,6 +78,10 @@ describe("formatFeatureTestCheckReport", () => {
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines).toContain("Benchmark: highest tier every benchmarked scene holds at 60 fps: low · at 30 fps: medium (2/2 scenes benchmarked)");
     expect(lines).toContain("  Highest tier at 60 fps: high · at 30 fps: ultra");
+    // Each scene's header states the GPU backpressure it ran under; a report from before it says so.
+    expect(lines.filter((line) => line.startsWith("  Frames in flight: "))).toEqual([
+      "  Frames in flight: 2 (12 renders skipped while sampling)", "  Frames in flight: unknown (older report)",
+    ]);
   });
 
   it("tabulates a breakdown's steps: mean-based change, vsync shares, bound and setting flags", () => {

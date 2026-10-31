@@ -118,6 +118,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       `  Breakdown ${method} (60 fps cap; warm-up until steady, then a baseline before and after every step; each sampled once no shader is first drawn or compiling):`,
       `  preserveDrawingBuffer: ${preserveText(first?.settings?.["presentation.preserve"])} (live)`,
       `  Base: ${report.breakdown?.tier ?? "unknown"}`,
+      `  Frames in flight: ${framesInFlightText(play.benchmark)}`,
       drift
         ? `  Warm-up drift: first window ${drift.firstMs.toFixed(1)} ms, steady ${drift.steadyMs.toFixed(1)} ms (${drift.percent >= 0 ? "+" : ""}${drift.percent.toFixed(0)}%) over ${drift.windows} windows${drift.basis === "frame" ? " (mean frame)" : " (gpu busy)"}`
         : "  Warm-up drift: unmeasured (fewer than two windows)",
@@ -145,7 +146,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(vsync, 16)}${pad(busy, 14)}${pad(change, 18)}${pad(ms(sample.cpuMs), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${notes}`.trimEnd());
     }
   } else if (play.benchmark.length) {
-    lines.push("  Benchmark (frame cap lifted):", `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 20)}${pad("gpu", 20)}${pad("draws", 14)}resolution`);
+    lines.push("  Benchmark (frame cap lifted):", `  Frames in flight: ${framesInFlightText(play.benchmark)}`, `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 20)}${pad("gpu", 20)}${pad("draws", 14)}resolution`);
     for (const sample of play.benchmark) {
       lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(msText(sample.cpu, sample.cpuMs), 20)}${pad(msText(sample.gpu, sample.gpuMs), 20)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${sample.resolution ?? "-"}`);
     }
@@ -383,4 +384,13 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
     for (const sample of report.unfinished.resources) lines.push(resourceLine(sample));
   }
   return lines.join("\n").trimEnd();
+}
+
+/** The GPU backpressure mode the samples ran under (`framesinflight`) and the renders it skipped while they sampled. */
+function framesInFlightText(samples: readonly { framesInFlight?: { mode: "off" | 2 | 3; skipped: number } }[]): string {
+  const measured = samples.filter((sample) => sample.framesInFlight);
+  if (!measured.length) return "unknown (older report)";
+  const modes = [...new Set(measured.map((sample) => String(sample.framesInFlight!.mode)))];
+  const skipped = measured.reduce((sum, sample) => sum + sample.framesInFlight!.skipped, 0);
+  return `${modes.join(", ")} (${skipped} renders skipped while sampling)`;
 }
