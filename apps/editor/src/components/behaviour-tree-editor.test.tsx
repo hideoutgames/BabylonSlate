@@ -837,6 +837,6 @@ describe("BehaviourTreeEditor", () => {
     sequence.children = [];
     doc.nodes = doc.nodes.filter((node) => node.id !== "task");
     renderTree(doc);
-    expect(screen.getByLabelText("1 error")).toBeTruthy();
+    expect(screen.getByLabelText("1 Error")).toBeTruthy();
   });
 });
