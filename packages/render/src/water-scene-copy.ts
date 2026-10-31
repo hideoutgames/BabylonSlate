@@ -26,6 +26,7 @@ import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { managedRenderTextureResource, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { sceneWaterSamplesSceneCopy, waterMeshSamplesSceneCopy } from "./water-mesh";
 import type { WaterQualityDeviceClamp } from "./water-quality-device";
+import { sceneViewRenderSize } from "./scene-output-scale";
 
 /**
  * Linear view depth written for sky / far-plane pixels (the sentinel volumetric-shader also uses).
@@ -122,9 +123,7 @@ export function waterSceneCopyDemand(scene: Scene, camera: Camera): number {
   if (clearsDepthBetweenGroups(scene)) return 0;
   if (!sampleableOutput(camera) && !(scene.autoClear && scene.autoClearDepthAndStencil)) return 0;
   const scale = clamp.quality.refractionScale;
-  const target = camera.outputRenderTarget;
-  const width = target ? target.getRenderWidth() : engine.getRenderWidth(true);
-  const height = target ? target.getRenderHeight() : engine.getRenderHeight(true);
+  const { width, height } = sceneViewRenderSize(scene, camera.outputRenderTarget);
   if (copyDimension(width, scale) < 1 || copyDimension(height, scale) < 1) return 0;
   return scale;
 }

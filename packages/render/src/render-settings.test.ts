@@ -8,7 +8,7 @@ import {
 } from "@haptic/core";
 import {
   applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneEffectsQualityLimits, sceneRenderingSettings, sceneWaterQuality, setSceneEffectsEnabled,
-  allowSceneScreenShadows, sceneMultisampleCount, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings,
+  allowSceneScreenShadows, sceneMultisampleCount, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings, pinFullRenderQuality,
 } from "./render-settings";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 
@@ -126,6 +126,28 @@ it("resolves a followed Scene's water quality, as SceneLayers do through the wor
   layer.dispose();
   updateSceneRenderingSettings(world, tier("high"));
   expect(dirty.value).toBe(2);
+});
+
+it("keeps a full-quality Scene (a SceneLayer) at the device's highest texture and model quality whatever the world's tier", () => {
+  const world = fixture();
+  world.getEngine().getCaps().maxAnisotropy = 8;
+  const layer = new Scene(world.getEngine());
+  const early = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layer);
+  updateSceneRenderingSettings(world, tier("low"));
+  followSceneRenderSettings(layer, world);
+  pinFullRenderQuality(layer);
+  const late = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layer);
+  updateSceneRenderingSettings(world, tier("ultra"));
+  updateSceneRenderingSettings(world, tier("low"));
+  expect(sceneRenderingSettings(world)).toMatchObject({ textureAnisotropy: 4, autoLod: true });
+  expect(sceneRenderingSettings(layer)).toMatchObject({ textureAnisotropy: 8, textureLodBias: 0, autoLod: false });
+  expect([early.anisotropicFilteringLevel, late.anisotropicFilteringLevel]).toEqual([8, 8]);
+  // Water stays the followed project's.
+  expect(sceneWaterQuality(layer)).toEqual(waterValues("low"));
+  // A pinned Scene that receives settings itself (a Scene Layer's editor tab) keeps full quality through them.
+  updateSceneRenderingSettings(layer, tier("low"));
+  expect(sceneRenderingSettings(layer)).toMatchObject({ textureAnisotropy: 8, textureLodBias: 0, autoLod: false });
+  expect(late.anisotropicFilteringLevel).toBe(8);
 });
 
 it("reports device-clamped water features while keeping the requested quality", () => {

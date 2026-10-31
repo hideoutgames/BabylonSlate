@@ -43,6 +43,7 @@ import {
 } from "@haptic/core";
 import { upsertFogVolumes } from "./fog-volumes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { setSceneOutputScale } from "./scene-output-scale";
 import { ParticleService } from "./particle-service";
 import {
   allowSceneScreenShadows,
@@ -447,6 +448,54 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(probe).toHaveBeenLastCalledWith(96, 72);
   expect(graphRenderers(scene)).toEqual([renderer]);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  graph.dispose();
+});
+
+it("renders a scaled view at its scale into own targets whose single output copy fills the backbuffer", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 80;
+  options.renderHeight = 64;
+  const { scene, camera } = host(new NullEngine(options));
+  const graph = new ForwardSceneFrameGraph(scene);
+  const owned = graph as unknown as { graph?: FrameGraph; ownScene?: { color: FrameGraphTextureHandle } };
+  const ownSize = () => {
+    const texture = owned.ownScene ? owned.graph!.textureManager.getTextureFromHandle(owned.ownScene.color) : null;
+    return texture ? [texture.width, texture.height] : null;
+  };
+  const outputCopies = () => owned.graph!.tasks.filter((task) => task.getClassName() === "FrameGraphCopyToBackbufferColorTask").length;
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(ownSize()).toBeNull();
+  expect(outputCopies()).toBe(0);
+  setSceneOutputScale(scene, 0.5);
+  expect(graph.render(camera)).toMatchObject({ rendered: false, reason: expect.stringContaining("preparation") });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(ownSize()).toEqual([40, 32]);
+  expect(outputCopies()).toBe(1);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  setSceneOutputScale(scene, 1);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(ownSize()).toBeNull();
+  expect(outputCopies()).toBe(0);
+  graph.dispose();
+});
+
+it("multisamples a scaled view's own targets at its scale and resolves them through its single output copy", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 80;
+  options.renderHeight = 64;
+  const { engine, scene, camera } = host(new NullEngine(options));
+  engine.getCaps().maxMSAASamples = 4;
+  // A world view at the default Medium tier: MSAA 4x.
+  allowSceneScreenShadows(scene, () => false);
+  setSceneOutputScale(scene, 0.5);
+  const graph = new ForwardSceneFrameGraph(scene);
+  const owned = graph as unknown as { graph?: FrameGraph; ownScene?: { color: FrameGraphTextureHandle } };
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const description = owned.graph!.textureManager.getTextureDescription(owned.ownScene!.color);
+  expect([description.size.width, description.size.height, description.options.samples]).toEqual([40, 32, 4]);
+  expect(owned.graph!.tasks.filter((task) => task.getClassName() === "FrameGraphCopyToBackbufferColorTask").map((task) => task.name))
+    .toEqual(["Multisample output"]);
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();
 });
