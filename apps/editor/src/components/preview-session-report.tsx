@@ -25,6 +25,8 @@ import {
 } from "@haptic/ui/components/empty";
 import type { SessionReportEntry } from "@haptic/runtime";
 import { copyText } from "../lib/diagnostic-info";
+import { reloadForNewBuild } from "../lib/preload-error-reload";
+import { EDITOR_BUILD_REPLACED_CODE } from "../lib/build-staleness";
 import {
   EMPTY_SESSION_REPORT_LABELS,
   NO_SOURCE_LABEL,
@@ -349,6 +351,16 @@ export function PreviewSessionReport({
           </Alert>
         ) : null}
         <DialogFooter>
+          {entries.some((entry) => entry.code === EDITOR_BUILD_REPLACED_CODE) ? (
+            // A newer deploy replaced this editor's build: only loading it lets Play start again.
+            <Button
+              variant="secondary"
+              data-testid="session-report-reload"
+              onClick={() => reloadForNewBuild()}
+            >
+              Reload Editor
+            </Button>
+          ) : null}
           <Button
             variant="secondary"
             data-testid="session-report-copy"

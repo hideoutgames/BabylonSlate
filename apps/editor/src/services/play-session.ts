@@ -28,6 +28,7 @@ import { SimulationCaptureClient } from "./simulation-capture-client";
 import { getBuildIdentity } from "../lib/build-identity";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
+import { EDITOR_BUILD_REPLACED_CODE, editorBuildReplaced } from "../lib/build-staleness";
 import {
   editorDracoPublicBase,
   editorKtx2PublicBase,
@@ -637,13 +638,21 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     runtimeMode = "worker";
     // A worker that cannot run (failed to load or evaluate, never started) ends the session with its cause, as a
     // Scene that fails to load does: the load never completes, so it must not wait at Preparing Scene.
-    worker.onFailure((message) => {
+    worker.onFailure((cause) => {
       if (stopped) return;
-      hostDiagnostics.push({ code: "runtime.worker.failed", severity: "error", message, frameId: 0 });
-      try {
-        options.onSceneLoadFailed?.();
-        options.onLog?.(message, "error");
-      } finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
+      // A deploy deletes the previous build's chunks: an editor tab left open across one asks for a worker that is gone.
+      // Whatever the check does, the session still ends: it only chooses the message.
+      void editorBuildReplaced().catch(() => false).then((replaced) => {
+        if (stopped) return;
+        const message = replaced
+          ? `The editor is out of date: a newer version was published while it was open, so Play could not load. Reload the editor to Play. (${cause})`
+          : cause;
+        hostDiagnostics.push({ code: replaced ? EDITOR_BUILD_REPLACED_CODE : "runtime.worker.failed", severity: "error", message, frameId: 0 });
+        try {
+          options.onSceneLoadFailed?.();
+          options.onLog?.(message, "error");
+        } finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
+      });
     });
     worker.onCommand((cmd) => onCommand(cmd));
     worker.onSnapshot((buffer) => {

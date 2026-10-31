@@ -23,6 +23,11 @@ vi.mock("@haptic/runtime", async (importOriginal) => ({
   createRuntimeFromLoad: vi.fn(),
 }));
 vi.mock("./game-worker-host", () => ({ createGameWorkerHost: vi.fn() }));
+const build = vi.hoisted(() => ({ replaced: false }));
+vi.mock("../lib/build-staleness", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/build-staleness")>()),
+  editorBuildReplaced: async () => build.replaced,
+}));
 const capture = vi.hoisted(() => ({ setSuppressed: vi.fn<(suppressed: boolean) => void>() }));
 vi.mock("./input-capture", () => ({
   attachInputCapture: () => ({
@@ -532,6 +537,25 @@ describe.each(["worker", "in-process"] as const)(
       await vi.waitFor(() => expect(onFatalDiagnostic).toHaveBeenCalledOnce());
       expect(onSceneLoadFailed).toHaveBeenCalledOnce();
       expect(stopped?.diagnostics).toEqual([expect.objectContaining({ code: "runtime.worker.failed", severity: "error", message: cause })]);
+    });
+
+    it.runIf(mode === "worker")("says the editor is out of date when a newer deploy replaced the build its worker came from", async () => {
+      build.replaced = true;
+      try {
+        let fail!: (message: string) => void;
+        let stopped: ReturnType<PlaySession["stop"]> | undefined;
+        const onFatalDiagnostic = vi.fn(() => {
+          stopped = session!.stop();
+          session = undefined;
+        });
+        await play({ silentWorker: (handler) => { fail = handler; }, onFatalDiagnostic });
+        fail("The Play worker failed to start: Failed to fetch a worker script.");
+        await vi.waitFor(() => expect(onFatalDiagnostic).toHaveBeenCalledOnce());
+        expect(stopped?.diagnostics).toEqual([expect.objectContaining({
+          code: "editor.build.replaced", severity: "error",
+          message: expect.stringMatching(/^The editor is out of date: .*Reload the editor to Play\. \(The Play worker failed to start: Failed to fetch a worker script\.\)$/),
+        })]);
+      } finally { build.replaced = false; }
     });
 
     it("hands a runtime quit to the host once, so the host can stop the session as its Stop control does", async () => {
