@@ -34,6 +34,7 @@
  */
 import {
   ArcRotateCamera,
+  Color4,
   Constants,
   DirectionalLight,
   Mesh,
@@ -72,7 +73,8 @@ import {
   normalizeRenderProjectSettings, parseText2DProperties, parseText3DProperties,
 } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
+import { instanceParameterOf } from "./instance-parameters";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { rectLightEmission } from "./area-emission-array";
@@ -96,7 +98,7 @@ import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
-import { encodeTriangleGlb } from "./glb-test-fixtures";
+import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
 import { spawnableLightsOfLoad, type SpawnableLightLoad } from "./spawnable-lights";
@@ -498,7 +500,7 @@ const INSTANCING_BY_DEFAULT = process.env.HAPTIC_GATE_INSTANCING === "1";
 
 function playWorld(
   model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2", load = classesLoad([]),
-  { instancing = INSTANCING_BY_DEFAULT }: { instancing?: boolean } = {},
+  { instancing = INSTANCING_BY_DEFAULT, documents }: { instancing?: boolean; documents?: ReadonlyMap<string, MaterialDocument> } = {},
 ) {
   // Preparation polls every 16 ms and the Play pause waits 250 ms: both run on this clock.
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
@@ -512,7 +514,7 @@ function playWorld(
     sharedEngine: engine,
     playMode: true,
     onPipelineHold: (held) => holds.push(held),
-    materialDocuments: new Map(materials.map((guid) => [guid, createDefaultMaterialDocument(guid)])),
+    materialDocuments: new Map(materials.map((guid) => [guid, documents?.get(guid) ?? createDefaultMaterialDocument(guid)])),
     // As editor Play passes its startup sources'.
     spawnableLights: spawnableLightsOfLoad(load),
   });
@@ -2104,6 +2106,30 @@ describe("pooled primitives", () => {
       .toEqual({ shown: true, heldFrames: 0, recovered: true });
   });
 
+  it.each(POOLED_MODELS)("a script's write of a per-instance Tint keeps the actor in its group and compiles nothing: %s", async (model) => {
+    // A Material whose base colour is the Color parameter Tint, marked Per Instance.
+    const tinted = createDefaultMaterialDocument("tinted");
+    const tint = tinted.nodes.find((node) => node.id === "baseColor")!;
+    tint.type = "param.color";
+    tint.properties = { name: "Tint", value: [0.8, 0.8, 0.8, 1], perInstance: true };
+    tinted.edges.find((edge) => edge.sourceNodeId === "baseColor")!.sourcePinId = "rgb";
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["tinted"], "actor-2", classesLoad([]),
+      { instancing: true, documents: new Map([["tinted", tinted]]) });
+    for (const slotId of [2, 20]) world.handle.applyCommand({ type: "assignMaterial", slotId, materialAssetGuid: "tinted" });
+    const leaf = (name: string) => pooledLeafOf(world.handle.scene.getMeshByName(name)!)!;
+    const record = await measure(world, () => world.handle.applyCommand({
+      type: "setMaterialParameter", slotId: 20, componentId: null, materialAssetGuid: "tinted", parameterName: "Tint",
+      parameter: { kind: "color", value: [1, 0, 0, 1] },
+    }));
+    expectNothingCompiled(world, record);
+    const attribute = instanceParameterOf(leaf("actor-20").material!, "Tint")!.attribute;
+    expect({
+      shared: leaf("actor-20").sourceMesh === leaf("actor-2").sourceMesh,
+      own: (leaf("actor-20").instancedBuffers[attribute] as Color4).equalsWithEpsilon(new Color4(1, 0, 0, 1).toLinearSpace()),
+      theirs: (leaf("actor-2").instancedBuffers[attribute] as Color4).equalsWithEpsilon(new Color4(0.8, 0.8, 0.8, 1).toLinearSpace()),
+    }).toEqual({ shared: true, own: true, theirs: true });
+  });
+
   it.each(POOLED_MODELS)("the last member of a drawn group despawned and spawned again compiles nothing: %s", async (model) => {
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
       { instancing: true });
@@ -2120,6 +2146,27 @@ describe("pooled primitives", () => {
     expectNothingCompiled(world, record);
     expect(pool.diagnostics()).toMatchObject({ groups: 2, retained: 0 });
   });
+  it.each(POOLED_MODELS)("a pooled dense model moving away draws its source's coarser level and compiles nothing: %s", async (model) => {
+    // A sphere dense enough for Auto LOD: its group's source carries the levels (`attachModelLods`).
+    const statue = (slotId: number, position: Vec3): Actor =>
+      ({ slotId, guid: `statue-${slotId}`, position, assign: { meshAssetGuid: "sphere", meshKind: null } });
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1])], [], "actor-2", classesLoad([]), { instancing: true });
+    world.handle.setMeshAssets({ modelBytes: new Map([["sphere", encodeUvSphereGlb()]]) });
+    // One near and one far, so the source's levels have drawn before the near one moves away.
+    world.place(statue(20, [2, 1, 1]), statue(21, [0, 1, 160]));
+    await settle(world);
+    const member = () => world.handle.scene.getMeshByName("actor-20")!.getChildMeshes(false)
+      .find((mesh): mesh is InstancedMesh => mesh instanceof InstancedMesh && mesh.isVisible)!;
+    // Levels arrive after the instance publishes (simplified off the frame), then draw for the far one.
+    for (let frame = 0; frame < 120 && !member().sourceMesh.hasLODLevels; frame++) await world.frame();
+    for (let frame = 0; frame < 4; frame++) await world.frame();
+    const levels = member().sourceMesh.getLODLevels().map((level) => level.mesh);
+    const record = await measure(world, () => world.move(20, [0, 1, 160]));
+    expectNothingCompiled(world, record);
+    expect({ levels: levels.length > 0, coarser: levels.includes((member() as unknown as { _currentLOD: Mesh })._currentLOD) })
+      .toEqual({ levels: true, coarser: true });
+  });
+
   it.each(POOLED_MODELS)("a second instance of a static model spawned after the first drew compiles nothing: %s", async (model) => {
     // A rigid model's leaf draws as a member of a group of its container geometry (`poolModelLeaves`).
     const statue = (slotId: number, position: Vec3): Actor =>

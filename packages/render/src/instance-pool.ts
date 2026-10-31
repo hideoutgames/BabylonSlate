@@ -3,6 +3,7 @@ import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { hasPerMeshBindings } from "./unlit-material-blocks";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { markInstanceSource } from "./instance-source";
+import { refreshInstanceParameters } from "./instance-parameters";
 import { hasDrawn } from "./reveal-pending";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
@@ -10,8 +11,8 @@ import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
 /**
  * Automatic instancing: a per-Scene pool of hidden source meshes whose regular instances draw actors that share a
  * geometry and a Material, one batch per group. Each member keeps its own node (transform, parent, animation target,
- * visibility, picking, bounds and casting); the group's source holds what Babylon reads from the source for every
- * instance (Material, receiving shadows, rendering group). The pool is not wired to any visual yet.
+ * visibility, picking, bounds and casting into shadow maps); the group's source holds what Babylon reads from the source
+ * for every instance (Material, receiving shadows, rendering group) and whether its members cast Screen-Space Shadows.
  */
 
 /** Where a group's geometry comes from: a cached model's leaf or a per-Scene primitive template. */
@@ -30,6 +31,11 @@ export interface InstanceGroupKey {
   /** Null draws with `scene.defaultMaterial`. */
   readonly material: Material | null;
   readonly receiveShadows: boolean;
+  /**
+   * Whether the members cast shadows (default true). Each member still enters shadow maps on its own; the geometry pass
+   * that Screen-Space Shadows march over draws a group in one batch, which marks every member a caster or none.
+   */
+  readonly castShadows?: boolean;
   readonly renderingGroupId: number;
   /**
    * An explicit sorting layer and order (`applyComponentSorting`), whose `alphaIndex` and sorting group each member
@@ -122,10 +128,10 @@ function materialId(material: Material | null): number {
 }
 
 function groupId(key: InstanceGroupKey): string {
-  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.renderingGroupId}|${key.sortKey ?? ""}`;
+  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.castShadows === false ? 0 : 1}|${key.renderingGroupId}|${key.sortKey ?? ""}`;
 }
 
-const sources = new WeakSet<Mesh>();
+const sources = new WeakMap<Mesh, InstanceGroupKey>();
 
 /**
  * Gives `member`, moving to `source`'s group, the instance buffers `source` registered, as `createInstance` gives a
@@ -142,6 +148,19 @@ function adoptInstancedBuffers(member: InstancedMesh, source: Mesh): void {
 /** Whether `mesh` is a pool group's hidden source. */
 export function isInstancePoolSource(mesh: Mesh): boolean {
   return sources.has(mesh);
+}
+
+/** Meshes outside the pool that cast no shadows (`setMeshShadowFlags`). */
+const nonCasters = new WeakSet<AbstractMesh>();
+
+/**
+ * Whether the geometry pass marks `mesh`'s pixels as a shadow caster's, which Screen-Space Shadows march over: a pool
+ * group's source as its members cast, any other mesh as the shadow controller last set (a mesh it has not seen casts).
+ */
+export function meshCastsShadows(mesh: AbstractMesh): boolean {
+  const key = mesh instanceof Mesh ? sources.get(mesh) : undefined;
+  if (key) return key.castShadows !== false;
+  return !nonCasters.has(mesh);
 }
 
 export class SceneInstancePool {
@@ -185,6 +204,8 @@ export class SceneInstancePool {
     previous.members.delete(member);
     (member as unknown as { _sourceMesh: Mesh })._sourceMesh = next.source;
     adoptInstancedBuffers(member, next.source);
+    // A per-instance parameter's attribute names another value in another Material.
+    refreshInstanceParameters(member);
     next.source.addInstance(member);
     next.members.add(member);
     this.memberGroups.set(member, next);
@@ -285,7 +306,7 @@ export class SceneInstancePool {
     }
     const source = key.geometry.build(this.scene, `instanceSource:${key.geometry.key}#${++this.sourceCount}`);
     configureSource(source, key);
-    sources.add(source);
+    sources.set(source, key);
     const group: InstanceGroup = { id, key, source, members: new Set(), drawn: false, release: undefined };
     group.release = key.geometry.retain?.();
     this.groups.set(id, group);
@@ -374,13 +395,21 @@ export function isPoolMember(mesh: AbstractMesh): mesh is InstancedMesh {
 }
 
 /**
- * Sets whether `mesh` receives shadows: a pool member by moving it to the group that does (its own setter warns and
- * does nothing), any other mesh directly.
+ * Sets whether `mesh` receives and casts shadows: a pool member by moving it to the group that does (its own receive
+ * setter warns and does nothing), any other mesh directly. Casting here is the geometry pass's mark
+ * (`meshCastsShadows`); the shadow controller keeps shadow-map casters itself.
  */
-export function setMeshReceivesShadows(mesh: AbstractMesh, receives: boolean): void {
+export function setMeshShadowFlags(mesh: AbstractMesh, receives: boolean, casts: boolean): void {
   const pooled = poolMember(mesh);
-  if (pooled) pooled.pool.update(pooled.member, { receiveShadows: receives });
-  else mesh.receiveShadows = receives;
+  if (pooled) {
+    const key = pooled.pool.keyOf(pooled.member)!;
+    if (key.receiveShadows !== receives || (key.castShadows !== false) !== casts)
+      pooled.pool.update(pooled.member, { receiveShadows: receives, castShadows: casts });
+    return;
+  }
+  mesh.receiveShadows = receives;
+  if (casts) nonCasters.delete(mesh);
+  else nonCasters.add(mesh);
 }
 
 /** Sets `mesh`'s rendering group: a pool member by moving it to the group drawn in it, any other mesh directly. */

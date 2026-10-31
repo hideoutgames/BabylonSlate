@@ -48,6 +48,8 @@ const baseline = (n: number): FeatureTestBreakdownStep => ({ label: `baseline ${
 export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] = [
   { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows"] },
   { label: "shadows medium", commands: ["quality shadows medium"], fields: ["shadows"] },
+  // The shadow filter alone: Castaño's 5 × 5 kernel (nine taps) in place of the level's (High's 7 × 7, sixteen).
+  { label: "shadow filter medium", commands: ["quality shadows filter medium"], fields: ["shadows"] },
   { label: "water refraction off", commands: ["quality water refraction off"], fields: ["water.refraction"] },
   { label: "water reflections sky", commands: ["quality water reflections sky"], fields: ["water.reflections"] },
   { label: "water detail low", commands: ["quality water shadingDetail low"], fields: ["water.shadingDetail"] },
