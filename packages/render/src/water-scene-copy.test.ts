@@ -22,6 +22,7 @@ import {
 } from "@haptic/core";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import { COMPILE_AHEAD_LIMIT } from "./driver-compile";
+import { setSceneOutputScale } from "./scene-output-scale";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { allowSceneScreenShadows, updateSceneRenderingSettings } from "./render-settings";
@@ -682,6 +683,26 @@ it("follows a backbuffer resize in place, keeping every task and render pass id"
   const screens = binds.mock.calls.filter(([name]) => name === "slateWaterNodeScreen");
   expect(screens.length).toBeGreaterThan(0);
   expect(screens.at(-1)!.slice(1, 3)).toEqual([1 / 256, 1 / 160]);
+  graph.dispose();
+});
+
+it("sizes the copy from the world's render scale when Play composites it at full backbuffer size", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 320;
+  options.renderHeight = 200;
+  const { scene, camera } = host({ options });
+  lake(scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  const copySize = () => waterSceneCopyForPass(scene, graph.waterSceneCopyDiagnostics()!.renderPassId)!.texture.getSize();
+  // Medium's Refraction Resolution 0.75 of the 320 × 200 view.
+  expect(copySize()).toEqual({ width: 240, height: 150 });
+  // Scene Layers keep the backbuffer at full size and scale the world through its output scale.
+  setSceneOutputScale(scene, 0.5);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  expect(copySize()).toEqual({ width: 120, height: 75 });
   graph.dispose();
 });
 
