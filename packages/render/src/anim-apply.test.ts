@@ -505,6 +505,27 @@ describe("seekGameplayAnimation", () => {
     expect(missing).toEqual(["/B"]);
   });
 
+  it("finds a clip by name and clip asset without reading the other groups of that name", () => {
+    let reads = 0;
+    const sought: string[] = [];
+    // Fifty actors' Idle clips in one list, as a crowd's shared slot list holds them.
+    const groups = Array.from({ length: 50 }, (_, index) => ({
+      name: "Idle", from: 0, to: 10, pause() {},
+      get clipAssetGuid() { reads++; return `actor-${index}`; },
+      goToFrame() { sought.push(`actor-${index}`); },
+    }));
+    const play = (clipAssetGuid: string) => applyAnimStateToScene({ getAnimationGroups: () => groups }, {
+      type: "animState", slotId: 1, stateId: "s", normalisedTime: 0.5, blendWeights: { s: 1 },
+      clipName: "Idle", clipKind: "animation", clipAssetGuid,
+    });
+    play("actor-0");
+    reads = 0;
+    play("actor-49");
+    expect(sought).toEqual(["actor-0", "actor-49"]);
+    // The hit's own guid, confirmed once: no scan of the 49 other Idle groups.
+    expect(reads).toBeLessThanOrEqual(2);
+  });
+
   it("reports a missing animation clip instead of silently skipping it", () => {
     const missing: Array<{
       slotId: number;
