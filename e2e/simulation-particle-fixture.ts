@@ -51,6 +51,8 @@ export async function simulationParticleProject() {
   ];
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
   project.settings.render.gpuBackend = "webgl2";
+  // Pixel hashes compare redraws: a fixed render resolution, so slow software-GL frames (MSAA) never rescale one.
+  project.settings.render.quality = { ...project.settings.render.quality, resolution: { scale: 1, dynamic: false, minScale: 1, targetFps: 60 } };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const assets = [
     { path: MAIN_SCENE_FILE, guid: "00000000-0000-4000-8000-000000000001", type: "Scene", name: "Main", payload: scene, dependencies: [systemGuid, blueMaterialGuid] },
