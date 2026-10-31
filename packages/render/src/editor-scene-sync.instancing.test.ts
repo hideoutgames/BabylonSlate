@@ -49,6 +49,18 @@ describe("editor primitives drawn through the instance pool", () => {
     expect(sync.visualMeshesForActor("b")).toEqual([leaves[1]]);
   });
 
+  it("pools each primitive part of a multi-component actor, and a tap on any part names the actor", () => {
+    const { sync, pool } = pooledEditor();
+    const actor = createActor("pair", "Pair", { components: [createMeshComponent("left", "box"), createMeshComponent("right", "sphere")] });
+    sync.apply(sceneWith([actor]));
+    const drawn = sync.visualMeshesForActor("pair");
+    expect(drawn.map((mesh) => mesh instanceof InstancedMesh)).toEqual([true, true]);
+    expect(drawn.map((mesh) => sync.actorForMesh(mesh.name))).toEqual(["pair", "pair"]);
+    expect(pool.diagnostics()).toMatchObject({ groups: 2, pooled: 2 });
+    sync.apply(sceneWith([{ ...actor, visible: false }]));
+    expect(drawn.map((mesh) => mesh.isVisible)).toEqual([false, false]);
+  });
+
   it("hides and locks what draws: the crate's leaf", () => {
     const { sync } = pooledEditor();
     const actor = crate("a");

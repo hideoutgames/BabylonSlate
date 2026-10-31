@@ -600,7 +600,8 @@ function initializeEngine(
     configureEditorRenderingGroups(scene);
   } else {
     scene.performancePriority = ScenePerformancePriority.BackwardCompatible;
-    if (globalThis.process?.env?.HAPTIC_EDITOR_INSTANCING === "1") { engine.getCaps().instancedArrays = true; setSceneInstancing(scene, true); }
+    // The editor viewport's primitives batch too: picking, visibility, Material and nav writes reach the drawn leaf.
+    if (options.editor) setSceneInstancing(scene, true);
   }
   if (options.editor && !options.playMode && options.previewLighting) {
     createPreviewLighting(scene);
