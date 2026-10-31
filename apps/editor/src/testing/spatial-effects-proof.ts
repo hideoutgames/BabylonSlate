@@ -9,7 +9,6 @@ import {
   PBRMaterial,
   Scene,
   SpotLight,
-  StandardMaterial,
   type AbstractEngine,
   type Material,
   type Mesh,
@@ -35,6 +34,7 @@ import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene"
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { removeFogVolumes, upsertFogVolumes } from "@haptic/render/fog-volumes";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
+import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => Promise<number[]>) {
@@ -130,19 +130,18 @@ type ReflectionRender = { mode: RenderMode };
 
 /**
  * A red unlit box over a floor, drawn without and with Real-Time Reflections for each surface kind: an authored
- * graph mirror in PBR and in CEL, and an unlit Standard floor, whose white default specular color must not make it a
- * mirror.
+ * graph mirror in PBR and in CEL, and a floor drawn with the engine's unlit Material, which writes no reflectivity.
  */
 async function captureReflections(
-  scene: Scene,
   floor: Mesh,
   mirror: Material,
   render: ReflectionRender,
   effects: ReturnType<typeof normalizeRenderEffectsSettings>,
   draw: () => Promise<number[]>,
 ) {
-  const pair = async (material: Material, mode: RenderMode) => {
-    floor.material = material;
+  const pair = async (material: Material | (() => Material), mode: RenderMode) => {
+    if (typeof material === "function") material = material();
+    else floor.material = material;
     render.mode = mode;
     const capture = async (enabled: boolean) => {
       effects.reflections.enabled = enabled;
@@ -157,13 +156,13 @@ async function captureReflections(
     const on = await capture(true);
     return { off, on };
   };
-  const unlit = new StandardMaterial("Unlit Standard Floor", scene);
-  unlit.disableLighting = true;
-  unlit.diffuseColor = new Color3(0.1, 0.1, 0.1);
+  const unlit = () => setUnlitMaterial(floor, { textured: false, backFaceCulling: true, fog: true, role: "world" }, {
+    texture: null, color: [0.1, 0.1, 0.1], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+  });
   return {
     pbr: await pair(mirror, "pbr"),
     cel: await pair(mirror, "cel"),
-    unlitStandard: await pair(unlit, "pbr"),
+    unlit: await pair(unlit, "pbr"),
   };
 }
 
@@ -429,7 +428,7 @@ export async function runSpatialEffectsProof(
           return { occlusionCaptures: [await captureAmbientOcclusion(camera, effects, draw)] };
         }
         if (kind === "reflections") {
-          return { reflectionCaptures: [await captureReflections(scene, floor, mirror!, render, effects, draw)] };
+          return { reflectionCaptures: [await captureReflections(floor, mirror!, render, effects, draw)] };
         }
         if (kind === "volumetricShadows") {
           if (!light) throw new Error("The volumetric shadow capture has no spot light");

@@ -1,7 +1,8 @@
 /**
  * Test-build-only: the two Standard-material changes the engine made before the unlit Material replaced its last
- * Standard surface, kept so the unlit parity proof (`unlit-parity-proof.ts`) draws its Standard references as the
- * engine drew them. The engine itself creates no Standard material.
+ * Standard surface, kept so proofs that draw Standard fixtures draw them as the engine did: the unlit parity proof's
+ * references (`unlit-parity-proof.ts`) and the water template proof's floor. The engine itself creates no Standard
+ * material.
  */
 import { MaterialPluginBase, ShaderLanguage, ShaderStore, type Material } from "@babylonjs/core";
 import { defaultPixelShader } from "@babylonjs/core/Shaders/default.fragment";
