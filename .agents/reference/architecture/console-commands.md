@@ -45,6 +45,7 @@ Built-in Play/export console command catalog, its principles, host wiring and us
 | `showfps`, `stat unit\|memory\|draws\|threads`, `lightsdebug` | Open Stats HUD / highlight row; `threads` means bridge traffic, not OS threads |
 | `wireframe`, `showbounds` / `actorboundingbox`, `showcollision` / `debugphysics` | Play-scene overlays in the world rendering group (depth-tested). Collision uses `listDebugColliders()`; each physics-enabled Scene Layer draws in its own overlay scene |
 | `postprocessing`, `rendertargets` | Cost measurement (the Feature Test Check's Breakdown): the Play handle's `setPostProcessingEnabled`; `RenderTargetCaptures.setEveryFrameSuspended`, which skips every-frame captures' draws and keeps their outputs, targets and views (manual requests still draw) |
+| `gpubusy`, `preservebuffer` | Breakdown timing: `gpubusy` starts (restarting) or stops the project Engine's `GpuBusyProbe` ([`gpu-busy-probe.ts`](../../../packages/render/src/gpu-busy-probe.ts); WebGL2 fences polled with `clientWaitSync(sync, 0, 0)`, WebGPU `queue.onSubmittedWorkDone`), read as `RenderDiagnostics.gpuBusy`. `preservebuffer` stores `haptic.debug.preserveDrawingBuffer` in `localStorage`; `projectEngineOptions` reads it when the project Engine is created, so it applies after an editor reload |
 | `shownav` / `shownavdebug`, `showpathfinding`, `shownavagent` | Navmesh, crowd paths and agent telemetry from live crowd state |
 | `behaviourtreedebug`, `showaudiodebug` | Live BT inspector; DOM voice overlay (not Babylon GUI) that keeps drawing while paused |
 | `dumpactors`, `inspect [name\|guid]`, `possess`, `destroyactor`, `dumplog`, `snapshot start\|stop` | Inspect data; possess/destroy by GUID or unique name (ambiguous names fail); trace recording |
@@ -53,7 +54,7 @@ The visualization commands stay off the Debug menu; the console arms them.
 
 ## Worker → main commands
 
-`sessionPaused`, `setScalability`, `setGlobalVolume`, `setFreeCam`, `setWireframe` / `setShowBounds` / `setShowCollision` / `setShowNav` / `setShowAudioDebug`, `setPostProcessingDebug` / `setRenderTargetCapturesDebug`, `debugColliders` (one per physics world, tagged `layerId` for layers), `setShowFps` / `setStat`.
+`sessionPaused`, `setScalability`, `setGlobalVolume`, `setFreeCam`, `setWireframe` / `setShowBounds` / `setShowCollision` / `setShowNav` / `setShowAudioDebug`, `setPostProcessingDebug` / `setRenderTargetCapturesDebug` / `setGpuBusyProbeDebug` / `setPreserveDrawingBufferDebug`, `debugColliders` (one per physics world, tagged `layerId` for layers), `setShowFps` / `setStat`.
 
 ## Autocomplete
 

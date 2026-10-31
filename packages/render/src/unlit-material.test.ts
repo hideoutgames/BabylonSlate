@@ -4,6 +4,8 @@ import {
   type NodeMaterial,
 } from "@babylonjs/core";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
+import { materialIneligibility } from "./instance-pool";
+import { unlitBinding } from "./unlit-material-blocks";
 import { ensureLatticeShadowAdapter, releaseLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { hasStockVertexStage } from "./shadow-material-policy";
@@ -145,6 +147,31 @@ describe("unlit Material", () => {
     expect(material.shadowDepthWrapper).toBeNull();
     await built(material);
     expect(hasStockVertexStage(material)).toBe(true);
+  });
+
+  it("keeps drawing the other meshes when one mesh is disposed with its materials", () => {
+    const target = scene();
+    const first = MeshBuilder.CreatePlane("first", {}, target);
+    const second = MeshBuilder.CreatePlane("second", {}, target);
+    const material = setUnlitMaterial(first, solid, binding());
+    setUnlitMaterial(second, solid, binding());
+    first.dispose(false, true);
+    expect(target.materials).toContain(material);
+    expect(second.material).toBe(material);
+    expect(unlitMaterial(target, solid)).toBe(material);
+  });
+
+  it("keeps its meshes out of instance pool groups, and draws a visual's binding on the mesh that replaces its leaf", () => {
+    const target = scene();
+    const root = MeshBuilder.CreatePlane("root", {}, target);
+    const red = texture(target);
+    const material = setUnlitMaterial(root, world, binding({ texture: red, color: [0.5, 0.25, 1] }));
+    // A group's instances draw with their source's binding: an unlit mesh never joins one.
+    expect(materialIneligibility(root, material)).toBe("perMeshBinding");
+    const own = MeshBuilder.CreatePlane("own", {}, target);
+    own.parent = root;
+    own.material = material;
+    expect(unlitBinding(own)).toBe(unlitBinding(root));
   });
 
   it("frees its instance and variants with the Scene", () => {

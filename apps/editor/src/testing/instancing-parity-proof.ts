@@ -16,7 +16,7 @@ import { createPooledPrimitiveVisual } from "../../../../packages/render/src/poo
 import { setActorMeshMaterial } from "../../../../packages/render/src/pooled-visuals";
 import { applyWorldVisualGroup } from "../../../../packages/render/src/sorting";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { setSceneOcclusionCulling } from "../../../../packages/render/src/view-occlusion";
+import { allowSceneOcclusionCulling } from "../../../../packages/render/src/view-occlusion";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 192;
@@ -39,7 +39,11 @@ async function drawStreet(engine: AbstractEngine, pooled: boolean) {
     camera.maxZ = 300;
     scene.activeCamera = camera;
     setSceneBindsPreviousEffects(scene);
-    setSceneRenderSettings(scene, { quality: normalizeRenderingQuality({}), shadows: normalizeShadowSettings({}) });
+    const occlusionSetting = (occlusionCulling: boolean) => setSceneRenderSettings(scene, {
+      quality: normalizeRenderingQuality({ geometry: { occlusionCulling } }), shadows: normalizeShadowSettings({}),
+    });
+    occlusionSetting(false);
+    allowSceneOcclusionCulling(scene, true);
     const compile = async (name: string, color: [number, number, number]) => {
       const doc = createDefaultMaterialDocument(name);
       doc.nodes.find((node) => node.id === "baseColor")!.properties.value = color;
@@ -105,7 +109,7 @@ async function drawStreet(engine: AbstractEngine, pooled: boolean) {
       return last;
     };
     const visible = await settle();
-    setSceneOcclusionCulling(scene, true);
+    occlusionSetting(true);
     const occluded = await settle();
     const pool = sceneInstancePool(scene).diagnostics();
     graph.dispose();

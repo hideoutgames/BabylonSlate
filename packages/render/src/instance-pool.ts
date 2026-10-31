@@ -1,5 +1,6 @@
 import { InstancedMesh, Material, Mesh, MultiMaterial, type AbstractMesh, type Scene } from "@babylonjs/core";
 import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
+import { hasPerMeshBindings } from "./unlit-material-blocks";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { markInstanceSource } from "./instance-source";
 import { hasDrawn } from "./reveal-pending";
@@ -40,7 +41,7 @@ export interface InstanceGroupKey {
 /** Why a mesh draws unpooled (v1). */
 export type InstancingIneligibility =
   | "deforming" | "thinInstances" | "levelsOfDetail" | "instanced" | "drawHooks" | "partitioned" | "sorted"
-  | "blended" | "vertexStage" | "fillMode";
+  | "blended" | "vertexStage" | "fillMode" | "perMeshBinding";
 
 /** Why a group cannot draw `material` on `mesh`'s geometry (blending, fill mode, vertex stage), or null. */
 export function materialIneligibility(mesh: AbstractMesh, material: Material): InstancingIneligibility | null {
@@ -52,6 +53,8 @@ export function materialIneligibility(mesh: AbstractMesh, material: Material): I
     return null;
   }
   if (material.needAlphaBlendingForMesh(mesh)) return "blended";
+  // The unlit Material binds each mesh's texture and colour; a group's instances all draw their source's.
+  if (hasPerMeshBindings(material)) return "perMeshBinding";
   if (material.fillMode !== Material.TriangleFillMode || material.wireframe || material.pointsCloud) return "fillMode";
   // World Position Offset and other authored vertex stages: an instance's bounds and the CPU pick must stay exact.
   return hasStockOrPlannedVertexStage(material) ? null : "vertexStage";

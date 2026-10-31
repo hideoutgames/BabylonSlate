@@ -4,7 +4,7 @@ node: scalability.setGeometryQuality
 
 # Set Geometry Quality
 
-Turns automatic Model level of detail on or off and scales when simpler levels take over.
+Turns automatic Model level of detail on or off, scales when simpler levels take over, and turns occlusion culling on or off.
 
 ## Inputs
 
@@ -24,3 +24,4 @@ Turns automatic Model level of detail on or off and scales when simpler levels t
 
 - The distance scale runs from 0.25 to 4. A higher value keeps detailed levels visible for longer.
 - Applies without reloading models.
+- **Occlusion Culling** skips objects hidden behind solid shapes during Play. See [Occlusion culling](../../graphics/index.md#occlusion-culling).

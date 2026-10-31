@@ -38,6 +38,7 @@ import {
   type BitmapGlyphCell,
 } from "./text2d-bitmap";
 import { VisualBundle } from "./visual-bundle";
+import { materialRestore, setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
 import { bindTextMaterialGlyph } from "./text-material-block";
 import { glyphBatchVertexData, writeGlyphBatchPositions, type GlyphBatchQuad } from "./text2d-glyph-batch";
 import { applyOverlayVisualStyle, overlayVisualStyle } from "./overlay-visual-style";
@@ -63,7 +64,7 @@ export type Text2DAssetContext = MeshAssetContext & {
   paused?: boolean;
 };
 
-const textMaterialVisuals = new WeakMap<Mesh, { guid: string | null; glyphs: Array<{ mesh: Mesh; fallback: Material | null }> }>();
+const textMaterialVisuals = new WeakMap<Mesh, { guid: string | null; glyphs: Array<{ mesh: Mesh; restore: () => void }> }>();
 const appearVisuals = new WeakMap<Mesh, (progress: number) => void>();
 const textLayouts = new WeakMap<Mesh, Text2DLayout>();
 
@@ -85,7 +86,10 @@ export function refreshText2DMaterials(root: Mesh, assets?: MeshAssetContext): v
     if (!entry) continue;
     const material = entry.guid ? assets?.resolveMaterial?.(entry.guid, { scene: visual.getScene(), unlit: true }) : null;
     const accepted = material?.metadata?.materialDomain === "text" ? material : null;
-    for (const glyph of entry.glyphs) glyph.mesh.material = accepted ?? glyph.fallback;
+    for (const glyph of entry.glyphs) {
+      if (accepted) glyph.mesh.material = accepted;
+      else glyph.restore();
+    }
   }
 }
 
@@ -230,21 +234,22 @@ function msdfMetrics(
   };
 }
 
-function bitmapGlyphMaterial(scene: Scene, name: string, atlas: Texture, bundle: VisualBundle, fade: boolean): StandardMaterial {
-  const material = bundle.ownMaterial(new StandardMaterial(name, scene));
-  material.disableLighting = true;
-  material.backFaceCulling = false;
-  material.emissiveColor = Color3.White();
-  material.diffuseColor = Color3.Black();
-  material.specularColor = Color3.Black();
-  material.emissiveTexture = atlas;
-  material.diffuseTexture = atlas;
+/** Text glyphs draw from both sides, fogged with the world. */
+const TEXT_GLYPH: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: true, role: "world" };
+const TEXT_SOLID: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: true, role: "world" };
+
+/** A bitmap glyph: its atlas's colour and coverage, cut out at 0.4 unless the text fades in. */
+function bitmapGlyphBinding(atlas: Texture, fade: boolean): UnlitBinding {
   atlas.hasAlpha = true;
-  material.useAlphaFromDiffuseTexture = true;
-  material.transparencyMode = fade ? Material.MATERIAL_ALPHABLEND : Material.MATERIAL_ALPHATEST;
-  material.alphaCutOff = 0.4;
-  material.metadata = { ...(material.metadata ?? {}), bitmapAtlas: true };
-  return material;
+  return { texture: atlas, color: [1, 1, 1], alpha: 1, cutoff: fade ? 0 : 0.4, blend: fade, textureAlpha: true, twoSided: false };
+}
+
+/** A solid glyph, underline or image placeholder: its colour (display space), blended while the text fades in. */
+function solidGlyphBinding(color: readonly [number, number, number], fade: boolean): UnlitBinding {
+  const clamp = (value: number) => Math.min(1, Math.max(0, value));
+  return {
+    texture: null, color: [clamp(color[0]), clamp(color[1]), clamp(color[2])], alpha: 1, cutoff: 0, blend: fade, textureAlpha: false, twoSided: false,
+  };
 }
 
 function unlitMaterial(
@@ -638,7 +643,7 @@ export function createText2DMesh(
     const atlasTexture = atlasLease?.resource ?? null;
     bundle.releaseWith(() => atlasLease?.release());
     let bitmapAtlas: RawTexture | null = null;
-    let sharedBitmapMaterial: StandardMaterial | null = null;
+    let bitmapBinding: UnlitBinding | null = null;
     if (packedBitmap) {
       bitmapAtlas = bundle.ownTexture(RawTexture.CreateRGBATexture(
         packedBitmap.pixels,
@@ -651,7 +656,7 @@ export function createText2DMesh(
       ));
       bitmapAtlas.hasAlpha = true;
       bitmapAtlas.name = `${name}:bitmap-atlas`;
-      sharedBitmapMaterial = bitmapGlyphMaterial(scene, `${name}:bitmap`, bitmapAtlas, bundle, fade);
+      bitmapBinding = bitmapGlyphBinding(bitmapAtlas, fade);
     }
 
     const glyphMeshes: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }> =
@@ -676,33 +681,34 @@ export function createText2DMesh(
       }
       return material;
     };
-    const materialGlyphs: Array<{ mesh: Mesh; fallback: Material | null }> = [];
+    const materialGlyphs: Array<{ mesh: Mesh; restore: () => void }> = [];
     // Static glyphs that share a material draw as one mesh per material. A Text
     // Material binds each glyph's own state and a reveal mode animates glyphs
     // individually, so those texts keep one plane per glyph, as do letter
     // effects, images, underlines and glyphs with a private fallback material.
     const batchGlyphs = !parsed.materialGuid && (!rich || parsed.appearModes.length === 0);
-    const batches = new Map<Material, { mesh: Mesh; quads: GlyphBatchQuad[] }>();
+    /** Keyed by the MSDF style's material, or the bitmap atlas its glyphs sample. */
+    const batches = new Map<Material | Texture, { mesh: Mesh; quads: GlyphBatchQuad[] }>();
     layout.items.forEach((item, index) => {
       if (item.kind === "glyph" && !(item.ch ?? "").trim()) return;
       const msdf = item.source === "msdf" && renderer === "msdf";
       const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
       if (batchGlyphs && item.kind === "glyph" && !hasLetterEffects(item)) {
         const bitmapKey = !msdf && item.ch ? bitmapGlyphKey(item.ch, item.style, fontStack) : null;
-        const material = msdf
-          ? msdfMaterialFor(item, index)
-          : bitmapKey && sharedBitmapMaterial && packedBitmap ? sharedBitmapMaterial : null;
-        if (material) {
-          let batch = batches.get(material);
+        const material = msdf ? msdfMaterialFor(item, index) : null;
+        const batchKey = material ?? (bitmapKey && bitmapBinding && packedBitmap ? bitmapAtlas : null);
+        if (batchKey) {
+          let batch = batches.get(batchKey);
           if (!batch) {
             // Created at its first glyph so draw and child order follow glyph order.
             const mesh = new Mesh(`${name}:glyphs:${index}`, scene);
             mesh.parent = parent;
             mesh.isPickable = false;
-            mesh.material = material;
+            if (material) mesh.material = material;
+            else setUnlitMaterial(mesh, TEXT_GLYPH, bitmapBinding!);
             mesh.metadata = { text2dGlyph: true, text2dSource: item.source, text2dBatch: true };
             batch = { mesh, quads: [] };
-            batches.set(material, batch);
+            batches.set(batchKey, batch);
           }
           const scale = item.style.bold && msdf ? 1.08 : 1;
           batch.quads.push({
@@ -732,18 +738,18 @@ export function createText2DMesh(
         child.material = msdfMaterialFor(item, index);
         applyGlyphUvs(child, item.uvs);
       } else if (item.kind === "image") {
-        child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
+        setUnlitMaterial(child, TEXT_SOLID, solidGlyphBinding(item.style.color, fade));
         if (item.guid) applyAlbedoTexture(child, scene, item.guid, assets, { alwaysBlend: fade });
       } else if (item.kind === "underline") {
-        child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
-      } else if (sharedBitmapMaterial && packedBitmap && item.ch) {
-        child.material = sharedBitmapMaterial;
+        setUnlitMaterial(child, TEXT_SOLID, solidGlyphBinding(item.style.color, fade));
+      } else if (bitmapBinding && packedBitmap && item.ch) {
+        setUnlitMaterial(child, TEXT_GLYPH, bitmapBinding);
         applyGlyphUvs(
           child,
           packedBitmap.uvs.get(bitmapGlyphKey(item.ch, item.style, fontStack)),
         );
       } else {
-        child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
+        setUnlitMaterial(child, TEXT_SOLID, solidGlyphBinding(item.style.color, fade));
       }
       if (item.style.bold && msdf) {
         child.scaling.x = 1.08;
@@ -773,7 +779,7 @@ export function createText2DMesh(
             item.width / wrapW, item.height / wrapH,
           ],
         });
-        materialGlyphs.push({ mesh: child, fallback: child.material });
+        materialGlyphs.push({ mesh: child, restore: materialRestore(child) });
       }
       glyphMeshes.push({ mesh: child, item, restRotation });
     });

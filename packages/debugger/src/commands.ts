@@ -40,6 +40,8 @@ export const DEBUG_COMMAND_NAMES = [
   "wireframe",
   "postprocessing",
   "rendertargets",
+  "gpubusy",
+  "preservebuffer",
   "pause",
   "resume",
   "unpause",
@@ -135,7 +137,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: group ? `quality ${group}` : "quality", tier: "core", category: "engine",
       description: "Query, set or reset rendering scalability",
       parameters: [
-        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled", "screen"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : group === "geometry" ? ["lod", "distance"] : group === "water" ? WATER_QUALITY_FIELDS : group === "postprocessing" ? POST_PROCESSING_EFFECT_FIELDS : [])] },
+        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled", "screen"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : group === "geometry" ? ["lod", "distance", "occlusion"] : group === "water" ? WATER_QUALITY_FIELDS : group === "postprocessing" ? POST_PROCESSING_EFFECT_FIELDS : [])] },
         { name: "value", type: "string", optional: true },
       ],
       run: (args, host) => host.quality(group, args.choice as string | undefined, args.value as string | undefined),
@@ -204,6 +206,10 @@ export function builtinCommands(): RegisteredCommand[] {
       "Turn the Play view's post-processing on or off as a whole, to measure its cost"),
     flagCommand("rendertargets", (host, enabled) => host.setRenderTargetCaptures?.(enabled),
       "Suspend or resume every-frame Render Target Captures, to measure their cost; manual captures still draw"),
+    flagCommand("gpubusy", (host, enabled) => host.setGpuBusyProbe?.(enabled),
+      "Start (on, restarting) or stop measuring GPU-busy time per frame with fences, independently of display pacing"),
+    flagCommand("preservebuffer", (host, enabled) => host.setPreserveDrawingBuffer?.(enabled),
+      "Keep (on, the default) or drop the Engine's drawing buffer between presentations; applies after reloading the editor"),
     flagCommand(
       "freecam",
       (host, enabled) => host.setFreeCam?.(enabled),

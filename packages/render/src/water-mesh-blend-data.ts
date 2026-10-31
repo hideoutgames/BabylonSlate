@@ -238,15 +238,49 @@ let marginScratch = new Float32Array(0);
 export function blendNormals(s: Surface, first: number, end: number): void {
   const count = s.base.length / 3;
   if (marginScratch.length < count) marginScratch = new Float32Array(count);
-  blendFit(s, s, s.world, marginScratch, first, end);
+  const state = sceneBlends.get(s.mesh.getScene());
+  const inputs = state && s.blend ? liveBlendInputs(state, s.blend.self, s.world, s.inverse) : null;
+  blendFit(s, s, s.world, marginScratch, first, end, inputs);
   for (let v = first; v < end; v++) s.blendData[v * 4 + 2] = marginScratch[v]!;
+}
+
+const seamPoint = new Vector3(), seamSample = createWaterBlendSample();
+/** Kernel steps a seam search takes along its reach, then bisections between the last two. */
+const SEAM_STEPS = 8, SEAM_BISECTIONS = 10;
+
+/** The kernel's ownership margin at world X/Z (−1 where this body has no water). */
+function marginAt(inputs: BlendInputs, x: number, y: number, z: number): number {
+  return evaluateWaterBlend(inputs.index, inputs.self, x, y, z, seamSample, true) ? seamSample.margin : -1;
+}
+
+/**
+ * Signed distance in metres from world (x, y, z), whose kernel margin is `margin`, to the seam (margin 0) along the
+ * margin's gradient (`ux`, `uz`, a unit vector), searched within `reach`: positive where this body owns the point.
+ * Beyond the reach it is ±reach.
+ */
+function seamDistance(inputs: BlendInputs, x: number, y: number, z: number, margin: number, ux: number, uz: number, reach: number): number {
+  // Toward the seam: down the gradient from owned water, up it from a neighbour's.
+  const sign = margin >= 0 ? -1 : 1, owned = margin >= 0;
+  let inside = 0, outside = Number.NaN;
+  for (let step = 1; step <= SEAM_STEPS; step++) {
+    const t = reach * step / SEAM_STEPS;
+    if ((marginAt(inputs, x + sign * t * ux, y, z + sign * t * uz) >= 0) !== owned) { outside = t; break; }
+    inside = t;
+  }
+  if (Number.isNaN(outside)) return owned ? reach : -reach;
+  for (let i = 0; i < SEAM_BISECTIONS; i++) {
+    const t = (inside + outside) / 2;
+    if ((marginAt(inputs, x + sign * t * ux, y, z + sign * t * uz) >= 0) === owned) inside = t; else outside = t;
+  }
+  const distance = (inside + outside) / 2;
+  return owned ? distance : -distance;
 }
 
 /**
  * `blendNormals`' fit for vertices [first, end) of `b`, leaving the margins in `metres` (the caller applies them to
  * `blendData` once every vertex has been fitted: neighbouring vertices read the margins as the kernel left them).
  */
-export function blendFit(s: Surface, b: RestBuffers, volume: Matrix, metres: Float32Array, first: number, end: number): void {
+export function blendFit(s: Surface, b: RestBuffers, volume: Matrix, metres: Float32Array, first: number, end: number, inputs: BlendInputs | null = null): void {
   const columns = s.layoutColumns, rest = b.blendRest, world = b.worldBase, data = b.blendData;
   const rows = b.base.length / 3 / (columns + 1) - 1;
   volume.transposeToRef(toLocalNormal);
@@ -255,12 +289,14 @@ export function blendFit(s: Surface, b: RestBuffers, volume: Matrix, metres: Flo
     // Vertices on the body's own rest data keep its own normals and own the point outright.
     if (Number.isNaN(rest[v * 6]!)) { metres[v] = MAX_WATER_BLEND_DISTANCE; continue; }
     const col = v % (columns + 1), row = (v - col) / (columns + 1);
-    let xx = 0, xz = 0, zz = 0, xh = 0, zh = 0, xm = 0, zm = 0;
+    let xx = 0, xz = 0, zz = 0, xh = 0, zh = 0, xm = 0, zm = 0, spacing = 0, crossed = false;
     for (let k = 0; k < 4; k++) {
       const n = k === 0 ? (col > 0 ? v - 1 : -1) : k === 1 ? (col < columns ? v + 1 : -1) : k === 2 ? (row > 0 ? v - columns - 1 : -1) : (row < rows ? v + columns + 1 : -1);
       if (n < 0) continue;
       const dx = world[n * 3]! - world[v * 3]!, dz = world[n * 3 + 2]! - world[v * 3 + 2]!, dh = rest[n * 6 + 5]! - rest[v * 6 + 5]!;
       const dm = data[n * 4 + 2]! - margin;
+      spacing = Math.max(spacing, dx * dx + dz * dz);
+      if ((data[n * 4 + 2]! < 0) !== (margin < 0)) crossed = true;
       xx += dx * dx; xz += dx * dz; zz += dz * dz; xh += dx * dh; zh += dz * dh; xm += dx * dm; zm += dz * dm;
     }
     const det = xx * zz - xz * xz, solve = det > 1e-12;
@@ -268,6 +304,14 @@ export function blendFit(s: Surface, b: RestBuffers, volume: Matrix, metres: Flo
     const slope = solve ? Math.hypot((zz * xm - xz * zm) / det, (xx * zm - xz * xm) / det) : 0;
     // A flat margin (deep inside one body) is far from the seam: the floor keeps it large and its sign intact.
     metres[v] = Math.max(-MAX_WATER_BLEND_DISTANCE, Math.min(MAX_WATER_BLEND_DISTANCE, margin / Math.max(slope, 0.02)));
+    // Where a coarse cell beside this vertex crosses the seam, the fit cannot place it (the margin swings across the
+    // whole blend band within the cell): measure the distance to the seam instead, so it interpolates as on a fine grid.
+    spacing = Math.sqrt(spacing);
+    if (inputs && crossed && solve && slope > 1e-9 && spacing > inputs.distance / 4) {
+      const ux = (zz * xm - xz * zm) / det / slope, uz = (xx * zm - xz * xm) / det / slope;
+      Vector3.TransformCoordinatesFromFloatsToRef(b.base[v * 3]!, b.base[v * 3 + 1]!, b.base[v * 3 + 2]!, volume, seamPoint);
+      metres[v] = seamDistance(inputs, seamPoint.x, seamPoint.y, seamPoint.z, margin, ux, uz, Math.min(MAX_WATER_BLEND_DISTANCE, 2 * spacing));
+    }
     baseNormal.set(-gx, 1, -gz).normalize().toArray(b.baseNormals, v * 3);
     if (s.gpu) { Vector3.TransformNormalToRef(baseNormal, toLocalNormal, localNormal); localNormal.normalize().toArray(b.normals, v * 3); }
   }

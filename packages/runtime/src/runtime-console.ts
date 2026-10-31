@@ -166,6 +166,8 @@ export class RuntimeConsole {
       setLightsDebug: (enabled) => host.emit({ type: "setLightsDebug", enabled }),
       setPostProcessing: (enabled) => host.emit({ type: "setPostProcessingDebug", enabled: Boolean(enabled) }),
       setRenderTargetCaptures: (enabled) => host.emit({ type: "setRenderTargetCapturesDebug", enabled: Boolean(enabled) }),
+      setGpuBusyProbe: (enabled) => host.emit({ type: "setGpuBusyProbeDebug", enabled: Boolean(enabled) }),
+      setPreserveDrawingBuffer: (enabled) => host.emit({ type: "setPreserveDrawingBufferDebug", enabled: Boolean(enabled) }),
       setFrameCap: (fps) => {
         host.requestScalability({ kind: "patch", frameCap: fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP });
       },

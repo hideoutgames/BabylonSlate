@@ -27,9 +27,8 @@ import {
 } from "./mesh-assets";
 import {
   createOverlayTextureQuad,
-  createOverlayUnlitMaterial,
+  applyOverlayUnlitMaterial,
 } from "./overlay-texture-quad";
-import { VisualBundle } from "./visual-bundle";
 import { createOverlayPanelMesh } from "./overlay-panel-mesh";
 import {
   beginSlotModelAnimLoad,
@@ -375,9 +374,7 @@ export function createPlayMesh(
       return mesh;
     }
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const bundle = new VisualBundle();
-    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
-    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
+    applyOverlayUnlitMaterial(mesh);
     mesh.isPickable = meshKind === "2dbutton";
     if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
       const compiled = binding.resolveMaterial(assetGuid, {

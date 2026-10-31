@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
 import {
-  breakdownDelta, counterStats, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_STEPS, frameBound, frameStats,
-  runFeatureTestCheck, settingsChanges, vsyncShares,
+  breakdownDelta, breakdownSequence, counterStats, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_STEPS, frameBound,
+  frameStats, isBreakdownBaseline, runFeatureTestCheck, settingsChanges, vsyncShares,
   type FeatureTestBenchmarkSample, type FeatureTestCheckDeps,
 } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
@@ -89,7 +89,8 @@ function fakeEditor(
     sessionIdle: () => play === null,
     onSessionClosed: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     sampleFrames: async () => {
-      sampled.push({ now, after: commands.at(-1) ?? null });
+      // The command a sample follows, past the Breakdown's per-sample `gpubusy on`.
+      sampled.push({ now, after: commands.filter((line) => line !== "gpubusy on").at(-1) ?? null });
       return { frames: 60, durationMs: 1000, fps: 60, p95Ms: 17, maxMs: 20, stalls: 0 };
     },
     now: () => now,
@@ -122,7 +123,7 @@ describe("runFeatureTestCheck", () => {
   });
 
   it("reads the shaders first drawn after a scene's commands ran, so Full mode's spawns count", async () => {
-    const editor = fakeEditor({}, undefined, () => ({ drawn: 1, held: 0 }));
+    const editor = fakeEditor({}, undefined, (now, commands) => ({ drawn: commands.length * 10 + now, held: 0 }));
     const report = await runFeatureTestCheck({
       mode: "full", scenes: [scene("main")], deps: editor.deps, signal: new AbortController().signal,
     });
@@ -202,29 +203,83 @@ describe("runFeatureTestCheck", () => {
     expect(editor.commands).not.toContain("ft_stats");
   });
 
-  it("measures each breakdown step on its own at the 60 fps cap, undoing it before the next, between baselines", async () => {
+  it("warms up, then measures each breakdown step on its own at the 60 fps cap between baselines, undoing it before the next", async () => {
     const editor = fakeEditor({});
     const report = await runFeatureTestCheck({
       mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal,
     });
     const samples = report.scenes[0]!.play.benchmark;
-    expect(samples.map((sample) => sample.label)).toEqual(FEATURE_TEST_BREAKDOWN_STEPS.map((step) => step.label));
-    // A baseline opens and closes the sweep, and one follows every four steps.
-    expect(samples.filter((sample) => sample.baseline).map((sample) => sample.label))
-      .toEqual(["baseline 1", "baseline 2", "baseline 3", "baseline 4", "baseline 5"]);
-    expect(samples[0]!.baseline && samples.at(-1)!.baseline).toBe(true);
-    // Each step is sampled after its own commands only: the previous step was undone first.
+    // The fake's frames never change: the second warm-up window matches the first, which ends the warm-up.
+    expect(samples.filter((sample) => sample.warmup).map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2"]);
+    expect(samples.slice(2).map((sample) => sample.label)).toEqual(breakdownSequence().map((step) => step.label));
+    // A baseline before every step and one after the last.
+    const measured = samples.slice(2);
+    expect(measured.filter((_, index) => index % 2 === 0).every((sample) => sample.baseline)).toBe(true);
+    expect(measured.filter((_, index) => index % 2 === 1).map((sample) => sample.label))
+      .toEqual(FEATURE_TEST_BREAKDOWN_STEPS.map((step) => step.label));
+    expect(measured.at(-1)!.label).toBe(`baseline ${FEATURE_TEST_BREAKDOWN_STEPS.length + 1}`);
+    // Each step is sampled after its own commands only: the previous step was undone first, and a baseline changes nothing.
     const commands = editor.commands;
     const at = (line: string) => commands.indexOf(line);
-    expect(at("quality shadows enabled off")).toBeLessThan(at("quality shadows medium"));
-    expect(commands.slice(at("quality shadows enabled off") + 1, at("quality shadows medium"))).toEqual(["quality reset"]);
-    expect(commands.slice(at("postprocessing off") + 1, at("rendertargets off"))).toEqual(["quality reset", "postprocessing on"]);
-    // Baseline 4 sits between them; it changes nothing and is undone by a reset too.
-    expect(commands.slice(at("rendertargets off") + 1, at("quality resolution scale 0.5"))).toEqual(["quality reset", "rendertargets on", "quality reset"]);
-    expect(editor.sampled.find((sample) => sample.after === "postprocessing off")).toBeDefined();
+    expect(commands.slice(at("quality shadows enabled off") + 1, at("quality shadows medium"))).toEqual(["gpubusy on", "quality reset", "gpubusy on", "quality reset"]);
+    expect(commands.slice(at("postprocessing off") + 1, at("rendertargets off"))).toEqual(["gpubusy on", "quality reset", "postprocessing on", "gpubusy on", "quality reset"]);
+    // GPU-busy time is restarted for every sample and stopped at the end.
+    expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length);
     // iOS paces frames to the display: a lifted cap only queues frames behind the GPU.
     expect(commands.slice(0, 2)).toEqual(["framecap", "framecap 60"]);
-    expect(commands.slice(-2)).toEqual(["quality reset", "framecap 30"]);
+    expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", "framecap 30"]);
+  });
+
+  it("alternates baselines and steps, so every step sits between two baselines", () => {
+    const steps = [{ label: "a", commands: ["x"] }, { label: "b", commands: ["y"] }];
+    expect(breakdownSequence(steps).map((step) => [step.label, step.baseline === true]))
+      .toEqual([["baseline 1", true], ["a", false], ["baseline 2", true], ["b", false], ["baseline 3", true]]);
+  });
+
+  it("warms up until two windows agree within 3%, and no longer than its bound when they never do", async () => {
+    const run = async (durations: (window: number) => number, breakdownWarmupMs: number) => {
+      const editor = fakeEditor({});
+      let window = 0;
+      const deps: FeatureTestCheckDeps = {
+        ...editor.deps,
+        sampleFrames: async () => {
+          // Only the Breakdown's own samples, after its frame cap.
+          const durationMs = editor.commands.includes("framecap 60") ? durations(window++) : 1000;
+          return { frames: 60, durationMs, fps: 60_000 / durationMs, p95Ms: 17, maxMs: 20, stalls: 0 };
+        },
+      };
+      const report = await runFeatureTestCheck({
+        mode: "breakdown", scenes: [scene("FT_World")], deps, signal: new AbortController().signal,
+        timeouts: { breakdownWarmupMs },
+      });
+      return report.scenes[0]!.play.benchmark.filter((sample) => sample.warmup);
+    };
+    // Cooling from 1300 to 1000 ms per 60 frames: stable once a window moves less than 3% from the one before.
+    const cooling = await run((window) => [1300, 1200, 1100, 1020, 1010][window] ?? 1000, 3_600_000);
+    expect(cooling.map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2", "warm-up 3", "warm-up 4", "warm-up 5"]);
+    // Alternating 10% apart never settles: the bound ends it, after at least one window past it.
+    const never = await run((window) => (window % 2 ? 1100 : 1000), 200_000);
+    expect(never.length).toBeGreaterThan(1);
+    expect(never.length).toBeLessThan(20);
+    expect(never.every((sample) => !isBreakdownBaseline(sample) && breakdownDelta(never, sample) === null)).toBe(true);
+  });
+
+  it("keeps each sample's GPU-busy time when the probe answered", async () => {
+    const editor = fakeEditor({}, undefined, (now, commands) => ({ drawn: commands.length * 10 + now, held: 0 }));
+    const gpuBusy = { frames: 290, medianMs: 21.5, p95Ms: 26, pollMs: 4.1, skipped: 0 };
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      play: () => {
+        const play = editor.deps.play();
+        return play && { ...play, snapshot: () => { const snapshot = play.snapshot(); return { ...snapshot, rendering: { ...snapshot.rendering!, gpuBusy } }; } };
+      },
+    };
+    const report = await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_World")], deps, signal: new AbortController().signal,
+    });
+    const samples = report.scenes[0]!.play.benchmark;
+    expect(samples.find((sample) => sample.label === "shadows off")!.gpuBusy).toEqual(gpuBusy);
+    expect(breakdownDelta(samples, samples.find((sample) => sample.label === "shadows off")!)).toMatchObject({ ms: 0, basis: "gpu" });
   });
 
   it("restores a step's toggle when the sweep stops at it", async () => {
@@ -279,7 +334,9 @@ describe("breakdown settling", () => {
     let busyUntil = 0;
     let commandsSeen = 0;
     const editor = fakeEditor({}, (now) => {
-      if (editor && editor.commands.length !== commandsSeen) { commandsSeen = editor.commands.length; busyUntil = now + ms; }
+      // Timing GPU work (`gpubusy`) compiles nothing.
+      const changing = editor ? editor.commands.filter((line) => !line.startsWith("gpubusy")).length : 0;
+      if (changing !== commandsSeen) { commandsSeen = changing; busyUntil = now + ms; }
       if (now < busyUntil) firstDraws += 1;
     });
     const deps: FeatureTestCheckDeps = {
@@ -320,7 +377,9 @@ describe("breakdown settling", () => {
     const report = await runFeatureTestCheck({
       mode: "breakdown", scenes: [scene("FT_World")], deps, signal: new AbortController().signal, timeouts: { profileCompileMs: 10_000 },
     });
-    const first = report.scenes[0]!.play.benchmark[0]!;
+    const benchmark = report.scenes[0]!.play.benchmark;
+    expect(benchmark[0]!.failed).toEqual(["Shaders were still first drawn or compiling after 10 s; this window's frames include them."]);
+    const first = benchmark.find((sample) => !sample.warmup)!;
     expect(first.failed).toEqual(["Shaders were still first drawn or compiling after 10 s; this step's frames include them."]);
     expect(first.unsettled!.compiling).toBeGreaterThan(0);
   });
@@ -357,7 +416,7 @@ describe("draw sampling", () => {
   });
 
   it("gives each benchmark step its median counters and their range", async () => {
-    const editor = fakeEditor({}, undefined, () => ({ drawn: 1, held: 0 }));
+    const editor = fakeEditor({}, undefined, (now, commands) => ({ drawn: commands.length * 10 + now, held: 0 }));
     const report = await runFeatureTestCheck({
       mode: "benchmark", scenes: [scene("FT_World")], deps: alternating(editor.deps), signal: new AbortController().signal,
     });
@@ -385,9 +444,9 @@ describe("breakdownDelta", () => {
 
   it("measures a step's mean frame time against the baselines around it, so drift is shared", () => {
     const samples = [sample("baseline 1", 38), sample("shadows off", 30), sample("baseline 2", 42), sample("post off", 30), sample("baseline 3", 46)];
-    expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -10, percent: -25 });
+    expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -10, percent: -25, basis: "frame" });
     // Against baselines 2 and 3, not the first: drift since the start is not counted as the step's.
-    expect(breakdownDelta(samples, samples[3]!)).toEqual({ ms: -14, percent: -31.818181818181817 });
+    expect(breakdownDelta(samples, samples[3]!)).toEqual({ ms: -14, percent: -31.818181818181817, basis: "frame" });
     // A baseline's change is its drift against the first.
     expect(breakdownDelta(samples, samples[4]!)!.ms).toBe(8);
     expect(breakdownDelta(samples, samples[0]!)!.ms).toBe(0);
@@ -395,11 +454,28 @@ describe("breakdownDelta", () => {
 
   it("uses the baselines that were measured, and reports nothing without one or without frames", () => {
     const one = [sample("baseline 1", 40), sample("post off", 30), sample("baseline 2")];
-    expect(breakdownDelta(one, one[1]!)).toEqual({ ms: -10, percent: -25 });
+    expect(breakdownDelta(one, one[1]!)).toEqual({ ms: -10, percent: -25, basis: "frame" });
     const none = [sample("baseline 1"), sample("post off", 30)];
     expect(breakdownDelta(none, none[1]!)).toBeNull();
     const unmeasured = [sample("baseline 1", 40), sample("post off")];
     expect(breakdownDelta(unmeasured, unmeasured[1]!)).toBeNull();
+  });
+
+  it("compares median GPU-busy time when the step and its baselines measured it, else mean frame time", () => {
+    const busy = (entry: FeatureTestBenchmarkSample, medianMs: number): FeatureTestBenchmarkSample =>
+      ({ ...entry, gpuBusy: { frames: 300, medianMs, p95Ms: medianMs + 4, pollMs: 4, skipped: 0 } });
+    // Frame times are vsync-bound (all 33.3 ms) and say nothing; GPU-busy time drops 6 ms against 20 and 22.
+    const samples = [busy(sample("baseline 1", 33.3), 20), busy(sample("SSR off", 33.3), 15), busy(sample("baseline 2", 33.3), 22)];
+    expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -6, percent: (-6 / 21) * 100, basis: "gpu" });
+    // A step whose probe did not answer falls back to frame times on both sides.
+    const mixed = [samples[0]!, sample("SSR off", 30), samples[2]!];
+    expect(breakdownDelta(mixed, mixed[1]!)).toMatchObject({ basis: "frame" });
+    // Warm-up windows are never references, and have no change of their own.
+    const warm = { ...busy(sample("warm-up 1", 50), 40), baseline: false, warmup: true };
+    const warmed = [warm, ...samples];
+    expect(breakdownDelta(warmed, warmed[2]!)!.ms).toBe(-6);
+    expect(breakdownDelta(warmed, warmed[3]!)!.ms).toBe(2);
+    expect(breakdownDelta(warmed, warm)).toBeNull();
   });
 
   it("reads reports saved before interleaved baselines and mean frame times", () => {
@@ -408,7 +484,7 @@ describe("breakdownDelta", () => {
       runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
     });
     const samples = [old("baseline", 38), old("shadows off", 30), old("baseline again", 42)];
-    expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -10, percent: -25 });
+    expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -10, percent: -25, basis: "frame" });
   });
 });
 

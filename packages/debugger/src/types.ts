@@ -50,6 +50,10 @@ export type ConsoleCommandHost = {
   setLightsDebug?(enabled: boolean): void;
   setPostProcessing?(enabled: boolean): void;
   setRenderTargetCaptures?(enabled: boolean): void;
+  /** Start (restart) or stop measuring GPU-busy time per frame; the Play view's diagnostics report it. */
+  setGpuBusyProbe?(enabled: boolean): void;
+  /** Store whether the next project Engine keeps its drawing buffer (applies after an editor reload). */
+  setPreserveDrawingBuffer?(enabled: boolean): void;
   dumpActors?(): string;
   inspectActor?(query: string): string;
   possessActorCamera?(query: string): CommandResult;

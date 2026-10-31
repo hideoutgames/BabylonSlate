@@ -86,7 +86,6 @@ import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
-import { setSceneOcclusionCulling } from "./view-occlusion";
 import { isAtlasShadow } from "./shadow-atlas";
 import { findSceneShadowController } from "./shadow-controller";
 import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
@@ -2135,14 +2134,19 @@ describe("the lighting CI gate", () => {
   const painting = (texture: Texture, overrides: Partial<UnlitBinding> = {}): UnlitBinding =>
     ({ texture, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false, ...overrides });
   /** The gameplay script: Effects each step compiled. */
-  /** The script's Painter 2D surface, red, in front of the crate. */
-  const placePainter = (world: PlayWorld) => {
+  /** A sprite: the unlit Material, cut out at 0.4, culled (`mesh-assets.ts`). */
+  const spriteKey: UnlitMaterialKey = { textured: true, backFaceCulling: true, fog: true, role: "world" };
+  /** The world's unlit surfaces, drawn from its first frame. */
+  const unlitSurfaces = (world: PlayWorld) => {
     const painter = MeshBuilder.CreatePlane("gate-painter", { size: 2 }, world.handle.scene);
     painter.position.set(0, 1, 2);
     setUnlitMaterial(painter, painterKey, painting(canvas(world.handle.scene, [255, 0, 0, 255])));
-    return painter;
+    const sprite = MeshBuilder.CreatePlane("gate-sprite", { size: 1 }, world.handle.scene);
+    sprite.position.set(2, 1, 2);
+    setUnlitMaterial(sprite, spriteKey, painting(canvas(world.handle.scene, [0, 0, 255, 255]), { blend: false, cutoff: 0.4 }));
+    return { painter, sprite };
   };
-  const play = async (world: PlayWorld, painter: Mesh) => {
+  const play = async (world: PlayWorld, { painter, sprite }: { painter: Mesh; sprite: Mesh }) => {
     const steps: Array<[string, () => void]> = [
       ["a point light switches off", () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))],
       ["it switches back on", () => world.place(point(11, [1.5, 2.5, -1]))],
@@ -2160,6 +2164,13 @@ describe("the lighting CI gate", () => {
       ["more point lights spawn than the block draws", () =>
         world.place(...Array.from({ length: 40 }, (_, index) => point(100 + index, [-10 + (index % 10) * 2, 2.5, Math.floor(index / 10) * 3])))],
       ["an actor the level holds spawns", () => world.place({ slotId: 200, guid: "crate-2", position: [2, 1, 0], assign: { meshAssetGuid: null, meshKind: "box" } })],
+      ["a sprite crossfades and its texture switches from a PNG to a KTX2", () => {
+        // A KTX2 is flipped on its wrapper: a texture matrix that is not the identity.
+        const ktx2 = canvas(world.handle.scene, [0, 255, 0, 255]);
+        ktx2.vScale = -1;
+        setUnlitMaterial(sprite, spriteKey, painting(ktx2, { blend: false, cutoff: 0.4 }));
+        sprite.visibility = 0.5;
+      }],
       ["a painter repaints onto another canvas and fades", () => {
         setUnlitMaterial(painter, painterKey, painting(canvas(world.handle.scene, [0, 128, 255, 128]), { color: [0.5, 1, 1] }));
         painter.visibility = 0.5;
@@ -2177,12 +2188,10 @@ describe("the lighting CI gate", () => {
 
   it.each(MODELS)("lights change mid-game without compiling a shader or waiting on a pipeline: %s", async (model) => {
     const world = playWorld(model, actors());
-    const painter = MeshBuilder.CreatePlane("gate-painter", { size: 2 }, world.handle.scene);
-    painter.position.set(0, 1, 2);
-    setUnlitMaterial(painter, painterKey, painting(canvas(world.handle.scene, [255, 0, 0, 255])));
+    const surfaces = unlitSurfaces(world);
     await settle(world);
     world.driver.arm();
-    const compiled = await play(world, painter);
+    const compiled = await play(world, surfaces);
     const lightDefines = Object.values(compiledEffects(world.engine)).filter((effect) => /#define LIGHT0\b/.test(effect.defines));
     // The block drew the script's lights: the sun, the spot and as many of the 42 points left as the Local Light Budget
     // leaves beside the spot, up to the block's maximum.
@@ -2208,14 +2217,14 @@ describe("the lighting CI gate", () => {
     world.handle.setRenderSettings(normalizeRenderProjectSettings({
       effects: { temporalAntiAliasing: { enabled: true } }, shadows: { screenShadows: "high" },
     }));
-    const painter = placePainter(world);
+    const surfaces = unlitSurfaces(world);
     await settle(world);
     const tasks = world.handle.renderTaskNames();
     const screenEffects = () => Object.values(compiledEffects(world.engine)).filter((effect) => /^#define HAPTIC_SCREEN_SHADOWS$/m.test(effect.defines));
     const before = screenEffects();
     world.driver.arm();
     const builds = vi.spyOn(FrameGraph.prototype, "buildAsync");
-    const compiled = await play(world, painter);
+    const compiled = await play(world, surfaces);
     expect({
       compiled, pipelines: world.driver.pipelines.size, synchronous: world.driver.synchronous.size, builds: builds.mock.calls.length,
       marched: tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1), tasks: world.handle.renderTaskNames(),
@@ -2230,11 +2239,12 @@ describe("the lighting CI gate", () => {
     // A wall between the camera and the crate (the lights' receiver), standing in front of the camera's whole view of it.
     const wall: Actor = { slotId: 20, guid: "wall", position: [0, 2, -5], scale: [6, 4, 0.2], assign: { meshAssetGuid: null, meshKind: "box" } };
     const world = playWorld(model, [...actors(), wall]);
-    setSceneOcclusionCulling(world.handle.scene, true);
-    const painter = placePainter(world);
+    // Play's world view follows the project's Occlusion Culling setting.
+    world.handle.setRenderSettings(normalizeRenderProjectSettings({ quality: { geometry: { occlusionCulling: true } } }));
+    const surfaces = unlitSurfaces(world);
     await settle(world);
     world.driver.arm();
-    const compiled = await play(world, painter);
+    const compiled = await play(world, surfaces);
     const crate = world.handle.scene.getMeshByName("actor-2")!;
     const hidden = world.view().occlusionDiagnostics()!.culled;
     // The wall moves aside: the crate, lit by every light the script changed, draws again.

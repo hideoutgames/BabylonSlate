@@ -12,7 +12,7 @@ import { normalizeRenderEffectsSettings, type RenderMode } from "@haptic/core";
 import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "../../../../packages/render/src/overlay-visual-style";
-import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "../../../../packages/render/src/unlit-material";
+import { atlasImageProcessing, setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "../../../../packages/render/src/unlit-material";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 96;
@@ -20,8 +20,10 @@ const HEIGHT = 48;
 
 type Case = {
   name: string;
-  /** The Standard setup the engine used. */
+  /** The Standard setup the engine used (`texture` is the flipped one for `flipped` cases). */
   standard: (material: StandardMaterial, texture: Texture) => void;
+  /** Samples the gradient through a non-identity texture matrix (vertically flipped), as a KTX2 sprite does. */
+  flipped?: boolean;
   key: UnlitMaterialKey;
   binding: (texture: Texture) => UnlitBinding;
   prepare?: (mesh: Mesh) => void;
@@ -59,6 +61,54 @@ const CASES: Case[] = [
     },
     key: { textured: true, backFaceCulling: true, fog: true, role: "world" },
     binding: (texture) => ({ ...unbound, texture, cutoff: 0.4 }),
+  },
+  {
+    // A sprite (`mesh-assets.ts` before the migration), its texture flipped as a KTX2's is.
+    name: "sprite",
+    flipped: true,
+    standard: (material, texture) => {
+      material.disableLighting = true;
+      material.emissiveColor = Color3.White();
+      material.useAlphaFromDiffuseTexture = true;
+      material.transparencyMode = StandardMaterial.MATERIAL_ALPHATEST;
+      material.alphaCutOff = 0.4;
+      material.diffuseTexture = texture;
+      material.emissiveTexture = texture;
+    },
+    key: { textured: true, backFaceCulling: true, fog: true, role: "world" },
+    binding: (texture) => ({ ...unbound, texture, cutoff: 0.4 }),
+  },
+  {
+    // A tilemap chunk: both sides, no fog, the atlas's exact display colours.
+    name: "tile",
+    standard: (material, texture) => {
+      material.disableLighting = true;
+      material.emissiveColor = Color3.White();
+      material.useAlphaFromDiffuseTexture = true;
+      material.transparencyMode = StandardMaterial.MATERIAL_ALPHATEST;
+      material.alphaCutOff = 0.4;
+      material.diffuseTexture = texture;
+      material.emissiveTexture = texture;
+      material.backFaceCulling = false;
+      material.fogEnabled = false;
+      material.imageProcessingConfiguration = atlasImageProcessing(material.getScene());
+    },
+    key: { textured: true, backFaceCulling: false, fog: false, role: "world", imageProcessing: "atlas" },
+    binding: (texture) => ({ ...unbound, texture, cutoff: 0.4 }),
+  },
+  {
+    // 3D Text (`text3d-mesh.ts` before the migration): both sides, its back faces' normal flipped.
+    name: "text3d",
+    standard: (material) => {
+      material.disableLighting = true;
+      material.backFaceCulling = false;
+      material.twoSidedLighting = true;
+      material.emissiveColor = new Color3(0.9, 0.7, 0.1);
+      material.diffuseColor = Color3.Black();
+      material.specularColor = Color3.Black();
+    },
+    key: { textured: false, backFaceCulling: false, fog: true, role: "world" },
+    binding: () => ({ ...unbound, color: [0.9, 0.7, 0.1], twoSided: true }),
   },
   {
     name: "opaque",
@@ -172,6 +222,8 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
     scene.fogColor = new Color3(0.2, 0.4, 0.8);
     scene.fogStart = 4; scene.fogEnd = 20; scene.fogDensity = 0.08;
     const texture = gradientTexture(scene);
+    const flipped = gradientTexture(scene);
+    flipped.vScale = -1;
     // Behind every quad, in both draws: the geometry effects read the quads' depth and normals against it.
     const backdrop = MeshBuilder.CreatePlane("backdrop", { width: 20, height: 10 }, scene);
     backdrop.position.z = 1;
@@ -180,10 +232,10 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
     backdropMaterial.emissiveColor = new Color3(0.35, 0.35, 0.35);
     backdrop.material = backdropMaterial;
     const quads = CASES.map((entry, index) => {
-      const mesh = MeshBuilder.CreatePlane(entry.name, { width: 3.6, height: 3.6 }, scene);
-      mesh.position.set(-6.3 + (index % 4) * 4.2, index < 4 ? 1.9 : -1.9, 0);
+      const mesh = MeshBuilder.CreatePlane(entry.name, { width: 3.1, height: 3.6 }, scene);
+      mesh.position.set(-6.75 + (index % 5) * 3.375, index < 5 ? 1.9 : -1.9, 0);
       const standard = new StandardMaterial(`${entry.name}-standard`, scene);
-      entry.standard(standard, texture);
+      entry.standard(standard, entry.flipped ? flipped : texture);
       entry.prepare?.(mesh);
       return { entry, mesh, standard };
     });
@@ -228,7 +280,7 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
           enableOverlayVisualMaterial(quad.mesh);
         }
         const standard = await draw();
-        for (const quad of quads) setUnlitMaterial(quad.mesh, quad.entry.key, quad.entry.binding(texture));
+        for (const quad of quads) setUnlitMaterial(quad.mesh, quad.entry.key, quad.entry.binding(quad.entry.flipped ? flipped : texture));
         const unlit = await draw();
         results.push({ mode: mode.name, fog: fog.name, standard, unlit });
       }

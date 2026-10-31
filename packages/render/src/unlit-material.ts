@@ -1,9 +1,10 @@
 import {
-  ColorMergerBlock, Constants, ImageProcessingBlock, InputBlock, InstancesBlock, Material, NodeMaterial,
+  ColorMergerBlock, Constants, ImageProcessingBlock, ImageProcessingConfiguration, InputBlock, InstancesBlock, Material, NodeMaterial,
   NodeMaterialBlockConnectionPointTypes as Types, NodeMaterialSystemValues, ShaderLanguage, TransformBlock,
   Vector4, VertexBuffer, VertexOutputBlock,
   type AbstractMesh, type BaseTexture, type Mesh, type NodeMaterialBlock, type NodeMaterialDefines, type Scene,
 } from "@babylonjs/core";
+import type { IImageProcessingConfigurationDefines } from "@babylonjs/core/Materials/imageProcessingConfiguration.defines";
 import { PrepareDefinesForPrePass } from "@babylonjs/core/Materials/materialHelper.functions";
 import { MaterialHelperGeometryRendering } from "@babylonjs/core/Materials/materialHelper.geometryrendering";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
@@ -21,7 +22,7 @@ import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-o
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import {
   UnlitFinishBlock, UnlitOutputBlock, UnlitSurfaceBlock, UnlitUvBlock, UnlitVelocityBlock, hasUnlitBinding,
-  setUnlitBinding, unlitBinding, type UnlitBinding,
+  markPerMeshBindingMaterial, setUnlitBinding, unlitBinding, type UnlitBinding,
 } from "./unlit-material-blocks";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 
@@ -39,9 +40,38 @@ export type UnlitMaterialKey = {
   fog: boolean;
   /** Who draws it: world content, an editor helper, or a preview; instances of different roles never share state. */
   role: "world" | "helper" | "preview";
+  /** The Scene's image processing (the default), or a tilemap atlas's exact display colours (`atlasImageProcessing`). */
+  imageProcessing?: "scene" | "atlas";
 };
 
-type UnlitInstance = { material: NodeMaterial; meshes: Set<AbstractMesh> };
+/**
+ * Tilemap atlases keep their exact display colors: the scene's tone mapping and exposure never apply to them. Under a
+ * Scene Linear display stage they still decode to linear, like every unlit surface on the scene's configuration, so the
+ * Display Color stage encodes them once.
+ */
+class AtlasImageProcessing extends ImageProcessingConfiguration {
+  private readonly sceneConfiguration: ImageProcessingConfiguration;
+  constructor(sceneConfiguration: ImageProcessingConfiguration) {
+    super();
+    this.sceneConfiguration = sceneConfiguration;
+    this.isEnabled = false;
+    sceneConfiguration.onUpdateParameters.add(() => this._updateParameters());
+  }
+  override prepareDefines(defines: IImageProcessingConfigurationDefines, forPostProcess = false): void {
+    super.prepareDefines(defines, forPostProcess);
+    defines.IMAGEPROCESSINGPOSTPROCESS = !forPostProcess && this.sceneConfiguration.applyByPostProcess;
+  }
+}
+const atlasConfigurations = new WeakMap<Scene, AtlasImageProcessing>();
+
+/** The Scene's tilemap atlas image processing (`UnlitMaterialKey.imageProcessing`). */
+export function atlasImageProcessing(scene: Scene): AtlasImageProcessing {
+  let configuration = atlasConfigurations.get(scene);
+  if (!configuration) atlasConfigurations.set(scene, (configuration = new AtlasImageProcessing(scene.imageProcessingConfiguration)));
+  return configuration;
+}
+
+type UnlitInstance = { material: NodeMaterial; key: UnlitMaterialKey; meshes: Set<AbstractMesh> };
 const instances = new WeakMap<Scene, Map<string, UnlitInstance>>();
 const instanceOf = new WeakMap<Material, UnlitInstance>();
 
@@ -60,7 +90,10 @@ function vertexAlpha(mesh: AbstractMesh): boolean {
 export function unlitNeedsBlending(mesh: AbstractMesh): boolean {
   const binding = unlitBinding(mesh);
   const style = overlayVisualStyle(mesh);
-  return binding.blend || binding.alpha < 1 || mesh.visibility < 1 || style.opacity * style.tint[3] < 1 || vertexAlpha(mesh);
+  if (style.opacity * style.tint[3] < 1) return true;
+  // Standard's alpha test blends only while the mesh fades (its alpha test and blend); alpha and vertex alpha it ignores.
+  if (binding.cutoff > 0 && !binding.blend) return mesh.visibility > 0 && mesh.visibility < 1;
+  return binding.blend || binding.alpha < 1 || mesh.visibility < 1 || vertexAlpha(mesh);
 }
 
 function matrixInput(name: string, value: NodeMaterialSystemValues, blocks: NodeMaterialBlock[]): InputBlock {
@@ -262,14 +295,21 @@ function createVariant(owner: NodeMaterial, textured: boolean, kind: AuthoredSur
 }
 
 function instanceId(key: UnlitMaterialKey): string {
-  return JSON.stringify([key.textured, key.backFaceCulling, key.fog, key.role]);
+  return JSON.stringify([key.textured, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene"]);
 }
 
 function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
   const material = createNodeMaterial(scene, `unlit:${key.role}${key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}`);
-  const instance: UnlitInstance = { material, meshes: new Set() };
+  const instance: UnlitInstance = { material, key: { ...key }, meshes: new Set() };
+  // Shared by every mesh with its key: a mesh disposed with its materials (`dispose(false, true)`) leaves it to the
+  // others. The Scene disposes it, after notifying its dispose observers.
+  let sceneDisposing = false;
+  scene.onDisposeObservable.addOnce(() => { sceneDisposing = true; });
+  const dispose = material.dispose.bind(material);
+  material.dispose = (...args: Parameters<NodeMaterial["dispose"]>) => { if (sceneDisposing) dispose(...args); };
   material.backFaceCulling = key.backFaceCulling;
   material.fogEnabled = key.fog;
+  if (key.imageProcessing === "atlas") material.imageProcessingConfiguration = atlasImageProcessing(scene);
   material.needAlphaBlending = () => false;
   material.needAlphaTesting = () => false;
   material.needAlphaBlendingForMesh = (mesh) => unlitNeedsBlending(mesh);
@@ -322,6 +362,7 @@ function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
     if (map?.get(instanceId(key)) === instance) map.delete(instanceId(key));
   });
   instanceOf.set(material, instance);
+  markPerMeshBindingMaterial(material);
   return instance;
 }
 
@@ -361,6 +402,24 @@ export function setUnlitMaterial(mesh: AbstractMesh, key: UnlitMaterialKey, bind
     });
   }
   return material;
+}
+
+/** Draws `target` as `source` draws: its unlit Material and binding, or its other material. */
+export function copyMaterialOf(target: AbstractMesh, source: AbstractMesh): void {
+  const instance = source.material && instanceOf.get(source.material);
+  if (instance && hasUnlitBinding(source)) setUnlitMaterial(target, instance.key, unlitBinding(source));
+  else target.material = source.material;
+}
+
+/** Captures how `mesh` draws now (its unlit Material and binding, or its other material) and returns its restore. */
+export function materialRestore(mesh: AbstractMesh): () => void {
+  const material = mesh.material;
+  const instance = material && instanceOf.get(material);
+  if (instance && hasUnlitBinding(mesh)) {
+    const binding = unlitBinding(mesh);
+    return () => { setUnlitMaterial(mesh, instance.key, binding); };
+  }
+  return () => { mesh.material = material; };
 }
 
 /** Whether `mesh` has an unlit binding (`setUnlitMaterial`). */
