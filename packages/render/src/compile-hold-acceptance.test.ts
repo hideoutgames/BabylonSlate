@@ -2049,16 +2049,17 @@ describe("pooled primitives", () => {
   });
 
   it.each(POOLED_MODELS)("a plain user of a Material only pooled groups drew compiles its variant as a swap, holding nothing: %s", async (model) => {
-    // A box sorted by an explicit order draws unpooled: its plain variant of the pooled Material is new mid-game. It is
-    // hidden until it compiles, and the view never holds nor waits on it.
+    // A mesh of its own drawn with the pooled Material (a model's, a deformed primitive's): its plain variant is new
+    // mid-game. It is hidden until it compiles, and the view never holds nor waits on it.
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
       { instancing: true });
     world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    let plain!: Mesh;
     const record = await measure(world, () => {
-      world.place({ ...box(21, [-2, 1, 1]), assign: { meshAssetGuid: null, meshKind: "box", orderInLayer: 1 } });
-      world.handle.applyCommand({ type: "assignMaterial", slotId: 21, materialAssetGuid: "surface-a" });
+      plain = MeshBuilder.CreateBox("actor-21", { size: 1 }, world.handle.scene);
+      plain.position.set(-2, 1, 1);
+      plain.material = world.drawn("actor-20")!.material;
     });
-    const plain = world.handle.scene.getMeshByName("actor-21")!;
     expect({
       pooled: pooledLeafOf(plain) !== undefined, heldFrames: record.heldFrames, holdRaised: record.holdRaised,
       recovered: record.recovered, shown: !isRevealPending(plain),
@@ -2066,14 +2067,23 @@ describe("pooled primitives", () => {
   });
 
   it.each(POOLED_MODELS)("a load with a plain and a pooled user of one Material presents, and a spawn of either compiles nothing: %s", async (model) => {
-    const sorted = (slotId: number, position: Vec3): Actor =>
-      ({ ...box(slotId, position), assign: { meshAssetGuid: null, meshKind: "box", orderInLayer: 1 } });
-    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1]), sorted(21, [-2, 1, 1])], ["surface-a"],
-      "actor-2", classesLoad([]), { instancing: true });
-    for (const slotId of [20, 21]) world.handle.applyCommand({ type: "assignMaterial", slotId, materialAssetGuid: "surface-a" });
+    // A mesh of its own drawn with the pooled Material at load: the load compiles and draws both variants.
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
+      { instancing: true });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    const plain = (name: string, x: number) => {
+      const mesh = MeshBuilder.CreateBox(name, { size: 1 }, world.handle.scene);
+      mesh.position.set(x, 1, 1);
+      mesh.material = world.drawn("actor-20")!.material;
+      return mesh;
+    };
+    await settle(world);
+    plain("actor-21", -2);
+    await settle(world);
     const record = await measure(world, () => {
-      world.place(box(22, [1, 1, -2]), sorted(23, [-1, 1, -2]));
-      for (const slotId of [22, 23]) world.handle.applyCommand({ type: "assignMaterial", slotId, materialAssetGuid: "surface-a" });
+      world.place(box(22, [1, 1, -2]));
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 22, materialAssetGuid: "surface-a" });
+      plain("actor-23", -1);
     });
     expectNothingCompiled(world, record);
   });

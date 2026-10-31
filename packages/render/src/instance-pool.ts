@@ -30,6 +30,11 @@ export interface InstanceGroupKey {
   readonly material: Material | null;
   readonly receiveShadows: boolean;
   readonly renderingGroupId: number;
+  /**
+   * An explicit sorting layer and order (`applyComponentSorting`), whose `alphaIndex` and sorting group each member
+   * carries: one batch draws at one place in the order, so members sorted apart draw in groups of their own.
+   */
+  readonly sortKey?: string;
 }
 
 /** Why a mesh draws unpooled (v1). */
@@ -114,7 +119,7 @@ function materialId(material: Material | null): number {
 }
 
 function groupId(key: InstanceGroupKey): string {
-  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.renderingGroupId}`;
+  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.renderingGroupId}|${key.sortKey ?? ""}`;
 }
 
 const sources = new WeakSet<Mesh>();

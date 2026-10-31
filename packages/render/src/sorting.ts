@@ -1,5 +1,6 @@
 import { InstancedMesh, type AbstractMesh, type Scene, type SubMesh } from "@babylonjs/core";
 import { setMeshRenderingGroup } from "./instance-pool";
+import { sortPooledLeaf } from "./pooled-visuals";
 import { sortingLayerSortKey } from "@haptic/core";
 
 /**
@@ -82,6 +83,8 @@ export function applyComponentSorting(
       sortingLayerKey: internal ? resolveSortingLayer(layers, internal.name, internal.order).sortKey : 0,
     };
   }
+  // A pooled visual's drawn leaf sorts as its root does.
+  sortPooledLeaf(root);
 }
 
 function compareIdentity(a: string, b: string): number {
