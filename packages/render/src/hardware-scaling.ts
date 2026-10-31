@@ -20,14 +20,19 @@ export interface HardwareScalingOptions {
   targetFrameMs?: number;
   cooldownFrames?: number;
   initialLevel?: number;
+  /**
+   * Where the level takes effect; the Engine's hardware scaling by default. Play passes its world output,
+   * so the level scales the world alone and the backbuffer Scene Layers draw into keeps full resolution.
+   */
+  apply?: (level: number) => void;
 }
 
 /**
- * Owns resolution via setHardwareScalingLevel. Engine must be constructed with
- * adaptToDeviceRatio: false.
+ * Owns resolution via setHardwareScalingLevel, or through `apply`. Engine must be
+ * constructed with adaptToDeviceRatio: false.
  */
 export class HardwareScalingController {
-  private readonly engine: AbstractEngine;
+  private readonly apply: (level: number) => void;
   private minLevel: number;
   private maxLevel: number;
   private targetFrameMs: number;
@@ -38,7 +43,7 @@ export class HardwareScalingController {
   private samples: FramePressureSample[] = [];
 
   constructor(engine: AbstractEngine, options: HardwareScalingOptions = {}) {
-    this.engine = engine;
+    this.apply = options.apply ?? ((level) => engine.setHardwareScalingLevel(level));
     this.minLevel = options.minLevel ?? 1;
     this.maxLevel = options.maxLevel ?? 2;
     this.targetFrameMs = options.targetFrameMs ?? 1000 / 60;
@@ -75,7 +80,7 @@ export class HardwareScalingController {
     const next = Math.min(this.maxLevel, Math.max(this.minLevel, level));
     if (next === this.level) return;
     this.level = next;
-    this.engine.setHardwareScalingLevel(this.level);
+    this.apply(this.level);
   }
 
   /**

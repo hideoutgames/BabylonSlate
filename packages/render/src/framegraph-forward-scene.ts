@@ -9,6 +9,7 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
 import { upscaledRenderSize } from "./scene-effects";
+import { scaledOutputSize, sceneOutputScale } from "./scene-output-scale";
 import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
@@ -252,6 +253,8 @@ export class ForwardSceneFrameGraph {
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
   private preparedHeight = 0;
+  /** The output scale (`sceneOutputScale`) the graph was built for. */
+  private preparedScale = 1;
   private outputColor: InternalTexture | null = null;
   private outputDepth: InternalTexture | null = null;
   private pending: Promise<ForwardSceneGraphResult> | undefined;
@@ -997,11 +1000,13 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       const output = this.output(camera);
       // Everything drawn into an FSR chain, water copy included, runs at its
-      // internal size.
-      const renderSize = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, output.width, output.height);
+      // internal size: the output's at the Scene's output scale, then the FSR
+      // render scale. The chain's single output pass fills the whole output.
+      const viewSize = scaledOutputSize(output.width, output.height, output.scale);
+      const renderSize = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, viewSize.width, viewSize.height);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-        this.outputColor !== output.color || this.outputDepth !== output.depth ||
+        this.outputColor !== output.color || this.outputDepth !== output.depth || this.preparedScale !== output.scale ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask || this.ownScene) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
         this.releaseGraph();
@@ -1081,9 +1086,9 @@ export class ForwardSceneFrameGraph {
         };
         // An auxiliary view without a chain still draws offscreen: only the
         // final copy writes its output, which a material in view may sample.
-        // A multisampled view without a chain draws offscreen too: the output
-        // (the backbuffer, created without antialiasing) is single-sample.
-        if ((this.auxiliary || samples > 1) && !this.postProcessGraph && !effectsPlan)
+        // So does a scaled view (the copy fills its full-size output), and a multisampled one: the output (the
+        // backbuffer, created without antialiasing) is single-sample.
+        if ((this.auxiliary || output.scale !== 1 || samples > 1) && !this.postProcessGraph && !effectsPlan)
           this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height, samples);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
@@ -1208,12 +1213,12 @@ export class ForwardSceneFrameGraph {
           (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
         if (chainOutput) {
           if (output.color) {
-            const copy = new FrameGraphCopyToTextureTask(this.ownScene ? this.auxiliary ? "Capture output" : "Multisample output" : "Scene post-process output", this.graph);
+            const copy = new FrameGraphCopyToTextureTask(this.ownScene ? this.ownScene.samples > 1 ? "Multisample output" : "Capture output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
             copy.targetTexture = color;
             this.outputCopy = copy;
           } else {
-            const copy = new FrameGraphCopyToBackbufferColorTask(this.ownScene ? "Multisample output" : "Scene post-process output", this.graph);
+            const copy = new FrameGraphCopyToBackbufferColorTask((this.ownScene?.samples ?? 1) > 1 ? "Multisample output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
             this.outputCopy = copy;
           }
@@ -1297,6 +1302,7 @@ export class ForwardSceneFrameGraph {
       this.preparedWaterDemand = waterDemand;
       this.preparedWidth = width;
       this.preparedHeight = height;
+      this.preparedScale = output.scale;
       this.failure = undefined;
       return { path: "frameGraph" };
     } catch (error) {
@@ -1328,7 +1334,7 @@ export class ForwardSceneFrameGraph {
       sizeIsPercentage: false,
       options: { createMipMaps: false, types: [type], formats: [format], samples, useSRGBBuffers: [false] },
     });
-    const prefix = this.auxiliary ? "Capture" : "Multisample";
+    const prefix = samples > 1 ? "Multisample" : this.auxiliary ? "Capture" : "Scaled";
     return {
       color: target(`${prefix} scene color`, colorType, Constants.TEXTUREFORMAT_RGBA),
       depth: target(`${prefix} scene Z`, Constants.TEXTURETYPE_FLOAT, Constants.TEXTUREFORMAT_DEPTH32_FLOAT),
@@ -1388,14 +1394,16 @@ export class ForwardSceneFrameGraph {
     return {
       width: size?.width ?? engine.getRenderWidth(true),
       height: size?.height ?? engine.getRenderHeight(true),
+      // Only a scene view drawing into the backbuffer scales.
+      scale: target || this.auxiliary ? 1 : sceneOutputScale(this.scene),
       color: target?.getInternalTexture() ?? null,
       depth: target?.depthStencilTexture ?? null,
     };
   }
 
-  /** Whether the prepared graph was built for this exact output size and attachments. */
+  /** Whether the prepared graph was built for this exact output size, scale and attachments. */
   private outputMatches(output: ReturnType<ForwardSceneFrameGraph["output"]>): boolean {
-    return this.preparedWidth === output.width && this.preparedHeight === output.height &&
+    return this.preparedWidth === output.width && this.preparedHeight === output.height && this.preparedScale === output.scale &&
       this.outputColor === output.color && this.outputDepth === output.depth;
   }
 
@@ -1664,5 +1672,6 @@ export class ForwardSceneFrameGraph {
     this.graph = undefined;
     this.outputColor = this.outputDepth = null;
     this.preparedWidth = this.preparedHeight = 0;
+    this.preparedScale = 1;
   }
 }

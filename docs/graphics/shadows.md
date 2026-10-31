@@ -32,7 +32,7 @@ Open **Project Settings > Rendering > Shadows**. The defaults below are the High
 | **Directional Map Size** | 2048 | Resolution per cascade, 256 to 4096. |
 | **Shadow Cascades** | 4 | Splits directional coverage, 1 to 4, to keep detail near the camera. |
 | **Shadow Filter** | PCF | **PCF** softens edges. **Contact Hardening (PCSS)** adds a contact-hardening penumbra, in PBR only; flat ground under the sun stays free of its own shadow. |
-| **Shadow Filter Quality** | High | Low, Medium or High. Higher uses more texture samples. |
+| **Shadow Filter Quality** | High | Low, Medium or High. **Low** takes one sample and shows the shadow map's texels at edges. **Medium** blends edges over about 5 shadow-map texels and **High** over about 7, for smoother, wider edges at a higher GPU cost. Edges keep the same softness in the world near and far, except where far shadows have too little detail for it. |
 | **Contact Hardening Size** | 0.05 | PCSS light size. Larger values widen the penumbra. |
 | **Screen-Space Shadows** | Medium | **Off**, **Low**, **Medium** or **High**. Adds the sun's small contact shadows the shadow map misses, near the camera. See [Screen-Space Shadows](#screen-space-shadows). |
 | **Shadow Depth Bias** | 0.0001 | Depth offset. High values detach shadows from surfaces. |
@@ -83,7 +83,8 @@ The sun's shadow map has a limited number of texels, so small objects resting on
 - They work in the Scene Viewport, Play, Preview Build, exported games and Full Quality [Render Target Captures](render-targets.md#quality). Fast captures, reflection probes, mirrors, previews, thumbnails and Scene Layers do not draw them.
 - They need the scene's depth. When no post-processing effect already draws it, turning them on adds a depth pass, which costs a little GPU time and one more draw per visible object. Turning **Post-Processing** off in the viewport turns them off too.
 - They see only what is on screen: an object leaving the edge of the view stops darkening the ground near it.
-- Opaque and masked surfaces receive them. Translucent surfaces don't, but glass and other translucent surfaces in front of the ground can cast them.
+- They follow each mesh's **Cast Shadows** and **Receive Shadows**, as the shadow map does: only meshes that cast shadows block the sun, and only meshes that receive shadows darken.
+- Opaque and masked surfaces receive them. Translucent surfaces don't, but glass and other translucent surfaces that cast shadows can cast them on the ground behind.
 - Turning them on or off recompiles lit materials once; changing between Low, Medium and High does not.
 
 ## Override shadows in a scene

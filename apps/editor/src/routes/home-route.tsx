@@ -1,3 +1,4 @@
+import { FeatureTestCheckResume } from "../components/feature-test-check-resume";
 import { Homepage } from "../components/homepage";
 import { HomepageMobileAccountGate } from "../components/homepage-mobile-account-gate";
 import { useDocumentActions, useEditorShellState } from "../context/document-context";
@@ -47,6 +48,7 @@ export default function HomeRoute() {
         }}
         onSettingsChanged={refreshTemplates}
       />
+      <FeatureTestCheckResume />
     </HomepageMobileAccountGate>
   );
 }

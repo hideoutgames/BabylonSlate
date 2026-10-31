@@ -56,6 +56,7 @@ import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import type { SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
+import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "./preserve-drawing-buffer-setting";
 import { nativePreparationForEngine } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineOptions, EngineView, Material } from "@babylonjs/core";
@@ -78,7 +79,7 @@ import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
 import { environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -133,6 +134,7 @@ import {
   resourceCacheForEngine,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
+import { sceneViewRenderSize, setSceneOutputScale } from "./scene-output-scale";
 import {
   applyPlayFreeCamCommand,
   attachPlayFreeCamInput,
@@ -341,34 +343,7 @@ function projectEngineOptions(): EngineOptions {
   };
 }
 
-/** Browser storage key of the `preservebuffer` debug setting. */
-const PRESERVE_DRAWING_BUFFER_KEY = "haptic.debug.preserveDrawingBuffer";
-
-/**
- * Whether the project Engine keeps its drawing buffer between presentations: on unless the `preservebuffer off` debug
- * command turned it off. Off is a debug comparison on a device only (WebKit may present a preserved buffer by
- * copying, which can back up behind the compositor): the Engine's own reads (a view's copy, the direct presenter's held
- * image) happen in the task that drew the frame, but in a frame the Engine skips (the frame cap, a held frame) the
- * canvas reads back blank, which fails the direct presentation e2e probe that samples every animation frame. It is a
- * context attribute, so it applies when the project Engine is next created (an editor reload).
- */
-export function preserveDrawingBufferSetting(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(PRESERVE_DRAWING_BUFFER_KEY) !== "off";
-  } catch {
-    return true;
-  }
-}
-
-/** Debug (`preservebuffer on|off`): store the setting for the next project Engine. */
-export function setPreserveDrawingBufferSetting(enabled: boolean): void {
-  try {
-    if (enabled) globalThis.localStorage?.removeItem(PRESERVE_DRAWING_BUFFER_KEY);
-    else globalThis.localStorage?.setItem(PRESERVE_DRAWING_BUFFER_KEY, "off");
-  } catch {
-    // Storage unavailable (a private window): the setting stays on.
-  }
-}
+export { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting };
 
 /** Frames with no layer still presenting share this set instead of building one. */
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
@@ -668,6 +643,43 @@ function initializeEngine(
     width: Math.max(1, Math.floor(lockedViewSize.width / engine.getHardwareScalingLevel())),
     height: Math.max(1, Math.floor(lockedViewSize.height / engine.getHardwareScalingLevel())),
   } : null;
+  /**
+   * Play's world scale: the `HardwareScalingController` level (render scale,
+   * dynamic resolution, Engine Settings). Without Scene Layers it is the
+   * Engine's level, so the backbuffer is the world's size, as in the editor.
+   * With Scene Layers (`composited`) the backbuffer is the full output, the
+   * view's device pixels or the locked resolution, for the layers, and the
+   * world renders at its own scale inside its graph (`setSceneOutputScale`),
+   * whose output pass fills the backbuffer.
+   */
+  let worldLevel = options.hardwareScalingLevel ?? 1;
+  let composited = false;
+  /**
+   * A Scene Layer's editor view draws at its canvas's device pixels and full
+   * quality: its own level is 1 / the pixel ratio whatever the Engine-wide
+   * level, and its scaling controller never writes the Engine's.
+   */
+  const fullQuality = options.fullQuality === true && !options.playMode && !presentRtt;
+  if (fullQuality) pinFullRenderQuality(scene);
+  const viewLevel = () => fullQuality
+    ? 1 / (canvas.ownerDocument?.defaultView?.devicePixelRatio || 1)
+    : engine.getHardwareScalingLevel();
+  const fullQualityResize = () => {
+    if (!viewCanvasHasLayoutBox(canvas)) return;
+    const css = cssCanvasPixelSize(canvas);
+    const level = viewLevel();
+    const width = Math.max(1, Math.floor(css.width / level)), height = Math.max(1, Math.floor(css.height / level));
+    if (engine.getRenderWidth(true) !== width || engine.getRenderHeight(true) !== height) engine.setSize(width, height);
+  };
+  const playPixelRatio = () => lockedViewSize ? 1 : canvas.ownerDocument?.defaultView?.devicePixelRatio || 1;
+  const syncPlayOutput = () => {
+    if (!options.playMode || presentRtt) return;
+    const ratio = playPixelRatio();
+    // The Engine level maps CSS pixels onto the backbuffer, which picking reads.
+    const level = composited ? 1 / ratio : worldLevel;
+    if (engine.getHardwareScalingLevel() !== level) engine.setHardwareScalingLevel(level);
+    setSceneOutputScale(scene, composited ? 1 / (worldLevel * ratio) : 1);
+  };
   const syncLockedViewSize = () => {
     const size = scaledLockedViewSize();
     if (size && (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)) engine.setSize(size.width, size.height);
@@ -706,7 +718,8 @@ function initializeEngine(
       // Prepare against this view's private-buffer dimensions before Babylon
       // resizes its visible canvas. A pending graph must retain that bitmap.
       const css = cssCanvasPixelSize(canvas);
-      const scale = engine.getHardwareScalingLevel();
+      syncPlayOutput();
+      const scale = viewLevel();
       const locked = scaledLockedViewSize();
       const size = locked ?? {
         width: Math.max(1, Math.floor(css.width / scale)),
@@ -802,6 +815,10 @@ function initializeEngine(
     minLevel: settingsLevel,
     maxLevel: 4,
     initialLevel: settingsLevel,
+    apply: options.playMode && !presentRtt ? (level) => {
+      worldLevel = level;
+      syncPlayOutput();
+    } : fullQuality ? () => {} : undefined,
     targetFrameMs:
       options.frameCap && options.frameCap > 0
         ? 1000 / options.frameCap
@@ -1031,7 +1048,7 @@ function initializeEngine(
   const rebuildPostProcessStack = () => {
     const camera = scene.activeCamera;
     const stack = postProcessParameters.effective(postProcessStack);
-    const resolutionScale = resolveSceneRenderingQuality(scene).postprocessing.resolutionScale;
+    const resolutionScale = fullQuality ? 1 : resolveSceneRenderingQuality(scene).postprocessing.resolutionScale;
     const key = JSON.stringify([postProcessingEnabled, stack, resolutionScale, materialRevision]);
     if (key === appliedPostProcessKey && camera === appliedPostProcessCamera) return;
     retireAttachedStack();
@@ -1073,6 +1090,7 @@ function initializeEngine(
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
       "resolution.scale": String(quality.resolution.scale),
+      "geometry.occlusion": String(quality.geometry.occlusionCulling),
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
       "presentation.preserve": engine.isWebGPU ? "n/a"
         : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
@@ -1095,7 +1113,7 @@ function initializeEngine(
   let appliedRuntimeOverrides: unknown;
   let appliedLocalOverrides: unknown;
   const applyTextureAnisotropy = (texture: BaseTexture) => {
-    const anisotropy = appliedQuality?.textures.anisotropy ?? 4;
+    const anisotropy = fullQuality ? sceneRenderingSettings(scene).textureAnisotropy : appliedQuality?.textures.anisotropy ?? 4;
     applyMaterialTextureAnisotropy(texture, Math.min(anisotropy, engine.getCaps().maxAnisotropy ?? 1));
   };
   const applyQualitySettings = (state: ReturnType<typeof sceneRenderingSettings>) => {
@@ -1115,12 +1133,9 @@ function initializeEngine(
     if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
       resourceCache.setByteCeiling(quality.textures.byteBudget);
       for (const texture of scene.textures) applyTextureAnisotropy(texture);
-      for (const layer of sceneLayerCompositor?.layers() ?? [])
-        for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
     }
     if (previous && previous.postprocessing.resolutionScale !== quality.postprocessing.resolutionScale) {
       rebuildPostProcessStack();
-      sceneLayerCompositor?.refreshPostProcess();
     }
   };
   const applyRenderingQuality = () => {
@@ -1157,7 +1172,8 @@ function initializeEngine(
             camera: layer.camera,
             library: materialLibrary,
             stack: normalizePostProcessStack(stack),
-            resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
+            // Scene Layers keep full quality: their passes never follow the Post Processing tier.
+            resolutionScale: 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
             onDiagnostic: (diagnostic) =>
               options.onPostProcessDiagnostic?.(diagnostic),
@@ -1614,13 +1630,15 @@ function initializeEngine(
       return;
     }
     lockedViewSize = null;
+    syncPlayOutput();
     if (presentRtt) {
       // Resize owned GPU targets while keeping the last completed canvas copy.
       rttPresent?.bind();
     } else if (registeredView) {
-      registeredView.customResize = undefined;
+      // Babylon's own view resize divides by the Engine-wide level.
+      registeredView.customResize = fullQuality ? fullQualityResize : undefined;
       const size = cssCanvasPixelSize(canvas);
-      const scale = engine.getHardwareScalingLevel();
+      const scale = viewLevel();
       engine.setSize(Math.max(1, Math.floor(size.width / scale)), Math.max(1, Math.floor(size.height / scale)));
     } else if (options.sharedEngine) {
       const size = snapCanvasDrawingBuffer(canvas);
@@ -1646,8 +1664,22 @@ function initializeEngine(
     notifyOverlayResize();
   };
 
+  /**
+   * Composition starts with the first Scene Layer and ends with the last. A
+   * registered view applies the new backbuffer size at its next admission,
+   * before it draws; any other view resizes now.
+   */
+  const syncPlayComposition = () => {
+    const next = (sceneLayerCompositor?.layers().length ?? 0) > 0;
+    if (next === composited) return;
+    composited = next;
+    syncPlayOutput();
+    if (!registeredView) resize();
+  };
+
   const setSize = (width: number, height: number) => {
       lockedViewSize = { width: Math.max(1, Math.floor(width)), height: Math.max(1, Math.floor(height)) };
+      syncPlayOutput();
       const { width: nextWidth, height: nextHeight } = scaledLockedViewSize()!;
       if (registeredView) {
         // Native view admission runs before this callback. Defer visible bitmap
@@ -1753,7 +1785,7 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
+    ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
@@ -2012,9 +2044,9 @@ function initializeEngine(
       frameId: engine.frameId, tickId: sampled?.tickIndex ?? 0, sceneGeneration: loadGeneration,
       preparationMs: presentationStats.preparationMs + (registeredView ? admissionPreparationMs : 0),
       submissionMs: 0, drawCalls: 0,
-      width: scene.activeCamera?.outputRenderTarget?.getSize().width ?? engine.getRenderWidth(true),
-      height: scene.activeCamera?.outputRenderTarget?.getSize().height ?? engine.getRenderHeight(true),
-      resolutionScale: 1 / engine.getHardwareScalingLevel(), loading: loadingFrame,
+      width: sceneViewRenderSize(scene, scene.activeCamera?.outputRenderTarget).width,
+      height: sceneViewRenderSize(scene, scene.activeCamera?.outputRenderTarget).height,
+      resolutionScale: 1 / (options.playMode && !presentRtt ? worldLevel : engine.getHardwareScalingLevel()), loading: loadingFrame,
     }) : null;
     admissionPreparationMs = 0;
     let coherentFrame = true;
@@ -2035,8 +2067,8 @@ function initializeEngine(
     const frameReportReceipt = frameScope ? frameReportFeed.candidate({ ...frameScope.capture.report, frame: {
       renderFrameId: engine.frameId, snapshotFrameId: sampled?.frameId ?? 0, tickId: sampled?.tickIndex ?? 0,
       sceneGeneration: loadGeneration, sceneLoadId: worldLoadId, sceneAssetGuid: worldSceneAssetGuid ?? lastSceneAssetGuid, viewId: scene.uniqueId,
-      width: scene.activeCamera?.outputRenderTarget?.getSize().width ?? engine.getRenderWidth(true),
-      height: scene.activeCamera?.outputRenderTarget?.getSize().height ?? engine.getRenderHeight(true),
+      width: sceneViewRenderSize(scene, scene.activeCamera?.outputRenderTarget).width,
+      height: sceneViewRenderSize(scene, scene.activeCamera?.outputRenderTarget).height,
       backend: engine.isWebGPU ? "webgpu" : "webGLVersion" in engine && engine.webGLVersion === 2 ? "webgl2"
         : "webGLVersion" in engine && engine.webGLVersion === 1 ? "webgl1" : "unknown",
     } }) : null;
@@ -2716,15 +2748,15 @@ function initializeEngine(
       }
       if (command.type === "sceneLayerCreate") {
         const layer = sceneLayerCompositor?.create(command);
-        // Layers resolve project quality (Geometry, Water, texture anisotropy)
-        // through the world view.
+        // Layers follow the world view's project settings (Water) but keep full
+        // quality whatever the tier (`pinFullRenderQuality`).
         if (layer) {
           followSceneRenderSettings(layer.scene, scene);
+          pinFullRenderQuality(layer.scene);
           setSceneGameTimePaused(layer.scene, gameTimePaused || heldForPipelines());
-          for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
-          layer.scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
         }
         syncOverlayLayer(command.layerId);
+        syncPlayComposition();
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerRemove") {
@@ -2733,6 +2765,7 @@ function initializeEngine(
         cancelPresentation(new Error("SceneLayer was removed."), `layer:${command.layerId}`);
         layerLoads.delete(command.layerId);
         sceneLayerCompositor?.remove(command.layerId);
+        syncPlayComposition();
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerClear") {
@@ -2742,6 +2775,7 @@ function initializeEngine(
         layerLoads.clear();
         pendingOverlayAssign.clear();
         sceneLayerCompositor?.clear();
+        syncPlayComposition();
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerPostProcess") {
