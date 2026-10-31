@@ -82,6 +82,7 @@ export function mannequinShadowSamples(geometry: MannequinGeometry, state: Shado
   const camera = state.camera!.position as V;
   const matrix = state.camera!.viewProjection as V;
   const texel = sun.generator!.lastDrawBias[0]!.worldTexelSize;
+  const reach = (sun.generator!.textureFetches?.[0] ?? 0) >= 16 ? 3.5 : 2;
   // Low is one hardware bilinear PCF tap. At this model scale the four
   // contributing texels can span an entire limb, so sparse world offsets are
   // not a valid lit/contact oracle. Intersect their exact centers with the face.
@@ -94,9 +95,10 @@ export function mannequinShadowSamples(geometry: MannequinGeometry, state: Shado
     if (incidence <= 0.02 || dot(tri.normal, sub(camera, tri.a)) <= 0) continue;
     const tangent = unit(sub(tri.b, tri.a));
     const bitangent = unit(cross(tri.normal, tangent));
-    // Classify interiors conservatively against the current filter footprint.
+    // Classify interiors conservatively against the current filter footprint:
+    // the first cascade's kernel, 7 × 7 texels at sixteen taps, else 5 × 5 or less.
     // Boundary samples remain in the helper-on/off pixel comparison below.
-    const radius = 2 * texel / incidence;
+    const radius = reach * texel / incidence;
     for (let i = 0; i < 14; i++) for (let j = 0; j < 14 - i; j++) {
       const point = add(add(tri.a, sub(tri.b, tri.a), (i + 0.3) / 14), sub(tri.c, tri.a), (j + 0.3) / 14);
       const towardCamera = sub(camera, point);

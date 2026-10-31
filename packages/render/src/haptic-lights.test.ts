@@ -23,7 +23,10 @@ import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/sh
 import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { HapticLightingBlock } from "./haptic-lighting-block";
-import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer } from "./haptic-lights";
+import { HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S, hapticLightBuffer } from "./haptic-lights";
+
+/** Floats per shadow view record. */
+const VIEW = HAPTIC_SHADOW_VIEW_VEC4S * 4;
 import { isForwardLightExcluded } from "./light-policy";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { compileMaterialPlan } from "./material-compiler";
@@ -252,12 +255,12 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const views = () => [0, 1, 2].map((index) => read("hapticSpot", index * 16 + 12, 1)[0]);
     // The first four views are the sun's; the third spot casts no shadow.
     expect(views()).toEqual([4, 5, -1]);
-    expect(read("hapticShadowViews", 4 * 28, 16)).toEqual([...first!.getTransformMatrix().m].map(Math.fround));
+    expect(read("hapticShadowViews", 4 * VIEW, 16)).toEqual([...first!.getTransformMatrix().m].map(Math.fround));
     const texel = 1 / EDGE;
-    expect(read("hapticShadowViews", 4 * 28 + 16, 8)).toEqual([0, 0, 0.5, texel, 0, 2, 0, 0].map(Math.fround));
+    expect(read("hapticShadowViews", 4 * VIEW + 16, 8)).toEqual([0, 0, 0.5, texel, 0, 2, 0, 0].map(Math.fround));
     // Contact Hardening at medium quality, and the planes of its perspective view and the light's size.
-    expect(read("hapticShadowViews", 5 * 28 + 16, 8)).toEqual([0.5, 0, 0.5, texel, 0.25, 4, 0, 0].map(Math.fround));
-    read("hapticShadowViews", 5 * 28 + 24, 4).forEach((value, index) => expect(value).toBeCloseTo([0.5, 20, 0, 0.08][index]!, 4));
+    expect(read("hapticShadowViews", 5 * VIEW + 16, 8)).toEqual([0.5, 0, 0.5, texel, 0.25, 4, 0, 0].map(Math.fround));
+    read("hapticShadowViews", 5 * VIEW + 24, 4).forEach((value, index) => expect(value).toBeCloseTo([0.5, 20, 0, 0.08][index]!, 4));
     // A light's or the Scene's shadows switched off sample none.
     spots[0]!.shadowEnabled = false;
     syncSceneLighting(scene);
@@ -290,7 +293,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(read("hapticSunShadow", 0, 4).map((value) => Math.round(value * 1000) / 1000)).toEqual([3, 20, 0.1, 0]);
     // Each cascade a tile, its depth clamped.
     const texel = Math.fround(1 / EDGE);
-    expect([0, 1, 2].map((view) => read("hapticShadowViews", view * 28 + 16, 8))).toEqual([
+    expect([0, 1, 2].map((view) => read("hapticShadowViews", view * VIEW + 16, 8))).toEqual([
       [0, 0, 0.25, texel, 0, 2, 1, 0], [0.25, 0, 0.25, texel, 0, 2, 1, 0], [0, 0.25, 0.25, texel, 0, 2, 1, 0],
     ]);
     // Drawn, the views and splits are the ones the cascades were drawn with, and the block takes them at once.
@@ -299,15 +302,20 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     generator.getShadowMap()!.render();
     expect(generator.cascadeEnds.every((end) => end > 0)).toBe(true);
     expect(read("hapticSunShadow", 8, 3)).toEqual(generator.cascadeEnds.slice(0, 3).map(Math.fround));
-    expect(read("hapticShadowViews", 28, 16)).toEqual([...generator.getCascadeTransformMatrix(1)!.m].map(Math.fround));
+    expect(read("hapticShadowViews", VIEW, 16)).toEqual([...generator.getCascadeTransformMatrix(1)!.m].map(Math.fround));
     // Contact Hardening's corrections toward the first cascade, as drawn: its orthographic projection's width, height and
     // depth range over the first's (Babylon's from the cascades' extents), and the light's size.
     const first = generator.getCascadeProjectionMatrix(0)!.m;
     [0, 1, 2].forEach((view) => {
       const projection = generator.getCascadeProjectionMatrix(view)!.m;
-      read("hapticShadowViews", view * 28 + 24, 4).forEach((value, index) =>
+      read("hapticShadowViews", view * VIEW + 24, 4).forEach((value, index) =>
         expect(value).toBeCloseTo([projection[0]! / first[0]!, projection[5]! / first[5]!, first[10]! / projection[10]!, 0.1][index]!, 4));
+      // The filter's texel ratio: the first cascade's world texel over this one's, on the coarser axis (equal tiles here,
+      // so the projections' scales), which picks the kernel holding the first cascade's width in the world.
+      expect(read("hapticShadowViews", view * VIEW + 28, 1)[0]).toBeCloseTo(
+        Math.min(1, projection[0]! / first[0]!, projection[5]! / first[5]!), 4);
     });
+    expect(read("hapticShadowViews", 2 * VIEW + 28, 1)[0]).toBeLessThan(1);
     // The camera's view depth plane: its forward axis and the camera's depth.
     const plane = read("hapticSunShadow", 4, 4);
     const camera = scene.activeCamera!;
@@ -333,7 +341,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const above = Vector3.TransformCoordinates(new Vector3(0, 0, 0), generator.drawnViews[3]!);
     expect([Math.abs(below.x) < 1e-6 && Math.abs(below.y) < 1e-6, below.z > 0 && below.z < 1]).toEqual([true, true]);
     expect(above.z < 0 || above.z > 1).toBe(true);
-    expect(read("hapticShadowViews", (4 + 2) * 28, 16)).toEqual([...generator.drawnViews[2]!.m].map(Math.fround));
+    expect(read("hapticShadowViews", (4 + 2) * VIEW, 16)).toEqual([...generator.drawnViews[2]!.m].map(Math.fround));
   });
 
   it("writes the sun's cascades of the camera rendering: a view's own map while it draws, the scene view's after", () => {
@@ -354,7 +362,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     };
     const read = (name: string, from: number, length: number) =>
       [...buffer._bufferData.subarray(buffer._uniformLocations[name]! + from, buffer._uniformLocations[name]! + from + length)];
-    const tiles = () => [0, 1].map((view) => read("hapticShadowViews", view * 28 + 16, 2));
+    const tiles = () => [0, 1].map((view) => read("hapticShadowViews", view * VIEW + 16, 2));
     const scene0 = tiles();
     expect(scene0).toEqual([[0, 0], [0.25, 0]]);
     const update = vi.spyOn(buffer, "update");
@@ -362,7 +370,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(tiles()).toEqual(own.tiles.map((tile) => [tile.x / EDGE, tile.y / EDGE]));
     // The spot light's view keeps its place.
     expect(read("hapticSpot", 12, 1)).toEqual([4]);
-    expect(read("hapticShadowViews", 4 * 28 + 16, 2)).toEqual([lamp.tile.x / EDGE, lamp.tile.y / EDGE]);
+    expect(read("hapticShadowViews", 4 * VIEW + 16, 2)).toEqual([lamp.tile.x / EDGE, lamp.tile.y / EDGE]);
     scene.activeCamera = main;
     expect(tiles()).toEqual(scene0);
     expect(update).toHaveBeenCalledTimes(2);

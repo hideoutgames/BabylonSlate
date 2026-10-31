@@ -28,7 +28,7 @@ The game keeps running while the console is open, and pressing the game does not
 | --- | --- | --- | --- |
 | `changescene` | scene | Loads a scene by its asset GUID or name. |  |
 | `quality` | `low`, `medium`, `high`, `ultra` or `reset` | Sets every rendering quality group, or resets them. No argument prints the current values. |  |
-| `quality shadows` | tier or `reset`; `budget` N or `auto`; `distance` N; `enabled` `on`/`off`; `screen` `off`/`low`/`medium`/`high` | Shadow quality, the number of shadowed lights, shadow distance (1 to 1,000,000), shadows on or off, and Screen-Space Shadows. |  |
+| `quality shadows` | tier or `reset`; `budget` N or `auto`; `distance` N; `enabled` `on`/`off`; `screen` `off`/`low`/`medium`/`high`; `filter` `low`/`medium`/`high` | Shadow quality, the number of shadowed lights, shadow distance (1 to 1,000,000), shadows on or off, Screen-Space Shadows, and **Shadow Filter Quality**. |  |
 | `quality resolution` | tier or `reset`; `scale` 0.25 to 1 | Render resolution quality, or a fixed fraction of the output size. |  |
 | `quality textures` | tier or `reset` | Texture quality. |  |
 | `quality geometry` | tier or `reset`; `lod` `on`/`off`; `distance` 0.25 to 4; `occlusion` `on`/`off` | Geometry quality: automatic Model LOD, its switch distance scale, and occlusion culling. |  |
