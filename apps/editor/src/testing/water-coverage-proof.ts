@@ -12,8 +12,6 @@ import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene"
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
-/** Water Mesh Density: Low's, Medium and High's, and Ultra's. */
-export const WATER_COVERAGE_DENSITIES = [0.75, 1, 1.5] as const;
 const SEA = -6;
 /** Camera positions and the point each looks at: the far neighbours sit in the frame's upper part. */
 const CAMERAS: ReadonlyArray<{ position: readonly [number, number, number]; target: readonly [number, number, number] }> = [

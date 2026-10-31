@@ -1,13 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { WATER_COVERAGE_DENSITIES, type runWaterCoverageProof } from "../apps/editor/src/testing/water-coverage-proof";
+import type { runWaterCoverageProof } from "../apps/editor/src/testing/water-coverage-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
+/** Water Mesh Density: Low's, Medium and High's, and Ultra's. */
+const DENSITIES = [0.75, 1, 1.5] as const;
 const background = (pixels: number[], index: number) => pixels[index]! > 200 && pixels[index + 1]! < 60 && pixels[index + 2]! > 200;
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-  for (const density of WATER_COVERAGE_DENSITIES) {
+  for (const density of DENSITIES) {
     test(`blended water covers the whole frame with far neighbours at Water Mesh Density ${density} on ${backend}`, async ({ page }, testInfo) => {
       test.setTimeout(180_000);
       const errors: string[] = [];
