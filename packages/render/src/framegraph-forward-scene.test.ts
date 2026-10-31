@@ -1264,3 +1264,65 @@ it("redraws without advancing native animation or catching up after resume", asy
   expect(moving.position.x).toBeCloseTo(2);
   graph.dispose();
 });
+
+it("sizes every screen-space target of the world view from its render scale; only the backbuffer stays at output size", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 160;
+  options.renderHeight = 128;
+  const { engine, scene, camera } = host(new NullEngine(options));
+  // The spatial chain needs four float targets and depth sampling.
+  Object.assign(engine.getCaps(), {
+    maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
+    textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
+  });
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: {
+      ...DEFAULT_RENDER_EFFECTS,
+      ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+      reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+      volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
+    },
+    quality: normalizeRenderingQuality({
+      postprocessing: { resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true, reflections: true, volumetricLighting: true },
+    }),
+  });
+  new PointLight("light", new Vector3(0, 2, 0), scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  /** Every texture the graph creates (not imported or aliased), by name, as width x height. */
+  const sizes = () => {
+    const { textureManager } = (graph as unknown as { graph: FrameGraph }).graph;
+    return Object.fromEntries([...textureManager._textures].filter(([, entry]) => entry && !entry.refHandle).map(([handle, entry]) => {
+      const { size } = textureManager.getTextureDescription(handle);
+      return [entry!.name, `${size.width}x${size.height}`];
+    }));
+  };
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    // Each effect's own scale (the defaults' 0.5) applies on top of the render size.
+    const full = {
+      "backbuffer color": "160x128", "backbuffer depth/stencil": "160x128",
+      "Scene Effects Scene Color": "160x128", "Scene Effects Scene Z": "160x128",
+      "Spatial Geometry Z": "160x128", "Spatial Geometry ViewDepth": "160x128",
+      "Spatial Geometry WorldNormal": "160x128", "Spatial Geometry Reflectivity": "160x128",
+      "Scene Ambient Occlusion": "80x64", "Scene Ambient Occlusion Blur X": "80x64", "Scene Ambient Occlusion Blur Y": "80x64",
+      "Scene Ambient Occlusion Compose": "160x128",
+      "Scene Reflections": "80x64", "Scene Reflections Blur X": "80x64", "Scene Reflections Blur Y": "80x64",
+      "Scene Reflections Compose": "160x128",
+      "Scene Volumetric Lighting": "80x64", "Scene Volumetric Compose": "160x128",
+    };
+    expect(sizes()).toEqual(full);
+    // Half the render scale halves every target but the backbuffer, which the view's output copy fills.
+    setSceneOutputScale(scene, 0.5);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const half = Object.fromEntries(Object.entries(full).map(([name, size]) => {
+      if (name.startsWith("backbuffer")) return [name, size];
+      const [width, height] = size.split("x").map(Number);
+      return [name, `${width! / 2}x${height! / 2}`];
+    }));
+    expect(sizes()).toMatchObject(half);
+    expect(Object.keys(sizes()).filter((name) => !(name in half))).toEqual([]);
+  } finally {
+    graph.dispose();
+  }
+});
