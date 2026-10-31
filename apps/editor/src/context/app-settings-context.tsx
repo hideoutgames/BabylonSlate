@@ -18,7 +18,6 @@ import {
   type EngineSettings,
 } from "@haptic/vfs";
 
-import { LinkedAxesContext } from "@haptic/editor-kit";
 import { GraphInteractionSettingsContext } from "@haptic/graph-ui";
 
 export type AppSettingsSnapshot = {
@@ -199,25 +198,11 @@ export function AppSettingsProvider({
     }),
     [snapshot, updateSettings, updateDebuggerDefaults],
   );
-  const scaleAxesLinked = snapshot.settings.scaleAxesLinked;
-  const linkedAxes = useMemo(
-    () => ({
-      linked: scaleAxesLinked,
-      onLinkedChange: (linked: boolean) => {
-        void owner.update((settings) => {
-          settings.scaleAxesLinked = linked;
-        }).catch((error) => console.warn("Could not remember the Scale link:", error));
-      },
-    }),
-    [owner, scaleAxesLinked],
-  );
   return (
     <AppSettingsContext.Provider value={value}>
       <AppSettingsOwnerContext.Provider value={owner}>
       <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: snapshot.settings.graphAssistantEnabled, assistantDistance: snapshot.settings.graphAssistantDistance, shakeEnabled: snapshot.settings.graphShakeEnabled, readOnlyPinDefaults: snapshot.settings.readOnlyPinDefaults, addNodeHistoryEnabled: snapshot.settings.graphAddNodeHistoryEnabled }}>
-      <LinkedAxesContext.Provider value={linkedAxes}>
         {children}
-      </LinkedAxesContext.Provider>
       </GraphInteractionSettingsContext.Provider>
       </AppSettingsOwnerContext.Provider>
     </AppSettingsContext.Provider>

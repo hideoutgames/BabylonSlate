@@ -41,6 +41,7 @@ import {
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useModelColliderSession } from "../context/model-collider-session";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
+import { scaleLinkKey, useLinkedScale, type ScaleLink } from "../lib/linked-scale";
 import { ModelPreviewCanvas } from "./model-preview-canvas";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -277,6 +278,7 @@ function colliderPropertyRows(
   collider: ModelSimpleCollider,
   /** `field` names the scrubbed property so one drag is one undo step. */
   commit: (next: ModelSimpleCollider, field?: string) => void,
+  scaleLink: ScaleLink,
 ): PropertyRow[] {
   const euler = quaternionToEulerDegrees(collider.rotation);
   const rows: PropertyRow[] = [
@@ -312,7 +314,7 @@ function colliderPropertyRows(
       kind: "vector3",
       label: "Scale",
       value: collider.scale,
-      linkable: true,
+      ...scaleLink,
       onChange: (value) =>
         commit({ ...collider, scale: [value[0], value[1], value[2]] }, "scale"),
     },
@@ -378,6 +380,7 @@ export function ModelColliders({
 }) {
   const model = normalizeModelPayload(payload);
   const { selectedColliderId, setSelectedColliderId } = useModelColliderSession();
+  const linkedScale = useLinkedScale();
   const selected =
     model.simpleColliders.find((entry) => entry.id === selectedColliderId) ??
     null;
@@ -479,6 +482,7 @@ export function ModelColliders({
               patchCollider(model, next.id, next),
               field ? `model-collider:${next.id}:${field}` : undefined,
             ),
+            linkedScale.link(scaleLinkKey.collider(selected.id)),
           )}
         />
       ) : null}

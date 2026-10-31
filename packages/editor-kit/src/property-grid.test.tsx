@@ -11,7 +11,6 @@ import {
 } from "@testing-library/react";
 import { PropertyGrid, type PropertyRow, type Vector3Value } from "./property-grid";
 import { EditorReadOnlyContext } from "./editor-read-only";
-import { LinkedAxesContext } from "./linked-axes";
 import { AssetOpenProvider } from "./asset-picker-control";
 import {
   formatEventMemberName,
@@ -169,8 +168,8 @@ describe("PropertyGrid", () => {
     expect(onChange).toHaveBeenCalledWith([0, 0, 0]);
   });
 
-  describe("linkable vector rows", () => {
-    function renderLinkable(
+  describe("linked vector rows", () => {
+    function renderLinked(
       value: Vector3Value,
       extra: Partial<Extract<PropertyRow, { kind: "vector3" }>> = {},
     ) {
@@ -179,7 +178,7 @@ describe("PropertyGrid", () => {
       const grid = (next: Vector3Value) => (
         <PropertyGrid
           rows={[
-            { kind: "vector3", id: "scale", label: "Scale", value: next, linkable: true, onChange, onCommit, ...extra },
+            { kind: "vector3", id: "scale", label: "Scale", value: next, linked: true, onLinkedChange: () => {}, onChange, onCommit, ...extra },
           ]}
         />
       );
@@ -189,20 +188,31 @@ describe("PropertyGrid", () => {
     const link = () => screen.getByRole("button", { name: "Link Scale Axes" });
     const axis = (name: string) => screen.getByRole("textbox", { name: `Scale ${name}` });
 
-    it("keeps axes independent until the link is pressed, then scales the others by the same factor", () => {
-      const { onChange } = renderLinkable([2, 4, 1]);
+    it("shows the row's link state and reports presses", () => {
+      const onLinkedChange = vi.fn();
+      const onChange = vi.fn();
+      const view = render(
+        <PropertyGrid
+          rows={[{ kind: "vector3", id: "scale", label: "Scale", value: [2, 4, 1], linked: false, onLinkedChange, onChange }]}
+        />,
+      );
       expect(link().getAttribute("aria-pressed")).toBe("false");
       fireEvent.change(axis("X"), { target: { value: "1" } });
       expect(onChange).toHaveBeenLastCalledWith([1, 4, 1]);
       fireEvent.click(link());
+      expect(onLinkedChange).toHaveBeenCalledExactlyOnceWith(true);
+      view.rerender(
+        <PropertyGrid
+          rows={[{ kind: "vector3", id: "scale", label: "Scale", value: [2, 4, 1], linked: true, onLinkedChange, onChange }]}
+        />,
+      );
       expect(link().getAttribute("aria-pressed")).toBe("true");
       fireEvent.change(axis("Y"), { target: { value: "8" } });
       expect(onChange).toHaveBeenLastCalledWith([4, 8, 2]);
     });
 
     it("scales from where the edit began, so a typed 0 prefix keeps the proportions", () => {
-      const { onChange, onCommit, show } = renderLinkable([2, 4, 1]);
-      fireEvent.click(link());
+      const { onChange, onCommit, show } = renderLinked([2, 4, 1]);
       fireEvent.change(axis("X"), { target: { value: "0" } });
       expect(onChange).toHaveBeenLastCalledWith([0, 0, 0]);
       show([0, 0, 0]);
@@ -214,8 +224,7 @@ describe("PropertyGrid", () => {
     });
 
     it("starts the next linked edit from values changed elsewhere", () => {
-      const { onChange, show } = renderLinkable([1, 2, 4]);
-      fireEvent.click(link());
+      const { onChange, show } = renderLinked([1, 2, 4]);
       fireEvent.change(axis("X"), { target: { value: "3" } });
       show([3, 6, 12]);
       fireEvent.keyDown(axis("X"), { key: "Escape" });
@@ -228,39 +237,23 @@ describe("PropertyGrid", () => {
     });
 
     it("gives every shown axis the value when the edited axis was zero, and leaves hidden axes alone", () => {
-      const { onChange } = renderLinkable([0, 3, 7], { axes: ["X", "Y"] });
-      fireEvent.click(link());
+      const { onChange } = renderLinked([0, 3, 7], { axes: ["X", "Y"] });
       fireEvent.change(axis("X"), { target: { value: "2" } });
       expect(onChange).toHaveBeenLastCalledWith([2, 2, 7]);
     });
 
-    it("scales each selected item by its own factor", () => {
+    it("scales each linked item by its own factor and only sets the axis on unlinked items", () => {
       const onItemValuesChange = vi.fn();
-      const { onChange } = renderLinkable([1, 2, 4], {
-        itemValues: [[1, 2, 4], [4, 2, 1]],
+      const { onChange } = renderLinked([1, 2, 4], {
+        linked: false,
+        itemValues: [[1, 2, 4], [4, 2, 1], [4, 2, 1]],
+        itemLinked: [true, true, false],
         onItemValuesChange,
       });
-      fireEvent.click(link());
+      expect(link().getAttribute("aria-pressed")).toBe("false");
       fireEvent.change(axis("X"), { target: { value: "2" } });
-      expect(onItemValuesChange).toHaveBeenLastCalledWith([[2, 4, 8], [2, 1, 0.5]]);
+      expect(onItemValuesChange).toHaveBeenLastCalledWith([[2, 4, 8], [2, 1, 0.5], [2, 2, 1]]);
       expect(onChange).not.toHaveBeenCalled();
-    });
-
-    it("reads and reports the shared link state", () => {
-      const onLinkedChange = vi.fn();
-      const onChange = vi.fn();
-      render(
-        <LinkedAxesContext.Provider value={{ linked: true, onLinkedChange }}>
-          <PropertyGrid
-            rows={[{ kind: "vector3", id: "scale", label: "Scale", value: [1, 2, 3], linkable: true, onChange }]}
-          />
-        </LinkedAxesContext.Provider>,
-      );
-      expect(link().getAttribute("aria-pressed")).toBe("true");
-      fireEvent.change(axis("Z"), { target: { value: "6" } });
-      expect(onChange).toHaveBeenLastCalledWith([2, 4, 6]);
-      fireEvent.click(link());
-      expect(onLinkedChange).toHaveBeenCalledExactlyOnceWith(false);
     });
   });
 

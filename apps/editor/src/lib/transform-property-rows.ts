@@ -6,6 +6,7 @@ import {
   type SerializedTransform,
   type ViewportMode,
 } from "@haptic/core";
+import type { ScaleLink } from "./linked-scale";
 
 /**
  * `layer3d` is Scene Layer 3D geometry: placed like 2D (Position XY plus
@@ -19,11 +20,16 @@ export function spatialTransformPropertyRows(
   mode: TransformRowsMode,
   transform: SerializedTransform,
   onUpdateTransform: (next: SerializedTransform) => void,
-  defaults?: SerializedTransform,
+  options: {
+    /** Reset values; identity otherwise. */
+    defaults?: SerializedTransform;
+    /** The owner's Scale link; without one Scale has no link toggle. */
+    scaleLink?: ScaleLink;
+  } = {},
 ): PropertyRow[] {
   const planar = mode !== "3d";
   const twoD = mode === "2d";
-  const reset = defaults ?? identitySerializedTransform();
+  const reset = options.defaults ?? identitySerializedTransform();
   const defaultEuler = quaternionToEulerDegrees(reset.rotation);
   const rows: PropertyRow[] = [
     {
@@ -80,7 +86,7 @@ export function spatialTransformPropertyRows(
       value: transform.scale,
       defaultValue: [...reset.scale] as [number, number, number],
       axes: twoD ? ["X", "Y"] : ["X", "Y", "Z"],
-      linkable: true,
+      ...options.scaleLink,
       onChange: (scale) =>
         onUpdateTransform({
           ...transform,

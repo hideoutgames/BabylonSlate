@@ -5,12 +5,14 @@ import {
   type SerializedActor,
 } from "@haptic/core";
 import { depthFromZOrder, zOrderFromDepth, type TransformRowsMode } from "./transform-property-rows";
+import { scaleLinkKey, type LinkedScale } from "./linked-scale";
 
 /** Shared axis edits are absolute values; other axes retain each actor's values. */
 export function selectionTransformPropertyRows(
   actors: readonly SerializedActor[],
   mode: TransformRowsMode,
   updateSelected: (update: (actor: SerializedActor) => SerializedActor) => void,
+  linkedScale?: LinkedScale,
 ): PropertyRow[] {
   const primary = actors[0];
   if (!primary) return [];
@@ -75,10 +77,13 @@ export function selectionTransformPropertyRows(
         values[axis] = next;
         apply(values, axis);
       },
-      // Linked Scale edits scale each actor by its own factor.
-      ...(property === "scale"
+      // Each actor keeps its own link; linked actors scale by their own factor.
+      ...(property === "scale" && linkedScale
         ? {
-            linkable: true,
+            linked: actors.every((actor) => linkedScale.isLinked(scaleLinkKey.actor(actor.id))),
+            onLinkedChange: (linked: boolean) =>
+              linkedScale.setLinked(actors.map((actor) => scaleLinkKey.actor(actor.id)), linked),
+            itemLinked: actors.map((actor) => linkedScale.isLinked(scaleLinkKey.actor(actor.id))),
             itemValues: actors.map((actor) => shownValues(valuesFor(actor))),
             onItemValuesChange: (itemValues: Vector3Value[]) =>
               updateSelected((actor) => {

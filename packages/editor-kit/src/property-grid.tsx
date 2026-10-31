@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link2Icon, Link2OffIcon } from "lucide-react";
 import { useEditorReadOnly } from "./editor-read-only";
 import type { Tag, TagContainer } from "@haptic/core";
@@ -39,7 +39,7 @@ import { type TypeVisualQuery } from "./type-visuals";
 import { AssetPickerControl } from "./asset-picker-control";
 import { CurveField, type CurveKey } from "./curve-field";
 import { GradientField, type GradientStop } from "./gradient-field";
-import { LinkedAxesContext, scaleLinkedAxes } from "./linked-axes";
+import { editVectorAxis } from "./linked-axes";
 import "./styles/property-grid.css";
 
 export type Vector3Value =
@@ -109,16 +109,20 @@ export type PropertyRow =
       onAxisChange?: (axis: number, value: number) => void;
       onCommit?: (value: Vector3Value) => void;
       /**
-       * Link toggle after the label (vertical grids only), state from
-       * `LinkedAxesContext`. While linked, an axis edit scales the other shown
-       * axes by the same factor, measured from the values where the edit began.
+       * While linked, an axis edit scales the other shown axes by the same
+       * factor, measured from the values where the edit began. Vertical grids
+       * only; `onLinkedChange` adds the link toggle after the label.
        */
-      linkable?: boolean;
+      linked?: boolean;
+      onLinkedChange?: (linked: boolean) => void;
       /**
-       * A multi-selection's per-item values in `axes` order. Linked edits scale
-       * each item by its own factor and report them here instead of `onChange`.
+       * A multi-selection's per-item values in `axes` order, `value`'s item
+       * first. With any item linked, an edit sets the axis on every item, scales
+       * each linked item by its own factor and reports them here, not `onChange`.
        */
       itemValues?: Vector3Value[];
+      /** Per-item link state; `linked` (pressed only when all are) otherwise. */
+      itemLinked?: boolean[];
       onItemValuesChange?: (values: Vector3Value[]) => void;
     })
   | (PropertyRowBase & {
@@ -377,8 +381,12 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
 
 type Vector3Row = Extract<PropertyRow, { kind: "vector3" }>;
 
-function Vector3RowControl({ row, linked }: { row: Vector3Row; linked: boolean }) {
+function Vector3RowControl({ row, linkable }: { row: Vector3Row; linkable: boolean }) {
   const axes = row.axes ?? ["X", "Y", "Z"];
+  const items = row.itemValues && row.onItemValuesChange ? row.itemValues : undefined;
+  const itemLinked = items?.map((_, index) => row.itemLinked?.[index] ?? row.linked === true);
+  const primaryLinked = itemLinked?.[0] ?? row.linked === true;
+  const linked = linkable && (itemLinked ? itemLinked.some(Boolean) : primaryLinked);
   // Scaling from where the edit began keeps proportions through typed
   // prefixes ("0" of "0.5") and scrubs that cross zero.
   const linkedEditRef = useRef<{
@@ -395,13 +403,15 @@ function Vector3RowControl({ row, linked }: { row: Vector3Row; linked: boolean }
   const editLinked = (index: number, next: number) => {
     const edit = (linkedEditRef.current ??= {
       value: [...row.value],
-      items: row.itemValues?.map((item) => [...item] as Vector3Value),
+      items: items?.map((item) => [...item] as Vector3Value),
       latest: row.value,
     });
-    edit.latest = scaleLinkedAxes(edit.value, index, next, axes.length);
+    edit.latest = editVectorAxis(edit.value, index, next, axes.length, primaryLinked);
     if (edit.items && row.onItemValuesChange) {
       row.onItemValuesChange(
-        edit.items.map((item) => scaleLinkedAxes(item, index, next, axes.length)),
+        edit.items.map((item, itemIndex) =>
+          editVectorAxis(item, index, next, axes.length, itemLinked?.[itemIndex] === true),
+        ),
       );
     } else {
       row.onChange(edit.latest);
@@ -440,7 +450,7 @@ function Vector3RowControl({ row, linked }: { row: Vector3Row; linked: boolean }
               if (linked) {
                 const base = linkedEditRef.current?.value ?? row.value;
                 linkedEditRef.current = null;
-                row.onCommit?.(scaleLinkedAxes(base, index, next, axes.length));
+                row.onCommit?.(editVectorAxis(base, index, next, axes.length, primaryLinked));
                 return;
               }
               // The finished axis value may not have re-rendered into row.value yet.
@@ -458,14 +468,13 @@ function Vector3RowControl({ row, linked }: { row: Vector3Row; linked: boolean }
 
 function LinkAxesToggle({
   row,
-  linked,
   onLinkedChange,
 }: {
   row: Vector3Row;
-  linked: boolean;
   onLinkedChange: (linked: boolean) => void;
 }) {
   const name = `Link ${humanizePropertyLabel(row.label)} Axes`;
+  const linked = row.linked === true;
   const Icon = linked ? Link2Icon : Link2OffIcon;
   return (
     <Tooltip>
@@ -489,7 +498,7 @@ function LinkAxesToggle({
   );
 }
 
-function RowControl({ row, linked = false }: { row: PropertyRow; linked?: boolean }) {
+function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: boolean }) {
   switch (row.kind) {
     case "tag":
       return <TagPicker mode="single" id={`property-${row.id}`} value={row.value} onChange={row.onChange}
@@ -516,7 +525,7 @@ function RowControl({ row, linked = false }: { row: PropertyRow; linked?: boolea
         />
       );
     case "vector3":
-      return <Vector3RowControl row={row} linked={linked} />;
+      return <Vector3RowControl row={row} linkable={linkable} />;
     case "boolean":
       return (
         <FieldLabel
@@ -810,10 +819,6 @@ export function PropertyGrid({
   const inheritedReadOnly = useEditorReadOnly();
   const readOnly = readOnlyProp || inheritedReadOnly;
   const compact = density === "compact";
-  const linkSetting = useContext(LinkedAxesContext);
-  const [localLinked, setLocalLinked] = useState(false);
-  const linked = linkSetting?.linked ?? localLinked;
-  const setLinked = linkSetting?.onLinkedChange ?? setLocalLinked;
   return (
     <div
       className="flex min-w-0 flex-col gap-0"
@@ -827,8 +832,8 @@ export function PropertyGrid({
       <FieldGroup className="gap-0">
         {rows.map((source) => {
           const row = readOnly ? readOnlyPropertyRow(source) : source;
-          const linkable =
-            orientation === "vertical" && row.kind === "vector3" && row.linkable === true;
+          const onLinkedChange =
+            orientation === "vertical" && row.kind === "vector3" ? row.onLinkedChange : undefined;
           const label = (
             <FieldLabel
               id={`property-${row.id}-caption`}
@@ -838,7 +843,7 @@ export function PropertyGrid({
                   ? "sr-only"
                   : cn(
                       "w-auto min-w-0 truncate",
-                      !linkable && "flex-1",
+                      !onLinkedChange && "flex-1",
                       row.unit && !inlineUnit(row) && "gap-1",
                     )
               }
@@ -879,14 +884,14 @@ export function PropertyGrid({
                 <>
                   <div className="flex min-w-0 items-center gap-1">
                     {label}
-                    {linkable && row.kind === "vector3" ? (
-                      <LinkAxesToggle row={row} linked={linked} onLinkedChange={setLinked} />
+                    {onLinkedChange && row.kind === "vector3" ? (
+                      <LinkAxesToggle row={row} onLinkedChange={onLinkedChange} />
                     ) : null}
                     {row.labelAccessory}
                     {rowResetButton(row)}
                   </div>
                   <div className="min-w-0">
-                    <RowControl row={row} linked={linkable && linked} />
+                    <RowControl row={row} linkable />
                     {row.description ? (
                       <FieldDescription>{row.description}</FieldDescription>
                     ) : null}

@@ -86,6 +86,7 @@ function GalleryDisclosure() {
 export function GalleryComposites() {
   const [position, setPosition] = useState<[number, number, number]>([0, 1, 0]);
   const [scale, setScale] = useState<[number, number, number]>([1, 2, 1]);
+  const [scaleLinked, setScaleLinked] = useState(false);
   const [speed, setSpeed] = useState(4);
   const [friction, setFriction] = useState(0.5);
   const [physicsLayer, setPhysicsLayer] = useState(1);
@@ -155,7 +156,8 @@ export function GalleryComposites() {
       label: "Scale",
       value: scale,
       defaultValue: [1, 1, 1],
-      linkable: true,
+      linked: scaleLinked,
+      onLinkedChange: setScaleLinked,
       onChange: (value) => setScale([value[0], value[1], value[2]]),
     },
     {
