@@ -60,6 +60,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/haptic-screen-shadows-proof").then(({ runHapticScreenShadowsProof }) => Object.assign(window, { __hapticScreenShadowsProof: runHapticScreenShadowsProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterCutProof")) {
   void import("./testing/water-cut-proof").then(({ runWaterCutProof }) => Object.assign(window, { __waterCutProof: runWaterCutProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterCoverageProof")) {
+  void import("./testing/water-coverage-proof").then(({ runWaterCoverageProof }) => Object.assign(window, { __waterCoverageProof: runWaterCoverageProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterSeamProof")) {
   void import("./testing/water-seam-proof").then(({ runWaterSeamProof }) => Object.assign(window, { __waterSeamProof: runWaterSeamProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterReflectionProof")) {
