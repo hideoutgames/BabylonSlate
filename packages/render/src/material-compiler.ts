@@ -1007,16 +1007,20 @@ export function compileMaterialPlan(
   // Frozen NodeMaterials skip forced bindings when another mesh shared the effect.
   // Bone palettes, morph weights and text atlases belong to each mesh, even
   // when their material is static.
+  // So do Cast Shadows (the geometry pass's caster mark) and, below, Receive Shadows.
   const perMeshBlocks = created.filter(
-    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock | WaterWavesBlock =>
-      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock || block instanceof WaterWavesBlock,
+    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock | WaterWavesBlock | GeometrySurfaceOutputBlock =>
+      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock || block instanceof WaterWavesBlock || block instanceof GeometrySurfaceOutputBlock,
   );
-  if (perMeshBlocks.length > 0) {
+  // The light block rebinds only its receiver terms.
+  const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
+  if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {
     material.onBindObservable.add((mesh) => {
       if (!(mesh instanceof Mesh) || !material.isFrozen) return;
       const effect = material.getEffect();
       if (effect) {
         for (const block of perMeshBlocks) block.bind(effect, material, mesh);
+        for (const block of lightingBlocks) block.bindReceiver(effect, mesh);
       }
     });
   }

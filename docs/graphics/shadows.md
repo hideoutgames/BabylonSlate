@@ -83,7 +83,8 @@ The sun's shadow map has a limited number of texels, so small objects resting on
 - They work in the Scene Viewport, Play, Preview Build, exported games and Full Quality [Render Target Captures](render-targets.md#quality). Fast captures, reflection probes, mirrors, previews, thumbnails and Scene Layers do not draw them.
 - They need the scene's depth. When no post-processing effect already draws it, turning them on adds a depth pass, which costs a little GPU time and one more draw per visible object. Turning **Post-Processing** off in the viewport turns them off too.
 - They see only what is on screen: an object leaving the edge of the view stops darkening the ground near it.
-- Opaque and masked surfaces receive them. Translucent surfaces don't, but glass and other translucent surfaces in front of the ground can cast them.
+- They follow each mesh's **Cast Shadows** and **Receive Shadows**, as the shadow map does: only meshes that cast shadows block the sun, and only meshes that receive shadows darken.
+- Opaque and masked surfaces receive them. Translucent surfaces don't, but glass and other translucent surfaces that cast shadows can cast them on the ground behind.
 - Turning them on or off recompiles lit materials once; changing between Low, Medium and High does not.
 
 ## Override shadows in a scene

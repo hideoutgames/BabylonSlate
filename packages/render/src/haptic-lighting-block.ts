@@ -221,6 +221,22 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     uniformBuffers.push("HapticLights", "HapticClusters");
   }
 
+  /**
+   * The drawn mesh's own terms: whether it receives shadows (the atlas's and the screen shadows'). Babylon skips a frozen
+   * Material's bindings for a draw that shares the previous draw's Material and Effect, so the compiler also calls this
+   * for every draw of a frozen Material (`material-compiler.ts`); otherwise one mesh's Receive Shadows leaks to the next.
+   */
+  bindReceiver(effect: Effect, mesh: AbstractMesh): void {
+    const scene = mesh.getScene();
+    effect.setFloat("hapticShadowReceiver", mesh.receiveShadows ? 1 : 0);
+    if (screenShadowEffect(effect)) {
+      // This pass's screen shadows (a planned view's objects pass), else the placeholder and the read off.
+      const screen = screenShadowsForPass(scene, scene.getEngine().currentRenderPassId);
+      effect.setTexture("hapticScreenShadowSampler", screen ?? screenShadowsPlaceholder(scene));
+      effect.setFloat4("hapticScreenShadowTerms", screen && mesh.receiveShadows ? 1 : 0, 0, 0, 0);
+    }
+  }
+
   override bind(effect: Effect, _nodeMaterial: NodeMaterial, mesh?: Mesh): void {
     if (!mesh) return;
     const scene = mesh.getScene();
@@ -233,13 +249,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       plainDepthSampler(scene.getEngine());
       effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
     }
-    effect.setFloat("hapticShadowReceiver", mesh.receiveShadows ? 1 : 0);
-    if (screenShadowEffect(effect)) {
-      // This pass's screen shadows (a planned view's objects pass), else the placeholder and the read off.
-      const screen = screenShadowsForPass(scene, scene.getEngine().currentRenderPassId);
-      effect.setTexture("hapticScreenShadowSampler", screen ?? screenShadowsPlaceholder(scene));
-      effect.setFloat4("hapticScreenShadowTerms", screen && mesh.receiveShadows ? 1 : 0, 0, 0, 0);
-    }
+    this.bindReceiver(effect, mesh);
     // WebGPU draws only with every declared texture bound: the table always, the cube where a program declares it.
     effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
     if (celEffect(effect)) {
