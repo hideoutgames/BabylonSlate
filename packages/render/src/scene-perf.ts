@@ -21,7 +21,7 @@ import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 import { drawnMaterialVariants } from "./drawn-variants";
-import { drawingMesh } from "./instance-source";
+import { drawingMesh, isInstanceSource } from "./instance-source";
 import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
@@ -215,7 +215,9 @@ type SceneReadinessInternals = { _isReadyChecks: readonly { isReady(): boolean }
 /** The Effects the mesh being probed requested, and that mesh (reused, so a probe allocates nothing per mesh). */
 const meshRequests = new Set<Effect>();
 let probedMesh: AbstractMesh | undefined;
-const probeMesh = () => probedMesh!.isReady(true);
+// A pool's source draws only its instances (`markInstanceSource`), so it is probed for its instanced variants even
+// while it has none: a member that moved to another group leaves its source empty for the rest of the frame.
+const probeMesh = () => probedMesh instanceof Mesh && isInstanceSource(probedMesh) ? probedMesh.isReady(true, true) : probedMesh!.isReady(true);
 const reportedFailures = new WeakSet<Effect>();
 /** The scene probe's shadow maps (reused). */
 const probedShadowMaps = new Set<RenderTargetTexture>();

@@ -11,6 +11,7 @@ import {
   ImageProcessingBlock,
   InputBlock,
   Material,
+  InstancedMesh,
   Mesh,
   MeshBuilder,
   ParticleBlendMultiplyBlock,
@@ -1019,11 +1020,13 @@ export function compileMaterialPlan(
   const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
   if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {
     material.onBindObservable.add((mesh) => {
-      if (!(mesh instanceof Mesh) || !material.isFrozen) return;
+      // A pool member Babylon draws on its own (`_actAsRegularMesh`, its handedness apart from its source's) binds as
+      // itself: an instance carries no bones, morphs or per-mesh text, so it rebinds as a rigid mesh does.
+      if (!(mesh instanceof Mesh || mesh instanceof InstancedMesh) || !material.isFrozen) return;
       const effect = material.getEffect();
       if (effect) {
-        for (const block of perMeshBlocks) block.bind(effect, material, mesh);
-        for (const block of lightingBlocks) block.bindReceiver(effect, mesh);
+        for (const block of perMeshBlocks) block.bind(effect, material, mesh as Mesh);
+        for (const block of lightingBlocks) block.bindReceiver(effect, mesh as Mesh);
       }
     });
   }

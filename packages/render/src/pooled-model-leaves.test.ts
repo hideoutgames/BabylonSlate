@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { InstancedMesh, Mesh, StandardMaterial } from "@babylonjs/core";
+import { FreeCamera, InstancedMesh, Mesh, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import { encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { sceneInstancePool, setSceneInstancing } from "./instance-pool";
@@ -46,6 +46,22 @@ describe("poolModelLeaves", () => {
     expect(holds).toEqual(["held", "held"]);
     for (const root of [left, right]) root.dispose();
     expect(holds.filter((hold) => hold === "released")).toHaveLength(2);
+  });
+
+  it("draws a mirrored glTF model's parts as one batch from a mirrored source", async () => {
+    // The loader's handedness root mirrors every mesh; Babylon draws an instance mirrored apart from its source alone.
+    const { scene, instance, container, retain } = await modelScene();
+    const [left, right] = [instance("left"), instance("right")];
+    for (const root of [left, right]) poolModelLeaves(root, container, { retain });
+    right.position.x = 3;
+    const camera = new FreeCamera("camera", new Vector3(0, 0, -10), scene);
+    camera.setTarget(Vector3.Zero());
+    scene.render();
+    const parts = [part(left, "part-a"), part(right, "part-a")] as InstancedMesh[];
+    const mirrored = (mesh: Mesh) => mesh.getWorldMatrix().determinant() < 0;
+    expect(parts.map((member) => [mirrored(member as unknown as Mesh), mirrored(member.sourceMesh)])).toEqual([[true, true], [true, true]]);
+    expect(parts.map((member) => (member as unknown as { _internalAbstractMeshDataInfo: { _actAsRegularMesh: boolean } })
+      ._internalAbstractMeshDataInfo._actAsRegularMesh)).toEqual([false, false]);
   });
 
   it("moves a pooled part to the group of the Material its slot assigns", async () => {
