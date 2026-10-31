@@ -24,6 +24,8 @@ export const DEFAULT_CAMERA_PREVIEW_FRAME_RATE = 30;
 /** Hardware scaling 1 is native resolution; 4 is the quarter-scale floor rendering quality accepts. */
 export const MIN_HARDWARE_SCALING_LEVEL = 1;
 export const MAX_HARDWARE_SCALING_LEVEL = 4;
+/** Linked Inspector Scale fields remembered on this device; linking another forgets the oldest. */
+export const MAX_LINKED_SCALE_KEYS = 1000;
 
 /**
  * Focus keep-list defaults: one key per dock document kind (plus the Scene
@@ -210,6 +212,12 @@ export const engineSettingsSchema = z.object({
   viewportSnapRotateDeg: z.number().finite().positive().default(15),
   viewportSnapTranslate: z.number().finite().positive().default(1),
   viewportSnapScale: z.number().finite().positive().default(0.25),
+  /** Inspector Scale fields whose axes are linked, by owner key, newest last; the rest start unlinked. */
+  linkedScaleKeys: z
+    .array(z.string())
+    .catch([])
+    .default([])
+    .transform((keys) => keys.slice(-MAX_LINKED_SCALE_KEYS)),
   postProcessingEnabled: z.boolean().default(true),
   editorTextureLodEnabled: z.boolean().default(false),
   editorTextureLodQuality: z.preprocess((value) => {
