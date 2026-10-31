@@ -1,6 +1,7 @@
-import { Mesh, type AbstractMesh, type AssetContainer, type Geometry, type InstancedMesh, type Scene } from "@babylonjs/core";
-import { instancingIneligibility, sceneInstancePool, sceneInstancing, type InstanceGeometry } from "./instance-pool";
+import { Mesh, type AbstractMesh, type AnimationGroup, type AssetContainer, type Geometry, type InstancedMesh, type Scene } from "@babylonjs/core";
+import { instancingIneligibility, mirrorsWorld, sceneInstancePool, sceneInstancing, type InstanceGeometry } from "./instance-pool";
 import { attachTemplateLods } from "./model-lod";
+import { animatesOnlyTransform, handOverNode } from "./node-handover";
 
 /** Each Scene's model leaf geometries, by the container geometry their clones share. */
 const geometries = new WeakMap<Scene, WeakMap<Geometry, InstanceGeometry>>();
@@ -32,25 +33,29 @@ function leafGeometry(scene: Scene, template: Mesh, retain: () => () => void): I
 }
 
 /**
- * Whether the model leaf `mesh` may draw as a pool member: a visible, rigid mesh with no children (an instance
- * cannot keep a subtree's records) whose geometry a container mesh holds, and no skeleton or morphs. The rest is
- * `instancingIneligibility`. Auto LOD gives its group's source the levels (`attachModelLods`).
+ * Whether the model mesh `mesh` may draw as a pool member: a visible, rigid mesh whose geometry a container mesh holds,
+ * with no skeleton or morphs, and whose animations in `groups` move only its transform (a member's own). Its children
+ * move to the member. The rest is `instancingIneligibility`. Auto LOD gives its group's source the levels
+ * (`attachModelLods`).
  */
-function poolsLeaf(mesh: AbstractMesh): mesh is Mesh {
-  if (!(mesh instanceof Mesh) || !mesh.geometry || !mesh.isVisible || mesh.getChildren().length > 0) return false;
+function poolsLeaf(mesh: AbstractMesh, groups: readonly AnimationGroup[]): mesh is Mesh {
+  if (!(mesh instanceof Mesh) || !mesh.geometry || !mesh.isVisible) return false;
   if (mesh.skeleton || mesh.morphTargetManager) return false;
+  if (!animatesOnlyTransform(mesh, groups)) return false;
   return instancingIneligibility(mesh, mesh.material) === null;
 }
 
 /**
- * Replaces the eligible leaves of a static model instance under `root` with members of `root`'s Scene's instance
- * pool, in place: same parent, name, transform, flags, metadata and glTF primitive (its Material slot). Returns the
- * members. Only where the Scene pools (`sceneInstancing`), for an instance with no animations: an animation targets
- * the clone's own nodes.
+ * Replaces the eligible meshes of a model instance under `root` with members of `root`'s Scene's instance pool, in
+ * place: same parent, children, name, transform, flags, metadata and glTF primitive (its Material slot), and the
+ * channels of the instance's `animationGroups` that moved the mesh move the member. Returns the members. Only where
+ * the Scene pools (`sceneInstancing`).
  */
 export function poolModelLeaves(root: AbstractMesh, container: AssetContainer, options: {
   /** Takes a hold on the container for a group (a lease of the cached GLB); returns its release. */
   retain: () => () => void;
+  /** The instance's animation groups, whose channels target its own nodes. */
+  animationGroups?: readonly AnimationGroup[];
 }): InstancedMesh[] {
   const scene = root.getScene();
   if (!sceneInstancing(scene)) return [];
@@ -58,8 +63,9 @@ export function poolModelLeaves(root: AbstractMesh, container: AssetContainer, o
   for (const mesh of container.meshes) if (mesh instanceof Mesh && mesh.geometry && !templates.has(mesh.geometry)) templates.set(mesh.geometry, mesh);
   const pool = sceneInstancePool(scene);
   const members: InstancedMesh[] = [];
+  const groups = options.animationGroups ?? [];
   for (const leaf of root.getChildMeshes(false)) {
-    if (!poolsLeaf(leaf)) continue;
+    if (!poolsLeaf(leaf, groups)) continue;
     const template = templates.get(leaf.geometry!);
     if (!template) continue;
     const member = pool.join({
@@ -67,6 +73,8 @@ export function poolModelLeaves(root: AbstractMesh, container: AssetContainer, o
       material: leaf.material,
       receiveShadows: leaf.receiveShadows,
       renderingGroupId: leaf.renderingGroupId,
+      // A glTF model's meshes sit under its handedness root, which mirrors them.
+      mirrored: mirrorsWorld(leaf),
     }, leaf.name);
     member.parent = leaf.parent;
     member.position.copyFrom(leaf.position);
@@ -78,6 +86,7 @@ export function poolModelLeaves(root: AbstractMesh, container: AssetContainer, o
     member.metadata = leaf.metadata;
     // The glTF primitive record names the leaf's Material slot (`modelMaterialIndexOf`).
     (member as unknown as { _internalMetadata: unknown })._internalMetadata = (leaf as unknown as { _internalMetadata: unknown })._internalMetadata;
+    handOverNode(scene, leaf, member, groups);
     leaf.dispose(false, false);
     members.push(member);
   }

@@ -649,6 +649,9 @@ export type CommandMessage =
       sortingLayer?: string;
       /** Sprite / tilemap order within that sorting layer. */
       orderInLayer?: number;
+      /** The optimized actor mesh's shadow participation (no `parts`): its component's resolved Cast/Receive Shadows. */
+      castShadows?: boolean;
+      receiveShadows?: boolean;
       light?: PlayLightProperties;
       camera?: PlayCameraProperties;
       /** Extra renderable components parented to the actor origin mesh. */

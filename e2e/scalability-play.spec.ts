@@ -34,7 +34,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   page.on("pageerror", (error) => errors.push(error.message));
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!)) as ProjectDocument;
-  project.settings.render = normalizeRenderProjectSettings({ gpuBackend: backend, mode: "cel", effects: { fxaa: true }, shadows: { enabled: false }, quality: { resolution: { dynamic: false, scale: 0.8, minScale: 0.8 } }, customResolution: true, width: 480, height: 270, blackBars: true });
+  project.settings.render = normalizeRenderProjectSettings({ gpuBackend: backend, mode: "cel", shadows: { enabled: false }, quality: { resolution: { dynamic: false, scale: 0.8, minScale: 0.8 }, postprocessing: { antiAliasing: "fxaa" } }, customResolution: true, width: 480, height: 270, blackBars: true });
   project.settings.playFrameCap = 30;
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const version = createDefaultMigrationRegistry().currentVersion("Class");
@@ -123,7 +123,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   await apply("qual_settings", () => expect.poll(async () => (await read(page)).scalability?.effective?.render.environmentLighting?.rotationYDegrees, { timeout: APPLY_TIMEOUT_MS }).toBe(23));
   const custom = await read(page);
   expect(custom.rendering).toMatchObject({ width: 300, height: 180 });
-  expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: { cel: { shadowBands: 6 }, quality: { lighting: { maxLocalLights: 3 }, textures: { anisotropy: 2 }, geometry: { autoLod: false, lodDistanceScale: 2 }, postprocessing: { resolutionScale: 0.5 } }, effects: { fxaa: false, vignette: { color: [0.2, 0.1, 0.3] } } } });
+  expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: { cel: { shadowBands: 6 }, quality: { lighting: { maxLocalLights: 3 }, textures: { anisotropy: 2 }, geometry: { autoLod: false, lodDistanceScale: 2 }, postprocessing: { resolutionScale: 0.5, antiAliasing: "off" } }, effects: { vignette: { color: [0.2, 0.1, 0.3] } } } });
   expect(custom.tasks.some((name) => /FXAA/.test(name))).toBe(false);
   const transcript = page.getByTestId("debug-console-transcript");
   await expect(transcript.getByText(`[log] ${custom.scalability!.revision}`, { exact: true })).toHaveCount(2);

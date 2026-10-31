@@ -172,6 +172,11 @@ async function drawCases(engine: AbstractEngine, host: ShadowParticipationHost, 
         cases.push({ host, screenShadows, target, flags, ...count });
       }
     graph.dispose();
+    // WebGPU destroys disposed targets (a world view's multisampled ones) at the end of its next frame, which the
+    // release waits for from a microtask on.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    scene.getEngine().beginFrame();
+    scene.getEngine().endFrame();
     await graph.whenReleased();
     return cases;
   } finally {

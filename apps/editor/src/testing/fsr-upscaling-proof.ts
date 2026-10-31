@@ -30,7 +30,7 @@ export async function runFsrUpscalingProof(backend: "webgl2" | "webgpu") {
   const card = MeshBuilder.CreatePlane("FSR Card", { width: 3, height: 2 }, scene);
   card.rotation.z = Math.PI / 7;
   card.material = material;
-  const effects = normalizeRenderEffectsSettings({ fxaa: true });
+  const effects = normalizeRenderEffectsSettings({ vignette: { enabled: true, weight: 0 } });
   const graph = new ForwardSceneFrameGraph(scene);
   const draw = async () => {
     setSceneRenderSettings(scene, { mode: "pbr", effects });

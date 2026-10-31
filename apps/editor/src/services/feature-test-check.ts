@@ -70,7 +70,9 @@ export interface FeatureTestBreakdownStep {
   overlaps?: boolean;
 }
 
-const POST_FIELDS = ["post.scale", "post.ambientOcclusion", "post.reflections", "post.volumetricLighting"] as const;
+const POST_FIELDS = [
+  "post.scale", "post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "post.antiAliasing", "post.samples",
+] as const;
 
 /**
  * What a Breakdown measures per scene, each on top of the Breakdown tier: one feature off (or one cost lowered) at a
@@ -91,6 +93,9 @@ export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] =
   { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"], overlaps: true },
   { label: "SSR off", commands: ["quality postprocessing reflections off"], fields: ["post.reflections"], overlaps: true },
   { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"], fields: ["post.volumetricLighting"], overlaps: true },
+  { label: "MSAA off", commands: ["quality postprocessing antialiasing off"], fields: ["post.antiAliasing", "post.samples"] },
+  // Its saving is part of "MSAA off": a lower setting of the same feature.
+  { label: "MSAA 2x", commands: ["quality postprocessing antialiasing msaa2"], fields: ["post.antiAliasing", "post.samples"], overlaps: true },
   { label: "post off", commands: ["postprocessing off"], restore: ["postprocessing on"], fields: ["post.enabled"] },
   { label: "captures off", commands: ["rendertargets off"], restore: ["rendertargets on"], fields: ["captures"] },
   { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale"], overlaps: true },

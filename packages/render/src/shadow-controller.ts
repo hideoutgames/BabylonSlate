@@ -21,8 +21,10 @@ import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { setMeshShadowFlags } from "./instance-pool";
 import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
+  componentCastsShadows,
   effectiveShadowSettings,
   SHADOW_HALF_TILE_CASCADES,
+  type SerializedComponent,
   type ShadowSettings,
 } from "@haptic/core";
 import { sceneRenderingSettings } from "./render-settings";
@@ -823,4 +825,15 @@ export function sceneShadowController(scene: Scene): SceneShadowController {
     controllers.set(scene, controller);
   }
   return controller;
+}
+
+/**
+ * Gives `mesh` the shadow participation its component authors: its Receive Shadows, and its Cast Shadows or, when that
+ * is unset, its class default (unlit visuals cast none, `componentCastsShadows`).
+ */
+export function applyComponentShadowParticipation(mesh: AbstractMesh, component: Pick<SerializedComponent, "classId" | "properties">): void {
+  sceneShadowController(mesh.getScene()).setParticipation(mesh, {
+    castShadows: componentCastsShadows(component.classId, component.properties.castShadows),
+    receiveShadows: component.properties.receiveShadows === undefined ? undefined : component.properties.receiveShadows !== false,
+  });
 }

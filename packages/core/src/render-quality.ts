@@ -143,8 +143,22 @@ export function parseWaterQualitySetting(field: string, value: string): Partial<
       return undefined;
   }
 }
+/**
+ * The world view's edge anti-aliasing, its only control: multisampling of the scene pass at 4 or 2 samples, FXAA (one
+ * sample and the FXAA pass), or neither. MSAA never runs FXAA as well.
+ */
+export const ANTI_ALIASING_MODES = ["msaa4", "msaa2", "fxaa", "off"] as const;
+export type AntiAliasingMode = (typeof ANTI_ALIASING_MODES)[number];
+/** Scene-pass samples per pixel for `mode`, before the device's limit. */
+export function antiAliasingSamples(mode: AntiAliasingMode): 1 | 2 | 4 {
+  return mode === "msaa4" ? 4 : mode === "msaa2" ? 2 : 1;
+}
+export function isAntiAliasingMode(value: unknown): value is AntiAliasingMode {
+  return (ANTI_ALIASING_MODES as readonly unknown[]).includes(value);
+}
 export interface PostProcessingQuality extends QualitySelection {
   resolutionScale: number;
+  antiAliasing: AntiAliasingMode;
   /**
    * Screen-space effects this tier can afford. Each runs only when the project
    * also enables it; a disallowed one is skipped, never forced on.
@@ -200,7 +214,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: true, refractionScale: 0.5, reflections: "planar", reflectionSteps: 6,
       planarScale: 0.25, fftSize: 128, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 0.75, ambientOcclusion: false, reflections: false, volumetricLighting: false },
+    postprocessing: { resolutionScale: 0.75, antiAliasing: "fxaa", ambientOcclusion: false, reflections: false, volumetricLighting: false },
   },
   medium: {
     lighting: { localLightMode: "auto", maxLocalLights: 32 },
@@ -212,7 +226,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: true, refractionScale: 0.75, reflections: "planar", reflectionSteps: 12,
       planarScale: 0.5, fftSize: 256, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: false },
+    postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: false },
   },
   high: {
     lighting: { localLightMode: "auto", maxLocalLights: 64 },
@@ -224,7 +238,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: true, refractionScale: 0.75, reflections: "planar", reflectionSteps: 16,
       planarScale: 0.75, fftSize: 256, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
+    postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
   ultra: {
     lighting: { localLightMode: "auto", maxLocalLights: 256 },
@@ -236,7 +250,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: true, refractionScale: 1, reflections: "planar", reflectionSteps: 24,
       planarScale: 0.75, fftSize: 256, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
+    postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
 };
 type QualityValues<G extends keyof RenderingQuality> = Omit<RenderingQuality[G], keyof QualitySelection>;
@@ -244,7 +258,7 @@ type QualityValues<G extends keyof RenderingQuality> = Omit<RenderingQuality[G],
  * Values earlier releases gave a level. A saved group still labelled with that level whose values equal one of these
  * was never edited, so it loads as the level's current values instead of turning Custom.
  */
-const SUPERSEDED_QUALITY_PROFILES: { [L in QualityLevel]?: { [G in keyof RenderingQuality]?: readonly QualityValues<G>[] } } = {
+const SUPERSEDED_QUALITY_PROFILES: { [L in QualityLevel]?: { [G in keyof RenderingQuality]?: readonly Partial<QualityValues<G>>[] } } = {
   low: {
     lighting: [{ localLightMode: "auto", maxLocalLights: 4 }],
     resolution: [{ scale: 0.75, dynamic: true, minScale: 0.5, targetFps: 60 }],
@@ -378,6 +392,10 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
         0.25,
         1,
       ),
+      antiAliasing: isAntiAliasingMode(source.postprocessing?.antiAliasing)
+        ? source.postprocessing.antiAliasing
+        : RENDER_QUALITY_PROFILES[isQualityLevel(source.postprocessing?.profile) ? source.postprocessing.profile : "medium"]
+          .postprocessing.antiAliasing,
       ...postProcessingEffects(source.postprocessing),
     },
     lighting: {
@@ -652,6 +670,11 @@ export class RenderingQualitySession {
         this.overrides = {
           ...this.overrides,
           water: { ...this.overrides.water, ...water },
+        };
+      else if (group === "postprocessing" && choice === "antialiasing" && isAntiAliasingMode(value))
+        this.overrides = {
+          ...this.overrides,
+          postprocessing: { ...this.overrides.postprocessing, antiAliasing: value },
         };
       else if (
         group === "postprocessing" &&

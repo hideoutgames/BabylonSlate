@@ -35,6 +35,8 @@ export interface SceneEffectsInputs {
   allowed?: Pick<PostProcessingQuality, PostProcessingEffectField>;
   /** Screen-Space Shadows' level from the resolved shadow settings (off in CEL and without shadows). */
   screenShadows?: ScreenShadowsQuality;
+  /** The quality tier's Anti-Aliasing is FXAA (a world view's): the only source of the FXAA pass. */
+  fxaa?: boolean;
 }
 
 /** Composed effect chain: authored stack output → ambient occlusion →
@@ -75,7 +77,7 @@ export function upscaledRenderSize(
  * Resolve the normalized settings into the renderable chain. CEL renders
  * display-space by construction, so the Scene Linear stage (and therefore
  * tone mapping, exposure and contrast) only applies to PBR projects; vignette,
- * bloom and FXAA remain available in every mode. Ambient occlusion is
+ * bloom and the tier's FXAA remain available in every mode. Ambient occlusion is
  * PBR-only so CEL keeps its hard-stepped shading. Real-Time Reflections
  * follow the one Post Processing setting in both modes.
  */
@@ -96,7 +98,7 @@ export function planSceneEffects(
   // the only pass which can apply the vignette or LUT on either pipeline.
   const imageProcessing =
     sceneLinear || vignette || colorGrading ? { sceneLinear, vignette, colorGrading } : null;
-  const fxaa = effects.fxaa;
+  const fxaa = inputs.fxaa === true;
   const allowed = inputs.allowed;
   const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled && allowed?.ambientOcclusion !== false
     ? effects.ambientOcclusion : null;
@@ -189,5 +191,6 @@ export function sceneEffectsKey(
     ? `:skip${allowed.ambientOcclusion ? "" : "O"}${allowed.reflections ? "" : "R"}${allowed.volumetricLighting ? "" : "V"}`
     : "";
   const screen = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? `:screen${inputs.screenShadows}` : "";
-  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
+  const fxaa = inputs.fxaa ? ":fxaa" : "";
+  return `${mode}${JSON.stringify(effects)}${fxaa}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
 }

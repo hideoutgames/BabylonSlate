@@ -14,7 +14,7 @@ import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
-import { sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
+import { sceneMultisampleCount, sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
 import { isBuiltInWaterMesh } from "./water-mesh";
 import { WaterSceneCopyGraph, waterSceneCopyDemand } from "./water-scene-copy";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
@@ -263,7 +263,9 @@ export class ForwardSceneFrameGraph {
   private renderingCamera: Camera | undefined;
   private readonly auxiliary: ForwardSceneFrameGraphOptions["auxiliary"];
   /** An auxiliary view's own scene targets, charged to the shared ledger. */
-  private ownScene: { color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle; lease: ManagedRenderLease; committed: boolean } | undefined;
+  private ownScene: {
+    color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle; lease: ManagedRenderLease; committed: boolean; samples: number;
+  } | undefined;
   private readinessDirtyFlag = true;
   /**
    * The last passing probe tolerated a mesh drawing its previous Effect while its new variant compiles. Steady frames
@@ -1049,6 +1051,10 @@ export class ForwardSceneFrameGraph {
         }
         const effectsState = sceneRenderingSettings(scene);
         const effectsPlan = effectsState.effectsPlan;
+        // MSAA: the objects draw into multisampled scene colour and depth, which resolve when their passes end (colour
+        // averaged, depth by sample, never blended), so every later reader samples resolved, single-sample textures.
+        // Auxiliary views (captures, previews) stay single-sample.
+        const samples = this.auxiliary ? 1 : sceneMultisampleCount(scene);
         const postProcessOwner = this.postProcessOwner;
         if (postProcessOwner) {
           postProcessOwner.useGraph();
@@ -1063,6 +1069,7 @@ export class ForwardSceneFrameGraph {
             sceneColorType: effectsPlan?.sceneLinear
               ? Constants.TEXTURETYPE_HALF_FLOAT
               : undefined,
+            samples,
             onDiagnostic: postProcessOwner.options.onDiagnostic,
           });
           this.postProcessGraph = result.owner ?? undefined;
@@ -1078,9 +1085,10 @@ export class ForwardSceneFrameGraph {
         };
         // An auxiliary view without a chain still draws offscreen: only the
         // final copy writes its output, which a material in view may sample.
-        // So does a scaled view: the copy fills its full-size output.
-        if ((this.auxiliary || output.scale !== 1) && !this.postProcessGraph && !effectsPlan)
-          this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height);
+        // So does a scaled view (the copy fills its full-size output), and a multisampled one: the output (the
+        // backbuffer, created without antialiasing) is single-sample.
+        if ((this.auxiliary || output.scale !== 1 || samples > 1) && !this.postProcessGraph && !effectsPlan)
+          this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height, samples);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
@@ -1092,6 +1100,7 @@ export class ForwardSceneFrameGraph {
             height: renderSize.height,
             outputWidth: output.width,
             outputHeight: output.height,
+            samples,
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
           });
         } else if (this.preparedOutlineView) {
@@ -1139,6 +1148,8 @@ export class ForwardSceneFrameGraph {
         this.objects.isMainObjectRenderer = true;
         this.objects.warmsPipelines = !this.auxiliary;
         if (waterDemand > 0) {
+          // The water scene copy samples the scene depth after this pass: resolve it too.
+          this.objects.resolveMSAADepth = samples > 1;
           // Sample the chain's scene targets or an imported output directly;
           // only the backbuffer (or a stencil depth) needs an own pair.
           const sceneColor = this.postProcessGraph?.sceneColorTexture ?? this.effectsGraph?.sceneColorTexture ?? this.ownScene?.color;
@@ -1197,12 +1208,12 @@ export class ForwardSceneFrameGraph {
           (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
         if (chainOutput) {
           if (output.color) {
-            const copy = new FrameGraphCopyToTextureTask(this.ownScene ? "Capture output" : "Scene post-process output", this.graph);
+            const copy = new FrameGraphCopyToTextureTask(this.ownScene ? this.ownScene.samples > 1 ? "Multisample output" : "Capture output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
             copy.targetTexture = color;
             this.outputCopy = copy;
           } else {
-            const copy = new FrameGraphCopyToBackbufferColorTask("Scene post-process output", this.graph);
+            const copy = new FrameGraphCopyToBackbufferColorTask((this.ownScene?.samples ?? 1) > 1 ? "Multisample output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
             this.outputCopy = copy;
           }
@@ -1305,24 +1316,26 @@ export class ForwardSceneFrameGraph {
    * ledger before the graph allocates them. Colour keeps the materials'
    * display or linear encoding; depth is sampleable for the water scene copy.
    */
-  private declareOwnSceneTargets(graph: FrameGraph, width: number, height: number) {
+  private declareOwnSceneTargets(graph: FrameGraph, width: number, height: number, samples: number) {
     const engine = this.scene.getEngine();
     const colorType = this.scene.imageProcessingConfiguration.applyByPostProcess
       ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     const lease = beginManagedRenderAllocation(engine,
-      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type: colorType }) +
-      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32_FLOAT, type: Constants.TEXTURETYPE_FLOAT }));
+      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type: colorType, samples }) +
+      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32_FLOAT, type: Constants.TEXTURETYPE_FLOAT, samples }));
     if (!lease) throw new Error("Capture scene targets exceed the shared rendering budget.");
     const target = (name: string, type: number, format: number) => graph.textureManager.createRenderTargetTexture(name, {
       size: { width, height },
       sizeIsPercentage: false,
-      options: { createMipMaps: false, types: [type], formats: [format], samples: 1, useSRGBBuffers: [false] },
+      options: { createMipMaps: false, types: [type], formats: [format], samples, useSRGBBuffers: [false] },
     });
+    const prefix = samples > 1 ? "Multisample" : this.auxiliary ? "Capture" : "Scaled";
     return {
-      color: target("Capture scene color", colorType, Constants.TEXTUREFORMAT_RGBA),
-      depth: target("Capture scene Z", Constants.TEXTURETYPE_FLOAT, Constants.TEXTUREFORMAT_DEPTH32_FLOAT),
+      color: target(`${prefix} scene color`, colorType, Constants.TEXTUREFORMAT_RGBA),
+      depth: target(`${prefix} scene Z`, Constants.TEXTURETYPE_FLOAT, Constants.TEXTUREFORMAT_DEPTH32_FLOAT),
       lease,
       committed: false,
+      samples,
     };
   }
 
@@ -1334,7 +1347,7 @@ export class ForwardSceneFrameGraph {
     const resource = (handle: FrameGraphTextureHandle, category: ManagedRenderCategory) => {
       const texture = textures.getTextureFromHandle(handle);
       if (!texture) throw new Error("Capture scene target is not allocated.");
-      return managedRenderTextureResource(texture, category, { samples: 1, allocatedMipLevels: 1 });
+      return managedRenderTextureResource(texture, category, { samples: own.samples, allocatedMipLevels: 1 });
     };
     own.lease.commit([resource(own.color, "sceneColor"), resource(own.depth, "depth")]);
     own.committed = true;

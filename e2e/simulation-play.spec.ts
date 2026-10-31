@@ -109,7 +109,7 @@ async function pauseSamples(page: Page, frames = 30) {
     const samples = [];
     for (let frame = 0; frame < count; frame++) {
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-      samples.push({ tick: api.tickIndex(), positions: api.actorPositions() });
+      samples.push({ tick: api.tickIndex(), positions: api.actorPositions(), at: performance.now() });
     }
     return samples;
   }, frames);
@@ -274,12 +274,16 @@ test("Simulation freezes real physics while Edit camera redraws and resumes with
   await expect.poll(() => tick(page)).toBe(before.at(-1)!.tick + 1);
   const stepped = await pauseSamples(page, 10);
   expect(stepped.every(sample => sample.tick === before.at(-1)!.tick + 1)).toBe(true);
+  const resumedAt = await page.evaluate(() => performance.now());
   await page.getByTestId("simulation-pause").click();
   await expect.poll(() => tick(page)).toBeGreaterThan(before.at(-1)!.tick);
   // Sample the first following browser frames: a pause interval must not become
-  // hundreds of accumulated fixed steps in one resumed boundary.
+  // hundreds of accumulated fixed steps in one resumed boundary. The game runs in
+  // real time once resumed (60 Hz fixed steps), so slow software-GL frames add
+  // the steps of the time since the resume, never the paused interval's.
   const resumed = await pauseSamples(page, 2);
-  expect(resumed[0]!.tick - before.at(-1)!.tick).toBeLessThan(30);
+  const runningSteps = Math.ceil((resumed[0]!.at - resumedAt) / (1000 / 60));
+  expect(resumed[0]!.tick - before.at(-1)!.tick).toBeLessThan(30 + runningSteps);
   await stopSimulation(page);
   await evidence(page, testInfo, { pausedTick: before.at(-1)!.tick, resumedTick: resumed[0]!.tick, frozenSamples: frozen.length });
 });

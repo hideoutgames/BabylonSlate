@@ -323,19 +323,6 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
           </Field>
         ) : null}
         <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="project-effects-fxaa">FXAA</FieldLabel>
-          <Switch
-            id="project-effects-fxaa"
-            aria-describedby="project-effects-fxaa-description"
-            data-testid="project-effects-fxaa"
-            checked={project.fxaa}
-            onCheckedChange={(checked) => patch({ fxaa: checked === true })}
-          />
-          <FieldDescription id="project-effects-fxaa-description">
-            Full-screen edge anti-aliasing.
-          </FieldDescription>
-        </Field>
-        <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="project-effects-upscaling">FSR Upscaling</FieldLabel>
           <Switch
             id="project-effects-upscaling"

@@ -4,6 +4,7 @@ import { parseMirrorProperties } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { createMirrorSurfaceMesh, mirrorDiagnostics } from "./mirrors";
+import { setPlanarFootprintCulling } from "./planar-mirror";
 import { mirrorReflectionBinding } from "./mirror-surface-state";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { applySpriteFrameUvs, createSpriteQuad } from "./sprite-quad";
@@ -62,13 +63,13 @@ it("draws at most two visible, facing mirrors per render, an imageless one first
 
   expect(frame()).toEqual(["mirror:near", "mirror:middle"]);
   expect(frame()).toEqual(["mirror:far", "mirror:near"]);
-  // A draw made before the scene's first render placed its meshes is drawn once more; then the static view draws
-  // nothing, and every mirror keeps its image.
-  expect(frame()).toEqual(["mirror:middle"]);
+  // A draw made before the scene's first render placed its meshes is drawn once more (the near mirror's, the only one
+  // whose footprint shows the box); then the static view draws nothing, and every mirror keeps its image.
+  expect(frame()).toEqual([]);
   expect(frame()).toEqual([]);
   // Skipped this render, the far mirror still shows its first reflection.
   expect(mirrorReflectionBinding(far)?.texture).not.toBeNull();
-  expect(mirrorDiagnostics(scene)).toMatchObject({ surfaces: 5, targets: 3, draws: 5 });
+  expect(mirrorDiagnostics(scene)).toMatchObject({ surfaces: 5, targets: 3, draws: 4 });
 
   // Each pass sees the scene from the eye reflected through its mirror and never draws a mirror surface.
   const near = passes[0]![0]!;
@@ -163,6 +164,38 @@ it("keeps the reflection of unlit Text 3D and sprites, and redraws it once when 
   // A texture another pass draws into changes without the binding: every render redraws.
   binding.texture = new RenderTargetTexture("capture", 4, scene);
   expect(drawsOver(10)).toBe(10);
+});
+
+it("draws and follows only what the surface's footprint can show, widened by a Mirror Reflection node's Offset", async () => {
+  const { scene, surface, passes, frame, drawsOver } = settledMirror();
+  // Inside the mirrored view, but beside what the 2 × 2 mirror reflects (about ±1.5 across at this depth).
+  const side = MeshBuilder.CreateBox("side", { size: 0.4 }, scene);
+  side.position.set(2.2, 1, 1.5);
+  drawsOver(10);
+  const reflected = () => { scene.activeCamera!.position.y += 1e-3; frame(); return passes.at(-1)![0]!.meshes; };
+  expect(reflected()).toEqual(["box"]);
+  // Moving it, while it stays beside the footprint, keeps the reflection.
+  drawsOver(10);
+  side.position.y += 0.2;
+  expect(drawsOver(10)).toBe(0);
+  // The whole mirrored frustum would draw it.
+  setPlanarFootprintCulling(scene, false);
+  expect(reflected()).toEqual(expect.arrayContaining(["box", "side"]));
+  setPlanarFootprintCulling(scene, true);
+  expect(reflected()).toEqual(["box"]);
+  // An Offset of 0.15 texture units samples 0.3 of the view's half-width further out: the side box can show.
+  const doc = createDefaultMaterialDocument("offset");
+  doc.shadingModel = "unlit";
+  doc.nodes.push({ id: "reflection", type: "input.mirrorReflection", position: { x: 0, y: 0 }, properties: { "default:offset": [0.15, 0] } });
+  doc.edges = [{ id: "reflection-output", sourceNodeId: "reflection", sourcePinId: "color", targetNodeId: "output", targetPinId: "baseColor" }];
+  const lowered = lowerMaterialDocument(doc);
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "offset" });
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+  expect(await compiled.ready).toEqual([]);
+  surface.material = compiled.material;
+  expect(reflected()).toEqual(expect.arrayContaining(["box", "side"]));
+  compiled.dispose();
 });
 
 it("redraws a reflection on every render while a time-driven Material it reflects animates", async () => {

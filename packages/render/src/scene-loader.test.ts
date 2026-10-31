@@ -25,6 +25,7 @@ import {
 import { isEditorVolumeMesh } from "./editor-volume";
 import { isColliderVisualMesh } from "./collider-visual";
 import { unlitBinding } from "./unlit-material-blocks";
+import { authoredShadowParticipation } from "./shadow-mesh-policy";
 
 function lightComponent(
   color: [number, number, number] = [1, 1, 1],
@@ -63,6 +64,27 @@ describe("scene-loader", () => {
     handles.push(handle);
     return handle;
   }
+
+  it("leaves unlit 3D Text and Sprites out of shadow maps until Cast Shadows is set, and follows an edit", () => {
+    const { scene } = createHandle();
+    const visual = (id: string, classId: string, properties: Record<string, unknown>) =>
+      createActor(id, id, { components: [{ id: `${id}-visual`, classId, properties }] });
+    const actors = () => [
+      visual("label", "Text3DComponent", { text: "Label" }),
+      visual("lit-label", "Text3DComponent", { text: "Label", castShadows: true }),
+      visual("sprite", "SpriteComponent", { assetGuid: null }),
+      createActor("crate", "Crate", { components: [createMeshComponent("crate-mesh", "box")] }),
+    ];
+    const casts = () => ["label", "lit-label", "sprite", "crate"]
+      .map((id) => authoredShadowParticipation(scene.getMeshByName(editorMeshName(id))!).castShadows !== false);
+    const scene0 = sceneWithActors(actors());
+    applySceneToBabylonScene(scene, scene0);
+    expect(casts()).toEqual([false, true, false, true]);
+    const edited = actors();
+    edited[0]!.components[0]!.properties.castShadows = true;
+    applySceneToBabylonScene(scene, sceneWithActors(edited));
+    expect(casts()).toEqual([true, true, false, true]);
+  });
 
   it("creates editor meshes for the default actor and camera", () => {
     const { scene } = createHandle();

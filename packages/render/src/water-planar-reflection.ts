@@ -13,7 +13,7 @@
  * thumbnails and Render Target Captures never do. A view allocates its target only when an eligible body is
  * visible, draws on every render while its camera moves, and frees the target's storage after `RELEASE_RENDERS`
  * renders unused. A static view reuses its draw for as long as nothing it reflects changes (`ReflectedContent`: the
- * culled meshes, their placement, geometry and materials, and the scene's lights, shadow draws, environment, fog and
+ * culled meshes, their placement, geometry and materials, and the scene's lights, shadow passes that change a shadow it shows, environment, fog and
  * render settings); a change redraws at most every `STATIC_REDRAW_INTERVAL` renders, and content that changes on its
  * own (skinning, time-driven materials, textures updated in place) keeps that cadence while it is reflected. Every window counts the owner's own renders, never
  * engine frames, so frame caps, paused views and display refresh rates do not change them. The owner's per-frame

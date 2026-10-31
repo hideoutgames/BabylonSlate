@@ -47,6 +47,7 @@ export const SCALABILITY_FIELD_OWNERS = {
   },
   postprocessing: {
     resolutionScale: "postprocessing",
+    antiAliasing: "postprocessing",
     ambientOcclusion: "postprocessing",
     reflections: "postprocessing",
     volumetricLighting: "postprocessing",

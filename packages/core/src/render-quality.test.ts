@@ -220,6 +220,22 @@ describe("rendering quality sessions", () => {
     session.execute("geometry", "reset");
     expect(session.effective().geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1.25 });
   });
+  it("sets Anti-Aliasing from the console, refuses an unknown mode, and fills it from the saved tier", () => {
+    const session = new RenderingQualitySession({ quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }) });
+    expect(session.effective().postprocessing.antiAliasing).toBe("msaa4");
+    expect(session.execute("postprocessing", "antialiasing", "msaa2").success).toBe(true);
+    expect(session.effective().postprocessing).toMatchObject({ antiAliasing: "msaa2", preset: "custom" });
+    expect(session.execute("postprocessing", "antialiasing", "msaa8").success).toBe(false);
+    expect(session.effective().postprocessing.antiAliasing).toBe("msaa2");
+    session.execute("postprocessing", "reset");
+    expect(session.effective().postprocessing.antiAliasing).toBe("msaa4");
+    // Saved before the setting existed: the saved tier fills it (Low runs FXAA), Medium without one.
+    expect(normalizeRenderingQuality({ postprocessing: { profile: "low", preset: "low", resolutionScale: 0.75 } }).postprocessing)
+      .toMatchObject({ antiAliasing: "fxaa", preset: "low" });
+    expect(normalizeRenderingQuality({ postprocessing: { antiAliasing: "supersample" } }).postprocessing.antiAliasing).toBe("msaa4");
+    expect(resolveRenderingQuality({ quality: normalizeRenderingQuality({}) }, {}, qualityPresetPatch("low")).postprocessing.antiAliasing)
+      .toBe("fxaa");
+  });
   it("switches occlusion culling from the console, off on every tier", () => {
     const session = new RenderingQualitySession();
     expect(session.effective().geometry.occlusionCulling).toBe(false);

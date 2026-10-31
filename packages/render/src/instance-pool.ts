@@ -1,4 +1,4 @@
-import { InstancedMesh, Material, Mesh, MultiMaterial, type AbstractMesh, type Scene } from "@babylonjs/core";
+import { InstancedMesh, Material, Mesh, MultiMaterial, TransformNode, type AbstractMesh, type Node, type Scene } from "@babylonjs/core";
 import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { hasPerMeshBindings } from "./unlit-material-blocks";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
@@ -7,6 +7,7 @@ import { refreshInstanceParameters } from "./instance-parameters";
 import { hasDrawn } from "./reveal-pending";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
+import { handOverNode } from "./node-handover";
 
 /**
  * Automatic instancing: a per-Scene pool of hidden source meshes whose regular instances draw actors that share a
@@ -37,6 +38,12 @@ export interface InstanceGroupKey {
    */
   readonly castShadows?: boolean;
   readonly renderingGroupId: number;
+  /**
+   * Whether the members' world matrices mirror (a negative determinant, as a glTF model's under its handedness root).
+   * Babylon draws an instance whose handedness differs from its source's as a mesh of its own (`_actAsRegularMesh`), so
+   * a mirrored group draws from a mirrored source.
+   */
+  readonly mirrored?: boolean;
   /**
    * An explicit sorting layer and order (`applyComponentSorting`), whose `alphaIndex` and sorting group each member
    * carries: one batch draws at one place in the order, so members sorted apart draw in groups of their own.
@@ -86,6 +93,17 @@ export function instancingIneligibility(mesh: Mesh, material: Material | null): 
   return materialIneligibility(mesh, material ?? mesh.getScene().defaultMaterial);
 }
 
+/** Whether `node`'s world matrix mirrors: an odd number of negative scale axes along its parent chain. */
+export function mirrorsWorld(node: TransformNode): boolean {
+  let mirrored = false;
+  for (let current: Node | null = node; current; current = current.parent) {
+    if (!(current instanceof TransformNode)) continue;
+    const { x, y, z } = current.scaling;
+    if (x * y * z < 0) mirrored = !mirrored;
+  }
+  return mirrored;
+}
+
 /** A group's empty drawn sources kept for a respawn, beyond which the least recently emptied is disposed. */
 export const RETAINED_EMPTY_GROUPS = 32;
 
@@ -128,7 +146,7 @@ function materialId(material: Material | null): number {
 }
 
 function groupId(key: InstanceGroupKey): string {
-  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.castShadows === false ? 0 : 1}|${key.renderingGroupId}|${key.sortKey ?? ""}`;
+  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.castShadows === false ? 0 : 1}|${key.renderingGroupId}|${key.sortKey ?? ""}|${key.mirrored ? 1 : 0}`;
 }
 
 const sources = new WeakMap<Mesh, InstanceGroupKey>();
@@ -155,10 +173,11 @@ const nonCasters = new WeakSet<AbstractMesh>();
 
 /**
  * Whether the geometry pass marks `mesh`'s pixels as a shadow caster's, which Screen-Space Shadows march over: a pool
- * group's source as its members cast, any other mesh as the shadow controller last set (a mesh it has not seen casts).
+ * group's source, and a member Babylon draws on its own (`_actAsRegularMesh`), as the group casts; any other mesh as
+ * the shadow controller last set (a mesh it has not seen casts).
  */
 export function meshCastsShadows(mesh: AbstractMesh): boolean {
-  const key = mesh instanceof Mesh ? sources.get(mesh) : undefined;
+  const key = mesh instanceof Mesh ? sources.get(mesh) : poolMember(mesh)?.pool.keyOf(mesh as InstancedMesh);
   if (key) return key.castShadows !== false;
   return !nonCasters.has(mesh);
 }
@@ -257,6 +276,8 @@ export class SceneInstancePool {
     mesh.metadata = member.metadata;
     // A model leaf's glTF primitive record, which names its Material slot.
     (mesh as unknown as { _internalMetadata: unknown })._internalMetadata = (member as unknown as { _internalMetadata: unknown })._internalMetadata;
+    // An animated model's member keeps its children and animations on the mesh that replaces it.
+    handOverNode(this.scene, member, mesh);
     member.dispose();
     return mesh;
   }
@@ -354,7 +375,7 @@ function configureSource(source: Mesh, key: InstanceGroupKey): void {
   source.position.setAll(0);
   source.rotationQuaternion = null;
   source.rotation.setAll(0);
-  source.scaling.setAll(1);
+  source.scaling.set(1, 1, key.mirrored ? -1 : 1);
   source.freezeWorldMatrix();
   // After the freeze, which found a uniform scale: a frozen world matrix never updates it again.
   (source as unknown as { _updateNonUniformScalingState(value: boolean): boolean })._updateNonUniformScalingState(true);
