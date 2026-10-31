@@ -9,6 +9,7 @@ import {
   type TilesetPayload,
 } from "@haptic/assets";
 import { DEFAULT_SORTING_LAYERS } from "@haptic/core";
+import { markOwnerNotifiedGeometry } from "./geometry-revision";
 import { applyComponentSorting } from "./sorting";
 
 type AnimatedChunk = {
@@ -239,6 +240,8 @@ function appendChunkMesh(
   // Atlases without an image draw per-tile placeholder colours.
   if (data.colors) vertexData.colors = data.colors;
   vertexData.applyToMesh(mesh, true);
+  // Animated tiles rewrite their UVs through notified updates only.
+  markOwnerNotifiedGeometry(mesh);
   if (data.animatedTiles.length > 0) {
     let chunks = animatedChunks.get(scene);
     if (!chunks) {

@@ -6,13 +6,6 @@ test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 /** Water Mesh Density: Low's, Medium and High's, and Ultra's. */
 const DENSITIES = [0.75, 1, 1.5] as const;
-/**
- * A known gap, older than Global Water's far-column thinning (it reproduces on 5f5433a, before #1417): at Water Mesh
- * Density 0.75 the Ocean's far corner, where its graded cells are coarse, leaves a couple of pixels between it and
- * Global Water from this camera. Its ownership margins interpolate unlike each other across the corner of the ownership
- * field, wider than the seam's overlap.
- */
-const CORNER_SEAM = { density: 0.75, camera: "0, 300, 200" } as const;
 const background = (pixels: number[], index: number) => pixels[index]! > 200 && pixels[index + 1]! < 60 && pixels[index + 2]! > 200;
 
 /** Every view's holes (background below the water 800 m ahead, which water must fill), with the frames attached. */
@@ -59,21 +52,13 @@ async function coverage(page: Page, testInfo: TestInfo, backend: "webgl2" | "web
   return holes.map((view) => ({ ...view, text: `${view.camera}: ${view.count} at ${view.where}` }));
 }
 
-const corner = (density: number, camera: string) => density === CORNER_SEAM.density && camera === CORNER_SEAM.camera;
-
 for (const backend of ["webgl2", "webgpu"] as const) {
   for (const density of DENSITIES) {
     test(`blended water covers the whole frame with far neighbours at Water Mesh Density ${density} on ${backend}`, async ({ page }, testInfo) => {
       test.setTimeout(180_000);
       const holes = await coverage(page, testInfo, backend, density);
-      // Any background in a view is a hole no body keeps. The known corner seam has its own case below.
-      expect(holes.filter((view) => view.count > 0 && !corner(density, view.camera)).map((view) => view.text)).toEqual([]);
+      // Any background in a view is a hole no body keeps.
+      expect(holes.filter((view) => view.count > 0).map((view) => view.text)).toEqual([]);
     });
   }
-  test(`the Ocean's far corner meets Global Water without a gap at Water Mesh Density ${CORNER_SEAM.density} on ${backend}`, async ({ page }, testInfo) => {
-    test.fail(true, "A pre-existing Ocean/Global corner seam on coarse Ocean cells; it reproduces on 5f5433a, before #1417.");
-    test.setTimeout(180_000);
-    const holes = await coverage(page, testInfo, backend, CORNER_SEAM.density);
-    expect(holes.filter((view) => view.count > 0 && corner(CORNER_SEAM.density, view.camera)).map((view) => view.text)).toEqual([]);
-  });
 }
