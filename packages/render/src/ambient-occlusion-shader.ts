@@ -1,4 +1,4 @@
-/** Shared GLSL/WGSL syntax helpers for the ambient occlusion and temporal passes. */
+/** Shared GLSL/WGSL syntax helpers for the ambient occlusion and other spatial passes. */
 export function syntax(wgsl: boolean) {
   const v2 = wgsl ? "vec2f" : "vec2",
     v3 = wgsl ? "vec3f" : "vec3",
