@@ -5,7 +5,7 @@
  * each Water Mesh Density. The cameras look down far enough that water fills the frame to its top edge, so any background
  * is a hole: a fragment no body keeps.
  */
-import { Color4, DirectionalLight, Engine, FreeCamera, Scene, Vector3, type AbstractEngine } from "@babylonjs/core";
+import { Color4, DirectionalLight, Engine, FreeCamera, Matrix, Scene, Vector3, type AbstractEngine } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import { compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateSceneWater } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
@@ -55,8 +55,10 @@ export async function runWaterCoverageProof(backend: "webgl2" | "webgpu" = "webg
     configureEditorRenderingGroups(scene);
     scene.clearColor = new Color4(1, 0, 1, 1);
     const camera = new FreeCamera("camera", new Vector3(0, 34, 0), scene);
-    camera.minZ = 0.5;
-    camera.maxZ = 10000;
+    // An authored camera's defaults: 60 degrees, 1 km far clip (Global Water's extent follows it).
+    camera.fov = Math.PI / 3;
+    camera.minZ = 0.1;
+    camera.maxZ = 1000;
     scene.activeCamera = camera;
     setSceneRenderSettings(scene, {
       mode: "pbr",
@@ -91,13 +93,20 @@ export async function runWaterCoverageProof(backend: "webgl2" | "webgpu" = "webg
       const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
       return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
     };
-    const views: { camera: readonly number[]; pixels: number[] }[] = [];
+    // Rows above the water 800 m ahead may reach past the far clip; holes are counted below it (rows from the top).
+    const views: { camera: readonly number[]; pixels: number[]; checkedFrom: number }[] = [];
     for (const { position, target } of CAMERAS) {
       camera.position.set(position[0], position[1], position[2]);
       camera.setTarget(new Vector3(target[0], target[1], target[2]));
       // The grids follow the camera and the blend settles over a few frames.
       for (let frame = 0; frame < 6; frame++) await draw();
-      views.push({ camera: position, pixels: await draw() });
+      const pixels = await draw();
+      const ahead = camera.getDirection(Vector3.Forward());
+      ahead.y = 0;
+      ahead.normalize().scaleInPlace(800).addInPlace(camera.position);
+      ahead.y = SEA;
+      const projected = Vector3.Project(ahead, Matrix.IdentityReadOnly, scene.getTransformMatrix(), camera.viewport.toGlobal(canvas.width, canvas.height));
+      views.push({ camera: position, pixels, checkedFrom: Math.max(0, Math.ceil(projected.y)) });
     }
     graph.dispose();
     green.dispose(); blue.dispose(); cyan.dispose();

@@ -29,9 +29,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         let count = 0;
         for (let index = 0; index < view.pixels.length; index += 4) {
           if (!background(view.pixels, index)) continue;
+          const x = (index / 4) % result.width, read = Math.floor(index / 4 / result.width);
+          const row = result.flipped ? result.height - 1 - read : read;
+          if (row < view.checkedFrom) continue;
           count++;
-          const x = (index / 4) % result.width, row = Math.floor(index / 4 / result.width);
-          if (where.length < 12) where.push(`${x},${result.flipped ? result.height - 1 - row : row}`);
+          if (where.length < 12) where.push(`${x},${row}`);
         }
         return { camera: view.camera.join(", "), count, where: where.join(" ") };
       });
@@ -51,7 +53,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         await testInfo.attach(`water-coverage-${backend}-${density}-view${index}.png`, { body: Buffer.from(png, "base64"), contentType: "image/png" });
         writeFileSync(testInfo.outputPath(`view${index}.png`), Buffer.from(png, "base64"));
       }
-      // Water fills every view to the top of the frame: any background is a hole no body keeps.
+      // Water fills every view below the water 800 m ahead: any background there is a hole no body keeps.
       expect(holes.filter((view) => view.count > 0).map((view) => `${view.camera}: ${view.count} at ${view.where}`)).toEqual([]);
     });
   }
