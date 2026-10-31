@@ -12,7 +12,7 @@ import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene"
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { setSceneOcclusionCulling } from "../../../../packages/render/src/view-occlusion";
+import { allowSceneOcclusionCulling } from "../../../../packages/render/src/view-occlusion";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 export async function runOcclusionCullingProof(backend: "webgl2" | "webgpu") {
@@ -38,7 +38,12 @@ export async function runOcclusionCullingProof(backend: "webgl2" | "webgpu") {
     camera.maxZ = 300;
     scene.activeCamera = camera;
     setSceneBindsPreviousEffects(scene);
-    setSceneRenderSettings(scene, { quality: normalizeRenderingQuality({}), shadows: normalizeShadowSettings({}) });
+    /** The project's Occlusion Culling setting; a Play world view (allowed below) follows it. */
+    const occlusionSetting = (occlusionCulling: boolean) => setSceneRenderSettings(scene, {
+      quality: normalizeRenderingQuality({ geometry: { occlusionCulling } }), shadows: normalizeShadowSettings({}),
+    });
+    occlusionSetting(false);
+    allowSceneOcclusionCulling(scene, true);
 
     const doc = createDefaultMaterialDocument("rough dielectric");
     doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [0.7, 0.7, 0.7];
@@ -104,7 +109,7 @@ export async function runOcclusionCullingProof(backend: "webgl2" | "webgpu") {
       return last;
     };
     const off = await settle();
-    setSceneOcclusionCulling(scene, true);
+    occlusionSetting(true);
     const on = await settle();
     const diagnostics = { ...graph.occlusionDiagnostics()! };
     const occluded = graph.occludedMeshes();

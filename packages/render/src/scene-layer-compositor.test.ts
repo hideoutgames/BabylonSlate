@@ -485,8 +485,9 @@ describe("SceneLayerCompositor", () => {
     compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
     expect(acknowledged).toBe(true);
     const first = layer.camera.outputRenderTarget!;
-    const oldBlit = engine.scenes.find((scene) => scene.getMaterialByName("sceneLayerBlit:overlay"))!;
-    expect(oldBlit.getMaterialByName("sceneLayerBlit:overlay")!.needAlphaBlending()).toBe(true);
+    const oldBlit = engine.scenes.find((scene) => scene.getMeshByName("sceneLayerBlitPlane"))!;
+    const plane = oldBlit.getMeshByName("sceneLayerBlitPlane")!;
+    expect(plane.material!.needAlphaBlendingForMesh(plane)).toBe(true);
     const disposeFirst = vi.spyOn(first, "dispose");
     const fallbackDraw = vi.spyOn(oldBlit, "render");
     compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);

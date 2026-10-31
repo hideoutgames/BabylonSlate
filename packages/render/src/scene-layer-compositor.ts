@@ -5,18 +5,17 @@ import { pickBufferSize } from "./pick-coords";
 import type { AttachedPostProcessStack } from "./post-process-material";
 import {
   Camera,
-  Color3,
   Color4,
   Constants,
   MeshBuilder,
   Quaternion,
   RenderTargetTexture,
   Scene,
-  StandardMaterial,
   UniversalCamera,
   Vector3,
   type AbstractEngine,
   type AbstractMesh,
+  type Mesh,
 } from "@babylonjs/core";
 import type { CommandMessage } from "@haptic/bridge";
 import {
@@ -38,6 +37,10 @@ import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coor
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+
+/** A layer's output over the world: its target's colour, blended by its alpha, without fog. */
+const SCENE_LAYER_BLIT: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "world" };
 import {
   overlayMinTargetWorldSize,
   pointInInflatedWorldAabb,
@@ -90,7 +93,8 @@ type LayerRecord = SceneLayerView & {
   renderer: SceneRenderCoordinator;
   postProcessStack: SceneLayerPostProcessEntry[];
   rtt: RenderTargetTexture | null;
-  blitMaterial: StandardMaterial | null;
+  /** The blit plane, drawing the layer's target with the unlit Material. */
+  blitPlane: Mesh | null;
   blitScene: Scene | null;
   parameters: PostProcessParameterState;
   retirements: PostProcessRetirement;
@@ -160,7 +164,7 @@ export class SceneLayerCompositor {
       hudPose: null,
       postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
       rtt: null,
-      blitMaterial: null,
+      blitPlane: null,
       blitScene: null,
       attachedPostProcess: null,
       parameters: new PostProcessParameterState(),
@@ -716,7 +720,7 @@ export class SceneLayerCompositor {
       false,
       true,
     );
-    // StandardMaterial only blends sampled alpha when the source advertises it.
+    // The unlit Material reads a texture's alpha only when the texture advertises it.
     // The layer clear is transparent; preserve world pixels outside its content.
     layer.rtt.hasAlpha = true;
     // The graph borrows both native attachments; the host retains their owner.
@@ -749,7 +753,7 @@ export class SceneLayerCompositor {
     layer.camera.outputRenderTarget = null;
     layer.rtt = null;
     layer.blitScene = null;
-    layer.blitMaterial = null;
+    layer.blitPlane = null;
     const reports: Promise<void>[] = [];
     try { attached?.dispose(); } catch (error) { reports.push(Promise.reject(error)); }
     try { reports.push(renderer.retire()); } catch (error) { reports.push(Promise.reject(error)); }
@@ -815,23 +819,13 @@ export class SceneLayerCompositor {
         { size: 2 },
         blitScene,
       );
-      const material = new StandardMaterial(
-        `sceneLayerBlit:${layer.layerId}`,
-        blitScene,
-      );
-      material.disableLighting = true;
-      material.diffuseColor = Color3.White();
-      material.emissiveColor = Color3.White();
-      material.backFaceCulling = false;
-      material.useAlphaFromDiffuseTexture = true;
-      plane.material = material;
       layer.blitScene = blitScene;
-      layer.blitMaterial = material;
+      layer.blitPlane = plane;
     }
-    if (layer.blitMaterial) {
-      layer.blitMaterial.diffuseTexture = layer.rtt;
-      layer.blitMaterial.emissiveTexture = layer.rtt;
-    }
+    // The layer's colour over the world, blended by its alpha.
+    if (layer.blitPlane) setUnlitMaterial(layer.blitPlane, SCENE_LAYER_BLIT, {
+      texture: layer.rtt, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
+    });
   }
 
   private blit(layer: LayerRecord): void {

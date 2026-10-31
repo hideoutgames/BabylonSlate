@@ -6,6 +6,7 @@ import {
   createText2DComponent,
 } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
+import { unlitBinding } from "./unlit-material-blocks";
 import {
   actorVisualFingerprint,
   createMeshForComponent,
@@ -67,10 +68,7 @@ describe("createText2DMesh", () => {
       (mesh.metadata as { text2dWrapWidth?: number }).text2dWrapWidth,
     ).toBeGreaterThan(0);
     for (const child of children) {
-      const material = child.material as StandardMaterial;
-      expect(
-        material.diffuseTexture ?? material.opacityTexture ?? material.emissiveTexture,
-      ).toBeTruthy();
+      expect(unlitBinding(child).texture).toBeTruthy();
       // Two letters share one batch: one atlas rectangle (4 vertices) per letter.
       const uvs = child.getVerticesData("uv");
       expect(uvs?.length).toBe(16);
@@ -123,10 +121,9 @@ describe("createText2DMesh", () => {
     expect(children[0]!.getTotalVertices()).toBe(8);
     expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
     for (const child of children) {
-      const material = child.material as StandardMaterial;
-      expect(material.emissiveTexture).toBeTruthy();
-      expect(material.diffuseTexture).toBeTruthy();
-      expect(material.transparencyMode).toBe(1);
+      expect(unlitBinding(child).texture).toBeTruthy();
+      // Cut out (Standard's alpha test).
+      expect(child.material!.needAlphaTestingForMesh(child)).toBe(true);
       const uvs = child.getVerticesData("uv");
       expect(uvs?.[0]).not.toBe(uvs?.[2]);
     }
@@ -430,8 +427,7 @@ describe("2D text editor and Play wiring", () => {
     expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
     expect(mesh.getChildMeshes().length).toBeGreaterThanOrEqual(1);
     expect(mesh.getChildMeshes().every((glyph) => glyph.visibility === 1)).toBe(true);
-    const material = mesh.getChildMeshes()[0]?.material as StandardMaterial;
-    expect(material.emissiveTexture).toBeTruthy();
+    expect(unlitBinding(mesh.getChildMeshes()[0]!).texture).toBeTruthy();
     expect(actorVisualFingerprint(actor)).toContain("2DRichTextComponent");
   });
 

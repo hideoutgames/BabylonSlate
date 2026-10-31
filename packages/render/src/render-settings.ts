@@ -52,6 +52,8 @@ type SceneRendering = {
   /** Automatic Model LOD selection; false keeps every model on full detail. */
   autoLod: boolean;
   lodDistanceScale: number;
+  /** The Occlusion Culling quality setting; a world view culls by it only where its Scene allows (`view-occlusion.ts`). */
+  occlusionCulling: boolean;
   /** Resolved Water quality values (no preset metadata); replaced only on a real change. */
   water: Readonly<WaterQuality>;
   /** Process-unique, so a Scene that starts following another never reuses a stale value. */
@@ -135,6 +137,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       textureAnisotropy: 4,
       autoLod: quality.geometry.autoLod,
       lodDistanceScale: quality.geometry.lodDistanceScale,
+      occlusionCulling: quality.geometry.occlusionCulling,
       water: waterQualityValues(quality.water),
       waterRevision: ++waterRevisions,
       waterDevice: null,
@@ -203,6 +206,7 @@ export function updateSceneRenderingSettings(
   state.textureLodBias = quality.textures.lodBias;
   state.autoLod = quality.geometry.autoLod;
   state.lodDistanceScale = quality.geometry.lodDistanceScale;
+  state.occlusionCulling = quality.geometry.occlusionCulling;
   syncWaterQuality(scene, state, quality.water);
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   for (const texture of scene.textures) applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);

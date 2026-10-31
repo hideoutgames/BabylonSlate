@@ -123,6 +123,22 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["post:false", "post:true", "captures:false", "captures:true"]);
   });
 
+  it("starts and stops GPU-busy timing and stores the drawing-buffer setting, in debug registries only", () => {
+    const host = recordingHost();
+    host.setGpuBusyProbe = (enabled) => host.calls.push(`gpubusy:${enabled}`);
+    host.setPreserveDrawingBuffer = (enabled) => host.calls.push(`preserve:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    expect(debug.execute("gpubusy on", host)).toEqual({ success: true, output: "gpubusy on" });
+    expect(debug.execute("gpubusy off", host)).toEqual({ success: true, output: "gpubusy off" });
+    expect(debug.execute("preservebuffer off", host).success).toBe(true);
+    expect(debug.execute("preservebuffer on", host).success).toBe(true);
+    expect(debug.execute("preservebuffer maybe", host).success).toBe(false);
+    expect(release.execute("gpubusy on", host).success).toBe(false);
+    expect(release.execute("preservebuffer off", host).success).toBe(false);
+    expect(host.calls).toEqual(["gpubusy:true", "gpubusy:false", "preserve:false", "preserve:true"]);
+  });
+
   it("turns each post-processing effect a tier allows off and back on until a reset", () => {
     const host = recordingHost();
     const registry = createCommandRegistry({ includeDebug: false });

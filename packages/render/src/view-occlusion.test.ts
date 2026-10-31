@@ -14,7 +14,9 @@ import { trackFirstDraws } from "./first-draw-stats";
 import { markEditorHelperMesh } from "./helper-mesh";
 import { createPrimitiveMesh } from "./scene-component-mesh";
 import { RENDERING_GROUP } from "./sorting";
-import { OCCLUDER_TRIANGLE_BUDGET, primitiveOccluderShape, setSceneOcclusionCulling, ViewOcclusion } from "./view-occlusion";
+import { normalizeRenderingQuality } from "@haptic/core";
+import { setSceneRenderSettings } from "./scene-render-mode";
+import { allowSceneOcclusionCulling, OCCLUDER_TRIANGLE_BUDGET, primitiveOccluderShape, sceneOcclusionCulling, sceneOcclusionDiagnostics, ViewOcclusion } from "./view-occlusion";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -33,7 +35,8 @@ function view({ rightHanded = false } = {}) {
   camera.minZ = 0.1;
   camera.maxZ = 1000;
   scene.activeCamera = camera;
-  setSceneOcclusionCulling(scene, true);
+  allowSceneOcclusionCulling(scene, true);
+  occlusionSetting(scene, true);
   const world = (mesh: Mesh) => {
     mesh.renderingGroupId = RENDERING_GROUP.world;
     return mesh;
@@ -56,6 +59,11 @@ function view({ rightHanded = false } = {}) {
 }
 
 const names = (meshes: readonly AbstractMesh[]) => meshes.map((mesh) => mesh.name);
+
+/** Sets the Occlusion Culling quality setting of `scene`'s project. */
+function occlusionSetting(scene: Scene, occlusionCulling: boolean): void {
+  setSceneRenderSettings(scene, { quality: normalizeRenderingQuality({ geometry: { occlusionCulling } }) });
+}
 
 describe("primitiveOccluderShape", () => {
   const min = [-0.75, -0.75, -0.75], max = [0.75, 0.75, 0.75];
@@ -88,6 +96,20 @@ describe("ViewOcclusion", () => {
     expect(occlusion.diagnostics).toMatchObject({ tested: 3, culled: 1, occluders: 2, triangles: 24 });
   });
 
+  it("culls only in a Scene allowed to and while the Occlusion Culling setting is on, and reports the last frame", () => {
+    const { scene, meshes, filter } = view();
+    expect(sceneOcclusionCulling(scene)).toBe(true);
+    expect(filter()).not.toBe(meshes);
+    expect(sceneOcclusionDiagnostics(scene)).toMatchObject({ tested: 3, culled: 1 });
+    occlusionSetting(scene, false);
+    expect(filter()).toBe(meshes);
+    expect(sceneOcclusionDiagnostics(scene)).toBeNull();
+    occlusionSetting(scene, true);
+    allowSceneOcclusionCulling(scene, false);
+    expect(filter()).toBe(meshes);
+    expect(sceneOcclusionCulling(scene)).toBe(false);
+  });
+
   it("returns the input list itself when nothing is hidden", () => {
     const { wall, beside, filter } = view();
     const list = [wall, beside];
@@ -96,7 +118,7 @@ describe("ViewOcclusion", () => {
 
   it("culls nothing while the scene does not, for an orthographic camera, or in a frame drawn without view culling", () => {
     const off = view();
-    setSceneOcclusionCulling(off.scene, false);
+    occlusionSetting(off.scene, false);
     expect(off.filter()).toBe(off.meshes);
     const ortho = view();
     ortho.camera.mode = Camera.ORTHOGRAPHIC_CAMERA;

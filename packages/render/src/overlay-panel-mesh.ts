@@ -11,10 +11,9 @@ import {
 } from "@haptic/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import {
-  createOverlayUnlitMaterial,
+  applyOverlayUnlitMaterial,
   overlayTextureWorldSize,
 } from "./overlay-texture-quad";
-import { VisualBundle } from "./visual-bundle";
 
 export type OverlayPanelMeshOptions = OverlayPanelProperties & {
   destWidth?: number;
@@ -81,10 +80,8 @@ export function createOverlayPanelMesh(
     vertex += 4;
   }
   const mesh = new Mesh(name, scene);
-  const bundle = new VisualBundle();
-  mesh.onDisposeObservable.addOnce(() => bundle.dispose());
   if (positions.length === 0) {
-    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
+    applyOverlayUnlitMaterial(mesh);
     return mesh;
   }
   const vertexData = new VertexData();
@@ -102,7 +99,8 @@ export function createOverlayPanelMesh(
           unlit: true,
         }) ?? null
       : null;
-  mesh.material = compiled ?? createOverlayUnlitMaterial(scene, name, bundle);
+  if (compiled) mesh.material = compiled;
+  else applyOverlayUnlitMaterial(mesh);
   if (parsed.source === "texture") {
     applyAlbedoTexture(mesh, scene, parsed.textureGuid, assets);
   }

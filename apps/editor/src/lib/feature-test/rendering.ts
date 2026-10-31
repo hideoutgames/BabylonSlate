@@ -565,11 +565,16 @@ async function saveManualCapture(ctx: FeatureTestContext, renderTargetGuid: stri
   return { ref, components };
 }
 
-/** Console commands perf agents use to flip shading mid-run. */
+/** Console commands perf agents use to flip shading and occlusion culling mid-run. */
 async function saveScalabilityCommands(ctx: FeatureTestContext): Promise<void> {
   const commands = [
     { name: "FT_RenderCelCommand", command: "ft_cel", node: "scalability.setRenderMode", data: { "default:mode": "cel" }, report: "Requested CEL shading" },
     { name: "FT_RenderPbrCommand", command: "ft_pbr", node: "scalability.setRenderMode", data: { "default:mode": "pbr" }, report: "Requested PBR shading" },
+    // Occlusion Culling is off on every quality tier until measured on device; this turns it on for the session.
+    {
+      name: "FT_RenderOcclusionCommand", command: "ft_occlusion", node: "debug.executeConsoleCommand",
+      data: { "default:command": "quality geometry occlusion on" }, report: "Turned occlusion culling on",
+    },
   ];
   for (const entry of commands) {
     const graph = classGraph({
