@@ -1,6 +1,7 @@
-import { Matrix, Quaternion, Vector3, VertexBuffer, type Mesh, type StandardMaterial } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3, VertexBuffer, type Mesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
+import { unlitBinding } from "./unlit-material-blocks";
 import { writeOverlayBoxTransform } from "./overlay-transform-box";
 import { textMaterialGlyphBinding } from "./text-material-block";
 import { createText2DMesh, text2DMeshLayout, updateText2DAppear } from "./text2d-mesh";
@@ -110,10 +111,10 @@ describe("static glyph batching", () => {
       { rich: true },
     );
     const sources = glyphMeshes(root).map((mesh) => [mesh.metadata.text2dSource, mesh.getTotalVertices() / 4]);
-    // Red A (msdf), green A (msdf), B (bitmap fallback): three materials, one quad each.
+    // Red A (msdf), green A (msdf), B (bitmap fallback): three bindings, one quad each.
     expect(sources).toEqual([["msdf", 1], ["msdf", 1], ["bitmap", 1]]);
     const [red, green] = glyphMeshes(root);
-    expect(red!.material).not.toBe(green!.material);
+    expect(unlitBinding(red!)).not.toBe(unlitBinding(green!));
     const plain = createText2DMesh(scene, "plain", { text: "AAB", renderer: "msdf", size: 32, fontAssetGuid: "font-1" }, msdfAssets);
     expect(glyphMeshes(plain).map((mesh) => [mesh.metadata.text2dSource, mesh.getTotalVertices() / 4])).toEqual([["msdf", 2], ["bitmap", 1]]);
   });
@@ -130,7 +131,7 @@ describe("static glyph batching", () => {
     expect(others).toEqual([]);
     expect(uvsOf(batch!)).toEqual(planes.flatMap(uvsOf));
     expect(new Set(planes.map((plane) => uvsOf(plane).join())).size).toBe(2);
-    expect((batch!.material as StandardMaterial).diffuseTexture).toBeTruthy();
+    expect(unlitBinding(batch!).texture).toBeTruthy();
     const items = drawn(text2DMeshLayout(batched)!.items);
     const positions = positionsOf(batch!);
     const expected = items.flatMap((item) => perGlyphCorners(item, false));
@@ -219,6 +220,8 @@ describe("static glyph batching", () => {
 
   it("releases the batch geometry and materials with the text", () => {
     const { scene } = host();
+    // The Scene's unlit Material outlives any one text: create it first.
+    createText2DMesh(scene, "first", { text: "Hello", size: 32 }, undefined, { metrics: fixedMetrics() }).dispose();
     const before = { meshes: scene.meshes.length, geometries: scene.geometries.length, materials: scene.materials.length, textures: scene.textures.length };
     createText2DMesh(scene, "gone", { text: "Hello", size: 32 }, undefined, { metrics: fixedMetrics() }).dispose();
     expect({ meshes: scene.meshes.length, geometries: scene.geometries.length, materials: scene.materials.length, textures: scene.textures.length }).toEqual(before);

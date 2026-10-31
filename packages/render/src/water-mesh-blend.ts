@@ -5,6 +5,7 @@
 import { Matrix, Quaternion, Vector3, type Scene } from "@babylonjs/core";
 import { WaterBlendIndex, type Transform, type WaterBlendBody } from "@haptic/core";
 import { sceneWaterBlendDistance } from "./render-settings";
+import { blendOwnership } from "./water-blend-ownership";
 import {
   beginBlend, blendFit, blendInputs, blendRange, createBlendInputs, finishBlend, globalReachRows, globalWriteRows, sceneBlends, type BlendInputs,
   type SceneBlend,
@@ -116,6 +117,9 @@ export function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
   const index = state.index, now = performance.now(), key = blendKey;
   for (const s of entries) {
     const self = members.indexOf(s), neighbours = self < 0 ? [] : index.neighbours(self);
+    // Exact per-pixel seams where the participants allow: an index update (bodies added, removed, moved or edited),
+    // never the camera, can change whether a surface qualifies.
+    if (s.nodes) s.nodes.ownership = self < 0 ? null : blendOwnership(index, self, s.nodes.ownership ?? null);
     if (!neighbours.length) {
       if (s.blend) {
         s.blend = null; s.version++;
@@ -126,7 +130,9 @@ export function syncSceneBlend(scene: Scene, entries: Set<Surface>): void {
     }
     let finite = false;
     for (const j of neighbours) if (Number.isFinite(index.bodies[j]!.bounds[0]!)) { finite = true; break; }
-    const reach = finite && s.body.kind !== "global" ? distance / 2 : 0;
+    // A finite body's grid reaches past its footprint toward finite neighbours, and toward Global Water when its seam is
+    // per pixel: that seam is its own bank, so its edge cells would end exactly on it.
+    const reach = (finite || s.nodes?.ownership) && s.body.kind !== "global" ? distance / 2 : 0;
     // This surface's placement and revision, then each neighbour's: blend data depends on nothing else.
     key.length = 0;
     key.push(distance, reach, s.blendStamp, s.blendRevision);
@@ -235,7 +241,7 @@ function stepBlendRebuild(s: Surface, r: BlendRebuild): void {
     r.cursor = end;
     if (end >= r.end) { r.phase = FIT; r.cursor = r.first; }
   } else {
-    blendFit(s, b, r.world, b.metres, r.cursor, end);
+    blendFit(s, b, r.world, b.metres, r.cursor, end, r.inputs);
     r.cursor = end;
     if (end >= r.end) r.phase = LANDED;
   }

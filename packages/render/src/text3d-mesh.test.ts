@@ -1,4 +1,6 @@
-import { Mesh, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Mesh, VertexBuffer } from "@babylonjs/core";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 import type { IFontData } from "@babylonjs/core/Meshes/Builders/textBuilder";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createText3DComponent } from "@haptic/core";
@@ -98,14 +100,9 @@ describe("3D Text mesh", () => {
     const indices = mesh.getIndices();
     expect(indices).not.toBeNull();
     expect(indices!.length).toBe(12);
-    const material = mesh.material as StandardMaterial;
-    expect(material).toBeInstanceOf(StandardMaterial);
-    expect(material.disableLighting).toBe(true);
-    expect(material.backFaceCulling).toBe(false);
-    expect(material.twoSidedLighting).toBe(true);
-    expect(material.emissiveColor.r).toBeCloseTo(1);
-    expect(material.emissiveColor.g).toBeCloseTo(0);
-    expect(material.emissiveColor.b).toBeCloseTo(0);
+    expect(isUnlitMaterial(mesh.material)).toBe(true);
+    expect(mesh.material!.backFaceCulling).toBe(false);
+    expect(unlitBinding(mesh)).toMatchObject({ color: [1, 0, 0], twoSided: true, texture: null });
   });
 
   it("builds bundled T with at most four triangles", () => {
@@ -176,9 +173,8 @@ describe("3D Text mesh", () => {
     const indices = mesh.getIndices();
     expect(indices).not.toBeNull();
     expect(indices!.length).toBe(6);
-    const material = mesh.material as StandardMaterial;
-    expect(material.disableLighting).toBe(true);
-    expect(material.backFaceCulling).toBe(false);
+    expect(isUnlitMaterial(mesh.material)).toBe(true);
+    expect(mesh.material!.backFaceCulling).toBe(false);
   });
 
   it("uses the bundled ASCII TypeFace when no Font facetype is present", () => {

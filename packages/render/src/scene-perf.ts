@@ -21,12 +21,12 @@ import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 import { drawnMaterialVariants } from "./drawn-variants";
-import { drawingMesh } from "./instance-source";
+import { drawingMesh, isInstanceSource } from "./instance-source";
 import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { collectEffectRequests } from "./effect-requests";
 import {
-  hasDrawn, hideUntilReady, isRevealPending, noteDrawn, noteRevealFailed, noteRevealProbe, replacesDrawnVisual,
+  hasDrawn, hasDrawnItself, hideUntilReady, isRevealPending, noteDrawn, noteRevealFailed, noteRevealProbe, replacesDrawnVisual,
 } from "./reveal-pending";
 import { casterPipelinesWarm } from "./shadow-caster-warm";
 import { awaitsFirstDraw } from "./shadow-first-draw";
@@ -117,11 +117,13 @@ export async function prewarmSceneMaterials(
  */
 export async function prewarmMeshMaterials(
   scene: Scene,
-  meshes: Iterable<AbstractMesh>,
+  given: Iterable<AbstractMesh>,
   assertCurrent?: (mesh?: AbstractMesh) => void,
   skipMesh?: (mesh: AbstractMesh) => boolean,
   onProgress?: (count: { done: number; total: number }) => void,
 ): Promise<void> {
+  // An instance draws in its source's batch: the source compiles, once (a pool source, instanced only).
+  const meshes = new Set([...given].map(drawingMesh));
   let finished = false;
   const check = (mesh?: AbstractMesh) => {
     // The owner's check first: it names why (a superseded load) before its deferred Scene disposal does.
@@ -213,7 +215,9 @@ type SceneReadinessInternals = { _isReadyChecks: readonly { isReady(): boolean }
 /** The Effects the mesh being probed requested, and that mesh (reused, so a probe allocates nothing per mesh). */
 const meshRequests = new Set<Effect>();
 let probedMesh: AbstractMesh | undefined;
-const probeMesh = () => probedMesh!.isReady(true);
+// A pool's source draws only its instances (`markInstanceSource`), so it is probed for its instanced variants even
+// while it has none: a member that moved to another group leaves its source empty for the rest of the frame.
+const probeMesh = () => probedMesh instanceof Mesh && isInstanceSource(probedMesh) ? probedMesh.isReady(true, true) : probedMesh!.isReady(true);
 const reportedFailures = new WeakSet<Effect>();
 /** The scene probe's shadow maps (reused). */
 const probedShadowMaps = new Set<RenderTargetTexture>();
@@ -331,8 +335,10 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   };
   try {
     capture(mesh.material ?? scene.defaultMaterial);
-    if (mesh.subMeshes) {
-      for (const part of mesh.subMeshes) {
+    // An instance draws with its source's submeshes, whose draw wrappers hold the cached readiness to reset.
+    const drawing = drawingMesh(mesh);
+    if (drawing.subMeshes) {
+      for (const part of drawing.subMeshes) {
         const material = part.getMaterial();
         capture(material);
         // Babylon 9.29 otherwise answers from the previous effect's frozen or
@@ -355,7 +361,10 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     }
     const tolerated = variantSwapsTolerated();
     // Before the probe: a spawn's first request sets its still-compiling Effect on the submesh.
-    const hideable = tolerated && (isRevealPending(mesh) || (!hasDrawn(mesh) && !drawsSomething(mesh)));
+    // A new instance waits for its actor's other meshes, as a new mesh does, though its batch draws (its group's
+    // variants are ready, so it is revealed in the round that finds them all ready).
+    const fresh = mesh.getClassName() === "InstancedMesh" ? !hasDrawnItself(mesh) : !hasDrawn(mesh) && !drawsSomething(mesh);
+    const hideable = tolerated && (isRevealPending(mesh) || fresh);
     probedMesh = mesh;
     // A mesh to reveal also needs its caster depth variant for every map that has drawn (a map awaiting its first
     // draw waits for its casters itself); a drawn mesh lets the maps wait for theirs.
@@ -384,8 +393,9 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     // round when every other pass agrees. Otherwise only a tolerant round could reveal it, and none follows.
     if (isRevealPending(mesh)) noteRevealProbe(mesh, true);
     noteDrawn(mesh);
-    // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready.
-    for (const part of mesh.subMeshes ?? []) {
+    // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready (an
+    // instance's in its source's submeshes).
+    for (const part of drawing.subMeshes ?? []) {
       const material = part.getMaterial();
       if (!material?._storeEffectOnSubMeshes) continue;
       if (part.materialDefines?.isDirty && part.effect?.isReady()) {

@@ -1,8 +1,10 @@
-import { Mesh, type Material } from "@babylonjs/core";
+import { Mesh, type AbstractMesh, type Material } from "@babylonjs/core";
 import type { SerializedComponent } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { ownedMaterialPreparation } from "./material-library";
 import { applyMaterialBounds } from "./material-bounds";
+import { setActorMeshMaterial } from "./pooled-visuals";
+import { everyInstanceParameter, setMeshInstanceParameters } from "./instance-parameters";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { isColliderVisualTree } from "./collider-visual";
 
@@ -28,11 +30,17 @@ export function authoredMaterialInstancePreparation(mesh: Mesh): Promise<void> |
   return owners.get(mesh)?.preparation;
 }
 
+/** Draws `mesh` with `material`: a pooled visual through its group, or a mesh of its own where no group can. */
+function drawWith(mesh: Mesh, material: Material | null): void {
+  const own = setActorMeshMaterial(mesh, material);
+  applyMaterialBounds(mesh);
+  if (own) applyMaterialBounds(own);
+}
+
 function release(owner: Owner): void {
   for (const [mesh, material] of owner.originals) {
     if (!mesh.isDisposed() && mesh.material === owner.active?.material) {
-      mesh.material = material;
-      applyMaterialBounds(mesh);
+      drawWith(mesh, material);
     }
   }
   owner.pending?.release();
@@ -40,6 +48,32 @@ function release(owner: Owner): void {
   owner.pending = undefined;
   owner.active = undefined;
   owner.preparation = undefined;
+}
+
+/** The meshes of `visual` whose Material its saved instance owns. */
+function instanceTargets(visual: Mesh): Mesh[] {
+  return [visual, ...visual.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh)]
+    .filter((mesh) => !mesh.isBlocked && !isColliderVisualTree(mesh) &&
+      // Attached component/actor roots have independent material ownership.
+      (mesh === visual || !mesh.name.startsWith("editorActor:") || mesh.name.startsWith(`${visual.name}:`)));
+}
+
+/**
+ * What draws `visual`'s meshes, which carries its per-instance values: each mesh with vertices of its own, a pooled
+ * primitive's leaf and a static model's pooled leaves included, under the same ownership as `instanceTargets`.
+ */
+function drawnInstanceHolders(visual: Mesh): AbstractMesh[] {
+  return [visual, ...visual.getChildMeshes()].filter((mesh) => mesh.getTotalVertices() > 0 &&
+    !(mesh instanceof Mesh && mesh.isBlocked) && !isColliderVisualTree(mesh) &&
+    (mesh === visual || !mesh.name.startsWith("editorActor:") || mesh.name.startsWith(`${visual.name}:`)));
+}
+
+/** The meshes carrying a visual's per-instance values, which draw the Material's again once they clear. */
+const instanceValueHolders = new WeakMap<Mesh, AbstractMesh[]>();
+
+function clearInstanceValues(visual: Mesh): void {
+  for (const holder of instanceValueHolders.get(visual) ?? []) if (!holder.isDisposed()) setMeshInstanceParameters(holder, holder.material);
+  instanceValueHolders.delete(visual);
 }
 
 /**
@@ -55,6 +89,7 @@ export function applyAuthoredMaterialInstance(
   let owner = owners.get(visual);
   const instance = component.materialInstance;
   const guid = component.properties.materialGuid;
+  clearInstanceValues(visual);
   if (!instance || typeof guid !== "string" || instance.materialGuid !== guid || !Object.keys(instance.parameters).length) {
     if (owner) { release(owner); owners.delete(visual); }
     return;
@@ -65,6 +100,17 @@ export function applyAuthoredMaterialInstance(
   const releaseInstance = assets.releaseMaterialInstance;
   const parameters = new Map(Object.entries(instance.parameters).sort(([a], [b]) => a.localeCompare(b)));
   const signature = JSON.stringify([guid, options.unlit === true, [...parameters]]);
+  // Values only of per-instance parameters keep the shared Material, which the visual already draws: each mesh it
+  // draws carries them in its instance buffer, so it still draws in its group.
+  const shared = options.apply ? null : resolve(guid, { scene: visual.getScene(), unlit: options.unlit });
+  if (shared && everyInstanceParameter(shared, parameters.keys()) &&
+    [...parameters].every(([name, value]) => assets.validateMaterialParameter?.(guid, name, value) !== false)) {
+    if (owner) { release(owner); owners.delete(visual); }
+    const holders = drawnInstanceHolders(visual);
+    for (const holder of holders) setMeshInstanceParameters(holder, shared, parameters);
+    instanceValueHolders.set(visual, holders);
+    return;
+  }
   if (!owner) {
     owner = { originals: new Map(), apply: () => {} };
     owners.set(visual, owner);
@@ -73,10 +119,7 @@ export function applyAuthoredMaterialInstance(
   }
   const owned = owner;
   owned.onPublished = options.onPublished;
-  const targets = [visual, ...visual.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh)]
-    .filter((mesh) => !mesh.isBlocked && !isColliderVisualTree(mesh) &&
-      // Attached component/actor roots have independent material ownership.
-      (mesh === visual || !mesh.name.startsWith("editorActor:") || mesh.name.startsWith(`${visual.name}:`)));
+  const targets = instanceTargets(visual);
   const live = new Set(targets);
   for (const target of owned.originals.keys()) if (!live.has(target)) owned.originals.delete(target);
   for (const target of targets) {
@@ -84,7 +127,7 @@ export function applyAuthoredMaterialInstance(
       owned.originals.set(target, target.material);
   }
   owned.apply = options.apply ?? ((material) => {
-    for (const target of targets) { target.material = material; applyMaterialBounds(target); }
+    for (const target of targets) drawWith(target, material);
   });
   if (owned.active?.signature === signature) {
     owned.pending?.release();

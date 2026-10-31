@@ -10,34 +10,43 @@
  *
  * Budget (`mirror-selection.ts`): a reflection is one more scene draw on the main thread, so a render draws at most
  * `MIRROR_RENDERS_PER_FRAME` surfaces that the view sees from their reflective side, never-drawn first, then nearest;
- * the others keep their last image. A target allocates on a surface's first draw and lives with the surface (resized
+ * the others keep their last image. A surface whose reflection is current is not drawn again: the view's camera, the
+ * surface and its target are as they were drawn, and nothing the pass draws has changed (`ReflectedContent`: the culled
+ * meshes, their placement, geometry and materials, and the scene's lights, shadow passes that change a shadow it shows, environment, fog and render
+ * settings). A pass culls with the mirrored frustum cropped to the surface's footprint on screen (where its Material can
+ * sample the reflection), so content no reflection can show is neither drawn nor followed. Content that changes on its own (skinning, time-driven materials, textures updated in place) keeps its
+ * surface due on every render while it is reflected, within the same budget. A target allocates on a surface's first draw and lives with the surface (resized
  * when the view's size or Resolution Scale changes), so a skipped surface always has its last image to show.
  *
  * Views that draw no reflections (their surfaces keep their last image): orthographic, rig/XR and multi-camera views,
  * Scene Linear without half-float targets, and Render Target Captures, which show what the scene view drew.
  */
 import {
-  Camera, Color4, Constants, Frustum, Matrix, MeshBuilder, NodeMaterial, ShaderLanguage, Vector3,
-  type AbstractMesh, type Mesh, type NodeMaterialBlock, type Observer, type RenderTargetTexture, type Scene,
+  AnimatedInputBlockTypes, Camera, Color4, Constants, Frustum, InputBlock, Matrix, MeshBuilder, NodeMaterial, ShaderLanguage,
+  Vector2, Vector3, type AbstractMesh, type Material, type Mesh, type NodeMaterialBlock, type Observer, type RenderTargetTexture, type Scene,
 } from "@babylonjs/core";
 import type { MirrorProperties } from "@haptic/core";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import { MIRROR_RENDERS_PER_FRAME, selectMirrorsToRender, type MirrorCandidate } from "./mirror-selection";
 import {
-  createMirrorReflectionBinding, isMirrorSurfaceMesh, markBuiltInMirrorMaterial, mirrorFallbackTexture, type MirrorReflectionBinding,
+  createMirrorReflectionBinding, isBuiltInMirrorMaterial, isMirrorSurfaceMesh, markBuiltInMirrorMaterial, mirrorFallbackTexture, type MirrorReflectionBinding,
 } from "./mirror-surface-state";
 import {
   beginPlanarMirrorPassState, buildViewProjectionMatrix, clipFrustumAtMirror, collectPlanarMirrorMeshes, createPlanarMirrorTarget,
-  disposePlanarMirrorTarget, drawPlanarMirrorPass, planarMirrorTargetSize, PlanarMirrorMath, resizePlanarMirrorTarget,
+  cropToFootprint, disposePlanarMirrorTarget, drawPlanarMirrorPass, planarFootprintCulling, planarMirrorTargetSize, PlanarMirrorMath, resizePlanarMirrorTarget,
   type MirrorPlane, type PlanarMirrorTargetState,
 } from "./planar-mirror";
+import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
+import { ReflectedContent } from "./reflected-content";
+import { shadowChangeSequence } from "./shadow-change-journal";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { connectGeometrySurfaceOutput, GeometrySurfaceOutputBlock } from "./geometry-surface-output-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
+import { sceneViewRenderSize } from "./scene-output-scale";
 
 export { isMirrorSurfaceMesh } from "./mirror-surface-state";
 
@@ -53,6 +62,12 @@ export interface MirrorDiagnostics {
   readonly draws: number;
   /** Reflections drawn in the last scene render that drew any. */
   readonly lastRenderDraws: number;
+  /** Visible surfaces that kept their current reflection instead of drawing it again. */
+  readonly reuses: number;
+  /** Meshes the drawn reflections' passes drew, summed over draws. */
+  readonly drawnMeshes: number;
+  /** Shadow map passes the Scene's surfaces sample, recorded so far (`shadowChangeSequence`). */
+  readonly shadowPasses: number;
 }
 
 type Surface = MirrorCandidate & {
@@ -64,9 +79,42 @@ type Surface = MirrorCandidate & {
   /** The first draw waits for every reflected material; later draws skip any mesh that is not ready. */
   ready: boolean;
   failed: boolean;
+  /** What the pass draws, followed while the surface is visible; `dirty` holds a change until a draw shows it. */
+  readonly content: ReflectedContent;
+  /** Something the pass draws may have changed since the last draw, or the last draw skipped a mesh not yet ready. */
+  dirty: boolean;
+  /** The mirror view-projection of the last draw. */
+  readonly drawnViewProjection: Matrix;
 };
 
 const owners = new WeakMap<Scene, SceneMirrors>();
+
+/** Target texels of margin around a footprint: bilinear sampling at its edge reads the next texel out. */
+const FOOTPRINT_TEXELS = 2;
+const reach = { x: 0, y: 0 };
+
+/**
+ * How far (texture units per axis) `material` samples a surface's reflection from the surface's own screen position,
+ * into `reach`; null when it cannot be bounded. The built-in surface samples it in place; an authored Mirror Reflection
+ * node reaches by its Offset when that is a value input (read every render, so a parameter edit applies), and anything
+ * else driving Offset is unbounded.
+ */
+function sampleReach(material: Material | null): { x: number; y: number } | null {
+  reach.x = reach.y = 0;
+  if (!material || isBuiltInMirrorMaterial(material)) return reach;
+  if (!(material instanceof NodeMaterial)) return null;
+  for (const block of material.attachedBlocks) {
+    if (!(block instanceof MirrorReflectionBlock) || !block.offset.isConnected) continue;
+    const source = block.offset.connectedPoint!.ownerBlock;
+    if (!(source instanceof InputBlock) || source.isAttribute || source.isSystemValue ||
+      source.animationType !== AnimatedInputBlockTypes.None || !(source.value instanceof Vector2)) return null;
+    const value = source.value;
+    if (!Number.isFinite(value.x) || !Number.isFinite(value.y)) return null;
+    reach.x = Math.max(reach.x, Math.abs(value.x));
+    reach.y = Math.max(reach.y, Math.abs(value.y));
+  }
+  return reach;
+}
 const builtInMaterials = new WeakMap<Scene, NodeMaterial>();
 
 function excludedFromMirrors(mesh: AbstractMesh): boolean {
@@ -81,6 +129,8 @@ class SceneMirrors {
   readonly surfaces: Surface[] = [];
   draws = 0;
   lastRenderDraws = 0;
+  reuses = 0;
+  drawnMeshes = 0;
   private readonly scene: Scene;
   private beforeRender: Observer<Scene> | null = null;
   private order = 0;
@@ -93,15 +143,24 @@ class SceneMirrors {
   private readonly projection = new Matrix();
   private readonly viewProjection = new Matrix();
   private readonly cullViewProjection = new Matrix();
+  private readonly cropViewProjection = new Matrix();
+  private readonly corners = [new Vector3(), new Vector3(), new Vector3(), new Vector3()];
   private readonly relativeView = new Matrix();
   private readonly planes = Frustum.GetPlanes(Matrix.Identity());
   private readonly reflectionPlanes = Frustum.GetPlanes(Matrix.Identity());
+  private readonly nextViewProjection = new Matrix();
   private readonly scratch = new Vector3();
   private readonly drawPass = () => {
     const surface = this.drawSurface!, target = this.drawTarget!;
     beginPlanarMirrorPassState(this.scene.getEngine());
-    if (!surface.ready) surface.ready = target.texture.isReadyForRendering();
-    if (surface.ready) { target.texture.render(false); this.drew = true; }
+    // The first draw waits for every reflected material; later draws skip any mesh that is not ready, and stay dirty
+    // until a draw has drawn every one.
+    let complete = false;
+    if (!surface.ready) complete = surface.ready = target.texture.isReadyForRendering();
+    if (!surface.ready) return;
+    target.texture.render(false);
+    this.drew = true;
+    surface.dirty = !(complete || target.texture.isReadyForRendering());
   };
 
   constructor(scene: Scene) {
@@ -111,7 +170,8 @@ class SceneMirrors {
   add(mesh: Mesh, properties: MirrorProperties): void {
     const surface: Surface = {
       mesh, properties, binding: createMirrorReflectionBinding(mesh, properties.tint), plane: { nx: 0, ny: 0, nz: -1, d: 0 },
-      target: null, ready: false, failed: false, drawn: false, visible: false, order: this.order++, distance: 0,
+      target: null, ready: false, failed: false, content: new ReflectedContent(), dirty: true, drawnViewProjection: new Matrix(),
+      drawn: false, visible: false, order: this.order++, distance: 0,
       cx: 0, cy: 0, cz: 0, nx: 0, ny: 0, nz: -1, ux: 0, uy: 0, uz: 0, vx: 0, vy: 0, vz: 0,
     };
     this.surfaces.push(surface);
@@ -124,7 +184,8 @@ class SceneMirrors {
   diagnostics(): MirrorDiagnostics {
     return {
       surfaces: this.surfaces.length, targets: this.surfaces.filter((surface) => surface.target?.lease).length,
-      draws: this.draws, lastRenderDraws: this.lastRenderDraws,
+      draws: this.draws, lastRenderDraws: this.lastRenderDraws, reuses: this.reuses, drawnMeshes: this.drawnMeshes,
+      shadowPasses: shadowChangeSequence(this.scene),
     };
   }
 
@@ -134,6 +195,7 @@ class SceneMirrors {
     surface.binding.texture = null;
     if (surface.target) disposePlanarMirrorTarget(this.scene, surface.target);
     surface.target = null;
+    surface.content.dispose();
     if (!this.surfaces.length) {
       this.scene.onBeforeRenderObservable.remove(this.beforeRender);
       this.beforeRender = null;
@@ -147,14 +209,23 @@ class SceneMirrors {
     if (!camera || camera.mode !== Camera.PERSPECTIVE_CAMERA || camera.rigCameras.length > 0 || (scene.activeCameras?.length ?? 0) > 1) return;
     const linear = scene.imageProcessingConfiguration.applyByPostProcess;
     if (linear && !engine.getCaps().textureHalfFloatRender) return;
-    const output = camera.outputRenderTarget;
-    const viewWidth = (output ? output.getRenderWidth() : engine.getRenderWidth(true)) * camera.viewport.width;
-    const viewHeight = (output ? output.getRenderHeight() : engine.getRenderHeight(true)) * camera.viewport.height;
+    const view = sceneViewRenderSize(scene, camera.outputRenderTarget);
+    const viewWidth = view.width * camera.viewport.width;
+    const viewHeight = view.height * camera.viewport.height;
     if (!(viewWidth >= 1 && viewHeight >= 1)) return;
     buildViewProjectionMatrix(scene, camera, viewWidth / viewHeight, this.projection);
     camera.getViewMatrix().multiplyToRef(this.projection, this.viewProjection);
     Frustum.GetPlanesToRef(this.viewProjection, this.planes);
-    for (const surface of this.surfaces) this.place(surface, camera.layerMask);
+    const maxSize = engine.getCaps().maxTextureSize;
+    const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+    for (const surface of this.surfaces) {
+      this.place(surface, camera.layerMask);
+      // A current reflection is not a candidate: the budget goes to surfaces whose image is due.
+      if (surface.visible && this.current(surface, camera, viewWidth, viewHeight, type, maxSize)) {
+        surface.visible = false;
+        this.reuses++;
+      }
+    }
     selectMirrorsToRender(camera.globalPosition, this.surfaces, MIRROR_RENDERS_PER_FRAME, this.selected);
     let draws = 0;
     for (const surface of this.selected) {
@@ -197,6 +268,59 @@ class SceneMirrors {
     surface.visible = mesh.isInFrustum(this.planes);
   }
 
+  /**
+   * Whether a drawn surface's reflection still shows what a draw would: the same target size and colour type, the same
+   * mirror view-projection, and nothing the pass draws changed (`ReflectedContent`, followed on every visible render).
+   * Leaves the mirror camera and the pass's list as a draw this render would set them.
+   */
+  private current(surface: Surface, camera: Camera, viewWidth: number, viewHeight: number, type: number, maxSize: number): boolean {
+    const target = surface.target;
+    if (!surface.drawn || !target?.lease || target.type !== type) return false;
+    const scale = surface.properties.resolutionScale;
+    if (target.width !== planarMirrorTargetSize(viewWidth, scale, maxSize) || target.height !== planarMirrorTargetSize(viewHeight, scale, maxSize)) return false;
+    if (!this.mirrorAndCull(surface, camera, target)) return false;
+    if (surface.content.changed(this.scene, target.texture.renderList!)) surface.dirty = true;
+    target.mirror.mirrorView.multiplyToRef(target.projection, this.nextViewProjection);
+    return !surface.dirty && surface.drawnViewProjection.equals(this.nextViewProjection);
+  }
+
+  /** Places the surface's mirror camera for the view and culls the pass's list; false when the eye cannot see it. */
+  private mirrorAndCull(surface: Surface, camera: Camera, target: PlanarMirrorTargetState): boolean {
+    const engine = this.scene.getEngine();
+    if (!this.math.mirror(camera.getViewMatrix(), camera.globalPosition, surface.plane, this.projection,
+      engine.useReverseDepthBuffer, engine.isNDCHalfZRange, target.mirror.mirrorView, target.projection)) return false;
+    const eye = this.math.eye;
+    target.mirror.position.set(eye[0]!, eye[1]!, eye[2]!);
+    // Cull with the mirror camera's ordinary frustum, cropped to the surface's footprint, its near plane replaced by the
+    // mirror plane.
+    target.mirror.mirrorView.multiplyToRef(this.projection, this.cullViewProjection);
+    const cull = this.cropToSurface(surface, target) ? this.cropViewProjection : this.cullViewProjection;
+    clipFrustumAtMirror(cull, surface.plane, this.reflectionPlanes);
+    collectPlanarMirrorMeshes(this.scene, target.texture.renderList!, camera.layerMask, this.reflectionPlanes, excludedFromMirrors);
+    return true;
+  }
+
+  /**
+   * Crops the culling view-projection to where the surface's Material can sample its reflection: the rectangle's
+   * projection (the mirror view projects a point on the plane where the view does, mirrored), widened by its reach and
+   * the bilinear margin. False (no crop) when that cannot be bounded: an unbounded Offset or a lattice-deformed surface.
+   */
+  private cropToSurface(surface: Surface, target: PlanarMirrorTargetState): boolean {
+    const mesh = surface.mesh;
+    if (!planarFootprintCulling(this.scene) || hasMeshLatticeDeformer(mesh)) return false;
+    const sampled = sampleReach(mesh.material);
+    if (!sampled) return false;
+    const [a, b, c, d] = this.corners as [Vector3, Vector3, Vector3, Vector3];
+    a.set(surface.cx - surface.ux - surface.vx, surface.cy - surface.uy - surface.vy, surface.cz - surface.uz - surface.vz);
+    b.set(surface.cx + surface.ux - surface.vx, surface.cy + surface.uy - surface.vy, surface.cz + surface.uz - surface.vz);
+    c.set(surface.cx + surface.ux + surface.vx, surface.cy + surface.uy + surface.vy, surface.cz + surface.uz + surface.vz);
+    d.set(surface.cx - surface.ux + surface.vx, surface.cy - surface.uy + surface.vy, surface.cz - surface.uz + surface.vz);
+    // Texture units are half the NDC range.
+    const marginX = 2 * sampled.x + 2 * FOOTPRINT_TEXELS / target.width;
+    const marginY = 2 * sampled.y + 2 * FOOTPRINT_TEXELS / target.height;
+    return cropToFootprint(this.cullViewProjection, this.corners, marginX, marginY, this.cropViewProjection);
+  }
+
   private renderSurface(surface: Surface, camera: Camera, viewWidth: number, viewHeight: number, linear: boolean): boolean {
     const scene = this.scene, engine = scene.getEngine();
     const maxSize = engine.getCaps().maxTextureSize;
@@ -205,20 +329,17 @@ class SceneMirrors {
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     const target = this.ensureTarget(surface, camera, width, height, type);
     if (!target) return false;
-    if (!this.math.mirror(camera.getViewMatrix(), camera.globalPosition, surface.plane, this.projection,
-      engine.useReverseDepthBuffer, engine.isNDCHalfZRange, target.mirror.mirrorView, target.projection)) return false;
-    const eye = this.math.eye;
-    target.mirror.position.set(eye[0]!, eye[1]!, eye[2]!);
-    // Cull with the mirror camera's ordinary frustum, its near plane replaced by the mirror plane.
-    target.mirror.mirrorView.multiplyToRef(this.projection, this.cullViewProjection);
-    clipFrustumAtMirror(this.cullViewProjection, surface.plane, this.reflectionPlanes);
-    collectPlanarMirrorMeshes(scene, target.texture.renderList!, camera.layerMask, this.reflectionPlanes, excludedFromMirrors);
+    if (!this.mirrorAndCull(surface, camera, target)) return false;
+    // Follows the drawn list from this draw on (a surface's first draw starts following it here).
+    surface.content.changed(scene, target.texture.renderList!);
     target.mirror.minZ = camera.minZ;
     target.mirror.maxZ = camera.maxZ;
     target.mirror.getViewMatrix(true);
     if (!this.draw(surface, target)) return false;
     this.draws++;
+    this.drawnMeshes += target.texture.renderList!.length;
     surface.drawn = true;
+    target.mirror.mirrorView.multiplyToRef(target.projection, surface.drawnViewProjection);
     const binding = surface.binding;
     // The shader's positions are relative to the floating origin (the view's eye) when it is on.
     binding.origin.copyFrom(scene.floatingOriginMode ? camera.globalPosition : Vector3.ZeroReadOnly);

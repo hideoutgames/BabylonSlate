@@ -1,10 +1,11 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, PBRMaterial, Scene, StandardMaterial, TransformNode } from "@babylonjs/core";
+import { NullEngine, PBRMaterial, Scene, TransformNode } from "@babylonjs/core";
 import { createDefaultSpritePayload } from "@haptic/assets";
 import { createActor, createDefaultScene, createSkyboxComponent, emptySkyboxFaces } from "@haptic/core";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { installTextureBytes, type MeshAssetContext } from "./mesh-assets";
+import { unlitBinding } from "./unlit-material-blocks";
 import { ResourceCache } from "./resource-cache";
 import { applyAssignMesh, createSnapshotSceneBinding, disposeSnapshotBinding, retirePlaySlot } from "./snapshot-apply";
 
@@ -90,7 +91,7 @@ for (const host of ["play", "editor"] as const) {
         const previous = f.current()!;
         const material = previous.material;
         const overlay = f.binding.spriteOverlays?.get(1);
-        const texture = kind === "skybox" ? (material as PBRMaterial).reflectionTexture : (material as StandardMaterial).diffuseTexture;
+        const texture = kind === "skybox" ? (material as PBRMaterial).reflectionTexture : unlitBinding(previous).texture;
         const warmed = { meshes: f.scene.meshes.length, materials: f.scene.materials.length, leases: f.cache.resourceStats().leases };
         f.assign(1);
         expect(f.current()).toBe(previous);

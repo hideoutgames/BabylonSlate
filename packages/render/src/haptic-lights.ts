@@ -21,6 +21,7 @@ import { deviceProfile } from "./device-profile";
 import { isIlluminatingLight, sortLightsByAdmission, type ForwardLightSelection } from "./light-policy";
 import { CLUSTER_BLOCK_WORDS, CLUSTER_COUNT, CLUSTER_HEADER_FLOATS, buildLightClusters, type ClusterLight } from "./light-clusters";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowAtlasTexture, watchShadowDraws } from "./shadow-atlas";
+import { shadowViewTexelRatios } from "./shadow-filter";
 
 /**
  * Lighting plan: lit graph Materials (`HapticLightingBlock`) read every light from one per-Scene uniform block
@@ -41,9 +42,10 @@ const SUN_SHADOW_VIEWS = 4;
  * A shadow view's record: its light's view-projection (four columns), its atlas tile (u, v, size, texel), (darkness,
  * filter: PCF's quality 0 low, 1 medium, 2 high, Contact Hardening's 3, 4, 5, 1 for a cascade, whose depth clamps, 1
  * for receiver-plane bias) and Contact Hardening's terms: a perspective view's (near, far, 0, light size), a cascade's
- * (width correction, height correction, depth correction, light size), the light size a share of the tile.
+ * (width correction, height correction, depth correction, light size), the light size a share of the tile, and the filter's
+ * texel ratio (ratio, 0, 0, 0: `shadowViewTexelRatios`).
  */
-export const HAPTIC_SHADOW_VIEW_VEC4S = 7;
+export const HAPTIC_SHADOW_VIEW_VEC4S = 8;
 
 /** The block's GLSL and WGSL declarations; their layout matches `hapticLightBuffer`. WGSL binds the buffer by the variable's name. */
 export const HAPTIC_LIGHTS_GLSL = `layout(std140) uniform HapticLights {
@@ -300,6 +302,7 @@ function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerat
   const filter = quality + (shadow.useContactHardeningShadow ? 3 : 0);
   const size = shadow.contactHardeningLightSizeUVRatio;
   const cascaded = shadow instanceof AtlasCascadedShadowGenerator;
+  const ratios = shadowViewTexelRatios(shadow);
   shadow.tiles.forEach((tile, index) => {
     const base = (first + index) * HAPTIC_SHADOW_VIEW_VEC4S * 4;
     Matrix.TranslationToRef(offset.x, offset.y, offset.z, shadowTransform);
@@ -314,6 +317,7 @@ function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerat
       const range = shadow.drawnDepthRange;
       state.shadowViews.set([range.x, range.y, 0, size], base + 24);
     }
+    state.shadowViews.set([ratios[index]!, 0, 0, 0], base + 28);
   });
 }
 

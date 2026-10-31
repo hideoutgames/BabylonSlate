@@ -1,15 +1,19 @@
-import { InstancedMesh, Material, Mesh, MultiMaterial, type AbstractMesh, type Scene } from "@babylonjs/core";
-import { hasStockVertexStage } from "./shadow-material-policy";
+import { InstancedMesh, Material, Mesh, MultiMaterial, TransformNode, type AbstractMesh, type Node, type Scene } from "@babylonjs/core";
+import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
+import { hasPerMeshBindings } from "./unlit-material-blocks";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { markInstanceSource } from "./instance-source";
+import { refreshInstanceParameters } from "./instance-parameters";
 import { hasDrawn } from "./reveal-pending";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
+import { handOverNode } from "./node-handover";
 
 /**
  * Automatic instancing: a per-Scene pool of hidden source meshes whose regular instances draw actors that share a
  * geometry and a Material, one batch per group. Each member keeps its own node (transform, parent, animation target,
- * visibility, picking, bounds and casting); the group's source holds what Babylon reads from the source for every
- * instance (Material, receiving shadows, rendering group). The pool is not wired to any visual yet.
+ * visibility, picking, bounds and casting into shadow maps); the group's source holds what Babylon reads from the source
+ * for every instance (Material, receiving shadows, rendering group) and whether its members cast Screen-Space Shadows.
  */
 
 /** Where a group's geometry comes from: a cached model's leaf or a per-Scene primitive template. */
@@ -28,13 +32,29 @@ export interface InstanceGroupKey {
   /** Null draws with `scene.defaultMaterial`. */
   readonly material: Material | null;
   readonly receiveShadows: boolean;
+  /**
+   * Whether the members cast shadows (default true). Each member still enters shadow maps on its own; the geometry pass
+   * that Screen-Space Shadows march over draws a group in one batch, which marks every member a caster or none.
+   */
+  readonly castShadows?: boolean;
   readonly renderingGroupId: number;
+  /**
+   * Whether the members' world matrices mirror (a negative determinant, as a glTF model's under its handedness root).
+   * Babylon draws an instance whose handedness differs from its source's as a mesh of its own (`_actAsRegularMesh`), so
+   * a mirrored group draws from a mirrored source.
+   */
+  readonly mirrored?: boolean;
+  /**
+   * An explicit sorting layer and order (`applyComponentSorting`), whose `alphaIndex` and sorting group each member
+   * carries: one batch draws at one place in the order, so members sorted apart draw in groups of their own.
+   */
+  readonly sortKey?: string;
 }
 
 /** Why a mesh draws unpooled (v1). */
 export type InstancingIneligibility =
   | "deforming" | "thinInstances" | "levelsOfDetail" | "instanced" | "drawHooks" | "partitioned" | "sorted"
-  | "blended" | "vertexStage" | "fillMode";
+  | "blended" | "vertexStage" | "fillMode" | "perMeshBinding";
 
 /** Why a group cannot draw `material` on `mesh`'s geometry (blending, fill mode, vertex stage), or null. */
 export function materialIneligibility(mesh: AbstractMesh, material: Material): InstancingIneligibility | null {
@@ -46,9 +66,11 @@ export function materialIneligibility(mesh: AbstractMesh, material: Material): I
     return null;
   }
   if (material.needAlphaBlendingForMesh(mesh)) return "blended";
+  // The unlit Material binds each mesh's texture and colour; a group's instances all draw their source's.
+  if (hasPerMeshBindings(material)) return "perMeshBinding";
   if (material.fillMode !== Material.TriangleFillMode || material.wireframe || material.pointsCloud) return "fillMode";
   // World Position Offset and other authored vertex stages: an instance's bounds and the CPU pick must stay exact.
-  return hasStockVertexStage(material) ? null : "vertexStage";
+  return hasStockOrPlannedVertexStage(material) ? null : "vertexStage";
 }
 
 /**
@@ -69,6 +91,17 @@ export function instancingIneligibility(mesh: Mesh, material: Material | null): 
   if ((mesh.subMeshes?.length ?? 0) > ranges.size) return "partitioned";
   if (mesh.alphaIndex !== Number.MAX_VALUE) return "sorted";
   return materialIneligibility(mesh, material ?? mesh.getScene().defaultMaterial);
+}
+
+/** Whether `node`'s world matrix mirrors: an odd number of negative scale axes along its parent chain. */
+export function mirrorsWorld(node: TransformNode): boolean {
+  let mirrored = false;
+  for (let current: Node | null = node; current; current = current.parent) {
+    if (!(current instanceof TransformNode)) continue;
+    const { x, y, z } = current.scaling;
+    if (x * y * z < 0) mirrored = !mirrored;
+  }
+  return mirrored;
 }
 
 /** A group's empty drawn sources kept for a respawn, beyond which the least recently emptied is disposed. */
@@ -113,14 +146,40 @@ function materialId(material: Material | null): number {
 }
 
 function groupId(key: InstanceGroupKey): string {
-  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.renderingGroupId}`;
+  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.castShadows === false ? 0 : 1}|${key.renderingGroupId}|${key.sortKey ?? ""}|${key.mirrored ? 1 : 0}`;
 }
 
-const sources = new WeakSet<Mesh>();
+const sources = new WeakMap<Mesh, InstanceGroupKey>();
+
+/**
+ * Gives `member`, moving to `source`'s group, the instance buffers `source` registered, as `createInstance` gives a
+ * new instance: its own value where it had one, the source's otherwise. Buffers only the old source had leave with it.
+ */
+function adoptInstancedBuffers(member: InstancedMesh, source: Mesh): void {
+  if (!source.instancedBuffers) return;
+  const own: Record<string, unknown> = member.instancedBuffers ?? {};
+  const buffers: Record<string, unknown> = {};
+  for (const kind in source.instancedBuffers) buffers[kind] = kind in own ? own[kind] : source.instancedBuffers[kind];
+  member.instancedBuffers = buffers as InstancedMesh["instancedBuffers"];
+}
 
 /** Whether `mesh` is a pool group's hidden source. */
 export function isInstancePoolSource(mesh: Mesh): boolean {
   return sources.has(mesh);
+}
+
+/** Meshes outside the pool that cast no shadows (`setMeshShadowFlags`). */
+const nonCasters = new WeakSet<AbstractMesh>();
+
+/**
+ * Whether the geometry pass marks `mesh`'s pixels as a shadow caster's, which Screen-Space Shadows march over: a pool
+ * group's source, and a member Babylon draws on its own (`_actAsRegularMesh`), as the group casts; any other mesh as
+ * the shadow controller last set (a mesh it has not seen casts).
+ */
+export function meshCastsShadows(mesh: AbstractMesh): boolean {
+  const key = mesh instanceof Mesh ? sources.get(mesh) : poolMember(mesh)?.pool.keyOf(mesh as InstancedMesh);
+  if (key) return key.castShadows !== false;
+  return !nonCasters.has(mesh);
 }
 
 export class SceneInstancePool {
@@ -140,7 +199,9 @@ export class SceneInstancePool {
   /** A new member of `key`'s group, at the origin, unparented; the caller places and parents it. */
   join(key: InstanceGroupKey, name: string): InstancedMesh {
     const group = this.group(key);
-    const member = new InstancedMesh(name, group.source);
+    // Through the source's factory, which gives the member the source's registered instance buffers (an outline's
+    // identity stream): a member without them throws where their owner writes its value.
+    const member = group.source.createInstance(name);
     this.memberGroups.set(member, group);
     group.members.add(member);
     member.onDisposeObservable.addOnce(() => this.left(member));
@@ -161,6 +222,9 @@ export class SceneInstancePool {
     previous.source.removeInstance(member);
     previous.members.delete(member);
     (member as unknown as { _sourceMesh: Mesh })._sourceMesh = next.source;
+    adoptInstancedBuffers(member, next.source);
+    // A per-instance parameter's attribute names another value in another Material.
+    refreshInstanceParameters(member);
     next.source.addInstance(member);
     next.members.add(member);
     this.memberGroups.set(member, next);
@@ -210,6 +274,10 @@ export class SceneInstancePool {
     mesh.isPickable = member.isPickable;
     mesh.layerMask = member.layerMask;
     mesh.metadata = member.metadata;
+    // A model leaf's glTF primitive record, which names its Material slot.
+    (mesh as unknown as { _internalMetadata: unknown })._internalMetadata = (member as unknown as { _internalMetadata: unknown })._internalMetadata;
+    // An animated model's member keeps its children and animations on the mesh that replaces it.
+    handOverNode(this.scene, member, mesh);
     member.dispose();
     return mesh;
   }
@@ -259,7 +327,7 @@ export class SceneInstancePool {
     }
     const source = key.geometry.build(this.scene, `instanceSource:${key.geometry.key}#${++this.sourceCount}`);
     configureSource(source, key);
-    sources.add(source);
+    sources.set(source, key);
     const group: InstanceGroup = { id, key, source, members: new Set(), drawn: false, release: undefined };
     group.release = key.geometry.retain?.();
     this.groups.set(id, group);
@@ -278,6 +346,9 @@ export class SceneInstancePool {
   /** An empty group that drew is kept for a respawn (within `RETAINED_EMPTY_GROUPS`); one that never drew goes. */
   private emptied(group: InstanceGroup): void {
     if (group.members.size || !this.groups.has(group.id)) return;
+    // Its batch drew where a pass's draw wrapper holds a ready Effect, whether or not a probe noted a member drawn.
+    group.drawn ||= (group.source.subMeshes ?? []).some((part) =>
+      part._drawWrappers.some((wrapper) => !!wrapper?.effect?.isReady()));
     if (!group.drawn) {
       this.dispose(group);
       return;
@@ -304,7 +375,7 @@ function configureSource(source: Mesh, key: InstanceGroupKey): void {
   source.position.setAll(0);
   source.rotationQuaternion = null;
   source.rotation.setAll(0);
-  source.scaling.setAll(1);
+  source.scaling.set(1, 1, key.mirrored ? -1 : 1);
   source.freezeWorldMatrix();
   // After the freeze, which found a uniform scale: a frozen world matrix never updates it again.
   (source as unknown as { _updateNonUniformScalingState(value: boolean): boolean })._updateNonUniformScalingState(true);
@@ -322,9 +393,26 @@ export function setSceneInstancing(scene: Scene, enabled: boolean): void {
   else instancing.delete(scene);
 }
 
-/** Whether visuals built in `scene` draw through its instance pool (`setSceneInstancing`). */
+/** Pools where pipelines are deferred too (`setDeferredPipelineInstancing`). */
+let deferredPipelineInstancing = false;
+
+/**
+ * Lets scenes pool where pipelines are deferred (WebGPU): the compile-hold gate turns it on for the cases whose warm
+ * draws, caster warm and reveal already resolve a member to its group source, until every case does.
+ */
+export function setDeferredPipelineInstancing(enabled: boolean): void {
+  deferredPipelineInstancing = enabled;
+}
+
+/**
+ * Whether visuals built in `scene` draw through its instance pool (`setSceneInstancing`), which needs hardware
+ * instancing: without it Babylon draws each instance on its own, which a pool would only add to. Not where pipelines
+ * are deferred (WebGPU) yet unless `setDeferredPipelineInstancing` allows it: their warm draws, caster warm and reveal
+ * lookups do not all resolve a member to its group source yet.
+ */
 export function sceneInstancing(scene: Scene): boolean {
-  return instancing.has(scene);
+  const engine = scene.getEngine();
+  return instancing.has(scene) && engine.getCaps().instancedArrays && (deferredPipelineInstancing || !pipelinesDeferred(engine));
 }
 
 /** The pool member `mesh` is, if it is one. */
@@ -334,14 +422,27 @@ function poolMember(mesh: AbstractMesh): { pool: SceneInstancePool; member: Inst
   return pool?.keyOf(mesh) ? { pool, member: mesh } : undefined;
 }
 
+/** Whether `mesh` is a member of its Scene's instance pool. */
+export function isPoolMember(mesh: AbstractMesh): mesh is InstancedMesh {
+  return poolMember(mesh) !== undefined;
+}
+
 /**
- * Sets whether `mesh` receives shadows: a pool member by moving it to the group that does (its own setter warns and
- * does nothing), any other mesh directly.
+ * Sets whether `mesh` receives and casts shadows: a pool member by moving it to the group that does (its own receive
+ * setter warns and does nothing), any other mesh directly. Casting here is the geometry pass's mark
+ * (`meshCastsShadows`); the shadow controller keeps shadow-map casters itself.
  */
-export function setMeshReceivesShadows(mesh: AbstractMesh, receives: boolean): void {
+export function setMeshShadowFlags(mesh: AbstractMesh, receives: boolean, casts: boolean): void {
   const pooled = poolMember(mesh);
-  if (pooled) pooled.pool.update(pooled.member, { receiveShadows: receives });
-  else mesh.receiveShadows = receives;
+  if (pooled) {
+    const key = pooled.pool.keyOf(pooled.member)!;
+    if (key.receiveShadows !== receives || (key.castShadows !== false) !== casts)
+      pooled.pool.update(pooled.member, { receiveShadows: receives, castShadows: casts });
+    return;
+  }
+  mesh.receiveShadows = receives;
+  if (casts) nonCasters.delete(mesh);
+  else nonCasters.add(mesh);
 }
 
 /** Sets `mesh`'s rendering group: a pool member by moving it to the group drawn in it, any other mesh directly. */

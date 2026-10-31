@@ -83,7 +83,9 @@ test("project backend changes rebuild one Engine while preserving scene edits an
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   await waitForSceneViewportReady(page);
-  expect((await baseline())?.engineCount).toBe(1);
+  // The viewport takes its Engine back from Play a frame or more after it reports ready (longer when its frames are
+  // slow, as multisampled software-GL frames are): wait for it, then require that it is still the only Engine.
+  await expect.poll(async () => (await baseline())?.engineCount, { timeout: 30_000 }).toBe(1);
   await testInfo.attach("project-backend-transitions", { body: JSON.stringify(captures), contentType: "application/json" });
   expect(errors).toEqual([]);
   expect(externalShaderRequests).toEqual([]);
@@ -212,7 +214,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     warmSpawn: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
     casterSpawn: { done: true, held: 0, hidden: true, synchronous: 0 },
   });
-  // With a geometry pass (temporal anti-aliasing), a spawn with a variant nothing compiled stays hidden until its colour
+  // With a geometry pass (ambient occlusion), a spawn with a variant nothing compiled stays hidden until its colour
   // pipelines exist, then is left out of the geometry pass alone, holding no frame, until its geometry pipeline exists.
   const geometry = result.geometrySpawn!;
   expect({

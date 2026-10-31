@@ -10,10 +10,13 @@ import {
 import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
 import { effectiveShadowSettings } from "@haptic/core";
 import { resolveSceneRenderingQuality, sceneEffectsQualityLimits, sceneRenderingSettings } from "./render-settings";
+import { sceneViewRenderSize } from "./scene-output-scale";
 import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
+import { sceneOcclusionDiagnostics } from "./view-occlusion";
 import type { RenderScheduler } from "./render-scheduler";
 import type { FirstDrawStats } from "./first-draw-stats";
+import type { GpuBusyStats } from "./gpu-busy-probe";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
 import { deviceProfile, deviceTextureLimits } from "./device-profile";
@@ -24,10 +27,16 @@ export type RenderDiagnostics = {
   firstDraws?: FirstDrawStats | null;
   /**
    * A compact fingerprint of the effective settings the Feature Test Check's Breakdown steps change (`field: value`):
-   * shadows, device-clamped water refraction, reflections and shading detail, post-processing tier flags and whether
-   * post-processing runs, every-frame captures, resolution scale. A step that changes more than its own fields shows.
+   * `qualitySettingsFingerprint` (shadows and their filter, device-clamped water, post-processing tier values, resolution
+   * scale, occlusion culling), plus the scene pass's live MSAA samples, whether post-processing runs, every-frame
+   * captures and the live context's preserveDrawingBuffer. A step that changes more than its own fields shows.
    */
   settings?: Record<string, string>;
+  /**
+   * GPU-busy time per Engine frame while the `gpubusy` debug command measures (`gpu-busy-probe.ts`); null when it has
+   * not measured a frame or the Engine has no fences.
+   */
+  gpuBusy?: GpuBusyStats | null;
   /** View-owned draw/copy counts. A held draw never replaces the visible bitmap.
    * Phase timing is enabled by requesting diagnostics, independently of GPU timers. */
   presentation?: {
@@ -111,6 +120,8 @@ export type RenderDiagnostics = {
   drawCalls: number;
   /** Visible automatic-LOD meshes, how many draw a simplified level, and the triangles that saves. */
   autoLod: ReturnType<typeof autoLodDiagnostics>;
+  /** The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms); null while it does not cull. */
+  occlusion: { tested: number; culled: number; occluders: number; triangles: number; ms: number } | null;
   /** Live scene resource counts; cachedTextures is the Engine texture cache. */
   resources: {
     meshes: number;
@@ -160,8 +171,9 @@ export function createRenderDiagnostics(
           : "unsupported",
       pressure: sample,
       gpuAttribution,
-      width: size?.width ?? engine.getRenderWidth(),
-      height: size?.height ?? engine.getRenderHeight(),
+      // The world's render size: its output target's, or the backbuffer at the Scene's output scale.
+      width: size?.width ?? sceneViewRenderSize(scene, null).width,
+      height: size?.height ?? sceneViewRenderSize(scene, null).height,
       scalingLevel: engine.getHardwareScalingLevel(),
       samples: target?.samples ?? 1,
       shadowPasses: metrics.passes,
@@ -183,6 +195,7 @@ export function createRenderDiagnostics(
       adapter: engineAdapterInfo(engine),
       drawCalls: readEngineDrawCalls(engine),
       autoLod: autoLodDiagnostics(scene),
+      occlusion: occlusionCounts(scene),
       resources: {
         meshes: liveMeshCount(scene),
         materials: scene.materials.length,
@@ -225,4 +238,9 @@ export function lightsDebugText(diagnostics: RenderDiagnostics): string | null {
           light.cascades.length ? `; cascades ${light.cascades.map((cascade) => `${cascade.end.toFixed(1)} m @ ${Math.round(cascade.texelsPerMetre)}/m`).join(", ")}` : ""}`,
     )
     .join("\n");
+}
+
+function occlusionCounts(scene: Scene): RenderDiagnostics["occlusion"] {
+  const last = sceneOcclusionDiagnostics(scene);
+  return last && { tested: last.tested, culled: last.culled, occluders: last.occluders, triangles: last.triangles, ms: last.ms };
 }

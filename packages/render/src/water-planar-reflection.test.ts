@@ -1,3 +1,4 @@
+import { setSceneOutputScale } from "./scene-output-scale";
 import {
   Color3, Constants, CreateLines, DirectionalLight, FreeCamera, Matrix, MeshBuilder, NullEngine, NullEngineOptions, ObjectRenderer, RawTexture, RenderTargetTexture,
   Scene, StandardMaterial, Vector3, Viewport, type AbstractMesh, type Camera, type Material, type Mesh,
@@ -289,6 +290,11 @@ it("leases its target under the water category, resizes in place and frees idle 
   // The mirror camera and target never join the scene: no readiness-relevant membership change.
   const membership = () => ({ cameras: scene.cameras.length, textures: sceneTextures() });
   expect(membership()).toEqual({ cameras: 1, textures });
+  // The world's render scale (Scene Layers' composited Play) shrinks the view it mirrors.
+  setSceneOutputScale(scene, 0.5);
+  expect(frame()!.texture.getInternalTexture()).toMatchObject({ width: 192, height: 96 });
+  setSceneOutputScale(scene, 1);
+  expect(frame()!.texture.getInternalTexture()).toMatchObject({ width: 384, height: 192 });
   // A smaller view resizes the same target and swaps its charge.
   camera.viewport.width = 0.5;
   const resized = frame()!;
@@ -385,6 +391,21 @@ it("redraws a static view once for a light, environment, fog or material change"
   paint.diffuseColor = new Color3(1, 0, 0);
   expect(drawsOver(10)).toBe(1);
   expect(drawsOver(10)).toBe(0);
+});
+
+it("reuses a static view whose reflected mesh draws an ordinary graph Material", async () => {
+  const { scene, boat, drawsOver } = settledView();
+  const lowered = lowerMaterialDocument(createDefaultMaterialDocument("paint"));
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "paint" });
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+  expect(await compiled.ready).toEqual([]);
+  // Every graph Material carries a Lattice Deformer block; with no cage on the mesh it deforms nothing.
+  expect(compiled.material.attachedBlocks.some((block) => block.getClassName() === "LatticeDeformerBlock")).toBe(true);
+  boat.material = compiled.material;
+  expect(drawsOver(10)).toBe(1);
+  expect(drawsOver(10)).toBe(0);
+  compiled.dispose();
 });
 
 it("keeps redrawing every other render while reflected content can change on its own", () => {

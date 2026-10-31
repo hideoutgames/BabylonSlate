@@ -18,6 +18,8 @@ export function adaptNullEngineFrameGraph(engine: NullEngine): NullEngine {
     const wrapper = engine.createRenderTargetTexture(size, { ...creation, generateDepthBuffer: false });
     const texture = wrapper.texture!;
     texture.format = creation.format ?? Constants.TEXTUREFORMAT_RGBA;
+    // NullEngine creates every target single-sample; keep the multisample count the graph asked for.
+    texture.samples = creation.samples ?? 1;
     wrapper.dispose(true);
     return texture;
   };

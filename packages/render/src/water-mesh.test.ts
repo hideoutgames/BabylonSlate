@@ -744,6 +744,44 @@ describe("Water rendering", () => {
       expect(created[1]).toHaveBeenCalled();
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
+  it("draws Global Water's far rows without slivers along Z, with the triangles tiling its grid and sharing every edge", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 600, -700), scene);
+    camera.maxZ = 10000;
+    try {
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"), undefined, builtInWaterMaterial(scene));
+      updateSceneWater(scene);
+      const positions = global.getVerticesData(VertexBuffer.PositionKind)!, indices = global.getIndices()!;
+      const side = Math.round(Math.sqrt(positions.length / 3)), at = (i: number) => [positions[i * 3]!, positions[i * 3 + 2]!] as const;
+      const [minX, minZ] = at(0), [maxX, maxZ] = at(side * side - 1);
+      let area = 0, worst = 0;
+      const edges = new Map<string, number>();
+      for (let t = 0; t < indices.length; t += 3) {
+        const [a, b, c] = [indices[t]!, indices[t + 1]!, indices[t + 2]!].map(at);
+        // Every triangle faces up, as the full grid's do.
+        const twice = (b![0] - a![0]) * (c![1] - a![1]) - (b![1] - a![1]) * (c![0] - a![0]);
+        expect(twice).toBeGreaterThan(0);
+        area += twice / 2;
+        // How much longer a triangle runs along Z than across X: the full grid's far cells reach the thousands.
+        const xs = [a![0], b![0], c![0]], zs = [a![1], b![1], c![1]];
+        worst = Math.max(worst, (Math.max(...zs) - Math.min(...zs)) / (Math.max(...xs) - Math.min(...xs)));
+        for (const [p, q] of [[t, t + 1], [t + 1, t + 2], [t + 2, t]]) {
+          const key = [indices[p!]!, indices[q!]!].sort((x, y) => x - y).join();
+          edges.set(key, (edges.get(key) ?? 0) + 1);
+        }
+      }
+      // The triangles cover the grid's square once, and an edge inside it belongs to two of them: no T-junction can crack.
+      expect(area / ((maxX - minX) * (maxZ - minZ))).toBeCloseTo(1, 6);
+      for (const [key, uses] of edges) {
+        const [p, q] = key.split(",").map((value) => at(Number(value)));
+        const border = (p![0] === q![0] && (p![0] === minX || p![0] === maxX)) || (p![1] === q![1] && (p![1] === minZ || p![1] === maxZ));
+        expect(uses, key).toBe(border ? 1 : 2);
+      }
+      expect(worst).toBeLessThanOrEqual(8);
+      // Thinning the far columns draws a third fewer triangles than the full grid.
+      expect(indices.length / 3).toBeLessThan(2 * (side - 1) * (side - 1) * 0.75);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
   it("picks a recentred Global grid where its water is, as a grid built there is picked", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
@@ -988,6 +1026,120 @@ describe("Water rendering", () => {
       expect(partial.length).toBe(7);
       for (const [, data] of partial) expect((data as Float32Array).length).toBeLessThan(count);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+  it("keeps Global Water's triangles within a cell of every vertex inside a far neighbour, as its vertex cull assumes, as the grid recentres", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 10, -30), scene);
+    try {
+      const sea = createWaterMesh(scene, "sea", normalizeWaterBody({ resolution: 48 }, "global"), undefined, builtInWaterMaterial(scene));
+      // Past the dense cells, across far rows (about 190 and 440 m out) that are hundreds of metres apart.
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 320, length: 360, resolution: 16 }), undefined, builtInWaterMaterial(scene));
+      lake.position.set(25, 0.2, 320);
+      const inside = () => {
+        updateSceneWater(scene);
+        const positions = sea.getVerticesData(VertexBuffer.PositionKind)!, indices = sea.getIndices()!;
+        const blend = sea.getVerticesData("slateWaterBlend")!, data = sea.getVerticesData("slateWaterData")!;
+        let checked = 0;
+        for (let t = 0; t < indices.length; t += 3) {
+          const corners = [indices[t]!, indices[t + 1]!, indices[t + 2]!];
+          for (const v of corners) {
+            // A vertex the sea does not own: the cull drops it, and every triangle it belongs to, from about two of
+            // its grid spacings inside the lake, trusting the triangle's other corners to be at most a cell away.
+            if (blend[v * 4 + 2]! >= 0) continue;
+            checked++;
+            for (const w of corners) {
+              const reach = Math.hypot(positions[w * 3]! - positions[v * 3]!, positions[w * 3 + 2]! - positions[v * 3 + 2]!);
+              expect(reach).toBeLessThanOrEqual(Math.SQRT2 * data[v * 4]! * 1.001);
+            }
+          }
+        }
+        return checked;
+      };
+      expect(inside()).toBeGreaterThan(0);
+      const rebuilt = vi.spyOn(sea, "setIndices");
+      // A short move keeps the lake on the same grid lines: the index buffer stays as it is.
+      camera.position.x += 7.3; camera.position.z += 3.1;
+      expect(inside()).toBeGreaterThan(0);
+      expect(rebuilt).not.toHaveBeenCalled();
+      // A long one brings other lines into its reach: they are kept whole, once.
+      camera.position.x += 37.3; camera.position.z += 150.1;
+      expect(inside()).toBeGreaterThan(0);
+      expect(rebuilt).toHaveBeenCalledTimes(1);
+      updateSceneWater(scene);
+      expect(rebuilt).toHaveBeenCalledTimes(1);
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+  /**
+   * Checks a blending surface as the GPU path's blend vertex cull reads it (a vertex this far inside water the surface
+   * never draws drops every triangle it belongs to): no triangle with a vertex in water the surface draws has such a vertex.
+   * Returns the owning triangles and the world X/Z, margin and spacing of each vertex.
+   */
+  function owningTrianglesKept(mesh: Mesh) {
+    const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, indices = mesh.getIndices()!, offset = gridOffset(mesh);
+    const blend = mesh.getVerticesData("slateWaterBlend")!, data = mesh.getVerticesData("slateWaterData")!;
+    const at = (v: number) => [positions[v * 3]! + offset.x + mesh.position.x, positions[v * 3 + 2]! + offset.z + mesh.position.z] as const;
+    const cullable = (v: number) => Math.min(data[v * 4 + 1]!, blend[v * 4 + 2]!) < -(2 * data[v * 4]! + 1);
+    let owning = 0;
+    for (let t = 0; t < indices.length; t += 3) {
+      const corners = [indices[t]!, indices[t + 1]!, indices[t + 2]!];
+      // The Water Cut keeps a fragment inside the (union) bank and the surface's share: min(bank, margin) >= 0.
+      if (!corners.some((v) => Math.min(data[v * 4 + 1]!, blend[v * 4 + 2]!) >= 0)) continue;
+      owning++;
+      for (const v of corners) expect(cullable(v), `${mesh.name} ${at(v)} margin ${blend[v * 4 + 2]} spacing ${data[v * 4]}`).toBe(false);
+    }
+    return { owning, count: positions.length / 3, at, margin: (v: number) => blend[v * 4 + 2]! };
+  }
+  it("keeps an Ocean's coarse far corner, and Global Water around it, drawn where each owns the water", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 300, 200), scene);
+    camera.maxZ = 1000;
+    camera.setTarget(new Vector3(-40, 0, 620));
+    try {
+      setQuality(scene, "low");
+      const sea = createWaterMesh(scene, "sea", normalizeWaterBody({}, "global"), undefined, builtInWaterMaterial(scene));
+      // Graded around the camera, so the far corner's cells are about twelve metres.
+      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 260, length: 160 }, "ocean"), undefined, builtInWaterMaterial(scene));
+      ocean.position.set(-40, 0, 620);
+      updateSceneWater(scene);
+      const corner = (x: number, z: number) => Math.hypot(x + 170, z - 700);
+      // The Ocean's corner is convex: its vertex just outside it reaches the seam only across a cell's diagonal, a few
+      // metres away, and its margin says so.
+      const outer = owningTrianglesKept(ocean);
+      let convex = 0;
+      for (let v = 0; v < outer.count; v++) {
+        const [x, z] = outer.at(v);
+        if (x > -170 || z < 700 || corner(x, z) > 12) continue;
+        convex++;
+        expect(outer.margin(v), `${x},${z}`).toBeGreaterThan(-corner(x, z) - 2);
+      }
+      // For Global Water the same corner is concave: its vertices just inside the Ocean's corner are its own nearest
+      // unowned water, a few metres from the seam, and keep owning triangles beside them.
+      const inner = owningTrianglesKept(sea);
+      let concave = 0;
+      for (let v = 0; v < inner.count; v++) {
+        const [x, z] = inner.at(v);
+        if (x < -170 || z > 700 || corner(x, z) > 40) continue;
+        concave++;
+        expect(inner.margin(v), `${x},${z}`).toBeGreaterThan(-corner(x, z) - 2);
+      }
+      expect([outer.owning > 0, inner.owning > 0, convex > 0, concave > 0]).toEqual([true, true, true, true]);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("keeps a river that runs into an Ocean, and the Ocean, drawn where each owns the water", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 120, -60), scene);
+    camera.setTarget(new Vector3(0, 0, 60));
+    try {
+      setQuality(scene, "low");
+      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 120, length: 80 }, "ocean"), undefined, builtInWaterMaterial(scene));
+      ocean.position.set(0, 0, 80);
+      // The river's rows cross the Ocean's south edge at a slant, so its cells meet the seam corner-first.
+      const river = createWaterMesh(scene, "river", normalizeWaterBody({ width: 8, points: [[-30, 0, -30], [-10, 0, 0], [5, 0, 25], [10, 0, 50]] }, "river"),
+        undefined, builtInWaterMaterial(scene));
+      updateSceneWater(scene);
+      expect(owningTrianglesKept(river).owning).toBeGreaterThan(0);
+      expect(owningTrianglesKept(ocean).owning).toBeGreaterThan(0);
+    } finally { scene.dispose(); engine.dispose(); }
   });
   it("keeps a moving body's neighbours on their last blend data between refreshes, and lands the final pose", () => {
     const engine = new NullEngine(), scene = new Scene(engine);

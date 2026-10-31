@@ -7,6 +7,14 @@ export function isMaterialParameterNode(type: string): boolean {
   );
 }
 
+/**
+ * Whether a Float or Color parameter is marked Per Instance (`properties.perInstance`): each mesh drawn with the
+ * Material can carry its own value, read from an instanced attribute, so actors that vary it still draw together.
+ */
+export function isPerInstanceParameter(type: string, properties: Readonly<Record<string, unknown>>): boolean {
+  return (type === "param.float" || type === "param.color") && properties.perInstance === true;
+}
+
 export function materialParameterName(node: MaterialGraphNode): string {
   return typeof node.properties.name === "string"
     ? node.properties.name.trim()

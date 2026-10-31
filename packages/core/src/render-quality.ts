@@ -45,11 +45,13 @@ export interface TextureQuality extends QualitySelection {
   anisotropy: number;
   byteBudget: number;
 }
-/** Automatic Model LOD selection; generated levels are chosen by screen coverage. */
+/** Automatic Model LOD selection, generated levels chosen by screen coverage, and occlusion culling. */
 export interface GeometryQuality extends QualitySelection {
   autoLod: boolean;
   /** Multiplies the distance at which each generated level takes over. */
   lodDistanceScale: number;
+  /** Play leaves out meshes wholly hidden behind occluders (off on every level until measured on device). */
+  occlusionCulling: boolean;
 }
 export const LOD_DISTANCE_SCALE_MIN = 0.25;
 export const LOD_DISTANCE_SCALE_MAX = 4;
@@ -141,8 +143,22 @@ export function parseWaterQualitySetting(field: string, value: string): Partial<
       return undefined;
   }
 }
+/**
+ * The world view's edge anti-aliasing, its only control: multisampling of the scene pass at 4 or 2 samples, FXAA (one
+ * sample and the FXAA pass), or neither. MSAA never runs FXAA as well.
+ */
+export const ANTI_ALIASING_MODES = ["msaa4", "msaa2", "fxaa", "off"] as const;
+export type AntiAliasingMode = (typeof ANTI_ALIASING_MODES)[number];
+/** Scene-pass samples per pixel for `mode`, before the device's limit. */
+export function antiAliasingSamples(mode: AntiAliasingMode): 1 | 2 | 4 {
+  return mode === "msaa4" ? 4 : mode === "msaa2" ? 2 : 1;
+}
+export function isAntiAliasingMode(value: unknown): value is AntiAliasingMode {
+  return (ANTI_ALIASING_MODES as readonly unknown[]).includes(value);
+}
 export interface PostProcessingQuality extends QualitySelection {
   resolutionScale: number;
+  antiAliasing: AntiAliasingMode;
   /**
    * Screen-space effects this tier can afford. Each runs only when the project
    * also enables it; a disallowed one is skipped, never forced on.
@@ -192,49 +208,49 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     lighting: { localLightMode: "auto", maxLocalLights: 6 },
     resolution: { scale: 0.85, dynamic: true, minScale: 0.5, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 4, byteBudget: 384 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 0.75 },
+    geometry: { autoLod: true, lodDistanceScale: 0.75, occlusionCulling: false },
     water: {
       shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
       refraction: true, refractionScale: 0.5, reflections: "planar", reflectionSteps: 6,
       planarScale: 0.25, fftSize: 128, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 0.75, ambientOcclusion: false, reflections: false, volumetricLighting: false },
+    postprocessing: { resolutionScale: 0.75, antiAliasing: "fxaa", ambientOcclusion: false, reflections: false, volumetricLighting: false },
   },
   medium: {
     lighting: { localLightMode: "auto", maxLocalLights: 32 },
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 768 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 1.25 },
+    geometry: { autoLod: true, lodDistanceScale: 1.25, occlusionCulling: false },
     water: {
       shadingDetail: "medium", meshDensity: 1, contactResolution: 512,
       refraction: true, refractionScale: 0.75, reflections: "planar", reflectionSteps: 12,
       planarScale: 0.5, fftSize: 256, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: false },
+    postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: false },
   },
   high: {
     lighting: { localLightMode: "auto", maxLocalLights: 64 },
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 1024 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 1.5 },
+    geometry: { autoLod: true, lodDistanceScale: 1.5, occlusionCulling: false },
     water: {
       shadingDetail: "high", meshDensity: 1, contactResolution: 1024,
       refraction: true, refractionScale: 0.75, reflections: "planar", reflectionSteps: 16,
       planarScale: 0.75, fftSize: 256, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
+    postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
   ultra: {
     lighting: { localLightMode: "auto", maxLocalLights: 256 },
     resolution: { scale: 1, dynamic: false, minScale: 1, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 16, byteBudget: 2048 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 2 },
+    geometry: { autoLod: true, lodDistanceScale: 2, occlusionCulling: false },
     water: {
       shadingDetail: "ultra", meshDensity: 1.5, contactResolution: 1024,
       refraction: true, refractionScale: 1, reflections: "planar", reflectionSteps: 24,
       planarScale: 0.75, fftSize: 256, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1, ambientOcclusion: true, reflections: true, volumetricLighting: true },
+    postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
 };
 type QualityValues<G extends keyof RenderingQuality> = Omit<RenderingQuality[G], keyof QualitySelection>;
@@ -242,12 +258,12 @@ type QualityValues<G extends keyof RenderingQuality> = Omit<RenderingQuality[G],
  * Values earlier releases gave a level. A saved group still labelled with that level whose values equal one of these
  * was never edited, so it loads as the level's current values instead of turning Custom.
  */
-const SUPERSEDED_QUALITY_PROFILES: { [L in QualityLevel]?: { [G in keyof RenderingQuality]?: readonly QualityValues<G>[] } } = {
+const SUPERSEDED_QUALITY_PROFILES: { [L in QualityLevel]?: { [G in keyof RenderingQuality]?: readonly Partial<QualityValues<G>>[] } } = {
   low: {
     lighting: [{ localLightMode: "auto", maxLocalLights: 4 }],
     resolution: [{ scale: 0.75, dynamic: true, minScale: 0.5, targetFps: 60 }],
     textures: [{ lodBias: 1, anisotropy: 2, byteBudget: 256 * MIB }],
-    geometry: [{ autoLod: true, lodDistanceScale: 0.5 }],
+    geometry: [{ autoLod: true, lodDistanceScale: 0.5, occlusionCulling: false }],
     water: [128, 64].map((fftSize) => ({
       shadingDetail: "low", meshDensity: 0.5, contactResolution: 256,
       refraction: false, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
@@ -258,7 +274,7 @@ const SUPERSEDED_QUALITY_PROFILES: { [L in QualityLevel]?: { [G in keyof Renderi
   medium: {
     lighting: [{ localLightMode: "auto", maxLocalLights: 16 }],
     textures: [{ lodBias: 0, anisotropy: 4, byteBudget: 512 * MIB }],
-    geometry: [{ autoLod: true, lodDistanceScale: 1 }],
+    geometry: [{ autoLod: true, lodDistanceScale: 1, occlusionCulling: false }],
     water: [256, 128].map((fftSize) => ({
       shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
       refraction: true, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
@@ -362,6 +378,10 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
         LOD_DISTANCE_SCALE_MIN,
         LOD_DISTANCE_SCALE_MAX,
       ),
+      occlusionCulling:
+        typeof geometry?.occlusionCulling === "boolean"
+          ? geometry.occlusionCulling
+          : defaults.geometry.occlusionCulling,
     },
     water: normalizeWaterQuality(water),
     postprocessing: {
@@ -372,6 +392,10 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
         0.25,
         1,
       ),
+      antiAliasing: isAntiAliasingMode(source.postprocessing?.antiAliasing)
+        ? source.postprocessing.antiAliasing
+        : RENDER_QUALITY_PROFILES[isQualityLevel(source.postprocessing?.profile) ? source.postprocessing.profile : "medium"]
+          .postprocessing.antiAliasing,
       ...postProcessingEffects(source.postprocessing),
     },
     lighting: {
@@ -647,6 +671,11 @@ export class RenderingQualitySession {
           ...this.overrides,
           water: { ...this.overrides.water, ...water },
         };
+      else if (group === "postprocessing" && choice === "antialiasing" && isAntiAliasingMode(value))
+        this.overrides = {
+          ...this.overrides,
+          postprocessing: { ...this.overrides.postprocessing, antiAliasing: value },
+        };
       else if (
         group === "postprocessing" &&
         (POST_PROCESSING_EFFECT_FIELDS as readonly string[]).includes(choice) &&
@@ -710,6 +739,15 @@ export class RenderingQualitySession {
         };
       else if (
         group === "shadows" &&
+        choice === "filter" &&
+        (value === "low" || value === "medium" || value === "high")
+      )
+        this.overrides = {
+          ...this.overrides,
+          shadows: { ...this.overrides.shadows, filterQuality: value },
+        };
+      else if (
+        group === "shadows" &&
         choice === "enabled" &&
         (value === "on" || value === "off")
       )
@@ -725,6 +763,15 @@ export class RenderingQualitySession {
         this.overrides = {
           ...this.overrides,
           geometry: { ...this.overrides.geometry, autoLod: value === "on" },
+        };
+      else if (
+        group === "geometry" &&
+        choice === "occlusion" &&
+        (value === "on" || value === "off")
+      )
+        this.overrides = {
+          ...this.overrides,
+          geometry: { ...this.overrides.geometry, occlusionCulling: value === "on" },
         };
       else if (
         group === "geometry" &&
@@ -773,4 +820,29 @@ export class RenderingQualitySession {
         .join("\n"),
     };
   }
+}
+
+/**
+ * The quality part of `RenderDiagnostics.settings`: every quality field a Feature Test Check Breakdown step changes,
+ * as text, so a step's sample can say what it changed. `quality` carries the device-clamped water values.
+ */
+export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): Record<string, string> {
+  const { shadows, water, postprocessing: post } = quality;
+  return {
+    shadows: shadows.enabled ? `${shadows.profile} ${shadows.mapSize}` : "off",
+    "shadows.filter": shadows.filterQuality,
+    "water.refraction": String(water.refraction),
+    "water.refractionScale": String(water.refractionScale),
+    "water.reflections": water.reflections,
+    "water.planarScale": String(water.planarScale),
+    "water.shadingDetail": water.shadingDetail,
+    "water.fft": `${water.fftSize}x${water.fftCascades}`,
+    "post.scale": String(post.resolutionScale),
+    "post.ambientOcclusion": String(post.ambientOcclusion),
+    "post.reflections": String(post.reflections),
+    "post.volumetricLighting": String(post.volumetricLighting),
+    "post.antiAliasing": post.antiAliasing,
+    "resolution.scale": String(quality.resolution.scale),
+    "geometry.occlusion": String(quality.geometry.occlusionCulling),
+  };
 }

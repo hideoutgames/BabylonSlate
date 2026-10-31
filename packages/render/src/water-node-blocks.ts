@@ -27,6 +27,7 @@ import { SCENE_FOG_COLOR_UNIFORM, bindSceneFog, bindSceneFogColor, emitSceneFogF
 import { isSpatialGeometryPass } from "./spatial-geometry-passes";
 import { isSkyboxMesh } from "./skybox";
 import { WATER_SCENE_COPY_SKY_DEPTH, isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
+import { ownershipSource, WATER_OWNERSHIP_DEFINE, WATER_OWNERSHIP_UNIFORMS } from "./water-blend-ownership";
 import { declareWaterAttributes, isBlendingWaterSurface, isWaterSurfaceMesh, WATER_DEPTH_PRE_PASS_DEFINE, WATER_SURFACE_DEFINE } from "./water-surface-block";
 
 /**
@@ -48,6 +49,11 @@ export interface WaterNodeSurface {
   partners: readonly (WaterDefinition | null)[];
   /** Level (not a river or a volume tilted out of level), so it can take the view's planar reflection. */
   flat: boolean;
+  /**
+   * While blending, the per-pixel ownership inputs when the surface qualifies (`blendOwnership`: the Water Cut then
+   * evaluates its seam per pixel, `WATER_OWNERSHIP_DEFINE`), else null (the per-vertex margin).
+   */
+  ownership?: Float32Array | null;
 }
 const nodeSurfaces = new WeakMap<AbstractMesh, WaterNodeSurface>();
 /** Registers (or with null removes) what `mesh`'s Custom Material water nodes read. */
@@ -932,7 +938,9 @@ export class WaterCutBlock extends WaterNodeBlock {
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
     prepareSurfaceDefines(defines, material, mesh, false);
     const scene = material.getScene(), engine = scene.getEngine(), water = isWaterSurfaceMesh(mesh);
-    defines.setValue(WATER_BLEND_DEFINE, isBlendingWaterSurface(mesh), true);
+    const blending = isBlendingWaterSurface(mesh);
+    defines.setValue(WATER_BLEND_DEFINE, blending, true);
+    defines.setValue(WATER_OWNERSHIP_DEFINE, blending && (meshWaterNodeSurface(mesh)?.ownership ?? null) !== null, true);
     defines.setValue(WATER_DEPTH_PRE_PASS_DEFINE, water && !engine.getColorWrite(), true);
     // Registered with the pass's geometry task before its first readiness probe, so it never changes for the pass.
     defines.setValue(WATER_EFFECTS_GEOMETRY_DEFINE, water && isSpatialGeometryPass(scene, engine.currentRenderPassId), true);
@@ -941,6 +949,12 @@ export class WaterCutBlock extends WaterNodeBlock {
     if (!isWaterSurfaceMesh(mesh)) return;
     const scene = material.getScene(), selected = meshRemovals(scene, mesh!);
     bindSurface(effect, scene, mesh);
+    const ownership = meshWaterNodeSurface(mesh)?.ownership;
+    if (ownership) {
+      for (let i = 0; i < WATER_OWNERSHIP_UNIFORMS.length; i++) {
+        effect.setFloat4(WATER_OWNERSHIP_UNIFORMS[i]!, ownership[i * 4]!, ownership[i * 4 + 1]!, ownership[i * 4 + 2]!, ownership[i * 4 + 3]!);
+      }
+    }
     for (let i = 0; i < WATER_REMOVAL_SLOTS; i++) {
       const entry = selected[i];
       if (!entry) {
@@ -961,6 +975,8 @@ export class WaterCutBlock extends WaterNodeBlock {
     for (const name of WATER_REMOVAL_SHAPE_UNIFORMS) state._emitUniformFromString(name, Types.Vector4, WATER_SURFACE_DEFINE);
     for (const name of WATER_REMOVAL_UNIFORMS) state._emitUniformFromString(name, Types.Matrix, WATER_SURFACE_DEFINE);
     state._emitFunction("swRemoval", `#ifdef ${WATER_SURFACE_DEFINE}\n${bind(REMOVAL_HELPER, wgsl)}#endif\n`, "");
+    for (const name of WATER_OWNERSHIP_UNIFORMS) state._emitUniformFromString(name, Types.Vector4, WATER_OWNERSHIP_DEFINE);
+    state._emitFunction("swOwnership", `#ifdef ${WATER_OWNERSHIP_DEFINE}\n${bind(ownershipSource(), wgsl)}#endif\n`, "");
     // The ownership margin, and on the GPU path (only a graph with Water Waves has one) the blend cull, once the vertex
     // program has written its clip position.
     declareWaterAttributes(vertex, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
@@ -977,7 +993,11 @@ export class WaterCutBlock extends WaterNodeBlock {
       + surfaceLocals(state, this.worldPosition.associatedVariableName)
       + bind("float swnHeight = swnData.x;\nfloat swnKeep = 1.0;\n", wgsl)
       + (gpu ? `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.waveHeight.associatedVariableName};\n#endif\n` : "")
-      + `#ifdef ${WATER_BLEND_DEFINE}\nswnKeep = min(swnData.y, ${wgsl ? "fragmentInputs." : ""}${CUT_MARGIN_VARYING} + 0.015);\n#endif\n`
+      // The seam per pixel where the surface's participants allow (`WATER_OWNERSHIP_DEFINE`), else the per-vertex margin.
+      // Each side keeps a pixel past the seam: the bodies' meshes interpolate the same world point a little apart.
+      + `#ifdef ${WATER_BLEND_DEFINE}\n#ifdef ${WATER_OWNERSHIP_DEFINE}\n`
+      + bind("float swnOwn = swOwnership(swnPos.xz);\nswnKeep = min(swnData.y, swnOwn + fwidth(swnOwn));\n", wgsl) + "#else\n"
+      + `swnKeep = min(swnData.y, ${wgsl ? "fragmentInputs." : ""}${CUT_MARGIN_VARYING} + 0.015);\n#endif\n#endif\n`
       + bind(`vec4 swnField = swnFieldAt(swnPos.xz);\nfloat swnCut = ${cut};\n`, wgsl)
       + `${removed} = swnCut < 0.0 || swnKeep < 0.0 || (swnField.w > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swnField.y + swnHeight <= 0.0);\n}\n`
       + `#ifdef ${WATER_DEPTH_PRE_PASS_DEFINE}\nif (${removed}) { discard; }\nreturn${wgsl ? " fragmentOutputs" : ""};\n#endif\n#endif\n`;

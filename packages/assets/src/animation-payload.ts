@@ -2,7 +2,10 @@ export interface AnimationPayload {
   clipName: string;
   modelGuid: string;
   skeletonGuid: string | null;
+  /** Length of one playback pass; authored in the Inspector, defaults to `clipDurationMs`. */
   durationMs?: number;
+  /** The clip's length in its source file, set at import; Reset restores `durationMs` to it. */
+  clipDurationMs?: number;
   sourceAnimationGuid?: string | null;
 }
 
@@ -36,8 +39,12 @@ export function normalizeAnimationPayload(value: unknown): AnimationPayload {
     skeletonGuid: nullableGuid(record.skeletonGuid),
     sourceAnimationGuid: nullableGuid(record.sourceAnimationGuid),
   };
-  const durationMs = optionalDurationMs(record.durationMs);
+  const authoredMs = optionalDurationMs(record.durationMs);
+  // Assets saved before Duration was editable store only the clip's length.
+  const clipDurationMs = optionalDurationMs(record.clipDurationMs) ?? authoredMs;
+  const durationMs = authoredMs ?? clipDurationMs;
   if (durationMs !== undefined) payload.durationMs = durationMs;
+  if (clipDurationMs !== undefined) payload.clipDurationMs = clipDurationMs;
   return payload;
 }
 

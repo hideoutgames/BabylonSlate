@@ -1,5 +1,4 @@
 import "./texture-quality";
-import "./standard-fog";
 import { lightsInCreationOrder, syncForwardLightPolicy } from "./light-policy";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty, notifySceneReceiversChanged } from "./scene-readiness-signal";

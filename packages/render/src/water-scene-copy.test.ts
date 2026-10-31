@@ -12,6 +12,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
+import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   createDefaultWaterDefinition,
@@ -21,9 +22,10 @@ import {
 } from "@haptic/core";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import { COMPILE_AHEAD_LIMIT } from "./driver-compile";
+import { setSceneOutputScale } from "./scene-output-scale";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
-import { updateSceneRenderingSettings } from "./render-settings";
+import { allowSceneScreenShadows, updateSceneRenderingSettings } from "./render-settings";
 import { prewarmSceneMaterials } from "./scene-perf";
 import { configureEditorRenderingGroups } from "./sorting";
 import { createWaterMesh, isBuiltInWaterMesh, updateSceneWater } from "./water-mesh";
@@ -198,6 +200,33 @@ it("admits the copy only without per-group depth clears, and re-plans when that 
   graph.dispose();
 });
 
+it("copies a multisampled world view's resolved scene, depth included, and draws the transparent pass into its samples", async () => {
+  const { engine, scene, camera } = host();
+  engine.getCaps().maxMSAASamples = 4;
+  // A world view at the default Medium tier: MSAA 4x.
+  allowSceneScreenShadows(scene, () => false);
+  lake(scene);
+  const renderers = new Map<string, { resolveDepth: boolean; samples: number | undefined }>();
+  const record = FrameGraphObjectRendererTask.prototype.record;
+  vi.spyOn(FrameGraphObjectRendererTask.prototype, "record").mockImplementation(function (this: FrameGraphObjectRendererTask, ...args) {
+    const description = this._frameGraph.textureManager.getTextureDescription(this.targetTexture as number);
+    renderers.set(this.name, { resolveDepth: this.resolveMSAADepth, samples: description.options.samples });
+    return record.apply(this, args);
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // No own pair: the copy samples the view's own multisampled scene targets once the objects resolve them.
+  expect(graph.taskNames()).toEqual([
+    "Forward admitted shadows", "Forward clear", "Forward cull", "Water split", "Forward objects", "Water scene copy",
+    "Forward transparent", "Multisample output",
+  ]);
+  expect(Object.fromEntries(renderers)).toEqual({
+    "Forward objects": { resolveDepth: true, samples: 4 },
+    "Forward transparent": { resolveDepth: false, samples: 4 },
+  });
+  graph.dispose();
+});
+
 it("swaps the backbuffer view onto an own pair only on frames with visible copy-sampling water", async () => {
   const { scene, camera } = host();
   const water = lake(scene);
@@ -256,7 +285,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
 
 it("shares an effect chain's scene targets, deferring transparents only while water is visible", async () => {
   const { scene, camera } = host();
-  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true } });
+  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, vignette: { ...DEFAULT_RENDER_EFFECTS.vignette, enabled: true } } });
   const water = lake(scene);
   const glass = box(scene, "glass", 0.5);
   const glassDraws = drawnBy(scene, glass);
@@ -268,7 +297,7 @@ it("shares an effect chain's scene targets, deferring transparents only while wa
   expect(names.indexOf("Water split")).toBe(names.indexOf("Forward objects") - 1);
   expect(names.indexOf("Water scene copy")).toBe(names.indexOf("Forward objects") + 1);
   expect(names.indexOf("Forward transparent")).toBe(names.indexOf("Water scene copy") + 1);
-  expect(names.indexOf("Scene Effects FXAA")).toBeGreaterThan(names.indexOf("Forward transparent"));
+  expect(names.indexOf("Scene Effects Display Color")).toBeGreaterThan(names.indexOf("Forward transparent"));
   await settle(graph, camera);
   expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: false });
   let work = frames(graph, () => {
@@ -289,35 +318,6 @@ it("shares an effect chain's scene targets, deferring transparents only while wa
   expect(work).toEqual({ frames: 1, visibleFrames: 0, copies: 0 });
   expect(glassDraws).toEqual(["Forward objects → texture"]);
   expect(sparkDraws).toEqual(["Forward objects → texture"]);
-  graph.dispose();
-});
-
-it("jitters the transparent pass like the opaque draw under temporal anti-aliasing", async () => {
-  const { engine, scene, camera } = host();
-  // The spatial chain (its geometry pass feeds the resolve's velocity) needs four float targets and depth sampling.
-  Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
-  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } });
-  lake(scene);
-  const wall = box(scene, "wall"), glass = box(scene, "glass", 0.5);
-  // The projection each box draws with in the view's object passes, and the pass it draws in.
-  const draws = new Map<string, { pass: string; projection: number[] }>();
-  for (const mesh of [wall, glass]) {
-    mesh.onBeforeRenderObservable.add(() => {
-      const pass = currentPass(scene);
-      if (pass.startsWith("Forward")) draws.set(mesh.name, { pass, projection: [...scene.getProjectionMatrix().m] });
-    });
-  }
-  const graph = new ForwardSceneFrameGraph(scene);
-  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.taskNames()).toContain("Forward transparent");
-  await settle(graph, camera);
-  draws.clear();
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
-  expect(draws.get("wall")?.pass).toBe("Forward objects → texture");
-  expect(draws.get("glass")?.pass).toBe("Forward transparent → texture");
-  // Both draws use this frame's sub-pixel jitter; the camera's own projection stays unjittered.
-  expect(draws.get("wall")!.projection).not.toEqual([...camera.getProjectionMatrix().m]);
-  expect(draws.get("glass")!.projection).toEqual(draws.get("wall")!.projection);
   graph.dispose();
 });
 
@@ -577,11 +577,11 @@ it("links the next water bodies' variants while the first still links, a bounded
 
 it("links the transparent pass's water while an earlier geometry pass still links its own", async () => {
   const { engine, scene, camera } = host();
-  // The spatial chain (its geometry pass feeds the resolve's velocity) needs four float targets and depth sampling.
+  // The spatial chain (its geometry pass feeds the reflections) needs four float targets and depth sampling.
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
   updateSceneRenderingSettings(scene, {
     quality: normalizeRenderingQuality({ water: { profile: "ultra" } }),
-    effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } },
+    effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } },
   });
   await threeWaterBodies(scene);
   const links = holdWaterLinks(engine);
@@ -601,11 +601,11 @@ it.each([["transparent", false], ["geometry", true]] as const)(
   "links ahead again, in the %s pass, the water it already linked ahead once a change mid-load gives it new variants",
   async (_pass, geometry) => {
     const { engine, scene, camera } = host();
-    // The spatial chain (its geometry pass feeds the resolve's velocity) needs four float targets and depth sampling.
+    // The spatial chain (its geometry pass feeds the reflections) needs four float targets and depth sampling.
     if (geometry) Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
     updateSceneRenderingSettings(scene, {
       quality: normalizeRenderingQuality({ water: { profile: "ultra" } }),
-      ...(geometry ? { effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } } : {}),
+      ...(geometry ? { effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } } } : {}),
     });
     const [first, second] = await threeWaterBodies(scene);
     const links = holdWaterLinks(engine);
@@ -683,6 +683,26 @@ it("follows a backbuffer resize in place, keeping every task and render pass id"
   const screens = binds.mock.calls.filter(([name]) => name === "slateWaterNodeScreen");
   expect(screens.length).toBeGreaterThan(0);
   expect(screens.at(-1)!.slice(1, 3)).toEqual([1 / 256, 1 / 160]);
+  graph.dispose();
+});
+
+it("sizes the copy from the world's render scale when Play composites it at full backbuffer size", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 320;
+  options.renderHeight = 200;
+  const { scene, camera } = host({ options });
+  lake(scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  const copySize = () => waterSceneCopyForPass(scene, graph.waterSceneCopyDiagnostics()!.renderPassId)!.texture.getSize();
+  // Medium's Refraction Resolution 0.75 of the 320 × 200 view.
+  expect(copySize()).toEqual({ width: 240, height: 150 });
+  // Scene Layers keep the backbuffer at full size and scale the world through its output scale.
+  setSceneOutputScale(scene, 0.5);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  expect(copySize()).toEqual({ width: 120, height: 75 });
   graph.dispose();
 });
 

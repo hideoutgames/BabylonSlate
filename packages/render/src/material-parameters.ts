@@ -1,3 +1,4 @@
+import { instanceParameterOf, instanceParameterValue, setInstanceParameterValue } from "./instance-parameters";
 import {
   Color4,
   InputBlock,
@@ -73,7 +74,11 @@ export function createMaterialParameterBindings(
   const defaults = new Map<string, MaterialParameterValue>();
   for (const [name, operation] of parameters) {
     const block = realized.get(operation.id)?.blocks[0];
-    if (operation.nodeType === "param.texture") {
+    // A per-instance parameter's attribute block holds no value: the Material's is recorded with it.
+    const perInstance = instanceParameterValue(material, name);
+    if (perInstance) {
+      defaults.set(name, perInstance);
+    } else if (operation.nodeType === "param.texture") {
       defaults.set(name, { kind: "texture", textureAssetGuid:
         typeof operation.properties.textureGuid === "string" ? operation.properties.textureGuid : null });
     } else if (block instanceof InputBlock && operation.nodeType === "param.float") {
@@ -156,6 +161,13 @@ export function createMaterialParameterBindings(
         }
         dirty(true);
         values.set(name, copy(parameter));
+        return true;
+      }
+      if (instanceParameterOf(material, name)) {
+        // Every mesh the Material draws without a value of its own draws this one; no uniform or Effect changes.
+        if (!setInstanceParameterValue(material, name, parameter)) return false;
+        values.set(name, copy(parameter));
+        parameterRevisions.set(material, (parameterRevisions.get(material) ?? 0) + 1);
         return true;
       }
       const block = realized.get(operation.id)?.blocks[0];

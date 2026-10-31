@@ -1,9 +1,10 @@
+import { createPooledPrimitiveVisual } from "./pooled-primitive-visual";
 /**
  * The editor's Babylon mesh for one visual component, and the primitive meshes editor and Play share. A property read
  * here at build time must also change the component's kind in `scene-visual-fingerprint.ts`, or edits to it never
  * rebuild the mesh. `scene-loader.ts` re-exports the public names.
  */
-import { Color3, Mesh, MeshBuilder, StandardMaterial, Vector3, type Scene } from "@babylonjs/core";
+import { Color3, Mesh, MeshBuilder, Vector3, type Scene } from "@babylonjs/core";
 import {
   isOverlayLayoutClass, isUIControl2DClass, MIRROR_CLASS_ID, normalizeWaterBody, overlayPanelDestFromScale,
   parseCableProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,
@@ -21,14 +22,14 @@ import { createFogVolumeGuide, createReflectionProbeGuide } from "./fog-volume-g
 import { createFoliageMesh } from "./foliage-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createModelActorRoot } from "./glb-anim";
-import { shareHelperProgram } from "./helper-program";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 import { createJoystick2DMesh } from "./joystick2d-mesh";
 import { createLandscapeMesh } from "./landscape-mesh";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { attachMeshCollisionDashes } from "./mesh-collision-dashes";
 import { createMirrorSurfaceMesh } from "./mirrors";
 import { createOverlayPanelMesh } from "./overlay-panel-mesh";
-import { createOverlayTextureQuad, createOverlayUnlitMaterial } from "./overlay-texture-quad";
+import { applyOverlayUnlitMaterial, createOverlayTextureQuad } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { createPainter2DMesh } from "./painter2d-mesh";
 import { parentStreamingComponentOf, stringProp, type SceneActorSource } from "./scene-visual-classify";
@@ -42,17 +43,24 @@ import { createText2DMesh } from "./text2d-mesh";
 import { createText3DMesh } from "./text3d-mesh";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { createUIControl2DMesh } from "./ui-controls2d-mesh";
-import { VisualBundle } from "./visual-bundle";
 import { createWaterMesh } from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
+import { primitiveOccluderShape, registerOccluderShape } from "./view-occlusion";
 
-/** Build a primitive mesh for editor or Play from a MeshComponent kind. */
+/** Build a primitive mesh for editor or Play from a MeshComponent kind; a box, sphere, cylinder or plane is an occluder. */
 export function createPrimitiveMesh(
   scene: Scene,
   name: string,
   meshKind: string | null | undefined,
 ): Mesh {
+  const mesh = buildPrimitiveMesh(scene, name, meshKind);
+  const { minimum, maximum } = mesh.getBoundingInfo().boundingBox;
+  registerOccluderShape(mesh, primitiveOccluderShape(meshKind, minimum.asArray(), maximum.asArray()));
+  return mesh;
+}
+
+function buildPrimitiveMesh(scene: Scene, name: string, meshKind: string | null | undefined): Mesh {
   switch (meshKind) {
     case "sphere":
       return MeshBuilder.CreateSphere(name, { diameter: 1.5 }, scene);
@@ -86,17 +94,15 @@ export function createPrimitiveMesh(
   }
 }
 
+const PIVOT_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: true, fog: false, role: "helper" };
+
 function createPivotMarkerMesh(scene: Scene, name: string): Mesh {
   const root = MeshBuilder.CreateSphere(name, { diameter: 0.14 }, scene);
   root.isPickable = true;
-  const bundle = new VisualBundle();
-  root.onDisposeObservable.addOnce(() => bundle.dispose());
-  const material = bundle.ownMaterial(shareHelperProgram(new StandardMaterial(`${name}-pivot`, scene)));
-  material.disableLighting = true;
-  material.emissiveColor = new Color3(0.92, 0.93, 0.96);
-  material.diffuseColor = Color3.Black();
-  material.specularColor = Color3.Black();
-  root.material = material;
+  // A pale marker, front faces only; editor helpers draw without fog.
+  setUnlitMaterial(root, PIVOT_MATERIAL, {
+    texture: null, color: [0.92, 0.93, 0.96], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+  });
   const axes: Array<{
     suffix: string;
     end: Vector3;
@@ -307,9 +313,7 @@ function createComponentMesh(
   }
   if (component.classId === "2DMaterialComponent") {
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const bundle = new VisualBundle();
-    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
-    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
+    applyOverlayUnlitMaterial(mesh);
     const guid = stringProp(component.properties.materialGuid);
     if (guid && assets?.resolveMaterial) {
       const compiled = assets.resolveMaterial(guid, { scene, unlit: true });
@@ -335,9 +339,7 @@ function createComponentMesh(
   }
   if (component.classId === "2DButtonComponent") {
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const bundle = new VisualBundle();
-    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
-    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
+    applyOverlayUnlitMaterial(mesh);
     return mesh;
   }
   if (isUIControl2DClass(component.classId)) return createUIControl2DMesh(scene, name, component, assets, component.id);
@@ -371,15 +373,14 @@ function createComponentMesh(
   const assetGuid = stringProp(component.properties.assetGuid);
   const visual = assetGuid
     ? createModelActorRoot(scene, name)
-    : createPrimitiveMesh(
-        scene,
-        name,
-        typeof component.properties.meshKind === "string"
-          ? component.properties.meshKind
-          : null,
-      );
+    : primitiveVisual(scene, name, typeof component.properties.meshKind === "string" ? component.properties.meshKind : null);
   attachMeshCollisionDashes(visual, component, assets);
   return visual;
+}
+
+/** A mesh component's primitive: drawn through the instance pool where the Scene pools (`createPooledPrimitiveVisual`). */
+function primitiveVisual(scene: Scene, name: string, kind: string | null): Mesh {
+  return createPooledPrimitiveVisual(scene, name, kind) ?? createPrimitiveMesh(scene, name, kind);
 }
 
 export function applyAuthoredComponentSorting(mesh: Mesh, component: SerializedComponent, layers?: readonly string[]): void {

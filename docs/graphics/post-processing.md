@@ -14,11 +14,9 @@ Open **Project Settings > Rendering > Post Processing**. Every effect is off in 
 | **Bloom** | **Bloom Threshold** (0.9), **Bloom Weight** (0.15), **Bloom Kernel** (64), **Bloom Scale** (0.5) | Glow around bright surfaces. |
 | **Vignette** | **Vignette Weight** (1.5), **Vignette Color** (black) | Darkens the frame edges. |
 | **Color Grading** | **LUT Texture** | Remaps final colours through a lookup table. |
-| **FXAA** | None | Full-screen edge anti-aliasing. |
-| **Temporal Anti-Aliasing** | **Temporal Blend** (0.1), **Jitter Samples** (8) | Blends jittered frames to smooth edges and effect noise. Fast motion can ghost. |
 | **FSR Upscaling** | **Render Scale** (0.67), **Sharpness** (0.2) | Renders at a lower resolution, then upscales and sharpens with AMD FSR 1. |
 
-Ambient occlusion, reflections, volumetric fog and temporal anti-aliasing draw a depth pass of the scene. [Screen-Space Shadows](shadows.md#screen-space-shadows) use the same pass, or add it when none of these is on.
+Ambient occlusion, reflections and volumetric fog draw a depth pass of the scene. [Screen-Space Shadows](shadows.md#screen-space-shadows) use the same pass, or add it when none of these is on.
 
 For **Color Grading**, use a horizontal strip of square slices, such as 256×16 or 1024×32. Open the Texture and set **Usage** to **Color Grading LUT** so it stays uncompressed.
 
@@ -38,14 +36,32 @@ Vignette and Color Grading apply in both pipelines.
 
 Post-processing cost follows the **Post Processing** group in **Project Settings > Rendering > Scalability**.
 
-| Level | Post Processing Resolution Scale | Allow Ambient Occlusion | Allow Reflections | Allow Volumetric Lighting |
-| --- | --- | --- | --- | --- |
-| Low | 0.75 | Off | Off | Off |
-| Medium | 1 | On | On | Off |
-| High | 1 | On | On | On |
-| Ultra | 1 | On | On | On |
+| Level | Post Processing Resolution Scale | Anti-Aliasing | Allow Ambient Occlusion | Allow Reflections | Allow Volumetric Lighting |
+| --- | --- | --- | --- | --- | --- |
+| Low | 0.75 | FXAA | Off | Off | Off |
+| Medium | 1 | MSAA 4x | On | On | Off |
+| High | 1 | MSAA 4x | On | On | On |
+| Ultra | 1 | MSAA 4x | On | On | On |
 
 An **Allow** switch never turns an effect on; the effect also has to be on in **Post Processing**. **Post Processing Resolution Scale** applies to passes marked **Scalable**.
+
+## Anti-aliasing
+
+**Anti-Aliasing** in the **Post Processing** quality group smooths the jagged edges of geometry in the Scene Viewport, Play, Preview Build and exported games.
+
+| Mode | Description |
+| --- | --- |
+| **MSAA 4x** | Draws each pixel of the scene from four samples. Edges are smooth and the image stays sharp and still. |
+| **MSAA 2x** | Two samples per pixel: cheaper, a little less smooth. WebGPU only supports four, so it uses **MSAA 4x** there. |
+| **FXAA** | Draws one sample per pixel, then blurs edges in a full-screen pass. Cheapest, slightly soft. |
+| **Off** | No anti-aliasing. |
+
+- Under MSAA, alpha-tested surfaces (Materials with **Blend Mode** set to **Masked**, and cut-out sprites and tiles) use alpha-to-coverage: the edges of their cut-outs, such as leaves and fences, are smoothed like geometric edges.
+- MSAA costs GPU memory and time in proportion to the samples. Lower it first on a device that struggles.
+- Effects that read the scene's depth, such as water and Screen-Space Shadows, see one real surface depth at every pixel, never a blend of the surfaces along an edge.
+- Render Target Captures, previews and thumbnails always draw one sample per pixel.
+- Devices that cannot multisample, or support fewer samples, draw with what they support.
+- Changing the mode while a game runs keeps the last image on screen for a moment while the view rebuilds.
 
 ## Scene passes
 
@@ -60,7 +76,7 @@ Passes run from top to bottom. If a pass needs a buffer the device cannot provid
 
 ## From scripts
 
-- [Set Rendering Effects](../scripting/class/set-rendering-effects.md) changes the colour pipeline, tone mapping, exposure, bloom, vignette and FXAA for the session. [Set Antialiasing](../scripting/class/set-antialiasing.md) and [Set Vignette Color](../scripting/class/set-vignette-color.md) change one setting.
+- [Set Rendering Effects](../scripting/class/set-rendering-effects.md) changes the colour pipeline, tone mapping, exposure, bloom and vignette for the session. [Set Anti-Aliasing](../scripting/class/set-anti-aliasing.md) and [Set Vignette Color](../scripting/class/set-vignette-color.md) change one setting.
 - [Set Post Processing Quality](../scripting/class/set-post-processing-quality.md) changes the Post Processing quality group.
 - To animate a scene pass, copy its **Entry ID** (the **#** button beside the pass's Material), get its Material with [Get Post Process Entry](../scripting/class/get-post-process-entry.md), then use [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md) or [Set Material Color Parameter](../scripting/class/set-material-color-parameter.md).
 - [Register Scene Layer Post-Processing](../scripting/class/register-scene-layer-post-processing.md) adds a post-process Material to a Scene Layer.

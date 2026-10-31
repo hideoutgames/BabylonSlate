@@ -1,5 +1,6 @@
 import "./gltf-loader";
 import { applyMaterialBounds } from "./material-bounds";
+import { setDrawnMaterial } from "./pooled-visuals";
 import type {
   AnimationGroup,
   Material,
@@ -38,8 +39,8 @@ export function applyModelMaterialSlots(
     const index = modelMaterialIndexOf(mesh);
     if (index === undefined) continue;
     const guid = index === null ? null : guids.get(index) ?? null;
-    mesh.material = guid ? resolveMaterial(guid) : null;
-    applyMaterialBounds(mesh);
+    // A pooled leaf moves to the group of its Material (`setDrawnMaterial`).
+    applyMaterialBounds(setDrawnMaterial(mesh, guid ? resolveMaterial(guid) : null));
   }
 }
 

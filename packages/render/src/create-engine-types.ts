@@ -131,6 +131,11 @@ export interface EngineHandle {
   renderDiagnostics: () => RenderDiagnostics;
   /** Whether `lightsdebug` is on, so hosts read `renderDiagnostics().shadowLights` only while it is. */
   lightsDebugEnabled: () => boolean;
+  /**
+   * While `showocclusion` is on, the world view's occlusion buffer for `drawOcclusionOverlay` (`sceneOcclusionBuffer`;
+   * null while it does not cull); null while the overlay is off.
+   */
+  occlusionOverlay: () => { buffer: { width: number; height: number; depth: Float32Array } | null } | null;
   /** Explicit CPU timing only; host controls finite capture, session mode and result retention. */
   observePerformance: (onFrame: (sample: RenderPerformanceSample) => void) => () => void;
   /** Explicit unpaired engine-wide GPU queries; unavailable backends explain why. */
@@ -428,6 +433,12 @@ export interface CreateEngineOptions {
   nativePreparation?: NativePreparationLimits;
   /** Engine Settings `hardwareScalingLevel`. 1 is native. */
   hardwareScalingLevel?: number;
+  /**
+   * An editor view of a Scene Layer document: it draws at its canvas's device
+   * pixels and full quality (`pinFullRenderQuality`), whatever the quality tier,
+   * render scale or Engine Settings scaling.
+   */
+  fullQuality?: boolean;
   /** Stack skip / compile messages (exported player and Play overlay). */
   onPostProcessDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
   /** Injected playback backend (tests). Browser Play uses AudioV2. */
@@ -524,6 +535,8 @@ export interface EditorTools {
   setViewportShadingMode: (mode: ViewportShadingMode) => void;
   /** Session MeshComponent collision dashes (default off). */
   setDrawMeshCollision: (enabled: boolean) => void;
+  /** Session: the viewport culls by occlusion whatever the project setting (default off). */
+  setOcclusionCulling: (enabled: boolean) => void;
   /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
   setPixelPerfect: (settings: { pixelsPerUnit: number } | null) => void;
   /** Ordered sorting layers from project settings, back to front. */

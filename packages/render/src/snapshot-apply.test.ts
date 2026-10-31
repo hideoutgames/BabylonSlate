@@ -1,14 +1,17 @@
+import { authoredShadowParticipation } from "./shadow-mesh-policy";
 import { installModelSources } from "./mesh-assets";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DirectionalLight, Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
+import { DirectionalLight, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeHasset, embedGlbExternalImages, encodeHasset, normalizeTilesetPayload, setTile } from "@haptic/assets";
 import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, identityTransform, normalizeWaterBody, parseText2DProperties } from "@haptic/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { glbContainerLoadCount } from "./glb-anim";
 import { visualMeshes } from "./visual-meshes";
@@ -84,10 +87,9 @@ describe("createPlayMesh", () => {
     binding.modelSources = installModelSources(binding);
 
     const spriteMesh = createPlayMesh(scene, 1, "sprite", "sprite-1", binding);
-    expect(spriteMesh.material).toBeInstanceOf(StandardMaterial);
-    const material = spriteMesh.material as StandardMaterial;
-    expect(material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
-    expect(material.alphaCutOff).toBeCloseTo(0.4);
+    expect(isUnlitMaterial(spriteMesh.material)).toBe(true);
+    expect(spriteMesh.material!.needAlphaTestingForMesh(spriteMesh)).toBe(true);
+    expect(unlitBinding(spriteMesh).cutoff).toBeCloseTo(0.4);
     // Only the slot's own sprite owns the clip-crossfade overlay.
     expect(binding.spriteOverlays?.get(1)?.parent).toBe(spriteMesh);
     createPlayMesh(scene, 3, "sprite", "sprite-1", binding, "actor-3|second");
@@ -107,9 +109,9 @@ describe("createPlayMesh", () => {
     const material = createPlayMesh(scene, 2, "2dmaterial", "mat-1");
     const button = createPlayMesh(scene, 3, "2dbutton", null);
     expect(texture.getClassName()).toBe("Mesh");
-    expect((texture.material as StandardMaterial).disableLighting).toBe(true);
-    expect((material.material as StandardMaterial).disableLighting).toBe(true);
-    expect((button.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(texture.material)).toBe(true);
+    expect(isUnlitMaterial(material.material)).toBe(true);
+    expect(isUnlitMaterial(button.material)).toBe(true);
     expect(button.isPickable).toBe(true);
   });
 
@@ -286,7 +288,7 @@ describe("createPlayMesh", () => {
       hitTest: "ignore",
     });
     const mesh = createPlayMesh(handle.scene, 4, "2dpanel", "tex-1", binding);
-    expect((mesh.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(mesh.material)).toBe(true);
     expect(mesh.getTotalVertices()).toBe(36);
   });
 
@@ -2042,6 +2044,17 @@ describe("createPlayMesh", () => {
     expect(mesh).not.toBeNull();
     expect((mesh!.metadata as { text3d?: boolean }).text3d).toBe(true);
     expect(isPlayHelperMeshKind("text3d")).toBe(false);
+  });
+
+  it("gives a one-visual actor's mesh the shadow participation its assignment resolves: an unlit 3D Text casts none", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const text3d = { text: "Hi", size: 1, color: [1, 1, 1] as [number, number, number], fontAssetGuid: null, alignment: "left" as const };
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 4, meshAssetGuid: null, meshKind: "text3d", text3d, castShadows: false, receiveShadows: true });
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 5, meshAssetGuid: null, meshKind: "text3d", text3d, castShadows: true, receiveShadows: true });
+    expect(["actor-4", "actor-5"].map((name) => authoredShadowParticipation(scene.getMeshByName(name)!).castShadows)).toEqual([false, true]);
   });
 
   it("hides a RigidBody Play helper instead of drawing a white cube", () => {

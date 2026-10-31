@@ -1,4 +1,3 @@
-import { StandardMaterial } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createActor,
@@ -13,6 +12,8 @@ import {
   setTile,
 } from "@haptic/assets";
 import { createTestEngine } from "./create-null-engine";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 import { ResourceCache } from "./resource-cache";
 import { applySceneToBabylonScene, editorMeshName } from "./scene-loader";
 import type { MeshAssetContext } from "./mesh-assets";
@@ -72,9 +73,8 @@ describe("authored mesh content", () => {
     );
     const mesh = scene.getMeshByName(editorMeshName("hero"));
     expect(mesh).not.toBeNull();
-    const material = mesh!.material as StandardMaterial | null;
-    expect(material).toBeInstanceOf(StandardMaterial);
-    expect(material!.emissiveTexture).toBeTruthy();
+    expect(isUnlitMaterial(mesh!.material)).toBe(true);
+    expect(unlitBinding(mesh!).texture).toBeTruthy();
   });
 
   it("assigns a ResourceCache texture to tilemap chunk meshes", () => {
@@ -114,9 +114,9 @@ describe("authored mesh content", () => {
     );
     const root = scene.getMeshByName(editorMeshName("ground"));
     expect(root).not.toBeNull();
-    const child = root!.getChildren()[0] as { material?: StandardMaterial };
-    expect(child.material).toBeInstanceOf(StandardMaterial);
-    expect(child.material!.emissiveTexture).toBeTruthy();
+    const child = root!.getChildMeshes()[0]!;
+    expect(isUnlitMaterial(child.material)).toBe(true);
+    expect(unlitBinding(child).texture).toBeTruthy();
   });
 
   it("loads a GLB assetGuid as the authored mesh instead of a box", async () => {

@@ -1,12 +1,13 @@
-import { Color3, MeshBuilder, VertexData, type AbstractMesh, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
+import { Color3, MeshBuilder, VertexData, type AbstractMesh, type Mesh, type Scene } from "@babylonjs/core";
 import { parseUIControl2DProperties, uiControl2DFraction, type UIControl2DProperties } from "@haptic/core";
 import { applyAlbedoTexture, restoreAlbedoMaterial, type MeshAssetContext } from "./mesh-assets";
-import { createOverlayUnlitMaterial } from "./overlay-texture-quad";
-import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "./overlay-visual-style";
+import { applyOverlayUnlitMaterial, type OverlayUnlitFallback } from "./overlay-texture-quad";
+import { applyOverlayVisualStyle } from "./overlay-visual-style";
+import { copyMaterialOf } from "./unlit-material";
 import { createText2DMesh, text2DMeshLayout } from "./text2d-mesh";
 import { VisualBundle } from "./visual-bundle";
 
-type Surface = { mesh: Mesh; role: "background" | "track" | "fill" | "thumb" | "indicator"; fallback: StandardMaterial };
+type Surface = { mesh: Mesh; role: "background" | "track" | "fill" | "thumb" | "indicator"; fallback: OverlayUnlitFallback };
 export type UIControl2DSource = { classId: string; properties: Record<string, unknown> | UIControl2DProperties };
 export interface UIControl2DMesh {
   mesh: Mesh;
@@ -35,16 +36,15 @@ export function refreshUIControl2DMaterials(root: Mesh, assets?: MeshAssetContex
       const textureGuid = visual.properties[`${surface.role}TextureGuid`];
       const material = materialGuid ? assets?.resolveMaterial?.(materialGuid, { scene: mesh.getScene(), unlit: true }) : null;
       if (textureGuid && !materialGuid) {
-        if (!restoreAlbedoMaterial(surface.mesh)) surface.mesh.material = surface.fallback;
+        if (!restoreAlbedoMaterial(surface.mesh)) surface.fallback.apply();
         applyAlbedoTexture(surface.mesh, mesh.getScene(), textureGuid, assets, { alwaysBlend: true });
       } else {
         applyAlbedoTexture(surface.mesh, mesh.getScene(), null, assets);
-        surface.mesh.material = surface.fallback;
+        surface.fallback.apply();
       }
       if (material) surface.mesh.material = material;
-      enableOverlayVisualMaterial(surface.mesh);
       if (surface.role === "background") {
-        for (const child of mesh.getChildMeshes()) if (child.metadata?.uiControl2DOption) child.material = surface.mesh.material;
+        for (const child of mesh.getChildMeshes()) if (child.metadata?.uiControl2DOption) copyMaterialOf(child, surface.mesh);
       }
     }
   }
@@ -57,9 +57,7 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
   const labels = new Map<string, { mesh: Mesh; key: string }>();
   const surface = (role: Surface["role"], suffix: string, color: string): Mesh => {
     const mesh = bundle.ownRenderUser(MeshBuilder.CreatePlane(suffix, { size: 1 }, scene));
-    const fallback = createOverlayUnlitMaterial(scene, suffix, bundle);
-    fallback.emissiveColor = Color3.FromHexString(color);
-    mesh.material = fallback;
+    const fallback = applyOverlayUnlitMaterial(mesh, Color3.FromHexString(color).asArray() as [number, number, number]);
     mesh.isPickable = false;
     mesh.alphaIndex = surfaces.length;
     surfaces.push({ mesh, role, fallback });
@@ -75,7 +73,7 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
     const indicator = surface("indicator", `${name}:indicator`, "#539ce3");
     const caret = surface("indicator", `${name}:caret`, "#eeeeee");
     const selection = surface("indicator", `${name}:selection`, "#539ce3");
-    surfaces.find(entry => entry.mesh === selection)!.fallback.alpha = 0.4;
+    surfaces.find(entry => entry.mesh === selection)!.fallback.binding.alpha = 0.4;
     for (const [index, child] of [track, fill, thumb, upperThumb, indicator, caret, selection].entries()) {
       child.parent = mesh;
       child.position.z = -0.002 * (index + 1);
@@ -143,7 +141,8 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
       mesh.isPickable = interactive;
       mesh.metadata = { ...mesh.metadata, overlayControlMeshName: name, overlayControlComponentId: componentId,
         overlayHitTest: interactive ? "block" : "ignore", overlayHasButton: false };
-      background.fallback.emissiveColor = Color3.FromHexString(visual.focused ? "#3a485d" : "#272b35");
+      // The background and its option rows draw this binding: the colour reaches them at their next draws.
+      background.fallback.binding.color = Color3.FromHexString(visual.focused ? "#3a485d" : "#272b35").asArray() as [number, number, number];
       if (["2DSliderComponent", "2DRangeSliderComponent", "2DProgressBarComponent"].includes(kind)) {
         const vertical = p.orientation === "vertical";
         const length = vertical ? p.height : p.width;
@@ -203,7 +202,7 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
         if (visual.expanded && kind === "2DDropdownComponent") {
           p.options.forEach((option, index) => {
             const row = MeshBuilder.CreatePlane(`${name}:option:${index}`, { width: p.width, height: p.height }, scene);
-            row.parent = mesh; row.material = background.fallback;
+            row.parent = mesh; background.fallback.apply(row);
             row.position.set(0, -(index + 1) * p.height, -0.04);
             row.alphaIndex = 30;
             row.isPickable = interactive;

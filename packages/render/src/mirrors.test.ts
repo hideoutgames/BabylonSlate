@@ -1,10 +1,15 @@
-import { Constants, FreeCamera, MeshBuilder, NullEngine, RenderTargetTexture, Scene, Vector3 } from "@babylonjs/core";
+import { Color3, Constants, DirectionalLight, FreeCamera, MeshBuilder, NullEngine, RenderTargetTexture, Scene, StandardMaterial, Texture, Vector3 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { parseMirrorProperties } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { createMirrorSurfaceMesh, mirrorDiagnostics } from "./mirrors";
+import { setPlanarFootprintCulling } from "./planar-mirror";
 import { mirrorReflectionBinding } from "./mirror-surface-state";
+import { applyOverlayVisualStyle } from "./overlay-visual-style";
+import { applySpriteFrameUvs, createSpriteQuad } from "./sprite-quad";
+import { createText3DMesh } from "./text3d-mesh";
+import { setUnlitMaterial, type UnlitBinding } from "./unlit-material";
 
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
@@ -58,16 +63,174 @@ it("draws at most two visible, facing mirrors per render, an imageless one first
 
   expect(frame()).toEqual(["mirror:near", "mirror:middle"]);
   expect(frame()).toEqual(["mirror:far", "mirror:near"]);
-  expect(frame()).toEqual(["mirror:near", "mirror:middle"]);
+  // A draw made before the scene's first render placed its meshes is drawn once more (the near mirror's, the only one
+  // whose footprint shows the box); then the static view draws nothing, and every mirror keeps its image.
+  expect(frame()).toEqual([]);
+  expect(frame()).toEqual([]);
   // Skipped this render, the far mirror still shows its first reflection.
   expect(mirrorReflectionBinding(far)?.texture).not.toBeNull();
-  expect(mirrorDiagnostics(scene)).toMatchObject({ surfaces: 5, targets: 3, lastRenderDraws: 2 });
+  expect(mirrorDiagnostics(scene)).toMatchObject({ surfaces: 5, targets: 3, draws: 4 });
 
   // Each pass sees the scene from the eye reflected through its mirror and never draws a mirror surface.
   const near = passes[0]![0]!;
   expect(near.eye.subtract(new Vector3(0, 1, 6)).length()).toBeLessThan(1e-6);
   expect(near.meshes).toContain("box");
   for (const pass of passes.flat()) expect(pass.meshes.filter((name) => name !== "box")).toEqual([]);
+});
+
+/** A static view of one mirror reflecting a box, its first draw settled. */
+function settledMirror() {
+  const view = host();
+  const box = MeshBuilder.CreateBox("box", { size: 0.5 }, view.scene);
+  box.position.set(0, 1, 1.5);
+  const surface = mirror(view.scene, "mirror", new Vector3(0, 1, 3));
+  /** Mirror draws over `renders` more renders. */
+  const drawsOver = (renders: number) => {
+    let draws = 0;
+    for (let i = 0; i < renders; i++) draws += view.frame().length;
+    return draws;
+  };
+  expect(drawsOver(4)).toBe(2);
+  return { ...view, box, surface, drawsOver };
+}
+
+it("keeps a static view's reflection instead of drawing it again, and redraws it on every render while the view moves", () => {
+  const { scene, camera, surface, passes, drawsOver } = settledMirror();
+  const image = mirrorReflectionBinding(surface)!.texture;
+  expect(drawsOver(20)).toBe(0);
+  expect(mirrorReflectionBinding(surface)!.texture).toBe(image);
+  expect(mirrorDiagnostics(scene)).toMatchObject({ draws: 2, reuses: 22 });
+  for (let i = 0; i < 4; i++) {
+    camera.position.x += 0.1;
+    expect(drawsOver(1)).toBe(1);
+    // Each draw sees the scene from the moved eye reflected through the mirror.
+    expect(passes.at(-1)![0]!.eye.x).toBeCloseTo(camera.position.x, 6);
+  }
+  expect(drawsOver(10)).toBe(0);
+});
+
+it("redraws a static view's reflection once when what it reflects changes, then keeps it again", () => {
+  const { scene, box, drawsOver } = settledMirror();
+  box.position.x += 0.1;
+  expect(drawsOver(10)).toBe(1);
+  box.isVisible = false;
+  expect(drawsOver(10)).toBe(1);
+  box.isVisible = true;
+  expect(drawsOver(10)).toBe(1);
+  const paint = new StandardMaterial("paint", scene);
+  box.material = paint;
+  expect(drawsOver(10)).toBe(1);
+  paint.diffuseColor = new Color3(1, 0, 0);
+  expect(drawsOver(10)).toBe(1);
+  const sun = new DirectionalLight("sun", new Vector3(0, -1, 0.5), scene);
+  expect(drawsOver(10)).toBe(1);
+  sun.intensity = 2;
+  expect(drawsOver(10)).toBe(1);
+  scene.fogMode = Scene.FOGMODE_EXP;
+  expect(drawsOver(10)).toBe(1);
+  // Something the pass does not draw changes nothing: a mesh behind the mirror, past its plane, once its first render
+  // has settled where it is.
+  const behind = MeshBuilder.CreateBox("behind", { size: 0.5 }, scene);
+  behind.position.set(0, 1, 20);
+  drawsOver(10);
+  behind.position.y += 1;
+  behind.material = paint;
+  expect(drawsOver(10)).toBe(0);
+});
+
+it("keeps the reflection of unlit Text 3D and sprites, and redraws it once when what an unlit mesh binds changes", () => {
+  const { scene, box, drawsOver } = settledMirror();
+  box.dispose();
+  const text = createText3DMesh(scene, "text", { text: "Hi", size: 0.5 });
+  text.position.set(-0.5, 1, 1.5);
+  const frame = { name: "a", u: 0, v: 0, uSize: 0.5, vSize: 0.5, durationMs: 100, pivot: { x: 0.5, y: 0.5 } };
+  const sprite = createSpriteQuad(scene, "sprite", frame);
+  sprite.position.set(0.5, 1, 1.5);
+  const atlas = new Texture(null, scene);
+  const binding: UnlitBinding = { texture: atlas, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: true, twoSided: false };
+  setUnlitMaterial(sprite, { textured: true, backFaceCulling: false, fog: false, role: "world" }, binding);
+  // The unlit Materials finish building over the first renders; then the reflection is reused.
+  drawsOver(10);
+  expect(drawsOver(20)).toBe(0);
+  // Owners edit a binding in place.
+  binding.color = [1, 0, 0];
+  expect(drawsOver(10)).toBe(1);
+  applyOverlayVisualStyle(text, { opacity: 0.5 });
+  expect(drawsOver(10)).toBe(1);
+  applySpriteFrameUvs(sprite, { ...frame, u: 0.5 });
+  expect(drawsOver(10)).toBe(1);
+  atlas.uOffset = 0.25;
+  expect(drawsOver(10)).toBe(1);
+  // A texture another pass draws into changes without the binding: every render redraws.
+  binding.texture = new RenderTargetTexture("capture", 4, scene);
+  expect(drawsOver(10)).toBe(10);
+});
+
+it("draws and follows only what the surface's footprint can show, widened by a Mirror Reflection node's Offset", async () => {
+  const { scene, surface, passes, frame, drawsOver } = settledMirror();
+  // Inside the mirrored view, but beside what the 2 × 2 mirror reflects (about ±1.5 across at this depth).
+  const side = MeshBuilder.CreateBox("side", { size: 0.4 }, scene);
+  side.position.set(2.2, 1, 1.5);
+  drawsOver(10);
+  const reflected = () => { scene.activeCamera!.position.y += 1e-3; frame(); return passes.at(-1)![0]!.meshes; };
+  expect(reflected()).toEqual(["box"]);
+  // Moving it, while it stays beside the footprint, keeps the reflection.
+  drawsOver(10);
+  side.position.y += 0.2;
+  expect(drawsOver(10)).toBe(0);
+  // The whole mirrored frustum would draw it.
+  setPlanarFootprintCulling(scene, false);
+  expect(reflected()).toEqual(expect.arrayContaining(["box", "side"]));
+  setPlanarFootprintCulling(scene, true);
+  expect(reflected()).toEqual(["box"]);
+  // An Offset of 0.15 texture units samples 0.3 of the view's half-width further out: the side box can show.
+  const doc = createDefaultMaterialDocument("offset");
+  doc.shadingModel = "unlit";
+  doc.nodes.push({ id: "reflection", type: "input.mirrorReflection", position: { x: 0, y: 0 }, properties: { "default:offset": [0.15, 0] } });
+  doc.edges = [{ id: "reflection-output", sourceNodeId: "reflection", sourcePinId: "color", targetNodeId: "output", targetPinId: "baseColor" }];
+  const lowered = lowerMaterialDocument(doc);
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "offset" });
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+  expect(await compiled.ready).toEqual([]);
+  surface.material = compiled.material;
+  expect(reflected()).toEqual(expect.arrayContaining(["box", "side"]));
+  compiled.dispose();
+});
+
+it("redraws a reflection on every render while a time-driven Material it reflects animates", async () => {
+  const { scene, box, drawsOver } = settledMirror();
+  const doc = createDefaultMaterialDocument("pulse");
+  doc.nodes.push(
+    { id: "time", type: "input.time", position: { x: 0, y: 0 }, properties: {} },
+    { id: "sin", type: "math.sin", position: { x: 0, y: 0 }, properties: {} },
+    { id: "combine", type: "vector.combine", position: { x: 0, y: 0 }, properties: {} },
+  );
+  doc.edges.push(
+    { id: "time-sin", sourceNodeId: "time", sourcePinId: "time", targetNodeId: "sin", targetPinId: "value" },
+    { id: "sin-combine", sourceNodeId: "sin", sourcePinId: "out", targetNodeId: "combine", targetPinId: "y" },
+    { id: "combine-emissive", sourceNodeId: "combine", sourcePinId: "xyz", targetNodeId: "output", targetPinId: "emissive" },
+  );
+  const lowered = lowerMaterialDocument(doc);
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "pulse" });
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+  expect(await compiled.ready).toEqual([]);
+  box.material = compiled.material;
+  await compiled.material.forceCompilationAsync(box);
+  expect(drawsOver(10)).toBe(10);
+  // Back on a still graph Material, it draws the change once and keeps its image.
+  const stillPlan = lowerMaterialDocument(createDefaultMaterialDocument("still"));
+  if (!stillPlan.ok) throw new Error(JSON.stringify(stillPlan.diagnostics));
+  const still = compileMaterialPlan(stillPlan.plan, { scene, name: "still" });
+  if (!still.ok) throw new Error(JSON.stringify(still.diagnostics));
+  expect(await still.ready).toEqual([]);
+  box.material = still.material;
+  await still.material.forceCompilationAsync(box);
+  expect(drawsOver(10)).toBe(1);
+  expect(drawsOver(10)).toBe(0);
+  compiled.dispose();
+  still.dispose();
 });
 
 it("hides a disabled mirror and frees a removed mirror's reflection", () => {

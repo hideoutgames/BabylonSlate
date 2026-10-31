@@ -13,7 +13,7 @@
  * thumbnails and Render Target Captures never do. A view allocates its target only when an eligible body is
  * visible, draws on every render while its camera moves, and frees the target's storage after `RELEASE_RENDERS`
  * renders unused. A static view reuses its draw for as long as nothing it reflects changes (`ReflectedContent`: the
- * culled meshes, their placement, geometry and materials, and the scene's lights, shadow draws, environment, fog and
+ * culled meshes, their placement, geometry and materials, and the scene's lights, shadow passes that change a shadow it shows, environment, fog and
  * render settings); a change redraws at most every `STATIC_REDRAW_INTERVAL` renders, and content that changes on its
  * own (skinning, time-driven materials, textures updated in place) keeps that cadence while it is reflected. Every window counts the owner's own renders, never
  * engine frames, so frame caps, paused views and display refresh rates do not change them. The owner's per-frame
@@ -45,6 +45,7 @@ import { ReflectedContent } from "./reflected-content";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { waterMeshReflectsObjects, waterMeshRestVaries } from "./water-mesh";
+import { sceneViewRenderSize } from "./scene-output-scale";
 
 /** One view's planar reflection, valid for the scene render in which it was returned. */
 export interface WaterPlanarReflection {
@@ -327,9 +328,9 @@ class WaterPlanarReflections {
     if (camera.mode !== Camera.PERSPECTIVE_CAMERA || camera.rigCameras.length > 0 || (scene.activeCameras?.length ?? 0) > 1) return false;
     const linear = scene.imageProcessingConfiguration.applyByPostProcess;
     if (linear && !engine.getCaps().textureHalfFloatRender) return false;
-    const output = camera.outputRenderTarget;
-    const viewWidth = (output ? output.getRenderWidth() : engine.getRenderWidth(true)) * camera.viewport.width;
-    const viewHeight = (output ? output.getRenderHeight() : engine.getRenderHeight(true)) * camera.viewport.height;
+    const viewSize = sceneViewRenderSize(scene, camera.outputRenderTarget);
+    const viewWidth = viewSize.width * camera.viewport.width;
+    const viewHeight = viewSize.height * camera.viewport.height;
     if (!(viewWidth >= 1 && viewHeight >= 1)) return false;
     // The view's own projection, built from the camera's settings rather than read back, so a bound
     // framebuffer of another size cannot change the camera's cached matrix here.

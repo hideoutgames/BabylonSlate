@@ -644,7 +644,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Get Effective Scalability](get-effective-scalability.md) | Returns the quality settings you requested and the ones the renderer is using. |
 | [Reset to Project Defaults](reset-to-project-defaults.md) | Clears all temporary quality and rendering changes made during this session. |
-| [Set Antialiasing](set-antialiasing.md) | Turns FXAA antialiasing on or off for the current session. |
+| [Set Anti-Aliasing](set-anti-aliasing.md) | Sets the view's edge anti-aliasing: MSAA 4x, MSAA 2x, FXAA or off. |
 | [Set CEL Outlines](set-cel-outlines.md) | Turns global CEL outlines on or off and sets their colour and width. |
 | [Set CEL Shading](set-cel-shading.md) | Changes CEL banding, specular highlights, light mixing and outlines. |
 | [Set Environment Lighting](set-environment-lighting.md) | Changes image-based lighting: whether it is on, its intensity, rotation and CEL strength. |
@@ -655,7 +655,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Render Mode](set-render-mode.md) | Switches between PBR and CEL rendering for the current session. |
 | [Set Render Resolution](set-render-resolution.md) | Locks the rendered output to a fixed width and height, with black bars if needed. |
 | [Set Render Scale](set-render-scale.md) | Sets a fixed render scale and turns off dynamic resolution. |
-| [Set Rendering Effects](set-rendering-effects.md) | Sets the colour pipeline, tone mapping, exposure, bloom, vignette and FXAA. |
+| [Set Rendering Effects](set-rendering-effects.md) | Sets the colour pipeline, tone mapping, exposure, bloom and vignette. |
 | [Set Resolution Quality](set-resolution-quality.md) | Sets render scale, dynamic resolution limits and the target frame rate. |
 | [Set Scalability Preset](set-scalability-preset.md) | Applies a Low, Medium, High or Ultra quality tier to the current session. |
 | [Set Shadow Quality](set-shadow-quality.md) | Sets shadow map size, filtering, distance and the limits for local-light shadows. |

@@ -18,11 +18,13 @@ import {
   type Camera,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
-import { setMeshReceivesShadows } from "./instance-pool";
+import { setMeshShadowFlags } from "./instance-pool";
 import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
+  componentCastsShadows,
   effectiveShadowSettings,
   SHADOW_HALF_TILE_CASCADES,
+  type SerializedComponent,
   type ShadowSettings,
 } from "@haptic/core";
 import { sceneRenderingSettings } from "./render-settings";
@@ -478,7 +480,7 @@ export class SceneShadowController {
         continue;
       }
       if (!participatesInShadows(mesh)) {
-        setMeshReceivesShadows(mesh, false);
+        setMeshShadowFlags(mesh, false, false);
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
           this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
@@ -486,9 +488,10 @@ export class SceneShadowController {
         continue;
       }
       const participation = authoredShadowParticipation(mesh);
-      // A pool member receives as its group does: it moves to the group that matches.
-      setMeshReceivesShadows(mesh, participation.receiveShadows !== false);
-      if (participation.castShadows === false || neverCastsShadows(mesh)) {
+      const casts = participation.castShadows !== false && !neverCastsShadows(mesh);
+      // A pool member receives and casts as its group does: it moves to the group that matches.
+      setMeshShadowFlags(mesh, participation.receiveShadows !== false, casts || participation.spawnStandIn === true);
+      if (!casts) {
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
           this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
@@ -822,4 +825,15 @@ export function sceneShadowController(scene: Scene): SceneShadowController {
     controllers.set(scene, controller);
   }
   return controller;
+}
+
+/**
+ * Gives `mesh` the shadow participation its component authors: its Receive Shadows, and its Cast Shadows or, when that
+ * is unset, its class default (unlit visuals cast none, `componentCastsShadows`).
+ */
+export function applyComponentShadowParticipation(mesh: AbstractMesh, component: Pick<SerializedComponent, "classId" | "properties">): void {
+  sceneShadowController(mesh.getScene()).setParticipation(mesh, {
+    castShadows: componentCastsShadows(component.classId, component.properties.castShadows),
+    receiveShadows: component.properties.receiveShadows === undefined ? undefined : component.properties.receiveShadows !== false,
+  });
 }

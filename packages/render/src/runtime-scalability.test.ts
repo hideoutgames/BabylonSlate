@@ -21,11 +21,11 @@ describe("view runtime scalability queue", () => {
   it("coalesces requests at the existing frame boundary and acknowledges only a presented ready frame", async () => {
     const f = fixture();
     f.session.request({ kind: "patch", frameCap: 30 });
-    f.session.request({ kind: "patch", render: { effects: { fxaa: true } } });
+    f.session.request({ kind: "patch", render: { effects: { exposure: 2 } } });
     expect(f.applied).toHaveLength(0);
     f.controller.advance();
     expect(f.applied).toHaveLength(1);
-    expect(f.applied[0]?.settings).toMatchObject({ frameCap: 30, render: { effects: { fxaa: true } } });
+    expect(f.applied[0]?.settings).toMatchObject({ frameCap: 30, render: { effects: { exposure: 2 } } });
     expect(f.controller.canPresent).toBe(false);
     f.work[0]!.resolve(); await flush();
     expect(f.acknowledgements).toHaveLength(0);

@@ -1,4 +1,4 @@
-import { Mesh, StandardMaterial, type Scene } from "@babylonjs/core";
+import { Mesh, type Scene } from "@babylonjs/core";
 import { describe, expect, it, afterEach } from "vitest";
 import {
   createActor,
@@ -8,6 +8,7 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
+import { isUnlitMaterial } from "./unlit-material";
 import {
   actorIdFromMeshName,
   applySceneToBabylonScene,
@@ -23,6 +24,8 @@ import {
 } from "./scene-loader";
 import { isEditorVolumeMesh } from "./editor-volume";
 import { isColliderVisualMesh } from "./collider-visual";
+import { unlitBinding } from "./unlit-material-blocks";
+import { authoredShadowParticipation } from "./shadow-mesh-policy";
 
 function lightComponent(
   color: [number, number, number] = [1, 1, 1],
@@ -61,6 +64,27 @@ describe("scene-loader", () => {
     handles.push(handle);
     return handle;
   }
+
+  it("leaves unlit 3D Text and Sprites out of shadow maps until Cast Shadows is set, and follows an edit", () => {
+    const { scene } = createHandle();
+    const visual = (id: string, classId: string, properties: Record<string, unknown>) =>
+      createActor(id, id, { components: [{ id: `${id}-visual`, classId, properties }] });
+    const actors = () => [
+      visual("label", "Text3DComponent", { text: "Label" }),
+      visual("lit-label", "Text3DComponent", { text: "Label", castShadows: true }),
+      visual("sprite", "SpriteComponent", { assetGuid: null }),
+      createActor("crate", "Crate", { components: [createMeshComponent("crate-mesh", "box")] }),
+    ];
+    const casts = () => ["label", "lit-label", "sprite", "crate"]
+      .map((id) => authoredShadowParticipation(scene.getMeshByName(editorMeshName(id))!).castShadows !== false);
+    const scene0 = sceneWithActors(actors());
+    applySceneToBabylonScene(scene, scene0);
+    expect(casts()).toEqual([false, true, false, true]);
+    const edited = actors();
+    edited[0]!.components[0]!.properties.castShadows = true;
+    applySceneToBabylonScene(scene, sceneWithActors(edited));
+    expect(casts()).toEqual([true, true, false, true]);
+  });
 
   it("creates editor meshes for the default actor and camera", () => {
     const { scene } = createHandle();
@@ -626,10 +650,7 @@ describe("scene-loader", () => {
       ]),
     );
     const mesh = scene.getMeshByName(editorComponentMeshName("lamp", "light"))!;
-    const material = mesh.material as StandardMaterial;
-    expect(material.emissiveColor.r).toBeCloseTo(1);
-    expect(material.emissiveColor.g).toBeCloseTo(1);
-    expect(material.emissiveColor.b).toBeCloseTo(1);
+    expect(unlitBinding(mesh).color).toEqual([1, 1, 1]);
   });
 
   it("hides invisible actors and unlocks pickability from the locked flag", () => {
@@ -648,6 +669,7 @@ describe("scene-loader", () => {
   it("maps mesh names back to actor ids", () => {
     expect(actorIdFromMeshName(editorMeshName("abc"))).toBe("abc");
     expect(actorIdFromMeshName("actor-3")).toBeNull();
+    expect(actorIdFromMeshName(`${editorMeshName("abc")}:drawn`)).toBe("abc");
     expect(actorIdFromMeshName("editorActor:ground:layer-1:0:0")).toBe("ground");
     expect(actorIdFromMeshName("editorActor:ground:layer-1:0:0:anim")).toBe(
       "ground",
@@ -825,7 +847,7 @@ describe("scene-loader", () => {
     expect(isEditorVolumeMesh(volume!)).toBe(true);
     expect(volume!.isPickable).toBe(true);
     expect(volume!.visibility).toBe(1);
-    expect((volume!.material as StandardMaterial).alpha).toBe(0);
+    expect(unlitBinding(volume!).alpha).toBe(0);
     expect(volume!.parent).toBe(origin);
     expect(icon!.parent).toBe(origin);
     expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
@@ -892,7 +914,7 @@ describe("scene-loader", () => {
     applySceneToBabylonScene(scene, sceneWithActors([actor]), assets);
     const mesh = scene.getMeshByName(editorMeshName("banner"));
     expect(mesh).not.toBeNull();
-    expect((mesh!.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(mesh!.material)).toBe(true);
     mesh!.refreshBoundingInfo(false, false);
     const extent = mesh!.getBoundingInfo().boundingBox.extendSize;
     expect(extent.x * 2).toBeCloseTo(0.64);
@@ -951,9 +973,9 @@ describe("scene-loader", () => {
     const material = scene.getMeshByName(editorMeshName("mat"));
     const button = scene.getMeshByName(editorMeshName("btn"));
     const panel = scene.getMeshByName(editorMeshName("panel"));
-    expect((material!.material as StandardMaterial).disableLighting).toBe(true);
-    expect((button!.material as StandardMaterial).disableLighting).toBe(true);
-    expect((panel!.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(material!.material)).toBe(true);
+    expect(isUnlitMaterial(button!.material)).toBe(true);
+    expect(isUnlitMaterial(panel!.material)).toBe(true);
     expect(panel!.getTotalVertices()).toBeGreaterThan(8);
     for (const mesh of [material!, button!, panel!]) {
       mesh.dispose();
@@ -1012,7 +1034,7 @@ describe("scene-loader", () => {
       ]),
     );
     const banner = scene.getMeshByName(editorMeshName("banner"));
-    expect((banner!.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(banner!.material)).toBe(true);
     const child = scene.getMeshByName(editorMeshName("child"));
     expect(child?.visibility).toBe(0);
     expect(child?.isPickable).toBe(false);

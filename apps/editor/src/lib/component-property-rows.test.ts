@@ -368,6 +368,16 @@ describe("componentPropertyRows", () => {
     });
   });
 
+  it("offers a MeshComponent's Occluder, Auto by default", () => {
+    const { rows, update } = rowsFor({ id: "mesh", classId: "MeshComponent", properties: { meshKind: "box" } });
+    const occluder = rows.find((row) => row.id.endsWith("-occluder"));
+    expect(occluder).toMatchObject({ kind: "enum", label: "Occluder", value: "auto" });
+    if (occluder?.kind === "enum") occluder.onChange("never");
+    expect(update).toHaveBeenCalledWith("occluder", "never");
+    expect(rowsFor({ id: "mesh", classId: "MeshComponent", properties: { occluder: "always" } }).rows.find((row) => row.id.endsWith("-occluder")))
+      .toMatchObject({ value: "always" });
+  });
+
   it("exposes MeshComponent.assetGuid as a Model asset pick", () => {
     const { rows, onPickAsset } = rowsFor({
       id: "mesh",
@@ -522,6 +532,18 @@ describe("componentPropertyRows", () => {
       value: "Bundled ASCII (no Font facetype chunk)",
       disabled: true,
     });
+  });
+
+  it("shows unlit Sprites, Tilemaps and 3D Text not casting shadows until Cast Shadows is set", () => {
+    const castRow = (classId: string, properties: Record<string, unknown>) =>
+      rowsFor({ id: "visual", classId, properties }).rows.find((row) => row.id.endsWith("-castShadows"));
+    for (const classId of ["SpriteComponent", "TilemapComponent", "Text3DComponent"]) {
+      const defaults = defaultPropertiesFor(classId);
+      expect(castRow(classId, defaults)).toMatchObject({ kind: "boolean", label: "Cast Shadows", value: false, defaultValue: false });
+      expect(castRow(classId, { ...defaults, castShadows: true })).toMatchObject({ value: true, defaultValue: false });
+    }
+    // Lit meshes still cast by default.
+    expect(castRow("MeshComponent", defaultPropertiesFor("MeshComponent"))).toMatchObject({ value: true });
   });
 
   it("uses Sprite and Tilemap pickers plus project sorting layers", () => {

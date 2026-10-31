@@ -9,11 +9,13 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
 import { upscaledRenderSize } from "./scene-effects";
+import { scaledOutputSize, sceneOutputScale } from "./scene-output-scale";
 import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
-import { sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
+import { endAlphaToCoverage, guardAlphaToCoverageBlending } from "./alpha-to-coverage";
+import { sceneMultisampleCount, sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
 import { isBuiltInWaterMesh } from "./water-mesh";
 import { WaterSceneCopyGraph, waterSceneCopyDemand } from "./water-scene-copy";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
@@ -27,6 +29,7 @@ import {
 } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { settlePlayViewCulling } from "./play-view-culling";
+import { ViewOcclusion, type ViewOcclusionDiagnostics } from "./view-occlusion";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
@@ -54,6 +57,8 @@ import {
   unsupportedManagedShadows,
 } from "./framegraph-managed-shadows";
 
+const NO_MESHES: ReadonlySet<AbstractMesh> = new Set();
+
 /** The FrameGraph is the only scene renderer; a frame it cannot draw is skipped. */
 export type ForwardSceneGraphResult = { path: "frameGraph" };
 export type ForwardSceneFrameGraphOptions = {
@@ -68,6 +73,11 @@ export type ForwardSceneFrameGraphOptions = {
    * copy, so a material in view may sample that output without a feedback loop.
    */
   auxiliary?: { objects: FrameGraphObjectList };
+  /**
+   * A world view (the editor's, Play's, the player's): its camera's list leaves out meshes hidden behind occluders
+   * while the scene culls by occlusion (`view-occlusion.ts`). Never with `auxiliary`.
+   */
+  occlusion?: boolean;
 };
 /**
  * Graph renders and camera assignments in progress, per scene. Babylon clears
@@ -125,6 +135,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
    * collider outline or grid neither darkens ambient occlusion, reflects, nor blocks Screen-Space Shadows' march.
    */
   readonly worldObjectList: FrameGraphObjectList = { meshes: this.world, particleSystems: null };
+  /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
+  occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
 
   override _execute(): void {
     // Play: the meshes added since the last cull leave Intermediate's always-drawn mark first (`play-view-culling.ts`).
@@ -133,6 +145,7 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     if (!target) {
       super._execute();
       this.leaveOutHidden();
+      this.occlude();
       this.publishWorld();
       return;
     }
@@ -148,7 +161,15 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
       engine.restoreDefaultFramebuffer();
     }
     this.leaveOutHidden();
+    this.occlude();
     this.publishWorld();
+  }
+
+  /** Leaves out the meshes hidden behind occluders, into the view's own list (the frustum's output stays as it was). */
+  private occlude(): void {
+    const occlusion = this.occlusion, meshes = this.outputObjectList.meshes;
+    if (!occlusion || !meshes) return;
+    this.outputObjectList.meshes = occlusion.view.filter(meshes, this.camera, occlusion.colourPass()) as AbstractMesh[];
   }
 
   private publishWorld(): void {
@@ -227,9 +248,13 @@ export class ForwardSceneFrameGraph {
   private objects: ManagedShadowObjectRendererTask | undefined;
   private shadows: ManagedShadowsTask | undefined;
   private cull: CameraOutputCullTask | undefined;
+  /** A world view's occlusion culling; kept across graph rebuilds. */
+  private readonly occlusion: ViewOcclusion | undefined;
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
   private preparedHeight = 0;
+  /** The output scale (`sceneOutputScale`) the graph was built for. */
+  private preparedScale = 1;
   private outputColor: InternalTexture | null = null;
   private outputDepth: InternalTexture | null = null;
   private pending: Promise<ForwardSceneGraphResult> | undefined;
@@ -239,7 +264,9 @@ export class ForwardSceneFrameGraph {
   private renderingCamera: Camera | undefined;
   private readonly auxiliary: ForwardSceneFrameGraphOptions["auxiliary"];
   /** An auxiliary view's own scene targets, charged to the shared ledger. */
-  private ownScene: { color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle; lease: ManagedRenderLease; committed: boolean } | undefined;
+  private ownScene: {
+    color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle; lease: ManagedRenderLease; committed: boolean; samples: number;
+  } | undefined;
   private readinessDirtyFlag = true;
   /**
    * The last passing probe tolerated a mesh drawing its previous Effect while its new variant compiles. Steady frames
@@ -287,6 +314,7 @@ export class ForwardSceneFrameGraph {
   constructor(scene: Scene, options: ForwardSceneFrameGraphOptions = {}) {
     this.scene = scene;
     this.auxiliary = options.auxiliary;
+    this.occlusion = options.occlusion && !options.auxiliary ? new ViewOcclusion() : undefined;
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = () => this.markReadinessDirty();
@@ -381,6 +409,16 @@ export class ForwardSceneFrameGraph {
         if (!this.pending) this.releaseGraph();
       }
     };
+  }
+
+  /** The last frame's occlusion culling; null for a view that does not cull by occlusion. */
+  occlusionDiagnostics(): Readonly<ViewOcclusionDiagnostics> | null {
+    return this.occlusion?.diagnostics ?? null;
+  }
+
+  /** The meshes occlusion left out of the last frame; empty for a view that does not cull by occlusion. */
+  occludedMeshes(): ReadonlySet<AbstractMesh> {
+    return this.occlusion?.culled ?? NO_MESHES;
   }
 
   postProcessPassCount(): number {
@@ -962,11 +1000,13 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       const output = this.output(camera);
       // Everything drawn into an FSR chain, water copy included, runs at its
-      // internal size.
-      const renderSize = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, output.width, output.height);
+      // internal size: the output's at the Scene's output scale, then the FSR
+      // render scale. The chain's single output pass fills the whole output.
+      const viewSize = scaledOutputSize(output.width, output.height, output.scale);
+      const renderSize = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, viewSize.width, viewSize.height);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-        this.outputColor !== output.color || this.outputDepth !== output.depth ||
+        this.outputColor !== output.color || this.outputDepth !== output.depth || this.preparedScale !== output.scale ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask || this.ownScene) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
         this.releaseGraph();
@@ -1012,6 +1052,10 @@ export class ForwardSceneFrameGraph {
         }
         const effectsState = sceneRenderingSettings(scene);
         const effectsPlan = effectsState.effectsPlan;
+        // MSAA: the objects draw into multisampled scene colour and depth, which resolve when their passes end (colour
+        // averaged, depth by sample, never blended), so every later reader samples resolved, single-sample textures.
+        // Auxiliary views (captures, previews) stay single-sample.
+        const samples = this.auxiliary ? 1 : sceneMultisampleCount(scene);
         const postProcessOwner = this.postProcessOwner;
         if (postProcessOwner) {
           postProcessOwner.useGraph();
@@ -1026,6 +1070,7 @@ export class ForwardSceneFrameGraph {
             sceneColorType: effectsPlan?.sceneLinear
               ? Constants.TEXTURETYPE_HALF_FLOAT
               : undefined,
+            samples,
             onDiagnostic: postProcessOwner.options.onDiagnostic,
           });
           this.postProcessGraph = result.owner ?? undefined;
@@ -1041,8 +1086,10 @@ export class ForwardSceneFrameGraph {
         };
         // An auxiliary view without a chain still draws offscreen: only the
         // final copy writes its output, which a material in view may sample.
-        if (this.auxiliary && !this.postProcessGraph && !effectsPlan)
-          this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height);
+        // So does a scaled view (the copy fills its full-size output), and a multisampled one: the output (the
+        // backbuffer, created without antialiasing) is single-sample.
+        if ((this.auxiliary || output.scale !== 1 || samples > 1) && !this.postProcessGraph && !effectsPlan)
+          this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height, samples);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
@@ -1054,6 +1101,7 @@ export class ForwardSceneFrameGraph {
             height: renderSize.height,
             outputWidth: output.width,
             outputHeight: output.height,
+            samples,
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
           });
         } else if (this.preparedOutlineView) {
@@ -1081,6 +1129,8 @@ export class ForwardSceneFrameGraph {
           this.graph,
           scene,
         );
+        const occlusion = this.occlusion;
+        if (occlusion) this.cull.occlusion = { view: occlusion, colourPass: () => this.objects!.objectRenderer.renderPassId };
         // Babylon updates cameras, animations and world matrices after render()
         // begins, so the spatial stages' demand follows them from inside the
         // graph run: the first task every spatial task follows.
@@ -1097,8 +1147,13 @@ export class ForwardSceneFrameGraph {
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
+        // Alpha-tested draws turn alpha-to-coverage on for themselves (`alpha-to-coverage.ts`); nothing after the pass keeps it.
+        guardAlphaToCoverageBlending(scene.getEngine());
+        this.objects.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
         this.objects.warmsPipelines = !this.auxiliary;
         if (waterDemand > 0) {
+          // The water scene copy samples the scene depth after this pass: resolve it too.
+          this.objects.resolveMSAADepth = samples > 1;
           // Sample the chain's scene targets or an imported output directly;
           // only the backbuffer (or a stencil depth) needs an own pair.
           const sceneColor = this.postProcessGraph?.sceneColorTexture ?? this.effectsGraph?.sceneColorTexture ?? this.ownScene?.color;
@@ -1112,10 +1167,8 @@ export class ForwardSceneFrameGraph {
             output: { color, texture: Boolean(output.color) },
           });
         }
+        this.water?.transparent.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
         this.objects.neverDraws = this.water && this.skipCopyWater;
-        // Temporal anti-aliasing jitters the scene draw with its geometry pass,
-        // including the water split's transparent pass, which draws over the
-        // jittered opaque depth and samples the jittered scene copy.
         // Screen-Space Shadows draw before the objects, which read them (as does the water split's own opaque pass, which
         // draws through the objects' renderer and so its render pass).
         const screenShadows = this.effectsGraph?.spatial?.screenShadows;
@@ -1124,9 +1177,6 @@ export class ForwardSceneFrameGraph {
           this.objects.setOwnedTextureDependencies("screenShadows", [screenShadows.output]);
           this.water?.readsInOpaquePass(screenShadows.output);
         }
-        const jitter = this.effectsGraph?.spatial?.jitter;
-        jitter?.jitterRenderer(this.objects.objectRenderer);
-        if (this.water) jitter?.jitterRenderer(this.water.transparent.objectRenderer);
         this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects, { view: this.auxiliary ? camera : undefined });
         for (const receiver of this.water?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
         // The scene view draws its auxiliary views here: after Babylon's
@@ -1163,12 +1213,12 @@ export class ForwardSceneFrameGraph {
           (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
         if (chainOutput) {
           if (output.color) {
-            const copy = new FrameGraphCopyToTextureTask(this.ownScene ? "Capture output" : "Scene post-process output", this.graph);
+            const copy = new FrameGraphCopyToTextureTask(this.ownScene ? this.ownScene.samples > 1 ? "Multisample output" : "Capture output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
             copy.targetTexture = color;
             this.outputCopy = copy;
           } else {
-            const copy = new FrameGraphCopyToBackbufferColorTask("Scene post-process output", this.graph);
+            const copy = new FrameGraphCopyToBackbufferColorTask((this.ownScene?.samples ?? 1) > 1 ? "Multisample output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
             this.outputCopy = copy;
           }
@@ -1252,6 +1302,7 @@ export class ForwardSceneFrameGraph {
       this.preparedWaterDemand = waterDemand;
       this.preparedWidth = width;
       this.preparedHeight = height;
+      this.preparedScale = output.scale;
       this.failure = undefined;
       return { path: "frameGraph" };
     } catch (error) {
@@ -1270,24 +1321,26 @@ export class ForwardSceneFrameGraph {
    * ledger before the graph allocates them. Colour keeps the materials'
    * display or linear encoding; depth is sampleable for the water scene copy.
    */
-  private declareOwnSceneTargets(graph: FrameGraph, width: number, height: number) {
+  private declareOwnSceneTargets(graph: FrameGraph, width: number, height: number, samples: number) {
     const engine = this.scene.getEngine();
     const colorType = this.scene.imageProcessingConfiguration.applyByPostProcess
       ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     const lease = beginManagedRenderAllocation(engine,
-      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type: colorType }) +
-      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32_FLOAT, type: Constants.TEXTURETYPE_FLOAT }));
+      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type: colorType, samples }) +
+      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32_FLOAT, type: Constants.TEXTURETYPE_FLOAT, samples }));
     if (!lease) throw new Error("Capture scene targets exceed the shared rendering budget.");
     const target = (name: string, type: number, format: number) => graph.textureManager.createRenderTargetTexture(name, {
       size: { width, height },
       sizeIsPercentage: false,
-      options: { createMipMaps: false, types: [type], formats: [format], samples: 1, useSRGBBuffers: [false] },
+      options: { createMipMaps: false, types: [type], formats: [format], samples, useSRGBBuffers: [false] },
     });
+    const prefix = samples > 1 ? "Multisample" : this.auxiliary ? "Capture" : "Scaled";
     return {
-      color: target("Capture scene color", colorType, Constants.TEXTUREFORMAT_RGBA),
-      depth: target("Capture scene Z", Constants.TEXTURETYPE_FLOAT, Constants.TEXTUREFORMAT_DEPTH32_FLOAT),
+      color: target(`${prefix} scene color`, colorType, Constants.TEXTUREFORMAT_RGBA),
+      depth: target(`${prefix} scene Z`, Constants.TEXTURETYPE_FLOAT, Constants.TEXTUREFORMAT_DEPTH32_FLOAT),
       lease,
       committed: false,
+      samples,
     };
   }
 
@@ -1299,7 +1352,7 @@ export class ForwardSceneFrameGraph {
     const resource = (handle: FrameGraphTextureHandle, category: ManagedRenderCategory) => {
       const texture = textures.getTextureFromHandle(handle);
       if (!texture) throw new Error("Capture scene target is not allocated.");
-      return managedRenderTextureResource(texture, category, { samples: 1, allocatedMipLevels: 1 });
+      return managedRenderTextureResource(texture, category, { samples: own.samples, allocatedMipLevels: 1 });
     };
     own.lease.commit([resource(own.color, "sceneColor"), resource(own.depth, "depth")]);
     own.committed = true;
@@ -1341,14 +1394,16 @@ export class ForwardSceneFrameGraph {
     return {
       width: size?.width ?? engine.getRenderWidth(true),
       height: size?.height ?? engine.getRenderHeight(true),
+      // Only a scene view drawing into the backbuffer scales.
+      scale: target || this.auxiliary ? 1 : sceneOutputScale(this.scene),
       color: target?.getInternalTexture() ?? null,
       depth: target?.depthStencilTexture ?? null,
     };
   }
 
-  /** Whether the prepared graph was built for this exact output size and attachments. */
+  /** Whether the prepared graph was built for this exact output size, scale and attachments. */
   private outputMatches(output: ReturnType<ForwardSceneFrameGraph["output"]>): boolean {
-    return this.preparedWidth === output.width && this.preparedHeight === output.height &&
+    return this.preparedWidth === output.width && this.preparedHeight === output.height && this.preparedScale === output.scale &&
       this.outputColor === output.color && this.outputDepth === output.depth;
   }
 
@@ -1617,5 +1672,6 @@ export class ForwardSceneFrameGraph {
     this.graph = undefined;
     this.outputColor = this.outputDepth = null;
     this.preparedWidth = this.preparedHeight = 0;
+    this.preparedScale = 1;
   }
 }

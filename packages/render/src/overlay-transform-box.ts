@@ -11,7 +11,7 @@ import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
 import { CreateLines } from "@babylonjs/core/Meshes/Builders/linesBuilder";
 import { CreatePlane } from "@babylonjs/core/Meshes/Builders/planeBuilder";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
 import { PointerDragBehavior } from "@babylonjs/core/Behaviors/Meshes/pointerDragBehavior";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
@@ -511,20 +511,11 @@ function overlayHandleWorldSize(scene: Scene, cssHeight?: number): number {
   return sized > 0 ? sized : FALLBACK_HANDLE_WORLD;
 }
 
-function unlitMaterial(
-  name: string,
-  scene: Scene,
-  color: Color3,
-  alpha = 1,
-): StandardMaterial {
-  const material = new StandardMaterial(name, scene);
-  material.disableLighting = true;
-  material.emissiveColor = color.clone();
-  material.diffuseColor = color.clone();
-  material.specularColor = Color3.Black();
-  material.alpha = alpha;
-  material.backFaceCulling = false;
-  return material;
+/** The box's handles and interior: flat colour from both sides, in the utility layer; editor helpers draw without fog. */
+const HANDLE_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "helper" };
+
+function handleBinding(color: Color3, alpha = 1): UnlitBinding {
+  return { texture: null, color: [color.r, color.g, color.b], alpha, cutoff: 0, blend: false, textureAlpha: false, twoSided: false };
 }
 
 function worldToParentXy(
@@ -577,8 +568,8 @@ export function createOverlayTransformBox(
 ): OverlayTransformBox {
   const util = layer.utilityLayerScene;
   const color = SELECTION_COLOR;
-  const fill = unlitMaterial("overlay-box-fill", util, color);
-  const interiorMat = unlitMaterial("overlay-box-interior", util, color, 0);
+  const fill = handleBinding(color);
+  const interiorFill = handleBinding(color, 0);
 
   const root = new TransformNode("overlay-box-root", util);
   const boxScale = new TransformNode("overlay-box-scale", util);
@@ -594,7 +585,7 @@ export function createOverlayTransformBox(
   frame.parent = boxScale;
 
   const interior = CreatePlane("overlay-box-interior", { size: 1 }, util);
-  interior.material = interiorMat;
+  setUnlitMaterial(interior, HANDLE_MATERIAL, interiorFill);
   interior.visibility = 0;
   interior.isVisible = true;
   interior.isPickable = true;
@@ -603,13 +594,13 @@ export function createOverlayTransformBox(
   const handles = new Map<OverlayBoxHandle, Mesh>();
   for (const id of OVERLAY_BOX_HANDLES) {
     const handle = CreateBox(`overlay-box-handle-${id}`, { size: 1 }, util);
-    handle.material = fill;
+    setUnlitMaterial(handle, HANDLE_MATERIAL, fill);
     handle.isPickable = true;
     handle.visibility = 0;
     handle.isVisible = true;
     handle.parent = root;
     const visual = CreateBox(`overlay-box-handle-${id}-visual`, { size: 1 }, util);
-    visual.material = fill;
+    setUnlitMaterial(visual, HANDLE_MATERIAL, fill);
     visual.isPickable = false;
     visual.parent = handle;
     visual.scaling.setAll(OVERLAY_HANDLE_VISUAL_SCALE);
@@ -631,7 +622,7 @@ export function createOverlayTransformBox(
     { radius: 0.5, tessellation: 24, sideOrientation: Mesh.DOUBLESIDE },
     util,
   );
-  knob.material = fill;
+  setUnlitMaterial(knob, HANDLE_MATERIAL, fill);
   knob.isPickable = true;
   knob.visibility = 0;
   knob.isVisible = true;
@@ -641,7 +632,7 @@ export function createOverlayTransformBox(
     { radius: 0.5, tessellation: 24, sideOrientation: Mesh.DOUBLESIDE },
     util,
   );
-  knobVisual.material = fill;
+  setUnlitMaterial(knobVisual, HANDLE_MATERIAL, fill);
   knobVisual.isPickable = false;
   knobVisual.parent = knob;
   knobVisual.scaling.setAll(OVERLAY_HANDLE_VISUAL_SCALE);
@@ -827,8 +818,6 @@ export function createOverlayTransformBox(
       knob.dispose();
       boxScale.dispose();
       root.dispose();
-      fill.dispose();
-      interiorMat.dispose();
     },
   };
 }

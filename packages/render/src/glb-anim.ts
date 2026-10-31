@@ -26,7 +26,9 @@ import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
 import { accountedGeometryBytes } from "./perf-ceilings";
+import { poolModelLeaves } from "./pooled-model-leaves";
 import { VisualBundle } from "./visual-bundle";
+import { registerModelOccluder } from "./view-occlusion";
 import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
@@ -763,6 +765,18 @@ export function beginSlotModelAnimLoad(
       }
       await wait(Promise.resolve(prepareInstance?.(prepared.staging)));
       if (!request.isCurrent()) return;
+      // A model's rigid meshes, with their slot Materials assigned, draw in the Scene's instance pool, the channels of
+      // its own clips moving the members; the preparation below then compiles their groups' instanced variants. A
+      // retargeted clip binds through a skeleton linked to the instance's nodes, so such an instance keeps its meshes.
+      if (wrapped.length === instance.animationGroups.length) {
+        poolModelLeaves(prepared.staging, container, {
+          retain: () => {
+            const hold = acquireGlbContainer(scene, clipAssetGuid, bytes, priority);
+            return () => hold.release();
+          },
+          animationGroups: instance.animationGroups,
+        });
+      }
       await wait(prepareInstanceMaterials(prepared.staging, () => {
         if (!request.isCurrent()) throw new Error("Model preparation was cancelled");
       }, cancellation));
@@ -773,6 +787,7 @@ export function beginSlotModelAnimLoad(
       for (const group of wrapped) bundleOwnedGroups.add(group);
       prepared.wrapper.parent = placeholder;
       prepared.staging.dispose(true);
+      registerModelOccluder(placeholder, binding.modelPayloads?.get(clipAssetGuid)?.occluder);
       meta[MODEL_INSTANCE_KEY] = prepared;
       if (!meta.disposeModelOnDespawn) {
         meta.disposeModelOnDespawn = true;

@@ -1,9 +1,10 @@
 import {
-  ColorMergerBlock, Constants, ImageProcessingBlock, InputBlock, InstancesBlock, Material, NodeMaterial,
+  ColorMergerBlock, Constants, ImageProcessingBlock, ImageProcessingConfiguration, InputBlock, InstancesBlock, Material, NodeMaterial,
   NodeMaterialBlockConnectionPointTypes as Types, NodeMaterialSystemValues, ShaderLanguage, TransformBlock,
   Vector4, VertexBuffer, VertexOutputBlock,
   type AbstractMesh, type BaseTexture, type Mesh, type NodeMaterialBlock, type NodeMaterialDefines, type Scene,
 } from "@babylonjs/core";
+import type { IImageProcessingConfigurationDefines } from "@babylonjs/core/Materials/imageProcessingConfiguration.defines";
 import { PrepareDefinesForPrePass } from "@babylonjs/core/Materials/materialHelper.functions";
 import { MaterialHelperGeometryRendering } from "@babylonjs/core/Materials/materialHelper.geometryrendering";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
@@ -20,28 +21,65 @@ import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import {
-  UnlitFinishBlock, UnlitOutputBlock, UnlitSurfaceBlock, UnlitUvBlock, UnlitVelocityBlock, hasUnlitBinding,
-  setUnlitBinding, unlitBinding, type UnlitBinding,
+  UnlitFinishBlock, UnlitOutputBlock, UnlitSurfaceBlock, UnlitUvBlock, hasUnlitBinding,
+  markPerMeshBindingMaterial, setMaterialUnlitBinding, setUnlitBinding, unlitBinding, type UnlitBinding,
 } from "./unlit-material-blocks";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
+import { registerAlphaToCoverage } from "./alpha-to-coverage";
 
 export type { UnlitBinding } from "./unlit-material-blocks";
 
 /**
  * The render state an unlit Material instance carries (Babylon keeps it on the Material): every mesh drawing with the
- * same key shares one instance, and every instance with the same `textured` shares one program.
+ * same key shares one instance, and every instance with the same texturing (`textured`, `msdf`) shares one program.
  */
 export type UnlitMaterialKey = {
   /** Samples the mesh's bound texture. */
   textured: boolean;
+  /**
+   * The bound texture is a multi-channel signed distance field (Text2D's MSDF atlas): the surface draws its glyph's
+   * fill in the binding's colour and its outline in `UnlitBinding.msdf`'s. Requires `textured`.
+   */
+  msdf?: boolean;
   backFaceCulling: boolean;
   /** The scene's fog applies (editor helpers draw without it). */
   fog: boolean;
   /** Who draws it: world content, an editor helper, or a preview; instances of different roles never share state. */
   role: "world" | "helper" | "preview";
+  /** The Scene's image processing (the default), or a tilemap atlas's exact display colours (`atlasImageProcessing`). */
+  imageProcessing?: "scene" | "atlas";
+  /** Draws its triangles' edges (a debug overlay's). */
+  wireframe?: boolean;
 };
 
-type UnlitInstance = { material: NodeMaterial; meshes: Set<AbstractMesh> };
+/**
+ * Tilemap atlases keep their exact display colors: the scene's tone mapping and exposure never apply to them. Under a
+ * Scene Linear display stage they still decode to linear, like every unlit surface on the scene's configuration, so the
+ * Display Color stage encodes them once.
+ */
+class AtlasImageProcessing extends ImageProcessingConfiguration {
+  private readonly sceneConfiguration: ImageProcessingConfiguration;
+  constructor(sceneConfiguration: ImageProcessingConfiguration) {
+    super();
+    this.sceneConfiguration = sceneConfiguration;
+    this.isEnabled = false;
+    sceneConfiguration.onUpdateParameters.add(() => this._updateParameters());
+  }
+  override prepareDefines(defines: IImageProcessingConfigurationDefines, forPostProcess = false): void {
+    super.prepareDefines(defines, forPostProcess);
+    defines.IMAGEPROCESSINGPOSTPROCESS = !forPostProcess && this.sceneConfiguration.applyByPostProcess;
+  }
+}
+const atlasConfigurations = new WeakMap<Scene, AtlasImageProcessing>();
+
+/** The Scene's tilemap atlas image processing (`UnlitMaterialKey.imageProcessing`). */
+export function atlasImageProcessing(scene: Scene): AtlasImageProcessing {
+  let configuration = atlasConfigurations.get(scene);
+  if (!configuration) atlasConfigurations.set(scene, (configuration = new AtlasImageProcessing(scene.imageProcessingConfiguration)));
+  return configuration;
+}
+
+type UnlitInstance = { material: NodeMaterial; key: UnlitMaterialKey; meshes: Set<AbstractMesh> };
 const instances = new WeakMap<Scene, Map<string, UnlitInstance>>();
 const instanceOf = new WeakMap<Material, UnlitInstance>();
 
@@ -60,7 +98,10 @@ function vertexAlpha(mesh: AbstractMesh): boolean {
 export function unlitNeedsBlending(mesh: AbstractMesh): boolean {
   const binding = unlitBinding(mesh);
   const style = overlayVisualStyle(mesh);
-  return binding.blend || binding.alpha < 1 || mesh.visibility < 1 || style.opacity * style.tint[3] < 1 || vertexAlpha(mesh);
+  if (style.opacity * style.tint[3] < 1) return true;
+  // Standard's alpha test blends only while the mesh fades (its alpha test and blend); alpha and vertex alpha it ignores.
+  if (binding.cutoff > 0 && !binding.blend) return mesh.visibility > 0 && mesh.visibility < 1;
+  return binding.blend || binding.alpha < 1 || mesh.visibility < 1 || vertexAlpha(mesh);
 }
 
 function matrixInput(name: string, value: NodeMaterialSystemValues, blocks: NodeMaterialBlock[]): InputBlock {
@@ -71,8 +112,15 @@ function matrixInput(name: string, value: NodeMaterialSystemValues, blocks: Node
   return block;
 }
 
+/** What a surface samples: nothing, the bound texture, or the bound texture as an MSDF atlas. */
+type SurfaceKind = { textured: boolean; msdf: boolean };
+
+function surfaceKind(key: UnlitMaterialKey): SurfaceKind {
+  return { textured: key.textured, msdf: key.textured && key.msdf === true };
+}
+
 /** The surface's colour graph: position, UV and colour only; lattice-deformable through a constant normal. */
-function buildSurface(material: NodeMaterial, textured: boolean, blocks: NodeMaterialBlock[]): void {
+function buildSurface(material: NodeMaterial, { textured, msdf }: SurfaceKind, blocks: NodeMaterialBlock[]): void {
   const scene = material.getScene();
   const position = new InputBlock(`${NAME}_position`, undefined, Types.Vector3);
   position.setAsAttribute("position");
@@ -101,7 +149,9 @@ function buildSurface(material: NodeMaterial, textured: boolean, blocks: NodeMat
   blocks.push(clip, vertexOutput);
 
   const surface = new UnlitSurfaceBlock(`${NAME}_surface`);
+  surface.coverage = true;
   surface.textured = textured;
+  surface.msdf = msdf;
   if (textured) {
     const uv = new InputBlock(`${NAME}_uv`, undefined, Types.Vector2);
     uv.setAsAttribute("uv");
@@ -138,19 +188,13 @@ function buildSurface(material: NodeMaterial, textured: boolean, blocks: NodeMat
   const camera = new InputBlock(`${NAME}_camera`);
   camera.setAsSystemValue(NodeMaterialSystemValues.CameraParameters);
   camera.output.connectTo(output.geometryCamera);
-  const velocity = new UnlitVelocityBlock(`${NAME}_velocity`);
-  position.output.connectTo(velocity.position);
-  finalPosition.connectTo(velocity.worldPosition);
-  viewProjection.output.connectTo(velocity.viewProjection);
-  velocity.current.connectTo(output.velocityCurrent);
-  velocity.previous.connectTo(output.velocityPrevious);
-  blocks.push(surface, fog, merge, imageProcessing, finish, output, viewPosition, camera, velocity);
+  blocks.push(surface, fog, merge, imageProcessing, finish, output, viewPosition, camera);
   material.addOutputNode(vertexOutput);
   material.addOutputNode(output);
 }
 
 /** A pass variant's graph: the coverage of the surface (its texture, alpha and cutoff) over the shared surface plumbing. */
-function buildVariant(material: NodeMaterial, textured: boolean, kind: AuthoredSurfaceVariant, owner: NodeMaterial, blocks: NodeMaterialBlock[]): void {
+function buildVariant(material: NodeMaterial, { textured, msdf }: SurfaceKind, kind: AuthoredSurfaceVariant, owner: NodeMaterial, blocks: NodeMaterialBlock[]): void {
   const scene = material.getScene();
   const name = `${NAME}_${kind}`;
   const plumbing: MaterialPlumbing = {};
@@ -159,6 +203,7 @@ function buildVariant(material: NodeMaterial, textured: boolean, kind: AuthoredS
   plumbing.worldPosition!.connectTo(plumbing.clipPosition!);
   const surface = new UnlitSurfaceBlock(`${name}_surface`);
   surface.textured = textured;
+  surface.msdf = msdf;
   surface.alphaOwner = owner;
   if (textured) {
     const transformed = new UnlitUvBlock(`${name}_uvTransform`);
@@ -246,34 +291,46 @@ function variantCompiled(material: NodeMaterial): CompiledMaterial {
   };
 }
 
-function createVariant(owner: NodeMaterial, textured: boolean, kind: AuthoredSurfaceVariant): NodeMaterial {
+function createVariant(owner: NodeMaterial, surface: SurfaceKind, kind: AuthoredSurfaceVariant): NodeMaterial {
   const scene = owner.getScene();
   const material = createNodeMaterial(scene, `${owner.name}:${kind}`);
   material.backFaceCulling = owner.backFaceCulling;
   material.transparencyMode = Material.MATERIAL_OPAQUE;
   material.alphaMode = Constants.ALPHA_DISABLE;
   const blocks: NodeMaterialBlock[] = [];
-  buildVariant(material, textured, kind, owner, blocks);
+  buildVariant(material, surface, kind, owner, blocks);
   rebindPerMesh(material);
-  shareCompiledProgram(material, JSON.stringify([NAME, kind, textured, material.shaderLanguage]));
+  shareCompiledProgram(material, JSON.stringify([NAME, kind, surface.textured, surface.msdf, material.shaderLanguage]));
   material.onDisposeObservable.addOnce(() => { for (const block of blocks) block.dispose(); });
   material.build();
   return material;
 }
 
 function instanceId(key: UnlitMaterialKey): string {
-  return JSON.stringify([key.textured, key.backFaceCulling, key.fog, key.role]);
+  return JSON.stringify([key.textured, key.msdf === true, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene", key.wireframe === true]);
 }
 
-function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
-  const material = createNodeMaterial(scene, `unlit:${key.role}${key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}`);
-  const instance: UnlitInstance = { material, meshes: new Set() };
+function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): UnlitInstance {
+  const material = createNodeMaterial(scene, `unlit:${key.role}${key.msdf ? ":msdf" : key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}`);
+  const instance: UnlitInstance = { material, key: { ...key }, meshes: new Set() };
+  if (!owned) {
+    // Shared by every mesh with its key: a mesh disposed with its materials (`dispose(false, true)`) leaves it to the
+    // others. The Scene disposes it, after notifying its dispose observers.
+    let sceneDisposing = false;
+    scene.onDisposeObservable.addOnce(() => { sceneDisposing = true; });
+    const dispose = material.dispose.bind(material);
+    material.dispose = (...args: Parameters<NodeMaterial["dispose"]>) => { if (sceneDisposing) dispose(...args); };
+  }
   material.backFaceCulling = key.backFaceCulling;
   material.fogEnabled = key.fog;
+  if (key.imageProcessing === "atlas") material.imageProcessingConfiguration = atlasImageProcessing(scene);
+  if (key.wireframe) material.wireframe = true;
   material.needAlphaBlending = () => false;
   material.needAlphaTesting = () => false;
   material.needAlphaBlendingForMesh = (mesh) => unlitNeedsBlending(mesh);
   material.needAlphaTestingForMesh = (mesh) => { const binding = unlitBinding(mesh); return binding.cutoff > 0 && !binding.blend; };
+  // An alpha-tested mesh's colour draws write alpha-to-coverage under MSAA.
+  registerAlphaToCoverage(material, (mesh) => material.needAlphaTestingForMesh(mesh));
   const activeTextures = material.getActiveTextures.bind(material);
   material.getActiveTextures = () => {
     const textures = activeTextures();
@@ -287,9 +344,10 @@ function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
   material.hasTexture = (texture: BaseTexture) => hasTexture(texture) || [...instance.meshes].some((mesh) => unlitBinding(mesh).texture === texture);
   pinAttributeDefines(material, key.textured);
   const blocks: NodeMaterialBlock[] = [];
-  buildSurface(material, key.textured, blocks);
+  const kind = surfaceKind(key);
+  buildSurface(material, kind, blocks);
   rebindPerMesh(material);
-  shareCompiledProgram(material, JSON.stringify([NAME, "surface", key.textured, material.shaderLanguage]));
+  shareCompiledProgram(material, JSON.stringify([NAME, "surface", kind.textured, kind.msdf, material.shaderLanguage]));
   // Opaque unlit meshes keep the cached stock shadow path. Registered with the build's final id (the build finishes
   // once its blocks' shader code has loaded), after the bind observers it snapshots.
   material.onBuildObservable.addOnce(() => registerCacheableShadowMaterial(material));
@@ -297,7 +355,7 @@ function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
   const variants = new Map<AuthoredSurfaceVariant, { material: NodeMaterial; references: number }>();
   const registration = registerAuthoredVariants(material, (kind): AuthoredMaterialVariant => {
     let variant = variants.get(kind);
-    if (!variant) variants.set(kind, (variant = { material: createVariant(material, key.textured, kind), references: 0 }));
+    if (!variant) variants.set(kind, (variant = { material: createVariant(material, surfaceKind(key), kind), references: 0 }));
     const retained = variant;
     retained.references++;
     let released = false;
@@ -322,6 +380,7 @@ function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
     if (map?.get(instanceId(key)) === instance) map.delete(instanceId(key));
   });
   instanceOf.set(material, instance);
+  markPerMeshBindingMaterial(material);
   return instance;
 }
 
@@ -333,6 +392,16 @@ export function unlitMaterial(scene: Scene, key: UnlitMaterialKey): NodeMaterial
   let instance = map.get(id);
   if (!instance) map.set(id, (instance = createInstance(scene, key)));
   return instance.material;
+}
+
+/**
+ * An unlit Material of its own, whose binding every mesh drawing it shares: for owners that swap whole materials on
+ * their meshes, as Babylon's gizmos do on hover. Its owner disposes it; it shares the program of its key's texturing.
+ */
+export function ownedUnlitMaterial(scene: Scene, key: UnlitMaterialKey, binding: UnlitBinding): NodeMaterial {
+  const { material } = createInstance(scene, key, true);
+  setMaterialUnlitBinding(material, binding);
+  return material;
 }
 
 /** Whether `material` is an unlit Material instance. */
@@ -361,6 +430,24 @@ export function setUnlitMaterial(mesh: AbstractMesh, key: UnlitMaterialKey, bind
     });
   }
   return material;
+}
+
+/** Draws `target` as `source` draws: its unlit Material and binding, or its other material. */
+export function copyMaterialOf(target: AbstractMesh, source: AbstractMesh): void {
+  const instance = source.material && instanceOf.get(source.material);
+  if (instance && hasUnlitBinding(source)) setUnlitMaterial(target, instance.key, unlitBinding(source));
+  else target.material = source.material;
+}
+
+/** Captures how `mesh` draws now (its unlit Material and binding, or its other material) and returns its restore. */
+export function materialRestore(mesh: AbstractMesh): () => void {
+  const material = mesh.material;
+  const instance = material && instanceOf.get(material);
+  if (instance && hasUnlitBinding(mesh)) {
+    const binding = unlitBinding(mesh);
+    return () => { setUnlitMaterial(mesh, instance.key, binding); };
+  }
+  return () => { mesh.material = material; };
 }
 
 /** Whether `mesh` has an unlit binding (`setUnlitMaterial`). */

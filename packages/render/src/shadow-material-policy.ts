@@ -15,9 +15,7 @@ import {
   StandardMaterial,
   type AbstractMesh,
 } from "@babylonjs/core";
-import { HelperProgramPlugin } from "./helper-program";
 import { TextureQualityPlugin } from "./texture-quality";
-import { StandardFogPlugin } from "./standard-fog";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
 import { hasMeshLatticeDeformer, isCageOnlyShadowWrapper } from "./lattice-deformer-binding";
 
@@ -53,9 +51,7 @@ const nativePlugins = new Set<unknown>([
   PBRSheenConfiguration,
   PBRSubSurfaceConfiguration,
   TextureQualityPlugin,
-  StandardFogPlugin,
   LatticeDeformerPlugin,
-  HelperProgramPlugin,
 ]);
 
 /**
@@ -93,6 +89,17 @@ export function hasStockVertexStage(material: Material): boolean {
     !material.customShaderNameResolve &&
     !material.onBindObservable.hasObservers()
   );
+}
+
+/**
+ * `hasStockVertexStage`, or a compiled surface whose first build is still pending and whose plan has the stock vertex
+ * stage (`plannedStockVertexStage`, set by the compiler before the build): grouping by it need not wait for the build.
+ */
+export function hasStockOrPlannedVertexStage(material: Material): boolean {
+  if (hasStockVertexStage(material)) return true;
+  if (!(material instanceof NodeMaterial) || compiled.has(material)) return false;
+  if (material.pluginManager?._plugins.some((plugin) => !nativePlugins.has(plugin.constructor))) return false;
+  return (material.metadata as { plannedStockVertexStage?: boolean } | null)?.plannedStockVertexStage === true;
 }
 
 /**

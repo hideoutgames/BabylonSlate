@@ -1,3 +1,6 @@
+import { createPooledPrimitiveVisual, POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
+import { syncPooledLeafFlags } from "./pooled-visuals";
+import { applyOccluderProperty } from "./view-occlusion";
 import { Mesh, MeshBuilder, Quaternion, Scene, Vector3, type Matrix, type TransformNode } from "@babylonjs/core";
 import { resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
@@ -5,7 +8,7 @@ import { bindEditorCable, configureCableMesh, findEditorCableMesh, hasEditorCabl
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { syncFogVolumeGuideAttachments } from "./fog-volume-guide";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@haptic/core";
-import { sceneShadowController } from "./shadow-controller";
+import { applyComponentShadowParticipation } from "./shadow-controller";
 import { isUIControl2DClass } from "@haptic/core";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { supportsOverlayVisualStyle } from "@haptic/core";
@@ -91,6 +94,8 @@ export function actorIdFromMeshName(meshName: string): string | null {
   const rest = meshName.slice(EDITOR_ACTOR_MESH_PREFIX.length);
   const pipe = rest.indexOf(EDITOR_COMPONENT_MESH_SEP);
   if (pipe >= 0) return rest.slice(0, pipe);
+  // A pooled primitive's drawn leaf is `editorActor:<id>:drawn` (`createPooledPrimitiveVisual`).
+  if (rest.endsWith(POOLED_LEAF_SUFFIX)) return rest.slice(0, -POOLED_LEAF_SUFFIX.length);
   // Chunk children are `editorActor:<id>:<layer>:<cx>:<cy>` plus optional
   // `:aN` atlas suffix and `:anim`.
   const chunk =
@@ -198,6 +203,7 @@ function createActorOriginHierarchy(
       );
       mesh.isVisible = actor.visible;
       mesh.isPickable = visualIsPickable(mesh, actor.locked);
+      syncPooledLeafFlags(mesh);
       meshes.set(component.id, mesh);
     }
     const fogBindings = new Map<string, { transforms: SerializedTransform[]; error?: string }>(
@@ -365,7 +371,7 @@ function createUnboundActorMesh(
     typeof meshComponent?.properties.meshKind === "string"
       ? meshComponent.properties.meshKind
       : null;
-  const primitive = createPrimitiveMesh(scene, name, meshKind);
+  const primitive = createPooledPrimitiveVisual(scene, name, meshKind) ?? createPrimitiveMesh(scene, name, meshKind);
   if (meshComponent) attachMeshCollisionDashes(primitive, meshComponent, assets);
   return primitive;
 }
@@ -406,13 +412,19 @@ function applyModelPlaceholderVisibility(mesh: Mesh, actor: SerializedActor): vo
   }
 }
 
+/** Components whose authored Cast Shadows and Receive Shadows reach their visual (`applyComponentShadowParticipation`). */
+const CASTER_COMPONENT_CLASS_IDS: ReadonlySet<string> = new Set(["MeshComponent", "CableComponent", "SpriteComponent", "TilemapComponent", "Text3DComponent"]);
+
 export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   if (!isEditorActorOrigin(mesh)) {
     const visual = actor.components.find((entry) => supportsOverlayVisualStyle(entry.classId));
     if (visual) applyOverlayVisualStyle(mesh, visual.properties);
   }
-  const component = actor.components.find((entry) => entry.classId === "MeshComponent");
-  if (component && !isEditorActorOrigin(mesh)) sceneShadowController(mesh.getScene()).setParticipation(mesh, component.properties);
+  const caster = actor.components.find((entry) => CASTER_COMPONENT_CLASS_IDS.has(entry.classId));
+  if (caster && !isEditorActorOrigin(mesh)) {
+    applyComponentShadowParticipation(mesh, caster);
+    if (caster.classId === "MeshComponent") applyOccluderProperty(mesh, caster.properties.occluder);
+  }
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
   applySerializedTransform(mesh, isSceneLayerAnchorActor(actor) ? identitySerializedTransform() : actor.transform);
   const origin = isEditorActorOrigin(mesh);
@@ -432,6 +444,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   }
   mesh.isVisible = actor.visible;
   mesh.isPickable = visualIsPickable(mesh, actor.locked);
+  syncPooledLeafFlags(mesh);
   if (!origin) return;
   const environmentRoots = new Set(actor.components
     .filter((entry) => entry.classId === "LandscapeComponent" || entry.classId === "FoliageComponent")
@@ -454,6 +467,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
     if (!isDirectComponentPart(child.name)) continue;
     child.isVisible = actor.visible;
     child.isPickable = visualIsPickable(child, actor.locked);
+    syncPooledLeafFlags(child);
   }
 }
 
@@ -470,7 +484,8 @@ export function applyComponentChildTransforms(
     if (!child) continue;
     if (supportsOverlayVisualStyle(component.classId)) applyOverlayVisualStyle(child, component.properties);
     if ((isEditorCameraModel(child) || component.classId === "CableComponent") && child.isWorldMatrixFrozen) child.unfreezeWorldMatrix();
-    if (component.classId === "MeshComponent" || component.classId === "CableComponent") sceneShadowController(mesh.getScene()).setParticipation(child, component.properties);
+    if (CASTER_COMPONENT_CLASS_IDS.has(component.classId)) applyComponentShadowParticipation(child, component);
+    if (component.classId === "MeshComponent") applyOccluderProperty(child, component.properties.occluder);
     applySerializedTransform(
       child,
       cableVisualTransform(actor, component),
