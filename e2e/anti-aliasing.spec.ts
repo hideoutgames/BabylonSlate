@@ -43,6 +43,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await testInfo.attach("anti-aliasing-pixels", { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(result.reservations.reservedBytes).toBe(0);
+    expect(result.glErrors).toEqual([]);
     const capture = Object.fromEntries(result.captures.map((entry) => [entry.label, entry]));
     // WebGPU multisamples at 4 only.
     expect(result.captures.map((entry) => entry.samples)).toEqual([1, 4, backend === "webgpu" ? 4 : 2, 1, 4, 1]);
@@ -56,6 +57,12 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(partialPixels(capture[smoothed]!.first), `${smoothed}: smoothed edges`).toBeGreaterThan(40);
       // Multisampling smooths edges only: the image stays in place.
       expect(difference(capture[aliased]!.first, capture[smoothed]!.first).mean, `${smoothed}: same image`).toBeLessThan(6);
+    }
+    // WebGL2 presents a multisampled view without a chain by one blit to the backbuffer; WebGPU, and any chain, resolve and copy.
+    for (const entry of result.captures) {
+      const blit = backend === "webgl2" && entry.samples > 1 && !entry.label.startsWith("chain");
+      expect(entry.tasks.includes("Multisample present"), `${entry.label}: direct blit`).toBe(blit);
+      expect(entry.tasks.includes("Multisample output"), `${entry.label}: output copy`).toBe(entry.samples > 1 && !blit && !entry.label.startsWith("chain"));
     }
     // Back to Off, the view draws exactly what it drew before multisampling.
     expect(difference(capture.off!.first, capture["off again"]!.first).max).toBe(0);
