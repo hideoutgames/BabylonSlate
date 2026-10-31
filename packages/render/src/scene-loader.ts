@@ -8,7 +8,7 @@ import { bindEditorCable, configureCableMesh, findEditorCableMesh, hasEditorCabl
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { syncFogVolumeGuideAttachments } from "./fog-volume-guide";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@haptic/core";
-import { sceneShadowController } from "./shadow-controller";
+import { applyComponentShadowParticipation } from "./shadow-controller";
 import { isUIControl2DClass } from "@haptic/core";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { supportsOverlayVisualStyle } from "@haptic/core";
@@ -412,15 +412,18 @@ function applyModelPlaceholderVisibility(mesh: Mesh, actor: SerializedActor): vo
   }
 }
 
+/** Components whose authored Cast Shadows and Receive Shadows reach their visual (`applyComponentShadowParticipation`). */
+const CASTER_COMPONENT_CLASS_IDS: ReadonlySet<string> = new Set(["MeshComponent", "CableComponent", "SpriteComponent", "TilemapComponent", "Text3DComponent"]);
+
 export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   if (!isEditorActorOrigin(mesh)) {
     const visual = actor.components.find((entry) => supportsOverlayVisualStyle(entry.classId));
     if (visual) applyOverlayVisualStyle(mesh, visual.properties);
   }
-  const component = actor.components.find((entry) => entry.classId === "MeshComponent");
-  if (component && !isEditorActorOrigin(mesh)) {
-    sceneShadowController(mesh.getScene()).setParticipation(mesh, component.properties);
-    applyOccluderProperty(mesh, component.properties.occluder);
+  const caster = actor.components.find((entry) => CASTER_COMPONENT_CLASS_IDS.has(entry.classId));
+  if (caster && !isEditorActorOrigin(mesh)) {
+    applyComponentShadowParticipation(mesh, caster);
+    if (caster.classId === "MeshComponent") applyOccluderProperty(mesh, caster.properties.occluder);
   }
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
   applySerializedTransform(mesh, isSceneLayerAnchorActor(actor) ? identitySerializedTransform() : actor.transform);
@@ -481,7 +484,7 @@ export function applyComponentChildTransforms(
     if (!child) continue;
     if (supportsOverlayVisualStyle(component.classId)) applyOverlayVisualStyle(child, component.properties);
     if ((isEditorCameraModel(child) || component.classId === "CableComponent") && child.isWorldMatrixFrozen) child.unfreezeWorldMatrix();
-    if (component.classId === "MeshComponent" || component.classId === "CableComponent") sceneShadowController(mesh.getScene()).setParticipation(child, component.properties);
+    if (CASTER_COMPONENT_CLASS_IDS.has(component.classId)) applyComponentShadowParticipation(child, component);
     if (component.classId === "MeshComponent") applyOccluderProperty(child, component.properties.occluder);
     applySerializedTransform(
       child,

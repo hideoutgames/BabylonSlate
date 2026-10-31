@@ -6,6 +6,7 @@ import {
   genericRows,
   rowId,
   sortingLayerRow,
+  unlitCastShadowsRow,
   type ComponentPropertyContext,
   type ComponentPropertyUpdate,
 } from "./component-property-row-helpers";
@@ -28,11 +29,12 @@ export function spritePropertyRows(
       "Pick Sprite",
     ),
     sortingLayerRow(actorId, component, update, context.sortingLayers),
+    unlitCastShadowsRow(actorId, component, update),
     ...genericRows(
       actorId,
       component,
       update,
-      new Set(["assetGuid", "sortingLayer"]),
+      new Set(["assetGuid", "sortingLayer", "castShadows"]),
     ),
   ];
 }
@@ -55,11 +57,12 @@ export function tilemapPropertyRows(
       "Pick Tilemap",
     ),
     sortingLayerRow(actorId, component, update, context.sortingLayers),
+    unlitCastShadowsRow(actorId, component, update),
     ...genericRows(
       actorId,
       component,
       update,
-      new Set(["assetGuid", "sortingLayer"]),
+      new Set(["assetGuid", "sortingLayer", "castShadows"]),
     ),
   ];
 }
