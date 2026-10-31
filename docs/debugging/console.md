@@ -33,7 +33,7 @@ The game keeps running while the console is open, and pressing the game does not
 | `quality textures` | tier or `reset` | Texture quality. |  |
 | `quality geometry` | tier or `reset`; `lod` `on`/`off`; `distance` 0.25 to 4; `occlusion` `on`/`off` | Geometry quality: automatic Model LOD, its switch distance scale, and occlusion culling. |  |
 | `quality water` | tier or `reset`; setting and value | Water rendering quality, or one water setting (see below). Buoyancy is unaffected. |  |
-| `quality postprocessing` | tier or `reset`; `ambientOcclusion`, `reflections` or `volumetricLighting` `on`/`off` | Post-processing quality, or whether the tier allows one effect. An effect still runs only where the project turns it on. |  |
+| `quality postprocessing` | tier or `reset`; `ambientOcclusion`, `reflections` or `volumetricLighting` `on`/`off`; `antialiasing` `msaa4`/`msaa2`/`fxaa`/`off` | Post-processing quality, whether the tier allows one effect, or the [Anti-Aliasing](../graphics/post-processing.md#anti-aliasing) mode. An effect still runs only where the project turns it on. |  |
 | `quality lighting` | tier or `reset`; `budget` N or `auto` | Lighting quality and the number of local lights. |  |
 | `framecap` | fps | Limits the frame rate. 0 or less uses 60. |  |
 | `volume` | 0 to 1 | Sets the master volume, like [Set Global Volume](../scripting/class/set-global-volume.md). |  |

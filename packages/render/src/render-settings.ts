@@ -106,7 +106,7 @@ type SceneRendering = {
    * device draws their depth pass (read at each replan: an Engine's capabilities can change); null for any other Scene.
    */
   screenShadowsSupported: (() => boolean) | null;
-  /** The device's MSAA limit, read when the Scene becomes a world view's. */
+  /** The device's MSAA limit (`readMultisampleLimit`). */
   maxSamples: number;
   webGpu: boolean;
 };
@@ -213,6 +213,7 @@ export function updateSceneRenderingSettings(
   const { ambientOcclusion, reflections, volumetricLighting } = quality.postprocessing;
   state.effectAllowances = { ambientOcclusion, reflections, volumetricLighting };
   state.antiAliasing = quality.postprocessing.antiAliasing;
+  readMultisampleLimit(scene, state);
   state.localLightBudget = resolveLocalLightBudget(quality.lighting);
   state.textureLodBias = quality.textures.lodBias;
   state.autoLod = quality.geometry.autoLod;
@@ -260,6 +261,12 @@ function worldView(state: SceneRendering): boolean {
   return state.screenShadowsSupported !== null;
 }
 
+/** The device's MSAA limit, read at each settings update and when the Scene becomes a world view's. */
+function readMultisampleLimit(scene: Scene, state: SceneRendering): void {
+  state.maxSamples = scene.getEngine().getCaps().maxMSAASamples ?? 1;
+  state.webGpu = scene.getEngine().isWebGPU;
+}
+
 function multisampleCount(state: SceneRendering): number {
   if (!worldView(state)) return 1;
   const requested = antiAliasingSamples(state.antiAliasing);
@@ -284,8 +291,7 @@ export function sceneMultisampleCount(scene: Scene): number {
 export function allowSceneScreenShadows(scene: Scene, supported: () => boolean): void {
   const state = sceneRenderingSettings(scene);
   state.screenShadowsSupported = supported;
-  state.maxSamples = scene.getEngine().getCaps().maxMSAASamples ?? 1;
-  state.webGpu = scene.getEngine().isWebGPU;
+  readMultisampleLimit(scene, state);
   replanSceneEffects(state);
 }
 

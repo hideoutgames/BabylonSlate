@@ -126,6 +126,16 @@ it("plans bloom and FXAA independently in Legacy Display", () => {
   expect(plan?.fxaa).toBe(true);
 });
 
+it("runs FXAA for the tier's Anti-Aliasing on its own, keyed apart from the project switch", () => {
+  const plain = effects();
+  expect(planSceneEffects(plain, "cel", true, { fxaa: true })).toMatchObject({ fxaa: true, bloom: null, imageProcessing: null });
+  expect(planSceneEffects(plain, "pbr", false, { fxaa: true })).toBeNull();
+  expect(sceneEffectsKey(plain, "pbr", true, { fxaa: true })).not.toBe(sceneEffectsKey(plain, "pbr", true));
+  // With the project switch on, the tier's FXAA changes nothing.
+  const project = effects({ fxaa: true });
+  expect(sceneEffectsKey(project, "pbr", true, { fxaa: true })).toBe(sceneEffectsKey(project, "pbr", true));
+});
+
 it("plans an FSR chain on its own and renders it at the scaled size", () => {
   const upscaling = { enabled: true, renderScale: 0.67, sharpness: 0.2 };
   for (const mode of ["pbr", "cel"] as const) {

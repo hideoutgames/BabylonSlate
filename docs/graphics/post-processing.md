@@ -14,7 +14,7 @@ Open **Project Settings > Rendering > Post Processing**. Every effect is off in 
 | **Bloom** | **Bloom Threshold** (0.9), **Bloom Weight** (0.15), **Bloom Kernel** (64), **Bloom Scale** (0.5) | Glow around bright surfaces. |
 | **Vignette** | **Vignette Weight** (1.5), **Vignette Color** (black) | Darkens the frame edges. |
 | **Color Grading** | **LUT Texture** | Remaps final colours through a lookup table. |
-| **FXAA** | None | Full-screen edge anti-aliasing. |
+| **FXAA** | None | Full-screen edge anti-aliasing, on top of the quality level's [Anti-Aliasing](#anti-aliasing). |
 | **FSR Upscaling** | **Render Scale** (0.67), **Sharpness** (0.2) | Renders at a lower resolution, then upscales and sharpens with AMD FSR 1. |
 
 Ambient occlusion, reflections and volumetric fog draw a depth pass of the scene. [Screen-Space Shadows](shadows.md#screen-space-shadows) use the same pass, or add it when none of these is on.
@@ -37,14 +37,31 @@ Vignette and Color Grading apply in both pipelines.
 
 Post-processing cost follows the **Post Processing** group in **Project Settings > Rendering > Scalability**.
 
-| Level | Post Processing Resolution Scale | Allow Ambient Occlusion | Allow Reflections | Allow Volumetric Lighting |
-| --- | --- | --- | --- | --- |
-| Low | 0.75 | Off | Off | Off |
-| Medium | 1 | On | On | Off |
-| High | 1 | On | On | On |
-| Ultra | 1 | On | On | On |
+| Level | Post Processing Resolution Scale | Anti-Aliasing | Allow Ambient Occlusion | Allow Reflections | Allow Volumetric Lighting |
+| --- | --- | --- | --- | --- | --- |
+| Low | 0.75 | FXAA | Off | Off | Off |
+| Medium | 1 | MSAA 4x | On | On | Off |
+| High | 1 | MSAA 4x | On | On | On |
+| Ultra | 1 | MSAA 4x | On | On | On |
 
 An **Allow** switch never turns an effect on; the effect also has to be on in **Post Processing**. **Post Processing Resolution Scale** applies to passes marked **Scalable**.
+
+## Anti-aliasing
+
+**Anti-Aliasing** in the **Post Processing** quality group smooths the jagged edges of geometry in the Scene Viewport, Play, Preview Build and exported games.
+
+| Mode | Description |
+| --- | --- |
+| **MSAA 4x** | Draws each pixel of the scene from four samples. Edges are smooth and the image stays sharp and still. |
+| **MSAA 2x** | Two samples per pixel: cheaper, a little less smooth. WebGPU only supports four, so it uses **MSAA 4x** there. |
+| **FXAA** | Draws one sample per pixel, then blurs edges in a full-screen pass, even when the project's **FXAA** effect is off. Cheapest, slightly soft. |
+| **Off** | No anti-aliasing beyond the project's **FXAA** effect. |
+
+- MSAA costs GPU memory and time in proportion to the samples. Lower it first on a device that struggles.
+- Effects that read the scene's depth, such as water and Screen-Space Shadows, see one real surface depth at every pixel, never a blend of the surfaces along an edge.
+- Render Target Captures, previews and thumbnails always draw one sample per pixel.
+- Devices that cannot multisample, or support fewer samples, draw with what they support.
+- Changing the mode while a game runs keeps the last image on screen for a moment while the view rebuilds.
 
 ## Scene passes
 

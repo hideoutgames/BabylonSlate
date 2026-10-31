@@ -38,14 +38,19 @@ import {
   normalizeRenderingQuality,
   normalizeShadowSettings,
   qualityPresetPatch,
+  qualitySettingPatch,
+  type AntiAliasingMode,
 } from "@haptic/core";
 import { upsertFogVolumes } from "./fog-volumes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { ParticleService } from "./particle-service";
 import {
+  allowSceneScreenShadows,
+  sceneRenderingSettings,
   setSceneEffectsEnabled,
   updateSceneRenderingSettings,
 } from "./render-settings";
+import { managedRenderReservations } from "./managed-render-resources";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
@@ -129,6 +134,46 @@ it("captures graph frames and skips an unsupported camera setup without drawing"
   expect(skipped.report.stages).toHaveLength(0);
   expect(skipped.report.tasks).toHaveLength(0);
   owner.dispose();
+});
+
+it("draws a multisampled world view into its own scene targets, copies them to the single-sample output, and charges every sample", async () => {
+  const { engine, scene, camera } = host();
+  engine.getCaps().maxMSAASamples = 4;
+  allowSceneScreenShadows(scene, () => false);
+  const state = sceneRenderingSettings(scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  const prepare = async (antiAliasing: AntiAliasingMode, fxaa = false) => {
+    state.qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing });
+    updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa } });
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const frame = captureRenderFrame(engine, () => graph.render(camera));
+    expect(frame.value).toEqual({ path: "frameGraph" });
+    // The scene colour and depth the objects draw into: the targets of "Forward clear".
+    const clear = frame.report.tasks.find((task) => task.name === "Forward clear")!;
+    const targets = clear.passes.flatMap((pass) => [...pass.colorTargets ?? [], ...pass.depthTarget === undefined ? [] : [pass.depthTarget]]);
+    const samples = targets.map((handle) => frame.report.resources.find((resource) => resource.handle === handle)?.samples ?? 1);
+    return { tasks: graph.taskNames(), samples, sceneBytes: managedRenderReservations(engine).categoryBytes };
+  };
+  // 4x without a chain: own multisampled colour and depth, then one copy to the backbuffer.
+  const msaa = await prepare("msaa4");
+  expect(msaa.samples).toEqual([4, 4]);
+  expect(msaa.tasks.at(-1)).toBe("Multisample output");
+  const off = await prepare("off");
+  // Off draws straight into the backbuffer, as before.
+  expect(off.tasks).not.toContain("Multisample output");
+  expect(off.sceneBytes.sceneColor).toBe(0);
+  // Each 4x sample is charged beside the resolved texture: (1 + 4) × RGBA8, (1 + 4) × depth32 at 1 × 1.
+  expect([msaa.sceneBytes.sceneColor, msaa.sceneBytes.depth]).toEqual([
+    (1 + 4) * 4 * engine.getRenderWidth() * engine.getRenderHeight(), (1 + 4) * 4 * engine.getRenderWidth() * engine.getRenderHeight(),
+  ]);
+  // A settings chain's own scene targets multisample too; FXAA mode runs FXAA single-sample.
+  const chain = await prepare("msaa2", true);
+  expect(chain.samples).toEqual([2, 2]);
+  expect(chain.tasks).toContain("Scene Effects FXAA");
+  const fxaa = await prepare("fxaa");
+  expect(fxaa.samples).toEqual([1, 1]);
+  expect(fxaa.tasks).toContain("Scene Effects FXAA");
+  graph.dispose();
 });
 
 it("retains the previous graph during a settings transaction and releases superseded candidates", async () => {
