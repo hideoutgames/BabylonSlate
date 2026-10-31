@@ -17,8 +17,9 @@ const SEA = -6;
 const CAMERAS: ReadonlyArray<{ position: readonly [number, number, number]; target: readonly [number, number, number] }> = [
   // Global Water's dense cells follow the camera's X/Z, so neighbours a few hundred metres away lie in its wide far
   // cells. Each camera looks down far enough that the frame's top edge still meets water.
-  { position: [-4, 52, -82], target: [4, 0, 6] },
   { position: [0, 34, 0], target: [0, SEA, 90] },
+  // FT_World's world camera, reached by recentring the grid built for the view before.
+  { position: [-4, 52, -82], target: [4, 0, 6] },
   { position: [0, 300, 200], target: [-40, SEA, 620] },
   { position: [300, 200, 100], target: [320, SEA, 420] },
   { position: [0, 600, 0], target: [100, SEA, 500] },
