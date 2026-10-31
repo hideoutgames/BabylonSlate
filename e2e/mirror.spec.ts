@@ -19,7 +19,8 @@ type ViewportHost = {
   __hapticViewportTest: {
     setShadowCaptureView(position: number[], target: number[], fov: number): void;
     renderingBaseline(): { backend: string } | null;
-    mirrorDiagnostics(): { draws: number; reuses: number } | null;
+    mirrorDiagnostics(): { draws: number; reuses: number; drawnMeshes: number } | null;
+    setMirrorFootprintCulling(enabled: boolean): void;
   };
 };
 
@@ -171,4 +172,74 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
   await waitForPreviewBuildBoot(page);
   await expectReflected(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas"), "mirror-node-preview-build", "blue");
   expect(errors).toEqual([]);
+});
+
+/** A hash of every pixel of the canvas (read from a copy, as `centerColor` does). */
+async function canvasHash(canvas: Locator): Promise<string> {
+  return canvas.evaluate(async (node: HTMLCanvasElement) => {
+    const copy = document.createElement("canvas");
+    copy.width = node.width;
+    copy.height = node.height;
+    const ctx = copy.getContext("2d", { willReadFrequently: true })!;
+    ctx.drawImage(node, 0, 0);
+    const digest = await crypto.subtle.digest("SHA-256", ctx.getImageData(0, 0, node.width, node.height).data);
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  });
+}
+
+for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws only what its footprint can show, with the same pixels as the whole mirrored view, on ${backend}`, async ({ page }) => {
+  test.setTimeout(180_000);
+  const files = await minimalProjectFiles();
+  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+  project.settings.render.gpuBackend = backend;
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+  const sceneFile = files.get(MAIN_SCENE_FILE)!;
+  const decoded = await decodeAssetDocument(sceneFile);
+  const scene = decoded.payload as unknown as SerializedScene;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
+  const box = (id: string, position: [number, number, number], scale: number) => createActor(id, id, {
+    transform: { ...identitySerializedTransform(), position, scale: [scale, scale, scale] },
+    components: [createMeshComponent(`${id}-mesh`, "box")],
+  });
+  scene.actors = [
+    camera,
+    // A small mirror: its reflection shows the box behind the camera, never the one off to the side, which the whole
+    // mirrored view still contains.
+    createActor("mirror", "Mirror", {
+      transform: { ...identitySerializedTransform(), position: [0, 2, 0] },
+      components: [{ id: "mirror-surface", classId: "MirrorComponent", properties: { ...parseMirrorProperties({ width: 1, height: 1 }) }, parentId: null, transform: identitySerializedTransform() }],
+    }),
+    box("reflected-box", [0, 2, -10], 4),
+    box("side-box", [6, 2, -10], 2),
+  ];
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...decoded, payload: scene as unknown as Record<string, unknown> }));
+
+  await openMinimalTestProject(page, files);
+  await openMainScene(page);
+  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
+  await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
+  const viewport = page.getByTestId("viewport-canvas");
+  const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
+  /** Waits for the reflection to settle (renders reuse it); the canvas then and the meshes per draw since `from`. */
+  const settled = async (from: { draws: number; drawnMeshes: number }) => {
+    let result = { hash: "", meshesPerDraw: 0 };
+    await expect.poll(async () => {
+      const before = await mirrors(), hash = await canvasHash(viewport);
+      await page.waitForTimeout(500);
+      const after = await mirrors(), again = await canvasHash(viewport);
+      result = { hash, meshesPerDraw: (after.drawnMeshes - from.drawnMeshes) / Math.max(1, after.draws - from.draws) };
+      return after.draws > from.draws && after.draws === before.draws && after.reuses > before.reuses && hash === again;
+    }, { timeout: 60_000 }).toBe(true);
+    return result;
+  };
+  const cropped = await settled({ draws: 0, drawnMeshes: 0 });
+  const start = await mirrors();
+  await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setMirrorFootprintCulling(false));
+  const whole = await settled(start);
+  // Byte-identical frames; the whole mirrored view draws the side box too.
+  expect(whole.hash).toBe(cropped.hash);
+  expect(whole.meshesPerDraw).toBeGreaterThan(cropped.meshesPerDraw);
+  await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setMirrorFootprintCulling(true));
+  expect((await settled(await mirrors())).hash).toBe(cropped.hash);
 });

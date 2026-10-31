@@ -9,6 +9,7 @@ import {
   mirrorDiagnostics,
   selectionGizmoRoots,
   setDirectViewPresentationEnabled,
+  setPlanarFootprintCulling,
   whenSubmittedWorkDone,
   type EngineHandle,
 } from "@haptic/render";
@@ -40,6 +41,8 @@ export type ViewportTestHost = {
     engineCount: () => number;
     shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
     mirrorDiagnostics: () => ReturnType<typeof mirrorDiagnostics> | null;
+    /** Whether Mirror passes cull to their surface's footprint (on by default): a proof compares both. */
+    setMirrorFootprintCulling: (enabled: boolean) => void;
     mannequinShadowProbe: (modelOnly?: boolean) => Promise<unknown>;
     mannequinShadowVisibility: (points: { worldPosition: number[]; region: string }[]) => Promise<boolean[]>;
     setRenderSettings: EngineHandle["setRenderSettings"];
@@ -261,6 +264,10 @@ export function installViewportTestHost({
     mirrorDiagnostics: () => {
       const handle = engineRef.current;
       return handle ? mirrorDiagnostics(handle.scene) : null;
+    },
+    setMirrorFootprintCulling: (enabled) => {
+      const handle = engineRef.current;
+      if (handle) setPlanarFootprintCulling(handle.scene, enabled);
     },
     mannequinShadowProbe: async (modelOnly) => {
       const handle = engineRef.current;
