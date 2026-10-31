@@ -83,8 +83,8 @@ jobs:
       - run: pnpm install
       # Unsharded: per-package coverage gates need the full Vitest suite.
       - run: pnpm test:coverage
-      # The compile-hold gate again with hardware instancing, which turns Play's primitive pooling on (its WebGL2 driver
-      # models; WebGPU does not pool yet).
+      # The compile-hold gate again with hardware instancing, which turns Play's primitive pooling on in every driver
+      # model.
       - run: pnpm test packages/render/src/compile-hold-acceptance.test.ts
         env:
           HAPTIC_GATE_INSTANCING: "1"

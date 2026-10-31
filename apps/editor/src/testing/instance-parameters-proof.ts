@@ -50,7 +50,7 @@ export async function runInstanceParametersProof(backend: "webgl2" | "webgpu") {
     const tints: Array<[number, number, number]> = [[0.9, 0.1, 0.1], [0.1, 0.9, 0.1], [0.1, 0.1, 0.9]];
     const leaves: AbstractMesh[] = [];
     for (const [index, x] of [-3, -1, 1].entries()) {
-      // WebGPU does not pool yet: a crate there is a mesh of its own.
+      // A crate is a mesh of its own only where the Engine does not instance in hardware.
       const root = createPooledPrimitiveVisual(scene, `crate-${index}`, "box") ?? createPrimitiveMesh(scene, `crate-${index}`, "box");
       root.position.set(x, 0.75, 0);
       applyWorldVisualGroup(root, { components: [] });

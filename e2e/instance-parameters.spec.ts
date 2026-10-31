@@ -30,7 +30,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const [r, g, b] = result.plain;
     expect(Math.max(r!, g!, b!) - Math.min(r!, g!, b!)).toBeLessThan(12);
     expect(r).toBeGreaterThan(40);
-    // WebGPU does not pool yet (`sceneInstancing`); on WebGL2 the crates share one source.
-    expect(result.sources).toBe(backend === "webgl2" ? 1 : 3);
+    // The crates share one group source.
+    expect(result.sources).toBe(1);
   });
 }
