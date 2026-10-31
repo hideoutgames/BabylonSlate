@@ -21,7 +21,7 @@ import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import {
-  UnlitFinishBlock, UnlitOutputBlock, UnlitSurfaceBlock, UnlitUvBlock, UnlitVelocityBlock, hasUnlitBinding,
+  UnlitFinishBlock, UnlitOutputBlock, UnlitSurfaceBlock, UnlitUvBlock, hasUnlitBinding,
   markPerMeshBindingMaterial, setMaterialUnlitBinding, setUnlitBinding, unlitBinding, type UnlitBinding,
 } from "./unlit-material-blocks";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
@@ -186,13 +186,7 @@ function buildSurface(material: NodeMaterial, { textured, msdf }: SurfaceKind, b
   const camera = new InputBlock(`${NAME}_camera`);
   camera.setAsSystemValue(NodeMaterialSystemValues.CameraParameters);
   camera.output.connectTo(output.geometryCamera);
-  const velocity = new UnlitVelocityBlock(`${NAME}_velocity`);
-  position.output.connectTo(velocity.position);
-  finalPosition.connectTo(velocity.worldPosition);
-  viewProjection.output.connectTo(velocity.viewProjection);
-  velocity.current.connectTo(output.velocityCurrent);
-  velocity.previous.connectTo(output.velocityPrevious);
-  blocks.push(surface, fog, merge, imageProcessing, finish, output, viewPosition, camera, velocity);
+  blocks.push(surface, fog, merge, imageProcessing, finish, output, viewPosition, camera);
   material.addOutputNode(vertexOutput);
   material.addOutputNode(output);
 }

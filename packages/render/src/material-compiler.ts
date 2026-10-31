@@ -42,7 +42,8 @@ import type {
   MaterialTextureFilter,
   MaterialValueType,
 } from "@haptic/shader-graph";
-import { componentCount, materialNodeDefinition } from "@haptic/shader-graph";
+import { componentCount, isPerInstanceParameter, materialNodeDefinition } from "@haptic/shader-graph";
+import { attachInstanceParameters, createInstanceParameterBlock, instanceParameterAttribute, type InstanceParameter } from "./instance-parameters";
 import { materialGlslDiagnostic, shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
@@ -383,6 +384,7 @@ export function compileMaterialPlan(
         : NodeMaterialModes.Material;
 
   const created: NodeMaterialBlock[] = [];
+  const instanceParameters: Array<InstanceParameter & { value: MaterialParameterValue }> = [];
   // Samples of one asset share a Texture; one load must rebuild once.
   const pendingTextures = new Set<Texture>();
   const diagnostics: MaterialDiagnostic[] = [];
@@ -537,7 +539,16 @@ export function compileMaterialPlan(
         pin && pin.type.kind !== "generic"
           ? (pin.type.kind as MaterialValueType)
           : "float";
-      const block = createConstantBlock(operationBlockName(operation.id), type, value, asColor);
+      // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute.
+      const perInstance = operation.source.callPath.length === 0 && isPerInstanceParameter(operation.nodeType, operation.properties);
+      const kind = operation.nodeType === "param.color" ? "color" : "float";
+      const block = perInstance
+        ? createInstanceParameterBlock(instanceParameterAttribute(instanceParameters.length), kind)
+        : createConstantBlock(operationBlockName(operation.id), type, value, asColor);
+      if (perInstance) instanceParameters.push({
+        name: String(operation.properties.name ?? "").trim(), attribute: block.name, kind,
+        value: kind === "color" ? { kind, value: [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1] } : { kind, value: value[0] ?? 0 },
+      });
       created.push(block);
       const blocks: NodeMaterialBlock[] = [block];
       const outputs: Record<string, NodeMaterialConnectionPoint> = {
@@ -1102,6 +1113,7 @@ export function compileMaterialPlan(
     }
   }
 
+  attachInstanceParameters(material, instanceParameters);
   const parameters = createMaterialParameterBindings(
     plan,
     realized,

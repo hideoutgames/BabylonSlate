@@ -2,7 +2,7 @@ import type { Scene } from "@babylonjs/core";
 
 /**
  * Render pass ids of the scene effects' geometry passes (`SpatialEffectsGraph`), whose buffers feed ambient occlusion,
- * Real-Time Reflections, volumetric lighting and temporal anti-aliasing. A Material that draws differently there
+ * Real-Time Reflections, volumetric lighting and Screen-Space Shadows. A Material that draws differently there
  * (water) asks by the pass being drawn. The authored post-process chain's geometry pass is not one of them.
  */
 const registries = new WeakMap<Scene, Set<number>>();
