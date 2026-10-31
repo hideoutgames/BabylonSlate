@@ -11,7 +11,7 @@ import {
   usePublishSimulationControls,
 } from "../context/simulation-controls-context";
 import { useAppSettings } from "../context/app-settings-context";
-import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
+import { captureShadowDiagnostics, drawOcclusionOverlay, lightsDebugText } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
@@ -408,6 +408,8 @@ function PlayOverlayView({
   const statsVisibleRef = useRef(false);
   statsVisibleRef.current = statsVisible;
   const [lightsDebug, setLightsDebug] = useState(false);
+  const [occlusionShown, setOcclusionShown] = useState(false);
+  const occlusionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [statGroups, setStatGroups] = useState<readonly StatGroup[]>([]);
   const inspectSelectionRef = useRef<string | null>(null);
   const hostMemoryInFlight = useRef(false);
@@ -1111,7 +1113,11 @@ function PlayOverlayView({
           // frame-phase timing on. Only the Stats HUD and the lights debug overlay show them.
           const lights = current.handle.lightsDebugEnabled();
           update("lights", lights, setLightsDebug);
-          if (statsVisibleRef.current || lights) setRendering(current.handle.renderDiagnostics());
+          // `showocclusion`: a 2D canvas of the occlusion buffer over the view; it compiles nothing.
+          const occlusion = current.handle.occlusionOverlay();
+          update("occlusion", occlusion !== null, setOcclusionShown);
+          if (occlusion?.buffer && occlusionCanvasRef.current) drawOcclusionOverlay(occlusionCanvasRef.current, occlusion.buffer);
+          if (statsVisibleRef.current || lights || occlusion) setRendering(current.handle.renderDiagnostics());
           if (testMode) {
             update("passes", current.handle.postProcessPassCount(), setPostProcessPasses);
             update("materials", current.handle.assignedMaterialGuids().join(","), setAssignedMaterials);
@@ -1410,6 +1416,16 @@ function PlayOverlayView({
         <pre className="play-debug-readout pointer-events-none absolute top-14 right-3 m-0 max-h-64 max-w-xl overflow-hidden whitespace-pre-wrap" data-testid="lights-debug-overlay">
           <SelectableText>{lightsDebugText(rendering)}</SelectableText>
         </pre>
+      ) : null}
+      {occlusionShown ? (
+        <div className="play-debug-readout pointer-events-none absolute bottom-3 left-3 z-20 m-0" data-testid="occlusion-debug-overlay">
+          {rendering?.occlusion ? <canvas ref={occlusionCanvasRef} className="block h-32 w-64 [image-rendering:pixelated]" /> : null}
+          <SelectableText>
+            {rendering?.occlusion
+              ? `occlusion culled ${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.occluders} occluders`
+              : "occlusion culling off"}
+          </SelectableText>
+        </div>
       ) : null}
       {audioDebugText !== null ? (
         <pre

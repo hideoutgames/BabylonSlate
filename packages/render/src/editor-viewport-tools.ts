@@ -19,6 +19,7 @@ import {
 } from "./editor-place";
 import { createEditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { allowSceneOcclusionCulling } from "./view-occlusion";
 import { calculateEditorDropTransforms } from "./editor-drop";
 import {
   ViewportShadingOverlay,
@@ -452,6 +453,10 @@ export function createEditorViewportTools({
     },
     setDrawMeshCollision: (enabled: boolean) => {
       editorSync.setDrawMeshCollision(enabled);
+      scheduler.invalidate("asset");
+    },
+    setOcclusionCulling: (enabled: boolean) => {
+      allowSceneOcclusionCulling(scene, enabled ? "always" : "never");
       scheduler.invalidate("asset");
     },
     setPixelPerfect: (settings) => {

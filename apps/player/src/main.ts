@@ -8,7 +8,7 @@ import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";
 import { previewConsoleCatalog } from "./console-catalog";
 import type { PlayerTestHandle } from "./boot";
-import { mountPlayerHud, mountPlayerDebuggerOverlays } from "./hud";
+import { mountPlayerHud, mountPlayerDebuggerOverlays, type PlayerHudStats } from "./hud";
 import { applyPlayerLayout } from "./layout";
 import {
   createPreviewAssetClient,
@@ -115,8 +115,10 @@ async function launchLoaded(
     { bundleDebugger: game.manifest.bundleDebugger, visible: !previewHosted },
   );
   let currentLightsDebugText: string | null = null;
+  let currentOcclusionOverlay: PlayerHudStats["occlusionOverlay"] = null;
   const stopAudioOverlays = mountPlayerDebuggerOverlays(rootEl(), {
     lightsDebugText: () => currentLightsDebugText,
+    occlusionOverlay: () => currentOcclusionOverlay,
     bundleDebugger: game.manifest.bundleDebugger,
   });
   setRootState({
@@ -194,6 +196,7 @@ async function launchLoaded(
     onStats: (stats) => {
       if (stopped) return;
       currentLightsDebugText = stats.lightsDebugText ?? null;
+      currentOcclusionOverlay = stats.occlusionOverlay ?? null;
       hud.setStats({ ...stats, ...hostMemory });
       setRootState({
         booted: stats.ticks > 0,

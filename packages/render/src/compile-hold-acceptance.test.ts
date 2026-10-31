@@ -2106,6 +2106,12 @@ describe("the lighting CI gate", () => {
     const compiled = await play(world, surfaces);
     const crate = world.handle.scene.getMeshByName("actor-2")!;
     const hidden = world.view().occlusionDiagnostics()!.culled;
+    // The debug views switch on: a 2D overlay and a frozen buffer, which compile nothing.
+    const beforeDebug = world.driver.created.length;
+    world.handle.applyCommand({ type: "setOcclusionDebug", show: true, freeze: true });
+    for (let index = 0; index < 4; index++) await world.frame();
+    const debug = { compiled: world.driver.created.length - beforeDebug, buffer: world.handle.occlusionOverlay()?.buffer != null };
+    world.handle.applyCommand({ type: "setOcclusionDebug", show: false, freeze: false });
     // The wall moves aside: the crate, lit by every light the script changed, draws again.
     const before = world.driver.created.length;
     world.move(20, [30, 2, -5]);
@@ -2114,10 +2120,10 @@ describe("the lighting CI gate", () => {
       compiled, pipelines: world.driver.pipelines.size, synchronous: world.driver.synchronous.size,
       // Occlusion left Babylon's own state alone.
       crateShown: crate.isEnabled() && crate.isVisible, hidden: hidden > 0,
-      reappeared: world.driver.created.length - before, culledAfter: world.view().occlusionDiagnostics()!.culled,
+      reappeared: world.driver.created.length - before, culledAfter: world.view().occlusionDiagnostics()!.culled, debug,
     }).toEqual({
       compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0,
-      crateShown: true, hidden: true, reappeared: 0, culledAfter: 0,
+      crateShown: true, hidden: true, reappeared: 0, culledAfter: 0, debug: { compiled: 0, buffer: true },
     });
   });
 });
