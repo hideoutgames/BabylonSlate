@@ -250,15 +250,9 @@ export function updateLayout(s: Surface, world: Matrix, inverse: Matrix): Layout
     );
   }
   writeRestPositions(s, 0, count);
-  const indices: number[] = [], uvs: number[] = [];
-  for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
-    uvs.push(col / columns, row / rows);
-    if (row < rows && col < columns) {
-      const a = row * (columns + 1) + col, b = a + columns + 1;
-      if (body.kind === "river") indices.push(a, b, a + 1, a + 1, b, b + 1);
-      else indices.push(a, a + 1, b, a + 1, b + 1, b);
-    }
-  }
+  const uvs: number[] = [];
+  for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) uvs.push(col / columns, row / rows);
+  const indices = body.kind === "global" ? thinnedGridIndices(xs, zs) : gridIndices(columns, rows, body.kind === "river");
   const data = new VertexData();
   data.positions = s.positions; data.normals = s.normals; data.indices = indices; data.uvs = uvs;
   data.applyToMesh(mesh, true);
@@ -295,6 +289,52 @@ function riverExtension(s: Surface, world: Matrix, reach: number): (index: numbe
     return reach * t * t * (3 - 2 * t);
   });
   return (i) => widths[i] ?? 0;
+}
+
+/** Two triangles per cell of a full grid (a river's the other way round). */
+function gridIndices(columns: number, rows: number, river: boolean): number[] {
+  const indices: number[] = [];
+  for (let row = 0; row < rows; row++) for (let col = 0; col < columns; col++) {
+    const a = row * (columns + 1) + col, b = a + columns + 1;
+    if (river) indices.push(a, b, a + 1, a + 1, b, b + 1);
+    else indices.push(a, a + 1, b, a + 1, b + 1, b);
+  }
+  return indices;
+}
+
+/**
+ * Global Water's triangles. Its dense columns run the grid's whole length, so far from the camera, where rows are
+ * hundreds of metres long, a full grid draws cells far longer than wide: slivers a fraction of a pixel wide that crowd
+ * the vanishing point, cost a triangle each and leak pixels on the software WebGPU rasterizer. Each grid line keeps only
+ * columns about as far apart as its rows (the shorter row beside it), so far cells stay square; the strip between two
+ * lines zips their kept vertices together, so every edge is shared by both its triangles and nothing cracks. Near the
+ * camera every column is kept and the triangles are the full grid's. Vertices are unchanged: unused ones are not drawn.
+ */
+function thinnedGridIndices(xs: ArrayLike<number>, zs: ArrayLike<number>): number[] {
+  const columns = xs.length - 1, rows = zs.length - 1, stride = columns + 1;
+  const kept = Array.from({ length: rows + 1 }, (_, line) => {
+    const width = Math.min(line > 0 ? zs[line]! - zs[line - 1]! : Infinity, line < rows ? zs[line + 1]! - zs[line]! : Infinity);
+    const cols = [0];
+    for (let col = 1; col < columns; col++) if (xs[col]! - xs[cols[cols.length - 1]!]! >= width * (1 - 1e-6)) cols.push(col);
+    // The last column closes the line; a kept column too close to it would leave a sliver.
+    if (cols.length > 1 && xs[columns]! - xs[cols[cols.length - 1]!]! < width / 2) cols.pop();
+    cols.push(columns);
+    return cols;
+  });
+  const indices: number[] = [];
+  for (let row = 0; row < rows; row++) {
+    const bottom = kept[row]!, top = kept[row + 1]!, a = row * stride, b = a + stride;
+    let i = 0, k = 0;
+    while (i < bottom.length - 1 || k < top.length - 1) {
+      // Advance the side whose next vertex lies further left; a full grid alternates exactly as `gridIndices` does.
+      if (k === top.length - 1 || (i < bottom.length - 1 && xs[bottom[i + 1]!]! <= xs[top[k + 1]!]!)) {
+        indices.push(a + bottom[i]!, a + bottom[i + 1]!, b + top[k]!); i++;
+      } else {
+        indices.push(a + bottom[i]!, b + top[k + 1]!, b + top[k]!); k++;
+      }
+    }
+  }
+  return indices;
 }
 
 /**

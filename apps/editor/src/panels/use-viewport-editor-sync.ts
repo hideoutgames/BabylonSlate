@@ -49,6 +49,7 @@ export function useViewportEditorSync({
     pivotAroundCenter,
     viewportShadingMode,
     collisionsVisible,
+    occlusionCulling,
   } = useSceneEditing();
 
   useEffect(() => {
@@ -96,6 +97,10 @@ export function useViewportEditorSync({
   useEffect(() => {
     engineRef.current?.editor?.setDrawMeshCollision(collisionsVisible);
   }, [collisionsVisible, engineEpoch, engineRef]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.setOcclusionCulling(occlusionCulling);
+  }, [occlusionCulling, engineEpoch, engineRef]);
 
   useEffect(() => {
     engineRef.current?.editor?.setPreviewGameCamera(previewGameCamera);

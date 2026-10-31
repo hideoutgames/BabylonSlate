@@ -32,6 +32,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       setViewportMode: vi.fn(),
       setViewportShadingMode: vi.fn(),
       setDrawMeshCollision: vi.fn(),
+      setOcclusionCulling: vi.fn(),
       setPreviewGameCamera: vi.fn(),
       setGridSettings: vi.fn(),
       setSortingLayers: vi.fn(),

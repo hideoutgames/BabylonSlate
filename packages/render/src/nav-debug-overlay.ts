@@ -3,7 +3,6 @@ import {
   Color4,
   Matrix,
   Mesh,
-  StandardMaterial,
   VertexData,
   type Scene,
 } from "@babylonjs/core";
@@ -19,7 +18,10 @@ import {
   type EditorVolumeKind,
 } from "./editor-volume";
 import { markEditorHelperMesh } from "./helper-mesh";
-import { shareHelperProgram } from "./helper-program";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+
+/** The bake's walkable fill: translucent from both sides, without fog. */
+const NAV_FILL_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "helper" };
 import { RENDERING_GROUP } from "./sorting";
 
 export const NAVMESH_DEBUG_Y_OFFSET = 0.04;
@@ -137,16 +139,10 @@ export class NavMeshDebugOverlay {
       data.positions = positions;
       data.indices = indices;
       data.applyToMesh(mesh);
-      const material = shareHelperProgram(new StandardMaterial("navmeshDebugMat", this.scene));
-      material.disableLighting = true;
-      material.diffuseColor = Color3.Black();
-      material.emissiveColor = NAVMESH_DEBUG_FILL.clone();
-      material.specularColor = Color3.Black();
-      material.alpha = 0.35;
-      material.backFaceCulling = false;
-      material.wireframe = false;
-      material.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
-      mesh.material = material;
+      setUnlitMaterial(mesh, NAV_FILL_MATERIAL, {
+        texture: null, color: [NAVMESH_DEBUG_FILL.r, NAVMESH_DEBUG_FILL.g, NAVMESH_DEBUG_FILL.b], alpha: 0.35, cutoff: 0, blend: true,
+        textureAlpha: false, twoSided: false,
+      });
       mesh.renderingGroupId = RENDERING_GROUP.world;
       mesh.enableEdgesRendering();
       mesh.edgesWidth = 2;

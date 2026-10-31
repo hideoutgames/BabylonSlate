@@ -20,6 +20,7 @@ import { HapticLightingBlock } from "./haptic-lighting-block";
 import { createPrimitiveMesh } from "./scene-loader";
 import { applySceneEnvironment } from "./scene-illumination";
 import { createDefaultScene } from "@haptic/core";
+import { isUnlitMaterial } from "./unlit-material";
 
 const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
   [];
@@ -129,7 +130,7 @@ describe("engine default material", () => {
 
     expect(pivot.material).not.toBeNull();
     expect(isEngineDefaultMaterial(pivot.material)).toBe(false);
-    expect((pivot.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(pivot.material)).toBe(true);
   });
 
   it("does not replace an already assigned sprite-style material", () => {

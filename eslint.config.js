@@ -172,26 +172,44 @@ const renderNoReact = boundary(
   ],
 );
 
-/** Ban constructing Babylon Texture outside resource-cache.ts (engineplan §2.4). */
-const renderTextureCacheOnly = {
-  name: "boundary/render-texture-cache",
-  files: ["packages/render/src/**/*.{ts,tsx}"],
-  ignores: [
-    "packages/render/src/resource-cache.ts",
-    "packages/render/src/**/*.test.ts",
-  ],
-  rules: {
-    "no-restricted-syntax": [
-      "error",
-      {
-        selector:
-          "NewExpression[callee.name='Texture'], NewExpression[callee.property.name='Texture']",
-        message:
-          "Construct textures only via ResourceCache (engineplan section 2.4).",
-      },
-    ],
-  },
+/** Construct Babylon Texture only in resource-cache.ts (engineplan §2.4). */
+const TEXTURE_CACHE_ONLY = {
+  selector:
+    "NewExpression[callee.name='Texture'], NewExpression[callee.property.name='Texture']",
+  message:
+    "Construct textures only via ResourceCache (engineplan section 2.4).",
 };
+
+/** Engine surfaces draw the unlit Material (unlit-material.ts), never a StandardMaterial of their own. */
+const NO_STANDARD_MATERIAL = {
+  selector:
+    "NewExpression[callee.name='StandardMaterial'], NewExpression[callee.property.name='StandardMaterial']",
+  message:
+    "Draw engine surfaces with the unlit Material (setUnlitMaterial), not a StandardMaterial.",
+};
+
+/**
+ * Render's construction bans. A later `no-restricted-syntax` block replaces an earlier one's options, so each file
+ * set lists every ban it keeps: resource-cache.ts constructs textures, and Text2D's MSDF fallback stays a
+ * StandardMaterial until the MSDF shader moves to the unlit Material.
+ */
+const RENDER_SYNTAX_EXCEPTIONS = {
+  "packages/render/src/resource-cache.ts": [NO_STANDARD_MATERIAL],
+  "packages/render/src/text2d-mesh.ts": [TEXTURE_CACHE_ONLY],
+};
+const renderConstructionBans = [
+  {
+    name: "boundary/render-construction",
+    files: ["packages/render/src/**/*.{ts,tsx}"],
+    ignores: ["packages/render/src/**/*.test.ts", ...Object.keys(RENDER_SYNTAX_EXCEPTIONS)],
+    rules: { "no-restricted-syntax": ["error", TEXTURE_CACHE_ONLY, NO_STANDARD_MATERIAL] },
+  },
+  ...Object.entries(RENDER_SYNTAX_EXCEPTIONS).map(([file, bans]) => ({
+    name: `boundary/render-construction:${file}`,
+    files: [file],
+    rules: { "no-restricted-syntax": ["error", ...bans] },
+  })),
+];
 
 const uiNoBabylonNoCapacitor = boundary(
   "boundary/ui-packages",
@@ -291,7 +309,7 @@ export default defineConfig(
   navigationNoReactNoBabylon,
   vfsNoReactNoBabylon,
   renderNoReact,
-  renderTextureCacheOnly,
+  ...renderConstructionBans,
   uiNoBabylonNoCapacitor,
   appNoCapacitor,
   playerNoReactNoCapacitor,

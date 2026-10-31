@@ -744,6 +744,44 @@ describe("Water rendering", () => {
       expect(created[1]).toHaveBeenCalled();
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
+  it("draws Global Water's far rows without slivers along Z, with the triangles tiling its grid and sharing every edge", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 600, -700), scene);
+    camera.maxZ = 10000;
+    try {
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"), undefined, builtInWaterMaterial(scene));
+      updateSceneWater(scene);
+      const positions = global.getVerticesData(VertexBuffer.PositionKind)!, indices = global.getIndices()!;
+      const side = Math.round(Math.sqrt(positions.length / 3)), at = (i: number) => [positions[i * 3]!, positions[i * 3 + 2]!] as const;
+      const [minX, minZ] = at(0), [maxX, maxZ] = at(side * side - 1);
+      let area = 0, worst = 0;
+      const edges = new Map<string, number>();
+      for (let t = 0; t < indices.length; t += 3) {
+        const [a, b, c] = [indices[t]!, indices[t + 1]!, indices[t + 2]!].map(at);
+        // Every triangle faces up, as the full grid's do.
+        const twice = (b![0] - a![0]) * (c![1] - a![1]) - (b![1] - a![1]) * (c![0] - a![0]);
+        expect(twice).toBeGreaterThan(0);
+        area += twice / 2;
+        // How much longer a triangle runs along Z than across X: the full grid's far cells reach the thousands.
+        const xs = [a![0], b![0], c![0]], zs = [a![1], b![1], c![1]];
+        worst = Math.max(worst, (Math.max(...zs) - Math.min(...zs)) / (Math.max(...xs) - Math.min(...xs)));
+        for (const [p, q] of [[t, t + 1], [t + 1, t + 2], [t + 2, t]]) {
+          const key = [indices[p!]!, indices[q!]!].sort((x, y) => x - y).join();
+          edges.set(key, (edges.get(key) ?? 0) + 1);
+        }
+      }
+      // The triangles cover the grid's square once, and an edge inside it belongs to two of them: no T-junction can crack.
+      expect(area / ((maxX - minX) * (maxZ - minZ))).toBeCloseTo(1, 6);
+      for (const [key, uses] of edges) {
+        const [p, q] = key.split(",").map((value) => at(Number(value)));
+        const border = (p![0] === q![0] && (p![0] === minX || p![0] === maxX)) || (p![1] === q![1] && (p![1] === minZ || p![1] === maxZ));
+        expect(uses, key).toBe(border ? 1 : 2);
+      }
+      expect(worst).toBeLessThanOrEqual(8);
+      // Thinning the far columns draws a third fewer triangles than the full grid.
+      expect(indices.length / 3).toBeLessThan(2 * (side - 1) * (side - 1) * 0.75);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
   it("picks a recentred Global grid where its water is, as a grid built there is picked", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);

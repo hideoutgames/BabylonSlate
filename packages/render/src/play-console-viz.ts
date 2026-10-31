@@ -3,7 +3,6 @@ import {
   Mesh,
   MeshBuilder,
   Quaternion,
-  StandardMaterial,
   Vector3,
   VertexData,
   type AbstractMesh,
@@ -17,6 +16,9 @@ import { NavMeshDebugOverlay, type NavDebugBlockerPose } from "./nav-debug-overl
 import { isPlayConsoleVizSkipMesh } from "./snapshot-apply";
 import { createPlayNavigationOverlay } from "./play-navigation-overlay";
 import { markPlayDebugOverlay } from "./play-debug-overlay";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+
+const COLLISION_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "helper", wireframe: true };
 
 const DEBUG_OVERLAY_PREFIX = "playConsoleViz:";
 const wireframeRestore = new WeakMap<Scene, Map<Material, boolean>>();
@@ -160,13 +162,10 @@ export function createPlayCollisionOverlay(scene: Scene): {
   // Runtime primitives are fresh objects per tick, so the slot keeps its source.
   const slots = new Map<string, { mesh: Mesh; shape: DebugColliderPrimitive }>();
   const seen = new Set<string>();
-  const material = new StandardMaterial(`${DEBUG_OVERLAY_PREFIX}collisionMat`, scene);
-  material.diffuseColor = new Color3(0.2, 0.95, 0.35);
-  material.disableLighting = true;
-  material.emissiveColor = material.diffuseColor.clone();
-  material.wireframe = true;
-  material.alpha = 0.5;
-  material.backFaceCulling = false;
+  // Half-transparent green edges from both sides; debug overlays draw without fog.
+  const drawCollider = (mesh: Mesh) => setUnlitMaterial(mesh, COLLISION_MATERIAL, {
+    texture: null, color: [0.2, 0.95, 0.35], alpha: 0.5, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+  });
   const lineColor = new Color3(0.2, 0.95, 0.35);
 
   const clear = () => {
@@ -188,7 +187,7 @@ export function createPlayCollisionOverlay(scene: Scene): {
         },
         scene,
       );
-      mesh.material = material;
+      drawCollider(mesh);
       markPlayDebugOverlay(mesh);
       return mesh;
     }
@@ -198,7 +197,7 @@ export function createPlayCollisionOverlay(scene: Scene): {
         { diameter: collider.radius * 2 },
         scene,
       );
-      mesh.material = material;
+      drawCollider(mesh);
       markPlayDebugOverlay(mesh);
       return mesh;
     }
@@ -254,7 +253,7 @@ export function createPlayCollisionOverlay(scene: Scene): {
         height: collider.height,
         tessellation: 24,
       }, scene);
-      mesh.material = material;
+      drawCollider(mesh);
       markPlayDebugOverlay(mesh);
       return mesh;
     }
@@ -264,7 +263,7 @@ export function createPlayCollisionOverlay(scene: Scene): {
       data.positions = collider.points.flatMap((point) => [point.x, point.y, point.z]);
       data.indices = collider.indices;
       data.applyToMesh(mesh);
-      mesh.material = material;
+      drawCollider(mesh);
       markPlayDebugOverlay(mesh);
       return mesh;
     }
@@ -281,7 +280,7 @@ export function createPlayCollisionOverlay(scene: Scene): {
         },
         scene,
       );
-      mesh.material = material;
+      drawCollider(mesh);
       markPlayDebugOverlay(mesh);
       return mesh;
     }
@@ -328,7 +327,6 @@ export function createPlayCollisionOverlay(scene: Scene): {
     },
     dispose() {
       clear();
-      material.dispose();
     },
   };
 }

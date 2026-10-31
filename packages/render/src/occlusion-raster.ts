@@ -173,6 +173,11 @@ export class OcclusionBuffer {
     this.occluderRight = this.occluderBottom = -1;
   }
 
+  /** Level 0: the view depth per texel, row 0 at the top (Infinity where nothing occludes), for debug views. */
+  depths(): { width: number; height: number; depth: Float32Array } {
+    return { width: this.width, height: this.height, depth: this.levels[0]! };
+  }
+
   /** The depth at texel (x, y) of level 0, for diagnostics and tests. */
   depthAt(x: number, y: number): number {
     return this.levels[0]![y * this.width + x]!;

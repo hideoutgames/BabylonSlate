@@ -8,7 +8,7 @@ const background = (pixels: number[], index: number) => pixels[index]! > 200 && 
 const ocean = (pixels: number[], index: number) => pixels[index + 2]! > pixels[index]! + 60 && pixels[index + 2]! > pixels[index + 1]! + 60;
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`Global Water and an Ocean meet without a gap from near and far, on ${backend}`, async ({ page }, testInfo) => {
+  test(`Global Water and an Ocean meet without a gap, and Global Water has no crack, from near and far, on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -23,17 +23,14 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await testInfo.attach(`water-seam-proof-${backend}`, { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
     for (const view of result.views) {
-      // The seam lies on the Ocean's outline: look within a few pixels of it, not at the far horizon.
-      const xs = view.corners.map((c) => c[0]!), ys = view.corners.map((c) => c[1]!);
-      const left = Math.min(...xs) - 6, right = Math.max(...xs) + 6, bottom = Math.min(...ys) - 6, top = Math.max(...ys) + 6;
       let gaps = 0, changed = 0, blue = 0;
       const where: string[] = [];
       for (let index = 0; index < view.first.length; index += 4) {
         const x = (index / 4) % result.width, y = Math.floor(index / 4 / result.width);
         if (ocean(view.first, index)) blue++;
         if (ocean(view.first, index) !== ocean(view.second, index)) changed++;
-        if (x < left || x > right || y < bottom || y > top) continue;
-        // Around the Ocean the view sees water only: any background is a gap between the bodies.
+        // Every view sees water only, out to the top of the frame: any background is a gap between the bodies or a
+        // crack in Global Water's far cells, where its columns converge on the vanishing point.
         if (background(view.first, index) || background(view.second, index)) {
           gaps++;
           if (where.length < 12) where.push(`${x},${y}`);

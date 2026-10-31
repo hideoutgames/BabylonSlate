@@ -46,9 +46,13 @@ const BUFFER_WIDTH = 256;
 const BUFFER_HEIGHT = 128;
 
 const shapes = new WeakMap<AbstractMesh, OccluderShape>();
-const enabledScenes = new WeakSet<Scene>();
-/** Each Scene's world view's last filtered frame (`sceneOcclusionDiagnostics`). */
+/** How each Scene's world views may cull (`allowSceneOcclusionCulling`); absent is "never". */
+const access = new WeakMap<Scene, OcclusionCullingAccess>();
+/** Each Scene's world view's last filtered frame (`sceneOcclusionDiagnostics`) and its occlusion (`sceneOcclusionBuffer`). */
 const sceneDiagnostics = new WeakMap<Scene, ViewOcclusionDiagnostics>();
+const sceneViews = new WeakMap<Scene, ViewOcclusion>();
+/** Scenes whose world view keeps testing against the buffer it last drew (`freezeocclusion`). */
+const frozenScenes = new WeakSet<Scene>();
 
 /** Makes `mesh` an occluder with `shape`; null makes it none. */
 export function registerOccluderShape(mesh: AbstractMesh, shape: OccluderShape | null): void {
@@ -95,17 +99,42 @@ export function primitiveOccluderShape(kind: string | null | undefined, min: rea
 }
 
 /**
- * Lets `scene`'s world views cull by occlusion while its Occlusion Culling quality setting is on (create-engine's Play
- * and player Scenes); a Scene never allowed never culls, whatever the setting.
+ * How a Scene's world views cull by occlusion: "setting" while its Occlusion Culling quality setting is on (Play and the
+ * player), "always" (the editor viewport's Occlusion Culling toggle), or "never" (the default).
  */
-export function allowSceneOcclusionCulling(scene: Scene, allowed: boolean): void {
-  if (allowed) enabledScenes.add(scene);
-  else enabledScenes.delete(scene);
+export type OcclusionCullingAccess = "setting" | "always" | "never";
+
+export function allowSceneOcclusionCulling(scene: Scene, mode: OcclusionCullingAccess): void {
+  if (mode === "never") access.delete(scene);
+  else access.set(scene, mode);
 }
 
-/** Whether `scene`'s world views cull by occlusion now: allowed, and the setting on. */
+/** Whether `scene`'s world views cull by occlusion now. */
 export function sceneOcclusionCulling(scene: Scene): boolean {
-  return enabledScenes.has(scene) && sceneRenderingSettings(scene).occlusionCulling;
+  const mode = access.get(scene);
+  return mode === "always" || (mode === "setting" && sceneRenderingSettings(scene).occlusionCulling);
+}
+
+/**
+ * Freezes `scene`'s occlusion: its world view stops drawing occluders and tests every frame's meshes against the buffer
+ * and view it last drew, so moving the camera shows what that view hid (`freezeocclusion`).
+ */
+export function setSceneOcclusionFrozen(scene: Scene, frozen: boolean): void {
+  if (frozen) frozenScenes.add(scene);
+  else frozenScenes.delete(scene);
+}
+
+export function sceneOcclusionFrozen(scene: Scene): boolean {
+  return frozenScenes.has(scene);
+}
+
+/**
+ * The occlusion `scene`'s world view last drew, for the `showocclusion` overlay: per texel of its `width` × `height`
+ * buffer, row 0 at the top, the view depth occluders hold there (Infinity where none); null while it does not cull.
+ */
+export function sceneOcclusionBuffer(scene: Scene): { width: number; height: number; depth: Float32Array } | null {
+  const view = sceneViews.get(scene);
+  return sceneOcclusionCulling(scene) && view ? view.depthBuffer() : null;
 }
 
 /** The last frame `scene`'s world view culled by occlusion; null while it does not. */
@@ -160,6 +189,13 @@ export class ViewOcclusion {
   readonly diagnostics: ViewOcclusionDiagnostics = { tested: 0, culled: 0, occluders: 0, triangles: 0, ms: 0 };
   /** The meshes the last filtered frame left out. */
   readonly culled = new Set<AbstractMesh>();
+  /** The occluders the buffer holds, since the frame that drew them; null when it holds none. */
+  private drawn: { occluders: number; triangles: number } | null = null;
+
+  /** The buffer's view depths (`sceneOcclusionBuffer`). */
+  depthBuffer(): { width: number; height: number; depth: Float32Array } {
+    return this.buffer.depths();
+  }
 
   /**
    * `meshes` without those hidden behind the occluders among them, as seen by `camera` (its view and projection as
@@ -174,9 +210,17 @@ export class ViewOcclusion {
     const scene = camera.getScene();
     if (!sceneOcclusionCulling(scene) || camera.mode !== Camera.PERSPECTIVE_CAMERA || scene.skipFrustumClipping) return meshes;
     sceneDiagnostics.set(scene, diagnostics);
+    sceneViews.set(scene, this);
     const start = performance.now();
     try {
-      if (!this.drawOccluders(meshes, camera)) return meshes;
+      if (frozenScenes.has(scene) && this.drawn) {
+        diagnostics.occluders = this.drawn.occluders;
+        diagnostics.triangles = this.drawn.triangles;
+      } else {
+        this.drawn = null;
+        if (!this.drawOccluders(meshes, camera)) return meshes;
+        this.drawn = { occluders: diagnostics.occluders, triangles: diagnostics.triangles };
+      }
       return this.cull(meshes, scene.getEngine(), renderPassId);
     } finally {
       diagnostics.ms = performance.now() - start;

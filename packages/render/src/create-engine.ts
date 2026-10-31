@@ -1,5 +1,5 @@
 import { setSceneInstancing } from "./instance-pool";
-import { allowSceneOcclusionCulling } from "./view-occlusion";
+import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";
 import { applyGamepadRumble } from "./gamepad-rumble";
 import { applyDeviceVibration } from "./device-vibration";
 import { drainEngineAfterRelease } from "./idle-engine-drain";
@@ -481,7 +481,7 @@ function initializeEngine(
   // Only a world view (the editor's, Play's, the player's) marches Screen-Space Shadows; previews keep them off.
   if (!presentRtt && !options.previewLighting) allowSceneScreenShadows(scene, () => !spatialEffectsUnsupported(scene));
   // Play's and the player's world view cull by occlusion while the Occlusion Culling setting is on; the editor's does not.
-  if (!presentRtt && !options.previewLighting && options.playMode) allowSceneOcclusionCulling(scene, true);
+  if (!presentRtt && !options.previewLighting && options.playMode) allowSceneOcclusionCulling(scene, "setting");
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so a
@@ -1692,6 +1692,8 @@ function initializeEngine(
     });
   }
   let lastDrawCalls = 0;
+  /** `showocclusion`: hosts draw the world view's occlusion buffer over the view. */
+  let occlusionOverlay = false;
   let lastRenderCpuMs = 0;
   // Dynamic scaling input: whether this view presented the current and previous
   // engine frames (non-loading), when the last presentation happened, and the
@@ -2859,6 +2861,10 @@ function initializeEngine(
       if (command.type === "setScalability" && options.playMode) runtimeScalability?.enqueue(command.transaction);
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
+      if (command.type === "setOcclusionDebug") {
+        if (command.show !== undefined) occlusionOverlay = command.show;
+        if (command.freeze !== undefined) setSceneOcclusionFrozen(scene, command.freeze);
+      }
       if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
       if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
       if (command.type === "setGpuBusyProbeDebug") {
@@ -2949,6 +2955,7 @@ function initializeEngine(
     drawCalls: () => lastDrawCalls,
     renderDiagnostics,
     lightsDebugEnabled: () => sceneRenderingSettings(scene).lightsDebug,
+    occlusionOverlay: () => occlusionOverlay ? { buffer: sceneOcclusionBuffer(scene) } : null,
     observePerformance: (onFrame) => {
       if (frameReportFeed.active) throw new Error("Stop frame capture before recording performance.");
       return performanceFeed.subscribe(onFrame);
