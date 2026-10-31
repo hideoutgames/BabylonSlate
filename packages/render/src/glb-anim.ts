@@ -1,4 +1,3 @@
-import { registerModelOccluder } from "./view-occlusion";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import "./gltf-loader";
 import { Animation } from "@babylonjs/core/Animations/animation";
@@ -28,6 +27,7 @@ import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
 import { accountedGeometryBytes } from "./perf-ceilings";
 import { VisualBundle } from "./visual-bundle";
+import { registerModelOccluder } from "./view-occlusion";
 import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
