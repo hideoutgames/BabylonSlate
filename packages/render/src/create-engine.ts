@@ -60,7 +60,7 @@ import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from ".
 import { nativePreparationForEngine } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineOptions, EngineView, Material } from "@babylonjs/core";
-import { resolveRenderingQuality } from "@haptic/core";
+import { qualitySettingsFingerprint, resolveRenderingQuality } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
@@ -1073,29 +1073,19 @@ function initializeEngine(
   /** `RenderDiagnostics.settings`: what the Feature Test Check's Breakdown steps change, as effective now. */
   const breakdownSettings = (): Record<string, string> => {
     const quality = resolveSceneRenderingQuality(scene);
-    const water = sceneWaterQualityDeviceClamp(scene).quality;
-    const { shadows, postprocessing: post } = quality;
     return {
-      shadows: shadows.enabled ? `${shadows.profile} ${shadows.mapSize}` : "off",
-      "water.refraction": String(water.refraction),
-      "water.reflections": water.reflections,
-      "water.shadingDetail": water.shadingDetail,
-      "post.scale": String(post.resolutionScale),
-      "post.ambientOcclusion": String(post.ambientOcclusion),
-      "post.reflections": String(post.reflections),
-      "post.volumetricLighting": String(post.volumetricLighting),
-      "post.antiAliasing": post.antiAliasing,
+      ...qualitySettingsFingerprint({ ...quality, water: sceneWaterQualityDeviceClamp(scene).quality }),
       "post.samples": String(sceneMultisampleCount(scene)),
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
-      "resolution.scale": String(quality.resolution.scale),
-      "geometry.occlusion": String(quality.geometry.occlusionCulling),
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
       "presentation.preserve": engine.isWebGPU ? "n/a"
         : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
     };
   };
   const setPostProcessingEnabled = (enabled: boolean) => {
+    // Unchanged: no stack rebuild (the Breakdown's add-one base turns it off again after every step).
+    if (postProcessingEnabled === enabled) return;
     postProcessingEnabled = enabled;
     setSceneEffectsEnabled(scene, enabled);
     rebuildPostProcessStack();

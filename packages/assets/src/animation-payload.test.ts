@@ -20,8 +20,19 @@ describe("normalizeAnimationPayload", () => {
       modelGuid: "model-1",
       skeletonGuid: "skel-1",
       durationMs: 1250.4,
+      clipDurationMs: 1250.4,
       sourceAnimationGuid: "src-1",
     });
+  });
+
+  it("keeps an authored Duration apart from the clip's length", () => {
+    const authored = normalizeAnimationPayload({ clipName: "Walk", durationMs: 1500, clipDurationMs: 1000 });
+    expect([authored.durationMs, authored.clipDurationMs]).toEqual([1500, 1000]);
+    const clipOnly = normalizeAnimationPayload({ clipName: "Walk", clipDurationMs: 1000 });
+    expect([clipOnly.durationMs, clipOnly.clipDurationMs]).toEqual([1000, 1000]);
+    // An invalid clip length falls back to the stored Duration, as for assets saved before it existed.
+    const invalidClip = normalizeAnimationPayload({ clipName: "Walk", durationMs: 1250, clipDurationMs: -1 });
+    expect([invalidClip.durationMs, invalidClip.clipDurationMs]).toEqual([1250, 1250]);
   });
 
   it("coerces missing optional guids to null and drops non-positive durations", () => {

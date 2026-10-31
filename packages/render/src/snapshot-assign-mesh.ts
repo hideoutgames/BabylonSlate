@@ -211,7 +211,10 @@ function beginAssignMesh(
   const retireRemovedMaterials = () => retireRemovedComponentMaterials(binding, command.slotId, componentIds);
   const meshKind = command.meshKind ?? null;
   binding.meshKinds.set(command.slotId, meshKind);
-  binding.meshSorting.set(command.slotId, { actorGuid: command.actorGuid, sortingLayer: command.sortingLayer, orderInLayer: command.orderInLayer });
+  binding.meshSorting.set(command.slotId, {
+    actorGuid: command.actorGuid, sortingLayer: command.sortingLayer, orderInLayer: command.orderInLayer,
+    castShadows: command.castShadows, receiveShadows: command.receiveShadows,
+  });
   binding.meshAssetGuids.set(command.slotId, command.meshAssetGuid);
   if (command.parts && command.parts.length > 0) {
     binding.meshParts.set(command.slotId, command.parts);

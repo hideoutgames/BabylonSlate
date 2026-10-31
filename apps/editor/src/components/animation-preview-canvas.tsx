@@ -29,6 +29,7 @@ export function AnimationPreviewCanvas({
   skeletonKind = null,
   showBones = false,
   sourceClipBytes = null,
+  speedRatio = 1,
 }: {
   sourceBytes: Uint8Array;
   /** The Model's slots, drawn with their Materials. */
@@ -37,6 +38,8 @@ export function AnimationPreviewCanvas({
   skeletonKind?: SkeletonKind | null;
   showBones?: boolean;
   sourceClipBytes?: Uint8Array | null;
+  /** Playback rate of the clip; the Animation's Duration sets it without reloading the preview. */
+  speedRatio?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
@@ -49,6 +52,7 @@ export function AnimationPreviewCanvas({
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
   const playingRef = useRef<AnimationGroup | null>(null);
+  const speedRatioRef = useRef(speedRatio);
   const { release: releaseMaterials } = useModelSlotMaterials({
     hostRef,
     engine,
@@ -67,6 +71,11 @@ export function AnimationPreviewCanvas({
   useEffect(() => {
     setEngine(play?.ensureSharedEngine() ?? null);
   }, [play]);
+
+  useEffect(() => {
+    speedRatioRef.current = speedRatio;
+    if (playingRef.current) playingRef.current.speedRatio = speedRatio;
+  }, [speedRatio]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -121,6 +130,7 @@ export function AnimationPreviewCanvas({
         } else {
           group = loaded.animationGroups.find((entry) => entry.name === clipName) ?? null;
         }
+        if (group) group.speedRatio = speedRatioRef.current;
         group?.play(true);
         group?.onAnimationGroupEndObservable.add(() => {
           if (!cancelled) setClip(STOPPED_CLIP);

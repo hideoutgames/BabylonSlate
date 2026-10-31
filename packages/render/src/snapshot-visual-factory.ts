@@ -112,6 +112,9 @@ export function applyPlayVisualSorting(root: Mesh, slotId: number, binding: Snap
   } else if (parts?.[0]) {
     shadows.setParticipation(root, parts[0]);
     applyOccluderProperty(root, parts[0].occluder);
+  } else if (primary?.castShadows !== undefined) {
+    // The optimized actor mesh draws its one component: an unlit visual's class default casts none.
+    shadows.setParticipation(root, { castShadows: primary.castShadows, receiveShadows: primary.receiveShadows });
   }
   const layers = binding.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const actorId = primary?.actorGuid ?? `actor-${slotId}`;

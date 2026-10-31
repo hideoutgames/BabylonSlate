@@ -24,6 +24,7 @@ import {
   genericRows,
   rowId,
   sliderRow,
+  unlitCastShadowsRow,
   type ComponentPropertyContext,
   type ComponentPropertyUpdate,
 } from "./component-property-row-helpers";
@@ -82,6 +83,7 @@ export function text3DPropertyRows(
       context,
       "Pick Font",
     ),
+    unlitCastShadowsRow(actorId, component, update),
   ];
   if (!hasFacetype) {
     rows.push({
@@ -98,7 +100,7 @@ export function text3DPropertyRows(
       actorId,
       component,
       update,
-      new Set(["text", "size", "color", "fontAssetGuid", "alignment", "editorOnly"]),
+      new Set(["text", "size", "color", "fontAssetGuid", "alignment", "editorOnly", "castShadows"]),
     ),
   );
   return rows;
