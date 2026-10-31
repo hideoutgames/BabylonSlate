@@ -12,7 +12,7 @@
  * `MIRROR_RENDERS_PER_FRAME` surfaces that the view sees from their reflective side, never-drawn first, then nearest;
  * the others keep their last image. A surface whose reflection is current is not drawn again: the view's camera, the
  * surface and its target are as they were drawn, and nothing the pass draws has changed (`ReflectedContent`: the culled
- * meshes, their placement, geometry and materials, and the scene's lights, shadow draws, environment, fog and render
+ * meshes, their placement, geometry and materials, and the scene's lights, shadow passes that change a shadow it shows, environment, fog and render
  * settings). A pass culls with the mirrored frustum cropped to the surface's footprint on screen (where its Material can
  * sample the reflection), so content no reflection can show is neither drawn nor followed. Content that changes on its own (skinning, time-driven materials, textures updated in place) keeps its
  * surface due on every render while it is reflected, within the same budget. A target allocates on a surface's first draw and lives with the surface (resized
