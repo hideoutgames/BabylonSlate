@@ -148,6 +148,7 @@ export {
   type RangeValue,
   type Vector3Value,
 } from "./property-grid";
+export { LinkedAxesContext, type LinkedAxesSetting } from "./linked-axes";
 export {
   ModuleCard,
   ModuleStack,

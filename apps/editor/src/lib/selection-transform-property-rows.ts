@@ -49,10 +49,15 @@ export function selectionTransformPropertyRows(
         };
       });
     };
-    const value: [number, number, number] = [0, 0, 0];
-    axes.forEach((axis, index) => {
-      value[index] = primaryValues[axis]!;
-    });
+    const shownValues = (values: [number, number, number]) => {
+      const shown: [number, number, number] = [0, 0, 0];
+      axes.forEach((axis, index) => {
+        shown[index] = values[axis]!;
+      });
+      return shown;
+    };
+    const value = shownValues(primaryValues);
+    const actorIndex = new Map(actors.map((actor, index) => [actor.id, index]));
     rows.push({
       kind: "vector3",
       id: `actor-${property}`,
@@ -70,6 +75,23 @@ export function selectionTransformPropertyRows(
         values[axis] = next;
         apply(values, axis);
       },
+      // Linked Scale edits scale each actor by its own factor.
+      ...(property === "scale"
+        ? {
+            linkable: true,
+            itemValues: actors.map((actor) => shownValues(valuesFor(actor))),
+            onItemValuesChange: (itemValues: Vector3Value[]) =>
+              updateSelected((actor) => {
+                const shown = itemValues[actorIndex.get(actor.id) ?? -1];
+                if (!shown) return actor;
+                const next = valuesFor(actor);
+                axes.forEach((axis, index) => {
+                  next[axis] = shown[index]!;
+                });
+                return { ...actor, transform: { ...actor.transform, scale: next } };
+              }),
+          }
+        : {}),
     });
     if (planar && property === "position") {
       rows.push({

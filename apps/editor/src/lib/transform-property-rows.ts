@@ -80,6 +80,7 @@ export function spatialTransformPropertyRows(
       value: transform.scale,
       defaultValue: [...reset.scale] as [number, number, number],
       axes: twoD ? ["X", "Y"] : ["X", "Y", "Z"],
+      linkable: true,
       onChange: (scale) =>
         onUpdateTransform({
           ...transform,

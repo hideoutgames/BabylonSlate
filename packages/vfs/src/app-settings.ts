@@ -210,6 +210,8 @@ export const engineSettingsSchema = z.object({
   viewportSnapRotateDeg: z.number().finite().positive().default(15),
   viewportSnapTranslate: z.number().finite().positive().default(1),
   viewportSnapScale: z.number().finite().positive().default(0.25),
+  /** Inspector Scale link toggle: an axis edit scales the others proportionally. */
+  scaleAxesLinked: z.boolean().default(false),
   postProcessingEnabled: z.boolean().default(true),
   editorTextureLodEnabled: z.boolean().default(false),
   editorTextureLodQuality: z.preprocess((value) => {

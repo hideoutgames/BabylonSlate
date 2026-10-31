@@ -312,6 +312,7 @@ function colliderPropertyRows(
       kind: "vector3",
       label: "Scale",
       value: collider.scale,
+      linkable: true,
       onChange: (value) =>
         commit({ ...collider, scale: [value[0], value[1], value[2]] }, "scale"),
     },

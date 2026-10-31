@@ -404,6 +404,22 @@ describe("shared actor Details", () => {
     ]);
   });
 
+  it("scales each selected actor by its own factor while 2D Scale is linked, keeping hidden Z", () => {
+    scene().viewportMode = "2d";
+    scene().actors[1]!.transform.scale = [4, 2, 6];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Link Scale Axes" }));
+    fireEvent.change(screen.getByTestId("property-actor-scale-x"), {
+      target: { value: "2" },
+    });
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(next.actors.map((actor) => actor.transform.scale)).toEqual([
+      [2, 4, 3],
+      [2, 1, 6],
+      [1, 1, 1],
+    ]);
+  });
+
   it("treats shared 2D scale as default when only hidden Z differs", () => {
     scene().viewportMode = "2d";
     scene().actors[0]!.transform.scale = [1, 1, 3];
