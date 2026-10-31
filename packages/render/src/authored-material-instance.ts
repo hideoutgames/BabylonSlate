@@ -1,9 +1,10 @@
-import { Mesh, type Material } from "@babylonjs/core";
+import { Mesh, type AbstractMesh, type Material } from "@babylonjs/core";
 import type { SerializedComponent } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { ownedMaterialPreparation } from "./material-library";
 import { applyMaterialBounds } from "./material-bounds";
-import { setActorMeshMaterial } from "./pooled-visuals";
+import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
+import { everyInstanceParameter, setMeshInstanceParameters } from "./instance-parameters";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { isColliderVisualTree } from "./collider-visual";
 
@@ -49,6 +50,22 @@ function release(owner: Owner): void {
   owner.preparation = undefined;
 }
 
+/** The meshes of `visual` whose Material its saved instance owns. */
+function instanceTargets(visual: Mesh): Mesh[] {
+  return [visual, ...visual.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh)]
+    .filter((mesh) => !mesh.isBlocked && !isColliderVisualTree(mesh) &&
+      // Attached component/actor roots have independent material ownership.
+      (mesh === visual || !mesh.name.startsWith("editorActor:") || mesh.name.startsWith(`${visual.name}:`)));
+}
+
+/** The meshes carrying a visual's per-instance values, which draw the Material's again once they clear. */
+const instanceValueHolders = new WeakMap<Mesh, AbstractMesh[]>();
+
+function clearInstanceValues(visual: Mesh): void {
+  for (const holder of instanceValueHolders.get(visual) ?? []) if (!holder.isDisposed()) setMeshInstanceParameters(holder, holder.material);
+  instanceValueHolders.delete(visual);
+}
+
 /**
  * Scene-owned persisted overrides. A replacement retains the last valid material
  * until its exact compiler/texture admission succeeds; each visual owns its lease.
@@ -62,6 +79,7 @@ export function applyAuthoredMaterialInstance(
   let owner = owners.get(visual);
   const instance = component.materialInstance;
   const guid = component.properties.materialGuid;
+  clearInstanceValues(visual);
   if (!instance || typeof guid !== "string" || instance.materialGuid !== guid || !Object.keys(instance.parameters).length) {
     if (owner) { release(owner); owners.delete(visual); }
     return;
@@ -72,6 +90,17 @@ export function applyAuthoredMaterialInstance(
   const releaseInstance = assets.releaseMaterialInstance;
   const parameters = new Map(Object.entries(instance.parameters).sort(([a], [b]) => a.localeCompare(b)));
   const signature = JSON.stringify([guid, options.unlit === true, [...parameters]]);
+  // Values only of per-instance parameters keep the shared Material, which the visual already draws: each mesh it
+  // draws carries them in its instance buffer, so it still draws in its group.
+  const shared = options.apply ? null : resolve(guid, { scene: visual.getScene(), unlit: options.unlit });
+  if (shared && everyInstanceParameter(shared, parameters.keys()) &&
+    [...parameters].every(([name, value]) => assets.validateMaterialParameter?.(guid, name, value) !== false)) {
+    if (owner) { release(owner); owners.delete(visual); }
+    const holders = instanceTargets(visual).map((target) => pooledLeafOf(target) ?? target).filter((mesh) => mesh.getTotalVertices() > 0);
+    for (const holder of holders) setMeshInstanceParameters(holder, shared, parameters);
+    instanceValueHolders.set(visual, holders);
+    return;
+  }
   if (!owner) {
     owner = { originals: new Map(), apply: () => {} };
     owners.set(visual, owner);
@@ -80,10 +109,7 @@ export function applyAuthoredMaterialInstance(
   }
   const owned = owner;
   owned.onPublished = options.onPublished;
-  const targets = [visual, ...visual.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh)]
-    .filter((mesh) => !mesh.isBlocked && !isColliderVisualTree(mesh) &&
-      // Attached component/actor roots have independent material ownership.
-      (mesh === visual || !mesh.name.startsWith("editorActor:") || mesh.name.startsWith(`${visual.name}:`)));
+  const targets = instanceTargets(visual);
   const live = new Set(targets);
   for (const target of owned.originals.keys()) if (!live.has(target)) owned.originals.delete(target);
   for (const target of targets) {

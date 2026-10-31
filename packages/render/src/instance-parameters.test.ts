@@ -1,18 +1,22 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Color4, InputBlock, MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { instanceParameterAttribute, instanceParameterOf, prepareInstanceParameters } from "./instance-parameters";
+import { everyInstanceParameter, instanceParameterAttribute, instanceParameterOf, prepareInstanceParameters, setMeshInstanceParameters } from "./instance-parameters";
+import { sceneInstancePool } from "./instance-pool";
 import { compileMaterialPlan } from "./material-compiler";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()?.(); });
 
 /** A Material whose base colour is the Color parameter Tint, and whose Roughness is the Float parameter Grit. */
-function tinted(tintPerInstance: boolean, gritPerInstance = false) {
-  const engine = new NullEngine();
-  engine.getCaps().instancedArrays = true;
-  const scene = new Scene(engine);
-  disposers.push(() => { scene.dispose(); engine.dispose(); });
+function tinted(tintPerInstance: boolean, gritPerInstance = false, into?: Scene) {
+  const scene = into ?? (() => {
+    const engine = new NullEngine();
+    engine.getCaps().instancedArrays = true;
+    const created = new Scene(engine);
+    disposers.push(() => { created.dispose(); engine.dispose(); });
+    return created;
+  })();
   const doc = createDefaultMaterialDocument("tinted");
   const tint = doc.nodes.find((node) => node.id === "baseColor")!;
   tint.type = "param.color";
@@ -66,11 +70,40 @@ describe("per-instance Material parameters", () => {
     const [same, own] = [box.createInstance("same"), box.createInstance("own")];
     prepareInstanceParameters(box, material);
     const tint = instanceParameterOf(material, "Tint")!.attribute;
-    own.instancedBuffers[tint] = linear(0, 1, 0);
+    setMeshInstanceParameters(own, material, new Map([["Tint", { kind: "color", value: [0, 1, 0, 1] }]]));
     expect(compiled.setParameter("Tint", { kind: "color", value: [0.2, 0.4, 0.6, 1] })).toBe(true);
     for (const holder of [box, same]) expect((holder.instancedBuffers[tint] as Color4).equalsWithEpsilon(linear(0.2, 0.4, 0.6))).toBe(true);
     expect((own.instancedBuffers[tint] as Color4).equalsWithEpsilon(linear(0, 1, 0))).toBe(true);
     expect(compiled.getParameter("Tint")).toEqual({ kind: "color", value: [0.2, 0.4, 0.6, 1] });
+  });
+
+  it("keeps a member's own value through a move to another group, and writes the next Material's over another's", () => {
+    const { scene, material } = tinted(true);
+    // Its first per-instance attribute is the Float Grit: the same attribute name as Tint's.
+    const gritty = tinted(false, true, scene).material;
+    const pool = sceneInstancePool(scene);
+    const geometry = { key: "box", build: (_scene: Scene, name: string) => MeshBuilder.CreateBox(name, {}, scene) };
+    const key = (drawn: typeof material, receiveShadows = true) => ({ geometry, material: drawn, receiveShadows, renderingGroupId: 1 });
+    const [mine, plain] = [pool.join(key(material), "mine"), pool.join(key(material), "plain")];
+    material.isReadyForSubMesh(mine.sourceMesh, mine.sourceMesh.subMeshes[0]!, true);
+    const attribute = instanceParameterOf(material, "Tint")!.attribute;
+    expect(instanceParameterOf(gritty, "Grit")!.attribute).toBe(attribute);
+    setMeshInstanceParameters(mine, material, new Map([["Tint", { kind: "color", value: [0, 1, 0, 1] }]]));
+    // Another group of the same Material (a receive change), and one of the gritty Material, each prepared first.
+    const unreceived = pool.join(key(material, false), "unreceived");
+    material.isReadyForSubMesh(unreceived.sourceMesh, unreceived.sourceMesh.subMeshes[0]!, true);
+    const rough = pool.join(key(gritty), "rough");
+    gritty.isReadyForSubMesh(rough.sourceMesh, rough.sourceMesh.subMeshes[0]!, true);
+    pool.rekey(mine, key(material, false));
+    pool.rekey(plain, key(gritty));
+    expect((mine.instancedBuffers[attribute] as Color4).equalsWithEpsilon(linear(0, 1, 0))).toBe(true);
+    expect(plain.instancedBuffers[attribute]).toBe(0.3);
+  });
+
+  it("names per-instance parameters as such only when every one is", () => {
+    const { material } = tinted(true);
+    expect([everyInstanceParameter(material, ["Tint"]), everyInstanceParameter(material, ["Tint", "Grit"]), everyInstanceParameter(material, [])])
+      .toEqual([true, false, false]);
   });
 
   it("refuses a value of the wrong kind for a per-instance parameter", () => {

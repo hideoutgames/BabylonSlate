@@ -1,6 +1,7 @@
-import { setActorMeshMaterial } from "./pooled-visuals";
+import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
+import { everyInstanceParameter, setMeshInstanceParameters } from "./instance-parameters";
 import type { Material, Mesh, Scene } from "@babylonjs/core";
-import type { CommandMessage } from "@haptic/bridge";
+import type { CommandMessage, MaterialParameterValue } from "@haptic/bridge";
 import { applyMaterialBounds } from "./material-bounds";
 import { restoreAlbedoMaterial } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
@@ -152,7 +153,7 @@ export function applyLoadedModelMaterials(
   const payload = binding.modelPayloads?.get(assetGuid);
   if (payload) {
     applyModelMaterialSlots(root, payload.materialSlots, (guid) =>
-      resolveAssignedMaterial(binding, slotId, root, guid),
+      resolveAssignedMaterial(binding, slotId, root, guid).material,
     );
   }
   applyMaterialToActorMeshes(binding, slotId, root);
@@ -179,30 +180,42 @@ export function wantsOverlayUnlitMaterial(
   }
 }
 
-function resolveAssignedMaterial(
-  binding: SnapshotSceneBinding,
-  slotId: number,
-  root: Mesh,
-  guid: string,
-  componentId: string | null = componentIdForPlayMesh(root, slotId, binding),
-): Material | null {
-  const host = root.getScene();
-  const overlay = wantsOverlayUnlitMaterial(binding, slotId);
+/** The parameter values recorded for `slotId`'s component (or its actor) drawn with `guid`, and their instance key. */
+function assignedParameters(binding: SnapshotSceneBinding, slotId: number, componentId: string | null, guid: string) {
   let instanceKey = materialInstanceKey(slotId, componentId);
   let parameters = binding.materialParameters.get(instanceKey);
   if (!parameters && !binding.componentMaterialGuids.has(instanceKey)) {
     instanceKey = materialInstanceKey(slotId);
     parameters = binding.materialParameters.get(instanceKey);
   }
-  return (
-    binding.resolveMaterial?.(guid, {
-      scene: host,
-      ...(overlay ? { unlit: true } : {}),
-      ...(parameters?.materialAssetGuid === guid
-        ? { instanceKey, parameters: parameters.values }
-        : {}),
-    }) ?? null
-  );
+  return { instanceKey, values: parameters?.materialAssetGuid === guid ? parameters.values : undefined };
+}
+
+/**
+ * The Material `root`'s component draws with `guid`, and the values its meshes carry of their own: values only of
+ * per-instance parameters keep the shared Material and go to each mesh's instance buffer, so the actor still draws
+ * in its group; any other value gives it a Material of its own, as before.
+ */
+function resolveAssignedMaterial(
+  binding: SnapshotSceneBinding,
+  slotId: number,
+  root: Mesh,
+  guid: string,
+  componentId: string | null = componentIdForPlayMesh(root, slotId, binding),
+): { material: Material | null; instanceValues?: ReadonlyMap<string, MaterialParameterValue> } {
+  const host = root.getScene();
+  const overlay = wantsOverlayUnlitMaterial(binding, slotId);
+  const { instanceKey, values } = assignedParameters(binding, slotId, componentId, guid);
+  const resolve = (instance?: boolean) => binding.resolveMaterial?.(guid, {
+    scene: host,
+    ...(overlay ? { unlit: true } : {}),
+    ...(instance && values ? { instanceKey, parameters: values } : {}),
+  }) ?? null;
+  if (values?.size) {
+    const shared = resolve();
+    if (shared && everyInstanceParameter(shared, values.keys())) return { material: shared, instanceValues: values };
+  }
+  return { material: resolve(true) };
 }
 
 /**
@@ -232,7 +245,7 @@ export function applyMaterialToActorMeshes(
       continue;
     }
     if (!guid) continue;
-    const material = resolveAssignedMaterial(
+    const { material, instanceValues } = resolveAssignedMaterial(
       binding,
       slotId,
       root,
@@ -244,6 +257,9 @@ export function applyMaterialToActorMeshes(
       const own = setActorMeshMaterial(target, material);
       applyMaterialBounds(target);
       if (own) applyMaterialBounds(own);
+      // What draws carries the component's per-instance values, or the Material's once they clear.
+      if (target.getTotalVertices() > 0 || own || pooledLeafOf(target))
+        setMeshInstanceParameters(own ?? pooledLeafOf(target) ?? target, material, instanceValues);
     }
   }
 }

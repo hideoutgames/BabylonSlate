@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { InstancedMesh, Mesh, StandardMaterial, type Scene } from "@babylonjs/core";
+import { Color4, InstancedMesh, Mesh, StandardMaterial, type Scene } from "@babylonjs/core";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { instanceParameterOf } from "./instance-parameters";
+import { compileMaterialPlan } from "./material-compiler";
 import { createActor, createDefaultScene, createMeshComponent, type SerializedActor, type SerializedScene } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
@@ -106,6 +109,41 @@ describe("editor primitives drawn through the instance pool", () => {
     sync.apply(sceneWith([crate("wall"), crate("mover", undefined, 2)]));
     const statics = new Set(["wall"]);
     expect([isEditorStaticMesh(leafOf(sync, "wall"), statics), isEditorStaticMesh(leafOf(sync, "mover"), statics)]).toEqual([true, false]);
+  });
+
+  it("draws a crate's saved per-instance Tint from its leaf, still in its group, and the Material's once cleared", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    handle.engine.getCaps().instancedArrays = true;
+    setSceneInstancing(handle.scene, true);
+    const doc = createDefaultMaterialDocument("tinted");
+    const tint = doc.nodes.find((node) => node.id === "baseColor")!;
+    tint.type = "param.color";
+    tint.properties = { name: "Tint", value: [0.8, 0.8, 0.8, 1], perInstance: true };
+    doc.edges.find((edge) => edge.sourceNodeId === "baseColor")!.sourcePinId = "rgb";
+    const lowered = lowerMaterialDocument(doc);
+    if (!lowered.ok) throw new Error("did not lower");
+    const compiled = compileMaterialPlan(lowered.plan, { scene: handle.scene, name: "tinted" });
+    if (!compiled.ok) throw new Error("did not compile");
+    const resolved: Array<string | undefined> = [];
+    const sync = new EditorSceneSync(handle.scene, undefined, {
+      resolveMaterial: (guid, options) => { resolved.push(options?.instanceKey); return guid === "tinted" ? compiled.material : null; },
+      releaseMaterialInstance: () => {},
+    });
+    const red = crate("red", "tinted");
+    red.components[0]!.materialInstance = { materialGuid: "tinted", parameters: { Tint: { kind: "color", value: [1, 0, 0, 1] } } };
+    sync.apply(sceneWith([red, crate("plain", "tinted", 2)]));
+    const attribute = instanceParameterOf(compiled.material, "Tint")!.attribute;
+    const tintOf = (id: string) => leafOf(sync, id).instancedBuffers[attribute] as Color4;
+    expect({
+      shared: leafOf(sync, "red").sourceMesh === leafOf(sync, "plain").sourceMesh,
+      privateMaterials: resolved.filter(Boolean).length,
+      red: tintOf("red").equalsWithEpsilon(new Color4(1, 0, 0, 1).toLinearSpace()),
+      plain: tintOf("plain").equalsWithEpsilon(new Color4(0.8, 0.8, 0.8, 1).toLinearSpace()),
+    }).toEqual({ shared: true, privateMaterials: 0, red: true, plain: true });
+    delete red.components[0]!.materialInstance;
+    sync.apply(sceneWith([red, crate("plain", "tinted", 2)]));
+    expect(tintOf("red").equalsWithEpsilon(new Color4(0.8, 0.8, 0.8, 1).toLinearSpace())).toBe(true);
   });
 
   it("bakes a pooled crate's triangles into the nav mesh", () => {

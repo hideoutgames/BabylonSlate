@@ -3,6 +3,7 @@ import type { CommandMessage, MaterialParameterValue, RuntimeMaterialEditPrepara
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { applyMaterialBounds } from "./material-bounds";
+import { everyInstanceParameter } from "./instance-parameters";
 import { applyMaterialToActorMeshes, componentIdForPlayMesh, meshForPlayComponent, wantsOverlayUnlitMaterial,
   type SnapshotSceneBinding } from "./snapshot-apply";
 
@@ -12,6 +13,8 @@ type Stage = {
   request: RuntimeMaterialPreparationRequest; key: string; targetKey: string;
   root: Mesh; component: Mesh; targets: Mesh[]; before: string; unlit: boolean;
   values: Map<string, MaterialParameterValue>; material?: NodeMaterial;
+  /** The values are all of per-instance parameters: `material` is the shared one, which no adoption owns. */
+  shared?: boolean;
   ready: boolean;
 };
 
@@ -52,7 +55,12 @@ export class RuntimeMaterialEditOwner {
     this.stages.set(request.editToken, stage);
     try {
       if (request.materialGuid) {
-        const material = binding.resolveMaterial?.(request.materialGuid, { scene: component.getScene(), unlit: stage.unlit, instanceKey: stage.key, parameters: values });
+        // Values only of per-instance parameters keep the shared Material: the actor's meshes carry them
+        // (`applyMaterialToActorMeshes`), so it still draws in its group.
+        const shared = values.size ? binding.resolveMaterial?.(request.materialGuid, { scene: component.getScene(), unlit: stage.unlit }) : undefined;
+        stage.shared = !!shared && everyInstanceParameter(shared, values.keys());
+        const material = stage.shared ? shared
+          : binding.resolveMaterial?.(request.materialGuid, { scene: component.getScene(), unlit: stage.unlit, instanceKey: stage.key, parameters: values });
         if (!material) throw new Error("The requested material is unavailable for this visual.");
         stage.material = material as NodeMaterial;
         const diagnostics = await ownedMaterialPreparation(material);
@@ -82,7 +90,7 @@ export class RuntimeMaterialEditOwner {
     const previousMaterials = new Map<Mesh, Material | null>(stage.targets.map(mesh => [mesh, mesh.material]));
     try {
       this.validate(stage);
-      if (request.materialGuid && stage.material) adoption = this.library.adoptPreparedInstance(stage.component.getScene(), request.materialGuid,
+      if (request.materialGuid && stage.material && !stage.shared) adoption = this.library.adoptPreparedInstance(stage.component.getScene(), request.materialGuid,
         stage.key, targetKey, stage.material, { unlit: stage.unlit });
       binding.componentMaterialGuids.set(targetKey, request.materialGuid);
       if (request.materialGuid) binding.materialParameters.set(targetKey, { materialAssetGuid: request.materialGuid, values: stage.values });
