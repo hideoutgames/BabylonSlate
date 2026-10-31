@@ -548,11 +548,11 @@ it("links the next water bodies' variants while the first still links, a bounded
 
 it("links the transparent pass's water while an earlier geometry pass still links its own", async () => {
   const { engine, scene, camera } = host();
-  // The spatial chain (its geometry pass feeds the volumetric march) needs four float targets and depth sampling.
+  // The spatial chain (its geometry pass feeds the reflections) needs four float targets and depth sampling.
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
   updateSceneRenderingSettings(scene, {
     quality: normalizeRenderingQuality({ water: { profile: "ultra" } }),
-    effects: { ...DEFAULT_RENDER_EFFECTS, volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } },
+    effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } },
   });
   await threeWaterBodies(scene);
   const links = holdWaterLinks(engine);
@@ -572,11 +572,11 @@ it.each([["transparent", false], ["geometry", true]] as const)(
   "links ahead again, in the %s pass, the water it already linked ahead once a change mid-load gives it new variants",
   async (_pass, geometry) => {
     const { engine, scene, camera } = host();
-    // The spatial chain (its geometry pass feeds the volumetric march) needs four float targets and depth sampling.
+    // The spatial chain (its geometry pass feeds the reflections) needs four float targets and depth sampling.
     if (geometry) Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
     updateSceneRenderingSettings(scene, {
       quality: normalizeRenderingQuality({ water: { profile: "ultra" } }),
-      ...(geometry ? { effects: { ...DEFAULT_RENDER_EFFECTS, volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } } } : {}),
+      ...(geometry ? { effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } } } : {}),
     });
     const [first, second] = await threeWaterBodies(scene);
     const links = holdWaterLinks(engine);

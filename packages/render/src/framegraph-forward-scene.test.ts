@@ -849,7 +849,7 @@ it("clears the spatial geometry attachments on their own target, never the backb
   });
   updateSceneRenderingSettings(scene, {
     mode: "pbr",
-    effects: { ...DEFAULT_RENDER_EFFECTS, volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } },
+    effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } },
   });
   // WebGL2 accepts only a single BACK or NONE draw buffer on the default
   // framebuffer; any other layout is INVALID_OPERATION, which fails the
@@ -869,7 +869,7 @@ it("clears the spatial geometry attachments on their own target, never the backb
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.taskNames()).toContain("Scene Volumetric Lighting");
+    expect(graph.taskNames()).toContain("Scene Reflections");
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
     expect(backbufferLayouts).toEqual([]);
     expect(farClears).toEqual([true]);
