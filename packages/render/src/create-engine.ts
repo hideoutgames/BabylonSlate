@@ -53,6 +53,7 @@ import { warmSpawnables } from "./spawnable-warm";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
+import { engineFrameBackpressure } from "./frame-backpressure";
 import type { SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
@@ -707,6 +708,7 @@ function initializeEngine(
   };
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
   // renderLoop passes the loading permit it already evaluated for this frame.
+  const frameBackpressure = engineFrameBackpressure(engine);
   const shouldRenderFrame = (now: number, loadingFrame?: boolean) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
     (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
@@ -735,7 +737,7 @@ function initializeEngine(
         engine.setSize(size.width, size.height);
       admittedSnapshot = prepareSnapshot();
       snapshotAdmitted = true;
-      const admitted = !noLayout && shouldRenderFrame(performance.now());
+      const admitted = !noLayout && shouldRenderFrame(performance.now()) && frameBackpressure.admit();
       if (performanceFeed.active) admissionPreparationMs = performance.now() - preparationStart;
       return admitted;
     }, {
@@ -1776,7 +1778,7 @@ function initializeEngine(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
-      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
@@ -2019,7 +2021,8 @@ function initializeEngine(
     streamAdmission?.sync();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
-    if (!shouldRenderFrame(frameStart, loadingFrame)) {
+    // GPU backpressure last, so only a frame that would render can be skipped (`frame-backpressure.ts`).
+    if (!shouldRenderFrame(frameStart, loadingFrame) || !frameBackpressure.admit()) {
       return;
     }
     frameWasLoading = loadingFrame;
@@ -2903,6 +2906,7 @@ function initializeEngine(
       }
       if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
       if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
+      if (command.type === "setFramesInFlightDebug") engineFrameBackpressure(engine).setMode(command.mode);
       if (command.type === "setGpuBusyProbeDebug") {
         const probe = engineGpuBusyProbe(engine);
         if (command.enabled) probe?.start(); else probe?.stop();

@@ -505,6 +505,8 @@ export interface FeatureTestBenchmarkSample {
   occlusion?: { tested: number; culled: number; triangles: number; ms: number };
   /** GPU-busy time per frame from fences while sampled (`gpubusy`); absent where unmeasured or in older reports. */
   gpuBusy?: NonNullable<RenderDiagnostics["gpuBusy"]>;
+  /** The Engine's GPU backpressure while sampled (`framesinflight`): its mode and the renders it skipped; absent in older reports. */
+  framesInFlight?: { mode: "off" | 2 | 3; skipped: number };
   /** The step's render-settings fingerprint (`RenderDiagnostics.settings`) while sampled. */
   settings?: Record<string, string>;
   /** A Breakdown step not measured, and why (`breakdownSkip`): it has no frames. */
@@ -1030,6 +1032,7 @@ async function benchmarkProfiles(
   /** Samples the view as it is now into a sample labelled `label`; `failed` collects what went wrong. */
   const measure = async (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => {
     const firstDrawsBefore = play.snapshot().rendering?.firstDraws?.draws ?? 0;
+    const skippedBefore = play.snapshot().rendering?.frameBackpressure?.skipped ?? 0;
     if (breakdown) gpuBusy = (await run("gpubusy on")).success;
     const sampled = await sampleWithCounters(play, deps.sampleFrames(sampleMs, signal), deps, signal);
     const snapshot = play.snapshot();
@@ -1046,6 +1049,7 @@ async function benchmarkProfiles(
       gpu: sampled.gpu,
       resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
       failed: [...carried.splice(0), ...failed],
+      ...(rendering?.frameBackpressure ? { framesInFlight: { mode: rendering.frameBackpressure.mode, skipped: rendering.frameBackpressure.skipped - skippedBefore } } : {}),
       ...(breakdown ? {
         ...(gpuBusy && rendering?.gpuBusy ? { gpuBusy: { ...rendering.gpuBusy } } : {}),
         ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),
