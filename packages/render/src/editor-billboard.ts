@@ -6,7 +6,6 @@ import {
   Mesh,
   MeshBuilder,
   Scene,
-  StandardMaterial,
   Texture,
   TransformNode,
   type AbstractEngine,
@@ -14,10 +13,13 @@ import {
 } from "@babylonjs/core";
 import type { SerializedActor } from "@haptic/core";
 import { engineBillboardUrl } from "./default-billboard/urls";
-import { shareHelperProgram } from "./helper-program";
 import { createEngineTextureFromUrl } from "./resource-cache";
 import { RENDERING_GROUP } from "./sorting";
-import { VisualBundle } from "./visual-bundle";
+import { isUnlitMaterial, setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
+
+/** A light or camera icon from both sides, blended by its coverage; editor helpers draw without fog. */
+const BILLBOARD_MATERIAL: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "helper" };
 
 export const EDITOR_BILLBOARD_ICONS = [
   "default",
@@ -132,20 +134,15 @@ export function createEditorBillboard(
     syncEditorBillboardParentScale(mesh);
   });
 
-  // The mesh owns its material; the per-Engine icon texture outlives it.
-  const bundle = new VisualBundle();
-  mesh.onDisposeObservable.addOnce(() => bundle.dispose());
-  const material = bundle.ownMaterial(shareHelperProgram(new StandardMaterial(`${name}-billboard`, scene)));
-  material.disableLighting = true;
-  material.backFaceCulling = false;
-  material.emissiveColor = DEFAULT_FILL.clone();
-  material.diffuseColor = Color3.Black();
-  material.specularColor = Color3.Black();
+  // The per-Engine icon texture outlives the mesh.
   const texture = iconTexture(scene, icon);
-  // The icon multiplies the unlit tint; emissiveTexture would add white to it.
-  material.diffuseTexture = texture;
-  material.opacityTexture = texture;
-  mesh.material = material;
+  // The icon's coverage is its alpha.
+  texture.hasAlpha = true;
+  // The icon multiplies the status tint (`applyEditorBillboardFromActor` rewrites it).
+  setUnlitMaterial(mesh, BILLBOARD_MATERIAL, {
+    texture, color: DEFAULT_FILL.asArray() as [number, number, number], alpha: 1, cutoff: 0, blend: true, textureAlpha: true,
+    twoSided: false,
+  });
   return mesh;
 }
 
@@ -159,10 +156,14 @@ export function applyEditorBillboardFromActor(
     ?.editorBillboard;
   if (!icon) return;
   const resolved = resolveEditorBillboardIcon(icon);
-  const material = mesh.material;
-  if (!(material instanceof StandardMaterial)) return;
+  if (!isUnlitMaterial(mesh.material)) return;
+  // The billboard's own binding: its tint reaches its next draw.
+  const binding = unlitBinding(mesh);
+  const tint = (fill: Color3) => {
+    if (binding.color[0] !== fill.r || binding.color[1] !== fill.g || binding.color[2] !== fill.b) binding.color = [fill.r, fill.g, fill.b];
+  };
   if (!LIGHT_ICONS.has(resolved)) {
-    material.emissiveColor.copyFrom(DEFAULT_FILL);
+    tint(DEFAULT_FILL);
     return;
   }
   // The actor snapshot is fixed per registration; only its properties are re-read.
@@ -192,7 +193,7 @@ export function applyEditorBillboardFromActor(
       component.properties.castShadows === true &&
       !sceneShadowController(scene).generator(light);
     const fill = disabled ? DISABLED_FILL : illuminationLimited || shadowsMissing ? LIMITED_FILL : DEFAULT_FILL;
-    if (!material.emissiveColor.equals(fill)) material.emissiveColor.copyFrom(fill);
+    tint(fill);
     const status = disabled
       ? "Disabled: This Light Is Disabled Or Does Not Illuminate."
       : illuminationLimited

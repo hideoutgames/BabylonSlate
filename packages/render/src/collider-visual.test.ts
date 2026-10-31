@@ -1,4 +1,4 @@
-import { LinesMesh, Mesh, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { LinesMesh, Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -6,6 +6,8 @@ import {
   isColliderVisualMesh,
 } from "./collider-visual";
 import { RENDERING_GROUP } from "./sorting";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 
 /** World-space dash centers of a visual at the origin; every dash is a 24-vertex box. */
 function dashCenters(mesh: Mesh): Vector3[] {
@@ -55,10 +57,12 @@ describe("collider visual", () => {
     const dashes = mesh.getChildMeshes().filter((child): child is Mesh => child instanceof Mesh);
     expect(dashCenters(mesh).length).toBeGreaterThan(8);
     expect(dashes.some((child) => child instanceof LinesMesh)).toBe(false);
-    const material = dashes[0]!.material as StandardMaterial;
+    const material = dashes[0]!.material!;
+    expect(isUnlitMaterial(material)).toBe(true);
     expect(material.disableDepthWrite).toBe(false);
-    expect(material.alpha).toBe(1);
-    expect(material.disableLighting).toBe(true);
+    // Editor helpers draw without fog.
+    expect(material.fogEnabled).toBe(false);
+    expect(unlitBinding(dashes[0]!).alpha).toBe(1);
   });
 
   it("builds dashed rings for a sphere", () => {

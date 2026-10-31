@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Matrix, Mesh, MeshBuilder, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Matrix, Mesh, MeshBuilder, Scene, StandardMaterial, VertexBuffer, type Material } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   applyPlayShowBounds,
@@ -8,6 +8,7 @@ import {
   createPlayConsoleViz,
 } from "./play-console-viz";
 import { setupDefaultViewport } from "./viewport";
+import { isUnlitMaterial } from "./unlit-material";
 
 describe("play console visualization", () => {
   it("sets wireframe and bounds on play meshes and skips helper overlays", () => {
@@ -260,6 +261,9 @@ describe("play console visualization", () => {
     engine.dispose();
   });
 
+  /** The Scene's unlit Materials and its default material outlive the visualization. */
+  const sceneOwned = (target: Scene, material: Material) => isUnlitMaterial(material) || material === target.defaultMaterial;
+
   it("draws each Scene Layer's colliders in that layer's scene and clears them with the layer or the toggle", () => {
     const { engine, scene } = createTestEngine();
     const hud = new Scene(engine);
@@ -284,13 +288,13 @@ describe("play console visualization", () => {
 
     viz.applyCommand({ type: "sceneLayerRemove", layerId: "hud" });
     expect(hud.meshes).toHaveLength(0);
-    expect(hud.materials).toHaveLength(0);
+    expect(hud.materials.filter((material) => !sceneOwned(hud, material))).toHaveLength(0);
     expect(map.getMeshByName("playConsoleViz:pin")).not.toBeNull();
 
     viz.applyCommand({ type: "setShowCollision", enabled: false });
     expect(scene.getMeshByName("playConsoleViz:world")).toBeNull();
     expect(map.meshes).toHaveLength(0);
-    expect(map.materials).toHaveLength(0);
+    expect(map.materials.filter((material) => !sceneOwned(map, material))).toHaveLength(0);
     viz.dispose();
     engine.dispose();
   });

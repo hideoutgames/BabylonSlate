@@ -18,6 +18,7 @@ import {
   navDebugBlockersFromActors,
 } from "./nav-debug-overlay";
 import { createActor } from "@haptic/core";
+import { isUnlitMaterial } from "./unlit-material";
 
 function groundPrism(): { positions: number[]; indices: number[] } {
   const half = 10;
@@ -61,10 +62,12 @@ describe("NavMeshDebugOverlay", () => {
       ?.vertices[0]?.[1] ?? 0;
     expect(positions?.[1]).toBeCloseTo(rawY + NAVMESH_DEBUG_Y_OFFSET, 5);
     expect(overlay.mesh!.edgesWidth).toBeGreaterThan(0);
-    const material = overlay.mesh!.material;
+    // The Scene's unlit Material outlives the overlay.
+    expect(isUnlitMaterial(overlay.mesh!.material)).toBe(true);
+    const meshes = handle.scene.meshes.length;
     overlay.clear();
     expect(overlay.mesh).toBeNull();
-    expect(handle.scene.materials).not.toContain(material);
+    expect(handle.scene.meshes.length).toBeLessThan(meshes);
     overlay.dispose();
   });
 

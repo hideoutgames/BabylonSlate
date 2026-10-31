@@ -42,6 +42,8 @@ export type UnlitMaterialKey = {
   role: "world" | "helper" | "preview";
   /** The Scene's image processing (the default), or a tilemap atlas's exact display colours (`atlasImageProcessing`). */
   imageProcessing?: "scene" | "atlas";
+  /** Draws its triangles' edges (a debug overlay's). */
+  wireframe?: boolean;
 };
 
 /**
@@ -295,7 +297,7 @@ function createVariant(owner: NodeMaterial, textured: boolean, kind: AuthoredSur
 }
 
 function instanceId(key: UnlitMaterialKey): string {
-  return JSON.stringify([key.textured, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene"]);
+  return JSON.stringify([key.textured, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene", key.wireframe === true]);
 }
 
 function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
@@ -310,6 +312,7 @@ function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
   material.backFaceCulling = key.backFaceCulling;
   material.fogEnabled = key.fog;
   if (key.imageProcessing === "atlas") material.imageProcessingConfiguration = atlasImageProcessing(scene);
+  if (key.wireframe) material.wireframe = true;
   material.needAlphaBlending = () => false;
   material.needAlphaTesting = () => false;
   material.needAlphaBlendingForMesh = (mesh) => unlitNeedsBlending(mesh);

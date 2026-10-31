@@ -3,12 +3,15 @@ import {
   CreateBox,
   CreateLineSystem,
   Mesh,
-  StandardMaterial,
   Vector3,
   type Scene,
 } from "@babylonjs/core";
 import { normalizeWaterRemoval, type WaterRemovalProperties } from "@haptic/core";
 import { RENDERING_GROUP } from "./sorting";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+
+/** An invisible pick target: drawn at zero alpha, without fog. */
+const PICK_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: true, fog: false, role: "helper" };
 
 export const WATER_REMOVAL_COLOR = new Color3(0.25, 0.85, 1);
 const removals = new WeakMap<Scene, Set<Mesh>>();
@@ -94,13 +97,12 @@ export function createWaterRemovalMesh(scene: Scene, name: string, properties: u
     // Invisible pick target sized to the primitive's bounds.
     const [width, height, depth] = waterRemovalExtents(volume);
     const pick = CreateBox(`${name}:pick`, { width, height, depth }, scene);
-    const material = new StandardMaterial(`${name}:pick`, scene);
-    material.alpha = 0; material.disableLighting = true;
-    pick.material = material;
+    setUnlitMaterial(pick, PICK_MATERIAL, {
+      texture: null, color: [0, 0, 0], alpha: 0, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+    });
     pick.parent = mesh;
     pick.isPickable = true;
     pick.metadata = { editorVolume: true };
-    pick.onDisposeObservable.addOnce(() => material.dispose());
   }
   let set = removals.get(scene);
   if (!set) { set = new Set(); removals.set(scene, set); }
