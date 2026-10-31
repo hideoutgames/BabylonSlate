@@ -28,6 +28,7 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { createLandscapeMesh, updateLandscapeMesh } from "./landscape-mesh";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { ReflectedContent } from "./reflected-content";
 import type { AtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { HAPTIC_SHADOW_VIEW_VEC4S, hapticLightBuffer, hapticShadowViews, writeHapticLights } from "./haptic-lights";
 import type { AtlasShadow } from "./shadow-atlas";
@@ -807,6 +808,80 @@ describe("cascaded sun refresh", () => {
       expect(render()).toBe(0);
     },
   );
+});
+
+describe("reflected shadows", () => {
+  /** The sun fixture with a shadowed floor under the near caster and a far caster inside the cascades. */
+  async function reflectedFloor() {
+    const sun = await cascadedSun();
+    const floor = MeshBuilder.CreateGround("floor", { width: 4, height: 4 }, sun.scene);
+    floor.position.set(2, 0, 0);
+    floor.material = sun.material;
+    floor.receiveShadows = true;
+    const far = MeshBuilder.CreateBox("far caster", {}, sun.scene);
+    far.position.set(-10, 1, 10);
+    far.material = sun.material;
+    sun.render();
+    sun.settle();
+    // What a reflection shows: the floor, whose shadows come from the near caster.
+    const content = new ReflectedContent();
+    const changed = () => content.changed(sun.scene, [floor]);
+    changed();
+    expect(changed()).toBe(false);
+    return { ...sun, floor, far, changed };
+  }
+
+  it("keeps a reflection while a caster whose shadow cannot reach what it shows moves, and redraws it for one that can", async () => {
+    const { far, near, render, settle, changed } = await reflectedFloor();
+    far.position.x -= 1;
+    expect(render()).toBe(1);
+    expect(changed()).toBe(false);
+    near.position.x += 0.5;
+    expect(render()).toBe(1);
+    expect(changed()).toBe(true);
+    settle();
+    expect(changed()).toBe(false);
+  });
+
+  it("keeps a reflection while a far caster deforms on every frame, and redraws it while a near one does", async () => {
+    const { scene, far, near, render, changed } = await reflectedFloor();
+    far.skeleton = new Skeleton("rig", "rig", scene);
+    for (let frame = 0; frame < 3; frame++) {
+      expect(render()).toBe(1);
+      expect(changed()).toBe(false);
+    }
+    near.skeleton = new Skeleton("near rig", "near rig", scene);
+    render();
+    for (let frame = 0; frame < 3; frame++) {
+      expect(render()).toBe(1);
+      expect(changed()).toBe(true);
+    }
+  });
+
+  it("redraws a reflection for a pass that skipped a caster not ready, and for the pass that completes it", async () => {
+    const { generator, far, render, settle, changed } = await reflectedFloor();
+    // The far caster's move alone reaches nothing shown; the skipped caster could be any.
+    vi.spyOn(generator, "isReady").mockReturnValueOnce(false);
+    far.position.x -= 1;
+    expect(render()).toBe(1);
+    expect(changed()).toBe(true);
+    expect(render()).toBe(1);
+    expect(changed()).toBe(true);
+    settle();
+    expect(changed()).toBe(false);
+  });
+
+  it("redraws a reflection whenever the map changes everywhere: a turned light or a caster it cannot bound", async () => {
+    const { sun, far, render, settle, changed } = await reflectedFloor();
+    sun.direction = new Vector3(-0.3, -1, 0.2);
+    render();
+    expect(changed()).toBe(true);
+    settle();
+    expect(changed()).toBe(false);
+    far.onBeforeRenderObservable.add(() => {});
+    expect(render()).toBe(1);
+    expect(changed()).toBe(true);
+  });
 });
 
 describe("caster tracking while no map exists", () => {

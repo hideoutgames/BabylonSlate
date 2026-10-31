@@ -316,6 +316,71 @@ export function clipFrustumAtMirror(viewProjection: Matrix, plane: MirrorPlane, 
   near.d = plane.d;
 }
 
+/** Scenes whose mirror passes cull with the whole mirrored frustum (`setPlanarFootprintCulling`). */
+const uncroppedScenes = new WeakSet<Scene>();
+
+/** Test and proof hook: whether mirror passes crop their culling frustum to the surface's footprint (on by default). */
+export function setPlanarFootprintCulling(scene: Scene, enabled: boolean): void {
+  if (enabled) uncroppedScenes.delete(scene);
+  else uncroppedScenes.add(scene);
+}
+
+export function planarFootprintCulling(scene: Scene): boolean {
+  return !uncroppedScenes.has(scene);
+}
+
+const cropScratch = new Matrix();
+/** Clip-space w below which a footprint point counts as behind the mirror camera. */
+const MIN_W = 1e-6;
+
+/**
+ * Writes into `out` the culling view-projection `viewProjection` cropped to the screen bounds of a convex planar
+ * footprint (`corners`, in order around it, world positions as `viewProjection` takes them) widened by `marginX` and
+ * `marginY` (NDC units on each side). A mirror pass samples its target only where the footprint covers the view, so a
+ * mesh outside the crop can never show in the reflection. The footprint is clipped against the mirror camera's eye
+ * plane first, so a footprint reaching behind the eye still bounds what is in front. False, leaving `out` unwritten,
+ * when the widened bounds cover the whole view or the footprint has no point in front of the eye.
+ */
+export function cropToFootprint(
+  viewProjection: Matrix, corners: readonly Vector3[], marginX: number, marginY: number, out: Matrix,
+): boolean {
+  const m = viewProjection.m;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const include = (x: number, y: number, w: number) => {
+    const nx = x / w, ny = y / w;
+    if (nx < minX) minX = nx;
+    if (nx > maxX) maxX = nx;
+    if (ny < minY) minY = ny;
+    if (ny > maxY) maxY = ny;
+  };
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i]!, b = corners[(i + 1) % corners.length]!;
+    const ax = a.x * m[0]! + a.y * m[4]! + a.z * m[8]! + m[12]!;
+    const ay = a.x * m[1]! + a.y * m[5]! + a.z * m[9]! + m[13]!;
+    const aw = a.x * m[3]! + a.y * m[7]! + a.z * m[11]! + m[15]!;
+    const bx = b.x * m[0]! + b.y * m[4]! + b.z * m[8]! + m[12]!;
+    const by = b.x * m[1]! + b.y * m[5]! + b.z * m[9]! + m[13]!;
+    const bw = b.x * m[3]! + b.y * m[7]! + b.z * m[11]! + m[15]!;
+    if (aw > MIN_W) include(ax, ay, aw);
+    // The edge crosses the eye plane: its point there bounds the part in front.
+    if ((aw > MIN_W) !== (bw > MIN_W)) {
+      const t = (MIN_W - aw) / (bw - aw);
+      include(ax + (bx - ax) * t, ay + (by - ay) * t, MIN_W);
+    }
+  }
+  if (!(minX <= maxX && minY <= maxY)) return false;
+  minX = Math.max(-1, minX - marginX); maxX = Math.min(1, maxX + marginX);
+  minY = Math.max(-1, minY - marginY); maxY = Math.min(1, maxY + marginY);
+  if (minX <= -1 && maxX >= 1 && minY <= -1 && maxY >= 1) return false;
+  if (!(maxX > minX && maxY > minY)) return false;
+  // Clip-space crop, row vectors: x′ = (x − cx·w)·sx, y′ = (y − cy·w)·sy.
+  const sx = 2 / (maxX - minX), sy = 2 / (maxY - minY);
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  Matrix.FromValuesToRef(sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, 1, 0, -cx * sx, -cy * sy, 0, 1, cropScratch);
+  viewProjection.multiplyToRef(cropScratch, out);
+  return true;
+}
+
 /**
  * Pre-culled opaque list for a mirror pass (ObjectRenderer does not cull an explicit list): enabled, visible meshes
  * in the view's layers with geometry and an opaque material, inside `planes` (the skybox and always-active meshes

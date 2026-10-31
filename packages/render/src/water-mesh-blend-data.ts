@@ -290,9 +290,18 @@ export function blendFit(s: Surface, b: RestBuffers, volume: Matrix, metres: Flo
     if (Number.isNaN(rest[v * 6]!)) { metres[v] = MAX_WATER_BLEND_DISTANCE; continue; }
     const col = v % (columns + 1), row = (v - col) / (columns + 1);
     let xx = 0, xz = 0, zz = 0, xh = 0, zh = 0, xm = 0, zm = 0, spacing = 0, crossed = false;
-    for (let k = 0; k < 4; k++) {
-      const n = k === 0 ? (col > 0 ? v - 1 : -1) : k === 1 ? (col < columns ? v + 1 : -1) : k === 2 ? (row > 0 ? v - columns - 1 : -1) : (row < rows ? v + columns + 1 : -1);
+    // The neighbour across the seam that only a cell's diagonal reaches (every grid triangulation joins row + 1 and
+    // column − 1, and row − 1 and column + 1): at a convex corner the vertex just outside shares a triangle with the
+    // vertex inside only there.
+    let diagonal = -1;
+    for (let k = 0; k < 6; k++) {
+      const n = k === 0 ? (col > 0 ? v - 1 : -1) : k === 1 ? (col < columns ? v + 1 : -1) : k === 2 ? (row > 0 ? v - columns - 1 : -1)
+        : k === 3 ? (row < rows ? v + columns + 1 : -1) : k === 4 ? (row < rows && col > 0 ? v + columns : -1) : (row > 0 && col < columns ? v - columns : -1);
       if (n < 0) continue;
+      if (k >= 4) {
+        if (!crossed && diagonal < 0 && (data[n * 4 + 2]! < 0) !== (margin < 0)) diagonal = n;
+        continue;
+      }
       const dx = world[n * 3]! - world[v * 3]!, dz = world[n * 3 + 2]! - world[v * 3 + 2]!, dh = rest[n * 6 + 5]! - rest[v * 6 + 5]!;
       const dm = data[n * 4 + 2]! - margin;
       spacing = Math.max(spacing, dx * dx + dz * dz);
@@ -306,11 +315,23 @@ export function blendFit(s: Surface, b: RestBuffers, volume: Matrix, metres: Flo
     metres[v] = Math.max(-MAX_WATER_BLEND_DISTANCE, Math.min(MAX_WATER_BLEND_DISTANCE, margin / Math.max(slope, 0.02)));
     // Where a coarse cell beside this vertex crosses the seam, the fit cannot place it (the margin swings across the
     // whole blend band within the cell): measure the distance to the seam instead, so it interpolates as on a fine grid.
+    // Across a 4-neighbour it is measured along the fitted gradient; across only a diagonal (a convex corner, where
+    // the margin around the vertex is flat) along that diagonal, which meets the corner.
     spacing = Math.sqrt(spacing);
-    if (inputs && crossed && solve && slope > 1e-9 && spacing > inputs.distance / 4) {
-      const ux = (zz * xm - xz * zm) / det / slope, uz = (xx * zm - xz * xm) / det / slope;
-      Vector3.TransformCoordinatesFromFloatsToRef(b.base[v * 3]!, b.base[v * 3 + 1]!, b.base[v * 3 + 2]!, volume, seamPoint);
-      metres[v] = seamDistance(inputs, seamPoint.x, seamPoint.y, seamPoint.z, margin, ux, uz, Math.min(MAX_WATER_BLEND_DISTANCE, 2 * spacing));
+    if (inputs && (crossed || diagonal >= 0) && solve && spacing > inputs.distance / 4) {
+      let ux = 0, uz = 0;
+      if (crossed && slope > 1e-9) { ux = (zz * xm - xz * zm) / det / slope; uz = (xx * zm - xz * xm) / det / slope; }
+      else if (!crossed) {
+        // Toward the diagonal neighbour is up the margin from a neighbour's water, down it from owned water.
+        const dx = world[diagonal * 3]! - world[v * 3]!, dz = world[diagonal * 3 + 2]! - world[v * 3 + 2]!, length = Math.hypot(dx, dz) || 1;
+        const up = margin < 0 ? 1 : -1;
+        ux = up * dx / length; uz = up * dz / length;
+        spacing = Math.max(spacing, length);
+      }
+      if (ux !== 0 || uz !== 0) {
+        Vector3.TransformCoordinatesFromFloatsToRef(b.base[v * 3]!, b.base[v * 3 + 1]!, b.base[v * 3 + 2]!, volume, seamPoint);
+        metres[v] = seamDistance(inputs, seamPoint.x, seamPoint.y, seamPoint.z, margin, ux, uz, Math.min(MAX_WATER_BLEND_DISTANCE, 2 * spacing));
+      }
     }
     baseNormal.set(-gx, 1, -gz).normalize().toArray(b.baseNormals, v * 3);
     if (s.gpu) { Vector3.TransformNormalToRef(baseNormal, toLocalNormal, localNormal); localNormal.normalize().toArray(b.normals, v * 3); }

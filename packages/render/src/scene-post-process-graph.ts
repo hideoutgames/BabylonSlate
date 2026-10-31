@@ -35,6 +35,8 @@ type Options = {
   /** Scene color storage: Scene Linear passes carry half-float HDR through
    * the authored stack; the default keeps display-encoded RGBA8. */
   sceneColorType?: number;
+  /** Samples per pixel of the scene colour and depth the objects draw (MSAA); 1 when omitted. */
+  samples?: number;
   onDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
 };
 type Recipe = {
@@ -139,9 +141,12 @@ export function createScenePostProcessGraph(
     });
   const sceneColorType =
     options.sceneColorType ?? Constants.TEXTURETYPE_UNSIGNED_BYTE;
+  const sceneSamples = options.samples ?? 1;
   let estimatedBytes =
-    cost(Constants.TEXTUREFORMAT_RGBA, sceneColorType) +
-    cost(Constants.TEXTUREFORMAT_DEPTH32_FLOAT, Constants.TEXTURETYPE_FLOAT);
+    renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type: sceneColorType, samples: sceneSamples }) +
+    renderTargetAllocationBytes({
+      width, height, format: Constants.TEXTUREFORMAT_DEPTH32_FLOAT, type: Constants.TEXTURETYPE_FLOAT, samples: sceneSamples,
+    });
   if (geometryCount)
     estimatedBytes += cost(
       Constants.TEXTUREFORMAT_DEPTH32_FLOAT,
@@ -207,6 +212,7 @@ export class ScenePostProcessGraph {
   private readonly handles: Array<{
     handle: FrameGraphTextureHandle;
     category: ManagedRenderCategory;
+    samples?: number;
   }> = [];
   private committed: ManagedRenderResource[] | null = null;
   private initialized = false;
@@ -242,6 +248,7 @@ export class ScenePostProcessGraph {
       format: number,
       type: number,
       category: ManagedRenderCategory,
+      samples = 1,
     ) => {
       const handle = graph.textureManager.createRenderTargetTexture(name, {
         size: { width, height },
@@ -250,11 +257,11 @@ export class ScenePostProcessGraph {
           createMipMaps: false,
           types: [type],
           formats: [format],
-          samples: 1,
+          samples,
           useSRGBBuffers: [false],
         },
       });
-      this.handles.push({ handle, category });
+      this.handles.push({ handle, category, samples });
       return handle;
     };
     // Authored pass targets inherit this creation's type/format; Scene
@@ -264,12 +271,14 @@ export class ScenePostProcessGraph {
       Constants.TEXTUREFORMAT_RGBA,
       this.options.sceneColorType ?? Constants.TEXTURETYPE_UNSIGNED_BYTE,
       "sceneColor",
+      this.options.samples ?? 1,
     );
     this.depthTexture = createTexture(
       "Post-process Scene Z",
       Constants.TEXTUREFORMAT_DEPTH32_FLOAT,
       Constants.TEXTURETYPE_FLOAT,
       "depth",
+      this.options.samples ?? 1,
     );
     const logicalBuffers: {
       sceneDepth?: FrameGraphTextureHandle;
@@ -360,13 +369,13 @@ export class ScenePostProcessGraph {
   reconcile(): void {
     if (this.tasksDisposed)
       throw new Error("Post-process graph owner is disposed.");
-    const resources = this.handles.map(({ handle, category }) => {
+    const resources = this.handles.map(({ handle, category, samples }) => {
       const texture: InternalTexture | null =
         this.options.frameGraph.textureManager.getTextureFromHandle(handle);
       if (!texture)
         throw new Error("Post-process graph target has not been allocated.");
       return managedRenderTextureResource(texture, category, {
-        samples: 1,
+        samples: samples ?? 1,
         allocatedMipLevels: 1,
       });
     });

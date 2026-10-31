@@ -69,7 +69,7 @@ import {
   type ScriptBundleEntry,
 } from "@haptic/bridge";
 import {
-  areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, DEFAULT_RENDER_EFFECTS, fogVolumeBindings, normalizeRenderingQuality,
+  areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, DEFAULT_RENDER_EFFECTS, fogVolumeBindings, type AntiAliasingMode, normalizeRenderingQuality,
   normalizeRenderProjectSettings, parseText2DProperties, parseText3DProperties,
 } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
@@ -86,7 +86,7 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { isForwardLightExcluded, setAuthoredLightEnabled } from "./light-policy";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
-import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
+import { sceneMultisampleCount, sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isAtlasShadow } from "./shadow-atlas";
@@ -259,6 +259,8 @@ function driverModel(engine: NullEngine, model: Model) {
    * attributes' formats, strides and offsets the draw bound), not per Effect alone.
    */
   let byLayout = false;
+  /** WebGPU model, from `keySamples`: pipelines are per Effect and the bound target's sample count too, as Babylon's are. */
+  let bySamples = false;
   let boundLayout = "";
   const layoutReady = new Set<string>();
   const layoutPending = new Set<string>();
@@ -332,7 +334,9 @@ function driverModel(engine: NullEngine, model: Model) {
       const draw = (engine[name] as (...args: unknown[]) => void).bind(engine);
       vi.spyOn(engine, name).mockImplementation(((...args: unknown[]) => {
         const effect = internals._currentEffect;
-        const key = byLayout && effect ? `${effect.uniqueId}|${boundLayout}` : undefined;
+        const samples = engine._currentRenderTarget?.texture?.samples ?? 1;
+        const key = (byLayout || bySamples) && effect
+          ? `${effect.uniqueId}|${byLayout ? boundLayout : ""}|${bySamples ? samples : 1}` : undefined;
         let scope: Scope | undefined;
         for (let index = scopes.length - 1; index >= 0 && !scope; index--)
           if (scopes[index]!.allows(internals.currentRenderPassId)) scope = scopes[index];
@@ -449,6 +453,7 @@ function driverModel(engine: NullEngine, model: Model) {
     lookups: () => lookups,
     /** WebGPU model: from now on (before the load draws) each Effect needs a pipeline per vertex layout it draws with. */
     keyLayouts: () => { byLayout = true; },
+    keySamples: () => { bySamples = true; },
     /** WebGPU model: Effects whose pipeline a shadow map's draw created synchronously (the shadow pass defers none). */
     synchronous,
     /** WebGPU model: a warm scope is open (draws in its passes only create pipelines). */
@@ -2322,6 +2327,49 @@ describe("the lighting CI gate", () => {
     }).toEqual({
       compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, builds: 0,
       marched: ["Spatial Geometry", "Screen shadows", "Forward objects"], tasks, reading: true, sameReaders: before,
+    });
+  });
+
+  /** The world view's Anti-Aliasing, on a device that multisamples at up to 4. */
+  function withAntiAliasing(world: PlayWorld, antiAliasing: AntiAliasingMode) {
+    Object.assign(world.engine.getCaps(), { maxMSAASamples: 4 });
+    world.handle.setRenderSettings(normalizeRenderProjectSettings({ quality: { postprocessing: { antiAliasing } } }));
+  }
+
+  it.each(MODELS)("with MSAA 4x, lights change without compiling or rebuilding the view: %s", async (model) => {
+    const world = playWorld(model, actors());
+    if (model === "webgpu") world.driver.keySamples();
+    withAntiAliasing(world, "msaa4");
+    const surfaces = unlitSurfaces(world);
+    await settle(world);
+    const multisampled = sceneMultisampleCount(world.handle.scene);
+    world.driver.arm();
+    const builds = vi.spyOn(FrameGraph.prototype, "buildAsync");
+    const compiled = await play(world, surfaces);
+    expect({
+      multisampled, compiled, pipelines: world.driver.pipelines.size, synchronous: world.driver.synchronous.size, builds: builds.mock.calls.length,
+    }).toEqual({
+      multisampled: 4, compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, builds: 0,
+    });
+  });
+
+  it.each(MODELS)("an Anti-Aliasing change mid-game compiles no Material and holds as a quality change does: %s", async (model) => {
+    // The sample count changes no Material's Effect: WebGL draws the rebuilt graph with the same programs, compiling only
+    // the graph's own full-screen passes (its output copy). WebGPU keys pipelines on the target's sample count, so the
+    // floor's and the crate's pipelines are new for the multisampled targets. As for any quality change, the view keeps
+    // its last image until the rebuilt graph has drawn a complete frame, and creates no Material pipeline synchronously.
+    const world = playWorld(model, []);
+    if (model === "webgpu") world.driver.keySamples();
+    withAntiAliasing(world, "off");
+    const record = await measure(world, () => withAntiAliasing(world, "msaa4"));
+    const materials = (effects: Iterable<Effect>) => [...effects].filter((effect) => (effect.name as { vertex?: string }).vertex !== "postprocess").length;
+    expect({
+      multisampled: sceneMultisampleCount(world.handle.scene), materialCompiles: materials(world.driver.created),
+      materialSynchronous: materials(world.driver.synchronous), pipelines: record.pipelines, held: record.heldFrames > 0,
+      holdReported: record.holdReported, recovered: record.recovered, paused: model === "webgpu" ? undefined : record.pausedFrames,
+    }, JSON.stringify(record)).toEqual({
+      multisampled: 4, materialCompiles: 0, materialSynchronous: 0, pipelines: model === "webgpu" ? 2 : 0, held: true,
+      holdReported: model === "webgpu", recovered: true, paused: model === "webgpu" ? undefined : 0,
     });
   });
 

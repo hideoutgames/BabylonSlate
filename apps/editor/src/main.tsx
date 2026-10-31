@@ -39,6 +39,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/spatial-effects-proof").then(({ runSpatialEffectsProof }) => Object.assign(window, { __spatialEffectsProof: runSpatialEffectsProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("colorGradingProof")) {
   void import("./testing/color-grading-proof").then(({ runColorGradingProof, runDisplayColorProof }) => Object.assign(window, { __colorGradingProof: runColorGradingProof, __displayColorProof: runDisplayColorProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("antiAliasingProof")) {
+  void import("./testing/anti-aliasing-proof").then(({ runAntiAliasingProof }) => Object.assign(window, { __antiAliasingProof: runAntiAliasingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("hapticLightProof")) {
   void import("./testing/haptic-light-proof").then(({ runHapticLightProof }) => Object.assign(window, { __hapticLightProof: runHapticLightProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("unlitParityProof")) {
@@ -58,12 +60,16 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/pooled-lod-proof").then(({ runPooledLodProof }) => Object.assign(window, { __pooledLodProof: runPooledLodProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("instancingParityProof")) {
   void import("./testing/instancing-parity-proof").then(({ runInstancingParityProof }) => Object.assign(window, { __instancingParityProof: runInstancingParityProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("shadowFilterProof")) {
+  void import("./testing/shadow-filter-proof").then(({ runShadowFilterProof }) => Object.assign(window, { __shadowFilterProof: runShadowFilterProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("shadowParticipationProof")) {
   void import("./testing/shadow-participation-proof").then(({ runShadowParticipationProof }) => Object.assign(window, { __shadowParticipationProof: runShadowParticipationProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("hapticScreenShadowsProof")) {
   void import("./testing/haptic-screen-shadows-proof").then(({ runHapticScreenShadowsProof }) => Object.assign(window, { __hapticScreenShadowsProof: runHapticScreenShadowsProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterCutProof")) {
   void import("./testing/water-cut-proof").then(({ runWaterCutProof }) => Object.assign(window, { __waterCutProof: runWaterCutProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterCoverageProof")) {
+  void import("./testing/water-coverage-proof").then(({ runWaterCoverageProof }) => Object.assign(window, { __waterCoverageProof: runWaterCoverageProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterSeamProof")) {
   void import("./testing/water-seam-proof").then(({ runWaterSeamProof }) => Object.assign(window, { __waterSeamProof: runWaterSeamProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterReflectionProof")) {

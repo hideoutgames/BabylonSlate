@@ -8,7 +8,7 @@ import {
 } from "@haptic/core";
 import {
   applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneEffectsQualityLimits, sceneRenderingSettings, sceneWaterQuality, setSceneEffectsEnabled,
-  allowSceneScreenShadows, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings,
+  allowSceneScreenShadows, sceneMultisampleCount, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings, pinFullRenderQuality,
 } from "./render-settings";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 
@@ -128,6 +128,28 @@ it("resolves a followed Scene's water quality, as SceneLayers do through the wor
   expect(dirty.value).toBe(2);
 });
 
+it("keeps a full-quality Scene (a SceneLayer) at the device's highest texture and model quality whatever the world's tier", () => {
+  const world = fixture();
+  world.getEngine().getCaps().maxAnisotropy = 8;
+  const layer = new Scene(world.getEngine());
+  const early = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layer);
+  updateSceneRenderingSettings(world, tier("low"));
+  followSceneRenderSettings(layer, world);
+  pinFullRenderQuality(layer);
+  const late = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layer);
+  updateSceneRenderingSettings(world, tier("ultra"));
+  updateSceneRenderingSettings(world, tier("low"));
+  expect(sceneRenderingSettings(world)).toMatchObject({ textureAnisotropy: 4, autoLod: true });
+  expect(sceneRenderingSettings(layer)).toMatchObject({ textureAnisotropy: 8, textureLodBias: 0, autoLod: false });
+  expect([early.anisotropicFilteringLevel, late.anisotropicFilteringLevel]).toEqual([8, 8]);
+  // Water stays the followed project's.
+  expect(sceneWaterQuality(layer)).toEqual(waterValues("low"));
+  // A pinned Scene that receives settings itself (a Scene Layer's editor tab) keeps full quality through them.
+  updateSceneRenderingSettings(layer, tier("low"));
+  expect(sceneRenderingSettings(layer)).toMatchObject({ textureAnisotropy: 8, textureLodBias: 0, autoLod: false });
+  expect(late.anisotropicFilteringLevel).toBe(8);
+});
+
 it("reports device-clamped water features while keeping the requested quality", () => {
   const scene = fixture();
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "screenSpace" } }) });
@@ -228,9 +250,47 @@ it("plans Screen-Space Shadows only for a world view's Scene, and tells listener
   expect(state.effectsPlan?.screenShadows).toBe("high");
   state.qualityOverrides = qualityPresetPatch("low");
   updateSceneRenderingSettings(scene);
-  expect(state.effectsPlan).toBeNull();
+  // Low's Anti-Aliasing (FXAA) alone makes the world view's plan.
+  expect(state.effectsPlan).toMatchObject({ screenShadows: null, fxaa: true });
   // On at High, off at Medium, on at Ultra, off at Low: one call each time they start or stop.
   expect(seen).toEqual([true, false, true, false]);
+});
+
+it("multisamples a world view's scene pass at the tier's Anti-Aliasing, within the device's limit, and keys the count", () => {
+  const scene = fixture();
+  const engine = scene.getEngine();
+  engine.getCaps().maxMSAASamples = 4;
+  const state = sceneRenderingSettings(scene);
+  const mode = (antiAliasing: "msaa4" | "msaa2" | "fxaa" | "off") => {
+    state.qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing });
+    updateSceneRenderingSettings(scene);
+    return { samples: sceneMultisampleCount(scene), fxaa: state.effectsPlan?.fxaa ?? false, key: state.effectsKey };
+  };
+  // Previews, thumbnails and every other Scene stay single-sample and ignore the tier's FXAA.
+  expect(mode("msaa4")).toMatchObject({ samples: 1, fxaa: false });
+  expect(mode("fxaa")).toMatchObject({ samples: 1, fxaa: false });
+  allowSceneScreenShadows(scene, () => false);
+  const msaa4 = mode("msaa4"), msaa2 = mode("msaa2"), fxaa = mode("fxaa"), off = mode("off");
+  expect([msaa4, msaa2, fxaa, off].map(({ samples, fxaa }) => ({ samples, fxaa }))).toEqual([
+    { samples: 4, fxaa: false }, { samples: 2, fxaa: false }, { samples: 1, fxaa: true }, { samples: 1, fxaa: false },
+  ]);
+  // The count is baked into the prepared graph: every mode keys differently.
+  expect(new Set([msaa4.key, msaa2.key, fxaa.key, off.key]).size).toBe(4);
+  // The project's FXAA switch stays in force under MSAA.
+  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true } });
+  expect(mode("msaa4")).toMatchObject({ samples: 4, fxaa: true });
+  // A device limit of 2 caps 4x; one without multisampling draws single-sample.
+  engine.getCaps().maxMSAASamples = 2;
+  allowSceneScreenShadows(scene, () => false);
+  expect(mode("msaa4").samples).toBe(2);
+  engine.getCaps().maxMSAASamples = 1;
+  allowSceneScreenShadows(scene, () => false);
+  expect(mode("msaa4").samples).toBe(1);
+  // WebGPU multisamples at 4 only.
+  engine.getCaps().maxMSAASamples = 4;
+  Object.defineProperty(engine, "isWebGPU", { value: true, configurable: true });
+  allowSceneScreenShadows(scene, () => false);
+  expect(mode("msaa2").samples).toBe(4);
 });
 
 it("tells listeners of each render-mode change once, after the plan is current, and of nothing else", () => {

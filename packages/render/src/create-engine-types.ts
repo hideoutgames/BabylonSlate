@@ -433,6 +433,12 @@ export interface CreateEngineOptions {
   nativePreparation?: NativePreparationLimits;
   /** Engine Settings `hardwareScalingLevel`. 1 is native. */
   hardwareScalingLevel?: number;
+  /**
+   * An editor view of a Scene Layer document: it draws at its canvas's device
+   * pixels and full quality (`pinFullRenderQuality`), whatever the quality tier,
+   * render scale or Engine Settings scaling.
+   */
+  fullQuality?: boolean;
   /** Stack skip / compile messages (exported player and Play overlay). */
   onPostProcessDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
   /** Injected playback backend (tests). Browser Play uses AudioV2. */

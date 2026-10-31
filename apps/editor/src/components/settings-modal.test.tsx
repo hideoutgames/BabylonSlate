@@ -335,6 +335,7 @@ describe("SettingsModal project authoring", () => {
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
     ["fft size", /Water FFT Size/, "Scalability", "quality-water-fft-size"],
     ["allow reflections", /Allow Reflections/, "Scalability", "quality-postprocessing-reflections"],
+    ["msaa", /Anti-Aliasing/, "Scalability", "quality-postprocessing-antialiasing"],
     ["ssao", /Ambient Occlusion/, "Post Processing", "project-effects-ambient-occlusion"],
     ["lut", /Color Grading/, "Post Processing", "project-effects-color-grading"],
     ["upscaling", /FSR Upscaling/, "Post Processing", "project-effects-upscaling"],

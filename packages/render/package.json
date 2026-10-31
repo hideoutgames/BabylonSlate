@@ -22,7 +22,8 @@
     "./spawnable-lights": "./src/spawnable-lights.ts",
     "./lifecycle-pause": "./src/lifecycle-pause.ts",
     "./gl-error-trace": "./src/gl-error-trace.ts",
-    "./ktx2-transcoder": "./src/ktx2-transcoder.ts"
+    "./ktx2-transcoder": "./src/ktx2-transcoder.ts",
+    "./preserve-drawing-buffer-setting": "./src/preserve-drawing-buffer-setting.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
