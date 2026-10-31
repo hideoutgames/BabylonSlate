@@ -4,6 +4,7 @@ import { isEditorHelperMesh } from "./helper-mesh";
 import { drawingMesh } from "./instance-source";
 import { OcclusionBuffer } from "./occlusion-raster";
 import { keepsDrawingOutsideView } from "./play-view-culling";
+import { sceneRenderingSettings } from "./render-settings";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { RENDERING_GROUP } from "./sorting";
 
@@ -46,6 +47,8 @@ const BUFFER_HEIGHT = 128;
 
 const shapes = new WeakMap<AbstractMesh, OccluderShape>();
 const enabledScenes = new WeakSet<Scene>();
+/** Each Scene's world view's last filtered frame (`sceneOcclusionDiagnostics`). */
+const sceneDiagnostics = new WeakMap<Scene, ViewOcclusionDiagnostics>();
 
 /** Makes `mesh` an occluder with `shape`; null makes it none. */
 export function registerOccluderShape(mesh: AbstractMesh, shape: OccluderShape | null): void {
@@ -91,14 +94,23 @@ export function primitiveOccluderShape(kind: string | null | undefined, min: rea
   }
 }
 
-/** Turns occlusion culling on or off for `scene`'s world views (off by default). */
-export function setSceneOcclusionCulling(scene: Scene, enabled: boolean): void {
-  if (enabled) enabledScenes.add(scene);
+/**
+ * Lets `scene`'s world views cull by occlusion while its Occlusion Culling quality setting is on (create-engine's Play
+ * and player Scenes); a Scene never allowed never culls, whatever the setting.
+ */
+export function allowSceneOcclusionCulling(scene: Scene, allowed: boolean): void {
+  if (allowed) enabledScenes.add(scene);
   else enabledScenes.delete(scene);
 }
 
+/** Whether `scene`'s world views cull by occlusion now: allowed, and the setting on. */
 export function sceneOcclusionCulling(scene: Scene): boolean {
-  return enabledScenes.has(scene);
+  return enabledScenes.has(scene) && sceneRenderingSettings(scene).occlusionCulling;
+}
+
+/** The last frame `scene`'s world view culled by occlusion; null while it does not. */
+export function sceneOcclusionDiagnostics(scene: Scene): Readonly<ViewOcclusionDiagnostics> | null {
+  return sceneOcclusionCulling(scene) ? sceneDiagnostics.get(scene) ?? null : null;
 }
 
 export interface ViewOcclusionDiagnostics {
@@ -160,7 +172,8 @@ export class ViewOcclusion {
     diagnostics.ms = 0;
     this.culled.clear();
     const scene = camera.getScene();
-    if (!enabledScenes.has(scene) || camera.mode !== Camera.PERSPECTIVE_CAMERA || scene.skipFrustumClipping) return meshes;
+    if (!sceneOcclusionCulling(scene) || camera.mode !== Camera.PERSPECTIVE_CAMERA || scene.skipFrustumClipping) return meshes;
+    sceneDiagnostics.set(scene, diagnostics);
     const start = performance.now();
     try {
       if (!this.drawOccluders(meshes, camera)) return meshes;

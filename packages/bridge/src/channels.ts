@@ -1064,6 +1064,10 @@ export type CommandMessage =
   | { type: "setPostProcessingDebug"; enabled: boolean }
   /** Debug: whether every-frame Render Target Captures draw (the `rendertargets` console command). */
   | { type: "setRenderTargetCapturesDebug"; enabled: boolean }
+  /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */
+  | { type: "setGpuBusyProbeDebug"; enabled: boolean }
+  /** Debug: store whether the next project Engine keeps its drawing buffer (the `preservebuffer` console command). */
+  | { type: "setPreserveDrawingBufferDebug"; enabled: boolean }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }
   | { type: "setStat"; name: string; enabled: boolean }

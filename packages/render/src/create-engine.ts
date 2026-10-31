@@ -1,3 +1,4 @@
+import { allowSceneOcclusionCulling } from "./view-occlusion";
 import { applyGamepadRumble } from "./gamepad-rumble";
 import { applyDeviceVibration } from "./device-vibration";
 import { drainEngineAfterRelease } from "./idle-engine-drain";
@@ -49,6 +50,7 @@ import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
+import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import type { SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
@@ -327,13 +329,42 @@ export const PIPELINE_HOLD_PAUSE_DELAY_MS = 250;
  */
 function projectEngineOptions(): EngineOptions {
   return {
-    preserveDrawingBuffer: true,
+    preserveDrawingBuffer: preserveDrawingBufferSetting(),
     stencil: true,
     adaptToDeviceRatio: false,
     antialias: false,
     useLargeWorldRendering: true,
     useExactSrgbConversions: true,
   };
+}
+
+/** Browser storage key of the `preservebuffer` debug setting. */
+const PRESERVE_DRAWING_BUFFER_KEY = "haptic.debug.preserveDrawingBuffer";
+
+/**
+ * Whether the project Engine keeps its drawing buffer between presentations: on unless the `preservebuffer off` debug
+ * command turned it off. Off is a debug comparison on a device only (WebKit may present a preserved buffer by
+ * copying, which can back up behind the compositor): the Engine's own reads (a view's copy, the direct presenter's held
+ * image) happen in the task that drew the frame, but in a frame the Engine skips (the frame cap, a held frame) the
+ * canvas reads back blank, which fails the direct presentation e2e probe that samples every animation frame. It is a
+ * context attribute, so it applies when the project Engine is next created (an editor reload).
+ */
+export function preserveDrawingBufferSetting(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(PRESERVE_DRAWING_BUFFER_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+/** Debug (`preservebuffer on|off`): store the setting for the next project Engine. */
+export function setPreserveDrawingBufferSetting(enabled: boolean): void {
+  try {
+    if (enabled) globalThis.localStorage?.removeItem(PRESERVE_DRAWING_BUFFER_KEY);
+    else globalThis.localStorage?.setItem(PRESERVE_DRAWING_BUFFER_KEY, "off");
+  } catch {
+    // Storage unavailable (a private window): the setting stays on.
+  }
 }
 
 /** Frames with no layer still presenting share this set instead of building one. */
@@ -448,6 +479,8 @@ function initializeEngine(
   if (!presentRtt && !options.previewLighting) setSceneBindsPreviousEffects(scene);
   // Only a world view (the editor's, Play's, the player's) marches Screen-Space Shadows; previews keep them off.
   if (!presentRtt && !options.previewLighting) allowSceneScreenShadows(scene, () => !spatialEffectsUnsupported(scene));
+  // Play's and the player's world view cull by occlusion while the Occlusion Culling setting is on; the editor's does not.
+  if (!presentRtt && !options.previewLighting && options.playMode) allowSceneOcclusionCulling(scene, true);
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so a
@@ -1031,6 +1064,9 @@ function initializeEngine(
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
       "resolution.scale": String(quality.resolution.scale),
+      // The live context's attribute, not the stored setting: the setting applies to the next Engine.
+      "presentation.preserve": engine.isWebGPU ? "n/a"
+        : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
     };
   };
   const setPostProcessingEnabled = (enabled: boolean) => {
@@ -1700,7 +1736,8 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+    ))(), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
+      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
@@ -2820,6 +2857,11 @@ function initializeEngine(
       if (command.type === "setLightsDebug")
         sceneRenderingSettings(scene).lightsDebug = command.enabled;
       if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
+      if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
+      if (command.type === "setGpuBusyProbeDebug") {
+        const probe = engineGpuBusyProbe(engine);
+        if (command.enabled) probe?.start(); else probe?.stop();
+      }
       if (command.type === "setRenderTargetCapturesDebug") {
         renderTargetCaptures.setEveryFrameSuspended(!command.enabled);
         scheduler.invalidate("asset");

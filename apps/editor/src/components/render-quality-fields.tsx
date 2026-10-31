@@ -262,6 +262,15 @@ export function RenderQualityFields({
           <FieldDescription>Higher values keep full detail farther away.</FieldDescription>
         </Field>
         <Field className="settings-field">
+          <FieldLabel htmlFor="quality-geometry-occlusion">Occlusion Culling</FieldLabel>
+          <Switch
+            id="quality-geometry-occlusion"
+            checked={effective.geometry.occlusionCulling}
+            onCheckedChange={(occlusionCulling) => edit("geometry", { occlusionCulling })}
+          />
+          <FieldDescription>In Play, objects wholly hidden behind boxes, spheres, cylinders and two-sided planes are not drawn.</FieldDescription>
+        </Field>
+        <Field className="settings-field">
           <FieldLabel htmlFor="quality-water-shading">Water Shading Detail</FieldLabel>
           <Select
             value={water.shadingDetail}
