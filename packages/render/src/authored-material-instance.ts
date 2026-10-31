@@ -3,6 +3,7 @@ import type { SerializedComponent } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { ownedMaterialPreparation } from "./material-library";
 import { applyMaterialBounds } from "./material-bounds";
+import { setActorMeshMaterial } from "./pooled-visuals";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { isColliderVisualTree } from "./collider-visual";
 
@@ -28,11 +29,17 @@ export function authoredMaterialInstancePreparation(mesh: Mesh): Promise<void> |
   return owners.get(mesh)?.preparation;
 }
 
+/** Draws `mesh` with `material`: a pooled visual through its group, or a mesh of its own where no group can. */
+function drawWith(mesh: Mesh, material: Material | null): void {
+  const own = setActorMeshMaterial(mesh, material);
+  applyMaterialBounds(mesh);
+  if (own) applyMaterialBounds(own);
+}
+
 function release(owner: Owner): void {
   for (const [mesh, material] of owner.originals) {
     if (!mesh.isDisposed() && mesh.material === owner.active?.material) {
-      mesh.material = material;
-      applyMaterialBounds(mesh);
+      drawWith(mesh, material);
     }
   }
   owner.pending?.release();
@@ -84,7 +91,7 @@ export function applyAuthoredMaterialInstance(
       owned.originals.set(target, target.material);
   }
   owned.apply = options.apply ?? ((material) => {
-    for (const target of targets) { target.material = material; applyMaterialBounds(target); }
+    for (const target of targets) drawWith(target, material);
   });
   if (owned.active?.signature === signature) {
     owned.pending?.release();

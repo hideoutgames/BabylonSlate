@@ -8,6 +8,7 @@ import {
   Texture,
   Vector3,
   type AbstractMesh,
+  type Mesh,
   type Node,
   type Scene,
   type TransformNode,
@@ -31,6 +32,7 @@ import { isMirrorSurfaceMesh } from "./mirror-surface-state";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import { isSkyboxMesh } from "./skybox";
+import { drawingMesh, isInstanceSource } from "./instance-source";
 
 /** Edits and mesh changes settle this long before probes recapture, so a drag recaptures once. */
 export const REFLECTION_PROBE_RECAPTURE_DELAY_MS = 750;
@@ -77,6 +79,18 @@ function captureBytes(size: number): number {
   let colour = 0;
   for (let face = size; face >= 1; face >>= 1) colour += face * face * 6 * 8;
   return colour + size * size * 6 * 4;
+}
+
+/**
+ * Whether the editor mesh `mesh` belongs to one of the `statics` actors a probe captures: its nearest `editorActor:`
+ * node names the actor. A pooled primitive's drawn leaf (`<root>:drawn`) answers as its root does.
+ */
+export function isEditorStaticMesh(mesh: AbstractMesh, statics: ReadonlySet<string>): boolean {
+  const pooledLeaf = drawingMesh(mesh) !== mesh && isInstanceSource(drawingMesh(mesh) as Mesh);
+  for (let node: Node | null = pooledLeaf ? mesh.parent : mesh; node; node = node.parent) {
+    if (node.name.startsWith("editorActor:")) return statics.has(node.name.slice("editorActor:".length));
+  }
+  return false;
 }
 
 /**
@@ -169,12 +183,7 @@ export class ReflectionProbes {
     if (data === this.authored) return;
     this.authored = data;
     const statics = reflectionProbeStaticActors(data.actors);
-    this.setStaticPredicate((mesh) => {
-      for (let node: Node | null = mesh; node; node = node.parent) {
-        if (node.name.startsWith("editorActor:")) return statics.has(node.name.slice("editorActor:".length));
-      }
-      return false;
-    });
+    this.setStaticPredicate((mesh) => isEditorStaticMesh(mesh, statics));
     const live = new Set<string>();
     for (const actor of data.actors) {
       const bindings = actor.visible ? reflectionProbeBindings(actor.components) : [];

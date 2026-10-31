@@ -1,4 +1,5 @@
 import { setSceneInstancing } from "./instance-pool";
+import { ejectPooledLeaf } from "./pooled-visuals";
 import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";
 import { applyGamepadRumble } from "./gamepad-rumble";
 import { applyDeviceVibration } from "./device-vibration";
@@ -599,6 +600,8 @@ function initializeEngine(
     configureEditorRenderingGroups(scene);
   } else {
     scene.performancePriority = ScenePerformancePriority.BackwardCompatible;
+    // The editor viewport's primitives batch too: picking, visibility, Material and nav writes reach the drawn leaf.
+    if (options.editor) setSceneInstancing(scene, true);
   }
   if (options.editor && !options.playMode && options.previewLighting) {
     createPreviewLighting(scene);
@@ -1299,8 +1302,14 @@ function initializeEngine(
       for (const target of editorSync.visualComponentRootsForActor(actor.id)) markLatticeComponentRoot(target);
     }
     for (const actor of data.actors) {
-      deformerHost.setActor(actor.id, deformerBindings(actor.id, actor.components),
-        (id) => editorSync.meshForComponent(actor.id, id), true);
+      const bindings = deformerBindings(actor.id, actor.components);
+      // A deformer reads its target's own vertices, which a pool group's batch does not have: a pooled target leaves
+      // the pool first, as in Play (`play-visual-bindings.ts`).
+      for (const binding of bindings) {
+        const target = binding.enabled ? editorSync.meshForComponent(actor.id, binding.targetMeshComponentId) : null;
+        if (target) ejectPooledLeaf(target);
+      }
+      deformerHost.setActor(actor.id, bindings, (id) => editorSync.meshForComponent(actor.id, id), true);
     }
     deformerHost.retainActors(new Set(data.actors.map((actor) => actor.id)));
   };
