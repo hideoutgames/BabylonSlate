@@ -189,6 +189,8 @@ export function useViewportEngine({
           sharedEngine,
           viewportMode,
           overlayTransformBox,
+          // A Scene Layer document is the layer as Play draws it: device pixels and full quality on every tier.
+          fullQuality: overlayTransformBox,
           colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
           ktx2BasePath: editorKtx2PublicBase(),
           dracoBasePath: editorDracoPublicBase(),
