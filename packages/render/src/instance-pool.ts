@@ -172,10 +172,11 @@ const nonCasters = new WeakSet<AbstractMesh>();
 
 /**
  * Whether the geometry pass marks `mesh`'s pixels as a shadow caster's, which Screen-Space Shadows march over: a pool
- * group's source as its members cast, any other mesh as the shadow controller last set (a mesh it has not seen casts).
+ * group's source, and a member Babylon draws on its own (`_actAsRegularMesh`), as the group casts; any other mesh as
+ * the shadow controller last set (a mesh it has not seen casts).
  */
 export function meshCastsShadows(mesh: AbstractMesh): boolean {
-  const key = mesh instanceof Mesh ? sources.get(mesh) : undefined;
+  const key = mesh instanceof Mesh ? sources.get(mesh) : poolMember(mesh)?.pool.keyOf(mesh as InstancedMesh);
   if (key) return key.castShadows !== false;
   return !nonCasters.has(mesh);
 }

@@ -11,7 +11,7 @@ import {
 } from "@haptic/shader-graph";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
 import { HapticLightingBlock } from "./haptic-lighting-block";
-import { setMeshShadowFlags } from "./instance-pool";
+import { sceneInstancePool, setMeshShadowFlags } from "./instance-pool";
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
@@ -98,6 +98,32 @@ it("rebinds each mesh's Receive Shadows and caster mark when sharing a frozen co
   expect(values(/^hapticGeometryCaster/).at(-1)).toBe(0);
   expect(values(/^hapticShadowReceiver$/)).toContain(1);
   expect(values(/^hapticGeometryCaster/)).toContain(1);
+});
+
+it("rebinds the caster mark of a pool member drawn on its own when sharing a frozen compiled material", async () => {
+  // Babylon draws a member whose handedness differs from its source's as a mesh of its own (`_actAsRegularMesh`), binding
+  // the member: a frozen Material must still mark it as its group casts, not as what drew before it with the Effect.
+  const scene = host();
+  scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+  const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "shared-surface" });
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  const geometry = { key: "box", build: (owner: Scene, name: string) => MeshBuilder.CreateBox(name, {}, owner) };
+  const [caster, member] = [true, false].map((castShadows) => sceneInstancePool(scene).join(
+    { geometry, material: result.material, receiveShadows: true, castShadows, renderingGroupId: 0 }, castShadows ? "caster" : "member"));
+  for (const { sourceMesh } of [caster!, member!]) {
+    await result.material.forceCompilationAsync(sourceMesh);
+    expect(result.material.isReadyForSubMesh(sourceMesh, sourceMesh.subMeshes![0]!)).toBe(true);
+  }
+  result.material.freeze();
+  const effect = caster!.sourceMesh.subMeshes![0]!.effect!;
+  expect(member!.sourceMesh.subMeshes![0]!.effect).toBe(effect);
+  const setFloat = vi.spyOn(effect, "setFloat");
+  for (const drawn of [caster!, member!])
+    result.material.bindForSubMesh(drawn.computeWorldMatrix(true), drawn as never, drawn.sourceMesh.subMeshes![0]!);
+  const marks = setFloat.mock.calls.filter(([name]) => /^hapticGeometryCaster/.test(name)).map(([, value]) => value);
+  expect(marks.at(-1)).toBe(0);
+  expect(marks).toContain(1);
 });
 
 function planFor(doc: MaterialDocument, functions = {}) {
