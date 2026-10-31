@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { FreeCamera, InstancedMesh, Mesh, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Animation, FreeCamera, InstancedMesh, Mesh, StandardMaterial, Vector3, type AnimationGroup } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
-import { encodeUvHierarchyGlb } from "./glb-test-fixtures";
+import { encodeAnimatedLimbGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { sceneInstancePool, setSceneInstancing } from "./instance-pool";
 import { loadModelContainer, modelMaterialIndexOf } from "./model-container";
 import { applyModelMaterialSlots } from "./model-preview";
 import { poolModelLeaves } from "./pooled-model-leaves";
+import { setDrawnMaterial } from "./pooled-visuals";
 
 const handles: Array<ReturnType<typeof createTestEngine>> = [];
 afterEach(() => { for (const { engine } of handles.splice(0)) engine.dispose(); });
@@ -94,5 +95,85 @@ describe("poolModelLeaves", () => {
     const root = instance("model");
     expect(poolModelLeaves(root, container, { retain })).toEqual([]);
     expect(part(root, "part-a")).toBeInstanceOf(Mesh);
+  });
+});
+
+/** A pooling Scene's template container of a node-animated rig (`body` carrying `arm`), and instances with their clips. */
+async function rigScene() {
+  const handle = createTestEngine();
+  handles.push(handle);
+  handle.engine.getCaps().instancedArrays = true;
+  setSceneInstancing(handle.scene, true);
+  const container = await loadModelContainer(handle.scene, encodeAnimatedLimbGlb(), "rig.glb");
+  const instance = (name: string) => {
+    const root = new Mesh(name, handle.scene);
+    const entries = container.instantiateModelsToScene((source) => source, false, { doNotInstantiate: true });
+    for (const node of entries.rootNodes) node.parent = root;
+    return { root, groups: entries.animationGroups };
+  };
+  const retain = () => () => {};
+  return { scene: handle.scene, container, instance, retain, pool: sceneInstancePool(handle.scene) };
+}
+
+/** World height of `name` under `root` once `group` shows `frame`. */
+function heightAt(root: Mesh, name: string, group: AnimationGroup, frame: number) {
+  group.goToFrame(frame);
+  const mesh = part(root, name);
+  root.computeWorldMatrix(true);
+  for (let node = mesh; node; node = node.parent as typeof mesh) node.computeWorldMatrix(true);
+  return mesh.computeWorldMatrix(true).getTranslation().y;
+}
+
+describe("poolModelLeaves on a node-animated model", () => {
+  it("draws each instance's animated meshes pooled, its clip moving the member and the member carrying its child", async () => {
+    const { instance, container, retain, pool } = await rigScene();
+    const [left, right] = [instance("left"), instance("right")];
+    const members = [
+      ...poolModelLeaves(left.root, container, { retain, animationGroups: left.groups }),
+      ...poolModelLeaves(right.root, container, { retain, animationGroups: right.groups }),
+    ];
+    expect(members.map((member) => member.name)).toEqual(["body", "arm", "body", "arm"]);
+    const [body, arm] = [part(left.root, "body"), part(left.root, "arm")];
+    expect([body, arm].every((mesh) => mesh instanceof InstancedMesh)).toBe(true);
+    expect(arm.parent).toBe(body);
+    // One group per container mesh, each drawing both instances' copies.
+    expect(pool.diagnostics()).toMatchObject({ groups: 2, pooled: 4 });
+    const [wave] = left.groups;
+    expect(wave!.targetedAnimations.map((channel) => channel.target)).toEqual([body]);
+    wave!.start(true);
+    expect([heightAt(left.root, "body", wave!, wave!.to), heightAt(left.root, "arm", wave!, wave!.to)].map((y) => +y.toFixed(3))).toEqual([1, 1]);
+    // The other instance's clip moves only its own members.
+    expect(+heightAt(right.root, "body", right.groups[0]!, 0).toFixed(3)).toBe(0);
+  });
+
+  it("hands a playing member's clip and child to the mesh of its own a blended Material gives it", async () => {
+    const { scene, instance, container, retain } = await rigScene();
+    const rig = instance("rig");
+    poolModelLeaves(rig.root, container, { retain, animationGroups: rig.groups });
+    const [wave] = rig.groups;
+    wave!.start(true);
+    wave!.goToFrame(0);
+    const glass = new StandardMaterial("glass", scene);
+    glass.alpha = 0.5;
+    const own = setDrawnMaterial(part(rig.root, "body"), glass);
+    expect(own).toBeInstanceOf(Mesh);
+    expect(own).not.toBeInstanceOf(InstancedMesh);
+    expect(part(rig.root, "arm").parent).toBe(own);
+    expect(wave!.targetedAnimations[0]!.target).toBe(own);
+    expect(+heightAt(rig.root, "body", wave!, wave!.to).toFixed(3)).toBe(1);
+    expect(+heightAt(rig.root, "arm", wave!, wave!.to).toFixed(3)).toBe(1);
+  });
+
+  it("keeps a mesh whose clip animates more than its transform", async () => {
+    const { instance, container, retain } = await rigScene();
+    const rig = instance("rig");
+    const body = part(rig.root, "body");
+    const fade = new Animation("fade", "visibility", 60, Animation.ANIMATIONTYPE_FLOAT);
+    fade.setKeys([{ frame: 0, value: 1 }, { frame: 60, value: 0 }]);
+    rig.groups[0]!.addTargetedAnimation(fade, body);
+    poolModelLeaves(rig.root, container, { retain, animationGroups: rig.groups });
+    expect(part(rig.root, "body")).toBe(body);
+    expect(part(rig.root, "arm")).toBeInstanceOf(InstancedMesh);
+    expect(part(rig.root, "arm").parent).toBe(body);
   });
 });

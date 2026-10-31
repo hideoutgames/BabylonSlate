@@ -4,7 +4,7 @@ node: scalability.setEffects
 
 # Set Rendering Effects
 
-Sets the colour pipeline, tone mapping, exposure, bloom, vignette and FXAA.
+Sets the colour pipeline, tone mapping, exposure, bloom and vignette. Anti-aliasing is set with [Set Anti-Aliasing](set-anti-aliasing.md).
 
 ## Inputs
 
