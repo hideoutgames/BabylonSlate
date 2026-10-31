@@ -8,9 +8,12 @@ import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-rev
 import { hasRevisionTrackedLandscapeGeometry } from "./landscape-mesh";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { materialParameterRevision } from "./material-parameters";
+import { hasOwnerNotifiedGeometry } from "./geometry-revision";
+import { overlayVisualStyle } from "./overlay-visual-style";
 import { renderSettingsOwner, sceneRenderingSettings } from "./render-settings";
-import { sceneShadowDraws } from "./shadow-atlas";
+import { forEachShadowChangeSince, shadowChangeSequence, type ShadowChange } from "./shadow-change-journal";
 import { hasStaticThinInstances } from "./shadow-material-policy";
+import { hasPerMeshBindings, unlitBinding } from "./unlit-material-blocks";
 
 /** Reused value snapshot: an unchanged call allocates nothing. */
 class Snapshot {
@@ -47,8 +50,12 @@ type Record = {
   seen: number;
 };
 
-/** Graph blocks that bind content which changes without a parameter edit: other views' images, text, cage deformers. */
-const DYNAMIC_BLOCKS = new Set(["MirrorReflectionBlock", "TextMaterialBlock", "LatticeDeformerBlock"]);
+/**
+ * Graph blocks that bind content which changes without a parameter edit: other views' images and text. Every graph
+ * Material with a world position carries a Lattice Deformer block, which deforms only a mesh with an active cage
+ * (`hasMeshLatticeDeformer`, checked per mesh), so the block alone makes nothing volatile.
+ */
+const DYNAMIC_BLOCKS = new Set(["MirrorReflectionBlock", "TextMaterialBlock"]);
 /** Stock-material texture slots and colour/scalar inputs the snapshot follows. */
 const STOCK_TEXTURES = [
   "diffuseTexture", "albedoTexture", "emissiveTexture", "reflectionTexture", "opacityTexture", "bumpTexture", "ambientTexture",
@@ -59,6 +66,8 @@ const STOCK_SCALARS = [
   "alpha", "metallic", "roughness", "microSurface", "specularPower", "directIntensity", "emissiveIntensity", "environmentIntensity",
   "disableLighting", "backFaceCulling", "wireframe",
 ] as const;
+/** Texture placement that changes what a draw samples (its texture matrix). */
+const TEXTURE_PLACEMENT = ["uOffset", "vOffset", "uScale", "vScale", "uAng", "vAng", "wAng"] as const;
 const LIGHT_SCALARS = ["range", "angle", "innerAngle", "exponent", "width", "height", "radius", "shadowEnabled", "lightmapMode"] as const;
 
 /**
@@ -73,6 +82,44 @@ function isDynamicTexture(texture: BaseTexture): boolean {
     return size.width * size.height > 1;
   }
   return true;
+}
+
+/**
+ * Receiver-by-tile tests one call makes at most; past it the shadow passes count as changing what it shows, which
+ * bounds the cost of a reflection with many receivers under many changing maps.
+ */
+const SHADOW_TEST_BUDGET = 2048;
+/** Clip-space w below which a point counts as behind a shadow view's eye. */
+const MIN_W = 1e-6;
+
+/**
+ * Writes into `rect` (min x, min y, max x, max y) the NDC bounds of the world box `box` (six numbers from `at`) in the
+ * view-projection `m`: empty when the whole box is behind the view's eye (it neither draws into nor samples the view),
+ * unbounded when only part of it is.
+ */
+function projectBox(m: Float64Array, box: ArrayLike<number>, at: number, rect: Float64Array): void {
+  rect[0] = rect[1] = Infinity;
+  rect[2] = rect[3] = -Infinity;
+  let behind = 0;
+  for (let corner = 0; corner < 8; corner++) {
+    const x = box[at + (corner & 1 ? 3 : 0)]!, y = box[at + (corner & 2 ? 4 : 1)]!, z = box[at + (corner & 4 ? 5 : 2)]!;
+    const w = x * m[3]! + y * m[7]! + z * m[11]! + m[15]!;
+    if (w <= MIN_W) { behind++; continue; }
+    const nx = (x * m[0]! + y * m[4]! + z * m[8]! + m[12]!) / w, ny = (x * m[1]! + y * m[5]! + z * m[9]! + m[13]!) / w;
+    // Negated so a non-finite projection (or w) is unbounded.
+    if (!(Number.isFinite(nx) && Number.isFinite(ny))) { behind = -1; break; }
+    if (nx < rect[0]!) rect[0] = nx;
+    if (ny < rect[1]!) rect[1] = ny;
+    if (nx > rect[2]!) rect[2] = nx;
+    if (ny > rect[3]!) rect[3] = ny;
+  }
+  if (behind === 8) {
+    rect[0] = rect[1] = Infinity;
+    rect[2] = rect[3] = -Infinity;
+  } else if (behind !== 0) {
+    rect[0] = rect[1] = -Infinity;
+    rect[2] = rect[3] = Infinity;
+  }
 }
 
 /** Per compiled Material and its build and parameter revision: whether its look can change on its own. */
@@ -99,6 +146,19 @@ function compiledMaterialIsVolatile(material: NodeMaterial, revision: number): b
  */
 export class ReflectedContent {
   private readonly records = new Map<AbstractMesh, Record>();
+  /** The Scene's shadow change journal as last read; -1 before the first call. */
+  private shadowSequence = -1;
+  private receivers: readonly AbstractMesh[] = [];
+  private shadowReached = false;
+  private shadowTests = 0;
+  /** Scratch: a receiver's box, its rectangle, and the changed boxes' rectangles per tile (4 numbers each). */
+  private readonly receiverBox = new Float64Array(6);
+  private readonly receiverUnion = new Float64Array(6);
+  /** -1 until `unionReceivers` reads them this call. */
+  private shadowReceivers = -1;
+  private readonly receiverRect = new Float64Array(4);
+  private changeRects = new Float64Array(0);
+  private readonly visitShadowChange = (change: ShadowChange) => (this.shadowReached = this.shadowChangeReaches(change));
   private readonly state = new Snapshot();
   private generation = 0;
   private readonly sweep = (record: Record, mesh: AbstractMesh) => {
@@ -122,7 +182,100 @@ export class ReflectedContent {
     }
     state.end();
     if (this.records.size > meshes.length) this.records.forEach(this.sweep);
-    return state.changed || volatile;
+    const shadows = this.shadowsChanged(scene, meshes);
+    return state.changed || volatile || shadows;
+  }
+
+  /**
+   * Whether a shadow map pass since the last call may have changed a shadow `meshes` show: one whose changed region,
+   * in some tile's drawn view, overlaps a receiver's rectangle there widened by the tile's filter reach. Depth is not
+   * compared, so a caster's change reaches every receiver it lines up with in the light's view.
+   */
+  private shadowsChanged(scene: Scene, meshes: readonly AbstractMesh[]): boolean {
+    const sequence = shadowChangeSequence(scene);
+    const since = this.shadowSequence;
+    this.shadowSequence = sequence;
+    // The first call reports a change anyway.
+    if (since < 0 || since === sequence) return false;
+    this.receivers = meshes;
+    this.shadowReached = false;
+    this.shadowTests = 0;
+    this.shadowReceivers = -1;
+    const kept = forEachShadowChangeSince(scene, since, this.visitShadowChange);
+    this.receivers = [];
+    return !kept || this.shadowReached;
+  }
+
+  /**
+   * The union of the shown receivers' boxes (`receiverUnion`), read once per call: `shadowReceivers` 0 for none, 1 for
+   * bounded receivers, 2 when one's bounds leave its thin instances out.
+   */
+  private unionReceivers(): void {
+    const union = this.receiverUnion;
+    union[0] = union[1] = union[2] = Infinity;
+    union[3] = union[4] = union[5] = -Infinity;
+    this.shadowReceivers = 0;
+    for (const mesh of this.receivers) {
+      if (!mesh.receiveShadows) continue;
+      const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+      if (source instanceof Mesh && source.hasThinInstances) {
+        this.shadowReceivers = 2;
+        return;
+      }
+      this.shadowReceivers = 1;
+      const info = mesh.getBoundingInfo();
+      const min = info.boundingBox.minimumWorld, max = info.boundingBox.maximumWorld;
+      union[0] = Math.min(union[0]!, min.x); union[1] = Math.min(union[1]!, min.y); union[2] = Math.min(union[2]!, min.z);
+      union[3] = Math.max(union[3]!, max.x); union[4] = Math.max(union[4]!, max.y); union[5] = Math.max(union[5]!, max.z);
+    }
+  }
+
+  /** Whether `rect`, widened by `reach` and kept to the tile, overlaps one of `boxes` changed rectangles at `at`. */
+  private overlapsChange(rect: Float64Array, reach: number, at: number, boxes: number): boolean {
+    // Outside its tile's view a receiver samples nothing of it.
+    const x0 = Math.max(-1, rect[0]! - reach), y0 = Math.max(-1, rect[1]! - reach);
+    const x1 = Math.min(1, rect[2]! + reach), y1 = Math.min(1, rect[3]! + reach);
+    if (!(x0 <= x1 && y0 <= y1)) return false;
+    const rects = this.changeRects;
+    for (let b = 0; b < boxes; b++, at += 4)
+      if (rects[at]! <= x1 && rects[at + 2]! >= x0 && rects[at + 1]! <= y1 && rects[at + 3]! >= y0) return true;
+    return false;
+  }
+
+  private shadowChangeReaches(change: ShadowChange): boolean {
+    const region = change.region;
+    if (region.empty) return false;
+    if (this.shadowReceivers < 0) this.unionReceivers();
+    if (this.shadowReceivers === 0) return false;
+    if (region.all || this.shadowReceivers === 2) return true;
+    const boxes = region.count, stride = 4 * boxes, tiles = change.tiles;
+    if (this.changeRects.length < stride * tiles) this.changeRects = new Float64Array(stride * tiles);
+    const rects = this.changeRects, rect = this.receiverRect;
+    // Tiles where the receivers together could sample a change; usually none, which ends the test.
+    let candidates = 0;
+    for (let tile = 0; tile < tiles; tile++) {
+      for (let b = 0; b < boxes; b++) {
+        const at = tile * stride + 4 * b;
+        projectBox(change.views[tile]!, region.boxes, 6 * b, rects.subarray(at, at + 4));
+      }
+      projectBox(change.views[tile]!, this.receiverUnion, 0, rect);
+      if (this.overlapsChange(rect, change.reaches[tile]!, tile * stride, boxes)) candidates |= 1 << tile;
+    }
+    if (!candidates) return false;
+    const box = this.receiverBox;
+    for (const mesh of this.receivers) {
+      if (!mesh.receiveShadows) continue;
+      const info = mesh.getBoundingInfo();
+      const min = info.boundingBox.minimumWorld, max = info.boundingBox.maximumWorld;
+      box[0] = min.x; box[1] = min.y; box[2] = min.z; box[3] = max.x; box[4] = max.y; box[5] = max.z;
+      for (let tile = 0; tile < tiles; tile++) {
+        if (!(candidates & (1 << tile))) continue;
+        if (++this.shadowTests > SHADOW_TEST_BUDGET) return true;
+        projectBox(change.views[tile]!, box, 0, rect);
+        if (this.overlapsChange(rect, change.reaches[tile]!, tile * stride, boxes)) return true;
+      }
+    }
+    return false;
   }
 
   dispose(): void {
@@ -132,7 +285,6 @@ export class ReflectedContent {
 
   private sceneState(scene: Scene): void {
     const state = this.state;
-    state.value(sceneShadowDraws(scene));
     const lights = scene.lights;
     state.value(lights.length);
     for (let i = 0; i < lights.length; i++) this.lightState(lights[i]!);
@@ -218,6 +370,10 @@ export class ReflectedContent {
     state.value(mesh.visibility);
     state.value(mesh.receiveShadows);
     state.value(mesh.renderingGroupId);
+    // A component's opacity and tint, bound per draw by unlit and Standard materials alike.
+    const style = overlayVisualStyle(source);
+    state.value(style.opacity);
+    state.value(style.tint[0]); state.value(style.tint[1]); state.value(style.tint[2]); state.value(style.tint[3]);
     state.value(source instanceof Mesh ? source.sideOrientation : undefined);
     state.value(geometry);
     const watch = geometry ? geometryRevision(geometry) : null;
@@ -239,6 +395,8 @@ export class ReflectedContent {
       }
     const material = mesh.material ?? scene.defaultMaterial;
     let volatile = this.materialState(material);
+    // An unlit Material binds each mesh's own values per draw (Babylon binds an instance as its source).
+    if (hasPerMeshBindings(material) && this.unlitState(source)) volatile = true;
     if (material instanceof MultiMaterial) {
       const slots = material.subMaterials;
       state.value(slots.length);
@@ -260,7 +418,7 @@ export class ReflectedContent {
     // As shadow maps cache them (`ShadowMapRefresh`): vertex data changes count only through notified updates, and an
     // updatable index buffer's updates never notify, unless the mesh's owner routes every write through notified updates.
     if (!watch) return true;
-    if (hasRevisionTrackedDynamicMesh(source) || hasRevisionTrackedLandscapeGeometry(source)) return volatile;
+    if (hasRevisionTrackedDynamicMesh(source) || hasRevisionTrackedLandscapeGeometry(source) || hasOwnerNotifiedGeometry(source)) return volatile;
     if (Reflect.get(geometry, "_indexBufferIsUpdatable") !== false) return true;
     const buffers = geometry.getVertexBuffers();
     const cable = hasRevisionTrackedCableGeometry(source);
@@ -278,6 +436,14 @@ export class ReflectedContent {
     state.value(material.backFaceCulling);
     state.value(material.wireframe);
     if (material instanceof MultiMaterial) return false;
+    if (hasPerMeshBindings(material)) {
+      // The unlit Material's program and render state are fixed per instance; what each mesh draws is its binding
+      // (`unlitState`). Its bind observer only rebinds that binding on a frozen material.
+      state.value((material as NodeMaterial).buildId);
+      state.value(material.fogEnabled);
+      state.value((material as NodeMaterial).imageProcessingConfiguration);
+      return false;
+    }
     const revision = materialParameterRevision(material);
     if (revision !== undefined && material instanceof NodeMaterial) {
       state.value(material.buildId);
@@ -294,12 +460,39 @@ export class ReflectedContent {
       state.value(texture);
       if (!texture) continue;
       state.value(texture.level);
-      if (texture instanceof Texture) {
-        state.value(texture.uOffset); state.value(texture.vOffset); state.value(texture.uScale); state.value(texture.vScale);
-        state.value(texture.wAng);
-      }
-      if (isDynamicTexture(texture)) volatile = true;
+      if (this.textureState(texture)) volatile = true;
     }
     return volatile;
+  }
+
+  /** Writes a bound texture's state; true when its content can change without it. */
+  private textureState(texture: BaseTexture): boolean {
+    const state = this.state;
+    state.value(texture.level);
+    state.value(texture.hasAlpha);
+    if (texture instanceof Texture) for (const key of TEXTURE_PLACEMENT) state.value(texture[key]);
+    return isDynamicTexture(texture);
+  }
+
+  /**
+   * Writes what an unlit mesh binds (`bindUnlitUniforms`) besides its visual style: its binding, which owners edit in
+   * place, and its vertex colours. True when its texture can change without it.
+   */
+  private unlitState(mesh: AbstractMesh): boolean {
+    const state = this.state;
+    const binding = unlitBinding(mesh);
+    state.value(binding.texture);
+    state.value(binding.color[0]); state.value(binding.color[1]); state.value(binding.color[2]);
+    state.value(binding.alpha);
+    state.value(binding.cutoff);
+    state.value(binding.blend);
+    state.value(binding.textureAlpha);
+    state.value(binding.twoSided);
+    const stroke = binding.msdf;
+    state.value(stroke?.strokeColor[0]); state.value(stroke?.strokeColor[1]); state.value(stroke?.strokeColor[2]);
+    state.value(stroke?.strokeWidth);
+    state.value(mesh.hasVertexAlpha);
+    state.value(mesh.useVertexColors);
+    return !!binding.texture && this.textureState(binding.texture);
   }
 }

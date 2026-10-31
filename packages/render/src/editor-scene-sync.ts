@@ -1,6 +1,8 @@
 import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
+import { pooledLeafOf, setDrawnMaterial } from "./pooled-visuals";
+import { isPoolMember } from "./instance-pool";
 import { withNetMaterialChanges } from "./material-change-batch";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
@@ -121,7 +123,7 @@ export class EditorSceneSync {
   private readonly validateMaterialParameter?: MeshAssetContext["validateMaterialParameter"];
   private readonly onAfterApply?: () => void;
   private readonly preparationPriority?: NativePreparationPriority;
-  private readonly constructionMaterials = new WeakMap<Mesh, Material | null>();
+  private readonly constructionMaterials = new WeakMap<AbstractMesh, Material | null>();
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
   private lastAssetFingerprint: string | null = null;
@@ -1188,8 +1190,7 @@ export class EditorSceneSync {
       for (const target of meshAndDescendantMeshes(visual)) {
         if (isColliderVisualTree(target) || isTilemapChunkMesh(target)) continue;
         if (!this.constructionMaterials.has(target)) continue;
-        target.material = this.constructionMaterials.get(target) ?? null;
-        applyMaterialBounds(target);
+        assignActorMeshMaterial(target, this.constructionMaterials.get(target) ?? null);
       }
     }
   }
@@ -1230,8 +1231,7 @@ export class EditorSceneSync {
       ) {
         for (const target of meshAndDescendantMeshes(visual)) {
           if (isColliderVisualTree(target) || isTilemapChunkMesh(target)) continue;
-          target.material = null;
-          applyMaterialBounds(target);
+          assignActorMeshMaterial(target, null);
         }
         continue;
       }
@@ -1274,8 +1274,7 @@ export class EditorSceneSync {
     if (!material) return;
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;
-      target.material = material;
-      applyMaterialBounds(target);
+      assignActorMeshMaterial(target, material, this.constructionMaterials);
     }
   }
 
@@ -1339,11 +1338,29 @@ function visualForMeshComponent(
   return visualMeshesOfActorRoot(root).find((mesh) => mesh.name === name) ?? null;
 }
 
-function meshAndDescendantMeshes(root: Mesh): Mesh[] {
+/**
+ * Draws `target` with `material`: a pooled visual or a static model's pooled leaf through its group or, for a
+ * Material no group draws, a mesh of its own (`setDrawnMaterial`), which inherits `target`'s construction Material so
+ * a restore reaches what draws.
+ */
+function assignActorMeshMaterial(target: AbstractMesh, material: Material | null, construction?: WeakMap<AbstractMesh, Material | null>): void {
+  const drawn = setDrawnMaterial(target, material);
+  if (!target.isDisposed()) applyMaterialBounds(target);
+  if (drawn === target) return;
+  applyMaterialBounds(drawn);
+  if (construction?.has(target)) construction.set(drawn, construction.get(target) ?? null);
+}
+
+/**
+ * `root` and the meshes under it whose Material the editor writes: a static model's pooled leaves among them, not a
+ * pooled primitive's leaf, which follows its root.
+ */
+function meshAndDescendantMeshes(root: Mesh): AbstractMesh[] {
   // Automatic LOD levels are blocked meshes that mirror their master's material.
   const children = root
     .getChildMeshes()
-    .filter((child): child is Mesh => child instanceof Mesh && !child.isBlocked);
+    .filter((child) => child instanceof Mesh ? !child.isBlocked
+      : isPoolMember(child) && (!child.parent || pooledLeafOf(child.parent as AbstractMesh) !== child));
   return [root, ...children];
 }
 import { updateLandscapeMesh } from "./landscape-mesh";

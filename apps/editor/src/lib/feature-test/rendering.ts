@@ -565,11 +565,16 @@ async function saveManualCapture(ctx: FeatureTestContext, renderTargetGuid: stri
   return { ref, components };
 }
 
-/** Console commands perf agents use to flip shading mid-run. */
+/** Console commands perf agents use to flip shading and occlusion culling mid-run. */
 async function saveScalabilityCommands(ctx: FeatureTestContext): Promise<void> {
   const commands = [
     { name: "FT_RenderCelCommand", command: "ft_cel", node: "scalability.setRenderMode", data: { "default:mode": "cel" }, report: "Requested CEL shading" },
     { name: "FT_RenderPbrCommand", command: "ft_pbr", node: "scalability.setRenderMode", data: { "default:mode": "pbr" }, report: "Requested PBR shading" },
+    // Occlusion Culling is off on every quality tier until measured on device; this turns it on for the session.
+    {
+      name: "FT_RenderOcclusionCommand", command: "ft_occlusion", node: "debug.executeConsoleCommand",
+      data: { "default:command": "quality geometry occlusion on" }, report: "Turned occlusion culling on",
+    },
   ];
   for (const entry of commands) {
     const graph = classGraph({
@@ -622,7 +627,7 @@ function primitive(
   return actor(id, name, tf(position, { rotationDeg: options.rotationDeg, scale: options.scale }), [mesh]);
 }
 
-function text3d(id: string, name: string, position: Vec3, text: string, options: { size: number; color: Vec3; fontAssetGuid: string | null; rotationDeg?: Vec3 }): SerializedActor {
+function text3d(id: string, name: string, position: Vec3, text: string, options: { size: number; color: Vec3; fontAssetGuid: string | null; rotationDeg?: Vec3; castShadows?: boolean }): SerializedActor {
   return actor(id, name, tf(position, { rotationDeg: options.rotationDeg }), [
     comp(`${id}-text`, "Text3DComponent", {
       text,
@@ -630,6 +635,8 @@ function text3d(id: string, name: string, position: Vec3, text: string, options:
       color: options.color,
       alignment: "center",
       fontAssetGuid: options.fontAssetGuid,
+      // Unlit 3D Text casts no shadow unless Cast Shadows is set.
+      ...(options.castShadows !== undefined ? { castShadows: options.castShadows } : {}),
     }),
   ]);
 }
@@ -867,6 +874,9 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
   add(text3d("ft-render-text-bundled", "Bundled ASCII Text", zone.at(3, 2.4, 9), "Text3D Bundled ASCII", {
     size: 0.55, color: [0.6, 1, 0.7], fontAssetGuid: null,
   }));
+  add(text3d("ft-render-text-shadow", "Shadow Casting Text", zone.at(3, 1.4, 9), "Text3D Casts Shadows", {
+    size: 0.55, color: [1, 0.85, 0.5], fontAssetGuid: null, castShadows: true,
+  }));
 
   // Top-down orthographic view of the zone: `possess "Effects Ortho Camera"`.
   add(actor("ft-render-ortho-camera", "Effects Ortho Camera", tf(zone.at(0, 30, 0), { rotationDeg: [90, 0, 0] }), [
@@ -1051,7 +1061,6 @@ function applyRenderSettings(settings: ProjectSettings, lut: string | null): Pro
         whiteBalance: { ...effects.whiteBalance, enabled: true, temperature: 6800, tint: 0 },
         vignette: { ...effects.vignette, enabled: true, weight: 0.8 },
         bloom: { ...effects.bloom, enabled: true, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
-        fxaa: true,
         upscaling: { ...effects.upscaling, enabled: true, renderScale: 0.8, sharpness: 0.2 },
         colorGrading: { enabled: lut !== null, lutTextureGuid: lut },
         ambientOcclusion: { ...effects.ambientOcclusion, enabled: true, resolutionScale: 0.5, samples: 12 },

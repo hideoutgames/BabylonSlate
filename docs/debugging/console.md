@@ -28,12 +28,12 @@ The game keeps running while the console is open, and pressing the game does not
 | --- | --- | --- | --- |
 | `changescene` | scene | Loads a scene by its asset GUID or name. |  |
 | `quality` | `low`, `medium`, `high`, `ultra` or `reset` | Sets every rendering quality group, or resets them. No argument prints the current values. |  |
-| `quality shadows` | tier or `reset`; `budget` N or `auto`; `distance` N; `enabled` `on`/`off`; `screen` `off`/`low`/`medium`/`high` | Shadow quality, the number of shadowed lights, shadow distance (1 to 1,000,000), shadows on or off, and Screen-Space Shadows. |  |
+| `quality shadows` | tier or `reset`; `budget` N or `auto`; `distance` N; `enabled` `on`/`off`; `screen` `off`/`low`/`medium`/`high`; `filter` `low`/`medium`/`high` | Shadow quality, the number of shadowed lights, shadow distance (1 to 1,000,000), shadows on or off, Screen-Space Shadows, and **Shadow Filter Quality**. |  |
 | `quality resolution` | tier or `reset`; `scale` 0.25 to 1 | Render resolution quality, or a fixed fraction of the output size. |  |
 | `quality textures` | tier or `reset` | Texture quality. |  |
-| `quality geometry` | tier or `reset`; `lod` `on`/`off`; `distance` 0.25 to 4 | Geometry quality, automatic Model LOD and its switch distance scale. |  |
+| `quality geometry` | tier or `reset`; `lod` `on`/`off`; `distance` 0.25 to 4; `occlusion` `on`/`off` | Geometry quality: automatic Model LOD, its switch distance scale, and occlusion culling. |  |
 | `quality water` | tier or `reset`; setting and value | Water rendering quality, or one water setting (see below). Buoyancy is unaffected. |  |
-| `quality postprocessing` | tier or `reset`; `ambientOcclusion`, `reflections` or `volumetricLighting` `on`/`off` | Post-processing quality, or whether the tier allows one effect. An effect still runs only where the project turns it on. |  |
+| `quality postprocessing` | tier or `reset`; `ambientOcclusion`, `reflections` or `volumetricLighting` `on`/`off`; `antialiasing` `msaa4`/`msaa2`/`fxaa`/`off` | Post-processing quality, whether the tier allows one effect, or the [Anti-Aliasing](../graphics/post-processing.md#anti-aliasing) mode. An effect still runs only where the project turns it on. |  |
 | `quality lighting` | tier or `reset`; `budget` N or `auto` | Lighting quality and the number of local lights. |  |
 | `framecap` | fps | Limits the frame rate. 0 or less uses 60. |  |
 | `volume` | 0 to 1 | Sets the master volume, like [Set Global Volume](../scripting/class/set-global-volume.md). |  |
@@ -52,9 +52,13 @@ The game keeps running while the console is open, and pressing the game does not
 | `stat draws` | `on`/`off` | Adds draw calls, meshes, textures, render timings and first shader draws to Stats. | Yes |
 | `stat threads` | `on`/`off` | Adds message traffic, actor count and tick count to Stats. | Yes |
 | `lightsdebug` | `on`/`off` | Shows which lights illuminate and which cast shadows. | Yes |
+| `showocclusion` | `on`/`off` | Shows what occlusion culling sees: solid shapes, light when near and dark when far, and how many objects it skips. | Yes |
+| `freezeocclusion` | `on`/`off` | Keeps skipping what the current view hides while you move the camera, to check what occlusion culling skips. | Yes |
 | `wireframe` | `on`/`off` | Draws meshes as wireframes. | Yes |
 | `postprocessing` | `on`/`off` | Turns all post-processing off or back on, to measure what it costs. | Yes |
 | `rendertargets` | `on`/`off` | Pauses or resumes Render Target Captures that capture every frame, to measure what they cost. Their textures keep their last image; manual captures still capture when asked. | Yes |
+| `gpubusy` | `on`/`off` | Starts (or restarts) or stops measuring how long the GPU spends on each frame, independently of display pacing. The Feature Test Check's Breakdown reads it. | Yes |
+| `preservebuffer` | `on`/`off` | Keeps (on, the default) or drops the rendering canvas's image between frames, to compare presentation cost. Stored in the browser and applied after the editor reloads or the project is reopened. The Feature Test Check's Breakdown compares both settings by itself and puts yours back. | Yes |
 | `showbounds` | `on`/`off` | Draws the bounding box of each mesh. | Yes |
 | `actorboundingbox` | `on`/`off` | Same as `showbounds`. | Yes |
 | `showcollision` | `on`/`off` | Draws the physics collision shapes. | Yes |

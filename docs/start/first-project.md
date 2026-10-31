@@ -62,9 +62,22 @@ Feature Test is a developer starter that places every engine feature in a few sc
 1. Turn on **Engine Settings > Debugger > Debug Mode**.
 2. Create a project from the **Feature Test** starter.
 3. Choose **Debug > Run Feature Test Check…** (on phones, **More Tools** first).
-4. Pick **Quick (Current Scene)**, **Full (All Scenes)** or **Benchmark**, then choose **Start**.
+4. Pick **Quick (Current Scene)**, **Full (All Scenes)**, **Benchmark** or **Breakdown**, then choose **Start**.
 5. When it finishes, choose **Copy Report** to copy the plain-text results.
 
 If the app crashes or reloads during a check, choose **Run Feature Test Check…** again: it shows the report up to where the app stopped, with what the editor held at the end, so you can still copy it.
 
 Benchmark plays every scene at each quality level and takes about ten minutes; keep the device awake and plugged in.
+
+Breakdown shows what each feature costs your device's GPU. It plays two scenes, measures each feature on its own between unchanged baselines, and also measures occlusion culling seen from two cameras. It needs no console commands. Choose how it measures:
+
+- **Add One** (the default) starts from a light setup well below what the GPU can handle: the Low quality level at half resolution, without post-processing, anti-aliasing, water reflections, water refraction or captures. It turns one feature on at a time at its Medium value, so each change is that feature's own cost. The report flags **OVER CAP** when even the light setup took over 30 ms of GPU time per frame, because the costs are then unreliable.
+- **Remove One** starts from the Medium quality level and turns one feature off at a time, showing what each saves there. A GPU that is already at its limit shows only whether removing a feature brought it back under, not what the feature costs.
+
+Either way, a step whose setting already has that value is skipped, and the report says so. The report also shows how much the GPU time changed while the device warmed up.
+
+- Turn on **Compare Preserve Drawing Buffer** to also compare the two `preservebuffer` settings: halfway through, the editor reloads by itself, reopens the project and measures everything again with the other setting, then puts yours back. The report holds both rounds and compares them. It is off by default.
+- Choose **Cancel** in the status bar to stop at any point; the report keeps what finished.
+- The report warns when the device was still warm from a check that ended less than ten minutes earlier, and when the GPU was too busy for the costs to add up (Remove One).
+
+A Breakdown takes about 10 minutes, or 20 with the comparison; keep the device awake and plugged in.

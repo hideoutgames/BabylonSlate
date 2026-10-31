@@ -55,6 +55,9 @@ export interface SceneEditingContextValue {
   /** Session-only MeshComponent collision dashes. Default off. */
   collisionsVisible: boolean;
   setCollisionsVisible: (visible: boolean) => void;
+  /** Session-only: the viewport culls by occlusion, as Play does with Occlusion Culling on. Default off. */
+  occlusionCulling: boolean;
+  setOcclusionCulling: (enabled: boolean) => void;
   /** One-shot Drag Select; unpresses after the next tap or marquee. */
   dragSelectActive: boolean;
   setDragSelectActive: (active: boolean) => void;
@@ -152,6 +155,7 @@ export function SceneEditingProvider({
     documentNavmeshVisible ?? false,
   );
   const [collisionsVisible, setCollisionsVisible] = useState(false);
+  const [occlusionCulling, setOcclusionCulling] = useState(false);
   const [dragSelectActive, setDragSelectActive] = useState(false);
   const [viewportMode, setViewportMode] = useState<ViewportMode>(
     resolveDocumentViewportMode(documentViewportMode ?? initialViewportMode),
@@ -274,6 +278,8 @@ export function SceneEditingProvider({
       setNavmeshVisible,
       collisionsVisible,
       setCollisionsVisible,
+      occlusionCulling,
+      setOcclusionCulling,
       dragSelectActive,
       setDragSelectActive,
       viewportMode,
@@ -301,6 +307,7 @@ export function SceneEditingProvider({
       loadEditorCameraPose,
       navmeshVisible,
       collisionsVisible,
+      occlusionCulling,
       saveEditorCameraPose,
       selectActor,
       selectedActorIds,

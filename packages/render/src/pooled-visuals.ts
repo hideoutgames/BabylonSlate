@@ -1,5 +1,5 @@
 import type { AbstractMesh, InstancedMesh, Material, Mesh, Scene } from "@babylonjs/core";
-import { materialIneligibility, sceneInstancePool } from "./instance-pool";
+import { isPoolMember, materialIneligibility, sceneInstancePool } from "./instance-pool";
 
 /**
  * Visuals drawn through the instance pool: a slot root or named part stays a `Mesh` without geometry, and its drawn
@@ -64,4 +64,51 @@ export function setActorMeshMaterial(mesh: AbstractMesh, material: Material | nu
   }
   sceneInstancePool(mesh.getScene()).update(leaf, { material });
   return undefined;
+}
+
+/**
+ * Assigns `material` to what `mesh` draws and returns the mesh that draws it: a pool member, such as a static model's
+ * leaf (`poolModelLeaves`), by moving it to the group drawn with `material`, or, where no group can draw it, by
+ * replacing it in place with a mesh of its own (the eject listeners refresh what keyed it); a pooled visual's root
+ * through `setActorMeshMaterial`; any other mesh directly.
+ */
+export function setDrawnMaterial(mesh: AbstractMesh, material: Material | null): AbstractMesh {
+  if (!isPoolMember(mesh)) return setActorMeshMaterial(mesh, material) ?? mesh;
+  const pool = sceneInstancePool(mesh.getScene());
+  if (!materialIneligibility(mesh.sourceMesh, material ?? mesh.getScene().defaultMaterial)) {
+    pool.update(mesh, { material });
+    return mesh;
+  }
+  const own = pool.eject(mesh);
+  own.material = material;
+  for (const listener of [...ejectListeners.get(own.getScene()) ?? []]) listener(own);
+  return own;
+}
+
+/**
+ * Gives `root`'s pooled leaf the visibility and picking written to `root`, which draws nothing itself: Babylon
+ * inherits neither flag, and the leaf is what draws and what a pick meets.
+ */
+export function syncPooledLeafFlags(root: AbstractMesh): void {
+  const leaf = pooledLeafOf(root);
+  if (!leaf) return;
+  leaf.isVisible = root.isVisible;
+  leaf.isPickable = root.isPickable;
+}
+
+/**
+ * Sorts `root`'s pooled leaf as an explicit sorting layer and order sort `root` (`applyComponentSorting`): the leaf,
+ * whose submeshes the sorted passes compare, carries the same `alphaIndex` and sorting group, and draws in the group
+ * of that order and rendering group.
+ */
+export function sortPooledLeaf(root: AbstractMesh): void {
+  const leaf = pooledLeafOf(root);
+  if (!leaf) return;
+  const metadata = root.metadata as { sortingGroupId?: string; sortingLayerKey?: number } | null;
+  leaf.alphaIndex = root.alphaIndex;
+  leaf.metadata = { ...(leaf.metadata as object | null), sortingGroupId: metadata?.sortingGroupId, sortingLayerKey: metadata?.sortingLayerKey ?? 0 };
+  sceneInstancePool(root.getScene()).update(leaf, {
+    renderingGroupId: root.renderingGroupId,
+    sortKey: `${root.alphaIndex}|${metadata?.sortingGroupId ?? ""}|${metadata?.sortingLayerKey ?? 0}`,
+  });
 }

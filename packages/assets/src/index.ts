@@ -33,6 +33,7 @@ export * from "./model-payload";
 export * from "./convex-hull";
 export * from "./glb-geometry";
 export * from "./simple-collision";
+export * from "./occluder-bake";
 export * from "./mesh-collision";
 export * from "./skeleton-payload";
 export * from "./animation-payload";

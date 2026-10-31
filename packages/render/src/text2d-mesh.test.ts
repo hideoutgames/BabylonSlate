@@ -1,4 +1,4 @@
-import { Mesh, StandardMaterial } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createActor,
@@ -6,6 +6,7 @@ import {
   createText2DComponent,
 } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
+import { unlitBinding } from "./unlit-material-blocks";
 import {
   actorVisualFingerprint,
   createMeshForComponent,
@@ -18,6 +19,7 @@ import {
   createPlayMesh,
   createSnapshotSceneBinding,
 } from "./snapshot-apply";
+import { isUnlitMaterial } from "./unlit-material";
 
 function fixedMetrics(): GlyphMetricsProvider {
   return {
@@ -67,10 +69,7 @@ describe("createText2DMesh", () => {
       (mesh.metadata as { text2dWrapWidth?: number }).text2dWrapWidth,
     ).toBeGreaterThan(0);
     for (const child of children) {
-      const material = child.material as StandardMaterial;
-      expect(
-        material.diffuseTexture ?? material.opacityTexture ?? material.emissiveTexture,
-      ).toBeTruthy();
+      expect(unlitBinding(child).texture).toBeTruthy();
       // Two letters share one batch: one atlas rectangle (4 vertices) per letter.
       const uvs = child.getVerticesData("uv");
       expect(uvs?.length).toBe(16);
@@ -123,10 +122,9 @@ describe("createText2DMesh", () => {
     expect(children[0]!.getTotalVertices()).toBe(8);
     expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
     for (const child of children) {
-      const material = child.material as StandardMaterial;
-      expect(material.emissiveTexture).toBeTruthy();
-      expect(material.diffuseTexture).toBeTruthy();
-      expect(material.transparencyMode).toBe(1);
+      expect(unlitBinding(child).texture).toBeTruthy();
+      // Cut out (Standard's alpha test).
+      expect(child.material!.needAlphaTestingForMesh(child)).toBe(true);
       const uvs = child.getVerticesData("uv");
       expect(uvs?.[0]).not.toBe(uvs?.[2]);
     }
@@ -215,7 +213,7 @@ describe("createText2DMesh", () => {
     expect(
       children.every((child) => (child.metadata as { text2dGlyph?: boolean }).text2dGlyph),
     ).toBe(true);
-    expect((mesh.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(mesh.material)).toBe(true);
   });
 
   it("records the compiled CSS stack used to rasterize bitmap glyphs", () => {
@@ -261,7 +259,7 @@ describe("createText2DMesh", () => {
     const sources = mesh.getChildMeshes().map(sourceOf);
     expect(sources).toContain("msdf");
     expect(sources).toContain("bitmap");
-    // Same-style MSDF glyphs share one material and one batch mesh; another color gets its own.
+    // Same-style MSDF glyphs share one binding and one batch mesh; another color gets its own.
     const msdfGlyphs = mesh.getChildMeshes().filter((child) => sourceOf(child) === "msdf");
     expect(msdfGlyphs).toHaveLength(1);
     expect(msdfGlyphs[0]!.getTotalVertices()).toBe(2 * 4);
@@ -272,10 +270,11 @@ describe("createText2DMesh", () => {
       assets,
       { rich: true },
     );
-    const [red, green] = rich.getChildMeshes().map((child) => child.material as StandardMaterial);
+    // Without its atlas (no resource cache) each style draws its solid colour.
+    const [red, green] = rich.getChildMeshes().map((child) => unlitBinding(child));
     expect(red).not.toBe(green);
-    expect(red!.emissiveColor.asArray()).toEqual([1, 0, 0]);
-    expect(green!.emissiveColor.asArray()).toEqual([0, 1, 0]);
+    expect(red!.color).toEqual([1, 0, 0]);
+    expect(green!.color).toEqual([0, 1, 0]);
   });
 
   it.each([
@@ -430,8 +429,7 @@ describe("2D text editor and Play wiring", () => {
     expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
     expect(mesh.getChildMeshes().length).toBeGreaterThanOrEqual(1);
     expect(mesh.getChildMeshes().every((glyph) => glyph.visibility === 1)).toBe(true);
-    const material = mesh.getChildMeshes()[0]?.material as StandardMaterial;
-    expect(material.emissiveTexture).toBeTruthy();
+    expect(unlitBinding(mesh.getChildMeshes()[0]!).texture).toBeTruthy();
     expect(actorVisualFingerprint(actor)).toContain("2DRichTextComponent");
   });
 

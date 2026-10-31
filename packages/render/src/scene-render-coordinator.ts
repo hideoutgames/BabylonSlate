@@ -11,6 +11,7 @@ import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
+import { sceneOutputScale } from "./scene-output-scale";
 import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapsTolerated } from "./variant-swaps";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
@@ -53,7 +54,7 @@ function outputSnapshot(scene: Scene, camera: Camera) {
   const size = target?.getSize();
   const engine = scene.getEngine();
   return [camera, target, target?.getInternalTexture(), target?.depthStencilTexture,
-    size?.width ?? engine.getRenderWidth(true), size?.height ?? engine.getRenderHeight(true)] as const;
+    size?.width ?? engine.getRenderWidth(true), size?.height ?? engine.getRenderHeight(true), target ? 1 : sceneOutputScale(scene)] as const;
 }
 
 export type SceneRenderCoordinatorOptions = {
@@ -90,6 +91,8 @@ export type SceneRenderCoordinatorOptions = {
    * something that will not come.
    */
   deferPipelines?: boolean;
+  /** A world view: culls its camera's list by occlusion while the scene does (`ForwardSceneFrameGraphOptions.occlusion`). */
+  occlusion?: boolean;
 };
 
 /** Scene-owned graph lifetime; the host still owns scheduling and presentation. */
@@ -125,7 +128,9 @@ export class SceneRenderCoordinator {
     this.scene = scene;
     this.auxiliaryCamera = options.auxiliary?.camera;
     this.deferPipelines = options.deferPipelines === true;
-    this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary ? { auxiliary: { objects: options.auxiliary.objects } } : {});
+    this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary
+      ? { auxiliary: { objects: options.auxiliary.objects } }
+      : { occlusion: options.occlusion === true });
     this.detachReadinessDirty = onSceneReadinessDirty(scene, () =>
       this.graph.markReadinessDirty(),
     );
@@ -165,6 +170,9 @@ export class SceneRenderCoordinator {
   }
 
   postProcessPassCount(): number { return this.graph.postProcessPassCount(); }
+
+  /** The last frame's occlusion culling; null for a view that does not cull by occlusion. */
+  occlusionDiagnostics(): ReturnType<ForwardSceneFrameGraph["occlusionDiagnostics"]> { return this.graph.occlusionDiagnostics(); }
 
   /** Prepared graph task names in record order; [] before preparation. */
   taskNames(): string[] { return this.graph.taskNames(); }

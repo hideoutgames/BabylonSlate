@@ -1,13 +1,13 @@
 import {
-  Color3,
   MeshBuilder,
-  StandardMaterial,
+  type AbstractMesh,
   type Mesh,
+  type NodeMaterial,
   type Scene,
 } from "@babylonjs/core";
 import { sniffImageSize, sniffKtx2Size } from "@haptic/assets";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
-import { VisualBundle } from "./visual-bundle";
+import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
 
 export const OVERLAY_TEXTURE_DEFAULT_WORLD_SIZE = { width: 1, height: 1 };
 
@@ -69,21 +69,26 @@ export function overlayTextureVisualKind(
   return `2dtexture:${guid ?? ""}:${size.width}x${size.height}:${String(hitTest ?? "ignore")}`;
 }
 
-/**
- * White unlit double-sided construction material owned by the visual's bundle,
- * so it retires with the mesh even after an authored material replaces it.
- */
-export function createOverlayUnlitMaterial(
-  scene: Scene,
-  name: string,
-  bundle: VisualBundle,
-): StandardMaterial {
-  const material = bundle.ownMaterial(new StandardMaterial(`${name}-unlit`, scene));
-  material.disableLighting = true;
-  material.emissiveColor = Color3.White();
-  material.diffuseColor = Color3.White();
-  material.backFaceCulling = false;
-  return material;
+/** An overlay surface's construction look: a flat unlit colour from both sides (white by default). */
+const OVERLAY_UNLIT: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: true, role: "world" };
+
+/** An overlay surface's construction look, reapplied after an authored material or texture stops drawing in its place. */
+export interface OverlayUnlitFallback {
+  readonly binding: UnlitBinding;
+  /** Draws `mesh` (the surface by default) with the construction look; returns the unlit Material it draws. */
+  apply(mesh?: AbstractMesh): NodeMaterial;
+}
+
+/** Draws `mesh` with its construction look now, and returns it for later restores. */
+export function applyOverlayUnlitMaterial(
+  mesh: AbstractMesh,
+  color: readonly [number, number, number] = [1, 1, 1],
+  alpha = 1,
+): OverlayUnlitFallback {
+  const binding: UnlitBinding = { texture: null, color, alpha, cutoff: 0, blend: false, textureAlpha: false, twoSided: false };
+  const fallback: OverlayUnlitFallback = { binding, apply: (target = mesh) => setUnlitMaterial(target, OVERLAY_UNLIT, binding) };
+  fallback.apply();
+  return fallback;
 }
 
 /** Unlit overlay plane sized to the texture, then albedo if bytes are cached. */
@@ -104,15 +109,12 @@ export function createOverlayTextureQuad(
     { width: size.width, height: size.height },
     scene,
   );
-  const bundle = new VisualBundle();
-  bundle.ownRenderUser(mesh);
-  mesh.onDisposeObservable.addOnce(() => bundle.dispose());
   try {
-    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
+    applyOverlayUnlitMaterial(mesh);
     applyAlbedoTexture(mesh, scene, textureGuid, assets);
     return mesh;
   } catch (error) {
-    bundle.dispose();
+    mesh.dispose();
     throw error;
   }
 }

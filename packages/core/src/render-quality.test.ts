@@ -38,6 +38,16 @@ describe("rendering quality sessions", () => {
       mapSize: 4096,
     });
   });
+  it("sets the shadow filter quality from the console and refuses one that does not exist", () => {
+    const session = new RenderingQualitySession({ shadows: { profile: "high" } });
+    expect(session.effective().shadows.filterQuality).toBe("high");
+    expect(session.execute("shadows", "filter", "medium").success).toBe(true);
+    expect(session.effective().shadows.filterQuality).toBe("medium");
+    expect(session.execute("shadows", "filter", "ultra").success).toBe(false);
+    expect(session.effective().shadows.filterQuality).toBe("medium");
+    session.execute("shadows", "reset");
+    expect(session.effective().shadows.filterQuality).toBe("high");
+  });
   it("sets Screen-Space Shadows from the console and refuses a level that does not exist", () => {
     const session = new RenderingQualitySession({ shadows: { profile: "high" } });
     expect(session.effective().shadows.screenShadows).toBe("medium");
@@ -209,6 +219,32 @@ describe("rendering quality sessions", () => {
     expect(session.effective().geometry.lodDistanceScale).toBe(2.5);
     session.execute("geometry", "reset");
     expect(session.effective().geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1.25 });
+  });
+  it("sets Anti-Aliasing from the console, refuses an unknown mode, and fills it from the saved tier", () => {
+    const session = new RenderingQualitySession({ quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }) });
+    expect(session.effective().postprocessing.antiAliasing).toBe("msaa4");
+    expect(session.execute("postprocessing", "antialiasing", "msaa2").success).toBe(true);
+    expect(session.effective().postprocessing).toMatchObject({ antiAliasing: "msaa2", preset: "custom" });
+    expect(session.execute("postprocessing", "antialiasing", "msaa8").success).toBe(false);
+    expect(session.effective().postprocessing.antiAliasing).toBe("msaa2");
+    session.execute("postprocessing", "reset");
+    expect(session.effective().postprocessing.antiAliasing).toBe("msaa4");
+    // Saved before the setting existed: the saved tier fills it (Low runs FXAA), Medium without one.
+    expect(normalizeRenderingQuality({ postprocessing: { profile: "low", preset: "low", resolutionScale: 0.75 } }).postprocessing)
+      .toMatchObject({ antiAliasing: "fxaa", preset: "low" });
+    expect(normalizeRenderingQuality({ postprocessing: { antiAliasing: "supersample" } }).postprocessing.antiAliasing).toBe("msaa4");
+    expect(resolveRenderingQuality({ quality: normalizeRenderingQuality({}) }, {}, qualityPresetPatch("low")).postprocessing.antiAliasing)
+      .toBe("fxaa");
+  });
+  it("switches occlusion culling from the console, off on every tier", () => {
+    const session = new RenderingQualitySession();
+    expect(session.effective().geometry.occlusionCulling).toBe(false);
+    expect(session.execute("geometry", "occlusion", "on").success).toBe(true);
+    expect(session.effective().geometry).toMatchObject({ occlusionCulling: true, preset: "custom" });
+    expect(session.execute("geometry", "occlusion", "maybe").success).toBe(false);
+    session.execute("geometry", "reset");
+    expect(session.effective().geometry.occlusionCulling).toBe(false);
+    for (const level of ["low", "medium", "high", "ultra"] as const) expect(RENDER_QUALITY_PROFILES[level].geometry.occlusionCulling).toBe(false);
   });
   it("detects legacy mismatched shadow settings without overwriting their values", () => {
     const settings = normalizeProjectSettings({

@@ -15,11 +15,12 @@ Select an actor, then choose **Add Component > Rendering > 3D Text**. You can al
 | Alignment | **Left**, **Center** or **Right**. Default Left. |
 | Font | A [Font](../assets/font.md) asset. Empty uses a built-in typeface. |
 | Text | The text, which can run over several lines. Default "Text". |
+| Cast Shadows | Whether it casts a shadow in a lit world scene. Default off, because it is unlit. |
 
 ## Notes
 
 - Works in world scenes and in Scene Layers.
-- Lights and shadows do not affect the text.
+- Lights and shadows do not affect the text, and it casts no shadow unless you turn on **Cast Shadows**.
 - Each new line sits above the previous one. The actor's origin stays at the bottom of the block.
 - Without a Font, or with a Font that has no 3D typeface data, the text uses a built-in typeface with basic ASCII characters. The Inspector then shows **Typeface**.
 - Change the text from a script with the component's **Set Text** function.

@@ -129,6 +129,8 @@ export function ViewportToolbar({
     setNavmeshVisible,
     collisionsVisible,
     setCollisionsVisible,
+    occlusionCulling,
+    setOcclusionCulling,
     dragSelectActive,
     setDragSelectActive,
     viewportMode,
@@ -292,6 +294,18 @@ export function ViewportToolbar({
       testId: `${testIdPrefix}viewport-show-collisions-toggle`,
       onCheckedChange: setCollisionsVisible,
     },
+    // A Scene's world view culls as Play does; the Prefab viewport is not a world view.
+    ...(scene
+      ? ([{
+        type: "checkbox",
+        id: "occlusion-culling",
+        label: "Occlusion Culling",
+        checked: occlusionCulling,
+        closeOnClick: false,
+        testId: `${testIdPrefix}viewport-occlusion-culling-toggle`,
+        onCheckedChange: setOcclusionCulling,
+      }] satisfies NestedMenuItem[])
+      : []),
   ];
   const gridValue: SnapValues = {
     gridSize: scene?.settings.grid.tileSize ?? gridSize,

@@ -1,4 +1,4 @@
-import { DEFAULT_SHADOW_SETTINGS, RENDER_QUALITY_PROFILES, SCREEN_SHADOWS_QUALITIES } from "@haptic/core";
+import { ANTI_ALIASING_MODES, DEFAULT_SHADOW_SETTINGS, RENDER_QUALITY_PROFILES, SCREEN_SHADOWS_QUALITIES } from "@haptic/core";
 import type { EngineEnum, EngineStruct } from "./engine-types";
 import type { StructField } from "./type-assets";
 
@@ -14,6 +14,7 @@ export const SCALABILITY_ENUMS: EngineEnum[] = [
   enumeration("ShadowFilter", ["pcf", "pcss"]),
   enumeration("ShadowFilterQuality", ["low", "medium", "high"]),
   enumeration("ScreenShadowsQuality", [...SCREEN_SHADOWS_QUALITIES]),
+  enumeration("AntiAliasingMode", [...ANTI_ALIASING_MODES]),
   enumeration("CelLightMixing", ["strongest", "additive", "blend"]),
   enumeration("ToneMapping", ["none", "standard", "aces", "neutral"]),
   enumeration("ColorPipeline", ["legacyDisplay", "sceneLinear"]),
@@ -36,7 +37,8 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
     number("minScale", medium.resolution.minScale), number("targetFps", medium.resolution.targetFps)]),
   define("TextureQuality", [number("lodBias", medium.textures.lodBias), number("anisotropy", medium.textures.anisotropy),
     number("byteBudget", medium.textures.byteBudget)]),
-  define("GeometryQuality", [bool("autoLod", medium.geometry.autoLod), number("lodDistanceScale", medium.geometry.lodDistanceScale)]),
+  define("GeometryQuality", [bool("autoLod", medium.geometry.autoLod), number("lodDistanceScale", medium.geometry.lodDistanceScale),
+    bool("occlusionCulling", medium.geometry.occlusionCulling)]),
   // Defaults equal the Medium tier; normalization rounds integer fields and snaps FFT Size.
   define("WaterQuality", [choice("shadingDetail", "WaterShadingDetail", medium.water.shadingDetail), number("meshDensity", medium.water.meshDensity),
     number("contactResolution", medium.water.contactResolution), bool("refraction", medium.water.refraction),
@@ -60,7 +62,7 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("VignetteSettings", [bool("enabled", false), number("weight", 1.5)]),
   define("ColorPipelineSettings", [choice("mode", "ColorPipeline", "legacyDisplay")]),
   define("RenderEffects", [structure("colorPipeline", "ColorPipelineSettings"), choice("toneMapping", "ToneMapping", "none"), number("exposure", 1),
-    number("contrast", 1), structure("vignette", "VignetteSettings"), structure("bloom", "BloomSettings"), bool("fxaa", false)]),
+    number("contrast", 1), structure("vignette", "VignetteSettings"), structure("bloom", "BloomSettings")]),
   define("RenderingQuality", [structure("resolution", "ResolutionQuality"), structure("textures", "TextureQuality"),
     structure("geometry", "GeometryQuality"), structure("water", "WaterQuality"), structure("lighting", "LightingQuality"),
     structure("postprocessing", "PostProcessingQuality")]),

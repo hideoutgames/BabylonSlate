@@ -41,19 +41,6 @@ export interface ColorGradingSettings {
 }
 
 /**
- * Temporal anti-aliasing: the camera projection is jittered by a sub-pixel
- * sequence each frame and the history is reprojected through motion vectors,
- * clamped to the current neighborhood and blended with the new frame.
- */
-export interface TemporalAntiAliasingSettings {
-  enabled: boolean;
-  /** Length of the sub-pixel jitter sequence. */
-  samples: number;
-  /** Weight of the current frame; lower values smooth more and ghost more. */
-  blend: number;
-}
-
-/**
  * Scene Linear white balance: neutralizes an illuminant of the given
  * correlated color temperature, then offsets along the green/magenta axis.
  */
@@ -110,9 +97,7 @@ export interface RenderEffectsSettings {
     /** Bloom target scale relative to the post-processing resolution. */
     scale: number;
   };
-  fxaa: boolean;
   upscaling: UpscalingSettings;
-  temporalAntiAliasing: TemporalAntiAliasingSettings;
   colorGrading: ColorGradingSettings;
   ambientOcclusion: AmbientOcclusionSettings;
   reflections: ReflectionSettings;
@@ -132,8 +117,6 @@ export const RENDER_EFFECTS_LIMITS = {
   spatialResolutionScale: [0.25, 1],
   upscalingRenderScale: [0.5, 1],
   upscalingSharpness: [0, 2],
-  temporalSamples: [4, 32],
-  temporalBlend: [0.02, 1],
   ambientOcclusionSamples: [4, 32],
   ambientOcclusionRadius: [0.05, 10],
   ambientOcclusionStrength: [0, 4],
@@ -158,9 +141,7 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   whiteBalance: { enabled: false, temperature: 6500, tint: 0 },
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
-  fxaa: false,
   upscaling: { enabled: false, renderScale: 0.67, sharpness: 0.2 },
-  temporalAntiAliasing: { enabled: false, samples: 8, blend: 0.1 },
   colorGrading: { enabled: false, lutTextureGuid: null },
   ambientOcclusion: {
     enabled: false, resolutionScale: 0.5, samples: 16,
@@ -212,7 +193,6 @@ export function normalizeRenderEffectsSettings(
   const whiteBalance = object(source.whiteBalance);
   const bloom = object(source.bloom);
   const colorGrading = object(source.colorGrading);
-  const temporal = object(source.temporalAntiAliasing);
   const upscaling = object(source.upscaling);
   const ambientOcclusion = object(source.ambientOcclusion);
   const reflections = object(source.reflections);
@@ -286,20 +266,12 @@ export function normalizeRenderEffectsSettings(
         ...RENDER_EFFECTS_LIMITS.bloomScale,
       ),
     },
-    fxaa: source.fxaa === true,
     upscaling: {
       enabled: upscaling.enabled === true,
       renderScale: finite(upscaling.renderScale, DEFAULT_RENDER_EFFECTS.upscaling.renderScale,
         ...RENDER_EFFECTS_LIMITS.upscalingRenderScale),
       sharpness: finite(upscaling.sharpness, DEFAULT_RENDER_EFFECTS.upscaling.sharpness,
         ...RENDER_EFFECTS_LIMITS.upscalingSharpness),
-    },
-    temporalAntiAliasing: {
-      enabled: temporal.enabled === true,
-      samples: Math.round(finite(temporal.samples, DEFAULT_RENDER_EFFECTS.temporalAntiAliasing.samples,
-        ...RENDER_EFFECTS_LIMITS.temporalSamples)),
-      blend: finite(temporal.blend, DEFAULT_RENDER_EFFECTS.temporalAntiAliasing.blend,
-        ...RENDER_EFFECTS_LIMITS.temporalBlend),
     },
     colorGrading: {
       enabled: colorGrading.enabled === true,

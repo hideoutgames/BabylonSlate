@@ -76,7 +76,7 @@ describe("runtime scalability session", () => {
     const { settings, transactions } = session();
     for (let i = 0; i < 20; i++) settings.request({ kind: "preset", preset: "low" });
     for (let i = 0; i < 20; i++) settings.executeQuality("resolution", "scale", "0.5");
-    for (let i = 0; i < 20; i++) settings.request({ kind: "patch", render: { effects: { fxaa: true } } });
+    for (let i = 0; i < 20; i++) settings.request({ kind: "patch", render: { effects: { exposure: 2 } } });
     expect(transactions).toHaveLength(3);
   });
   it("rejects nonfinite values and unknown keys atomically without resetting valid settings", () => {
@@ -85,7 +85,7 @@ describe("runtime scalability session", () => {
       expect(settings.request({ kind: "patch", render: { width: value }, frameCap: 45 }).status).toBe("failed");
       expect(settings.request({ kind: "patch", frameCap: value }).status).toBe("failed");
     }
-    expect(settings.request({ kind: "patch", render: { effects: { fxaa: "yes" } } } as never).status).toBe("failed");
+    expect(settings.request({ kind: "patch", render: { effects: { exposure: "yes" } } } as never).status).toBe("failed");
     expect(settings.request({ kind: "patch", render: { editorOnly: true } } as never).status).toBe("failed");
     expect(settings.request({ kind: "patch", render: { mode: "smooth" } } as never).status).toBe("failed");
     expect(settings.requested.frameCap).toBe(30);
@@ -135,10 +135,10 @@ describe("runtime scalability session", () => {
   it("returns detached data and retains the previous confirmed settings after a failed rebuild", () => {
     const { settings } = session();
     settings.acknowledge({ revision: 0, status: "applied", message: "Ready", effective: settings.requested });
-    const result = settings.request({ kind: "patch", render: { effects: { fxaa: true } } });
+    const result = settings.request({ kind: "patch", render: { effects: { exposure: 2 } } });
     settings.acknowledge({ ...result, status: "failed", message: "Allocation failed" });
     const snapshot = settings.snapshot();
-    expect(snapshot.effective?.render.effects?.fxaa).toBe(false);
+    expect(snapshot.effective?.render.effects?.exposure).toBe(1);
     snapshot.requested.render.width = 10;
     expect(settings.requested.render.width).toBe(800);
   });

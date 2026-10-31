@@ -1,4 +1,4 @@
-import { Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
+import { InstancedMesh, Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
 import {
   composeAffineTransform,
   decomposeAffineTransform,
@@ -94,9 +94,10 @@ export function collectNavBakeGeometry(
   return mergeNavBakeMeshes(parts);
 }
 
-function bakeVisualMeshes(root: Mesh): Mesh[] {
-  return visualMeshes(root).filter((mesh): mesh is Mesh => {
-    if (!(mesh instanceof Mesh)) return false;
+/** The meshes whose triangles bake: a root's drawn parts, a pooled primitive's instance among them (its source's). */
+function bakeVisualMeshes(root: Mesh): Array<Mesh | InstancedMesh> {
+  return visualMeshes(root).filter((mesh): mesh is Mesh | InstancedMesh => {
+    if (!(mesh instanceof Mesh) && !(mesh instanceof InstancedMesh)) return false;
     const meta = mesh.metadata as { editorPickProxy?: boolean } | null;
     return !meta?.editorPickProxy && !isEditorCameraModel(mesh);
   });
@@ -233,7 +234,7 @@ function intersectXyBounds(
 }
 
 function meshAabbIntersects(
-  mesh: Mesh,
+  mesh: Mesh | InstancedMesh,
   bounds: NavBakeBounds,
 ): boolean {
   mesh.computeWorldMatrix(true);
@@ -252,7 +253,7 @@ function meshAabbIntersects(
 }
 
 function meshPart(
-  mesh: Mesh,
+  mesh: Mesh | InstancedMesh,
   scratch: Vector3,
 ): {
   positions: ArrayLike<number>;

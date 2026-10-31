@@ -1,9 +1,11 @@
-import { Material, Mesh, StandardMaterial } from "@babylonjs/core";
+import { Material, Mesh } from "@babylonjs/core";
 import { installAssetBytes } from "@haptic/assets";
 import { installTextureBytes } from "./mesh-assets";
 import { afterEach, expect, it, vi } from "vitest";
 import { identityTransform, parseText2DProperties } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
+import { unlitBinding } from "./unlit-material-blocks";
+import { isUnlitMaterial } from "./unlit-material";
 import { createText2DMesh, updateText2DAppear } from "./text2d-mesh";
 import { applyAssignMaterial, applyAssignMesh, applyComponentTransformsCommand, applyOverlayVisualStyleCommand, applyText2DAppearCommand, createSnapshotSceneBinding, createPlayMesh, playComponentMeshName, retirePlaySlot, type AssignMeshPart } from "./snapshot-apply";
 import { overlayVisualStyle } from "./overlay-visual-style";
@@ -40,11 +42,12 @@ it("reveals formatted glyphs, images and underlines together while preserving st
   updateText2DAppear(root, 0.5); // 0.2s of a 0.4s timeline: A finished, image halfway, B waiting.
   expect(a!.visibility).toBe(1);
   expect(image!.visibility).toBeCloseTo(0.5);
-  expect((image!.material as StandardMaterial).diffuseTexture).toBeTruthy();
+  expect(unlitBinding(image!).texture).toBeTruthy();
   for (const child of children) {
     expect(child.material!.needAlphaBlendingForMesh(child)).toBe(true);
     // Fade must preserve low alpha instead of discarding it at the cutout threshold.
-    expect(child.material!.transparencyMode).toBe(Material.MATERIAL_ALPHABLEND);
+    const discards = isUnlitMaterial(child.material) ? unlitBinding(child).cutoff > 0 : child.material!.transparencyMode !== Material.MATERIAL_ALPHABLEND;
+    expect(discards, child.name).toBe(false);
   }
   expect(b!.visibility).toBe(0);
   expect(image!.scaling.x).toBeCloseTo(0.5);

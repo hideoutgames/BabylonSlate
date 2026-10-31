@@ -1,3 +1,4 @@
+import { applyOccluderProperty } from "./view-occlusion";
 import { createPooledPrimitiveVisual } from "./pooled-primitive-visual";
 import { createWaterMesh } from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
@@ -27,9 +28,8 @@ import {
 } from "./mesh-assets";
 import {
   createOverlayTextureQuad,
-  createOverlayUnlitMaterial,
+  applyOverlayUnlitMaterial,
 } from "./overlay-texture-quad";
-import { VisualBundle } from "./visual-bundle";
 import { createOverlayPanelMesh } from "./overlay-panel-mesh";
 import {
   beginSlotModelAnimLoad,
@@ -104,9 +104,18 @@ export function applyPlayVisualSorting(root: Mesh, slotId: number, binding: Snap
   if (partsNeedOrigin(parts)) {
     for (const part of parts ?? []) {
       const target = root.getChildMeshes().find((mesh) => mesh.name === playComponentMeshName(slotId, part.componentId));
-      if (target) shadows.setParticipation(target, part);
+      if (target) {
+        shadows.setParticipation(target, part);
+        applyOccluderProperty(target, part.occluder);
+      }
     }
-  } else if (parts?.[0]) shadows.setParticipation(root, parts[0]);
+  } else if (parts?.[0]) {
+    shadows.setParticipation(root, parts[0]);
+    applyOccluderProperty(root, parts[0].occluder);
+  } else if (primary?.castShadows !== undefined) {
+    // The optimized actor mesh draws its one component: an unlit visual's class default casts none.
+    shadows.setParticipation(root, { castShadows: primary.castShadows, receiveShadows: primary.receiveShadows });
+  }
   const layers = binding.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const actorId = primary?.actorGuid ?? `actor-${slotId}`;
   if (partsNeedOrigin(parts)) {
@@ -375,9 +384,7 @@ export function createPlayMesh(
       return mesh;
     }
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    const bundle = new VisualBundle();
-    mesh.onDisposeObservable.addOnce(() => bundle.dispose());
-    mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
+    applyOverlayUnlitMaterial(mesh);
     mesh.isPickable = meshKind === "2dbutton";
     if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
       const compiled = binding.resolveMaterial(assetGuid, {
@@ -470,22 +477,16 @@ export function createPlayMesh(
   if (isPlayHelperMeshKind(meshKind)) {
     return finishPlayWorldMesh(createPlayHelperMesh(scene, slotId, name, meshKind, binding, targets, illuminationPart));
   }
-  const pooled = poolsPlayPrimitive(binding, slotId, name) ? createPooledPrimitiveVisual(scene, name, meshKind) : null;
+  const pooled = poolsPlayPrimitive(binding, slotId) ? createPooledPrimitiveVisual(scene, name, meshKind) : null;
   return finishPlayWorldMesh(pooled ?? createPrimitiveMesh(scene, name, meshKind));
 }
 
 /**
- * Whether the primitive visual `name` of `slotId` may draw through the instance pool: the slot binds no deformer (a
- * lattice reads the mesh's own vertices) and the visual sorts by no explicit layer or order (an `alphaIndex` is per
- * mesh, which a group's batch cannot keep).
+ * Whether the primitive visual of `slotId` may draw through the instance pool: the slot binds no deformer (a lattice
+ * reads the mesh's own vertices). An explicit sorting layer or order sorts it in a group of its own (`sortPooledLeaf`).
  */
-function poolsPlayPrimitive(binding: SnapshotSceneBinding | undefined, slotId: number, name: string): boolean {
-  if (binding?.deformers.get(slotId)) return false;
-  const sorted = (sorting: { sortingLayer?: string | null; orderInLayer?: number | null } | undefined) =>
-    sorting?.sortingLayer != null || sorting?.orderInLayer != null;
-  const parts = binding?.meshParts.get(slotId);
-  if (name === `actor-${slotId}`) return !sorted(binding?.meshSorting.get(slotId)) && !sorted(parts?.[0]);
-  return !sorted(parts?.find((part) => playComponentMeshName(slotId, part.componentId) === name));
+function poolsPlayPrimitive(binding: SnapshotSceneBinding | undefined, slotId: number): boolean {
+  return !binding?.deformers.get(slotId);
 }
 
 function finishPlayWorldMesh(mesh: Mesh): Mesh {

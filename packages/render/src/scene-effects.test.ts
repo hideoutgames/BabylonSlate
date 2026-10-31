@@ -49,7 +49,7 @@ it("adds the Scene Linear and Display Color stages for PBR only", () => {
     ambientOcclusion: null, reflections: null, volumetricLighting: null, upscale: null,
     bloom: null,
     imageProcessing: { sceneLinear: true, vignette: null, colorGrading: null },
-    fxaa: false, temporalAntiAliasing: null, screenShadows: null,
+    fxaa: false, screenShadows: null,
   });
   // CEL is display-space by construction: the linear stage never applies.
   expect(planSceneEffects(linear, "cel")).toBeNull();
@@ -68,7 +68,7 @@ it("keeps CEL effects display-space with identity processing", () => {
     ambientOcclusion: null, reflections: null, volumetricLighting: null, upscale: null,
     bloom: { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 },
     imageProcessing: null,
-    fxaa: false, temporalAntiAliasing: null, screenShadows: null,
+    fxaa: false, screenShadows: null,
   });
 });
 
@@ -116,9 +116,10 @@ it("plans bloom and FXAA independently in Legacy Display", () => {
   const plan = planSceneEffects(
     effects({
       bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
-      fxaa: true,
     }),
     "pbr",
+    true,
+    { fxaa: true },
   );
   expect(plan?.sceneLinear).toBe(false);
   expect(plan?.bloom?.enabled).toBe(true);
@@ -126,11 +127,11 @@ it("plans bloom and FXAA independently in Legacy Display", () => {
   expect(plan?.fxaa).toBe(true);
 });
 
-it("plans temporal anti-aliasing on both render modes", () => {
-  const temporal = effects({ temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } });
-  for (const mode of ["pbr", "cel"] as const)
-    expect(planSceneEffects(temporal, mode)?.temporalAntiAliasing).toEqual({ enabled: true, samples: 8, blend: 0.1 });
-  expect(sceneEffectsKey(temporal, "pbr", true)).not.toBe(sceneEffectsKey(effects({}), "pbr", true));
+it("runs FXAA for the tier's Anti-Aliasing alone, and keys it", () => {
+  const plain = effects();
+  expect(planSceneEffects(plain, "cel", true, { fxaa: true })).toMatchObject({ fxaa: true, bloom: null, imageProcessing: null });
+  expect(planSceneEffects(plain, "pbr", false, { fxaa: true })).toBeNull();
+  expect(sceneEffectsKey(plain, "pbr", true, { fxaa: true })).not.toBe(sceneEffectsKey(plain, "pbr", true));
 });
 
 it("plans an FSR chain on its own and renders it at the scaled size", () => {
@@ -148,7 +149,7 @@ it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-pr
   const plain = effects();
   expect(planSceneEffects(plain, "pbr", true, { screenShadows: "off" })).toBeNull();
   expect(planSceneEffects(plain, "pbr", true, { screenShadows: "medium" })).toMatchObject({
-    screenShadows: "medium", bloom: null, imageProcessing: null, fxaa: false, temporalAntiAliasing: null,
+    screenShadows: "medium", bloom: null, imageProcessing: null, fxaa: false,
   });
   expect(planSceneEffects(plain, "cel", true, { screenShadows: "medium" })).toBeNull();
   expect(planSceneEffects(plain, "pbr", false, { screenShadows: "medium" })).toBeNull();
@@ -160,9 +161,8 @@ it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-pr
 it("plans nothing while the post-processing toggle is off", () => {
   const linear = effects({
     colorPipeline: { version: 1, mode: "sceneLinear" },
-    fxaa: true,
   });
-  expect(planSceneEffects(linear, "pbr", false)).toBeNull();
+  expect(planSceneEffects(linear, "pbr", false, { fxaa: true })).toBeNull();
 });
 
 it("configures display processing only for the linear stage", () => {

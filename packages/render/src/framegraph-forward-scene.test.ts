@@ -38,14 +38,20 @@ import {
   normalizeRenderingQuality,
   normalizeShadowSettings,
   qualityPresetPatch,
+  qualitySettingPatch,
+  type AntiAliasingMode,
 } from "@haptic/core";
 import { upsertFogVolumes } from "./fog-volumes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { setSceneOutputScale } from "./scene-output-scale";
 import { ParticleService } from "./particle-service";
 import {
+  allowSceneScreenShadows,
+  sceneRenderingSettings,
   setSceneEffectsEnabled,
   updateSceneRenderingSettings,
 } from "./render-settings";
+import { managedRenderReservations } from "./managed-render-resources";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
@@ -115,6 +121,13 @@ function host(engine = new NullEngine()) {
   return { engine, scene, camera };
 }
 
+/** A world view's Scene at the tier's FXAA Anti-Aliasing (the FXAA pass), or Off. */
+function setTierFxaa(scene: Scene, on: boolean) {
+  allowSceneScreenShadows(scene, () => false);
+  sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing: on ? "fxaa" : "off" });
+  updateSceneRenderingSettings(scene);
+}
+
 it("captures graph frames and skips an unsupported camera setup without drawing", async () => {
   const { engine, scene, camera } = host();
   const owner = new ForwardSceneFrameGraph(scene);
@@ -131,18 +144,59 @@ it("captures graph frames and skips an unsupported camera setup without drawing"
   owner.dispose();
 });
 
+it("draws a multisampled world view into its own scene targets, copies them to the single-sample output, and charges every sample", async () => {
+  const { engine, scene, camera } = host();
+  engine.getCaps().maxMSAASamples = 4;
+  allowSceneScreenShadows(scene, () => false);
+  const state = sceneRenderingSettings(scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  const prepare = async (antiAliasing: AntiAliasingMode, chain = false) => {
+    state.qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing });
+    updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, vignette: { ...DEFAULT_RENDER_EFFECTS.vignette, enabled: chain } } });
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const frame = captureRenderFrame(engine, () => graph.render(camera));
+    expect(frame.value).toEqual({ path: "frameGraph" });
+    // The scene colour and depth the objects draw into: the targets of "Forward clear".
+    const clear = frame.report.tasks.find((task) => task.name === "Forward clear")!;
+    const targets = clear.passes.flatMap((pass) => [...pass.colorTargets ?? [], ...pass.depthTarget === undefined ? [] : [pass.depthTarget]]);
+    const samples = targets.map((handle) => frame.report.resources.find((resource) => resource.handle === handle)?.samples ?? 1);
+    return { tasks: graph.taskNames(), samples, sceneBytes: managedRenderReservations(engine).categoryBytes };
+  };
+  // 4x without a chain: own multisampled colour and depth, then one copy to the backbuffer.
+  const msaa = await prepare("msaa4");
+  expect(msaa.samples).toEqual([4, 4]);
+  expect(msaa.tasks.at(-1)).toBe("Multisample output");
+  const off = await prepare("off");
+  // Off draws straight into the backbuffer, as before.
+  expect(off.tasks).not.toContain("Multisample output");
+  expect(off.sceneBytes.sceneColor).toBe(0);
+  // Each 4x sample is charged beside the resolved texture: (1 + 4) × RGBA8, (1 + 4) × depth32 at 1 × 1.
+  expect([msaa.sceneBytes.sceneColor, msaa.sceneBytes.depth]).toEqual([
+    (1 + 4) * 4 * engine.getRenderWidth() * engine.getRenderHeight(), (1 + 4) * 4 * engine.getRenderWidth() * engine.getRenderHeight(),
+  ]);
+  // A settings chain's own scene targets multisample too, and MSAA never runs FXAA as well; FXAA mode runs it single-sample.
+  const chain = await prepare("msaa2", true);
+  expect(chain.samples).toEqual([2, 2]);
+  expect(chain.tasks).toContain("Scene Effects Display Color");
+  expect(chain.tasks).not.toContain("Scene Effects FXAA");
+  const fxaa = await prepare("fxaa");
+  expect(fxaa.samples).toEqual([1, 1]);
+  expect(fxaa.tasks).toContain("Scene Effects FXAA");
+  graph.dispose();
+});
+
 it("retains the previous graph during a settings transaction and releases superseded candidates", async () => {
   const { scene, camera } = host();
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
   const release = vi.spyOn(FrameGraphObjectRendererTask.prototype, "dispose");
   const releasePrevious = graph.retainResources();
-  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true } });
+  setTierFxaa(scene, true);
   await graph.prepare(camera);
   expect(release).not.toHaveBeenCalled();
   expect(graph.taskNames()).toContain("Scene Effects FXAA");
   // A cancelled intermediate build must not accumulate another retained graph.
-  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: false } });
+  setTierFxaa(scene, false);
   await graph.prepare(camera);
   expect(release).toHaveBeenCalledTimes(1);
   releasePrevious(); releasePrevious();
@@ -406,6 +460,54 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   graph.dispose();
 });
 
+it("renders a scaled view at its scale into own targets whose single output copy fills the backbuffer", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 80;
+  options.renderHeight = 64;
+  const { scene, camera } = host(new NullEngine(options));
+  const graph = new ForwardSceneFrameGraph(scene);
+  const owned = graph as unknown as { graph?: FrameGraph; ownScene?: { color: FrameGraphTextureHandle } };
+  const ownSize = () => {
+    const texture = owned.ownScene ? owned.graph!.textureManager.getTextureFromHandle(owned.ownScene.color) : null;
+    return texture ? [texture.width, texture.height] : null;
+  };
+  const outputCopies = () => owned.graph!.tasks.filter((task) => task.getClassName() === "FrameGraphCopyToBackbufferColorTask").length;
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(ownSize()).toBeNull();
+  expect(outputCopies()).toBe(0);
+  setSceneOutputScale(scene, 0.5);
+  expect(graph.render(camera)).toMatchObject({ rendered: false, reason: expect.stringContaining("preparation") });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(ownSize()).toEqual([40, 32]);
+  expect(outputCopies()).toBe(1);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  setSceneOutputScale(scene, 1);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(ownSize()).toBeNull();
+  expect(outputCopies()).toBe(0);
+  graph.dispose();
+});
+
+it("multisamples a scaled view's own targets at its scale and resolves them through its single output copy", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 80;
+  options.renderHeight = 64;
+  const { engine, scene, camera } = host(new NullEngine(options));
+  engine.getCaps().maxMSAASamples = 4;
+  // A world view at the default Medium tier: MSAA 4x.
+  allowSceneScreenShadows(scene, () => false);
+  setSceneOutputScale(scene, 0.5);
+  const graph = new ForwardSceneFrameGraph(scene);
+  const owned = graph as unknown as { graph?: FrameGraph; ownScene?: { color: FrameGraphTextureHandle } };
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const description = owned.graph!.textureManager.getTextureDescription(owned.ownScene!.color);
+  expect([description.size.width, description.size.height, description.options.samples]).toEqual([40, 32, 4]);
+  expect(owned.graph!.tasks.filter((task) => task.getClassName() === "FrameGraphCopyToBackbufferColorTask").map((task) => task.name))
+    .toEqual(["Multisample output"]);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  graph.dispose();
+});
+
 it("draws Play particle systems on graph frames", async () => {
   const { scene, camera } = host();
   scene.performancePriority = ScenePerformancePriority.Intermediate;
@@ -487,7 +589,7 @@ it("resizes settings-only effect targets together with the output depth", async 
   options.renderWidth = 480;
   options.renderHeight = 270;
   const { scene, camera } = host(new NullEngine(options));
-  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true } });
+  setTierFxaa(scene, true);
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     for (const [width, height] of [[480, 270], [384, 216], [240, 135], [480, 270]]) {
@@ -621,6 +723,7 @@ it("keeps the default graph free of effect tasks, copies and owned passes", asyn
 
 it("composes the settings effect chain before the single output copy in Scene Linear", async () => {
   const { scene, camera } = host();
+  setTierFxaa(scene, true);
   updateSceneRenderingSettings(scene, {
     mode: "pbr",
     effects: {
@@ -628,7 +731,6 @@ it("composes the settings effect chain before the single output copy in Scene Li
       colorPipeline: { version: 1, mode: "sceneLinear" },
       toneMapping: "aces",
       bloom: { enabled: true, threshold: 0.9, weight: 0.5, kernel: 32, scale: 0.5 },
-      fxaa: true,
     },
   });
   const graph = new ForwardSceneFrameGraph(scene);
@@ -651,12 +753,12 @@ it("composes the settings effect chain before the single output copy in Scene Li
 
 it("keeps Legacy Display effects display-space without a display stage", async () => {
   const { scene, camera } = host();
+  setTierFxaa(scene, true);
   updateSceneRenderingSettings(scene, {
     mode: "pbr",
     effects: {
       ...DEFAULT_RENDER_EFFECTS,
       bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
-      fxaa: true,
     },
   });
   const graph = new ForwardSceneFrameGraph(scene);
@@ -714,10 +816,7 @@ it("rebuilds the effect chain on a settings change without drawing stale output"
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).not.toContain("Scene post-process output");
-  updateSceneRenderingSettings(scene, {
-    mode: "pbr",
-    effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true },
-  });
+  setTierFxaa(scene, true);
   // The prepared key is stale: hold the frame until the graph reprepares.
   expect(graph.render(camera)).toMatchObject({
     rendered: false,
@@ -738,10 +837,7 @@ it("keeps a graph stale when settings change while it is being prepared", async 
   const { scene, camera } = host();
   const graph = new ForwardSceneFrameGraph(scene);
   const pending = graph.prepare(camera);
-  updateSceneRenderingSettings(scene, {
-    mode: "pbr",
-    effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true },
-  });
+  setTierFxaa(scene, true);
   expect(await pending).toEqual({ path: "frameGraph" });
   // The finished graph was built from the previous settings.
   expect(graph.taskNames()).not.toContain("Scene Effects FXAA");
@@ -840,7 +936,7 @@ it("gives the settings effect chain's offscreen scene color a real depth attachm
   }
 });
 
-it("clears the temporal geometry attachments on their own target, never the backbuffer", async () => {
+it("clears the spatial geometry attachments on their own target, never the backbuffer", async () => {
   const { engine, scene, camera } = host();
   // The spatial chain needs four float targets and depth sampling.
   Object.assign(engine.getCaps(), {
@@ -849,7 +945,7 @@ it("clears the temporal geometry attachments on their own target, never the back
   });
   updateSceneRenderingSettings(scene, {
     mode: "pbr",
-    effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } },
+    effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } },
   });
   // WebGL2 accepts only a single BACK or NONE draw buffer on the default
   // framebuffer; any other layout is INVALID_OPERATION, which fails the
@@ -869,7 +965,7 @@ it("clears the temporal geometry attachments on their own target, never the back
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.taskNames()).toContain("Scene Temporal Anti-Aliasing");
+    expect(graph.taskNames()).toContain("Scene Reflections");
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
     expect(backbufferLayouts).toEqual([]);
     expect(farClears).toEqual([true]);
@@ -1169,4 +1265,66 @@ it("redraws without advancing native animation or catching up after resume", asy
   graph.render(camera);
   expect(moving.position.x).toBeCloseTo(2);
   graph.dispose();
+});
+
+it("sizes every screen-space target of the world view from its render scale; only the backbuffer stays at output size", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 160;
+  options.renderHeight = 128;
+  const { engine, scene, camera } = host(new NullEngine(options));
+  // The spatial chain needs four float targets and depth sampling.
+  Object.assign(engine.getCaps(), {
+    maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
+    textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
+  });
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: {
+      ...DEFAULT_RENDER_EFFECTS,
+      ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+      reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+      volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
+    },
+    quality: normalizeRenderingQuality({
+      postprocessing: { resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true, reflections: true, volumetricLighting: true },
+    }),
+  });
+  new PointLight("light", new Vector3(0, 2, 0), scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  /** Every texture the graph creates (not imported or aliased), by name, as width x height. */
+  const sizes = () => {
+    const { textureManager } = (graph as unknown as { graph: FrameGraph }).graph;
+    return Object.fromEntries([...textureManager._textures].filter(([, entry]) => entry && !entry.refHandle).map(([handle, entry]) => {
+      const { size } = textureManager.getTextureDescription(handle);
+      return [entry!.name, `${size.width}x${size.height}`];
+    }));
+  };
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    // Each effect's own scale (the defaults' 0.5) applies on top of the render size.
+    const full = {
+      "backbuffer color": "160x128", "backbuffer depth/stencil": "160x128",
+      "Scene Effects Scene Color": "160x128", "Scene Effects Scene Z": "160x128",
+      "Spatial Geometry Z": "160x128", "Spatial Geometry ViewDepth": "160x128",
+      "Spatial Geometry WorldNormal": "160x128", "Spatial Geometry Reflectivity": "160x128",
+      "Scene Ambient Occlusion": "80x64", "Scene Ambient Occlusion Blur X": "80x64", "Scene Ambient Occlusion Blur Y": "80x64",
+      "Scene Ambient Occlusion Compose": "160x128",
+      "Scene Reflections": "80x64", "Scene Reflections Blur X": "80x64", "Scene Reflections Blur Y": "80x64",
+      "Scene Reflections Compose": "160x128",
+      "Scene Volumetric Lighting": "80x64", "Scene Volumetric Compose": "160x128",
+    };
+    expect(sizes()).toEqual(full);
+    // Half the render scale halves every target but the backbuffer, which the view's output copy fills.
+    setSceneOutputScale(scene, 0.5);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const half = Object.fromEntries(Object.entries(full).map(([name, size]) => {
+      if (name.startsWith("backbuffer")) return [name, size];
+      const [width, height] = size.split("x").map(Number);
+      return [name, `${width! / 2}x${height! / 2}`];
+    }));
+    expect(sizes()).toMatchObject(half);
+    expect(Object.keys(sizes()).filter((name) => !(name in half))).toEqual([]);
+  } finally {
+    graph.dispose();
+  }
 });

@@ -106,13 +106,26 @@ describe("a Play primitive drawn through the instance pool", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("stays unpooled when the slot binds a deformer or sorts by an explicit layer or order", () => {
+  it("stays unpooled when the slot binds a deformer", () => {
     const { box, binding } = setup();
     binding.deformers.set(1, { actorId: "a", revision: 1, bindings: [] });
     expect(pooledLeafOf(box(1))).toBeUndefined();
-    expect(pooledLeafOf(box(2, { sortingLayer: "Foreground" }))).toBeUndefined();
-    expect(pooledLeafOf(box(3, { orderInLayer: 2 }))).toBeUndefined();
-    expect(pooledLeafOf(box(4))).toBeDefined();
+    expect(pooledLeafOf(box(2))).toBeDefined();
+  });
+
+  it("sorts by an explicit layer or order in a group of its own, its leaf carrying the root's order", () => {
+    const { scene, box } = setup();
+    const plain = pooledLeafOf(box(1))!;
+    const ordered = pooledLeafOf(box(2, { orderInLayer: 2 }))!;
+    const sameOrder = pooledLeafOf(box(3, { orderInLayer: 2 }))!;
+    const root = scene.getMeshByName("actor-2")!;
+    expect({
+      ownGroup: ordered.sourceMesh !== plain.sourceMesh, alphaIndex: ordered.alphaIndex === root.alphaIndex,
+      sortingGroup: (ordered.metadata as { sortingGroupId?: string }).sortingGroupId === (root.metadata as { sortingGroupId?: string }).sortingGroupId,
+      renderingGroup: ordered.renderingGroupId === root.renderingGroupId,
+      // A sorting group is per actor, so even the same order sorts apart.
+      apart: sameOrder.sourceMesh !== ordered.sourceMesh,
+    }).toEqual({ ownGroup: true, alphaIndex: true, sortingGroup: true, renderingGroup: true, apart: true });
   });
 
   it("leaves its group when the slot's visual is disposed", () => {

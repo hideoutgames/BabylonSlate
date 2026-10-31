@@ -5,6 +5,7 @@ import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Geometry } from "@babylonjs/core/Meshes/geometry";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -13,7 +14,8 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import type { MeshoptSimplifier as Simplifier } from "meshoptimizer/simplifier";
 import { simplifyLevels, type LodLevelIndices, type LodSimplifyInput } from "./model-lod-simplify";
 import type { ModelLodWorkerReply, ModelLodWorkerRequest } from "./model-lod.worker";
-import { renderSettingsOwner, sceneRenderingSettings } from "./render-settings";
+import { isPoolMember } from "./instance-pool";
+import { sceneRenderingSettings } from "./render-settings";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
 
 export { AUTO_LOD_SCREEN_SIZES } from "./model-lod-simplify";
@@ -364,6 +366,8 @@ type SceneLods = {
 };
 
 const sceneLods = new WeakMap<Scene, SceneLods>();
+/** Each pool member's last selected level per camera, for hysteresis (the master's own is `LodBinding.current`). */
+const memberLevels = new WeakMap<AbstractMesh, WeakMap<Camera, number>>();
 /** Render state Babylon reads from the drawn LOD mesh rather than its master. */
 function mirrorLodState(master: Mesh, lod: Mesh): void {
   if (lod.material !== master.material) lod.material = master.material;
@@ -410,19 +414,24 @@ function levelForCoverage(binding: LodBinding, coverage: number, previous: numbe
   return level;
 }
 
-function selectLevel(binding: LodBinding, camera: Camera, commit: boolean): number {
+/**
+ * The level `binding` draws for `subject` (its master, or a pool member drawing in the master's batch, measured by
+ * its own bounds) from `camera`, with hysteresis kept in `current`.
+ */
+function selectLevel(binding: LodBinding, camera: Camera, commit: boolean, subject: AbstractMesh = binding.master,
+  current: WeakMap<Camera, number> = binding.current): number {
   const scene = binding.master.getScene();
-  // SceneLayers resolve Geometry quality through the Scene they follow.
-  const settings = sceneRenderingSettings(renderSettingsOwner(scene));
+  // A Scene's own Geometry quality: SceneLayers keep full detail (`pinFullRenderQuality`).
+  const settings = sceneRenderingSettings(scene);
   if (!settings.autoLod) {
-    if (commit) binding.current.delete(camera);
+    if (commit) current.delete(camera);
     return 0;
   }
-  const sphere = binding.master.getBoundingInfo().boundingSphere;
+  const sphere = subject.getBoundingInfo().boundingSphere;
   const scale = settings.lodDistanceScale;
   const coverage = autoLodScreenCoverage(sphere.radiusWorld, sphere.centerWorld, camera) * scale * scale;
-  const level = levelForCoverage(binding, coverage, binding.current.get(camera));
-  if (commit) binding.current.set(camera, level);
+  const level = levelForCoverage(binding, coverage, current.get(camera));
+  if (commit) current.set(camera, level);
   return level;
 }
 
@@ -435,6 +444,17 @@ function lodsFor(scene: Scene): SceneLods {
   // every ObjectRenderer pass (FrameGraph, shadow maps, outline masks).
   scene.customLODSelector = (mesh, camera) => {
     const binding = state.masters.get(mesh);
+    if (!binding && mesh instanceof InstancedMesh) {
+      // A pool member draws in the batch of the level chosen for its own bounds, which Babylon reads from it.
+      const source = state.masters.get(mesh.sourceMesh);
+      if (!source) return mesh.getLOD(camera);
+      let current = memberLevels.get(mesh);
+      if (!current) memberLevels.set(mesh, (current = new WeakMap()));
+      const level = selectLevel(source, camera, true, mesh, current);
+      const drawn = level === 0 ? source.master : source.levels[level - 1]!.mesh;
+      (mesh as unknown as { _currentLOD: AbstractMesh })._currentLOD = drawn;
+      return drawn;
+    }
     if (!binding) return mesh.getLOD(camera);
     const level = selectLevel(binding, camera, true);
     if (level === 0) return binding.master;
@@ -506,46 +526,69 @@ export function autoLodDiagnostics(scene: Scene): { meshes: number; reduced: num
  */
 export function attachModelLods(root: TransformNode, lods: ModelLodSet): number {
   let attached = 0;
-  for (const master of root.getChildMeshes()) {
+  for (const mesh of root.getChildMeshes()) {
+    // A pooled leaf draws in its group's batch: the group's source carries the levels, once, for all its members
+    // (the Scene selector picks each member's own).
+    const pooled = isPoolMember(mesh);
+    const master = pooled ? mesh.sourceMesh : mesh;
     if (!(master instanceof Mesh) || master.isBlocked || master.hasLODLevels) continue;
     const levels = lods.levelsFor(master.source);
     // Levels are triangle lists over the source; a wireframe or point material
     // on this actor draws them through Babylon's own topology conversion.
-    if (!levels?.length || master.geometry !== master.source!.geometry || !drawsOwnLevels(master)) continue;
-    const scene = master.getScene();
-    const state = lodsFor(scene);
-    const binding: LodBinding = { master, levels: [], current: new WeakMap() };
-    master.useLODScreenCoverage = true;
-    for (const [index, level] of levels.entries()) {
-      const lod = new Mesh(`${master.name} LOD${index + 1}`, scene);
-      levelGeometry(master.source!, level, index).applyToMesh(lod);
-      lod.subMeshes = [];
-      for (const part of level.data.subMeshes)
-        new SubMesh(part.materialIndex, part.verticesStart, part.verticesCount, part.indexStart, part.indexCount, lod);
-      lod.parent = master;
-      lod.isPickable = false;
-      lod.hasVertexAlpha = master.hasVertexAlpha;
-      lod.useVertexColors = master.useVertexColors;
-      lod.numBoneInfluencers = master.numBoneInfluencers;
-      lod.computeBonesUsingShaders = master.computeBonesUsingShaders;
-      lod.computeWorldMatrix(true);
-      mirrorLodState(master, lod);
-      if (master.skeleton?.needInitialSkinMatrix) lod.updatePoseMatrix(master.getPoseMatrix());
-      master.addLODLevel(level.data.coverage, lod);
-      binding.levels.push({ mesh: lod, coverage: level.data.coverage, triangles: level.data.triangles });
-    }
-    // Material swaps reach every level before the next readiness probe.
-    master.onMaterialChangedObservable.add(() => {
-      for (const level of binding.levels) level.mesh.material = master.material;
-    });
-    master.onDisposeObservable.addOnce(() => {
-      state.bindings.delete(binding);
-      state.masters.delete(master);
-      for (const level of binding.levels) if (!level.mesh.isDisposed()) level.mesh.dispose();
-    });
-    state.bindings.add(binding);
-    state.masters.set(master, binding);
+    if (!levels?.length || master.geometry !== master.source!.geometry || !(pooled || drawsOwnLevels(master))) continue;
+    // A source built later for the same container mesh (another group of its geometry) takes them as it is built.
+    if (pooled) templateLevels.set(master.source!, levels);
+    attachLevels(master, levels);
     attached++;
   }
   return attached;
+}
+
+/** The levels of each container mesh some pool source drew, for the group sources built from it afterwards. */
+const templateLevels = new WeakMap<Mesh, readonly SceneLevel[]>();
+
+/**
+ * Gives a pool group's new `source`, built from container mesh `template`, the levels a source of the same mesh was
+ * given (`attachModelLods`), so a member moving to another group of its geometry keeps drawing at its level.
+ */
+export function attachTemplateLods(source: Mesh, template: Mesh): void {
+  const levels = templateLevels.get(template);
+  if (levels && !source.hasLODLevels) attachLevels(source, levels);
+}
+
+/** Gives `master` its generated `levels`, children it releases, which the Scene selector draws in its place. */
+function attachLevels(master: Mesh, levels: readonly SceneLevel[]): void {
+  const scene = master.getScene();
+  const state = lodsFor(scene);
+  const binding: LodBinding = { master, levels: [], current: new WeakMap() };
+  master.useLODScreenCoverage = true;
+  for (const [index, level] of levels.entries()) {
+    const lod = new Mesh(`${master.name} LOD${index + 1}`, scene);
+    levelGeometry(master.source!, level, index).applyToMesh(lod);
+    lod.subMeshes = [];
+    for (const part of level.data.subMeshes)
+      new SubMesh(part.materialIndex, part.verticesStart, part.verticesCount, part.indexStart, part.indexCount, lod);
+    lod.parent = master;
+    lod.isPickable = false;
+    lod.hasVertexAlpha = master.hasVertexAlpha;
+    lod.useVertexColors = master.useVertexColors;
+    lod.numBoneInfluencers = master.numBoneInfluencers;
+    lod.computeBonesUsingShaders = master.computeBonesUsingShaders;
+    lod.computeWorldMatrix(true);
+    mirrorLodState(master, lod);
+    if (master.skeleton?.needInitialSkinMatrix) lod.updatePoseMatrix(master.getPoseMatrix());
+    master.addLODLevel(level.data.coverage, lod);
+    binding.levels.push({ mesh: lod, coverage: level.data.coverage, triangles: level.data.triangles });
+  }
+  // Material swaps reach every level before the next readiness probe.
+  master.onMaterialChangedObservable.add(() => {
+    for (const level of binding.levels) level.mesh.material = master.material;
+  });
+  master.onDisposeObservable.addOnce(() => {
+    state.bindings.delete(binding);
+    state.masters.delete(master);
+    for (const level of binding.levels) if (!level.mesh.isDisposed()) level.mesh.dispose();
+  });
+  state.bindings.add(binding);
+  state.masters.set(master, binding);
 }

@@ -13,6 +13,7 @@ Select an actor, then choose **Add Component > Rendering > Tilemap**. You can al
 | Asset | The [Tilemap](../assets/tilemap.md) to draw. |
 | Sorting Layer | The layer the tilemap draws on. Default **Default**. |
 | Order In Layer | Order within the layer. Higher values draw in front. Default 0. |
+| Cast Shadows | Whether it casts a shadow in a lit world scene. Default off, because it is unlit. |
 
 ## Notes
 

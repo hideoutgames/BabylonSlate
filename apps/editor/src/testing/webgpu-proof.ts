@@ -10,6 +10,7 @@ import {
   HemisphericLight,
   Matrix,
   MeshBuilder,
+  NodeMaterial,
   PBRMaterial,
   RawTexture,
   Scene,
@@ -36,6 +37,7 @@ import {
   text2DMeshLayout,
 } from "@haptic/render";
 import { normalizeShadowSettings } from "@haptic/core";
+import { unlitBinding } from "../../../../packages/render/src/unlit-material-blocks";
 import {
   proveWebGpuGeometrySpawn, proveWebGpuVariantSwap,
 } from "./webgpu-variant-swap-proof";
@@ -628,7 +630,7 @@ async function captureHelper(engine: AbstractEngine, kind: "grid" | "bounds" | "
       // The glyph's layout position is baked into its batch mesh; offset it back to the view centre.
       const placed = text2DMeshLayout(text)!.items[0]!;
       glyph.position.set(-placed.x, -placed.y, 0);
-      if (!(glyph.material instanceof ShaderMaterial)) throw new Error("MSDF shader fell back");
+      if (!(glyph.material instanceof NodeMaterial) || !unlitBinding(glyph).msdf) throw new Error("MSDF glyph fell back");
     } else {
       const grid = createEditorGrid(scene, {
         mode: "2d", camera: { target: Vector3.Zero(), radius: 4, alpha: -Math.PI / 2, beta: Math.PI / 2, orthoTop: 2, orthoRight: 2, maxZ: 100 },
@@ -648,7 +650,8 @@ async function captureHelper(engine: AbstractEngine, kind: "grid" | "bounds" | "
     const pixels = await engine.readPixels(0, 0, 64, 64);
     return {
       pixels: [...new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength)],
-      shaderLanguages: scene.materials.filter((material) => material instanceof ShaderMaterial).map((material) => material.options.shaderLanguage),
+      shaderLanguages: scene.materials.flatMap((material) => material instanceof ShaderMaterial ? [material.options.shaderLanguage]
+        : kind === "msdf" && material instanceof NodeMaterial ? [material.shaderLanguage] : []),
     };
   } finally {
     disposeGrid?.();

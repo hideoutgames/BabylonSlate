@@ -56,8 +56,6 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
     patch({ whiteBalance: { ...project.whiteBalance, ...value } });
   const patchUpscaling = (value: Partial<RenderEffectsSettings["upscaling"]>) =>
     patch({ upscaling: { ...project.upscaling, ...value } });
-  const patchTemporal = (value: Partial<RenderEffectsSettings["temporalAntiAliasing"]>) =>
-    patch({ temporalAntiAliasing: { ...project.temporalAntiAliasing, ...value } });
   return (
     <FieldSet data-testid="project-render-effects">
       <FieldLegend className={hideTitle ? "sr-only" : undefined}>Post Processing</FieldLegend>
@@ -323,64 +321,6 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
               Texture's Usage to Color Grading LUT so it stays uncompressed.
             </FieldDescription>
           </Field>
-        ) : null}
-        <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="project-effects-fxaa">FXAA</FieldLabel>
-          <Switch
-            id="project-effects-fxaa"
-            aria-describedby="project-effects-fxaa-description"
-            data-testid="project-effects-fxaa"
-            checked={project.fxaa}
-            onCheckedChange={(checked) => patch({ fxaa: checked === true })}
-          />
-          <FieldDescription id="project-effects-fxaa-description">
-            Full-screen edge anti-aliasing.
-          </FieldDescription>
-        </Field>
-        <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="project-effects-temporal">Temporal Anti-Aliasing</FieldLabel>
-          <Switch
-            id="project-effects-temporal"
-            aria-describedby="project-effects-temporal-description"
-            data-testid="project-effects-temporal"
-            checked={project.temporalAntiAliasing.enabled}
-            onCheckedChange={(enabled) => patchTemporal({ enabled: enabled === true })}
-          />
-          <FieldDescription id="project-effects-temporal-description">
-            Accumulates jittered frames to smooth edges and effect noise; fast motion can ghost.
-          </FieldDescription>
-        </Field>
-        {project.temporalAntiAliasing.enabled ? (
-          <>
-            <Field className="settings-field">
-              <FieldLabel htmlFor="project-effects-temporal-blend">Temporal Blend</FieldLabel>
-              <NumberField
-                id="project-effects-temporal-blend"
-                aria-describedby="project-effects-temporal-blend-description"
-                data-testid="project-effects-temporal-blend"
-                value={project.temporalAntiAliasing.blend}
-                min={RENDER_EFFECTS_LIMITS.temporalBlend[0]}
-                max={RENDER_EFFECTS_LIMITS.temporalBlend[1]}
-                step={0.01}
-                onChange={(blend) => patchTemporal({ blend })}
-              />
-              <FieldDescription id="project-effects-temporal-blend-description">
-                Weight of each new frame. Lower values are smoother but trail more.
-              </FieldDescription>
-            </Field>
-            <Field className="settings-field">
-              <FieldLabel htmlFor="project-effects-temporal-samples">Jitter Samples</FieldLabel>
-              <NumberField
-                id="project-effects-temporal-samples"
-                data-testid="project-effects-temporal-samples"
-                value={project.temporalAntiAliasing.samples}
-                min={RENDER_EFFECTS_LIMITS.temporalSamples[0]}
-                max={RENDER_EFFECTS_LIMITS.temporalSamples[1]}
-                step={1}
-                onChange={(samples) => patchTemporal({ samples: Math.round(samples) })}
-              />
-            </Field>
-          </>
         ) : null}
         <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="project-effects-upscaling">FSR Upscaling</FieldLabel>

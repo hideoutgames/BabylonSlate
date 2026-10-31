@@ -32,7 +32,7 @@ export const SCALABILITY_FIELD_OWNERS = {
     anisotropy: "textures",
     byteBudget: "textures",
   },
-  geometry: { autoLod: "geometry", lodDistanceScale: "geometry" },
+  geometry: { autoLod: "geometry", lodDistanceScale: "geometry", occlusionCulling: "geometry" },
   water: {
     shadingDetail: "water",
     meshDensity: "water",
@@ -47,6 +47,7 @@ export const SCALABILITY_FIELD_OWNERS = {
   },
   postprocessing: {
     resolutionScale: "postprocessing",
+    antiAliasing: "postprocessing",
     ambientOcclusion: "postprocessing",
     reflections: "postprocessing",
     volumetricLighting: "postprocessing",

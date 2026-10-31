@@ -4,6 +4,8 @@ import {
   type NodeMaterial,
 } from "@babylonjs/core";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
+import { materialIneligibility } from "./instance-pool";
+import { unlitBinding } from "./unlit-material-blocks";
 import { ensureLatticeShadowAdapter, releaseLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { hasStockVertexStage } from "./shadow-material-policy";
@@ -87,6 +89,26 @@ describe("unlit Material", () => {
     expect(plane.subMeshes[0]!.effect!.defines).toMatch(/#define UV1\b/);
   });
 
+  it("samples an MSDF atlas with a program of its own, its outline bound per mesh", async () => {
+    const target = scene();
+    const msdf: UnlitMaterialKey = { ...world, msdf: true, fog: false, imageProcessing: "atlas" };
+    const glyph = MeshBuilder.CreatePlane("glyph", {}, target);
+    const outlined = MeshBuilder.CreatePlane("outlined", {}, target);
+    const atlas = texture(target);
+    const material = setUnlitMaterial(glyph, msdf, binding({ texture: atlas, blend: true, cutoff: 0.01, textureAlpha: false }));
+    setUnlitMaterial(outlined, msdf, binding({ texture: atlas, blend: true, cutoff: 0.01, msdf: { strokeColor: [1, 0, 0], strokeWidth: 0.32 } }));
+    const textured = unlitMaterial(target, world);
+    for (const candidate of [material, textured]) await built(candidate);
+    expect(material).not.toBe(textured);
+    // Its code differs from the plain textured surface's: another program.
+    expect(material.buildId).not.toBe(textured.buildId);
+    await ready(material, glyph);
+    await ready(material, outlined);
+    expect(outlined.subMeshes[0]!.effect).toBe(glyph.subMeshes[0]!.effect);
+    expect(material.needAlphaBlendingForMesh(glyph)).toBe(true);
+    expect(material.fogEnabled).toBe(false);
+  });
+
   it("waits for the mesh's bound texture before drawing", async () => {
     const target = scene();
     const plane = MeshBuilder.CreatePlane("plane", {}, target);
@@ -145,6 +167,31 @@ describe("unlit Material", () => {
     expect(material.shadowDepthWrapper).toBeNull();
     await built(material);
     expect(hasStockVertexStage(material)).toBe(true);
+  });
+
+  it("keeps drawing the other meshes when one mesh is disposed with its materials", () => {
+    const target = scene();
+    const first = MeshBuilder.CreatePlane("first", {}, target);
+    const second = MeshBuilder.CreatePlane("second", {}, target);
+    const material = setUnlitMaterial(first, solid, binding());
+    setUnlitMaterial(second, solid, binding());
+    first.dispose(false, true);
+    expect(target.materials).toContain(material);
+    expect(second.material).toBe(material);
+    expect(unlitMaterial(target, solid)).toBe(material);
+  });
+
+  it("keeps its meshes out of instance pool groups, and draws a visual's binding on the mesh that replaces its leaf", () => {
+    const target = scene();
+    const root = MeshBuilder.CreatePlane("root", {}, target);
+    const red = texture(target);
+    const material = setUnlitMaterial(root, world, binding({ texture: red, color: [0.5, 0.25, 1] }));
+    // A group's instances draw with their source's binding: an unlit mesh never joins one.
+    expect(materialIneligibility(root, material)).toBe("perMeshBinding");
+    const own = MeshBuilder.CreatePlane("own", {}, target);
+    own.parent = root;
+    own.material = material;
+    expect(unlitBinding(own)).toBe(unlitBinding(root));
   });
 
   it("frees its instance and variants with the Scene", () => {

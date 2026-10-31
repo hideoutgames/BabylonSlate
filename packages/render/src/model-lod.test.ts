@@ -18,13 +18,15 @@ import { normalizeRenderingQuality } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
 import { loadModelContainer } from "./model-container";
+import { setSceneInstancing } from "./instance-pool";
+import { poolModelLeaves } from "./pooled-model-leaves";
 import {
   attachModelLods,
   autoLodDiagnostics,
   generateModelLods,
   isAutoLodMaster,
 } from "./model-lod";
-import { followSceneRenderSettings, updateSceneRenderingSettings } from "./render-settings";
+import { followSceneRenderSettings, updateSceneRenderingSettings, pinFullRenderQuality } from "./render-settings";
 import { participatesInShadows } from "./shadow-mesh-policy";
 import { visualMeshes } from "./visual-meshes";
 
@@ -117,6 +119,33 @@ describe("automatic model LOD", () => {
 
     updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ geometry: { autoLod: false, lodDistanceScale: 1 } }) });
     expect(select(0.02, scaled)).toBe(master);
+  });
+
+  it("gives a pooled model's group source the levels once, and draws each member at the level of its own bounds", async () => {
+    const { scene, engine, container, lods } = await sphereModel();
+    engine.getCaps().instancedArrays = true;
+    setSceneInstancing(scene, true);
+    const retain = () => () => {};
+    const actorAt = (name: string, z: number) => {
+      const instance = container.instantiateModelsToScene((source) => source, false, { doNotInstantiate: true });
+      const root = new Mesh(name, scene);
+      for (const node of instance.rootNodes) node.parent = root;
+      root.position.z = z;
+      const [member] = poolModelLeaves(root, container, { retain });
+      if (!member) throw new Error("the sphere did not pool");
+      return { root, member };
+    };
+    const [near, far] = [actorAt("near", 0), actorAt("far", 60)];
+    expect([attachModelLods(near.root, lods), attachModelLods(far.root, lods)]).toEqual([1, 0]);
+    const source = near.member.sourceMesh;
+    expect([far.member.sourceMesh === source, source.getLODLevels().length > 0, isAutoLodMaster(source)]).toEqual([true, true, true]);
+    for (const member of [near.member, far.member]) member.computeWorldMatrix(true);
+    const camera = cameraAt(scene, near.member as unknown as Mesh, 0.6);
+    const drawn = [near.member, far.member].map((member) => scene.customLODSelector!(member, camera));
+    // The near member draws at full detail, the far one at a level; each draws in the batch of what it chose.
+    expect(drawn[0]).toBe(source);
+    expect(source.getLODLevels().map((level) => level.mesh)).toContain(drawn[1]);
+    expect([near.member, far.member].map((member) => (member as unknown as { _currentLOD: unknown })._currentLOD)).toEqual(drawn);
   });
 
   it("renders the selected level in place of its master", async () => {
@@ -306,7 +335,7 @@ describe("automatic model LOD", () => {
     for (const lod of levels) expect(lod.nonUniformScaling).toBe(true);
   });
 
-  it("resolves quality from a followed Scene", async () => {
+  it("draws a full-quality Scene (a SceneLayer) at full detail whatever the Scene it follows", async () => {
     const { scene, instantiate } = await sphereModel();
     const { master, levels } = instantiate();
     const camera = cameraAt(scene, master, 0.02);
@@ -314,8 +343,9 @@ describe("automatic model LOD", () => {
 
     const owner = createTestEngine();
     handles.push(owner);
-    updateSceneRenderingSettings(owner.scene, { quality: normalizeRenderingQuality({ geometry: { autoLod: false, lodDistanceScale: 1 } }) });
+    updateSceneRenderingSettings(owner.scene, { quality: normalizeRenderingQuality({ geometry: { autoLod: true, lodDistanceScale: 0.25 } }) });
     followSceneRenderSettings(scene, owner.scene);
+    pinFullRenderQuality(scene);
     expect(scene.customLODSelector!(master, new FreeCamera("fresh", camera.position.clone(), scene))).toBe(master);
   });
 

@@ -35,6 +35,8 @@ export interface SceneEffectsInputs {
   allowed?: Pick<PostProcessingQuality, PostProcessingEffectField>;
   /** Screen-Space Shadows' level from the resolved shadow settings (off in CEL and without shadows). */
   screenShadows?: ScreenShadowsQuality;
+  /** The quality tier's Anti-Aliasing is FXAA (a world view's): the only source of the FXAA pass. */
+  fxaa?: boolean;
 }
 
 /** Composed effect chain: authored stack output → ambient occlusion →
@@ -46,7 +48,6 @@ export interface SceneEffectsPlan {
   bloom: RenderEffectsSettings["bloom"] | null;
   imageProcessing: SceneEffectsImageProcessingPlan | null;
   fxaa: boolean;
-  temporalAntiAliasing: RenderEffectsSettings["temporalAntiAliasing"] | null;
   ambientOcclusion: RenderEffectsSettings["ambientOcclusion"] | null;
   reflections: RenderEffectsSettings["reflections"] | null;
   volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
@@ -76,7 +77,7 @@ export function upscaledRenderSize(
  * Resolve the normalized settings into the renderable chain. CEL renders
  * display-space by construction, so the Scene Linear stage (and therefore
  * tone mapping, exposure and contrast) only applies to PBR projects; vignette,
- * bloom and FXAA remain available in every mode. Ambient occlusion is
+ * bloom and the tier's FXAA remain available in every mode. Ambient occlusion is
  * PBR-only so CEL keeps its hard-stepped shading. Real-Time Reflections
  * follow the one Post Processing setting in both modes.
  */
@@ -97,8 +98,7 @@ export function planSceneEffects(
   // the only pass which can apply the vignette or LUT on either pipeline.
   const imageProcessing =
     sceneLinear || vignette || colorGrading ? { sceneLinear, vignette, colorGrading } : null;
-  const fxaa = effects.fxaa;
-  const temporalAntiAliasing = effects.temporalAntiAliasing.enabled ? effects.temporalAntiAliasing : null;
+  const fxaa = inputs.fxaa === true;
   const allowed = inputs.allowed;
   const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled && allowed?.ambientOcclusion !== false
     ? effects.ambientOcclusion : null;
@@ -112,10 +112,10 @@ export function planSceneEffects(
   const upscale = effects.upscaling.enabled && effects.upscaling.renderScale < 1 ? effects.upscaling : null;
   // sceneLinear always yields imageProcessing, so it needs no separate term.
   const screenShadows = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? inputs.screenShadows : null;
-  if (!bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting && !upscale &&
+  if (!bloom && !imageProcessing && !fxaa && !ambientOcclusion && !reflections && !volumetricLighting && !upscale &&
     !screenShadows)
     return null;
-  return { sceneLinear, bloom, imageProcessing, fxaa, temporalAntiAliasing, ambientOcclusion, reflections, volumetricLighting, upscale, screenShadows };
+  return { sceneLinear, bloom, imageProcessing, fxaa, ambientOcclusion, reflections, volumetricLighting, upscale, screenShadows };
 }
 
 const TONE_MAPPING_TYPES: Record<RenderEffectsToneMapping, number> = {
@@ -191,5 +191,6 @@ export function sceneEffectsKey(
     ? `:skip${allowed.ambientOcclusion ? "" : "O"}${allowed.reflections ? "" : "R"}${allowed.volumetricLighting ? "" : "V"}`
     : "";
   const screen = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? `:screen${inputs.screenShadows}` : "";
-  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
+  const fxaa = inputs.fxaa ? ":fxaa" : "";
+  return `${mode}${JSON.stringify(effects)}${fxaa}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
 }

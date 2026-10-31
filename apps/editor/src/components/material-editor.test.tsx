@@ -237,6 +237,20 @@ describe("Material details panel", () => {
     fireEvent.blur(alpha!);
     expect(lastCommit().nodes.find((node) => node.id === "tint")?.properties.value).toEqual([0.1, 0.2, 0.3, 0.75]);
   });
+  it("marks a Float or Color parameter Per Instance, and offers it on no other node", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "tint", type: "param.color", position: { x: 0, y: 0 }, properties: { name: "Tint", value: [1, 1, 1, 1] } });
+    doc.nodes.push({ id: "albedo", type: "param.texture", position: { x: 0, y: 100 }, properties: { name: "Albedo" } });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "tint";
+    const { rerender } = render(<MaterialDetailsPanel {...panelProps} />);
+    fireEvent.click(document.getElementById("property-perInstance")!);
+    expect(lastCommit().nodes.find((node) => node.id === "tint")?.properties.perInstance).toBe(true);
+    harness.selectedNodeId = "albedo";
+    rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(document.getElementById("property-perInstance")).toBeNull();
+  });
+
   it("shows material settings when no node is selected", () => {
     render(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.getByTestId("material-settings")).toBeTruthy();

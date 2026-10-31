@@ -50,7 +50,7 @@ function diagnostics(lights: boolean): RenderDiagnostics {
 /** `testMode` mirrors a test build: the e2e data attributes only exist and update there. */
 async function openPlay(onRender?: () => void, testMode = true) {
   window.history.replaceState(null, "", testMode ? "/?test=1" : "/");
-  const state = { lights: false, guids: ["actor-a"], ys: [1], passes: 0, materials: [] as string[] };
+  const state = { lights: false, occlusion: false, guids: ["actor-a"], ys: [1], passes: 0, materials: [] as string[] };
   const renderDiagnostics = vi.fn(() => diagnostics(state.lights));
   const testHooks = {
     postProcessPassCount: vi.fn(() => state.passes),
@@ -63,6 +63,7 @@ async function openPlay(onRender?: () => void, testMode = true) {
       resize() {}, setSize() {}, scheduler: { setResizing() {} },
       renderDiagnostics,
       lightsDebugEnabled: () => state.lights,
+      occlusionOverlay: () => state.occlusion ? { buffer: null } : null,
       postProcessPassCount: testHooks.postProcessPassCount,
       assignedMaterialGuids: testHooks.assignedMaterialGuids,
       isFreeCamEnabled: () => false,
@@ -123,6 +124,19 @@ it("shows the lights overlay while lights debug is on, with Stats closed, and dr
   await poll();
   expect(screen.queryByTestId("lights-debug-overlay")).toBeNull();
   expect(renderDiagnostics).not.toHaveBeenCalled();
+});
+
+it("shows the occlusion overlay while showocclusion is on, with its caption, and drops it when it turns off", async () => {
+  const { state } = await openPlay();
+  expect(screen.queryByTestId("occlusion-debug-overlay")).toBeNull();
+  state.occlusion = true;
+  await poll();
+  // The diagnostics carry no occlusion: culling is off, so the overlay says so and draws no buffer.
+  expect(screen.getByTestId("occlusion-debug-overlay").textContent).toBe("occlusion culling off");
+  expect(screen.getByTestId("occlusion-debug-overlay").querySelector("canvas")).toBeNull();
+  state.occlusion = false;
+  await poll();
+  expect(screen.queryByTestId("occlusion-debug-overlay")).toBeNull();
 });
 
 it("leaves the e2e data attributes out and skips their reads outside a test build", async () => {

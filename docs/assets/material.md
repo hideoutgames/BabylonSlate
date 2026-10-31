@@ -26,7 +26,7 @@ With no node selected, the **Inspector** shows these settings. Some apply to onl
 | Domain | **Surface** (meshes and models), **Landscape**, **Post Process** (full-screen passes), **Particle** or **Text** (2D text in Scene Layers). Changing it removes nodes the new domain does not support. |
 | Shading Model | **PBR** (lit) or **Unlit**. Surface and Landscape. |
 | Blend Mode | **Opaque**, **Masked**, **Translucent** or **Additive**. Not shown for Particle or Text; particle emitters set their own blending. |
-| Alpha Cutoff | Masked only. Pixels with lower opacity are cut out. |
+| Alpha Cutoff | Masked only. Pixels with lower opacity are cut out. Under [MSAA](../graphics/post-processing.md#anti-aliasing) the cut-out edges are smoothed. |
 | Two Sided | Draws back faces too. Surface and Landscape. |
 | Default Normals | **Model Normals** or **Flat Normals**, used when the Normal input is unconnected. Surface and Landscape. |
 | Bounds Padding (Local) | Enlarges culling bounds for Materials that move vertices, so displaced meshes do not vanish at screen edges. Surface and Landscape. |

@@ -11,11 +11,15 @@
  *   texel centres, or a gap between two occluders narrower than a texel, never claims the area beside it. This holds
  *   for an occluder whose screen shape is convex (a box, a wall, a convex hull); a concave one can claim a sliver of a
  *   notch, so concave occluders are split into convex parts.
- * - A max-reduced mip pyramid answers a box's test from at most 2 × 2 texels.
+ * - A max-reduced mip pyramid answers a box's test from at most `TEST_SPAN` × `TEST_SPAN` texels: a coarser level would
+ *   reach further past the box's rectangle, to the next block edge.
  * - Triangles are clipped against the near plane (w ≥ near); a box with any corner at or behind it is visible.
  * - Matrices are Babylon's layout (`Matrix.m`: clip = (x, y, z, 1) · M, translation in m[12..14]), read in doubles,
  *   so a camera far from the origin keeps its precision. Nothing allocates per frame.
  */
+
+/** Texels across, at most, that a box test reads at its level. */
+const TEST_SPAN = 8;
 
 /** Which triangle winding, in screen space, faces the camera; "both" keeps every triangle. */
 export type OcclusionWinding = "clockwise" | "counterClockwise" | "both";
@@ -29,6 +33,8 @@ export class OcclusionBuffer {
   private readonly levelHeights: number[] = [];
   /** The occluder being rasterised, before its erosion, and the texel rectangle it has written. */
   private readonly occluder: Float32Array;
+  /** The occluder's 3-texel row maxima, the first half of its erosion. */
+  private readonly rowMax: Float32Array;
   private occluderLeft = 0;
   private occluderRight = -1;
   private occluderTop = 0;
@@ -45,6 +51,7 @@ export class OcclusionBuffer {
     this.width = width;
     this.height = height;
     this.occluder = new Float32Array(width * height).fill(Infinity);
+    this.rowMax = new Float32Array(width * height);
     for (let w = width, h = height; ; w = Math.max(1, Math.ceil(w / 2)), h = Math.max(1, Math.ceil(h / 2))) {
       this.levels.push(new Float32Array(w * h));
       this.levelWidths.push(w);
@@ -127,7 +134,7 @@ export class OcclusionBuffer {
     const y0 = Math.floor(top - 0.5) - 1, y1 = Math.ceil(bottom - 0.5) + 1;
     if (x0 < 0 || y0 < 0 || x1 >= this.width || y1 >= this.height) return false;
     let level = 0;
-    while (level + 1 < this.levels.length && ((x1 >> level) - (x0 >> level) > 1 || (y1 >> level) - (y0 >> level) > 1)) level++;
+    while (level + 1 < this.levels.length && ((x1 >> level) - (x0 >> level) >= TEST_SPAN || (y1 >> level) - (y0 >> level) >= TEST_SPAN)) level++;
     const data = this.levels[level]!, levelWidth = this.levelWidths[level]!;
     const limit = nearest - epsilon;
     for (let y = y0 >> level; y <= y1 >> level; y++)
@@ -138,30 +145,37 @@ export class OcclusionBuffer {
 
   /** Erodes the occluder just rasterised into the buffer, nearer depth winning, and clears it for the next. */
   private mergeOccluder(): void {
-    const { width, height, occluder } = this;
+    const { width, height, occluder, rowMax } = this;
     const base = this.levels[0]!;
-    // Erosion only shrinks coverage: texels outside the written rectangle stay uncovered.
-    for (let y = this.occluderTop; y <= this.occluderBottom; y++) {
-      for (let x = this.occluderLeft; x <= this.occluderRight; x++) {
-        let depth = 0;
-        for (let dy = -1; dy <= 1 && depth !== Infinity; dy++) {
-          const row = y + dy;
-          // Outside the buffer nothing is known to occlude.
-          if (row < 0 || row >= height) { depth = Infinity; break; }
-          for (let dx = -1; dx <= 1; dx++) {
-            const column = x + dx;
-            const value = column < 0 || column >= width ? Infinity : occluder[row * width + column]!;
-            if (value > depth) depth = value;
-          }
-        }
-        const index = y * width + x;
-        if (depth < base[index]!) base[index] = depth;
+    const top = this.occluderTop, bottom = this.occluderBottom, left = this.occluderLeft, right = this.occluderRight;
+    // A separable 3 × 3 max: along each row, then down the columns. Outside the buffer and the written rectangle nothing
+    // is known to occlude, and erosion only shrinks coverage, so texels outside the rectangle stay uncovered.
+    for (let y = top; y <= bottom; y++) {
+      const row = y * width;
+      for (let x = left; x <= right; x++) {
+        const centre = occluder[row + x]!;
+        const before = x > 0 ? occluder[row + x - 1]! : Infinity;
+        const after = x + 1 < width ? occluder[row + x + 1]! : Infinity;
+        rowMax[row + x] = Math.max(before, centre, after);
+      }
+    }
+    for (let y = top; y <= bottom; y++) {
+      if (y === 0 || y + 1 === height || y === top || y === bottom) continue;
+      const row = y * width;
+      for (let x = left; x <= right; x++) {
+        const depth = Math.max(rowMax[row - width + x]!, rowMax[row + x]!, rowMax[row + width + x]!);
+        if (depth < base[row + x]!) base[row + x] = depth;
       }
     }
     for (let y = this.occluderTop; y <= this.occluderBottom; y++)
       occluder.fill(Infinity, y * width + this.occluderLeft, y * width + this.occluderRight + 1);
     this.occluderLeft = this.occluderTop = 0;
     this.occluderRight = this.occluderBottom = -1;
+  }
+
+  /** Level 0: the view depth per texel, row 0 at the top (Infinity where nothing occludes), for debug views. */
+  depths(): { width: number; height: number; depth: Float32Array } {
+    return { width: this.width, height: this.height, depth: this.levels[0]! };
   }
 
   /** The depth at texel (x, y) of level 0, for diagnostics and tests. */
@@ -233,17 +247,31 @@ export class OcclusionBuffer {
       this.occluderLeft = Math.min(this.occluderLeft, x0); this.occluderRight = Math.max(this.occluderRight, x1);
       this.occluderTop = Math.min(this.occluderTop, y0); this.occluderBottom = Math.max(this.occluderBottom, y1);
     }
+    // Each row's span of texel centres inside (or on an edge of) the triangle: each edge bounds it on one side, where the
+    // row crosses the edge's line. That crossing is computed from the edge's endpoints in a fixed order, so a triangle
+    // sharing the edge finds the very same crossing, and a centre on it belongs to both: no seam between them.
     for (let y = y0; y <= y1; y++) {
       const py = y + 0.5;
-      for (let x = x0; x <= x1; x++) {
-        const px = x + 0.5;
-        // Inside (or on an edge of) the triangle by its three edge functions.
-        if (sign * ((bx - ax) * (py - ay) - (by - ay) * (px - ax)) < 0) continue;
-        if (sign * ((cx - bx) * (py - by) - (cy - by) * (px - bx)) < 0) continue;
-        if (sign * ((ax - cx) * (py - cy) - (ay - cy) * (px - cx)) < 0) continue;
-        const index = y * width + x;
-        if (depth < occluder[index]!) occluder[index] = depth;
+      let from = x0, to = x1;
+      for (let edge = 0; edge < 3 && from <= to; edge++) {
+        let ex = edge === 0 ? ax : edge === 1 ? bx : cx, ey = edge === 0 ? ay : edge === 1 ? by : cy;
+        let fx = edge === 0 ? bx : edge === 1 ? cx : ax, fy = edge === 0 ? by : edge === 1 ? cy : ay;
+        let side = sign;
+        if (ey > fy || (ey === fy && ex > fx)) {
+          [ex, ey, fx, fy] = [fx, fy, ex, ey];
+          side = -side;
+        }
+        // Inside: side · ((fx − ex)(py − ey) − (fy − ey)(px − ex)) ≥ 0.
+        if (fy === ey) {
+          if (side * (fx - ex) * (py - ey) < 0) to = from - 1;
+          continue;
+        }
+        const crossing = ex + ((fx - ex) * (py - ey)) / (fy - ey) - 0.5;
+        if (side < 0) from = Math.max(from, Math.ceil(crossing));
+        else to = Math.min(to, Math.floor(crossing));
       }
+      const row = y * width;
+      for (let x = from; x <= to; x++) if (depth < occluder[row + x]!) occluder[row + x] = depth;
     }
   }
 }

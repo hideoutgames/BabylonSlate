@@ -264,3 +264,16 @@ export function effectiveShadowSettings(
   }
   return { settings, limits };
 }
+
+/** Components drawn unlit (sprites, tilemaps, 3D text): they cast no shadow unless their Cast Shadows is set. */
+const UNLIT_CASTER_CLASS_IDS: ReadonlySet<string> = new Set(["SpriteComponent", "TilemapComponent", "Text3DComponent"]);
+
+/** Whether a component of `classId` casts shadows when its Cast Shadows is unset: every visual but an unlit one. */
+export function defaultCastShadows(classId: string): boolean {
+  return !UNLIT_CASTER_CLASS_IDS.has(classId);
+}
+
+/** Whether a component casts shadows: its authored Cast Shadows, or else its class default (`defaultCastShadows`). */
+export function componentCastsShadows(classId: string, castShadows: unknown): boolean {
+  return typeof castShadows === "boolean" ? castShadows : defaultCastShadows(classId);
+}

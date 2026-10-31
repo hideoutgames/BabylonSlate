@@ -282,7 +282,7 @@ export async function proveWebGpuVariantSwap(engine: AbstractEngine) {
 }
 
 /**
- * A world view with a geometry pass (temporal anti-aliasing's view depth and velocity, which no warm draw warms): a
+ * A world view with a geometry pass (ambient occlusion's view depth and normals, which no warm draw warms): a
  * spawn with a variant nothing compiled stays hidden until its colour pipelines exist, and is then left out of the
  * geometry pass alone, with no frame held and no pipeline created synchronously, until its geometry pipeline exists.
  * The floor is unlit: its lighting is not this proof's subject.
@@ -295,7 +295,7 @@ export async function proveWebGpuGeometrySpawn(engine: AbstractEngine) {
   scene.activeCamera = camera;
   setSceneBindsPreviousEffects(scene);
   setSceneRenderSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS,
-    temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } });
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } } });
   const floorMaterial = new PBRMaterial("floor", scene);
   floorMaterial.albedoColor = new Color3(0.8, 0.8, 0.8);
   floorMaterial.unlit = true;

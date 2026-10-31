@@ -32,6 +32,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       setViewportMode: vi.fn(),
       setViewportShadingMode: vi.fn(),
       setDrawMeshCollision: vi.fn(),
+      setOcclusionCulling: vi.fn(),
       setPreviewGameCamera: vi.fn(),
       setGridSettings: vi.fn(),
       setSortingLayers: vi.fn(),
@@ -577,6 +578,29 @@ describe("ViewportPanel engine", () => {
       await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
       expect(createEngineMock).toHaveBeenCalledTimes(2);
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    } finally {
+      play.registerSimulationViewport = undefined;
+    }
+  });
+
+  it("is not ready while Play holds its released Engine, and is ready again once restored", async () => {
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    let viewport!: SimulationViewport;
+    play.registerSimulationViewport = (registered) => { viewport = registered; return () => {}; };
+    try {
+      renderViewport();
+      const ready = () => screen.getByTestId("viewport-panel").getAttribute("data-scene-ready");
+      await waitFor(() => expect(ready()).toBe("true"));
+      await act(async () => { await viewport.suspend(); });
+      // Released, the view has no Engine: anything waiting for readiness must wait for the restore.
+      expect(handle.dispose).toHaveBeenCalledOnce();
+      expect(ready()).toBe("false");
+      act(() => viewport.restore());
+      await waitFor(() => expect(ready()).toBe("true"));
+      expect(createEngineMock).toHaveBeenCalledTimes(2);
     } finally {
       play.registerSimulationViewport = undefined;
     }

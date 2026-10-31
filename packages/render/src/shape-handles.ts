@@ -1,9 +1,13 @@
 import {
   Camera, Color3, CreateLineSystem, CreateSphere, Matrix, Mesh, PointerDragBehavior,
-  Quaternion, StandardMaterial, Vector3,
+  Quaternion, Vector3,
   type LinesMesh, type Scene, type UtilityLayerRenderer,
 } from "@babylonjs/core";
 import type { RenderScheduler } from "./render-scheduler";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+
+/** A handle's dot, in the utility layer; editor helpers draw without fog. */
+const HANDLE_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: true, fog: false, role: "helper" };
 
 export type ShapePoint = [number, number, number];
 export interface ShapeHandle {
@@ -69,7 +73,6 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
 ): ShapeHandlesHost<Target> {
   const util = layer.utilityLayerScene;
   const meshes = new Map<string, Mesh>();
-  const materials = new Map<string, StandardMaterial>();
   let target: Target | null = null;
   let body: Body | null = null;
   let handles: Handle[] = [];
@@ -203,15 +206,9 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       const visual = CreateSphere(`${adapter.name}-handle:${handle.id}:visual`, { diameter: handle.kind === "insert" ? 0.32 : 0.45, segments: 12 }, util);
       visual.isPickable = false; visual.parent = pick;
       const color = adapter.color(handle), alpha = handle.kind === "insert" ? 0.45 : 1;
-      const key = `${color.toHexString()}:${alpha}`;
-      let material = materials.get(key);
-      if (!material) {
-        material = new StandardMaterial(`${adapter.name}-handle:${key}`, util);
-        material.disableLighting = true; material.emissiveColor = color.clone();
-        material.diffuseColor = color.clone(); material.specularColor = Color3.Black(); material.alpha = alpha;
-        materials.set(key, material);
-      }
-      visual.material = material;
+      setUnlitMaterial(visual, HANDLE_MATERIAL, {
+        texture: null, color: [color.r, color.g, color.b], alpha, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+      });
       bind(pick, handle.id); meshes.set(handle.id, pick);
     }
   };
@@ -299,7 +296,6 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       if (drag) finish(true);
       selection?.dispose(); selection = null; selectedId = null;
       clear();
-      for (const material of materials.values()) material.dispose();
     },
   };
 }

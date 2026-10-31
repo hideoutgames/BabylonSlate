@@ -649,6 +649,9 @@ export type CommandMessage =
       sortingLayer?: string;
       /** Sprite / tilemap order within that sorting layer. */
       orderInLayer?: number;
+      /** The optimized actor mesh's shadow participation (no `parts`): its component's resolved Cast/Receive Shadows. */
+      castShadows?: boolean;
+      receiveShadows?: boolean;
       light?: PlayLightProperties;
       camera?: PlayCameraProperties;
       /** Extra renderable components parented to the actor origin mesh. */
@@ -673,6 +676,8 @@ export type CommandMessage =
         overlayStyle?: import("@haptic/core").OverlayVisualStyle;
         castShadows?: boolean;
         receiveShadows?: boolean;
+        /** A MeshComponent's Occluder: "auto" (absent), "always" or "never". */
+        occluder?: "auto" | "always" | "never";
         meshKind?: string | null;
         meshAssetGuid?: string | null;
         parentId?: string | null;
@@ -1060,10 +1065,16 @@ export type CommandMessage =
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
   | { type: "setScalability"; transaction: ScalabilityTransaction }
   | { type: "setLightsDebug"; enabled: boolean }
+  /** Debug: the occlusion overlay (`showocclusion`) and frozen occlusion (`freezeocclusion`); an absent field stays as it is. */
+  | { type: "setOcclusionDebug"; show?: boolean; freeze?: boolean }
   /** Debug: the Play view's post-processing as a whole (the `postprocessing` console command). */
   | { type: "setPostProcessingDebug"; enabled: boolean }
   /** Debug: whether every-frame Render Target Captures draw (the `rendertargets` console command). */
   | { type: "setRenderTargetCapturesDebug"; enabled: boolean }
+  /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */
+  | { type: "setGpuBusyProbeDebug"; enabled: boolean }
+  /** Debug: store whether the next project Engine keeps its drawing buffer (the `preservebuffer` console command). */
+  | { type: "setPreserveDrawingBufferDebug"; enabled: boolean }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }
   | { type: "setStat"; name: string; enabled: boolean }

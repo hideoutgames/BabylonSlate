@@ -9,7 +9,7 @@ import { createWaterMesh, sceneWaterSamplesSceneCopy, updateSceneWater, waterMes
 import { materialSceneCopyUse, meshWaterNodeSurface, WaterCoverageBlock, WaterCutBlock } from "./water-node-blocks";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import type { WaterField } from "./water-field";
-import { placeholderField } from "./water-material";
+import { placeholderField, waterGridOffset } from "./water-material";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 import { builtInWaterMaterial } from "./water-template";
 
@@ -666,5 +666,67 @@ describe("Water variant", () => {
       expect(water.compiled.material.attachedBlocks.some((block) => block instanceof WaterCutBlock), kind).toBe(true);
       expect(plain.compiled.material.attachedBlocks.some((block) => block instanceof WaterCutBlock), kind).toBe(false);
     }
+  });
+});
+
+describe("Water ownership", () => {
+  /** FT_World's sea and Ocean, drawn with the water starter's water variant. */
+  const sea = (scene: Scene) => {
+    const material = builtInWaterMaterial(scene);
+    const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"), undefined, material);
+    global.position.set(0, -6, 0);
+    const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 40, length: 80 }, "ocean"), undefined, material);
+    ocean.position.set(36, -6, 0);
+    updateSceneWater(scene);
+    updateSceneWater(scene);
+    return { global, ocean };
+  };
+
+  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("cuts a Global Water and an Ocean along their seam per pixel, a river and its lake per vertex, in language %s", async (language) => {
+    const scene = host(language === ShaderLanguage.WGSL);
+    overlook(scene);
+    const { global, ocean } = sea(scene);
+    for (const mesh of [global, ocean]) {
+      const effect = await programFor(mesh.material as NodeMaterial, mesh);
+      expect(effect.defines, mesh.name).toMatch(/^#define SLATE_WATER_OWNERSHIP$/m);
+      expect(effect.fragmentSourceCode, mesh.name).toContain("swOwnership(");
+    }
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 20 }, "lake"), undefined, builtInWaterMaterial(scene));
+    lake.position.set(-60, 0, 0);
+    const river = createWaterMesh(scene, "river", normalizeWaterBody({ width: 6, points: [[-40, 0, 0], [-12, 0, 0]] }, "river"), undefined, builtInWaterMaterial(scene));
+    river.position.set(-60, 0, 0);
+    updateSceneWater(scene);
+    updateSceneWater(scene);
+    for (const mesh of [lake, river]) {
+      const defines = await definesFor(mesh.material as NodeMaterial, mesh);
+      expect(defines, mesh.name).toMatch(/^#define SLATE_WATER_BLEND$/m);
+      expect(defines, mesh.name).not.toMatch(/^#define SLATE_WATER_OWNERSHIP$/m);
+    }
+  });
+
+  it("compiles nothing as the camera moves the graded grids and recentres Global Water", async () => {
+    const scene = host();
+    overlook(scene);
+    const { global, ocean } = sea(scene);
+    const before = [await programFor(global.material as NodeMaterial, global), await programFor(ocean.material as NodeMaterial, ocean)];
+    const compiled = (scene.getEngine() as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+    const programs = Object.keys(compiled).length;
+    const camera = scene.activeCamera as FreeCamera;
+    const centres = new Set<string>();
+    // Across the Ocean's dense region (it regrades), past Global Water's cells (it recentres), near and far.
+    for (const [x, y, z] of [[-4, 52, -82], [20, 30, -20], [36, 10, 0], [60, 20, 30], [0, 150, -250], [-200, 400, -900], [-4, 52, -82]] as const) {
+      camera.position.set(x, y, z);
+      camera.setTarget(new Vector3(4, -6, 6));
+      scene.incrementRenderId();
+      updateSceneWater(scene);
+      const offset = waterGridOffset(global);
+      centres.add(`${offset[0]},${offset[2]}`);
+      for (const mesh of [global, ocean]) expect(mesh.material!.isReadyForSubMesh(mesh, mesh.subMeshes[0]!), mesh.name).toBe(true);
+    }
+    // Global Water recentred along the way (its grid offset moved), and no program was compiled: a regraded Ocean's new
+    // vertex buffers re-prepare its defines, which find the same program in the Engine's cache.
+    expect(centres.size).toBeGreaterThan(3);
+    expect(Object.keys(compiled).length).toBe(programs);
+    expect([global.subMeshes[0]!.effect, ocean.subMeshes[0]!.effect]).toEqual(before);
   });
 });

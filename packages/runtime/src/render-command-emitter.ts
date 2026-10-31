@@ -1,5 +1,6 @@
 import type { CommandMessage } from "@haptic/bridge";
 import {
+  componentCastsShadows,
   areaRectLightBindings,
   deformerBindings,
   DEFORMER_PROPERTY_KEYS,
@@ -319,7 +320,11 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
         meshKind,
         actorGuid: actor.guid,
         ...(!parts
-          ? { primaryComponentId: primary.guid }
+          ? {
+              primaryComponentId: primary.guid,
+              castShadows: componentCastsShadows(primary.classId, primary.getVariable("castShadows")),
+              receiveShadows: primary.getVariable("receiveShadows") !== false,
+            }
           : {}),
         ...(supportsOverlayVisualStyle(primary.classId) ? { overlayStyle: parseOverlayVisualStyle(Object.fromEntries(primary.variables)) } : {}),
         ...(meshKind === "sprite" || meshKind === "tilemap"
@@ -807,8 +812,10 @@ function playMeshPartOf(
       ["width", "depth", "subdivisions", "heights", "weights", "materialGuid", "collisionsEnabled"].map((key) => [key, component.getVariable(key)]),
     )) } : {}),
     ...(component.classId === "FoliageComponent" ? { foliage: parseFoliageProperties({ groupId: component.getVariable("groupId"), batches: component.getVariable("batches") }) } : {}),
-    castShadows: component.getVariable("castShadows") !== false,
+    castShadows: componentCastsShadows(component.classId, component.getVariable("castShadows")),
     receiveShadows: component.getVariable("receiveShadows") !== false,
+    ...(component.classId === "MeshComponent" && (component.getVariable("occluder") === "always" || component.getVariable("occluder") === "never")
+      ? { occluder: component.getVariable("occluder") as "always" | "never" } : {}),
     meshKind: playMeshKindOf(component),
     meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
     parentId,
