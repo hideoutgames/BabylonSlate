@@ -78,7 +78,7 @@ import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows } from "./render-settings";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
 import { environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -334,6 +334,7 @@ function projectEngineOptions(): EngineOptions {
     preserveDrawingBuffer: preserveDrawingBufferSetting(),
     stencil: true,
     adaptToDeviceRatio: false,
+    // MSAA draws into the world view's own multisampled targets (`sceneMultisampleCount`): the canvas never multisamples.
     antialias: false,
     useLargeWorldRendering: true,
     useExactSrgbConversions: true,
@@ -1067,6 +1068,8 @@ function initializeEngine(
       "post.ambientOcclusion": String(post.ambientOcclusion),
       "post.reflections": String(post.reflections),
       "post.volumetricLighting": String(post.volumetricLighting),
+      "post.antiAliasing": post.antiAliasing,
+      "post.samples": String(sceneMultisampleCount(scene)),
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
       "resolution.scale": String(quality.resolution.scale),

@@ -37,7 +37,9 @@ export interface FeatureTestBreakdownStep {
   fields?: readonly string[];
 }
 
-const POST_FIELDS = ["post.scale", "post.ambientOcclusion", "post.reflections", "post.volumetricLighting"] as const;
+const POST_FIELDS = [
+  "post.scale", "post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "post.antiAliasing", "post.samples",
+] as const;
 const baseline = (n: number): FeatureTestBreakdownStep => ({ label: `baseline ${n}`, commands: [], baseline: true });
 
 /**
@@ -56,6 +58,8 @@ export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] =
   { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"] },
   { label: "SSR off", commands: ["quality postprocessing reflections off"], fields: ["post.reflections"] },
   { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"], fields: ["post.volumetricLighting"] },
+  { label: "MSAA off", commands: ["quality postprocessing antialiasing off"], fields: ["post.antiAliasing", "post.samples"] },
+  { label: "MSAA 2x", commands: ["quality postprocessing antialiasing msaa2"], fields: ["post.antiAliasing", "post.samples"] },
   { label: "post off", commands: ["postprocessing off"], restore: ["postprocessing on"], fields: ["post.enabled"] },
   { label: "captures off", commands: ["rendertargets off"], restore: ["rendertargets on"], fields: ["captures"] },
   { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale"] },

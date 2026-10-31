@@ -102,6 +102,8 @@ export class SpatialEffectsGraph {
   private readonly handles: {
     handle: FrameGraphTextureHandle;
     category: ManagedRenderCategory;
+    /** Multisampled storage beside the resolved texture (the enclosing view's scene targets under MSAA). */
+    samples?: number;
   }[] = [];
   private disposed = false;
   private committed = false;
@@ -118,6 +120,7 @@ export class SpatialEffectsGraph {
     sceneTargets: {
       handle: FrameGraphTextureHandle;
       category: ManagedRenderCategory;
+      samples?: number;
     }[] = [],
   ) {
     this.graph = graph;
@@ -275,13 +278,13 @@ export class SpatialEffectsGraph {
     this.screenShadows?.reconcile(this.graph);
     if (this.committed) return;
     this.lease.commit(
-      this.handles.map(({ handle, category }) => {
+      this.handles.map(({ handle, category, samples }) => {
         const texture: InternalTexture | null =
           this.graph.textureManager.getTextureFromHandle(handle);
         if (!texture)
           throw new Error("Spatial effects target is not allocated.");
         return managedRenderTextureResource(texture, category, {
-          samples: 1,
+          samples: samples ?? 1,
           allocatedMipLevels: 1,
         });
       }),

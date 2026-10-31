@@ -19,6 +19,9 @@ import {
   WATER_REFLECTION_MODES,
   WATER_REFLECTION_STEPS_MAX,
   WATER_REFLECTION_STEPS_MIN,
+  ANTI_ALIASING_MODES,
+  isAntiAliasingMode,
+  type AntiAliasingMode,
   WATER_SHADING_DETAILS,
   WATER_TARGET_SCALE_MAX,
   WATER_TARGET_SCALE_MIN,
@@ -64,6 +67,12 @@ const postProcessingEffects: { field: PostProcessingEffectField; label: string; 
   { field: "reflections", label: "Allow Reflections", description: "Runs the project's screen-space Reflections when enabled." },
   { field: "volumetricLighting", label: "Allow Volumetric Lighting", description: "Runs the project's scene-wide Volumetric Lighting when enabled. Fog Volumes always render." },
 ];
+const antiAliasingLabels: Record<AntiAliasingMode, string> = {
+  msaa4: "MSAA 4x",
+  msaa2: "MSAA 2x",
+  fxaa: "FXAA",
+  off: "Off",
+};
 const reflectionLabels: Record<WaterReflectionMode, string> = {
   sky: "Sky Only",
   screenSpace: "Screen Space",
@@ -437,6 +446,29 @@ export function RenderQualityFields({
             }
           />
           <FieldDescription>Applies to passes with Scalable Resolution.</FieldDescription>
+        </Field>
+        <Field className="settings-field">
+          <FieldLabel htmlFor="quality-postprocessing-antialiasing">Anti-Aliasing</FieldLabel>
+          <Select
+            value={effective.postprocessing.antiAliasing}
+            onValueChange={(antiAliasing) => {
+              if (isAntiAliasingMode(antiAliasing)) edit("postprocessing", { antiAliasing });
+            }}
+          >
+            <SelectTrigger id="quality-postprocessing-antialiasing" data-testid="quality-postprocessing-antialiasing">
+              <SelectValue>{antiAliasingLabels[effective.postprocessing.antiAliasing]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {ANTI_ALIASING_MODES.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {antiAliasingLabels[mode]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <FieldDescription>Smooths the scene's edges. MSAA renders each pixel from several samples; FXAA blurs edges after rendering.</FieldDescription>
         </Field>
         {postProcessingEffects.map(({ field, label, description }) => (
           <Field key={field} className="settings-field">

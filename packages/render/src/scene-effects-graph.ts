@@ -39,6 +39,8 @@ export interface SceneEffectsGraphOptions {
   /** View output size the FSR 1 tail restores; defaults to the render size. */
   outputWidth?: number;
   outputHeight?: number;
+  /** Samples per pixel of the own scene colour and depth (MSAA); 1 when omitted. */
+  samples?: number;
 }
 
 /**
@@ -68,6 +70,7 @@ export class SceneEffectsGraph {
 
   constructor(options: SceneEffectsGraphOptions) {
     const { frameGraph: graph, plan } = options;
+    const samples = options.samples ?? 1;
     try {
       let source: FrameGraphTextureHandle;
       if (options.authoredOutputTexture !== undefined) {
@@ -89,7 +92,7 @@ export class SceneEffectsGraph {
                     : Constants.TEXTURETYPE_UNSIGNED_BYTE,
                 ],
                 formats: [Constants.TEXTUREFORMAT_RGBA],
-                samples: 1,
+                samples,
                 useSRGBBuffers: [false],
               },
             },
@@ -103,7 +106,7 @@ export class SceneEffectsGraph {
               createMipMaps: false,
               types: [Constants.TEXTURETYPE_FLOAT],
               formats: [Constants.TEXTUREFORMAT_DEPTH32_FLOAT],
-              samples: 1,
+              samples,
               useSRGBBuffers: [false],
             },
           },
@@ -113,12 +116,13 @@ export class SceneEffectsGraph {
       if (hasSpatialEffects(plan) && !spatialEffectsUnsupported(graph.scene)) {
         const camera = options.camera ?? graph.scene.activeCamera;
         if (!camera) throw new Error("Spatial effects require a camera.");
-        const lease = reserveSpatialEffects(graph.scene, plan, options.width, options.height, false);
+        const lease = reserveSpatialEffects(graph.scene, plan, options.width, options.height, false,
+          this.sceneColorTexture !== null ? samples : 1);
         if (lease) {
           this.spatial = new SpatialEffectsGraph(graph, camera, plan, source, options.width, options.height, lease,
             this.sceneColorTexture !== null && this.depthTexture !== null ? [
-              { handle: this.sceneColorTexture, category: "sceneColor" },
-              { handle: this.depthTexture, category: "depth" },
+              { handle: this.sceneColorTexture, category: "sceneColor", samples },
+              { handle: this.depthTexture, category: "depth", samples },
             ] : []);
           for (const task of this.spatial.tasks) {
             this.tasks.push(task);
