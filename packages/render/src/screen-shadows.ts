@@ -238,8 +238,9 @@ export class ScreenShadowsGraph {
         effect.setFloat4("ssSun", toSun.x, toSun.y, toSun.z, 1);
       } else effect.setFloat4("ssSun", 0, 0, 1, 0);
       const caps = sun ? screenShadowThicknessCaps(sun, camera) : null;
-      effect.setFloat4("ssCascadeEnds", ...(caps?.ends ?? NO_CASCADES));
-      effect.setFloat4("ssCascadeCaps", ...(caps?.caps ?? NO_CASCADES));
+      const ends = caps?.ends ?? NO_CASCADES, reach = caps?.caps ?? NO_CASCADES;
+      effect.setFloat4("ssCascadeEnds", ends[0], ends[1], ends[2], ends[3]);
+      effect.setFloat4("ssCascadeCaps", reach[0], reach[1], reach[2], reach[3]);
       effect.setFloat4("ssMarch", settings.steps, settings.pixels, settings.length, 0);
       effect.setFloat4("ssFade", settings.fadeStart, settings.fadeEnd, height * Math.abs(projection.m[5]!), 0);
       effect.setFloat2("ssTexel", 1 / width, 1 / height);
