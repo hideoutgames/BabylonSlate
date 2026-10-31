@@ -8,6 +8,7 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
+import { isUnlitMaterial } from "./unlit-material";
 import {
   actorIdFromMeshName,
   applySceneToBabylonScene,
@@ -892,7 +893,7 @@ describe("scene-loader", () => {
     applySceneToBabylonScene(scene, sceneWithActors([actor]), assets);
     const mesh = scene.getMeshByName(editorMeshName("banner"));
     expect(mesh).not.toBeNull();
-    expect((mesh!.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(mesh!.material)).toBe(true);
     mesh!.refreshBoundingInfo(false, false);
     const extent = mesh!.getBoundingInfo().boundingBox.extendSize;
     expect(extent.x * 2).toBeCloseTo(0.64);
@@ -951,9 +952,9 @@ describe("scene-loader", () => {
     const material = scene.getMeshByName(editorMeshName("mat"));
     const button = scene.getMeshByName(editorMeshName("btn"));
     const panel = scene.getMeshByName(editorMeshName("panel"));
-    expect((material!.material as StandardMaterial).disableLighting).toBe(true);
-    expect((button!.material as StandardMaterial).disableLighting).toBe(true);
-    expect((panel!.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(material!.material)).toBe(true);
+    expect(isUnlitMaterial(button!.material)).toBe(true);
+    expect(isUnlitMaterial(panel!.material)).toBe(true);
     expect(panel!.getTotalVertices()).toBeGreaterThan(8);
     for (const mesh of [material!, button!, panel!]) {
       mesh.dispose();
@@ -1012,7 +1013,7 @@ describe("scene-loader", () => {
       ]),
     );
     const banner = scene.getMeshByName(editorMeshName("banner"));
-    expect((banner!.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(banner!.material)).toBe(true);
     const child = scene.getMeshByName(editorMeshName("child"));
     expect(child?.visibility).toBe(0);
     expect(child?.isPickable).toBe(false);

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument, lowerMaterialDocument, setMaterialDomain } from "@haptic/shader-graph";
 import { createActor, createText2DComponent, parseText2DProperties } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
+import { unlitBinding } from "./unlit-material-blocks";
 import { MaterialLibrary } from "./material-library";
 import { createText2DMesh, refreshText2DMaterials, updateText2DAppear } from "./text2d-mesh";
 import { textMaterialGlyphBinding } from "./text-material-block";
@@ -114,7 +115,7 @@ describe("Text Materials", () => {
     expect(image.material).toBe(imageMaterial);
     expect(root.getChildMeshes().every((glyph) => glyph.material !== surface)).toBe(true);
     const bitmap = root.getChildMeshes().find((mesh) => mesh.metadata?.text2dSource === "bitmap")!;
-    expect((bitmap.material as StandardMaterial).diffuseTexture).toBeTruthy();
+    expect(unlitBinding(bitmap).texture).toBeTruthy();
   });
 
   it("maps material UVs across the text box or independently over each glyph", () => {
