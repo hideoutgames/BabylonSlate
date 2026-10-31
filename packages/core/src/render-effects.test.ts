@@ -20,7 +20,6 @@ describe("render effects settings", () => {
       contrast: "high",
       vignette: "yes",
       bloom: null,
-      fxaa: "on",
     });
     expect(normalized).toEqual(DEFAULT_RENDER_EFFECTS);
   });
@@ -34,7 +33,6 @@ describe("render effects settings", () => {
       whiteBalance: { enabled: true, temperature: 3200, tint: -20 },
       vignette: { enabled: true, weight: 2.25, color: [0.1, 0.2, 0.3] },
       bloom: { enabled: true, threshold: 0.75, weight: 0.4, kernel: 96, scale: 0.25 },
-      fxaa: true,
       upscaling: { enabled: true, renderScale: 0.75, sharpness: 0.5 },
       // Removed settings (temporal anti-aliasing) are dropped, not carried.
       temporalAntiAliasing: { enabled: true, samples: 16, blend: 0.2 },
@@ -48,7 +46,6 @@ describe("render effects settings", () => {
       whiteBalance: { enabled: true, temperature: 3200, tint: -20 },
       vignette: { enabled: true, weight: 2.25, color: [0.1, 0.2, 0.3] },
       bloom: { enabled: true, threshold: 0.75, weight: 0.4, kernel: 96, scale: 0.25 },
-      fxaa: true,
       upscaling: { enabled: true, renderScale: 0.75, sharpness: 0.5 },
     });
     const clamped = normalizeRenderEffectsSettings({
@@ -109,7 +106,6 @@ describe("render effects settings", () => {
           colorGrading: { enabled: true, lutTextureGuid: " lut-guid " },
           reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true, maxSteps: 48 },
           volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.08 },
-          fxaa: true,
         },
       },
     });
@@ -122,7 +118,6 @@ describe("render effects settings", () => {
     expect(settings.render.effects?.bloom.kernel).toBe(
       DEFAULT_RENDER_EFFECTS.bloom.kernel,
     );
-    expect(settings.render.effects?.fxaa).toBe(true);
     expect(settings.render.effects?.colorGrading).toEqual({ enabled: true, lutTextureGuid: "lut-guid" });
     expect(renderEffectsAssetGuids(settings.render.effects)).toEqual(["lut-guid"]);
     expect(renderEffectsAssetGuids({ ...settings.render.effects!, colorGrading: { enabled: false, lutTextureGuid: "lut-guid" } })).toEqual([]);

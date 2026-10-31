@@ -276,9 +276,6 @@ it("multisamples a world view's scene pass at the tier's Anti-Aliasing, within t
   ]);
   // The count is baked into the prepared graph: every mode keys differently.
   expect(new Set([msaa4.key, msaa2.key, fxaa.key, off.key]).size).toBe(4);
-  // The project's FXAA switch stays in force under MSAA.
-  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true } });
-  expect(mode("msaa4")).toMatchObject({ samples: 4, fxaa: true });
   // A device limit of 2 caps 4x; one without multisampling draws single-sample.
   engine.getCaps().maxMSAASamples = 2;
   allowSceneScreenShadows(scene, () => false);

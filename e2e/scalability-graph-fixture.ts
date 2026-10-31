@@ -27,7 +27,7 @@ export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph
     graphCommand("qual_reset", [["scalability.reset", {}]]),
     graphCommand("qual_clamped", [["scalability.setRenderScale", { "default:scale": 0.1 }]]),
     graphCommand("qual_invalid", [["scalability.setFrameCap", { "default:fps": -10 }]]),
-    graphCommand("qual_aa", [["scalability.setAntialiasing", { "default:enabled": true }]]),
+    graphCommand("qual_aa", [["scalability.setAntiAliasing", { "default:mode": "fxaa" }]]),
     graphCommand("qual_settings", [
       ["scalability.setResolution", { "default:width": 400, "default:height": 240 }],
       ["scalability.setResolutionQuality", { "default:settings": { scale: 0.75, minScale: 0.75, dynamic: false, targetFps: 30 } }],
@@ -38,7 +38,8 @@ export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph
       ["scalability.setTextureQuality", { "default:settings": { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 } }],
       ["scalability.setGeometryQuality", { "default:settings": { autoLod: false, lodDistanceScale: 2 } }],
       ["scalability.setPostProcessingQuality", { "default:settings": { resolutionScale: 0.5 } }],
-      ["scalability.setEffects", { "default:settings": { fxaa: false, exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1 }, bloom: { enabled: false } } }],
+      ["scalability.setAntiAliasing", { "default:mode": "off" }],
+      ["scalability.setEffects", { "default:settings": { exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1 }, bloom: { enabled: false } } }],
       ["scalability.setVignetteColor", { "default:color": { x: 0.2, y: 0.1, z: 0.3, w: 1 } }],
       ["scalability.setCelShading", { "default:settings": { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" } }],
       ["scalability.setCelOutlines", { "default:enabled": true, "default:color": { x: 0.1875, y: 0.75, z: 0.375, w: 1 }, "default:width": 4 }],

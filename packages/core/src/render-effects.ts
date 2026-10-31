@@ -97,7 +97,6 @@ export interface RenderEffectsSettings {
     /** Bloom target scale relative to the post-processing resolution. */
     scale: number;
   };
-  fxaa: boolean;
   upscaling: UpscalingSettings;
   colorGrading: ColorGradingSettings;
   ambientOcclusion: AmbientOcclusionSettings;
@@ -142,7 +141,6 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   whiteBalance: { enabled: false, temperature: 6500, tint: 0 },
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
-  fxaa: false,
   upscaling: { enabled: false, renderScale: 0.67, sharpness: 0.2 },
   colorGrading: { enabled: false, lutTextureGuid: null },
   ambientOcclusion: {
@@ -268,7 +266,6 @@ export function normalizeRenderEffectsSettings(
         ...RENDER_EFFECTS_LIMITS.bloomScale,
       ),
     },
-    fxaa: source.fxaa === true,
     upscaling: {
       enabled: upscaling.enabled === true,
       renderScale: finite(upscaling.renderScale, DEFAULT_RENDER_EFFECTS.upscaling.renderScale,

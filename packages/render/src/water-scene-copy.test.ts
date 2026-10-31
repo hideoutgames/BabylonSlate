@@ -285,7 +285,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
 
 it("shares an effect chain's scene targets, deferring transparents only while water is visible", async () => {
   const { scene, camera } = host();
-  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, fxaa: true } });
+  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, vignette: { ...DEFAULT_RENDER_EFFECTS.vignette, enabled: true } } });
   const water = lake(scene);
   const glass = box(scene, "glass", 0.5);
   const glassDraws = drawnBy(scene, glass);
@@ -297,7 +297,7 @@ it("shares an effect chain's scene targets, deferring transparents only while wa
   expect(names.indexOf("Water split")).toBe(names.indexOf("Forward objects") - 1);
   expect(names.indexOf("Water scene copy")).toBe(names.indexOf("Forward objects") + 1);
   expect(names.indexOf("Forward transparent")).toBe(names.indexOf("Water scene copy") + 1);
-  expect(names.indexOf("Scene Effects FXAA")).toBeGreaterThan(names.indexOf("Forward transparent"));
+  expect(names.indexOf("Scene Effects Display Color")).toBeGreaterThan(names.indexOf("Forward transparent"));
   await settle(graph, camera);
   expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: false });
   let work = frames(graph, () => {
