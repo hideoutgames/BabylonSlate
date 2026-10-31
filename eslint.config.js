@@ -190,12 +190,10 @@ const NO_STANDARD_MATERIAL = {
 
 /**
  * Render's construction bans. A later `no-restricted-syntax` block replaces an earlier one's options, so each file
- * set lists every ban it keeps: resource-cache.ts constructs textures, and Text2D's MSDF fallback stays a
- * StandardMaterial until the MSDF shader moves to the unlit Material.
+ * set lists every ban it keeps: resource-cache.ts constructs textures.
  */
 const RENDER_SYNTAX_EXCEPTIONS = {
   "packages/render/src/resource-cache.ts": [NO_STANDARD_MATERIAL],
-  "packages/render/src/text2d-mesh.ts": [TEXTURE_CACHE_ONLY],
 };
 const renderConstructionBans = [
   {

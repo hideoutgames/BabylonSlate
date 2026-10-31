@@ -1,7 +1,49 @@
-import { ShaderStore } from "@babylonjs/core";
+/**
+ * Test-build-only: the two Standard-material changes the engine made before the unlit Material replaced its last
+ * Standard surface, kept so the unlit parity proof (`unlit-parity-proof.ts`) draws its Standard references as the
+ * engine drew them. The engine itself creates no Standard material.
+ */
+import { MaterialPluginBase, ShaderLanguage, ShaderStore, type Material } from "@babylonjs/core";
 import { defaultPixelShader } from "@babylonjs/core/Shaders/default.fragment";
 import { defaultPixelShaderWGSL } from "@babylonjs/core/ShadersWGSL/default.fragment";
-import { checkedShader } from "./checked-shader";
+import { checkedShader } from "../../../../packages/render/src/checked-shader";
+
+const PLUGIN_NAME = "HapticStandardFog";
+
+/**
+ * Babylon's fog mix in `fogFragment` as a Standard material expands it (display-space colour, display fog colour, raw
+ * factor), and the one rule every surface fogs by in its place: Babylon PBR's, the factor in linear space toward the
+ * linear fog colour (`sceneFogKeep`), mixed in linear and returned display-space as Standard's colour is.
+ */
+const FOG_MIX = {
+  glsl: {
+    pattern: String.raw`color\.rgb=mix\(vFogColor,color\.rgb,fog\);`,
+    rule: "color.rgb=toGammaSpace(mix(toLinearSpace(vFogColor),toLinearSpace(color.rgb),toLinearSpace(fog)));",
+  },
+  wgsl: {
+    pattern: String.raw`color= vec4f\(mix\(uniforms\.vFogColor,color\.rgb,fog\),color\.a\);`,
+    rule: "color=vec4f(toGammaSpaceVec3(mix(toLinearSpaceVec3(uniforms.vFogColor),toLinearSpaceVec3(color.rgb),toLinearSpace(fog))),color.a);",
+  },
+} as const;
+
+/**
+ * Fogs a Standard material by the one rule every surface fogs by, so 3D Text and sprites fade as graph Materials and
+ * water do at the same distance. Code only: no uniforms or defines, and nothing where the material draws without fog.
+ */
+export class StandardFogPlugin extends MaterialPluginBase {
+  constructor(material: Material) {
+    super(material, PLUGIN_NAME, 220, {}, true, false);
+    this._enable(true);
+  }
+  override isCompatible(): boolean {
+    return true;
+  }
+  override getCustomCode(type: string, language?: ShaderLanguage) {
+    if (type !== "fragment") return null;
+    const mix = FOG_MIX[language === ShaderLanguage.WGSL ? "wgsl" : "glsl"];
+    return { [`!${mix.pattern}`]: mix.rule };
+  }
+}
 
 /**
  * The Standard shader's geometry-pass reflectivity write in Babylon 9.29 (`default.fragment`, GLSL and WGSL): the

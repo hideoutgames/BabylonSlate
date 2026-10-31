@@ -30,11 +30,16 @@ export type { UnlitBinding } from "./unlit-material-blocks";
 
 /**
  * The render state an unlit Material instance carries (Babylon keeps it on the Material): every mesh drawing with the
- * same key shares one instance, and every instance with the same `textured` shares one program.
+ * same key shares one instance, and every instance with the same texturing (`textured`, `msdf`) shares one program.
  */
 export type UnlitMaterialKey = {
   /** Samples the mesh's bound texture. */
   textured: boolean;
+  /**
+   * The bound texture is a multi-channel signed distance field (Text2D's MSDF atlas): the surface draws its glyph's
+   * fill in the binding's colour and its outline in `UnlitBinding.msdf`'s. Requires `textured`.
+   */
+  msdf?: boolean;
   backFaceCulling: boolean;
   /** The scene's fog applies (editor helpers draw without it). */
   fog: boolean;
@@ -106,8 +111,15 @@ function matrixInput(name: string, value: NodeMaterialSystemValues, blocks: Node
   return block;
 }
 
+/** What a surface samples: nothing, the bound texture, or the bound texture as an MSDF atlas. */
+type SurfaceKind = { textured: boolean; msdf: boolean };
+
+function surfaceKind(key: UnlitMaterialKey): SurfaceKind {
+  return { textured: key.textured, msdf: key.textured && key.msdf === true };
+}
+
 /** The surface's colour graph: position, UV and colour only; lattice-deformable through a constant normal. */
-function buildSurface(material: NodeMaterial, textured: boolean, blocks: NodeMaterialBlock[]): void {
+function buildSurface(material: NodeMaterial, { textured, msdf }: SurfaceKind, blocks: NodeMaterialBlock[]): void {
   const scene = material.getScene();
   const position = new InputBlock(`${NAME}_position`, undefined, Types.Vector3);
   position.setAsAttribute("position");
@@ -137,6 +149,7 @@ function buildSurface(material: NodeMaterial, textured: boolean, blocks: NodeMat
 
   const surface = new UnlitSurfaceBlock(`${NAME}_surface`);
   surface.textured = textured;
+  surface.msdf = msdf;
   if (textured) {
     const uv = new InputBlock(`${NAME}_uv`, undefined, Types.Vector2);
     uv.setAsAttribute("uv");
@@ -185,7 +198,7 @@ function buildSurface(material: NodeMaterial, textured: boolean, blocks: NodeMat
 }
 
 /** A pass variant's graph: the coverage of the surface (its texture, alpha and cutoff) over the shared surface plumbing. */
-function buildVariant(material: NodeMaterial, textured: boolean, kind: AuthoredSurfaceVariant, owner: NodeMaterial, blocks: NodeMaterialBlock[]): void {
+function buildVariant(material: NodeMaterial, { textured, msdf }: SurfaceKind, kind: AuthoredSurfaceVariant, owner: NodeMaterial, blocks: NodeMaterialBlock[]): void {
   const scene = material.getScene();
   const name = `${NAME}_${kind}`;
   const plumbing: MaterialPlumbing = {};
@@ -194,6 +207,7 @@ function buildVariant(material: NodeMaterial, textured: boolean, kind: AuthoredS
   plumbing.worldPosition!.connectTo(plumbing.clipPosition!);
   const surface = new UnlitSurfaceBlock(`${name}_surface`);
   surface.textured = textured;
+  surface.msdf = msdf;
   surface.alphaOwner = owner;
   if (textured) {
     const transformed = new UnlitUvBlock(`${name}_uvTransform`);
@@ -281,27 +295,27 @@ function variantCompiled(material: NodeMaterial): CompiledMaterial {
   };
 }
 
-function createVariant(owner: NodeMaterial, textured: boolean, kind: AuthoredSurfaceVariant): NodeMaterial {
+function createVariant(owner: NodeMaterial, surface: SurfaceKind, kind: AuthoredSurfaceVariant): NodeMaterial {
   const scene = owner.getScene();
   const material = createNodeMaterial(scene, `${owner.name}:${kind}`);
   material.backFaceCulling = owner.backFaceCulling;
   material.transparencyMode = Material.MATERIAL_OPAQUE;
   material.alphaMode = Constants.ALPHA_DISABLE;
   const blocks: NodeMaterialBlock[] = [];
-  buildVariant(material, textured, kind, owner, blocks);
+  buildVariant(material, surface, kind, owner, blocks);
   rebindPerMesh(material);
-  shareCompiledProgram(material, JSON.stringify([NAME, kind, textured, material.shaderLanguage]));
+  shareCompiledProgram(material, JSON.stringify([NAME, kind, surface.textured, surface.msdf, material.shaderLanguage]));
   material.onDisposeObservable.addOnce(() => { for (const block of blocks) block.dispose(); });
   material.build();
   return material;
 }
 
 function instanceId(key: UnlitMaterialKey): string {
-  return JSON.stringify([key.textured, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene", key.wireframe === true]);
+  return JSON.stringify([key.textured, key.msdf === true, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene", key.wireframe === true]);
 }
 
 function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): UnlitInstance {
-  const material = createNodeMaterial(scene, `unlit:${key.role}${key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}`);
+  const material = createNodeMaterial(scene, `unlit:${key.role}${key.msdf ? ":msdf" : key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}`);
   const instance: UnlitInstance = { material, key: { ...key }, meshes: new Set() };
   if (!owned) {
     // Shared by every mesh with its key: a mesh disposed with its materials (`dispose(false, true)`) leaves it to the
@@ -332,9 +346,10 @@ function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): Unl
   material.hasTexture = (texture: BaseTexture) => hasTexture(texture) || [...instance.meshes].some((mesh) => unlitBinding(mesh).texture === texture);
   pinAttributeDefines(material, key.textured);
   const blocks: NodeMaterialBlock[] = [];
-  buildSurface(material, key.textured, blocks);
+  const kind = surfaceKind(key);
+  buildSurface(material, kind, blocks);
   rebindPerMesh(material);
-  shareCompiledProgram(material, JSON.stringify([NAME, "surface", key.textured, material.shaderLanguage]));
+  shareCompiledProgram(material, JSON.stringify([NAME, "surface", kind.textured, kind.msdf, material.shaderLanguage]));
   // Opaque unlit meshes keep the cached stock shadow path. Registered with the build's final id (the build finishes
   // once its blocks' shader code has loaded), after the bind observers it snapshots.
   material.onBuildObservable.addOnce(() => registerCacheableShadowMaterial(material));
@@ -342,7 +357,7 @@ function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): Unl
   const variants = new Map<AuthoredSurfaceVariant, { material: NodeMaterial; references: number }>();
   const registration = registerAuthoredVariants(material, (kind): AuthoredMaterialVariant => {
     let variant = variants.get(kind);
-    if (!variant) variants.set(kind, (variant = { material: createVariant(material, key.textured, kind), references: 0 }));
+    if (!variant) variants.set(kind, (variant = { material: createVariant(material, surfaceKind(key), kind), references: 0 }));
     const retained = variant;
     retained.references++;
     let released = false;

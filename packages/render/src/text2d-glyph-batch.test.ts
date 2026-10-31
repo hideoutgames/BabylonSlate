@@ -111,10 +111,10 @@ describe("static glyph batching", () => {
       { rich: true },
     );
     const sources = glyphMeshes(root).map((mesh) => [mesh.metadata.text2dSource, mesh.getTotalVertices() / 4]);
-    // Red A (msdf), green A (msdf), B (bitmap fallback): three materials, one quad each.
+    // Red A (msdf), green A (msdf), B (bitmap fallback): three bindings, one quad each.
     expect(sources).toEqual([["msdf", 1], ["msdf", 1], ["bitmap", 1]]);
     const [red, green] = glyphMeshes(root);
-    expect(red!.material).not.toBe(green!.material);
+    expect(unlitBinding(red!)).not.toBe(unlitBinding(green!));
     const plain = createText2DMesh(scene, "plain", { text: "AAB", renderer: "msdf", size: 32, fontAssetGuid: "font-1" }, msdfAssets);
     expect(glyphMeshes(plain).map((mesh) => [mesh.metadata.text2dSource, mesh.getTotalVertices() / 4])).toEqual([["msdf", 2], ["bitmap", 1]]);
   });
