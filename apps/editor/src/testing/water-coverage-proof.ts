@@ -17,6 +17,7 @@ const SEA = -6;
 const CAMERAS: ReadonlyArray<{ position: readonly [number, number, number]; target: readonly [number, number, number] }> = [
   // Global Water's dense cells follow the camera's X/Z, so neighbours a few hundred metres away lie in its wide far
   // cells. Each camera looks down far enough that the frame's top edge still meets water.
+  { position: [-4, 52, -82], target: [4, 0, 6] },
   { position: [0, 34, 0], target: [0, SEA, 90] },
   { position: [0, 300, 200], target: [-40, SEA, 620] },
   { position: [300, 200, 100], target: [320, SEA, 420] },
@@ -72,6 +73,10 @@ export async function runWaterCoverageProof(backend: "webgl2" | "webgpu" = "webg
     // Far neighbours at Global Water's height, past its dense cells: an Ocean ahead and a Lake off to the side.
     const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 260, length: 160 }, "ocean"), water, blue.material);
     ocean.position.set(-40, SEA, 620);
+    // FT_World's Ocean: a short seeded wind sea with no swell, east of the island.
+    const ftOcean = createWaterMesh(scene, "ftOcean", normalizeWaterBody({ width: 40, length: 80 }, "ocean"),
+      { ...water, waveSeed: 7, waveHeight: 0.6, waveLength: 18, swellHeight: 0 }, blue.material);
+    ftOcean.position.set(36, SEA, 0);
     const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 180, length: 120, depth: 6 }, "lake"), water, cyan.material);
     lake.position.set(320, SEA, 420);
     // The waves hold still, so the frames compare.
