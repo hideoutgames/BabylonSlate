@@ -98,7 +98,7 @@ import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
-import { encodeTriangleGlb } from "./glb-test-fixtures";
+import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
 import { spawnableLightsOfLoad, type SpawnableLightLoad } from "./spawnable-lights";
@@ -2151,6 +2151,27 @@ describe("pooled primitives", () => {
     expectNothingCompiled(world, record);
     expect(pool.diagnostics()).toMatchObject({ groups: 2, retained: 0 });
   });
+  it.each(POOLED_MODELS)("a pooled dense model moving away draws its source's coarser level and compiles nothing: %s", async (model) => {
+    // A sphere dense enough for Auto LOD: its group's source carries the levels (`attachModelLods`).
+    const statue = (slotId: number, position: Vec3): Actor =>
+      ({ slotId, guid: `statue-${slotId}`, position, assign: { meshAssetGuid: "sphere", meshKind: null } });
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1])], [], "actor-2", classesLoad([]), { instancing: true });
+    world.handle.setMeshAssets({ modelBytes: new Map([["sphere", encodeUvSphereGlb()]]) });
+    // One near and one far, so the source's levels have drawn before the near one moves away.
+    world.place(statue(20, [2, 1, 1]), statue(21, [0, 1, 160]));
+    await settle(world);
+    const member = () => world.handle.scene.getMeshByName("actor-20")!.getChildMeshes(false)
+      .find((mesh): mesh is InstancedMesh => mesh instanceof InstancedMesh && mesh.isVisible)!;
+    // Levels arrive after the instance publishes (simplified off the frame), then draw for the far one.
+    for (let frame = 0; frame < 120 && !member().sourceMesh.hasLODLevels; frame++) await world.frame();
+    for (let frame = 0; frame < 4; frame++) await world.frame();
+    const levels = member().sourceMesh.getLODLevels().map((level) => level.mesh);
+    const record = await measure(world, () => world.move(20, [0, 1, 160]));
+    expectNothingCompiled(world, record);
+    expect({ levels: levels.length > 0, coarser: levels.includes((member() as unknown as { _currentLOD: Mesh })._currentLOD) })
+      .toEqual({ levels: true, coarser: true });
+  });
+
   it.each(POOLED_MODELS)("a second instance of a static model spawned after the first drew compiles nothing: %s", async (model) => {
     // A rigid model's leaf draws as a member of a group of its container geometry (`poolModelLeaves`).
     const statue = (slotId: number, position: Vec3): Actor =>

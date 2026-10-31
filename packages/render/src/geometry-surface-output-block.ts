@@ -3,15 +3,24 @@ import {
   InputBlock,
   NodeMaterialBlockConnectionPointTypes as Types,
   NodeMaterialSystemValues,
+  type Effect,
+  type Mesh,
+  type NodeMaterial,
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { meshCastsShadows } from "./instance-pool";
 import type { MaterialPlumbing } from "./material-block-registry";
 
-/** Surface output with the same geometry encodings as Babylon's native materials. */
+/**
+ * Surface output with the same geometry encodings as Babylon's native materials, except the view depth's second channel:
+ * 1 where the drawn mesh casts shadows, 0 elsewhere (`meshCastsShadows`), which only a pass with an RG depth target keeps
+ * (Screen-Space Shadows march over casters alone). Bound per mesh; the compiler rebinds it for frozen Materials.
+ */
 export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
+  private casterUniform = "";
   constructor(name: string) {
     super(name);
     this.registerInput("geometryPosition", Types.Vector4);
@@ -33,6 +42,10 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
   get geometryRoughness() { return this.getInputByName("geometryRoughness")!; }
   get geometrySpecular() { return this.getInputByName("geometrySpecular")!; }
   override getClassName(): string { return "GeometrySurfaceOutputBlock"; }
+  override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
+    super.bind(effect, material, mesh);
+    effect.setFloat(this.casterUniform, mesh && meshCastsShadows(mesh) ? 1 : 0);
+  }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
@@ -49,6 +62,10 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     const reflectivity = this.geometryBaseColor.isConnected
       ? `${vec4}(mix(${vec3}(${dielectricF0}), ${this.geometryBaseColor.associatedVariableName}, clamp(${metallic}, 0.0, 1.0)), 1.0 - clamp(${roughness}, 0.0, 1.0))`
       : `${vec4}(0.0)`;
+    this.casterUniform = state._getFreeVariableName("hapticGeometryCaster");
+    state._emitUniformFromString(this.casterUniform, Types.Float);
+    state.sharedData.forcedBindableBlocks.push(this);
+    const caster = `${wgsl ? "uniforms." : ""}${this.casterUniform}`;
     const color = wgsl ? "fragmentOutputsColor" : "gl_FragColor";
     const savedColor = state._getFreeVariableName("geometrySurfaceColor");
     state.compilationString += `#ifdef PREPASS\n${state._declareLocalVar(savedColor, Types.Vector4)} = ${color};\n#endif\n`;
@@ -57,7 +74,7 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     // the native output, within this block (including after CEL/PBR switches).
     for (const [define, value] of [
       ["PREPASS_COLOR", savedColor],
-      ["PREPASS_DEPTH", `${vec4}((${view} * ${position}).z, 0.0, 0.0, 1.0)`],
+      ["PREPASS_DEPTH", `${vec4}((${view} * ${position}).z, ${caster}, 0.0, 1.0)`],
       ["PREPASS_REFLECTIVITY", reflectivity],
       ["PREPASS_NORMALIZED_VIEW_DEPTH", `${vec4}(((${view} * ${position}).z - ${camera}.y) / (${camera}.z - ${camera}.y), 0.0, 0.0, 1.0)`],
       ["PREPASS_WORLD_NORMAL", `${vec4}(normalize(${normal}) * 0.5 + 0.5, 1.0)`],

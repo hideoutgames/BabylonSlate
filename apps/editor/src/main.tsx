@@ -56,8 +56,14 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/occlusion-culling-proof").then(({ runOcclusionCullingProof }) => Object.assign(window, { __occlusionCullingProof: runOcclusionCullingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("instanceParametersProof")) {
   void import("./testing/instance-parameters-proof").then(({ runInstanceParametersProof }) => Object.assign(window, { __instanceParametersProof: runInstanceParametersProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("pooledLodProof")) {
+  void import("./testing/pooled-lod-proof").then(({ runPooledLodProof }) => Object.assign(window, { __pooledLodProof: runPooledLodProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("instancingParityProof")) {
   void import("./testing/instancing-parity-proof").then(({ runInstancingParityProof }) => Object.assign(window, { __instancingParityProof: runInstancingParityProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("shadowFilterProof")) {
+  void import("./testing/shadow-filter-proof").then(({ runShadowFilterProof }) => Object.assign(window, { __shadowFilterProof: runShadowFilterProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("shadowParticipationProof")) {
+  void import("./testing/shadow-participation-proof").then(({ runShadowParticipationProof }) => Object.assign(window, { __shadowParticipationProof: runShadowParticipationProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("hapticScreenShadowsProof")) {
   void import("./testing/haptic-screen-shadows-proof").then(({ runHapticScreenShadowsProof }) => Object.assign(window, { __hapticScreenShadowsProof: runHapticScreenShadowsProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterCutProof")) {

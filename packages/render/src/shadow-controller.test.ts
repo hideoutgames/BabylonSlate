@@ -18,6 +18,7 @@ import {
   type Effect,
 } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
+import { meshCastsShadows } from "./instance-pool";
 import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";
 import { selectHapticLights } from "./haptic-lights";
 import { awaitsFirstDraw } from "./shadow-first-draw";
@@ -295,6 +296,8 @@ describe("shared shadow lifecycle", () => {
       controller.generator(light)?.getShadowMap()?.renderList,
     ).not.toContain(mesh);
     expect(mesh.receiveShadows).toBe(true);
+    // Screen-Space Shadows march over the geometry pass's caster mark, which follows Cast Shadows too.
+    expect(meshCastsShadows(mesh)).toBe(false);
     controller.setParticipation(mesh, {
       castShadows: true,
       receiveShadows: false,
@@ -304,6 +307,7 @@ describe("shared shadow lifecycle", () => {
       mesh,
     );
     expect(mesh.receiveShadows).toBe(false);
+    expect(meshCastsShadows(mesh)).toBe(true);
     mesh.dispose();
     expect(
       controller.generator(light)?.getShadowMap()?.renderList,

@@ -153,8 +153,8 @@ export function reserveSpatialEffects(
     bytes += pixels * 16 + scaledBytes(plan.reflections.resolutionScale) * 3;
   if (plan.volumetricLighting)
     bytes += pixels * 8 + scaledBytes(plan.volumetricLighting.resolutionScale);
-  // Screen-Space Shadows' RG16F target.
-  if (plan.screenShadows) bytes += pixels * 4;
+  // Screen-Space Shadows' RG16F target and the caster mark's second channel of the geometry Z (at most float).
+  if (plan.screenShadows) bytes += pixels * 8;
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 
