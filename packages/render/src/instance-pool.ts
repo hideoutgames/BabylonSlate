@@ -7,6 +7,7 @@ import { refreshInstanceParameters } from "./instance-parameters";
 import { hasDrawn } from "./reveal-pending";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
+import { handOverNode } from "./node-handover";
 
 /**
  * Automatic instancing: a per-Scene pool of hidden source meshes whose regular instances draw actors that share a
@@ -239,6 +240,8 @@ export class SceneInstancePool {
     mesh.metadata = member.metadata;
     // A model leaf's glTF primitive record, which names its Material slot.
     (mesh as unknown as { _internalMetadata: unknown })._internalMetadata = (member as unknown as { _internalMetadata: unknown })._internalMetadata;
+    // An animated model's member keeps its children and animations on the mesh that replaces it.
+    handOverNode(this.scene, member, mesh);
     member.dispose();
     return mesh;
   }

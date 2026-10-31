@@ -98,7 +98,7 @@ import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
-import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
+import { encodeAnimatedLimbGlb, encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
 import { spawnableLightsOfLoad, type SpawnableLightLoad } from "./spawnable-lights";
@@ -2183,6 +2183,31 @@ describe("pooled primitives", () => {
       .find((mesh): mesh is InstancedMesh => mesh instanceof InstancedMesh && mesh.isVisible));
     expect({ joined: pool.diagnostics().pooled - pooled, shared: !!leaves[0] && leaves[0].sourceMesh === leaves[1]?.sourceMesh })
       .toEqual({ joined: 1, shared: true });
+  });
+
+  it.each(POOLED_MODELS)("a second instance of a node-animated model spawned after the first drew compiles nothing, its clip moving its members: %s", async (model) => {
+    // A rig of rigid meshes (a mannequin's): each mesh draws as a member, the instance's own clip channels moving it.
+    const rig = (slotId: number, position: Vec3): Actor =>
+      ({ slotId, guid: `rig-${slotId}`, position, assign: { meshAssetGuid: "rig", meshKind: null } });
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1])], [], "actor-2", classesLoad([]), { instancing: true });
+    world.handle.setMeshAssets({ modelBytes: new Map([["rig", encodeAnimatedLimbGlb()]]) });
+    world.place(rig(20, [2, 1, 1]));
+    await settle(world);
+    const pool = sceneInstancePool(world.handle.scene);
+    const pooled = pool.diagnostics().pooled;
+    const record = await measure(world, () => world.place(rig(21, [-2, 1, 1])));
+    expectNothingCompiled(world, record);
+    const members = (name: string) => world.handle.scene.getMeshByName(name)!.getChildMeshes(false)
+      .filter((mesh): mesh is InstancedMesh => mesh instanceof InstancedMesh);
+    const [first, second] = [members("actor-20"), members("actor-21")];
+    const targets = world.handle.scene.animationGroups.flatMap((group) => group.targetedAnimations.map((channel) => channel.target));
+    expect({
+      joined: pool.diagnostics().pooled - pooled,
+      names: second.map((member) => member.name),
+      shared: second.map((member, index) => member.sourceMesh === first[index]?.sourceMesh),
+      carried: second[1]?.parent === second[0],
+      animated: targets.includes(second[0]),
+    }).toEqual({ joined: 2, names: ["body", "arm"], shared: [true, true], carried: true, animated: true });
   });
 });
 
