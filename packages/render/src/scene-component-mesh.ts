@@ -46,13 +46,21 @@ import { VisualBundle } from "./visual-bundle";
 import { createWaterMesh } from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
+import { primitiveOccluderShape, registerOccluderShape } from "./view-occlusion";
 
-/** Build a primitive mesh for editor or Play from a MeshComponent kind. */
+/** Build a primitive mesh for editor or Play from a MeshComponent kind; a box, sphere, cylinder or plane is an occluder. */
 export function createPrimitiveMesh(
   scene: Scene,
   name: string,
   meshKind: string | null | undefined,
 ): Mesh {
+  const mesh = buildPrimitiveMesh(scene, name, meshKind);
+  const { minimum, maximum } = mesh.getBoundingInfo().boundingBox;
+  registerOccluderShape(mesh, primitiveOccluderShape(meshKind, minimum.asArray(), maximum.asArray()));
+  return mesh;
+}
+
+function buildPrimitiveMesh(scene: Scene, name: string, meshKind: string | null | undefined): Mesh {
   switch (meshKind) {
     case "sphere":
       return MeshBuilder.CreateSphere(name, { diameter: 1.5 }, scene);
