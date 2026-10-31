@@ -96,7 +96,7 @@ import { sceneInstancePool, setDeferredPipelineInstancing } from "./instance-poo
 import { drawingMesh, isInstanceSource } from "./instance-source";
 import { POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
 import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
-import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
+import { hasDrawn, isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
@@ -510,10 +510,7 @@ const INSTANCING_BY_DEFAULT = process.env.HAPTIC_GATE_INSTANCING === "1";
  * (`setDeferredPipelineInstancing`). `HAPTIC_GATE_WEBGPU_POOL=1` pools these as well.
  */
 const WEBGPU_UNPOOLED_CASES: ReadonlySet<string> = new Set<string>([
-  "a frame report's frame never leaves a geometry draw out",
   "an Anti-Aliasing change mid-game compiles no Material and holds as a quality change does",
-  "a lookup whose preparation throws leaves no deferral scope open, and the mesh still appears",
-  "a mesh whose Effect drew only with another vertex layout waits hidden for its own pipeline, holding nothing",
 ]);
 const WEBGPU_POOL_ALL = process.env.HAPTIC_GATE_WEBGPU_POOL === "1";
 
@@ -528,6 +525,19 @@ function renderedNames(mesh: Mesh, subMesh: { _id: number }, replacement?: Abstr
   const storage = (mesh as unknown as { _getInstanceDataStorage(): { previousBatch?: { visibleInstances: Record<number, AbstractMesh[] | null> } } })
     ._getInstanceDataStorage();
   return (storage.previousBatch?.visibleInstances[subMesh._id] ?? []).map(actorName);
+}
+
+/**
+ * A plain box beside the world's crate, drawn with the crate's Material until it has shown: the plain variant, whose
+ * pipelines a crate of its own creates (a pooled crate draws the instanced one).
+ */
+async function plainCrate(world: PlayWorld): Promise<Mesh> {
+  const scene = world.handle.scene;
+  const box = MeshBuilder.CreateBox("plain crate", { size: 1 }, scene);
+  box.material = scene.getMeshByName("actor-2")!.material;
+  box.position.set(-1.5, 1, 0);
+  for (let index = 0; index < 12 && (isRevealPending(box) || !hasDrawn(box)); index++) await world.frame();
+  return box;
 }
 
 /** The mesh whose render observables fire for actor `name`'s drawn surface: its own, or a pooled leaf's source's batch. */
@@ -2801,7 +2811,7 @@ describe("a visual re-sent every tick", () => {
     world.driver.keyLayouts();
     await settle(world);
     const scene = world.handle.scene;
-    const crate = scene.getMeshByName("actor-2") as Mesh;
+    const crate = await plainCrate(world);
     const drawn = spawnDraws();
     world.driver.arm();
     const padded = MeshBuilder.CreateBox("padded", { size: 1 }, scene);
@@ -2844,7 +2854,7 @@ describe("a visual re-sent every tick", () => {
     const world = playWorld("webgpu", []);
     await settle(world);
     const scene = world.handle.scene;
-    const crate = scene.getMeshByName("actor-2") as Mesh;
+    const crate = await plainCrate(world);
     const getDrawWrapper = SubMesh.prototype._getDrawWrapper;
     let thrown = 0;
     vi.spyOn(SubMesh.prototype, "_getDrawWrapper").mockImplementation(function (this: SubMesh, ...args) {

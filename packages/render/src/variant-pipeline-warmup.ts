@@ -198,7 +198,8 @@ function warmUp(state: WarmupState, effect: Effect): void {
 /**
  * Runs a world view's readiness round: the Effects it requests first are cold when the round is tolerant, or when the
  * view has drawn steady frames (`steady`). A tolerant round (one per steady frame) first admits up to
- * `FIRST_DRAWS_PER_FRAME` admissible cold Effects, oldest first, and starts its warm requests afresh.
+ * `FIRST_DRAWS_PER_FRAME` admissible cold Effects, oldest first (WebGPU: warmed ones ahead of unused ones), and starts
+ * its warm requests afresh.
  */
 export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boolean, run: () => T): T {
   const tolerated = variantSwapsTolerated();
@@ -223,18 +224,22 @@ export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boole
       state.budget = firstDrawsPerFrame(engine);
     }
     let budget = state.budget;
-    for (const [effect, entry] of state.cold) {
-      // A variant that failed to link, every fallback included, never turns ready (the mesh keeps its previous Effect
-      // for good): it leaves the queue without a first draw to spread.
-      if (effect.getCompilationError() && effect.allFallbacksProcessed()) {
+    // WebGPU: variants whose warm draws found their pipelines first (a mesh is swapping to each), then those no warm
+    // draw used, each queue oldest first.
+    for (const warmedOnly of deferred ? [true, false] : [false]) {
+      for (const [effect, entry] of state.cold) {
+        // A variant that failed to link, every fallback included, never turns ready (the mesh keeps its previous
+        // Effect for good): it leaves the queue without a first draw to spread.
+        if (effect.getCompilationError() && effect.allFallbacksProcessed()) {
+          warmUp(state, effect);
+          continue;
+        }
+        if (budget === 0) break;
+        const admissible = !deferred ? entry.base() : warmedOnly ? entry.warmed : now - entry.usedAt >= UNUSED_WARM_MS;
+        if (!admissible) continue;
         warmUp(state, effect);
-        continue;
+        budget -= 1;
       }
-      if (budget === 0) break;
-      const unused = now - entry.usedAt >= UNUSED_WARM_MS;
-      if (!(deferred ? entry.warmed || unused : entry.base())) continue;
-      warmUp(state, effect);
-      budget -= 1;
     }
     state.budget = budget;
     state.requests.clear();
