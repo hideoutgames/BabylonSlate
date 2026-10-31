@@ -1,6 +1,6 @@
 import { Mesh, type AbstractMesh, type AssetContainer, type Geometry, type InstancedMesh, type Scene } from "@babylonjs/core";
 import { instancingIneligibility, sceneInstancePool, sceneInstancing, type InstanceGeometry } from "./instance-pool";
-import { AUTO_LOD_MIN_SOURCE_TRIANGLES } from "./model-lod";
+import { attachTemplateLods } from "./model-lod";
 
 /** Each Scene's model leaf geometries, by the container geometry their clones share. */
 const geometries = new WeakMap<Scene, WeakMap<Geometry, InstanceGeometry>>();
@@ -21,6 +21,7 @@ function leafGeometry(scene: Scene, template: Mesh, retain: () => () => void): I
         const source = template.clone(name, null, true, false);
         source.setEnabled(true);
         source.isVisible = true;
+        attachTemplateLods(source, template);
         return source;
       },
       retain,
@@ -32,13 +33,12 @@ function leafGeometry(scene: Scene, template: Mesh, retain: () => () => void): I
 
 /**
  * Whether the model leaf `mesh` may draw as a pool member: a visible, rigid mesh with no children (an instance
- * cannot keep a subtree's records) whose geometry a container mesh holds, no skeleton or morphs, and, where Auto LOD
- * may give it levels of its own, too few triangles to be simplified. The rest is `instancingIneligibility`.
+ * cannot keep a subtree's records) whose geometry a container mesh holds, and no skeleton or morphs. The rest is
+ * `instancingIneligibility`. Auto LOD gives its group's source the levels (`attachModelLods`).
  */
-function poolsLeaf(mesh: AbstractMesh, autoLod: boolean): mesh is Mesh {
+function poolsLeaf(mesh: AbstractMesh): mesh is Mesh {
   if (!(mesh instanceof Mesh) || !mesh.geometry || !mesh.isVisible || mesh.getChildren().length > 0) return false;
   if (mesh.skeleton || mesh.morphTargetManager) return false;
-  if (autoLod && mesh.getTotalIndices() / 3 >= AUTO_LOD_MIN_SOURCE_TRIANGLES) return false;
   return instancingIneligibility(mesh, mesh.material) === null;
 }
 
@@ -49,7 +49,6 @@ function poolsLeaf(mesh: AbstractMesh, autoLod: boolean): mesh is Mesh {
  * the clone's own nodes.
  */
 export function poolModelLeaves(root: AbstractMesh, container: AssetContainer, options: {
-  autoLod: boolean;
   /** Takes a hold on the container for a group (a lease of the cached GLB); returns its release. */
   retain: () => () => void;
 }): InstancedMesh[] {
@@ -60,7 +59,7 @@ export function poolModelLeaves(root: AbstractMesh, container: AssetContainer, o
   const pool = sceneInstancePool(scene);
   const members: InstancedMesh[] = [];
   for (const leaf of root.getChildMeshes(false)) {
-    if (!poolsLeaf(leaf, options.autoLod)) continue;
+    if (!poolsLeaf(leaf)) continue;
     const template = templates.get(leaf.geometry!);
     if (!template) continue;
     const member = pool.join({

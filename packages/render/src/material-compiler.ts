@@ -42,7 +42,8 @@ import type {
   MaterialTextureFilter,
   MaterialValueType,
 } from "@haptic/shader-graph";
-import { componentCount, materialNodeDefinition } from "@haptic/shader-graph";
+import { componentCount, isPerInstanceParameter, materialNodeDefinition } from "@haptic/shader-graph";
+import { attachInstanceParameters, createInstanceParameterBlock, instanceParameterAttribute, type InstanceParameter } from "./instance-parameters";
 import { materialGlslDiagnostic, shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
@@ -383,6 +384,7 @@ export function compileMaterialPlan(
         : NodeMaterialModes.Material;
 
   const created: NodeMaterialBlock[] = [];
+  const instanceParameters: Array<InstanceParameter & { value: MaterialParameterValue }> = [];
   // Samples of one asset share a Texture; one load must rebuild once.
   const pendingTextures = new Set<Texture>();
   const diagnostics: MaterialDiagnostic[] = [];
@@ -537,7 +539,16 @@ export function compileMaterialPlan(
         pin && pin.type.kind !== "generic"
           ? (pin.type.kind as MaterialValueType)
           : "float";
-      const block = createConstantBlock(operationBlockName(operation.id), type, value, asColor);
+      // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute.
+      const perInstance = operation.source.callPath.length === 0 && isPerInstanceParameter(operation.nodeType, operation.properties);
+      const kind = operation.nodeType === "param.color" ? "color" : "float";
+      const block = perInstance
+        ? createInstanceParameterBlock(instanceParameterAttribute(instanceParameters.length), kind)
+        : createConstantBlock(operationBlockName(operation.id), type, value, asColor);
+      if (perInstance) instanceParameters.push({
+        name: String(operation.properties.name ?? "").trim(), attribute: block.name, kind,
+        value: kind === "color" ? { kind, value: [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1] } : { kind, value: value[0] ?? 0 },
+      });
       created.push(block);
       const blocks: NodeMaterialBlock[] = [block];
       const outputs: Record<string, NodeMaterialConnectionPoint> = {
@@ -996,16 +1007,20 @@ export function compileMaterialPlan(
   // Frozen NodeMaterials skip forced bindings when another mesh shared the effect.
   // Bone palettes, morph weights and text atlases belong to each mesh, even
   // when their material is static.
+  // So do Cast Shadows (the geometry pass's caster mark) and, below, Receive Shadows.
   const perMeshBlocks = created.filter(
-    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock | WaterWavesBlock =>
-      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock || block instanceof WaterWavesBlock,
+    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock | WaterWavesBlock | GeometrySurfaceOutputBlock =>
+      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock || block instanceof WaterWavesBlock || block instanceof GeometrySurfaceOutputBlock,
   );
-  if (perMeshBlocks.length > 0) {
+  // The light block rebinds only its receiver terms.
+  const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
+  if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {
     material.onBindObservable.add((mesh) => {
       if (!(mesh instanceof Mesh) || !material.isFrozen) return;
       const effect = material.getEffect();
       if (effect) {
         for (const block of perMeshBlocks) block.bind(effect, material, mesh);
+        for (const block of lightingBlocks) block.bindReceiver(effect, mesh);
       }
     });
   }
@@ -1098,6 +1113,7 @@ export function compileMaterialPlan(
     }
   }
 
+  attachInstanceParameters(material, instanceParameters);
   const parameters = createMaterialParameterBindings(
     plan,
     realized,

@@ -12,7 +12,6 @@ import {
   type SpatialStage,
 } from "./spatial-effects";
 import type { SceneEffectsPlan } from "./scene-effects";
-import type { TemporalJitter } from "./temporal-anti-aliasing";
 import { ScreenShadowsGraph } from "./screen-shadows";
 import {
   releaseManagedRenderLeaseAfterDisposal,
@@ -31,19 +30,16 @@ class SpatialTask extends FrameGraphPostProcessTask {
   readonly stage: SpatialStage;
   private readonly buffers: Record<string, FrameGraphTextureHandle>;
   private readonly main?: FrameGraphTextureHandle;
-  private readonly history?: FrameGraphTextureHandle;
   constructor(
     graph: FrameGraph,
     stage: SpatialStage,
     buffers: Record<string, FrameGraphTextureHandle>,
     main?: FrameGraphTextureHandle,
-    history?: FrameGraphTextureHandle,
   ) {
     super(stage.wrapper.name, graph, stage.wrapper);
     this.stage = stage;
     this.buffers = buffers;
     this.main = main;
-    this.history = history;
     this.depthTest = false;
   }
   override record() {
@@ -62,11 +58,6 @@ class SpatialTask extends FrameGraphPostProcessTask {
         }
       if (this.main !== undefined)
         context.bindTextureHandle(effect, "mainSampler", this.main);
-      if (this.history !== undefined) {
-        // Read as a texture, a history handle is the previous frame's output.
-        context.setTextureSamplingMode(this.history, Constants.TEXTURE_BILINEAR_SAMPLINGMODE);
-        context.bindTextureHandle(effect, "historySampler", this.history);
-      }
       this.stage.bind(effect);
     });
     if (this.stage.geometry) pass.addDependencies(Object.values(this.buffers));
@@ -105,9 +96,6 @@ export class SpatialEffectsGraph {
   readonly geometry: LogicalGeometryTask;
   readonly tasks: SpatialTask[] = [];
   readonly output: FrameGraphTextureHandle;
-  /** Present with temporal anti-aliasing; jitters the geometry pass already.
-   * The view's main object renderer must be registered by its owner. */
-  readonly jitter?: TemporalJitter;
   /** Screen-Space Shadows: a pass after the geometry pass that the owner adds before its objects (`screen-shadows.ts`). */
   readonly screenShadows?: ScreenShadowsGraph;
   private readonly lease: ManagedRenderLease;
@@ -139,9 +127,8 @@ export class SpatialEffectsGraph {
     this.handles.push(...sceneTargets);
     const unattached = new Set<SpatialStage>();
     try {
-      const target = (name: string, scale = 1, depth = false, history = false) => {
+      const target = (name: string, scale = 1, depth = false) => {
         const handle = graph.textureManager.createRenderTargetTexture(name, {
-          isHistoryTexture: history,
           size: {
             width: Math.max(1, Math.round(width * scale)),
             height: Math.max(1, Math.round(height * scale)),
@@ -194,7 +181,8 @@ export class SpatialEffectsGraph {
           type: Constants.PREPASS_DEPTH_TEXTURE_TYPE,
           // Spatial support already requires float and half-float rendering.
           textureType: geometryDepthTextureType(graph.scene.getEngine().getCaps())!,
-          textureFormat: Constants.TEXTUREFORMAT_R,
+          // Screen-Space Shadows read the caster mark beside the depth (`GeometrySurfaceOutputBlock`).
+          textureFormat: plan.screenShadows ? Constants.TEXTUREFORMAT_RG : Constants.TEXTUREFORMAT_R,
         },
       ];
       const buffers: Record<string, FrameGraphTextureHandle> = {
@@ -216,14 +204,6 @@ export class SpatialEffectsGraph {
         });
         buffers.reflectivitySampler = this.geometry.geometryReflectivityTexture;
       }
-      if (plan.temporalAntiAliasing) {
-        this.geometry.textureDescriptions.push({
-          type: Constants.PREPASS_VELOCITY_LINEAR_TEXTURE_TYPE,
-          textureType: Constants.TEXTURETYPE_HALF_FLOAT,
-          textureFormat: Constants.TEXTUREFORMAT_RGBA,
-        });
-        buffers.velocitySampler = this.geometry.geometryLinearVelocityTexture;
-      }
       for (const handle of Object.values(buffers))
         this.handles.push({ handle, category: "geometry" });
       const stages = createSpatialStages(
@@ -235,28 +215,24 @@ export class SpatialEffectsGraph {
         this.compileFailure,
       );
       for (const stage of stages) unattached.add(stage);
-      this.jitter = stages.find((stage) => stage.history)?.history;
-      this.jitter?.jitterRenderer(this.geometry.objectRenderer);
       if (plan.screenShadows) {
         this.screenShadows = new ScreenShadowsGraph(graph, camera, plan.screenShadows, this.geometry.geometryViewDepthTexture,
-          width, height, this.jitter, this.compileFailure);
+          width, height, this.compileFailure);
         this.handles.push({ handle: this.screenShadows.output, category: "geometry" });
       }
       const inputs: FrameGraphTextureHandle[] = [];
       for (const stage of stages) {
         inputs.push(source);
-        const history = stage.history ? target(`${stage.wrapper.name} History`, 1, false, true) : undefined;
         const task = new SpatialTask(
           graph,
           stage,
           buffers,
           stage.mainInput === undefined ? undefined : inputs[stage.mainInput],
-          history,
         );
         this.tasks.push(task);
         unattached.delete(stage);
         task.sourceTexture = source;
-        task.targetTexture = history ?? target(stage.wrapper.name, stage.scale);
+        task.targetTexture = target(stage.wrapper.name, stage.scale);
         source = task.outputTexture;
       }
       this.output = source;
@@ -315,7 +291,6 @@ export class SpatialEffectsGraph {
   }
   disposeTasks(): void {
     if (this.disposed) return;
-    this.jitter?.dispose();
     for (const task of this.tasks) task.dispose();
     this.screenShadows?.dispose();
     if (this.geometry) unregisterSpatialGeometryPass(this.graph.scene, this.geometry.objectRenderer.renderPassId);

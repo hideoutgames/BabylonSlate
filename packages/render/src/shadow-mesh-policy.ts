@@ -6,6 +6,11 @@ import { isMirrorSurfaceMesh } from "./mirror-surface-state";
 export type ShadowParticipation = {
   castShadows?: boolean;
   receiveShadows?: boolean;
+  /**
+   * A warm-up's stand-in for a spawn (`spawnable-warm.ts`): it casts into no shadow map, yet a pool member stays in the
+   * group the spawn joins, which casts, so the group it warms is the spawn's.
+   */
+  spawnStandIn?: boolean;
 };
 export function authoredShadowParticipation(
   mesh: AbstractMesh,

@@ -1153,9 +1153,6 @@ export class ForwardSceneFrameGraph {
           });
         }
         this.objects.neverDraws = this.water && this.skipCopyWater;
-        // Temporal anti-aliasing jitters the scene draw with its geometry pass,
-        // including the water split's transparent pass, which draws over the
-        // jittered opaque depth and samples the jittered scene copy.
         // Screen-Space Shadows draw before the objects, which read them (as does the water split's own opaque pass, which
         // draws through the objects' renderer and so its render pass).
         const screenShadows = this.effectsGraph?.spatial?.screenShadows;
@@ -1164,9 +1161,6 @@ export class ForwardSceneFrameGraph {
           this.objects.setOwnedTextureDependencies("screenShadows", [screenShadows.output]);
           this.water?.readsInOpaquePass(screenShadows.output);
         }
-        const jitter = this.effectsGraph?.spatial?.jitter;
-        jitter?.jitterRenderer(this.objects.objectRenderer);
-        if (this.water) jitter?.jitterRenderer(this.water.transparent.objectRenderer);
         this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects, { view: this.auxiliary ? camera : undefined });
         for (const receiver of this.water?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
         // The scene view draws its auxiliary views here: after Babylon's

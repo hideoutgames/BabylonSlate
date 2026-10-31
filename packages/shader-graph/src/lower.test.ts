@@ -7,6 +7,7 @@ import {
 } from "./document";
 import { newCustomGlslProperties } from "./custom-glsl";
 import { lowerMaterialDocument, materialCompileKey } from "./lower";
+import { isPerInstanceParameter } from "./parameters";
 
 function surfaceWithMultiply(): MaterialDocument {
   const doc = createDefaultMaterialDocument();
@@ -265,6 +266,23 @@ describe("material lowering", () => {
     if (!first.ok || !second.ok || !changed.ok) return;
     expect(first.plan.hash).toBe(second.plan.hash);
     expect(first.plan.hash).not.toBe(changed.plan.hash);
+  });
+
+  it("compiles a parameter marked Per Instance apart from the same parameter unmarked", () => {
+    const tinted = (perInstance: boolean) => {
+      const doc = createDefaultMaterialDocument();
+      const tint = doc.nodes.find((node) => node.id === "baseColor")!;
+      tint.type = "param.color";
+      tint.properties = { name: "Tint", value: [1, 1, 1, 1], perInstance };
+      doc.edges.find((edge) => edge.sourceNodeId === "baseColor")!.sourcePinId = "rgb";
+      return lowerMaterialDocument(doc);
+    };
+    const [marked, unmarked] = [tinted(true), tinted(false)];
+    expect(marked.ok && unmarked.ok).toBe(true);
+    if (!marked.ok || !unmarked.ok) return;
+    expect(marked.plan.hash).not.toBe(unmarked.plan.hash);
+    expect(isPerInstanceParameter("param.color", { perInstance: true })).toBe(true);
+    expect([isPerInstanceParameter("param.texture", { perInstance: true }), isPerInstanceParameter("param.float", {})]).toEqual([false, false]);
   });
 
   it("ignores node positions in the hash", () => {

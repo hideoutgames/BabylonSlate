@@ -811,6 +811,14 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
       value: materialParameterName(node),
       onChange: (name) => setProperties({ name }),
     });
+    // A Material's own Float or Color parameter can vary per actor and still draw in one batch.
+    if ((node.type === "param.float" || node.type === "param.color") && "domain" in document) rows.splice(1, 0, {
+      id: "perInstance",
+      kind: "boolean",
+      label: "Per Instance",
+      value: node.properties.perInstance === true,
+      onChange: (perInstance) => setProperties({ perInstance }),
+    });
   }
   if (node.type === "const.float" || node.type === "param.float") {
     const value = Array.isArray(node.properties.value)

@@ -205,8 +205,7 @@ const CASES: Case[] = [
 type Mode = {
   name: string; mode: RenderMode; pipeline: "legacyDisplay" | "sceneLinear"; toneMapping: "none" | "aces";
   /**
-   * Ambient occlusion and reflections: they read the geometry pass's depth, normal and reflectivity. (Temporal
-   * anti-aliasing would blend each draw with the one before.)
+   * Ambient occlusion and reflections: they read the geometry pass's depth, normal and reflectivity.
    */
   spatial?: boolean;
 };

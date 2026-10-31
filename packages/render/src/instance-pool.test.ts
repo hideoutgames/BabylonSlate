@@ -17,6 +17,8 @@ import { drawnMaterialVariants } from "./drawn-variants";
 import {
   instancingIneligibility,
   isInstancePoolSource,
+  meshCastsShadows,
+  setMeshShadowFlags,
   RETAINED_EMPTY_GROUPS,
   sceneInstancePool,
   type InstanceGeometry,
@@ -63,10 +65,10 @@ describe("groups", () => {
     // Each of these is read from the source for every instance, so it splits the group.
     const splits = [
       key({ material: new StandardMaterial("other", scene) }), key({ material: null }), key({ receiveShadows: false }),
-      key({ renderingGroupId: 2 }), key({ geometry: geometry("sphere") }),
+      key({ castShadows: false }), key({ renderingGroupId: 2 }), key({ geometry: geometry("sphere") }),
     ].map((other, index) => pool.join(other, `split ${index}`).sourceMesh);
-    expect(new Set([a.sourceMesh, ...splits]).size).toBe(6);
-    expect(pool.diagnostics()).toMatchObject({ groups: 6, pooled: 7, rekeys: 0 });
+    expect(new Set([a.sourceMesh, ...splits]).size).toBe(7);
+    expect(pool.diagnostics()).toMatchObject({ groups: 7, pooled: 8, rekeys: 0 });
   });
 
   it("builds a hidden source at identity that draws its members' normals for any scaling, never casts and only draws instanced", () => {
@@ -165,6 +167,33 @@ describe("rekey", () => {
     expect((instance as unknown as { _sourceMesh: Mesh })._sourceMesh).toBe(source);
     expect(typeof (instance as unknown as { _syncSubMeshes: unknown })._syncSubMeshes).toBe("function");
     expect(typeof (source as unknown as { _updateNonUniformScalingState: unknown })._updateNonUniformScalingState).toBe("function");
+  });
+});
+
+describe("shadow flags", () => {
+  it("moves a member to the group that receives and casts as it does, whose source the geometry pass marks", () => {
+    const { pool, key } = fixture();
+    const [caster, other] = [pool.join(key(), "caster"), pool.join(key(), "other")];
+    expect(meshCastsShadows(other.sourceMesh)).toBe(true);
+    setMeshShadowFlags(other, true, false);
+    expect({ moved: other.sourceMesh !== caster.sourceMesh, casts: meshCastsShadows(other.sourceMesh), receives: other.sourceMesh.receiveShadows })
+      .toEqual({ moved: true, casts: false, receives: true });
+    // Both flags in one move; unchanged flags move nothing.
+    setMeshShadowFlags(other, false, true);
+    setMeshShadowFlags(other, false, true);
+    expect({ casts: meshCastsShadows(other.sourceMesh), receives: other.sourceMesh.receiveShadows, rekeys: pool.diagnostics().rekeys })
+      .toEqual({ casts: true, receives: false, rekeys: 2 });
+    expect(meshCastsShadows(caster.sourceMesh)).toBe(true);
+  });
+
+  it("marks a mesh outside the pool directly; one the controller has not seen casts", () => {
+    const { scene } = fixture();
+    const mesh = MeshBuilder.CreateBox("mesh", {}, scene);
+    expect(meshCastsShadows(mesh)).toBe(true);
+    setMeshShadowFlags(mesh, false, false);
+    expect({ casts: meshCastsShadows(mesh), receives: mesh.receiveShadows }).toEqual({ casts: false, receives: false });
+    setMeshShadowFlags(mesh, true, true);
+    expect({ casts: meshCastsShadows(mesh), receives: mesh.receiveShadows }).toEqual({ casts: true, receives: true });
   });
 });
 

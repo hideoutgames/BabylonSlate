@@ -33,7 +33,6 @@ import {
   ambientOcclusionCompositeShader,
   ambientOcclusionShader,
 } from "./ambient-occlusion-shader";
-import { TemporalJitter, temporalAntiAliasingShader } from "./temporal-anti-aliasing";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
 import { bindFogVolumes, hasFogVolumes, selectFogVolumes } from "./fog-volumes";
@@ -92,9 +91,6 @@ export interface SpatialStage {
   /** Index of the stage whose input is the full-resolution color to compose. */
   mainInput?: number;
   geometry: boolean;
-  /** Renders into a persistent history target and samples the previous one;
-   * the owner hooks the jitter into its view's draws. */
-  history?: TemporalJitter;
   /**
    * Evaluated before each frame: true when running this stage would leave the
    * chain's color unchanged. The graph then skips it (a stage with `mainInput`
@@ -117,14 +113,13 @@ export function spatialEffectsUnsupported(scene: Scene): string | undefined {
     !caps.textureFloatRender ||
     !caps.depthTextureExtension
   )
-    return "Ambient occlusion, reflections, volumetric lighting and temporal anti-aliasing require four render targets, half-float textures and depth sampling.";
+    return "Ambient occlusion, reflections, volumetric lighting and Screen-Space Shadows require four render targets, half-float textures and depth sampling.";
   return undefined;
 }
 
 /** The plan has at least one stage composed by the spatial geometry chain. */
 export function hasSpatialEffects(plan: SceneEffectsPlan | null): plan is SceneEffectsPlan {
-  return !!plan && !!(plan.ambientOcclusion || plan.reflections || plan.volumetricLighting || plan.temporalAntiAliasing ||
-    plan.screenShadows);
+  return !!plan && !!(plan.ambientOcclusion || plan.reflections || plan.volumetricLighting || plan.screenShadows);
 }
 
 /** Reserve MRTs, color/depth and effect targets before any native allocation.
@@ -154,11 +149,8 @@ export function reserveSpatialEffects(
     bytes += pixels * 16 + scaledBytes(plan.reflections.resolutionScale) * 3;
   if (plan.volumetricLighting)
     bytes += pixels * 8 + scaledBytes(plan.volumetricLighting.resolutionScale);
-  // Half-float velocity and two half-float history targets; native adds the
-  // resolve pass input.
-  if (plan.temporalAntiAliasing) bytes += pixels * (native ? 32 : 24);
-  // Screen-Space Shadows' RG16F target.
-  if (plan.screenShadows) bytes += pixels * 4;
+  // Screen-Space Shadows' RG16F target and the caster mark's second channel of the geometry Z (at most float).
+  if (plan.screenShadows) bytes += pixels * 8;
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 
@@ -515,34 +507,6 @@ export function createSpatialStages(
             1 / Math.max(1, Math.round(height * scale)),
           );
           effect.setFloat("cameraFar", Math.min(65000, camera.maxZ || 65000));
-        },
-      });
-    }
-    const temporal = plan.temporalAntiAliasing;
-    if (temporal) {
-      // Last spatial stage: it also resolves the noise of the stages above.
-      const resolve = own(
-        customWrapper(
-          scene,
-          "Scene Temporal Anti-Aliasing",
-          temporalAntiAliasingShader(engine.isWebGPU),
-          ["taaSettings", "taaJitter"],
-          ["historySampler", "velocitySampler"],
-          failure,
-        ),
-      );
-      const jitter = new TemporalJitter(scene, camera, temporal.samples, width, height);
-      // The first frame of a generation has no valid history to blend.
-      let reset = true;
-      stages.push({
-        wrapper: resolve,
-        scale: 1,
-        geometry: true,
-        history: jitter,
-        bind: (effect) => {
-          effect.setFloat4("taaSettings", temporal.blend, reset ? 1 : 0, 1 / width, 1 / height);
-          effect.setFloat2("taaJitter", ...jitter.velocityOffset);
-          reset = false;
         },
       });
     }

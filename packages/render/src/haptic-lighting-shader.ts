@@ -72,9 +72,11 @@ function poissonWgsl(name: string, disc: readonly number[]): string {
  */
 export function hapticShadowGlsl(surface: boolean): string {
   return `// A light's shadow from its view of the atlas (\`hapticShadowViews\`): 1 where lit, the view's darkness where shadowed; 1
-// without a view (index < 0), outside its frustum and on a mesh that does not receive shadows. Babylon's PCF at the
-// view's filter quality (0 low, 1 medium, 2 high: its computeShadowWithPCF1, 3 and 5): one, four or nine weighted
-// bilinear compare taps, each kept a texel inside the view's tile so a neighbouring tile never bleeds in. A sun cascade
+// without a view (index < 0), outside its frustum and on a mesh that does not receive shadows. Filtered at the view's
+// quality (0 low: one bilinear compare tap; 1 medium: Castaño's nine weighted bilinear compare taps over 5 × 5 texels;
+// 2 high: his sixteen over 7 × 7; a view with coarser texels than its reference takes his smaller kernel nearest that
+// width in the world, so the softness holds across cascades and tiles),
+// each tap kept a texel inside the view's tile so a neighbouring tile never bleeds in. A sun cascade
 // with automatic bias compares each tap against the receiver's plane, from the position's change across the pixel
 // (\`dPdx\`, \`dPdy\`, taken where control flow is uniform); low quality then compares four texel centres, as one
 // bilinear comparison takes one depth.
@@ -198,9 +200,14 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
       + st.x * st.y * hapticShadowTap(tile, b, clamp(depth + dot(gradient, b - texels), 0.0, maximum));
     return mix(shading.x, 1.0, lit);
   }
+  // Castaño's exact kernels: 3 × 3 texels (four bilinear compare taps), 5 × 5 (nine) or 7 × 7 (sixteen), their positions
+  // and weights from the position within its texel. High quality aims at 7 × 7 texels of the reference view (the first
+  // cascade, a local light's requested size), medium at 5 × 5, and a view with coarser texels (its record's eighth vector:
+  // the reference texel over its own, \`shadowKernelRatio\`) takes the kernel nearest that width in the world.
+  float texelsWide = (quality < 1.5 ? 5.0 : 7.0) * hapticShadowViews[base + 7].x;
   vec2 st = fract(texels + 0.5);
   vec2 corner = floor(texels + 0.5) - 0.5;
-  if (quality < 1.5) {
+  if (texelsWide < 4.0) {
     vec2 w0 = 3.0 - 2.0 * st;
     vec2 w1 = 1.0 + 2.0 * st;
     vec2 a = corner + (2.0 - st) / w0 - 1.0;
@@ -209,7 +216,7 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
       + w1.x * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
       + w0.x * w1.y * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
       + w1.x * w1.y * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
-  } else {
+  } else if (texelsWide < 6.0) {
     vec2 w0 = 4.0 - 3.0 * st;
     vec2 w2 = 1.0 + 3.0 * st;
     vec2 a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
@@ -224,6 +231,14 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
       + w0.x * w2.y * hapticPlaneTap(tile, vec2(a.x, c.y), texels, depth, gradient, maximum)
       + 7.0 * w2.y * hapticPlaneTap(tile, vec2(b.x, c.y), texels, depth, gradient, maximum)
       + w2.x * w2.y * hapticPlaneTap(tile, vec2(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
+  } else {
+    vec2 w[4] = vec2[4](5.0 * st - 6.0, 11.0 * st - 28.0, -(11.0 * st + 17.0), -(5.0 * st + 1.0));
+    vec2 o[4] = vec2[4]((4.0 * st - 5.0) / w[0] - 3.0, (4.0 * st - 16.0) / w[1] - 1.0, -(7.0 * st + 5.0) / w[2] + 1.0, -st / w[3] + 3.0);
+    lit = 0.0;
+    for (int j = 0; j < 4; j++)
+      for (int i = 0; i < 4; i++)
+        lit += w[i].x * w[j].y * hapticPlaneTap(tile, corner + vec2(o[i].x, o[j].y), texels, depth, gradient, maximum);
+    lit /= 2704.0;
   }
   return mix(shading.x, 1.0, lit);
 ` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));\n"}}
@@ -386,9 +401,10 @@ ${surface ? `  var gradient = vec2f(0.0);
       + st.x * st.y * hapticShadowTap(tile, b, clamp(depth + dot(gradient, b - texels), 0.0, maximum));
     return mix(shading.x, 1.0, lit);
   }
+  let texelsWide = select(7.0, 5.0, quality < 1.5) * HapticLights.hapticShadowViews[base + 7].x;
   let st = fract(texels + 0.5);
   let corner = floor(texels + 0.5) - 0.5;
-  if (quality < 1.5) {
+  if (texelsWide < 4.0) {
     let w0 = 3.0 - 2.0 * st;
     let w1 = 1.0 + 2.0 * st;
     let a = corner + (2.0 - st) / w0 - 1.0;
@@ -397,7 +413,7 @@ ${surface ? `  var gradient = vec2f(0.0);
       + w1.x * w0.y * hapticPlaneTap(tile, vec2f(b.x, a.y), texels, depth, gradient, maximum)
       + w0.x * w1.y * hapticPlaneTap(tile, vec2f(a.x, b.y), texels, depth, gradient, maximum)
       + w1.x * w1.y * hapticPlaneTap(tile, vec2f(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
-  } else {
+  } else if (texelsWide < 6.0) {
     let w0 = 4.0 - 3.0 * st;
     let w2 = 1.0 + 3.0 * st;
     let a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
@@ -412,6 +428,17 @@ ${surface ? `  var gradient = vec2f(0.0);
       + w0.x * w2.y * hapticPlaneTap(tile, vec2f(a.x, c.y), texels, depth, gradient, maximum)
       + 7.0 * w2.y * hapticPlaneTap(tile, vec2f(b.x, c.y), texels, depth, gradient, maximum)
       + w2.x * w2.y * hapticPlaneTap(tile, vec2f(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
+  } else {
+    let w = array<vec2f, 4>(5.0 * st - 6.0, 11.0 * st - 28.0, -(11.0 * st + 17.0), -(5.0 * st + 1.0));
+    let o = array<vec2f, 4>((4.0 * st - 5.0) / w[0] - 3.0, (4.0 * st - 16.0) / w[1] - 1.0, -(7.0 * st + 5.0) / w[2] + 1.0,
+      -st / w[3] + 3.0);
+    lit = 0.0;
+    for (var j: i32 = 0; j < 4; j++) {
+      for (var i: i32 = 0; i < 4; i++) {
+        lit += w[i].x * w[j].y * hapticPlaneTap(tile, corner + vec2f(o[i].x, o[j].y), texels, depth, gradient, maximum);
+      }
+    }
+    lit /= 2704.0;
   }
   return mix(shading.x, 1.0, lit);
 ` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));\n"}}
@@ -469,13 +496,25 @@ int hapticLoopReached = 0;
 float hapticScreenLit = 1.0;
 // The screen shadows of this draw's pass (\`hapticScreenShadowSampler\`: R the sun's lit share, G the eye distance of the
 // surface marched from; \`hapticScreenShadowTerms.x\` 0 where the pass has none, a placeholder then bound), for the surface
-// at P only: a fragment at another distance (behind glass or water, or anything the depth did not hold) keeps 1.
+// at P only: a fragment at another distance (behind glass or water, or anything the depth did not hold) keeps 1. The
+// march's per-pixel noise is filtered spatially: the lit share averages the 3 x 3 neighbours marched from the same surface.
 float hapticScreenShadowLit(vec3 P, vec3 eye) {
   if (hapticScreenShadowTerms.x < 0.5) return 1.0;
   ivec2 last = textureSize(hapticScreenShadowSampler, 0) - 1;
-  vec2 texel = texelFetch(hapticScreenShadowSampler, clamp(ivec2(gl_FragCoord.xy), ivec2(0), last), 0).rg;
+  ivec2 pixel = ivec2(gl_FragCoord.xy);
   float distance = length(eye - P);
-  return abs(distance - texel.y) < 0.004 * distance + 0.01 ? texel.x : 1.0;
+  float tolerance = 0.004 * distance + 0.01;
+  vec2 center = texelFetch(hapticScreenShadowSampler, clamp(pixel, ivec2(0), last), 0).rg;
+  if (abs(distance - center.y) >= tolerance) return 1.0;
+  float lit = 0.0;
+  float weight = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 texel = texelFetch(hapticScreenShadowSampler, clamp(pixel + ivec2(x, y), ivec2(0), last), 0).rg;
+      if (abs(distance - texel.y) < 2.0 * tolerance) { lit += texel.x; weight += 1.0; }
+    }
+  }
+  return lit / weight;
 }
 
 // Where the sun's cascades darken to (the first cascade's darkness; a map awaiting its first draw is neutral), as far as
@@ -936,9 +975,20 @@ var<private> hapticScreenLit: f32 = 1.0;
 fn hapticScreenShadowLit(P: vec3f, eye: vec3f) -> f32 {
   if (uniforms.hapticScreenShadowTerms.x < 0.5) { return 1.0; }
   let last = vec2i(textureDimensions(hapticScreenShadowSampler, 0)) - 1;
-  let texel = textureLoad(hapticScreenShadowSampler, clamp(vec2i(fragmentInputs.position.xy), vec2i(0), last), 0).rg;
+  let pixel = vec2i(fragmentInputs.position.xy);
   let distance = length(eye - P);
-  return select(1.0, texel.x, abs(distance - texel.y) < 0.004 * distance + 0.01);
+  let tolerance = 0.004 * distance + 0.01;
+  let center = textureLoad(hapticScreenShadowSampler, clamp(pixel, vec2i(0), last), 0).rg;
+  if (abs(distance - center.y) >= tolerance) { return 1.0; }
+  var lit = 0.0;
+  var weight = 0.0;
+  for (var y = -1; y <= 1; y++) {
+    for (var x = -1; x <= 1; x++) {
+      let texel = textureLoad(hapticScreenShadowSampler, clamp(pixel + vec2i(x, y), vec2i(0), last), 0).rg;
+      if (abs(distance - texel.y) < 2.0 * tolerance) { lit += texel.x; weight += 1.0; }
+    }
+  }
+  return lit / weight;
 }
 
 fn hapticSunScreenShadow() -> f32 {
