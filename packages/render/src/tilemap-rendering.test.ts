@@ -1,4 +1,4 @@
-import { Color3, HemisphericLight, Material, Mesh, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Color3, HemisphericLight, Mesh, StandardMaterial, Vector3, VertexBuffer, type NodeMaterial } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent } from "@haptic/core";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
@@ -9,6 +9,8 @@ import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { ResourceCache } from "./resource-cache";
 import { createActorMesh } from "./scene-loader";
 import { applyAssignMaterial, applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 
 describe("tilemap rendering", () => {
   let handle: ReturnType<typeof createTestEngine>;
@@ -68,14 +70,15 @@ describe("tilemap rendering", () => {
     handle.scene.imageProcessingConfiguration.exposure = 0.1;
 
     const root = createActorMesh(handle.scene, actor, assets);
-    const material = chunk(root).material as StandardMaterial;
+    const tile = chunk(root);
+    const material = tile.material!;
 
-    expect(material.diffuseTexture).toBeTruthy();
-    expect(material.disableLighting).toBe(true);
+    expect(unlitBinding(tile).texture).toBeTruthy();
+    expect(isUnlitMaterial(material)).toBe(true);
     expect(material.backFaceCulling).toBe(false);
     expect(material.fogEnabled).toBe(false);
-    expect(material.imageProcessingConfiguration.isEnabled).toBe(false);
-    expect(material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
+    expect((material as NodeMaterial).imageProcessingConfiguration.isEnabled).toBe(false);
+    expect(material.needAlphaTestingForMesh(tile)).toBe(true);
   });
 
   it("draws a Tileset without an atlas image unlit with one placeholder colour per tile", async () => {
@@ -92,10 +95,10 @@ describe("tilemap rendering", () => {
     const chunks = root.getChildMeshes();
     expect(chunks).toHaveLength(3);
     expect(chunks.reduce((vertices, tile) => vertices + tile.getTotalVertices(), 0)).toBe(5 * 4);
-    const material = chunks[0]!.material as StandardMaterial;
+    const material = chunks[0]!.material as NodeMaterial;
     expect(chunks.every((tile) => tile.material === material)).toBe(true);
-    expect(material.diffuseTexture).toBeNull();
-    expect(material.disableLighting).toBe(true);
+    expect(unlitBinding(chunks[0]!).texture).toBeNull();
+    expect(isUnlitMaterial(material)).toBe(true);
     expect(material.backFaceCulling).toBe(false);
     expect(material.fogEnabled).toBe(false);
     expect(material.imageProcessingConfiguration.isEnabled).toBe(false);
@@ -123,7 +126,7 @@ describe("tilemap rendering", () => {
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
     scene.imageProcessingConfiguration.exposure = 0.1;
     const tile = chunk(createActorMesh(scene, actor, assets));
-    const material = tile.material as StandardMaterial;
+    const material = tile.material!;
     const displayStages = async () => {
       // A new frame: readiness is cached per render id.
       scene.incrementRenderId();
@@ -134,7 +137,7 @@ describe("tilemap rendering", () => {
     };
     // Legacy Display writes the atlas's display colors unchanged.
     expect(await displayStages()).toEqual([]);
-    // Scene Linear: Standard's linear decode, so the Display Color stage
+    // Scene Linear: the linear decode Standard's was, so the Display Color stage
     // encodes the tile once.
     scene.imageProcessingConfiguration.applyByPostProcess = true;
     expect(await displayStages()).toEqual(["#define IMAGEPROCESSINGPOSTPROCESS"]);
@@ -158,10 +161,10 @@ describe("tilemap rendering", () => {
     sync.setMeshAssets(assets);
     sync.apply({ ...createDefaultScene(), actors: [actor] });
 
-    const material = chunk(sync.meshForActor(actor.id)!).material as StandardMaterial;
-    expect(material).not.toBe(lit);
-    expect(material.diffuseTexture).toBeTruthy();
-    expect(material.disableLighting).toBe(true);
+    const tile = chunk(sync.meshForActor(actor.id)!);
+    expect(tile.material).not.toBe(lit);
+    expect(unlitBinding(tile).texture).toBeTruthy();
+    expect(isUnlitMaterial(tile.material)).toBe(true);
     sync.dispose();
   });
 
@@ -228,8 +231,8 @@ describe("tilemap rendering", () => {
     const { assets, actor } = content();
     const root = createActorMesh(handle.scene, actor, assets);
     const tile = chunk(root);
-    const previous = tile.material as StandardMaterial;
-    const texture = previous.diffuseTexture!;
+    const previous = tile.material!;
+    const texture = unlitBinding(tile).texture!;
     const count = handle.scene.materials.length;
 
     applyTilemapAlbedoTextures(root, handle.scene, assets);
@@ -239,7 +242,8 @@ describe("tilemap rendering", () => {
     await borrowed.ready;
     const current = tile.material;
     root.dispose();
-    expect(handle.scene.materials.includes(current!)).toBe(false);
+    // The Scene's unlit Material outlives the tilemap; it no longer samples its atlas.
+    expect(current!.getActiveTextures()).not.toContain(texture);
     expect(isDisposedGpuTexture(texture)).toBe(false);
     borrowed.release();
   });
