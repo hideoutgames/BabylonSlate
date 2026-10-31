@@ -116,9 +116,10 @@ it("plans bloom and FXAA independently in Legacy Display", () => {
   const plan = planSceneEffects(
     effects({
       bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
-      fxaa: true,
     }),
     "pbr",
+    true,
+    { fxaa: true },
   );
   expect(plan?.sceneLinear).toBe(false);
   expect(plan?.bloom?.enabled).toBe(true);
@@ -126,14 +127,11 @@ it("plans bloom and FXAA independently in Legacy Display", () => {
   expect(plan?.fxaa).toBe(true);
 });
 
-it("runs FXAA for the tier's Anti-Aliasing on its own, keyed apart from the project switch", () => {
+it("runs FXAA for the tier's Anti-Aliasing alone, and keys it", () => {
   const plain = effects();
   expect(planSceneEffects(plain, "cel", true, { fxaa: true })).toMatchObject({ fxaa: true, bloom: null, imageProcessing: null });
   expect(planSceneEffects(plain, "pbr", false, { fxaa: true })).toBeNull();
   expect(sceneEffectsKey(plain, "pbr", true, { fxaa: true })).not.toBe(sceneEffectsKey(plain, "pbr", true));
-  // With the project switch on, the tier's FXAA changes nothing.
-  const project = effects({ fxaa: true });
-  expect(sceneEffectsKey(project, "pbr", true, { fxaa: true })).toBe(sceneEffectsKey(project, "pbr", true));
 });
 
 it("plans an FSR chain on its own and renders it at the scaled size", () => {
@@ -163,9 +161,8 @@ it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-pr
 it("plans nothing while the post-processing toggle is off", () => {
   const linear = effects({
     colorPipeline: { version: 1, mode: "sceneLinear" },
-    fxaa: true,
   });
-  expect(planSceneEffects(linear, "pbr", false)).toBeNull();
+  expect(planSceneEffects(linear, "pbr", false, { fxaa: true })).toBeNull();
 });
 
 it("configures display processing only for the linear stage", () => {

@@ -66,7 +66,7 @@ describe("compiled Class Graph scalability", () => {
   it("executes typed setters, emits confirmed readback through the event and shares reset with console commands", async () => {
     const { runtime, commands, actor } = await run({ id: "settings", kind: "event", nodes: [
       node("begin", "flow.event.beginPlay"), node("cap", "scalability.setFrameCap", { "default:fps": 20 }),
-      node("scale", "scalability.setRenderScale", { "default:scale": 0.5 }), node("aa", "scalability.setAntialiasing", { "default:enabled": true }),
+      node("scale", "scalability.setRenderScale", { "default:scale": 0.5 }), node("aa", "scalability.setAntiAliasing", { "default:mode": "msaa2" }),
       node("changed", "flow.event.scalabilityChanged"), node("log", "debug.log"),
       node("revision", "struct.break", { structGuid: "engine:ScalabilitySnapshot", fields: [{ name: "appliedRevision", typeId: "float" }] }),
       node("revisionText", "literal.toStringFloat"),
@@ -75,7 +75,7 @@ describe("compiled Class Graph scalability", () => {
       edge("changed", "execOut", "log", "execIn"), edge("changed", "settings", "revision", "in"), edge("revision", "appliedRevision", "revisionText", "in"), edge("revisionText", "out", "log", "message"), edge("resetEvent", "execOut", "reset", "execIn")] });
     try {
       const snapshot = runtime.getScalability();
-      expect(snapshot.requested).toMatchObject({ frameCap: 20, render: { effects: { fxaa: true }, quality: { resolution: { scale: 0.5, dynamic: false } } } });
+      expect(snapshot.requested).toMatchObject({ frameCap: 20, render: { quality: { resolution: { scale: 0.5, dynamic: false }, postprocessing: { antiAliasing: "msaa2" } } } });
       runtime.applyScalabilityStatus({ revision: snapshot.result.revision, status: "applied", message: "Ready", effective: snapshot.requested });
       const logs = commands.filter((command) => command.type === "log");
       expect(logs).toHaveLength(1);
