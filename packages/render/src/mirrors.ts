@@ -39,6 +39,7 @@ import {
 } from "./planar-mirror";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { ReflectedContent } from "./reflected-content";
+import { shadowChangeSequence } from "./shadow-change-journal";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { connectGeometrySurfaceOutput, GeometrySurfaceOutputBlock } from "./geometry-surface-output-block";
@@ -64,6 +65,8 @@ export interface MirrorDiagnostics {
   readonly reuses: number;
   /** Meshes the drawn reflections' passes drew, summed over draws. */
   readonly drawnMeshes: number;
+  /** Shadow map passes the Scene's surfaces sample, recorded so far (`shadowChangeSequence`). */
+  readonly shadowPasses: number;
 }
 
 type Surface = MirrorCandidate & {
@@ -181,6 +184,7 @@ class SceneMirrors {
     return {
       surfaces: this.surfaces.length, targets: this.surfaces.filter((surface) => surface.target?.lease).length,
       draws: this.draws, lastRenderDraws: this.lastRenderDraws, reuses: this.reuses, drawnMeshes: this.drawnMeshes,
+      shadowPasses: shadowChangeSequence(this.scene),
     };
   }
 

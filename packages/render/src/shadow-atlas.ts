@@ -20,6 +20,7 @@ import {
 import { SHADOW_CAPACITY_PROFILES, type ShadowProfile } from "@haptic/core";
 import { deviceProfile } from "./device-profile";
 import { ShadowAtlasAllocator, type ShadowAtlasTile } from "./shadow-atlas-allocator";
+import { recordShadowMapPass, type ShadowTileView } from "./shadow-change-journal";
 
 /**
  * The light block's shadows (`HapticLightingBlock`) live in one depth-only texture per Scene, the shadow
@@ -187,14 +188,6 @@ class AtlasTileTarget extends RenderTargetTexture {
 /** Called once a Scene's atlas map has drawn (`watchShadowDraws`). */
 const drawWatchers = new WeakMap<Scene, () => void>();
 
-/** Atlas map draws per Scene (`sceneShadowDraws`). */
-const drawCounts = new WeakMap<Scene, number>();
-
-/** How many times the Scene's atlas maps have drawn: a changed count means sampled shadows may differ. */
-export function sceneShadowDraws(scene: Scene): number {
-  return drawCounts.get(scene) ?? 0;
-}
-
 /** Calls `drawn` each time one of the Scene's atlas maps has drawn, after all its tiles: their views have changed. */
 export function watchShadowDraws(scene: Scene, drawn: () => void): void {
   drawWatchers.set(scene, drawn);
@@ -207,25 +200,53 @@ export interface AtlasShadow {
   readonly drawnViews: readonly Matrix[];
 }
 
+/** Texels a PCF tap reads around a position at most: Castaño's 7 × 7 kernel, a texel inward, and a bilinear neighbour. */
+const PCF_REACH_TEXELS = 5;
+
+/**
+ * How far around a position, in NDC units of `tile`'s view, a receiver's filter reads `shadow`'s map: the PCF kernel, or
+ * Contact Hardening's blocker search and penumbra (`hapticContactLit`: the light's size as a share of the tile, scaled
+ * by the tile's correction toward the first cascade, the penumbra up to that size again plus ten texels).
+ */
+function filterReach(shadow: ShadowGenerator, size: number, correction: Vector3 | undefined): number {
+  let texels = PCF_REACH_TEXELS;
+  if (shadow.useContactHardeningShadow) {
+    const scale = Math.max(1, Math.abs(correction?.x ?? 1), Math.abs(correction?.y ?? 1));
+    texels += (size + 10) * shadow.contactHardeningLightSizeUVRatio * scale;
+  }
+  return 2 * texels / size;
+}
+
 /**
  * Draws `map`'s passes into its tiles of an `edge`-texel atlas: each pass's viewport is its tile, set once the
  * framebuffer is bound (the object renderer sets the camera's before the bind), and each tile clears only its own depth
  * under a scissor. `drawing(pass)` runs as a pass starts, once Babylon's generator has set its view. Installed once the
- * generator has set its own observers.
+ * generator has set its own observers. A real pass of a map in the Scene's atlas (one that clears; readiness probes
+ * emit the other render events) is recorded in the Scene's shadow change journal (`recordShadowMapPass`) with its
+ * tiles' drawn views, and partial when it skipped a caster that was not ready (Babylon resets the refresh counter).
  */
-function drawIntoTiles(map: AtlasTileTarget, edge: number, drawing: (pass: number) => void): void {
+function drawIntoTiles(map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShadow, atlas: RenderTargetTexture, edge: number, drawing: (pass: number) => void): void {
   const scene = map.getScene()!;
   const viewports = map.tiles.map((tile) => new Viewport(tile.x / edge, tile.y / edge, tile.size / edge, tile.size / edge));
+  const views: { view: Matrix; reach: number }[] = map.tiles.map(() => ({ view: Matrix.Identity(), reach: 0 }));
   let pass = 0;
+  let cleared = false;
+  let partial = false;
   map.ignoreCameraViewport = false;
   map.onBeforeRenderObservable.add((layer) => {
     pass = layer;
     scene.getEngine().setViewport(viewports[layer]!);
     drawing(layer);
   });
+  const resetRefreshCounter = map.resetRefreshCounter.bind(map);
+  map.resetRefreshCounter = () => {
+    if (cleared) partial = true;
+    resetRefreshCounter();
+  };
   // Only the tile's depth: Babylon's clear would wipe every other light's.
   map.onClearObservable.clear();
   map.onClearObservable.add((engine) => {
+    cleared = true;
     const tile = map.tiles[pass]!;
     engine.enableScissor(tile.x, tile.y, tile.size, tile.size);
     try {
@@ -236,7 +257,19 @@ function drawIntoTiles(map: AtlasTileTarget, edge: number, drawing: (pass: numbe
     }
   });
   map.onAfterUnbindObservable.add(() => {
-    drawCounts.set(scene, (drawCounts.get(scene) ?? 0) + 1);
+    if (cleared) {
+      // Only the Scene's atlas is sampled by its surfaces; a private one (caster warm-up) is not.
+      if (atlases.get(scene)?.target === atlas) {
+        const corrections = shadow instanceof AtlasCascadedShadowGenerator ? shadow.cascadeCorrections : undefined;
+        for (let i = 0; i < views.length; i++) {
+          views[i]!.view.copyFrom(shadow.drawnViews[i]!);
+          views[i]!.reach = filterReach(shadow, map.tiles[i]!.size, corrections?.[i]);
+        }
+        recordShadowMapPass(scene, map, views as ShadowTileView[], partial);
+      }
+      cleared = false;
+      partial = false;
+    }
     drawWatchers.get(scene)?.();
   });
 }
@@ -460,7 +493,7 @@ export class AtlasShadowGenerator extends ShadowGenerator implements AtlasShadow
   protected override _initializeShadowMap(): void {
     super._initializeShadowMap();
     // Babylon's observer has set the pass's face (`_currentFaceIndex`) by now, so the view is that face's.
-    drawIntoTiles(this._shadowMap as AtlasTileTarget, this.placement.atlas.tiles.edge, (face) => {
+    drawIntoTiles(this._shadowMap as AtlasTileTarget, this, this.placement.atlas.target, this.placement.atlas.tiles.edge, (face) => {
       this.views[face]!.copyFrom(this.getTransformMatrix());
       this.recordRange();
       this.drawn = true;
@@ -570,7 +603,7 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
     const csm = this as unknown as {
       _viewSpaceFrustumsZ: number[]; _frustumLengths: number[]; _cascadeMinExtents: Vector3[]; _cascadeMaxExtents: Vector3[];
     };
-    drawIntoTiles(this._shadowMap as AtlasTileTarget, this.placement.atlas.tiles.edge, (cascade) => {
+    drawIntoTiles(this._shadowMap as AtlasTileTarget, this, this.placement.atlas.target, this.placement.atlas.tiles.edge, (cascade) => {
       this.views[cascade]!.copyFrom(this.getCascadeTransformMatrix(cascade)!);
       // The splits the cascades are drawn for, computed as the map binds.
       if (cascade === 0) {

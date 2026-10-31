@@ -19,7 +19,7 @@ type ViewportHost = {
   __hapticViewportTest: {
     setShadowCaptureView(position: number[], target: number[], fov: number): void;
     renderingBaseline(): { backend: string } | null;
-    mirrorDiagnostics(): { draws: number; reuses: number; drawnMeshes: number } | null;
+    mirrorDiagnostics(): { draws: number; reuses: number; drawnMeshes: number; shadowPasses: number } | null;
     setMirrorFootprintCulling(enabled: boolean): void;
   };
 };
@@ -242,4 +242,74 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws only w
   expect(whole.meshesPerDraw).toBeGreaterThan(cropped.meshesPerDraw);
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setMirrorFootprintCulling(true));
   expect((await settled(await mirrors())).hash).toBe(cropped.hash);
+});
+
+for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror keeps its reflection while a caster whose shadow it cannot show moves, and redraws for one it can, on ${backend}`, async ({ page }) => {
+  test.setTimeout(180_000);
+  const files = await minimalProjectFiles();
+  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+  project.settings.render.gpuBackend = backend;
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+  const sceneFile = files.get(MAIN_SCENE_FILE)!;
+  const decoded = await decodeAssetDocument(sceneFile);
+  const scene = decoded.payload as unknown as SerializedScene;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
+  const box = (id: string, position: [number, number, number], scale: [number, number, number]) => createActor(id, id, {
+    transform: { ...identitySerializedTransform(), position, scale },
+    components: [createMeshComponent(`${id}-mesh`, "box")],
+  });
+  scene.actors = [
+    camera,
+    createActor("mirror", "Mirror", {
+      transform: { ...identitySerializedTransform(), position: [0, 2, 0] },
+      components: [{ id: "mirror-surface", classId: "MirrorComponent", properties: { ...parseMirrorProperties({ width: 2, height: 2 }) }, parentId: null, transform: identitySerializedTransform() }],
+    }),
+    // Behind the camera, seen only in the mirror: a floor under a spot light. The near caster hangs above what the
+    // mirror shows, so only its shadow on the floor is reflected.
+    box("floor", [0, -0.1, -9], [8, 0.2, 8]),
+    box("near-caster", [0, 6, -9], [1, 1, 1]),
+    // Within the light's range, so its map redraws when it moves, but outside its cone and the mirror's view.
+    box("far-caster", [10, 1, -9], [1, 1, 1]),
+    createActor("spot", "Spot", {
+      // Pointing down.
+      transform: { ...identitySerializedTransform(), position: [0, 9, -9], rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2] },
+      components: [{
+        id: "spot-light", classId: "LightComponent", parentId: null, transform: identitySerializedTransform(),
+        properties: { lightKind: "spot", color: [1, 1, 1], intensity: 4, range: 15, innerAngle: 45, outerAngle: 90, enabled: true, castShadows: true },
+      }],
+    }),
+  ];
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...decoded, payload: scene as unknown as Record<string, unknown> }));
+
+  await openMinimalTestProject(page, files);
+  await openMainScene(page);
+  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
+  await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
+  const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
+  const settled = () => expect.poll(async () => {
+    const before = await mirrors();
+    await page.waitForTimeout(500);
+    const after = await mirrors();
+    return after.draws > 0 && after.draws === before.draws && after.reuses > before.reuses && after.shadowPasses === before.shadowPasses;
+  }, { timeout: 60_000 }).toBe(true);
+  const moveX = async (actor: string, x: number) => {
+    await page.getByTestId(`tree-row-actor:${actor}`).click();
+    await page.getByTestId("property-actor-position-x").fill(String(x));
+    await page.getByTestId("property-actor-position-x").press("Enter");
+  };
+  await settled();
+
+  // The far caster's map pass changes no shadow the reflection shows: the reflection is reused.
+  const beforeFar = await mirrors();
+  await moveX("far-caster", 11);
+  await expect.poll(async () => (await mirrors()).shadowPasses, { timeout: 30_000 }).toBeGreaterThan(beforeFar.shadowPasses);
+  await settled();
+  const afterFar = await mirrors();
+  expect(afterFar.draws).toBe(beforeFar.draws);
+  expect(afterFar.reuses).toBeGreaterThan(beforeFar.reuses);
+
+  // The near caster's shadow lies on the reflected floor: the reflection draws again.
+  await moveX("near-caster", 0.5);
+  await expect.poll(async () => (await mirrors()).draws, { timeout: 30_000 }).toBeGreaterThan(afterFar.draws);
 });

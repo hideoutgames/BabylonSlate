@@ -11,7 +11,7 @@ import { materialParameterRevision } from "./material-parameters";
 import { hasOwnerNotifiedGeometry } from "./geometry-revision";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import { renderSettingsOwner, sceneRenderingSettings } from "./render-settings";
-import { sceneShadowDraws } from "./shadow-atlas";
+import { forEachShadowChangeSince, shadowChangeSequence, type ShadowChange } from "./shadow-change-journal";
 import { hasStaticThinInstances } from "./shadow-material-policy";
 import { hasPerMeshBindings, unlitBinding } from "./unlit-material-blocks";
 
@@ -84,6 +84,39 @@ function isDynamicTexture(texture: BaseTexture): boolean {
   return true;
 }
 
+/** Clip-space w below which a point counts as behind a shadow view's eye. */
+const MIN_W = 1e-6;
+
+/**
+ * Writes into `rect` (min x, min y, max x, max y) the NDC bounds of the world box `box` (six numbers from `at`) in the
+ * view-projection `m`: empty when the whole box is behind the view's eye (it neither draws into nor samples the view),
+ * unbounded when only part of it is.
+ */
+function projectBox(m: Float64Array, box: ArrayLike<number>, at: number, rect: Float64Array): void {
+  rect[0] = rect[1] = Infinity;
+  rect[2] = rect[3] = -Infinity;
+  let behind = 0;
+  for (let corner = 0; corner < 8; corner++) {
+    const x = box[at + (corner & 1 ? 3 : 0)]!, y = box[at + (corner & 2 ? 4 : 1)]!, z = box[at + (corner & 4 ? 5 : 2)]!;
+    const w = x * m[3]! + y * m[7]! + z * m[11]! + m[15]!;
+    if (w <= MIN_W) { behind++; continue; }
+    const nx = (x * m[0]! + y * m[4]! + z * m[8]! + m[12]!) / w, ny = (x * m[1]! + y * m[5]! + z * m[9]! + m[13]!) / w;
+    // Negated so a non-finite projection (or w) is unbounded.
+    if (!(Number.isFinite(nx) && Number.isFinite(ny))) { behind = -1; break; }
+    if (nx < rect[0]!) rect[0] = nx;
+    if (ny < rect[1]!) rect[1] = ny;
+    if (nx > rect[2]!) rect[2] = nx;
+    if (ny > rect[3]!) rect[3] = ny;
+  }
+  if (behind === 8) {
+    rect[0] = rect[1] = Infinity;
+    rect[2] = rect[3] = -Infinity;
+  } else if (behind !== 0) {
+    rect[0] = rect[1] = -Infinity;
+    rect[2] = rect[3] = Infinity;
+  }
+}
+
 /** Per compiled Material and its build and parameter revision: whether its look can change on its own. */
 const compiledVolatility = new WeakMap<NodeMaterial, { buildId: number; revision: number; volatile: boolean }>();
 
@@ -108,6 +141,15 @@ function compiledMaterialIsVolatile(material: NodeMaterial, revision: number): b
  */
 export class ReflectedContent {
   private readonly records = new Map<AbstractMesh, Record>();
+  /** The Scene's shadow change journal as last read; -1 before the first call. */
+  private shadowSequence = -1;
+  private receivers: readonly AbstractMesh[] = [];
+  private shadowReached = false;
+  /** Scratch: a receiver's box, its rectangle, and the changed boxes' rectangles per tile (4 numbers each). */
+  private readonly receiverBox = new Float64Array(6);
+  private readonly receiverRect = new Float64Array(4);
+  private changeRects = new Float64Array(0);
+  private readonly visitShadowChange = (change: ShadowChange) => (this.shadowReached = this.shadowChangeReaches(change));
   private readonly state = new Snapshot();
   private generation = 0;
   private readonly sweep = (record: Record, mesh: AbstractMesh) => {
@@ -131,7 +173,60 @@ export class ReflectedContent {
     }
     state.end();
     if (this.records.size > meshes.length) this.records.forEach(this.sweep);
-    return state.changed || volatile;
+    const shadows = this.shadowsChanged(scene, meshes);
+    return state.changed || volatile || shadows;
+  }
+
+  /**
+   * Whether a shadow map pass since the last call may have changed a shadow `meshes` show: one whose changed region,
+   * in some tile's drawn view, overlaps a receiver's rectangle there widened by the tile's filter reach. Depth is not
+   * compared, so a caster's change reaches every receiver it lines up with in the light's view.
+   */
+  private shadowsChanged(scene: Scene, meshes: readonly AbstractMesh[]): boolean {
+    const sequence = shadowChangeSequence(scene);
+    const since = this.shadowSequence;
+    this.shadowSequence = sequence;
+    // The first call reports a change anyway.
+    if (since < 0 || since === sequence) return false;
+    this.receivers = meshes;
+    this.shadowReached = false;
+    const kept = forEachShadowChangeSince(scene, since, this.visitShadowChange);
+    this.receivers = [];
+    return !kept || this.shadowReached;
+  }
+
+  private shadowChangeReaches(change: ShadowChange): boolean {
+    const region = change.region;
+    if (region.empty) return false;
+    const boxes = region.all ? 0 : region.count;
+    const stride = 4 * boxes;
+    if (this.changeRects.length < stride * change.tiles) this.changeRects = new Float64Array(stride * change.tiles);
+    const rects = this.changeRects;
+    for (let tile = 0; tile < change.tiles; tile++)
+      for (let b = 0; b < boxes; b++) projectBox(change.views[tile]!, region.boxes, 6 * b, rects.subarray(tile * stride + 4 * b, tile * stride + 4 * b + 4));
+    const box = this.receiverBox, rect = this.receiverRect;
+    for (const mesh of this.receivers) {
+      if (!mesh.receiveShadows) continue;
+      const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+      // Everywhere, or a receiver whose bounds leave its thin instances out.
+      if (region.all || (source instanceof Mesh && source.hasThinInstances)) return true;
+      const info = mesh.getBoundingInfo();
+      const min = info.boundingBox.minimumWorld, max = info.boundingBox.maximumWorld;
+      box[0] = min.x; box[1] = min.y; box[2] = min.z; box[3] = max.x; box[4] = max.y; box[5] = max.z;
+      for (let tile = 0; tile < change.tiles; tile++) {
+        projectBox(change.views[tile]!, box, 0, rect);
+        const reach = change.reaches[tile]!;
+        // Outside its tile's view a receiver samples nothing of it.
+        const x0 = Math.max(-1, rect[0]! - reach), y0 = Math.max(-1, rect[1]! - reach);
+        const x1 = Math.min(1, rect[2]! + reach), y1 = Math.min(1, rect[3]! + reach);
+        if (!(x0 <= x1 && y0 <= y1)) continue;
+        for (let b = 0; b < boxes; b++) {
+          const at = tile * stride + 4 * b;
+          if (rects[at]! <= x1 && rects[at + 2]! >= x0 && rects[at + 1]! <= y1 && rects[at + 3]! >= y0) return true;
+        }
+      }
+    }
+    return false;
   }
 
   dispose(): void {
@@ -141,7 +236,6 @@ export class ReflectedContent {
 
   private sceneState(scene: Scene): void {
     const state = this.state;
-    state.value(sceneShadowDraws(scene));
     const lights = scene.lights;
     state.value(lights.length);
     for (let i = 0; i < lights.length; i++) this.lightState(lights[i]!);
