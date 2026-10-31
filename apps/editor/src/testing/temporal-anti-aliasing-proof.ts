@@ -1,6 +1,7 @@
 import {
   Color3,
   Color4,
+  DirectionalLight,
   Engine,
   FreeCamera,
   MeshBuilder,
@@ -9,9 +10,13 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { normalizeRenderEffectsSettings } from "@haptic/core";
-import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { createAppWebGpuEngine, createPrimitiveMesh, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
+import { setSceneInstancing } from "../../../../packages/render/src/instance-pool";
+import { createPooledPrimitiveVisual } from "../../../../packages/render/src/pooled-primitive-visual";
+import { pooledLeafOf, setActorMeshMaterial } from "../../../../packages/render/src/pooled-visuals";
+import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 96;
@@ -111,7 +116,33 @@ export async function runTemporalAntiAliasingProof(backend: "webgl2" | "webgpu")
       const panned = await read();
       await toggle(false);
       const pannedReference = await read();
-      captures.push({ off, on, next, moved, movedReference, panned, pannedReference, projectionRestored: restored });
+      // A primitive moving every frame under a shadowing sun, synced each frame as Play's is, drawn as a mesh of its own
+      // and as Play pools it: its batch draws in the shadow map before the geometry pass writes its velocity.
+      const shadows = sceneShadowController(scene);
+      shadows.register(new DirectionalLight("Temporal Sun", new Vector3(0.2, -1, 0.4), scene), true);
+      const movingPrimitive = async (pooled: boolean, temporal: boolean) => {
+        setSceneInstancing(scene, pooled);
+        const mover = createPooledPrimitiveVisual(scene, "Temporal Mover", "plane") ?? createPrimitiveMesh(scene, "Temporal Mover", "plane");
+        setActorMeshMaterial(mover, material);
+        mover.position.set(-2.2, -1.2, 0);
+        // A fresh history for each run.
+        await toggle(false);
+        if (temporal) await toggle(true);
+        await frames(8, () => shadows.sync());
+        await frames(16, () => { mover.position.x += 0.06; shadows.sync(); });
+        const pixels = await read();
+        const instanced = pooledLeafOf(mover) !== undefined;
+        mover.dispose();
+        return { pixels, instanced };
+      };
+      const ownMover = await movingPrimitive(false, true);
+      const pooledMover = await movingPrimitive(true, true);
+      const pooledReference = await movingPrimitive(true, false);
+      captures.push({
+        off, on, next, moved, movedReference, panned, pannedReference, projectionRestored: restored,
+        ownMover: ownMover.pixels, pooledMover: pooledMover.pixels, pooledReference: pooledReference.pixels,
+        moverPooled: pooledMover.instanced && !ownMover.instanced,
+      });
     } finally {
       graph.dispose();
       await graph.whenReleased();

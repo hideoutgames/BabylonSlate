@@ -75,6 +75,14 @@ export function hasDrawn(mesh: AbstractMesh): boolean {
   return drawn(mesh) || (source !== mesh && drawn(source));
 }
 
+/**
+ * Whether `mesh` itself has drawn with its current Material (`hasDrawn` without an instance's source): a new instance
+ * is revealed with its actor's other meshes even where its batch has drawn.
+ */
+export function hasDrawnItself(mesh: AbstractMesh): boolean {
+  return drawnWith.has(mesh) && drawnWith.get(mesh) === (mesh.material ?? null);
+}
+
 /** A probe found `mesh` ready to draw with its current Material. */
 export function noteDrawn(mesh: AbstractMesh): void {
   drawnWith.set(mesh, mesh.material ?? null);

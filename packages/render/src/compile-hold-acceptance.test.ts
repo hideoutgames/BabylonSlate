@@ -89,6 +89,8 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isAtlasShadow } from "./shadow-atlas";
 import { findSceneShadowController } from "./shadow-controller";
 import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
+import { sceneInstancePool } from "./instance-pool";
+import { pooledLeafOf } from "./pooled-visuals";
 import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
@@ -487,11 +489,22 @@ const classesLoad = (scripts: ScriptBundleEntry[], assets: SpawnableLightLoad["a
  * the snapshot, as the game worker poses them. `load` is the startup sources' compiled Classes and dependencies, whose
  * lights it may spawn.
  */
-function playWorld(model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2", load = classesLoad([])) {
+/**
+ * Whether `playWorld` gives the Engine hardware instancing unless a case says otherwise, which turns Play's primitive
+ * pooling on (`sceneInstancing`). Off while the pooled run of every case is brought up (`HAPTIC_GATE_INSTANCING=1`).
+ */
+const INSTANCING_BY_DEFAULT = process.env.HAPTIC_GATE_INSTANCING === "1";
+
+function playWorld(
+  model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2", load = classesLoad([]),
+  { instancing = INSTANCING_BY_DEFAULT }: { instancing?: boolean } = {},
+) {
   // Preparation polls every 16 ms and the Play pause waits 250 ms: both run on this clock.
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"], now: 1_000 });
   cleanups.push(() => vi.useRealTimers());
   const engine = headlessEngine();
+  // Play pools primitives where the Engine instances in hardware (`sceneInstancing`).
+  if (instancing) engine.getCaps().instancedArrays = true;
   const driver = driverModel(engine, model);
   const holds: boolean[] = [];
   const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -587,11 +600,16 @@ function playWorld(model: Model, actors: Actor[], materials: string[] = [], subj
    * The Effect the subject's submesh draws with in the view's object pass (the camera's own pass is only probed): the
    * crate by default (it receives every light).
    */
+  /** The mesh whose submeshes draw the visual named `name`: a pooled visual's group source, or the mesh itself. */
+  const drawn = (name: string) => {
+    const root = handle.scene.getMeshByName(name);
+    return (root && pooledLeafOf(root)?.sourceMesh) ?? root;
+  };
   const subjectEffect = () => {
     const pass = engine.getRenderPassNames().lastIndexOf("Forward objects#0");
-    return pass < 0 ? null : handle.scene.getMeshByName(subject)?.subMeshes?.[0]?._getDrawWrapper(pass)?.effect ?? null;
+    return pass < 0 ? null : drawn(subject)?.subMeshes?.[0]?._getDrawWrapper(pass)?.effect ?? null;
   };
-  return { engine, handle, driver, holds, world, place, remove, move, frame, views, subjectEffect, view };
+  return { engine, handle, driver, holds, world, place, remove, move, frame, views, subjectEffect, view, drawn };
 }
 
 type PlayWorld = ReturnType<typeof playWorld>;
@@ -776,7 +794,15 @@ function spawnDraws(): Set<string> {
   const render = Mesh.prototype.render;
   vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
     const engine = this.getScene().getEngine();
-    if (!engine.getCurrentRenderPassName().startsWith("warm ")) drawn.add(this.name);
+    if (!engine.getCurrentRenderPassName().startsWith("warm ")) {
+      drawn.add(this.name);
+      // A batch draws its visible instances: a pooled visual's leaf, named for its slot root, under that root.
+      const subMesh = args[0];
+      for (const instance of this._getInstancesRenderList(subMesh._id).visibleInstances[subMesh._id] ?? []) {
+        drawn.add(instance.name);
+        if (instance.parent) drawn.add(instance.parent.name);
+      }
+    }
     return render.apply(this, args);
   });
   return drawn;
@@ -931,7 +957,7 @@ describe("compile holds after the first frame", () => {
     await settle(world);
     const pass = () => world.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
     const effects = () => barrels.map((actor) =>
-      world.handle.scene.getMeshByName(`actor-${actor.slotId}`)!.subMeshes[0]!._getDrawWrapper(pass())?.effect ?? null);
+      world.drawn(`actor-${actor.slotId}`)!.subMeshes[0]!._getDrawWrapper(pass())?.effect ?? null);
     const before = effects();
     world.driver.arm();
     toggleTwoSided(world.handle.scene, ...barrels.map((actor) => world.handle.scene.getMeshByName(`actor-${actor.slotId}`)!.material!));
@@ -1546,7 +1572,11 @@ describe("compile holds after the first frame", () => {
     // Nothing warmed this Material: only the new mesh is left out while its variant compiles, and the view keeps drawing.
     const world = playWorld(model, [], ["surface-a"]);
     const drawn = spawnDraws();
-    const barrel = () => world.handle.scene.getMeshByName("actor-20");
+    /** The mesh that draws the barrel (a pooled visual's leaf), which is what is hidden. */
+    const barrel = () => {
+      const root = world.handle.scene.getMeshByName("actor-20");
+      return (root && pooledLeafOf(root)) ?? root;
+    };
     let hiddenWhilePending = true;
     let pendingFrames = 0;
     const record = await measure(world, () => {
@@ -1617,7 +1647,11 @@ describe("compile holds after the first frame", () => {
     const world = playWorld(model, [], ["surface-a"]);
     const drawn = spawnDraws();
     const names = ["actor-20|body", "actor-20|lid"];
-    const part20 = (name: string) => world.handle.scene.getMeshByName(name);
+    /** The mesh that draws the part (a pooled part's leaf), which is what is hidden and revealed. */
+    const part20 = (name: string) => {
+      const root = world.handle.scene.getMeshByName(name);
+      return (root && pooledLeafOf(root)) ?? root;
+    };
     /** Each reveal: the part, and the world view frame it happened in. */
     const revealed: Array<[string, number]> = [];
     let hiddenWhilePending = true;
@@ -1633,7 +1667,8 @@ describe("compile holds after the first frame", () => {
       world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
       for (let index = 0; index < 6; index++) await world.frame();
       cleanups.push(onMeshRevealed(world.handle.scene, (mesh) => {
-        if (names.includes(mesh.name)) revealed.push([mesh.name, world.views.length]);
+        const name = mesh.name.replace(/:drawn$/, "");
+        if (names.includes(name)) revealed.push([name, world.views.length]);
       }));
     }, () => {
       // Only a pending compile or pipeline keeps the lid from its first frame; a synchronous link reveals both at once.
@@ -1980,6 +2015,102 @@ async function editorView() {
  * an actor the level holds, compile no shader, wait on no WebGPU pipeline and create none in a shadow pass. A merge gate:
  * CI's unit job runs it.
  */
+/** Where Play pools primitives: pipelines that are not deferred (`sceneInstancing`). */
+const POOLED_MODELS: readonly Model[] = ["sync", "parallel"];
+
+describe("pooled primitives", () => {
+  const box = (slotId: number, position: Vec3): Actor =>
+    ({ slotId, guid: `box-${slotId}`, position, assign: { meshAssetGuid: null, meshKind: "box" } });
+  /** What a cause compiled and held, with the pool's groups and members after it. */
+  const expectNothingCompiled = (world: PlayWorld, record: CauseRecord) => expect({
+    effects: record.effects, pipelines: record.pipelines + record.warmPipelines, synchronous: world.driver.synchronous.size,
+    heldFrames: record.heldFrames, holdRaised: record.holdRaised, recovered: record.recovered,
+  }, JSON.stringify(record)).toEqual({ effects: 0, pipelines: 0, synchronous: 0, heldFrames: 0, holdRaised: false, recovered: true });
+
+  it.each(POOLED_MODELS)("twenty boxes spawned into the load's drawn group compile nothing: %s", async (model) => {
+    // The floor and crate are boxes of the engine default Material: one group, its instanced variants drawn by the load.
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1])], [], "actor-2", classesLoad([]), { instancing: true });
+    const pool = sceneInstancePool(world.handle.scene);
+    const record = await measure(world, () => world.place(...Array.from({ length: 20 }, (_, index) =>
+      box(30 + index, [-4 + (index % 5) * 2, 1, -2 + Math.floor(index / 5) * 1.5]))));
+    expectNothingCompiled(world, record);
+    expect(pool.diagnostics()).toMatchObject({ groups: 1, pooled: 22 });
+  });
+
+  it.each(POOLED_MODELS)("a box whose Material changes to one another group draws compiles nothing: %s", async (model) => {
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
+      { instancing: true });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    const record = await measure(world, () => world.handle.applyCommand({ type: "assignMaterial", slotId: 2, materialAssetGuid: "surface-a" }));
+    expectNothingCompiled(world, record);
+    expect(pooledLeafOf(world.handle.scene.getMeshByName("actor-2")!)?.sourceMesh)
+      .toBe(pooledLeafOf(world.handle.scene.getMeshByName("actor-20")!)?.sourceMesh);
+  });
+
+  it.each(POOLED_MODELS)("a plain user of a Material only pooled groups drew compiles its variant as a swap, holding nothing: %s", async (model) => {
+    // A box sorted by an explicit order draws unpooled: its plain variant of the pooled Material is new mid-game. It is
+    // hidden until it compiles, and the view never holds nor waits on it.
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
+      { instancing: true });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    const record = await measure(world, () => {
+      world.place({ ...box(21, [-2, 1, 1]), assign: { meshAssetGuid: null, meshKind: "box", orderInLayer: 1 } });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 21, materialAssetGuid: "surface-a" });
+    });
+    const plain = world.handle.scene.getMeshByName("actor-21")!;
+    expect({
+      pooled: pooledLeafOf(plain) !== undefined, heldFrames: record.heldFrames, holdRaised: record.holdRaised,
+      recovered: record.recovered, shown: !isRevealPending(plain),
+    }, JSON.stringify(record)).toEqual({ pooled: false, heldFrames: 0, holdRaised: false, recovered: true, shown: true });
+  });
+
+  it.each(POOLED_MODELS)("a load with a plain and a pooled user of one Material presents, and a spawn of either compiles nothing: %s", async (model) => {
+    const sorted = (slotId: number, position: Vec3): Actor =>
+      ({ ...box(slotId, position), assign: { meshAssetGuid: null, meshKind: "box", orderInLayer: 1 } });
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1]), sorted(21, [-2, 1, 1])], ["surface-a"],
+      "actor-2", classesLoad([]), { instancing: true });
+    for (const slotId of [20, 21]) world.handle.applyCommand({ type: "assignMaterial", slotId, materialAssetGuid: "surface-a" });
+    const record = await measure(world, () => {
+      world.place(box(22, [1, 1, -2]), sorted(23, [-1, 1, -2]));
+      for (const slotId of [22, 23]) world.handle.applyCommand({ type: "assignMaterial", slotId, materialAssetGuid: "surface-a" });
+    });
+    expectNothingCompiled(world, record);
+  });
+
+  it.each(POOLED_MODELS)("a mesh of its own drawn with a Material only pooled groups drew holds no preparation: %s", async (model) => {
+    // Its plain variant was never drawn, so it is cold; the view's preparation, which draws no frame, admits it rather
+    // than wait on it until its stall.
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
+      { instancing: true });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    await settle(world);
+    const plain = MeshBuilder.CreateBox("actor-21", { size: 1 }, world.handle.scene);
+    plain.position.set(-2, 1, 1);
+    plain.material = world.drawn("actor-20")!.material;
+    await settle(world);
+    const record = await measure(world, () => world.place(box(22, [1, 1, -2])));
+    expect({ shown: !isRevealPending(plain), heldFrames: record.heldFrames, recovered: record.recovered })
+      .toEqual({ shown: true, heldFrames: 0, recovered: true });
+  });
+
+  it.each(POOLED_MODELS)("the last member of a drawn group despawned and spawned again compiles nothing: %s", async (model) => {
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
+      { instancing: true });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    await settle(world);
+    const pool = sceneInstancePool(world.handle.scene);
+    world.remove(20);
+    await world.frame();
+    expect(pool.diagnostics()).toMatchObject({ groups: 1, retained: 1 });
+    const record = await measure(world, () => {
+      world.place(box(20, [2, 1, 1]));
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    });
+    expectNothingCompiled(world, record);
+    expect(pool.diagnostics()).toMatchObject({ groups: 2, retained: 0 });
+  });
+});
+
 describe("the lighting CI gate", () => {
   const actors = () => [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1])];
   /** A Painter 2D surface: the unlit Material, textured and blended (`painter2d-mesh.ts`). */

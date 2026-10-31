@@ -69,6 +69,13 @@ for (const backend of ["webgl2"] as const) {
       expect(trailPixels(capture.moved, capture.movedReference, result.width), "a moved surface leaves no trail").toBe(0);
       expect(difference(capture.moved, capture.movedReference).mean, "a moved surface resolves").toBeLessThan(6);
       expect(difference(capture.panned, capture.pannedReference).mean, "history follows camera motion").toBeLessThan(5);
+      // A pooled primitive moving under a shadowing sun resolves as a moved surface does, leaving no trail, and its
+      // edges are smoothed as a mesh of its own's are.
+      expect(capture.moverPooled, "the moving primitive drew pooled").toBe(true);
+      expect(trailPixels(capture.pooledMover, capture.pooledReference, result.width), "a moving pooled primitive leaves no trail").toBe(0);
+      expect(difference(capture.pooledMover, capture.pooledReference).mean, "a moving pooled primitive resolves").toBeLessThan(6);
+      expect(Math.abs(partialPixels(capture.pooledMover) - partialPixels(capture.ownMover)), "pooled edges are smoothed alike")
+        .toBeLessThanOrEqual(partialPixels(capture.ownMover) * 0.2);
     }
   });
 }

@@ -1,10 +1,11 @@
 import { InstancedMesh, Material, Mesh, MultiMaterial, type AbstractMesh, type Scene } from "@babylonjs/core";
-import { hasStockVertexStage } from "./shadow-material-policy";
+import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { hasPerMeshBindings } from "./unlit-material-blocks";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { markInstanceSource } from "./instance-source";
 import { hasDrawn } from "./reveal-pending";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
 
 /**
  * Automatic instancing: a per-Scene pool of hidden source meshes whose regular instances draw actors that share a
@@ -51,7 +52,7 @@ export function materialIneligibility(mesh: AbstractMesh, material: Material): I
   if (hasPerMeshBindings(material)) return "perMeshBinding";
   if (material.fillMode !== Material.TriangleFillMode || material.wireframe || material.pointsCloud) return "fillMode";
   // World Position Offset and other authored vertex stages: an instance's bounds and the CPU pick must stay exact.
-  return hasStockVertexStage(material) ? null : "vertexStage";
+  return hasStockOrPlannedVertexStage(material) ? null : "vertexStage";
 }
 
 /**
@@ -121,6 +122,18 @@ function groupId(key: InstanceGroupKey): string {
 
 const sources = new WeakSet<Mesh>();
 
+/**
+ * Gives `member`, moving to `source`'s group, the instance buffers `source` registered, as `createInstance` gives a
+ * new instance: its own value where it had one, the source's otherwise. Buffers only the old source had leave with it.
+ */
+function adoptInstancedBuffers(member: InstancedMesh, source: Mesh): void {
+  if (!source.instancedBuffers) return;
+  const own: Record<string, unknown> = member.instancedBuffers ?? {};
+  const buffers: Record<string, unknown> = {};
+  for (const kind in source.instancedBuffers) buffers[kind] = kind in own ? own[kind] : source.instancedBuffers[kind];
+  member.instancedBuffers = buffers as InstancedMesh["instancedBuffers"];
+}
+
 /** Whether `mesh` is a pool group's hidden source. */
 export function isInstancePoolSource(mesh: Mesh): boolean {
   return sources.has(mesh);
@@ -143,7 +156,9 @@ export class SceneInstancePool {
   /** A new member of `key`'s group, at the origin, unparented; the caller places and parents it. */
   join(key: InstanceGroupKey, name: string): InstancedMesh {
     const group = this.group(key);
-    const member = new InstancedMesh(name, group.source);
+    // Through the source's factory, which gives the member the source's registered instance buffers (an outline's
+    // identity stream): a member without them throws where their owner writes its value.
+    const member = group.source.createInstance(name);
     this.memberGroups.set(member, group);
     group.members.add(member);
     member.onDisposeObservable.addOnce(() => this.left(member));
@@ -164,6 +179,7 @@ export class SceneInstancePool {
     previous.source.removeInstance(member);
     previous.members.delete(member);
     (member as unknown as { _sourceMesh: Mesh })._sourceMesh = next.source;
+    adoptInstancedBuffers(member, next.source);
     next.source.addInstance(member);
     next.members.add(member);
     this.memberGroups.set(member, next);
@@ -281,6 +297,9 @@ export class SceneInstancePool {
   /** An empty group that drew is kept for a respawn (within `RETAINED_EMPTY_GROUPS`); one that never drew goes. */
   private emptied(group: InstanceGroup): void {
     if (group.members.size || !this.groups.has(group.id)) return;
+    // Its batch drew where a pass's draw wrapper holds a ready Effect, whether or not a probe noted a member drawn.
+    group.drawn ||= (group.source.subMeshes ?? []).some((part) =>
+      part._drawWrappers.some((wrapper) => !!wrapper?.effect?.isReady()));
     if (!group.drawn) {
       this.dispose(group);
       return;
@@ -325,9 +344,14 @@ export function setSceneInstancing(scene: Scene, enabled: boolean): void {
   else instancing.delete(scene);
 }
 
-/** Whether visuals built in `scene` draw through its instance pool (`setSceneInstancing`). */
+/**
+ * Whether visuals built in `scene` draw through its instance pool (`setSceneInstancing`), which needs hardware
+ * instancing: without it Babylon draws each instance on its own, which a pool would only add to. Not where pipelines
+ * are deferred (WebGPU) yet: their warm draws, caster warm and reveal lookups still key by mesh, not by group source.
+ */
 export function sceneInstancing(scene: Scene): boolean {
-  return instancing.has(scene);
+  const engine = scene.getEngine();
+  return instancing.has(scene) && engine.getCaps().instancedArrays && !pipelinesDeferred(engine);
 }
 
 /** The pool member `mesh` is, if it is one. */
