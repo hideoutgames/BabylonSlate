@@ -10,6 +10,7 @@ export { sceneWaterQuality, sceneWaterQualityRevision, sceneWaterQualityDeviceCl
 export { clampWaterQualityToDevice, type WaterQualityDeviceClamp, type WaterDeviceCapabilities, type WaterDeviceView } from "./water-quality-device";
 export { waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera, type WaterPlanarReflection, type WaterPlanarReflectionDiagnostics } from "./water-planar-reflection";
 export { mirrorDiagnostics, type MirrorDiagnostics } from "./mirrors";
+export { setPlanarFootprintCulling } from "./planar-mirror";
 export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
 export * from "./create-null-engine";
