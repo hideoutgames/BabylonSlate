@@ -477,7 +477,7 @@ function LinkAxesToggle({
             pressed={linked}
             disabled={row.disabled}
             aria-label={name}
-            onPressedChange={onLinkedChange}
+            onPressedChange={(pressed) => onLinkedChange(pressed)}
             data-testid={`property-${row.id}-link`}
           />
         }

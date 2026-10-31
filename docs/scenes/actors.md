@@ -45,7 +45,9 @@ Deleting from the row menu with several actors selected offers **Delete This Obj
 
 Selecting an actor shows its **Name**, **Position**, **Rotation** (in degrees), **Scale**, **Visible** and **Locked**. In a 2D scene, Position and Scale show X and Y, Rotation shows Z, and **Z-Order** sets which actors draw in front: a higher Z-Order is nearer the camera.
 
-With several actors selected, the heading reads **N Actors** and edits apply to all of them; values that differ show as mixed. The **Primary Actor** section holds the name and lock of the actor whose components are shown.
+The link button beside **Scale** keeps the actor's proportions: while it is on, changing one axis scales the others by the same amount. If the axis you change is 0, the other axes take the same value. The link starts off, and the editor remembers your choice for every Scale field, including component and collider Scale, until you change it.
+
+With several actors selected, the heading reads **N Actors** and edits apply to all of them; values that differ show as mixed. With the Scale link on, each actor keeps its own proportions. The **Primary Actor** section holds the name and lock of the actor whose components are shown.
 
 Use **Filter Properties** at the top to find a field by name.
 
