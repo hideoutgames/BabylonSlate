@@ -15,6 +15,13 @@ import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 const SEA = -6;
 /** Camera positions and the point each looks at: the far neighbours sit in the frame's upper part. */
 const CAMERAS: ReadonlyArray<{ position: readonly [number, number, number]; target: readonly [number, number, number] }> = [
+  // Global Water's dense cells follow the camera's X/Z, so neighbours a few hundred metres away lie in its wide far
+  // cells. Each camera looks down far enough that the frame's top edge still meets water.
+  { position: [0, 34, 0], target: [0, SEA, 90] },
+  { position: [0, 300, 200], target: [-40, SEA, 620] },
+  { position: [300, 200, 100], target: [320, SEA, 420] },
+  { position: [0, 600, 0], target: [100, SEA, 500] },
+] target: readonly [number, number, number] }> = [
   // Each looks about 24 degrees down: the frame's top edge meets the water some 57 camera heights away.
   { position: [0, 34, 0], target: [0, SEA, 90] },
   { position: [-60, 34, -40], target: [-15, SEA, 32] },
@@ -40,8 +47,8 @@ async function colour(scene: Scene, name: string, rgb: readonly number[]) {
 
 export async function runWaterCoverageProof(backend: "webgl2" | "webgpu" = "webgl2", density: number = 1) {
   const canvas = document.createElement("canvas");
-  canvas.width = 240;
-  canvas.height = 135;
+  canvas.width = 320;
+  canvas.height = 180;
   document.getElementById("root")!.append(canvas);
   const engine: AbstractEngine = backend === "webgpu"
     ? await createAppWebGpuEngine(canvas)

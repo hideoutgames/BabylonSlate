@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import type { runWaterCoverageProof } from "../apps/editor/src/testing/water-coverage-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
@@ -48,6 +49,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
           return canvas.toDataURL("image/png").split(",")[1]!;
         }, { pixels: view.pixels, width: result.width, height: result.height, flipped: result.flipped });
         await testInfo.attach(`water-coverage-${backend}-${density}-view${index}.png`, { body: Buffer.from(png, "base64"), contentType: "image/png" });
+        writeFileSync(testInfo.outputPath(`view${index}.png`), Buffer.from(png, "base64"));
       }
       // Water fills every view to the top of the frame: any background is a hole no body keeps.
       expect(holes.filter((view) => view.count > 0).map((view) => `${view.camera}: ${view.count} at ${view.where}`)).toEqual([]);
