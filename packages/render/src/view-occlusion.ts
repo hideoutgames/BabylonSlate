@@ -1,4 +1,5 @@
-import { Camera, Vector3, type AbstractEngine, type AbstractMesh, type Scene } from "@babylonjs/core";
+import { Camera, Matrix, Vector3, type AbstractEngine, type AbstractMesh, type Node, type Scene, type TransformNode } from "@babylonjs/core";
+import type { ModelOccluder } from "@haptic/assets";
 import { effectDrawnOn } from "./first-draw-stats";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { drawingMesh } from "./instance-source";
@@ -33,6 +34,40 @@ export interface OccluderShape {
   readonly min: readonly [number, number, number];
   readonly max: readonly [number, number, number];
   readonly singleSided?: boolean;
+  /** The node whose space the box is in; the mesh's own when absent (a Model's box is in its actor's space). */
+  readonly frame?: TransformNode;
+  /**
+   * Bounds in the box's space the camera must be outside of: a Model's baked box lies inside its closed surface, which
+   * may enclose rooms a viewer inside them sees.
+   */
+  readonly viewerOutside?: { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] };
+  /** Every mesh the box stands in for: it occludes only while all of them do (a Model's glass hides nothing). */
+  readonly parts?: readonly AbstractMesh[];
+}
+
+/** Whether a mesh occludes: "auto" when its shape and material allow, "always" also when small on screen, "never". */
+export type OccluderMode = "auto" | "always" | "never";
+
+const modes = new WeakMap<Node, OccluderMode>();
+
+/** Sets the Occluder mode of `node` and the meshes under it (a component's root, from its Occluder property). */
+export function setOccluderMode(node: Node, mode: OccluderMode): void {
+  if (mode === "auto") modes.delete(node);
+  else modes.set(node, mode);
+}
+
+/** Sets `node`'s Occluder mode from an authored Occluder property value ("auto" when absent or unknown). */
+export function applyOccluderProperty(node: Node, value: unknown): void {
+  setOccluderMode(node, value === "always" || value === "never" ? value : "auto");
+}
+
+/** The Occluder mode set on `mesh` or its nearest ancestor. */
+export function occluderMode(mesh: AbstractMesh): OccluderMode {
+  for (let node: Node | null = mesh; node; node = node.parent) {
+    const mode = modes.get(node);
+    if (mode) return mode;
+  }
+  return "auto";
 }
 
 /** Triangles drawn as occluders per frame, the largest on screen first. */
@@ -58,6 +93,29 @@ const frozenScenes = new WeakSet<Scene>();
 export function registerOccluderShape(mesh: AbstractMesh, shape: OccluderShape | null): void {
   if (shape) shapes.set(mesh, shape);
   else shapes.delete(mesh);
+}
+
+/**
+ * Gives a Model instance its baked occluder (`ModelPayload.occluder`, in the space of its actor root `root`): the
+ * largest of its meshes carries it, drawn while the camera is outside the model's bounds. None when it has none.
+ */
+export function registerModelOccluder(root: TransformNode, occluder: ModelOccluder | null | undefined): void {
+  if (!occluder) return;
+  let carrier: AbstractMesh | null = null, largest = -1;
+  const parts = root.getChildMeshes(false);
+  for (const mesh of parts) {
+    if (mesh.getTotalVertices() === 0) continue;
+    const { minimum, maximum } = mesh.getBoundingInfo().boundingBox;
+    const volume = (maximum.x - minimum.x) * (maximum.y - minimum.y) * (maximum.z - minimum.z);
+    if (volume > largest) {
+      largest = volume;
+      carrier = mesh;
+    }
+  }
+  if (!carrier) return;
+  shapes.set(carrier, {
+    min: occluder.min, max: occluder.max, frame: root, viewerOutside: { min: occluder.boundsMin, max: occluder.boundsMax }, parts,
+  });
 }
 
 /** The occluder shape of `mesh`, or of the source it is an instance of. */
@@ -185,6 +243,8 @@ export class ViewOcclusion {
   /** The sign the view and projection give a world triangle's screen winding (positive: Babylon's left-handed own). */
   private viewParity = 1;
   private readonly corners = new Float64Array(24);
+  private readonly inverse = new Matrix();
+  private readonly eye = new Vector3();
   private readonly flat = new Float64Array(24);
   readonly diagnostics: ViewOcclusionDiagnostics = { tested: 0, culled: 0, occluders: 0, triangles: 0, ms: 0 };
   /** The meshes the last filtered frame left out. */
@@ -236,9 +296,12 @@ export class ViewOcclusion {
     const texelScale = projection[5]! * BUFFER_HEIGHT * 0.5;
     for (const mesh of meshes) {
       if (!occluderShape(mesh) || !occludes(mesh)) continue;
+      const mode = occluderMode(mesh);
+      if (mode === "never") continue;
       const sphere = mesh.getBoundingInfo().boundingSphere;
       const distance = Math.max(Vector3.Distance(sphere.centerWorld, eye) - sphere.radiusWorld, camera.minZ);
-      const size = (sphere.radiusWorld / distance) * texelScale;
+      // "always" draws whatever its size, first.
+      const size = mode === "always" ? Infinity : (sphere.radiusWorld / distance) * texelScale;
       if (size < MIN_OCCLUDER_TEXELS) continue;
       order.push(candidates.length);
       candidates.push(mesh);
@@ -252,8 +315,9 @@ export class ViewOcclusion {
     for (const index of order) {
       if (diagnostics.triangles + 12 > OCCLUDER_TRIANGLE_BUDGET) break;
       const mesh = candidates[index]!;
-      diagnostics.triangles += this.drawOccluder(mesh, occluderShape(mesh)!);
-      diagnostics.occluders += 1;
+      const triangles = this.drawOccluder(mesh, occluderShape(mesh)!, camera);
+      diagnostics.triangles += triangles;
+      if (triangles > 0) diagnostics.occluders += 1;
     }
     this.buffer.finish();
     candidates.length = 0;
@@ -261,8 +325,18 @@ export class ViewOcclusion {
   }
 
   /** Draws `shape` with `mesh`'s world matrix; returns the triangles drawn. */
-  private drawOccluder(mesh: AbstractMesh, shape: OccluderShape): number {
-    const world = mesh.getWorldMatrix().m;
+  private drawOccluder(mesh: AbstractMesh, shape: OccluderShape, camera: Camera): number {
+    const frame = shape.frame ?? mesh;
+    const world = frame.getWorldMatrix().m;
+    const outside = shape.viewerOutside;
+    if (outside) {
+      frame.getWorldMatrix().invertToRef(this.inverse);
+      const eye = Vector3.TransformCoordinatesToRef(camera.globalPosition, this.inverse, this.eye);
+      // A hair of room for the near plane: a viewer at the model's skin may already see inside.
+      const margin = camera.minZ * 2;
+      if (eye.x > outside.min[0] - margin && eye.x < outside.max[0] + margin && eye.y > outside.min[1] - margin
+        && eye.y < outside.max[1] + margin && eye.z > outside.min[2] - margin && eye.z < outside.max[2] + margin) return 0;
+    }
     const corners = this.corners;
     for (let corner = 0; corner < 8; corner++) {
       corners[corner * 3] = corner & 1 ? shape.max[0] : shape.min[0];
@@ -333,15 +407,21 @@ function determinant3(m: ArrayLike<number>): number {
 
 /** Whether `mesh`, an occluder in the view's list, hides what is behind it this frame. */
 function occludes(mesh: AbstractMesh): boolean {
-  if (mesh.renderingGroupId !== RENDERING_GROUP.world || mesh.visibility < 1 || isEditorHelperMesh(mesh)) return false;
+  if (mesh.renderingGroupId !== RENDERING_GROUP.world || isEditorHelperMesh(mesh) || !opaque(mesh)) return false;
   const source = drawingMesh(mesh);
   if (source.hasThinInstances || hasDeformingShadowBounds(source)) return false;
+  const shape = occluderShape(mesh)!;
+  if (shape.parts) for (const part of shape.parts) if (part !== mesh && !part.isDisposed() && part.isEnabled() && part.isVisible && !opaque(part)) return false;
+  return !shape.singleSided || !(mesh.material?.backFaceCulling ?? true);
+}
+
+/** Whether `mesh` draws solid: neither faded, blended, alpha-tested, depth-less nor wireframe. */
+function opaque(mesh: AbstractMesh): boolean {
+  if (mesh.visibility < 1) return false;
   const material = mesh.material;
   if (!material) return true;
   if (material.needAlphaBlendingForMesh(mesh) || material.needAlphaTesting() || material.depthFunction !== 0) return false;
-  if (material.disableDepthWrite || material.wireframe || material.pointsCloud) return false;
-  const shape = occluderShape(mesh)!;
-  return !shape.singleSided || !material.backFaceCulling;
+  return !material.disableDepthWrite && !material.wireframe && !material.pointsCloud;
 }
 
 /** Whether `mesh` may leave the list when hidden. */

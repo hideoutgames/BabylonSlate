@@ -28,6 +28,7 @@ describe("normalizeModelPayload", () => {
       importScale: 1,
       simpleColliders: [],
       autoLod: true,
+      occluder: null,
     });
     expect("materialCount" in payload).toBe(false);
     expect("textureCount" in payload).toBe(false);
@@ -136,6 +137,7 @@ describe("packed Model envelope", () => {
       skeletonGuid: "skel-1",
       simpleColliders: [],
       autoLod: false,
+      occluder: null,
     });
     expect(decodePackedModelAsset(packed)).toEqual({
       payload: {
@@ -145,6 +147,7 @@ describe("packed Model envelope", () => {
         skeletonGuid: "skel-1",
         simpleColliders: [],
         autoLod: false,
+        occluder: null,
       },
       source: glb,
     });

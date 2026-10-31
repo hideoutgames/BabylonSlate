@@ -673,6 +673,8 @@ export type CommandMessage =
         overlayStyle?: import("@haptic/core").OverlayVisualStyle;
         castShadows?: boolean;
         receiveShadows?: boolean;
+        /** A MeshComponent's Occluder: "auto" (absent), "always" or "never". */
+        occluder?: "auto" | "always" | "never";
         meshKind?: string | null;
         meshAssetGuid?: string | null;
         parentId?: string | null;

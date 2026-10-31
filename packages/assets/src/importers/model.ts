@@ -1,3 +1,4 @@
+import { bakeGltfOccluder } from "../occluder-bake";
 import { createDefaultMaterialDocument, migrateLegacyShaderPayload } from "@haptic/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
@@ -238,6 +239,8 @@ function importFromBrowse(
     skeletonGuid == null
       ? [cookGeneratedCollisionFromGltf(bytes, { importScale })]
       : [];
+  // A skinned model's vertices leave their rest pose, so it never occludes.
+  const occluder = skeletonGuid == null ? bakeGltfOccluder(bytes, importScale) : null;
 
   results.unshift({
     type: "Model",
@@ -261,6 +264,7 @@ function importFromBrowse(
         skeletonGuid,
         importScale,
         simpleColliders,
+        occluder,
       }),
     } as Record<string, unknown>,
     chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],

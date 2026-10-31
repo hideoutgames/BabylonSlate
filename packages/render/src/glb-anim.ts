@@ -1,3 +1,4 @@
+import { registerModelOccluder } from "./view-occlusion";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import "./gltf-loader";
 import { Animation } from "@babylonjs/core/Animations/animation";
@@ -773,6 +774,7 @@ export function beginSlotModelAnimLoad(
       for (const group of wrapped) bundleOwnedGroups.add(group);
       prepared.wrapper.parent = placeholder;
       prepared.staging.dispose(true);
+      registerModelOccluder(placeholder, binding.modelPayloads?.get(clipAssetGuid)?.occluder);
       meta[MODEL_INSTANCE_KEY] = prepared;
       if (!meta.disposeModelOnDespawn) {
         meta.disposeModelOnDespawn = true;

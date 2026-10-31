@@ -19,6 +19,7 @@ Select an actor, then choose **Add Component > Rendering > Mesh**. You can also 
 | Collision Responses | Ignore, Overlap or Block for every layer. Shown when Collision is on. |
 | Cast Shadows | Casts shadows. Default on. |
 | Receive Shadows | Receives shadows. Default on. |
+| Occluder | With [Occlusion Culling](../graphics/index.md#occlusion-culling) on, whether this mesh hides what is behind it. **Auto** (default): when it is solid and large enough on screen. **Always**: also when small on screen. **Never**: it hides nothing. |
 
 ## Notes
 
