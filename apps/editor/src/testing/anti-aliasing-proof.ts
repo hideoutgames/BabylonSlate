@@ -3,15 +3,23 @@ import {
   Color4,
   Engine,
   FreeCamera,
+  HemisphericLight,
   MeshBuilder,
+  Quaternion,
   PBRMaterial,
   RawTexture,
   Scene,
   Texture,
   Vector3,
 } from "@babylonjs/core";
-import { normalizeRenderEffectsSettings, normalizeRenderingQuality, type AntiAliasingMode } from "@haptic/core";
-import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import {
+  createDefaultWaterDefinition, normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeWaterBody, type AntiAliasingMode,
+} from "@haptic/core";
+import {
+  builtInWaterMaterial, compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh,
+  setSceneRenderSettings, setSceneWaterTime,
+} from "@haptic/render";
+import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { allowSceneScreenShadows, sceneMultisampleCount } from "../../../../packages/render/src/render-settings";
@@ -127,6 +135,97 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
       engine.endFrame();
     }
     return { width: WIDTH, captures, reservations: managedRenderReservations(engine) };
+  } finally {
+    engine.dispose();
+    canvas.remove();
+  }
+}
+
+/** A rough graph Material of one colour, drawn with the light block. */
+async function matte(scene: Scene, name: string, color: Color3, roughness = 1) {
+  const doc = createDefaultMaterialDocument(name);
+  doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [color.r, color.g, color.b];
+  doc.nodes.find((node) => node.id === "output")!.properties[materialPinDefaultPropertyKey("roughness")] = [roughness];
+  const lowered = lowerMaterialDocument(doc);
+  if (!lowered.ok) throw new Error(`${name} did not lower`);
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name });
+  if (!compiled.ok) throw new Error(`${name} did not compile`);
+  await compiled.ready;
+  return compiled.material;
+}
+
+/**
+ * Silhouettes over effects that read depth: a lit pier and boxes over a smooth floor and still water, with Ambient
+ * Occlusion and Real-Time Reflections on, drawn by a world view at MSAA Off and 4x. MSAA changes only edge pixels when
+ * every reader's depth matches the resolved colour; a halo shows as changed pixels beside the silhouettes.
+ */
+export async function runAntiAliasingHaloProof(backend: "webgl2" | "webgpu") {
+  const canvas = document.createElement("canvas");
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  document.getElementById("root")!.append(canvas);
+  const engine = backend === "webgpu"
+    ? await createAppWebGpuEngine(canvas)
+    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  engine.setSize(WIDTH, HEIGHT);
+  const captures: { label: string; samples: number; pixels: number[] }[] = [];
+  try {
+    const scene = new Scene(engine);
+    scene.clearColor = new Color4(0.55, 0.7, 0.9, 1);
+    configureEditorRenderingGroups(scene);
+    allowSceneScreenShadows(scene, () => false);
+    const camera = new FreeCamera("Halo Camera", new Vector3(0, 3, -7), scene);
+    camera.rotationQuaternion = Quaternion.FromEulerAngles(0.42, 0, 0);
+    camera.minZ = 0.1;
+    camera.maxZ = 100;
+    scene.activeCamera = camera;
+    new HemisphericLight("Halo Sky", new Vector3(0.3, 1, -0.2), scene);
+    const floor = MeshBuilder.CreateBox("Halo Floor", { width: 10, height: 0.2, depth: 10 }, scene);
+    floor.material = await matte(scene, "Halo Floor", new Color3(0.9, 0.12, 0.08), 0.2);
+    floor.position.y = -1.2;
+    const grey = await matte(scene, "Halo Grey", new Color3(0.8, 0.8, 0.8));
+    const pier = MeshBuilder.CreateBox("Halo Pier", { width: 1, height: 3, depth: 1 }, scene);
+    pier.material = grey;
+    pier.position.set(1.5, 0, 1);
+    const crate = MeshBuilder.CreateBox("Halo Crate", { size: 0.8 }, scene);
+    crate.material = grey;
+    crate.rotation.y = 0.5;
+    crate.position.set(-1.8, -0.7, -1);
+    createWaterMesh(scene, "Halo Lake", normalizeWaterBody({ width: 4, length: 4, resolution: 16 }),
+      { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0, detailWaves: 0, refraction: 0.35 }, builtInWaterMaterial(scene));
+    setSceneWaterTime(scene, 0);
+    const effects = normalizeRenderEffectsSettings({ ambientOcclusion: { enabled: true }, reflections: { enabled: true } });
+    const graph = new ForwardSceneFrameGraph(scene);
+    const read = async () => {
+      const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
+      return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), readbackChannelOrder(engine.isWebGPU));
+    };
+    try {
+      for (const antiAliasing of ["off", "msaa4"] as const) {
+        setSceneRenderSettings(scene, { mode: "pbr", effects, quality: normalizeRenderingQuality({ postprocessing: { antiAliasing } }) });
+        const deadline = performance.now() + 30_000;
+        await graph.prepare(camera);
+        for (let drawn = 0; drawn < 3;) {
+          if (performance.now() > deadline) throw new Error("Halo presentation timed out");
+          engine.beginFrame();
+          try {
+            if (graph.render(camera, false).rendered !== false) drawn++;
+          } finally {
+            engine.endFrame();
+          }
+          if (drawn < 3) await new Promise<void>((resolve) => setTimeout(resolve, 16));
+        }
+        captures.push({ label: antiAliasing, samples: sceneMultisampleCount(scene), pixels: await read() });
+      }
+      return { width: WIDTH, captures, tasks: graph.taskNames() };
+    } finally {
+      graph.dispose();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      engine.beginFrame();
+      engine.endFrame();
+      await graph.whenReleased();
+      scene.dispose();
+    }
   } finally {
     engine.dispose();
     canvas.remove();
