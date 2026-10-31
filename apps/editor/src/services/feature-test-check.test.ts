@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
 import {
-  breakdownDelta, breakdownSequence, counterStats, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_STEPS, frameBound,
-  frameStats, isBreakdownBaseline, runFeatureTestCheck, settingsChanges, vsyncShares,
+  breakdownAdditivity, breakdownDelta, breakdownSaturation, breakdownSequence, counterStats, FEATURE_TEST_BENCHMARK_PROFILES,
+  FEATURE_TEST_BREAKDOWN_STEPS, frameBound, frameStats, isBreakdownBaseline, runFeatureTestCheck, SATURATED_SHARE, settingsChanges,
+  vsyncShares, warmDeviceMinutes,
   type FeatureTestBenchmarkSample, type FeatureTestCheckDeps,
 } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
@@ -218,22 +219,74 @@ describe("runFeatureTestCheck", () => {
     expect(measured.filter((_, index) => index % 2 === 1).map((sample) => sample.label))
       .toEqual(FEATURE_TEST_BREAKDOWN_STEPS.map((step) => step.label));
     expect(measured.at(-1)!.label).toBe(`baseline ${FEATURE_TEST_BREAKDOWN_STEPS.length + 1}`);
-    // Each step is sampled after its own commands only: the previous step was undone first, and a baseline changes nothing.
+    // Each step is sampled after its own commands only: the previous step was undone (back to the Medium tier at the
+    // project's fixed resolution) first, and a baseline changes nothing.
     const commands = editor.commands;
     const at = (line: string) => commands.indexOf(line);
-    expect(commands.slice(at("quality shadows enabled off") + 1, at("quality shadows medium"))).toEqual(["gpubusy on", "quality reset", "gpubusy on", "quality reset"]);
-    expect(commands.slice(at("postprocessing off") + 1, at("rendertargets off"))).toEqual(["gpubusy on", "quality reset", "postprocessing on", "gpubusy on", "quality reset"]);
+    const tier = ["quality reset", "quality medium", "quality resolution reset"];
+    expect(commands.slice(at("quality shadows enabled off") + 1, at("quality shadows medium"))).toEqual(["gpubusy on", ...tier, "gpubusy on", ...tier]);
+    expect(commands.slice(at("postprocessing off") + 1, at("rendertargets off"))).toEqual(["gpubusy on", ...tier, "postprocessing on", "gpubusy on", ...tier]);
     // GPU-busy time is restarted for every sample and stopped at the end.
     expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length);
-    // iOS paces frames to the display: a lifted cap only queues frames behind the GPU.
-    expect(commands.slice(0, 2)).toEqual(["framecap", "framecap 60"]);
+    // iOS paces frames to the display: a lifted cap only queues frames behind the GPU. The tier applies before the
+    // warm-up, so the warm-up runs at the baselines' settings; the session's own quality returns at the end.
+    expect(commands.slice(0, 5)).toEqual(["framecap", "framecap 60", "quality medium", "quality resolution reset", "gpubusy on"]);
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", "framecap 30"]);
   });
 
-  it("alternates baselines and steps, so every step sits between two baselines", () => {
+  it("reports a tier the session refused on the first sample, which it would skew", async () => {
+    const editor = fakeEditor({ "assets/FT_World.scene.hasset": { commands: { "quality medium": { success: false, output: "Invalid quality setting or value" } } } });
+    const report = await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal,
+    });
+    const [world] = report.scenes;
+    expect(world!.play.benchmark[0]!.failed).toEqual(["quality medium failed: Invalid quality setting or value."]);
+    expect(world!.problems[0]).toBe("warm-up 1: quality medium failed: Invalid quality setting or value.");
+    expect(world!.passed).toBe(false);
+  });
+
+  it("measures FT_Occlusion's culling against its off baselines from the street camera, then from the possessed Rooms Camera", async () => {
+    const editor = fakeEditor({});
+    // Culling reports counts only while the session turned it on.
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      play: () => {
+        const play = editor.deps.play();
+        return play && { ...play, snapshot: () => {
+          const last = editor.commands.filter((line) => line.startsWith("quality")).at(-1);
+          const occlusion = last === "quality geometry occlusion on" ? { tested: 480, culled: 212, occluders: 30, triangles: 1520, ms: 0.42 } : null;
+          return { ...play.snapshot(), rendering: { cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1, occlusion } as unknown as RenderDiagnostics };
+        } };
+      },
+    };
+    const report = await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_Occlusion")], deps, signal: new AbortController().signal,
+    });
+    const samples = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup);
+    expect(samples.map((sample) => [sample.label, sample.view ?? null, sample.baseline])).toEqual([
+      ["baseline 1", null, true], ["occlusion on", null, false], ["baseline 2", null, true],
+      ["rooms baseline 1", "rooms", true], ["rooms occlusion on", "rooms", false], ["rooms baseline 2", "rooms", true],
+    ]);
+    expect(samples.find((sample) => sample.label === "rooms occlusion on")!.occlusion).toEqual({ tested: 480, culled: 212, triangles: 1520, ms: 0.42 });
+    expect(samples.find((sample) => sample.label === "rooms baseline 2")!.occlusion).toBeUndefined();
+    const commands = editor.commands;
+    const at = (line: string) => commands.indexOf(line);
+    // The rooms camera is possessed before its first baseline is sampled, and kept for its step.
+    expect(commands.slice(at('possess "Rooms Camera"') + 1, at('possess "Rooms Camera"') + 2)).toEqual(["gpubusy on"]);
+    expect(commands.filter((line) => line.startsWith("possess"))).toEqual(['possess "Rooms Camera"', 'possess "Camera"']);
+    // Back to the scene's own camera at the end, after its quality.
+    expect(commands.slice(-4)).toEqual(["gpubusy off", "quality reset", 'possess "Camera"', "framecap 30"]);
+  });
+
+  it("alternates baselines and steps per camera, so every step sits between two baselines of its own camera", () => {
     const steps = [{ label: "a", commands: ["x"] }, { label: "b", commands: ["y"] }];
-    expect(breakdownSequence(steps).map((step) => [step.label, step.baseline === true]))
+    expect(breakdownSequence([{ steps }]).map((step) => [step.label, step.baseline === true]))
       .toEqual([["baseline 1", true], ["a", false], ["baseline 2", true], ["b", false], ["baseline 3", true]]);
+    const views = breakdownSequence([{ steps: [steps[0]!] }, { name: "far", enter: ["possess far"], steps: [steps[1]!] }]);
+    expect(views.map((step) => [step.label, step.view ?? null, step.commands])).toEqual([
+      ["baseline 1", null, []], ["a", null, ["x"]], ["baseline 2", null, []],
+      ["far baseline 1", "far", ["possess far"]], ["far b", "far", ["y"]], ["far baseline 2", "far", []],
+    ]);
   });
 
   it("warms up until two windows agree within 3%, and no longer than its bound when they never do", async () => {
@@ -478,6 +531,18 @@ describe("breakdownDelta", () => {
     expect(breakdownDelta(warmed, warm)).toBeNull();
   });
 
+  it("compares a camera's steps and baselines only with that camera's baselines", () => {
+    const view = (entry: FeatureTestBenchmarkSample, name: string): FeatureTestBenchmarkSample => ({ ...entry, view: name });
+    const samples = [
+      sample("baseline 1", 40), sample("occlusion on", 36), sample("baseline 2", 40),
+      view(sample("rooms baseline 1", 20, true), "rooms"), view(sample("rooms occlusion on", 15), "rooms"), view(sample("rooms baseline 2", 21, true), "rooms"),
+    ];
+    expect(breakdownDelta(samples, samples[4]!)).toEqual({ ms: -5.5, percent: (-5.5 / 20.5) * 100, basis: "frame" });
+    // The rooms camera's first baseline is its own reference: the camera change is not drift.
+    expect(breakdownDelta(samples, samples[3]!)!.ms).toBe(0);
+    expect(breakdownDelta(samples, samples[5]!)!.ms).toBe(1);
+  });
+
   it("reads reports saved before interleaved baselines and mean frame times", () => {
     const old = (label: string, medianMs: number): FeatureTestBenchmarkSample => ({
       label, frames: { frames: 0, durationMs: 0, fps: 0, medianMs, p95Ms: 46, maxMs: 50, stalls: 0 },
@@ -485,6 +550,59 @@ describe("breakdownDelta", () => {
     });
     const samples = [old("baseline", 38), old("shadows off", 30), old("baseline again", 42)];
     expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -10, percent: -25, basis: "frame" });
+  });
+});
+
+describe("breakdown verdicts", () => {
+  const sample = (label: string, busyMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
+    label, baseline: label.includes("baseline"),
+    frames: { frames: 100, durationMs: 3330, fps: 30, meanMs: 33.3, p95Ms: 34, maxMs: 40, stalls: 0, vsync: [0, 1, 0, 0] },
+    runtimeFps: null, cpuMs: 8, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
+    gpuBusy: { frames: 100, medianMs: busyMs, p95Ms: busyMs + 2, pollMs: 4, skipped: 0 }, ...extra,
+  });
+
+  it("is NON-ADDITIVE when the savings of steps that overlap no other sum past the first baseline", () => {
+    // Against baselines of 20 ms: shadows off saves 9, post off 8, captures off 5 (22 > 20); post low (overlapping post off) is left out.
+    const run = [
+      sample("baseline 1", 20), sample("shadows off", 11), sample("baseline 2", 20), sample("post low", 2), sample("baseline 3", 20),
+      sample("post off", 12), sample("baseline 4", 20), sample("captures off", 15), sample("baseline 5", 20),
+    ];
+    expect(breakdownAdditivity("FT_World", run)).toEqual([{ view: undefined, savingsMs: 22, baselineMs: 20, basis: "gpu", nonAdditive: true }]);
+    // Without captures off the sum is 17, which a 20 ms frame can hold; post low's 18 ms is not counted.
+    expect(breakdownAdditivity("FT_World", run.slice(0, 7))).toMatchObject([{ savingsMs: 17, nonAdditive: false }]);
+  });
+
+  it("checks each camera's savings against its own first baseline, and only steps that saved", () => {
+    const rooms = (entry: FeatureTestBenchmarkSample): FeatureTestBenchmarkSample => ({ ...entry, view: "rooms" });
+    const run = [
+      sample("baseline 1", 10), sample("occlusion on", 11), sample("baseline 2", 10),
+      rooms(sample("rooms baseline 1", 4)), rooms(sample("rooms occlusion on", 3)), rooms(sample("rooms baseline 2", 4)),
+    ];
+    expect(breakdownAdditivity("FT_Occlusion", run)).toEqual([
+      { view: undefined, savingsMs: 0, baselineMs: 10, basis: "gpu", nonAdditive: false },
+      { view: "rooms", savingsMs: 1, baselineMs: 4, basis: "gpu", nonAdditive: false },
+    ]);
+  });
+
+  it("is SATURATED when most baseline frames lasted four or more display intervals, weighted by frames", () => {
+    const paced = (label: string, frames: number, fourPlus: number) =>
+      sample(label, 20, { frames: { frames, durationMs: frames * 70, fps: 14, p95Ms: 80, maxMs: 90, stalls: 0, vsync: [0, 0, 1 - fourPlus, fourPlus] } });
+    // (100 x 0.8 + 50 x 0.2) / 150 = 0.6; the step's own frames do not count.
+    const run = [paced("baseline 1", 100, 0.8), paced("shadows off", 100, 0), paced("baseline 2", 50, 0.2)];
+    expect(breakdownSaturation(run)).toBeCloseTo(0.6);
+    expect(breakdownSaturation(run)! > SATURATED_SHARE).toBe(true);
+    expect(breakdownSaturation([paced("baseline 1", 100, 0.5)])! > SATURATED_SHARE).toBe(false);
+    expect(breakdownSaturation([sample("baseline 1", 20, { frames: null })])).toBeNull();
+  });
+
+  it("notes a warm device only when the previous check ended under ten minutes before", () => {
+    const start = 1_790_000_000_000;
+    expect(warmDeviceMinutes(start, start - 4 * 60_000 - 30_000)).toBe(4);
+    expect(warmDeviceMinutes(start, start - 20_000)).toBe(0);
+    expect(warmDeviceMinutes(start, start - 10 * 60_000)).toBeNull();
+    expect(warmDeviceMinutes(start, null)).toBeNull();
+    // A clock set back since: unknown, not warm.
+    expect(warmDeviceMinutes(start, start + 60_000)).toBeNull();
   });
 });
 

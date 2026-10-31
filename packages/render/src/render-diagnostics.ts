@@ -27,7 +27,8 @@ export type RenderDiagnostics = {
   /**
    * A compact fingerprint of the effective settings the Feature Test Check's Breakdown steps change (`field: value`):
    * shadows, device-clamped water refraction, reflections and shading detail, post-processing tier flags and whether
-   * post-processing runs, every-frame captures, resolution scale. A step that changes more than its own fields shows.
+   * post-processing runs, every-frame captures, resolution scale, occlusion culling, and the live context's
+   * preserveDrawingBuffer. A step that changes more than its own fields shows.
    */
   settings?: Record<string, string>;
   /**
