@@ -126,6 +126,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Post Processing Resolution Scale", "quality-postprocessing-scale"],
   ["rendering", "Allow Ambient Occlusion Quality", "quality-postprocessing-ambientOcclusion"],
   ["rendering", "Allow Reflections Quality", "quality-postprocessing-reflections"],
+  ["rendering", "Anti-Aliasing MSAA", "quality-postprocessing-antialiasing"],
   ["rendering", "Allow Volumetric Lighting Quality", "quality-postprocessing-volumetricLighting"],
   ["rendering", "Color Pipeline Legacy Scene Linear", "project-effects-pipeline"],
   ["rendering", "Tone Mapping", "project-effects-tone-mapping"],

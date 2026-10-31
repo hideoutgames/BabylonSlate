@@ -12,6 +12,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
+import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   createDefaultWaterDefinition,
@@ -23,7 +24,7 @@ import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import { COMPILE_AHEAD_LIMIT } from "./driver-compile";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
-import { updateSceneRenderingSettings } from "./render-settings";
+import { allowSceneScreenShadows, updateSceneRenderingSettings } from "./render-settings";
 import { prewarmSceneMaterials } from "./scene-perf";
 import { configureEditorRenderingGroups } from "./sorting";
 import { createWaterMesh, isBuiltInWaterMesh, updateSceneWater } from "./water-mesh";
@@ -195,6 +196,33 @@ it("admits the copy only without per-group depth clears, and re-plans when that 
   updateSceneRenderingSettings(scene, { quality: noCopyQuality() });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).toEqual(DEFAULT_TASKS);
+  graph.dispose();
+});
+
+it("copies a multisampled world view's resolved scene, depth included, and draws the transparent pass into its samples", async () => {
+  const { engine, scene, camera } = host();
+  engine.getCaps().maxMSAASamples = 4;
+  // A world view at the default Medium tier: MSAA 4x.
+  allowSceneScreenShadows(scene, () => false);
+  lake(scene);
+  const renderers = new Map<string, { resolveDepth: boolean; samples: number | undefined }>();
+  const record = FrameGraphObjectRendererTask.prototype.record;
+  vi.spyOn(FrameGraphObjectRendererTask.prototype, "record").mockImplementation(function (this: FrameGraphObjectRendererTask, ...args) {
+    const description = this._frameGraph.textureManager.getTextureDescription(this.targetTexture as number);
+    renderers.set(this.name, { resolveDepth: this.resolveMSAADepth, samples: description.options.samples });
+    return record.apply(this, args);
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // No own pair: the copy samples the view's own multisampled scene targets once the objects resolve them.
+  expect(graph.taskNames()).toEqual([
+    "Forward admitted shadows", "Forward clear", "Forward cull", "Water split", "Forward objects", "Water scene copy",
+    "Forward transparent", "Multisample output",
+  ]);
+  expect(Object.fromEntries(renderers)).toEqual({
+    "Forward objects": { resolveDepth: true, samples: 4 },
+    "Forward transparent": { resolveDepth: false, samples: 4 },
+  });
   graph.dispose();
 });
 

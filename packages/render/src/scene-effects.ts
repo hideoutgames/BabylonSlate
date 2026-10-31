@@ -35,6 +35,8 @@ export interface SceneEffectsInputs {
   allowed?: Pick<PostProcessingQuality, PostProcessingEffectField>;
   /** Screen-Space Shadows' level from the resolved shadow settings (off in CEL and without shadows). */
   screenShadows?: ScreenShadowsQuality;
+  /** The quality tier's Anti-Aliasing is FXAA (a world view's): FXAA runs whatever the project's switch says. */
+  fxaa?: boolean;
 }
 
 /** Composed effect chain: authored stack output → ambient occlusion →
@@ -96,7 +98,7 @@ export function planSceneEffects(
   // the only pass which can apply the vignette or LUT on either pipeline.
   const imageProcessing =
     sceneLinear || vignette || colorGrading ? { sceneLinear, vignette, colorGrading } : null;
-  const fxaa = effects.fxaa;
+  const fxaa = effects.fxaa || inputs.fxaa === true;
   const allowed = inputs.allowed;
   const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled && allowed?.ambientOcclusion !== false
     ? effects.ambientOcclusion : null;
@@ -189,5 +191,6 @@ export function sceneEffectsKey(
     ? `:skip${allowed.ambientOcclusion ? "" : "O"}${allowed.reflections ? "" : "R"}${allowed.volumetricLighting ? "" : "V"}`
     : "";
   const screen = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? `:screen${inputs.screenShadows}` : "";
-  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
+  const fxaa = inputs.fxaa && !effects.fxaa ? ":fxaa" : "";
+  return `${mode}${JSON.stringify(effects)}${fxaa}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
 }

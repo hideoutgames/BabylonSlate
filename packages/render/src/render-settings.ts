@@ -24,6 +24,8 @@ import {
   WATER_QUALITY_FIELDS,
   type WaterQuality,
   normalizeWaterBlendDistance,
+  antiAliasingSamples,
+  type AntiAliasingMode,
   type PostProcessingEffectField,
   type PostProcessingQuality,
   type EffectiveRenderingQuality,
@@ -87,6 +89,8 @@ type SceneRendering = {
   fogVolumesPresent: boolean;
   /** Screen-space effects the resolved quality tier can afford. */
   effectAllowances: Pick<PostProcessingQuality, PostProcessingEffectField>;
+  /** The quality tier's Anti-Aliasing; a world view's alone (`sceneMultisampleCount`, the plan's FXAA). */
+  antiAliasing: AntiAliasingMode;
   /** Loads the requested LUT asset; only a ready texture enters the plan. */
   colorGrading: ColorGradingSource;
   colorGradingTexture: BaseTexture | null;
@@ -104,6 +108,9 @@ type SceneRendering = {
    * device draws their depth pass (read at each replan: an Engine's capabilities can change); null for any other Scene.
    */
   screenShadowsSupported: (() => boolean) | null;
+  /** The device's MSAA limit (`readMultisampleLimit`). */
+  maxSamples: number;
+  webGpu: boolean;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
 /** Scenes whose project quality resolves through another Scene (SceneLayers follow the world). */
@@ -162,12 +169,15 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
         reflections: quality.postprocessing.reflections,
         volumetricLighting: quality.postprocessing.volumetricLighting,
       },
+      antiAliasing: quality.postprocessing.antiAliasing,
       colorGrading: undefined as unknown as ColorGradingSource,
       colorGradingTexture: null,
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
       lightingDefines: "pbr|false",
       screenShadowsSupported: null,
+      maxSamples: 1,
+      webGpu: false,
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -205,6 +215,8 @@ export function updateSceneRenderingSettings(
   state.shadows = quality.shadows;
   const { ambientOcclusion, reflections, volumetricLighting } = quality.postprocessing;
   state.effectAllowances = { ambientOcclusion, reflections, volumetricLighting };
+  state.antiAliasing = quality.postprocessing.antiAliasing;
+  readMultisampleLimit(scene, state);
   state.localLightBudget = resolveLocalLightBudget(quality.lighting);
   state.textureLodBias = quality.textures.lodBias;
   state.autoLod = quality.geometry.autoLod;
@@ -235,14 +247,44 @@ function replanSceneEffects(state: SceneRendering): void {
     colorGradingTexture: state.colorGradingTexture,
     allowed: state.effectAllowances,
     screenShadows: state.screenShadowsSupported?.() && state.shadows.enabled ? state.shadows.screenShadows : "off",
+    fxaa: worldView(state) && state.antiAliasing === "fxaa",
   };
-  state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs);
+  // The scene targets' sample count is baked into the prepared graph (and, on WebGPU, every pipeline drawn into them).
+  const samples = multisampleCount(state);
+  state.effectsKey = `${sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs)}${samples > 1 ? `:msaa${samples}` : ""}`;
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
   // The light block's scene-level defines: the render mode and whether Screen-Space Shadows are read.
   const lightingDefines = `${state.mode}|${state.effectsPlan?.screenShadows != null}`;
   if (lightingDefines === state.lightingDefines) return;
   state.lightingDefines = lightingDefines;
   for (const listener of state.listeners) listener(state.mode);
+}
+
+/** A world view's Scene (`allowSceneScreenShadows`): only it follows the tier's Anti-Aliasing. */
+function worldView(state: SceneRendering): boolean {
+  return state.screenShadowsSupported !== null;
+}
+
+/** The device's MSAA limit, read at each settings update and when the Scene becomes a world view's. */
+function readMultisampleLimit(scene: Scene, state: SceneRendering): void {
+  state.maxSamples = scene.getEngine().getCaps().maxMSAASamples ?? 1;
+  state.webGpu = scene.getEngine().isWebGPU;
+}
+
+function multisampleCount(state: SceneRendering): number {
+  if (!worldView(state)) return 1;
+  const requested = antiAliasingSamples(state.antiAliasing);
+  if (requested <= 1 || state.maxSamples <= 1) return 1;
+  // WebGPU multisamples at 4 only: MSAA 2x draws at 4 there.
+  return state.webGpu ? 4 : Math.min(requested, state.maxSamples);
+}
+
+/**
+ * Samples per pixel of `scene`'s scene pass: the tier's MSAA for a world view, clamped to the device's limit; 1 for
+ * every other Scene (previews, thumbnails, captures) and for FXAA or Off.
+ */
+export function sceneMultisampleCount(scene: Scene): number {
+  return multisampleCount(sceneRenderingSettings(scene));
 }
 
 /**
@@ -253,6 +295,7 @@ function replanSceneEffects(state: SceneRendering): void {
 export function allowSceneScreenShadows(scene: Scene, supported: () => boolean): void {
   const state = sceneRenderingSettings(scene);
   state.screenShadowsSupported = supported;
+  readMultisampleLimit(scene, state);
   replanSceneEffects(state);
 }
 
