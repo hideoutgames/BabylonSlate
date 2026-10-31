@@ -57,7 +57,8 @@ export const SHADOW_PROFILES = {
     distance: 250,
     mapSize: 2048,
     cascades: 3,
-    filterQuality: "high",
+    // Castaño's 5 × 5 kernel (nine taps); High and Ultra take his 7 × 7 (sixteen), which costs more per shaded pixel.
+    filterQuality: "medium",
     localMapSize: 1024,
     maxLocalLights: 2,
   },
