@@ -155,6 +155,81 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("warm-up 1")).toMatch(/26\.0 \(29\) {5}- .*warm-up$/);
   });
 
+  it("reports both passes of the preserveDrawingBuffer A/B under one header: tier, warm device, verdicts and the on/off comparison", () => {
+    const restored = "preserveDrawingBuffer is stored as on again, as before the A/B; it applies when the editor next reloads or the project is reopened.";
+    const settings = (preserve: string) => ({ shadows: "medium 2048", "geometry.occlusion": "false", "presentation.preserve": preserve });
+    const sample = (label: string, busyMs: number | null, preserve: string, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
+      label, baseline: label.includes("baseline"),
+      frames: { frames: 100, durationMs: 3330, fps: 30, medianMs: 33.3, meanMs: 33.3, p95Ms: 34, maxMs: 40, stalls: 0, vsync: [0, 1, 0, 0] },
+      runtimeFps: null, cpuMs: 8, gpuMs: null, drawCalls: 575, resolution: "1180x788@1.00", failed: [], settings: settings(preserve),
+      ...(busyMs === null ? {} : { gpuBusy: { frames: 150, medianMs: busyMs, p95Ms: busyMs + 3, pollMs: 4.2, skipped: 0 } }), ...extra,
+    });
+    // Every baseline frame of the second pass lasted four or more display intervals.
+    const saturated: Partial<FeatureTestBenchmarkSample> = {
+      frames: { frames: 100, durationMs: 6670, fps: 15, medianMs: 66.7, meanMs: 66.7, p95Ms: 70, maxMs: 80, stalls: 0, vsync: [0, 0, 0, 1] },
+    };
+    const scene = (name: string, pass: number, benchmark: FeatureTestBenchmarkSample[]): FeatureTestCheckSceneResult => ({
+      name, path: `assets/FeatureTest/Scenes/${name}.scene.hasset`, pass, passed: true, problems: [],
+      editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+      play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark, logs: [] },
+      session: null,
+    });
+    const rooms = { view: "rooms" };
+    const report: FeatureTestCheckReport = {
+      mode: "breakdown", startedAt: 0, durationMs: 600_000, cancelled: false, pageErrors: [],
+      breakdown: { tier: "medium", warmMinutes: 4, passes: [{ preserveDrawingBuffer: true }, { preserveDrawingBuffer: false }], notes: [restored] },
+      scenes: [
+        scene("FT_World", 1, [sample("baseline 1", 20, "true"), sample("shadows off", 15, "true", { settings: { ...settings("true"), shadows: "off" } }), sample("baseline 2", 22, "true")]),
+        scene("FT_Occlusion", 1, [
+          sample("rooms baseline 1", null, "true", rooms),
+          sample("rooms occlusion on", null, "true", { ...rooms, settings: { ...settings("true"), "geometry.occlusion": "true" },
+            occlusion: { tested: 480, culled: 212, triangles: 1520, ms: 0.42 } }),
+          sample("rooms baseline 2", null, "true", rooms),
+        ]),
+        // 4 against 18.5 and 2 against 19 save 31.5 ms of an 18 ms frame.
+        scene("FT_World", 2, [sample("baseline 1", 18, "false", saturated), sample("shadows off", 4, "false"), sample("baseline 2", 19, "false", saturated),
+          sample("post off", 2, "false"), sample("baseline 3", 19, "false", saturated)]),
+      ],
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    expect(lines.slice(1, 3)).toEqual(["Result: 3/3 scenes passed · NON-ADDITIVE · SATURATED · took 600.0 s", "WARM DEVICE: previous run ended 4 min ago"]);
+    const header = lines.indexOf("Breakdown: tier medium · preserveDrawingBuffer A/B: pass 1 on, pass 2 off (stored setting; each pass's live value below)");
+    expect(lines.slice(header + 1, header + 3)).toEqual([
+      // On: the median of 20 and 22; off: of 18, 19 and 19.
+      "preserveDrawingBuffer on vs off, median baseline gpu busy: FT_World 21.0 vs 19.0 ms (off -2.0 ms, -10%)",
+      restored,
+    ]);
+    expect(lines.filter((line) => line.startsWith("Pass "))).toEqual(["Pass 1 of 2 · preserveDrawingBuffer on (live)", "Pass 2 of 2 · preserveDrawingBuffer off (live)"]);
+    // Each scene names its own live value, with the tier on the next line.
+    const preserveLines = lines.flatMap((line, index) => line.startsWith("  preserveDrawingBuffer: ") ? [[line, lines[index + 1]]] : []);
+    expect(preserveLines).toEqual([
+      ["  preserveDrawingBuffer: on (live)", "  Tier: medium (resolution kept at the project's fixed scale)"],
+      ["  preserveDrawingBuffer: on (live)", "  Tier: medium (resolution kept at the project's fixed scale)"],
+      ["  preserveDrawingBuffer: off (live)", "  Tier: medium (resolution kept at the project's fixed scale)"],
+    ]);
+    // Only the saturated second pass carries the verdicts.
+    expect(lines.filter((line) => line.startsWith("  NON-ADDITIVE: ") || line.startsWith("  SATURATED: "))).toEqual([
+      "  NON-ADDITIVE: step savings sum to 31.5 ms, past the first baseline's 18.0 ms gpu busy; the changes do not add up, so do not sum them",
+      "  SATURATED: 100% of baseline frames lasted 4+ display intervals; the GPU is saturated, so a change is not that feature's own cost",
+    ]);
+    // The rooms camera's step against its own baselines, with what it culled.
+    const occlusion = lines.find((line) => line.startsWith("    rooms occlusion on "))!;
+    expect(occlusion).toContain("+0.0ms +0%*");
+    expect(occlusion).toMatch(/575 {11}geometry\.occlusion=true · occlusion culled 212\/480 · 1520 tris · 0\.42 ms$/);
+  });
+
+  it("states a warm device and the verdicts only when they apply", () => {
+    const report: FeatureTestCheckReport = {
+      mode: "breakdown", startedAt: 0, durationMs: 1000, cancelled: false, pageErrors: [], scenes: [],
+      breakdown: { tier: "medium", warmMinutes: null, passes: [{ preserveDrawingBuffer: true }], notes: ["The preserveDrawingBuffer A/B ran one pass: the first was cancelled."] },
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    expect(lines[1]).toBe("Result: 0/0 scenes passed · took 1.0 s");
+    expect(lines.some((line) => line.startsWith("WARM DEVICE"))).toBe(false);
+    expect(lines).toContain("The preserveDrawingBuffer A/B ran one pass: the first was cancelled.");
+    expect(lines.some((line) => line.startsWith("preserveDrawingBuffer on vs off"))).toBe(false);
+  });
+
   it("shows the counters' medians with their ranges when frames differ", () => {
     const report: FeatureTestCheckReport = {
       mode: "benchmark", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],

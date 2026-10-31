@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EngineStore, type AbstractEngine, type Effect } from "@babylonjs/core";
-import { estimateTextureMemory, preserveDrawingBufferSetting } from "@haptic/render";
+import { estimateTextureMemory } from "@haptic/render";
 import { getHostMemoryStats } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -35,7 +35,8 @@ import {
   type BreakdownProject,
   type BreakdownResumeMarker,
 } from "../lib/feature-test-breakdown-ab";
-import { FEATURE_TEST_AB_DEPS, FeatureTestCheckStatus } from "./feature-test-check-status";
+import { FEATURE_TEST_AB_DEPS } from "../lib/feature-test-ab-deps";
+import { FeatureTestCheckStatus } from "./feature-test-check-status";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
 import {
@@ -102,8 +103,8 @@ const AB_DEPS = FEATURE_TEST_AB_DEPS;
 const RELOAD_DELAY_MS = 3_000;
 /** A page still here this long after the reload was asked for did not reload (the browser kept it, e.g. for unsaved changes). */
 const RELOAD_WATCHDOG_MS = 20_000;
-/** After the reopened project mounts the dialog, before the second pass starts. */
-const RESUME_DELAY_MS = 1_000;
+/** After the reopened project mounts the dialog, before the second pass starts: the project's own first scene open settles. */
+const RESUME_DELAY_MS = 2_000;
 
 /** How often a running check samples what the editor holds, so a crash's report shows memory climbing. */
 const RESOURCE_SAMPLE_MS = 2_000;
@@ -314,7 +315,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     const breakdown: FeatureTestBreakdownInfo = {
       tier: FEATURE_TEST_BREAKDOWN_TIER,
       warmMinutes: warmDeviceMinutes(Date.now(), loadCheckEnded()),
-      passes: [{ preserveDrawingBuffer: preserveDrawingBufferSetting() }],
+      passes: [{ preserveDrawingBuffer: AB_DEPS.preserve() }],
       notes: [],
     };
     const { report: first, error } = await runCheck({ mode, scenes, breakdown });

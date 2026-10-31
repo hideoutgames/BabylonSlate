@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@haptic/ui/components/button";
 import { useDocumentActions, useEditorShellState } from "../context/document-context";
 import { abandonSecondPass, resumeAfterLoad, type BreakdownResumeMarker } from "../lib/feature-test-breakdown-ab";
-import { FEATURE_TEST_AB_DEPS, FeatureTestCheckStatus } from "./feature-test-check-status";
+import { FEATURE_TEST_AB_DEPS } from "../lib/feature-test-ab-deps";
+import { FeatureTestCheckStatus } from "./feature-test-check-status";
 
 /**
  * On Home once the project list loads: a Breakdown waiting for its second pass (after the A/B's reload) reopens its

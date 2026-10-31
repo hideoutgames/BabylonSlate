@@ -1,14 +1,5 @@
 import type { ReactNode } from "react";
 import { SelectableText } from "@haptic/editor-kit";
-import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "@haptic/render";
-import type { BreakdownAbDeps } from "../lib/feature-test-breakdown-ab";
-
-/** The stored preserveDrawingBuffer setting the Breakdown's A/B switches and stores back. */
-export const FEATURE_TEST_AB_DEPS: BreakdownAbDeps = {
-  preserve: preserveDrawingBufferSetting,
-  setPreserve: setPreserveDrawingBufferSetting,
-  now: () => Date.now(),
-};
 
 /** The compact status bar a running Feature Test Check shows instead of its dialog, with one action. */
 export function FeatureTestCheckStatus({ message, action }: { message: string; action: ReactNode }) {
