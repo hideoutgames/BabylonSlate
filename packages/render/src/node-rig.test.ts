@@ -8,6 +8,7 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
+import { isUnlitMaterial } from "./unlit-material";
 import {
   attachSkeletonPreview,
   createLinkedSkeletonFromNodeRig,
@@ -164,7 +165,8 @@ describe("node-rig helpers", () => {
     expect(torso.visibility).toBe(0.35);
     expect(arm.isVisible).toBe(false);
     expect(scene.meshes).toHaveLength(originalMeshCount);
-    expect(scene.materials).toHaveLength(originalMaterialCount);
+    // The Scene's unlit Material outlives the preview; nothing else stays.
+    expect(scene.materials.filter((material) => !isUnlitMaterial(material))).toHaveLength(originalMaterialCount);
     expect(scene.onBeforeRenderObservable.hasObservers()).toBe(false);
     torso.isVisible = false;
     handle.dispose();

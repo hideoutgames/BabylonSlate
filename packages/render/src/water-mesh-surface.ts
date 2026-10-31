@@ -120,7 +120,7 @@ export type RestBuffers = Pick<Surface, "base" | "worldBase" | "normals" | "base
 export type SurfaceBlend = {
   /** This surface's body in the scene's `WaterBlendIndex`. */
   self: number;
-  /** World metres the rest grid extends past the footprint toward finite neighbours (half the distance), else 0. */
+  /** World metres the rest grid extends past the footprint toward finite neighbours, or past a per-pixel seam (half the distance), else 0. */
   reach: number;
   /**
    * Identity of everything this surface's blend data depends on (rebuilt only when it changes): the distance, the grid

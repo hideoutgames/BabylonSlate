@@ -149,6 +149,18 @@ describe("unlit Material", () => {
     expect(hasStockVertexStage(material)).toBe(true);
   });
 
+  it("keeps drawing the other meshes when one mesh is disposed with its materials", () => {
+    const target = scene();
+    const first = MeshBuilder.CreatePlane("first", {}, target);
+    const second = MeshBuilder.CreatePlane("second", {}, target);
+    const material = setUnlitMaterial(first, solid, binding());
+    setUnlitMaterial(second, solid, binding());
+    first.dispose(false, true);
+    expect(target.materials).toContain(material);
+    expect(second.material).toBe(material);
+    expect(unlitMaterial(target, solid)).toBe(material);
+  });
+
   it("keeps its meshes out of instance pool groups, and draws a visual's binding on the mesh that replaces its leaf", () => {
     const target = scene();
     const root = MeshBuilder.CreatePlane("root", {}, target);

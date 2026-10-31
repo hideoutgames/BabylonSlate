@@ -97,6 +97,20 @@ const CASES: Case[] = [
     binding: (texture) => ({ ...unbound, texture, cutoff: 0.4 }),
   },
   {
+    // 3D Text (`text3d-mesh.ts` before the migration): both sides, its back faces' normal flipped.
+    name: "text3d",
+    standard: (material) => {
+      material.disableLighting = true;
+      material.backFaceCulling = false;
+      material.twoSidedLighting = true;
+      material.emissiveColor = new Color3(0.9, 0.7, 0.1);
+      material.diffuseColor = Color3.Black();
+      material.specularColor = Color3.Black();
+    },
+    key: { textured: false, backFaceCulling: false, fog: true, role: "world" },
+    binding: () => ({ ...unbound, color: [0.9, 0.7, 0.1], twoSided: true }),
+  },
+  {
     name: "opaque",
     standard: (material) => {
       material.disableLighting = true;
@@ -218,8 +232,8 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
     backdropMaterial.emissiveColor = new Color3(0.35, 0.35, 0.35);
     backdrop.material = backdropMaterial;
     const quads = CASES.map((entry, index) => {
-      const mesh = MeshBuilder.CreatePlane(entry.name, { width: 3.2, height: 3.6 }, scene);
-      mesh.position.set(-7 + (index % 5) * 3.5, index < 5 ? 1.9 : -1.9, 0);
+      const mesh = MeshBuilder.CreatePlane(entry.name, { width: 3.1, height: 3.6 }, scene);
+      mesh.position.set(-6.75 + (index % 5) * 3.375, index < 5 ? 1.9 : -1.9, 0);
       const standard = new StandardMaterial(`${entry.name}-standard`, scene);
       entry.standard(standard, entry.flipped ? flipped : texture);
       entry.prepare?.(mesh);
