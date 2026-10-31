@@ -140,6 +140,19 @@ it("switches automatic LOD and scales its distances within the Geometry tier", a
   expect(selected("Textures Quality")).toBe("High");
 });
 
+it("leaves Occlusion Culling off on every Geometry tier and makes the tier Custom when switched on", async () => {
+  render(<Fields />);
+  const occlusion = () => screen.getByRole("switch", { name: "Occlusion Culling" }).getAttribute("aria-checked");
+  expect(occlusion()).toBe("false");
+  fireEvent.click(screen.getByRole("switch", { name: "Occlusion Culling" }));
+  expect(occlusion()).toBe("true");
+  expect(selected("Geometry Quality")).toBe("Custom");
+  for (const tier of ["Low", "Medium", "High", "Ultra"]) {
+    await select("Geometry Quality", tier);
+    expect(occlusion()).toBe("false");
+  }
+});
+
 it("edits Water quality within its tier and disables rows whose feature is off", async () => {
   render(<Fields />);
   expect(selected("Water Quality")).toBe("High");

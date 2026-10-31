@@ -210,6 +210,16 @@ describe("rendering quality sessions", () => {
     session.execute("geometry", "reset");
     expect(session.effective().geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1.25 });
   });
+  it("switches occlusion culling from the console, off on every tier", () => {
+    const session = new RenderingQualitySession();
+    expect(session.effective().geometry.occlusionCulling).toBe(false);
+    expect(session.execute("geometry", "occlusion", "on").success).toBe(true);
+    expect(session.effective().geometry).toMatchObject({ occlusionCulling: true, preset: "custom" });
+    expect(session.execute("geometry", "occlusion", "maybe").success).toBe(false);
+    session.execute("geometry", "reset");
+    expect(session.effective().geometry.occlusionCulling).toBe(false);
+    for (const level of ["low", "medium", "high", "ultra"] as const) expect(RENDER_QUALITY_PROFILES[level].geometry.occlusionCulling).toBe(false);
+  });
   it("detects legacy mismatched shadow settings without overwriting their values", () => {
     const settings = normalizeProjectSettings({
       render: {
