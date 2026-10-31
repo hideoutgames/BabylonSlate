@@ -1,17 +1,13 @@
 import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
-import { enableOverlayVisualMaterial } from "./overlay-visual-style";
 import {
-  Color3,
-  ImageProcessingConfiguration,
-  Material,
-  StandardMaterial,
   type AbstractMesh,
+  type Material,
+  type NodeMaterial,
   type Mesh,
   type Scene,
   type Texture,
   type CubeTexture,
 } from "@babylonjs/core";
-import type { IImageProcessingConfigurationDefines } from "@babylonjs/core/Materials/imageProcessingConfiguration.defines";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad, AreaEmissionPixels } from "@haptic/assets";
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";
@@ -20,6 +16,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { skyboxMeshPreparation } from "./skybox";
 import { foliagePreparation } from "./foliage-mesh";
 import { authoredMaterialInstancePreparation } from "./authored-material-instance";
+import { setUnlitMaterial, unlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -275,7 +272,12 @@ export function installTextureBytes(bytes: ReadonlyMap<string, Uint8Array | Blob
 }
 
 interface AlbedoBinding {
-  material: StandardMaterial | null;
+  /** The unlit Material the mesh draws its texture with, once published; an authored assignment draws in its place. */
+  material: NodeMaterial | null;
+  /** The mesh's unlit key: a sprite's, or a tilemap chunk's (both sides, no fog, the atlas's image processing). */
+  key: UnlitMaterialKey;
+  /** What the unlit Material samples for the mesh. */
+  unlit: UnlitBinding;
   /** Smooth alpha animation must not discard pixels below the cutout threshold. */
   alwaysBlend?: boolean;
   lease?: ResourceLease<Texture | CubeTexture>;
@@ -305,48 +307,49 @@ export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void>
   return pending.length ? Promise.all(pending).then(() => undefined) : undefined;
 }
 
-function syncAlbedoTransparency(mesh: AbstractMesh, material: StandardMaterial): void {
-  const mode = albedoBindings.get(mesh)?.alwaysBlend ? Material.MATERIAL_ALPHABLEND : mesh.visibility > 0 && mesh.visibility < 1
-    ? Material.MATERIAL_ALPHATESTANDBLEND
-    : Material.MATERIAL_ALPHATEST;
-  if (material.transparencyMode === mode) return;
-  material.transparencyMode = mode;
-  // Babylon's material setter dirties local shader defines but emits none of
-  // the scene observables used by the strict readiness cache.
-  markSceneReadinessDirty(mesh.getScene());
+/**
+ * Draws `mesh` with its albedo binding. A pooled visual's leaf cannot draw a per-mesh binding, so it leaves the pool
+ * for a mesh of its own under the visual, which draws the visual's binding.
+ */
+function drawAlbedo(mesh: AbstractMesh, binding: AlbedoBinding): NodeMaterial {
+  const material = setUnlitMaterial(mesh, binding.key, binding.unlit);
+  if (pooledLeafOf(mesh)) {
+    const own = setActorMeshMaterial(mesh, material);
+    if (own) applyMaterialBounds(own);
+  }
+  return material;
 }
 
-/** Whether Babylon's StandardMaterial reads this texture straight from the UVs (an identity texture matrix). */
-function usesDirectUv(texture: Texture | CubeTexture): boolean {
-  return texture.getTextureMatrix().isIdentityAs3x2();
+/** A sprite's key: alpha-tested (blended while it fades), culled, fogged. */
+const SPRITE_MATERIAL: UnlitMaterialKey = { textured: true, backFaceCulling: true, fog: true, role: "world" };
+/** A tilemap chunk's: readable from either side, without fog, in the atlas's exact display colours. */
+const TILEMAP_MATERIAL: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "world", imageProcessing: "atlas" };
+
+/**
+ * The sprite's cutout: discarded below 0.4, unless it always blends (smooth alpha animation). A fractional visibility
+ * blends the cutout (Standard's alpha test and blend), which the unlit Material decides per draw.
+ */
+function albedoUnlitBinding(texture: Texture | CubeTexture | null, alwaysBlend: boolean | undefined): UnlitBinding {
+  return {
+    texture, color: [1, 1, 1], alpha: 1, cutoff: alwaysBlend ? 0 : 0.4, blend: alwaysBlend === true, textureAlpha: true, twoSided: false,
+  };
 }
 
 /** Weight changes preserve owned cutouts while opting fractional weights into blending. */
 export function applySpriteVisibility(mesh: AbstractMesh, visibility: number): void {
   const material = mesh.material;
-  const owned = albedoBindings.get(mesh)?.material;
   const blended = material?.needAlphaBlendingForMesh(mesh);
   mesh.visibility = visibility;
-  if (owned && material === owned) {
-    syncAlbedoTransparency(mesh, owned);
-  } else if (material && blended !== material.needAlphaBlendingForMesh(mesh)) {
-    // Authored materials retain their own alpha policy, including automatic mode.
-    markSceneReadinessDirty(mesh.getScene());
-  }
+  // The draw moves between the opaque and transparent lists; no shader changes.
+  if (material && blended !== material.needAlphaBlendingForMesh(mesh)) markSceneReadinessDirty(mesh.getScene());
 }
 
 /** Restore the mesh's owned construction material after a borrowed assignment clears. */
 export function restoreAlbedoMaterial(mesh: AbstractMesh): boolean {
-  const material = albedoBindings.get(mesh)?.material;
-  if (!material) return false;
-  mesh.material = material;
+  const binding = albedoBindings.get(mesh);
+  if (!binding?.material) return false;
+  binding.material = drawAlbedo(mesh, binding);
   applyMaterialBounds(mesh);
-  syncAlbedoTransparency(mesh, material);
-  // After its blend is decided: a blended construction material draws unpooled.
-  if (pooledLeafOf(mesh)) {
-    const own = setActorMeshMaterial(mesh, material);
-    if (own) applyMaterialBounds(own);
-  }
   return true;
 }
 
@@ -355,26 +358,32 @@ export function applyAlbedoTexture(
   _scene: Scene,
   textureGuid: string | null | undefined,
   assets?: MeshAssetContext,
-  options: { alwaysBlend?: boolean } = {},
+  options: { alwaysBlend?: boolean; tilemap?: boolean } = {},
 ): void {
   const scene = mesh.getScene();
   let binding = albedoBindings.get(mesh);
   if (!binding) {
-    binding = { material: null };
+    binding = { material: null, key: SPRITE_MATERIAL, unlit: albedoUnlitBinding(null, false) };
     albedoBindings.set(mesh, binding);
     mesh.onDisposeObservable.addOnce(() => {
       binding!.pending?.release();
-      binding!.material?.dispose(false, false);
       binding!.lease?.release();
       albedoBindings.delete(mesh);
     });
   }
   binding.alwaysBlend = options.alwaysBlend === true;
+  if (options.tilemap) binding.key = TILEMAP_MATERIAL;
+  /** Rebinds the mesh's unlit values: its draw when it draws them, otherwise only the values a restore reapplies. */
+  const rebind = (texture: Texture | CubeTexture | null) => {
+    binding!.unlit = albedoUnlitBinding(texture, binding!.alwaysBlend);
+    if (binding!.material && mesh.material === binding!.material) binding!.material = setUnlitMaterial(mesh, binding!.key, binding!.unlit);
+  };
+  if (binding.unlit.blend !== binding.alwaysBlend) rebind(binding.unlit.texture as Texture | CubeTexture | null);
   if (!textureGuid) {
     binding.pending?.release(); binding.pending = undefined;
     binding.preparation = undefined;
     binding.lease?.release(); binding.lease = undefined;
-    if (binding.material) { binding.material.diffuseTexture = null; binding.material.emissiveTexture = null; }
+    if (binding.material) rebind(null);
     binding.source = undefined; binding.guid = undefined; binding.identity = undefined; binding.failed = undefined;
     return;
   }
@@ -406,36 +415,11 @@ export function applyAlbedoTexture(
   const publish = () => {
     if (albedoBindings.get(mesh) !== binding || binding.pending !== next || mesh.isDisposed()) { next.release(); return; }
     const publishToMesh = !mesh.material || mesh.material === binding.material || (!binding.material && !isSpriteQuad(mesh));
-    let material = binding.material;
-    if (!material) {
-      material = new StandardMaterial(`albedo:${textureGuid}`, scene);
-      material.disableLighting = true;
-      material.emissiveColor = Color3.White();
-      material.useAlphaFromDiffuseTexture = true;
-      material.transparencyMode = Material.MATERIAL_ALPHATEST;
-      material.alphaCutOff = 0.4;
-      binding.material = material;
-    }
-    const replaced = binding.lease?.resource;
-    material.diffuseTexture = next.resource;
-    material.emissiveTexture = next.resource;
+    binding.unlit = albedoUnlitBinding(next.resource, binding.alwaysBlend);
     // Preparation may finish after an authored assignment. Update only our
-    // retained material in that case; the borrowed material remains attached.
-    if (publishToMesh) {
-      mesh.material = material;
-      enableOverlayVisualMaterial(mesh);
-      syncAlbedoTransparency(mesh, material);
-      if (pooledLeafOf(mesh)) setActorMeshMaterial(mesh, material);
-      // Babylon samples a texture with an identity matrix straight from the UVs
-      // (DIFFUSEDIRECTUV / EMISSIVEDIRECTUV) and any other through the matrix, a
-      // different shader. A KTX2 is flipped on its wrapper, a PNG is not, so
-      // swapping one for the other recompiles the draw; none of Babylon's
-      // observables announce that, and without it the strict probe is skipped
-      // and the visual is not drawn while the new variant compiles.
-      if (replaced && replaced !== next.resource && usesDirectUv(replaced) !== usesDirectUv(next.resource)) {
-        markSceneReadinessDirty(scene);
-      }
-    }
+    // retained binding in that case; the borrowed material remains attached.
+    // Otherwise the borrowed material keeps drawing; `restoreAlbedoMaterial` reapplies these values.
+    binding.material = publishToMesh ? drawAlbedo(mesh, binding) : unlitMaterial(scene, binding.key);
     const previous = binding.lease;
     binding.lease = next; binding.pending = undefined;
     previous?.release();
@@ -445,7 +429,7 @@ export function applyAlbedoTexture(
     if (binding.pending === next) binding.pending = undefined;
     if (binding.lease === next) {
       binding.lease = undefined;
-      if (binding.material) { binding.material.diffuseTexture = null; binding.material.emissiveTexture = null; }
+      if (binding.material) rebind(null);
     }
     binding.failed = `${textureGuid}:${identity}`;
     next.release();
@@ -478,48 +462,14 @@ export function refreshAlbedoTextures(
     const binding = albedoBindings.get(mesh);
     if (!binding?.guid || !changed.has(binding.guid)) continue;
     const before = binding.preparation;
-    applyAlbedoTexture(mesh, mesh.getScene(), binding.guid, assets, { alwaysBlend: binding.alwaysBlend });
+    applyAlbedoTexture(mesh, mesh.getScene(), binding.guid, assets, { alwaysBlend: binding.alwaysBlend, tilemap: binding.key === TILEMAP_MATERIAL });
     if (binding.preparation && binding.preparation !== before) pending.push(binding.preparation);
   }
   return pending;
 }
 
-/**
- * Tilemap atlases keep their exact display colors: the scene's tone mapping and
- * exposure never apply to them. Under a Scene Linear display stage they still
- * decode to linear, like Standard materials on the scene's configuration, so
- * the Display Color stage encodes them once.
- */
-class AtlasImageProcessing extends ImageProcessingConfiguration {
-  private readonly sceneConfiguration: ImageProcessingConfiguration;
-  constructor(sceneConfiguration: ImageProcessingConfiguration) {
-    super();
-    this.sceneConfiguration = sceneConfiguration;
-    this.isEnabled = false;
-    sceneConfiguration.onUpdateParameters.add(() => this._updateParameters());
-  }
-  override prepareDefines(defines: IImageProcessingConfigurationDefines, forPostProcess = false): void {
-    super.prepareDefines(defines, forPostProcess);
-    defines.IMAGEPROCESSINGPOSTPROCESS = !forPostProcess && this.sceneConfiguration.applyByPostProcess;
-  }
-}
-const atlasImageProcessing = new WeakMap<Scene, AtlasImageProcessing>();
-
-const tilemapPlaceholderMaterials = new WeakMap<Scene, StandardMaterial>();
-
-/** One unlit, double-sided, fog-free material per Scene for every chunk of an atlas without an image. */
-function tilemapPlaceholderMaterial(scene: Scene, imageProcessing: ImageProcessingConfiguration): StandardMaterial {
-  const existing = tilemapPlaceholderMaterials.get(scene);
-  if (existing && scene.materials.includes(existing)) return existing;
-  const material = new StandardMaterial("tilemapPlaceholder", scene);
-  material.disableLighting = true;
-  material.emissiveColor = Color3.White();
-  material.backFaceCulling = false;
-  material.fogEnabled = false;
-  material.imageProcessingConfiguration = imageProcessing;
-  tilemapPlaceholderMaterials.set(scene, material);
-  return material;
-}
+/** A chunk of an atlas without an image draws its tiles' placeholder colours, from its vertex colours. */
+const TILEMAP_PLACEHOLDER: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "world", imageProcessing: "atlas" };
 
 /** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */
 export function applyTilemapAlbedoTextures(
@@ -527,27 +477,17 @@ export function applyTilemapAlbedoTextures(
   scene: Scene,
   assets?: MeshAssetContext,
 ): void {
-  let imageProcessing = atlasImageProcessing.get(scene);
-  if (!imageProcessing) {
-    imageProcessing = new AtlasImageProcessing(scene.imageProcessingConfiguration);
-    atlasImageProcessing.set(scene, imageProcessing);
-  }
   for (const child of mesh.getChildMeshes()) {
     const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
     if (!guid) {
       // Without an atlas image Babylon's lit default material would draw the
       // chunk black or grey; its vertex colours carry each tile's placeholder.
-      child.material = tilemapPlaceholderMaterial(scene, imageProcessing);
-      enableOverlayVisualMaterial(child);
+      setUnlitMaterial(child, TILEMAP_PLACEHOLDER, {
+        texture: null, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+      });
       continue;
     }
-    const before = child.material;
-    applyAlbedoTexture(child, scene, guid, assets);
-    const material = child.material;
-    if (material === before || !(material instanceof StandardMaterial)) continue;
     // Tilemaps remain readable from either side, including inside 3D actors.
-    material.backFaceCulling = false;
-    material.fogEnabled = false;
-    material.imageProcessingConfiguration = imageProcessing;
+    applyAlbedoTexture(child, scene, guid, assets, { tilemap: true });
   }
 }
