@@ -858,6 +858,19 @@ describe("reflected shadows", () => {
     }
   });
 
+  it("redraws a reflection for a pass that skipped a caster not ready, and for the pass that completes it", async () => {
+    const { generator, far, render, settle, changed } = await reflectedFloor();
+    // The far caster's move alone reaches nothing shown; the skipped caster could be any.
+    vi.spyOn(generator, "isReady").mockReturnValueOnce(false);
+    far.position.x -= 1;
+    expect(render()).toBe(1);
+    expect(changed()).toBe(true);
+    expect(render()).toBe(1);
+    expect(changed()).toBe(true);
+    settle();
+    expect(changed()).toBe(false);
+  });
+
   it("redraws a reflection whenever the map changes everywhere: a turned light or a caster it cannot bound", async () => {
     const { sun, far, render, settle, changed } = await reflectedFloor();
     sun.direction = new Vector3(-0.3, -1, 0.2);

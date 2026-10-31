@@ -84,6 +84,11 @@ function isDynamicTexture(texture: BaseTexture): boolean {
   return true;
 }
 
+/**
+ * Receiver-by-tile tests one call makes at most; past it the shadow passes count as changing what it shows, which
+ * bounds the cost of a reflection with many receivers under many changing maps.
+ */
+const SHADOW_TEST_BUDGET = 2048;
 /** Clip-space w below which a point counts as behind a shadow view's eye. */
 const MIN_W = 1e-6;
 
@@ -145,8 +150,12 @@ export class ReflectedContent {
   private shadowSequence = -1;
   private receivers: readonly AbstractMesh[] = [];
   private shadowReached = false;
+  private shadowTests = 0;
   /** Scratch: a receiver's box, its rectangle, and the changed boxes' rectangles per tile (4 numbers each). */
   private readonly receiverBox = new Float64Array(6);
+  private readonly receiverUnion = new Float64Array(6);
+  /** -1 until `unionReceivers` reads them this call. */
+  private shadowReceivers = -1;
   private readonly receiverRect = new Float64Array(4);
   private changeRects = new Float64Array(0);
   private readonly visitShadowChange = (change: ShadowChange) => (this.shadowReached = this.shadowChangeReaches(change));
@@ -190,40 +199,80 @@ export class ReflectedContent {
     if (since < 0 || since === sequence) return false;
     this.receivers = meshes;
     this.shadowReached = false;
+    this.shadowTests = 0;
+    this.shadowReceivers = -1;
     const kept = forEachShadowChangeSince(scene, since, this.visitShadowChange);
     this.receivers = [];
     return !kept || this.shadowReached;
   }
 
-  private shadowChangeReaches(change: ShadowChange): boolean {
-    const region = change.region;
-    if (region.empty) return false;
-    const boxes = region.all ? 0 : region.count;
-    const stride = 4 * boxes;
-    if (this.changeRects.length < stride * change.tiles) this.changeRects = new Float64Array(stride * change.tiles);
-    const rects = this.changeRects;
-    for (let tile = 0; tile < change.tiles; tile++)
-      for (let b = 0; b < boxes; b++) projectBox(change.views[tile]!, region.boxes, 6 * b, rects.subarray(tile * stride + 4 * b, tile * stride + 4 * b + 4));
-    const box = this.receiverBox, rect = this.receiverRect;
+  /**
+   * The union of the shown receivers' boxes (`receiverUnion`), read once per call: `shadowReceivers` 0 for none, 1 for
+   * bounded receivers, 2 when one's bounds leave its thin instances out.
+   */
+  private unionReceivers(): void {
+    const union = this.receiverUnion;
+    union[0] = union[1] = union[2] = Infinity;
+    union[3] = union[4] = union[5] = -Infinity;
+    this.shadowReceivers = 0;
     for (const mesh of this.receivers) {
       if (!mesh.receiveShadows) continue;
       const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
-      // Everywhere, or a receiver whose bounds leave its thin instances out.
-      if (region.all || (source instanceof Mesh && source.hasThinInstances)) return true;
+      if (source instanceof Mesh && source.hasThinInstances) {
+        this.shadowReceivers = 2;
+        return;
+      }
+      this.shadowReceivers = 1;
+      const info = mesh.getBoundingInfo();
+      const min = info.boundingBox.minimumWorld, max = info.boundingBox.maximumWorld;
+      union[0] = Math.min(union[0]!, min.x); union[1] = Math.min(union[1]!, min.y); union[2] = Math.min(union[2]!, min.z);
+      union[3] = Math.max(union[3]!, max.x); union[4] = Math.max(union[4]!, max.y); union[5] = Math.max(union[5]!, max.z);
+    }
+  }
+
+  /** Whether `rect`, widened by `reach` and kept to the tile, overlaps one of `boxes` changed rectangles at `at`. */
+  private overlapsChange(rect: Float64Array, reach: number, at: number, boxes: number): boolean {
+    // Outside its tile's view a receiver samples nothing of it.
+    const x0 = Math.max(-1, rect[0]! - reach), y0 = Math.max(-1, rect[1]! - reach);
+    const x1 = Math.min(1, rect[2]! + reach), y1 = Math.min(1, rect[3]! + reach);
+    if (!(x0 <= x1 && y0 <= y1)) return false;
+    const rects = this.changeRects;
+    for (let b = 0; b < boxes; b++, at += 4)
+      if (rects[at]! <= x1 && rects[at + 2]! >= x0 && rects[at + 1]! <= y1 && rects[at + 3]! >= y0) return true;
+    return false;
+  }
+
+  private shadowChangeReaches(change: ShadowChange): boolean {
+    const region = change.region;
+    if (region.empty) return false;
+    if (this.shadowReceivers < 0) this.unionReceivers();
+    if (this.shadowReceivers === 0) return false;
+    if (region.all || this.shadowReceivers === 2) return true;
+    const boxes = region.count, stride = 4 * boxes, tiles = change.tiles;
+    if (this.changeRects.length < stride * tiles) this.changeRects = new Float64Array(stride * tiles);
+    const rects = this.changeRects, rect = this.receiverRect;
+    // Tiles where the receivers together could sample a change; usually none, which ends the test.
+    let candidates = 0;
+    for (let tile = 0; tile < tiles; tile++) {
+      for (let b = 0; b < boxes; b++) {
+        const at = tile * stride + 4 * b;
+        projectBox(change.views[tile]!, region.boxes, 6 * b, rects.subarray(at, at + 4));
+      }
+      projectBox(change.views[tile]!, this.receiverUnion, 0, rect);
+      if (this.overlapsChange(rect, change.reaches[tile]!, tile * stride, boxes)) candidates |= 1 << tile;
+    }
+    if (!candidates) return false;
+    const box = this.receiverBox;
+    for (const mesh of this.receivers) {
+      if (!mesh.receiveShadows) continue;
       const info = mesh.getBoundingInfo();
       const min = info.boundingBox.minimumWorld, max = info.boundingBox.maximumWorld;
       box[0] = min.x; box[1] = min.y; box[2] = min.z; box[3] = max.x; box[4] = max.y; box[5] = max.z;
-      for (let tile = 0; tile < change.tiles; tile++) {
+      for (let tile = 0; tile < tiles; tile++) {
+        if (!(candidates & (1 << tile))) continue;
+        if (++this.shadowTests > SHADOW_TEST_BUDGET) return true;
         projectBox(change.views[tile]!, box, 0, rect);
-        const reach = change.reaches[tile]!;
-        // Outside its tile's view a receiver samples nothing of it.
-        const x0 = Math.max(-1, rect[0]! - reach), y0 = Math.max(-1, rect[1]! - reach);
-        const x1 = Math.min(1, rect[2]! + reach), y1 = Math.min(1, rect[3]! + reach);
-        if (!(x0 <= x1 && y0 <= y1)) continue;
-        for (let b = 0; b < boxes; b++) {
-          const at = tile * stride + 4 * b;
-          if (rects[at]! <= x1 && rects[at + 2]! >= x0 && rects[at + 1]! <= y1 && rects[at + 3]! >= y0) return true;
-        }
+        if (this.overlapsChange(rect, change.reaches[tile]!, tile * stride, boxes)) return true;
       }
     }
     return false;
