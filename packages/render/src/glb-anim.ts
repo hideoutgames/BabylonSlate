@@ -765,13 +765,17 @@ export function beginSlotModelAnimLoad(
       }
       await wait(Promise.resolve(prepareInstance?.(prepared.staging)));
       if (!request.isCurrent()) return;
-      // A static model's rigid leaves, with their slot Materials assigned, draw in the Scene's instance pool; the
-      // preparation below then compiles their groups' instanced variants.
-      if (!wrapped.length) {
-        poolModelLeaves(prepared.staging, container, { retain: () => {
-          const hold = acquireGlbContainer(scene, clipAssetGuid, bytes, priority);
-          return () => hold.release();
-        } });
+      // A model's rigid meshes, with their slot Materials assigned, draw in the Scene's instance pool, the channels of
+      // its own clips moving the members; the preparation below then compiles their groups' instanced variants. A
+      // retargeted clip binds through a skeleton linked to the instance's nodes, so such an instance keeps its meshes.
+      if (wrapped.length === instance.animationGroups.length) {
+        poolModelLeaves(prepared.staging, container, {
+          retain: () => {
+            const hold = acquireGlbContainer(scene, clipAssetGuid, bytes, priority);
+            return () => hold.release();
+          },
+          animationGroups: instance.animationGroups,
+        });
       }
       await wait(prepareInstanceMaterials(prepared.staging, () => {
         if (!request.isCurrent()) throw new Error("Model preparation was cancelled");

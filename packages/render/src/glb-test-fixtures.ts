@@ -193,6 +193,46 @@ export function encodeParentedAnimatedTriangleGlb(clipName = "Idle"): Uint8Array
   );
 }
 
+/**
+ * A node-animated rig of rigid meshes, as a mannequin's: `root` → `body` (a triangle, its clip translating it from rest
+ * to +Y) → `arm` (a mesh of its own on the same triangle, 2 along X, unanimated). Not a product fixture.
+ */
+export function encodeAnimatedLimbGlb(clipName = "Wave"): Uint8Array {
+  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const times = new Float32Array([0, 1]);
+  const translations = new Float32Array([0, 0, 0, 0, 1, 0]);
+  const bin = new Uint8Array(68);
+  bin.set(new Uint8Array(positions.buffer), 0);
+  bin.set(new Uint8Array(times.buffer), 36);
+  bin.set(new Uint8Array(translations.buffer), 44);
+  return encodeGlbJsonBin(
+    {
+      asset: { version: "2.0" },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ name: "root", children: [1] }, { name: "body", mesh: 0, children: [2] }, { name: "arm", mesh: 1, translation: [2, 0, 0] }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }, { primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [
+        { bufferView: 0, componentType: FLOAT, count: 3, type: "VEC3", min: [0, 0, 0], max: [1, 1, 0] },
+        { bufferView: 1, componentType: FLOAT, count: 2, type: "SCALAR", min: [0], max: [1] },
+        { bufferView: 2, componentType: FLOAT, count: 2, type: "VEC3" },
+      ],
+      bufferViews: [
+        { buffer: 0, byteOffset: 0, byteLength: 36 },
+        { buffer: 0, byteOffset: 36, byteLength: 8 },
+        { buffer: 0, byteOffset: 44, byteLength: 24 },
+      ],
+      buffers: [{ byteLength: 68 }],
+      animations: [{
+        name: clipName,
+        channels: [{ sampler: 0, target: { node: 1, path: "translation" } }],
+        samplers: [{ input: 1, output: 2, interpolation: "LINEAR" }],
+      }],
+    },
+    bin,
+  );
+}
+
 export type UvHierarchyGlbOptions = {
   /** Each part uses its own glTF material (slots 0 and 1) instead of sharing slot 0. */
   separateMaterials?: boolean;
