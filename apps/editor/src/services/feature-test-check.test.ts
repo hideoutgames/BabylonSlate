@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
 import {
-  breakdownAdditivity, breakdownDelta, breakdownSaturation, breakdownSequence, counterStats, FEATURE_TEST_BENCHMARK_PROFILES,
-  FEATURE_TEST_BREAKDOWN_STEPS, frameBound, frameStats, isBreakdownBaseline, runFeatureTestCheck, SATURATED_SHARE, settingsChanges,
-  vsyncShares, warmDeviceMinutes,
-  type FeatureTestBenchmarkSample, type FeatureTestCheckDeps,
+  antiAliasingSamples, QUALITY_GROUPS, qualitySettingsFingerprint, RenderingQualitySession, type QualityGroup,
+} from "@haptic/core";
+import {
+  ADD_ONE_CAP_MS, breakdownAdditivity, breakdownDelta, breakdownOverCap, breakdownSaturation, breakdownSequence, breakdownSkip,
+  breakdownWarmupDrift, counterStats, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS,
+  FEATURE_TEST_BREAKDOWN_BASES, FEATURE_TEST_BREAKDOWN_METHODS, FEATURE_TEST_BREAKDOWN_STEPS, featureTestBreakdownPlan, frameBound,
+  frameStats, isBreakdownBaseline, runFeatureTestCheck, SATURATED_SHARE, settingsChanges, vsyncShares, warmDeviceMinutes,
+  type FeatureTestBenchmarkSample, type FeatureTestBreakdownInfo, type FeatureTestCheckDeps,
 } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe } from "./runtime-probes";
@@ -107,6 +111,34 @@ function fakeEditor(
 
 const scene = (name: string) => ({ name, path: `assets/${name}.scene.hasset` });
 
+const REMOVE_ONE: FeatureTestBreakdownInfo = { method: "remove-one", tier: "medium", ab: false, warmMinutes: null, passes: [], notes: [] };
+
+/**
+ * The render-settings fingerprint (`RenderDiagnostics.settings`) after `commands`, as a Play session derives it: quality
+ * commands through the session's real `RenderingQualitySession`, `postprocessing` and `rendertargets` as the toggles
+ * they are, and MSAA samples at the tier's request (no device limit).
+ */
+function fingerprintAfter(commands: readonly string[]): Record<string, string> {
+  const session = new RenderingQualitySession();
+  let post = true;
+  let captures = true;
+  for (const line of commands) {
+    const [name, first, second, third] = line.split(" ");
+    if (name === "quality") {
+      if (QUALITY_GROUPS.includes(first as QualityGroup)) session.execute(first as QualityGroup, second, third);
+      else session.execute(undefined, first, second);
+    } else if (name === "postprocessing") post = first === "on";
+    else if (name === "rendertargets") captures = first === "on";
+  }
+  const quality = session.effective();
+  return {
+    ...qualitySettingsFingerprint(quality),
+    "post.samples": String(antiAliasingSamples(quality.postprocessing.antiAliasing)),
+    "post.enabled": String(post),
+    captures: captures ? "on" : "suspended",
+  };
+}
+
 describe("runFeatureTestCheck", () => {
   it("stops a Play that never finishes loading, records where it stuck, and checks the next scene", async () => {
     const editor = fakeEditor({ "assets/stuck.scene.hasset": { play: "stuck" } });
@@ -204,15 +236,16 @@ describe("runFeatureTestCheck", () => {
     expect(editor.commands).not.toContain("ft_stats");
   });
 
-  it("warms up, then measures each breakdown step on its own at the 60 fps cap between baselines, undoing it before the next", async () => {
+  it("warms up, then measures each remove-one step on its own at the 60 fps cap between baselines, undoing it before the next", async () => {
     const editor = fakeEditor({});
     const report = await runFeatureTestCheck({
-      mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal,
+      mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal, breakdown: REMOVE_ONE,
     });
     const samples = report.scenes[0]!.play.benchmark;
     // The fake's frames never change: the second warm-up window matches the first, which ends the warm-up.
     expect(samples.filter((sample) => sample.warmup).map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2"]);
-    expect(samples.slice(2).map((sample) => sample.label)).toEqual(breakdownSequence().map((step) => step.label));
+    expect(samples.slice(2).map((sample) => sample.label))
+      .toEqual(breakdownSequence(featureTestBreakdownPlan("FT_World", "remove-one").views).map((step) => step.label));
     // A baseline before every step and one after the last.
     const measured = samples.slice(2);
     expect(measured.filter((_, index) => index % 2 === 0).every((sample) => sample.baseline)).toBe(true);
@@ -234,14 +267,14 @@ describe("runFeatureTestCheck", () => {
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", "framecap 30"]);
   });
 
-  it("reports a tier the session refused on the first sample, which it would skew", async () => {
-    const editor = fakeEditor({ "assets/FT_World.scene.hasset": { commands: { "quality medium": { success: false, output: "Invalid quality setting or value" } } } });
+  it("reports a base command the session refused on the first sample, which it would skew", async () => {
+    const editor = fakeEditor({ "assets/FT_World.scene.hasset": { commands: { "quality low": { success: false, output: "Invalid quality setting or value" } } } });
     const report = await runFeatureTestCheck({
       mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal,
     });
     const [world] = report.scenes;
-    expect(world!.play.benchmark[0]!.failed).toEqual(["quality medium failed: Invalid quality setting or value."]);
-    expect(world!.problems[0]).toBe("warm-up 1: quality medium failed: Invalid quality setting or value.");
+    expect(world!.play.benchmark[0]!.failed).toEqual(["quality low failed: Invalid quality setting or value."]);
+    expect(world!.problems[0]).toBe("warm-up 1: quality low failed: Invalid quality setting or value.");
     expect(world!.passed).toBe(false);
   });
 
@@ -274,8 +307,8 @@ describe("runFeatureTestCheck", () => {
     // The rooms camera is possessed before its first baseline is sampled, and kept for its step.
     expect(commands.slice(at('possess "Rooms Camera"') + 1, at('possess "Rooms Camera"') + 2)).toEqual(["gpubusy on"]);
     expect(commands.filter((line) => line.startsWith("possess"))).toEqual(['possess "Rooms Camera"', 'possess "Camera"']);
-    // Back to the scene's own camera at the end, after its quality.
-    expect(commands.slice(-4)).toEqual(["gpubusy off", "quality reset", 'possess "Camera"', "framecap 30"]);
+    // Back to the scene's own camera at the end, after its quality and the add-one base's toggles.
+    expect(commands.slice(-6)).toEqual(["gpubusy off", "quality reset", "postprocessing on", "rendertargets on", 'possess "Camera"', "framecap 30"]);
   });
 
   it("alternates baselines and steps per camera, so every step sits between two baselines of its own camera", () => {
@@ -287,6 +320,63 @@ describe("runFeatureTestCheck", () => {
       ["baseline 1", null, []], ["a", null, ["x"]], ["baseline 2", null, []],
       ["far baseline 1", "far", ["possess far"]], ["far b", "far", ["y"]], ["far baseline 2", "far", []],
     ]);
+  });
+
+  it("measures add-one by default: each feature on top of the light base, undone by the base, which Play leaves at the end", async () => {
+    const editor = fakeEditor({});
+    const report = await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal,
+    });
+    const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup);
+    expect(measured.filter((sample) => !sample.baseline).map((sample) => sample.label)).toEqual([
+      "MSAA 2x", "MSAA 4x", "AA fxaa", "shadow filter high", "post-processing", "AO", "SSR", "water detail medium", "water detail high",
+      "water refraction", "planar water reflection", "captures", "resolution 1.0",
+    ]);
+    const base = FEATURE_TEST_BREAKDOWN_BASES["add-one"].commands;
+    const commands = editor.commands;
+    const at = (line: string) => commands.indexOf(line);
+    // The base before the warm-up; after each step `quality reset` and the base again, which turns its toggles back off.
+    expect(commands.slice(0, 2 + base.length)).toEqual(["framecap", "framecap 60", ...base]);
+    expect(commands.slice(at("quality postprocessing ambientOcclusion on") + 1, at("quality postprocessing reflections on") - 1))
+      .toEqual(["gpubusy on", "quality reset", ...base, "gpubusy on", "quality reset", ...base]);
+    // Medium's values: water refraction at Medium's copy scale, planar reflection at Medium's planar scale.
+    expect(commands).toContain("quality water refractionScale 0.75");
+    expect(commands).toContain("quality water planarScale 0.5");
+    // Play gets its post-processing and captures back.
+    expect(commands.slice(-5)).toEqual(["gpubusy off", "quality reset", "postprocessing on", "rendertargets on", "framecap 30"]);
+  });
+
+  it("skips a step whose setting already holds its value, and the baseline after it, without sampling either", async () => {
+    const editor = fakeEditor({});
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      play: () => {
+        const play = editor.deps.play();
+        return play && { ...play, snapshot: () => ({
+          ...play.snapshot(),
+          rendering: { cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1, settings: fingerprintAfter(editor.commands) } as unknown as RenderDiagnostics,
+        }) };
+      },
+    };
+    const report = await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_World")], deps, signal: new AbortController().signal, breakdown: REMOVE_ONE,
+    });
+    const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup);
+    const skipped = measured.filter((sample) => sample.skipped);
+    expect(skipped.map((sample) => [sample.label, sample.skipped])).toEqual([
+      ["shadows medium", "already shadows medium 2048, shadows.filter high"],
+      ["water detail medium", "already water.shadingDetail medium, water.fft 256x3"],
+      ["volumetrics off", "already post.volumetricLighting false"],
+    ]);
+    expect(skipped.every((sample) => sample.frames === null)).toBe(true);
+    // The filter step changes the fingerprint now, so it is measured.
+    expect(measured.find((sample) => sample.label === "shadow filter medium")).toMatchObject({ settings: { "shadows.filter": "medium" } });
+    expect(measured.find((sample) => sample.label === "shadow filter medium")!.skipped).toBeUndefined();
+    // shadows off, its baseline, the skipped step, then straight to the next step: the baseline before it is adjacent.
+    const labels = measured.map((sample) => sample.label);
+    expect(labels.slice(labels.indexOf("shadows off"), labels.indexOf("shadows off") + 5))
+      .toEqual(["shadows off", "baseline 2", "shadows medium", "shadow filter medium", "baseline 4"]);
+    expect(editor.sampled.length).toBe(report.scenes[0]!.play.benchmark.filter((sample) => !sample.skipped).length + 2);
   });
 
   it("warms up until two windows agree within 3%, and no longer than its bound when they never do", async () => {
@@ -331,8 +421,8 @@ describe("runFeatureTestCheck", () => {
       mode: "breakdown", scenes: [scene("FT_World")], deps, signal: new AbortController().signal,
     });
     const samples = report.scenes[0]!.play.benchmark;
-    expect(samples.find((sample) => sample.label === "shadows off")!.gpuBusy).toEqual(gpuBusy);
-    expect(breakdownDelta(samples, samples.find((sample) => sample.label === "shadows off")!)).toMatchObject({ ms: 0, basis: "gpu" });
+    expect(samples.find((sample) => sample.label === "MSAA 2x")!.gpuBusy).toEqual(gpuBusy);
+    expect(breakdownDelta(samples, samples.find((sample) => sample.label === "MSAA 2x")!)).toMatchObject({ ms: 0, basis: "gpu" });
   });
 
   it("restores a step's toggle when the sweep stops at it", async () => {
@@ -341,7 +431,7 @@ describe("runFeatureTestCheck", () => {
       ? { drawn: 0, held: commands.length }
       : { drawn: commands.length * 10 + _now, held: 0 });
     await runFeatureTestCheck({
-      mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: controller.signal,
+      mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: controller.signal, breakdown: REMOVE_ONE,
     });
     // `captures off` never draws steadily: the sweep stops there and still turns captures back on.
     expect(editor.commands).not.toContain("quality resolution scale 0.5");
@@ -415,10 +505,10 @@ describe("breakdown settling", () => {
       await deps.sleep(ms, signal);
     } };
     const report = await runFeatureTestCheck({ mode: "breakdown", scenes: [scene("FT_World")], deps: tracked, signal: new AbortController().signal });
-    const sampledAt = editor.sampled.find((sample) => sample.after === "quality shadows enabled off")!.now;
+    const sampledAt = editor.sampled.find((sample) => sample.after === "quality shadows filter high")!.now;
     // 12 s of first draws and compiles, then the 3 s quiet time.
-    expect(sampledAt - issued.get("quality shadows enabled off")!).toBeGreaterThanOrEqual(15_000);
-    const shadows = report.scenes[0]!.play.benchmark.find((sample) => sample.label === "shadows off")!;
+    expect(sampledAt - issued.get("quality shadows filter high")!).toBeGreaterThanOrEqual(15_000);
+    const shadows = report.scenes[0]!.play.benchmark.find((sample) => sample.label === "shadow filter high")!;
     expect(shadows.unsettled).toMatchObject({ firstDraws: 0, compiling: 0 });
     // 12 s busy, then the 3 s quiet time, within one 250 ms poll.
     expect(shadows.unsettled!.settleMs).toBeGreaterThanOrEqual(14_750);
@@ -567,9 +657,9 @@ describe("breakdown verdicts", () => {
       sample("baseline 1", 20), sample("shadows off", 11), sample("baseline 2", 20), sample("post low", 2), sample("baseline 3", 20),
       sample("post off", 12), sample("baseline 4", 20), sample("captures off", 15), sample("baseline 5", 20),
     ];
-    expect(breakdownAdditivity("FT_World", run)).toEqual([{ view: undefined, savingsMs: 22, baselineMs: 20, basis: "gpu", nonAdditive: true }]);
+    expect(breakdownAdditivity("FT_World", run, "remove-one")).toEqual([{ view: undefined, savingsMs: 22, baselineMs: 20, basis: "gpu", nonAdditive: true }]);
     // Without captures off the sum is 17, which a 20 ms frame can hold; post low's 18 ms is not counted.
-    expect(breakdownAdditivity("FT_World", run.slice(0, 7))).toMatchObject([{ savingsMs: 17, nonAdditive: false }]);
+    expect(breakdownAdditivity("FT_World", run.slice(0, 7), "remove-one")).toMatchObject([{ savingsMs: 17, nonAdditive: false }]);
   });
 
   it("checks each camera's savings against its own first baseline, and only steps that saved", () => {
@@ -578,10 +668,32 @@ describe("breakdown verdicts", () => {
       sample("baseline 1", 10), sample("occlusion on", 11), sample("baseline 2", 10),
       rooms(sample("rooms baseline 1", 4)), rooms(sample("rooms occlusion on", 3)), rooms(sample("rooms baseline 2", 4)),
     ];
-    expect(breakdownAdditivity("FT_Occlusion", run)).toEqual([
+    expect(breakdownAdditivity("FT_Occlusion", run, "remove-one")).toEqual([
       { view: undefined, savingsMs: 0, baselineMs: 10, basis: "gpu", nonAdditive: false },
       { view: "rooms", savingsMs: 1, baselineMs: 4, basis: "gpu", nonAdditive: false },
     ]);
+  });
+
+  it("leaves add-one out of the additivity check: its changes are costs on a base, not shares of one frame", () => {
+    const run = [sample("baseline 1", 10), sample("MSAA 4x", 30), sample("baseline 2", 10)];
+    expect(breakdownAdditivity("FT_World", run, "add-one")).toEqual([]);
+  });
+
+  it("is OVER CAP when an add-one baseline passes the cap, in GPU-busy time where measured, else mean frame time", () => {
+    const run = [
+      sample("baseline 1", ADD_ONE_CAP_MS), sample("MSAA 4x", 45), sample("baseline 2", 31),
+      sample("baseline 3", 0, { gpuBusy: undefined, frames: { frames: 100, durationMs: 3500, fps: 28, meanMs: 35, p95Ms: 40, maxMs: 50, stalls: 0 } }),
+      sample("warm-up 1", 40, { baseline: false, warmup: true }),
+    ];
+    // At the cap is not over it; the step and the warm-up window are not baselines.
+    expect(breakdownOverCap(run)).toEqual([{ label: "baseline 2", ms: 31, basis: "gpu" }, { label: "baseline 3", ms: 35, basis: "frame" }]);
+  });
+
+  it("measures the warm-up drift from the first window to the last, steady one", () => {
+    const warm = (label: string, busyMs: number) => sample(label, busyMs, { baseline: false, warmup: true });
+    expect(breakdownWarmupDrift([warm("warm-up 1", 40), warm("warm-up 2", 21), warm("warm-up 3", 20), sample("baseline 1", 70)]))
+      .toEqual({ firstMs: 40, steadyMs: 20, percent: -50, windows: 3, basis: "gpu" });
+    expect(breakdownWarmupDrift([warm("warm-up 1", 40), sample("baseline 1", 20)])).toBeNull();
   });
 
   it("is SATURATED when most baseline frames lasted four or more display intervals, weighted by frames", () => {
@@ -620,6 +732,33 @@ describe("frame pacing", () => {
     expect(frameBound(at(40), 30)).toBe("cpu");
     expect(frameBound(at(40), null)).toBeNull();
     expect(frameBound(null, 14)).toBeNull();
+  });
+
+  it("changes, with every Breakdown step, only that step's fingerprint fields, or skips it where the base already holds its value", () => {
+    // At Medium, Medium's shadows, water detail and volumetrics already hold; the add-one base turns every feature off.
+    const expectedSkips = { "remove-one": ["shadows medium", "water detail medium", "volumetrics off"], "add-one": [] as string[] };
+    for (const method of FEATURE_TEST_BREAKDOWN_METHODS) {
+      const base = FEATURE_TEST_BREAKDOWN_BASES[method].commands;
+      const reference = fingerprintAfter(base);
+      const skipped: string[] = [];
+      for (const step of method === "add-one" ? FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS : FEATURE_TEST_BREAKDOWN_STEPS) {
+        const after = fingerprintAfter([...base, ...step.commands]);
+        const changed = settingsChanges(reference, after).map((change) => change.slice(0, change.indexOf("=")));
+        expect(changed.filter((field) => !step.fields!.includes(field)), `${method} ${step.label}`).toEqual([]);
+        if (breakdownSkip(step.fields, reference, after)) skipped.push(step.label);
+        else expect(changed.length, `${method} ${step.label}`).toBeGreaterThan(0);
+      }
+      expect(skipped, method).toEqual(expectedSkips[method]);
+    }
+  });
+
+  it("skips a step only when none of its fields changed, naming what they already hold", () => {
+    const before = { shadows: "medium 2048", "shadows.filter": "high" };
+    expect(breakdownSkip(["shadows.filter"], before, { ...before, "shadows.filter": "medium" })).toBeNull();
+    expect(breakdownSkip(["shadows", "shadows.filter"], before, before)).toBe("already shadows medium 2048, shadows.filter high");
+    // Without fields or a fingerprint there is nothing to compare: measure it.
+    expect(breakdownSkip(undefined, before, before)).toBeNull();
+    expect(breakdownSkip(["shadows"], before, undefined)).toBeNull();
   });
 
   it("lists the render settings two fingerprints differ in", () => {
