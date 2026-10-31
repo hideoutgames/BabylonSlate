@@ -67,7 +67,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   meshAssetGuids: Map<number, string | null>;
   /** Extra component parts from assignMesh, keyed by slotId. */
   meshParts: Map<number, NonNullable<AssignMeshCommand["parts"]>>;
-  meshSorting: Map<number, Pick<AssignMeshCommand, "actorGuid" | "sortingLayer" | "orderInLayer">>;
+  meshSorting: Map<number, Pick<AssignMeshCommand, "actorGuid" | "sortingLayer" | "orderInLayer" | "castShadows" | "receiveShadows">>;
   /** Second sprite mesh used for two-layer clip crossfades. */
   spriteOverlays?: Map<number, Mesh>;
   /** Per-slot AnimationGroups keyed after model load (not the global scene list). */

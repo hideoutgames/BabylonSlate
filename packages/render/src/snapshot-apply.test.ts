@@ -1,3 +1,4 @@
+import { authoredShadowParticipation } from "./shadow-mesh-policy";
 import { installModelSources } from "./mesh-assets";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -2043,6 +2044,17 @@ describe("createPlayMesh", () => {
     expect(mesh).not.toBeNull();
     expect((mesh!.metadata as { text3d?: boolean }).text3d).toBe(true);
     expect(isPlayHelperMeshKind("text3d")).toBe(false);
+  });
+
+  it("gives a one-visual actor's mesh the shadow participation its assignment resolves: an unlit 3D Text casts none", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const text3d = { text: "Hi", size: 1, color: [1, 1, 1] as [number, number, number], fontAssetGuid: null, alignment: "left" as const };
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 4, meshAssetGuid: null, meshKind: "text3d", text3d, castShadows: false, receiveShadows: true });
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 5, meshAssetGuid: null, meshKind: "text3d", text3d, castShadows: true, receiveShadows: true });
+    expect(["actor-4", "actor-5"].map((name) => authoredShadowParticipation(scene.getMeshByName(name)!).castShadows)).toEqual([false, true]);
   });
 
   it("hides a RigidBody Play helper instead of drawing a white cube", () => {
