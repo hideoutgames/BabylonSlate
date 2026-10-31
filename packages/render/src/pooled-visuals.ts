@@ -1,5 +1,5 @@
 import type { AbstractMesh, InstancedMesh, Material, Mesh, Scene } from "@babylonjs/core";
-import { materialIneligibility, sceneInstancePool } from "./instance-pool";
+import { isPoolMember, materialIneligibility, sceneInstancePool } from "./instance-pool";
 
 /**
  * Visuals drawn through the instance pool: a slot root or named part stays a `Mesh` without geometry, and its drawn
@@ -64,6 +64,25 @@ export function setActorMeshMaterial(mesh: AbstractMesh, material: Material | nu
   }
   sceneInstancePool(mesh.getScene()).update(leaf, { material });
   return undefined;
+}
+
+/**
+ * Assigns `material` to what `mesh` draws and returns the mesh that draws it: a pool member, such as a static model's
+ * leaf (`poolModelLeaves`), by moving it to the group drawn with `material`, or, where no group can draw it, by
+ * replacing it in place with a mesh of its own (the eject listeners refresh what keyed it); a pooled visual's root
+ * through `setActorMeshMaterial`; any other mesh directly.
+ */
+export function setDrawnMaterial(mesh: AbstractMesh, material: Material | null): AbstractMesh {
+  if (!isPoolMember(mesh)) return setActorMeshMaterial(mesh, material) ?? mesh;
+  const pool = sceneInstancePool(mesh.getScene());
+  if (!materialIneligibility(mesh.sourceMesh, material ?? mesh.getScene().defaultMaterial)) {
+    pool.update(mesh, { material });
+    return mesh;
+  }
+  const own = pool.eject(mesh);
+  own.material = material;
+  for (const listener of [...ejectListeners.get(own.getScene()) ?? []]) listener(own);
+  return own;
 }
 
 /**

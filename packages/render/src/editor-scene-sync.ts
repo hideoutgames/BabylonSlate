@@ -1,7 +1,8 @@
 import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
-import { setActorMeshMaterial } from "./pooled-visuals";
+import { pooledLeafOf, setDrawnMaterial } from "./pooled-visuals";
+import { isPoolMember } from "./instance-pool";
 import { withNetMaterialChanges } from "./material-change-batch";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
@@ -122,7 +123,7 @@ export class EditorSceneSync {
   private readonly validateMaterialParameter?: MeshAssetContext["validateMaterialParameter"];
   private readonly onAfterApply?: () => void;
   private readonly preparationPriority?: NativePreparationPriority;
-  private readonly constructionMaterials = new WeakMap<Mesh, Material | null>();
+  private readonly constructionMaterials = new WeakMap<AbstractMesh, Material | null>();
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
   private lastAssetFingerprint: string | null = null;
@@ -1338,22 +1339,28 @@ function visualForMeshComponent(
 }
 
 /**
- * Draws `target` with `material`, a pooled visual through its group or, for a Material no group draws, a mesh of its
- * own (`setActorMeshMaterial`), which inherits `target`'s construction Material so a restore reaches what draws.
+ * Draws `target` with `material`: a pooled visual or a static model's pooled leaf through its group or, for a
+ * Material no group draws, a mesh of its own (`setDrawnMaterial`), which inherits `target`'s construction Material so
+ * a restore reaches what draws.
  */
-function assignActorMeshMaterial(target: Mesh, material: Material | null, construction?: WeakMap<Mesh, Material | null>): void {
-  const own = setActorMeshMaterial(target, material);
-  applyMaterialBounds(target);
-  if (!own) return;
-  applyMaterialBounds(own);
-  if (construction?.has(target)) construction.set(own, construction.get(target) ?? null);
+function assignActorMeshMaterial(target: AbstractMesh, material: Material | null, construction?: WeakMap<AbstractMesh, Material | null>): void {
+  const drawn = setDrawnMaterial(target, material);
+  if (!target.isDisposed()) applyMaterialBounds(target);
+  if (drawn === target) return;
+  applyMaterialBounds(drawn);
+  if (construction?.has(target)) construction.set(drawn, construction.get(target) ?? null);
 }
 
-function meshAndDescendantMeshes(root: Mesh): Mesh[] {
+/**
+ * `root` and the meshes under it whose Material the editor writes: a static model's pooled leaves among them, not a
+ * pooled primitive's leaf, which follows its root.
+ */
+function meshAndDescendantMeshes(root: Mesh): AbstractMesh[] {
   // Automatic LOD levels are blocked meshes that mirror their master's material.
   const children = root
     .getChildMeshes()
-    .filter((child): child is Mesh => child instanceof Mesh && !child.isBlocked);
+    .filter((child) => child instanceof Mesh ? !child.isBlocked
+      : isPoolMember(child) && (!child.parent || pooledLeafOf(child.parent as AbstractMesh) !== child));
   return [root, ...children];
 }
 import { updateLandscapeMesh } from "./landscape-mesh";

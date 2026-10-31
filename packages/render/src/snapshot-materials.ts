@@ -1,5 +1,6 @@
-import { setActorMeshMaterial } from "./pooled-visuals";
-import type { Material, Mesh, Scene } from "@babylonjs/core";
+import { pooledLeafOf, setDrawnMaterial } from "./pooled-visuals";
+import { isPoolMember } from "./instance-pool";
+import type { AbstractMesh, Material, Mesh, Scene } from "@babylonjs/core";
 import type { CommandMessage } from "@haptic/bridge";
 import { applyMaterialBounds } from "./material-bounds";
 import { restoreAlbedoMaterial } from "./mesh-assets";
@@ -218,7 +219,10 @@ export function applyMaterialToActorMeshes(
   root: Mesh,
   onlyComponentId?: string,
 ): void {
-  const targets: Mesh[] = [root, ...root.getChildMeshes().filter(isMesh)];
+  // A static model's pooled leaves draw with what is assigned to them (`setDrawnMaterial`); a pooled primitive's leaf
+  // follows its root.
+  const targets: AbstractMesh[] = [root, ...root.getChildMeshes().filter((mesh) => isMesh(mesh) ||
+    (isPoolMember(mesh) && (!mesh.parent || pooledLeafOf(mesh.parent as AbstractMesh) !== mesh)))];
   const components = new Map<SceneNode, string | null>();
   for (const target of targets) {
     // Text Materials are composed with glyph coverage by the text builder.
@@ -228,7 +232,7 @@ export function applyMaterialToActorMeshes(
     if (onlyComponentId !== undefined && componentId !== onlyComponentId) continue;
     const guid = assignedMaterialGuid(binding, slotId, componentId);
     if (guid === null) {
-      if (!restoreAlbedoMaterial(target)) setActorMeshMaterial(target, null);
+      if (!restoreAlbedoMaterial(target)) setDrawnMaterial(target, null);
       continue;
     }
     if (!guid) continue;
@@ -241,9 +245,9 @@ export function applyMaterialToActorMeshes(
     );
     if (material) {
       // A Material no pool group can draw (World Position Offset pads its bounds) gives the visual a mesh of its own.
-      const own = setActorMeshMaterial(target, material);
-      applyMaterialBounds(target);
-      if (own) applyMaterialBounds(own);
+      const drawn = setDrawnMaterial(target, material);
+      if (!target.isDisposed()) applyMaterialBounds(target);
+      if (drawn !== target) applyMaterialBounds(drawn);
     }
   }
 }
