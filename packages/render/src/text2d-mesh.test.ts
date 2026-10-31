@@ -1,4 +1,4 @@
-import { Mesh, StandardMaterial } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createActor,
@@ -259,7 +259,7 @@ describe("createText2DMesh", () => {
     const sources = mesh.getChildMeshes().map(sourceOf);
     expect(sources).toContain("msdf");
     expect(sources).toContain("bitmap");
-    // Same-style MSDF glyphs share one material and one batch mesh; another color gets its own.
+    // Same-style MSDF glyphs share one binding and one batch mesh; another color gets its own.
     const msdfGlyphs = mesh.getChildMeshes().filter((child) => sourceOf(child) === "msdf");
     expect(msdfGlyphs).toHaveLength(1);
     expect(msdfGlyphs[0]!.getTotalVertices()).toBe(2 * 4);
@@ -270,10 +270,11 @@ describe("createText2DMesh", () => {
       assets,
       { rich: true },
     );
-    const [red, green] = rich.getChildMeshes().map((child) => child.material as StandardMaterial);
+    // Without its atlas (no resource cache) each style draws its solid colour.
+    const [red, green] = rich.getChildMeshes().map((child) => unlitBinding(child));
     expect(red).not.toBe(green);
-    expect(red!.emissiveColor.asArray()).toEqual([1, 0, 0]);
-    expect(green!.emissiveColor.asArray()).toEqual([0, 1, 0]);
+    expect(red!.color).toEqual([1, 0, 0]);
+    expect(green!.color).toEqual([0, 1, 0]);
   });
 
   it.each([

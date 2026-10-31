@@ -1,16 +1,9 @@
 import {
-  Color3,
-  Effect,
-  Material,
   Mesh,
   MeshBuilder,
   Observer,
   RawTexture,
   Scene,
-  ShaderLanguage,
-  ShaderMaterial,
-  ShaderStore,
-  StandardMaterial,
   Texture,
   VertexBuffer,
   type BaseTexture,
@@ -41,7 +34,7 @@ import { VisualBundle } from "./visual-bundle";
 import { materialRestore, setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
 import { bindTextMaterialGlyph } from "./text-material-block";
 import { glyphBatchVertexData, writeGlyphBatchPositions, type GlyphBatchQuad } from "./text2d-glyph-batch";
-import { applyOverlayVisualStyle, overlayVisualStyle } from "./overlay-visual-style";
+import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import {
   combineText2DEffects,
   layoutText2DFromProperties,
@@ -119,10 +112,8 @@ export type MsdfAtlas = {
   chars: Map<number, MsdfGlyph>;
 };
 
-const MSDF_SHADER = "text2dMsdf";
 const MSDF_ITALIC_SHEAR = -0.2;
 const loggedMsdfFallback = new Set<string>();
-let msdfShadersRegistered = false;
 
 function decodeJson(bytes: Uint8Array): unknown {
   try {
@@ -237,6 +228,19 @@ function msdfMetrics(
 /** Text glyphs draw from both sides, fogged with the world. */
 const TEXT_GLYPH: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: true, role: "world" };
 const TEXT_SOLID: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: true, role: "world" };
+/**
+ * MSDF glyphs keep the look of the shader they replaced: exact display colours (a tilemap atlas's image processing,
+ * still decoded for a Scene Linear stage), no fog, blended by their coverage.
+ */
+const TEXT_MSDF: UnlitMaterialKey = { textured: true, msdf: true, backFaceCulling: false, fog: false, role: "world", imageProcessing: "atlas" };
+
+/** An MSDF glyph style: its fill and outline over the atlas's distance field; coverage below 0.01 is discarded. */
+function msdfGlyphBinding(atlas: BaseTexture, style: RichTextStyle): UnlitBinding {
+  return {
+    texture: atlas, color: [style.color[0], style.color[1], style.color[2]], alpha: 1, cutoff: 0.01, blend: true, textureAlpha: false,
+    twoSided: false, msdf: { strokeColor: [style.outlineColor[0], style.outlineColor[1], style.outlineColor[2]], strokeWidth: Math.max(0, style.outline) * 0.08 },
+  };
+}
 
 /** A bitmap glyph: its atlas's colour and coverage, cut out at 0.4 unless the text fades in. */
 function bitmapGlyphBinding(atlas: Texture, fade: boolean): UnlitBinding {
@@ -250,103 +254,6 @@ function solidGlyphBinding(color: readonly [number, number, number], fade: boole
   return {
     texture: null, color: [clamp(color[0]), clamp(color[1]), clamp(color[2])], alpha: 1, cutoff: 0, blend: fade, textureAlpha: false, twoSided: false,
   };
-}
-
-function unlitMaterial(
-  scene: Scene,
-  name: string,
-  color: [number, number, number],
-  msdf: boolean,
-  bundle: VisualBundle,
-): StandardMaterial {
-  const material = bundle.ownMaterial(new StandardMaterial(name, scene));
-  material.disableLighting = true;
-  material.backFaceCulling = false;
-  material.emissiveColor = new Color3(color[0], color[1], color[2]);
-  material.diffuseColor = Color3.Black();
-  material.specularColor = Color3.Black();
-  material.metadata = { ...(material.metadata ?? {}), msdf };
-  return material;
-}
-
-function ensureMsdfShaders(): void {
-  if (msdfShadersRegistered) return;
-  msdfShadersRegistered = true;
-  ShaderStore.ShadersStoreWGSL[`${MSDF_SHADER}VertexShader`] = `
-attribute position: vec3f;
-attribute uv: vec2f;
-uniform worldViewProjection: mat4x4f;
-varying vUV: vec2f;
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
-  vertexOutputs.vUV = vertexInputs.uv;
-  vertexOutputs.position = uniforms.worldViewProjection * vec4f(vertexInputs.position, 1.0);
-}
-`;
-  ShaderStore.ShadersStoreWGSL[`${MSDF_SHADER}FragmentShader`] = `
-varying vUV: vec2f;
-var atlasSampler: sampler;
-var atlas: texture_2d<f32>;
-uniform fillColor: vec3f;
-uniform strokeColor: vec3f;
-uniform strokeWidth: f32;
-uniform glyphOpacity: f32;
-uniform overlayTint: vec4f;
-uniform linearOutput: f32;
-fn median(r: f32, g: f32, b: f32) -> f32 {
-  return max(min(r, g), min(max(r, g), b));
-}
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let msd = textureSample(atlas, atlasSampler, fragmentInputs.vUV).rgb;
-  let sd = median(msd.r, msd.g, msd.b);
-  let screenPxDistance = fwidth(sd) * 0.5;
-  let fill = clamp((sd - 0.5) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0);
-  let outline = select(fill, clamp((sd - 0.5 + uniforms.strokeWidth) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0), uniforms.strokeWidth > 0.0);
-  var color = mix(uniforms.strokeColor, uniforms.fillColor, fill);
-  if (uniforms.linearOutput > 0.5) { color = pow(max(color, vec3f(0.0)), vec3f(2.2)); }
-  let alpha = max(fill, outline) * uniforms.glyphOpacity;
-  if (alpha < 0.01) { discard; }
-  fragmentOutputs.color = vec4f(color, alpha) * uniforms.overlayTint;
-}
-`;
-  Effect.ShadersStore[`${MSDF_SHADER}VertexShader`] = `
-attribute vec3 position;
-attribute vec2 uv;
-uniform mat4 worldViewProjection;
-varying vec2 vUV;
-void main() {
-  vUV = uv;
-  gl_Position = worldViewProjection * vec4(position, 1.0);
-}
-`;
-  Effect.ShadersStore[`${MSDF_SHADER}FragmentShader`] = `
-varying vec2 vUV;
-uniform sampler2D atlas;
-uniform vec3 fillColor;
-uniform vec3 strokeColor;
-uniform float strokeWidth;
-uniform float glyphOpacity;
-uniform vec4 overlayTint;
-uniform float linearOutput;
-float median(float r, float g, float b) {
-  return max(min(r, g), min(max(r, g), b));
-}
-void main() {
-  vec3 msd = texture2D(atlas, vUV).rgb;
-  float sd = median(msd.r, msd.g, msd.b);
-  float screenPxDistance = fwidth(sd) * 0.5;
-  float fill = clamp((sd - 0.5) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0);
-  float outline = strokeWidth > 0.0
-    ? clamp((sd - 0.5 + strokeWidth) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0)
-    : fill;
-  vec3 color = mix(strokeColor, fillColor, fill);
-  if (linearOutput > 0.5) color = pow(max(color, vec3(0.0)), vec3(2.2));
-  float alpha = max(fill, outline) * glyphOpacity;
-  if (alpha < 0.01) discard;
-  gl_FragColor = vec4(color, alpha) * overlayTint;
-}
-`;
 }
 
 function msdfAtlasTexture(
@@ -366,57 +273,6 @@ function msdfAtlasTexture(
       invertY: false,
     },
   );
-}
-
-function msdfGlyphMaterial(
-  scene: Scene,
-  name: string,
-  color: [number, number, number],
-  outline: number,
-  outlineColor: [number, number, number],
-  atlas: BaseTexture | null,
-  bundle: VisualBundle,
-): Material {
-  if (!atlas) return unlitMaterial(scene, name, color, true, bundle);
-  try {
-    ensureMsdfShaders();
-    const material = bundle.ownMaterial(new ShaderMaterial(
-      name,
-      scene,
-      { vertex: MSDF_SHADER, fragment: MSDF_SHADER },
-      {
-        shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
-        attributes: ["position", "uv"],
-        uniforms: ["worldViewProjection", "fillColor", "strokeColor", "strokeWidth", "glyphOpacity", "overlayTint", "linearOutput"],
-        samplers: ["atlas"],
-        needAlphaBlending: true,
-      },
-    ));
-    material.backFaceCulling = false;
-    material.setTexture("atlas", atlas);
-    material.setColor3("fillColor", new Color3(color[0], color[1], color[2]));
-    material.setColor3(
-      "strokeColor",
-      new Color3(outlineColor[0], outlineColor[1], outlineColor[2]),
-    );
-    material.setFloat("strokeWidth", Math.max(0, outline) * 0.08);
-    material.setFloat("glyphOpacity", 1);
-    material.onBindObservable.add((mesh) => {
-      material.getEffect()?.setFloat("glyphOpacity", mesh?.visibility ?? 1);
-      const { opacity, tint } = overlayVisualStyle(mesh);
-      material.getEffect()?.setFloat4("overlayTint", tint[0], tint[1], tint[2], tint[3] * opacity);
-      // Glyph colors are display-space. Like Standard materials, decode them
-      // for a Scene Linear display stage, which encodes the frame once.
-      material.getEffect()?.setFloat("linearOutput", scene.imageProcessingConfiguration.applyByPostProcess ? 1 : 0);
-    });
-    material.metadata = { ...(material.metadata ?? {}), msdf: true };
-    return material;
-  } catch {
-    const fallback = unlitMaterial(scene, name, color, true, bundle);
-    fallback.emissiveTexture = atlas as Texture;
-    fallback.opacityTexture = atlas as Texture;
-    return fallback;
-  }
 }
 
 function applyGlyphUvs(
@@ -662,25 +518,20 @@ export function createText2DMesh(
 
     const glyphMeshes: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }> =
       [];
-    // MSDF uniforms depend only on these style fields; bold and italic are
-    // mesh transforms, so glyphs of one style share a bundle-owned material.
-    const msdfMaterials = new Map<string, Material>();
-    const msdfMaterialFor = (item: Text2DLayoutItem, index: number): Material => {
+    // An MSDF glyph's binding depends only on these style fields; bold and italic
+    // are mesh transforms, so glyphs of one style share a binding (and a batch).
+    // Without its atlas a glyph draws its solid colour.
+    const msdfBindings = new Map<string, { key: UnlitMaterialKey; binding: UnlitBinding }>();
+    const msdfBindingFor = (item: Text2DLayoutItem): { key: UnlitMaterialKey; binding: UnlitBinding } => {
       const styleKey = `${item.style.color.join()}|${item.style.outline}|${item.style.outlineColor.join()}`;
-      let material = msdfMaterials.get(styleKey);
-      if (!material) {
-        material = msdfGlyphMaterial(
-          scene,
-          `${name}:glyph:${index}`,
-          item.style.color,
-          item.style.outline,
-          item.style.outlineColor,
-          atlasTexture,
-          bundle,
-        );
-        msdfMaterials.set(styleKey, material);
+      let style = msdfBindings.get(styleKey);
+      if (!style) {
+        style = atlasTexture
+          ? { key: TEXT_MSDF, binding: msdfGlyphBinding(atlasTexture, item.style) }
+          : { key: TEXT_SOLID, binding: solidGlyphBinding(item.style.color, fade) };
+        msdfBindings.set(styleKey, style);
       }
-      return material;
+      return style;
     };
     const materialGlyphs: Array<{ mesh: Mesh; restore: () => void }> = [];
     // Static glyphs that share a material draw as one mesh per material. A Text
@@ -688,16 +539,16 @@ export function createText2DMesh(
     // individually, so those texts keep one plane per glyph, as do letter
     // effects, images, underlines and glyphs with a private fallback material.
     const batchGlyphs = !parsed.materialGuid && (!rich || parsed.appearModes.length === 0);
-    /** Keyed by the MSDF style's material, or the bitmap atlas its glyphs sample. */
-    const batches = new Map<Material | Texture, { mesh: Mesh; quads: GlyphBatchQuad[] }>();
+    /** Keyed by the MSDF style's binding, or the bitmap atlas its glyphs sample. */
+    const batches = new Map<UnlitBinding | Texture, { mesh: Mesh; quads: GlyphBatchQuad[] }>();
     layout.items.forEach((item, index) => {
       if (item.kind === "glyph" && !(item.ch ?? "").trim()) return;
       const msdf = item.source === "msdf" && renderer === "msdf";
       const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
       if (batchGlyphs && item.kind === "glyph" && !hasLetterEffects(item)) {
         const bitmapKey = !msdf && item.ch ? bitmapGlyphKey(item.ch, item.style, fontStack) : null;
-        const material = msdf ? msdfMaterialFor(item, index) : null;
-        const batchKey = material ?? (bitmapKey && bitmapBinding && packedBitmap ? bitmapAtlas : null);
+        const style = msdf ? msdfBindingFor(item) : null;
+        const batchKey = style?.binding ?? (bitmapKey && bitmapBinding && packedBitmap ? bitmapAtlas : null);
         if (batchKey) {
           let batch = batches.get(batchKey);
           if (!batch) {
@@ -705,7 +556,7 @@ export function createText2DMesh(
             const mesh = new Mesh(`${name}:glyphs:${index}`, scene);
             mesh.parent = parent;
             mesh.isPickable = false;
-            if (material) mesh.material = material;
+            if (style) setUnlitMaterial(mesh, style.key, style.binding);
             else setUnlitMaterial(mesh, TEXT_GLYPH, bitmapBinding!);
             mesh.metadata = { text2dGlyph: true, text2dSource: item.source, text2dBatch: true };
             batch = { mesh, quads: [] };
@@ -736,7 +587,8 @@ export function createText2DMesh(
       child.isPickable = false;
       child.rotation.z = restRotation;
       if (msdf) {
-        child.material = msdfMaterialFor(item, index);
+        const style = msdfBindingFor(item);
+        setUnlitMaterial(child, style.key, style.binding);
         applyGlyphUvs(child, item.uvs);
       } else if (item.kind === "image") {
         setUnlitMaterial(child, TEXT_SOLID, solidGlyphBinding(item.style.color, fade));
@@ -755,9 +607,6 @@ export function createText2DMesh(
       if (item.style.bold && msdf) {
         child.scaling.x = 1.08;
         child.scaling.y = 1.08;
-      }
-      if (fade && child.material instanceof StandardMaterial) {
-        child.material.transparencyMode = Material.MATERIAL_ALPHABLEND;
       }
       child.metadata = {
         ...(child.metadata ?? {}),

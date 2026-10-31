@@ -26,6 +26,8 @@ export type UnlitBinding = {
   textureAlpha: boolean;
   /** Back faces flip the geometry pass's normal (Standard's `twoSidedLighting`). */
   twoSided: boolean;
+  /** An MSDF glyph's outline (`UnlitMaterialKey.msdf`): its colour, and its width in distance-field units (0: none). */
+  msdf?: { strokeColor: readonly [number, number, number]; strokeWidth: number };
 };
 
 const bindings = new WeakMap<AbstractMesh, UnlitBinding>();
@@ -72,6 +74,7 @@ const U = {
   finish: "unlitFinish",
   tint: "unlitTint",
   geometry: "unlitGeometry",
+  msdf: "unlitMsdf",
 } as const;
 
 /** Whether the mesh's vertex colours carry alpha (Standard's `VERTEXALPHA`). */
@@ -80,7 +83,7 @@ function vertexAlpha(mesh: AbstractMesh): boolean {
 }
 
 /** Every per-mesh uniform, bound by the surface block (and again by the frozen-material rebind hook). */
-function bindUnlitUniforms(effect: Effect, material: NodeMaterial, mesh: AbstractMesh, fallback: BaseTexture | null, textured: boolean): void {
+function bindUnlitUniforms(effect: Effect, material: NodeMaterial, mesh: AbstractMesh, fallback: BaseTexture | null, textured: boolean, msdf: boolean): void {
   const binding = unlitBinding(mesh);
   if (textured) {
     const texture = binding.texture ?? fallback;
@@ -88,6 +91,10 @@ function bindUnlitUniforms(effect: Effect, material: NodeMaterial, mesh: Abstrac
     if (texture) effect.setMatrix(U.matrix, texture.getTextureMatrix());
   }
   effect.setFloat4(U.color, binding.color[0], binding.color[1], binding.color[2], binding.alpha);
+  if (msdf) {
+    const stroke = binding.msdf;
+    effect.setFloat4(U.msdf, stroke?.strokeColor[0] ?? 0, stroke?.strokeColor[1] ?? 0, stroke?.strokeColor[2] ?? 0, Math.max(0, stroke?.strokeWidth ?? 0));
+  }
   const keepAlpha = material.needAlphaBlendingForMesh(mesh);
   effect.setFloat4(U.alpha, binding.cutoff, keepAlpha ? 1 : 0, textured && binding.textureAlpha && binding.texture?.hasAlpha ? 1 : 0, vertexAlpha(mesh) ? 1 : 0);
   effect.setFloat4(U.finish, mesh.visibility, 0, 0, 0);
@@ -125,6 +132,8 @@ RegisterClass("BABYLON.UnlitUvBlock", UnlitUvBlock);
 export class UnlitSurfaceBlock extends NodeMaterialBlock {
   /** Build-time: the instance samples the bound texture. */
   textured = false;
+  /** Build-time: the bound texture is an MSDF atlas (`UnlitMaterialKey.msdf`). */
+  msdf = false;
   /** The Material whose blending decides whether alpha is kept (a pass variant's surface); the drawing one otherwise. */
   alphaOwner: NodeMaterial | null = null;
   private fallback: RawTexture | null = null;
@@ -151,7 +160,7 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
   }
 
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
-    if (mesh) bindUnlitUniforms(effect, this.alphaOwner ?? material, mesh, this.fallback, this.textured);
+    if (mesh) bindUnlitUniforms(effect, this.alphaOwner ?? material, mesh, this.fallback, this.textured, this.msdf);
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -179,8 +188,25 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
       ? (wgsl ? `textureSample(${U.sampler}, ${U.sampler}Sampler, ${uv})` : `texture2D(${U.sampler}, ${uv})`)
       : `${vec4}(1.0)`};\n`;
     const rgb = this.rgb.associatedVariableName, a = this.a.associatedVariableName;
-    state.compilationString += `${state._declareOutput(this.rgb)} = ${u}${U.color}.rgb * ${sample}.rgb;\n`;
-    state.compilationString += `${state._declareOutput(this.a)} = ${u}${U.color}.a * mix(1.0, ${sample}.a, ${u}${U.alpha}.z);\n`;
+    if (this.msdf) {
+      // Text2D's MSDF glyph: the median distance, antialiased over a screen pixel, fills in the colour and strokes the
+      // outline (a wider coverage) in the outline colour. The derivative sits outside any branch.
+      state._emitUniformFromString(U.msdf, Types.Vector4);
+      const float = state._getShaderType(Types.Float);
+      const distance = state._getFreeVariableName("msdfDistance"), pixel = state._getFreeVariableName("msdfPixel");
+      const fill = state._getFreeVariableName("msdfFill"), outline = state._getFreeVariableName("msdfOutline");
+      const declare = (name: string) => wgsl ? `var ${name}: f32` : `${float} ${name}`;
+      state.compilationString += `${declare(distance)} = max(min(${sample}.r, ${sample}.g), min(max(${sample}.r, ${sample}.g), ${sample}.b));\n`;
+      state.compilationString += `${declare(pixel)} = max(fwidth(${distance}) * 0.5, 0.0001);\n`;
+      state.compilationString += `${declare(fill)} = clamp((${distance} - 0.5) / ${pixel} + 0.5, 0.0, 1.0);\n`;
+      state.compilationString += `${declare(outline)} = ${fill};\n`;
+      state.compilationString += `if (${u}${U.msdf}.w > 0.0) { ${outline} = clamp((${distance} - 0.5 + ${u}${U.msdf}.w) / ${pixel} + 0.5, 0.0, 1.0); }\n`;
+      state.compilationString += `${state._declareOutput(this.rgb)} = mix(${u}${U.msdf}.rgb, ${u}${U.color}.rgb, ${fill});\n`;
+      state.compilationString += `${state._declareOutput(this.a)} = ${u}${U.color}.a * max(${fill}, ${outline});\n`;
+    } else {
+      state.compilationString += `${state._declareOutput(this.rgb)} = ${u}${U.color}.rgb * ${sample}.rgb;\n`;
+      state.compilationString += `${state._declareOutput(this.a)} = ${u}${U.color}.a * mix(1.0, ${sample}.a, ${u}${U.alpha}.z);\n`;
+    }
     if (this.vertexColor.isConnected) {
       const color = this.vertexColor.associatedVariableName;
       state.compilationString += `#ifdef VERTEXCOLOR_NME\n${rgb} *= ${color}.rgb;\n${a} *= mix(1.0, ${color}.a, ${u}${U.alpha}.w);\n#endif\n`;

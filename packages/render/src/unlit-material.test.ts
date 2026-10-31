@@ -89,6 +89,26 @@ describe("unlit Material", () => {
     expect(plane.subMeshes[0]!.effect!.defines).toMatch(/#define UV1\b/);
   });
 
+  it("samples an MSDF atlas with a program of its own, its outline bound per mesh", async () => {
+    const target = scene();
+    const msdf: UnlitMaterialKey = { ...world, msdf: true, fog: false, imageProcessing: "atlas" };
+    const glyph = MeshBuilder.CreatePlane("glyph", {}, target);
+    const outlined = MeshBuilder.CreatePlane("outlined", {}, target);
+    const atlas = texture(target);
+    const material = setUnlitMaterial(glyph, msdf, binding({ texture: atlas, blend: true, cutoff: 0.01, textureAlpha: false }));
+    setUnlitMaterial(outlined, msdf, binding({ texture: atlas, blend: true, cutoff: 0.01, msdf: { strokeColor: [1, 0, 0], strokeWidth: 0.32 } }));
+    const textured = unlitMaterial(target, world);
+    for (const candidate of [material, textured]) await built(candidate);
+    expect(material).not.toBe(textured);
+    // Its code differs from the plain textured surface's: another program.
+    expect(material.buildId).not.toBe(textured.buildId);
+    await ready(material, glyph);
+    await ready(material, outlined);
+    expect(outlined.subMeshes[0]!.effect).toBe(glyph.subMeshes[0]!.effect);
+    expect(material.needAlphaBlendingForMesh(glyph)).toBe(true);
+    expect(material.fogEnabled).toBe(false);
+  });
+
   it("waits for the mesh's bound texture before drawing", async () => {
     const target = scene();
     const plane = MeshBuilder.CreatePlane("plane", {}, target);

@@ -247,12 +247,12 @@ for (const backend of ["webgl2"] as const) {
     expect(errors).toEqual([]);
     expect(result.reservations.reservedBytes).toBe(0);
     expect(result.reflectionCaptures).toHaveLength(1);
-    for (const { pbr, cel, unlitStandard } of result.reflectionCaptures) {
+    for (const { pbr, cel, unlit } of result.reflectionCaptures) {
       expect(reflected(pbr.off, pbr.on), "a PBR graph mirror reflects").toBeGreaterThan(20);
       // The one Post Processing setting drives CEL too; there is no CEL-only switch.
       expect(reflected(cel.off, cel.on), "a CEL graph mirror reflects").toBeGreaterThan(20);
-      expect(reflected(unlitStandard.off, unlitStandard.on), "an unlit Standard surface never reflects").toBe(0);
-      expect(pixelDifference(unlitStandard.off, unlitStandard.on), "unlit Standard color is unchanged").toBeLessThan(0.5);
+      expect(reflected(unlit.off, unlit.on), "an unlit surface never reflects").toBe(0);
+      expect(pixelDifference(unlit.off, unlit.on), "unlit color is unchanged").toBeLessThan(0.5);
     }
   });
 }
