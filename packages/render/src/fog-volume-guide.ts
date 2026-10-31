@@ -9,7 +9,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { parseFogVolumeProperties, parseReflectionProbeProperties, type FogVolumeProperties, type SerializedTransform } from "@haptic/core";
 import { RENDERING_GROUP } from "./sorting";
-import { volumeFillMaterial } from "./editor-volume";
+import { applyVolumeFillMaterial } from "./editor-volume";
 
 const ancestorsByGuide = new WeakMap<Mesh, TransformNode[]>();
 
@@ -42,7 +42,7 @@ export function createFogVolumeGuide(scene: Scene, name: string, properties: unk
     ? CreateSphere(name, { diameterX: width, diameterY: height, diameterZ: depth, segments: 12 }, scene)
     : CreateBox(name, { width, height, depth }, scene);
   guide.visibility = 1;
-  guide.material = volumeFillMaterial(scene);
+  applyVolumeFillMaterial(guide);
   guide.isPickable = true;
   guide.metadata = { editorVolume: true, fogVolumeGuide: true };
   const outline = CreateLineSystem(`${name}:outline`, { lines: outlineLines(volume) }, scene);
@@ -69,7 +69,7 @@ export function createReflectionProbeGuide(scene: Scene, name: string, propertie
   const [width, height, depth] = probe.size;
   const guide = CreateBox(name, { width, height, depth }, scene);
   guide.visibility = 1;
-  guide.material = volumeFillMaterial(scene);
+  applyVolumeFillMaterial(guide);
   guide.isPickable = true;
   guide.metadata = { editorVolume: true, reflectionProbeGuide: true };
   const outline = CreateLineSystem(`${name}:outline`, { lines: outlineLines({ shape: "box", size: probe.size, enabled: true, density: 0, edgeFalloff: 0 }) }, scene);

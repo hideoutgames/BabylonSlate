@@ -1,4 +1,4 @@
-import { StandardMaterial, type AbstractMesh } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
@@ -7,6 +7,8 @@ import {
   isEditorVolumeMesh,
   NAV_BLOCKER_VOLUME_COLOR,
 } from "./editor-volume";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 
 /** Dash boxes in the merged `:dash:` outline mesh (24 vertices per box). */
 function outlineDashCount(mesh: AbstractMesh): number {
@@ -39,8 +41,8 @@ describe("editor volume", () => {
     expect(isEditorVolumeMesh(mesh)).toBe(true);
     expect(mesh.isPickable).toBe(true);
     expect(mesh.visibility).toBe(1);
-    const material = mesh.material as StandardMaterial;
-    expect(material.alpha).toBe(0);
+    expect(isUnlitMaterial(mesh.material)).toBe(true);
+    expect(unlitBinding(mesh).alpha).toBe(0);
     expect(outlineDashCount(mesh)).toBeGreaterThan(8);
   });
 

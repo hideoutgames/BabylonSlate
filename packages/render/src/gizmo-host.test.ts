@@ -4,14 +4,21 @@ import {
   MeshBuilder,
   RenderTargetTexture,
   Scene,
+  StandardMaterial,
   Vector3,
+  type AbstractMesh,
+  type Material,
 } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   clampGizmoScreenScale,
   createGizmoHost,
   GIZMO_MIN_CAMERA_DISTANCE,
+  GIZMO_PLANAR_HOVER_ALPHA,
+  GIZMO_PLANAR_IDLE_ALPHA,
 } from "./gizmo-host";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 
 const handles: Array<{
   engine: { dispose: () => void };
@@ -224,6 +231,38 @@ describe("gizmo Prefab RTT pointer mapping", () => {
     expect(down).toHaveBeenCalled();
     const init = down.mock.calls[0]?.[1] as { pointerId?: number } | undefined;
     expect(init?.pointerId).toBe(7);
+    host.dispose();
+  });
+});
+
+describe("gizmo materials", () => {
+  it("draws every handle with unlit Materials, idle, hover and disabled each its own colour", () => {
+    const { scene } = createHandle();
+    new FreeCamera("camera", new Vector3(0, 0, -10), scene);
+    const host = createGizmoHost(scene, { tool: "translate" });
+    const layer = host.layer.utilityLayerScene;
+    // No Standard material is left in the gizmo layer: handles draw the unlit Material without fog.
+    expect(layer.materials.filter((material) => material instanceof StandardMaterial && material !== layer.defaultMaterial)).toEqual([]);
+    const handleMeshes = layer.meshes.filter((mesh) => mesh.material && mesh.material.getClassName() !== "ShaderMaterial");
+    expect(handleMeshes.length).toBeGreaterThan(0);
+    for (const mesh of handleMeshes) {
+      expect(isUnlitMaterial(mesh.material), mesh.name).toBe(true);
+      expect(mesh.material!.fogEnabled).toBe(false);
+    }
+    // Each slot binds its own fill: the planar handles' idle and hover alphas, and Babylon's disabled alpha.
+    const alphas = new Set(layer.materials.filter(isUnlitMaterial).map((material) => unlitBinding({ material } as unknown as AbstractMesh).alpha));
+    expect([...alphas]).toEqual(expect.arrayContaining([1, GIZMO_PLANAR_IDLE_ALPHA, GIZMO_PLANAR_HOVER_ALPHA, 0.4]));
+    // Babylon's gizmos copy the material's diffuse colour to their line meshes.
+    for (const material of layer.materials.filter(isUnlitMaterial)) {
+      expect((material as unknown as { diffuseColor?: unknown }).diffuseColor).toBeDefined();
+    }
+    // Hover swaps the cached materials: each axis's idle and hover fills differ.
+    const caches = (host.positionGizmo as unknown as { _gizmoAxisCache: Map<unknown, { material: Material; hoverMaterial: Material; disableMaterial: Material }> })._gizmoAxisCache;
+    expect(caches.size).toBeGreaterThan(0);
+    for (const cache of caches.values()) {
+      for (const material of [cache.material, cache.hoverMaterial, cache.disableMaterial]) expect(isUnlitMaterial(material)).toBe(true);
+      expect(unlitBinding({ material: cache.hoverMaterial } as unknown as AbstractMesh).color).not.toEqual(unlitBinding({ material: cache.material } as unknown as AbstractMesh).color);
+    }
     host.dispose();
   });
 });

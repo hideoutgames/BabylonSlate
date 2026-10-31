@@ -1,4 +1,4 @@
-import { Mesh, Ray, StandardMaterial, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
+import { Mesh, Ray, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, identitySerializedTransform, type SerializedActor } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
@@ -9,6 +9,7 @@ import { editorComponentMeshName } from "./scene-loader";
 import { AUTHORED_CAMERA_PREFIX } from "./scene-illumination";
 import { participatesInShadows } from "./shadow-mesh-policy";
 import { ViewportShadingOverlay } from "./viewport-shading-mode";
+import { isUnlitMaterial } from "./unlit-material";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => {
@@ -78,7 +79,8 @@ describe("editor camera model", () => {
     expect(geometry.isDisposed()).toBe(false);
     second.dispose();
     expect(geometry.isDisposed()).toBe(true);
-    expect(scene.materials).not.toContain(material);
+    // The Scene's unlit Material outlives its meshes.
+    expect(isUnlitMaterial(material)).toBe(true);
     const replacement = createEditorCameraModel(scene, "replacement");
     expect(replacement.geometry).not.toBe(geometry);
     expect(replacement.getTotalVertices()).toBeGreaterThan(0);
@@ -150,7 +152,7 @@ describe("editor camera model", () => {
     const model = createEditorCameraModel(scene, "camera");
     const overlay = new ViewportShadingOverlay(scene);
     overlay.setMode("wireframe");
-    expect((model.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(model.material)).toBe(true);
     expect(model.material!.wireframe).toBe(false);
     expect(participatesInShadows(model)).toBe(false);
   });

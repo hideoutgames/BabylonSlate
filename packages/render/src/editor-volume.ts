@@ -3,7 +3,6 @@ import {
   Mesh,
   MeshBuilder,
   Scene,
-  StandardMaterial,
   type AbstractMesh,
 } from "@babylonjs/core";
 import {
@@ -12,7 +11,10 @@ import {
   createDashedEdgesMesh,
   cylinderEdges,
 } from "./collider-visual";
-import { shareHelperProgram } from "./helper-program";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+
+/** An invisible pick fill: drawn at zero alpha from both sides, without fog. */
+const VOLUME_FILL_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "helper" };
 import { RENDERING_GROUP } from "./sorting";
 
 export const NAV_BLOCKER_VOLUME_COLOR = new Color3(1, 0.45, 0.15);
@@ -21,7 +23,6 @@ export const NAVMESH_DEBUG_BLOCKER_COLOR = new Color3(0.1, 0.45, 0.18);
 
 export type EditorVolumeKind = "box" | "cylinder";
 
-const volumeMaterials = new WeakMap<Scene, StandardMaterial>();
 
 export function isEditorVolumeMesh(mesh: AbstractMesh): boolean {
   return Boolean(
@@ -44,7 +45,7 @@ export function createEditorVolumeMesh(
   fill.isPickable = true;
   fill.visibility = 1;
   fill.renderingGroupId = RENDERING_GROUP.world;
-  fill.material = volumeFillMaterial(scene);
+  applyVolumeFillMaterial(fill);
   const outline =
     kind === "cylinder"
       ? createDashedEdgesMesh(scene, `${name}:outline`, cylinderEdges(0.5, 1), color)
@@ -73,19 +74,11 @@ export function createNavDebugBlockerMesh(
   return mesh;
 }
 
-export function volumeFillMaterial(scene: Scene): StandardMaterial {
-  const existing = volumeMaterials.get(scene);
-  if (existing) return existing;
-  const material = shareHelperProgram(new StandardMaterial("editorVolumeFill", scene));
-  material.disableLighting = true;
-  material.backFaceCulling = false;
-  material.diffuseColor = Color3.Black();
-  material.emissiveColor = Color3.Black();
-  material.specularColor = Color3.Black();
-  material.alpha = 0;
-  material.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
-  volumeMaterials.set(scene, material);
-  return material;
+/** Draws `mesh` as an invisible pick fill: black at zero alpha, blended. */
+export function applyVolumeFillMaterial(mesh: AbstractMesh): void {
+  setUnlitMaterial(mesh, VOLUME_FILL_MATERIAL, {
+    texture: null, color: [0, 0, 0], alpha: 0, cutoff: 0, blend: true, textureAlpha: false, twoSided: false,
+  });
 }
 
 export { COLLIDER_COLOR };
