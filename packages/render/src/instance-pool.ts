@@ -127,6 +127,18 @@ function groupId(key: InstanceGroupKey): string {
 
 const sources = new WeakSet<Mesh>();
 
+/**
+ * Gives `member`, moving to `source`'s group, the instance buffers `source` registered, as `createInstance` gives a
+ * new instance: its own value where it had one, the source's otherwise. Buffers only the old source had leave with it.
+ */
+function adoptInstancedBuffers(member: InstancedMesh, source: Mesh): void {
+  if (!source.instancedBuffers) return;
+  const own: Record<string, unknown> = member.instancedBuffers ?? {};
+  const buffers: Record<string, unknown> = {};
+  for (const kind in source.instancedBuffers) buffers[kind] = kind in own ? own[kind] : source.instancedBuffers[kind];
+  member.instancedBuffers = buffers as InstancedMesh["instancedBuffers"];
+}
+
 /** Whether `mesh` is a pool group's hidden source. */
 export function isInstancePoolSource(mesh: Mesh): boolean {
   return sources.has(mesh);
@@ -149,7 +161,9 @@ export class SceneInstancePool {
   /** A new member of `key`'s group, at the origin, unparented; the caller places and parents it. */
   join(key: InstanceGroupKey, name: string): InstancedMesh {
     const group = this.group(key);
-    const member = new InstancedMesh(name, group.source);
+    // Through the source's factory, which gives the member the source's registered instance buffers (an outline's
+    // identity stream): a member without them throws where their owner writes its value.
+    const member = group.source.createInstance(name);
     this.memberGroups.set(member, group);
     group.members.add(member);
     member.onDisposeObservable.addOnce(() => this.left(member));
@@ -170,6 +184,7 @@ export class SceneInstancePool {
     previous.source.removeInstance(member);
     previous.members.delete(member);
     (member as unknown as { _sourceMesh: Mesh })._sourceMesh = next.source;
+    adoptInstancedBuffers(member, next.source);
     next.source.addInstance(member);
     next.members.add(member);
     this.memberGroups.set(member, next);
