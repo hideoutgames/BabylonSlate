@@ -1069,6 +1069,41 @@ describe("Water rendering", () => {
       expect(rebuilt).toHaveBeenCalledTimes(1);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
+  it("keeps an Ocean's coarse far corner drawn where it owns the water, with no vertex of an owning triangle cullable", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 300, 200), scene);
+    camera.maxZ = 1000;
+    camera.setTarget(new Vector3(-40, 0, 620));
+    try {
+      setQuality(scene, "low");
+      createWaterMesh(scene, "sea", normalizeWaterBody({}, "global"), undefined, builtInWaterMaterial(scene));
+      // Graded around the camera, so the far corner's cells are about twelve metres.
+      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 260, length: 160 }, "ocean"), undefined, builtInWaterMaterial(scene));
+      ocean.position.set(-40, 0, 620);
+      updateSceneWater(scene);
+      const positions = ocean.getVerticesData(VertexBuffer.PositionKind)!, indices = ocean.getIndices()!, offset = gridOffset(ocean);
+      const blend = ocean.getVerticesData("slateWaterBlend")!, data = ocean.getVerticesData("slateWaterData")!;
+      const at = (v: number) => [positions[v * 3]! + offset.x + ocean.position.x, positions[v * 3 + 2]! + offset.z + ocean.position.z] as const;
+      // As the GPU path's blend vertex cull reads them: a vertex this far inside water the Ocean never draws drops its triangles.
+      const cullable = (v: number) => Math.min(data[v * 4 + 1]!, blend[v * 4 + 2]!) < -(2 * data[v * 4]! + 1);
+      let owning = 0, cornerVertices = 0;
+      for (let t = 0; t < indices.length; t += 3) {
+        const corners = [indices[t]!, indices[t + 1]!, indices[t + 2]!];
+        if (!corners.some((v) => blend[v * 4 + 2]! >= 0)) continue;
+        owning++;
+        for (const v of corners) expect(cullable(v), `${at(v)} margin ${blend[v * 4 + 2]} spacing ${data[v * 4]}`).toBe(false);
+      }
+      // The vertex just outside the north-west corner sits a few metres from it, and its margin says so.
+      for (let v = 0; v < positions.length / 3; v++) {
+        const [x, z] = at(v);
+        if (x > -170 || z < 700 || Math.hypot(x + 170, z - 700) > 12) continue;
+        cornerVertices++;
+        expect(blend[v * 4 + 2]!, `${x},${z}`).toBeGreaterThan(-Math.hypot(x + 170, z - 700) - 2);
+      }
+      expect(owning).toBeGreaterThan(0);
+      expect(cornerVertices).toBeGreaterThan(0);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
   it("keeps a moving body's neighbours on their last blend data between refreshes, and lands the final pose", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 30, -40), scene);
