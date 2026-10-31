@@ -3,6 +3,7 @@ import { materialIneligibility, sceneInstancePool, sceneInstancing, type Instanc
 import { RENDERING_GROUP } from "./sorting";
 import { attachPooledLeaf } from "./pooled-visuals";
 import { createPrimitiveMesh } from "./scene-component-mesh";
+import { occluderShape, registerOccluderShape } from "./view-occlusion";
 
 /** The primitive kinds a pool group can draw (`createPrimitiveMesh`'s 3D shapes). */
 const POOLED_KINDS = new Set(["box", "sphere", "cylinder", "plane", "quad", "ground"]);
@@ -25,6 +26,9 @@ function primitiveGeometry(scene: Scene, kind: string): InstanceGeometry {
         const source = template.clone(name, null, true, false);
         source.setEnabled(true);
         source.isPickable = true;
+        // A member occludes as the primitive does (`occluderShape` reads an instance's source): the source itself, hidden,
+        // is in no view's list, so it neither occludes nor is occluded.
+        registerOccluderShape(source, occluderShape(template) ?? null);
         return source;
       },
     };
