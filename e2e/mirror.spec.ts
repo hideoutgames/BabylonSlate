@@ -4,7 +4,7 @@ import { readHassetHeader } from "../packages/assets/src/hasset";
 import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import {
-  createActor, createMeshComponent, identitySerializedTransform, MAIN_SCENE_FILE, parseMirrorProperties, type SerializedScene,
+  createActor, createMeshComponent, createText3DComponent, identitySerializedTransform, MAIN_SCENE_FILE, parseMirrorProperties, type SerializedScene,
 } from "../packages/core/src/index";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
@@ -99,6 +99,9 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
   const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
   camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
   const box = createMeshComponent("red-box-mesh", "box");
+  // Static unlit Text 3D beside the box, inside the reflection: it must not keep the reflection redrawing.
+  const label = createText3DComponent("label-text");
+  label.properties = { ...label.properties, text: "Haptic", size: 0.6 };
   box.properties = { ...box.properties, materialGuid };
   scene.actors = [
     camera,
@@ -110,6 +113,10 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
     createActor("red-box", "Red Box", {
       transform: { ...identitySerializedTransform(), position: [0, 2, -10], scale: [4, 4, 4] },
       components: [box],
+    }),
+    createActor("label", "Label", {
+      transform: { ...identitySerializedTransform(), position: [-1.5, 3, -7] },
+      components: [label],
     }),
   ];
   files.set(MAIN_SCENE_FILE, await encodeAssetDocument(
@@ -124,7 +131,7 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
   await expectReflected(page.getByTestId("viewport-canvas"), "mirror-editor", "red");
 
-  // A static view keeps its reflection: renders reuse it, draw nothing, and the mirror shows the same pixels.
+  // A static view keeps its reflection, the unlit Text 3D in it included: renders reuse it, draw nothing, and the mirror shows the same pixels.
   const viewport = page.getByTestId("viewport-canvas");
   const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
   await expect.poll(async () => {
