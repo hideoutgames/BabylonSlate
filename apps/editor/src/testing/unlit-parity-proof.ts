@@ -26,7 +26,10 @@ type Case = {
   standard?: (material: StandardMaterial, texture: Texture) => void;
   /** A reference that is no Standard setup: Text2D's MSDF shader, over the distance-field atlas. */
   reference?: (scene: Scene, atlas: Texture) => Material;
-  /** Samples the distance-field atlas instead of the gradient. */
+  /**
+   * Samples the distance-field atlas instead of the gradient. Not drawn with ambient occlusion and reflections: the
+   * MSDF shader drew nothing into the geometry pass, and the unlit glyph writes it as every blended surface does.
+   */
   msdf?: boolean;
   /** Samples the gradient through a non-identity texture matrix (vertically flipped), as a KTX2 sprite does. */
   flipped?: boolean;
@@ -333,6 +336,7 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
         effects.reflections.enabled = true;
       }
       setSceneRenderSettings(scene, { mode: mode.mode, effects });
+      for (const quad of quads) quad.mesh.setEnabled(!(mode.spatial && quad.entry.msdf));
       for (const fog of FOGS) {
         scene.fogMode = fog.mode;
         for (const quad of quads) {
