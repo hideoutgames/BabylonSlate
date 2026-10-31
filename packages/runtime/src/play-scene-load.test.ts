@@ -157,6 +157,8 @@ describe("p7-play-scene-load", () => {
         meshAssetGuid: null,
         meshKind: "sphere",
         primaryComponentId: "component-1",
+        castShadows: true,
+        receiveShadows: true,
       },
     ]);
     runtime.stop();
@@ -1589,6 +1591,8 @@ describe("p7-play-scene-load", () => {
         slotId: 0,
         actorGuid: "sky",
         primaryComponentId: "sky-comp",
+        castShadows: true,
+        receiveShadows: true,
         meshAssetGuid: null,
         meshKind: "skybox",
         skybox: {
@@ -1643,6 +1647,9 @@ describe("p7-play-scene-load", () => {
         slotId: 0,
         actorGuid: "label",
         primaryComponentId: "text-comp",
+        // Unlit 3D Text casts no shadow by default.
+        castShadows: false,
+        receiveShadows: true,
         meshAssetGuid: "font-1",
         meshKind: "text3d",
         text3d: {
