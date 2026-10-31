@@ -600,14 +600,16 @@ function playWorld(
    * The Effect the subject's submesh draws with in the view's object pass (the camera's own pass is only probed): the
    * crate by default (it receives every light).
    */
+  /** The mesh whose submeshes draw the visual named `name`: a pooled visual's group source, or the mesh itself. */
+  const drawn = (name: string) => {
+    const root = handle.scene.getMeshByName(name);
+    return (root && pooledLeafOf(root)?.sourceMesh) ?? root;
+  };
   const subjectEffect = () => {
     const pass = engine.getRenderPassNames().lastIndexOf("Forward objects#0");
-    const root = handle.scene.getMeshByName(subject);
-    // A pooled subject draws through its group's source.
-    const drawn = (root && pooledLeafOf(root)?.sourceMesh) ?? root;
-    return pass < 0 ? null : drawn?.subMeshes?.[0]?._getDrawWrapper(pass)?.effect ?? null;
+    return pass < 0 ? null : drawn(subject)?.subMeshes?.[0]?._getDrawWrapper(pass)?.effect ?? null;
   };
-  return { engine, handle, driver, holds, world, place, remove, move, frame, views, subjectEffect, view };
+  return { engine, handle, driver, holds, world, place, remove, move, frame, views, subjectEffect, view, drawn };
 }
 
 type PlayWorld = ReturnType<typeof playWorld>;
@@ -955,7 +957,7 @@ describe("compile holds after the first frame", () => {
     await settle(world);
     const pass = () => world.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
     const effects = () => barrels.map((actor) =>
-      world.handle.scene.getMeshByName(`actor-${actor.slotId}`)!.subMeshes[0]!._getDrawWrapper(pass())?.effect ?? null);
+      world.drawn(`actor-${actor.slotId}`)!.subMeshes[0]!._getDrawWrapper(pass())?.effect ?? null);
     const before = effects();
     world.driver.arm();
     toggleTwoSided(world.handle.scene, ...barrels.map((actor) => world.handle.scene.getMeshByName(`actor-${actor.slotId}`)!.material!));
@@ -1570,7 +1572,11 @@ describe("compile holds after the first frame", () => {
     // Nothing warmed this Material: only the new mesh is left out while its variant compiles, and the view keeps drawing.
     const world = playWorld(model, [], ["surface-a"]);
     const drawn = spawnDraws();
-    const barrel = () => world.handle.scene.getMeshByName("actor-20");
+    /** The mesh that draws the barrel (a pooled visual's leaf), which is what is hidden. */
+    const barrel = () => {
+      const root = world.handle.scene.getMeshByName("actor-20");
+      return (root && pooledLeafOf(root)) ?? root;
+    };
     let hiddenWhilePending = true;
     let pendingFrames = 0;
     const record = await measure(world, () => {
@@ -1641,7 +1647,11 @@ describe("compile holds after the first frame", () => {
     const world = playWorld(model, [], ["surface-a"]);
     const drawn = spawnDraws();
     const names = ["actor-20|body", "actor-20|lid"];
-    const part20 = (name: string) => world.handle.scene.getMeshByName(name);
+    /** The mesh that draws the part (a pooled part's leaf), which is what is hidden and revealed. */
+    const part20 = (name: string) => {
+      const root = world.handle.scene.getMeshByName(name);
+      return (root && pooledLeafOf(root)) ?? root;
+    };
     /** Each reveal: the part, and the world view frame it happened in. */
     const revealed: Array<[string, number]> = [];
     let hiddenWhilePending = true;
@@ -1657,7 +1667,8 @@ describe("compile holds after the first frame", () => {
       world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
       for (let index = 0; index < 6; index++) await world.frame();
       cleanups.push(onMeshRevealed(world.handle.scene, (mesh) => {
-        if (names.includes(mesh.name)) revealed.push([mesh.name, world.views.length]);
+        const name = mesh.name.replace(/:drawn$/, "");
+        if (names.includes(name)) revealed.push([name, world.views.length]);
       }));
     }, () => {
       // Only a pending compile or pipeline keeps the lid from its first frame; a synchronous link reveals both at once.
@@ -2004,6 +2015,9 @@ async function editorView() {
  * an actor the level holds, compile no shader, wait on no WebGPU pipeline and create none in a shadow pass. A merge gate:
  * CI's unit job runs it.
  */
+/** Where Play pools primitives: pipelines that are not deferred (`sceneInstancing`). */
+const POOLED_MODELS: readonly Model[] = ["sync", "parallel"];
+
 describe("pooled primitives", () => {
   const box = (slotId: number, position: Vec3): Actor =>
     ({ slotId, guid: `box-${slotId}`, position, assign: { meshAssetGuid: null, meshKind: "box" } });
@@ -2013,7 +2027,7 @@ describe("pooled primitives", () => {
     heldFrames: record.heldFrames, holdRaised: record.holdRaised, recovered: record.recovered,
   }, JSON.stringify(record)).toEqual({ effects: 0, pipelines: 0, synchronous: 0, heldFrames: 0, holdRaised: false, recovered: true });
 
-  it.each(MODELS)("twenty boxes spawned into the load's drawn group compile nothing: %s", async (model) => {
+  it.each(POOLED_MODELS)("twenty boxes spawned into the load's drawn group compile nothing: %s", async (model) => {
     // The floor and crate are boxes of the engine default Material: one group, its instanced variants drawn by the load.
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1])], [], "actor-2", classesLoad([]), { instancing: true });
     const pool = sceneInstancePool(world.handle.scene);
@@ -2023,7 +2037,7 @@ describe("pooled primitives", () => {
     expect(pool.diagnostics()).toMatchObject({ groups: 1, pooled: 22 });
   });
 
-  it.each(MODELS)("a box whose Material changes to one another group draws compiles nothing: %s", async (model) => {
+  it.each(POOLED_MODELS)("a box whose Material changes to one another group draws compiles nothing: %s", async (model) => {
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
       { instancing: true });
     world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
@@ -2033,7 +2047,7 @@ describe("pooled primitives", () => {
       .toBe(pooledLeafOf(world.handle.scene.getMeshByName("actor-20")!)?.sourceMesh);
   });
 
-  it.each(MODELS)("a plain user of a Material only pooled groups drew compiles its variant as a swap, holding nothing: %s", async (model) => {
+  it.each(POOLED_MODELS)("a plain user of a Material only pooled groups drew compiles its variant as a swap, holding nothing: %s", async (model) => {
     // A box sorted by an explicit order draws unpooled: its plain variant of the pooled Material is new mid-game. It is
     // hidden until it compiles, and the view never holds nor waits on it.
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
@@ -2050,7 +2064,7 @@ describe("pooled primitives", () => {
     }, JSON.stringify(record)).toEqual({ pooled: false, heldFrames: 0, holdRaised: false, recovered: true, shown: true });
   });
 
-  it.each(MODELS)("a load with a plain and a pooled user of one Material presents, and a spawn of either compiles nothing: %s", async (model) => {
+  it.each(POOLED_MODELS)("a load with a plain and a pooled user of one Material presents, and a spawn of either compiles nothing: %s", async (model) => {
     const sorted = (slotId: number, position: Vec3): Actor =>
       ({ ...box(slotId, position), assign: { meshAssetGuid: null, meshKind: "box", orderInLayer: 1 } });
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1]), sorted(21, [-2, 1, 1])], ["surface-a"],
@@ -2063,7 +2077,7 @@ describe("pooled primitives", () => {
     expectNothingCompiled(world, record);
   });
 
-  it.each(MODELS)("the last member of a drawn group despawned and spawned again compiles nothing: %s", async (model) => {
+  it.each(POOLED_MODELS)("the last member of a drawn group despawned and spawned again compiles nothing: %s", async (model) => {
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
       { instancing: true });
     world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });

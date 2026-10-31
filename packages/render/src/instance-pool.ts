@@ -4,6 +4,7 @@ import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { markInstanceSource } from "./instance-source";
 import { hasDrawn } from "./reveal-pending";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
 
 /**
  * Automatic instancing: a per-Scene pool of hidden source meshes whose regular instances draw actors that share a
@@ -327,10 +328,12 @@ export function setSceneInstancing(scene: Scene, enabled: boolean): void {
 
 /**
  * Whether visuals built in `scene` draw through its instance pool (`setSceneInstancing`), which needs hardware
- * instancing: without it Babylon draws each instance on its own, which a pool would only add to.
+ * instancing: without it Babylon draws each instance on its own, which a pool would only add to. Not where pipelines
+ * are deferred (WebGPU) yet: their warm draws, caster warm and reveal lookups still key by mesh, not by group source.
  */
 export function sceneInstancing(scene: Scene): boolean {
-  return instancing.has(scene) && scene.getEngine().getCaps().instancedArrays;
+  const engine = scene.getEngine();
+  return instancing.has(scene) && engine.getCaps().instancedArrays && !pipelinesDeferred(engine);
 }
 
 /** The pool member `mesh` is, if it is one. */
