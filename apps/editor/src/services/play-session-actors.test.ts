@@ -294,6 +294,20 @@ describe.each(["worker", "in-process"] as const)(
       expect(pushSnapshot).not.toHaveBeenCalled();
     });
 
+    it.runIf(mode === "worker")("ends Play with the failure when its game worker fails, instead of waiting on a worker that answers nothing", async () => {
+      let worker!: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void };
+      let stopped: ReturnType<PlaySession["stop"]> | undefined;
+      const onFatalDiagnostic = vi.fn(() => {
+        stopped = session!.stop();
+        session = undefined;
+      });
+      await play({ onFatalDiagnostic, onWorker: (output) => { worker = output; } });
+      // What the worker host reports for a worker module that failed to evaluate (`createGameWorkerHost`).
+      worker.command({ type: "diagnostic", code: "play.worker.failed", severity: "error", frameId: 0, message: "The game worker failed: boom" });
+      await vi.waitFor(() => expect(onFatalDiagnostic).toHaveBeenCalledOnce());
+      expect(stopped?.diagnostics).toEqual([expect.objectContaining({ code: "play.worker.failed", severity: "error", message: "The game worker failed: boom" })]);
+    });
+
     it.runIf(mode === "worker")("keeps a stopped worker running End Play until it reports the stop finished", async () => {
       const terminate = vi.fn();
       let worker!: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void };

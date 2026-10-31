@@ -8,6 +8,7 @@ import {
 } from "@haptic/bridge";
 import type { RawInputEvent } from "@haptic/input";
 import { encodeInputEvents } from "@haptic/input";
+import { PLAY_WORKER_FAILED_CODE } from "./play-session-helpers";
 
 export interface GameWorkerHost {
   postControl: (message: ControlMessage) => void;
@@ -19,7 +20,11 @@ export interface GameWorkerHost {
 
 /**
  * Spawn the game worker via Vite-resolved module URL. Falls back by throwing
- * so the caller can use createInProcessRuntime.
+ * so the caller can use createInProcessRuntime. A worker that fails later, as a
+ * module that cannot load or evaluate does (asynchronously, so `new Worker`
+ * succeeded), or that stops unexpectedly, reaches the command handlers as one
+ * error diagnostic with `PLAY_WORKER_FAILED_CODE`: nothing else would answer
+ * its controls or boundaries.
  */
 export function createGameWorkerHost(): GameWorkerHost {
   const worker = new Worker(
@@ -46,6 +51,19 @@ export function createGameWorkerHost(): GameWorkerHost {
     }
     for (const handler of commandHandlers) handler(command);
   };
+
+  let failed = false;
+  const reportFailure = (message: string) => {
+    if (terminated || failed) return;
+    failed = true;
+    dispatchCommand({ type: "diagnostic", code: PLAY_WORKER_FAILED_CODE, severity: "error", frameId: 0, message });
+  };
+  worker.onerror = (event: ErrorEvent) => {
+    // WebKit reports a worker that failed to load or crashed without a message; keep where it was.
+    const at = event.filename ? ` (${event.filename}:${event.lineno}:${event.colno})` : "";
+    reportFailure(event.message ? `The game worker failed: ${event.message}${at}` : `The game worker failed to start or stopped unexpectedly${at}.`);
+  };
+  worker.onmessageerror = () => reportFailure("The game worker sent an unreadable message.");
 
   worker.onmessage = (event: MessageEvent<BridgeWorkerMessage>) => {
     const msg = event.data;
@@ -90,6 +108,8 @@ export function createGameWorkerHost(): GameWorkerHost {
     },
     terminate: () => {
       terminated = true;
+      worker.onerror = null;
+      worker.onmessageerror = null;
       worker.terminate();
     },
   };

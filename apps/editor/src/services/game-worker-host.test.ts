@@ -6,6 +6,8 @@ class FakeWorker {
   static instance: FakeWorker;
   static events: string[] = [];
   onmessage: ((event: MessageEvent<BridgeWorkerMessage>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessageerror: (() => void) | null = null;
   terminate = vi.fn();
   constructor() { FakeWorker.instance = this; }
   posted: Array<{ message: BridgeHostMessage; transfer: Transferable[] }> = [];
@@ -60,4 +62,30 @@ it("moves a navmesh buffer to the worker but still clones the load catalog the n
   host.postControl({ type: "loadNavMesh" });
 
   expect(FakeWorker.instance.posted.map(({ transfer }) => transfer)).toEqual([[], [buffer], []]);
+});
+
+it("reports a worker that fails to load or evaluate once, as a fatal diagnostic naming the failure, and nothing after Stop", () => {
+  const host = createGameWorkerHost();
+  const received: CommandMessage[] = [];
+  host.onCommand((command) => received.push(command));
+  // A module worker that throws while evaluating fails after `new Worker` returned, so only its error event says so.
+  FakeWorker.instance.onerror?.({ message: "Uncaught SyntaxError: Unexpected token", filename: "worker-entry.js", lineno: 3, colno: 7 } as ErrorEvent);
+  FakeWorker.instance.onerror?.({ message: "again" } as ErrorEvent);
+  expect(received).toEqual([{ type: "diagnostic", code: "play.worker.failed", severity: "error", frameId: 0,
+    message: "The game worker failed: Uncaught SyntaxError: Unexpected token (worker-entry.js:3:7)" }]);
+
+  // WebKit reports a worker that could not load, or was killed, with no message.
+  const silent = createGameWorkerHost();
+  const silentReceived: CommandMessage[] = [];
+  silent.onCommand((command) => silentReceived.push(command));
+  FakeWorker.instance.onerror?.({ message: "" } as ErrorEvent);
+  expect(silentReceived).toEqual([expect.objectContaining({ code: "play.worker.failed", message: "The game worker failed to start or stopped unexpectedly." })]);
+
+  const stopped = createGameWorkerHost();
+  const stoppedReceived: CommandMessage[] = [];
+  stopped.onCommand((command) => stoppedReceived.push(command));
+  const failed = FakeWorker.instance;
+  stopped.terminate();
+  failed.onerror?.({ message: "late" } as ErrorEvent);
+  expect(stoppedReceived).toEqual([]);
 });

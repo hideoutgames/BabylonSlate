@@ -18,6 +18,9 @@ import {
 import { INFINITE_LOOP_DIAGNOSTIC_CODE } from "@haptic/debugger";
 import type { PlayHudStats, PlayPrintEntry } from "./play-session-types";
 
+/** The diagnostic code of a game worker that failed to load, evaluate or keep running (`createGameWorkerHost`). */
+export const PLAY_WORKER_FAILED_CODE = "play.worker.failed";
+
 /**
  * Extract a `RuntimeDiagnostic` from a worker `diagnostic` command so it can
  * feed the same `SessionDiagnosticAggregator` the in-process driver uses.
@@ -62,7 +65,8 @@ export function deliverInspectSnapshot(
 }
 
 export function isFatalPlayDiagnostic(code: string | undefined): boolean {
-  return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
+  // A failed game worker answers nothing more: no tick, load progress or boundary would ever come.
+  return code === INFINITE_LOOP_DIAGNOSTIC_CODE || code === PLAY_WORKER_FAILED_CODE;
 }
 
 /** Apply worker sessionPaused onto Play overlay chrome, with the error it paused on, if any. */
