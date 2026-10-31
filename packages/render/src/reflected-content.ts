@@ -47,8 +47,12 @@ type Record = {
   seen: number;
 };
 
-/** Graph blocks that bind content which changes without a parameter edit: other views' images, text, cage deformers. */
-const DYNAMIC_BLOCKS = new Set(["MirrorReflectionBlock", "TextMaterialBlock", "LatticeDeformerBlock"]);
+/**
+ * Graph blocks that bind content which changes without a parameter edit: other views' images and text. Every graph
+ * Material with a world position carries a Lattice Deformer block, which deforms only a mesh with an active cage
+ * (`hasMeshLatticeDeformer`, checked per mesh), so the block alone makes nothing volatile.
+ */
+const DYNAMIC_BLOCKS = new Set(["MirrorReflectionBlock", "TextMaterialBlock"]);
 /** Stock-material texture slots and colour/scalar inputs the snapshot follows. */
 const STOCK_TEXTURES = [
   "diffuseTexture", "albedoTexture", "emissiveTexture", "reflectionTexture", "opacityTexture", "bumpTexture", "ambientTexture",

@@ -19,6 +19,7 @@ type ViewportHost = {
   __hapticViewportTest: {
     setShadowCaptureView(position: number[], target: number[], fov: number): void;
     renderingBaseline(): { backend: string } | null;
+    mirrorDiagnostics(): { draws: number; reuses: number } | null;
   };
 };
 
@@ -122,6 +123,24 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
   // The editor view looks down at the mirror from just in front of the scene camera (and its camera model).
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
   await expectReflected(page.getByTestId("viewport-canvas"), "mirror-editor", "red");
+
+  // A static view keeps its reflection: renders reuse it, draw nothing, and the mirror shows the same pixels.
+  const viewport = page.getByTestId("viewport-canvas");
+  const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
+  await expect.poll(async () => {
+    const before = await mirrors(), color = await centerColor(viewport);
+    await page.waitForTimeout(500);
+    const after = await mirrors(), again = await centerColor(viewport);
+    return after.draws === before.draws && after.reuses > before.reuses && color.every((value, i) => Math.abs(value - again[i]!) < 1);
+  }, { timeout: 30_000 }).toBe(true);
+  // Moving the box out of the reflection draws it again on the next render, and moving it back shows it again.
+  await page.getByTestId("tree-row-actor:red-box").click();
+  await page.getByTestId("property-actor-position-x").fill("40");
+  await page.getByTestId("property-actor-position-x").press("Enter");
+  await expect.poll(async () => { const [r, g, b] = await centerColor(viewport); return r! - Math.max(g!, b!); }, { timeout: 30_000 }).toBeLessThan(40);
+  await page.getByTestId("property-actor-position-x").fill("0");
+  await page.getByTestId("property-actor-position-x").press("Enter");
+  await expectReflected(viewport, "mirror-editor-moved-back", "red");
 
   await clickPlayAndWaitForOverlay(page);
   await expectReflected(page.getByTestId("play-canvas"), "mirror-play", "red");

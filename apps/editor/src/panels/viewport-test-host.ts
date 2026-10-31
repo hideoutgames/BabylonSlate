@@ -6,6 +6,7 @@ import {
   applyGizmoMultiSelectDrag,
   beginGizmoMultiSelectDrag,
   captureShadowDiagnostics,
+  mirrorDiagnostics,
   selectionGizmoRoots,
   setDirectViewPresentationEnabled,
   whenSubmittedWorkDone,
@@ -38,6 +39,7 @@ export type ViewportTestHost = {
     /** Babylon Engines alive in the page; answers while Play or Preview Build has released this viewport. */
     engineCount: () => number;
     shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
+    mirrorDiagnostics: () => ReturnType<typeof mirrorDiagnostics> | null;
     mannequinShadowProbe: (modelOnly?: boolean) => Promise<unknown>;
     mannequinShadowVisibility: (points: { worldPosition: number[]; region: string }[]) => Promise<boolean[]>;
     setRenderSettings: EngineHandle["setRenderSettings"];
@@ -255,6 +257,10 @@ export function installViewportTestHost({
     shadowDiagnostics: () => {
       const handle = engineRef.current;
       return handle ? captureShadowDiagnostics(handle.scene, { host: "editor", meshes: handle.scene.meshes }) : null;
+    },
+    mirrorDiagnostics: () => {
+      const handle = engineRef.current;
+      return handle ? mirrorDiagnostics(handle.scene) : null;
     },
     mannequinShadowProbe: async (modelOnly) => {
       const handle = engineRef.current;
