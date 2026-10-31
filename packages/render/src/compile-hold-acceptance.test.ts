@@ -2088,6 +2088,22 @@ describe("pooled primitives", () => {
     expectNothingCompiled(world, record);
   });
 
+  it.each(POOLED_MODELS)("a mesh of its own drawn with a Material only pooled groups drew holds no preparation: %s", async (model) => {
+    // Its plain variant was never drawn, so it is cold; the view's preparation, which draws no frame, admits it rather
+    // than wait on it until its stall.
+    const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
+      { instancing: true });
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-a" });
+    await settle(world);
+    const plain = MeshBuilder.CreateBox("actor-21", { size: 1 }, world.handle.scene);
+    plain.position.set(-2, 1, 1);
+    plain.material = world.drawn("actor-20")!.material;
+    await settle(world);
+    const record = await measure(world, () => world.place(box(22, [1, 1, -2])));
+    expect({ shown: !isRevealPending(plain), heldFrames: record.heldFrames, recovered: record.recovered })
+      .toEqual({ shown: true, heldFrames: 0, recovered: true });
+  });
+
   it.each(POOLED_MODELS)("the last member of a drawn group despawned and spawned again compiles nothing: %s", async (model) => {
     const world = playWorld(model, [point(10, [-1.5, 2.5, -1]), box(20, [2, 1, 1])], ["surface-a"], "actor-2", classesLoad([]),
       { instancing: true });
