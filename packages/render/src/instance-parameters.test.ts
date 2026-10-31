@@ -55,7 +55,8 @@ describe("per-instance Material parameters", () => {
     expect((box.instancedBuffers[tint] as Color4).equalsWithEpsilon(linear(1, 0.5, 0.25))).toBe(true);
     expect([box.instancedBuffers[grit], copy.instancedBuffers[grit]]).toEqual([0.3, 0.3]);
     expect((copy.instancedBuffers[tint] as Color4).equalsWithEpsilon(linear(1, 0.5, 0.25))).toBe(true);
-    expect(compiled.getParameter("Tint")?.value.map((channel: number) => Math.round(channel * 1000) / 1000)).toEqual([1, 0.5, 0.25, 1]);
+    const value = compiled.getParameter("Tint");
+    expect(value?.kind === "color" && value.value.map((channel) => Math.round(channel * 1000) / 1000)).toEqual([1, 0.5, 0.25, 1]);
   });
 
   it("gives the Material's new value to every mesh holding its value, not to one carrying its own", () => {
