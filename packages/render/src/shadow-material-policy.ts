@@ -95,6 +95,21 @@ export function hasStockVertexStage(material: Material): boolean {
   );
 }
 
+/**
+ * Whether a mesh's thin instances can change only by replacing a buffer or the instance count, both of which the
+ * refresh scheduler snapshots (`thinInstanceShadowState`): every thin-instance buffer is static, which Babylon never
+ * writes in place, and none is recreated behind an update (`thinInstanceAllowAutomaticStaticBufferRecreation` makes a
+ * new buffer, which the snapshot also sees, but on every update). Foliage sets its matrices once this way.
+ */
+export function hasStaticThinInstances(mesh: Mesh): boolean {
+  const storage = mesh._thinInstanceDataStorage;
+  if (mesh.thinInstanceAllowAutomaticStaticBufferRecreation) return false;
+  if (storage.matrixBuffer?.isUpdatable() || storage.previousMatrixBuffer?.isUpdatable()) return false;
+  const user = mesh._userThinInstanceBuffersStorage;
+  if (user) for (const kind in user.vertexBuffers) if (user.vertexBuffers[kind]?.isUpdatable()) return false;
+  return true;
+}
+
 /** Conservative shape eligibility; the refresh scheduler tracks mutable depth/culling state. */
 export function canCacheShadowMaterial(
   material: Material,
@@ -111,7 +126,7 @@ export function canCacheShadowMaterial(
     source.skeleton ||
     source.morphTargetManager ||
     source.bakedVertexAnimationManager ||
-    source.hasThinInstances ||
+    (source.hasThinInstances && !hasStaticThinInstances(source)) ||
     source.onBeforeRenderObservable.hasObservers() ||
     source.onBeforeBindObservable.hasObservers()
   )

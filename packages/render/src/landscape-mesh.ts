@@ -14,6 +14,18 @@ const landscapes = new WeakMap<Mesh, { data: LandscapeProperties; chunks: Chunk[
 /** Landscape roots in each scene, kept by creation and scene membership so per-frame readers never scan the scene. */
 const sceneRoots = new WeakMap<Scene, Mesh[]>();
 const NO_ROOTS: readonly Mesh[] = [];
+/** Each chunk's own geometry: only `updateLandscapeMesh` writes it, through `updateVerticesData`. */
+const chunkGeometries = new WeakMap<Mesh, Mesh["geometry"]>();
+
+/**
+ * Whether a landscape chunk still draws the geometry the landscape owns: its buffers are updatable for sculpting, but
+ * every write is an `updateVerticesData` (which notifies the geometry's update hook) and its indices never change, so
+ * shadow maps can cache it and refresh on its geometry revisions.
+ */
+export function hasRevisionTrackedLandscapeGeometry(mesh: Mesh): boolean {
+  const geometry = chunkGeometries.get(mesh);
+  return !!geometry && mesh.geometry === geometry;
+}
 
 function registerLandscape(scene: Scene, root: Mesh): void {
   let roots = sceneRoots.get(scene);
@@ -78,6 +90,7 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
     const mesh = new Mesh(`${name}:landscape:${x}:${z}`, scene);
     const chunk = { mesh, x, z, width: Math.min(CHUNK_CELLS, data.subdivisions - x), depth: Math.min(CHUNK_CELLS, data.subdivisions - z) };
     chunkData(data, chunk).applyToMesh(mesh, true);
+    chunkGeometries.set(mesh, mesh.geometry);
     mesh.parent = root;
     mesh.renderingGroupId = RENDERING_GROUP.world;
     mesh.hasVertexAlpha = false;

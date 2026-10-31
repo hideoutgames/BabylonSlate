@@ -16,6 +16,7 @@ import {
 import { canCacheShadowMaterial } from "./shadow-material-policy";
 import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
+import { hasRevisionTrackedLandscapeGeometry } from "./landscape-mesh";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
@@ -167,6 +168,15 @@ export class ShadowMapRefresh {
       state.value(source instanceof Mesh ? source.sideOrientation : undefined);
       state.value(source.skeleton);
       state.value(source.morphTargetManager);
+      // Static thin instances change only by a new buffer or count (`hasStaticThinInstances`).
+      if (source instanceof Mesh && source.hasThinInstances) {
+        const thin = source._thinInstanceDataStorage;
+        state.value(thin.instancesCount);
+        state.value(thin.matrixBuffer);
+        state.value(thin.previousMatrixBuffer);
+        const user = source._userThinInstanceBuffersStorage;
+        if (user) for (const kind in user.vertexBuffers) state.value(user.vertexBuffers[kind]);
+      }
       // An instance draws its source's parts, not its own copies of them.
       const parts = source.subMeshes;
       state.value(parts);
@@ -206,9 +216,12 @@ export class ShadowMapRefresh {
       // Babylon 9.29 has no public index-mutability getter. updateIndices skips
       // onGeometryUpdated for an existing dynamic buffer, including GPU-only
       // updates, so only the known immutable state is eligible for caching.
-      const trackedDynamic = source instanceof Mesh && hasRevisionTrackedDynamicMesh(source);
+      const trackedDynamic =
+        source instanceof Mesh && (hasRevisionTrackedDynamicMesh(source) || hasRevisionTrackedLandscapeGeometry(source));
+      // A mesh with neither geometry nor parts (a model or foliage root, a Water Removal carrier) draws nothing; the
+      // snapshot above sees geometry or parts arrive.
       let dynamicGeometry =
-        !trackedDynamic && (!geometry || Reflect.get(geometry, "_indexBufferIsUpdatable") !== false);
+        !trackedDynamic && (geometry ? Reflect.get(geometry, "_indexBufferIsUpdatable") !== false : !!parts?.length);
       const buffers = geometry?.getVertexBuffers();
       const trackedCable = source instanceof Mesh && hasRevisionTrackedCableGeometry(source);
       if (buffers)
