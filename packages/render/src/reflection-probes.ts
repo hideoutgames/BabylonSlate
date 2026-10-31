@@ -8,6 +8,7 @@ import {
   Texture,
   Vector3,
   type AbstractMesh,
+  type Mesh,
   type Node,
   type Scene,
   type TransformNode,
@@ -31,6 +32,7 @@ import { isMirrorSurfaceMesh } from "./mirror-surface-state";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import { isSkyboxMesh } from "./skybox";
+import { drawingMesh, isInstanceSource } from "./instance-source";
 
 /** Edits and mesh changes settle this long before probes recapture, so a drag recaptures once. */
 export const REFLECTION_PROBE_RECAPTURE_DELAY_MS = 750;
@@ -170,7 +172,9 @@ export class ReflectionProbes {
     this.authored = data;
     const statics = reflectionProbeStaticActors(data.actors);
     this.setStaticPredicate((mesh) => {
-      for (let node: Node | null = mesh; node; node = node.parent) {
+      // A pooled primitive's drawn leaf (`<root>:drawn`) is the actor's as its root is.
+      const pooledLeaf = drawingMesh(mesh) !== mesh && isInstanceSource(drawingMesh(mesh) as Mesh);
+      for (let node: Node | null = pooledLeaf ? mesh.parent : mesh; node; node = node.parent) {
         if (node.name.startsWith("editorActor:")) return statics.has(node.name.slice("editorActor:".length));
       }
       return false;
