@@ -1,5 +1,6 @@
-import { Mesh, type Scene } from "@babylonjs/core";
-import { sceneInstancePool, sceneInstancing, type InstanceGeometry } from "./instance-pool";
+import { Mesh, type InstancedMesh, type Material, type Scene } from "@babylonjs/core";
+import { materialIneligibility, sceneInstancePool, sceneInstancing, type InstanceGeometry } from "./instance-pool";
+import { RENDERING_GROUP } from "./sorting";
 import { attachPooledLeaf } from "./pooled-visuals";
 import { createPrimitiveMesh } from "./scene-component-mesh";
 
@@ -47,4 +48,19 @@ export function createPooledPrimitiveVisual(scene: Scene, name: string, kind: st
   leaf.parent = root;
   attachPooledLeaf(root, leaf);
   return root;
+}
+
+/**
+ * A member of the group a spawned primitive of `kind` drawn with `material` joins (receiving shadows, in the world
+ * rendering group), for a warm-up that stages what Play may spawn: it compiles and draws the group's instanced
+ * variants, which a pooled spawn draws with. Null when such a spawn would draw unpooled.
+ */
+export function joinPooledPrimitiveGroup(scene: Scene, kind: string, material: Material, name: string): InstancedMesh | null {
+  if (!POOLED_KINDS.has(kind) || !sceneInstancing(scene)) return null;
+  const member = sceneInstancePool(scene).join(
+    { geometry: primitiveGeometry(scene, kind), material, receiveShadows: true, renderingGroupId: RENDERING_GROUP.world }, name);
+  if (!materialIneligibility(member.sourceMesh, material)) return member;
+  // A group that never drew goes with its last member.
+  member.dispose();
+  return null;
 }

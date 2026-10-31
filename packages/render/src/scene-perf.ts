@@ -117,11 +117,13 @@ export async function prewarmSceneMaterials(
  */
 export async function prewarmMeshMaterials(
   scene: Scene,
-  meshes: Iterable<AbstractMesh>,
+  given: Iterable<AbstractMesh>,
   assertCurrent?: (mesh?: AbstractMesh) => void,
   skipMesh?: (mesh: AbstractMesh) => boolean,
   onProgress?: (count: { done: number; total: number }) => void,
 ): Promise<void> {
+  // An instance draws in its source's batch: the source compiles, once (a pool source, instanced only).
+  const meshes = new Set([...given].map(drawingMesh));
   let finished = false;
   const check = (mesh?: AbstractMesh) => {
     // The owner's check first: it names why (a superseded load) before its deferred Scene disposal does.

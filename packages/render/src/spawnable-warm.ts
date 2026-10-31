@@ -1,4 +1,5 @@
 import { Mesh, MeshBuilder, type AbstractMesh, type AssetContainer, type Material, type Scene } from "@babylonjs/core";
+import { joinPooledPrimitiveGroup } from "./pooled-primitive-visual";
 import { prewarmMeshMaterials } from "./scene-perf";
 import { hideForPipelineWarmup } from "./reveal-pending";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
@@ -43,8 +44,23 @@ export async function warmSpawnables(
     mesh.metadata = { ...(mesh.metadata as object | null), slateShadowParticipation: { castShadows: false } };
     staged.push(mesh);
   };
+  /** A pool member receives as its group does (its own setter warns), and is otherwise staged alike. */
+  const stagePooled = (member: AbstractMesh) => {
+    member.isVisible = false;
+    member.isPickable = false;
+    member.metadata = { ...(member.metadata as object | null), slateShadowParticipation: { castShadows: false } };
+    staged.push(member);
+  };
   try {
     for (const material of sources.materials) {
+      // A primitive spawned with it draws in a pool group where Play pools primitives: stage a member of that group, so
+      // its instanced variants are the ones compiled and drawn (a plain box's would be a variant no spawn draws).
+      const pooled = joinPooledPrimitiveGroup(scene, "box", material, `spawnable-warm:${material.name}`);
+      if (pooled) {
+        stagePooled(pooled);
+        disposals.push(() => pooled.dispose(false, false));
+        continue;
+      }
       const proxy = MeshBuilder.CreateBox(`spawnable-warm:${material.name}`, { size: 1 }, scene);
       proxy.material = material;
       stage(proxy);
