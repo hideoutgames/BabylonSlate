@@ -13,6 +13,7 @@ import {
   audioDebugOverlayText,
   audioStats,
   drawCallCeilingWarning,
+  drawOcclusionOverlay,
   geometryByteCeilingWarning,
   PLAY_AUDIO_UNLOCK_HINT,
   shouldShowPlayAudioUnlockHint,
@@ -20,6 +21,8 @@ import {
 
 export type PlayerHudStats = {
   lightsDebugText?: string | null;
+  /** `showocclusion`: the occlusion buffer to draw (null while culling is off) and its caption; null while off. */
+  occlusionOverlay?: { buffer: { width: number; height: number; depth: Float32Array } | null; text: string } | null;
   ticks: number;
   fps: number;
   scriptMs: number;
@@ -239,7 +242,11 @@ export function mountPlayerHud(
 
 export function mountPlayerDebuggerOverlays(
   parent: HTMLElement,
-  options: { bundleDebugger: boolean; lightsDebugText?: () => string | null },
+  options: {
+    bundleDebugger: boolean;
+    lightsDebugText?: () => string | null;
+    occlusionOverlay?: () => PlayerHudStats["occlusionOverlay"];
+  },
 ): () => void {
   if (!options.bundleDebugger) return () => {};
   const debugEl = document.createElement("pre");
@@ -249,6 +256,14 @@ export function mountPlayerDebuggerOverlays(
   const lightsEl = document.createElement("pre");
   lightsEl.dataset.testid = "lights-debug-overlay";
   lightsEl.style.cssText = debugEl.style.cssText + "top:48px;bottom:auto;white-space:pre-wrap;";
+  // `showocclusion`: a 2D canvas of the occlusion buffer and its caption; it compiles nothing.
+  const occlusionEl = document.createElement("div");
+  occlusionEl.dataset.testid = "occlusion-debug-overlay";
+  occlusionEl.style.cssText = debugEl.style.cssText + "left:8px;right:auto;";
+  const occlusionCanvas = document.createElement("canvas");
+  occlusionCanvas.style.cssText = "display:block;width:256px;height:128px;image-rendering:pixelated;";
+  const occlusionCaption = document.createElement("div");
+  occlusionEl.append(occlusionCanvas, occlusionCaption);
   const hint = document.createElement("p");
   hint.dataset.testid = "play-audio-unlock-hint";
   hint.style.cssText =
@@ -266,6 +281,14 @@ export function mountPlayerDebuggerOverlays(
       shownLightText = lightText;
       if (lightText === null) lightsEl.remove();
       else { lightsEl.textContent = lightText; if (!lightsEl.parentNode) parent.appendChild(lightsEl); }
+    }
+    const occlusion = options.occlusionOverlay?.() ?? null;
+    if (!occlusion) occlusionEl.remove();
+    else {
+      if (occlusion.buffer) drawOcclusionOverlay(occlusionCanvas, occlusion.buffer);
+      occlusionCanvas.style.display = occlusion.buffer ? "block" : "none";
+      if (occlusionCaption.textContent !== occlusion.text) occlusionCaption.textContent = occlusion.text;
+      if (!occlusionEl.parentNode) parent.appendChild(occlusionEl);
     }
     const debugText = audioDebugOverlayText(audioStats);
     if (debugText !== shownDebugText) {
@@ -291,6 +314,7 @@ export function mountPlayerDebuggerOverlays(
     cancelAnimationFrame(raf);
     debugEl.remove();
     lightsEl.remove();
+    occlusionEl.remove();
     hint.remove();
   };
 }

@@ -48,6 +48,10 @@ export type ConsoleCommandHost = {
   setBehaviourTreeDebug?(enabled: boolean): void;
   setShowAudioDebug?(enabled: boolean): void;
   setLightsDebug?(enabled: boolean): void;
+  /** `showocclusion`: overlay the occlusion buffer and what it culls. */
+  setShowOcclusion?(enabled: boolean): void;
+  /** `freezeocclusion`: keep testing against the occlusion the view last drew while the camera moves. */
+  setFreezeOcclusion?(enabled: boolean): void;
   setPostProcessing?(enabled: boolean): void;
   setRenderTargetCaptures?(enabled: boolean): void;
   dumpActors?(): string;

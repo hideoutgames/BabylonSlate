@@ -43,7 +43,7 @@ export async function runOcclusionCullingProof(backend: "webgl2" | "webgpu") {
       quality: normalizeRenderingQuality({ geometry: { occlusionCulling } }), shadows: normalizeShadowSettings({}),
     });
     occlusionSetting(false);
-    allowSceneOcclusionCulling(scene, true);
+    allowSceneOcclusionCulling(scene, "setting");
 
     const doc = createDefaultMaterialDocument("rough dielectric");
     doc.nodes.find((node) => node.id === "baseColor")!.properties.value = [0.7, 0.7, 0.7];

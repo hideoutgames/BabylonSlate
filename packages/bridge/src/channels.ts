@@ -1060,6 +1060,8 @@ export type CommandMessage =
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
   | { type: "setScalability"; transaction: ScalabilityTransaction }
   | { type: "setLightsDebug"; enabled: boolean }
+  /** Debug: the occlusion overlay (`showocclusion`) and frozen occlusion (`freezeocclusion`); an absent field stays as it is. */
+  | { type: "setOcclusionDebug"; show?: boolean; freeze?: boolean }
   /** Debug: the Play view's post-processing as a whole (the `postprocessing` console command). */
   | { type: "setPostProcessingDebug"; enabled: boolean }
   /** Debug: whether every-frame Render Target Captures draw (the `rendertargets` console command). */

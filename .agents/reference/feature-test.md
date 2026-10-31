@@ -103,7 +103,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play. Its 
 | `ft_stream` | Toggle loading `FT_StreamedRoom` |
 | `ft_stats` | Print score, spinner and spawn counts |
 
-Useful built-ins: `quality low|medium|high|ultra`, `quality shadows screen off|low|medium|high`, `quality geometry occlusion on|off`, `framecap <fps>`, `possess "<camera name>"`, `stat unit`, `behaviourtreedebug on`, `shownav on`, `showaudiodebug on`. The cost toggles `postprocessing off`, `rendertargets off` and `quality postprocessing <effect> off` are exercised by the check's Breakdown mode.
+Useful built-ins: `quality low|medium|high|ultra`, `quality shadows screen off|low|medium|high`, `quality geometry occlusion on|off` (with `showocclusion on` and `freezeocclusion on` to inspect it), `framecap <fps>`, `possess "<camera name>"`, `stat unit`, `behaviourtreedebug on`, `shownav on`, `showaudiodebug on`. The cost toggles `postprocessing off`, `rendertargets off` and `quality postprocessing <effect> off` are exercised by the check's Breakdown mode.
 
 ### Workload knobs
 
