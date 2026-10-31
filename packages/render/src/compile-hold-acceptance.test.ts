@@ -68,7 +68,7 @@ import {
   type ScriptBundleEntry,
 } from "@haptic/bridge";
 import {
-  areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality,
+  areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, DEFAULT_RENDER_EFFECTS, fogVolumeBindings, normalizeRenderingQuality,
   normalizeRenderProjectSettings, parseText2DProperties, parseText3DProperties,
 } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
@@ -1698,14 +1698,14 @@ describe("compile holds after the first frame", () => {
   });
 
   /**
-   * Temporal anti-aliasing on (in any render mode), with `effects` on top: the world view's graph draws the spatial
-   * geometry pass (view depth and velocity) every frame, and no warm draw creates its pipelines.
+   * Ambient occlusion on (the world is PBR), with `effects` on top: the world view's graph draws the spatial geometry
+   * pass (view depth and world normals) every frame, and no warm draw creates its pipelines.
    */
   function withGeometryPass(world: PlayWorld, effects: Partial<ReturnType<typeof sceneRenderingSettings>["effects"]> = {}) {
     // The spatial chain also needs texel fetches.
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     updateSceneRenderingSettings(world.handle.scene, { effects: { ...sceneRenderingSettings(world.handle.scene).effects,
-      temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 }, ...effects } });
+      ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true }, ...effects } });
   }
   /** A geometry pass's variant: Babylon's geometry rendering defines `PREPASS`. */
   const geometryVariant = (effect: Effect) => /#define PREPASS\b/.test(effect.defines);
@@ -1772,13 +1772,13 @@ describe("compile holds after the first frame", () => {
   });
 
   it("a geometry effect switched on mid-game holds the view for its new graph's geometry pipelines: webgpu", async () => {
-    // Ambient occlusion adds world normals to the geometry pass, so the rebuilt graph's geometry variants are new for
+    // Real-Time Reflections add reflectivity to the geometry pass, so the rebuilt graph's geometry variants are new for
     // every mesh at once. Until a build has drawn a complete frame it keeps the hold (bounded by the hold cap and the
     // stall) rather than present every mesh missing from the geometry buffers.
     const world = playWorld("webgpu", []);
     withGeometryPass(world);
     const record = await measure(world, () => withGeometryPass(world, {
-      ambientOcclusion: { ...sceneRenderingSettings(world.handle.scene).effects.ambientOcclusion, enabled: true } }));
+      reflections: { ...sceneRenderingSettings(world.handle.scene).effects.reflections, enabled: true } }));
     expect({ geometryVariants: world.driver.created.some(geometryVariant), held: record.heldFrames > 0, holdReported: record.holdReported,
       leftOut: world.driver.omitted.size, recovered: record.recovered }, JSON.stringify(record)).toEqual({
       geometryVariants: true, held: true, holdReported: true, leftOut: 0, recovered: true,
@@ -2228,12 +2228,12 @@ describe("the lighting CI gate", () => {
     });
   });
 
-  it.each(MODELS)("with Screen-Space Shadows at High and temporal anti-aliasing on, lights change without compiling or rebuilding the view: %s", async (model) => {
+  it.each(MODELS)("with Screen-Space Shadows at High, lights change without compiling or rebuilding the view: %s", async (model) => {
     const world = playWorld(model, actors());
     // Spatial effects need texel fetches, which the headless Engine leaves off.
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     world.handle.setRenderSettings(normalizeRenderProjectSettings({
-      effects: { temporalAntiAliasing: { enabled: true } }, shadows: { screenShadows: "high" },
+      shadows: { screenShadows: "high" },
     }));
     const surfaces = unlitSurfaces(world);
     await settle(world);

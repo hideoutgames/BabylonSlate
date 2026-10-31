@@ -49,7 +49,7 @@ it("adds the Scene Linear and Display Color stages for PBR only", () => {
     ambientOcclusion: null, reflections: null, volumetricLighting: null, upscale: null,
     bloom: null,
     imageProcessing: { sceneLinear: true, vignette: null, colorGrading: null },
-    fxaa: false, temporalAntiAliasing: null, screenShadows: null,
+    fxaa: false, screenShadows: null,
   });
   // CEL is display-space by construction: the linear stage never applies.
   expect(planSceneEffects(linear, "cel")).toBeNull();
@@ -68,7 +68,7 @@ it("keeps CEL effects display-space with identity processing", () => {
     ambientOcclusion: null, reflections: null, volumetricLighting: null, upscale: null,
     bloom: { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 },
     imageProcessing: null,
-    fxaa: false, temporalAntiAliasing: null, screenShadows: null,
+    fxaa: false, screenShadows: null,
   });
 });
 
@@ -126,13 +126,6 @@ it("plans bloom and FXAA independently in Legacy Display", () => {
   expect(plan?.fxaa).toBe(true);
 });
 
-it("plans temporal anti-aliasing on both render modes", () => {
-  const temporal = effects({ temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } });
-  for (const mode of ["pbr", "cel"] as const)
-    expect(planSceneEffects(temporal, mode)?.temporalAntiAliasing).toEqual({ enabled: true, samples: 8, blend: 0.1 });
-  expect(sceneEffectsKey(temporal, "pbr", true)).not.toBe(sceneEffectsKey(effects({}), "pbr", true));
-});
-
 it("plans an FSR chain on its own and renders it at the scaled size", () => {
   const upscaling = { enabled: true, renderScale: 0.67, sharpness: 0.2 };
   for (const mode of ["pbr", "cel"] as const) {
@@ -148,7 +141,7 @@ it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-pr
   const plain = effects();
   expect(planSceneEffects(plain, "pbr", true, { screenShadows: "off" })).toBeNull();
   expect(planSceneEffects(plain, "pbr", true, { screenShadows: "medium" })).toMatchObject({
-    screenShadows: "medium", bloom: null, imageProcessing: null, fxaa: false, temporalAntiAliasing: null,
+    screenShadows: "medium", bloom: null, imageProcessing: null, fxaa: false,
   });
   expect(planSceneEffects(plain, "cel", true, { screenShadows: "medium" })).toBeNull();
   expect(planSceneEffects(plain, "pbr", false, { screenShadows: "medium" })).toBeNull();
