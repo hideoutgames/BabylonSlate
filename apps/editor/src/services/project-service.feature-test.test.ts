@@ -11,6 +11,7 @@ import {
 import { validateAnimGraph, type AnimGraphDocument } from "@haptic/anim-graph";
 import {
   decodeTileGid,
+  normalizeAnimationPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   TILESET_TERRAIN_STYLES,
@@ -131,6 +132,15 @@ describe("FeatureTest starter", () => {
       assets.filter((asset) => asset.header.type === "Class").map((asset) => asset.header.parentClass ?? ""),
     );
     expect(ENGINE_BASE_CLASSES.filter((base) => !parents.has(base))).toEqual([]);
+  });
+
+  it("reopens an Animation whose authored Duration differs from its clip length", () => {
+    const authored = reopened.registry!.list()
+      .filter((asset) => asset.header.type === "Animation")
+      .map((asset) => normalizeAnimationPayload(asset.header.payload))
+      .filter((payload) => payload.durationMs !== payload.clipDurationMs);
+    expect(authored.map(({ clipName, durationMs, clipDurationMs }) => ({ clipName, durationMs, clipDurationMs })))
+      .toEqual([{ clipName: "open", durationMs: 1500, clipDurationMs: 1000 }]);
   });
 
   it("paints a Tilemap with a terrain of every autotile style", async () => {
