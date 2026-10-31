@@ -111,12 +111,26 @@ export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
 export function AnimationDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
+  const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
   return (
     <PanelFrame data-testid="animation-details-panel">
-      <AnimationEditor payload={asRecord(doc?.content)} />
+      <AnimationEditor
+        payload={asRecord(doc?.content)}
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
+        }}
+      />
     </PanelFrame>
   );
+}
+
+/** Preview playback rate that makes one pass of the clip last the authored Duration. */
+function previewSpeedRatio(payload: AnimationPayload): number {
+  const { durationMs, clipDurationMs } = payload;
+  return durationMs !== undefined && clipDurationMs !== undefined
+    ? clipDurationMs / durationMs
+    : 1;
 }
 
 export function AnimationPreview({
@@ -174,6 +188,7 @@ export function AnimationPreview({
           clipName={payload.clipName}
           skeletonKind={skeletonKind}
           showBones={showBones}
+          speedRatio={previewSpeedRatio(payload)}
           sourceClipBytes={
             payload.sourceAnimationGuid ? sourceClipBytes : null
           }
@@ -185,8 +200,11 @@ export function AnimationPreview({
 
 export function AnimationEditor({
   payload,
+  onChange,
 }: {
   payload: Record<string, unknown>;
+  /** Omitted: every row is read-only. */
+  onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const animation = normalizeAnimationPayload(payload);
   const { assetRegistry } = useRegistryState();
@@ -240,8 +258,15 @@ export function AnimationEditor({
       label: "Duration",
       unit: "ms",
       value: animation.durationMs,
-      disabled: true,
-      onChange: () => {},
+      defaultValue: animation.clipDurationMs,
+      min: 1,
+      disabled: !onChange,
+      // The normalized fields keep the clip's length for assets saved before Duration was editable.
+      onChange: (durationMs) =>
+        onChange?.(
+          { ...payload, ...animation, durationMs: Math.max(1, durationMs) },
+          "animation:durationMs",
+        ),
     });
   }
   return (

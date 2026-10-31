@@ -81,6 +81,8 @@ const SHOWCASE_SLOTS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 const DOOR_SCALE = 2.5;
+/** The door's Open Animation has an authored Duration this many times its clip length, so it opens slower than it closes. */
+const DOOR_OPEN_DURATION_SCALE = 1.5;
 
 const SPEED: AnimGraphVariable = { id: "ft-anim-var-speed", name: "Speed", typeId: "float", defaultValue: 0 };
 const CHEER: AnimGraphVariable = { id: "ft-anim-var-cheer", name: "Cheer", typeId: "bool", defaultValue: false };
@@ -104,6 +106,7 @@ const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
  * writes the graph's Speed and Cheer variables).
  */
 export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promise<void> {
+  await authorDoorOpenDuration(ctx);
   const locomotionGraph = await saveGraph(ctx, locomotionGraphDocument(ctx));
   const doorGraph = await saveGraph(ctx, doorGraphDocument(ctx));
   const locomotor = await saveLocomotor(ctx, locomotionGraph);
@@ -152,6 +155,19 @@ export async function placeFeatureTestAnimation(ctx: FeatureTestContext): Promis
       });
     }
   }
+}
+
+/** Save the door's Open Animation with a Duration longer than its clip, as the Inspector's Duration field does. */
+async function authorDoorOpenDuration(ctx: FeatureTestContext): Promise<void> {
+  const guid = ctx.assets.doorAnimations.open;
+  const asset = guid ? ctx.registry.getByGuid(guid) : undefined;
+  if (!asset) return;
+  const payload = normalizeAnimationPayload(asset.header.payload);
+  if (payload.clipDurationMs === undefined) return;
+  await ctx.host.saveDocument("animation", asset.path, {
+    ...payload,
+    durationMs: payload.clipDurationMs * DOOR_OPEN_DURATION_SCALE,
+  });
 }
 
 // ---------------------------------------------------------------------------

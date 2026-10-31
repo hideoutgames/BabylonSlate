@@ -25,6 +25,7 @@ import {
   markPerMeshBindingMaterial, setMaterialUnlitBinding, setUnlitBinding, unlitBinding, type UnlitBinding,
 } from "./unlit-material-blocks";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
+import { registerAlphaToCoverage } from "./alpha-to-coverage";
 
 export type { UnlitBinding } from "./unlit-material-blocks";
 
@@ -148,6 +149,7 @@ function buildSurface(material: NodeMaterial, { textured, msdf }: SurfaceKind, b
   blocks.push(clip, vertexOutput);
 
   const surface = new UnlitSurfaceBlock(`${NAME}_surface`);
+  surface.coverage = true;
   surface.textured = textured;
   surface.msdf = msdf;
   if (textured) {
@@ -327,6 +329,8 @@ function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): Unl
   material.needAlphaTesting = () => false;
   material.needAlphaBlendingForMesh = (mesh) => unlitNeedsBlending(mesh);
   material.needAlphaTestingForMesh = (mesh) => { const binding = unlitBinding(mesh); return binding.cutoff > 0 && !binding.blend; };
+  // An alpha-tested mesh's colour draws write alpha-to-coverage under MSAA.
+  registerAlphaToCoverage(material, (mesh) => material.needAlphaTestingForMesh(mesh));
   const activeTextures = material.getActiveTextures.bind(material);
   material.getActiveTextures = () => {
     const textures = activeTextures();

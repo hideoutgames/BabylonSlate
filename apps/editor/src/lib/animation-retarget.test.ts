@@ -8,14 +8,15 @@ import {
 } from "./animation-retarget";
 
 describe("retargetedAnimationPayload", () => {
-  it("points the new Animation at the target Skeleton and records the source guid", () => {
+  it("points the new Animation at the target Skeleton, keeps its Duration and records the source guid", () => {
     expect(
       retargetedAnimationPayload({
         source: normalizeAnimationPayload({
           clipName: "Idle",
           modelGuid: "src-model",
           skeletonGuid: "src-skel",
-          durationMs: 1800,
+          durationMs: 2400,
+          clipDurationMs: 1800,
         }),
         sourceGuid: "src-anim",
         targetSkeletonGuid: "dst-skel",
@@ -25,7 +26,8 @@ describe("retargetedAnimationPayload", () => {
       clipName: "Idle",
       modelGuid: "dst-model",
       skeletonGuid: "dst-skel",
-      durationMs: 1800,
+      durationMs: 2400,
+      clipDurationMs: 1800,
       sourceAnimationGuid: "src-anim",
     });
   });

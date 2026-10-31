@@ -1,8 +1,12 @@
 import {
+  ADD_ONE_CAP_MS,
   breakdownAdditivity,
   breakdownDelta,
+  breakdownOverCap,
   breakdownSaturation,
   breakdownStep,
+  breakdownWarmupDrift,
+  FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
   counterStats,
   FEATURE_TEST_BENCHMARK_PROFILES,
   frameBound,
@@ -12,6 +16,7 @@ import {
   SATURATED_SHARE,
   settingsChanges,
   type FeatureTestBreakdownInfo,
+  type FeatureTestBreakdownMethod,
   type FeatureTestBenchmarkSample,
   type FeatureTestCheckReport,
   type FeatureTestCheckResources,
@@ -45,15 +50,29 @@ function frames(stats: FrameStats | null): string {
   return `${stats.fps.toFixed(0)} fps (p95 ${stats.p95Ms.toFixed(0)} ms, max ${stats.maxMs.toFixed(0)} ms, ${stats.stalls} stalls >100 ms)`;
 }
 
-/** A scene's Breakdown verdicts: NON-ADDITIVE when a view's step savings sum past its first baseline, SATURATED when most baseline frames took 4+ intervals. */
-function breakdownVerdicts(scene: FeatureTestCheckSceneResult): { nonAdditive: string[]; saturated: string | null } {
+/** A report's Breakdown method; reports without one ran add-one. */
+function reportMethod(report: FeatureTestCheckReport): FeatureTestBreakdownMethod {
+  return report.breakdown?.method ?? FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD;
+}
+
+/**
+ * A scene's Breakdown verdicts: NON-ADDITIVE when a remove-one view's step savings sum past its first baseline,
+ * SATURATED when most baseline frames took 4+ intervals, OVER CAP when an add-one baseline passed `ADD_ONE_CAP_MS`.
+ */
+function breakdownVerdicts(
+  scene: FeatureTestCheckSceneResult, method: FeatureTestBreakdownMethod,
+): { nonAdditive: string[]; saturated: string | null; overCap: string | null } {
   const samples = scene.play.benchmark;
-  const nonAdditive = breakdownAdditivity(scene.name, samples).filter((entry) => entry.nonAdditive).map((entry) =>
+  const over = method === "add-one" ? breakdownOverCap(samples) : [];
+  const nonAdditive = breakdownAdditivity(scene.name, samples, method).filter((entry) => entry.nonAdditive).map((entry) =>
     `${entry.view ? `${entry.view}: ` : ""}step savings sum to ${entry.savingsMs.toFixed(1)} ms, past the first baseline's ${entry.baselineMs.toFixed(1)} ms ${entry.basis === "gpu" ? "gpu busy" : "mean frame"}`);
   const share = breakdownSaturation(samples);
   return {
     nonAdditive,
     saturated: share !== null && share > SATURATED_SHARE ? `${(share * 100).toFixed(0)}% of baseline frames lasted 4+ display intervals` : null,
+    overCap: over.length
+      ? `${over.map((entry) => `${entry.label} ${entry.ms.toFixed(1)} ms${entry.basis === "frame" ? " mean frame" : ""}`).join(", ")} past the ${ADD_ONE_CAP_MS} ms add-one cap`
+      : null,
   };
 }
 
@@ -90,16 +109,22 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
     lines.push(`  > ${command.line}: ${command.success ? "ok" : "FAILED"} in ${s(command.ms)}${command.output ? ` · ${clip(command.output, 160)}` : ""}`);
   }
   if (play.benchmark.length && mode === "breakdown") {
+    const method = reportMethod(report);
     const first = play.benchmark.find(isBreakdownBaseline);
     const timed = play.benchmark.find((sample) => sample.gpuBusy);
-    const verdicts = breakdownVerdicts(scene);
+    const verdicts = breakdownVerdicts(scene, method);
+    const drift = breakdownWarmupDrift(play.benchmark);
     lines.push(
-      "  Breakdown (60 fps cap; warm-up until steady, then a baseline before and after every step; each sampled once no shader is first drawn or compiling):",
+      `  Breakdown ${method} (60 fps cap; warm-up until steady, then a baseline before and after every step; each sampled once no shader is first drawn or compiling):`,
       `  preserveDrawingBuffer: ${preserveText(first?.settings?.["presentation.preserve"])} (live)`,
-      `  Tier: ${report.breakdown?.tier ?? "unknown"} (resolution kept at the project's fixed scale)`,
+      `  Base: ${report.breakdown?.tier ?? "unknown"}`,
+      drift
+        ? `  Warm-up drift: first window ${drift.firstMs.toFixed(1)} ms, steady ${drift.steadyMs.toFixed(1)} ms (${drift.percent >= 0 ? "+" : ""}${drift.percent.toFixed(0)}%) over ${drift.windows} windows${drift.basis === "frame" ? " (mean frame)" : " (gpu busy)"}`
+        : "  Warm-up drift: unmeasured (fewer than two windows)",
       ...verdicts.nonAdditive.map((text) => `  NON-ADDITIVE: ${text}; the changes do not add up, so do not sum them`),
       ...(verdicts.saturated ? [`  SATURATED: ${verdicts.saturated}; the GPU is saturated, so a change is not that feature's own cost`] : []),
-      "  Legend: gpu busy = median (p95) GPU time per frame from fences, unaffected by display pacing · change = gpu busy against the baselines of the same camera around the step (a baseline's: against that camera's first), or mean frame time where gpu busy is missing (marked *) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed and occlusion culled/tested · occluder tris · culling ms; UNEXPECTED, NOT RESTORED and UNSETTLED mark a sample not to trust",
+      ...(verdicts.overCap ? [`  OVER CAP: ${verdicts.overCap}; the GPU may change speed there, so changes are not costs`] : []),
+      `  Legend: gpu busy = median (p95) GPU time per frame from fences, unaffected by display pacing · change = gpu busy against the baselines of the same camera around the step (a baseline's: against that camera's first; ${method === "add-one" ? "a step's is the feature's cost" : "a step's is what the feature saves"}), or mean frame time where gpu busy is missing (marked *) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed and occlusion culled/tested · occluder tris · culling ms; UNEXPECTED, NOT RESTORED, UNSETTLED and OVER mark a sample not to trust`,
       `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
       `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("vsync 1/2/3/4+", 16)}${pad("gpu busy", 14)}${pad("change", 18)}${pad("cpu", 8)}${pad("bound", 6)}${pad("draws", 14)}notes`);
     for (const sample of play.benchmark) {
@@ -114,8 +139,10 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       const occlusion = sample.occlusion
         ? `occlusion culled ${sample.occlusion.culled}/${sample.occlusion.tested} · ${sample.occlusion.triangles} tris · ${sample.occlusion.ms.toFixed(2)} ms`
         : "";
-      const notes = [sample.warmup ? "warm-up" : "", breakdownNotes(scene.name, sample, viewFirst), occlusion].filter(Boolean).join(" · ");
-      lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(vsync, 16)}${pad(busy, 14)}${pad(change, 18)}${pad(ms(sample.cpuMs), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${notes}`.trimEnd());
+      const notes = [
+        sample.warmup ? "warm-up" : "", breakdownNotes(scene.name, method, play.benchmark, sample, viewFirst), occlusion,
+      ].filter(Boolean).join(" · ");
+      lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(vsync, 16)}${pad(busy, 14)}${pad(change, 18)}${pad(ms(sample.cpuMs), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${notes}`.trimEnd());
     }
   } else if (play.benchmark.length) {
     lines.push("  Benchmark (frame cap lifted):", `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 20)}${pad("gpu", 20)}${pad("draws", 14)}resolution`);
@@ -172,14 +199,21 @@ function preserveText(value: string | undefined): string {
  * first baseline of its camera (UNEXPECTED for a field outside its own; a baseline that differs was NOT RESTORED), or
  * that it changed nothing (its setting already had that value).
  */
-function breakdownNotes(sceneName: string, sample: FeatureTestBenchmarkSample, first: FeatureTestBenchmarkSample | undefined): string {
+function breakdownNotes(
+  sceneName: string,
+  method: FeatureTestBreakdownMethod,
+  samples: readonly FeatureTestBenchmarkSample[],
+  sample: FeatureTestBenchmarkSample,
+  first: FeatureTestBenchmarkSample | undefined,
+): string {
+  if (sample.skipped) return `skipped (${sample.skipped})`;
   const notes: string[] = [];
   const unsettled = sample.unsettled;
   if (unsettled && (unsettled.firstDraws > 0 || unsettled.compiling > 0))
     notes.push(`UNSETTLED: ${unsettled.firstDraws} first drawn, ${unsettled.compiling} compiling`);
   if (first?.settings && sample.settings && sample !== first) {
     const changes = settingsChanges(first.settings, sample.settings);
-    const fields = breakdownStep(sceneName, sample.label)?.fields ?? [];
+    const fields = breakdownStep(sceneName, sample.label, method)?.fields ?? [];
     const field = (change: string) => change.slice(0, change.indexOf("="));
     if (isBreakdownBaseline(sample) || sample.warmup) {
       if (changes.length) notes.push(`NOT RESTORED: ${changes.join(", ")}`);
@@ -190,6 +224,23 @@ function breakdownNotes(sceneName: string, sample: FeatureTestBenchmarkSample, f
       else notes.push("no setting changed");
       if (other.length) notes.push(`UNEXPECTED: ${other.join(", ")}`);
     }
+  }
+  const step = isBreakdownBaseline(sample) || sample.warmup ? undefined : breakdownStep(sceneName, sample.label, method);
+  // The FFT grid a water detail step ran: resolution-independent work the detail may change.
+  if (step?.fields?.includes("water.fft") && sample.settings?.["water.fft"]) notes.push(`fft ${sample.settings["water.fft"]}`);
+  if (step?.includes) {
+    const label = sample.view ? `${sample.view} ${step.includes}` : step.includes;
+    const included = samples.find((entry) => entry.label === label && entry.view === sample.view && !entry.skipped);
+    const own = breakdownDelta(samples, sample);
+    const part = included ? breakdownDelta(samples, included) : null;
+    if (own && part && own.basis === part.basis) {
+      const ms = own.ms - part.ms;
+      notes.push(`own ${ms >= 0 ? "+" : ""}${ms.toFixed(1)}ms beyond ${step.includes}`);
+    }
+  }
+  if (method === "add-one" && !sample.warmup && !isBreakdownBaseline(sample)) {
+    const value = sample.gpuBusy?.medianMs ?? null;
+    if (value !== null && value > ADD_ONE_CAP_MS) notes.push(`OVER ${ADD_ONE_CAP_MS} ms: the GPU may have changed speed`);
   }
   return notes.join(" · ");
 }
@@ -263,7 +314,14 @@ function preserveComparison(scenes: readonly FeatureTestCheckSceneResult[]): str
 /** A Breakdown's header lines: its tier and the A/B's passes, the on/off comparison, and how the A/B ended. */
 function breakdownHeader(report: FeatureTestCheckReport, breakdown: FeatureTestBreakdownInfo): string[] {
   const passes = breakdown.passes.map((entry, index) => `pass ${index + 1} ${entry.preserveDrawingBuffer ? "on" : "off"}`).join(", ");
-  const lines = [`Breakdown: tier ${breakdown.tier} · preserveDrawingBuffer A/B: ${passes || "no pass"} (stored setting; each pass's live value below)`];
+  if (!breakdown.ab) {
+    const stored = breakdown.passes[0]?.preserveDrawingBuffer;
+    return [
+      `Breakdown: ${breakdown.method} · base ${breakdown.tier} · preserveDrawingBuffer ${stored === undefined ? "unknown" : stored ? "on" : "off"} (stored setting; no A/B)`,
+      ...breakdown.notes,
+    ];
+  }
+  const lines = [`Breakdown: ${breakdown.method} · base ${breakdown.tier} · preserveDrawingBuffer A/B: ${passes || "no pass"} (stored setting; each pass's live value below)`];
   const comparison = preserveComparison(report.scenes);
   if (comparison) lines.push(comparison);
   else if (breakdown.passes.length > 1) {
@@ -282,10 +340,11 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
     ?? report.scenes.map((scene) => scene.editor.gpu).find(Boolean);
   const pipeline = report.scenes.map((scene) => scene.play.snapshot?.rendering?.pipeline.effective).find(Boolean);
   const breakdown = report.mode === "breakdown" ? report.breakdown : undefined;
-  const verdicts = report.mode === "breakdown" ? report.scenes.map(breakdownVerdicts) : [];
+  const verdicts = report.mode === "breakdown" ? report.scenes.map((scene) => breakdownVerdicts(scene, reportMethod(report))) : [];
   const flags = [
     ...(verdicts.some((entry) => entry.nonAdditive.length) ? [" · NON-ADDITIVE"] : []),
     ...(verdicts.some((entry) => entry.saturated) ? [" · SATURATED"] : []),
+    ...(verdicts.some((entry) => entry.overCap) ? [" · OVER CAP"] : []),
   ].join("");
   const lines = [
     `Haptic Feature Test Check (${MODE_LABELS[report.mode]}) · ${new Date(report.startedAt).toISOString()}`,
