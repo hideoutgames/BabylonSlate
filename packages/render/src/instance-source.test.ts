@@ -21,17 +21,21 @@ function batch() {
   return { scene, source, first };
 }
 
-it("never hides an instance spawned into a batch that draws: its source's submeshes hold what it draws with", async () => {
+it("never hides an instance that drew while its batch swaps, and reveals a new one with its actor", async () => {
   const { source, first } = batch();
   // The first instance's probe compiles the source's instanced variant, which the batch then draws.
   await vi.waitFor(() => expect(first.isReady(true)).toBe(true));
+  noteDrawn(first);
   expect(source.subMeshes[0]!.effect?.isReady()).toBe(true);
-  // A new variant still compiling (a light added) while the spawn arrives: the batch keeps drawing its previous Effect,
-  // so the spawn waits for the swap as the batch does, shown, rather than being hidden.
-  const spawned = source.createInstance("spawned");
+  // A new variant still compiling (a light added): the batch keeps drawing its previous Effect from the source's
+  // submeshes. The instance that drew waits for the swap, shown, as a drawn mesh does.
   vi.spyOn(source.material!, "isReadyForSubMesh").mockReturnValue(false);
-  expect(probeVariantSwaps(true, () => isMeshFrameReady(spawned))).toBe(false);
-  expect(isRevealPending(spawned)).toBe(false);
+  expect(probeVariantSwaps(true, () => isMeshFrameReady(first))).toBe(false);
+  expect(isRevealPending(first)).toBe(false);
+  // A new instance is hidden until its actor's round reveals it with the actor's other meshes.
+  const spawned = source.createInstance("spawned");
+  expect(probeVariantSwaps(true, () => isMeshFrameReady(spawned))).toBe(true);
+  expect(isRevealPending(spawned)).toBe(true);
 });
 
 it("counts an instance drawn when its source has drawn with its Material", () => {
