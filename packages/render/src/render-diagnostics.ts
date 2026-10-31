@@ -15,6 +15,7 @@ import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
 import { sceneOcclusionDiagnostics } from "./view-occlusion";
 import type { RenderScheduler } from "./render-scheduler";
 import type { FirstDrawStats } from "./first-draw-stats";
+import type { GpuBusyStats } from "./gpu-busy-probe";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
 import { deviceProfile, deviceTextureLimits } from "./device-profile";
@@ -29,6 +30,11 @@ export type RenderDiagnostics = {
    * post-processing runs, every-frame captures, resolution scale. A step that changes more than its own fields shows.
    */
   settings?: Record<string, string>;
+  /**
+   * GPU-busy time per Engine frame while the `gpubusy` debug command measures (`gpu-busy-probe.ts`); null when it has
+   * not measured a frame or the Engine has no fences.
+   */
+  gpuBusy?: GpuBusyStats | null;
   /** View-owned draw/copy counts. A held draw never replaces the visible bitmap.
    * Phase timing is enabled by requesting diagnostics, independently of GPU timers. */
   presentation?: {
