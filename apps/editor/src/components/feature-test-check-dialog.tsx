@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EngineStore, type AbstractEngine, type Effect } from "@babylonjs/core";
-import { estimateTextureMemory } from "@haptic/render";
+import { estimateTextureMemory, preserveDrawingBufferSetting } from "@haptic/render";
 import { getHostMemoryStats } from "@haptic/vfs";
-import { SelectableText } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
@@ -16,21 +15,37 @@ import { Checkbox } from "@haptic/ui/components/checkbox";
 import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { Textarea } from "@haptic/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
-import { useActiveDocumentId, useDocumentActions } from "../context/document-context";
+import { useActiveDocumentId, useDocumentActions, useEditorShellState, useProjectState } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import {
   MAX_CHECK_RESOURCE_SAMPLES,
   clearUnfinishedCheck,
-  loadUnfinishedCheck,
+  loadCheckEnded,
+  loadSavedCheck,
+  saveCheckEnded,
   saveUnfinishedCheck,
 } from "../lib/feature-test-check-record";
+import {
+  beginSecondPass,
+  cancelPlannedReload,
+  finishSecondPass,
+  mergeBreakdownPasses,
+  planSecondPass,
+  secondPassInfo,
+  type BreakdownProject,
+  type BreakdownResumeMarker,
+} from "../lib/feature-test-breakdown-ab";
+import { FEATURE_TEST_AB_DEPS, FeatureTestCheckStatus } from "./feature-test-check-status";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
 import {
   FEATURE_TEST_BREAKDOWN_SCENES,
+  FEATURE_TEST_BREAKDOWN_TIER,
   FEATURE_TEST_CHECK_SCENES,
   frameStats,
   runFeatureTestCheck,
+  warmDeviceMinutes,
+  type FeatureTestBreakdownInfo,
   type FeatureTestCheckDeps,
   type FeatureTestCheckMode,
   type FeatureTestCheckReport,
@@ -77,10 +92,18 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
   benchmark: "Plays every Feature Test scene and measures each quality tier with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
-  breakdown: "Plays FT_World and turns one feature off at a time (shadows, water, post-processing effects, captures, half resolution), measuring each at 60 fps once its shaders are ready, between baselines. The frame-time change shows what each feature costs this device's GPU. A few minutes per scene; keep the device awake and plugged in.",
+  breakdown: "Plays FT_World and FT_Occlusion at the Medium tier and turns one feature off at a time (shadows, water, post-processing effects, captures, half resolution; occlusion culling from two cameras), measuring each at 60 fps between baselines. Then the editor reloads once and repeats it with preserveDrawingBuffer switched, and writes one report. The change shows what each feature costs this device's GPU. About 20 minutes; keep the device awake and plugged in.",
 };
 
 const MODES = ["quick", "full", "benchmark", "breakdown"] as const satisfies readonly FeatureTestCheckMode[];
+
+const AB_DEPS = FEATURE_TEST_AB_DEPS;
+/** How long the status shows before the A/B's reload, so it can still be cancelled. */
+const RELOAD_DELAY_MS = 3_000;
+/** A page still here this long after the reload was asked for did not reload (the browser kept it, e.g. for unsaved changes). */
+const RELOAD_WATCHDOG_MS = 20_000;
+/** After the reopened project mounts the dialog, before the second pass starts. */
+const RESUME_DELAY_MS = 1_000;
 
 /** How often a running check samples what the editor holds, so a crash's report shows memory climbing. */
 const RESOURCE_SAMPLE_MS = 2_000;
@@ -124,9 +147,9 @@ async function sampleCheckResources(atMs: number, step: string): Promise<Feature
 
 type Phase = { kind: "idle" } | { kind: "running"; message: string } | { kind: "done"; text: string; report: FeatureTestCheckReport };
 
-/** The report a check the app stopped during left behind, if any. */
-function unfinishedPhase(): Phase {
-  const report = loadUnfinishedCheck();
+/** The report a check the app stopped during, or a finished one not yet shown, left behind; idle without one. */
+function savedPhase(): Phase {
+  const report = loadSavedCheck();
   return report ? { kind: "done", report, text: formatFeatureTestCheckReport(report, collectDiagnosticEnvironment()) } : { kind: "idle" };
 }
 
@@ -142,22 +165,50 @@ export interface FeatureTestCheckDialogProps {
 export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckDialogProps) {
   const { openDocument } = useDocumentActions();
   const activeDocumentId = useActiveDocumentId();
+  const { listedProjects } = useEditorShellState();
+  const { projectName } = useProjectState();
   const { requestPlay, playFromScene, setPlayFromScene, sessionOwner } = usePlay();
   const [mode, setMode] = useState<FeatureTestCheckMode>("quick");
   const [breakdownAllScenes, setBreakdownAllScenes] = useState(false);
-  const [phase, setPhase] = useState<Phase>(unfinishedPhase);
+  const [phase, setPhase] = useState<Phase>(savedPhase);
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
   const abortRef = useRef<AbortController | null>(null);
+  /** What the status bar's Cancel does: stop the running check, or the A/B's pending reload. */
+  const cancelRef = useRef<(() => void) | null>(null);
+  const resumedRef = useRef(false);
   const activeRef = useRef(activeDocumentId);
   activeRef.current = activeDocumentId;
   const playRef = useRef({ requestPlay, playFromScene, setPlayFromScene, sessionOwner });
   playRef.current = { requestPlay, playFromScene, setPlayFromScene, sessionOwner };
+  const projectRef = useRef({ listedProjects, projectName });
+  projectRef.current = { listedProjects, projectName };
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const start = useCallback(async () => {
+  /**
+   * The open project's Homepage entry, to reopen after the A/B's reload: opening a project moves it to the top of the
+   * list, so the first entry, when it has the project's name.
+   */
+  const currentProject = useCallback((): BreakdownProject | null => {
+    const { listedProjects: listed, projectName: name } = projectRef.current;
+    const entry = listed[0];
+    return entry && entry.label === name ? { id: entry.id, name: entry.name, tier: entry.tier, label: entry.label } : null;
+  }, []);
+
+  /**
+   * Runs one check, or one Breakdown pass, with the editor's own controls. `earlier` is the A/B's first pass, kept in
+   * the crash record with this one so a crash reports both. Returns the report, and the error when the run threw.
+   */
+  const runCheck = useCallback(async (options: {
+    mode: FeatureTestCheckMode;
+    scenes: ReadonlyArray<{ name: string; path: string }>;
+    breakdown?: FeatureTestBreakdownInfo;
+    earlier?: FeatureTestCheckReport;
+  }): Promise<{ report: FeatureTestCheckReport; error: string | null }> => {
+    const { mode, scenes, breakdown, earlier } = options;
     const controller = new AbortController();
     abortRef.current = controller;
+    cancelRef.current = () => controller.abort();
     setCopied("idle");
     setPhase({ kind: "running", message: "Starting" });
     clearUnfinishedCheck();
@@ -172,11 +223,6 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       saveUnfinishedCheck({ step: record.step, report: record.report, resources: record.resources });
     };
     const sampler = setInterval(() => { void sample(); }, RESOURCE_SAMPLE_MS);
-    const active = activeRef.current;
-    const current = FEATURE_TEST_CHECK_SCENES.find((scene) => `scene:${scene.path}` === active);
-    const scenes = mode === "quick" ? [current ?? FEATURE_TEST_CHECK_SCENES[0]]
-      : mode === "breakdown" && !breakdownAllScenes ? FEATURE_TEST_BREAKDOWN_SCENES
-        : FEATURE_TEST_CHECK_SCENES;
     const pageErrors: string[] = [];
     const onError = (event: ErrorEvent) => { pageErrors.push(event.message || String(event.error)); };
     const onRejection = (event: PromiseRejectionEvent) => {
@@ -203,15 +249,16 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     };
     try {
       const report = await runFeatureTestCheck({
-        mode, scenes, deps, signal: controller.signal, pageErrors: () => [...pageErrors],
-        onStep: (step, partial) => { record.step = step; record.report = partial; void sample(); },
+        mode, scenes, deps, signal: controller.signal, pageErrors: () => [...pageErrors], breakdown,
+        onStep: (step, partial) => { record.step = step; record.report = earlier ? mergeBreakdownPasses(earlier, partial) : partial; void sample(); },
       });
-      const environment = collectDiagnosticEnvironment();
-      setPhase({ kind: "done", report, text: formatFeatureTestCheckReport(report, environment) });
+      return { report, error: null };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setPhase({ kind: "done", report: { mode, startedAt: Date.now(), durationMs: 0, cancelled: true, scenes: [], pageErrors: [message] },
-        text: `Haptic Feature Test Check failed to run: ${message}` });
+      return {
+        report: { mode, startedAt: Date.now(), durationMs: 0, cancelled: true, scenes: [], pageErrors: [message], ...(breakdown ? { breakdown } : {}) },
+        error: message,
+      };
     } finally {
       running = false;
       clearInterval(sampler);
@@ -221,9 +268,82 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       releaseReporting();
       if (!restorePlayFromScene) playRef.current.setPlayFromScene(false);
       if (abortRef.current === controller) abortRef.current = null;
-      onOpenChange(true);
+      cancelRef.current = null;
     }
-  }, [mode, breakdownAllScenes, onOpenChange, openDocument]);
+  }, [openDocument]);
+
+  /** Shows the final report and records when this check ended, for the next Breakdown's warm-device note. */
+  const finish = useCallback((report: FeatureTestCheckReport, error: string | null = null) => {
+    saveCheckEnded(Date.now());
+    setPhase({
+      kind: "done", report,
+      text: error && !report.scenes.length ? `Haptic Feature Test Check failed to run: ${error}` : formatFeatureTestCheckReport(report, collectDiagnosticEnvironment()),
+    });
+    onOpenChange(true);
+  }, [onOpenChange]);
+
+  /** The A/B's reload, shown for a moment so it can be cancelled; a page that outlives it did not reload. */
+  const reloadForSecondPass = useCallback((marker: BreakdownResumeMarker) => {
+    setPhase({ kind: "running", message: `Reloading the editor for pass 2 of 2 (preserveDrawingBuffer ${marker.originalPreserve ? "off" : "on"})` });
+    let settled = false;
+    const giveUp = (reason: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(reload);
+      clearTimeout(watchdog);
+      cancelRef.current = null;
+      finish(cancelPlannedReload(marker, reason, AB_DEPS));
+    };
+    cancelRef.current = () => giveUp("cancelled before the reload");
+    const reload = setTimeout(() => { if (!settled) window.location.reload(); }, RELOAD_DELAY_MS);
+    const watchdog = setTimeout(() => giveUp("the editor did not reload"), RELOAD_DELAY_MS + RELOAD_WATCHDOG_MS);
+  }, [finish]);
+
+  const start = useCallback(async () => {
+    const active = activeRef.current;
+    const current = FEATURE_TEST_CHECK_SCENES.find((scene) => `scene:${scene.path}` === active);
+    const scenes = mode === "quick" ? [current ?? FEATURE_TEST_CHECK_SCENES[0]]
+      : mode === "breakdown" && !breakdownAllScenes ? FEATURE_TEST_BREAKDOWN_SCENES
+        : FEATURE_TEST_CHECK_SCENES;
+    if (mode !== "breakdown") {
+      const { report, error } = await runCheck({ mode, scenes });
+      finish(report, error);
+      return;
+    }
+    // Pass 1 at the stored setting; the warm-device note is decided once, before it.
+    const breakdown: FeatureTestBreakdownInfo = {
+      tier: FEATURE_TEST_BREAKDOWN_TIER,
+      warmMinutes: warmDeviceMinutes(Date.now(), loadCheckEnded()),
+      passes: [{ preserveDrawingBuffer: preserveDrawingBufferSetting() }],
+      notes: [],
+    };
+    const { report: first, error } = await runCheck({ mode, scenes, breakdown });
+    if (error) { finish(first, error); return; }
+    const plan = planSecondPass(first, { project: currentProject(), scenes }, AB_DEPS);
+    if (plan.kind === "done") finish(plan.report);
+    else reloadForSecondPass(plan.marker);
+  }, [mode, breakdownAllScenes, runCheck, finish, reloadForSecondPass, currentProject]);
+
+  /** The A/B's second pass, in the project Home reopened after the reload: the same scenes, then one report of both. */
+  const runSecondPass = useCallback(async (marker: BreakdownResumeMarker) => {
+    setMode("breakdown");
+    const { report: second, error } = await runCheck({
+      mode: "breakdown", scenes: marker.scenes, breakdown: secondPassInfo(marker), earlier: marker.first,
+    });
+    finish(finishSecondPass(marker, second, AB_DEPS), error && !marker.first.scenes.length ? error : null);
+  }, [runCheck, finish]);
+
+  // A Breakdown waiting for its second pass resumes once the reopened project mounts this dialog.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (resumedRef.current) return;
+      const marker = beginSecondPass(projectRef.current.listedProjects[0]?.id ?? null, AB_DEPS);
+      if (!marker) return;
+      resumedRef.current = true;
+      void runSecondPass(marker);
+    }, RESUME_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [runSecondPass]);
 
   const copy = async (text: string) => {
     setCopied(await copyText(text) ? "copied" : "failed");
@@ -231,13 +351,11 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
 
   if (phase.kind === "running") {
     return (
-      <div className="fixed left-3 top-[max(0.5rem,env(safe-area-inset-top))] z-[70] flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1 rounded-md border border-border bg-popover p-1 shadow-md"
-        role="status" aria-label="Feature Test Check" data-testid="feature-test-check-status">
-        <SelectableText className="px-1 text-xs">Feature Test Check · {phase.message}</SelectableText>
-        <Button size="sm" variant="secondary" data-testid="feature-test-check-cancel" onClick={() => abortRef.current?.abort()}>
+      <FeatureTestCheckStatus message={phase.message} action={
+        <Button size="sm" variant="secondary" data-testid="feature-test-check-cancel" onClick={() => cancelRef.current?.()}>
           Cancel
         </Button>
-      </div>
+      } />
     );
   }
 

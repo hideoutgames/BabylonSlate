@@ -1070,6 +1070,7 @@ function initializeEngine(
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
       "resolution.scale": String(quality.resolution.scale),
+      "geometry.occlusion": String(quality.geometry.occlusionCulling),
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
       "presentation.preserve": engine.isWebGPU ? "n/a"
         : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
