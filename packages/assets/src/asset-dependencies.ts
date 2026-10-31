@@ -351,7 +351,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         }
       };
       for (const entry of nodes) if (entry.nodeType.startsWith("input.") ||
-        ["data.readEntry", "data.getChildren", "data.getDescendants", "data.getParent"].includes(entry.nodeType)) requireInputs(String(entry.node.id));
+        ["data.readEntry", "data.readUnknownEntry", "data.getChildren", "data.getDescendants", "data.getParent"].includes(entry.nodeType)) requireInputs(String(entry.node.id));
       for (const { node, properties, nodeType, pins } of nodes) {
         const needed = requiredNodes.has(String(node.id));
         const schemaNeeded = nodeType !== "data.readEntryAsync";
@@ -369,6 +369,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         if (nodeType.startsWith("data.")) {
           add(properties["default:tree"], needed);
           add(properties.definitionGuid, schemaNeeded);
+          add(properties["default:definition"], schemaNeeded);
           for (const field of rows(properties.dataSchema)) memberValue(field, undefined, false, undefined, schemaNeeded);
         }
         if (nodeType === "variables.get" && needed) {
