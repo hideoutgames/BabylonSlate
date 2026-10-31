@@ -1,15 +1,15 @@
-import { Color3, MeshBuilder, type AbstractMesh, type Mesh, type Scene, type StandardMaterial } from "@babylonjs/core";
+import { MeshBuilder, type AbstractMesh, type Mesh, type Scene } from "@babylonjs/core";
 import { parseJoystick2DProperties, type Joystick2DProperties } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
-import { createOverlayUnlitMaterial } from "./overlay-texture-quad";
+import { applyOverlayUnlitMaterial, type OverlayUnlitFallback } from "./overlay-texture-quad";
 import { VisualBundle } from "./visual-bundle";
-import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "./overlay-visual-style";
+import { applyOverlayVisualStyle } from "./overlay-visual-style";
 
 export interface Joystick2DMesh {
   mesh: Mesh;
   thumb: Mesh;
   properties: Joystick2DProperties;
-  fallbacks: { background: StandardMaterial; joystick: StandardMaterial };
+  fallbacks: { background: OverlayUnlitFallback; joystick: OverlayUnlitFallback };
 }
 
 const joysticks = new WeakMap<AbstractMesh, Joystick2DMesh>();
@@ -21,12 +21,13 @@ export function refreshJoystick2DMaterials(root: Mesh, assets?: MeshAssetContext
   for (const mesh of [root, ...root.getChildMeshes()]) {
     const visual = joystick2DMesh(mesh);
     if (!visual) continue;
-    const resolve = (guid: string | null, fallback: StandardMaterial) =>
-      guid ? assets?.resolveMaterial?.(guid, { scene: mesh.getScene(), unlit: true }) ?? fallback : fallback;
-    mesh.material = resolve(visual.properties.backgroundMaterialGuid, visual.fallbacks.background);
-    visual.thumb.material = resolve(visual.properties.joystickMaterialGuid, visual.fallbacks.joystick);
-    enableOverlayVisualMaterial(mesh);
-    enableOverlayVisualMaterial(visual.thumb);
+    const resolve = (target: AbstractMesh, guid: string | null, fallback: OverlayUnlitFallback) => {
+      const material = guid ? assets?.resolveMaterial?.(guid, { scene: mesh.getScene(), unlit: true }) : null;
+      if (material) target.material = material;
+      else fallback.apply(target);
+    };
+    resolve(mesh, visual.properties.backgroundMaterialGuid, visual.fallbacks.background);
+    resolve(visual.thumb, visual.properties.joystickMaterialGuid, visual.fallbacks.joystick);
   }
 }
 
@@ -41,10 +42,7 @@ export function createJoystick2DMesh(
       ? MeshBuilder.CreatePlane(suffix, { size: radius * 2 }, scene)
       : MeshBuilder.CreateDisc(suffix, { radius, tessellation: 48 }, scene);
     bundle.ownRenderUser(mesh);
-    const fallback = createOverlayUnlitMaterial(scene, suffix, bundle);
-    fallback.emissiveColor = new Color3(0.75, 0.75, 0.75);
-    fallback.alpha = alpha;
-    mesh.material = fallback;
+    const fallback = applyOverlayUnlitMaterial(mesh, [0.75, 0.75, 0.75], alpha);
     return { mesh, fallback };
   };
   try {

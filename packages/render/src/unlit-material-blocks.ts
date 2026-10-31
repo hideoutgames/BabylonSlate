@@ -36,11 +36,25 @@ const DEFAULT_BINDING: UnlitBinding = {
 export function setUnlitBinding(mesh: AbstractMesh, binding: UnlitBinding): void {
   bindings.set(mesh, binding);
 }
+/**
+ * The binding `mesh` draws: its own, or, for a pooled visual's leaf replaced by a mesh of its own under the visual
+ * (`setActorMeshMaterial`), the visual's.
+ */
 export function unlitBinding(mesh: AbstractMesh | undefined): UnlitBinding {
-  return (mesh && bindings.get(mesh)) || DEFAULT_BINDING;
+  if (!mesh) return DEFAULT_BINDING;
+  return bindings.get(mesh) ?? bindings.get(mesh.parent as AbstractMesh) ?? DEFAULT_BINDING;
 }
 export function hasUnlitBinding(mesh: AbstractMesh): boolean {
   return bindings.has(mesh);
+}
+
+const perMeshMaterials = new WeakSet<object>();
+/** Marks an unlit Material: each mesh binds its own values, which pooled instances (drawn as their source) cannot. */
+export function markPerMeshBindingMaterial(material: object): void {
+  perMeshMaterials.add(material);
+}
+export function hasPerMeshBindings(material: object): boolean {
+  return perMeshMaterials.has(material);
 }
 
 /** Uniform names: one graph per instance, so fixed names keep every instance's code byte-identical. */

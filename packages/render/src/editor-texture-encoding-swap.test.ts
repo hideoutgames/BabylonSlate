@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { StandardMaterial, TextureBlock, type NodeMaterial, type Texture } from "@babylonjs/core";
+import { TextureBlock, type NodeMaterial, type Texture } from "@babylonjs/core";
 import { createDefaultSpritePayload } from "@haptic/assets";
 import { createActor, createDefaultScene, createMeshComponent, type SerializedScene } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
@@ -11,6 +11,7 @@ import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { sampledTextureDocument } from "./sampled-texture-material-fixture";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 import { ktx2HeaderBytes } from "./texture-test-fixtures";
+import { unlitBinding } from "./unlit-material-blocks";
 
 // The same pixels stored two ways. A real KTX2 header makes the cache flip the
 // wrapper's V axis (a sprite-sampled KTX2 gets a non-identity texture matrix).
@@ -64,8 +65,8 @@ function spriteFixture() {
     id: "visual", classId: "SpriteComponent", properties: { assetGuid: "sprite" },
   }] })]));
   const mesh = sync.meshForActor("a")!;
-  const material = mesh.material as StandardMaterial;
-  return { scene, cache, assets, sync, mesh, material, first: material.diffuseTexture! };
+  const material = mesh.material!;
+  return { scene, cache, assets, sync, mesh, material, first: unlitBinding(mesh).texture!, bound: () => unlitBinding(mesh).texture };
 }
 
 describe("swapping a Texture's stored encoding", () => {
@@ -77,11 +78,10 @@ describe("swapping a Texture's stored encoding", () => {
 
     f.sync.replaceTextureEncodings(swapped, ["tex"]);
 
-    await vi.waitFor(() => expect(f.material.diffuseTexture).not.toBe(f.first));
+    await vi.waitFor(() => expect(f.bound()).not.toBe(f.first));
     expect(f.sync.meshForActor("a")).toBe(f.mesh);
     expect(f.mesh.isDisposed()).toBe(false);
     expect(f.mesh.material).toBe(f.material);
-    expect(f.material.emissiveTexture).toBe(f.material.diffuseTexture);
     expect(f.scene.meshes).toHaveLength(meshes);
     f.cache.flushUnreferenced();
     expect(f.cache.resourceStats().leases).toBe(1);
@@ -90,22 +90,22 @@ describe("swapping a Texture's stored encoding", () => {
     expect(f.sync.meshForActor("a")).toBe(f.mesh);
   });
 
-  it("announces the shader variant change when a KTX2 replaces a PNG, so the visual is held rather than skipped", async () => {
+  it("announces nothing when a KTX2 replaces a PNG: the unlit Material reads either through its texture matrix", async () => {
     const f = spriteFixture();
     // The engine default material announces itself once its graph has built.
     await vi.waitFor(() => expect((f.scene.defaultMaterial as NodeMaterial).buildIsInProgress).toBe(false));
     const dirty = vi.fn();
     cleanups.push(onSceneReadinessDirty(f.scene, dirty));
-    // Babylon reads a texture with an identity matrix straight from the UVs and any other through the matrix.
+    // A PNG's texture matrix is the identity, a KTX2's flips it: one program reads both.
     expect((f.first as Texture).getTextureMatrix().isIdentityAs3x2()).toBe(true);
 
     f.sync.replaceTextureEncodings(installed(STORED_AS_KTX2), ["tex"]);
     // The working texture stays bound, and nothing is announced, until the successor is ready.
     expect(dirty).not.toHaveBeenCalled();
-    await vi.waitFor(() => expect(f.material.diffuseTexture).not.toBe(f.first));
+    await vi.waitFor(() => expect(f.bound()).not.toBe(f.first));
 
-    expect((f.material.diffuseTexture as Texture).getTextureMatrix().isIdentityAs3x2()).toBe(false);
-    expect(dirty).toHaveBeenCalled();
+    expect((f.bound() as Texture).getTextureMatrix().isIdentityAs3x2()).toBe(false);
+    expect(dirty).not.toHaveBeenCalled();
   });
 
   it("does not announce a swap that keeps the shader variant", async () => {
@@ -116,7 +116,7 @@ describe("swapping a Texture's stored encoding", () => {
     cleanups.push(onSceneReadinessDirty(f.scene, dirty));
 
     f.sync.replaceTextureEncodings(installed(STORED_AS_OTHER_PNG), ["tex"]);
-    await vi.waitFor(() => expect(f.material.diffuseTexture).not.toBe(f.first));
+    await vi.waitFor(() => expect(f.bound()).not.toBe(f.first));
 
     expect(dirty).not.toHaveBeenCalled();
   });
@@ -132,11 +132,11 @@ describe("swapping a Texture's stored encoding", () => {
     });
 
     f.sync.replaceTextureEncodings(installed(STORED_AS_KTX2), ["tex"]);
-    expect(f.material.diffuseTexture).toBe(f.first);
+    expect(f.bound()).toBe(f.first);
     gate.reject(new Error("Controlled texture admission failure"));
     await settle();
 
-    expect(f.material.diffuseTexture).toBe(f.first);
+    expect(f.bound()).toBe(f.first);
     expect(f.first.isReady()).toBe(true);
     expect(f.mesh.isDisposed()).toBe(false);
     f.cache.flushUnreferenced();
