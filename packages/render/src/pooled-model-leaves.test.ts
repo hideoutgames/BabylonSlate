@@ -35,7 +35,7 @@ describe("poolModelLeaves", () => {
     const { instance, container, retain, pool, holds } = await modelScene();
     const [left, right] = [instance("left"), instance("right")];
     const before = { parent: part(left, "part-a").parent, position: part(left, "part-a").position.asArray(), slot: modelMaterialIndexOf(part(left, "part-a")) };
-    const members = [...poolModelLeaves(left, container, { autoLod: true, retain }), ...poolModelLeaves(right, container, { autoLod: true, retain })];
+    const members = [...poolModelLeaves(left, container, { retain }), ...poolModelLeaves(right, container, { retain })];
     expect(members.map((member) => member.name)).toEqual(["part-a", "part-b", "part-a", "part-b"]);
     const a = part(left, "part-a");
     expect(a).toBeInstanceOf(InstancedMesh);
@@ -51,8 +51,8 @@ describe("poolModelLeaves", () => {
   it("moves a pooled part to the group of the Material its slot assigns", async () => {
     const { scene, instance, container, retain, pool } = await modelScene();
     const [left, right] = [instance("left"), instance("right")];
-    poolModelLeaves(left, container, { autoLod: true, retain });
-    poolModelLeaves(right, container, { autoLod: true, retain });
+    poolModelLeaves(left, container, { retain });
+    poolModelLeaves(right, container, { retain });
     const stone = new StandardMaterial("stone", scene);
     applyModelMaterialSlots(left, [{ index: 0, name: "MatA", materialGuid: "stone" }], () => stone);
     const [leftA, rightA] = [part(left, "part-a") as InstancedMesh, part(right, "part-a") as InstancedMesh];
@@ -64,7 +64,7 @@ describe("poolModelLeaves", () => {
   it("gives a part a mesh of its own, in place, for a Material no group draws", async () => {
     const { scene, instance, container, retain } = await modelScene();
     const root = instance("model");
-    poolModelLeaves(root, container, { autoLod: true, retain });
+    poolModelLeaves(root, container, { retain });
     const glass = new StandardMaterial("glass", scene);
     glass.alpha = 0.5;
     applyModelMaterialSlots(root, [{ index: 0, name: "MatA", materialGuid: "glass" }], () => glass);
@@ -76,7 +76,7 @@ describe("poolModelLeaves", () => {
   it("leaves a model alone where the Scene does not pool", async () => {
     const { instance, container, retain } = await modelScene(false);
     const root = instance("model");
-    expect(poolModelLeaves(root, container, { autoLod: true, retain })).toEqual([]);
+    expect(poolModelLeaves(root, container, { retain })).toEqual([]);
     expect(part(root, "part-a")).toBeInstanceOf(Mesh);
   });
 });
