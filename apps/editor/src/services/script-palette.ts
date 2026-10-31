@@ -90,7 +90,9 @@ function dataPaletteNodes(
   const rows: PaletteNode[] = [];
   for (const typeId of Object.keys(DATA_GRAPH_NODES) as Array<keyof typeof DATA_GRAPH_NODES>) {
     const def = nodeRegistry.get(typeId);
-    if (!def || dataGraphMetadata(typeId)?.schema === false || (def.editorOnly && !isEditorGraphHost(options ?? {}))) continue;
+    const metadata = dataGraphMetadata(typeId);
+    // Unknown reads take their Definition on a pin, so Add Node lists each once, untyped.
+    if (!def || metadata?.schema === false || metadata?.definitionPin || (def.editorOnly && !isEditorGraphHost(options ?? {}))) continue;
     for (const structure of options?.dataDefinitions ?? []) {
       const title = dataGraphNodeTitle(typeId, structure.name);
       const defaultData = { definitionGuid: structure.guid, title };

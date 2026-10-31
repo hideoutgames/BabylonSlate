@@ -35,6 +35,7 @@ import {
 import { mergedPrefabViewsForGraph } from "../lib/component-graph-members";
 import { collectParentEventNames } from "../lib/overridable-functions";
 import {
+  DATA_DEFINITION_PIN_ID,
   SUBSYSTEM_GET_NODE_ID,
   subsystemGetClassId,
   subsystemGetTitle,
@@ -48,7 +49,7 @@ import {
   nativeEventTitle,
 } from "../lib/class-members";
 import type { SubsystemClassEntry } from "../lib/logic-graph-document";
-import { dataGraphMetadata, isDataGraphNode, type DataGraphAssetEntry } from "../lib/data-graph";
+import { dataGraphDefinitionGuid, dataGraphMetadata, isDataGraphNode, type DataGraphAssetEntry } from "../lib/data-graph";
 import { parentLookup } from "./graph-class-symbols";
 import { defaultNodeRegistry as registry, materializeLogicGraph } from "./graph-hydration";
 import {
@@ -230,18 +231,21 @@ function dataGraphDiagnostics(
     for (const node of graph.nodes) {
       if (!isDataGraphNode(node.typeId)) continue;
       const metadata = dataGraphMetadata(node.typeId)!;
-      const guid = typeof node.properties.definitionGuid === "string" ? node.properties.definitionGuid.trim() : "";
+      const guid = dataGraphDefinitionGuid(node.typeId, node.properties);
       const report = (code: string, message: string, pinId?: string) => out.push(diagnostic({
         code, message, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id, pinId,
       }));
+      const wired = (pinId: string) => graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === pinId);
       const grouping = node.typeId === "editorData.addEntry" && node.properties.definitionMode === "none";
       const needsDefinition = metadata.required || (node.typeId === "editorData.addEntry" && node.properties.definitionMode === "override");
-      if (!guid && needsDefinition) {
-        report("data.missing_definition", "Select a Data Definition in the node Inspector");
+      if (metadata.definitionPin && wired(DATA_DEFINITION_PIN_ID)) {
+        report("data.wired_definition", "Pick the Data Definition on the node. A connected Data Definition cannot set the Value type", DATA_DEFINITION_PIN_ID);
+      } else if (!guid && needsDefinition) {
+        report("data.missing_definition", metadata.definitionPin ? "Pick a Data Definition on the Data Definition pin" : "Select a Data Definition in the node Inspector",
+          metadata.definitionPin ? DATA_DEFINITION_PIN_ID : undefined);
       } else if (!grouping && metadata.schema !== false && guid && options.dataDefinitions && !options.dataDefinitions[guid]) {
-        report("data.unknown_definition", `The selected Data Definition '${guid}' is missing`);
+        report("data.unknown_definition", `The selected Data Definition '${guid}' is missing`, metadata.definitionPin ? DATA_DEFINITION_PIN_ID : undefined);
       }
-      const wired = (pinId: string) => graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === pinId);
       if ((node.typeId === "editorData.addEntry" || node.typeId === "editorData.updateEntry") &&
         !grouping && guid && options.dataDefinitions?.[guid] && !wired("values") && node.properties["default:values"] !== undefined) {
         const value = dataLiteralEntry(node.id, node.properties);
