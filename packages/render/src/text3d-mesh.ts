@@ -1,8 +1,6 @@
 import {
-  Color3,
   Mesh,
   MeshBuilder,
-  StandardMaterial,
   TransformNode,
   Vector3,
   VertexBuffer,
@@ -24,6 +22,7 @@ import {
   parseTypeFaceJson,
 } from "./default-typeface";
 import type { MeshAssetContext } from "./mesh-assets";
+import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
 import { VisualBundle } from "./visual-bundle";
 
 const TEXT3D_RESOLUTION = 4;
@@ -49,23 +48,18 @@ export function resolveText3DFontData(
   return { font: bundledAsciiTypeFace, bundled: true };
 }
 
-function createText3DMaterial(
-  scene: Scene,
-  name: string,
-  color: [number, number, number],
-): StandardMaterial {
-  const material = new StandardMaterial(`${name}:text3d`, scene);
-  material.disableLighting = true;
-  material.backFaceCulling = false;
-  material.twoSidedLighting = true;
-  material.emissiveColor = new Color3(color[0], color[1], color[2]);
-  material.diffuseColor = Color3.Black();
-  material.specularColor = Color3.Black();
-  return material;
+/** 3D Text draws from both sides, fogged with the world, its back faces' geometry normal flipped. */
+const TEXT3D_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: true, role: "world" };
+
+function text3DBinding(color: readonly [number, number, number]): UnlitBinding {
+  const clamp = (value: number) => Math.min(1, Math.max(0, value));
+  return {
+    texture: null, color: [clamp(color[0]), clamp(color[1]), clamp(color[2])], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: true,
+  };
 }
 
-function applyText3DVisual(mesh: Mesh, material: StandardMaterial): Mesh {
-  mesh.material = material;
+function applyText3DVisual(mesh: Mesh, binding: UnlitBinding): Mesh {
+  setUnlitMaterial(mesh, TEXT3D_MATERIAL, binding);
   mesh.receiveShadows = false;
   mesh.metadata = { ...(mesh.metadata ?? {}), text3d: true };
   return mesh;
@@ -171,10 +165,10 @@ function createFallbackPlane(
   scene: Scene,
   name: string,
   parsed: Text3DProperties,
-  material: StandardMaterial,
+  binding: UnlitBinding,
 ): Mesh {
   const mesh = MeshBuilder.CreatePlane(name, { size: parsed.size }, scene);
-  return applyText3DVisual(mesh, material);
+  return applyText3DVisual(mesh, binding);
 }
 
 export function createText3DMesh(
@@ -188,13 +182,13 @@ export function createText3DMesh(
   const text = parsed.text.length > 0 ? parsed.text : " ";
   const bundle = new VisualBundle();
   try {
-    const material = bundle.ownMaterial(createText3DMaterial(scene, name, parsed.color));
+    const binding = text3DBinding(parsed.color);
     const created = createFlatTextMesh(scene, name, text, parsed.size, font, parsed.alignment);
     let mesh: Mesh;
     if (!created || !created.getVerticesData(VertexBuffer.PositionKind)) {
       created?.dispose();
-      mesh = createFallbackPlane(scene, name, parsed, material);
-    } else mesh = applyText3DVisual(created, material);
+      mesh = createFallbackPlane(scene, name, parsed, binding);
+    } else mesh = applyText3DVisual(created, binding);
     bundle.ownRenderUser(mesh);
     mesh.onDisposeObservable.addOnce(() => bundle.dispose());
     return mesh;

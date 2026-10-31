@@ -301,6 +301,12 @@ function instanceId(key: UnlitMaterialKey): string {
 function createInstance(scene: Scene, key: UnlitMaterialKey): UnlitInstance {
   const material = createNodeMaterial(scene, `unlit:${key.role}${key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}`);
   const instance: UnlitInstance = { material, key: { ...key }, meshes: new Set() };
+  // Shared by every mesh with its key: a mesh disposed with its materials (`dispose(false, true)`) leaves it to the
+  // others. The Scene disposes it, after notifying its dispose observers.
+  let sceneDisposing = false;
+  scene.onDisposeObservable.addOnce(() => { sceneDisposing = true; });
+  const dispose = material.dispose.bind(material);
+  material.dispose = (...args: Parameters<NodeMaterial["dispose"]>) => { if (sceneDisposing) dispose(...args); };
   material.backFaceCulling = key.backFaceCulling;
   material.fogEnabled = key.fog;
   if (key.imageProcessing === "atlas") material.imageProcessingConfiguration = atlasImageProcessing(scene);

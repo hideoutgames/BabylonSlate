@@ -1,6 +1,5 @@
 import type { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -8,6 +7,10 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
+import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+
+/** The preview's bones and joints: flat colour from both sides. */
+const SKELETON_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: true, role: "preview" };
 
 interface PreviewJoint {
   position: Vector3;
@@ -40,11 +43,10 @@ function createGlyphMesh(
   mesh.parent = parent;
   mesh.isPickable = false;
   mesh.alwaysSelectAsActiveMesh = true;
-  const material = new StandardMaterial(`${name}-material`, parent.getScene());
-  material.disableLighting = true;
-  material.emissiveColor = color;
-  material.backFaceCulling = false;
-  mesh.material = material;
+  setUnlitMaterial(mesh, SKELETON_MATERIAL, {
+    texture: null, color: [Math.min(1, color.r), Math.min(1, color.g), Math.min(1, color.b)], alpha: 1, cutoff: 0, blend: false,
+    textureAlpha: false, twoSided: false,
+  });
   mesh.setVerticesData(
     VertexBuffer.PositionKind,
     new Float32Array(count * 18),
