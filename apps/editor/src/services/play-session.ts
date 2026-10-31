@@ -635,6 +635,16 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
   try {
     worker = createGameWorkerHost();
     runtimeMode = "worker";
+    // A worker that cannot run (failed to load or evaluate, never started) ends the session with its cause, as a
+    // Scene that fails to load does: the load never completes, so it must not wait at Preparing Scene.
+    worker.onFailure((message) => {
+      if (stopped) return;
+      hostDiagnostics.push({ code: "runtime.worker.failed", severity: "error", message, frameId: 0 });
+      try {
+        options.onSceneLoadFailed?.();
+        options.onLog?.(message, "error");
+      } finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
+    });
     worker.onCommand((cmd) => onCommand(cmd));
     worker.onSnapshot((buffer) => {
       if (stopped) return;

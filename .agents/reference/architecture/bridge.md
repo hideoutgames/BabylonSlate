@@ -19,6 +19,7 @@ Main thread ↔ game worker transport: snapshot buffer layout, channels, scene-l
 - Both share one `Float32Array` layout. Main-thread SAB reads are not wired (optional optimisation; CI exercises transferables).
 - No RPC / Comlink: typed control, command, input and snapshot messages only. Results must match between the in-process runtime and the worker path.
 - If Worker construction fails, Play falls back to `createInProcessRuntime` and logs a warning.
+- A constructed worker that cannot run fails the session visibly, never as a silent Preparing Scene: the worker posts `ready` as the last statement of its module, and both hosts report a worker `error` before `ready` (a module that failed to fetch, parse or evaluate, with its file and line), a `messageerror`, or no `ready` within `GAME_WORKER_START_TIMEOUT_MS` = 10000 (the session boundary timeout). Editor Play records it as a `runtime.worker.failed` host diagnostic, logs it, calls `onSceneLoadFailed` and ends the session (`onFatalDiagnostic`), as a Scene load failure does; the player reports it through `onError`. After `ready` the worker reports its own uncaught errors as runtime diagnostics.
 
 ## Snapshot layout (version 2)
 
@@ -51,7 +52,7 @@ Seq-lock: writer sets `seq` odd, writes header + rows, sets `seq` even; reader s
 ## Channels
 
 - `BridgeHostMessage` (main → worker): `control`, `input` (tick-stamped ring), `snapshotLayoutAck`, `recycleSnapshot`.
-- `BridgeWorkerMessage` (worker → main): `command`, `commands` (ordered batch), `snapshot` (+ `generation`).
+- `BridgeWorkerMessage` (worker → main): `command`, `commands` (ordered batch), `snapshot` (+ `generation`), `ready` (once, when the module has evaluated).
 - Control and command payload types are the unions in [`channels.ts`](../../../packages/bridge/src/channels.ts); do not duplicate them here.
 - Input is stamped with the last snapshot header `tickIndex` (`snapshotTickIndex`), never with `stats`. `stats` is ~5 Hz (`STATS_COMMAND_INTERVAL_MS` = 200, `@haptic/debugger`) and not a hot path.
 - `loadScripts` registers classes without creating Actors; explicit `spawn` requests are filtered by `shouldSpawnScriptedActor` so GameInstance, FunctionLibrary, editor utility, SceneLayer and Scene classes never spawn.

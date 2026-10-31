@@ -6,6 +6,8 @@ class FakeWorker {
   static instance: FakeWorker;
   static events: string[] = [];
   onmessage: ((event: MessageEvent<BridgeWorkerMessage>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessageerror: ((event: MessageEvent) => void) | null = null;
   terminate = vi.fn();
   constructor() { FakeWorker.instance = this; }
   posted: Array<{ message: BridgeHostMessage; transfer: Transferable[] }> = [];
@@ -60,4 +62,60 @@ it("moves a navmesh buffer to the worker but still clones the load catalog the n
   host.postControl({ type: "loadNavMesh" });
 
   expect(FakeWorker.instance.posted.map(({ transfer }) => transfer)).toEqual([[], [buffer], []]);
+});
+
+it("reports a worker that fails to load or evaluate, with its location, instead of staying silent", () => {
+  const host = createGameWorkerHost();
+  const failures: string[] = [];
+  host.onFailure((message) => failures.push(message));
+  FakeWorker.instance.onerror?.({ message: "SyntaxError: Unexpected token", filename: "worker-entry.js", lineno: 3, colno: 7,
+    preventDefault() {} } as unknown as ErrorEvent);
+  expect(failures).toEqual(["The Play worker failed to start: SyntaxError: Unexpected token (worker-entry.js:3:7)"]);
+});
+
+it("reports a message the worker cannot deserialize", () => {
+  const host = createGameWorkerHost();
+  const failures: string[] = [];
+  host.onFailure((message) => failures.push(message));
+  FakeWorker.instance.onmessageerror?.({} as MessageEvent);
+  expect(failures).toEqual(["The Play worker could not read a message from the game runtime."]);
+});
+
+it("reports a worker whose module never evaluates within the session boundary timeout, and only once", () => {
+  vi.useFakeTimers();
+  try {
+    const host = createGameWorkerHost();
+    const failures: string[] = [];
+    host.onFailure((message) => failures.push(message));
+    vi.advanceTimersByTime(9_999);
+    expect(failures).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(failures).toEqual(["The Play worker did not start within 10 seconds: its module never finished loading."]);
+    FakeWorker.instance.onerror?.({ message: "late", preventDefault() {} } as unknown as ErrorEvent);
+    expect(failures).toHaveLength(1);
+  } finally { vi.useRealTimers(); }
+});
+
+it("does not report a worker that started, nor one the host terminated", () => {
+  vi.useFakeTimers();
+  try {
+    const started = createGameWorkerHost();
+    const failures: string[] = [];
+    started.onFailure((message) => failures.push(message));
+    FakeWorker.instance.receive({ channel: "ready" });
+    const stopped = createGameWorkerHost();
+    stopped.onFailure((message) => failures.push(message));
+    stopped.terminate();
+    vi.advanceTimersByTime(20_000);
+    expect(failures).toEqual([]);
+  } finally { vi.useRealTimers(); }
+});
+
+it("leaves a started worker's uncaught errors to its own runtime diagnostics", () => {
+  const host = createGameWorkerHost();
+  const failures: string[] = [];
+  host.onFailure((message) => failures.push(message));
+  FakeWorker.instance.receive({ channel: "ready" });
+  FakeWorker.instance.onerror?.({ message: "TypeError: x is undefined", preventDefault() {} } as unknown as ErrorEvent);
+  expect(failures).toEqual([]);
 });

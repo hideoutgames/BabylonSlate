@@ -79,6 +79,8 @@ describe.each(["worker", "in-process"] as const)(
         onRuntime?: (runtime: RuntimeDriver) => void;
         /** In-process mode: a worker that starts but cannot accept its boot controls. */
         failingWorkerTerminate?: () => void;
+        /** Worker mode: a worker that never runs; receives the host's failure report to raise. */
+        silentWorker?: (fail: (message: string) => void) => void;
         /** Worker mode: observes the host terminating the worker. */
         workerTerminate?: () => void;
         /** Worker mode: deliver output as the worker would, including after Stop. */
@@ -164,7 +166,7 @@ describe.each(["worker", "in-process"] as const)(
       });
       if (mode === "in-process" && options.failingWorkerTerminate) {
         vi.mocked(createGameWorkerHost).mockReturnValue({
-          onCommand() {}, onSnapshot() {}, pushInput() {}, terminate: options.failingWorkerTerminate,
+          onCommand() {}, onSnapshot() {}, onFailure() {}, pushInput() {}, terminate: options.failingWorkerTerminate,
           postControl() { throw new DOMException("The load could not be cloned.", "DataCloneError"); },
         });
       } else if (mode === "in-process") {
@@ -176,7 +178,13 @@ describe.each(["worker", "in-process"] as const)(
         let onCommand: (command: CommandMessage) => void = () => {};
         let onSnapshot: (buffer: Float32Array) => void = () => {};
         options.onWorker?.({ command: (command) => onCommand(command), snapshot: (buffer) => onSnapshot(buffer) });
-        vi.mocked(createGameWorkerHost).mockReturnValue({
+        const silent = options.silentWorker;
+        if (silent) vi.mocked(createGameWorkerHost).mockReturnValue({
+          onCommand() {}, onSnapshot() {}, pushInput() {}, postControl() {}, terminate: options.workerTerminate ?? (() => {}),
+          onFailure: (handler) => silent(handler),
+        });
+        else vi.mocked(createGameWorkerHost).mockReturnValue({
+          onFailure() {},
           onCommand: (handler) => {
             onCommand = handler;
           },
@@ -227,6 +235,8 @@ describe.each(["worker", "in-process"] as const)(
         acquireSceneSources: options.sceneSources,
         audioReverbByScene: options.audioReverbByScene,
       });
+      // A silent worker never boots: the caller drives its failure.
+      if (options.silentWorker) return undefined as unknown as RuntimeDriver;
       await booted;
       runtime.tick();
       return runtime;
@@ -505,6 +515,23 @@ describe.each(["worker", "in-process"] as const)(
         code: "scene.loading.failed", assetGuid: "scene", severity: "error",
         message: "Scene loading failed: First frame shader pipeline unavailable", stack: failure.stack,
       })]);
+    });
+
+    it.runIf(mode === "worker")("ends the session with the cause when its worker never runs, instead of waiting at Preparing Scene", async () => {
+      let fail!: (message: string) => void;
+      let stopped: ReturnType<PlaySession["stop"]> | undefined;
+      const onFatalDiagnostic = vi.fn(() => {
+        stopped = session!.stop();
+        session = undefined;
+      });
+      const onSceneLoadFailed = vi.fn();
+      await play({ silentWorker: (handler) => { fail = handler; }, onFatalDiagnostic, onSceneLoadFailed });
+      expect(onFatalDiagnostic).not.toHaveBeenCalled();
+      const cause = "The Play worker failed to start: SyntaxError: Unexpected token (worker-entry.js:3:7)";
+      fail(cause);
+      await vi.waitFor(() => expect(onFatalDiagnostic).toHaveBeenCalledOnce());
+      expect(onSceneLoadFailed).toHaveBeenCalledOnce();
+      expect(stopped?.diagnostics).toEqual([expect.objectContaining({ code: "runtime.worker.failed", severity: "error", message: cause })]);
     });
 
     it("hands a runtime quit to the host once, so the host can stop the session as its Stop control does", async () => {
