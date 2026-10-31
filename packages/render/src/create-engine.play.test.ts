@@ -37,6 +37,7 @@ import {
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
+import { sceneOutputScale } from "./scene-output-scale";
 import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@haptic/assets";
@@ -1326,7 +1327,7 @@ describe("Play createEngine view", () => {
     submitted.mockRestore();
   });
 
-  it("applies locked output quality to the world target before preparation without resizing inside a scene render owner", async () => {
+  it("applies locked output quality before preparation without resizing inside a scene render owner", async () => {
     const engine = sharedEngine();
     // NullEngine hard-codes scale 1; model the native scale storage boundary.
     let hardwareScaling = 1;
@@ -1350,10 +1351,8 @@ describe("Play createEngine view", () => {
       quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
     }));
     await handle.prewarmSceneMaterials();
-    // The backbuffer keeps the locked resolution for Scene Layers; the world renders at its scale.
-    expect([width, height]).toEqual([480, 270]);
-    expect(resize).not.toHaveBeenCalledWith(384, 216);
-    expect(handle.scene.activeCamera!.outputRenderTarget!.getSize()).toEqual({ width: 384, height: 216 });
+    expect(resize).toHaveBeenCalledWith(384, 216);
+    expect([width, height]).toEqual([384, 216]);
     const presented = handle.presentFirstFrame();
     renderViews(engine);
     engine.onEndFrameObservable.notifyObservers(engine);
@@ -1408,9 +1407,7 @@ describe("Play createEngine view", () => {
         quality: { resolution: { scale: 0.5, minScale: 0.5, dynamic: false } },
       }));
       await play.prewarmSceneMaterials();
-      // Play scales its world target; the Engine level maps CSS pixels to its full-resolution backbuffer.
-      expect(play.scaling.getLevel()).toBe(2);
-      expect(hardwareScaling).toBe(1);
+      expect(hardwareScaling).toBe(2);
       expect(editorView.enabled).toBe(false);
       restoring = true;
       play.dispose();
@@ -5087,7 +5084,7 @@ describe("Play createEngine view", () => {
     } finally { observing.mockRestore(); }
   });
 
-  it("applies render scale to a locked Play world target while the framebuffer keeps its authored size", () => {
+  it("applies render scale to a locked Play framebuffer without replacing its authored size", () => {
     const engine = sharedEngine();
     // NullEngine hardcodes a scaling level of one; supply the browser boundary.
     let hardwareScaling = 1;
@@ -5099,16 +5096,13 @@ describe("Play createEngine view", () => {
     handle.setSize(800, 450);
     const size = vi.spyOn(engine, "setSize");
     const view = engine.views!.find((entry) => entry.target === canvas)!;
-    const world = () => handle.scene.activeCamera!.outputRenderTarget!.getSize();
     handle.scaling.setSettingsLevel(2);
     view.customResize!(canvas);
-    expect(size).toHaveBeenLastCalledWith(800, 450);
-    expect(world()).toEqual({ width: 400, height: 225 });
+    expect(size).toHaveBeenLastCalledWith(400, 225);
     expect([canvas.width, canvas.height]).toEqual([256, 256]);
     handle.scaling.setSettingsLevel(1);
     view.customResize!(canvas);
     expect(size).toHaveBeenLastCalledWith(800, 450);
-    expect(world()).toEqual({ width: 800, height: 450 });
     expect([canvas.width, canvas.height]).toEqual([256, 256]);
   });
 
@@ -5135,28 +5129,76 @@ describe("Play createEngine view", () => {
     expect(canvas.height).toBe(150);
   });
 
-  it("keeps Play's backbuffer at device pixels and scales only the world target", () => {
+  it("keeps Play's backbuffer at device pixels while Scene Layers show and scales only the world inside its graph", () => {
     const engine = sharedEngine();
     let hardwareScaling = 1;
     vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
     vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     Object.assign(canvas, { clientWidth: 400, clientHeight: 300, ownerDocument: { defaultView: { devicePixelRatio: 2 } } });
+    // NullEngine reports its constructor size; model the backbuffer setSize writes.
+    let width = 256, height = 256;
+    vi.spyOn(engine, "getRenderWidth").mockImplementation(() => width);
+    vi.spyOn(engine, "getRenderHeight").mockImplementation(() => height);
+    const setSize = vi.spyOn(engine, "setSize").mockImplementation((nextWidth, nextHeight) => {
+      const changed = nextWidth !== width || nextHeight !== height;
+      width = nextWidth; height = nextHeight;
+      return changed;
+    });
     const handle = createEngine(canvas, { sharedEngine: engine, playMode: true });
     handles.push(handle);
-    const setSize = vi.spyOn(engine, "setSize");
-    const world = () => handle.scene.activeCamera!.outputRenderTarget!.getSize();
+    const world = () => { const { width, height } = handle.renderDiagnostics(); return [width, height]; };
     handle.setLocalQualityOverrides({ resolution: { scale: 0.5, minScale: 0.25, dynamic: true } });
+    handle.resize();
+    // No layer: the backbuffer is the world's size, as in the editor.
+    expect(setSize).toHaveBeenLastCalledWith(200, 150);
+    expect(hardwareScaling).toBe(2);
+    expect(sceneOutputScale(handle.scene)).toBe(1);
+    expect(world()).toEqual([200, 150]);
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
     handle.resize();
     expect(setSize).toHaveBeenLastCalledWith(800, 600);
     expect(hardwareScaling).toBe(0.5);
-    expect(world()).toEqual({ width: 200, height: 150 });
-    // Dynamic resolution steps move the world target alone.
+    expect(world()).toEqual([200, 150]);
+    // Dynamic resolution steps scale the world alone.
     handle.scaling.setLevel(2.5);
-    expect(world()).toEqual({ width: 160, height: 120 });
+    expect(world()).toEqual([160, 120]);
+    expect(hardwareScaling).toBe(0.5);
     handle.resize();
     expect(setSize).toHaveBeenLastCalledWith(800, 600);
     expect(handle.renderDiagnostics().scalingLevel).toBe(2.5);
+    handle.applyCommand({ type: "sceneLayerRemove", layerId: "hud" });
+    handle.resize();
+    expect(setSize).toHaveBeenLastCalledWith(160, 120);
+    expect(hardwareScaling).toBe(2.5);
+    expect(sceneOutputScale(handle.scene)).toBe(1);
+  });
+
+  it("draws a Scene Layer's editor view at device pixels and full quality whatever the tier and the Engine's scaling", () => {
+    const engine = sharedEngine();
+    Object.assign(engine.getCaps(), { maxAnisotropy: 16 });
+    // Another editor view left the Engine-wide level at half resolution.
+    let hardwareScaling = 2;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
+    const setSize = vi.spyOn(engine, "setSize");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    Object.assign(canvas, { clientWidth: 400, clientHeight: 300, ownerDocument: { defaultView: { devicePixelRatio: 2 } } });
+    const handle = createEngine(canvas, { sharedEngine: engine, editor: true, fullQuality: true });
+    handles.push(handle);
+    handle.setLocalQualityOverrides({ resolution: { scale: 0.5, minScale: 0.5, dynamic: false }, textures: { anisotropy: 2 }, geometry: { autoLod: true } });
+    handle.resize();
+    expect(setSize).toHaveBeenLastCalledWith(800, 600);
+    expect(hardwareScaling).toBe(2);
+    expect(engine.views!.find((view) => view.target === canvas)!.customResize).toBeTypeOf("function");
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, handle.scene);
+    expect(texture.anisotropicFilteringLevel).toBe(16);
+    expect(sceneRenderingSettings(handle.scene)).toMatchObject({ textureAnisotropy: 16, autoLod: false });
+    // An ordinary editor view keeps following the Engine-wide level and the tier.
+    const plain = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(plain);
+    plain.setLocalQualityOverrides({ textures: { anisotropy: 2 } });
+    expect(RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, plain.scene).anisotropicFilteringLevel).toBe(2);
   });
 
   it("sizes a shared editor framebuffer from the viewport canvas instead of engine.resize", () => {

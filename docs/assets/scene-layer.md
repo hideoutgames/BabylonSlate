@@ -10,7 +10,7 @@ In the **Content Browser**, choose **New Asset > World > Scene Layer**.
 
 Double-tap a Scene Layer to open it.
 
-- **Viewport**: always 2D and unlit. The orange frame is the layer's design canvas, centred on the origin.
+- **Viewport**: always 2D and unlit. The orange frame is the layer's design canvas, centred on the origin. It draws at the screen's full resolution and quality, as the game does, whatever the Scalability level or Engine Settings.
 - **Outliner**: the layer's actors. Tap **+** to place them; **Place Actors** adds an **Overlay** category of ready-made 2D elements.
 - **Inspector**: the selected actor, or the layer's settings when nothing is selected.
 - **Output Log** and **Compiler Results**: messages and script errors.

@@ -144,6 +144,10 @@ it("keeps a full-quality Scene (a SceneLayer) at the device's highest texture an
   expect([early.anisotropicFilteringLevel, late.anisotropicFilteringLevel]).toEqual([8, 8]);
   // Water stays the followed project's.
   expect(sceneWaterQuality(layer)).toEqual(waterValues("low"));
+  // A pinned Scene that receives settings itself (a Scene Layer's editor tab) keeps full quality through them.
+  updateSceneRenderingSettings(layer, tier("low"));
+  expect(sceneRenderingSettings(layer)).toMatchObject({ textureAnisotropy: 8, textureLodBias: 0, autoLod: false });
+  expect(late.anisotropicFilteringLevel).toBe(8);
 });
 
 it("reports device-clamped water features while keeping the requested quality", () => {

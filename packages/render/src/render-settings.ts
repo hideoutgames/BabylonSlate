@@ -70,6 +70,8 @@ type SceneRendering = {
   } | null;
   /** Scenes (such as SceneLayers) resolving their quality through this Scene. */
   followers: Set<Scene>;
+  /** Full quality whatever the tier (`pinFullRenderQuality`): a Scene Layer's, in Play or its editor tab. */
+  fullQuality: boolean;
   localLightBudget: number;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
@@ -143,6 +145,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       waterDevice: null,
       resolvedQuality: null,
       followers: new Set(),
+      fullQuality: false,
       localLightBudget: resolveLocalLightBudget(quality.lighting),
       cel: normalizeCelShadingSettings(undefined),
       project: {},
@@ -209,6 +212,7 @@ export function updateSceneRenderingSettings(
   state.occlusionCulling = quality.geometry.occlusionCulling;
   syncWaterQuality(scene, state, quality.water);
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
+  if (state.fullQuality) holdFullQuality(scene, state);
   for (const texture of scene.textures) applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);
   const mode = resolved.mode === "cel" ? "cel" : "pbr";
   state.cel = resolveCelShadingSettings(state.project.cel, {
@@ -358,19 +362,31 @@ export function followSceneRenderSettings(scene: Scene, owner: Scene): void {
 const FULL_QUALITY_TEXTURE_ANISOTROPY = 16;
 
 /**
- * Pin `scene` (a SceneLayer) to full quality whatever the tier: textures sample
- * at the highest anisotropy the device allows with no LOD bias, and models draw
- * full detail (no Auto LOD). Its project settings still resolve through the
- * Scene it follows (`followSceneRenderSettings`).
+ * Pin `scene` (a SceneLayer's, in Play or its editor tab) to full quality
+ * whatever the tier, including later quality updates: textures sample at the
+ * highest anisotropy the device allows with no LOD bias, and models draw full
+ * detail (no Auto LOD). A Play layer's project settings still resolve through
+ * the Scene it follows (`followSceneRenderSettings`).
  */
 export function pinFullRenderQuality(scene: Scene): void {
   const state = sceneRenderingSettings(scene);
+  if (state.fullQuality) return;
+  state.fullQuality = true;
+  holdFullQuality(scene, state);
+  for (const texture of scene.textures) applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);
+  scene.onNewTextureAddedObservable.add((texture) => applyMaterialTextureAnisotropy(texture, state.textureAnisotropy));
+}
+
+/** Whether `scene` is pinned to full quality (`pinFullRenderQuality`). */
+export function sceneUsesFullQuality(scene: Scene): boolean {
+  return sceneRenderingSettings(scene).fullQuality;
+}
+
+/** The full-quality values a quality update must not lower. */
+function holdFullQuality(scene: Scene, state: SceneRendering): void {
   state.textureAnisotropy = Math.min(FULL_QUALITY_TEXTURE_ANISOTROPY, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   state.textureLodBias = 0;
   state.autoLod = false;
-  const apply = (texture: BaseTexture) => applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);
-  for (const texture of scene.textures) apply(texture);
-  scene.onNewTextureAddedObservable.add(apply);
 }
 
 /**

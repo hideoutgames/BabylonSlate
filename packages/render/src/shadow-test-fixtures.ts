@@ -26,8 +26,6 @@ export function enableHeadlessCascades(engine: AbstractEngine): void {
     texture.depth = texture.baseDepth = dimensions.layers ?? 0;
     texture.is2DArray = texture.depth > 0;
     texture.format = options.depthTextureFormat ?? 14;
-    // As a GPU depth texture records it; a FrameGraph pass pairs it with a colour target by sample count.
-    texture.samples = options.samples ?? 1;
     texture.isReady = true;
     engine.getLoadedTexturesCache().push(texture);
     return texture;
