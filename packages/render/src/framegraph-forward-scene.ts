@@ -14,6 +14,7 @@ import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import { endAlphaToCoverage, guardAlphaToCoverageBlending } from "./alpha-to-coverage";
 import { sceneMultisampleCount, sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
 import { isBuiltInWaterMesh } from "./water-mesh";
 import { WaterSceneCopyGraph, waterSceneCopyDemand } from "./water-scene-copy";
@@ -1146,6 +1147,9 @@ export class ForwardSceneFrameGraph {
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
+        // Alpha-tested draws turn alpha-to-coverage on for themselves (`alpha-to-coverage.ts`); nothing after the pass keeps it.
+        guardAlphaToCoverageBlending(scene.getEngine());
+        this.objects.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
         this.objects.warmsPipelines = !this.auxiliary;
         if (waterDemand > 0) {
           // The water scene copy samples the scene depth after this pass: resolve it too.
@@ -1163,6 +1167,7 @@ export class ForwardSceneFrameGraph {
             output: { color, texture: Boolean(output.color) },
           });
         }
+        this.water?.transparent.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
         this.objects.neverDraws = this.water && this.skipCopyWater;
         // Screen-Space Shadows draw before the objects, which read them (as does the water split's own opaque pass, which
         // draws through the objects' renderer and so its render pass).
