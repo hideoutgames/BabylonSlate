@@ -14,6 +14,8 @@ import {
   isClassConstraintTypeId,
   isMemberTypeId,
   isStructOrEnumTypeId,
+  pinTypeForVariable,
+  type VariableTypeSpec,
 } from "./member-pin-type";
 import {
   pinAcceptsLiteralDefault,
@@ -494,7 +496,7 @@ function validatePinTyping(
           !readsSelf &&
           (!literalPin || interfaceOutput)
         ) {
-          const liveRef = pin.type.kind === "objectRef";
+          const liveRef = pin.type.kind === "objectRef" || pin.type.kind === "delegate";
           out.push(
             diagnostic({
               severity: requiresReference || liveRef || interfaceOutput ? "error" : "warning",
@@ -850,11 +852,16 @@ type SignaturePin = {
   direction: "in" | "out";
   typeClassId?: string;
   container?: "single" | "array" | "map";
+  signature?: readonly VariableTypeSpec[];
 };
 
 function signaturePinKey(pin: SignaturePin): string {
   const container = pin.container === "array" || pin.container === "map" ? pin.container : "single";
-  return `${pin.direction}:${pin.name}:${container}:${pin.typeId}:${pin.typeClassId ?? ""}`;
+  // Delegates match by signature, not by the dispatcher it was copied from.
+  const parameter = pin.typeId === "delegate"
+    ? JSON.stringify(pinTypeForVariable(pin))
+    : pin.typeClassId ?? "";
+  return `${pin.direction}:${pin.name}:${container}:${pin.typeId}:${parameter}`;
 }
 
 function pinsMatch(

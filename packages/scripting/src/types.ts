@@ -79,6 +79,14 @@ export function mapOf(key: PinType, value: PinType): PinType {
   return { kind: "map", key, value };
 }
 
+/**
+ * Event delegate taking `inputs`. Event Dispatchers and the events bound to
+ * them return nothing, so their delegates have no outputs.
+ */
+export function delegateOf(inputs: readonly PinType[]): PinType {
+  return { kind: "delegate", inputs: [...inputs], outputs: [] };
+}
+
 export function pinTypeEquals(a: PinType, b: PinType): boolean {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
