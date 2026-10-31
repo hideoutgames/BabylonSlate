@@ -13,7 +13,7 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import type { MeshoptSimplifier as Simplifier } from "meshoptimizer/simplifier";
 import { simplifyLevels, type LodLevelIndices, type LodSimplifyInput } from "./model-lod-simplify";
 import type { ModelLodWorkerReply, ModelLodWorkerRequest } from "./model-lod.worker";
-import { renderSettingsOwner, sceneRenderingSettings } from "./render-settings";
+import { sceneRenderingSettings } from "./render-settings";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
 
 export { AUTO_LOD_SCREEN_SIZES } from "./model-lod-simplify";
@@ -412,8 +412,8 @@ function levelForCoverage(binding: LodBinding, coverage: number, previous: numbe
 
 function selectLevel(binding: LodBinding, camera: Camera, commit: boolean): number {
   const scene = binding.master.getScene();
-  // SceneLayers resolve Geometry quality through the Scene they follow.
-  const settings = sceneRenderingSettings(renderSettingsOwner(scene));
+  // A Scene's own Geometry quality: SceneLayers keep full detail (`useFullRenderQuality`).
+  const settings = sceneRenderingSettings(scene);
   if (!settings.autoLod) {
     if (commit) binding.current.delete(camera);
     return 0;

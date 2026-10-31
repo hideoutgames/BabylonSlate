@@ -334,8 +334,8 @@ export function renderSettingsOwner(scene: Scene): Scene {
 }
 
 /**
- * Resolve `scene`'s project quality (Geometry, Water) through `owner`, as
- * SceneLayers do through the world view. Only the owner receives settings.
+ * Resolve `scene`'s project quality (Water) through `owner`, as SceneLayers do
+ * through the world view. Only the owner receives settings.
  */
 export function followSceneRenderSettings(scene: Scene, owner: Scene): void {
   const root = renderSettingsOwner(owner);
@@ -352,6 +352,25 @@ export function followSceneRenderSettings(scene: Scene, owner: Scene): void {
   settingsOwners.set(scene, root);
   sceneRenderingSettings(root).followers.add(scene);
   if (!sameWaterQuality(before, sceneWaterQuality(scene))) markSceneReadinessDirty(scene);
+}
+
+/** The highest texture anisotropy a quality tier offers (Ultra). */
+const FULL_QUALITY_TEXTURE_ANISOTROPY = 16;
+
+/**
+ * Pin `scene` (a SceneLayer) to full quality whatever the tier: textures sample
+ * at the highest anisotropy the device allows with no LOD bias, and models draw
+ * full detail (no Auto LOD). Its project settings still resolve through the
+ * Scene it follows (`followSceneRenderSettings`).
+ */
+export function useFullRenderQuality(scene: Scene): void {
+  const state = sceneRenderingSettings(scene);
+  state.textureAnisotropy = Math.min(FULL_QUALITY_TEXTURE_ANISOTROPY, scene.getEngine().getCaps().maxAnisotropy ?? 1);
+  state.textureLodBias = 0;
+  state.autoLod = false;
+  const apply = (texture: BaseTexture) => applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);
+  for (const texture of scene.textures) apply(texture);
+  scene.onNewTextureAddedObservable.add(apply);
 }
 
 /**

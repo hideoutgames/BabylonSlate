@@ -78,7 +78,7 @@ import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows } from "./render-settings";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, useFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows } from "./render-settings";
 import { environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -133,6 +133,7 @@ import {
   resourceCacheForEngine,
 } from "./resource-cache";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
+import { PlayWorldOutput, playOutputSizes } from "./play-world-output";
 import {
   applyPlayFreeCamCommand,
   attachPlayFreeCamInput,
@@ -663,10 +664,36 @@ function initializeEngine(
   const deformerHost = new SceneDeformerHost(scene);
   onRollback(() => deformerHost.dispose());
   let lockedViewSize: { width: number; height: number } | null = null;
+  // Play's backbuffer is the full locked resolution; only its world target scales (`playSizes`).
   const scaledLockedViewSize = () => lockedViewSize ? {
-    width: Math.max(1, Math.floor(lockedViewSize.width / engine.getHardwareScalingLevel())),
-    height: Math.max(1, Math.floor(lockedViewSize.height / engine.getHardwareScalingLevel())),
+    width: Math.max(1, Math.floor(lockedViewSize.width / (worldOutput ? 1 : engine.getHardwareScalingLevel()))),
+    height: Math.max(1, Math.floor(lockedViewSize.height / (worldOutput ? 1 : engine.getHardwareScalingLevel()))),
   } : null;
+  /**
+   * Play: the world renders into its own target at the view's size over the
+   * hardware scaling level (`worldLevel`), then fills the backbuffer, which keeps
+   * the view's device pixels (or the locked resolution) for the Scene Layers.
+   */
+  const worldOutput = options.playMode && !presentRtt ? new PlayWorldOutput(scene) : null;
+  onRollback(() => worldOutput?.dispose());
+  let worldLevel = options.hardwareScalingLevel ?? 1;
+  const playPixelRatio = () => canvas.ownerDocument?.defaultView?.devicePixelRatio || 1;
+  const playSizes = () => playOutputSizes(lockedViewSize ?? cssCanvasPixelSize(canvas), lockedViewSize ? 1 : playPixelRatio(), worldLevel);
+  /** Play: the Engine-wide level maps CSS pixels onto the device-pixel backbuffer, which picking reads. */
+  const syncPlayPixelRatio = () => {
+    const level = 1 / playPixelRatio();
+    if (worldOutput && engine.getHardwareScalingLevel() !== level) engine.setHardwareScalingLevel(level);
+  };
+  syncPlayPixelRatio();
+  const syncPlayWorldSize = () => {
+    if (!worldOutput) return;
+    const laidOut = lockedViewSize !== null || viewCanvasHasLayoutBox(canvas);
+    // A view without a layout box (a hidden tab, a headless canvas) keeps its target; its first follows the backbuffer.
+    if (!laidOut && worldOutput.size()) return;
+    const { world } = laidOut ? playSizes()
+      : playOutputSizes({ width: engine.getRenderWidth(true), height: engine.getRenderHeight(true) }, 1, worldLevel);
+    worldOutput.resize(world.width, world.height);
+  };
   const syncLockedViewSize = () => {
     const size = scaledLockedViewSize();
     if (size && (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)) engine.setSize(size.width, size.height);
@@ -705,6 +732,7 @@ function initializeEngine(
       // Prepare against this view's private-buffer dimensions before Babylon
       // resizes its visible canvas. A pending graph must retain that bitmap.
       const css = cssCanvasPixelSize(canvas);
+      syncPlayPixelRatio();
       const scale = engine.getHardwareScalingLevel();
       const locked = scaledLockedViewSize();
       const size = locked ?? {
@@ -719,6 +747,7 @@ function initializeEngine(
       const noLayout = !locked && !viewCanvasHasLayoutBox(canvas);
       if (!noLayout && (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height))
         engine.setSize(size.width, size.height);
+      syncPlayWorldSize();
       admittedSnapshot = prepareSnapshot();
       snapshotAdmitted = true;
       const admitted = !noLayout && shouldRenderFrame(performance.now());
@@ -801,6 +830,10 @@ function initializeEngine(
     minLevel: settingsLevel,
     maxLevel: 4,
     initialLevel: settingsLevel,
+    apply: worldOutput ? (level) => {
+      worldLevel = level;
+      syncPlayWorldSize();
+    } : undefined,
     targetFrameMs:
       options.frameCap && options.frameCap > 0
         ? 1000 / options.frameCap
@@ -1112,12 +1145,9 @@ function initializeEngine(
     if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
       resourceCache.setByteCeiling(quality.textures.byteBudget);
       for (const texture of scene.textures) applyTextureAnisotropy(texture);
-      for (const layer of sceneLayerCompositor?.layers() ?? [])
-        for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
     }
     if (previous && previous.postprocessing.resolutionScale !== quality.postprocessing.resolutionScale) {
       rebuildPostProcessStack();
-      sceneLayerCompositor?.refreshPostProcess();
     }
   };
   const applyRenderingQuality = () => {
@@ -1154,7 +1184,8 @@ function initializeEngine(
             camera: layer.camera,
             library: materialLibrary,
             stack: normalizePostProcessStack(stack),
-            resolutionScale: appliedQuality?.postprocessing.resolutionScale ?? 1,
+            // Scene Layers keep full quality: their passes never follow the Post Processing tier.
+            resolutionScale: 1,
             documentFor: (guid) => materialDocuments.get(guid) ?? null,
             onDiagnostic: (diagnostic) =>
               options.onPostProcessDiagnostic?.(diagnostic),
@@ -1611,6 +1642,7 @@ function initializeEngine(
       return;
     }
     lockedViewSize = null;
+    syncPlayPixelRatio();
     if (presentRtt) {
       // Resize owned GPU targets while keeping the last completed canvas copy.
       rttPresent?.bind();
@@ -1638,6 +1670,7 @@ function initializeEngine(
       editor?.camera.setCanvasHeight(height);
       editor?.camera.updateOrthoBounds(width / height);
     }
+    syncPlayWorldSize();
     sceneLayerCompositor?.resize();
     refreshAuthoredCameraLenses(scene);
     notifyOverlayResize();
@@ -1660,6 +1693,7 @@ function initializeEngine(
         canvas.height = nextHeight;
       }
       engine.setSize(nextWidth, nextHeight);
+      syncPlayWorldSize();
       sceneLayerCompositor?.resize();
       refreshAuthoredCameraLenses(scene);
       notifyOverlayResize();
@@ -1750,7 +1784,7 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
+    ))(), ...(worldOutput ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
@@ -1826,7 +1860,7 @@ function initializeEngine(
       // The light block's path: each kind of shadow map's caster depth variants, ahead of its first shadow start, for
       // the casters as the starting state poses them.
       if (!pending.owner && options.playMode) findSceneShadowController(scene)?.warmCasterVariants();
-      pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady();
+      pending.ready = pending.owner ? sceneLayerCompositor?.isReady(pending.owner.layerId) === true : worldRenderer.isReady() && worldOutput?.isReady() !== false;
       return pending.ready;
     } catch (error) {
       cancelPresentation(error instanceof Error ? error : new Error(String(error)), presentationKey(pending.owner));
@@ -2011,7 +2045,7 @@ function initializeEngine(
       submissionMs: 0, drawCalls: 0,
       width: scene.activeCamera?.outputRenderTarget?.getSize().width ?? engine.getRenderWidth(true),
       height: scene.activeCamera?.outputRenderTarget?.getSize().height ?? engine.getRenderHeight(true),
-      resolutionScale: 1 / engine.getHardwareScalingLevel(), loading: loadingFrame,
+      resolutionScale: 1 / (worldOutput ? worldLevel : engine.getHardwareScalingLevel()), loading: loadingFrame,
     }) : null;
     admissionPreparationMs = 0;
     let coherentFrame = true;
@@ -2112,13 +2146,16 @@ function initializeEngine(
         });
       };
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
+        worldOutput?.attach();
         const result = frameScope
           ? frameScope.capture.stage(scene, { name: "World output", kind: "composition", sceneId: lastSceneAssetGuid },
             () => worldRenderer.render(true))
           : worldRenderer.render(pendingPresentations.has("world"));
-        coherentFrame = result.rendered && (!frameScope || result.readyForPresentation);
+        // Play's world drew into its own target; it reaches the backbuffer only through this full-view draw.
+        const presented = !worldOutput || (result.rendered && worldOutput.present());
+        coherentFrame = result.rendered && presented && (!frameScope || result.readyForPresentation);
         syncPipelineHold(worldRenderer.holdingForPipelines);
-        return result.readyForPresentation;
+        return result.readyForPresentation && presented;
       }, () => {
         // A newly bound output may invalidate admission between scheduling and
         // drawing. Only explicit world loading may present ready layers over a
@@ -2189,7 +2226,7 @@ function initializeEngine(
         // A stored preparation failure rethrows until the coordinator's retry
         // succeeds. It must not escape endFrame and stop the shared Engine loop.
         let ready: boolean;
-        try { ready = worldRenderer.isReady() && sceneLayerCompositor?.isReady() !== false; } catch { ready = false; }
+        try { ready = worldRenderer.isReady() && worldOutput?.isReady() !== false && sceneLayerCompositor?.isReady() !== false; } catch { ready = false; }
         if (ready) runtimeScalability.presented();
       }
       const presentedAt = performance.now();
@@ -2452,6 +2489,7 @@ function initializeEngine(
         materialFunctionRecord = {};
         materialDocumentsKey = "";
         releaseInitialSources();
+        worldOutput?.dispose();
         scene.dispose();
         rttPresent?.dispose();
         cacheBinding.dispose();
@@ -2713,13 +2751,12 @@ function initializeEngine(
       }
       if (command.type === "sceneLayerCreate") {
         const layer = sceneLayerCompositor?.create(command);
-        // Layers resolve project quality (Geometry, Water, texture anisotropy)
-        // through the world view.
+        // Layers follow the world view's project settings (Water) but keep full
+        // quality whatever the tier (`useFullRenderQuality`).
         if (layer) {
           followSceneRenderSettings(layer.scene, scene);
+          useFullRenderQuality(layer.scene);
           setSceneGameTimePaused(layer.scene, gameTimePaused || heldForPipelines());
-          for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
-          layer.scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
         }
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
@@ -3290,7 +3327,10 @@ function initializeEngine(
       freezeLibraryMaterials();
       outlineHost.refreshSettings();
       if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
-      else await worldRenderer.prepare(scope.assert);
+      else {
+        await worldRenderer.prepare(scope.assert);
+        await worldOutput?.prepare(scope.assert);
+      }
       scope.assert();
       // Play draws its starting state without view culling in the world presentation's loading frames, before the
       // first presented one, when the Scene holds a light, Play may spawn one, the spawn warm-up staged meshes, or a

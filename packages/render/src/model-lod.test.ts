@@ -24,7 +24,7 @@ import {
   generateModelLods,
   isAutoLodMaster,
 } from "./model-lod";
-import { followSceneRenderSettings, updateSceneRenderingSettings } from "./render-settings";
+import { followSceneRenderSettings, updateSceneRenderingSettings, useFullRenderQuality } from "./render-settings";
 import { participatesInShadows } from "./shadow-mesh-policy";
 import { visualMeshes } from "./visual-meshes";
 
@@ -306,7 +306,7 @@ describe("automatic model LOD", () => {
     for (const lod of levels) expect(lod.nonUniformScaling).toBe(true);
   });
 
-  it("resolves quality from a followed Scene", async () => {
+  it("draws a full-quality Scene (a SceneLayer) at full detail whatever the Scene it follows", async () => {
     const { scene, instantiate } = await sphereModel();
     const { master, levels } = instantiate();
     const camera = cameraAt(scene, master, 0.02);
@@ -314,8 +314,9 @@ describe("automatic model LOD", () => {
 
     const owner = createTestEngine();
     handles.push(owner);
-    updateSceneRenderingSettings(owner.scene, { quality: normalizeRenderingQuality({ geometry: { autoLod: false, lodDistanceScale: 1 } }) });
+    updateSceneRenderingSettings(owner.scene, { quality: normalizeRenderingQuality({ geometry: { autoLod: true, lodDistanceScale: 0.25 } }) });
     followSceneRenderSettings(scene, owner.scene);
+    useFullRenderQuality(scene);
     expect(scene.customLODSelector!(master, new FreeCamera("fresh", camera.position.clone(), scene))).toBe(master);
   });
 

@@ -540,16 +540,19 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
-  it("applies the world texture anisotropy to SceneLayer textures", () => {
+  it("keeps SceneLayer textures at full anisotropy whatever the world's texture tier", () => {
     const engine = sharedEngine();
-    Object.assign(engine.getCaps(), { maxAnisotropy: 2 });
+    Object.assign(engine.getCaps(), { maxAnisotropy: 16 });
     const { handle } = playHandle(engine);
+    handle.setLocalQualityOverrides({ textures: { anisotropy: 2 } });
     handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
     const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
     const world = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, handle.scene);
     const overlay = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layerScene);
     expect(world.anisotropicFilteringLevel).toBe(2);
-    expect(overlay.anisotropicFilteringLevel).toBe(2);
+    expect(overlay.anisotropicFilteringLevel).toBe(16);
+    handle.setLocalQualityOverrides({ textures: { anisotropy: 4 } });
+    expect(overlay.anisotropicFilteringLevel).toBe(16);
   });
 
   it("reports the lightsdebug switch without reading diagnostics", () => {
@@ -1323,7 +1326,7 @@ describe("Play createEngine view", () => {
     submitted.mockRestore();
   });
 
-  it("applies locked output quality before preparation without resizing inside a scene render owner", async () => {
+  it("applies locked output quality to the world target before preparation without resizing inside a scene render owner", async () => {
     const engine = sharedEngine();
     // NullEngine hard-codes scale 1; model the native scale storage boundary.
     let hardwareScaling = 1;
@@ -1347,8 +1350,10 @@ describe("Play createEngine view", () => {
       quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
     }));
     await handle.prewarmSceneMaterials();
-    expect(resize).toHaveBeenCalledWith(384, 216);
-    expect([width, height]).toEqual([384, 216]);
+    // The backbuffer keeps the locked resolution for Scene Layers; the world renders at its scale.
+    expect([width, height]).toEqual([480, 270]);
+    expect(resize).not.toHaveBeenCalledWith(384, 216);
+    expect(handle.scene.activeCamera!.outputRenderTarget!.getSize()).toEqual({ width: 384, height: 216 });
     const presented = handle.presentFirstFrame();
     renderViews(engine);
     engine.onEndFrameObservable.notifyObservers(engine);
@@ -1403,7 +1408,9 @@ describe("Play createEngine view", () => {
         quality: { resolution: { scale: 0.5, minScale: 0.5, dynamic: false } },
       }));
       await play.prewarmSceneMaterials();
-      expect(hardwareScaling).toBe(2);
+      // Play scales its world target; the Engine level maps CSS pixels to its full-resolution backbuffer.
+      expect(play.scaling.getLevel()).toBe(2);
+      expect(hardwareScaling).toBe(1);
       expect(editorView.enabled).toBe(false);
       restoring = true;
       play.dispose();
@@ -2936,6 +2943,28 @@ describe("Play createEngine view", () => {
     play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: options.postProcessStack });
     const layer = play.sceneLayerScenes()[0]!.scene;
     expect(attach.mock.calls.some(([value]) => value.scene === layer && value.camera === layer.activeCamera)).toBe(true);
+  });
+
+  it("runs a SceneLayer's post effects at full resolution whatever the Post Processing tier", () => {
+    const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
+    const stack = [{ id: "pass", materialGuid: "pp", enabled: true }];
+    const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(), playMode: true, postProcessStack: stack,
+      materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]),
+    });
+    handles.push(play);
+    // The first override only establishes the quality baseline.
+    play.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.5 } });
+    play.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.25 } });
+    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: stack });
+    const layer = play.sceneLayerScenes()[0]!.scene;
+    const scales = (scene: Scene) => attach.mock.calls.filter(([value]) => value.scene === scene).map(([value]) => value.resolutionScale);
+    expect(scales(play.scene).at(-1)).toBe(0.25);
+    expect(scales(layer)).toEqual([1]);
+    // A tier change rebuilds the world's stack and leaves the layer's alone.
+    play.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.5 } });
+    expect(scales(play.scene).at(-1)).toBe(0.5);
+    expect(scales(layer)).toEqual([1]);
   });
 
   it("keeps the editor's prepared post-process stack across an edit that leaves it alone", () => {
@@ -5058,7 +5087,7 @@ describe("Play createEngine view", () => {
     } finally { observing.mockRestore(); }
   });
 
-  it("applies render scale to a locked Play framebuffer without replacing its authored size", () => {
+  it("applies render scale to a locked Play world target while the framebuffer keeps its authored size", () => {
     const engine = sharedEngine();
     // NullEngine hardcodes a scaling level of one; supply the browser boundary.
     let hardwareScaling = 1;
@@ -5070,13 +5099,16 @@ describe("Play createEngine view", () => {
     handle.setSize(800, 450);
     const size = vi.spyOn(engine, "setSize");
     const view = engine.views!.find((entry) => entry.target === canvas)!;
+    const world = () => handle.scene.activeCamera!.outputRenderTarget!.getSize();
     handle.scaling.setSettingsLevel(2);
     view.customResize!(canvas);
-    expect(size).toHaveBeenLastCalledWith(400, 225);
+    expect(size).toHaveBeenLastCalledWith(800, 450);
+    expect(world()).toEqual({ width: 400, height: 225 });
     expect([canvas.width, canvas.height]).toEqual([256, 256]);
     handle.scaling.setSettingsLevel(1);
     view.customResize!(canvas);
     expect(size).toHaveBeenLastCalledWith(800, 450);
+    expect(world()).toEqual({ width: 800, height: 450 });
     expect([canvas.width, canvas.height]).toEqual([256, 256]);
   });
 
@@ -5101,6 +5133,30 @@ describe("Play createEngine view", () => {
     expect(setSize).toHaveBeenCalledWith(800, 450);
     expect(canvas.width).toBe(300);
     expect(canvas.height).toBe(150);
+  });
+
+  it("keeps Play's backbuffer at device pixels and scales only the world target", () => {
+    const engine = sharedEngine();
+    let hardwareScaling = 1;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    Object.assign(canvas, { clientWidth: 400, clientHeight: 300, ownerDocument: { defaultView: { devicePixelRatio: 2 } } });
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const setSize = vi.spyOn(engine, "setSize");
+    const world = () => handle.scene.activeCamera!.outputRenderTarget!.getSize();
+    handle.setLocalQualityOverrides({ resolution: { scale: 0.5, minScale: 0.25, dynamic: true } });
+    handle.resize();
+    expect(setSize).toHaveBeenLastCalledWith(800, 600);
+    expect(hardwareScaling).toBe(0.5);
+    expect(world()).toEqual({ width: 200, height: 150 });
+    // Dynamic resolution steps move the world target alone.
+    handle.scaling.setLevel(2.5);
+    expect(world()).toEqual({ width: 160, height: 120 });
+    handle.resize();
+    expect(setSize).toHaveBeenLastCalledWith(800, 600);
+    expect(handle.renderDiagnostics().scalingLevel).toBe(2.5);
   });
 
   it("sizes a shared editor framebuffer from the viewport canvas instead of engine.resize", () => {
