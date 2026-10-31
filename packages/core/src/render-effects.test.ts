@@ -36,6 +36,7 @@ describe("render effects settings", () => {
       bloom: { enabled: true, threshold: 0.75, weight: 0.4, kernel: 96, scale: 0.25 },
       fxaa: true,
       upscaling: { enabled: true, renderScale: 0.75, sharpness: 0.5 },
+      // Removed settings (temporal anti-aliasing) are dropped, not carried.
       temporalAntiAliasing: { enabled: true, samples: 16, blend: 0.2 },
     });
     expect(normalized).toEqual({
@@ -49,7 +50,6 @@ describe("render effects settings", () => {
       bloom: { enabled: true, threshold: 0.75, weight: 0.4, kernel: 96, scale: 0.25 },
       fxaa: true,
       upscaling: { enabled: true, renderScale: 0.75, sharpness: 0.5 },
-      temporalAntiAliasing: { enabled: true, samples: 16, blend: 0.2 },
     });
     const clamped = normalizeRenderEffectsSettings({
       exposure: 1000,
@@ -57,7 +57,6 @@ describe("render effects settings", () => {
       whiteBalance: { enabled: true, temperature: 100, tint: 900 },
       vignette: { enabled: true, weight: 50, color: [2, -1, 0.5, 9] },
       bloom: { enabled: true, threshold: -3, weight: 99, kernel: 8192.7, scale: 0 },
-      temporalAntiAliasing: { enabled: true, samples: 99.6, blend: 0 },
       upscaling: { enabled: true, renderScale: 0.1, sharpness: 9 },
     });
     expect(clamped.exposure).toBe(100);
@@ -69,7 +68,6 @@ describe("render effects settings", () => {
     expect(clamped.bloom.weight).toBe(10);
     expect(clamped.bloom.kernel).toBe(512);
     expect(clamped.bloom.scale).toBe(0.05);
-    expect(clamped.temporalAntiAliasing).toEqual({ enabled: true, samples: 32, blend: 0.02 });
     expect(clamped.upscaling).toEqual({ enabled: true, renderScale: 0.5, sharpness: 2 });
   });
 

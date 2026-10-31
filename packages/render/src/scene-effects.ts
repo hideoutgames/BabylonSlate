@@ -46,7 +46,6 @@ export interface SceneEffectsPlan {
   bloom: RenderEffectsSettings["bloom"] | null;
   imageProcessing: SceneEffectsImageProcessingPlan | null;
   fxaa: boolean;
-  temporalAntiAliasing: RenderEffectsSettings["temporalAntiAliasing"] | null;
   ambientOcclusion: RenderEffectsSettings["ambientOcclusion"] | null;
   reflections: RenderEffectsSettings["reflections"] | null;
   volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
@@ -98,7 +97,6 @@ export function planSceneEffects(
   const imageProcessing =
     sceneLinear || vignette || colorGrading ? { sceneLinear, vignette, colorGrading } : null;
   const fxaa = effects.fxaa;
-  const temporalAntiAliasing = effects.temporalAntiAliasing.enabled ? effects.temporalAntiAliasing : null;
   const allowed = inputs.allowed;
   const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled && allowed?.ambientOcclusion !== false
     ? effects.ambientOcclusion : null;
@@ -112,10 +110,10 @@ export function planSceneEffects(
   const upscale = effects.upscaling.enabled && effects.upscaling.renderScale < 1 ? effects.upscaling : null;
   // sceneLinear always yields imageProcessing, so it needs no separate term.
   const screenShadows = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? inputs.screenShadows : null;
-  if (!bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting && !upscale &&
+  if (!bloom && !imageProcessing && !fxaa && !ambientOcclusion && !reflections && !volumetricLighting && !upscale &&
     !screenShadows)
     return null;
-  return { sceneLinear, bloom, imageProcessing, fxaa, temporalAntiAliasing, ambientOcclusion, reflections, volumetricLighting, upscale, screenShadows };
+  return { sceneLinear, bloom, imageProcessing, fxaa, ambientOcclusion, reflections, volumetricLighting, upscale, screenShadows };
 }
 
 const TONE_MAPPING_TYPES: Record<RenderEffectsToneMapping, number> = {

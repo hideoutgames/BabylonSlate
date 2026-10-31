@@ -212,7 +212,7 @@ test("WebGPU renders native and graph PBR and CEL using native shaders", async (
     warmSpawn: { done: true, held: 0, synchronous: 0, asynchronous: 0 },
     casterSpawn: { done: true, held: 0, hidden: true, synchronous: 0 },
   });
-  // With a geometry pass (temporal anti-aliasing), a spawn with a variant nothing compiled stays hidden until its colour
+  // With a geometry pass (ambient occlusion), a spawn with a variant nothing compiled stays hidden until its colour
   // pipelines exist, then is left out of the geometry pass alone, holding no frame, until its geometry pipeline exists.
   const geometry = result.geometrySpawn!;
   expect({
