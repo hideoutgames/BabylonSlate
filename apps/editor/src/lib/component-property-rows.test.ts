@@ -368,6 +368,16 @@ describe("componentPropertyRows", () => {
     });
   });
 
+  it("offers a MeshComponent's Occluder, Auto by default", () => {
+    const { rows, update } = rowsFor({ id: "mesh", classId: "MeshComponent", properties: { meshKind: "box" } });
+    const occluder = rows.find((row) => row.id.endsWith("-occluder"));
+    expect(occluder).toMatchObject({ kind: "enum", label: "Occluder", value: "auto" });
+    if (occluder?.kind === "enum") occluder.onChange("never");
+    expect(update).toHaveBeenCalledWith("occluder", "never");
+    expect(rowsFor({ id: "mesh", classId: "MeshComponent", properties: { occluder: "always" } }).rows.find((row) => row.id.endsWith("-occluder")))
+      .toMatchObject({ value: "always" });
+  });
+
   it("exposes MeshComponent.assetGuid as a Model asset pick", () => {
     const { rows, onPickAsset } = rowsFor({
       id: "mesh",

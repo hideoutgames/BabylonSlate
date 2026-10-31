@@ -1,3 +1,4 @@
+import { applyOccluderProperty } from "./view-occlusion";
 import { Mesh, MeshBuilder, Quaternion, Scene, Vector3, type Matrix, type TransformNode } from "@babylonjs/core";
 import { resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
@@ -412,7 +413,10 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
     if (visual) applyOverlayVisualStyle(mesh, visual.properties);
   }
   const component = actor.components.find((entry) => entry.classId === "MeshComponent");
-  if (component && !isEditorActorOrigin(mesh)) sceneShadowController(mesh.getScene()).setParticipation(mesh, component.properties);
+  if (component && !isEditorActorOrigin(mesh)) {
+    sceneShadowController(mesh.getScene()).setParticipation(mesh, component.properties);
+    applyOccluderProperty(mesh, component.properties.occluder);
+  }
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
   applySerializedTransform(mesh, isSceneLayerAnchorActor(actor) ? identitySerializedTransform() : actor.transform);
   const origin = isEditorActorOrigin(mesh);
@@ -471,6 +475,7 @@ export function applyComponentChildTransforms(
     if (supportsOverlayVisualStyle(component.classId)) applyOverlayVisualStyle(child, component.properties);
     if ((isEditorCameraModel(child) || component.classId === "CableComponent") && child.isWorldMatrixFrozen) child.unfreezeWorldMatrix();
     if (component.classId === "MeshComponent" || component.classId === "CableComponent") sceneShadowController(mesh.getScene()).setParticipation(child, component.properties);
+    if (component.classId === "MeshComponent") applyOccluderProperty(child, component.properties.occluder);
     applySerializedTransform(
       child,
       cableVisualTransform(actor, component),

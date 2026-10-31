@@ -115,6 +115,20 @@ export function meshPropertyRows(
       value: component.properties[key] !== false,
       onChange: (value: boolean) => update(key, value),
     })),
+    {
+      kind: "enum",
+      id: rowId(actorId, component.id, "occluder"),
+      label: "Occluder",
+      value: component.properties.occluder === "always" || component.properties.occluder === "never" ? component.properties.occluder : "auto",
+      defaultValue: "auto",
+      options: [
+        { value: "auto", label: "Auto" },
+        { value: "always", label: "Always" },
+        { value: "never", label: "Never" },
+      ],
+      description: "With Occlusion Culling on, whether this mesh hides what is behind it. Auto: when solid and large enough on screen.",
+      onChange: (next) => update("occluder", next),
+    },
     ...genericRows(
       actorId,
       component,
@@ -123,6 +137,7 @@ export function meshPropertyRows(
         "meshKind",
         "castShadows",
         "receiveShadows",
+        "occluder",
         "assetGuid",
         "materialGuid",
         "materialSource",

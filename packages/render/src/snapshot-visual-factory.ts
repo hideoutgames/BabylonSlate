@@ -1,3 +1,4 @@
+import { applyOccluderProperty } from "./view-occlusion";
 import { createPooledPrimitiveVisual } from "./pooled-primitive-visual";
 import { createWaterMesh } from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
@@ -103,9 +104,15 @@ export function applyPlayVisualSorting(root: Mesh, slotId: number, binding: Snap
   if (partsNeedOrigin(parts)) {
     for (const part of parts ?? []) {
       const target = root.getChildMeshes().find((mesh) => mesh.name === playComponentMeshName(slotId, part.componentId));
-      if (target) shadows.setParticipation(target, part);
+      if (target) {
+        shadows.setParticipation(target, part);
+        applyOccluderProperty(target, part.occluder);
+      }
     }
-  } else if (parts?.[0]) shadows.setParticipation(root, parts[0]);
+  } else if (parts?.[0]) {
+    shadows.setParticipation(root, parts[0]);
+    applyOccluderProperty(root, parts[0].occluder);
+  }
   const layers = binding.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const actorId = primary?.actorGuid ?? `actor-${slotId}`;
   if (partsNeedOrigin(parts)) {

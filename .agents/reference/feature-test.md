@@ -47,6 +47,7 @@ The Kenney sounds are CC0; `License.txt` and `Source.txt` beside them record lic
 | FT_Stress | `assets/FeatureTest/Scenes/FT_Stress.scene.hasset` | Heavy, scalable load: physics pile, particle stress, animated crowd, dense foliage |
 | FT_World | `assets/FeatureTest/Scenes/FT_World.scene.hasset` | Landscape, Foliage, every water body kind, buoyancy, Cables and Splines |
 | FT_Lights | `assets/FeatureTest/Scenes/FT_Lights.scene.hasset` | Many unshadowed point lights: the many-lights workload |
+| FT_Occlusion | `assets/FeatureTest/Scenes/FT_Occlusion.scene.hasset` | The occlusion culling yardstick: a street-level city block and a building of rooms with doorways |
 | FT_2D | `assets/FeatureTest/Scenes/FT_2D.scene.hasset` | Sprites, Sprite Animation, Tilemaps, 2D physics |
 | FT_StreamedRoom | `assets/FeatureTest/Scenes/FT_StreamedRoom.scene.hasset` | Sub-scene streamed into the main scene |
 
@@ -80,6 +81,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play. Its 
 | `FT_Stress` | 320 dynamic bodies over a scaled sweeper, 6 ragdolls, a 32-link chain; 4 stress particle actors (about 16 000 GPU particles); an 8x8 animated Mannequin crowd; a 5184-instance foliage carpet. |
 | `FT_World` (`world.ts`) | 80 m island Landscape (grass, snow, sand, rock layers, collision), 226 foliage instances, Global Sea at -6 m (object reflections off), Ocean (short Realistic spectrum sea without swell, object reflections), Lake, River (the starter water Material `FT_WorldRiverMaterial` as its Custom Material, every water material node; cut by its banks, the Lake it blends into and the River Ford removal volume) and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines; shadowed sun and light fog. A Full Quality Render Target Capture of the Lake from the south shore (256², every frame) on a captioned monitor facing the world camera, refracting the lake bed and drawing its own sun shadow cascades as the world camera does. Separate from the main scene because an Ocean over every main-scene zone made the main scene miss its loading deadline on software GL. |
 | `FT_Lights` | 48 unshadowed point lights over a plain floor with the engine default sky, more than any quality level's light budget admits, so the budget's ranking chooses each surface's lights. |
+| `FT_Occlusion` | `occlusion.ts`. A street between two rows of six box buildings, each hiding a yard of 12 crates and posts; street lamps in view; behind the East row a 3 × 3 building of rooms with doorways, each holding four crates and a `present-a-cube` Model (its import-baked box occludes), under a roof marked Occluder Never. `Rooms Camera` stands in the front doorway (`possess "Rooms Camera"`). A yardstick to measure occlusion culling, not an optimisation of other content; the check runs `ft_occlusion`. |
 | `FT_2D` | Orthographic camera over a 16x9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks), decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DTiles` defines two autotile terrains: Grass (8-neighbour blob on the sheet's grass and dirt cells, incomplete, so it relies on closest-match) and Ledge (4-side, the thin ledge pieces). `two-d.ts` paints the floating ledge with a Ledge brush stroke and a stepped backdrop island (grass top, inner corner, fill) with Grass rect and brush strokes through `applyTilemapPaint`; the scaffold test checks a Tilemap holds terrain tiles of every style. `FT_2DRobotGraph` cycles robot Idle, Walk, Jump, Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
 | `FT_HUD` (Scene Layer) | Every overlay widget: text with the Text-domain Material, rich text, panels, safe area (its label has no Font, so it draws with the project Default Font), form controls, scroll box, virtualized list (10 000 rows) and grid (400 cells), mask and mask panel, texture, material swatch, click button (`FT_UIClickButton`), focus target, card switcher (`FT_UICardSwitcher`), joystick bound to Move, persistent painter. Focus navigation uses Confirm. |
@@ -131,7 +133,7 @@ For devices without a test harness (iPad, phones, other browsers), a Feature Tes
 | Mode | Scenes | Per scene |
 | --- | --- | --- |
 | Quick | Current Feature Test scene (main otherwise) | Open in the editor and sample viewport frames; Play, sample frames, run `ft_stats`; Stop |
-| Full | `main`, `FT_World`, `FT_Lights`, `FT_2D`, `FT_Stress` | As Quick; the main scene also runs `ft_spawn 10`, `ft_stream`, `ft_cel`, `ft_pbr` |
+| Full | `main`, `FT_World`, `FT_Lights`, `FT_Occlusion`, `FT_2D`, `FT_Stress` | As Quick; the main scene also runs `ft_spawn 10`, `ft_stream`, `ft_cel`, `ft_pbr`, and `FT_Occlusion` runs `ft_occlusion` |
 | Benchmark | All five | Play with the frame cap lifted to 240, then 5 s per profile: `low`, `medium`, `high`, `ultra`. After its commands each profile waits up to 90 s until the view draws without held frames (a profile can rebuild every lit shader and its render targets); when the view does not, the profile reports it and that scene's sweep stops, so changes do not pile up on a view that stopped drawing. quality and cap are restored afterwards |
 | Breakdown | `FT_World` (**All Scenes**: all five) | A GPU breakdown without timer queries, at the normal 60 fps cap (iOS Safari paces frames to the display, so a lifted cap only queues frames behind a busy GPU): each step (`FEATURE_TEST_BREAKDOWN_STEPS`) turns one feature off or lowers one cost on top of the project quality and is undone (`quality reset`, plus `postprocessing on` / `rendertargets on`) before the next; it waits as Benchmark does for the view to draw, then until no shader has been first drawn or compiled for 3 s (at most 90 s), and samples 5 s with `gpubusy on` (GPU-busy time per frame from fences, restarted per sample; `gpubusy off` at the end). First it warms up at the baseline in 10 s windows until two consecutive windows differ by under 3% (GPU-busy median, else mean frame time), at most 90 s. Then it alternates baselines and steps (`breakdownSequence`: A B A C A …, a baseline before every step and after the last), so each step is compared with the two baselines immediately around it: `quality shadows enabled off`; `quality shadows medium` (the Medium shadow tier: 4096 atlas, Medium map sizes); `quality water refraction off`; `quality water reflections sky`; `quality water shadingDetail low` and `medium`; `quality postprocessing low`; `quality postprocessing ambientOcclusion off`; `quality postprocessing reflections\|volumetricLighting off`; `postprocessing off`; `rendertargets off`; `quality resolution scale 0.5`. 13 steps and 14 baselines take about 10 s each: about 6 minutes for `FT_World` with the warm-up |
 
@@ -155,7 +157,7 @@ It creates FeatureTest through the real Create dialog, waits for background text
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `HAPTIC_PERF_SCENES` | `main,stress` | Any of `main`, `stress`, `world`, `lights`, `2d` |
+| `HAPTIC_PERF_SCENES` | `main,stress` | Any of `main`, `stress`, `world`, `lights`, `occlusion`, `2d` (with `HAPTIC_PERF_COMMANDS=ft_occlusion` to cull) |
 | `HAPTIC_PERF_SAMPLE_MS` / `HAPTIC_PERF_SAMPLES` | 15000 / 2 | Measurement windows per host |
 | `HAPTIC_PERF_WARMUP_MS` / `HAPTIC_PERF_SETTLE_MS` | 10000 / 5000 | Play warm-up and editor settle |
 | `HAPTIC_PERF_QUALITY` / `HAPTIC_PERF_FRAMECAP` | project defaults | Play console `quality` (then `quality resolution reset`, so resolution stays fixed) and `framecap` |
@@ -189,7 +191,7 @@ A switched backend or quality is saved before the first scene opens; scene edits
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `HAPTIC_PERF_SCENES` | `main` | Any of `main`, `stress`, `world`, `lights`, `2d` |
+| `HAPTIC_PERF_SCENES` | `main` | Any of `main`, `stress`, `world`, `lights`, `occlusion`, `2d` |
 | `HAPTIC_PERF_BACKEND` | project (WebGL2) | `webgl2` or `webgpu`; WebGPU uses the software adapter unless `HAPTIC_RENDER_NATIVE_GPU=1` |
 | `HAPTIC_PERF_SETTLE_MS` | 8000 | How long after ready the settled window keeps counting |
 | `HAPTIC_PERF_LABEL`, `HAPTIC_PERF_OUT` | none | Label; extra report path |

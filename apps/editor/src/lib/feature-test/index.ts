@@ -32,6 +32,7 @@ import {
 } from "./scripting";
 import { buildFeatureTestTwoD } from "./two-d";
 import { buildFeatureTestWorld, placeFeatureTestWorld } from "./world";
+import { buildFeatureTestOcclusion } from "./occlusion";
 
 export type { FeatureTestHost } from "./context";
 
@@ -75,6 +76,7 @@ export async function applyFeatureTestScaffold(options: {
   await buildFeatureTestRendering(ctx);
   await buildFeatureTestPhysics(ctx);
   await buildFeatureTestWorld(ctx);
+  await buildFeatureTestOcclusion(ctx);
   await buildFeatureTestAnimation(ctx);
   await buildFeatureTestParticles(ctx);
   await buildFeatureTestAi(ctx);

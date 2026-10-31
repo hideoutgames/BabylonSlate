@@ -1,3 +1,4 @@
+import type { ModelOccluder } from "./occluder-bake";
 import { concatBytes, readU32LE, writeU32LE } from "./bytes";
 import {
   normalizeModelSimpleColliders,
@@ -29,6 +30,8 @@ export interface ModelPayload {
    * normalize to true so existing models gain automatic LOD.
    */
   autoLod: boolean;
+  /** The occluder baked at import (`occluder-bake.ts`); null for a model with none, a skinned one, or one imported before. */
+  occluder?: ModelOccluder | null;
 }
 
 export function normalizeModelImportScale(value: unknown): number {
@@ -93,6 +96,7 @@ export function normalizeModelPayload(value: unknown): ModelPayload {
     importScale: normalizeModelImportScale(record.importScale),
     simpleColliders: normalizeModelSimpleColliders(record.simpleColliders),
     autoLod: record.autoLod !== false,
+    occluder: normalizeModelOccluder(record.occluder),
   };
 }
 
@@ -169,3 +173,14 @@ export function decodePackedModelAsset(
   return { payload, source: bytes.subarray(range.jsonEnd) };
 }
 
+function normalizeModelOccluder(value: unknown): ModelOccluder | null {
+  const record = asRecord(value);
+  const vector = (entry: unknown) =>
+    Array.isArray(entry) && entry.length === 3 && entry.every((item) => typeof item === "number" && Number.isFinite(item))
+      ? entry as [number, number, number]
+      : null;
+  const min = vector(record.min), max = vector(record.max), boundsMin = vector(record.boundsMin), boundsMax = vector(record.boundsMax);
+  if (!min || !max || !boundsMin || !boundsMax) return null;
+  if ([0, 1, 2].some((axis) => !(min[axis]! < max[axis]!) || min[axis]! < boundsMin[axis]! || max[axis]! > boundsMax[axis]!)) return null;
+  return { min: [...min], max: [...max], boundsMin: [...boundsMin], boundsMax: [...boundsMax] };
+}
