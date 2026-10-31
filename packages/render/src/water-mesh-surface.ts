@@ -112,6 +112,11 @@ export type Surface = {
    * neighbour's reach; empty (first > last) when none. Rows outside it hold open water's uniform rest data.
    */
   blendRows: Int32Array;
+  /**
+   * Global Water only: the grid lines (first and last, inclusive; empty when first > last) its index buffer keeps every
+   * column of (`syncGlobalIndices`), the rows its blend data vary over.
+   */
+  indexRows: Int32Array;
   /** The budgeted blend refresh (`BlendRebuild`), created with the first one and kept while the surface blends. */
   stage: BlendRebuild | null;
 };
