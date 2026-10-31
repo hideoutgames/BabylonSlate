@@ -237,6 +237,8 @@ export class SceneInstancePool {
     mesh.isPickable = member.isPickable;
     mesh.layerMask = member.layerMask;
     mesh.metadata = member.metadata;
+    // A model leaf's glTF primitive record, which names its Material slot.
+    (mesh as unknown as { _internalMetadata: unknown })._internalMetadata = (member as unknown as { _internalMetadata: unknown })._internalMetadata;
     member.dispose();
     return mesh;
   }
@@ -367,6 +369,11 @@ function poolMember(mesh: AbstractMesh): { pool: SceneInstancePool; member: Inst
   if (!(mesh instanceof InstancedMesh) || !isInstancePoolSource(mesh.sourceMesh)) return undefined;
   const pool = pools.get(mesh.getScene());
   return pool?.keyOf(mesh) ? { pool, member: mesh } : undefined;
+}
+
+/** Whether `mesh` is a member of its Scene's instance pool. */
+export function isPoolMember(mesh: AbstractMesh): mesh is InstancedMesh {
+  return poolMember(mesh) !== undefined;
 }
 
 /**

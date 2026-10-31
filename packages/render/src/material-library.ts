@@ -15,6 +15,8 @@ import {
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";
+import { isInstancePoolSource } from "./instance-pool";
+import { setDrawnMaterial } from "./pooled-visuals";
 import { rebindWaterMeshMaterial } from "./water-mesh";
 import { markSceneReadinessDirty, onSceneReceiversChanged } from "./scene-readiness-signal";
 import { shaderLinkLog } from "./material-glsl-diagnostics";
@@ -101,8 +103,10 @@ function rebindMaterial(scene: Scene, from: Material, to: Material): void {
       return child;
     });
   };
-  for (const mesh of scene.meshes) {
-    if (mesh.material === from) { mesh.material = to; applyMaterialBounds(mesh); }
+  for (const mesh of [...scene.meshes]) {
+    // A group source follows its members, which move to the group drawn with `to` (`setDrawnMaterial`).
+    if (mesh instanceof Mesh && isInstancePoolSource(mesh)) continue;
+    if (mesh.material === from) { applyMaterialBounds(setDrawnMaterial(mesh, to)); }
     else if (mesh.material && waterVariantBase(mesh.material) === from && rebindWaterMeshMaterial(mesh, to)) applyMaterialBounds(mesh);
     else if (mesh.material) replaceSubmaterials(mesh.material);
   }

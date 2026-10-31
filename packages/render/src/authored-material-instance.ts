@@ -3,7 +3,7 @@ import type { SerializedComponent } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { ownedMaterialPreparation } from "./material-library";
 import { applyMaterialBounds } from "./material-bounds";
-import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
+import { setActorMeshMaterial } from "./pooled-visuals";
 import { everyInstanceParameter, setMeshInstanceParameters } from "./instance-parameters";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { isColliderVisualTree } from "./collider-visual";
@@ -58,6 +58,16 @@ function instanceTargets(visual: Mesh): Mesh[] {
       (mesh === visual || !mesh.name.startsWith("editorActor:") || mesh.name.startsWith(`${visual.name}:`)));
 }
 
+/**
+ * What draws `visual`'s meshes, which carries its per-instance values: each mesh with vertices of its own, a pooled
+ * primitive's leaf and a static model's pooled leaves included, under the same ownership as `instanceTargets`.
+ */
+function drawnInstanceHolders(visual: Mesh): AbstractMesh[] {
+  return [visual, ...visual.getChildMeshes()].filter((mesh) => mesh.getTotalVertices() > 0 &&
+    !(mesh instanceof Mesh && mesh.isBlocked) && !isColliderVisualTree(mesh) &&
+    (mesh === visual || !mesh.name.startsWith("editorActor:") || mesh.name.startsWith(`${visual.name}:`)));
+}
+
 /** The meshes carrying a visual's per-instance values, which draw the Material's again once they clear. */
 const instanceValueHolders = new WeakMap<Mesh, AbstractMesh[]>();
 
@@ -96,7 +106,7 @@ export function applyAuthoredMaterialInstance(
   if (shared && everyInstanceParameter(shared, parameters.keys()) &&
     [...parameters].every(([name, value]) => assets.validateMaterialParameter?.(guid, name, value) !== false)) {
     if (owner) { release(owner); owners.delete(visual); }
-    const holders = instanceTargets(visual).map((target) => pooledLeafOf(target) ?? target).filter((mesh) => mesh.getTotalVertices() > 0);
+    const holders = drawnInstanceHolders(visual);
     for (const holder of holders) setMeshInstanceParameters(holder, shared, parameters);
     instanceValueHolders.set(visual, holders);
     return;
