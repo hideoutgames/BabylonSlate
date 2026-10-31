@@ -82,6 +82,18 @@ function captureBytes(size: number): number {
 }
 
 /**
+ * Whether the editor mesh `mesh` belongs to one of the `statics` actors a probe captures: its nearest `editorActor:`
+ * node names the actor. A pooled primitive's drawn leaf (`<root>:drawn`) answers as its root does.
+ */
+export function isEditorStaticMesh(mesh: AbstractMesh, statics: ReadonlySet<string>): boolean {
+  const pooledLeaf = drawingMesh(mesh) !== mesh && isInstanceSource(drawingMesh(mesh) as Mesh);
+  for (let node: Node | null = pooledLeaf ? mesh.parent : mesh; node; node = node.parent) {
+    if (node.name.startsWith("editorActor:")) return statics.has(node.name.slice("editorActor:".length));
+  }
+  return false;
+}
+
+/**
  * A scene's reflection probes: each captures the scene's static meshes into a
  * cube, filters it like the sky, and lights the surfaces inside its box.
  */
@@ -171,14 +183,7 @@ export class ReflectionProbes {
     if (data === this.authored) return;
     this.authored = data;
     const statics = reflectionProbeStaticActors(data.actors);
-    this.setStaticPredicate((mesh) => {
-      // A pooled primitive's drawn leaf (`<root>:drawn`) is the actor's as its root is.
-      const pooledLeaf = drawingMesh(mesh) !== mesh && isInstanceSource(drawingMesh(mesh) as Mesh);
-      for (let node: Node | null = pooledLeaf ? mesh.parent : mesh; node; node = node.parent) {
-        if (node.name.startsWith("editorActor:")) return statics.has(node.name.slice("editorActor:".length));
-      }
-      return false;
-    });
+    this.setStaticPredicate((mesh) => isEditorStaticMesh(mesh, statics));
     const live = new Set<string>();
     for (const actor of data.actors) {
       const bindings = actor.visible ? reflectionProbeBindings(actor.components) : [];

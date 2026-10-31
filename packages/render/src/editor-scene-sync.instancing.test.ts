@@ -6,6 +6,7 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { sceneInstancePool, setSceneInstancing } from "./instance-pool";
 import { collectNavBakeGeometry } from "./nav-bake-geometry";
 import { pooledLeafOf } from "./pooled-visuals";
+import { isEditorStaticMesh } from "./reflection-probes";
 
 const handles: Array<ReturnType<typeof createTestEngine>> = [];
 afterEach(() => { for (const { engine } of handles.splice(0)) engine.dispose(); });
@@ -98,6 +99,13 @@ describe("editor primitives drawn through the instance pool", () => {
     expect(sync.actorForMesh(own.name)).toBe("a");
     sync.apply(sceneWith([crate("a")]));
     expect(own.material).not.toBe(glass);
+  });
+
+  it("lets a reflection probe capture a static crate through its leaf", () => {
+    const { sync } = pooledEditor();
+    sync.apply(sceneWith([crate("wall"), crate("mover", undefined, 2)]));
+    const statics = new Set(["wall"]);
+    expect([isEditorStaticMesh(leafOf(sync, "wall"), statics), isEditorStaticMesh(leafOf(sync, "mover"), statics)]).toEqual([true, false]);
   });
 
   it("bakes a pooled crate's triangles into the nav mesh", () => {
