@@ -34,9 +34,23 @@ for (const backend of ["webgl2", "webgpu"] as const) {
         }
         return { camera: view.camera.join(", "), count, where: where.join(" ") };
       });
-      await testInfo.attach(`water-coverage-${backend}-${density}`, { body: JSON.stringify({ holes, result }), contentType: "application/json" });
+      await testInfo.attach(`water-coverage-${backend}-${density}`, { body: JSON.stringify(holes), contentType: "application/json" });
+      for (const [index, view] of result.views.entries()) {
+        const png = await page.evaluate(({ pixels, width, height, flipped }) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          const image = new ImageData(width, height);
+          for (let row = 0; row < height; row++) {
+            const from = (flipped ? height - 1 - row : row) * width * 4;
+            image.data.set(pixels.slice(from, from + width * 4), row * width * 4);
+          }
+          canvas.getContext("2d")!.putImageData(image, 0, 0);
+          return canvas.toDataURL("image/png").split(",")[1]!;
+        }, { pixels: view.pixels, width: result.width, height: result.height, flipped: result.flipped });
+        await testInfo.attach(`water-coverage-${backend}-${density}-view${index}.png`, { body: Buffer.from(png, "base64"), contentType: "image/png" });
+      }
       // Water fills every view to the top of the frame: any background is a hole no body keeps.
-      for (const view of holes) expect(view.count, `${view.camera}: ${view.where}`).toBe(0);
+      expect(holes.filter((view) => view.count > 0).map((view) => `${view.camera}: ${view.count} at ${view.where}`)).toEqual([]);
     });
   }
 }
