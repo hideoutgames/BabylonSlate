@@ -8,7 +8,6 @@ import type { EffectCompileFailure } from "./effect-compile-failure";
 import { hapticShadowedSun } from "./haptic-lights";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 import { customWrapper } from "./spatial-effects";
-import type { TemporalJitter } from "./temporal-anti-aliasing";
 
 /**
  * Screen-Space Shadows: before the objects draw, a full-resolution pass marches from each pixel of the spatial geometry
@@ -28,9 +27,9 @@ export const SCREEN_SHADOW_LEVELS: Record<Exclude<ScreenShadowsQuality, "off">, 
 const MAX_STEPS = 16;
 
 /**
- * The march (GLSL or WGSL). Uniforms: `ssProjection`, `ssInverseProjection` (the projection the geometry pass drew with,
- * jittered under temporal anti-aliasing), `ssSun` (the view-space direction toward the sun; w 0 writes lit: no shadowed
- * sun, an orthographic view), `ssMarch` (steps, pixel cap, world cap, noise phase), `ssFade` (fade start and end, the
+ * The march (GLSL or WGSL). Uniforms: `ssProjection`, `ssInverseProjection` (the camera's projection, which the geometry pass
+ * drew with), `ssSun` (the view-space direction toward the sun; w 0 writes lit: no shadowed
+ * sun, an orthographic view), `ssMarch` (steps, pixel cap, world cap; w unused), `ssFade` (fade start and end, the
  * render height times the projection's y scale), `ssTexel`. Derivatives come first: WGSL takes them in uniform control flow.
  */
 export function screenShadowsShader(wgsl: boolean): string {
@@ -63,11 +62,11 @@ ${decl(f, "bias", "(0.004 * depth + 0.01) / max(NdotL, 0.25)")}
 ${decl(f, "thickness", "0.15 + 0.02 * depth")}
 ${decl(v3, "start", "P + L * (1.5 * footprint)")}
 ${decl(v2, "pixel", `floor(${uv} / ${u("ssTexel")})`)}
-${decl(f, "jitter", `fract(52.9829189 * fract(dot(pixel + 5.588238 * ${u("ssMarch")}.w, ${v2}(0.06711056, 0.00583715))))`)}
+${decl(f, "dither", `fract(52.9829189 * fract(dot(pixel, ${v2}(0.06711056, 0.00583715))))`)}
 ${decl(f, "occlusion", "0.0")}
 ${loop("i", 0, MAX_STEPS)} {
   if (${f}(i) >= ${u("ssMarch")}.x) { break; }
-  ${decl(f, "t", `(${f}(i) + jitter) / ${u("ssMarch")}.x * reach`)}
+  ${decl(f, "t", `(${f}(i) + dither) / ${u("ssMarch")}.x * reach`)}
   ${decl(v3, "q", "start + L * t")}
   ${decl(v4, "clip", `${u("ssProjection")} * ${v4}(q, 1.0)`)}
   if (clip.w <= 0.0) { break; }
@@ -157,7 +156,7 @@ export class ScreenShadowsGraph {
 
   constructor(
     graph: FrameGraph, camera: Camera, level: Exclude<ScreenShadowsQuality, "off">, depth: FrameGraphTextureHandle,
-    width: number, height: number, jitter: TemporalJitter | undefined, failure?: EffectCompileFailure,
+    width: number, height: number, failure?: EffectCompileFailure,
   ) {
     const scene = graph.scene;
     this.scene = scene;
@@ -178,8 +177,7 @@ export class ScreenShadowsGraph {
     const inverse = new Matrix();
     const toSun = new Vector3();
     this.task = new ScreenShadowsTask(graph, wrapper, depth, (effect) => {
-      // The projection the geometry pass drew with: the temporal jitter's this frame.
-      const projection = jitter?.projection() ?? camera.getProjectionMatrix();
+      const projection = camera.getProjectionMatrix();
       projection.invertToRef(inverse);
       effect.setMatrix("ssProjection", projection);
       effect.setMatrix("ssInverseProjection", inverse);
@@ -190,7 +188,7 @@ export class ScreenShadowsGraph {
         toSun.normalize().scaleInPlace(-1);
         effect.setFloat4("ssSun", toSun.x, toSun.y, toSun.z, 1);
       } else effect.setFloat4("ssSun", 0, 0, 1, 0);
-      effect.setFloat4("ssMarch", settings.steps, settings.pixels, settings.length, jitter?.sampleIndex ?? 0);
+      effect.setFloat4("ssMarch", settings.steps, settings.pixels, settings.length, 0);
       effect.setFloat4("ssFade", settings.fadeStart, settings.fadeEnd, height * Math.abs(projection.m[5]!), 0);
       effect.setFloat2("ssTexel", 1 / width, 1 / height);
     });

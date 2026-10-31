@@ -68,7 +68,7 @@ import {
   type ScriptBundleEntry,
 } from "@haptic/bridge";
 import {
-  areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality,
+  areaRectLightBindings, createDefaultRenderTargetCaptureProperties, createDefaultScene, DEFAULT_RENDER_EFFECTS, fogVolumeBindings, normalizeRenderingQuality,
   normalizeRenderProjectSettings, parseText2DProperties, parseText3DProperties,
 } from "@haptic/core";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
@@ -1698,14 +1698,14 @@ describe("compile holds after the first frame", () => {
   });
 
   /**
-   * Temporal anti-aliasing on (in any render mode), with `effects` on top: the world view's graph draws the spatial
-   * geometry pass (view depth and velocity) every frame, and no warm draw creates its pipelines.
+   * Scene-wide volumetric lighting on (in any render mode), with `effects` on top: the world view's graph draws the
+   * spatial geometry pass (view depth) every frame, and no warm draw creates its pipelines.
    */
   function withGeometryPass(world: PlayWorld, effects: Partial<ReturnType<typeof sceneRenderingSettings>["effects"]> = {}) {
     // The spatial chain also needs texel fetches.
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     updateSceneRenderingSettings(world.handle.scene, { effects: { ...sceneRenderingSettings(world.handle.scene).effects,
-      temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 }, ...effects } });
+      volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true }, ...effects } });
   }
   /** A geometry pass's variant: Babylon's geometry rendering defines `PREPASS`. */
   const geometryVariant = (effect: Effect) => /#define PREPASS\b/.test(effect.defines);
@@ -2228,12 +2228,12 @@ describe("the lighting CI gate", () => {
     });
   });
 
-  it.each(MODELS)("with Screen-Space Shadows at High and temporal anti-aliasing on, lights change without compiling or rebuilding the view: %s", async (model) => {
+  it.each(MODELS)("with Screen-Space Shadows at High, lights change without compiling or rebuilding the view: %s", async (model) => {
     const world = playWorld(model, actors());
     // Spatial effects need texel fetches, which the headless Engine leaves off.
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     world.handle.setRenderSettings(normalizeRenderProjectSettings({
-      effects: { temporalAntiAliasing: { enabled: true } }, shadows: { screenShadows: "high" },
+      shadows: { screenShadows: "high" },
     }));
     const surfaces = unlitSurfaces(world);
     await settle(world);

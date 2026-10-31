@@ -840,7 +840,7 @@ it("gives the settings effect chain's offscreen scene color a real depth attachm
   }
 });
 
-it("clears the temporal geometry attachments on their own target, never the backbuffer", async () => {
+it("clears the spatial geometry attachments on their own target, never the backbuffer", async () => {
   const { engine, scene, camera } = host();
   // The spatial chain needs four float targets and depth sampling.
   Object.assign(engine.getCaps(), {
@@ -849,7 +849,7 @@ it("clears the temporal geometry attachments on their own target, never the back
   });
   updateSceneRenderingSettings(scene, {
     mode: "pbr",
-    effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } },
+    effects: { ...DEFAULT_RENDER_EFFECTS, volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } },
   });
   // WebGL2 accepts only a single BACK or NONE draw buffer on the default
   // framebuffer; any other layout is INVALID_OPERATION, which fails the
@@ -869,7 +869,7 @@ it("clears the temporal geometry attachments on their own target, never the back
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.taskNames()).toContain("Scene Temporal Anti-Aliasing");
+    expect(graph.taskNames()).toContain("Scene Volumetric Lighting");
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
     expect(backbufferLayouts).toEqual([]);
     expect(farClears).toEqual([true]);
