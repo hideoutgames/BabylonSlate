@@ -4,7 +4,7 @@ import { readHassetHeader } from "../packages/assets/src/hasset";
 import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import {
-  createActor, createMeshComponent, identitySerializedTransform, MAIN_SCENE_FILE, parseMirrorProperties, type SerializedScene,
+  createActor, createMeshComponent, createText3DComponent, identitySerializedTransform, MAIN_SCENE_FILE, parseMirrorProperties, type SerializedScene,
 } from "../packages/core/src/index";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
@@ -19,7 +19,8 @@ type ViewportHost = {
   __hapticViewportTest: {
     setShadowCaptureView(position: number[], target: number[], fov: number): void;
     renderingBaseline(): { backend: string } | null;
-    mirrorDiagnostics(): { draws: number; reuses: number } | null;
+    mirrorDiagnostics(): { draws: number; reuses: number; drawnMeshes: number; shadowPasses: number } | null;
+    setMirrorFootprintCulling(enabled: boolean): void;
   };
 };
 
@@ -99,6 +100,9 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
   const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
   camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
   const box = createMeshComponent("red-box-mesh", "box");
+  // Static unlit Text 3D beside the box, inside the reflection: it must not keep the reflection redrawing.
+  const label = createText3DComponent("label-text");
+  label.properties = { ...label.properties, text: "Haptic", size: 0.6 };
   box.properties = { ...box.properties, materialGuid };
   scene.actors = [
     camera,
@@ -110,6 +114,10 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
     createActor("red-box", "Red Box", {
       transform: { ...identitySerializedTransform(), position: [0, 2, -10], scale: [4, 4, 4] },
       components: [box],
+    }),
+    createActor("label", "Label", {
+      transform: { ...identitySerializedTransform(), position: [-1.5, 3, -7] },
+      components: [label],
     }),
   ];
   files.set(MAIN_SCENE_FILE, await encodeAssetDocument(
@@ -124,7 +132,7 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
   await expectReflected(page.getByTestId("viewport-canvas"), "mirror-editor", "red");
 
-  // A static view keeps its reflection: renders reuse it, draw nothing, and the mirror shows the same pixels.
+  // A static view keeps its reflection, the unlit Text 3D in it included: renders reuse it, draw nothing, and the mirror shows the same pixels.
   const viewport = page.getByTestId("viewport-canvas");
   const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
   await expect.poll(async () => {
@@ -164,4 +172,144 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
   await waitForPreviewBuildBoot(page);
   await expectReflected(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas"), "mirror-node-preview-build", "blue");
   expect(errors).toEqual([]);
+});
+
+/** A hash of every pixel of the canvas (read from a copy, as `centerColor` does). */
+async function canvasHash(canvas: Locator): Promise<string> {
+  return canvas.evaluate(async (node: HTMLCanvasElement) => {
+    const copy = document.createElement("canvas");
+    copy.width = node.width;
+    copy.height = node.height;
+    const ctx = copy.getContext("2d", { willReadFrequently: true })!;
+    ctx.drawImage(node, 0, 0);
+    const digest = await crypto.subtle.digest("SHA-256", ctx.getImageData(0, 0, node.width, node.height).data);
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  });
+}
+
+for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws only what its footprint can show, with the same pixels as the whole mirrored view, on ${backend}`, async ({ page }) => {
+  test.setTimeout(180_000);
+  const files = await minimalProjectFiles();
+  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+  project.settings.render.gpuBackend = backend;
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+  const sceneFile = files.get(MAIN_SCENE_FILE)!;
+  const decoded = await decodeAssetDocument(sceneFile);
+  const scene = decoded.payload as unknown as SerializedScene;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
+  const box = (id: string, position: [number, number, number], scale: number) => createActor(id, id, {
+    transform: { ...identitySerializedTransform(), position, scale: [scale, scale, scale] },
+    components: [createMeshComponent(`${id}-mesh`, "box")],
+  });
+  scene.actors = [
+    camera,
+    // A small mirror: its reflection shows the box behind the camera, never the one off to the side, which the whole
+    // mirrored view still contains.
+    createActor("mirror", "Mirror", {
+      transform: { ...identitySerializedTransform(), position: [0, 2, 0] },
+      components: [{ id: "mirror-surface", classId: "MirrorComponent", properties: { ...parseMirrorProperties({ width: 1, height: 1 }) }, parentId: null, transform: identitySerializedTransform() }],
+    }),
+    box("reflected-box", [0, 2, -10], 4),
+    box("side-box", [6, 2, -10], 2),
+  ];
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...decoded, payload: scene as unknown as Record<string, unknown> }));
+
+  await openMinimalTestProject(page, files);
+  await openMainScene(page);
+  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
+  await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
+  const viewport = page.getByTestId("viewport-canvas");
+  const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
+  /** Waits for the reflection to settle (renders reuse it); the canvas then and the meshes per draw since `from`. */
+  const settled = async (from: { draws: number; drawnMeshes: number }) => {
+    let result = { hash: "", meshesPerDraw: 0 };
+    await expect.poll(async () => {
+      const before = await mirrors(), hash = await canvasHash(viewport);
+      await page.waitForTimeout(500);
+      const after = await mirrors(), again = await canvasHash(viewport);
+      result = { hash, meshesPerDraw: (after.drawnMeshes - from.drawnMeshes) / Math.max(1, after.draws - from.draws) };
+      return after.draws > from.draws && after.draws === before.draws && after.reuses > before.reuses && hash === again;
+    }, { timeout: 60_000 }).toBe(true);
+    return result;
+  };
+  const cropped = await settled({ draws: 0, drawnMeshes: 0 });
+  const start = await mirrors();
+  await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setMirrorFootprintCulling(false));
+  const whole = await settled(start);
+  // Byte-identical frames; the whole mirrored view draws the side box too.
+  expect(whole.hash).toBe(cropped.hash);
+  expect(whole.meshesPerDraw).toBeGreaterThan(cropped.meshesPerDraw);
+  await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setMirrorFootprintCulling(true));
+  expect((await settled(await mirrors())).hash).toBe(cropped.hash);
+});
+
+for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror keeps its reflection while a caster whose shadow it cannot show moves, and redraws for one it can, on ${backend}`, async ({ page }) => {
+  test.setTimeout(180_000);
+  const files = await minimalProjectFiles();
+  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+  project.settings.render.gpuBackend = backend;
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+  const sceneFile = files.get(MAIN_SCENE_FILE)!;
+  const decoded = await decodeAssetDocument(sceneFile);
+  const scene = decoded.payload as unknown as SerializedScene;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
+  const box = (id: string, position: [number, number, number], scale: [number, number, number]) => createActor(id, id, {
+    transform: { ...identitySerializedTransform(), position, scale },
+    components: [createMeshComponent(`${id}-mesh`, "box")],
+  });
+  scene.actors = [
+    camera,
+    createActor("mirror", "Mirror", {
+      transform: { ...identitySerializedTransform(), position: [0, 2, 0] },
+      components: [{ id: "mirror-surface", classId: "MirrorComponent", properties: { ...parseMirrorProperties({ width: 2, height: 2 }) }, parentId: null, transform: identitySerializedTransform() }],
+    }),
+    // Behind the camera, seen only in the mirror: a floor under a spot light. The near caster hangs above what the
+    // mirror shows, so only its shadow on the floor is reflected.
+    box("floor", [0, -0.1, -9], [8, 0.2, 8]),
+    box("near-caster", [0, 6, -9], [1, 1, 1]),
+    // Within the light's range, so its map redraws when it moves, but outside its cone and the mirror's view.
+    box("far-caster", [10, 1, -9], [1, 1, 1]),
+    createActor("spot", "Spot", {
+      // Pointing down.
+      transform: { ...identitySerializedTransform(), position: [0, 9, -9], rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2] },
+      components: [{
+        id: "spot-light", classId: "LightComponent", parentId: null, transform: identitySerializedTransform(),
+        properties: { lightKind: "spot", color: [1, 1, 1], intensity: 4, range: 15, innerAngle: 45, outerAngle: 90, enabled: true, castShadows: true },
+      }],
+    }),
+  ];
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...decoded, payload: scene as unknown as Record<string, unknown> }));
+
+  await openMinimalTestProject(page, files);
+  await openMainScene(page);
+  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
+  await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
+  const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
+  const settled = () => expect.poll(async () => {
+    const before = await mirrors();
+    await page.waitForTimeout(500);
+    const after = await mirrors();
+    return after.draws > 0 && after.draws === before.draws && after.reuses > before.reuses && after.shadowPasses === before.shadowPasses;
+  }, { timeout: 60_000 }).toBe(true);
+  const moveX = async (actor: string, x: number) => {
+    await page.getByTestId(`tree-row-actor:${actor}`).click();
+    await page.getByTestId("property-actor-position-x").fill(String(x));
+    await page.getByTestId("property-actor-position-x").press("Enter");
+  };
+  await settled();
+
+  // The far caster's map pass changes no shadow the reflection shows: the reflection is reused.
+  const beforeFar = await mirrors();
+  await moveX("far-caster", 11);
+  await expect.poll(async () => (await mirrors()).shadowPasses, { timeout: 30_000 }).toBeGreaterThan(beforeFar.shadowPasses);
+  await settled();
+  const afterFar = await mirrors();
+  expect(afterFar.draws).toBe(beforeFar.draws);
+  expect(afterFar.reuses).toBeGreaterThan(beforeFar.reuses);
+
+  // The near caster's shadow lies on the reflected floor: the reflection draws again.
+  await moveX("near-caster", 0.5);
+  await expect.poll(async () => (await mirrors()).draws, { timeout: 30_000 }).toBeGreaterThan(afterFar.draws);
 });

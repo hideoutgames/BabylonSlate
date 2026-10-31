@@ -6,6 +6,7 @@ import {
 } from "@babylonjs/core";
 import type { SpriteFrame } from "@haptic/assets";
 import { spriteFrameUvs } from "@haptic/assets";
+import { markOwnerNotifiedGeometry } from "./geometry-revision";
 
 const spriteQuads = new WeakSet<Mesh>();
 export function isSpriteQuad(mesh: unknown): boolean { return mesh instanceof Mesh && spriteQuads.has(mesh); }
@@ -25,6 +26,8 @@ export function createSpriteQuad(
   const height = (frame.height ?? 100) / pixelsPerUnit || 1;
   const mesh = MeshBuilder.CreatePlane(name, { width, height, updatable: true }, scene);
   spriteQuads.add(mesh);
+  // Resizes and frame changes rewrite positions and UVs through notified updates only.
+  markOwnerNotifiedGeometry(mesh);
   setSpriteQuadSize(mesh, width, height, frame.pivot);
   applySpriteFrameUvs(mesh, frame);
   return mesh;

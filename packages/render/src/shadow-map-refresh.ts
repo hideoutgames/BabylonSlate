@@ -21,6 +21,7 @@ import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
 import { hasRevisionTrackedLandscapeGeometry } from "./landscape-mesh";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
+import { shadowMapChanges, type ShadowChangeRegion } from "./shadow-change-journal";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
 /** Reused scalar/object snapshot; unchanged frames allocate no signature arrays. */
@@ -56,7 +57,12 @@ type Caster = {
   revision: number;
   /** Visible content whose shadow can change without a tracked state change. */
   unsafe: boolean;
+  /** Its geometry draws within its bounds (twice its radius when it deforms): `safeMesh`, its thin instances aside. */
+  bounded: boolean;
 };
+
+/** A caster as a map last saw it: what it drew and where (`ShadowMapRefresh.note`). */
+type SeenCaster = { revision: number; level: number | undefined; stamp: number; bounded: boolean; readonly box: Float64Array };
 
 /**
  * Whether a world sphere may touch the light-space rectangle of any cascade
@@ -98,6 +104,12 @@ function drawnIntoCascade(
   return false;
 }
 
+function addSeen(entry: SeenCaster, region: ShadowChangeRegion): void {
+  const box = entry.box;
+  if (entry.bounded) region.addBox(box[0]!, box[1]!, box[2]!, box[3]!, box[4]!, box[5]!);
+  else region.addAll();
+}
+
 /**
  * Per-map invalidation for shadow maps with static opaque content. A local map
  * tracks only casters within its light's range: elsewhere a caster cannot
@@ -115,6 +127,10 @@ export class ShadowMapRefresh {
   private readonly cascadeSizes: number[] = [];
   private readonly drawnFits = new WeakMap<RenderTargetTexture, DrawnFit>();
   private readonly maps = new WeakMap<ShadowGenerator, Snapshot>();
+  /** Per map, its casters as last applied, for the change journal's regions (`shadowMapChanges`). */
+  private readonly seen = new WeakMap<RenderTargetTexture, Map<AbstractMesh, SeenCaster>>();
+  private stamp = 0;
+  private readonly box = new Float64Array(6);
   /** Drawn level of each visible automatic-LOD caster for the scene camera. */
   private readonly lodLevels = new Map<AbstractMesh, number>();
   private readonly sceneState = new Snapshot();
@@ -156,6 +172,7 @@ export class ShadowMapRefresh {
           transformRevision: 0,
           revision: 0,
           unsafe: false,
+          bounded: false,
         };
         this.casters.set(mesh, record);
       }
@@ -267,6 +284,8 @@ export class ShadowMapRefresh {
       }
       const visible = enabled && mesh.isVisible && mesh.visibility > 0;
       record.unsafe = visible && (!safeMesh || !safeMaterial);
+      // Babylon's bounds leave thin instances out unless refreshed for them.
+      record.bounded = safeMesh && !(source instanceof Mesh && source.hasThinInstances);
       if (visible && autoLod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
     }
     const state = this.sceneState;
@@ -332,30 +351,39 @@ export class ShadowMapRefresh {
     state.value(generator.enableSoftTransparentShadow);
     state.value(generator.useOpacityTextureForTransparentShadow);
     const cascadedSun = generator instanceof CascadedShadowGenerator ? generator : null;
+    // What changed where, until the map's next real pass: everywhere for its view, settings or an unbounded caster;
+    // else where the casters that changed, entered, left or keep changing on their own were and are.
+    const changes = shadowMapChanges(map);
+    changes.described = true;
+    const region = changes.region;
+    const seen = this.seenCasters(map);
+    this.stamp++;
     let continuous: boolean =
       this.continuous ||
       (light instanceof DirectionalLight && !cascadedSun) ||
       !!light.customProjectionMatrixBuilder ||
       !!generator.customShaderOptions;
-    if (!continuous && cascadedSun) {
-      continuous = this.trackCascades(cascadedSun, map, state);
-    } else if (!continuous) {
+    if (continuous) {
+      region.addAll();
+    } else if (cascadedSun) {
+      continuous = this.trackCascades(cascadedSun, map, state, seen, region);
+    } else {
+      if (state.changed) region.addAll();
       // A local map re-renders once when a caster within its range changes,
       // enters or leaves, or changes the level the camera draws; unrelated
       // casters elsewhere in the scene do not touch it.
       const range = "range" in light && Number.isFinite(light.range) ? light.range : Infinity;
       for (const [mesh, record] of this.casters) {
         if (!casterWithinShadowRange(mesh, position, range)) continue;
-        if (record.unsafe) {
-          continuous = true;
-          break;
-        }
+        const level = this.lodLevels.get(mesh);
+        this.note(seen, mesh, record, level, region);
+        if (record.unsafe) continuous = true;
         state.value(mesh);
         state.value(record.revision);
-        const level = this.lodLevels.get(mesh);
         if (level !== undefined) state.value(level);
       }
     }
+    this.sweepSeen(seen, region);
     state.end();
     const rate = continuous
       ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME
@@ -382,7 +410,9 @@ export class ShadowMapRefresh {
    * into the map. Deforming geometry is drawn whatever its bounds, so it
    * reaches within the shadow distance of the camera as well.
    */
-  private trackCascades(generator: CascadedShadowGenerator, map: RenderTargetTexture, state: Snapshot): boolean {
+  private trackCascades(
+    generator: CascadedShadowGenerator, map: RenderTargetTexture, state: Snapshot, seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion,
+  ): boolean {
     const camera: Camera | null = generator.camera ?? generator.getLight().getScene().activeCamera;
     const view = camera?.getViewMatrix().m;
     const projection = camera?.getProjectionMatrix().m;
@@ -419,6 +449,9 @@ export class ShadowMapRefresh {
       matrices.push(m);
     }
     if (refit) state.changed = true;
+    // A changed fit, camera, light or setting redraws every cascade differently.
+    if (state.changed) region.addAll();
+    let continuous = false;
     const eye = camera?.globalPosition;
     const orthographic = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA;
     for (const [mesh, record] of this.casters) {
@@ -442,13 +475,69 @@ export class ShadowMapRefresh {
           }
         }
       }
-      if (record.unsafe) return true;
+      const level = this.lodLevels.get(mesh);
+      this.note(seen, mesh, record, level, region);
+      if (record.unsafe) continuous = true;
       state.value(mesh);
       state.value(record.revision);
-      const level = this.lodLevels.get(mesh);
       if (level !== undefined) state.value(level);
     }
-    return false;
+    return continuous;
+  }
+
+  private seenCasters(map: RenderTargetTexture): Map<AbstractMesh, SeenCaster> {
+    let seen = this.seen.get(map);
+    if (!seen) this.seen.set(map, (seen = new Map()));
+    return seen;
+  }
+
+  /**
+   * Where `mesh` draws into a map, into `box`; false when that cannot be bounded. A deforming caster can leave its
+   * bind-pose bounds, so it gets twice its bounding radius (as `casterWithinShadowRange`).
+   */
+  private casterBox(mesh: AbstractMesh, record: Caster, box: Float64Array): boolean {
+    if (!record.bounded) return false;
+    const info = mesh.getBoundingInfo();
+    if (hasDeformingShadowBounds(mesh)) {
+      const center = info.boundingSphere.centerWorld, radius = 2 * info.boundingSphere.radiusWorld;
+      box[0] = center.x - radius; box[1] = center.y - radius; box[2] = center.z - radius;
+      box[3] = center.x + radius; box[4] = center.y + radius; box[5] = center.z + radius;
+    } else {
+      const min = info.boundingBox.minimumWorld, max = info.boundingBox.maximumWorld;
+      box[0] = min.x; box[1] = min.y; box[2] = min.z;
+      box[3] = max.x; box[4] = max.y; box[5] = max.z;
+    }
+    return true;
+  }
+
+  /**
+   * Notes a caster a map draws: when it entered, changed or changes on its own, the map changed where it was and where
+   * it is now (everywhere for an unbounded one).
+   */
+  private note(seen: Map<AbstractMesh, SeenCaster>, mesh: AbstractMesh, record: Caster, level: number | undefined, region: ShadowChangeRegion): void {
+    const box = this.box;
+    const bounded = this.casterBox(mesh, record, box);
+    let entry = seen.get(mesh);
+    if (!entry || record.unsafe || entry.revision !== record.revision || entry.level !== level) {
+      if (entry) addSeen(entry, region);
+      if (bounded) region.addBox(box[0]!, box[1]!, box[2]!, box[3]!, box[4]!, box[5]!);
+      else region.addAll();
+    }
+    if (!entry) seen.set(mesh, (entry = { revision: 0, level: undefined, stamp: 0, bounded: false, box: new Float64Array(6) }));
+    entry.revision = record.revision;
+    entry.level = level;
+    entry.stamp = this.stamp;
+    entry.bounded = bounded;
+    entry.box.set(box);
+  }
+
+  /** Casters the map no longer draws (removed, out of range or reach) changed it where they were. */
+  private sweepSeen(seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion): void {
+    for (const [mesh, entry] of seen) {
+      if (entry.stamp === this.stamp) continue;
+      addSeen(entry, region);
+      seen.delete(mesh);
+    }
   }
 
   /** The cascade matrices of the map's last actual pass, kept by a clear observer. */

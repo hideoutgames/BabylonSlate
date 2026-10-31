@@ -171,6 +171,10 @@ export function useViewportEngine({
       if (released) return;
       released = true;
       for (const dispose of disposers.reverse()) dispose();
+      // Without its Engine (released to Play or a Simulation, or after a failed load) the view is not ready; the
+      // next load sets it again once it presents.
+      setSceneReady(false);
+      setDropReady(null);
     };
     releaseEngineRef.current = release;
     void (async () => {
