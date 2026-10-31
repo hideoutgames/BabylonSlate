@@ -33,16 +33,22 @@ const DEFAULT_BINDING: UnlitBinding = {
   texture: null, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: true, twoSided: false,
 };
 
+const materialBindings = new WeakMap<object, UnlitBinding>();
+
 export function setUnlitBinding(mesh: AbstractMesh, binding: UnlitBinding): void {
   bindings.set(mesh, binding);
 }
+/** Every mesh drawing `material` draws `binding` (`ownedUnlitMaterial`). */
+export function setMaterialUnlitBinding(material: object, binding: UnlitBinding): void {
+  materialBindings.set(material, binding);
+}
 /**
- * The binding `mesh` draws: its own, or, for a pooled visual's leaf replaced by a mesh of its own under the visual
- * (`setActorMeshMaterial`), the visual's.
+ * The binding `mesh` draws: its material's own (`ownedUnlitMaterial`), its own, or, for a pooled visual's leaf
+ * replaced by a mesh of its own under the visual (`setActorMeshMaterial`), the visual's.
  */
 export function unlitBinding(mesh: AbstractMesh | undefined): UnlitBinding {
   if (!mesh) return DEFAULT_BINDING;
-  return bindings.get(mesh) ?? bindings.get(mesh.parent as AbstractMesh) ?? DEFAULT_BINDING;
+  return (mesh.material && materialBindings.get(mesh.material)) ?? bindings.get(mesh) ?? bindings.get(mesh.parent as AbstractMesh) ?? DEFAULT_BINDING;
 }
 export function hasUnlitBinding(mesh: AbstractMesh): boolean {
   return bindings.has(mesh);

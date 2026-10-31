@@ -619,7 +619,8 @@ export function createText2DMesh(
   try {
     const parent = bundle.ownRenderUser(MeshBuilder.CreatePlane(name, { width: wrapW, height: wrapH }, scene));
     parent.onDisposeObservable.addOnce(() => bundle.dispose());
-    parent.material = unlitMaterial(scene, `${name}:pick`, [0, 0, 0], false, bundle);
+    // Drawn at zero visibility: a pick target only.
+    setUnlitMaterial(parent, TEXT_SOLID, solidGlyphBinding([0, 0, 0], false));
     parent.visibility = 0;
     parent.isPickable = hitTest !== "ignore";
     parent.metadata = {

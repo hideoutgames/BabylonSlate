@@ -1,4 +1,4 @@
-import { Mesh, StandardMaterial, type Scene } from "@babylonjs/core";
+import { Mesh, type Scene } from "@babylonjs/core";
 import { describe, expect, it, afterEach } from "vitest";
 import {
   createActor,
@@ -24,6 +24,7 @@ import {
 } from "./scene-loader";
 import { isEditorVolumeMesh } from "./editor-volume";
 import { isColliderVisualMesh } from "./collider-visual";
+import { unlitBinding } from "./unlit-material-blocks";
 
 function lightComponent(
   color: [number, number, number] = [1, 1, 1],
@@ -627,10 +628,7 @@ describe("scene-loader", () => {
       ]),
     );
     const mesh = scene.getMeshByName(editorComponentMeshName("lamp", "light"))!;
-    const material = mesh.material as StandardMaterial;
-    expect(material.emissiveColor.r).toBeCloseTo(1);
-    expect(material.emissiveColor.g).toBeCloseTo(1);
-    expect(material.emissiveColor.b).toBeCloseTo(1);
+    expect(unlitBinding(mesh).color).toEqual([1, 1, 1]);
   });
 
   it("hides invisible actors and unlocks pickability from the locked flag", () => {
@@ -826,7 +824,7 @@ describe("scene-loader", () => {
     expect(isEditorVolumeMesh(volume!)).toBe(true);
     expect(volume!.isPickable).toBe(true);
     expect(volume!.visibility).toBe(1);
-    expect((volume!.material as StandardMaterial).alpha).toBe(0);
+    expect(unlitBinding(volume!).alpha).toBe(0);
     expect(volume!.parent).toBe(origin);
     expect(icon!.parent).toBe(origin);
     expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
