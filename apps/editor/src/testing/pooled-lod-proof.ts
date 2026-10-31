@@ -76,7 +76,8 @@ export async function runPooledLodProof(backend: "webgl2" | "webgpu") {
       let rendered: boolean;
       try { rendered = graph.render(camera, false).rendered !== false; } finally { engine.endFrame(); }
       if (rendered) presented++;
-      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+      // Read in the task that presented: a later task may find the canvas texture already released.
+      if (presented < 10) await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     const read = await engine.readPixels(0, 0, WIDTH, HEIGHT);
     const pixels = toRgbaPixels(new Uint8Array(read.buffer, read.byteOffset, read.byteLength), readbackChannelOrder(engine.isWebGPU));
