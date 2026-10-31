@@ -16,7 +16,10 @@ import { createPrimitiveMesh } from "./scene-component-mesh";
 import { RENDERING_GROUP } from "./sorting";
 import { normalizeRenderingQuality } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { allowSceneOcclusionCulling, OCCLUDER_TRIANGLE_BUDGET, primitiveOccluderShape, sceneOcclusionCulling, sceneOcclusionDiagnostics, ViewOcclusion } from "./view-occlusion";
+import {
+  allowSceneOcclusionCulling, OCCLUDER_TRIANGLE_BUDGET, primitiveOccluderShape, sceneOcclusionBuffer, sceneOcclusionCulling,
+  sceneOcclusionDiagnostics, setSceneOcclusionFrozen, ViewOcclusion,
+} from "./view-occlusion";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -35,7 +38,7 @@ function view({ rightHanded = false } = {}) {
   camera.minZ = 0.1;
   camera.maxZ = 1000;
   scene.activeCamera = camera;
-  allowSceneOcclusionCulling(scene, true);
+  allowSceneOcclusionCulling(scene, "setting");
   occlusionSetting(scene, true);
   const world = (mesh: Mesh) => {
     mesh.renderingGroupId = RENDERING_GROUP.world;
@@ -105,9 +108,43 @@ describe("ViewOcclusion", () => {
     expect(filter()).toBe(meshes);
     expect(sceneOcclusionDiagnostics(scene)).toBeNull();
     occlusionSetting(scene, true);
-    allowSceneOcclusionCulling(scene, false);
+    allowSceneOcclusionCulling(scene, "never");
     expect(filter()).toBe(meshes);
     expect(sceneOcclusionCulling(scene)).toBe(false);
+  });
+
+  it("culls in the editor viewport's \"always\" access whatever the setting", () => {
+    const { scene, meshes, filter } = view();
+    occlusionSetting(scene, false);
+    allowSceneOcclusionCulling(scene, "always");
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    allowSceneOcclusionCulling(scene, "never");
+    expect(filter()).toBe(meshes);
+  });
+
+  it("frozen, keeps testing against the view it last drew while the camera turns away", () => {
+    const { scene, camera, hidden, filter, occlusion } = view();
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    setSceneOcclusionFrozen(scene, true);
+    // Moved behind the hidden box, looking back at it with nothing between: the frozen view still hides it.
+    camera.position.set(0, 0, 22);
+    camera.setTarget(hidden.position);
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    expect(occlusion.diagnostics).toMatchObject({ culled: 1, occluders: 2 });
+    setSceneOcclusionFrozen(scene, false);
+    expect(names(filter())).toContain("hidden");
+  });
+
+  it("hands the overlay its buffer, nearest occluder depths at the top row first, only while it culls", () => {
+    const { scene, filter } = view();
+    filter();
+    const buffer = sceneOcclusionBuffer(scene)!;
+    expect({ width: buffer.width, height: buffer.height }).toEqual({ width: 256, height: 128 });
+    // The wall's near side, 4.85 m away, fills the middle; a corner sees past it.
+    expect(buffer.depth[64 * 256 + 128]).toBeCloseTo(4.85, 3);
+    expect(buffer.depth[0]).toBe(Infinity);
+    occlusionSetting(scene, false);
+    expect(sceneOcclusionBuffer(scene)).toBeNull();
   });
 
   it("returns the input list itself when nothing is hidden", () => {

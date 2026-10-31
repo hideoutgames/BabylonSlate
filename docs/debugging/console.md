@@ -52,6 +52,8 @@ The game keeps running while the console is open, and pressing the game does not
 | `stat draws` | `on`/`off` | Adds draw calls, meshes, textures, render timings and first shader draws to Stats. | Yes |
 | `stat threads` | `on`/`off` | Adds message traffic, actor count and tick count to Stats. | Yes |
 | `lightsdebug` | `on`/`off` | Shows which lights illuminate and which cast shadows. | Yes |
+| `showocclusion` | `on`/`off` | Shows what occlusion culling sees: solid shapes, light when near and dark when far, and how many objects it skips. | Yes |
+| `freezeocclusion` | `on`/`off` | Keeps skipping what the current view hides while you move the camera, to check what occlusion culling skips. | Yes |
 | `wireframe` | `on`/`off` | Draws meshes as wireframes. | Yes |
 | `postprocessing` | `on`/`off` | Turns all post-processing off or back on, to measure what it costs. | Yes |
 | `rendertargets` | `on`/`off` | Pauses or resumes Render Target Captures that capture every frame, to measure what they cost. Their textures keep their last image; manual captures still capture when asked. | Yes |
