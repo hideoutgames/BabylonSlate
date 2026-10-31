@@ -1,4 +1,4 @@
-import { parseSkyboxFaces, type CollisionPreset, type SerializedComponent, type SkyboxFaceKey } from "@haptic/core";
+import { componentCastsShadows, defaultCastShadows, parseSkyboxFaces, type CollisionPreset, type SerializedComponent, type SkyboxFaceKey } from "@haptic/core";
 import type { ModelMaterialSlot } from "@haptic/assets";
 import { assetRowIdentity, type ClassPickerEntry, type PropertyRow } from "@haptic/editor-kit";
 
@@ -97,6 +97,22 @@ export function assetRow(
         ...(materialDomain ? { materialDomain } : {}),
       }),
     onChange: (next) => update(property, next),
+  };
+}
+
+/**
+ * The Cast Shadows row of a visual whose class casts none by default (unlit sprites, tilemaps and 3D text): it shows
+ * the class default until set.
+ */
+export function unlitCastShadowsRow(actorId: string, component: SerializedComponent, update: ComponentPropertyUpdate): PropertyRow {
+  return {
+    kind: "boolean",
+    id: rowId(actorId, component.id, "castShadows"),
+    label: "Cast Shadows",
+    value: componentCastsShadows(component.classId, component.properties.castShadows),
+    defaultValue: defaultCastShadows(component.classId),
+    description: "Unlit, so it casts no shadow unless turned on.",
+    onChange: (value) => update("castShadows", value),
   };
 }
 

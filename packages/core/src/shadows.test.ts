@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  componentCastsShadows,
   effectiveShadowSettings,
   normalizeShadowSettings,
   normalizeShadowOverrides,
@@ -119,5 +120,19 @@ describe("shadow settings", () => {
         }),
       ).settings.maxLocalLights,
     ).toBe(0);
+  });
+});
+
+describe("component Cast Shadows defaults", () => {
+  it("leaves unlit visuals out of shadow maps unless Cast Shadows is set, and every other visual in", () => {
+    expect(["SpriteComponent", "TilemapComponent", "Text3DComponent", "MeshComponent", "CableComponent"].map((classId) =>
+      [classId, componentCastsShadows(classId, undefined), componentCastsShadows(classId, true), componentCastsShadows(classId, false)]))
+      .toEqual([
+        ["SpriteComponent", false, true, false],
+        ["TilemapComponent", false, true, false],
+        ["Text3DComponent", false, true, false],
+        ["MeshComponent", true, true, false],
+        ["CableComponent", true, true, false],
+      ]);
   });
 });
