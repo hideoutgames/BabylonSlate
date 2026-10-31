@@ -19,6 +19,7 @@ import {
   createPlayMesh,
   createSnapshotSceneBinding,
 } from "./snapshot-apply";
+import { isUnlitMaterial } from "./unlit-material";
 
 function fixedMetrics(): GlyphMetricsProvider {
   return {
@@ -212,7 +213,7 @@ describe("createText2DMesh", () => {
     expect(
       children.every((child) => (child.metadata as { text2dGlyph?: boolean }).text2dGlyph),
     ).toBe(true);
-    expect((mesh.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(mesh.material)).toBe(true);
   });
 
   it("records the compiled CSS stack used to rasterize bitmap glyphs", () => {

@@ -29,6 +29,8 @@ export const CORE_COMMAND_NAMES = [
 export const DEBUG_COMMAND_NAMES = [
   "showfps",
   "lightsdebug",
+  "showocclusion",
+  "freezeocclusion",
   "stat unit",
   "stat memory",
   "stat draws",
@@ -143,6 +145,10 @@ export function builtinCommands(): RegisteredCommand[] {
       run: (args, host) => host.quality(group, args.choice as string | undefined, args.value as string | undefined),
     })),
     flagCommand("lightsdebug", (host, enabled) => host.setLightsDebug?.(enabled), "Show light illumination and shadow allocation diagnostics"),
+    flagCommand("showocclusion", (host, enabled) => host.setShowOcclusion?.(enabled),
+      "Show the occlusion culling buffer and how many meshes it culls (needs Occlusion Culling on)"),
+    flagCommand("freezeocclusion", (host, enabled) => host.setFreezeOcclusion?.(enabled),
+      "Keep culling against the occlusion of the current view while the camera moves"),
     {
       name: "framecap",
       tier: "core",

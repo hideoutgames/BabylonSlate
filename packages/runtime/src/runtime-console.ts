@@ -164,6 +164,8 @@ export class RuntimeConsole {
       changeScene: (scene) => host.sceneRealizer().change(scene),
       quality: (group, choice, value) => host.scalability().executeQuality(group, choice, value),
       setLightsDebug: (enabled) => host.emit({ type: "setLightsDebug", enabled }),
+      setShowOcclusion: (enabled) => host.emit({ type: "setOcclusionDebug", show: Boolean(enabled) }),
+      setFreezeOcclusion: (enabled) => host.emit({ type: "setOcclusionDebug", freeze: Boolean(enabled) }),
       setPostProcessing: (enabled) => host.emit({ type: "setPostProcessingDebug", enabled: Boolean(enabled) }),
       setRenderTargetCaptures: (enabled) => host.emit({ type: "setRenderTargetCapturesDebug", enabled: Boolean(enabled) }),
       setGpuBusyProbe: (enabled) => host.emit({ type: "setGpuBusyProbeDebug", enabled: Boolean(enabled) }),

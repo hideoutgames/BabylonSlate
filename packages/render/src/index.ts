@@ -110,6 +110,7 @@ export type { RenderFrameReport, RenderFrameReportDraft, RenderFrameStage, Rende
 export type { RenderPerformanceSample } from "./render-performance";
 
 export { engineAdapterInfo, lightsDebugText } from "./render-diagnostics";
+export { drawOcclusionOverlay } from "./occlusion-overlay";
 export { estimateTextureMemory } from "./texture-memory-estimate";
 export { formatGlErrorTrace, glErrorTraceActive, glErrorTraceEntries, installGlErrorTrace, type GlErrorTraceEntry } from "./gl-error-trace";
 export { captureShadowDiagnostics, type ShadowDiagnosticOptions, type ShadowDiagnostics } from "./shadow-diagnostics";

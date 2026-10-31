@@ -62,6 +62,8 @@ import {
   isEditorActorOrigin,
 } from "./scene-loader";
 import { RENDERING_GROUP } from "./sorting";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 
 function kenneyMannequinGlb(): Uint8Array {
   const dir = join(
@@ -885,10 +887,7 @@ describe("EditorSceneSync", () => {
       ]),
     );
     expect(sync.meshForActor("a")).toBe(mesh);
-    const material = icon!.material as StandardMaterial;
-    expect(material.emissiveColor.r).toBeCloseTo(1);
-    expect(material.emissiveColor.g).toBeCloseTo(1);
-    expect(material.emissiveColor.b).toBeCloseTo(1);
+    expect(unlitBinding(icon!).color).toEqual([1, 1, 1]);
     expect(icon!.metadata.editorBillboardStatus).toBe("Active: This Light Is Operating As Configured.");
   });
 
@@ -1492,7 +1491,7 @@ describe("EditorSceneSync", () => {
     );
     const pivotMesh = sync.meshForActor("prefab-root");
     expect(pivotMesh?.material).not.toBe(assigned);
-    expect((pivotMesh?.material as StandardMaterial).disableLighting).toBe(true);
+    expect(isUnlitMaterial(pivotMesh?.material)).toBe(true);
   });
 
   it("applies Model defaults, scene overrides, explicit None and a default reset without editing model slots", async () => {

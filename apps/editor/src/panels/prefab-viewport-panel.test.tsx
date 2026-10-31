@@ -59,6 +59,7 @@ const {
       setViewportMode: vi.fn(),
       setViewportShadingMode: vi.fn(),
       setDrawMeshCollision: vi.fn(),
+      setOcclusionCulling: vi.fn(),
       setSelectedActors: vi.fn(),
       syncSelectionDebug: vi.fn(),
       gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn() },

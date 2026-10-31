@@ -615,14 +615,21 @@ function initializePlayer(
   const emitHudStats = (next: PlayerHudStats) => {
     const statsVisible = manifest.bundleDebugger && options.statsVisible?.() === true;
     const lights = manifest.bundleDebugger && handle.lightsDebugEnabled();
+    const occlusion = manifest.bundleDebugger ? handle.occlusionOverlay() : null;
     // Rendering diagnostics scan the Scene, and each read keeps frame-phase timing on.
-    const rendering = statsVisible || lights ? handle.renderDiagnostics() : undefined;
+    const rendering = statsVisible || lights || occlusion ? handle.renderDiagnostics() : undefined;
     const counts = statsVisible ? handle.liveObjectCounts() : undefined;
     hudStats = {
       ...next,
       draws: handle.drawCalls(),
       geometryBytes: handle.accountedGeometryBytes(),
       lightsDebugText: lights && rendering ? lightsDebugText(rendering) : null,
+      occlusionOverlay: occlusion && {
+        buffer: occlusion.buffer,
+        text: rendering?.occlusion
+          ? `occlusion culled ${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.occluders} occluders`
+          : "occlusion culling off",
+      },
       ...(statsVisible ? {
         memoryBytes: handle.resourceCache.accountedBytes(),
         meshCount: counts?.meshes,

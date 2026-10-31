@@ -43,7 +43,7 @@ async function drawStreet(engine: AbstractEngine, pooled: boolean) {
       quality: normalizeRenderingQuality({ geometry: { occlusionCulling } }), shadows: normalizeShadowSettings({}),
     });
     occlusionSetting(false);
-    allowSceneOcclusionCulling(scene, true);
+    allowSceneOcclusionCulling(scene, "setting");
     const compile = async (name: string, color: [number, number, number]) => {
       const doc = createDefaultMaterialDocument(name);
       doc.nodes.find((node) => node.id === "baseColor")!.properties.value = color;

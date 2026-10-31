@@ -47,6 +47,8 @@ const harness = vi.hoisted(() => ({
   setNavmeshVisible: vi.fn(),
   collisionsVisible: false,
   setCollisionsVisible: vi.fn(),
+  occlusionCulling: false,
+  setOcclusionCulling: vi.fn(),
   dragSelectActive: false,
   setDragSelectActive: vi.fn(),
   viewportMode: "3d" as "2d" | "3d",
@@ -103,6 +105,8 @@ vi.mock("../context/scene-editing-context", () => ({
     setNavmeshVisible: harness.setNavmeshVisible,
     collisionsVisible: harness.collisionsVisible,
     setCollisionsVisible: harness.setCollisionsVisible,
+    occlusionCulling: harness.occlusionCulling,
+    setOcclusionCulling: harness.setOcclusionCulling,
     dragSelectActive: harness.dragSelectActive,
     setDragSelectActive: harness.setDragSelectActive,
     viewportMode: harness.viewportMode,
@@ -141,6 +145,7 @@ beforeEach(() => {
   harness.gridVisible = true;
   harness.navmeshVisible = false;
   harness.collisionsVisible = false;
+  harness.occlusionCulling = false;
   harness.dragSelectActive = false;
   harness.viewportMode = "3d";
   harness.previewGameCamera = false;
@@ -638,6 +643,19 @@ describe("ViewportToolbar", () => {
     fireEvent.click(screen.getByTestId("viewport-show-collisions-toggle"));
     expect(harness.setCollisionsVisible).toHaveBeenCalledWith(true);
     expect(harness.applySceneChange).not.toHaveBeenCalled();
+  });
+
+  it("toggles the Scene viewport's Occlusion Culling without writing the scene document, and offers it only for a Scene", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-view"));
+    fireEvent.click(screen.getByTestId("viewport-occlusion-culling-toggle"));
+    expect(harness.setOcclusionCulling).toHaveBeenCalledWith(true);
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    cleanup();
+    harness.documentKind = "graph";
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-view"));
+    expect(screen.queryByTestId("viewport-occlusion-culling-toggle")).toBeNull();
   });
 
   it("toggles Pivot Around Center without writing the scene document", () => {
