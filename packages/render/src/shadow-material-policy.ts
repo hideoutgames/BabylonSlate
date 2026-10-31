@@ -15,9 +15,7 @@ import {
   StandardMaterial,
   type AbstractMesh,
 } from "@babylonjs/core";
-import { HelperProgramPlugin } from "./helper-program";
 import { TextureQualityPlugin } from "./texture-quality";
-import { StandardFogPlugin } from "./standard-fog";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
 import { hasMeshLatticeDeformer, isCageOnlyShadowWrapper } from "./lattice-deformer-binding";
 
@@ -53,9 +51,7 @@ const nativePlugins = new Set<unknown>([
   PBRSheenConfiguration,
   PBRSubSurfaceConfiguration,
   TextureQualityPlugin,
-  StandardFogPlugin,
   LatticeDeformerPlugin,
-  HelperProgramPlugin,
 ]);
 
 /**

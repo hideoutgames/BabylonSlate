@@ -387,6 +387,21 @@ it("redraws a static view once for a light, environment, fog or material change"
   expect(drawsOver(10)).toBe(0);
 });
 
+it("reuses a static view whose reflected mesh draws an ordinary graph Material", async () => {
+  const { scene, boat, drawsOver } = settledView();
+  const lowered = lowerMaterialDocument(createDefaultMaterialDocument("paint"));
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "paint" });
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+  expect(await compiled.ready).toEqual([]);
+  // Every graph Material carries a Lattice Deformer block; with no cage on the mesh it deforms nothing.
+  expect(compiled.material.attachedBlocks.some((block) => block.getClassName() === "LatticeDeformerBlock")).toBe(true);
+  boat.material = compiled.material;
+  expect(drawsOver(10)).toBe(1);
+  expect(drawsOver(10)).toBe(0);
+  compiled.dispose();
+});
+
 it("keeps redrawing every other render while reflected content can change on its own", () => {
   const { scene, boat, drawsOver } = settledView();
   // A render hook can change the mesh at any render.

@@ -27,6 +27,7 @@ import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
 import { accountedGeometryBytes } from "./perf-ceilings";
 import { VisualBundle } from "./visual-bundle";
+import { registerModelOccluder } from "./view-occlusion";
 import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
@@ -773,6 +774,7 @@ export function beginSlotModelAnimLoad(
       for (const group of wrapped) bundleOwnedGroups.add(group);
       prepared.wrapper.parent = placeholder;
       prepared.staging.dispose(true);
+      registerModelOccluder(placeholder, binding.modelPayloads?.get(clipAssetGuid)?.occluder);
       meta[MODEL_INSTANCE_KEY] = prepared;
       if (!meta.disposeModelOnDespawn) {
         meta.disposeModelOnDespawn = true;

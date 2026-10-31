@@ -809,6 +809,8 @@ function playMeshPartOf(
     ...(component.classId === "FoliageComponent" ? { foliage: parseFoliageProperties({ groupId: component.getVariable("groupId"), batches: component.getVariable("batches") }) } : {}),
     castShadows: component.getVariable("castShadows") !== false,
     receiveShadows: component.getVariable("receiveShadows") !== false,
+    ...(component.classId === "MeshComponent" && (component.getVariable("occluder") === "always" || component.getVariable("occluder") === "never")
+      ? { occluder: component.getVariable("occluder") as "always" | "never" } : {}),
     meshKind: playMeshKindOf(component),
     meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
     parentId,

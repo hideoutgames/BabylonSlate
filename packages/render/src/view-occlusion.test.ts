@@ -1,8 +1,10 @@
 import {
   Camera,
+  MeshBuilder,
   NullEngine,
   Scene,
   StandardMaterial,
+  TransformNode,
   UniversalCamera,
   Vector3,
   type AbstractMesh,
@@ -16,7 +18,10 @@ import { createPrimitiveMesh } from "./scene-component-mesh";
 import { RENDERING_GROUP } from "./sorting";
 import { normalizeRenderingQuality } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { allowSceneOcclusionCulling, OCCLUDER_TRIANGLE_BUDGET, primitiveOccluderShape, sceneOcclusionCulling, sceneOcclusionDiagnostics, ViewOcclusion } from "./view-occlusion";
+import {
+  allowSceneOcclusionCulling, OCCLUDER_TRIANGLE_BUDGET, primitiveOccluderShape, sceneOcclusionBuffer, sceneOcclusionCulling,
+  sceneOcclusionDiagnostics, setOccluderMode, setSceneOcclusionFrozen, registerModelOccluder, ViewOcclusion,
+} from "./view-occlusion";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -35,7 +40,7 @@ function view({ rightHanded = false } = {}) {
   camera.minZ = 0.1;
   camera.maxZ = 1000;
   scene.activeCamera = camera;
-  allowSceneOcclusionCulling(scene, true);
+  allowSceneOcclusionCulling(scene, "setting");
   occlusionSetting(scene, true);
   const world = (mesh: Mesh) => {
     mesh.renderingGroupId = RENDERING_GROUP.world;
@@ -105,9 +110,43 @@ describe("ViewOcclusion", () => {
     expect(filter()).toBe(meshes);
     expect(sceneOcclusionDiagnostics(scene)).toBeNull();
     occlusionSetting(scene, true);
-    allowSceneOcclusionCulling(scene, false);
+    allowSceneOcclusionCulling(scene, "never");
     expect(filter()).toBe(meshes);
     expect(sceneOcclusionCulling(scene)).toBe(false);
+  });
+
+  it("culls in the editor viewport's \"always\" access whatever the setting", () => {
+    const { scene, meshes, filter } = view();
+    occlusionSetting(scene, false);
+    allowSceneOcclusionCulling(scene, "always");
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    allowSceneOcclusionCulling(scene, "never");
+    expect(filter()).toBe(meshes);
+  });
+
+  it("frozen, keeps testing against the view it last drew while the camera turns away", () => {
+    const { scene, camera, hidden, filter, occlusion } = view();
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    setSceneOcclusionFrozen(scene, true);
+    // Moved behind the hidden box, looking back at it with nothing between: the frozen view still hides it.
+    camera.position.set(0, 0, 22);
+    camera.setTarget(hidden.position);
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    expect(occlusion.diagnostics).toMatchObject({ culled: 1, occluders: 2 });
+    setSceneOcclusionFrozen(scene, false);
+    expect(names(filter())).toContain("hidden");
+  });
+
+  it("hands the overlay its buffer, nearest occluder depths at the top row first, only while it culls", () => {
+    const { scene, filter } = view();
+    filter();
+    const buffer = sceneOcclusionBuffer(scene)!;
+    expect({ width: buffer.width, height: buffer.height }).toEqual({ width: 256, height: 128 });
+    // The wall's near side, 4.85 m away, fills the middle; a corner sees past it.
+    expect(buffer.depth[64 * 256 + 128]).toBeCloseTo(4.85, 3);
+    expect(buffer.depth[0]).toBe(Infinity);
+    occlusionSetting(scene, false);
+    expect(sceneOcclusionBuffer(scene)).toBeNull();
   });
 
   it("returns the input list itself when nothing is hidden", () => {
@@ -227,6 +266,46 @@ describe("ViewOcclusion", () => {
     // The wall's faces toward the camera lie 4.85 m away, its back 5.15 m.
     const buffer = (setup.occlusion as unknown as { buffer: { depthAt(x: number, y: number): number } }).buffer;
     expect(buffer.depthAt(128, 64)).toBeCloseTo(4.85, 3);
+  });
+
+  it("follows a mesh's Occluder: Never hides nothing, Always occludes even when small on screen", () => {
+    const never = view();
+    setOccluderMode(never.wall, "never");
+    expect(names(never.filter())).toContain("hidden");
+    // A post far away, too small on screen to draw as an occluder, right in front of a smaller box.
+    const small = view();
+    small.wall.position.set(0, 0, 60);
+    small.wall.scaling.set(4, 4, 0.2);
+    small.hidden.position.set(0, 0, 70);
+    small.hidden.scaling.set(0.4, 0.4, 0.4);
+    expect(names(small.filter())).toContain("hidden");
+    setOccluderMode(small.wall, "always");
+    expect(names(small.filter())).not.toContain("hidden");
+  });
+
+  it("draws a Model's baked box in its actor's space, and not while the camera is inside the model's bounds", () => {
+    const { scene, camera, hidden, beside, filter } = view();
+    // A model: an actor root at 5 m with a mesh under it; its baked box spans the wall's extent.
+    const root = new TransformNode("model-root", scene);
+    root.position.set(0, 0, 5);
+    const part = MeshBuilder.CreateBox("model-part", { width: 9, height: 6, depth: 0.3 }, scene);
+    part.parent = root;
+    part.renderingGroupId = RENDERING_GROUP.world;
+    registerModelOccluder(root, { min: [-4.4, -2.9, -0.1], max: [4.4, 2.9, 0.1], boundsMin: [-4.5, -3, -0.15], boundsMax: [4.5, 3, 0.15] });
+    expect(names(filter([part, hidden, beside]))).toEqual(["model-part", "beside"]);
+    // A viewer inside the model's bounds is never shown its box.
+    camera.position.set(0, 0, 5);
+    expect(names(filter([part, hidden, beside]))).toContain("hidden");
+    // A see-through part of the model (its glass) stops the box occluding.
+    camera.position.set(0, 0, 0);
+    const glass = MeshBuilder.CreateBox("model-glass", { size: 1 }, scene);
+    glass.parent = root;
+    glass.renderingGroupId = RENDERING_GROUP.world;
+    const material = new StandardMaterial("glass", scene);
+    material.alpha = 0.4;
+    glass.material = material;
+    registerModelOccluder(root, { min: [-4.4, -2.9, -0.1], max: [4.4, 2.9, 0.1], boundsMin: [-4.5, -3, -0.15], boundsMax: [4.5, 3, 0.15] });
+    expect(names(filter([part, glass, hidden, beside]))).toContain("hidden");
   });
 
   it("draws the largest occluders first, up to the triangle budget", () => {

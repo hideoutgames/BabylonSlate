@@ -17,6 +17,7 @@ import {
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
+import { StandardFogPlugin } from "./standard-reference";
 
 const SCENARIOS = ["sun", "deep", "grazing", "glint", "fog", "environment"] as const;
 type Scenario = (typeof SCENARIOS)[number];
@@ -62,11 +63,14 @@ export async function runWaterTemplateProof(backend: "webgl2" | "webgpu" = "webg
     floor.position.y = -0.8;
     const sand = new StandardMaterial("sand", scene);
     sand.diffuseColor = new Color3(0.76, 0.68, 0.5);
+    // The floor and pole fog by the rule every engine surface fogs by, which the water's own fog is measured against.
+    new StandardFogPlugin(sand);
     floor.material = sand;
     const pole = MeshBuilder.CreateBox("pole", { width: 0.6, height: 4, depth: 0.6 }, scene);
     pole.position.set(1.5, 1.2, 6);
     const red = new StandardMaterial("red", scene);
     red.diffuseColor = new Color3(0.8, 0.1, 0.08);
+    new StandardFogPlugin(red);
     pole.material = red;
     const sky = skyCube(scene);
     const graph = new ForwardSceneFrameGraph(scene);

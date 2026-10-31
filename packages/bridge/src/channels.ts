@@ -673,6 +673,8 @@ export type CommandMessage =
         overlayStyle?: import("@haptic/core").OverlayVisualStyle;
         castShadows?: boolean;
         receiveShadows?: boolean;
+        /** A MeshComponent's Occluder: "auto" (absent), "always" or "never". */
+        occluder?: "auto" | "always" | "never";
         meshKind?: string | null;
         meshAssetGuid?: string | null;
         parentId?: string | null;
@@ -1060,6 +1062,8 @@ export type CommandMessage =
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
   | { type: "setScalability"; transaction: ScalabilityTransaction }
   | { type: "setLightsDebug"; enabled: boolean }
+  /** Debug: the occlusion overlay (`showocclusion`) and frozen occlusion (`freezeocclusion`); an absent field stays as it is. */
+  | { type: "setOcclusionDebug"; show?: boolean; freeze?: boolean }
   /** Debug: the Play view's post-processing as a whole (the `postprocessing` console command). */
   | { type: "setPostProcessingDebug"; enabled: boolean }
   /** Debug: whether every-frame Render Target Captures draw (the `rendertargets` console command). */

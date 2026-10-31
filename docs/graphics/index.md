@@ -52,11 +52,13 @@ Targets are guides, not guarantees. Profile on the devices you ship to.
 
 With **Occlusion Culling** on (the **Geometry** group of Scalability), Play and exported games skip objects that are wholly hidden behind solid shapes. Fewer draws can raise the frame rate in dense scenes, such as streets and rooms. It is off on every level, so turn it on per project and measure it on your devices.
 
-- Box, Sphere and Cylinder meshes from a Mesh component hide what is behind them, and Plane meshes do when two-sided. Imported models are not used to hide others.
+- Box, Sphere and Cylinder meshes from a Mesh component hide what is behind them, and Plane meshes do when two-sided.
+- An imported model hides what is behind it when it is closed and solid: on import, Haptic finds a box that fits inside it, and uses that box. Open, flat or animated models do not hide anything, and a model only hides things while you look at it from outside.
+- A Mesh component's **Occluder** chooses per object: **Auto**, **Always** (even when small on screen) or **Never**.
 - A shape hides things only while it is opaque, fills enough of the screen, and is not see-through or animated by its material.
 - Objects are only skipped when no part of them could be in view. Shadows, reflections, captures and picking still include them.
-- The editor viewport does not cull this way.
-- In Play, `quality geometry occlusion on` turns it on for the session, and `stat draws` shows how many objects it skipped and what that cost.
+- To preview it in the editor, turn on **Occlusion Culling** in the viewport's **View** menu. It is off in each new session and does not change the project setting.
+- In Play, `quality geometry occlusion on` turns it on for the session, and `stat draws` shows how many objects it skipped and what that cost. `showocclusion on` shows the solid shapes it uses, and `freezeocclusion on` keeps the current view's result while you move with `freecam`, so you can see what it skipped.
 
 ## Resolution and frame rate
 

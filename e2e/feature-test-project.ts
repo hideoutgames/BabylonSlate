@@ -14,6 +14,7 @@ export const FEATURE_TEST_SCENES = {
   lights: "assets/FeatureTest/Scenes/FT_Lights.scene.hasset",
   "2d": "assets/FeatureTest/Scenes/FT_2D.scene.hasset",
   world: "assets/FeatureTest/Scenes/FT_World.scene.hasset",
+  occlusion: "assets/FeatureTest/Scenes/FT_Occlusion.scene.hasset",
 } as const;
 
 export type FeatureTestSceneName = keyof typeof FEATURE_TEST_SCENES;

@@ -8,6 +8,7 @@ export const FEATURE_TEST_CHECK_SCENES = [
   { name: "main", path: "assets/main.scene.hasset" },
   { name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset" },
   { name: "FT_Lights", path: "assets/FeatureTest/Scenes/FT_Lights.scene.hasset" },
+  { name: "FT_Occlusion", path: "assets/FeatureTest/Scenes/FT_Occlusion.scene.hasset" },
   { name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.hasset" },
   { name: "FT_Stress", path: "assets/FeatureTest/Scenes/FT_Stress.scene.hasset" },
 ] as const;
@@ -15,6 +16,8 @@ export const FEATURE_TEST_CHECK_SCENES = [
 /** Console commands each scene runs in Play; the main scene exercises the full set. */
 export function featureTestCheckCommands(sceneName: string, mode: FeatureTestCheckMode): string[] {
   if (sceneName === "main" && mode === "full") return ["ft_stats", "ft_spawn 10", "ft_stats", "ft_stream", "ft_cel", "ft_pbr"];
+  // Occlusion Culling is off on every tier: the yardstick turns it on.
+  if (sceneName === "FT_Occlusion") return ["ft_stats", "ft_occlusion"];
   return ["ft_stats"];
 }
 

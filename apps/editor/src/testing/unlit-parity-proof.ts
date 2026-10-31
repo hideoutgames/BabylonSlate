@@ -1,19 +1,21 @@
 /**
- * Test-build-only check that the engine's unlit Material (`unlit-material.ts`) draws what the Standard materials it
- * replaces drew. Each quad is drawn twice in the same view: once with a frozen copy of the Standard setup the engine
+ * Test-build-only check that the engine's unlit Material (`unlit-material.ts`) draws what the Standard materials (and
+ * Text2D's MSDF shader) it replaces drew. Each quad is drawn twice in the same view: once with a frozen copy of the Standard setup the engine
  * used before the migration, once with the unlit binding, in Legacy Display (PBR and CEL) and Scene Linear (no tone
  * mapping and ACES), without fog and with linear and exponential fog. The two images are compared channel by channel.
  */
 import {
-  Camera, Color3, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Texture,
-  Vector3, VertexBuffer, type AbstractEngine, type Mesh,
+  Camera, Color3, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, RawTexture, Scene, StandardMaterial, Texture,
+  Vector3, VertexBuffer, type AbstractEngine, type Material, type Mesh,
 } from "@babylonjs/core";
 import { normalizeRenderEffectsSettings, type RenderMode } from "@haptic/core";
 import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "../../../../packages/render/src/overlay-visual-style";
 import { atlasImageProcessing, setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "../../../../packages/render/src/unlit-material";
+import { msdfReferenceMaterial } from "./msdf-reference";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
+import { StandardFogPlugin } from "./standard-reference";
 
 const WIDTH = 96;
 const HEIGHT = 48;
@@ -21,7 +23,14 @@ const HEIGHT = 48;
 type Case = {
   name: string;
   /** The Standard setup the engine used (`texture` is the flipped one for `flipped` cases). */
-  standard: (material: StandardMaterial, texture: Texture) => void;
+  standard?: (material: StandardMaterial, texture: Texture) => void;
+  /** A reference that is no Standard setup: Text2D's MSDF shader, over the distance-field atlas. */
+  reference?: (scene: Scene, atlas: Texture) => Material;
+  /**
+   * Samples the distance-field atlas instead of the gradient. Not drawn with ambient occlusion and reflections: the
+   * MSDF shader drew nothing into the geometry pass, and the unlit glyph writes it as every blended surface does.
+   */
+  msdf?: boolean;
   /** Samples the gradient through a non-identity texture matrix (vertically flipped), as a KTX2 sprite does. */
   flipped?: boolean;
   key: UnlitMaterialKey;
@@ -165,6 +174,32 @@ const CASES: Case[] = [
     binding: (texture) => ({ ...unbound, texture, blend: true }),
     prepare: (mesh) => { mesh.visibility = 0.5; },
   },
+  {
+    // A Text2D MSDF glyph (`text2d-mesh.ts` before the migration): its fill alone, antialiased at its edge.
+    name: "msdf",
+    msdf: true,
+    reference: (scene, atlas) => msdfReferenceMaterial(scene, [0.95, 0.85, 0.2], 0, [0, 0, 0], atlas),
+    key: { textured: true, msdf: true, backFaceCulling: false, fog: false, role: "world", imageProcessing: "atlas" },
+    binding: (atlas) => ({
+      ...unbound, texture: atlas, color: [0.95, 0.85, 0.2], cutoff: 0.01, blend: true, textureAlpha: false,
+      msdf: { strokeColor: [0, 0, 0], strokeWidth: 0 },
+    }),
+  },
+  {
+    // An outlined MSDF glyph (outline 4), fading, under an overlay tint.
+    name: "msdfOutline",
+    msdf: true,
+    reference: (scene, atlas) => msdfReferenceMaterial(scene, [0.2, 0.9, 0.6], 4, [0.8, 0.1, 0.3], atlas),
+    key: { textured: true, msdf: true, backFaceCulling: false, fog: false, role: "world", imageProcessing: "atlas" },
+    binding: (atlas) => ({
+      ...unbound, texture: atlas, color: [0.2, 0.9, 0.6], cutoff: 0.01, blend: true, textureAlpha: false,
+      msdf: { strokeColor: [0.8, 0.1, 0.3], strokeWidth: 4 * 0.08 },
+    }),
+    prepare: (mesh) => {
+      mesh.visibility = 0.8;
+      applyOverlayVisualStyle(mesh, { opacity: 0.9, tint: [1, 0.8, 0.6, 1] });
+    },
+  },
 ];
 
 type Mode = {
@@ -187,6 +222,25 @@ const FOGS = [
   { name: "linear", mode: Scene.FOGMODE_LINEAR },
   { name: "exp2", mode: Scene.FOGMODE_EXP2 },
 ];
+
+/**
+ * A disc's signed distance field, 0.5 on its edge, with each channel offset differently so only their median is the
+ * distance, as in a multi-channel atlas.
+ */
+function msdfTexture(scene: Scene): RawTexture {
+  const size = 64;
+  const pixels = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const distance = Math.hypot((x + 0.5) / size - 0.5, (y + 0.5) / size - 0.5);
+    const field = 0.5 + (0.3 - distance) * 2.5;
+    const channel = (offset: number) => Math.round(Math.min(1, Math.max(0, field + offset)) * 255);
+    pixels.set([channel(0.12), channel(0), channel(-0.12), 255], (y * size + x) * 4);
+  }
+  // As the engine loads an MSDF atlas: no mipmaps, bilinear, not flipped.
+  const texture = RawTexture.CreateRGBATexture(pixels, size, size, scene, false, false, Texture.BILINEAR_SAMPLINGMODE);
+  texture.wrapU = texture.wrapV = Texture.CLAMP_ADDRESSMODE;
+  return texture;
+}
 
 /** A gradient with an alpha ramp: smooth colour, coverage on both sides of the cutoff. */
 function gradientTexture(scene: Scene): DynamicTexture {
@@ -224,6 +278,8 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
     const texture = gradientTexture(scene);
     const flipped = gradientTexture(scene);
     flipped.vScale = -1;
+    const atlas = msdfTexture(scene);
+    const textureOf = (entry: Case) => entry.msdf ? atlas : entry.flipped ? flipped : texture;
     // Behind every quad, in both draws: the geometry effects read the quads' depth and normals against it.
     const backdrop = MeshBuilder.CreatePlane("backdrop", { width: 20, height: 10 }, scene);
     backdrop.position.z = 1;
@@ -232,10 +288,17 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
     backdropMaterial.emissiveColor = new Color3(0.35, 0.35, 0.35);
     backdrop.material = backdropMaterial;
     const quads = CASES.map((entry, index) => {
-      const mesh = MeshBuilder.CreatePlane(entry.name, { width: 3.1, height: 3.6 }, scene);
-      mesh.position.set(-6.75 + (index % 5) * 3.375, index < 5 ? 1.9 : -1.9, 0);
-      const standard = new StandardMaterial(`${entry.name}-standard`, scene);
-      entry.standard(standard, entry.flipped ? flipped : texture);
+      const mesh = MeshBuilder.CreatePlane(entry.name, { width: 2.5, height: 3.6 }, scene);
+      mesh.position.set(-6.875 + (index % 6) * 2.75, index < 6 ? 1.9 : -1.9, 0);
+      let standard: Material;
+      if (entry.reference) standard = entry.reference(scene, textureOf(entry));
+      else {
+        const material = new StandardMaterial(`${entry.name}-standard`, scene);
+        // The engine's Standard fog rule, as every Standard surface drew with it.
+        new StandardFogPlugin(material);
+        entry.standard!(material, textureOf(entry));
+        standard = material;
+      }
       entry.prepare?.(mesh);
       return { entry, mesh, standard };
     });
@@ -273,6 +336,7 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
         effects.reflections.enabled = true;
       }
       setSceneRenderSettings(scene, { mode: mode.mode, effects });
+      for (const quad of quads) quad.mesh.setEnabled(!(mode.spatial && quad.entry.msdf));
       for (const fog of FOGS) {
         scene.fogMode = fog.mode;
         for (const quad of quads) {
@@ -280,7 +344,7 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
           enableOverlayVisualMaterial(quad.mesh);
         }
         const standard = await draw();
-        for (const quad of quads) setUnlitMaterial(quad.mesh, quad.entry.key, quad.entry.binding(quad.entry.flipped ? flipped : texture));
+        for (const quad of quads) setUnlitMaterial(quad.mesh, quad.entry.key, quad.entry.binding(textureOf(quad.entry)));
         const unlit = await draw();
         results.push({ mode: mode.name, fog: fog.name, standard, unlit });
       }

@@ -1,7 +1,13 @@
-import { Color3, Geometry, Mesh, StandardMaterial, VertexData, type Scene } from "@babylonjs/core";
+import { Geometry, Mesh, VertexData, type Scene } from "@babylonjs/core";
 import geometryData from "./editor-camera-geometry.json";
 import { applyEditorBillboardPass } from "./editor-billboard";
-import { shareHelperProgram } from "./helper-program";
+import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
+
+/** Its vertex colours, front faces only; editor helpers draw without fog. */
+const CAMERA_MODEL_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: true, fog: false, role: "helper" };
+const CAMERA_MODEL_BINDING: UnlitBinding = {
+  texture: null, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+};
 
 /** Outside Babylon's default camera mask; only the editor navigation camera opts in. */
 export const EDITOR_CAMERA_MODEL_LAYER = 0x10000000;
@@ -9,7 +15,6 @@ export const EDITOR_CAMERA_MODEL_KIND = "editor-camera-model";
 
 type CameraResources = {
   geometry: Geometry;
-  material: StandardMaterial;
   users: number;
 };
 const resourcesByScene = new WeakMap<Scene, CameraResources>();
@@ -34,22 +39,15 @@ export function createEditorCameraModel(scene: Scene, name: string): Mesh {
         1,
       );
     }
-    const material = shareHelperProgram(new StandardMaterial("editorCameraMaterial", scene));
-    material.disableLighting = true;
-    material.emissiveColor = Color3.White();
-    material.diffuseColor = Color3.Black();
-    material.specularColor = Color3.Black();
-    material.fogEnabled = false;
     resources = {
       geometry: new Geometry("editorCameraGeometry", scene, vertices, false),
-      material,
       users: 0,
     };
     resourcesByScene.set(scene, resources);
   }
   const mesh = new Mesh(name, scene);
   resources.geometry.applyToMesh(mesh);
-  mesh.material = resources.material;
+  setUnlitMaterial(mesh, CAMERA_MODEL_MATERIAL, CAMERA_MODEL_BINDING);
   mesh.hasVertexAlpha = false;
   mesh.metadata = { editorCameraModel: true };
   mesh.layerMask = EDITOR_CAMERA_MODEL_LAYER;
@@ -59,7 +57,6 @@ export function createEditorCameraModel(scene: Scene, name: string): Mesh {
   mesh.onDisposeObservable.addOnce(() => {
     if (--shared.users !== 0) return;
     shared.geometry.dispose();
-    shared.material.dispose();
     resourcesByScene.delete(scene);
   });
   return mesh;

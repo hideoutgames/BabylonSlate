@@ -6,7 +6,6 @@ import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Tex
 import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 // Unlit Standard surfaces write no reflectivity: installed before any reflectivity geometry pass compiles.
-import "./standard-reflectivity";
 import {
   createSpatialStages,
   spatialEffectsUnsupported,
