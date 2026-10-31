@@ -11,6 +11,7 @@ import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
+import { sceneOutputScale } from "./scene-output-scale";
 import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapsTolerated } from "./variant-swaps";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
@@ -53,7 +54,7 @@ function outputSnapshot(scene: Scene, camera: Camera) {
   const size = target?.getSize();
   const engine = scene.getEngine();
   return [camera, target, target?.getInternalTexture(), target?.depthStencilTexture,
-    size?.width ?? engine.getRenderWidth(true), size?.height ?? engine.getRenderHeight(true)] as const;
+    size?.width ?? engine.getRenderWidth(true), size?.height ?? engine.getRenderHeight(true), target ? 1 : sceneOutputScale(scene)] as const;
 }
 
 export type SceneRenderCoordinatorOptions = {

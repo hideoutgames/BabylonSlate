@@ -154,3 +154,17 @@ describe("quality resolution bounds", () => {
     engine.dispose();
   });
 });
+
+describe("scaling target", () => {
+  it("sends every level to `apply` and leaves the Engine's hardware scaling alone", () => {
+    const setHardwareScalingLevel = vi.fn();
+    const applied: number[] = [];
+    const scaling = new HardwareScalingController({ setHardwareScalingLevel } as unknown as NullEngine, {
+      minLevel: 1, maxLevel: 4, cooldownFrames: 0, initialLevel: 1.5, apply: (level) => applied.push(level),
+    });
+    for (let i = 0; i < 5; i++) scaling.noteFramePressure(sample(33, 3));
+    scaling.setSettingsLevel(3);
+    expect(applied).toEqual([1.5, 1.75, 3]);
+    expect(setHardwareScalingLevel).not.toHaveBeenCalled();
+  });
+});

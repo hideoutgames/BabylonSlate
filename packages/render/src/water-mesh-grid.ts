@@ -252,7 +252,9 @@ export function updateLayout(s: Surface, world: Matrix, inverse: Matrix): Layout
   writeRestPositions(s, 0, count);
   const uvs: number[] = [];
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) uvs.push(col / columns, row / rows);
-  const indices = body.kind === "global" ? thinnedGridIndices(xs, zs) : gridIndices(columns, rows, body.kind === "river");
+  // Global Water's blend rows are found after its blend data are written: `syncGlobalIndices` keeps them whole then.
+  s.indexRows[0] = 1; s.indexRows[1] = 0;
+  const indices = body.kind === "global" ? thinnedGridIndices(xs, zs, s.indexRows) : gridIndices(columns, rows, body.kind === "river");
   const data = new VertexData();
   data.positions = s.positions; data.normals = s.normals; data.indices = indices; data.uvs = uvs;
   data.applyToMesh(mesh, true);
@@ -310,9 +312,10 @@ function gridIndices(columns: number, rows: number, river: boolean): number[] {
  * lines zips their kept vertices together, so every edge is shared by both its triangles and nothing cracks. Near the
  * camera every column is kept and the triangles are the full grid's. Vertices are unchanged: unused ones are not drawn.
  */
-function thinnedGridIndices(xs: ArrayLike<number>, zs: ArrayLike<number>): number[] {
+function thinnedGridIndices(xs: ArrayLike<number>, zs: ArrayLike<number>, whole: Int32Array): number[] {
   const columns = xs.length - 1, rows = zs.length - 1, stride = columns + 1;
   const kept = Array.from({ length: rows + 1 }, (_, line) => {
+    if (line >= whole[0]! && line <= whole[1]!) return Array.from({ length: columns + 1 }, (_, col) => col);
     const width = Math.min(line > 0 ? zs[line]! - zs[line - 1]! : Infinity, line < rows ? zs[line + 1]! - zs[line]! : Infinity);
     const cols = [0];
     for (let col = 1; col < columns; col++) if (xs[col]! - xs[cols[cols.length - 1]!]! >= width * (1 - 1e-6)) cols.push(col);
@@ -335,6 +338,25 @@ function thinnedGridIndices(xs: ArrayLike<number>, zs: ArrayLike<number>): numbe
     }
   }
   return indices;
+}
+
+/**
+ * Keeps every column of the grid lines a blending Global Water's blend data vary over: its rows within a neighbour's
+ * reach (`blendRows`) and one line either side. The ownership margin and the union shoreline are per-vertex values the
+ * fragment discards on, so across a thinned far cell (hundreds of metres wide) a vertex inside a neighbour would cut a
+ * triangle of open water away with it. Rebuilds the index buffer only when those lines change: a recentre near a
+ * neighbour or a blend refresh moves them; nothing else does.
+ */
+export function syncGlobalIndices(s: Surface): void {
+  if (s.body.kind !== "global" || !s.base.length) return;
+  const rows = s.gridZ.length - 1;
+  const first = s.blend ? Math.max(0, s.blendRows[0]! - 1) : 1, last = s.blend ? Math.min(rows, s.blendRows[1]! + 1) : 0;
+  const empty = first > last, was = s.indexRows[0]! > s.indexRows[1]!;
+  if (empty && was) return;
+  if (first === s.indexRows[0] && last === s.indexRows[1]) return;
+  s.indexRows[0] = first; s.indexRows[1] = last;
+  const xs = s.gridX, zs = s.gridZ;
+  s.mesh.setIndices(thinnedGridIndices(xs, zs, s.indexRows), s.base.length / 3, true);
 }
 
 /**

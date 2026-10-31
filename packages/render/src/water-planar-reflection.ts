@@ -45,6 +45,7 @@ import { ReflectedContent } from "./reflected-content";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { waterMeshReflectsObjects, waterMeshRestVaries } from "./water-mesh";
+import { sceneViewRenderSize } from "./scene-output-scale";
 
 /** One view's planar reflection, valid for the scene render in which it was returned. */
 export interface WaterPlanarReflection {
@@ -327,9 +328,9 @@ class WaterPlanarReflections {
     if (camera.mode !== Camera.PERSPECTIVE_CAMERA || camera.rigCameras.length > 0 || (scene.activeCameras?.length ?? 0) > 1) return false;
     const linear = scene.imageProcessingConfiguration.applyByPostProcess;
     if (linear && !engine.getCaps().textureHalfFloatRender) return false;
-    const output = camera.outputRenderTarget;
-    const viewWidth = (output ? output.getRenderWidth() : engine.getRenderWidth(true)) * camera.viewport.width;
-    const viewHeight = (output ? output.getRenderHeight() : engine.getRenderHeight(true)) * camera.viewport.height;
+    const viewSize = sceneViewRenderSize(scene, camera.outputRenderTarget);
+    const viewWidth = viewSize.width * camera.viewport.width;
+    const viewHeight = viewSize.height * camera.viewport.height;
     if (!(viewWidth >= 1 && viewHeight >= 1)) return false;
     // The view's own projection, built from the camera's settings rather than read back, so a bound
     // framebuffer of another size cannot change the camera's cached matrix here.
