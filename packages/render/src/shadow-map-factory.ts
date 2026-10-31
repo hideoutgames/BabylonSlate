@@ -13,7 +13,7 @@ import {
   Camera,
 } from "@babylonjs/core";
 import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
-import { AtlasCascadedShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowTileSize } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
@@ -371,6 +371,7 @@ export function applyShadowSettings(
   generator.bias = settings.depthBias;
   generator.normalBias = settings.normalBias;
   generator.frustumEdgeFalloff = 0;
+  if (generator instanceof AtlasShadowGenerator) generator.filterReferenceSize = settings.localMapSize;
   if (generator instanceof AtlasCascadedShadowGenerator) {
     generator.fadeFraction = settings.fadeFraction;
     generator.autoBias = settings.autoBias;

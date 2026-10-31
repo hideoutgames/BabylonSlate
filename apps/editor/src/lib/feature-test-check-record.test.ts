@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeatureTestCheckReport } from "../services/feature-test-check";
-import { clearUnfinishedCheck, loadUnfinishedCheck, saveUnfinishedCheck } from "./feature-test-check-record";
+import { clearUnfinishedCheck, loadCheckEnded, loadSavedCheck, saveCheckEnded, saveUnfinishedCheck } from "./feature-test-check-record";
 import { formatFeatureTestCheckReport } from "./feature-test-check-report";
 
 const report: FeatureTestCheckReport = {
@@ -32,12 +32,12 @@ describe("the unfinished Feature Test Check", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("comes back after a crash with its last step and resource samples, until cleared", () => {
-    expect(loadUnfinishedCheck()).toBeNull();
+    expect(loadSavedCheck()).toBeNull();
     saveUnfinishedCheck({
       step: "main: benchmarking high", report,
       resources: [sample(30_000, "main: benchmarking medium", 400), sample(40_000, "main: benchmarking high", 900)],
     });
-    const restored = loadUnfinishedCheck()!;
+    const restored = loadSavedCheck()!;
     expect(restored.scenes[0].play.benchmark.map((entry) => entry.label)).toEqual(["low"]);
     const lines = formatFeatureTestCheckReport(restored, {
       appVersion: "1.2.3", userAgent: "iPad", platform: "iPad", touchPoints: 5, devicePixelRatio: 2, screen: "1180x820", viewport: "1180x820", cores: 6, memoryGb: null,
@@ -50,15 +50,23 @@ describe("the unfinished Feature Test Check", () => {
       "  40.0 s   300 shaders (40 compiling) · Play drawn 900, held 120, CONTEXT LOST 1x · 120 textures (900 MB) · app 1500 MB · main: benchmarking high",
     ]);
     clearUnfinishedCheck();
-    expect(loadUnfinishedCheck()).toBeNull();
+    expect(loadSavedCheck()).toBeNull();
+  });
+
+  it("keeps when the last check ended for the next Breakdown's warm-device note, and nothing it cannot read", () => {
+    expect(loadCheckEnded()).toBeNull();
+    saveCheckEnded(1_790_000_000_000);
+    expect(loadCheckEnded()).toBe(1_790_000_000_000);
+    store.set("haptic:feature-test-check:ended", "soon");
+    expect(loadCheckEnded()).toBeNull();
   });
 
   it("ignores a record it cannot read, and runs on without storage", () => {
     store.set("haptic:feature-test-check:unfinished", "{not json");
-    expect(loadUnfinishedCheck()).toBeNull();
+    expect(loadSavedCheck()).toBeNull();
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("denied"); } });
     expect(() => saveUnfinishedCheck({ step: "x", report, resources: [] })).not.toThrow();
-    expect(loadUnfinishedCheck()).toBeNull();
+    expect(loadSavedCheck()).toBeNull();
     expect(() => clearUnfinishedCheck()).not.toThrow();
   });
 });

@@ -43,6 +43,7 @@ import { connectGeometrySurfaceOutput, GeometrySurfaceOutputBlock } from "./geom
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
+import { sceneViewRenderSize } from "./scene-output-scale";
 
 export { isMirrorSurfaceMesh } from "./mirror-surface-state";
 
@@ -170,9 +171,9 @@ class SceneMirrors {
     if (!camera || camera.mode !== Camera.PERSPECTIVE_CAMERA || camera.rigCameras.length > 0 || (scene.activeCameras?.length ?? 0) > 1) return;
     const linear = scene.imageProcessingConfiguration.applyByPostProcess;
     if (linear && !engine.getCaps().textureHalfFloatRender) return;
-    const output = camera.outputRenderTarget;
-    const viewWidth = (output ? output.getRenderWidth() : engine.getRenderWidth(true)) * camera.viewport.width;
-    const viewHeight = (output ? output.getRenderHeight() : engine.getRenderHeight(true)) * camera.viewport.height;
+    const view = sceneViewRenderSize(scene, camera.outputRenderTarget);
+    const viewWidth = view.width * camera.viewport.width;
+    const viewHeight = view.height * camera.viewport.height;
     if (!(viewWidth >= 1 && viewHeight >= 1)) return;
     buildViewProjectionMatrix(scene, camera, viewWidth / viewHeight, this.projection);
     camera.getViewMatrix().multiplyToRef(this.projection, this.viewProjection);

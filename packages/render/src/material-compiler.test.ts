@@ -11,6 +11,7 @@ import {
 } from "@haptic/shader-graph";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
 import { HapticLightingBlock } from "./haptic-lighting-block";
+import { setMeshShadowFlags } from "./instance-pool";
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
@@ -67,6 +68,36 @@ it("rebinds each mesh's bone palette when sharing a frozen compiled material", a
   expect(palettes.at(-1)).toBe(meshes[1]!.skeleton!.getTransformMatrixTexture(meshes[1]!));
   expect(palettes).toContain(meshes[0]!.skeleton!.getTransformMatrixTexture(meshes[0]!));
   expect(palettes[0]).not.toBe(palettes.at(-1));
+});
+
+it("rebinds each mesh's Receive Shadows and caster mark when sharing a frozen compiled material", async () => {
+  const scene = host();
+  scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+  const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "shared-surface" });
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  const [receiver, other] = ["receiver", "other"].map((name) => {
+    const mesh = MeshBuilder.CreateBox(name, {}, scene);
+    mesh.material = result.material;
+    return mesh;
+  });
+  setMeshShadowFlags(receiver!, true, true);
+  setMeshShadowFlags(other!, false, false);
+  for (const mesh of [receiver!, other!]) {
+    await result.material.forceCompilationAsync(mesh);
+    expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes![0]!)).toBe(true);
+  }
+  result.material.freeze();
+  const effect = receiver!.subMeshes![0]!.effect!;
+  expect(other!.subMeshes![0]!.effect).toBe(effect);
+  const setFloat = vi.spyOn(effect, "setFloat");
+  // The second draw shares the first's Material and Effect, so Babylon skips the frozen Material's bindings for it.
+  for (const mesh of [receiver!, other!]) result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes![0]!);
+  const values = (pattern: RegExp) => setFloat.mock.calls.filter(([name]) => pattern.test(name)).map(([, value]) => value);
+  expect(values(/^hapticShadowReceiver$/).at(-1)).toBe(0);
+  expect(values(/^hapticGeometryCaster/).at(-1)).toBe(0);
+  expect(values(/^hapticShadowReceiver$/)).toContain(1);
+  expect(values(/^hapticGeometryCaster/)).toContain(1);
 });
 
 function planFor(doc: MaterialDocument, functions = {}) {

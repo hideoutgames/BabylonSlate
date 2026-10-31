@@ -768,7 +768,7 @@ export function beginSlotModelAnimLoad(
       // A static model's rigid leaves, with their slot Materials assigned, draw in the Scene's instance pool; the
       // preparation below then compiles their groups' instanced variants.
       if (!wrapped.length) {
-        poolModelLeaves(prepared.staging, container, { autoLod, retain: () => {
+        poolModelLeaves(prepared.staging, container, { retain: () => {
           const hold = acquireGlbContainer(scene, clipAssetGuid, bytes, priority);
           return () => hold.release();
         } });

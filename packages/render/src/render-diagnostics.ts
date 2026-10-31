@@ -10,6 +10,7 @@ import {
 import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
 import { effectiveShadowSettings } from "@haptic/core";
 import { resolveSceneRenderingQuality, sceneEffectsQualityLimits, sceneRenderingSettings } from "./render-settings";
+import { sceneViewRenderSize } from "./scene-output-scale";
 import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
 import { sceneOcclusionDiagnostics } from "./view-occlusion";
@@ -27,7 +28,8 @@ export type RenderDiagnostics = {
   /**
    * A compact fingerprint of the effective settings the Feature Test Check's Breakdown steps change (`field: value`):
    * shadows, device-clamped water refraction, reflections and shading detail, post-processing tier flags and whether
-   * post-processing runs, every-frame captures, resolution scale. A step that changes more than its own fields shows.
+   * post-processing runs, every-frame captures, resolution scale, occlusion culling, and the live context's
+   * preserveDrawingBuffer. A step that changes more than its own fields shows.
    */
   settings?: Record<string, string>;
   /**
@@ -169,8 +171,9 @@ export function createRenderDiagnostics(
           : "unsupported",
       pressure: sample,
       gpuAttribution,
-      width: size?.width ?? engine.getRenderWidth(),
-      height: size?.height ?? engine.getRenderHeight(),
+      // The world's render size: its output target's, or the backbuffer at the Scene's output scale.
+      width: size?.width ?? sceneViewRenderSize(scene, null).width,
+      height: size?.height ?? sceneViewRenderSize(scene, null).height,
       scalingLevel: engine.getHardwareScalingLevel(),
       samples: target?.samples ?? 1,
       shadowPasses: metrics.passes,

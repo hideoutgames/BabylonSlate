@@ -62,9 +62,16 @@ Feature Test is a developer starter that places every engine feature in a few sc
 1. Turn on **Engine Settings > Debugger > Debug Mode**.
 2. Create a project from the **Feature Test** starter.
 3. Choose **Debug > Run Feature Test Check…** (on phones, **More Tools** first).
-4. Pick **Quick (Current Scene)**, **Full (All Scenes)** or **Benchmark**, then choose **Start**.
+4. Pick **Quick (Current Scene)**, **Full (All Scenes)**, **Benchmark** or **Breakdown**, then choose **Start**.
 5. When it finishes, choose **Copy Report** to copy the plain-text results.
 
 If the app crashes or reloads during a check, choose **Run Feature Test Check…** again: it shows the report up to where the app stopped, with what the editor held at the end, so you can still copy it.
 
 Benchmark plays every scene at each quality level and takes about ten minutes; keep the device awake and plugged in.
+
+Breakdown shows what each feature costs your device's GPU. It plays two scenes at the Medium quality level and turns one feature off at a time, including occlusion culling seen from two cameras. It needs no console commands:
+
+- Halfway through, the editor reloads by itself, reopens the project and measures everything again with the other `preservebuffer` setting, then puts yours back. Choose **Cancel** in the status bar to stop at any point; the report keeps what finished.
+- The report holds both rounds and compares them. It also warns when the device was still warm from a check that ended less than ten minutes earlier, and when the GPU was too busy for the costs to add up.
+
+A Breakdown takes about 20 minutes; keep the device awake and plugged in.

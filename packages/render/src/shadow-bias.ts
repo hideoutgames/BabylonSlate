@@ -1,3 +1,5 @@
+import { SHADOW_FILTER_REACH_TEXELS } from "./shadow-filter";
+
 export type DirectionalShadowBiasInput = {
   /** Current orthographic projection spans, in world units. */
   width: number;
@@ -25,12 +27,13 @@ export type DirectionalShadowBias = {
 /**
  * World texels of normal inset for smooth-normal casters in automatic
  * directional mode. The receiver-plane correction extrapolates each triangle's
- * own plane across the PCF footprint, so at a sculpted heightfield's concave
- * edges the neighbouring triangle rises above it and self-shadows as dark lines
- * along the geometry. Insetting the caster by more than that footprint removes
- * them; continuous normals mean the inset cannot open split-normal edges.
+ * own plane across the filter's reach (`SHADOW_FILTER_REACH_TEXELS`), so at a
+ * sculpted heightfield's concave edges the neighbouring triangle rises above it
+ * and self-shadows as dark lines along the geometry. Insetting the caster by
+ * that reach removes them; continuous normals mean the inset cannot open
+ * split-normal edges.
  */
-export const SMOOTH_CASTER_NORMAL_BIAS_TEXELS = 3;
+export const SMOOTH_CASTER_NORMAL_BIAS_TEXELS = SHADOW_FILTER_REACH_TEXELS;
 const smoothNormalCasters = new WeakSet<object>();
 
 /** Marks a caster whose vertex normals are continuous everywhere, such as a landscape chunk. */
@@ -97,9 +100,9 @@ export function resolveDirectionalShadowBias(
   if (!positiveFinite(worldTexelSize)) return result;
   result.worldTexelSize = worldTexelSize;
 
-  // PCF's receiver-plane correction covers its actual 1/3/5 reconstruction
-  // support. The caster needs only the smallest validated raster correction
-  // (one quarter of a world texel), independent of that receiver kernel.
+  // The filter's receiver-plane correction covers its own footprint
+  // (`SHADOW_FILTER_REACH_TEXELS`). The caster needs only the smallest validated
+  // raster correction (one quarter of a world texel), independent of that kernel.
   // PCSS quality changes sample
   // count, not a fixed filter width, so it uses only the base raster correction.
   const normalizedCorrection = ((input.filter === "pcf" ? 0.25 : 0.5) * worldTexelSize) / input.depth;
