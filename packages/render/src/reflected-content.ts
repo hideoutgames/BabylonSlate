@@ -8,9 +8,12 @@ import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-rev
 import { hasRevisionTrackedLandscapeGeometry } from "./landscape-mesh";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { materialParameterRevision } from "./material-parameters";
+import { hasOwnerNotifiedGeometry } from "./geometry-revision";
+import { overlayVisualStyle } from "./overlay-visual-style";
 import { renderSettingsOwner, sceneRenderingSettings } from "./render-settings";
 import { sceneShadowDraws } from "./shadow-atlas";
 import { hasStaticThinInstances } from "./shadow-material-policy";
+import { hasPerMeshBindings, unlitBinding } from "./unlit-material-blocks";
 
 /** Reused value snapshot: an unchanged call allocates nothing. */
 class Snapshot {
@@ -63,6 +66,8 @@ const STOCK_SCALARS = [
   "alpha", "metallic", "roughness", "microSurface", "specularPower", "directIntensity", "emissiveIntensity", "environmentIntensity",
   "disableLighting", "backFaceCulling", "wireframe",
 ] as const;
+/** Texture placement that changes what a draw samples (its texture matrix). */
+const TEXTURE_PLACEMENT = ["uOffset", "vOffset", "uScale", "vScale", "uAng", "vAng", "wAng"] as const;
 const LIGHT_SCALARS = ["range", "angle", "innerAngle", "exponent", "width", "height", "radius", "shadowEnabled", "lightmapMode"] as const;
 
 /**
@@ -222,6 +227,10 @@ export class ReflectedContent {
     state.value(mesh.visibility);
     state.value(mesh.receiveShadows);
     state.value(mesh.renderingGroupId);
+    // A component's opacity and tint, bound per draw by unlit and Standard materials alike.
+    const style = overlayVisualStyle(source);
+    state.value(style.opacity);
+    state.value(style.tint[0]); state.value(style.tint[1]); state.value(style.tint[2]); state.value(style.tint[3]);
     state.value(source instanceof Mesh ? source.sideOrientation : undefined);
     state.value(geometry);
     const watch = geometry ? geometryRevision(geometry) : null;
@@ -243,6 +252,8 @@ export class ReflectedContent {
       }
     const material = mesh.material ?? scene.defaultMaterial;
     let volatile = this.materialState(material);
+    // An unlit Material binds each mesh's own values per draw (Babylon binds an instance as its source).
+    if (hasPerMeshBindings(material) && this.unlitState(source)) volatile = true;
     if (material instanceof MultiMaterial) {
       const slots = material.subMaterials;
       state.value(slots.length);
@@ -264,7 +275,7 @@ export class ReflectedContent {
     // As shadow maps cache them (`ShadowMapRefresh`): vertex data changes count only through notified updates, and an
     // updatable index buffer's updates never notify, unless the mesh's owner routes every write through notified updates.
     if (!watch) return true;
-    if (hasRevisionTrackedDynamicMesh(source) || hasRevisionTrackedLandscapeGeometry(source)) return volatile;
+    if (hasRevisionTrackedDynamicMesh(source) || hasRevisionTrackedLandscapeGeometry(source) || hasOwnerNotifiedGeometry(source)) return volatile;
     if (Reflect.get(geometry, "_indexBufferIsUpdatable") !== false) return true;
     const buffers = geometry.getVertexBuffers();
     const cable = hasRevisionTrackedCableGeometry(source);
@@ -282,6 +293,14 @@ export class ReflectedContent {
     state.value(material.backFaceCulling);
     state.value(material.wireframe);
     if (material instanceof MultiMaterial) return false;
+    if (hasPerMeshBindings(material)) {
+      // The unlit Material's program and render state are fixed per instance; what each mesh draws is its binding
+      // (`unlitState`). Its bind observer only rebinds that binding on a frozen material.
+      state.value((material as NodeMaterial).buildId);
+      state.value(material.fogEnabled);
+      state.value((material as NodeMaterial).imageProcessingConfiguration);
+      return false;
+    }
     const revision = materialParameterRevision(material);
     if (revision !== undefined && material instanceof NodeMaterial) {
       state.value(material.buildId);
@@ -298,12 +317,39 @@ export class ReflectedContent {
       state.value(texture);
       if (!texture) continue;
       state.value(texture.level);
-      if (texture instanceof Texture) {
-        state.value(texture.uOffset); state.value(texture.vOffset); state.value(texture.uScale); state.value(texture.vScale);
-        state.value(texture.wAng);
-      }
-      if (isDynamicTexture(texture)) volatile = true;
+      if (this.textureState(texture)) volatile = true;
     }
     return volatile;
+  }
+
+  /** Writes a bound texture's state; true when its content can change without it. */
+  private textureState(texture: BaseTexture): boolean {
+    const state = this.state;
+    state.value(texture.level);
+    state.value(texture.hasAlpha);
+    if (texture instanceof Texture) for (const key of TEXTURE_PLACEMENT) state.value(texture[key]);
+    return isDynamicTexture(texture);
+  }
+
+  /**
+   * Writes what an unlit mesh binds (`bindUnlitUniforms`) besides its visual style: its binding, which owners edit in
+   * place, and its vertex colours. True when its texture can change without it.
+   */
+  private unlitState(mesh: AbstractMesh): boolean {
+    const state = this.state;
+    const binding = unlitBinding(mesh);
+    state.value(binding.texture);
+    state.value(binding.color[0]); state.value(binding.color[1]); state.value(binding.color[2]);
+    state.value(binding.alpha);
+    state.value(binding.cutoff);
+    state.value(binding.blend);
+    state.value(binding.textureAlpha);
+    state.value(binding.twoSided);
+    const stroke = binding.msdf;
+    state.value(stroke?.strokeColor[0]); state.value(stroke?.strokeColor[1]); state.value(stroke?.strokeColor[2]);
+    state.value(stroke?.strokeWidth);
+    state.value(mesh.hasVertexAlpha);
+    state.value(mesh.useVertexColors);
+    return !!binding.texture && this.textureState(binding.texture);
   }
 }

@@ -54,3 +54,19 @@ export function geometryRevision(geometry: Geometry): { readonly revision: numbe
   const record = watches.get(geometry);
   return record && geometry.onGeometryUpdated === record.notify ? record : null;
 }
+
+const ownerNotified = new WeakSet<object>();
+
+/**
+ * Declares that `mesh`'s owner writes its vertex data only through notified updates (`updateVerticesData`,
+ * `setVerticesData`) and never updates its indices in place, so its geometry revision follows every change even though
+ * its buffers are updatable.
+ */
+export function markOwnerNotifiedGeometry(mesh: object): void {
+  ownerNotified.add(mesh);
+}
+
+/** Whether `markOwnerNotifiedGeometry` declared `mesh`'s writes notified. */
+export function hasOwnerNotifiedGeometry(mesh: object): boolean {
+  return ownerNotified.has(mesh);
+}

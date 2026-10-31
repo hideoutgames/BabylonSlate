@@ -26,6 +26,7 @@ The reflective side faces the actor's local −Z, the same side a Plane mesh sho
 - Each mirror that draws costs about one more render of the scene, mostly main-thread time.
 - At most two mirrors draw a new reflection each frame: mirrors that have no reflection yet first, then the ones nearest the camera. Other mirrors keep their last reflection until their turn.
 - A mirror the camera can't see, or sees from behind, draws nothing.
+- While the camera and everything in the reflection stay still, the mirror keeps its reflection instead of drawing it again. Text, sprites and tilemaps keep it too, and animated tiles draw it again only when their frame changes. Animated Materials, skinned meshes and live images such as other captures make it draw again each frame.
 - Each mirror keeps its own reflection image in GPU memory. **Resolution Scale** makes it smaller.
 
 ## Custom surfaces
