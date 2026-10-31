@@ -24,8 +24,26 @@ export const PIN_PICKER_TYPES = [
 
 export type PinPickerType = (typeof PIN_PICKER_TYPES)[number];
 
-/** Function signature picker: exec plus the Structure/data pin types. */
-export const FUNCTION_PIN_PICKER_TYPES = ["exec", ...PIN_PICKER_TYPES] as const;
+/**
+ * Class graph declarations (variables, signature rows of functions, custom
+ * events, Event Dispatchers and Script Interfaces, Execute JavaScript pins):
+ * the data types plus Delegate. Assets that store values as data (Structures,
+ * Data Definitions, Save Games, Blackboards) keep `PIN_PICKER_TYPES`, because
+ * a delegate has no value to save or type in.
+ */
+export const CLASS_PIN_PICKER_TYPES = [
+  ...PIN_PICKER_TYPES.filter((type) => type !== "wildcard"),
+  "delegate",
+  "wildcard",
+] as const;
+
+/** Function signature picker: exec plus the Class graph types. */
+export const FUNCTION_PIN_PICKER_TYPES = ["exec", ...CLASS_PIN_PICKER_TYPES] as const;
+
+/** Mark shape of a picker type: Delegate is a square, as its pins are. */
+export function pinPickerShape(type: string): "circle" | "square" {
+  return type === "delegate" ? "square" : "circle";
+}
 
 const PIN_PICKER_LABEL: Record<string, string> = {
   exec: "Exec",
@@ -49,6 +67,7 @@ const PIN_PICKER_LABEL: Record<string, string> = {
   asset: "Asset",
   struct: "Struct",
   wildcard: "Wildcard",
+  delegate: "Delegate",
 };
 
 const PIN_PICKER_KIND: Record<PinPickerType, string> = {
@@ -97,6 +116,7 @@ function typeClassIdKind(type: string): string | undefined {
     case "asset":
     case "struct":
     case "enum":
+    case "delegate":
       return type;
     default:
       return undefined;

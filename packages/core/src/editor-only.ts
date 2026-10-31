@@ -1,6 +1,7 @@
 import { normalizeClassMemberCategory } from "./class-member-category";
 import { normalizeMaterialInstanceOverrides, type MaterialInstanceOverrides } from "./material-parameter-value";
 import type { SerializedComponent } from "./scene";
+import type { DelegateSignatureType } from "./project";
 import { declaredValueUnit } from "./value-units";
 
 /** Editor-only assets stripped from Play compile and game export (P12 / P14). */
@@ -85,6 +86,8 @@ export type ClassHeaderPin = {
   direction?: "in" | "out";
   typeClassId?: string;
   unit?: string;
+  /** Delegate pins: the signature's input types. */
+  signature?: DelegateSignatureType[];
 };
 
 export type ClassHeaderFunction = {
@@ -108,12 +111,21 @@ export type ClassHeaderVariable = {
   category?: string;
   loading?: "hard";
   unit?: string;
+  /** Delegate variables: the signature's input types. */
+  signature?: DelegateSignatureType[];
 };
 
 export type ClassHeaderEvent = {
   id: string;
   name: string;
   pins: ClassHeaderPin[];
+};
+
+export type ClassHeaderDispatcher = {
+  id: string;
+  name: string;
+  pins: ClassHeaderPin[];
+  category?: string;
 };
 
 /**
@@ -187,7 +199,16 @@ export type ClassHeaderMeta = {
   events: ClassHeaderEvent[];
   interfaces: ClassHeaderInterface[];
   components: ClassHeaderComponent[];
+  /** Event Dispatchers; absent when the Class declares none, so older headers stay byte-identical. */
+  dispatchers?: ClassHeaderDispatcher[];
 };
+
+function copySignature(signature: readonly DelegateSignatureType[] | undefined): DelegateSignatureType[] {
+  return (signature ?? []).map((input) => ({
+    ...input,
+    ...(input.signature ? { signature: copySignature(input.signature) } : {}),
+  }));
+}
 
 function headerPinsFromMember(
   pins: ClassHeaderPin[] | undefined,
@@ -201,6 +222,7 @@ function headerPinsFromMember(
     if (pin.typeClassId) next.typeClassId = pin.typeClassId;
     const unit = declaredValueUnit(pin.typeId, pin.unit);
     if (unit) next.unit = unit;
+    if (pin.typeId === "delegate") next.signature = copySignature(pin.signature);
     return next;
   });
 }
@@ -224,6 +246,7 @@ export function classHeaderMeta(graph: {
     category?: string;
     loading?: "hard";
     unit?: string;
+    signature?: DelegateSignatureType[];
   }>;
   components?: Array<Partial<ClassHeaderComponent>>;
 }): ClassHeaderMeta {
@@ -231,6 +254,7 @@ export function classHeaderMeta(graph: {
   const variables: ClassHeaderVariable[] = [];
   const events: ClassHeaderEvent[] = [];
   const interfaces: ClassHeaderInterface[] = [];
+  const dispatchers: ClassHeaderDispatcher[] = [];
   for (const member of graph.members ?? []) {
     if (!member.id || !member.name) continue;
     if (member.kind === "function") {
@@ -275,7 +299,19 @@ export function classHeaderMeta(graph: {
       if (member.loading === "hard") variable.loading = "hard";
       const unit = declaredValueUnit(member.typeId, member.unit);
       if (unit) variable.unit = unit;
+      if (member.typeId === "delegate") variable.signature = copySignature(member.signature);
       variables.push(variable);
+      continue;
+    }
+    if (member.kind === "dispatcher") {
+      const dispatcher: ClassHeaderDispatcher = {
+        id: member.id,
+        name: member.name,
+        pins: headerPinsFromMember(member.pins),
+      };
+      const dispatcherCategory = normalizeClassMemberCategory(member.category);
+      if (dispatcherCategory) dispatcher.category = dispatcherCategory;
+      dispatchers.push(dispatcher);
       continue;
     }
     if (member.kind === "event") {
@@ -300,5 +336,12 @@ export function classHeaderMeta(graph: {
     const row = classHeaderComponentRow(component);
     if (row) components.push(row);
   }
-  return { functions, variables, events, interfaces, components };
+  return {
+    functions,
+    variables,
+    events,
+    interfaces,
+    components,
+    ...(dispatchers.length > 0 ? { dispatchers } : {}),
+  };
 }

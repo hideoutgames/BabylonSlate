@@ -21,6 +21,7 @@ const CLASS_BLUEPRINT_SECTIONS: BlueprintSection[] = [
   { id: "functions", label: "Functions", kind: "function" },
   { id: "variables", label: "Variables", kind: "variable" },
   { id: "events", label: "Events", kind: "event" },
+  { id: "dispatchers", label: "Event Dispatchers", kind: "dispatcher" },
   { id: "interfaces", label: "Interfaces", kind: "interface" },
 ];
 
@@ -53,12 +54,23 @@ export function functionLibraryShowsEventGraphEmpty(
   return isFunctionLibraryHost(options);
 }
 
+/**
+ * Scene and Scene Layer scripts bind to other objects' Event Dispatchers but
+ * declare none: nothing can hold a reference to them to bind to theirs.
+ */
+function isEmbeddedSceneScriptHost(options?: ClassEventOptions): boolean {
+  const parent = options?.parentClass;
+  return parent === "Scene" || parent === "SceneLayer";
+}
+
 export function blueprintSectionsForClass(
   options?: ClassEventOptions & { activeFunctionId?: string | null },
 ): BlueprintSection[] {
   const sections = isFunctionLibraryHost(options)
     ? [...FUNCTION_LIBRARY_SECTIONS]
-    : [...CLASS_BLUEPRINT_SECTIONS];
+    : CLASS_BLUEPRINT_SECTIONS.filter(
+        (section) => section.kind !== "dispatcher" || !isEmbeddedSceneScriptHost(options),
+      );
   if (options?.activeFunctionId) {
     if (isFunctionLibraryHost(options)) {
       sections.push(LOCAL_VARIABLES_SECTION);
@@ -76,6 +88,7 @@ export function classAllowsMemberKind(
   kind: ClassBlueprintMemberKind,
   options?: ClassEventOptions & { local?: boolean },
 ): boolean {
+  if (kind === "dispatcher" && isEmbeddedSceneScriptHost(options)) return false;
   if (!isFunctionLibraryHost(options)) return true;
   if (kind === "function") return true;
   if (kind === "variable" && options?.local) return true;
@@ -100,7 +113,9 @@ export function nextNewMemberName(
 /** Variable type fields for an Add Variable type-menu pick (`tagContainer` is a struct alias). */
 export function variableFieldsForPickerType(
   pickerType: string,
-): Pick<GraphClassMember, "typeId" | "typeClassId" | "defaultValue"> {
+): Pick<GraphClassMember, "typeId" | "typeClassId" | "defaultValue" | "signature"> {
+  // A Delegate starts with No Inputs and, like an Object, has no default.
+  if (pickerType === "delegate") return { typeId: "delegate", signature: [] };
   if (pickerType === "tagContainer") {
     return {
       typeId: "struct",
@@ -140,6 +155,8 @@ export function memberNamePromptCopy(
         : { title: "Add Variable", label: "Variable Name" };
     case "event":
       return { title: "Add Event", label: "Event Name" };
+    case "dispatcher":
+      return { title: "Add Event Dispatcher", label: "Event Dispatcher Name" };
     default:
       return { title: "Add Interface", label: "Interface Name" };
   }

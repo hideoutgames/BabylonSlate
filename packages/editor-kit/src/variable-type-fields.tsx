@@ -19,6 +19,11 @@ import {
 } from "./picker-identity";
 import { pinPickerKeepsTypeClassId } from "./pin-types";
 import { useState } from "react";
+import type { DelegateSignatureType } from "@haptic/core";
+import {
+  DelegateSignatureField,
+  type DelegateSignatureEntry,
+} from "./delegate-signature-field";
 
 export type VariableContainer = "single" | "array" | "map";
 
@@ -28,6 +33,8 @@ export type VariableTypeFieldsValue = {
   container: VariableContainer;
   keyTypeId?: string;
   keyTypeClassId?: string;
+  /** Delegate types: the input types of the signature named by `typeClassId`. */
+  signature?: readonly DelegateSignatureType[];
 };
 
 export type VariableTypeFieldsProps = {
@@ -39,6 +46,8 @@ export type VariableTypeFieldsProps = {
   /** Omitted accepts both record assets; schema editors can restrict their source. */
   structAssetType?: "Structure" | "DataDefinition";
   types?: readonly string[];
+  /** Signatures a Delegate type can take; shown as a Signature field once Delegate is picked. */
+  delegateSignatures?: readonly DelegateSignatureEntry[];
   "data-testid"?: string;
 };
 
@@ -59,6 +68,7 @@ export function VariableTypeFields({
   typeAssets = [],
   structAssetType,
   types,
+  delegateSignatures = [],
   "data-testid": testId = "variable-type-fields",
 }: VariableTypeFieldsProps) {
   const [keyClassOpen, setKeyClassOpen] = useState(false);
@@ -76,8 +86,13 @@ export function VariableTypeFields({
   const commit = (patch: Partial<VariableTypeFieldsValue>) => {
     const next: VariableTypeFieldsValue = { ...value, ...patch };
     next.container = patch.container ?? container;
+    // A Delegate starts with No Inputs; any other type has no signature.
+    if (next.typeId !== "delegate") delete next.signature;
+    else if (!next.signature) next.signature = [];
     onChange(next);
   };
+  // A Map key compares by value; a delegate has none to compare.
+  const keyTypes = types?.filter((type) => type !== "delegate");
 
   return (
     <div className="flex flex-col gap-3" data-testid={testId}>
@@ -101,11 +116,19 @@ export function VariableTypeFields({
           data-testid="inspector-member-type"
         />
       </Field> : null}
+      {value.typeId === "delegate" ? (
+        <DelegateSignatureField
+          entries={delegateSignatures}
+          value={value}
+          onChange={(signature) => commit(signature)}
+          data-testid="inspector-member-signature"
+        />
+      ) : null}
       {container === "map" ? (
         <Field>
           <FieldLabel>Key Type</FieldLabel>
           <PinTypePicker
-            types={types}
+            types={keyTypes}
             labels={{ struct: structLabel }}
             value={keyTypeId === "struct" && keyClassId === "engine:TagContainer" ? "tagContainer" : keyTypeId}
             onChange={(nextKey) => {

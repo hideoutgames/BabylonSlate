@@ -10,13 +10,16 @@ import { EngineObject } from "@haptic/object-model";
  */
 export class EventDelegate {
   readonly [EVENT_DELEGATE_BRAND] = true;
+  readonly object: EngineObject;
+  readonly name: string;
+  readonly kind: "event" | "function";
+  readonly params: readonly string[];
 
-  constructor(
-    readonly object: EngineObject,
-    readonly name: string,
-    readonly kind: "event" | "function",
-    readonly params: readonly string[],
-  ) {
+  constructor(object: EngineObject, name: string, kind: "event" | "function", params: readonly string[]) {
+    this.object = object;
+    this.name = name;
+    this.kind = kind;
+    this.params = params;
     Object.freeze(this);
   }
 
