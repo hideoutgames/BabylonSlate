@@ -1,0 +1,189 @@
+{
+  "id": "delegate-missing-member",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "bind",
+      "typeId": "flow.dispatcher.bind",
+      "position": {
+        "x": 300,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "target",
+          "name": "target",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "objectRef",
+            "classId": "Hero"
+          },
+          "optional": true,
+          "subject": true,
+          "selfWhenUnwired": true
+        },
+        {
+          "id": "event",
+          "name": "Event",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "delegate",
+            "inputs": [
+              {
+                "kind": "float"
+              }
+            ],
+            "outputs": []
+          },
+          "subject": true
+        }
+      ],
+      "properties": {
+        "name": "On Hit",
+        "classId": "Hero",
+        "implicitSelf": true,
+        "pins": [
+          {
+            "name": "Damage",
+            "typeId": "float",
+            "direction": "in"
+          }
+        ]
+      }
+    },
+    {
+      "id": "create",
+      "typeId": "flow.delegate.create",
+      "position": {
+        "x": 0,
+        "y": 200
+      },
+      "pins": [
+        {
+          "id": "object",
+          "name": "Object",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "objectRef",
+            "classId": "Hero"
+          },
+          "optional": true,
+          "subject": true,
+          "selfWhenUnwired": true
+        },
+        {
+          "id": "event",
+          "name": "Event",
+          "kind": "data",
+          "direction": "out",
+          "type": {
+            "kind": "delegate",
+            "inputs": [
+              {
+                "kind": "float"
+              }
+            ],
+            "outputs": []
+          }
+        }
+      ],
+      "properties": {
+        "classId": "Hero",
+        "memberName": "Took Hit",
+        "memberKind": "event",
+        "pins": [
+          {
+            "name": "Damage",
+            "typeId": "float",
+            "direction": "in"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->bind.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "bind",
+      "targetPinId": "execIn"
+    },
+    {
+      "id": "create.event->bind.event",
+      "sourceNodeId": "create",
+      "sourcePinId": "event",
+      "targetNodeId": "bind",
+      "targetPinId": "event"
+    }
+  ],
+  "context": {
+    "classId": "Hero",
+    "members": [
+      {
+        "id": "on-hit",
+        "name": "On Hit",
+        "kind": "dispatcher",
+        "classId": "Hero",
+        "pins": [
+          {
+            "name": "Damage",
+            "typeId": "float",
+            "direction": "in"
+          }
+        ]
+      },
+      {
+        "id": "health",
+        "name": "Health",
+        "kind": "variable",
+        "classId": "Hero",
+        "typeId": "float"
+      }
+    ]
+  },
+  "pureTypeIds": [
+    "flow.delegate.create"
+  ]
+}
