@@ -41,35 +41,49 @@ const POST_FIELDS = ["post.scale", "post.ambientOcclusion", "post.reflections", 
 const baseline = (n: number): FeatureTestBreakdownStep => ({ label: `baseline ${n}`, commands: [], baseline: true });
 
 /**
- * Steps a Breakdown measures per scene, each on top of the project quality: one feature off (or one cost lowered) at
- * a time, so the frame-time change against the baselines around it is that feature's share of a GPU-bound frame,
- * without timer queries. After each step `quality reset` and its `restore` commands undo it. A baseline every four
- * steps shows drift (thermal throttling, background work), and each step is measured against the two around it.
+ * What a Breakdown measures per scene, each on top of the project quality: one feature off (or one cost lowered) at a
+ * time, so its change against the baselines around it is that feature's share of the frame. After each step
+ * `quality reset` and its `restore` commands undo it. The run alternates baselines and steps (`breakdownSequence`).
  */
 export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] = [
-  baseline(1),
   { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows"] },
   { label: "shadows medium", commands: ["quality shadows medium"], fields: ["shadows"] },
   { label: "water refraction off", commands: ["quality water refraction off"], fields: ["water.refraction"] },
   { label: "water reflections sky", commands: ["quality water reflections sky"], fields: ["water.reflections"] },
-  baseline(2),
   { label: "water detail low", commands: ["quality water shadingDetail low"], fields: ["water.shadingDetail"] },
   { label: "water detail medium", commands: ["quality water shadingDetail medium"], fields: ["water.shadingDetail"] },
   { label: "post low", commands: ["quality postprocessing low"], fields: POST_FIELDS },
   { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"] },
-  baseline(3),
   { label: "SSR off", commands: ["quality postprocessing reflections off"], fields: ["post.reflections"] },
   { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"], fields: ["post.volumetricLighting"] },
   { label: "post off", commands: ["postprocessing off"], restore: ["postprocessing on"], fields: ["post.enabled"] },
   { label: "captures off", commands: ["rendertargets off"], restore: ["rendertargets on"], fields: ["captures"] },
-  baseline(4),
   { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale"] },
-  baseline(5),
 ];
+
+/**
+ * The order a Breakdown measures in: a baseline before every step and one after the last (A B A C A …), so each step is
+ * compared with the two baselines immediately around it and slow drift (thermal throttling, background work) cancels.
+ */
+export function breakdownSequence(steps: readonly FeatureTestBreakdownStep[] = FEATURE_TEST_BREAKDOWN_STEPS): FeatureTestBreakdownStep[] {
+  const sequence: FeatureTestBreakdownStep[] = [];
+  steps.forEach((step, index) => sequence.push(baseline(index + 1), step));
+  sequence.push(baseline(steps.length + 1));
+  return sequence;
+}
 
 /** Whether a sample is a Breakdown baseline (reports saved before `baseline` name theirs "baseline" and "baseline again"). */
 export function isBreakdownBaseline(sample: FeatureTestBenchmarkSample): boolean {
+  if (sample.warmup) return false;
   return sample.baseline ?? (sample.label === "baseline" || sample.label === "baseline again");
+}
+
+/**
+ * What a Breakdown compares: the median GPU-busy time per frame (`gpuBusy`, from fences, unaffected by display pacing)
+ * when both sides measured it, else the mean frame interval.
+ */
+function breakdownValue(sample: FeatureTestBenchmarkSample, gpu: boolean): number | null {
+  return gpu ? sample.gpuBusy?.medianMs ?? null : meanFrameMs(sample.frames);
 }
 
 /**
@@ -83,30 +97,35 @@ export function meanFrameMs(frames: FrameStats | null): number | null {
 }
 
 /**
- * A Breakdown step's change in mean frame interval against the baselines around it (the mean of the nearest before
- * and after), or null when unmeasured. A baseline is measured against the first baseline: its change is the drift.
+ * A Breakdown step's change against the baselines around it (the mean of the nearest before and after), or null when
+ * unmeasured: in median GPU-busy time per frame when the step and those baselines measured it (`basis: "gpu"`), else in
+ * mean frame interval (`"frame"`). A baseline is measured against the first baseline: its change is the drift.
  */
 export function breakdownDelta(
   samples: readonly FeatureTestBenchmarkSample[],
   sample: FeatureTestBenchmarkSample,
-): { ms: number; percent: number } | null {
-  const value = meanFrameMs(sample.frames);
+): { ms: number; percent: number; basis: "gpu" | "frame" } | null {
   const index = samples.indexOf(sample);
-  if (value === null || index < 0) return null;
-  const measured = (entry: FeatureTestBenchmarkSample) => isBreakdownBaseline(entry) && meanFrameMs(entry.frames) !== null;
-  let references: FeatureTestBenchmarkSample[];
-  if (isBreakdownBaseline(sample)) {
-    const first = samples.find(measured);
-    references = first ? [first] : [];
-  } else {
+  if (index < 0 || sample.warmup) return null;
+  const references = (gpu: boolean) => {
+    const measured = (entry: FeatureTestBenchmarkSample) => isBreakdownBaseline(entry) && breakdownValue(entry, gpu) !== null;
+    if (isBreakdownBaseline(sample)) {
+      const first = samples.find(measured);
+      return first ? [first] : [];
+    }
     const before = samples.slice(0, index).reverse().find(measured);
     const after = samples.slice(index + 1).find(measured);
-    references = [before, after].filter((entry): entry is FeatureTestBenchmarkSample => entry !== undefined);
+    return [before, after].filter((entry): entry is FeatureTestBenchmarkSample => entry !== undefined);
+  };
+  for (const gpu of [true, false]) {
+    const value = breakdownValue(sample, gpu);
+    const around = references(gpu);
+    if (value === null || !around.length) continue;
+    const base = around.reduce((total, entry) => total + breakdownValue(entry, gpu)!, 0) / around.length;
+    const ms = value - base;
+    return { ms, percent: (ms / base) * 100, basis: gpu ? "gpu" : "frame" };
   }
-  if (!references.length) return null;
-  const base = references.reduce((total, entry) => total + meanFrameMs(entry.frames)!, 0) / references.length;
-  const ms = value - base;
-  return { ms, percent: (ms / base) * 100 };
+  return null;
 }
 
 /** The display interval a Breakdown's 60 fps cap paces frames to. */
@@ -172,6 +191,10 @@ export interface FeatureTestBenchmarkSample {
   failed: string[];
   /** A Breakdown baseline; absent in reports saved before interleaved baselines. */
   baseline?: boolean;
+  /** A Breakdown warm-up window at the baseline, before the steps (never a reference). */
+  warmup?: boolean;
+  /** GPU-busy time per frame from fences while sampled (`gpubusy`); absent where unmeasured or in older reports. */
+  gpuBusy?: NonNullable<RenderDiagnostics["gpuBusy"]>;
   /** The step's render-settings fingerprint (`RenderDiagnostics.settings`) while sampled. */
   settings?: Record<string, string>;
   /** Shaders first drawn and Effects compiling during the sample (both should be 0), and how long settling took. */
@@ -320,6 +343,10 @@ export interface FeatureTestCheckTimeouts {
   profileCompileMs: number;
   editorSampleMs: number;
   playSampleMs: number;
+  /** A Breakdown's warm-up window: it ends once two consecutive windows differ by under 3%. */
+  breakdownWarmupWindowMs: number;
+  /** Most a Breakdown warms up before its first step, stable or not. */
+  breakdownWarmupMs: number;
 }
 
 export const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
@@ -332,7 +359,12 @@ export const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   profileCompileMs: 90_000,
   editorSampleMs: 3_000,
   playSampleMs: 5_000,
+  breakdownWarmupWindowMs: 10_000,
+  breakdownWarmupMs: 90_000,
 };
+
+/** Consecutive warm-up windows within this share of each other end a Breakdown's warm-up. */
+const WARMUP_STABLE = 0.03;
 
 const POLL_MS = 250;
 
@@ -627,18 +659,49 @@ async function benchmarkProfiles(
   limits: FeatureTestCheckTimeouts,
   samples: FeatureTestBenchmarkSample[],
 ): Promise<void> {
+  const breakdown = mode === "breakdown";
   const cap = /(\d+)/.exec((await run("framecap")).output)?.[1];
-  await run(`framecap ${mode === "breakdown" ? BREAKDOWN_FRAME_CAP : BENCHMARK_FRAME_CAP}`);
-  const steps: readonly FeatureTestBreakdownStep[] = mode === "breakdown" ? FEATURE_TEST_BREAKDOWN_STEPS : FEATURE_TEST_BENCHMARK_PROFILES;
+  await run(`framecap ${breakdown ? BREAKDOWN_FRAME_CAP : BENCHMARK_FRAME_CAP}`);
+  const steps: readonly FeatureTestBreakdownStep[] = breakdown ? breakdownSequence() : FEATURE_TEST_BENCHMARK_PROFILES;
   const pendingRestore: string[] = [];
   const restore = async () => {
-    if (mode !== "breakdown") return;
+    if (!breakdown) return;
     await run("quality reset");
     for (const line of pendingRestore.splice(0)) await run(line);
   };
+  // A Breakdown times each frame's GPU work with fences, which display pacing does not quantise; restarted per sample.
+  let gpuBusy = false;
+  /** Samples the view as it is now into a sample labelled `label`; `failed` collects what went wrong. */
+  const measure = async (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => {
+    const firstDrawsBefore = play.snapshot().rendering?.firstDraws?.draws ?? 0;
+    if (breakdown) gpuBusy = (await run("gpubusy on")).success;
+    const sampled = await sampleWithCounters(play, deps.sampleFrames(sampleMs, signal), deps, signal);
+    const snapshot = play.snapshot();
+    const rendering = snapshot.rendering;
+    const sample: FeatureTestBenchmarkSample = {
+      label,
+      frames: sampled.frames,
+      runtimeFps: play.runtimeFps(),
+      cpuMs: sampled.cpu?.median ?? null,
+      gpuMs: sampled.gpu?.median ?? null,
+      drawCalls: sampled.draws?.median ?? snapshot.drawCalls,
+      draws: sampled.draws ?? undefined,
+      cpu: sampled.cpu,
+      gpu: sampled.gpu,
+      resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
+      failed,
+      ...(breakdown ? {
+        ...(gpuBusy && rendering?.gpuBusy ? { gpuBusy: { ...rendering.gpuBusy } } : {}),
+        ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),
+        unsettled: { firstDraws: (rendering?.firstDraws?.draws ?? 0) - firstDrawsBefore, compiling: sampled.compiling, settleMs: settled.ms },
+      } : {}),
+    };
+    return sample;
+  };
   try {
+    if (breakdown) await warmUp(sceneName, play, deps, signal, limits, measure, samples);
     for (const profile of steps) {
-      deps.onProgress?.(`${sceneName}: ${mode === "breakdown" ? "measuring" : "benchmarking"} ${profile.label}`);
+      deps.onProgress?.(`${sceneName}: ${breakdown ? "measuring" : "benchmarking"} ${profile.label}`);
       const failed: string[] = [];
       if (profile.restore) pendingRestore.push(...profile.restore);
       for (const line of profile.commands) {
@@ -655,37 +718,51 @@ async function benchmarkProfiles(
         ? await settleView(play, deps, signal, limits.profileSettleMs, limits.profileCompileMs)
         : { quiet: true, ms: 0 };
       if (!settled.quiet) failed.push(`Shaders were still first drawn or compiling after ${seconds(limits.profileCompileMs)}; this step's frames include them.`);
-      const firstDrawsBefore = play.snapshot().rendering?.firstDraws?.draws ?? 0;
-      const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
-      const snapshot = play.snapshot();
-      const rendering = snapshot.rendering;
-      samples.push({
-        label: profile.label,
-        frames: sampled.frames,
-        runtimeFps: play.runtimeFps(),
-        cpuMs: sampled.cpu?.median ?? null,
-        gpuMs: sampled.gpu?.median ?? null,
-        drawCalls: sampled.draws?.median ?? snapshot.drawCalls,
-        draws: sampled.draws ?? undefined,
-        cpu: sampled.cpu,
-        gpu: sampled.gpu,
-        resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
-        failed,
-        ...(mode === "breakdown" ? {
-          baseline: profile.baseline === true,
-          ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),
-          unsettled: { firstDraws: (rendering?.firstDraws?.draws ?? 0) - firstDrawsBefore, compiling: sampled.compiling, settleMs: settled.ms },
-        } : {}),
-      });
+      const sample = await measure(profile.label, failed, limits.playSampleMs, settled);
+      if (breakdown) sample.baseline = profile.baseline === true;
+      samples.push(sample);
       if (!steady) break;
       await restore();
     }
   } finally {
     if (!signal.aborted) {
+      if (gpuBusy) await run("gpubusy off");
       await run("quality reset");
       for (const line of pendingRestore.splice(0)) await run(line);
       await run(`framecap ${cap ?? 60}`);
     }
+  }
+}
+
+/**
+ * Before a Breakdown's first step: samples the baseline in `breakdownWarmupWindowMs` windows until two consecutive
+ * windows differ by under 3% (GPU-busy median where measured, else mean frame interval), bounded by
+ * `breakdownWarmupMs`, so a device that heats up during the run starts the steps near its steady state. Each window is
+ * kept as a `warmup` sample.
+ */
+async function warmUp(
+  sceneName: string,
+  play: PlayProbe,
+  deps: FeatureTestCheckDeps,
+  signal: AbortSignal,
+  limits: FeatureTestCheckTimeouts,
+  measure: (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => Promise<FeatureTestBenchmarkSample>,
+  samples: FeatureTestBenchmarkSample[],
+): Promise<void> {
+  const started = deps.now();
+  let previous: number | null = null;
+  for (let window = 1; ; window++) {
+    deps.onProgress?.(`${sceneName}: warming up (${window})`);
+    const steady = await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
+    const settled = steady ? await settleView(play, deps, signal, limits.profileSettleMs, limits.profileCompileMs) : { quiet: true, ms: 0 };
+    const failed = settled.quiet ? [] : [`Shaders were still first drawn or compiling after ${seconds(limits.profileCompileMs)}; this window's frames include them.`];
+    const sample = await measure(`warm-up ${window}`, failed, limits.breakdownWarmupWindowMs, settled);
+    sample.warmup = true;
+    samples.push(sample);
+    const value = sample.gpuBusy?.medianMs ?? meanFrameMs(sample.frames);
+    const stable = value !== null && previous !== null && Math.abs(value - previous) <= previous * WARMUP_STABLE;
+    if (!steady || stable || value === null || deps.now() - started >= limits.breakdownWarmupMs) return;
+    previous = value;
   }
 }
 
