@@ -600,7 +600,7 @@ function initializeEngine(
     configureEditorRenderingGroups(scene);
   } else {
     scene.performancePriority = ScenePerformancePriority.BackwardCompatible;
-    if (process.env.HAPTIC_EDITOR_INSTANCING === "1") setSceneInstancing(scene, true);
+    if (globalThis.process?.env?.HAPTIC_EDITOR_INSTANCING === "1") { engine.getCaps().instancedArrays = true; setSceneInstancing(scene, true); }
   }
   if (options.editor && !options.playMode && options.previewLighting) {
     createPreviewLighting(scene);
