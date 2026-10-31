@@ -763,8 +763,7 @@ describe("syncAuthoredIllumination", () => {
     const generator = key.getShadowGenerator() as AtlasCascadedShadowGenerator;
     expect(generator).toBeInstanceOf(AtlasCascadedShadowGenerator);
     expect(generator.usePercentageCloserFiltering).toBe(true);
-    // The default level, Medium, filters with Castaño's 5 × 5 kernel; High and Ultra take the 7 × 7.
-    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_MEDIUM);
+    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_HIGH);
     expect(generator.bias).toBeCloseTo(0.0001);
     expect(generator.normalBias).toBeCloseTo(0.005);
     expect(generator.frustumEdgeFalloff).toBe(0);

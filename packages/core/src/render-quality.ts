@@ -716,6 +716,15 @@ export class RenderingQualitySession {
         };
       else if (
         group === "shadows" &&
+        choice === "filter" &&
+        (value === "low" || value === "medium" || value === "high")
+      )
+        this.overrides = {
+          ...this.overrides,
+          shadows: { ...this.overrides.shadows, filterQuality: value },
+        };
+      else if (
+        group === "shadows" &&
         choice === "enabled" &&
         (value === "on" || value === "off")
       )
