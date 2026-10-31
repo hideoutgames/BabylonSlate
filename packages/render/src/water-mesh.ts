@@ -19,7 +19,7 @@ import { materialSceneCopyUse, setMeshWaterNodeSurface } from "./water-node-bloc
 import { materialHasWaterWaves } from "./water-waves-block";
 import { advanceBlendRebuild, markBlendDirty, syncSceneBlend } from "./water-mesh-blend";
 import { blendNormals, globalReachRows, liveBlendInputs, placeBlend, placeGlobalBlend, sceneBlends } from "./water-mesh-blend-data";
-import { REBUILT, RECENTRED, syncQuality, updateLayout } from "./water-mesh-grid";
+import { REBUILT, RECENTRED, syncGlobalIndices, syncQuality, updateLayout } from "./water-mesh-grid";
 import { centredGrid, restDataRange, uploadRestData } from "./water-mesh-rest-data";
 import { L_CX, L_CZ, LAYOUT_STATE, NO_PARTNERS, type Surface } from "./water-mesh-surface";
 import { advanceSceneWaterClock, deleteSceneWaterClock, sceneWaterTime } from "./water-scene-clock";
@@ -77,6 +77,7 @@ export function updateSceneWater(scene: Scene, early = false): void {
     surface.disabledSince = -1;
     syncCustomMaterial(surface);
     placeSurface(surface, time, now);
+    syncGlobalIndices(surface);
     // Re-enabled water restores its textures after its placement, a few surfaces per frame (streaming in a section that
     // enables many bodies spreads the work); the rest draw without them until their turn.
     if (surface.released && restored < WATER_RESTORES_PER_FRAME) {
@@ -277,6 +278,7 @@ function animateSurface(s: Surface, time: number): void {
 /** A full update outside the frame loop: creation, handle edits and path switches. */
 function refreshSurface(s: Surface, time: number): void {
   placeSurface(s, time, performance.now());
+  syncGlobalIndices(s);
   animateSurface(s, time);
 }
 
@@ -598,7 +600,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
     bankGradient: empty, boundedSubMeshes: -1, boundedFirst: null, boundsDirty: false,
     copyCounted: 0, nodes: null, nodeCopyUse: 0, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendColors: empty, blendRest: empty, blendRevision: 0,
-    blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), stage: null, layoutColumns: 0, disabledSince: -1, released: false,
+    blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), indexRows: Int32Array.of(1, 0), stage: null, layoutColumns: 0, disabledSince: -1, released: false,
   };
   let entries = surfaces.get(scene);
   if (!entries) {

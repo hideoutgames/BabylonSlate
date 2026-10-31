@@ -1027,6 +1027,48 @@ describe("Water rendering", () => {
       for (const [, data] of partial) expect((data as Float32Array).length).toBeLessThan(count);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
+  it("keeps Global Water's triangles within a cell of every vertex inside a far neighbour, as its vertex cull assumes, as the grid recentres", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 10, -30), scene);
+    try {
+      const sea = createWaterMesh(scene, "sea", normalizeWaterBody({ resolution: 48 }, "global"), undefined, builtInWaterMaterial(scene));
+      // Past the dense cells, across far rows (about 190 and 440 m out) that are hundreds of metres apart.
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 320, length: 360, resolution: 16 }), undefined, builtInWaterMaterial(scene));
+      lake.position.set(25, 0.2, 320);
+      const inside = () => {
+        updateSceneWater(scene);
+        const positions = sea.getVerticesData(VertexBuffer.PositionKind)!, indices = sea.getIndices()!;
+        const blend = sea.getVerticesData("slateWaterBlend")!, data = sea.getVerticesData("slateWaterData")!;
+        let checked = 0;
+        for (let t = 0; t < indices.length; t += 3) {
+          const corners = [indices[t]!, indices[t + 1]!, indices[t + 2]!];
+          for (const v of corners) {
+            // A vertex the sea does not own: the cull drops it, and every triangle it belongs to, from about two of
+            // its grid spacings inside the lake, trusting the triangle's other corners to be at most a cell away.
+            if (blend[v * 4 + 2]! >= 0) continue;
+            checked++;
+            for (const w of corners) {
+              const reach = Math.hypot(positions[w * 3]! - positions[v * 3]!, positions[w * 3 + 2]! - positions[v * 3 + 2]!);
+              expect(reach).toBeLessThanOrEqual(Math.SQRT2 * data[v * 4]! * 1.001);
+            }
+          }
+        }
+        return checked;
+      };
+      expect(inside()).toBeGreaterThan(0);
+      const rebuilt = vi.spyOn(sea, "setIndices");
+      // A short move keeps the lake on the same grid lines: the index buffer stays as it is.
+      camera.position.x += 7.3; camera.position.z += 3.1;
+      expect(inside()).toBeGreaterThan(0);
+      expect(rebuilt).not.toHaveBeenCalled();
+      // A long one brings other lines into its reach: they are kept whole, once.
+      camera.position.x += 37.3; camera.position.z += 150.1;
+      expect(inside()).toBeGreaterThan(0);
+      expect(rebuilt).toHaveBeenCalledTimes(1);
+      updateSceneWater(scene);
+      expect(rebuilt).toHaveBeenCalledTimes(1);
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
   it("keeps a moving body's neighbours on their last blend data between refreshes, and lands the final pose", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 30, -40), scene);
