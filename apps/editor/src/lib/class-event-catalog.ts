@@ -10,7 +10,7 @@ import {
   SCENE_SUBSYSTEM_CLASS_ID,
   engineNativeEventsFor,
 } from "@haptic/object-model";
-import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, SUBSYSTEM_GET_NODE_ID } from "@haptic/scripting-nodes";
+import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, SUBSYSTEM_GET_NODE_ID, isDispatcherNodeType } from "@haptic/scripting-nodes";
 
 export const NATIVE_CLASS_EVENT_TYPES = [
   "flow.event.gameLoaded",
@@ -343,6 +343,10 @@ export function isScriptCatalogNodeAllowed(
     return false;
   }
   if (nodeId === "flow.event.call" || nodeId === "functions.call") {
+    return false;
+  }
+  // One row per Event Dispatcher and action is injected instead.
+  if (isDispatcherNodeType(nodeId)) {
     return false;
   }
   if (nodeId === "flow.event.callParent") {

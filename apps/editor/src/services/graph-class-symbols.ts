@@ -23,6 +23,7 @@ import {
   embeddedScriptParentOf,
 } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
+import { OUTPUT_DELEGATE_PIN_ID } from "@haptic/scripting-nodes";
 import type { PinCompatibilityRule } from "@haptic/graph-ui";
 
 export function parentLookup(
@@ -130,6 +131,9 @@ export function classMemberSymbolsFromGraphs(
       }
       if (member.keyTypeId) symbol.keyTypeId = member.keyTypeId;
       if (member.keyTypeClassId) symbol.keyTypeClassId = member.keyTypeClassId;
+      if (member.signature) symbol.signature = member.signature;
+      // Create Event and copied Delegate signatures read event and dispatcher inputs.
+      if ((member.kind === "event" || member.kind === "dispatcher") && member.pins) symbol.pins = member.pins;
       if (member.kind === "function") {
         if (member.pins) symbol.pins = member.pins;
         if (member.implementsInterface) {
@@ -156,6 +160,7 @@ export function classMemberSymbolsFromGraphs(
         kind: "event",
         name: event.name,
         classId,
+        pins: event.pins,
       });
     }
     for (const member of componentGraphMembersForClass({
@@ -226,13 +231,31 @@ export function knownClassIdSet(
   return ids;
 }
 
+/**
+ * A custom event that takes nothing yet adopts the signature of the delegate
+ * input its Output Delegate is wired to (as in Unreal), so it connects to any.
+ */
+function adoptsDelegateSignature(
+  outgoing: { id: string; type: { kind: string; [key: string]: unknown } },
+  incoming: { type: { kind: string } },
+): boolean {
+  return (
+    outgoing.id === OUTPUT_DELEGATE_PIN_ID &&
+    outgoing.type.kind === "delegate" &&
+    incoming.type.kind === "delegate" &&
+    Array.isArray(outgoing.type.inputs) &&
+    outgoing.type.inputs.length === 0
+  );
+}
+
 export function scriptPinCompatibility(
   hierarchy?: ClassHierarchy,
 ): PinCompatibilityRule {
   return (outgoing, incoming) =>
-    (incoming.reference !== "required" || (outgoing.reference === "writable" &&
+    adoptsDelegateSignature(outgoing, incoming) ||
+    ((incoming.reference !== "required" || (outgoing.reference === "writable" &&
       pinTypeEquals(outgoing.type as PinType, incoming.type as PinType))) &&
     isAssignable(outgoing.type as PinType, incoming.type as PinType, {
       hierarchy,
-    });
+    }));
 }

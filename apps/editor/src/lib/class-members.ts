@@ -746,3 +746,54 @@ export function removeClassMember(
     ),
   };
 }
+
+/** The signature rows a delegate input stands for: a dispatcher node's inputs, else the input's own signature. */
+function delegateInputRows(
+  node: SerializedGraph["nodes"][number],
+  pinId: string,
+): GraphClassMemberPin[] | null {
+  const rows = Array.isArray(node.data.pins) ? (node.data.pins as GraphClassMemberPin[]) : [];
+  if (node.type in DISPATCHER_ACTION_BY_TYPE && pinId === "event") {
+    return dispatcherEventPins({ pins: rows });
+  }
+  const row = rows.find((entry) => entry.name === pinId && entry.typeId === "delegate");
+  if (!row) return null;
+  return (row.signature ?? []).map((input, index) => ({
+    ...input,
+    name: `Input ${index + 1}`,
+    direction: "out" as const,
+  }));
+}
+
+/**
+ * Give each custom event that takes nothing the signature of the delegate
+ * input its Output Delegate was just wired to, as Unreal does: wiring an empty
+ * event to Bind Event to On Damaged gives it On Damaged's inputs, names
+ * included, in the same change.
+ */
+export function adoptBoundEventSignatures(
+  graph: SerializedGraph,
+  classId?: string,
+): SerializedGraph {
+  let next = graph;
+  for (const edge of graph.edges) {
+    if (edge.sourceHandle !== OUTPUT_DELEGATE_PIN_ID || !edge.targetHandle) continue;
+    const event = next.nodes.find((node) => node.id === edge.source);
+    if (event?.type !== "flow.event.custom") continue;
+    const current = Array.isArray(event.data.pins) ? (event.data.pins as GraphClassMemberPin[]) : [];
+    if (current.some((pin) => pin.typeId !== "exec")) continue;
+    const target = next.nodes.find((node) => node.id === edge.target);
+    const pins = target ? delegateInputRows(target, edge.targetHandle) : null;
+    if (!pins || pins.length === 0) continue;
+    const name = formatEventMemberName(String(event.data.name ?? event.data.title ?? "Custom"));
+    const member = (next.members ?? []).find(
+      (entry) => entry.kind === "event" && (entry.id === event.id || formatEventMemberName(entry.name) === name),
+    );
+    // A canvas-only event gets its member row here, as the Inspector's first pin edit gives it one.
+    const withMember: SerializedGraph = member
+      ? next
+      : { ...next, members: [...(next.members ?? []), { id: event.id, kind: "event", name, pins: [] }] };
+    next = patchClassMember(withMember, member?.id ?? event.id, { pins }, classId);
+  }
+  return next;
+}

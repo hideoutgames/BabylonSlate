@@ -35,7 +35,20 @@ import {
   subsystemGetTitle,
 } from "@haptic/scripting-nodes";
 import type { PaletteNode } from "@haptic/graph-ui";
-import { isObjectInstanceVariableType, type ClassEventOptions } from "../lib/class-members";
+import {
+  createEventNodeData,
+  dispatcherEventNodeData,
+  dispatcherNodeData,
+  freeDispatcherEventName,
+  isObjectInstanceVariableType,
+  type ClassEventOptions,
+} from "../lib/class-members";
+import {
+  CREATE_EVENT_NODE_TYPE_ID,
+  DISPATCHER_NODE_TYPE_IDS,
+  OUTPUT_DELEGATE_PIN_ID,
+  type DispatcherNodeAction,
+} from "@haptic/scripting-nodes";
 import type {
   GraphEnumEntry,
   GraphStructureEntry,
@@ -815,4 +828,120 @@ export function subsystemGetPaletteNodes(
       defaultData,
     };
   });
+}
+
+type DispatcherRow = {
+  classId: string;
+  name: string;
+  pins: GraphClassMemberPin[];
+  implicitSelf: boolean;
+};
+
+/** Event Dispatchers the host can reach: its own and inherited ones on Self, other Classes' on a Target. */
+function dispatcherRows(options?: ScriptPaletteOptions): DispatcherRow[] {
+  const localClassId = options?.classId ?? "Object";
+  const rows: DispatcherRow[] = [];
+  const seen = new Set<string>();
+  const push = (classId: string, graph: SerializedGraph | undefined, implicitSelf: boolean) => {
+    for (const member of graph?.members ?? []) {
+      if (member.kind !== "dispatcher") continue;
+      // A child cannot redeclare a dispatcher, so the nearest one names it.
+      const key = implicitSelf ? `self:${member.name}` : `${classId}:${member.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ classId, name: member.name, pins: member.pins ?? [], implicitSelf });
+    }
+  };
+  push(localClassId, options?.graph, true);
+  for (const [classId, graph] of Object.entries(options?.otherClassGraphs ?? {})) {
+    if (classId === localClassId) continue;
+    if (!otherClassAllowedOnHost(classId, options)) continue;
+    push(classId, graph, callImplicitSelf(classId, options));
+  }
+  return rows;
+}
+
+const DISPATCHER_ACTIONS: readonly DispatcherNodeAction[] = ["call", "bind", "unbind", "unbindAll"];
+
+/**
+ * One Call, Bind, Unbind and Unbind All row per Event Dispatcher, plus
+ * Unreal's Assign (a Bind node with a matching custom event wired to it). In
+ * the Event Graph, rows that only make sense from a dragged delegate pin offer
+ * a matching custom event or Create Event for it.
+ */
+export function dispatcherPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const bindDef = nodeRegistry.get(DISPATCHER_NODE_TYPE_IDS.bind);
+  const eventDef = nodeRegistry.get("flow.event.custom");
+  const createDef = nodeRegistry.get(CREATE_EVENT_NODE_TYPE_ID);
+  if (!bindDef || !eventDef || !createDef) return [];
+  const inEventGraph = !options?.activeFunctionId;
+  const graph = options?.graph ?? { nodes: [], edges: [] };
+  const nodes: PaletteNode[] = [];
+  for (const row of dispatcherRows(options)) {
+    const member = { name: row.name, pins: row.pins };
+    const spawn = { classId: row.classId, implicitSelf: row.implicitSelf };
+    for (const action of DISPATCHER_ACTIONS) {
+      const type = DISPATCHER_NODE_TYPE_IDS[action];
+      const def = nodeRegistry.get(type);
+      if (!def) continue;
+      const defaultData = dispatcherNodeData(member, action, spawn);
+      nodes.push({
+        id: `${type}:${row.classId}:${row.name}`,
+        nodeType: type,
+        title: String(defaultData.title),
+        description: def.description,
+        category: def.category,
+        pins: def.pins(defaultData),
+        defaultData,
+      });
+    }
+    if (!inEventGraph) continue;
+    const eventName = freeDispatcherEventName(graph, row.name);
+    const eventData = dispatcherEventNodeData(member, eventName);
+    const eventNode: PaletteNode = {
+      id: "flow.event.custom",
+      title: String(eventData.title),
+      category: eventDef.category,
+      pins: eventDef.pins(eventData),
+      pure: eventDef.pure,
+      defaultData: eventData,
+    };
+    const bindData = dispatcherNodeData(member, "bind", spawn);
+    nodes.push({
+      id: `${DISPATCHER_NODE_TYPE_IDS.bind}:assign:${row.classId}:${row.name}`,
+      nodeType: DISPATCHER_NODE_TYPE_IDS.bind,
+      title: `Assign ${row.name}`,
+      description: `Adds Bind Event to ${row.name} and a custom event with its inputs, wired together.`,
+      category: bindDef.category,
+      pins: bindDef.pins(bindData),
+      defaultData: bindData,
+      bundle: {
+        nodes: [{ key: "event", node: eventNode, offset: { x: -40, y: 200 } }],
+        edges: [{ source: "event", sourceHandle: OUTPUT_DELEGATE_PIN_ID, target: "main", targetHandle: "event" }],
+      },
+    });
+    // From a dragged delegate pin only: a matching custom event, or Create Event for one.
+    nodes.push({
+      ...eventNode,
+      id: `flow.event.custom:for:${row.classId}:${row.name}`,
+      nodeType: "flow.event.custom",
+      title: `Add Custom Event for ${row.name}`,
+      outOfContext: true,
+    });
+    const createData = { ...createEventNodeData(row.pins), implicitSelf: true };
+    nodes.push({
+      id: `${CREATE_EVENT_NODE_TYPE_ID}:for:${row.classId}:${row.name}`,
+      nodeType: CREATE_EVENT_NODE_TYPE_ID,
+      title: `Create Event for ${row.name}`,
+      category: createDef.category,
+      pins: createDef.pins(createData),
+      pure: true,
+      defaultData: createData,
+      outOfContext: true,
+    });
+  }
+  return nodes;
 }

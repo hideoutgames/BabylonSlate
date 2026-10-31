@@ -1055,16 +1055,17 @@ describe("addClassMember", () => {
 });
 
 describe("blueprintSectionsForClass", () => {
-  it("lists Functions, Variables, Events, and Interfaces for Actor and Object", () => {
+  it("lists Functions, Variables, Events, Event Dispatchers and Interfaces for Actor and Object", () => {
     expect(blueprintSectionsForClass({ parentClass: "Actor" }).map((s) => s.id)).toEqual([
       "functions",
       "variables",
       "events",
+      "dispatchers",
       "interfaces",
     ]);
     expect(
       blueprintSectionsForClass({ parentClass: "Object" }).map((s) => s.id),
-    ).toEqual(["functions", "variables", "events", "interfaces"]);
+    ).toEqual(["functions", "variables", "events", "dispatchers", "interfaces"]);
     expect(
       blueprintSectionsForClass({
         parentClass: "Actor",
@@ -1075,8 +1076,19 @@ describe("blueprintSectionsForClass", () => {
       "variables",
       "local-variables",
       "events",
+      "dispatchers",
       "interfaces",
     ]);
+  });
+
+  it("leaves Event Dispatchers out of Scene and Scene Layer scripts, which only bind", () => {
+    for (const parentClass of ["Scene", "SceneLayer"]) {
+      expect(blueprintSectionsForClass({ parentClass }).map((s) => s.id)).toEqual([
+        "functions", "variables", "events", "interfaces",
+      ]);
+      expect(classAllowsMemberKind("dispatcher", { parentClass })).toBe(false);
+    }
+    expect(classAllowsMemberKind("dispatcher", { parentClass: "Actor" })).toBe(true);
   });
 
   it("lists Functions only for FunctionLibrary, plus Local Variables when a function is open", () => {

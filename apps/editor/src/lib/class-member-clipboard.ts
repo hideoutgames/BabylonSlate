@@ -75,11 +75,19 @@ export type ClipboardEvent = {
   sourceClassId?: string;
 };
 
+/** A copied Event Dispatcher: the member alone (its name and inputs). */
+export type ClipboardDispatcher = {
+  member: GraphClassMember;
+  sourceClassId?: string;
+};
+
 /** Snapshot of Class members that survives switching between Class assets. */
 export type ClassMemberClipboard = {
   variables: ClipboardVariable[];
   functions: ClipboardFunction[];
   events: ClipboardEvent[];
+  /** Absent in snapshots that hold no Event Dispatcher. */
+  dispatchers?: ClipboardDispatcher[];
 };
 
 /** A Class tree row, as far as Copy needs to know it. */
@@ -161,6 +169,10 @@ function collectClassMembers(
       clip.variables.push({ member, ...(sourceClassId ? { sourceClassId } : {}) });
       continue;
     }
+    if (row.kind === "dispatcher") {
+      (clip.dispatchers ??= []).push({ member, ...(sourceClassId ? { sourceClassId } : {}) });
+      continue;
+    }
     const slice = owner.functionGraphs?.[member.id];
     clip.functions.push({
       member,
@@ -229,7 +241,7 @@ export type ClassMemberPasteOptions = {
 };
 
 export type PastedClassMember = {
-  kind: "variable" | "function" | "event";
+  kind: "variable" | "function" | "event" | "dispatcher";
   id: string;
   name: string;
   /** A pasted component variable: the id of the component added with it. */
@@ -239,7 +251,7 @@ export type PastedClassMember = {
 };
 
 export type SkippedClassMember = {
-  kind: "variable" | "function" | "event";
+  kind: "variable" | "function" | "event" | "dispatcher";
   name: string;
   /**
    * `kind`: the Class cannot have that member. `unavailable`: an override of an inherited custom event the Class does not inherit.
@@ -931,6 +943,25 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
   for (const fn of functions) {
     added.push(fn.member, ...fn.locals.values());
     functionGraphs[fn.member.id] = pastedFunctionGraph(fn, refs, newId);
+  }
+
+  // Event Dispatchers are the member alone, named free among the target's and its parents' dispatchers.
+  const takenDispatchers = new Set([
+    ...(options.graph.members ?? []),
+    ...ancestors.flatMap((ancestor) => ancestor.graph.members ?? []),
+  ].filter((member) => member.kind === "dispatcher").map((member) => member.name));
+  for (const entry of clipboard.dispatchers ?? []) {
+    if (!classAllowsMemberKind("dispatcher", options.eventOptions)) {
+      skipped.push({ kind: "dispatcher", name: entry.member.name, reason: "kind" });
+      continue;
+    }
+    const member: GraphClassMember = {
+      ...structuredClone(entry.member),
+      id: newId(),
+      name: uniqueName(entry.member.name, takenDispatchers),
+    };
+    added.push(member);
+    pasted.push({ kind: "dispatcher", id: member.id, name: member.name });
   }
 
   if (pasted.length === 0) return { graph: options.graph, pasted, skipped };
