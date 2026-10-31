@@ -27,6 +27,7 @@ import {
 } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { settlePlayViewCulling } from "./play-view-culling";
+import { ViewOcclusion, type ViewOcclusionDiagnostics } from "./view-occlusion";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
@@ -54,6 +55,8 @@ import {
   unsupportedManagedShadows,
 } from "./framegraph-managed-shadows";
 
+const NO_MESHES: ReadonlySet<AbstractMesh> = new Set();
+
 /** The FrameGraph is the only scene renderer; a frame it cannot draw is skipped. */
 export type ForwardSceneGraphResult = { path: "frameGraph" };
 export type ForwardSceneFrameGraphOptions = {
@@ -68,6 +71,11 @@ export type ForwardSceneFrameGraphOptions = {
    * copy, so a material in view may sample that output without a feedback loop.
    */
   auxiliary?: { objects: FrameGraphObjectList };
+  /**
+   * A world view (the editor's, Play's, the player's): its camera's list leaves out meshes hidden behind occluders
+   * while the scene culls by occlusion (`view-occlusion.ts`). Never with `auxiliary`.
+   */
+  occlusion?: boolean;
 };
 /**
  * Graph renders and camera assignments in progress, per scene. Babylon clears
@@ -125,6 +133,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
    * collider outline or grid neither darkens ambient occlusion, reflects, nor blocks Screen-Space Shadows' march.
    */
   readonly worldObjectList: FrameGraphObjectList = { meshes: this.world, particleSystems: null };
+  /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
+  occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
 
   override _execute(): void {
     // Play: the meshes added since the last cull leave Intermediate's always-drawn mark first (`play-view-culling.ts`).
@@ -133,6 +143,7 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     if (!target) {
       super._execute();
       this.leaveOutHidden();
+      this.occlude();
       this.publishWorld();
       return;
     }
@@ -148,7 +159,15 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
       engine.restoreDefaultFramebuffer();
     }
     this.leaveOutHidden();
+    this.occlude();
     this.publishWorld();
+  }
+
+  /** Leaves out the meshes hidden behind occluders, into the view's own list (the frustum's output stays as it was). */
+  private occlude(): void {
+    const occlusion = this.occlusion, meshes = this.outputObjectList.meshes;
+    if (!occlusion || !meshes) return;
+    this.outputObjectList.meshes = occlusion.view.filter(meshes, this.camera, occlusion.colourPass()) as AbstractMesh[];
   }
 
   private publishWorld(): void {
@@ -227,6 +246,8 @@ export class ForwardSceneFrameGraph {
   private objects: ManagedShadowObjectRendererTask | undefined;
   private shadows: ManagedShadowsTask | undefined;
   private cull: CameraOutputCullTask | undefined;
+  /** A world view's occlusion culling; kept across graph rebuilds. */
+  private readonly occlusion: ViewOcclusion | undefined;
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
   private preparedHeight = 0;
@@ -287,6 +308,7 @@ export class ForwardSceneFrameGraph {
   constructor(scene: Scene, options: ForwardSceneFrameGraphOptions = {}) {
     this.scene = scene;
     this.auxiliary = options.auxiliary;
+    this.occlusion = options.occlusion && !options.auxiliary ? new ViewOcclusion() : undefined;
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = () => this.markReadinessDirty();
@@ -381,6 +403,16 @@ export class ForwardSceneFrameGraph {
         if (!this.pending) this.releaseGraph();
       }
     };
+  }
+
+  /** The last frame's occlusion culling; null for a view that does not cull by occlusion. */
+  occlusionDiagnostics(): Readonly<ViewOcclusionDiagnostics> | null {
+    return this.occlusion?.diagnostics ?? null;
+  }
+
+  /** The meshes occlusion left out of the last frame; empty for a view that does not cull by occlusion. */
+  occludedMeshes(): ReadonlySet<AbstractMesh> {
+    return this.occlusion?.culled ?? NO_MESHES;
   }
 
   postProcessPassCount(): number {
@@ -1081,6 +1113,8 @@ export class ForwardSceneFrameGraph {
           this.graph,
           scene,
         );
+        const occlusion = this.occlusion;
+        if (occlusion) this.cull.occlusion = { view: occlusion, colourPass: () => this.objects!.objectRenderer.renderPassId };
         // Babylon updates cameras, animations and world matrices after render()
         // begins, so the spatial stages' demand follows them from inside the
         // graph run: the first task every spatial task follows.

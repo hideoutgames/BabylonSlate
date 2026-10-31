@@ -453,7 +453,8 @@ function initializeEngine(
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so a
   // draw whose WebGPU pipeline is still compiling holds the last image.
-  const worldRenderer = new SceneRenderCoordinator(scene, { deferPipelines: true });
+  // A world view culls by occlusion while its scene does; previews never do.
+  const worldRenderer = new SceneRenderCoordinator(scene, { deferPipelines: true, occlusion: !presentRtt && !options.previewLighting });
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
   let streamAdmission: ReturnType<typeof createSceneStreamAdmission> | undefined;
