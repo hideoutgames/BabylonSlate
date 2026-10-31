@@ -202,19 +202,31 @@ interface ClipGroupEntry {
 interface ClipGroupIndex {
   members: readonly NamedSeekableGroup[];
   byName: Map<string, ClipGroupEntry[]>;
+  /** By name and clip guid (`clipKey`), so a lookup naming both finds its group without scanning same-name groups. */
+  byClip: Map<string, ClipGroupEntry[]>;
+}
+
+/** A group's name and clip guid as one key; NUL separates them, as neither holds it. */
+function clipKey(name: string, clipAssetGuid: string | undefined): string {
+  return `${name}\u0000${clipAssetGuid ?? ""}`;
 }
 const clipGroupIndexes = new WeakMap<readonly NamedSeekableGroup[], ClipGroupIndex>();
 
 function buildClipGroupIndex(groups: readonly NamedSeekableGroup[]): ClipGroupIndex {
   const byName = new Map<string, ClipGroupEntry[]>();
+  const byClip = new Map<string, ClipGroupEntry[]>();
+  const add = (map: Map<string, ClipGroupEntry[]>, key: string, entry: ClipGroupEntry) => {
+    const list = map.get(key);
+    if (list) list.push(entry);
+    else map.set(key, [entry]);
+  };
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i]!;
     const entry = { group, position: i };
-    const named = byName.get(group.name);
-    if (named) named.push(entry);
-    else byName.set(group.name, [entry]);
+    add(byName, group.name, entry);
+    add(byClip, clipKey(group.name, group.clipAssetGuid), entry);
   }
-  const index = { members: groups.slice(), byName };
+  const index = { members: groups.slice(), byName, byClip };
   clipGroupIndexes.set(groups, index);
   return index;
 }
@@ -238,7 +250,8 @@ function findIndexedClipGroup(
   }
   for (;;) {
     let moved = false;
-    const named = index.byName.get(clipName);
+    // In list order either way: the entries naming the guid as well hold only matches.
+    const named = clipAssetGuid ? index.byClip.get(clipKey(clipName, clipAssetGuid)) : index.byName.get(clipName);
     if (named) {
       for (let i = 0; i < named.length; i++) {
         const entry = named[i]!;

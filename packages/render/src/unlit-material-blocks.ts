@@ -248,42 +248,10 @@ export class UnlitFinishBlock extends NodeMaterialBlock {
 }
 RegisterClass("BABYLON.UnlitFinishBlock", UnlitFinishBlock);
 
-/** Vertex: the current and previous clip positions Standard's linear velocity reads (`prePassVertex`). */
-export class UnlitVelocityBlock extends NodeMaterialBlock {
-  constructor(name: string) {
-    super(name, Targets.Vertex);
-    this.registerInput("position", Types.Vector3);
-    this.registerInput("worldPosition", Types.Vector4);
-    this.registerInput("viewProjection", Types.Matrix);
-    this.registerOutput("current", Types.Vector4);
-    this.registerOutput("previous", Types.Vector4);
-  }
-  get position() { return this._inputs[0]!; }
-  get worldPosition() { return this._inputs[1]!; }
-  get viewProjection() { return this._inputs[2]!; }
-  get current() { return this._outputs[0]!; }
-  get previous() { return this._outputs[1]!; }
-  override getClassName(): string { return "UnlitVelocityBlock"; }
-  protected override _buildBlock(state: NodeMaterialBuildState): this {
-    super._buildBlock(state);
-    // NodeMaterial binds both for a geometry pass (`MaterialHelperGeometryRendering.Bind`).
-    state._emitUniformFromString("previousWorld", Types.Matrix, "PREPASS_VELOCITY_LINEAR");
-    state._emitUniformFromString("previousViewProjection", Types.Matrix, "PREPASS_VELOCITY_LINEAR");
-    const wgsl = state.shaderLanguage === 1;
-    const u = wgsl ? "uniforms." : "", vec4 = state._getShaderType(Types.Vector4);
-    const current = this.current.associatedVariableName, previous = this.previous.associatedVariableName;
-    state.compilationString += `${state._declareOutput(this.current)} = ${vec4}(0.0);\n${state._declareOutput(this.previous)} = ${vec4}(0.0);\n`;
-    state.compilationString += `#ifdef PREPASS_VELOCITY_LINEAR\n${current} = ${this.viewProjection.associatedVariableName} * ${this.worldPosition.associatedVariableName};\n`
-      + `${previous} = ${u}previousViewProjection * ${u}previousWorld * ${vec4}(${this.position.associatedVariableName}, 1.0);\n#endif\n`;
-    return this;
-  }
-}
-RegisterClass("BABYLON.UnlitVelocityBlock", UnlitVelocityBlock);
-
 /**
  * The colour output with Standard's unlit geometry encodings (`default.fragment`): view depth, normalized view depth,
- * the derivative face normal (mirrored views and back faces of two-sided surfaces flip it), no reflectivity, linear
- * velocity and object ID, each scaled by Standard's `writeGeometryInfo` (1 for an alpha-tested surface, else alpha
+ * the derivative face normal (mirrored views and back faces of two-sided surfaces flip it), no reflectivity and
+ * object ID, each scaled by Standard's `writeGeometryInfo` (1 for an alpha-tested surface, else alpha
  * above 0.4).
  */
 export class UnlitOutputBlock extends FragmentOutputBlock {
@@ -293,14 +261,10 @@ export class UnlitOutputBlock extends FragmentOutputBlock {
     this.registerInput("geometryViewPosition", Types.Vector4);
     this.registerInput("geometryNormal", Types.Vector3);
     this.registerInput("geometryCamera", Types.Vector4);
-    this.registerInput("velocityCurrent", Types.Vector4);
-    this.registerInput("velocityPrevious", Types.Vector4);
   }
   get geometryViewPosition() { return this.getInputByName("geometryViewPosition")!; }
   get geometryNormal() { return this.getInputByName("geometryNormal")!; }
   get geometryCamera() { return this.getInputByName("geometryCamera")!; }
-  get velocityCurrent() { return this.getInputByName("velocityCurrent")!; }
-  get velocityPrevious() { return this.getInputByName("velocityPrevious")!; }
   override getClassName(): string { return "UnlitOutputBlock"; }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -308,13 +272,12 @@ export class UnlitOutputBlock extends FragmentOutputBlock {
     state._emitUniformFromString(U.geometry, Types.Vector4);
     const wgsl = state.shaderLanguage === 1;
     const u = wgsl ? "uniforms." : "";
-    const vec2 = state._getShaderType(Types.Vector2), vec4 = state._getShaderType(Types.Vector4);
+    const vec4 = state._getShaderType(Types.Vector4);
     const color = this.rgba.isConnected ? this.rgba.associatedVariableName : "";
     const info = state._getFreeVariableName("unlitGeometryInfo");
     const normal = state._getFreeVariableName("unlitGeometryNormal");
     const viewPosition = this.geometryViewPosition.associatedVariableName;
     const camera = this.geometryCamera.associatedVariableName;
-    const current = this.velocityCurrent.associatedVariableName, previous = this.velocityPrevious.associatedVariableName;
     const frontFacing = wgsl ? "fragmentInputs.frontFacing" : "gl_FrontFacing";
     state.compilationString += `#ifdef PREPASS\n`
       + `${state._declareLocalVar(info, Types.Float)} = ${wgsl ? `select(0.0, 1.0, ${color}.a > 0.4)` : `${color}.a > 0.4 ? 1.0 : 0.0`};\n`
@@ -327,7 +290,6 @@ export class UnlitOutputBlock extends FragmentOutputBlock {
       ["PREPASS_NORMALIZED_VIEW_DEPTH", `${vec4}((${viewPosition}.z - ${camera}.y) / (${camera}.z - ${camera}.y), 0.0, 0.0, ${info})`],
       ["PREPASS_WORLD_NORMAL", `${vec4}(${normal} * 0.5 + 0.5, ${info})`],
       ["PREPASS_REFLECTIVITY", `${vec4}(0.0, 0.0, 0.0, 1.0) * ${info}`],
-      ["PREPASS_VELOCITY_LINEAR", `${vec4}(${vec2}(0.5) * ((${previous}.xy / ${previous}.w) - (${current}.xy / ${current}.w)), 0.0, ${info})`],
     ]) state.compilationString += geometryOutputWrite(wgsl, define!, value!);
     return this;
   }

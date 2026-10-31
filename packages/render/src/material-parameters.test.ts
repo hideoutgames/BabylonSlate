@@ -490,8 +490,9 @@ describe("runtime material parameters", () => {
       parameter: { kind: "float", value: 0.2 },
     });
 
-    // Only the body and its imported child resolve, both against the private instance.
-    expect(resolved).toEqual(["1|body", "1|body"]);
+    // Only the body and its imported child resolve, both against the private instance, each after asking for the
+    // shared Material, whose parameters say a value of Roughness needs a Material of its own (none is per-instance).
+    expect(resolved).toEqual([undefined, "1|body", undefined, "1|body"]);
     expect(imported.material).toBe(body.material);
     expect(roughness(body)).toMatchObject({ value: 0.2 });
     for (const other of [root, hat, stray]) {
@@ -503,7 +504,8 @@ describe("runtime material parameters", () => {
     const scoped = meshes.map((mesh) => mesh.material);
     resolved.length = 0;
     snapshots.applyMaterialToActorMeshes(binding, 1, root);
-    expect(resolved).toHaveLength(meshes.length);
+    // One resolve per mesh, and the shared Material asked for first by the two with the body's values.
+    expect(resolved).toHaveLength(meshes.length + 2);
     meshes.forEach((mesh, index) => expect(mesh.material).toBe(scoped[index]));
   });
 

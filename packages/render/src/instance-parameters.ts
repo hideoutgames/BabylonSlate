@@ -90,47 +90,98 @@ export function instanceParameterValue(material: Material, name: string): Materi
   return value === undefined ? null : authoredValue(value);
 }
 
+/** Each mesh's own per-instance values, by parameter name (an actor's write), whatever Material it draws. */
+const overrides = new WeakMap<AbstractMesh, Map<string, MaterialParameterValue>>();
+/** The Material each drawing mesh's per-instance buffers were last written for. */
+const preparedFor = new WeakMap<AbstractMesh, Material>();
+
+/** The value `holder` draws `parameter` of `record` with: its own, when of the parameter's kind, or the Material's. */
+function holderValue(holder: AbstractMesh, record: MaterialInstanceParameters, parameter: InstanceParameter): number | Color4 {
+  const own = overrides.get(holder)?.get(parameter.name);
+  const value = own && own.kind === parameter.kind ? bufferValue(own) : null;
+  const resolved = value ?? record.values.get(parameter.name)!;
+  return typeof resolved === "number" ? resolved : resolved.clone();
+}
+
+/** Writes every per-instance value of `record` that `holder` draws with. */
+function writeHolder(holder: AbstractMesh, record: MaterialInstanceParameters): void {
+  for (const parameter of record.parameters.values()) holder.instancedBuffers[parameter.attribute] = holderValue(holder, record, parameter);
+}
+
 /**
- * Registers `material`'s per-instance attributes on the mesh that draws `mesh` (an instance's source), holding the
- * Material's values; an instance with no value yet takes the same. Unchanged registrations are left alone.
+ * Registers `material`'s per-instance attributes on the mesh that draws `mesh` (an instance's source) and, the first
+ * time it is asked for this Material, writes the values the mesh and each of its instances draw: their own or the
+ * Material's. Attribute names repeat across Materials, so a mesh newly drawn with another Material is written again.
  */
 export function prepareInstanceParameters(mesh: AbstractMesh, material: Material): void {
   const record = materials.get(material);
   if (!record) return;
   const drawing = drawingMesh(mesh) as Mesh;
-  if (typeof drawing.registerInstancedBuffer !== "function") return;
+  if (typeof drawing.registerInstancedBuffer !== "function" || preparedFor.get(drawing) === material) return;
   for (const parameter of record.parameters.values()) {
-    if (drawing.instancedBuffers?.[parameter.attribute] !== undefined && drawing.instancedBuffers[parameter.attribute] !== null) continue;
-    const value = record.values.get(parameter.name)!;
-    drawing.registerInstancedBuffer(parameter.attribute, parameter.kind === "float" ? 1 : 4);
-    drawing.instancedBuffers[parameter.attribute] = typeof value === "number" ? value : value.clone();
-    for (const instance of drawing.instances)
-      instance.instancedBuffers[parameter.attribute] ??= typeof value === "number" ? value : value.clone();
+    if (drawing.instancedBuffers?.[parameter.attribute] === undefined) drawing.registerInstancedBuffer(parameter.attribute, parameter.kind === "float" ? 1 : 4);
+  }
+  writeHolder(drawing, record);
+  for (const instance of drawing.instances) writeHolder(instance, record);
+  preparedFor.set(drawing, material);
+  if (!record.meshes.has(drawing)) {
     record.meshes.add(drawing);
     drawing.onDisposeObservable.addOnce(() => record.meshes.delete(drawing));
   }
 }
 
 /**
+ * Writes the per-instance values `member`, an instance that joined or moved to another source, draws for the
+ * Material its source was prepared for (`instance-pool.ts`'s `rekey`): the buffers it carried were another
+ * Material's.
+ */
+export function refreshInstanceParameters(member: AbstractMesh): void {
+  const drawing = drawingMesh(member);
+  const material = preparedFor.get(drawing);
+  const record = material && materials.get(material);
+  if (record) writeHolder(member, record);
+}
+
+/** Whether every one of `names` is a per-instance parameter of `material`, so values of them need no Material of their own. */
+export function everyInstanceParameter(material: Material, names: Iterable<string>): boolean {
+  const record = materials.get(material);
+  if (!record) return false;
+  let any = false;
+  for (const name of names) {
+    if (!record.parameters.has(name)) return false;
+    any = true;
+  }
+  return any;
+}
+
+/**
+ * Gives `mesh` (a pooled leaf, a model's member or a mesh of its own) its own values of `material`'s per-instance
+ * parameters, `values` by name; none clears them, so it draws the Material's. They outlast a change of Material.
+ */
+export function setMeshInstanceParameters(mesh: AbstractMesh, material: Material | null, values?: ReadonlyMap<string, MaterialParameterValue>): void {
+  if (values?.size) overrides.set(mesh, new Map(values));
+  else overrides.delete(mesh);
+  const record = material && materials.get(material);
+  if (!record) return;
+  prepareInstanceParameters(mesh, material);
+  writeHolder(mesh, record);
+}
+
+/**
  * Sets `material`'s value of its per-instance parameter `name` (a Material Instance asset, a script's or the
- * editor's write to the Material): each mesh the Material prepared, and its instances, draw it. Returns false for a
- * parameter that is not per-instance.
+ * editor's write to the Material): each mesh it prepared, and their instances, draw it unless they carry their own.
+ * Returns false for a parameter that is not per-instance.
  */
 export function setInstanceParameterValue(material: Material, name: string, value: MaterialParameterValue): boolean {
   const record = materials.get(material);
   const parameter = record?.parameters.get(name);
   const next = parameter && parameter.kind === value.kind ? bufferValue(value) : null;
   if (!record || !parameter || next === null) return false;
-  const previous = record.values.get(name);
   record.values.set(name, next);
-  const same = (a: unknown, b: unknown) => a === b || (a instanceof Color4 && b instanceof Color4 && a.equals(b));
   for (const mesh of record.meshes) {
-    if (mesh.isDisposed() || mesh.material !== material) continue;
-    for (const holder of [mesh, ...(mesh as Mesh).instances ?? []]) {
-      const current = holder.instancedBuffers?.[parameter.attribute];
-      if (current === undefined || same(current, previous))
-        holder.instancedBuffers[parameter.attribute] = typeof next === "number" ? next : next.clone();
-    }
+    if (mesh.isDisposed() || preparedFor.get(mesh) !== material) continue;
+    for (const holder of [mesh, ...(mesh as Mesh).instances ?? []])
+      holder.instancedBuffers[parameter.attribute] = holderValue(holder, record, parameter);
   }
   return true;
 }

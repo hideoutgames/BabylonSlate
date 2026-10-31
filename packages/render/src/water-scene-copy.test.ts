@@ -292,35 +292,6 @@ it("shares an effect chain's scene targets, deferring transparents only while wa
   graph.dispose();
 });
 
-it("jitters the transparent pass like the opaque draw under temporal anti-aliasing", async () => {
-  const { engine, scene, camera } = host();
-  // The spatial chain (its geometry pass feeds the resolve's velocity) needs four float targets and depth sampling.
-  Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
-  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } });
-  lake(scene);
-  const wall = box(scene, "wall"), glass = box(scene, "glass", 0.5);
-  // The projection each box draws with in the view's object passes, and the pass it draws in.
-  const draws = new Map<string, { pass: string; projection: number[] }>();
-  for (const mesh of [wall, glass]) {
-    mesh.onBeforeRenderObservable.add(() => {
-      const pass = currentPass(scene);
-      if (pass.startsWith("Forward")) draws.set(mesh.name, { pass, projection: [...scene.getProjectionMatrix().m] });
-    });
-  }
-  const graph = new ForwardSceneFrameGraph(scene);
-  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.taskNames()).toContain("Forward transparent");
-  await settle(graph, camera);
-  draws.clear();
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
-  expect(draws.get("wall")?.pass).toBe("Forward objects → texture");
-  expect(draws.get("glass")?.pass).toBe("Forward transparent → texture");
-  // Both draws use this frame's sub-pixel jitter; the camera's own projection stays unjittered.
-  expect(draws.get("wall")!.projection).not.toEqual([...camera.getProjectionMatrix().m]);
-  expect(draws.get("glass")!.projection).toEqual(draws.get("wall")!.projection);
-  graph.dispose();
-});
-
 it("plans no copy for disabled copy-sampling water, authored off or under a deactivated actor, and re-plans when it is enabled", async () => {
   const { engine, scene, camera } = host();
   createWaterMesh(scene, "authored off", normalizeWaterBody({ width: 4, length: 4, resolution: 8, enabled: false }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
@@ -577,11 +548,11 @@ it("links the next water bodies' variants while the first still links, a bounded
 
 it("links the transparent pass's water while an earlier geometry pass still links its own", async () => {
   const { engine, scene, camera } = host();
-  // The spatial chain (its geometry pass feeds the resolve's velocity) needs four float targets and depth sampling.
+  // The spatial chain (its geometry pass feeds the reflections) needs four float targets and depth sampling.
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
   updateSceneRenderingSettings(scene, {
     quality: normalizeRenderingQuality({ water: { profile: "ultra" } }),
-    effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } },
+    effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } },
   });
   await threeWaterBodies(scene);
   const links = holdWaterLinks(engine);
@@ -601,11 +572,11 @@ it.each([["transparent", false], ["geometry", true]] as const)(
   "links ahead again, in the %s pass, the water it already linked ahead once a change mid-load gives it new variants",
   async (_pass, geometry) => {
     const { engine, scene, camera } = host();
-    // The spatial chain (its geometry pass feeds the resolve's velocity) needs four float targets and depth sampling.
+    // The spatial chain (its geometry pass feeds the reflections) needs four float targets and depth sampling.
     if (geometry) Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
     updateSceneRenderingSettings(scene, {
       quality: normalizeRenderingQuality({ water: { profile: "ultra" } }),
-      ...(geometry ? { effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } } : {}),
+      ...(geometry ? { effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } } } : {}),
     });
     const [first, second] = await threeWaterBodies(scene);
     const links = holdWaterLinks(engine);
