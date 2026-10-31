@@ -41,7 +41,10 @@ import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
 import {
   FEATURE_TEST_BREAKDOWN_SCENES,
-  FEATURE_TEST_BREAKDOWN_TIER,
+  FEATURE_TEST_BREAKDOWN_BASES,
+  FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
+  FEATURE_TEST_BREAKDOWN_METHODS,
+  type FeatureTestBreakdownMethod,
   FEATURE_TEST_CHECK_SCENES,
   frameStats,
   runFeatureTestCheck,
@@ -93,10 +96,12 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
   benchmark: "Plays every Feature Test scene and measures each quality tier with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
-  breakdown: "Plays FT_World and FT_Occlusion at the Medium tier and turns one feature off at a time (shadows, water, post-processing effects, captures, half resolution; occlusion culling from two cameras), measuring each at 60 fps between baselines. Then the editor reloads once and repeats it with preserveDrawingBuffer switched, and writes one report. The change shows what each feature costs this device's GPU. About 20 minutes; keep the device awake and plugged in.",
+  breakdown: "Plays FT_World and FT_Occlusion and measures each feature at 60 fps between baselines (anti-aliasing, shadow filter, post-processing effects, water, captures, resolution; occlusion culling from two cameras). Add One starts from a light Low base and turns one feature on at a time, so each change is that feature's own cost; Remove One turns one feature off at a time from the Medium tier. Then the editor reloads once and repeats it with preserveDrawingBuffer switched, and writes one report. About 20 minutes; keep the device awake and plugged in.",
 };
 
 const MODES = ["quick", "full", "benchmark", "breakdown"] as const satisfies readonly FeatureTestCheckMode[];
+
+const METHOD_LABELS: Record<FeatureTestBreakdownMethod, string> = { "add-one": "Add One", "remove-one": "Remove One" };
 
 const AB_DEPS = FEATURE_TEST_AB_DEPS;
 /** How long the status shows before the A/B's reload, so it can still be cancelled. */
@@ -171,6 +176,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
   const { requestPlay, playFromScene, setPlayFromScene, sessionOwner } = usePlay();
   const [mode, setMode] = useState<FeatureTestCheckMode>("quick");
   const [breakdownAllScenes, setBreakdownAllScenes] = useState(false);
+  const [breakdownMethod, setBreakdownMethod] = useState<FeatureTestBreakdownMethod>(FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD);
   const [phase, setPhase] = useState<Phase>(savedPhase);
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
   const abortRef = useRef<AbortController | null>(null);
@@ -313,7 +319,8 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     }
     // Pass 1 at the stored setting; the warm-device note is decided once, before it.
     const breakdown: FeatureTestBreakdownInfo = {
-      tier: FEATURE_TEST_BREAKDOWN_TIER,
+      method: breakdownMethod,
+      tier: FEATURE_TEST_BREAKDOWN_BASES[breakdownMethod].label,
       warmMinutes: warmDeviceMinutes(Date.now(), loadCheckEnded()),
       passes: [{ preserveDrawingBuffer: AB_DEPS.preserve() }],
       notes: [],
@@ -323,7 +330,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     const plan = planSecondPass(first, { project: currentProject(), scenes }, AB_DEPS);
     if (plan.kind === "done") finish(plan.report);
     else reloadForSecondPass(plan.marker);
-  }, [mode, breakdownAllScenes, runCheck, finish, reloadForSecondPass, currentProject]);
+  }, [mode, breakdownAllScenes, breakdownMethod, runCheck, finish, reloadForSecondPass, currentProject]);
 
   /** The A/B's second pass, in the project Home reopened after the reload: the same scenes, then one report of both. */
   const runSecondPass = useCallback(async (marker: BreakdownResumeMarker) => {
@@ -398,6 +405,24 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
               <ToggleGroupItem value="benchmark" data-testid="feature-test-check-benchmark">Benchmark</ToggleGroupItem>
               <ToggleGroupItem value="breakdown" data-testid="feature-test-check-breakdown">Breakdown</ToggleGroupItem>
             </ToggleGroup>
+            {mode === "breakdown" ? (
+              <ToggleGroup
+                size="sm"
+                spacing={1}
+                value={[breakdownMethod]}
+                onValueChange={(value) => {
+                  const next = FEATURE_TEST_BREAKDOWN_METHODS.find((entry) => entry === value[0]);
+                  if (next) setBreakdownMethod(next);
+                }}
+                aria-label="Breakdown Method"
+              >
+                {FEATURE_TEST_BREAKDOWN_METHODS.map((method) => (
+                  <ToggleGroupItem key={method} value={method} data-testid={`feature-test-check-breakdown-${method}`}>
+                    {METHOD_LABELS[method]}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            ) : null}
             {mode === "breakdown" ? (
               <Field orientation="horizontal" className="items-center">
                 <Checkbox

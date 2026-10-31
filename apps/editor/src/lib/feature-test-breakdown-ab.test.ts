@@ -39,7 +39,7 @@ function pass(breakdown: FeatureTestBreakdownInfo, scenes: FeatureTestCheckScene
   return { mode: "breakdown", startedAt: 1_000, durationMs: 300_000, cancelled: false, scenes, pageErrors: [], breakdown, ...extra };
 }
 
-const firstInfo: FeatureTestBreakdownInfo = { tier: "medium", warmMinutes: 4, passes: [{ preserveDrawingBuffer: true }], notes: [] };
+const firstInfo: FeatureTestBreakdownInfo = { method: "remove-one", tier: "medium", warmMinutes: 4, passes: [{ preserveDrawingBuffer: true }], notes: [] };
 
 describe("the Breakdown's preserveDrawingBuffer A/B", () => {
   let store: Map<string, string>;

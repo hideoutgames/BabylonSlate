@@ -22,7 +22,7 @@ vi.mock("../context/document-context", async () =>
 
 const first: FeatureTestCheckReport = {
   mode: "breakdown", startedAt: 1_000, durationMs: 300_000, cancelled: false, pageErrors: [],
-  breakdown: { tier: "medium", warmMinutes: null, passes: [{ preserveDrawingBuffer: true }], notes: [] },
+  breakdown: { method: "remove-one", tier: "medium", warmMinutes: null, passes: [{ preserveDrawingBuffer: true }], notes: [] },
   scenes: [{
     name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", pass: 1, passed: true, problems: [],
     editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },

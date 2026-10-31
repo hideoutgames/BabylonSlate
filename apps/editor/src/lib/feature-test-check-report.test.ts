@@ -89,6 +89,7 @@ describe("formatFeatureTestCheckReport", () => {
     });
     const report: FeatureTestCheckReport = {
       mode: "breakdown", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],
+      breakdown: { method: "remove-one", tier: "medium", warmMinutes: null, passes: [{ preserveDrawingBuffer: true }], notes: [] },
       scenes: [{
         name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
@@ -132,6 +133,7 @@ describe("formatFeatureTestCheckReport", () => {
     });
     const report: FeatureTestCheckReport = {
       mode: "breakdown", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],
+      breakdown: { method: "remove-one", tier: "medium", warmMinutes: null, passes: [{ preserveDrawingBuffer: true }], notes: [] },
       scenes: [{
         name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
@@ -177,7 +179,7 @@ describe("formatFeatureTestCheckReport", () => {
     const rooms = { view: "rooms" };
     const report: FeatureTestCheckReport = {
       mode: "breakdown", startedAt: 0, durationMs: 600_000, cancelled: false, pageErrors: [],
-      breakdown: { tier: "medium", warmMinutes: 4, passes: [{ preserveDrawingBuffer: true }, { preserveDrawingBuffer: false }], notes: [restored] },
+      breakdown: { method: "remove-one", tier: "medium", warmMinutes: 4, passes: [{ preserveDrawingBuffer: true }, { preserveDrawingBuffer: false }], notes: [restored] },
       scenes: [
         scene("FT_World", 1, [sample("baseline 1", 20, "true"), sample("shadows off", 15, "true", { settings: { ...settings("true"), shadows: "off" } }), sample("baseline 2", 22, "true")]),
         scene("FT_Occlusion", 1, [
@@ -193,19 +195,19 @@ describe("formatFeatureTestCheckReport", () => {
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines.slice(1, 3)).toEqual(["Result: 3/3 scenes passed · NON-ADDITIVE · SATURATED · took 600.0 s", "WARM DEVICE: previous run ended 4 min ago"]);
-    const header = lines.indexOf("Breakdown: tier medium · preserveDrawingBuffer A/B: pass 1 on, pass 2 off (stored setting; each pass's live value below)");
+    const header = lines.indexOf("Breakdown: remove-one · base medium · preserveDrawingBuffer A/B: pass 1 on, pass 2 off (stored setting; each pass's live value below)");
     expect(lines.slice(header + 1, header + 3)).toEqual([
       // On: the median of 20 and 22; off: of 18, 19 and 19.
       "preserveDrawingBuffer on vs off, median baseline gpu busy: FT_World 21.0 vs 19.0 ms (off -2.0 ms, -10%)",
       restored,
     ]);
     expect(lines.filter((line) => line.startsWith("Pass "))).toEqual(["Pass 1 of 2 · preserveDrawingBuffer on (live)", "Pass 2 of 2 · preserveDrawingBuffer off (live)"]);
-    // Each scene names its own live value, with the tier on the next line.
+    // Each scene names its own live value, with the base on the next line.
     const preserveLines = lines.flatMap((line, index) => line.startsWith("  preserveDrawingBuffer: ") ? [[line, lines[index + 1]]] : []);
     expect(preserveLines).toEqual([
-      ["  preserveDrawingBuffer: on (live)", "  Tier: medium (resolution kept at the project's fixed scale)"],
-      ["  preserveDrawingBuffer: on (live)", "  Tier: medium (resolution kept at the project's fixed scale)"],
-      ["  preserveDrawingBuffer: off (live)", "  Tier: medium (resolution kept at the project's fixed scale)"],
+      ["  preserveDrawingBuffer: on (live)", "  Base: medium"],
+      ["  preserveDrawingBuffer: on (live)", "  Base: medium"],
+      ["  preserveDrawingBuffer: off (live)", "  Base: medium"],
     ]);
     // Only the saturated second pass carries the verdicts.
     expect(lines.filter((line) => line.startsWith("  NON-ADDITIVE: ") || line.startsWith("  SATURATED: "))).toEqual([
@@ -221,13 +223,63 @@ describe("formatFeatureTestCheckReport", () => {
   it("states a warm device and the verdicts only when they apply", () => {
     const report: FeatureTestCheckReport = {
       mode: "breakdown", startedAt: 0, durationMs: 1000, cancelled: false, pageErrors: [], scenes: [],
-      breakdown: { tier: "medium", warmMinutes: null, passes: [{ preserveDrawingBuffer: true }], notes: ["The preserveDrawingBuffer A/B ran one pass: the first was cancelled."] },
+      breakdown: { method: "remove-one", tier: "medium", warmMinutes: null, passes: [{ preserveDrawingBuffer: true }], notes: ["The preserveDrawingBuffer A/B ran one pass: the first was cancelled."] },
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines[1]).toBe("Result: 0/0 scenes passed · took 1.0 s");
     expect(lines.some((line) => line.startsWith("WARM DEVICE"))).toBe(false);
     expect(lines).toContain("The preserveDrawingBuffer A/B ran one pass: the first was cancelled.");
     expect(lines.some((line) => line.startsWith("preserveDrawingBuffer on vs off"))).toBe(false);
+  });
+
+  it("reports an add-one Breakdown: warm-up drift, skipped steps, a step's cost beyond the step it includes, and OVER CAP", () => {
+    const settings = { "post.enabled": "false", "post.ambientOcclusion": "false", "post.antiAliasing": "off", "post.samples": "1" };
+    const sample = (label: string, busyMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
+      label, baseline: label.startsWith("baseline"),
+      frames: { frames: 100, durationMs: 1670, fps: 60, medianMs: 16.7, meanMs: 16.7, p95Ms: 17, maxMs: 20, stalls: 0, vsync: [1, 0, 0, 0] },
+      runtimeFps: null, cpuMs: 6, gpuMs: null, drawCalls: 300, resolution: "590x394@2.00", failed: [], settings,
+      gpuBusy: { frames: 300, medianMs: busyMs, p95Ms: busyMs + 2, pollMs: 4.2, skipped: 0 }, ...extra,
+    });
+    const report: FeatureTestCheckReport = {
+      mode: "breakdown", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],
+      breakdown: { method: "add-one", tier: "low at resolution 0.5", warmMinutes: null, passes: [{ preserveDrawingBuffer: true }], notes: [] },
+      scenes: [{
+        name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
+        editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [],
+          benchmark: [
+            sample("warm-up 1", 20, { baseline: false, warmup: true }),
+            sample("warm-up 2", 12.5, { baseline: false, warmup: true }),
+            sample("warm-up 3", 12.4, { baseline: false, warmup: true }),
+            sample("baseline 1", 12),
+            sample("post-processing", 15, { settings: { ...settings, "post.enabled": "true" } }),
+            sample("baseline 2", 12),
+            sample("AO", 19, { settings: { ...settings, "post.enabled": "true", "post.ambientOcclusion": "true" } }),
+            sample("baseline 3", 12),
+            {
+              label: "water detail medium", frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null,
+              failed: [], baseline: false, skipped: "already water.shadingDetail medium",
+            },
+            sample("MSAA 4x", 33, { settings: { ...settings, "post.antiAliasing": "msaa4", "post.samples": "4" } }),
+            sample("baseline 5", 31),
+          ], logs: [] },
+        session: null,
+      }],
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    const row = (label: string) => lines.find((line) => line.startsWith(`    ${label} `))!;
+    expect(lines[1]).toBe("Result: 1/1 scenes passed · OVER CAP · took 300.0 s");
+    expect(lines).toContain("Breakdown: add-one · base low at resolution 0.5 · preserveDrawingBuffer A/B: pass 1 on (stored setting; each pass's live value below)");
+    expect(lines).toContain("  Base: low at resolution 0.5");
+    // The first warm-up window against the last, the steady one the steps start from.
+    expect(lines).toContain("  Warm-up drift: first window 20.0 ms, steady 12.4 ms (-38%) over 3 windows (gpu busy)");
+    expect(lines).toContain("  OVER CAP: baseline 5 31.0 ms past the 30 ms add-one cap; the GPU may change speed there, so changes are not costs");
+    expect(lines.some((line) => line.startsWith("  NON-ADDITIVE"))).toBe(false);
+    expect(row("post-processing")).toMatch(/\+3\.0ms \+25% .*post\.enabled=true$/);
+    // 19 against 12 and 12 is +7; the stack alone cost +3.
+    expect(row("AO")).toMatch(/\+7\.0ms \+58% .*post\.enabled=true, post\.ambientOcclusion=true · own \+4\.0ms beyond post-processing$/);
+    expect(row("water detail medium")).toMatch(/^ {4}water detail medium +- +- +- +- +- +- +- +- +- +skipped \(already water\.shadingDetail medium\)$/);
+    expect(row("MSAA 4x")).toContain("OVER 30 ms: the GPU may have changed speed");
   });
 
   it("shows the counters' medians with their ranges when frames differ", () => {
