@@ -32,6 +32,7 @@ export const FEATURE_TEST_MATERIAL_NAMES = {
   surfaceInstance: "FT_MatSurfaceInstance",
   surfaceInstanceMetal: "FT_MatSurfaceInstanceMetal",
   emissive: "FT_MatEmissive",
+  perInstanceTint: "FT_MatPerInstanceTint",
   translucent: "FT_MatGlass",
   masked: "FT_MatNoiseMasked",
   particle: "FT_MatParticleSoft",
@@ -100,6 +101,7 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
     Albedo: { kind: "texture", textureAssetGuid: pixelArt },
   });
   const emissive = await saveMaterial(ctx, NAMES.emissive, emissiveMaterial(NAMES.emissive));
+  await saveMaterial(ctx, NAMES.perInstanceTint, perInstanceTintMaterial(NAMES.perInstanceTint));
   const translucent = await saveMaterial(ctx, NAMES.translucent, glassMaterial(NAMES.translucent));
   await saveMaterial(ctx, NAMES.masked, noiseMaskedMaterial(NAMES.masked));
 
@@ -128,7 +130,7 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
  * `Meshes And Materials` zone: floor, one of every primitive kind in the
  * surface Material, a row of Material / Instance spheres and shapes (instance,
  * chained instance, scene-owned private overrides, emissive, translucent,
- * masked) and Holiday Pack Models keeping their slot Materials beside one with
+ * masked), a row of crates varying a Per Instance Tint of one Material, and Holiday Pack Models keeping their slot Materials beside one with
  * a whole-mesh Material override.
  */
 export async function placeFeatureTestMaterials(ctx: FeatureTestContext): Promise<void> {
@@ -177,6 +179,16 @@ export async function placeFeatureTestMaterials(ctx: FeatureTestContext): Promis
   place("emissive", "Emissive Material", "cylinder", zone.at(3.2, 0.75, -1), emissive);
   place("translucent", "Translucent Material", "sphere", zone.at(6.4, 0.9, -1), translucent);
   place("masked", "Masked Material", "plane", zone.at(9.6, 1, -1), masked, { scale: [1.3, 1.3, 1.3] });
+
+  // Per-instance row: crates of one Material, each overriding only its Per Instance Tint, so they keep sharing it and
+  // draw in one batch.
+  const perInstanceTint = featureTestMaterialAssetGuid(ctx, "Material", NAMES.perInstanceTint);
+  const tints: Array<[number, number, number]> = [[0.95, 0.3, 0.25], [0.95, 0.75, 0.2], [0.35, 0.85, 0.35], [0.25, 0.6, 0.95], [0.7, 0.4, 0.9]];
+  tints.forEach(([r, g, b], index) => {
+    const crate = place(`per-instance-${index + 1}`, `Per Instance Tint ${index + 1}`, "box", zone.at(-8 + index * 4, 0.5, 2.5), perInstanceTint,
+      { scale: [0.66, 0.66, 0.66] });
+    crate.components[0]!.materialInstance = { materialGuid: perInstanceTint, parameters: { Tint: color(r, g, b) } };
+  });
 
   // Back row: Holiday Pack Models keep their imported slot Materials; the last overrides the whole mesh.
   const models = ctx.assets.models;
@@ -434,6 +446,17 @@ function emissiveMaterial(name: string): MaterialDocument {
   wire(doc, "base", "rgb", "output", "baseColor");
   wire(doc, "roughness", "out", "output", "roughness");
   wire(doc, "glow", "out", "output", "emissive");
+  return doc;
+}
+
+/** A plain surface whose base colour is the Tint parameter, marked Per Instance so each actor can vary it. */
+function perInstanceTintMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "surface");
+  node(doc, "tint", "param.color", 0, 0, { name: "Tint", value: [0.8, 0.8, 0.8, 1], perInstance: true });
+  node(doc, "roughness", "const.float", 0, 1, { value: [0.55] });
+  node(doc, "output", "output.surface", 1, 0);
+  wire(doc, "tint", "rgb", "output", "baseColor");
+  wire(doc, "roughness", "out", "output", "roughness");
   return doc;
 }
 
