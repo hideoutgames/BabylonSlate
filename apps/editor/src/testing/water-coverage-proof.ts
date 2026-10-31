@@ -19,10 +19,6 @@ const CAMERAS: ReadonlyArray<{ position: readonly [number, number, number]; targ
   { position: [0, 34, 0], target: [0, SEA, 90] },
   { position: [-60, 34, -40], target: [-15, SEA, 32] },
   { position: [0, 80, -100], target: [0, SEA, 90] },
-] target: readonly [number, number, number] }> = [
-  { position: [0, 34, 0], target: [0, SEA, 90] },
-  { position: [-60, 34, -40], target: [40, SEA, 120] },
-  { position: [0, 80, -100], target: [0, SEA, 160] },
 ];
 
 /** An opaque unlit Material of one colour. */
