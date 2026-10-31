@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InstancedMesh, Mesh, StandardMaterial, type Scene } from "@babylonjs/core";
 import { createActor, createDefaultScene, createMeshComponent, type SerializedActor, type SerializedScene } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { sceneInstancePool, setSceneInstancing } from "./instance-pool";
 import { collectNavBakeGeometry } from "./nav-bake-geometry";
@@ -106,6 +107,29 @@ describe("editor primitives drawn through the instance pool", () => {
     sync.apply(sceneWith([crate("wall"), crate("mover", undefined, 2)]));
     const statics = new Set(["wall"]);
     expect([isEditorStaticMesh(leafOf(sync, "wall"), statics), isEditorStaticMesh(leafOf(sync, "mover"), statics)]).toEqual([true, false]);
+  });
+
+  it("draws a static model's leaf pooled with its slot, the actor's override and the slot again", async () => {
+    const { sync, materials } = pooledEditor((scene) => ({ slot: new StandardMaterial("slot", scene), override: new StandardMaterial("override", scene) }));
+    sync.setMeshAssets({
+      modelBytes: new Map([["statue", encodeTriangleGlb()]]),
+      modelPayloads: new Map([["statue", { clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+        materialSlots: [{ index: 0, name: "Stone", materialGuid: "slot" }] }]]),
+    });
+    const mesh = createMeshComponent("statue-mesh", "box");
+    mesh.properties.assetGuid = "statue";
+    const statue = () => sceneWith([createActor("statue", "Statue", { components: [mesh] })]);
+    sync.apply(statue());
+    const leaf = () => sync.meshForActor("statue")!.getChildMeshes(false).find((child) => child.getTotalVertices() > 0);
+    await vi.waitFor(() => expect(leaf()).toBeInstanceOf(InstancedMesh));
+    expect(leaf()!.material).toBe(materials.slot);
+    mesh.properties.materialGuid = "override";
+    sync.apply(statue());
+    expect([leaf()!.material, leaf() instanceof InstancedMesh]).toEqual([materials.override, true]);
+    mesh.properties.materialGuid = null;
+    mesh.properties.materialSource = "model";
+    sync.apply(statue());
+    expect(leaf()!.material).toBe(materials.slot);
   });
 
   it("bakes a pooled crate's triangles into the nav mesh", () => {
