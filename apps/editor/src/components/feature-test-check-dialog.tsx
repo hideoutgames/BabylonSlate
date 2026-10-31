@@ -96,7 +96,7 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
   benchmark: "Plays every Feature Test scene and measures each quality tier with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
-  breakdown: "Plays FT_World and FT_Occlusion and measures each feature at 60 fps between baselines (anti-aliasing, shadow filter, post-processing effects, water, captures, resolution; occlusion culling from two cameras). Add One starts from a light Low base and turns one feature on at a time, so each change is that feature's own cost; Remove One turns one feature off at a time from the Medium tier. Then the editor reloads once and repeats it with preserveDrawingBuffer switched, and writes one report. About 20 minutes; keep the device awake and plugged in.",
+  breakdown: "Plays FT_World and FT_Occlusion and measures each feature at 60 fps between baselines (anti-aliasing, shadow filter, post-processing effects, water, captures, resolution; occlusion culling from two cameras). Add One starts from a light Low base and turns one feature on at a time, so each change is that feature's own cost; Remove One turns one feature off at a time from the Medium tier. With Compare Preserve Drawing Buffer, the editor then reloads once and repeats it with preserveDrawingBuffer switched, and writes one report of both. About 10 minutes (20 with the comparison); keep the device awake and plugged in.",
 };
 
 const MODES = ["quick", "full", "benchmark", "breakdown"] as const satisfies readonly FeatureTestCheckMode[];
@@ -176,6 +176,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
   const { requestPlay, playFromScene, setPlayFromScene, sessionOwner } = usePlay();
   const [mode, setMode] = useState<FeatureTestCheckMode>("quick");
   const [breakdownAllScenes, setBreakdownAllScenes] = useState(false);
+  const [breakdownAb, setBreakdownAb] = useState(false);
   const [breakdownMethod, setBreakdownMethod] = useState<FeatureTestBreakdownMethod>(FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD);
   const [phase, setPhase] = useState<Phase>(savedPhase);
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
@@ -321,16 +322,18 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     const breakdown: FeatureTestBreakdownInfo = {
       method: breakdownMethod,
       tier: FEATURE_TEST_BREAKDOWN_BASES[breakdownMethod].label,
+      ab: breakdownAb,
       warmMinutes: warmDeviceMinutes(Date.now(), loadCheckEnded()),
       passes: [{ preserveDrawingBuffer: AB_DEPS.preserve() }],
       notes: [],
     };
     const { report: first, error } = await runCheck({ mode, scenes, breakdown });
-    if (error) { finish(first, error); return; }
+    // Without the A/B: one pass at the stored setting, no reload.
+    if (error || !breakdownAb) { finish(first, error); return; }
     const plan = planSecondPass(first, { project: currentProject(), scenes }, AB_DEPS);
     if (plan.kind === "done") finish(plan.report);
     else reloadForSecondPass(plan.marker);
-  }, [mode, breakdownAllScenes, breakdownMethod, runCheck, finish, reloadForSecondPass, currentProject]);
+  }, [mode, breakdownAllScenes, breakdownMethod, breakdownAb, runCheck, finish, reloadForSecondPass, currentProject]);
 
   /** The A/B's second pass, in the project Home reopened after the reload: the same scenes, then one report of both. */
   const runSecondPass = useCallback(async (marker: BreakdownResumeMarker) => {
@@ -432,6 +435,17 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
                   onCheckedChange={(checked) => setBreakdownAllScenes(checked === true)}
                 />
                 <FieldLabel htmlFor="feature-test-check-breakdown-all" className="flex-1 font-normal">All Scenes</FieldLabel>
+              </Field>
+            ) : null}
+            {mode === "breakdown" ? (
+              <Field orientation="horizontal" className="items-center">
+                <Checkbox
+                  id="feature-test-check-breakdown-ab"
+                  checked={breakdownAb}
+                  data-testid="feature-test-check-breakdown-ab"
+                  onCheckedChange={(checked) => setBreakdownAb(checked === true)}
+                />
+                <FieldLabel htmlFor="feature-test-check-breakdown-ab" className="flex-1 font-normal">Compare Preserve Drawing Buffer (Reloads Once)</FieldLabel>
               </Field>
             ) : null}
           </>

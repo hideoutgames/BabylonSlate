@@ -122,6 +122,7 @@ const POST_FIELDS = [
   "post.scale", "post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "post.antiAliasing", "post.samples",
 ] as const;
 const ANTI_ALIASING_FIELDS = ["post.antiAliasing", "post.samples"] as const;
+const WATER_DETAIL_FIELDS = ["water.shadingDetail", "water.fft"] as const;
 
 /**
  * Remove-one (`FEATURE_TEST_BREAKDOWN_BASES["remove-one"]`, the Medium tier): one feature off (or one cost lowered) at
@@ -135,8 +136,8 @@ export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] =
   { label: "shadow filter medium", commands: ["quality shadows filter medium"], fields: ["shadows.filter"], overlaps: true },
   { label: "water refraction off", commands: ["quality water refraction off"], fields: ["water.refraction"] },
   { label: "water reflections sky", commands: ["quality water reflections sky"], fields: ["water.reflections"] },
-  { label: "water detail low", commands: ["quality water shadingDetail low"], fields: ["water.shadingDetail"] },
-  { label: "water detail medium", commands: ["quality water shadingDetail medium"], fields: ["water.shadingDetail"], overlaps: true },
+  { label: "water detail low", commands: ["quality water shadingDetail low"], fields: WATER_DETAIL_FIELDS },
+  { label: "water detail medium", commands: ["quality water shadingDetail medium"], fields: WATER_DETAIL_FIELDS, overlaps: true },
   { label: "post low", commands: ["quality postprocessing low"], fields: POST_FIELDS, overlaps: true },
   { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"], overlaps: true },
   { label: "SSR off", commands: ["quality postprocessing reflections off"], fields: ["post.reflections"], overlaps: true },
@@ -156,11 +157,16 @@ export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] =
 export const FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS: readonly FeatureTestBreakdownStep[] = [
   { label: "MSAA 2x", commands: ["quality postprocessing antialiasing msaa2"], fields: ANTI_ALIASING_FIELDS },
   { label: "MSAA 4x", commands: ["quality postprocessing antialiasing msaa4"], fields: ANTI_ALIASING_FIELDS },
+  // FXAA runs in the post-processing stack, so its step includes it, as AO's and SSR's do.
+  {
+    label: "AA fxaa", commands: ["postprocessing on", "quality postprocessing antialiasing fxaa"],
+    fields: ["post.enabled", ...ANTI_ALIASING_FIELDS], includes: "post-processing",
+  },
   {
     label: `shadow filter ${MEDIUM.shadows.filterQuality}`,
     commands: [`quality shadows filter ${MEDIUM.shadows.filterQuality}`], fields: ["shadows.filter"],
   },
-  // AO and SSR run in the post-processing stack, so their steps include it; this one measures the stack alone.
+  // FXAA, AO and SSR run in the post-processing stack, so their steps include it; this one measures the stack alone.
   { label: "post-processing", commands: ["postprocessing on"], fields: ["post.enabled"] },
   {
     label: "AO", commands: ["postprocessing on", "quality postprocessing ambientOcclusion on"],
@@ -170,8 +176,9 @@ export const FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS: readonly FeatureTestBreakdown
     label: "SSR", commands: ["postprocessing on", "quality postprocessing reflections on"],
     fields: ["post.enabled", "post.reflections"], includes: "post-processing",
   },
-  { label: "water detail medium", commands: ["quality water shadingDetail medium"], fields: ["water.shadingDetail"] },
-  { label: "water detail high", commands: ["quality water shadingDetail high"], fields: ["water.shadingDetail"] },
+  // Each from the base on its own; the notes name the FFT grid it ran, resolution-independent work the detail may change.
+  { label: "water detail medium", commands: ["quality water shadingDetail medium"], fields: WATER_DETAIL_FIELDS },
+  { label: "water detail high", commands: ["quality water shadingDetail high"], fields: WATER_DETAIL_FIELDS },
   {
     label: "water refraction",
     commands: ["quality water refraction on", `quality water refractionScale ${MEDIUM.water.refractionScale}`],
@@ -627,6 +634,8 @@ export interface FeatureTestBreakdownInfo {
   method: FeatureTestBreakdownMethod;
   /** The base's label (`FEATURE_TEST_BREAKDOWN_BASES[method].label`). */
   tier: string;
+  /** Whether the preserveDrawingBuffer A/B was asked for (the Check dialog's checkbox, off by default): one pass without. */
+  ab: boolean;
   /** Whole minutes since the previous check ended, when that was within `WARM_DEVICE_MS` of the Breakdown's start. */
   warmMinutes: number | null;
   /**

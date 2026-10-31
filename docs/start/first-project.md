@@ -76,7 +76,8 @@ Breakdown shows what each feature costs your device's GPU. It plays two scenes, 
 
 Either way, a step whose setting already has that value is skipped, and the report says so. The report also shows how much the GPU time changed while the device warmed up.
 
-- Halfway through, the editor reloads by itself, reopens the project and measures everything again with the other `preservebuffer` setting, then puts yours back. Choose **Cancel** in the status bar to stop at any point; the report keeps what finished.
-- The report holds both rounds and compares them. It also warns when the device was still warm from a check that ended less than ten minutes earlier, and when the GPU was too busy for the costs to add up (Remove One).
+- Turn on **Compare Preserve Drawing Buffer** to also compare the two `preservebuffer` settings: halfway through, the editor reloads by itself, reopens the project and measures everything again with the other setting, then puts yours back. The report holds both rounds and compares them. It is off by default.
+- Choose **Cancel** in the status bar to stop at any point; the report keeps what finished.
+- The report warns when the device was still warm from a check that ended less than ten minutes earlier, and when the GPU was too busy for the costs to add up (Remove One).
 
-A Breakdown takes about 20 minutes; keep the device awake and plugged in.
+A Breakdown takes about 10 minutes, or 20 with the comparison; keep the device awake and plugged in.

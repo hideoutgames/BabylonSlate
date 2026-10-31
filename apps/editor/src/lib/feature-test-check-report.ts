@@ -226,6 +226,8 @@ function breakdownNotes(
     }
   }
   const step = isBreakdownBaseline(sample) || sample.warmup ? undefined : breakdownStep(sceneName, sample.label, method);
+  // The FFT grid a water detail step ran: resolution-independent work the detail may change.
+  if (step?.fields?.includes("water.fft") && sample.settings?.["water.fft"]) notes.push(`fft ${sample.settings["water.fft"]}`);
   if (step?.includes) {
     const label = sample.view ? `${sample.view} ${step.includes}` : step.includes;
     const included = samples.find((entry) => entry.label === label && entry.view === sample.view && !entry.skipped);
@@ -312,6 +314,13 @@ function preserveComparison(scenes: readonly FeatureTestCheckSceneResult[]): str
 /** A Breakdown's header lines: its tier and the A/B's passes, the on/off comparison, and how the A/B ended. */
 function breakdownHeader(report: FeatureTestCheckReport, breakdown: FeatureTestBreakdownInfo): string[] {
   const passes = breakdown.passes.map((entry, index) => `pass ${index + 1} ${entry.preserveDrawingBuffer ? "on" : "off"}`).join(", ");
+  if (!breakdown.ab) {
+    const stored = breakdown.passes[0]?.preserveDrawingBuffer;
+    return [
+      `Breakdown: ${breakdown.method} · base ${breakdown.tier} · preserveDrawingBuffer ${stored === undefined ? "unknown" : stored ? "on" : "off"} (stored setting; no A/B)`,
+      ...breakdown.notes,
+    ];
+  }
   const lines = [`Breakdown: ${breakdown.method} · base ${breakdown.tier} · preserveDrawingBuffer A/B: ${passes || "no pass"} (stored setting; each pass's live value below)`];
   const comparison = preserveComparison(report.scenes);
   if (comparison) lines.push(comparison);

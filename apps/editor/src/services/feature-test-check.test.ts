@@ -111,7 +111,7 @@ function fakeEditor(
 
 const scene = (name: string) => ({ name, path: `assets/${name}.scene.hasset` });
 
-const REMOVE_ONE: FeatureTestBreakdownInfo = { method: "remove-one", tier: "medium", warmMinutes: null, passes: [], notes: [] };
+const REMOVE_ONE: FeatureTestBreakdownInfo = { method: "remove-one", tier: "medium", ab: false, warmMinutes: null, passes: [], notes: [] };
 
 /**
  * The render-settings fingerprint (`RenderDiagnostics.settings`) after `commands`, as a Play session derives it: quality
@@ -329,7 +329,7 @@ describe("runFeatureTestCheck", () => {
     });
     const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup);
     expect(measured.filter((sample) => !sample.baseline).map((sample) => sample.label)).toEqual([
-      "MSAA 2x", "MSAA 4x", "shadow filter high", "post-processing", "AO", "SSR", "water detail medium", "water detail high",
+      "MSAA 2x", "MSAA 4x", "AA fxaa", "shadow filter high", "post-processing", "AO", "SSR", "water detail medium", "water detail high",
       "water refraction", "planar water reflection", "captures", "resolution 1.0",
     ]);
     const base = FEATURE_TEST_BREAKDOWN_BASES["add-one"].commands;
@@ -365,7 +365,7 @@ describe("runFeatureTestCheck", () => {
     const skipped = measured.filter((sample) => sample.skipped);
     expect(skipped.map((sample) => [sample.label, sample.skipped])).toEqual([
       ["shadows medium", "already shadows medium 2048, shadows.filter high"],
-      ["water detail medium", "already water.shadingDetail medium"],
+      ["water detail medium", "already water.shadingDetail medium, water.fft 256x3"],
       ["volumetrics off", "already post.volumetricLighting false"],
     ]);
     expect(skipped.every((sample) => sample.frames === null)).toBe(true);

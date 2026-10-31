@@ -150,10 +150,6 @@ describe("createCommandRegistry", () => {
     }
     expect(registry.execute("quality postprocessing ambientOcclusion maybe", host).success).toBe(false);
     expect(registry.execute("quality postprocessing resolutionScale off", host).success).toBe(false);
-    // The world view's anti-aliasing mode, by name only.
-    expect(registry.execute("quality postprocessing antialiasing msaa2", host).success).toBe(true);
-    expect(effects().antiAliasing).toBe("msaa2");
-    expect(registry.execute("quality postprocessing antialiasing msaa8", host).success).toBe(false);
     // A reset returns the group to the project's (Medium) effects.
     registry.execute("quality postprocessing reset", host);
     expect(effects()).toMatchObject({ ambientOcclusion: true, reflections: true });

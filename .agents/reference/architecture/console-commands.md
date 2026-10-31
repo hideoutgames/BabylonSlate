@@ -29,7 +29,7 @@ Built-in Play/export console command catalog, its principles, host wiring and us
 | Command | Behavior |
 | --- | --- |
 | `changescene <scene>` | Same path as `ctx.changeScene`; guid or display name from the Play scene library |
-| `quality [tier\|reset]` and `quality shadows\|resolution\|textures\|geometry\|water\|postprocessing\|lighting …` | Shared `RenderingQualitySession`; session overrides via `setScalability`; water fields from `WATER_QUALITY_FIELDS`, post-processing effect flags from `POST_PROCESSING_EFFECT_FIELDS` plus `antialiasing <ANTI_ALIASING_MODES>`; cleared at next Play |
+| `quality [tier\|reset]` and `quality shadows\|resolution\|textures\|geometry\|water\|postprocessing\|lighting …` | Shared `RenderingQualitySession`; session overrides via `setScalability`; water fields from `WATER_QUALITY_FIELDS`, post-processing effect flags from `POST_PROCESSING_EFFECT_FIELDS`; cleared at next Play |
 | `framecap [fps]` | Render cap only; fixed simulation step and input polling unchanged. Initial value from project `playFrameCap` |
 | `volume [0..1]` | `setGlobalVolume` (same as the graph node) |
 | `quit` | `runtime.stop()`, then a `sessionEnded` command: editor Play ends its session through the Stop path, Preview Build closes, a standalone player stops itself. Also runs from `ExecuteConsoleCommand` |
