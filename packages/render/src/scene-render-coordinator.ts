@@ -90,6 +90,8 @@ export type SceneRenderCoordinatorOptions = {
    * something that will not come.
    */
   deferPipelines?: boolean;
+  /** A world view: culls its camera's list by occlusion while the scene does (`ForwardSceneFrameGraphOptions.occlusion`). */
+  occlusion?: boolean;
 };
 
 /** Scene-owned graph lifetime; the host still owns scheduling and presentation. */
@@ -125,7 +127,9 @@ export class SceneRenderCoordinator {
     this.scene = scene;
     this.auxiliaryCamera = options.auxiliary?.camera;
     this.deferPipelines = options.deferPipelines === true;
-    this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary ? { auxiliary: { objects: options.auxiliary.objects } } : {});
+    this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary
+      ? { auxiliary: { objects: options.auxiliary.objects } }
+      : { occlusion: options.occlusion === true });
     this.detachReadinessDirty = onSceneReadinessDirty(scene, () =>
       this.graph.markReadinessDirty(),
     );
@@ -165,6 +169,9 @@ export class SceneRenderCoordinator {
   }
 
   postProcessPassCount(): number { return this.graph.postProcessPassCount(); }
+
+  /** The last frame's occlusion culling; null for a view that does not cull by occlusion. */
+  occlusionDiagnostics(): ReturnType<ForwardSceneFrameGraph["occlusionDiagnostics"]> { return this.graph.occlusionDiagnostics(); }
 
   /** Prepared graph task names in record order; [] before preparation. */
   taskNames(): string[] { return this.graph.taskNames(); }
