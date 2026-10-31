@@ -1,3 +1,4 @@
+import { createPooledPrimitiveVisual } from "./pooled-primitive-visual";
 /**
  * The editor's Babylon mesh for one visual component, and the primitive meshes editor and Play share. A property read
  * here at build time must also change the component's kind in `scene-visual-fingerprint.ts`, or edits to it never
@@ -375,15 +376,14 @@ function createComponentMesh(
   const assetGuid = stringProp(component.properties.assetGuid);
   const visual = assetGuid
     ? createModelActorRoot(scene, name)
-    : createPrimitiveMesh(
-        scene,
-        name,
-        typeof component.properties.meshKind === "string"
-          ? component.properties.meshKind
-          : null,
-      );
+    : primitiveVisual(scene, name, typeof component.properties.meshKind === "string" ? component.properties.meshKind : null);
   attachMeshCollisionDashes(visual, component, assets);
   return visual;
+}
+
+/** A mesh component's primitive: drawn through the instance pool where the Scene pools (`createPooledPrimitiveVisual`). */
+function primitiveVisual(scene: Scene, name: string, kind: string | null): Mesh {
+  return createPooledPrimitiveVisual(scene, name, kind) ?? createPrimitiveMesh(scene, name, kind);
 }
 
 export function applyAuthoredComponentSorting(mesh: Mesh, component: SerializedComponent, layers?: readonly string[]): void {

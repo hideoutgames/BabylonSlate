@@ -5,6 +5,9 @@ import { attachPooledLeaf } from "./pooled-visuals";
 import { createPrimitiveMesh } from "./scene-component-mesh";
 import { occluderShape, registerOccluderShape } from "./view-occlusion";
 
+/** The suffix of a pooled visual's drawn leaf name: `<root name>:drawn`. */
+export const POOLED_LEAF_SUFFIX = ":drawn";
+
 /** The primitive kinds a pool group can draw (`createPrimitiveMesh`'s 3D shapes). */
 const POOLED_KINDS = new Set(["box", "sphere", "cylinder", "plane", "quad", "ground"]);
 
@@ -47,7 +50,7 @@ export function createPooledPrimitiveVisual(scene: Scene, name: string, kind: st
   const root = new Mesh(name, scene);
   const leaf = sceneInstancePool(scene).join(
     { geometry: primitiveGeometry(scene, kind), material: null, receiveShadows: true, renderingGroupId: root.renderingGroupId },
-    `${name}:drawn`,
+    `${name}${POOLED_LEAF_SUFFIX}`,
   );
   leaf.parent = root;
   attachPooledLeaf(root, leaf);

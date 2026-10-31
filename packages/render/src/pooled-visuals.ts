@@ -67,6 +67,17 @@ export function setActorMeshMaterial(mesh: AbstractMesh, material: Material | nu
 }
 
 /**
+ * Gives `root`'s pooled leaf the visibility and picking written to `root`, which draws nothing itself: Babylon
+ * inherits neither flag, and the leaf is what draws and what a pick meets.
+ */
+export function syncPooledLeafFlags(root: AbstractMesh): void {
+  const leaf = pooledLeafOf(root);
+  if (!leaf) return;
+  leaf.isVisible = root.isVisible;
+  leaf.isPickable = root.isPickable;
+}
+
+/**
  * Sorts `root`'s pooled leaf as an explicit sorting layer and order sort `root` (`applyComponentSorting`): the leaf,
  * whose submeshes the sorted passes compare, carries the same `alphaIndex` and sorting group, and draws in the group
  * of that order and rendering group.

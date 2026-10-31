@@ -1,6 +1,7 @@
 import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
+import { setActorMeshMaterial } from "./pooled-visuals";
 import { withNetMaterialChanges } from "./material-change-batch";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
@@ -1188,8 +1189,7 @@ export class EditorSceneSync {
       for (const target of meshAndDescendantMeshes(visual)) {
         if (isColliderVisualTree(target) || isTilemapChunkMesh(target)) continue;
         if (!this.constructionMaterials.has(target)) continue;
-        target.material = this.constructionMaterials.get(target) ?? null;
-        applyMaterialBounds(target);
+        assignActorMeshMaterial(target, this.constructionMaterials.get(target) ?? null);
       }
     }
   }
@@ -1230,8 +1230,7 @@ export class EditorSceneSync {
       ) {
         for (const target of meshAndDescendantMeshes(visual)) {
           if (isColliderVisualTree(target) || isTilemapChunkMesh(target)) continue;
-          target.material = null;
-          applyMaterialBounds(target);
+          assignActorMeshMaterial(target, null);
         }
         continue;
       }
@@ -1274,8 +1273,7 @@ export class EditorSceneSync {
     if (!material) return;
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;
-      target.material = material;
-      applyMaterialBounds(target);
+      assignActorMeshMaterial(target, material, this.constructionMaterials);
     }
   }
 
@@ -1337,6 +1335,18 @@ function visualForMeshComponent(
   if (!isEditorActorOrigin(root)) return root;
   const name = editorComponentMeshName(actorId, componentId);
   return visualMeshesOfActorRoot(root).find((mesh) => mesh.name === name) ?? null;
+}
+
+/**
+ * Draws `target` with `material`, a pooled visual through its group or, for a Material no group draws, a mesh of its
+ * own (`setActorMeshMaterial`), which inherits `target`'s construction Material so a restore reaches what draws.
+ */
+function assignActorMeshMaterial(target: Mesh, material: Material | null, construction?: WeakMap<Mesh, Material | null>): void {
+  const own = setActorMeshMaterial(target, material);
+  applyMaterialBounds(target);
+  if (!own) return;
+  applyMaterialBounds(own);
+  if (construction?.has(target)) construction.set(own, construction.get(target) ?? null);
 }
 
 function meshAndDescendantMeshes(root: Mesh): Mesh[] {

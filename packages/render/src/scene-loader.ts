@@ -1,3 +1,5 @@
+import { createPooledPrimitiveVisual, POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
+import { syncPooledLeafFlags } from "./pooled-visuals";
 import { Mesh, MeshBuilder, Quaternion, Scene, Vector3, type Matrix, type TransformNode } from "@babylonjs/core";
 import { resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
@@ -91,6 +93,8 @@ export function actorIdFromMeshName(meshName: string): string | null {
   const rest = meshName.slice(EDITOR_ACTOR_MESH_PREFIX.length);
   const pipe = rest.indexOf(EDITOR_COMPONENT_MESH_SEP);
   if (pipe >= 0) return rest.slice(0, pipe);
+  // A pooled primitive's drawn leaf is `editorActor:<id>:drawn` (`createPooledPrimitiveVisual`).
+  if (rest.endsWith(POOLED_LEAF_SUFFIX)) return rest.slice(0, -POOLED_LEAF_SUFFIX.length);
   // Chunk children are `editorActor:<id>:<layer>:<cx>:<cy>` plus optional
   // `:aN` atlas suffix and `:anim`.
   const chunk =
@@ -198,6 +202,7 @@ function createActorOriginHierarchy(
       );
       mesh.isVisible = actor.visible;
       mesh.isPickable = visualIsPickable(mesh, actor.locked);
+      syncPooledLeafFlags(mesh);
       meshes.set(component.id, mesh);
     }
     const fogBindings = new Map<string, { transforms: SerializedTransform[]; error?: string }>(
@@ -365,7 +370,7 @@ function createUnboundActorMesh(
     typeof meshComponent?.properties.meshKind === "string"
       ? meshComponent.properties.meshKind
       : null;
-  const primitive = createPrimitiveMesh(scene, name, meshKind);
+  const primitive = createPooledPrimitiveVisual(scene, name, meshKind) ?? createPrimitiveMesh(scene, name, meshKind);
   if (meshComponent) attachMeshCollisionDashes(primitive, meshComponent, assets);
   return primitive;
 }
@@ -432,6 +437,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   }
   mesh.isVisible = actor.visible;
   mesh.isPickable = visualIsPickable(mesh, actor.locked);
+  syncPooledLeafFlags(mesh);
   if (!origin) return;
   const environmentRoots = new Set(actor.components
     .filter((entry) => entry.classId === "LandscapeComponent" || entry.classId === "FoliageComponent")
@@ -454,6 +460,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
     if (!isDirectComponentPart(child.name)) continue;
     child.isVisible = actor.visible;
     child.isPickable = visualIsPickable(child, actor.locked);
+    syncPooledLeafFlags(child);
   }
 }
 
