@@ -13,7 +13,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon } from "lucide-react";
+import { ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
 import {
   humanizePropertyLabel,
   PinShapeGlyph,
@@ -208,6 +208,42 @@ function PinHandle({
     >
       <PinVisual type={displayType} connected={connected} />
     </Handle>
+  );
+}
+
+/**
+ * An output drawn at the right end of the title bar, aligned with the output
+ * handles of the rows below: a custom event's Output Delegate, as in Unreal.
+ */
+function HeaderPin({
+  nodeId,
+  pin,
+  disabled,
+}: {
+  nodeId: string;
+  pin: SerializedPin;
+  disabled: boolean;
+}) {
+  const { pendingPin, pinHasError } = useGraphEditorContext();
+  const connected = useStore((state) => isPinWired(state.edges, nodeId, pin));
+  const label = humanizePropertyLabel(pin.name);
+  return (
+    <span
+      className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center"
+      data-pin-side={pin.direction}
+      data-pin-id={pin.id}
+      data-header-pin
+    >
+      <PinHandle
+        nodeId={nodeId}
+        pin={pin}
+        label={label}
+        pending={pendingPin?.nodeId === nodeId && pendingPin.pinId === pin.id}
+        hasError={pinHasError(nodeId, pin.id)}
+        connected={connected}
+        disabled={disabled}
+      />
+    </span>
   );
 }
 
@@ -428,9 +464,19 @@ function isInheritedCustomEvent(nodeType: string, data: Record<string, unknown> 
   return data?.eventQualifier === "Inherited" || (typeof data?.parentClassId === "string" && data.parentClassId !== "");
 }
 
+/** Pins drawn in the title bar rather than in a pin row. */
+function headerPinsOf(data: Record<string, unknown> | undefined): SerializedPin[] {
+  return hasSerializedPins(data) ? data.__pins.filter((pin) => pin.placement === "header") : [];
+}
+
 function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   if (data?.__material || data?.__particleRole) return null;
   const nodeType = typeof data?.__nodeType === "string" ? data.__nodeType : "";
+  // A title-bar pin takes the corner (an inherited custom event's delegate square).
+  if (headerPinsOf(data).length > 0) return null;
+  if (nodeType.startsWith("flow.dispatcher.")) {
+    return { Icon: RadioTowerIcon, label: "Event Dispatcher" };
+  }
   if (data?.__latent === true || (nodeType === "debug.executeJavaScript" && data?.async === true)) {
     return { Icon: ClockIcon, label: "Latent Action" };
   }
@@ -469,10 +515,11 @@ export function BlueprintNodeShell({
   const editorOnly = data?.__editorOnly === true;
   const disabled = data?.__disabled === true;
   const marker = nodeCornerMarker(data);
+  const headerPins = card ? [] : headerPinsOf(data);
 
   return (
     <div className={cn("relative", card && "group/title")}>
-      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker} />
+      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker || headerPins.length > 0} />
       {/* Outside the card's clipped body, straddling its left border at the header. */}
       {card ? <NodeBreakpointDot nodeId={nodeId} data={data} className="-left-1.5 top-6 z-10" /> : null}
       {marker ? (
@@ -504,11 +551,15 @@ export function BlueprintNodeShell({
             className={cn(
               "group/title relative rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
               marker && "pr-10",
+              headerPins.length > 0 && "pr-12",
               nodeRoleClass(role),
             )}
           >
             <NodeBreakpointDot nodeId={nodeId} data={data} />
             {title}
+            {headerPins.map((pin) => (
+              <HeaderPin key={pin.id} nodeId={nodeId} pin={pin} disabled={disabled} />
+            ))}
           </div>
         )}
         {children}
@@ -538,7 +589,7 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
   const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const { title, role } = visualFromData(data, type);
-  const rows = zipPinRows(pins, {
+  const rows = zipPinRows(pins.filter((pin) => pin.placement !== "header"), {
     declaredOrder: data.__declaredPinOrder === true,
   });
   // Reordering pins moves handles without resizing the node, so React Flow
