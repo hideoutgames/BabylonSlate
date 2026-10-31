@@ -98,11 +98,12 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play. Its 
 | Command | Effect |
 | --- | --- |
 | `ft_cel` / `ft_pbr` | Switch the shading mode |
+| `ft_occlusion` | Turn occlusion culling on for the session (off on every quality tier); `stat draws` shows what it culls |
 | `ft_spawn [count]` | Spawn `FT_ScriptSpawned` actors (default 10); exercises Play's load-time warm-up of spawnables and the per-mesh hide of a missed one |
 | `ft_stream` | Toggle loading `FT_StreamedRoom` |
 | `ft_stats` | Print score, spinner and spawn counts |
 
-Useful built-ins: `quality low|medium|high|ultra`, `quality shadows screen off|low|medium|high`, `framecap <fps>`, `possess "<camera name>"`, `stat unit`, `behaviourtreedebug on`, `shownav on`, `showaudiodebug on`. The cost toggles `postprocessing off`, `rendertargets off` and `quality postprocessing <effect> off`, and `gpubusy on|off`, are exercised by the check's Breakdown mode; `preservebuffer on|off` is compared across two Breakdown runs with an editor reload between them.
+Useful built-ins: `quality low|medium|high|ultra`, `quality shadows screen off|low|medium|high`, `quality geometry occlusion on|off`, `framecap <fps>`, `possess "<camera name>"`, `stat unit`, `behaviourtreedebug on`, `shownav on`, `showaudiodebug on`. The cost toggles `postprocessing off`, `rendertargets off` and `quality postprocessing <effect> off`, and `gpubusy on|off`, are exercised by the check's Breakdown mode; `preservebuffer on|off` is compared across two Breakdown runs with an editor reload between them.
 
 ### Workload knobs
 

@@ -45,7 +45,18 @@ Targets are guides, not guarantees. Profile on the devices you ship to.
 - **Resolution Scale**, **Dynamic Resolution**, **Minimum Resolution Scale** and **Dynamic Resolution Target FPS** trade sharpness for frame rate. Dynamic Resolution is on below Ultra.
 - **Texture LOD Bias**, **Texture Anisotropy** and **Texture Budget (MiB)** control texture detail and memory. Unused textures are released above the budget.
 - **Auto LOD** and **LOD Distance Scale** control simplified model levels. See [Models](models.md#automatic-lod).
+- **Occlusion Culling** skips objects hidden behind walls and other solid shapes. It is off on every level. See [Occlusion culling](#occlusion-culling).
 - Water and post-processing groups are covered in [Water](water.md#water-quality) and [Post-Processing](post-processing.md#quality).
+
+## Occlusion culling
+
+With **Occlusion Culling** on (the **Geometry** group of Scalability), Play and exported games skip objects that are wholly hidden behind solid shapes. Fewer draws can raise the frame rate in dense scenes, such as streets and rooms. It is off on every level, so turn it on per project and measure it on your devices.
+
+- Box, Sphere and Cylinder meshes from a Mesh component hide what is behind them, and Plane meshes do when two-sided. Imported models are not used to hide others.
+- A shape hides things only while it is opaque, fills enough of the screen, and is not see-through or animated by its material.
+- Objects are only skipped when no part of them could be in view. Shadows, reflections, captures and picking still include them.
+- The editor viewport does not cull this way.
+- In Play, `quality geometry occlusion on` turns it on for the session, and `stat draws` shows how many objects it skipped and what that cost.
 
 ## Resolution and frame rate
 

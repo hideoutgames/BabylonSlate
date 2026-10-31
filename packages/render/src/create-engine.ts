@@ -1,3 +1,4 @@
+import { allowSceneOcclusionCulling } from "./view-occlusion";
 import { applyGamepadRumble } from "./gamepad-rumble";
 import { applyDeviceVibration } from "./device-vibration";
 import { drainEngineAfterRelease } from "./idle-engine-drain";
@@ -478,6 +479,8 @@ function initializeEngine(
   if (!presentRtt && !options.previewLighting) setSceneBindsPreviousEffects(scene);
   // Only a world view (the editor's, Play's, the player's) marches Screen-Space Shadows; previews keep them off.
   if (!presentRtt && !options.previewLighting) allowSceneScreenShadows(scene, () => !spatialEffectsUnsupported(scene));
+  // Play's and the player's world view cull by occlusion while the Occlusion Culling setting is on; the editor's does not.
+  if (!presentRtt && !options.previewLighting && options.playMode) allowSceneOcclusionCulling(scene, true);
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so a

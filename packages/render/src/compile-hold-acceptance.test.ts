@@ -86,7 +86,6 @@ import { compileMaterialPlan } from "./material-compiler";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
-import { setSceneOcclusionCulling } from "./view-occlusion";
 import { isAtlasShadow } from "./shadow-atlas";
 import { findSceneShadowController } from "./shadow-controller";
 import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
@@ -2099,7 +2098,8 @@ describe("the lighting CI gate", () => {
     // A wall between the camera and the crate (the lights' receiver), standing in front of the camera's whole view of it.
     const wall: Actor = { slotId: 20, guid: "wall", position: [0, 2, -5], scale: [6, 4, 0.2], assign: { meshAssetGuid: null, meshKind: "box" } };
     const world = playWorld(model, [...actors(), wall]);
-    setSceneOcclusionCulling(world.handle.scene, true);
+    // Play's world view follows the project's Occlusion Culling setting.
+    world.handle.setRenderSettings(normalizeRenderProjectSettings({ quality: { geometry: { occlusionCulling: true } } }));
     const surfaces = unlitSurfaces(world);
     await settle(world);
     world.driver.arm();
