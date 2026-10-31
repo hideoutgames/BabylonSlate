@@ -1,5 +1,5 @@
 import { Mesh, type AbstractMesh, type AnimationGroup, type AssetContainer, type Geometry, type InstancedMesh, type Scene } from "@babylonjs/core";
-import { instancingIneligibility, sceneInstancePool, sceneInstancing, type InstanceGeometry } from "./instance-pool";
+import { instancingIneligibility, mirrorsWorld, sceneInstancePool, sceneInstancing, type InstanceGeometry } from "./instance-pool";
 import { attachTemplateLods } from "./model-lod";
 import { animatesOnlyTransform, handOverNode } from "./node-handover";
 
@@ -73,6 +73,8 @@ export function poolModelLeaves(root: AbstractMesh, container: AssetContainer, o
       material: leaf.material,
       receiveShadows: leaf.receiveShadows,
       renderingGroupId: leaf.renderingGroupId,
+      // A glTF model's meshes sit under its handedness root, which mirrors them.
+      mirrored: mirrorsWorld(leaf),
     }, leaf.name);
     member.parent = leaf.parent;
     member.position.copyFrom(leaf.position);

@@ -1,4 +1,4 @@
-import { InstancedMesh, Material, Mesh, MultiMaterial, type AbstractMesh, type Scene } from "@babylonjs/core";
+import { InstancedMesh, Material, Mesh, MultiMaterial, TransformNode, type AbstractMesh, type Node, type Scene } from "@babylonjs/core";
 import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { hasPerMeshBindings } from "./unlit-material-blocks";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
@@ -38,6 +38,12 @@ export interface InstanceGroupKey {
    */
   readonly castShadows?: boolean;
   readonly renderingGroupId: number;
+  /**
+   * Whether the members' world matrices mirror (a negative determinant, as a glTF model's under its handedness root).
+   * Babylon draws an instance whose handedness differs from its source's as a mesh of its own (`_actAsRegularMesh`), so
+   * a mirrored group draws from a mirrored source.
+   */
+  readonly mirrored?: boolean;
   /**
    * An explicit sorting layer and order (`applyComponentSorting`), whose `alphaIndex` and sorting group each member
    * carries: one batch draws at one place in the order, so members sorted apart draw in groups of their own.
@@ -87,6 +93,17 @@ export function instancingIneligibility(mesh: Mesh, material: Material | null): 
   return materialIneligibility(mesh, material ?? mesh.getScene().defaultMaterial);
 }
 
+/** Whether `node`'s world matrix mirrors: an odd number of negative scale axes along its parent chain. */
+export function mirrorsWorld(node: TransformNode): boolean {
+  let mirrored = false;
+  for (let current: Node | null = node; current; current = current.parent) {
+    if (!(current instanceof TransformNode)) continue;
+    const { x, y, z } = current.scaling;
+    if (x * y * z < 0) mirrored = !mirrored;
+  }
+  return mirrored;
+}
+
 /** A group's empty drawn sources kept for a respawn, beyond which the least recently emptied is disposed. */
 export const RETAINED_EMPTY_GROUPS = 32;
 
@@ -129,7 +146,7 @@ function materialId(material: Material | null): number {
 }
 
 function groupId(key: InstanceGroupKey): string {
-  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.castShadows === false ? 0 : 1}|${key.renderingGroupId}|${key.sortKey ?? ""}`;
+  return `${key.geometry.key}|${materialId(key.material)}|${key.receiveShadows ? 1 : 0}|${key.castShadows === false ? 0 : 1}|${key.renderingGroupId}|${key.sortKey ?? ""}|${key.mirrored ? 1 : 0}`;
 }
 
 const sources = new WeakMap<Mesh, InstanceGroupKey>();
@@ -357,7 +374,7 @@ function configureSource(source: Mesh, key: InstanceGroupKey): void {
   source.position.setAll(0);
   source.rotationQuaternion = null;
   source.rotation.setAll(0);
-  source.scaling.setAll(1);
+  source.scaling.set(1, 1, key.mirrored ? -1 : 1);
   source.freezeWorldMatrix();
   // After the freeze, which found a uniform scale: a frozen world matrix never updates it again.
   (source as unknown as { _updateNonUniformScalingState(value: boolean): boolean })._updateNonUniformScalingState(true);
