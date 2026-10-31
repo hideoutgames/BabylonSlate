@@ -65,3 +65,20 @@ export function setActorMeshMaterial(mesh: AbstractMesh, material: Material | nu
   sceneInstancePool(mesh.getScene()).update(leaf, { material });
   return undefined;
 }
+
+/**
+ * Sorts `root`'s pooled leaf as an explicit sorting layer and order sort `root` (`applyComponentSorting`): the leaf,
+ * whose submeshes the sorted passes compare, carries the same `alphaIndex` and sorting group, and draws in the group
+ * of that order and rendering group.
+ */
+export function sortPooledLeaf(root: AbstractMesh): void {
+  const leaf = pooledLeafOf(root);
+  if (!leaf) return;
+  const metadata = root.metadata as { sortingGroupId?: string; sortingLayerKey?: number } | null;
+  leaf.alphaIndex = root.alphaIndex;
+  leaf.metadata = { ...(leaf.metadata as object | null), sortingGroupId: metadata?.sortingGroupId, sortingLayerKey: metadata?.sortingLayerKey ?? 0 };
+  sceneInstancePool(root.getScene()).update(leaf, {
+    renderingGroupId: root.renderingGroupId,
+    sortKey: `${root.alphaIndex}|${metadata?.sortingGroupId ?? ""}|${metadata?.sortingLayerKey ?? 0}`,
+  });
+}
