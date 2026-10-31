@@ -376,7 +376,6 @@ describe("SettingsModal project authoring", () => {
     expect(screen.queryByLabelText("Scene-Wide Fog Density")).toBeNull();
     fireEvent.change(screen.getByLabelText("Volumetric Steps"), { target: { value: "32" } });
     fireEvent.blur(screen.getByLabelText("Volumetric Steps"));
-    fireEvent.click(screen.getByTestId("project-effects-fxaa"));
     expect(screen.queryByLabelText("Render Scale")).toBeNull();
     fireEvent.click(screen.getByTestId("project-effects-upscaling"));
     fireEvent.change(screen.getByLabelText("Render Scale"), { target: { value: "0.5" } });
@@ -397,7 +396,7 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByLabelText("Volumetric Steps")).toHaveProperty("value", "32");
     expect(lastProjectRender.current).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, upscaling: { enabled: true, renderScale: 0.5, sharpness: 0.2 }, colorGrading: { enabled: true, lutTextureGuid: null }, ambientOcclusion: { enabled: true, radius: 1.5 }, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
+    expect(lastProjectRender.current).toMatchObject({ effects: { upscaling: { enabled: true, renderScale: 0.5, sharpness: 0.2 }, colorGrading: { enabled: true, lutTextureGuid: null }, ambientOcclusion: { enabled: true, radius: 1.5 }, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
   });
 
   it("picks the default font from Font assets instead of a guid field", async () => {

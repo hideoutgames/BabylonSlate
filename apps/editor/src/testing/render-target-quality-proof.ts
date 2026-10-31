@@ -157,14 +157,14 @@ function meanError(a: readonly number[], b: readonly number[]): number {
 
 /**
  * How closely each capture matches the scene view's own image of the same
- * lens, with and without a settings effect chain (FXAA).
+ * lens, with and without a settings effect chain (an identity vignette).
  */
 export async function runRenderTargetQualityProof(backend: Backend) {
   const size = 96;
   const host = await lakeHost(backend, size);
   try {
     const cases: Record<string, Record<RenderTargetCaptureQuality, number> & { waterCopy: boolean }> = {};
-    for (const [label, effects] of [["plain", DEFAULT_RENDER_EFFECTS], ["fxaa", { ...DEFAULT_RENDER_EFFECTS, fxaa: true }]] as const) {
+    for (const [label, effects] of [["plain", DEFAULT_RENDER_EFFECTS], ["chain", { ...DEFAULT_RENDER_EFFECTS, vignette: { ...DEFAULT_RENDER_EFFECTS.vignette, enabled: true, weight: 0 } }]] as const) {
       // Fresh captures, so each case publishes only images drawn with its settings.
       for (const quality of QUALITIES) host.configure(quality, false);
       updateSceneRenderingSettings(host.scene, { effects, quality: normalizeRenderingQuality({ water: { profile: "high" } }) });

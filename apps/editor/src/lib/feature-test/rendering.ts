@@ -1056,7 +1056,6 @@ function applyRenderSettings(settings: ProjectSettings, lut: string | null): Pro
         whiteBalance: { ...effects.whiteBalance, enabled: true, temperature: 6800, tint: 0 },
         vignette: { ...effects.vignette, enabled: true, weight: 0.8 },
         bloom: { ...effects.bloom, enabled: true, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
-        fxaa: true,
         upscaling: { ...effects.upscaling, enabled: true, renderScale: 0.8, sharpness: 0.2 },
         colorGrading: { enabled: lut !== null, lutTextureGuid: lut },
         ambientOcclusion: { ...effects.ambientOcclusion, enabled: true, resolutionScale: 0.5, samples: 12 },

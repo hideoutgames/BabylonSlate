@@ -144,8 +144,8 @@ export function parseWaterQualitySetting(field: string, value: string): Partial<
   }
 }
 /**
- * The world view's edge anti-aliasing: multisampling of the scene pass at 4 or 2 samples, FXAA (one sample, FXAA run
- * whatever the project's FXAA switch says), or neither. MSAA modes keep the project's FXAA switch in force.
+ * The world view's edge anti-aliasing, its only control: multisampling of the scene pass at 4 or 2 samples, FXAA (one
+ * sample and the FXAA pass), or neither. MSAA never runs FXAA as well.
  */
 export const ANTI_ALIASING_MODES = ["msaa4", "msaa2", "fxaa", "off"] as const;
 export type AntiAliasingMode = (typeof ANTI_ALIASING_MODES)[number];

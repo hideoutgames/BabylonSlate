@@ -3,6 +3,7 @@ import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { hasPerMeshBindings } from "./unlit-material-blocks";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { markInstanceSource } from "./instance-source";
+import { refreshInstanceParameters } from "./instance-parameters";
 import { hasDrawn } from "./reveal-pending";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
@@ -185,6 +186,8 @@ export class SceneInstancePool {
     previous.members.delete(member);
     (member as unknown as { _sourceMesh: Mesh })._sourceMesh = next.source;
     adoptInstancedBuffers(member, next.source);
+    // A per-instance parameter's attribute names another value in another Material.
+    refreshInstanceParameters(member);
     next.source.addInstance(member);
     next.members.add(member);
     this.memberGroups.set(member, next);
