@@ -157,8 +157,8 @@ export function reserveSpatialEffects(
   // Half-float velocity and two half-float history targets; native adds the
   // resolve pass input.
   if (plan.temporalAntiAliasing) bytes += pixels * (native ? 32 : 24);
-  // Screen-Space Shadows' RG16F target.
-  if (plan.screenShadows) bytes += pixels * 4;
+  // Screen-Space Shadows' RG16F target and the caster mark's second channel of the geometry Z (at most float).
+  if (plan.screenShadows) bytes += pixels * 8;
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 

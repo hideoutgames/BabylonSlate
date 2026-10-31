@@ -13,8 +13,10 @@ import type { TemporalJitter } from "./temporal-anti-aliasing";
 /**
  * Screen-Space Shadows: before the objects draw, a full-resolution pass marches from each pixel of the spatial geometry
  * pass's depth toward the shadowed sun and writes RG16F (R: the sun's lit share, G: the eye distance of the surface it
- * marched from). The light block reads it at its own pixel for a surface at that distance, so glass, water and anything
- * the geometry pass did not see in front keep the sun's map alone, and combines it with the cascades by min.
+ * marched from). Only pixels the geometry pass marks as a shadow caster's (its depth's G channel, `meshCastsShadows`)
+ * occlude, so Cast Shadows holds for the march as for the map. The light block reads it at its own pixel for a surface at
+ * that distance, so glass, water and anything the geometry pass did not see in front keep the sun's map alone, and
+ * combines it with the cascades by min, on receivers only.
  */
 
 /** Per level: march steps, the march's screen cap in pixels and world cap in metres, and the eye-distance fade. */
@@ -73,9 +75,11 @@ ${loop("i", 0, MAX_STEPS)} {
   if (clip.w <= 0.0) { break; }
   ${decl(v2, "at", "clip.xy / clip.w * 0.5 + 0.5")}
   if (at.x < 0.0 || at.y < 0.0 || at.x > 1.0 || at.y > 1.0) { break; }
-  ${decl(f, "scene", `abs(${sample("depthSampler", "at")}.r)`)}
+  ${decl(v2, "stored", `${sample("depthSampler", "at")}.rg`)}
+  ${decl(f, "scene", "abs(stored.x)")}
   ${decl(f, "delta", "abs(q.z) - scene")}
-  if (scene > 0.000001 && delta > bias && delta < thickness) {
+  // Only a shadow caster's pixel occludes (the geometry pass's caster mark, G).
+  if (stored.y > 0.5 && scene > 0.000001 && delta > bias && delta < thickness) {
     ${decl(f, "edge", "min(min(at.x, 1.0 - at.x), min(at.y, 1.0 - at.y))")}
     occlusion = max(occlusion, (1.0 - 0.5 * t / reach) * clamp(edge * 20.0, 0.0, 1.0));
   }
