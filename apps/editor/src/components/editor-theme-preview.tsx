@@ -16,7 +16,9 @@ import {
   Maximize2Icon,
   PanelsTopLeftIcon,
   PlayIcon,
+  PlugZapIcon,
   PlusIcon,
+  RadioTowerIcon,
   Redo2Icon,
   SaveAllIcon,
   SearchIcon,
@@ -372,7 +374,7 @@ const eventMember = (id: string, label: string): TreeViewNode => ({
   depth: 1,
   hasChildren: false,
   expanded: false,
-  icon: <TypeColorMark colorVar="var(--node-event)" />,
+  icon: <PlugZapIcon className="size-3.5 text-muted-foreground" aria-hidden />,
 });
 
 const CLASS_ROWS: TreeViewNode[] = [
@@ -386,6 +388,15 @@ const CLASS_ROWS: TreeViewNode[] = [
   { id: "section-events", label: "Events", depth: 0, hasChildren: true, expanded: true, trailing: addButton("Add Event") },
   eventMember("event-begin-play", "Event Begin Play"),
   eventMember("event-tick", "Event Tick"),
+  { id: "section-dispatchers", label: "Event Dispatchers", depth: 0, hasChildren: true, expanded: true, trailing: addButton("Add Event Dispatcher") },
+  {
+    id: "dispatcher-on-landed",
+    label: "On Landed",
+    depth: 1,
+    hasChildren: false,
+    expanded: false,
+    icon: <RadioTowerIcon className="size-3.5 text-muted-foreground" aria-hidden />,
+  },
   { id: "section-interfaces", label: "Interfaces", depth: 0, hasChildren: true, expanded: true, trailing: addButton("Add Interface") },
 ];
 
