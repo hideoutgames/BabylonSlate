@@ -66,6 +66,7 @@ const TICK_PHASE_COLOR: Readonly<Record<TickTimingPhase, string>> = {
   physics: "--tick-physics",
   postPhysics: "--tick-post-physics",
   sceneSystems: "--tick-scene-systems",
+  garbageCollection: "--tick-garbage-collection",
 };
 const COLOR_CLASS: Readonly<Record<string, string>> = {
   "--trace-script": "bg-trace-script",
@@ -78,6 +79,7 @@ const COLOR_CLASS: Readonly<Record<string, string>> = {
   "--tick-physics": "bg-tick-physics",
   "--tick-post-physics": "bg-tick-post-physics",
   "--tick-scene-systems": "bg-tick-scene-systems",
+  "--tick-garbage-collection": "bg-tick-garbage-collection",
 };
 const POPULATION_LABEL: Readonly<Record<Population, string>> = { frames: "Frames", ticks: "Ticks", gpu: "GPU", memory: "Memory" };
 const isPopulation = (value: unknown): value is Population => typeof value === "string" && Object.hasOwn(POPULATION_LABEL, value);

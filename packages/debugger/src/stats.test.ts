@@ -48,13 +48,13 @@ describe("statsHudModel", () => {
   });
 
   it("splits the Unit row into the tick's timed phases when the host reports them", () => {
-    const phaseMs = [0.1, 0.2, 1.5, 0.5, 0.25, 2, 0.3, 0.4];
+    const phaseMs = [0.1, 0.2, 1.5, 0.5, 0.25, 2, 0.3, 0.4, 0.05];
     const row = (input: Parameters<typeof statsHudModel>[0]) =>
       statsHudModel(input, ["unit"]).rows[0]!.metrics.map(({ label, text }) => `${label} ${text}`);
     expect(row({ fps: 60, scriptMs: 3, physicsMs: 2, publishMs: 0.5, phaseMs })).toEqual([
       "tick 5.00 / 8 ms",
       "game 0.10 ms", "subsystems 0.20 ms", "actors 1.50 ms", "components 0.50 ms", "objects 0.25 ms",
-      "physics 2.00 ms", "post-physics 0.30 ms", "systems 0.40 ms",
+      "physics 2.00 ms", "post-physics 0.30 ms", "systems 0.40 ms", "gc 0.05 ms",
       "publish 0.50 ms",
     ]);
     // A host without the split (or an incomplete one) keeps the total.
@@ -74,6 +74,14 @@ describe("statsHudModel", () => {
       { text: "9.00 / 8 ms", warn: true },
       { text: "0.50 ms", warn: false },
     ]);
+  });
+
+  it("shows created objects and the last collection pass under memory", () => {
+    const row = (input: Partial<Parameters<typeof statsHudModel>[0]>) =>
+      rowText(statsHudModel({ fps: 60, scriptMs: 1, physicsMs: 1, ...input }, ["memory"])).memory;
+    expect(row({ collectableObjects: 12, garbageCollectionMs: 0.125 })).toEqual(["objects 12", "gc 0.13 ms"]);
+    // Before the first pass the host sends only the count.
+    expect(row({ collectableObjects: 0 })).toEqual(["objects 0"]);
   });
 
   it("shows memory and render detail with the ceiling warnings the host reports", () => {

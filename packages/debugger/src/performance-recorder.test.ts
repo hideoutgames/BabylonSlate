@@ -4,6 +4,7 @@ import {
   PERFORMANCE_TICK_COLUMNS,
   PERFORMANCE_TICK_COLUMNS_V1,
   PERFORMANCE_TICK_COLUMNS_V2,
+  PERFORMANCE_TICK_COLUMNS_V5,
   PerformanceRecorder,
   parsePerformanceProfile,
   serializePerformanceProfile,
@@ -22,7 +23,7 @@ const identity: PerformanceIdentity = {
 /** A tick whose unnamed timings are 0. */
 const tick = (sample: Partial<PerformanceTickSample> & Pick<PerformanceTickSample, "tickId" | "elapsedMs">): PerformanceTickSample => ({
   scriptMs: 0, physicsMs: 0, publishMs: 0, otherMs: 0,
-  gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 0, componentsMs: 0, objectsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0,
+  gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 0, componentsMs: 0, objectsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0, garbageCollectionMs: 0,
   ...sample,
 });
 const frame = (frameId: number, completedAtMs: number) => ({
@@ -131,7 +132,7 @@ describe("PerformanceRecorder", () => {
     recorder.start(identity);
     recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3, physicsMs: 2, actorsMs: 1.25, objectsMs: 0.5, sceneSystemsMs: 0.75 }));
     const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)));
-    expect(reopened?.version).toBe(5);
+    expect(reopened?.version).toBe(6);
     expect(reopened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS);
     expect(summarizePerformanceColumn(reopened!.ticks, "actorsMs").median).toBe(1.25);
     expect(summarizePerformanceColumn(reopened!.ticks, "objectsMs").median).toBe(0.5);
@@ -139,6 +140,10 @@ describe("PerformanceRecorder", () => {
     // Version 2 tick rows are the full width; version 1 rows under a version 2 label are not.
     const json = JSON.parse(serializePerformanceProfile(reopened!));
     expect(parsePerformanceProfile({ ...json, ticks: { ...json.ticks, columns: [...PERFORMANCE_TICK_COLUMNS_V1] } })).toBeNull();
+    // A version 5 profile opens with its own columns and no Garbage Collection phase.
+    const version5 = parsePerformanceProfile({ ...json, version: 5, ticks: { columns: [...PERFORMANCE_TICK_COLUMNS_V5], count: 0, chunks: [] } });
+    expect(version5?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS_V5);
+    expect(summarizePerformanceColumn(version5!.ticks, "garbageCollectionMs").count).toBe(0);
   });
 
   it("records memory and long tasks, leaving out a long task that started before the recording", () => {
@@ -170,7 +175,7 @@ describe("PerformanceRecorder", () => {
     expect(recorder.recordScript({ tickId: 1, entry: 0, calls: 2, totalMs: 1.5 })).toBe(true);
     expect(() => recorder.recordScript({ tickId: 1, entry: 1, calls: 1, totalMs: 1 })).toThrow();
     const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)))!;
-    expect(reopened.version).toBe(5);
+    expect(reopened.version).toBe(6);
     expect(reopened.scriptEntries).toEqual([door]);
     expect(Array.from(reopened.scripts.chunks[0]!)).toEqual([1, 0, 2, 1.5]);
     const json = JSON.parse(serializePerformanceProfile(reopened));

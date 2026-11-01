@@ -40,6 +40,7 @@ Built-in Play/export console command catalog, its principles, host wiring and us
 | Command | Behavior |
 | --- | --- |
 | `pause`, `resume` / `unpause`, `step` | Idempotent; `pause` is never a toggle. `step` = resume → tick → pause |
+| `gc` / `gc stats` | `RuntimeObjectLifetime.request()`; `gc stats` prints `formatObjectLifetimeStats` (collectable count, last pass tick, reached, collected, cleared, ms) |
 | `slomo [rate]` | `0..8`; every per-tick system uses the step captured at tick start, so a change applies next tick. Traces keep undilated `dt` plus per-frame `timeDilation` |
 | `freecam [on\|off]` | Detached debug camera; simulation keeps ticking; pointer/WASD stop feeding the input ring, gamepad still forwards. Off, `changescene` or possess restore. Never writes actor transforms |
 | `showfps`, `stat unit\|memory\|draws\|threads`, `lightsdebug` | Open Stats HUD / highlight row; `threads` means bridge traffic, not OS threads |
