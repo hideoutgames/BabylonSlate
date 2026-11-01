@@ -14,7 +14,20 @@ They are ordinary Structures, so **Make** and **Break** work as for any Structur
 | **Vector Range** | **Min** and **Max**, vectors. |
 | **Rotator Range** | **Min** and **Max**, rotators. |
 
-**Min** is meant to be at most **Max**. Every range node treats a range whose ends cross as if they were swapped, axis by axis for vectors and rotators.
+**Min** is always at most **Max**, axis by axis for vectors and rotators:
+
+- Dragging **Min** past **Max** pushes **Max** along, and the other way round. Drag back and the pushed end returns.
+- Typing a **Min** above **Max**, or a **Max** below **Min**, swaps the two when you finish typing.
+- A stored range whose ends cross, for example one built with **Make Int Range**, reads as swapped in the **Inspector** and in every range node.
+
+## Edit ranges in the Inspector
+
+A range variable, Structure field, Data Definition field or unwired node pin shows one row:
+
+- **Int Range** and **Float Range** edit **Min** and **Max** side by side in the row.
+- **Vector 2 Range**, **Vector Range** and **Rotator Range** show a one-line summary, such as **−5.00, 0.00, −5.00 – 5.00, 2.00, 5.00**. Tap it to expand one **Min** – **Max** pair per axis.
+
+Data Tree grids and the Play **Inspector** show the same summary. In a Data Tree, edit a range in **Values**.
 
 ## Curves
 

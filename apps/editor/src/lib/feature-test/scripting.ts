@@ -124,6 +124,8 @@ const ITEM_FIELDS: DataDefinitionField[] = [
   { id: "ft-data-field-damage", name: "Damage", typeId: "int", defaultValue: 10, min: 0, max: 999, category: "Combat" },
   { id: "ft-data-field-weight", name: "Weight", typeId: "float", defaultValue: 1, min: 0, category: "Physical" },
   { id: "ft-data-field-label", name: "Label", typeId: "string", defaultValue: "", category: "Display" },
+  // A built-in range Structure field: the Inspector edits it with a Min – Max row.
+  { id: "ft-data-field-damage-roll", name: "DamageRoll", typeId: "struct", typeClassId: "engine:FloatRange", defaultValue: { Min: 0, Max: 1 }, category: "Combat" },
 ];
 
 const SPIN_CONFIG_FIELDS = [
@@ -379,15 +381,15 @@ async function saveDocumentGuid(
 
 /** Untyped Weapons / Consumables groups; typed entries name the Definition explicitly. */
 function itemEntries(definitionGuid: string) {
-  const schema = ITEM_FIELDS.map(({ id, name, typeId }) => ({ id, name, typeId }));
+  const schema = ITEM_FIELDS.map(({ id, name, typeId, typeClassId }) => ({ id, name, typeId, ...(typeClassId ? { typeClassId } : {}) }));
   const item = (id: string, name: string, parentId: string, values: Record<string, unknown>) =>
     createDataTreeEntry({ id, name, parentId, definitionGuid, values, schema });
   return [
     createDataTreeEntry({ id: "ft-data-weapons", name: "Weapons", definitionGuid: null, values: {} }),
-    item("ft-data-sword", "Sword", "ft-data-weapons", { Damage: 25, Weight: 3.5, Label: "Iron Sword" }),
-    item("ft-data-shield", "Shield", "ft-data-weapons", { Damage: 5, Weight: 6, Label: "Oak Shield" }),
+    item("ft-data-sword", "Sword", "ft-data-weapons", { Damage: 25, Weight: 3.5, Label: "Iron Sword", DamageRoll: { Min: 20, Max: 30 } }),
+    item("ft-data-shield", "Shield", "ft-data-weapons", { Damage: 5, Weight: 6, Label: "Oak Shield", DamageRoll: { Min: 4, Max: 6 } }),
     createDataTreeEntry({ id: "ft-data-consumables", name: "Consumables", definitionGuid: null, values: {} }),
-    item("ft-data-potion", "Potion", "ft-data-consumables", { Damage: 0, Weight: 0.25, Label: "Health Potion" }),
+    item("ft-data-potion", "Potion", "ft-data-consumables", { Damage: 0, Weight: 0.25, Label: "Health Potion", DamageRoll: { Min: 0, Max: 0 } }),
   ];
 }
 
@@ -1321,6 +1323,8 @@ async function saveDataProbe(
       getVar("get-spawn-count", spawnCount, 1420, 400),
       gNode("clamp-spawn", "range.clampInt", 1660, 400, { "default:value": 9 }),
       gNode("assert-spawn", "debug.assertEqual", 1660, 0, { "default:expected": 5, "default:message": "Clamp Integer To Range ignored Spawn Count" }),
+      gNode("roll-in-range", "range.isFloatInRange", 1900, 400),
+      gNode("assert-roll", "debug.assert", 1900, 0, { "default:message": "Sword Damage is outside its Damage Roll range" }),
       gNode("read", "data.readEntry", 220, 160, {
         definitionGuid: types.itemStats,
         "default:tree": types.itemsTree,
@@ -1332,10 +1336,13 @@ async function saveDataProbe(
       format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons)"),
       gNode("assert-found", "debug.assert", 700, 0, { "default:message": "Data Probe could not read Weapons/Sword" }),
       gNode("assert-weapons", "debug.assertEqual", 700, 400, { "default:expected": 2, "default:message": "Data Probe expected two Weapons" }),
-      printText("print", 1900, 0, "ft-data-probe", undefined, 8),
+      printText("print", 2140, 0, "ft-data-probe", undefined, 8),
     ],
     edges: [
-      ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "print"),
+      ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "assert-roll", "print"),
+      gWire("fields", "Damage", "roll-in-range", "value"),
+      gWire("fields", "DamageRoll", "roll-in-range", "range"),
+      gWire("roll-in-range", "result", "assert-roll", "condition"),
       gWire("get-falloff", "value", "falloff", "curve"),
       gWire("falloff", "value", "assert-falloff", "actual"),
       gWire("get-spawn-count", "value", "clamp-spawn", "range"),

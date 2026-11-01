@@ -1,9 +1,12 @@
 import { formatValue, normalizeTag, normalizeTagContainer, parseMapDefaultEntries } from "@haptic/core";
+import { normalizeRangeFieldValue } from "@haptic/editor-kit";
 import type {
   ColorValue,
   PropertyRow,
+  RangeFieldValue,
   Vector3Value,
 } from "@haptic/editor-kit";
+import { rangeKindForStruct } from "@haptic/scripting";
 
 export type PlayInspectRowSource = {
   id: string;
@@ -108,6 +111,16 @@ function toRow(source: PlayInspectRowSource): PropertyRow {
     disabled: true as const,
     testId: source.testId,
   };
+  const rangeKind = type.startsWith("struct:") ? rangeKindForStruct(type.slice("struct:".length)) : undefined;
+  if (rangeKind) {
+    return {
+      ...base,
+      kind: "value-range",
+      rangeKind,
+      value: normalizeRangeFieldValue(rangeKind, source.value as RangeFieldValue),
+      onChange: noop,
+    };
+  }
   switch (type) {
     case "tag":
       return {

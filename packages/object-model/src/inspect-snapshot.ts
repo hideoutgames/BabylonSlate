@@ -62,8 +62,10 @@ function classVariableTypes(
     if (Object.hasOwn(variables, def.name)) {
       const keyType = def.keyTypeId === "struct" && def.keyTypeClassId === "engine:TagContainer"
         ? "struct:engine:TagContainer" : def.keyTypeId ?? "string";
-      types[def.name] = def.container === "array" ? `array:${def.type}`
-        : def.container === "map" ? `map:${keyType}=>${def.type}` : def.type;
+      // Built-in Structures carry their id (`struct:engine:FloatRange`) so the Play Inspector can pick an editor.
+      const type = def.type === "struct" && def.typeClassId?.startsWith("engine:") ? `struct:${def.typeClassId}` : def.type;
+      types[def.name] = def.container === "array" ? `array:${type}`
+        : def.container === "map" ? `map:${keyType}=>${type}` : type;
     }
   }
   return Object.keys(types).length > 0 ? types : undefined;

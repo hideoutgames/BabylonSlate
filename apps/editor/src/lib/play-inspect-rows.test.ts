@@ -44,6 +44,17 @@ describe("playInspectPropertyRows", () => {
     expect(ordinaryStruct?.kind).toBe("text");
   });
 
+  it("shows built-in range Structures as read-only range rows", () => {
+    const [count, area, other] = playInspectPropertyRows([
+      { id: "count", label: "Spawn Count", value: { Min: 5, Max: 2 }, type: "struct:engine:IntRange" },
+      { id: "area", label: "Spawn Area", value: { Min: { x: -1, y: 0, z: -1 }, Max: { x: 1, y: 2, z: 1 } }, type: "struct:engine:VectorRange" },
+      { id: "hit", label: "Hit", value: { Hit: false }, type: "struct:engine:HitResult" },
+    ]);
+    expect(count).toMatchObject({ kind: "value-range", rangeKind: "int", value: { Min: 2, Max: 5 }, disabled: true });
+    expect(area).toMatchObject({ kind: "value-range", rangeKind: "vec3", disabled: true });
+    expect(other?.kind).toBe("text");
+  });
+
   it("maps bool values to disabled checkboxes", () => {
     const [row] = playInspectPropertyRows([
       { id: "alive", label: "alive", value: true, type: "bool" },

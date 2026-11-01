@@ -30,9 +30,10 @@ export interface NumericDragFieldProps {
   /**
    * Fired once per scrub and once per submitted typed edit, so callers can
    * commit one undo entry. A draft that ends invalid ends on the last value it
-   * sent through `onChange`; Escape never fires it.
+   * sent through `onChange`; Escape never fires it. `source` says whether a
+   * scrub or a typed edit ended.
    */
-  onDragEnd?: (value: number) => void;
+  onDragEnd?: (value: number, source: "drag" | "typed") => void;
   /** Axis color token: X red, Y green, Z blue. */
   accent?: "x" | "y" | "z";
   /** Shown after the value while idle (`45°`); typing it is optional. */
@@ -126,7 +127,7 @@ export function NumericDragField({
       if (!drag || drag.pointerId !== event.pointerId) return;
       dragRef.current = null;
       setDragging(false);
-      onDragEnd?.(drag.latest);
+      onDragEnd?.(drag.latest, "drag");
     },
     [onDragEnd],
   );
@@ -140,7 +141,7 @@ export function NumericDragField({
       dragRef.current = null;
       setDragging(false);
       if (drag.latest !== drag.startValue) onChange(drag.startValue);
-      onDragEnd?.(drag.startValue);
+      onDragEnd?.(drag.startValue, "drag");
     },
     [onChange, onDragEnd],
   );
@@ -249,14 +250,14 @@ export function NumericDragField({
             liveRef.current = undefined;
             if (next === undefined) {
               setError("Invalid expression. Restored the last valid value.");
-              if (live !== undefined) onDragEnd?.(live);
+              if (live !== undefined) onDragEnd?.(live, "typed");
             } else if (validationError) {
               setError(`${validationError} Restored the last valid value.`);
-              if (live !== undefined) onDragEnd?.(live);
+              if (live !== undefined) onDragEnd?.(live, "typed");
             } else {
               if (parsed !== next) setNotice(`Adjusted to ${next} to stay within the allowed range.`);
               if (next !== value) onChange(next);
-              onDragEnd?.(next);
+              onDragEnd?.(next, "typed");
             }
             setDraft(null);
           }}
