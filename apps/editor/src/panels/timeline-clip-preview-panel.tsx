@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AssetLoadError } from "@haptic/assets";
 import { applyTimelineClipToScene, type SerializedScene } from "@haptic/core";
 import { createEngine, EDITOR_CANVAS_COLOR_SCHEME, syncEditorPlayState, type EngineHandle } from "@haptic/render";
+import { isTestModeEnabled } from "@haptic/vfs";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { selectProxy, TimelineClipAssetSource, useSelectedProxy, useTimelineClipAsset } from "../components/timeline-clip-asset-editor";
 import { usePlay } from "../context/play-context";
@@ -16,14 +17,16 @@ import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import { modelSlotMaterialGuidsFromPayloads, overlayTextureGuidsFromScene } from "../lib/play-content";
-import { composeTimelineProxyPreview, timelineProxyPreviewScene } from "../lib/timeline-proxy-scene";
+import { composeTimelineProxyPreview, timelineProxyGizmoEdit, timelineProxyPreviewScene } from "../lib/timeline-proxy-scene";
 
 /**
  * Viewport window of a 2D or 3D Timeline Clip asset: an editor-only preview
  * of its proxies, each drawn by its Editor Preview representation and
  * animated by the clip at the Timeline playhead. It renders to a texture on
- * the shared Engine like the Prefab viewport, and edits nothing: tapping a
- * proxy selects it in Proxies and the Inspector.
+ * the shared Engine like the Prefab viewport. Tapping a proxy selects it in
+ * Proxies and the Inspector; its gizmo keys the proxy's transform tracks
+ * (Auto Key) or sets unkeyed values, and moves its preview placement where it
+ * has no track (`timelineProxyGizmoEdit`).
  */
 export function TimelineClipPreviewPanel(props: IDockviewPanelProps) {
   const { id, twoD } = useTimelineClipAsset();
@@ -47,11 +50,14 @@ function ClipPreview(_props: IDockviewPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
   const viewportId = useId();
-  const { id: documentId, payload, twoD } = useTimelineClipAsset();
+  const { id: documentId, payload, twoD, commit } = useTimelineClipAsset();
   const { scene, clip, tools } = useTimelineClip();
   const selectedProxy = useSelectedProxy(documentId);
-  const { viewportMode, gridVisible, saveEditorCameraPose, loadEditorCameraPose, viewportShadingMode, pivotAroundCenter } = useSceneEditing();
-  const { flySpeed, gridSize } = useEditorViewportPrefs();
+  const {
+    viewportMode, gridVisible, saveEditorCameraPose, loadEditorCameraPose, viewportShadingMode, pivotAroundCenter,
+    gizmoTool, gizmoSpace, snapEnabled,
+  } = useSceneEditing();
+  const { flySpeed, gridSize, snapTranslate, snapRotateDeg, snapScale } = useEditorViewportPrefs();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
   const { registerScheduler, playing, preparing, ensureSharedEngine, sharedEngineGeneration } = usePlay();
@@ -75,6 +81,35 @@ function ClipPreview(_props: IDockviewPanelProps) {
   const shownRef = useRef(shown);
   shownRef.current = shown;
 
+  // A released gizmo: keys, unkeyed values or a moved placement, in one undo step.
+  const commitGizmo = () => {
+    const handle = engineRef.current;
+    const lives = handle?.editor?.selectedActorTransforms() ?? [];
+    if (!handle || !scene || !clip || lives.length === 0) return;
+    const time = Math.min(clip.length, Math.max(0, tools.timelinePlayhead.get()));
+    const edit = timelineProxyGizmoEdit(payload, scene, time, lives, {
+      autoKey: tools.timelineAutoKey, unkeyed: tools.timelineUnkeyed, newId: () => crypto.randomUUID(),
+    });
+    if (edit.unkeyed.size) tools.setTimelineUnkeyed(new Map([...tools.timelineUnkeyed, ...edit.unkeyed]));
+    if (edit.payload !== payload) {
+      commit(edit.payload, `timeline-clip-asset:gizmo:${crypto.randomUUID()}`);
+      return;
+    }
+    if (edit.unkeyed.size) return;
+    // Nothing holds the change (Scale without a track): the proxy returns to where the clip puts it.
+    // The engine re-poses only actors whose loaded pose changed, so it first learns where the gizmo left them.
+    const current = shownRef.current(time);
+    if (!current) return;
+    const live = new Map(lives.map((entry) => [entry.actorId, entry]));
+    handle.loadScene({ ...current, actors: current.actors.map((actor) => {
+      const moved = live.get(actor.id);
+      return moved ? { ...actor, transform: { position: moved.position, rotation: moved.rotation, scale: moved.scale } } : actor;
+    }) });
+    handle.loadScene(current);
+  };
+  const commitGizmoRef = useRef(commitGizmo);
+  commitGizmoRef.current = commitGizmo;
+
   useEffect(() => {
     setSharedEngine(ensureSharedEngine());
   }, [ensureSharedEngine, sharedEngineGeneration]);
@@ -95,6 +130,7 @@ function ClipPreview(_props: IDockviewPanelProps) {
       dracoBasePath: editorDracoPublicBase(),
       meshoptBasePath: editorMeshoptPublicBase(),
       onPickActor: (actorId) => selectProxy(documentId, actorId),
+      onGizmoDragEnd: () => commitGizmoRef.current(),
       editorFlySpeed: () => flySpeedRef.current,
     });
     engineRef.current = handle;
@@ -195,9 +231,59 @@ function ClipPreview(_props: IDockviewPanelProps) {
     engineRef.current?.editor?.setSelectedActors(selectedProxy ? [selectedProxy] : []);
   }, [selectedProxy, engineEpoch, loadKey]);
 
+  // Test builds: where each proxy is drawn, and the playhead, for browser specs.
+  useEffect(() => {
+    if (import.meta.env.VITE_TEST_MODE !== "true" || !isTestModeEnabled()) return;
+    const host = globalThis as unknown as { __hapticClipPreviewTest?: unknown };
+    host.__hapticClipPreviewTest = {
+      proxyPositions: () => {
+        const sync = engineRef.current?.editor?.sync;
+        const out: Record<string, { root: [number, number, number] | null; visual: [number, number, number] | null }> = {};
+        for (const actor of base?.actors ?? []) {
+          const root = sync?.meshForActor(actor.id) ?? null;
+          const visual = sync?.visualMeshesForActor(actor.id)[0] ?? null;
+          visual?.computeWorldMatrix(true);
+          const at = visual?.getAbsolutePosition();
+          out[actor.id] = {
+            root: root ? [root.position.x, root.position.y, root.position.z] : null,
+            visual: at ? [at.x, at.y, at.z] : null,
+          };
+        }
+        return out;
+      },
+      setPlayhead: (time: number) => tools.timelinePlayhead.set(time),
+      // A gizmo drag of one proxy by (dx, dy, dz), released.
+      nudgeProxy: (actorId: string, dx: number, dy: number, dz: number) => {
+        const handle = engineRef.current;
+        const mesh = handle?.editor?.sync.meshForActor(actorId);
+        if (!handle?.editor || !mesh) return false;
+        selectProxy(documentId, actorId);
+        handle.editor.setSelectedActors([actorId]);
+        mesh.position.x += dx;
+        mesh.position.y += dy;
+        mesh.position.z += dz;
+        commitGizmoRef.current();
+        return true;
+      },
+    };
+    return () => { delete host.__hapticClipPreviewTest; };
+  }, [base, documentId, engineEpoch, tools.timelinePlayhead]);
+
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
   }, [viewportMode, engineEpoch]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.gizmos.setTool(gizmoTool);
+  }, [gizmoTool, engineEpoch]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.gizmos.setSpace(gizmoSpace);
+  }, [gizmoSpace, engineEpoch]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.gizmos.setSnap({ enabled: snapEnabled, translate: snapTranslate, rotateDeg: snapRotateDeg, scale: snapScale });
+  }, [snapEnabled, snapTranslate, snapRotateDeg, snapScale, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportShadingMode(viewportShadingMode);
@@ -221,8 +307,8 @@ function ClipPreview(_props: IDockviewPanelProps) {
     <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background" data-testid="timeline-clip-preview-panel">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
         <div className="pointer-events-auto toolbar-island">
-          {/* A preview: the proxies move with the clip, and are placed in the Inspector. */}
-          <ViewportToolbar testIdPrefix="timeline-clip-" showDragSelect={false} showViewportModeToggle={false} showGameCamera={false} showGizmoTools={false} />
+          {/* The proxies move with the clip; the gizmo keys them or moves their preview placement. */}
+          <ViewportToolbar testIdPrefix="timeline-clip-" showDragSelect={false} showViewportModeToggle={false} showGameCamera={false} />
         </div>
       </div>
       <canvas ref={canvasRef} className="h-full min-h-0 min-w-0 w-full flex-1 touch-none" data-testid="timeline-clip-preview-canvas" />

@@ -18,6 +18,8 @@ const harness = vi.hoisted(() => {
       setSelectedActors: vi.fn(),
       setGridSettings: vi.fn(),
       grid: { setCameraBounds: vi.fn(), setVisible: vi.fn() },
+      gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn() },
+      selectedActorTransforms: vi.fn((): Array<{ actorId: string; position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] }> => []),
     },
     scheduler: { setAlwaysRender: vi.fn(), acquireObstruction: vi.fn(), setResizing: vi.fn() },
     scaling: {},
@@ -34,6 +36,10 @@ const harness = vi.hoisted(() => {
     handle,
     createEngineMock: vi.fn<(canvas: unknown, options: Record<string, unknown>) => typeof handle>(() => handle),
     content: null as unknown as SerializedTimelineClipAsset,
+    applyAssetDocumentChange: vi.fn(async (_id: string, payload: unknown) => {
+      harness.content = payload as SerializedTimelineClipAsset;
+      return true;
+    }),
     kind: "timeline-clip-3d" as "timeline-clip-2d" | "timeline-clip-3d",
   };
 });
@@ -55,6 +61,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     return [{ id: DOC, ref: { kind: harness.kind, path: "assets/Swing.timelineclip3d.hasset" }, content: harness.content }];
   },
   assetRegistry: { generation: 1, list: () => [], getByPath: () => undefined } as never,
+  applyAssetDocumentChange: harness.applyAssetDocumentChange,
   projectDocument: null,
   collectPlayModelBytes: async () => new Map(),
   collectPlayModelPayloads: async () => new Map(),
@@ -90,6 +97,7 @@ beforeEach(() => {
   };
   harness.createEngineMock.mockClear();
   harness.handle.loadScene.mockClear();
+  harness.applyAssetDocumentChange.mockClear();
 });
 afterEach(() => {
   cleanup();
@@ -116,6 +124,25 @@ describe("TimelineClipPreviewPanel", () => {
     act(() => onPickActor("door"));
     expect(selected).toBe("door");
     await waitFor(() => expect(harness.handle.editor.setSelectedActors).toHaveBeenLastCalledWith(["door"]));
+  });
+
+  it("turns a released gizmo into a moved placement, and a tracked move into an unkeyed value without Auto Key", async () => {
+    render(<SceneToolsProvider><Probe /><TimelineClipPreviewPanel {...panel} /></SceneToolsProvider>);
+    await waitFor(() => expect(harness.handle.loadScene).toHaveBeenCalled());
+    expect(harness.handle.editor.gizmos.setTool).toHaveBeenCalled();
+    const { onGizmoDragEnd } = harness.createEngineMock.mock.calls[0]![1] as { onGizmoDragEnd: () => void };
+    // Turned 30 degrees where it stands: Rotation has no track, so the placement turns.
+    const yaw30: [number, number, number, number] = [0, Math.sin(Math.PI / 12), 0, Math.cos(Math.PI / 12)];
+    harness.handle.editor.selectedActorTransforms.mockReturnValue([{ actorId: "door", position: [5, 0, 0], rotation: yaw30, scale: [1, 1, 1] }]);
+    act(() => onGizmoDragEnd());
+    const placed = harness.applyAssetDocumentChange.mock.calls.at(-1)![1] as SerializedTimelineClipAsset;
+    expect(placed.editorPreview!.proxies.door!.rotation.map((value) => Math.round(value))).toEqual([0, 30, 0]);
+    // Moved along the tracked Location while Auto Key is off: an unkeyed value, the asset unchanged.
+    harness.applyAssetDocumentChange.mockClear();
+    harness.handle.editor.selectedActorTransforms.mockReturnValue([{ actorId: "door", position: [7, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }]);
+    act(() => onGizmoDragEnd());
+    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
+    expect([...tools!.timelineUnkeyed.keys()]).toEqual(["t"]);
   });
 
   it("previews a 2D clip in a locked 2D overlay viewport", async () => {

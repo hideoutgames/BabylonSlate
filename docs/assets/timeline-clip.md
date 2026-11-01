@@ -21,7 +21,10 @@ The **Viewport** window previews the clip: each proxy is drawn the way its **Edi
 
 - An **Outline** is a box in a 3D clip and a square in a 2D clip, in the proxy's **Color**, **Size** wide. A **Model**, **Material** or **Texture** draws that asset at **Size**; with none picked, the proxy is an Outline. **Class** draws the Class's own components, and a Component proxy also draws its component.
 - A **Relative** proxy stands at its preview **Location** and **Rotation**, and its transform keys move it from there. An **Absolute** proxy stands exactly where its keys put it.
-- The Viewport only previews: tap a proxy to select it in **Proxies** and the **Inspector**, and place it with the preview **Location** and **Rotation** there. The camera, shading and grid controls work as in a Scene.
+- Tap a proxy to select it in **Proxies** and the **Inspector**, and drag its gizmo to move, turn or scale it, as in a Scene's Timeline mode:
+  - A channel with a track (**Location**, **Rotation** or **Scale**) takes a key at the playhead with **Auto Key** on. With it off, the change waits as an unkeyed value, shown amber on the track, until you key it.
+  - **Location** or **Rotation** without a track moves the proxy's preview placement, the same as editing **Location** and **Rotation** in the **Inspector**. **Scale** without a track has nothing to hold it, so the proxy returns to its size.
+- The camera, shading, grid and gizmo controls work as in a Scene.
 
 ## Timeline
 
