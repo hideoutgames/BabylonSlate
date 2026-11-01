@@ -594,6 +594,84 @@ describe("attachViewportGestures", () => {
     expect(after[1]).toBeCloseTo(before[1], 4);
   });
 
+  /** A gizmo handle that, like Babylon's PointerDragBehavior, ends a drag only on an up from the pointer that started it. */
+  function fakeGizmo() {
+    let dragPointer: number | null = null;
+    const forwarded: Array<[string, number]> = [];
+    return {
+      forwarded,
+      isDragging: () => dragPointer !== null,
+      onPointer: (type: "down" | "move" | "up", _x: number, _y: number, pointerId: number) => {
+        forwarded.push([type, pointerId]);
+        if (type === "down" && dragPointer === null) dragPointer = pointerId;
+        else if (type === "up" && dragPointer === pointerId) dragPointer = null;
+      },
+    };
+  }
+
+  it("ends a gizmo drag when its finger lifts first during a pinch, so one-finger pan keeps working", () => {
+    const gizmo = fakeGizmo();
+    const { controller } = attach("2d", { onPointer: gizmo.onPointer, blockLook: () => gizmo.isDragging() });
+    // Finger 1 drags the selection's box; finger 2 joins to pinch; finger 1 lifts before finger 2.
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointerdown", pointer(2, 300, 300));
+    canvas.emit("pointerup", pointer(1, 100, 100));
+    canvas.emit("pointerup", pointer(2, 300, 300));
+    expect(gizmo.forwarded).toContainEqual(["up", 1]);
+    expect(gizmo.isDragging()).toBe(false);
+    const before = controller.camera.target.clone();
+    canvas.emit("pointerdown", pointer(3, 100, 100));
+    canvas.emit("pointermove", pointer(3, 60, 140));
+    canvas.emit("pointerup", pointer(3, 60, 140));
+    expect(controller.camera.target.equals(before)).toBe(false);
+  });
+
+  it("forwards each forwarded finger's up once, with its own pointer id", () => {
+    const gizmo = fakeGizmo();
+    attach("2d", { onPointer: gizmo.onPointer });
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointerdown", pointer(2, 300, 300));
+    canvas.emit("pointerup", pointer(2, 300, 300));
+    canvas.emit("pointerup", pointer(1, 100, 100));
+    // Only finger 1's down was forwarded, so only its up is.
+    expect(gizmo.forwarded.filter(([type]) => type !== "move")).toEqual([["down", 1], ["up", 1]]);
+  });
+
+  it("drops a finger whose up never came when a new gesture starts, so one finger pans instead of pinching", () => {
+    const gizmo = fakeGizmo();
+    const { controller } = attach("2d", { onPointer: gizmo.onPointer, blockLook: () => gizmo.isDragging() });
+    // Finger 1 goes down and its up is lost (the canvas was hidden mid-touch).
+    canvas.emit("pointerdown", { ...pointer(1, 100, 100), isPrimary: true });
+    const before = controller.camera.target.clone();
+    const top = controller.camera.orthoTop;
+    canvas.emit("pointerdown", { ...pointer(2, 200, 200), isPrimary: true });
+    canvas.emit("pointermove", { ...pointer(2, 160, 240), isPrimary: true });
+    canvas.emit("pointerup", { ...pointer(2, 160, 240), isPrimary: true });
+    expect(controller.camera.target.equals(before)).toBe(false);
+    expect(controller.camera.orthoTop).toBe(top);
+    // The lost finger's gizmo drag ended too.
+    expect(gizmo.forwarded).toContainEqual(["up", 1]);
+    expect(gizmo.isDragging()).toBe(false);
+  });
+
+  it("ends a finger whose pointer capture is lost without an up", () => {
+    const tap = vi.fn();
+    const { controller } = attach("2d", { onTap: tap });
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("lostpointercapture", pointer(1, 100, 100));
+    expect(tap).not.toHaveBeenCalled();
+    const before = controller.camera.target.clone();
+    const top = controller.camera.orthoTop;
+    canvas.emit("pointerdown", pointer(2, 200, 200));
+    canvas.emit("pointermove", pointer(2, 160, 240));
+    canvas.emit("pointerup", pointer(2, 160, 240));
+    // The capture lost after a normal up changes nothing.
+    canvas.emit("lostpointercapture", pointer(2, 160, 240));
+    // A pan: the view moved and did not zoom, as a pinch with the lost finger would.
+    expect(controller.camera.target.equals(before)).toBe(false);
+    expect(controller.camera.orthoTop).toBe(top);
+  });
+
   it("ignores a cancelled pointer that was never captured", () => {
     const taps: unknown[] = [];
     attach("3d", { onTap: (x, y) => taps.push([x, y]) });

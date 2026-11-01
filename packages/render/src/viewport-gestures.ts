@@ -120,6 +120,13 @@ export function attachViewportGestures(
   let dragSelectGesture = false;
   let marqueeTimer: ReturnType<typeof setTimeout> | null = null;
   let releaseLease: (() => void) | null = null;
+  /**
+   * The finger whose down went to `onPointer`. Its up is always forwarded,
+   * with its own id, even while other fingers stay down: a gizmo drag
+   * (Babylon's PointerDragBehavior) ends only on an up from the pointer that
+   * started it, and a drag left running blocks every later one-finger pan.
+   */
+  let forwarded: { id: number; point: PointerSample } | null = null;
 
   const acquireLease = () => {
     if (!releaseLease && options.scheduler) {
@@ -190,7 +197,39 @@ export function attachViewportGestures(
         : null;
   };
 
+  const forwardUp = (pointerId: number, point: PointerSample | undefined) => {
+    if (forwarded?.id !== pointerId) return;
+    const at = point ?? forwarded.point;
+    forwarded = null;
+    options.onPointer?.("up", at.x, at.y, pointerId);
+  };
+
+  /**
+   * A new gesture's first finger while fingers are still tracked: their ups
+   * never came (the canvas was hidden or lost them), so they are dropped
+   * rather than turning this finger's drag into a pinch.
+   */
+  const dropStalePointers = () => {
+    for (const [pointerId, point] of pointers) forwardUp(pointerId, point);
+    pointers.clear();
+    lastMid = null;
+    lastSpread = 0;
+    pinchOrigin = null;
+    lastPoint = null;
+    downPoint = null;
+    moved = false;
+    skipLook = false;
+    skipTap = false;
+    tapAdditive = false;
+    marqueeArmed = false;
+    dragSelectGesture = false;
+    clearMarqueeTimer();
+    clearMarqueeOverlay();
+    dropLease();
+  };
+
   const onPointerDown = (event: PointerEvent) => {
+    if (event.isPrimary === true && pointers.size > 0) dropStalePointers();
     const point = toCanvas(event);
     pointers.set(event.pointerId, point);
     canvas.setPointerCapture?.(event.pointerId);
@@ -207,6 +246,7 @@ export function attachViewportGestures(
         !dragSelectGesture && options.blockLook?.(point.x, point.y) === true;
       skipLook = dragSelectGesture || skipTap;
       marqueeArmed = dragSelectGesture;
+      if (options.onPointer) forwarded = { id: event.pointerId, point };
       options.onPointer?.("down", point.x, point.y, event.pointerId);
       clearMarqueeTimer();
       if (!dragSelectGesture && controller.mode === "2d" && !skipLook) {
@@ -235,6 +275,7 @@ export function attachViewportGestures(
 
     if (samples.length === 1) {
       const point = samples[0]!;
+      if (forwarded?.id === event.pointerId) forwarded.point = point;
       options.onPointer?.("move", point.x, point.y, event.pointerId);
       if (
         downPoint &&
@@ -308,6 +349,7 @@ export function attachViewportGestures(
   const endPointer = (event: PointerEvent, cancelled = false) => {
     const point = pointers.get(event.pointerId);
     pointers.delete(event.pointerId);
+    forwardUp(event.pointerId, point);
     if (pointers.size === 1) {
       const remaining = [...pointers.values()][0]!;
       lastPoint = remaining;
@@ -331,9 +373,6 @@ export function attachViewportGestures(
     }
     if (pointers.size > 0 || !point || !downPoint) {
       if (pointers.size === 0) {
-        if (point) {
-          options.onPointer?.("up", point.x, point.y, event.pointerId);
-        }
         downPoint = null;
         skipLook = false;
         skipTap = false;
@@ -346,7 +385,6 @@ export function attachViewportGestures(
       return;
     }
     clearMarqueeTimer();
-    options.onPointer?.("up", point.x, point.y, event.pointerId);
     const wasDragSelect = dragSelectGesture;
     if (!cancelled && !moved && !skipTap) {
       options.onTap?.(point.x, point.y, { additive: tapAdditive });
@@ -373,6 +411,10 @@ export function attachViewportGestures(
   };
 
   const cancelPointer = (event: PointerEvent) => endPointer(event, true);
+  // Capture lost without an up (the canvas was hidden or removed mid-touch); after a normal up the pointer is already gone.
+  const onLostCapture = (event: PointerEvent) => {
+    if (pointers.has(event.pointerId)) endPointer(event, true);
+  };
 
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
@@ -403,6 +445,7 @@ export function attachViewportGestures(
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", cancelPointer);
+  canvas.addEventListener("lostpointercapture", onLostCapture);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("touchstart", onTouch, { passive: false });
   canvas.addEventListener("touchmove", onTouch, { passive: false });
@@ -413,12 +456,14 @@ export function attachViewportGestures(
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", endPointer);
       canvas.removeEventListener("pointercancel", cancelPointer);
+      canvas.removeEventListener("lostpointercapture", onLostCapture);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("touchstart", onTouch);
       canvas.removeEventListener("touchmove", onTouch);
       clearMarqueeTimer();
       dropLease();
       pointers.clear();
+      forwarded = null;
     },
   };
 }
