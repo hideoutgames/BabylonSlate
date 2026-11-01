@@ -18,6 +18,7 @@ export function retargetedAnimationPayload(options: {
     modelGuid: options.targetModelGuid,
     skeletonGuid: options.targetSkeletonGuid,
     durationMs: options.source.durationMs,
+    clipDurationMs: options.source.clipDurationMs,
     sourceAnimationGuid: options.sourceGuid,
   });
 }

@@ -1,6 +1,7 @@
 import type { RenderDiagnostics } from "@haptic/render";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe, ViewportProbe } from "./runtime-probes";
+import { RENDER_QUALITY_PROFILES, SHADOW_PROFILES } from "@haptic/core";
 import { describeError } from "../lib/diagnostic-info";
 
 /** Scenes a Full check walks, in order; the heaviest runs last. */
@@ -36,69 +37,160 @@ export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands
 ];
 
 /**
- * The scalability tier every Breakdown scene measures at. At heavier tiers a tablet's GPU saturates (every frame
- * lasts four or more display intervals) and remove-one changes stop adding up; Medium stays below that.
+ * How a Breakdown measures each feature's GPU cost. A tablet GPU near its cap runs at two speeds with hysteresis, so a
+ * change measured there says only whether the step crossed the cap, not what the feature costs.
+ * - `add-one` (the default): from a light base well below the cap (`FEATURE_TEST_BREAKDOWN_BASES`), each step turns
+ *   one feature on at its Medium value, so every sample stays below the cap and a change is that feature's own cost.
+ * - `remove-one`: from the Medium tier, each step turns one feature off or lowers one cost: what it saves at a shipping
+ *   tier, meaningful only while that tier is below the cap.
  */
-export const FEATURE_TEST_BREAKDOWN_TIER = "medium";
+export type FeatureTestBreakdownMethod = "add-one" | "remove-one";
+export const FEATURE_TEST_BREAKDOWN_METHODS: readonly FeatureTestBreakdownMethod[] = ["add-one", "remove-one"];
+export const FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD: FeatureTestBreakdownMethod = "add-one";
+
+/** What a Breakdown's baselines run: applied after `quality reset` before the warm-up and after every step. */
+export interface FeatureTestBreakdownBase {
+  /** How the report names it (`FeatureTestBreakdownInfo.tier`). */
+  label: string;
+  commands: readonly string[];
+  /** After the scene's last step and `quality reset`: what returns the session to how Play started it. */
+  cleanup: readonly string[];
+}
+
+const MEDIUM = { ...RENDER_QUALITY_PROFILES.medium, shadows: SHADOW_PROFILES.medium };
+
+export const FEATURE_TEST_BREAKDOWN_BASES: Readonly<Record<FeatureTestBreakdownMethod, FeatureTestBreakdownBase>> = {
+  "add-one": {
+    label: "low at resolution 0.5, without post-processing, anti-aliasing, water reflections, water refraction or captures; shadow filter low; water detail low",
+    // Each feature a step turns on is off here by name, so the base does not depend on what the Low tier holds.
+    commands: [
+      "quality low",
+      "quality resolution scale 0.5",
+      "quality shadows filter low",
+      "quality water shadingDetail low",
+      "quality water reflections sky",
+      "quality water refraction off",
+      "quality postprocessing antialiasing off",
+      "quality postprocessing ambientOcclusion off",
+      "quality postprocessing reflections off",
+      "quality postprocessing volumetricLighting off",
+      "postprocessing off",
+      "rendertargets off",
+    ],
+    cleanup: ["postprocessing on", "rendertargets on"],
+  },
+  "remove-one": {
+    label: "medium",
+    // Tiers below Ultra turn dynamic resolution on, which a Feature Test project keeps off so the workload stays fixed.
+    commands: ["quality medium", "quality resolution reset"],
+    cleanup: [],
+  },
+};
 
 /**
- * What applies the Breakdown tier, as its Benchmark profile does, then the project's resolution again: tiers below
- * Ultra turn dynamic resolution on, which a Feature Test project keeps off so the workload stays fixed.
+ * An add-one Breakdown keeps every sample below this GPU-busy time (mean frame time without fences): past it the GPU
+ * nears its cap and may change speed, so a baseline over it flags the run OVER CAP.
  */
-export const FEATURE_TEST_BREAKDOWN_TIER_COMMANDS: readonly string[] = [
-  ...FEATURE_TEST_BENCHMARK_PROFILES.find((profile) => profile.label === FEATURE_TEST_BREAKDOWN_TIER)!.commands,
-  "quality resolution reset",
-];
+export const ADD_ONE_CAP_MS = 30;
 
 /** Scenes a Breakdown measures unless every scene is asked for: the GPU-heaviest, and the occlusion culling yardstick. */
 export const FEATURE_TEST_BREAKDOWN_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "FT_World" || scene.name === "FT_Occlusion");
 
-/** A Breakdown step: its commands, what undoes them besides `quality reset` and the tier, and the render settings it may change. */
+/** A Breakdown step: its commands, what undoes them besides `quality reset` and the base, and the render settings it may change. */
 export interface FeatureTestBreakdownStep {
   label: string;
   commands: readonly string[];
   restore?: readonly string[];
-  /** A baseline: the Breakdown tier, nothing changed. */
+  /** A baseline: the base, nothing changed. */
   baseline?: boolean;
-  /** Render-settings fingerprint fields (`RenderDiagnostics.settings`) the step may change; any other change is flagged. */
+  /**
+   * Render-settings fingerprint fields (`RenderDiagnostics.settings`) the step changes: any other change is flagged,
+   * and a step that changes none of them is skipped (its setting already holds that value).
+   */
   fields?: readonly string[];
   /**
-   * Its saving overlaps another step's (a lower setting of a feature another step turns off, one effect of the
-   * post-processing another step turns off, or a resolution scale that shrinks every pass), so the NON-ADDITIVE check
-   * leaves it out of the sum.
+   * Remove-one: its saving overlaps another step's (a lower setting of a feature another step turns off, one effect of
+   * the post-processing another step turns off, or a resolution scale that shrinks every pass), so the NON-ADDITIVE
+   * check leaves it out of the sum.
    */
   overlaps?: boolean;
+  /** Add-one: the label of another step whose cost this one includes (AO and SSR run in the post-processing stack). */
+  includes?: string;
 }
 
 const POST_FIELDS = [
   "post.scale", "post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "post.antiAliasing", "post.samples",
 ] as const;
+const ANTI_ALIASING_FIELDS = ["post.antiAliasing", "post.samples"] as const;
+const WATER_DETAIL_FIELDS = ["water.shadingDetail", "water.fft"] as const;
 
 /**
- * What a Breakdown measures per scene, each on top of the Breakdown tier: one feature off (or one cost lowered) at a
- * time, so its change against the baselines around it is that feature's share of the frame. After each step
- * `quality reset`, the tier commands and its `restore` commands undo it. The run alternates baselines and steps
- * (`breakdownSequence`).
+ * Remove-one (`FEATURE_TEST_BREAKDOWN_BASES["remove-one"]`, the Medium tier): one feature off (or one cost lowered) at
+ * a time, so its change against the baselines around it is what that feature saves. At Medium, `shadows medium`,
+ * `water detail medium` and `volumetrics off` already hold and are skipped.
  */
 export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] = [
-  { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows"] },
-  { label: "shadows medium", commands: ["quality shadows medium"], fields: ["shadows"], overlaps: true },
+  { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"] },
+  { label: "shadows medium", commands: ["quality shadows medium"], fields: ["shadows", "shadows.filter"], overlaps: true },
   // The shadow filter alone: Castaño's 5 × 5 kernel (nine taps) in place of the level's (High's 7 × 7, sixteen).
-  { label: "shadow filter medium", commands: ["quality shadows filter medium"], fields: ["shadows"], overlaps: true },
+  { label: "shadow filter medium", commands: ["quality shadows filter medium"], fields: ["shadows.filter"], overlaps: true },
   { label: "water refraction off", commands: ["quality water refraction off"], fields: ["water.refraction"] },
   { label: "water reflections sky", commands: ["quality water reflections sky"], fields: ["water.reflections"] },
-  { label: "water detail low", commands: ["quality water shadingDetail low"], fields: ["water.shadingDetail"] },
-  { label: "water detail medium", commands: ["quality water shadingDetail medium"], fields: ["water.shadingDetail"], overlaps: true },
+  { label: "water detail low", commands: ["quality water shadingDetail low"], fields: WATER_DETAIL_FIELDS },
+  { label: "water detail medium", commands: ["quality water shadingDetail medium"], fields: WATER_DETAIL_FIELDS, overlaps: true },
   { label: "post low", commands: ["quality postprocessing low"], fields: POST_FIELDS, overlaps: true },
   { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"], overlaps: true },
   { label: "SSR off", commands: ["quality postprocessing reflections off"], fields: ["post.reflections"], overlaps: true },
   { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"], fields: ["post.volumetricLighting"], overlaps: true },
-  { label: "MSAA off", commands: ["quality postprocessing antialiasing off"], fields: ["post.antiAliasing", "post.samples"] },
+  { label: "MSAA off", commands: ["quality postprocessing antialiasing off"], fields: ANTI_ALIASING_FIELDS },
   // Its saving is part of "MSAA off": a lower setting of the same feature.
-  { label: "MSAA 2x", commands: ["quality postprocessing antialiasing msaa2"], fields: ["post.antiAliasing", "post.samples"], overlaps: true },
+  { label: "MSAA 2x", commands: ["quality postprocessing antialiasing msaa2"], fields: ANTI_ALIASING_FIELDS, overlaps: true },
   { label: "post off", commands: ["postprocessing off"], restore: ["postprocessing on"], fields: ["post.enabled"] },
   { label: "captures off", commands: ["rendertargets off"], restore: ["rendertargets on"], fields: ["captures"] },
   { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale"], overlaps: true },
+];
+
+/**
+ * Add-one (`FEATURE_TEST_BREAKDOWN_BASES["add-one"]`): one feature on at its Medium value at a time, so its change
+ * against the baselines around it is that feature's own cost below the GPU cap. The base's commands undo each step.
+ */
+export const FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS: readonly FeatureTestBreakdownStep[] = [
+  { label: "MSAA 2x", commands: ["quality postprocessing antialiasing msaa2"], fields: ANTI_ALIASING_FIELDS },
+  { label: "MSAA 4x", commands: ["quality postprocessing antialiasing msaa4"], fields: ANTI_ALIASING_FIELDS },
+  // FXAA runs in the post-processing stack, so its step includes it, as AO's and SSR's do.
+  {
+    label: "AA fxaa", commands: ["postprocessing on", "quality postprocessing antialiasing fxaa"],
+    fields: ["post.enabled", ...ANTI_ALIASING_FIELDS], includes: "post-processing",
+  },
+  {
+    label: `shadow filter ${MEDIUM.shadows.filterQuality}`,
+    commands: [`quality shadows filter ${MEDIUM.shadows.filterQuality}`], fields: ["shadows.filter"],
+  },
+  // FXAA, AO and SSR run in the post-processing stack, so their steps include it; this one measures the stack alone.
+  { label: "post-processing", commands: ["postprocessing on"], fields: ["post.enabled"] },
+  {
+    label: "AO", commands: ["postprocessing on", "quality postprocessing ambientOcclusion on"],
+    fields: ["post.enabled", "post.ambientOcclusion"], includes: "post-processing",
+  },
+  {
+    label: "SSR", commands: ["postprocessing on", "quality postprocessing reflections on"],
+    fields: ["post.enabled", "post.reflections"], includes: "post-processing",
+  },
+  // Each from the base on its own; the notes name the FFT grid it ran, resolution-independent work the detail may change.
+  { label: "water detail medium", commands: ["quality water shadingDetail medium"], fields: WATER_DETAIL_FIELDS },
+  { label: "water detail high", commands: ["quality water shadingDetail high"], fields: WATER_DETAIL_FIELDS },
+  {
+    label: "water refraction",
+    commands: ["quality water refraction on", `quality water refractionScale ${MEDIUM.water.refractionScale}`],
+    fields: ["water.refraction", "water.refractionScale"],
+  },
+  {
+    label: "planar water reflection",
+    commands: ["quality water reflections planar", `quality water planarScale ${MEDIUM.water.planarScale}`],
+    fields: ["water.reflections", "water.planarScale"],
+  },
+  { label: "captures", commands: ["rendertargets on"], fields: ["captures"] },
+  { label: "resolution 1.0", commands: [`quality resolution scale ${MEDIUM.resolution.scale}`], fields: ["resolution.scale"] },
 ];
 
 /** A camera a Breakdown measures from: `enter` switches to it before its first baseline, and it stays until the next view's. */
@@ -126,9 +218,15 @@ const OCCLUSION_PLAN: FeatureTestBreakdownPlan = {
   exit: ['possess "Camera"'],
 };
 
-/** A scene's Breakdown plan: FT_Occlusion measures occlusion culling from two cameras, every other scene the feature steps. */
-export function featureTestBreakdownPlan(sceneName: string): FeatureTestBreakdownPlan {
-  return sceneName === "FT_Occlusion" ? OCCLUSION_PLAN : { views: [{ steps: FEATURE_TEST_BREAKDOWN_STEPS }] };
+/**
+ * A scene's Breakdown plan: FT_Occlusion measures occlusion culling from two cameras (on either method's base), every
+ * other scene the method's feature steps.
+ */
+export function featureTestBreakdownPlan(
+  sceneName: string, method: FeatureTestBreakdownMethod = FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
+): FeatureTestBreakdownPlan {
+  if (sceneName === "FT_Occlusion") return OCCLUSION_PLAN;
+  return { views: [{ steps: method === "add-one" ? FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS : FEATURE_TEST_BREAKDOWN_STEPS }] };
 }
 
 /** A step in a Breakdown's run order, its label prefixed with its view's name. */
@@ -139,7 +237,8 @@ export interface FeatureTestBreakdownSequenceStep extends FeatureTestBreakdownSt
 /**
  * The order a Breakdown measures in: per view, a baseline before every step and one after the last (A B A C A …), so
  * each step is compared with the two baselines immediately around it and slow drift (thermal throttling, background
- * work) cancels. A view's first baseline runs its `enter` commands.
+ * work) cancels. A view's first baseline runs its `enter` commands. A baseline right after a skipped step's is not
+ * measured again (`benchmarkProfiles`).
  */
 export function breakdownSequence(
   views: readonly FeatureTestBreakdownView[] = featureTestBreakdownPlan("FT_World").views,
@@ -158,8 +257,25 @@ export function breakdownSequence(
 }
 
 /** The step a Breakdown sample of `sceneName` measured, by its label; undefined for warm-up windows and unknown labels. */
-export function breakdownStep(sceneName: string, label: string): FeatureTestBreakdownSequenceStep | undefined {
-  return breakdownSequence(featureTestBreakdownPlan(sceneName).views).find((step) => step.label === label);
+export function breakdownStep(
+  sceneName: string, label: string, method: FeatureTestBreakdownMethod = FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
+): FeatureTestBreakdownSequenceStep | undefined {
+  return breakdownSequence(featureTestBreakdownPlan(sceneName, method).views).find((step) => step.label === label);
+}
+
+/**
+ * Why a Breakdown step is skipped: its fingerprint `fields` hold the same values with the step applied (`settings`)
+ * as at the baseline before it (`reference`), so measuring it would compare the baseline with itself. Null when it
+ * changes one, or when it names no fields or either fingerprint is missing.
+ */
+export function breakdownSkip(
+  fields: readonly string[] | undefined,
+  reference: Readonly<Record<string, string>> | undefined,
+  settings: Readonly<Record<string, string>> | undefined,
+): string | null {
+  if (!fields?.length || !reference || !settings) return null;
+  if (fields.some((field) => reference[field] !== settings[field])) return null;
+  return `already ${fields.map((field) => `${field} ${settings[field] ?? "-"}`).join(", ")}`;
 }
 
 /** Whether a sample is a Breakdown baseline (reports saved before `baseline` name theirs "baseline" and "baseline again"). */
@@ -221,7 +337,7 @@ export function breakdownDelta(
 }
 
 /**
- * Whether a Breakdown's remove-one changes add up, per view: the savings of its steps that overlap no other step's
+ * Whether a remove-one Breakdown's changes add up, per view (none for add-one, whose changes are costs on a base): the savings of its steps that overlap no other step's
  * (`overlaps`), summed in the view's first baseline's basis (GPU-busy median where measured, else mean frame time),
  * against that baseline. A sum past it is NON-ADDITIVE: removing features saved more than the whole frame cost, as
  * when the GPU is saturated and frames queue behind it.
@@ -229,7 +345,9 @@ export function breakdownDelta(
 export function breakdownAdditivity(
   sceneName: string,
   samples: readonly FeatureTestBenchmarkSample[],
+  method: FeatureTestBreakdownMethod = FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
 ): { view: string | undefined; savingsMs: number; baselineMs: number; basis: "gpu" | "frame"; nonAdditive: boolean }[] {
+  if (method === "add-one") return [];
   const views = [...new Set(samples.filter(isBreakdownBaseline).map((sample) => sample.view))];
   return views.flatMap((view) => {
     const first = samples.find((sample) => isBreakdownBaseline(sample) && sample.view === view)!;
@@ -240,12 +358,48 @@ export function breakdownAdditivity(
     let savingsMs = 0;
     for (const sample of samples) {
       if (sample.warmup || isBreakdownBaseline(sample) || sample.view !== view) continue;
-      if (breakdownStep(sceneName, sample.label)?.overlaps) continue;
+      if (breakdownStep(sceneName, sample.label, method)?.overlaps) continue;
       const delta = breakdownDelta(samples, sample);
       if (delta?.basis === basis && delta.ms < 0) savingsMs -= delta.ms;
     }
     return [{ view, savingsMs, baselineMs, basis, nonAdditive: savingsMs > baselineMs }];
   });
+}
+
+/**
+ * An add-one Breakdown's baselines past `ADD_ONE_CAP_MS` (GPU-busy median where measured, else mean frame time): the
+ * base nears the GPU's cap, where it may change speed, so the run is OVER CAP.
+ */
+export function breakdownOverCap(
+  samples: readonly FeatureTestBenchmarkSample[],
+): { label: string; ms: number; basis: "gpu" | "frame" }[] {
+  return samples.flatMap((sample) => {
+    if (!isBreakdownBaseline(sample)) return [];
+    const gpu = breakdownValue(sample, true) !== null;
+    const ms = breakdownValue(sample, gpu);
+    return ms !== null && ms > ADD_ONE_CAP_MS ? [{ label: sample.label, ms, basis: gpu ? "gpu" as const : "frame" as const }] : [];
+  });
+}
+
+/**
+ * A Breakdown's warm-up drift: its first warm-up window against the last (the steady one the steps start from), in
+ * GPU-busy median when both measured it, else mean frame time; null without two measured windows. A large drift shows
+ * the GPU changed speed while warming up.
+ */
+export function breakdownWarmupDrift(
+  samples: readonly FeatureTestBenchmarkSample[],
+): { firstMs: number; steadyMs: number; percent: number; windows: number; basis: "gpu" | "frame" } | null {
+  const windows = samples.filter((sample) => sample.warmup);
+  const first = windows[0];
+  const steady = windows.at(-1);
+  if (!first || !steady || first === steady) return null;
+  for (const gpu of [true, false]) {
+    const firstMs = breakdownValue(first, gpu);
+    const steadyMs = breakdownValue(steady, gpu);
+    if (firstMs === null || steadyMs === null) continue;
+    return { firstMs, steadyMs, percent: ((steadyMs - firstMs) / firstMs) * 100, windows: windows.length, basis: gpu ? "gpu" : "frame" };
+  }
+  return null;
 }
 
 /** Above this share of baseline frames lasting four or more display intervals, a Breakdown is SATURATED. */
@@ -351,8 +505,12 @@ export interface FeatureTestBenchmarkSample {
   occlusion?: { tested: number; culled: number; triangles: number; ms: number };
   /** GPU-busy time per frame from fences while sampled (`gpubusy`); absent where unmeasured or in older reports. */
   gpuBusy?: NonNullable<RenderDiagnostics["gpuBusy"]>;
+  /** The Engine's GPU backpressure while sampled (`framesinflight`): its mode and the renders it skipped; absent in older reports. */
+  framesInFlight?: { mode: "off" | 2 | 3; skipped: number };
   /** The step's render-settings fingerprint (`RenderDiagnostics.settings`) while sampled. */
   settings?: Record<string, string>;
+  /** A Breakdown step not measured, and why (`breakdownSkip`): it has no frames. */
+  skipped?: string;
   /** Shaders first drawn and Effects compiling during the sample (both should be 0), and how long settling took. */
   unsettled?: { firstDraws: number; compiling: number; settleMs: number };
 }
@@ -474,8 +632,12 @@ export interface FeatureTestCheckReport {
 
 /** What a Breakdown measured under: its tier, the device's warmth, and its preserveDrawingBuffer A/B. */
 export interface FeatureTestBreakdownInfo {
-  /** The scalability tier every scene measured at (`FEATURE_TEST_BREAKDOWN_TIER`). */
+  /** How each feature was measured; its base names what every scene's baselines ran. */
+  method: FeatureTestBreakdownMethod;
+  /** The base's label (`FEATURE_TEST_BREAKDOWN_BASES[method].label`). */
   tier: string;
+  /** Whether the preserveDrawingBuffer A/B was asked for (the Check dialog's checkbox, off by default): one pass without. */
+  ab: boolean;
   /** Whole minutes since the previous check ended, when that was within `WARM_DEVICE_MS` of the Breakdown's start. */
   warmMinutes: number | null;
   /**
@@ -626,7 +788,7 @@ export async function runFeatureTestCheck(options: {
     if (breakdown?.passes.length) result.pass = breakdown.passes.length;
     scenes.push(result);
     try {
-      await checkScene(result, mode, deps, signal, limits);
+      await checkScene(result, mode, deps, signal, limits, breakdown?.method ?? FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD);
     } catch (error) {
       if (!signal.aborted) throw error;
       cancelled = true;
@@ -654,6 +816,7 @@ async function checkScene(
   deps: FeatureTestCheckDeps,
   signal: AbortSignal,
   limits: FeatureTestCheckTimeouts,
+  method: FeatureTestBreakdownMethod,
 ): Promise<void> {
   const scene = result;
   const documentId = `scene:${scene.path}`;
@@ -715,7 +878,7 @@ async function checkScene(
     result.play.snapshot = play.snapshot();
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
     if (mode === "benchmark" || mode === "breakdown") {
-      await benchmarkProfiles(scene.name, mode, play, run, deps, signal, limits, result.play.benchmark);
+      await benchmarkProfiles(scene.name, mode, method, play, run, deps, signal, limits, result.play.benchmark);
       for (const sample of result.play.benchmark) {
         for (const failure of sample.failed) result.problems.push(`${sample.label}: ${failure}`);
       }
@@ -826,12 +989,14 @@ async function settleView(
 
 /**
  * Sweeps FEATURE_TEST_BENCHMARK_PROFILES (a Benchmark, frame cap lifted) or the scene's Breakdown plan (a Breakdown at
- * the normal cap and the Breakdown tier, undoing each step after it) on the running scene into `samples`, one as each
- * finishes, then restores the session's quality, render path, camera and cap.
+ * the normal cap on its method's base, undoing each step after it) on the running scene into `samples`, one as each
+ * finishes, then restores the session's quality, render path, camera and cap. A Breakdown step whose fields already
+ * hold its values is skipped (`breakdownSkip`), and so is the baseline after it, the one before still being adjacent.
  */
 async function benchmarkProfiles(
   sceneName: string,
   mode: "benchmark" | "breakdown",
+  method: FeatureTestBreakdownMethod,
   play: PlayProbe,
   run: (line: string) => Promise<FeatureTestCheckCommandResult>,
   deps: FeatureTestCheckDeps,
@@ -840,7 +1005,8 @@ async function benchmarkProfiles(
   samples: FeatureTestBenchmarkSample[],
 ): Promise<void> {
   const breakdown = mode === "breakdown";
-  const plan = featureTestBreakdownPlan(sceneName);
+  const plan = featureTestBreakdownPlan(sceneName, method);
+  const base = FEATURE_TEST_BREAKDOWN_BASES[method];
   const cap = /(\d+)/.exec((await run("framecap")).output)?.[1];
   await run(`framecap ${breakdown ? BREAKDOWN_FRAME_CAP : BENCHMARK_FRAME_CAP}`);
   const steps: readonly FeatureTestBreakdownSequenceStep[] = breakdown ? breakdownSequence(plan.views) : FEATURE_TEST_BENCHMARK_PROFILES;
@@ -852,13 +1018,13 @@ async function benchmarkProfiles(
     }
   };
   const pendingRestore: string[] = [];
-  // Failures of the tier or of a step's undo, reported on the next sample: the one they would skew.
+  // Failures of the base or of a step's undo, reported on the next sample: the one they would skew.
   const carried: string[] = [];
-  /** Back to the Breakdown tier: `quality reset` clears every session override, the tier included. */
+  /** Back to the base: `quality reset` clears every session override, the base's included. */
   const restore = async () => {
     if (!breakdown) return;
     await run("quality reset");
-    await runAll(FEATURE_TEST_BREAKDOWN_TIER_COMMANDS, carried);
+    await runAll(base.commands, carried);
     await runAll(pendingRestore.splice(0), carried);
   };
   // A Breakdown times each frame's GPU work with fences, which display pacing does not quantise; restarted per sample.
@@ -866,6 +1032,7 @@ async function benchmarkProfiles(
   /** Samples the view as it is now into a sample labelled `label`; `failed` collects what went wrong. */
   const measure = async (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => {
     const firstDrawsBefore = play.snapshot().rendering?.firstDraws?.draws ?? 0;
+    const skippedBefore = play.snapshot().rendering?.frameBackpressure?.skipped ?? 0;
     if (breakdown) gpuBusy = (await run("gpubusy on")).success;
     const sampled = await sampleWithCounters(play, deps.sampleFrames(sampleMs, signal), deps, signal);
     const snapshot = play.snapshot();
@@ -882,6 +1049,7 @@ async function benchmarkProfiles(
       gpu: sampled.gpu,
       resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
       failed: [...carried.splice(0), ...failed],
+      ...(rendering?.frameBackpressure ? { framesInFlight: { mode: rendering.frameBackpressure.mode, skipped: rendering.frameBackpressure.skipped - skippedBefore } } : {}),
       ...(breakdown ? {
         ...(gpuBusy && rendering?.gpuBusy ? { gpuBusy: { ...rendering.gpuBusy } } : {}),
         ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),
@@ -891,13 +1059,19 @@ async function benchmarkProfiles(
     };
     return sample;
   };
+  /** The settings of the last baseline or warm-up window measured from `view`: what a step there is compared with. */
+  const reference = (view: string | undefined) =>
+    samples.findLast((sample) => (sample.warmup || isBreakdownBaseline(sample)) && sample.view === view && sample.settings)?.settings;
+  // The last step skipped: the baseline after it would repeat the one before it.
+  let skippedLast = false;
   try {
-    // The tier first, so the warm-up runs at the baseline the steps are compared with.
+    // The base first, so the warm-up runs at the baseline the steps are compared with.
     if (breakdown) {
-      await runAll(FEATURE_TEST_BREAKDOWN_TIER_COMMANDS, carried);
+      await runAll(base.commands, carried);
       await warmUp(sceneName, play, deps, signal, limits, measure, samples);
     }
     for (const profile of steps) {
+      if (profile.baseline && skippedLast) { skippedLast = false; continue; }
       deps.onProgress?.(`${sceneName}: ${breakdown ? "measuring" : "benchmarking"} ${profile.label}`);
       const failed: string[] = [];
       if (profile.restore) pendingRestore.push(...profile.restore);
@@ -906,6 +1080,20 @@ async function benchmarkProfiles(
       // sweep: more changes on top would only pile up work and memory.
       const steady = await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
       if (!steady) failed.push(`The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`);
+      const skip = breakdown && steady && !profile.baseline && !failed.length
+        ? breakdownSkip(profile.fields, reference(profile.view), play.snapshot().rendering?.settings)
+        : null;
+      if (skip) {
+        deps.onProgress?.(`${sceneName}: skipped ${profile.label} (${skip})`);
+        samples.push({
+          label: profile.label, frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null,
+          failed: carried.splice(0), baseline: false, skipped: skip, ...(profile.view ? { view: profile.view } : {}),
+        });
+        skippedLast = true;
+        await restore();
+        continue;
+      }
+      skippedLast = false;
       // The view draws again, but the variants a step asked for may still be first drawing or compiling: sampling
       // them would measure their compiles, not the step.
       const settled = steady
@@ -927,7 +1115,7 @@ async function benchmarkProfiles(
       // The session's own quality again, as Play started it.
       await run("quality reset");
       for (const line of pendingRestore.splice(0)) await run(line);
-      if (breakdown) for (const line of plan.exit ?? []) await run(line);
+      if (breakdown) for (const line of [...base.cleanup, ...plan.exit ?? []]) await run(line);
       await run(`framecap ${cap ?? 60}`);
     }
   }

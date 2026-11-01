@@ -2287,7 +2287,14 @@ describe("the lighting CI gate", () => {
     setUnlitMaterial(sprite, spriteKey, painting(canvas(world.handle.scene, [0, 0, 255, 255]), { blend: false, cutoff: 0.4 }));
     return { painter, sprite };
   };
-  const play = async (world: PlayWorld, { painter, sprite }: { painter: Mesh; sprite: Mesh }) => {
+  /** The script's steps that change what lights a receiver and what shadows it: an occluded crate's variants. */
+  const RECEIVER_STEPS: ReadonlySet<string> = new Set([
+    "a point light switches off", "it switches back on", "a point light spawns", "a spot light spawns",
+    "the sun starts casting shadows", "a spot light starts casting shadows", "a point light starts casting shadows",
+    "a light stops casting shadows", "it starts again", "a light is removed", "more point lights spawn than the block draws",
+  ]);
+  /** Plays the light script (only the steps `only` names, when given), four frames per step. */
+  const play = async (world: PlayWorld, { painter, sprite }: { painter: Mesh; sprite: Mesh }, only?: ReadonlySet<string>) => {
     const steps: Array<[string, () => void]> = [
       ["a point light switches off", () => world.place(point(11, [1.5, 2.5, -1], { enabled: false }))],
       ["it switches back on", () => world.place(point(11, [1.5, 2.5, -1]))],
@@ -2319,6 +2326,7 @@ describe("the lighting CI gate", () => {
     ];
     const compiled: Record<string, number> = {};
     for (const [name, step] of steps) {
+      if (only && !only.has(name)) continue;
       const before = world.driver.created.length;
       step();
       for (let index = 0; index < 4; index++) await world.frame();
@@ -2428,7 +2436,8 @@ describe("the lighting CI gate", () => {
     const surfaces = unlitSurfaces(world);
     await settle(world);
     world.driver.arm();
-    const compiled = await play(world, surfaces);
+    // The receiver's steps alone: what the hidden crate's variants depend on (the full script is the case above).
+    const compiled = await play(world, surfaces, RECEIVER_STEPS);
     const crate = world.handle.scene.getMeshByName("actor-2")!;
     const hidden = world.view().occlusionDiagnostics()!.culled;
     // The debug views switch on: a 2D overlay and a frozen buffer, which compile nothing.
