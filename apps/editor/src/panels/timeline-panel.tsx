@@ -12,6 +12,8 @@ import {
 import {
   ChecklistDialog,
   ContextMenuOverlay,
+  CurveEditor,
+  TreeView,
   KeyframeTimeline,
   NestedMenu,
   NumberField,
@@ -39,6 +41,7 @@ import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@haptic/ui/components/empty";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@haptic/ui/components/select";
 import { Toggle } from "@haptic/ui/components/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -110,6 +113,7 @@ import {
   type TrackKeyRef,
 } from "../lib/timeline-track-edits";
 import { TIMELINE_EASE_SHORTCUTS, TIMELINE_EASING_CURVES, timelineInterpolationLabel } from "../lib/timeline-interpolation";
+import { applyTimelineCurve, timelineCurveChannels, timelineCurveKind, timelineTrackCurve } from "../lib/timeline-curves";
 import { useTimelineClip, useTimelinePropertyContext } from "../context/use-timeline-clip";
 
 const newId = () => crypto.randomUUID();
@@ -172,6 +176,8 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   const [addTrackActorId, setAddTrackActorId] = useState<string | null>(null);
   const [pickActorOpen, setPickActorOpen] = useState(false);
   const [fitToken, setFitToken] = useState(0);
+  // Keys: the key lanes. Curves: the selected track's curves, with tangent handles.
+  const [view, setView] = useState<"keys" | "curves">("keys");
   const lengthDrag = useRef<number | null>(null);
   const drag = useRef<{ base: SerializedTimelineClip; snapshot: Map<string, TimelineKey[]> } | null>(null);
   const clipRef = useRef(clip);
@@ -596,6 +602,11 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
           <CircleDotIcon className={autoKey ? "text-destructive" : undefined} />Auto Key
         </Toggle>
         <TransportButton label="Zoom To Fit" onClick={() => setFitToken((token) => token + 1)} testId="timeline-zoom-fit"><UnfoldHorizontalIcon /></TransportButton>
+        <ToggleGroup variant="outline" size="sm" spacing={0} value={[view]} aria-label="Timeline View"
+          onValueChange={(values) => { if (values[0] === "keys" || values[0] === "curves") setView(values[0]); }}>
+          <ToggleGroupItem value="keys" data-testid="timeline-view-keys">Keys</ToggleGroupItem>
+          <ToggleGroupItem value="curves" data-testid="timeline-view-curves">Curves</ToggleGroupItem>
+        </ToggleGroup>
         <span className="flex-1" />
         <NestedMenu items={trackMenu} trigger={<Button variant="ghost" size="sm" data-testid="timeline-add-menu">
           <PlusIcon data-icon="inline-start" />Track<ChevronDownIcon data-icon="inline-end" />
@@ -609,6 +620,8 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
             <EmptyDescription>Drag an actor here from the Outliner, or use Track to add the selected actors.</EmptyDescription>
           </EmptyHeader>
         </Empty>
+      ) : view === "curves" ? (
+        <TimelineCurves clip={clip} rows={rows} rowId={rowId} setRowId={setRowId} snap={snap} commitClip={commitClip} touch={touch} />
       ) : (
         <KeyframeTimeline
           rows={laneRows}
@@ -680,3 +693,66 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
     </div>
   </PanelFrame>;
 }
+
+/** Curves view: the clip's interpolated tracks beside the curve editor for the selected one. */
+function TimelineCurves({ clip, rows, rowId, setRowId, snap, commitClip, touch }: {
+  clip: SerializedTimelineClip;
+  rows: readonly TimelineRowModel[];
+  rowId: string | null;
+  setRowId: (id: string | null) => void;
+  snap: boolean;
+  commitClip: (clip: SerializedTimelineClip) => void;
+  touch: boolean;
+}) {
+  const tracks = rows.filter((row) => row.kind === "track" && row.track && timelineCurveKind(row.track.valueType));
+  const groups = new Map(rows.filter((row) => row.kind === "group").map((row) => [row.id, row.label]));
+  const selected = tracks.find((row) => row.id === rowId) ?? null;
+  const track = selected?.track;
+  const kind = track ? timelineCurveKind(track.valueType) : null;
+  return <div className="flex min-h-0 flex-1" data-testid="timeline-curves">
+    <div className="w-[264px] shrink-0 border-r">
+      {tracks.length ? <TreeView
+        aria-label="Curve Tracks"
+        rowHeight={touch ? 44 : undefined}
+        nodes={tracks.map((row) => ({
+          id: row.id,
+          label: `${groups.get(row.objectId) ?? "Actor"} › ${row.label}`,
+          depth: 0,
+          hasChildren: false,
+          expanded: false,
+          draggable: false,
+          muted: row.muted,
+        }))}
+        selectedId={selected?.id ?? null}
+        onSelect={(id) => setRowId(id)}
+        data-testid="timeline-curve-tracks"
+      /> : <p className="p-3 text-xs text-muted-foreground">Add a Float, Vector, Rotator or Color track to edit its curves.</p>}
+    </div>
+    <div className="min-w-0 flex-1 overflow-y-auto p-2">
+      {track && kind ? (
+        <CurveEditor
+          key={track.id}
+          kind={kind}
+          aria-label={selected!.label}
+          value={timelineTrackCurve(track)}
+          channels={timelineCurveChannels(track.valueType)}
+          constraints={{
+            timeRange: [0, clip.length],
+            ...(snap ? { timeSnap: 1 / clip.frameRate } : {}),
+            keyGap: 0.5 / clip.frameRate,
+            extrapolation: "constant",
+          }}
+          onChange={(curve) => commitClip({
+            ...clip,
+            objects: clip.objects.map((object) => ({
+              ...object,
+              tracks: object.tracks.map((entry) => (entry.id === track.id ? applyTimelineCurve(entry, curve, newId) : entry)),
+            })),
+          })}
+          data-testid="timeline-curve"
+        />
+      ) : tracks.length ? <p className="p-3 text-xs text-muted-foreground">Pick a track to edit its curves.</p> : null}
+    </div>
+  </div>;
+}
+
