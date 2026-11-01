@@ -153,3 +153,54 @@ describe("COI service worker bootstrap", () => {
     expect(app.reload).not.toHaveBeenCalled();
   });
 });
+
+/** Execute the shipped script as the service worker; only the network (`fetch`) is controlled. */
+function isolationWorker(network: () => Promise<unknown>) {
+  const listeners = new Map<string, (event: unknown) => void>();
+  const self = {
+    addEventListener: (type: string, listener: (event: unknown) => void) => listeners.set(type, listener),
+    skipWaiting: vi.fn(),
+    clients: { claim: vi.fn() },
+  };
+  const console = { error: vi.fn() };
+  runInNewContext(source, { self, fetch: network, Request, Response, Headers, console });
+  return {
+    console,
+    /** Dispatch a fetch event and resolve to the worker's answer (undefined when it answers with nothing). */
+    fetch(url: string): Promise<Response | undefined> {
+      let answer: Promise<Response | undefined> = Promise.resolve(undefined);
+      listeners.get("fetch")?.({
+        request: new Request(url),
+        respondWith: (value: Promise<Response | undefined>) => { answer = value; },
+      });
+      return answer;
+    },
+  };
+}
+
+describe("COI service worker fetch", () => {
+  it.each([304, 204])("forwards a %i that arrives with an empty body stream, with the isolation headers", async (status) => {
+    // WebKit answers a revalidated module worker script this way; wrapping its body failed the worker's load.
+    const worker = isolationWorker(async () => ({
+      status,
+      statusText: "",
+      headers: new Headers({ etag: '"a"' }),
+      body: new ReadableStream(),
+    }));
+    const response = await worker.fetch("https://editor.example/assets/worker-entry.js");
+    expect(response?.status).toBe(status);
+    expect(response?.headers.get("etag")).toBe('"a"');
+    expect(response?.headers.get("Cross-Origin-Embedder-Policy")).toBe("require-corp");
+    expect(response?.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin");
+    expect(worker.console.error).not.toHaveBeenCalled();
+  });
+
+  it("keeps the body of an ordinary response", async () => {
+    const worker = isolationWorker(async () =>
+      new Response("export {};", { status: 200, headers: { "content-type": "text/javascript" } }));
+    const response = await worker.fetch("https://editor.example/assets/worker-entry.js");
+    expect(response?.status).toBe(200);
+    expect(await response?.text()).toBe("export {};");
+    expect(response?.headers.get("Cross-Origin-Resource-Policy")).toBe("cross-origin");
+  });
+});

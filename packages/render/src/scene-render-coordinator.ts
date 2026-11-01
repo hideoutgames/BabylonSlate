@@ -13,6 +13,7 @@ import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
 import { sceneOutputScale } from "./scene-output-scale";
 import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapsTolerated } from "./variant-swaps";
+import { admitSteadyFirstDraws } from "./variant-pipeline-warmup";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
 } from "./stall-deadline";
@@ -422,7 +423,11 @@ export class SceneRenderCoordinator {
     // (a light switched off, a shadow lost, a grown light capacity) instead of holding the image; a frame that
     // validates a presentation waits for every requested variant.
     const tolerate = !validatePresentation && this.toleratesVariantSwaps();
-    if (tolerate) this.graph.recheckVariantSwaps();
+    if (tolerate) {
+      this.graph.recheckVariantSwaps();
+      // Its cold variants are admitted whether or not a readiness round runs in this frame (`admitSteadyFirstDraws`).
+      if (this.graph.warmsVariants) admitSteadyFirstDraws(this.scene.getEngine());
+    }
     return probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation, tolerate));
   }
 
