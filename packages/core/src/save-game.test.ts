@@ -395,6 +395,47 @@ describe("SaveGameService schema upgrades and portability", () => {
     expect([...storage.files]).toEqual(before);
   });
 
+  it("saves and restores Structure fields, such as a range and a curve, as plain records", async () => {
+    const curve = { Keys: [{ Time: 0, Value: 1, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 }], Before: "constant", After: "constant" };
+    const structured: SaveGameDefinition = {
+      id: "structured", schemaVersion: 1,
+      fields: [
+        { id: "spawn-id", name: "SpawnCount", type: "struct", structId: "engine:IntRange", defaultValue: { Min: 2, Max: 5 } },
+        { id: "falloff-id", name: "Falloff", type: "struct", structId: "engine:FloatCurve", defaultValue: curve },
+      ],
+    };
+    const storage = new FaultStorage();
+    const service = new SaveGameService({ projectId: "sample-project", definition: structured, storage });
+    service.setField("spawn-id", { Min: 3, Max: 9 });
+    expect(await service.saveGame()).toMatchObject({ ok: true });
+    service.setField("spawn-id", { Min: 0, Max: 1 });
+    const reloaded = new SaveGameService({ projectId: "sample-project", definition: structured, storage });
+    expect(await reloaded.loadGame()).toMatchObject({ ok: true });
+    expect(reloaded.getField("spawn-id")).toEqual({ Min: 3, Max: 9 });
+    expect(reloaded.getField("falloff-id")).toEqual(curve);
+    expect(() => service.setField("spawn-id", 7)).toThrow(SaveGameError);
+    expect(() => validateSaveGameDefinition({ ...structured, fields: [{ id: "x", name: "x", type: "struct", defaultValue: {} }] })).toThrow(SaveGameError);
+    expect(generateSaveGameTypes(structured)).toContain('"SpawnCount": Record<string, unknown>;');
+  });
+
+  it("writes format version 2 and still loads saves written in format version 1", async () => {
+    const storage = new FaultStorage();
+    const service = make(storage);
+    service.getSaveData().coins = 12;
+    expect(await service.saveGame()).toMatchObject({ ok: true });
+    const key = generationKey(storage, "a");
+    const written = JSON.parse(storage.files.get(key)!);
+    expect(written.formatVersion).toBe(2);
+    // A version 1 save: the same body, its envelope and payload both marked 1.
+    const older = await editPayload(storage.files.get(key)!, (payload) => { payload.formatVersion = 1; });
+    const envelope = JSON.parse(older);
+    envelope.formatVersion = 1;
+    storage.files.set(key, JSON.stringify(envelope));
+    const reloaded = make(storage);
+    expect(await reloaded.loadGame()).toMatchObject({ ok: true });
+    expect(reloaded.getSaveData().coins).toBe(12);
+  });
+
   it("validates field types, array entries, reserved keys and independent defaults before persistence", async () => {
     const service = make();
     const another = make();

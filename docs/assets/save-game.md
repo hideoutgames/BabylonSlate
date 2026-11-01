@@ -18,7 +18,8 @@ Double-tap a Save Game to open it.
 | Setting | Description |
 | --- | --- |
 | Name | The field's name. Renaming keeps the value already saved. |
-| Type | **Boolean**, **Integer**, **Float**, **String**, **Vector 3**, **Actor Reference** or **Asset Reference**. |
+| Type | **Boolean**, **Integer**, **Float**, **String**, **Vector 3**, **Actor Reference**, **Asset Reference** or **Structure**. |
+| Structure | For a **Structure** field, the Structure it holds, such as **Int Range** or **Float Curve**. Only Structures without object references can be saved, nested Structures included. |
 | Container | **Single** or **Array**. |
 | Default Value | The value for new games, and when an existing save lacks the field. For an Array, **Add Item** adds entries. |
 | Remove Field | Deletes the selected field. |

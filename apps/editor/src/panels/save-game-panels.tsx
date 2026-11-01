@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { PlusIcon } from "lucide-react";
 import {
+  cloneSaveGameValue,
   generateSaveGameTypes,
   validateSaveGameDefinition,
   type SaveGameDefinition,
@@ -26,12 +27,16 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSaveGameEditing } from "../context/save-game-editing-context";
+import { structInstanceDefault, type TypeSchemas } from "@haptic/scripting";
+import { variableDefaultPropertyRows } from "../lib/graph-inspector";
+import { saveableStructures } from "../lib/save-game-catalog";
+import { useDataCatalog } from "../lib/use-data-catalog";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 
-const FIELD_TYPES = ["bool", "int", "float", "string", "vec3", "actor", "asset"] as const;
+const FIELD_TYPES = ["bool", "int", "float", "string", "vec3", "actor", "asset", "struct"] as const;
 const FIELD_TYPE_LABELS: Record<SaveGameField["type"], string> = {
   bool: "Boolean", int: "Integer", float: "Float", string: "String",
-  vector3: "Vector 3", actor: "Actor Reference", asset: "Asset Reference",
+  vector3: "Vector 3", actor: "Actor Reference", asset: "Asset Reference", struct: "Structure",
 };
 const FIELD_PICKER_LABELS = { ...FIELD_TYPE_LABELS, vec3: FIELD_TYPE_LABELS.vector3 };
 
@@ -85,11 +90,25 @@ function fieldNameError(definition: SaveGameDefinition, name: string, id?: strin
   return null;
 }
 
+/** A Structure field's starting value: the Structure's own defaults. */
+function structDefault(structId: string | undefined, schemas: TypeSchemas): SaveGameValue {
+  const schema = structId ? schemas.structs[structId] : undefined;
+  return (schema ? structInstanceDefault(schema.fields, schemas) : {}) as SaveGameValue;
+}
+
 function DefaultValueEditor({ field, value, onChange, label = "Default Value" }: {
   field: SaveGameField; value: SaveGameValue; onChange(value: SaveGameValue): void; label?: string;
 }) {
   const { assetRegistry } = useRegistryState();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const catalog = useDataCatalog();
+  if (field.type === "struct") {
+    const rows = variableDefaultPropertyRows("struct", value, (next) => onChange(cloneSaveGameValue(next)), {
+      typeClassId: field.structId, schemas: catalog.schemas, enumMembers: catalog.enumMembers,
+      label: label === "Default Value" ? "Default" : label, pinId: `default-${field.id}-${label}`,
+    });
+    return <PropertyGrid rows={rows} />;
+  }
   const base = { id: `default-${field.id}-${label}`, label };
   let row: PropertyRow;
   switch (field.type) {
@@ -161,6 +180,9 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
   const { assetRegistry } = useRegistryState();
   const { documentId } = useDocumentWorkspace();
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [structurePickerOpen, setStructurePickerOpen] = useState(false);
+  const catalog = useDataCatalog();
+  const structures = saveableStructures(catalog.types.structures, catalog.schemas);
   const [nameError, setNameError] = useState<{ fieldId: string; message: string } | null>(null);
   const path = useOpenDocument(documentId)?.ref.path;
   const guid = path ? assetRegistry?.getByPath(path)?.header.guid : undefined;
@@ -187,18 +209,41 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
         }]} />
         <Field><FieldLabel>Type</FieldLabel><PinTypePicker types={FIELD_TYPES} labels={FIELD_PICKER_LABELS} value={fieldPickerType(selectedField.type)} onChange={(value) => {
           const type = (value === "vec3" ? "vector3" : value) as SaveGameField["type"];
-          if (type !== selectedField.type) patch({ type, defaultValue: selectedField.array ? [] : initialValue(type) });
+          if (type === selectedField.type) return;
+          if (type === "struct") {
+            // A Structure field needs a Structure; start with the first one a save can hold.
+            const structId = structures[0]?.guid;
+            if (!structId) return;
+            patch({ type, structId, defaultValue: selectedField.array ? [] : structDefault(structId, catalog.schemas) });
+            return;
+          }
+          patch({ type, structId: undefined, defaultValue: selectedField.array ? [] : initialValue(type) });
         }} data-testid="save-game-field-type" /></Field>
+        {selectedField.type === "struct" ? <>
+          <PropertyGrid rows={[{
+            id: `structure-${selectedField.id}`, kind: "asset", label: "Structure", value: selectedField.structId ?? null,
+            displayLabel: structures.find((entry) => entry.guid === selectedField.structId)?.name ?? "Missing Structure",
+            displayType: "Structure", placeholder: "Choose Structure",
+            description: "Only Structures without object references can be saved.",
+            onPick: () => setStructurePickerOpen(true), onChange: () => undefined,
+          }]} />
+          <AssetPicker open={structurePickerOpen} onOpenChange={setStructurePickerOpen} title="Pick Structure" allowNone={false}
+            assets={structures.map((entry) => ({ guid: entry.guid, name: entry.name, type: "Structure" }))} allowedTypes={["Structure"]}
+            onPick={(structId) => {
+              setStructurePickerOpen(false);
+              if (structId && structId !== selectedField.structId) patch({ structId, defaultValue: selectedField.array ? [] : structDefault(structId, catalog.schemas) });
+            }} />
+        </> : null}
         <Field><FieldLabel>Container</FieldLabel><ToggleGroup variant="outline" size="sm" spacing={1} value={[selectedField.array ? "array" : "single"]} aria-label="Container" onValueChange={(values) => {
           const value = values[0];
           if (value !== "single" && value !== "array") return;
           const array = value === "array";
-          if (array !== !!selectedField.array) patch({ array, defaultValue: array ? [] : initialValue(selectedField.type) });
+          if (array !== !!selectedField.array) patch({ array, defaultValue: array ? [] : selectedField.type === "struct" ? structDefault(selectedField.structId, catalog.schemas) : initialValue(selectedField.type) });
         }}><ToggleGroupItem value="single"><PinShapeGlyph shape="circle" connected outlined={false} color="currentColor" size={8} data-icon="inline-start" />Single</ToggleGroupItem><ToggleGroupItem value="array"><PinShapeGlyph shape="list" connected data-icon="inline-start" />Array</ToggleGroupItem></ToggleGroup></Field>
         {selectedField.array ? <FieldSet className="gap-2"><FieldLegend variant="label">Default Value</FieldLegend><EntryListEditor
           items={selectedField.defaultValue as SaveGameValue[]}
           onChange={(defaultValue) => patch({ defaultValue })}
-          onCreate={() => initialValue(selectedField.type)}
+          onCreate={() => selectedField.type === "struct" ? structDefault(selectedField.structId, catalog.schemas) : initialValue(selectedField.type)}
           addLabel="Add Item"
           touchAdaptive
           data-testid="save-game-field-defaults"
