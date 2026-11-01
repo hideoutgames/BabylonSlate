@@ -170,6 +170,7 @@ describe("material dock catalog", () => {
       expect(listDockWindows(kind).map((entry) => [entry.id, entry.title])).toEqual([
         ["timeline-clip-proxies", "Proxies"],
         ["timeline-clip-inspector", "Inspector"],
+        ["timeline-clip-timeline", "Timeline"],
       ]);
       expect(primaryDockPanel(kind)).toBe("timeline-clip-proxies");
     }

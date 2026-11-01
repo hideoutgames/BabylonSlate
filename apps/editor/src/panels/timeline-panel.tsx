@@ -153,7 +153,7 @@ function TransportButton({ label, shortcut, onClick, disabled, children, testId 
 /** Timeline mode: the selected clip's keyframe timeline. */
 export function TimelinePanel(_props: IDockviewPanelProps) {
   void _props;
-  const { scene, clips, clip, commitClip, tools } = useTimelineClip();
+  const { scene, clips, clip, commitClip, tools, proxies } = useTimelineClip();
   if (!scene || !clip) {
     return <PanelFrame>
       <Empty className="h-full gap-3 p-4" data-testid="scene-timeline-panel">
@@ -165,14 +165,16 @@ export function TimelinePanel(_props: IDockviewPanelProps) {
       </Empty>
     </PanelFrame>;
   }
-  return <ClipTimeline key={clip.id} scene={scene} clip={clip} commitClip={commitClip} tools={tools} />;
+  return <ClipTimeline key={clip.id} scene={scene} clip={clip} commitClip={commitClip} tools={tools} proxies={proxies} />;
 }
 
-function ClipTimeline({ scene, clip, commitClip, tools }: {
+function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
   scene: SerializedScene;
   clip: SerializedTimelineClip;
   commitClip: (clip: SerializedTimelineClip) => void;
   tools: ReturnType<typeof useSceneTools>;
+  /** A clip asset's: every row is a proxy, kept while the proxy exists. */
+  proxies?: boolean;
 }) {
   const session = useEditorSessionState();
   const keybinds = useKeybindings();
@@ -357,6 +359,8 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
       return;
     }
     const object = clip.objects.find((entry) => entry.id === rowId);
+    // A proxy's row stays while the proxy does; Delete removes it in Proxies.
+    if (object && proxies) return;
     commitClip(object ? removeTimelineObject(clip, rowId) : removeTimelineTrack(clip, rowId));
     setRowId(null);
   };
@@ -506,12 +510,15 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
           disabled: !session.readCopiedTimelineTrack() || !row.actor, onSelect: () => pasteTrack(row.id) },
         { id: "select-keys", label: "Select All Keys", icon: <ListChecksIcon />, disabled: tracks.every((track) => track.keys.length === 0),
           testId: "timeline-row-menu-select-keys", onSelect: () => selectRowKeys(row.id) },
-        reveal,
+        // A proxy has no scene actor to select, and leaves the clip only from Proxies.
+        ...(proxies ? [] : [reveal]),
         { type: "separator", id: "move-separator" },
         ...moveItems(row.id),
-        { type: "separator", id: "remove-separator" },
-        { id: "remove-object", label: "Remove From Clip", icon: <Trash2Icon />, variant: "destructive", testId: "timeline-row-menu-remove",
-          onSelect: () => commitClip(removeTimelineObject(clip, row.id)) },
+        ...(proxies ? [] : [
+          { type: "separator" as const, id: "remove-separator" },
+          { id: "remove-object", label: "Remove From Clip", icon: <Trash2Icon />, variant: "destructive" as const, testId: "timeline-row-menu-remove",
+            onSelect: () => commitClip(removeTimelineObject(clip, row.id)) },
+        ]),
       ];
     }
     const muted = row.track?.muted === true;
@@ -523,7 +530,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
       { id: "copy-track", label: "Copy Track", icon: <CopyIcon />, testId: "timeline-row-menu-copy-track", onSelect: () => copyTrack(row.id) },
       { id: "select-keys", label: "Select All Keys", icon: <ListChecksIcon />, disabled: !row.track?.keys.length,
         testId: "timeline-row-menu-select-keys", onSelect: () => selectRowKeys(row.id) },
-      reveal,
+      ...(proxies ? [] : [reveal]),
       { type: "separator", id: "move-separator" },
       ...moveItems(row.id),
       { type: "separator", id: "delete-separator" },
@@ -645,7 +652,10 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   });
 
   const unanimated = scene.actors.filter((actor) => !clip.objects.some((object) => object.actorId === actor.id));
-  const trackMenu: NestedMenuItem[] = [
+  // A clip asset's rows are its proxies; only Custom Event Tracks are added here.
+  const trackMenu: NestedMenuItem[] = proxies ? [
+    { id: "add-event-track", label: "Custom Event Track", icon: <ZapIcon />, testId: "timeline-track-menu-event", onSelect: addEventTrack },
+  ] : [
     { id: "add-selected", label: selectedActors.length === 1
         ? `Selected Actor (${actorNames.get(selectedActors[0]!) ?? "Actor"})`
         : `Selected Actors (${selectedActors.length})`,

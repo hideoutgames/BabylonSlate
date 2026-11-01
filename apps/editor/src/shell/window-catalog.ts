@@ -1171,6 +1171,7 @@ export function listDockWindows(
   if (kind === "timeline-clip-2d" || kind === "timeline-clip-3d") return withOptionalLocks(kind, [
     { id: "timeline-clip-proxies", component: "timeline-clip-proxies", title: "Proxies" },
     { id: "timeline-clip-inspector", component: "timeline-clip-inspector", title: "Inspector", defaultPosition: { referencePanelId: "timeline-clip-proxies", direction: "right", initialWidth: 320 } },
+    { id: "timeline-clip-timeline", component: "timeline-clip-timeline", title: "Timeline", defaultPosition: { referencePanelId: "timeline-clip-proxies", direction: "below", initialHeight: 320 } },
   ], options);
   if (kind === "timeline") return withOptionalLocks(kind, [
     { id: "timeline-asset-clips", component: "timeline-asset-clips", title: "Timeline Clips" },

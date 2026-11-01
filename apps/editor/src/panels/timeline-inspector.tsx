@@ -174,6 +174,16 @@ function TimelineTrackValues({ title, testId, entries, actor, context, clip, com
  * clip's settings.
  */
 export function TimelineInspector() {
+  return <PanelFrame data-testid="scene-details-panel">
+    <TimelineInspectorContent />
+  </PanelFrame>;
+}
+
+/**
+ * The Timeline Inspector's grids. A clip asset's Inspector shows them without
+ * the scene clip's settings (`showClip`), which it edits itself.
+ */
+export function TimelineInspectorContent({ showClip = true }: { showClip?: boolean }) {
   const { scene, clip, commitClip, commitScene, tools } = useTimelineClip();
   const property = useTimelinePropertyContext();
   const { assetRegistry } = useRegistryState();
@@ -309,21 +319,21 @@ export function TimelineInspector() {
         { id: "timeline-track-value", label: timelineTrackLabel(actor, found.track, labels), track: found.track }]) });
     }
   }
-  grids.push({
-    title: "Timeline Clip",
-    testId: "timeline-inspector-clip",
-    rows: clipRows(clip, commitClip, (name) => commitScene(renameClip(scene, clip.id, name))),
-  });
+  if (showClip) {
+    grids.push({
+      title: "Timeline Clip",
+      testId: "timeline-inspector-clip",
+      rows: clipRows(clip, commitClip, (name) => commitScene(renameClip(scene, clip.id, name))),
+    });
+  }
 
-  return <PanelFrame data-testid="scene-details-panel">
-    <div className="flex flex-col gap-3 pb-4" data-testid="timeline-inspector">
-      {grids.map((grid) => <div key={grid.testId} className="flex flex-col gap-2">
-        <PropertyGrid title={grid.title} rows={grid.rows} data-testid={grid.testId} />
-        {grid.after}
-      </div>)}
-      {selectedCount === 0 && !tools.timelineRowId ? (
-        <p className="px-2 text-xs text-muted-foreground">Select a key or track in the Timeline to edit it here.</p>
-      ) : null}
-    </div>
-  </PanelFrame>;
+  return <div className="flex flex-col gap-3 pb-4" data-testid="timeline-inspector">
+    {grids.map((grid) => <div key={grid.testId} className="flex flex-col gap-2">
+      <PropertyGrid title={grid.title} rows={grid.rows} data-testid={grid.testId} />
+      {grid.after}
+    </div>)}
+    {showClip && selectedCount === 0 && !tools.timelineRowId ? (
+      <p className="px-2 text-xs text-muted-foreground">Select a key or track in the Timeline to edit it here.</p>
+    ) : null}
+  </div>;
 }
