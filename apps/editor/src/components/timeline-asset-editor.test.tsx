@@ -65,8 +65,11 @@ describe("Timeline Asset document", () => {
   it("shows the selected clip's events, Custom Event Tracks then the built-in ones", () => {
     render(<TimelineAssetEventsPanel {...panel} />);
     const events = screen.getByTestId("timeline-asset-events");
-    expect(within(events).getByDisplayValue("Line: String")).toBeTruthy();
-    expect(within(events).getAllByDisplayValue("Built in")).toHaveLength(2);
+    // A read-only list: nothing here can be typed into.
+    expect(within(events).queryByRole("textbox")).toBeNull();
+    expect(within(events).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      expect.stringContaining("Line: String"), "On FinishedBuilt In", "On LoopedBuilt In",
+    ]);
     expect(within(events).getByText("On Finished")).toBeTruthy();
   });
 });

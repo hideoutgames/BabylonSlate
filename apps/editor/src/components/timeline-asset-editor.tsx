@@ -122,20 +122,26 @@ export function TimelineAssetEventsPanel(_props: IDockviewPanelProps) {
   const { id, clips } = useTimelineAsset();
   const key = useSelectedClip(id);
   const clip = clips.find((entry) => clipKey(entry) === key) ?? clips[0];
-  const rows: PropertyRow[] = clip ? [
-    ...clip.clip.events.map((event, index): PropertyRow => ({
-      id: `timeline-asset-event-${index}`, kind: "text", label: event.name, readOnly: true, onChange: () => {},
-      value: event.inputs.length ? event.inputs.map((input) => `${input.name}: ${pinPickerLabel(input.typeId)}`).join(", ") : "No inputs",
+  // What the clip declares, to read: the clip's Custom Event Tracks are edited in its Scene or Scene Layer.
+  const events = clip ? [
+    ...clip.clip.events.map((event) => ({
+      name: event.name,
+      detail: event.inputs.length ? event.inputs.map((input) => `${input.name}: ${pinPickerLabel(input.typeId)}`).join(", ") : "No Inputs",
     })),
-    ...TIMELINE_CLIP_BUILT_IN_DISPATCHERS.map((name): PropertyRow => ({
-      id: `timeline-asset-event-${name}`, kind: "text", label: name, value: "Built in", readOnly: true, onChange: () => {},
-    })),
+    ...TIMELINE_CLIP_BUILT_IN_DISPATCHERS.map((name) => ({ name, detail: "Built In" })),
   ] : [];
   return <PanelFrame data-testid="timeline-asset-events-panel">
     {clip ? <div className="flex flex-col gap-2 p-2">
       <div className="flex items-center gap-1.5 px-2 text-sm font-medium [&_svg]:size-4"><ZapIcon />{clip.clip.name}</div>
-      <PropertyGrid rows={rows} data-testid="timeline-asset-events" />
-      <FieldDescription className="px-2 text-xs">Event Dispatchers of the selected clip, from its Custom Event Tracks.</FieldDescription>
+      <ul className="flex flex-col" aria-label={`${clip.clip.name} Events`} data-testid="timeline-asset-events">
+        {events.map((event) => (
+          <li key={event.name} className="flex h-7 min-w-0 items-center gap-2 px-2 text-sm" data-testid={`timeline-asset-event-${event.name}`}>
+            <span className="min-w-0 truncate" title={event.name}>{event.name}</span>
+            <span className="ml-auto min-w-0 shrink-[2] truncate text-xs text-muted-foreground" title={event.detail}>{event.detail}</span>
+          </li>
+        ))}
+      </ul>
+      <FieldDescription className="px-2 text-xs">Event Dispatchers of the selected clip, from its Custom Event Tracks. Edit them in the clip's Scene or Scene Layer.</FieldDescription>
     </div> : <Empty className="h-full gap-3 p-4">
       <EmptyHeader>
         <EmptyMedia variant="icon"><ZapIcon /></EmptyMedia>
