@@ -4,7 +4,10 @@ import {
   normalizeCurveAssetPayload,
   normalizeDataDefinitionAsset,
   normalizeDataTreeAsset,
+  isTimelineClipAssetType,
   normalizeTimelineAsset,
+  normalizeTimelineClipAsset,
+  timelineClipAssetSummaries,
   timelineClipSummaries,
 } from "@haptic/core";
 import type {
@@ -52,6 +55,8 @@ export function headerMetaForSave(
   const curveKind = curveKindForAssetType(type);
   if (curveKind) return { ...normalizeCurveAssetPayload(curveKind, content) };
   if (type === "Timeline") return { ...normalizeTimelineAsset(content) };
+  // A clip asset lists its one clip as Scene headers list theirs; the index names it after the asset.
+  if (isTimelineClipAssetType(type)) return timelineClipAssetSummaries(normalizeTimelineClipAsset(content), "");
   // The registry indexes which clips each Timeline Asset holds from these, without loading the scenes.
   if (type === "Scene" || type === "SceneLayer") {
     const clips = (content as { timelineClips?: SerializedScene["timelineClips"] }).timelineClips;

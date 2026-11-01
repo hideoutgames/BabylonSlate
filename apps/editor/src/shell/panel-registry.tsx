@@ -1,5 +1,6 @@
 import { CurveAssetDetailsPanel, CurveAssetEditorPanel } from "../components/curve-asset-editor";
 import { TimelineAssetClipsPanel, TimelineAssetEventsPanel } from "../components/timeline-asset-editor";
+import { TimelineClipInspectorPanel, TimelineClipProxiesPanel } from "../components/timeline-clip-asset-editor";
 import { BreakpointsPanel } from "../panels/breakpoints-panel";
 import { WatchesPanel } from "../panels/watches-panel";
 import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "../panels/save-game-panels";
@@ -244,6 +245,8 @@ export const panelComponents = {
   "curve-asset-details": (props: IDockviewPanelProps) => <CurveAssetDetailsPanel {...props} />,
   "timeline-asset-clips": (props: IDockviewPanelProps) => <TimelineAssetClipsPanel {...props} />,
   "timeline-asset-events": (props: IDockviewPanelProps) => <TimelineAssetEventsPanel {...props} />,
+  "timeline-clip-proxies": (props: IDockviewPanelProps) => <TimelineClipProxiesPanel {...props} />,
+  "timeline-clip-inspector": (props: IDockviewPanelProps) => <TimelineClipInspectorPanel {...props} />,
   "sound-attenuation-details": (props: IDockviewPanelProps) => (
     <SoundAttenuationDetailsPanel {...props} />
   ),

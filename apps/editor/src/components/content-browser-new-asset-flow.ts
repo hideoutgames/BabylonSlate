@@ -104,6 +104,8 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
   const [newAssetFolder, setNewAssetFolder] = useState(ASSETS_ROOT);
   const [newAssetParent, setNewAssetParent] = useState("Object");
   const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
+  // A new 2D or 3D Timeline Clip's Timeline Asset; null makes one named after the clip.
+  const [newTimelineAsset, setNewTimelineAsset] = useState<string | null>(null);
   const [newWaterStarter, setNewWaterStarter] = useState(false);
 
   const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataTree")
@@ -129,6 +131,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     if (busy || !selectedRootWritable) return;
     setNewAssetType(type);
     setNewAssetName("");
+    setNewTimelineAsset(allAssets.find((asset) => asset.header.type === "Timeline")?.header.guid ?? null);
     setNewAssetFolder(selectedFolderPath);
     setNewAssetOpen(true);
   }, [busy, selectedFolderPath, selectedRootWritable, setNewAssetOpen, setNewAssetType]);
@@ -142,6 +145,17 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     setOperationError(null);
     try {
       const type = newAssetType;
+      // A clip needs its Timeline Asset first: the chosen one, or a new one beside it.
+      let timelineAsset: string | undefined;
+      if (type === "TimelineClip2D" || type === "TimelineClip3D") {
+        timelineAsset = newTimelineAsset ?? (await createProjectAsset({
+          registry: assetRegistry,
+          rootId: destination.rootId,
+          folderRelative: destination.relative,
+          type: "Timeline",
+          name: `${name} Timeline`,
+        })).header.guid;
+      }
       const created = await createProjectAsset({
         registry: assetRegistry,
         rootId: destination.rootId,
@@ -162,6 +176,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
               })
             : undefined,
         viewportMode: type === "Prefab" ? openSceneViewportMode(getOpenDocuments(), activeDocumentId) : undefined,
+        timelineAsset,
       });
       setNewAssetOpen(false);
       // A Location changed in the dialog shows the folder the asset went to.
@@ -173,7 +188,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
       // The mounted registry indexed the asset on write; a remount would
       // rescan every root while the new tile waits.
       noteAssetsCreated();
-      if (type === "Scene" || type === "DataDefinition" || type === "DataTree") {
+      if (type === "Scene" || type === "DataDefinition" || type === "DataTree" || type === "TimelineClip2D" || type === "TimelineClip3D") {
         await openOrFocusDocument(created);
       }
     } catch (error) {
@@ -193,6 +208,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     newAssetParent,
     newDataDefinition,
     newDataTypes,
+    newTimelineAsset,
     newWaterStarter,
     newAssetType,
     getOpenDocuments,
@@ -231,6 +247,9 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     definitionGuid: newDataDefinition,
     onDefinitionGuidChange: setNewDataDefinition,
     definitionAssets: newDataTypes.dataDefinitions.map(definition => ({ guid: definition.guid, name: definition.name, type: "DataDefinition" })),
+    timelineAssetGuid: newTimelineAsset,
+    onTimelineAssetGuidChange: setNewTimelineAsset,
+    timelineAssets: allAssets.filter((asset) => asset.header.type === "Timeline").map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: "Timeline" })),
     onParentClassChange: setNewAssetParent,
     classAssets: allAssets.filter((asset) => asset.header.type === "Class"),
     takenNameError: newAssetTakenError,

@@ -167,6 +167,16 @@ describe("typed asset dependencies", () => {
     expect(scene.requiredDependencies).toEqual([]);
   });
 
+  it("ships a clip asset's Timeline Asset and proxy Classes, never its Editor Preview assets", () => {
+    const metadata = collectAssetDependencyMetadata("TimelineClip3D", {
+      timelineAsset: "story",
+      proxies: [{ id: "door", name: "Door", represents: "actor", classId: "Door", tracks: [] }],
+      editorPreview: { proxies: { door: { representation: "model", assetGuid: "door-model" } } },
+    }, { classes: [{ guid: "door-class", classId: "Door" }] });
+    expect(metadata.dependencies).toEqual(["door-class", "story"]);
+    expect(metadata.requiredDependencies).toEqual([]);
+  });
+
   it("loads the Class picked on Create Object with its owner, and no Class a Cast names", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
       nodes: [

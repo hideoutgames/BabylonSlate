@@ -53,6 +53,21 @@ function tap(path: string) {
 }
 
 describe("ContentBrowserNewAssetDialog", () => {
+  it("asks a Timeline Clip for its Timeline Asset, or makes one named after it", () => {
+    const onTimelineAssetGuidChange = vi.fn();
+    const timelineAssets = [{ guid: "story", name: "Story", type: "Timeline" }];
+    const view = renderDialog({ type: "TimelineClip3D", name: "Door Swing", timelineAssets, timelineAssetGuid: null, onTimelineAssetGuidChange });
+    expect(screen.getByTestId("new-asset-timeline").textContent).toBe("New Timeline Asset");
+    expect(screen.getByText(/A new Timeline Asset named Door Swing Timeline is created beside the clip/)).toBeTruthy();
+    view.rerender(
+      <ContentBrowserNewAssetDialog open onOpenChange={vi.fn()} type="TimelineClip3D" name="Door Swing" onNameChange={vi.fn()} parentClass="Object"
+        onParentClassChange={vi.fn()} onCreate={vi.fn()} timelineAssets={timelineAssets} timelineAssetGuid="story" onTimelineAssetGuidChange={onTimelineAssetGuidChange} />,
+    );
+    expect(screen.getByTestId("new-asset-timeline").textContent).toBe("Story");
+    fireEvent.click(screen.getByTestId("new-asset-timeline-new"));
+    expect(onTimelineAssetGuidChange).toHaveBeenCalledWith(null);
+  });
+
   it("creates a Water asset without a style to choose", () => {
     const { onCreate } = renderDialog({ type: "Water", name: "Lagoon" });
     expect(screen.queryByRole("group", { name: "Water Style" })).toBeNull();

@@ -26,6 +26,8 @@ export const ASSET_DOCUMENT_KINDS = [
   "vector-curve",
   "color-curve",
   "timeline",
+  "timeline-clip-2d",
+  "timeline-clip-3d",
   "script-interface",
   "plugin-settings",
   "audio",
@@ -131,6 +133,10 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "ColorCurve";
     case "timeline":
       return "Timeline";
+    case "timeline-clip-2d":
+      return "TimelineClip2D";
+    case "timeline-clip-3d":
+      return "TimelineClip3D";
     case "script-interface":
       return "ScriptInterface";
     case "plugin-settings":
@@ -224,6 +230,10 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "color-curve";
     case "Timeline":
       return "timeline";
+    case "TimelineClip2D":
+      return "timeline-clip-2d";
+    case "TimelineClip3D":
+      return "timeline-clip-3d";
     case "ScriptInterface":
       return "script-interface";
     case "PluginSettings":
@@ -317,6 +327,10 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Color Curve";
     case "timeline":
       return "Timeline";
+    case "timeline-clip-2d":
+      return "2D Timeline Clip";
+    case "timeline-clip-3d":
+      return "3D Timeline Clip";
     case "script-interface":
       return "Script Interface";
     case "plugin-settings":

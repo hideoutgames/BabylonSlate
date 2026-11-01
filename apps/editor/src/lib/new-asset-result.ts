@@ -9,6 +9,8 @@ import {
   createDefaultRenderTargetCaptureProperties,
   createDefaultCurveAssetPayload,
   createDefaultTimelineAsset,
+  createDefaultTimelineClipAsset,
+  timelineClipAssetSummaries,
   createDefaultRenderTargetPayload,
   curveKindForAssetType,
   createDefaultRenderTargetTexturePayload,
@@ -84,6 +86,8 @@ export function buildNewAssetResult(options: {
   dataTree?: DataTreeAsset;
   /** A new Prefab starts empty in a 2D scene, with the starter box in 3D. */
   viewportMode?: ViewportMode;
+  /** A new 2D or 3D Timeline Clip's required Timeline Asset. */
+  timelineAsset?: string;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
   if (type === "DataDefinition" || type === "DataTree") {
@@ -330,6 +334,13 @@ export function buildNewAssetResult(options: {
 
   if (type === "Timeline") {
     return documentAsset(type, name, guid, createDefaultTimelineAsset() as unknown as Record<string, unknown>);
+  }
+
+  if (type === "TimelineClip2D" || type === "TimelineClip3D") {
+    const clip = createDefaultTimelineClipAsset(options.timelineAsset ?? "");
+    const result = documentAsset(type, name, guid, clip as unknown as Record<string, unknown>);
+    // The header lists the clip at once, so its Timeline Asset shows it before the first save.
+    return { ...result, payload: { ...result.payload, ...timelineClipAssetSummaries(clip, "") } };
   }
 
   if (type === "FloatCurve" || type === "VectorCurve" || type === "ColorCurve") {

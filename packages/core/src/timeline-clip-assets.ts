@@ -143,7 +143,9 @@ export function normalizeTimelineClipAsset(value: unknown): SerializedTimelineCl
     objects: rawProxies.map((proxy) => ({ id: proxy.id, actorId: proxy.id, tracks: proxy.tracks })),
   })!;
   const tracksOf = new Map(clip.objects.map((object) => [object.actorId, object.tracks]));
-  const proxies: TimelineProxy[] = rawProxies.map(({ tracks: _tracks, ...proxy }) => ({ ...proxy, tracks: tracksOf.get(proxy.id) ?? [] }));
+  const proxies: TimelineProxy[] = rawProxies.map((proxy) => ({
+    id: proxy.id, name: proxy.name, represents: proxy.represents, classId: proxy.classId, tracks: tracksOf.get(proxy.id) ?? [],
+  }));
   const previews = record(record(source.editorPreview).proxies);
   return {
     timelineAsset: text(source.timelineAsset),
@@ -160,7 +162,8 @@ export function normalizeTimelineClipAsset(value: unknown): SerializedTimelineCl
 
 /** The payload Play and an export see: the editor-only preview section is gone. */
 export function stripTimelineClipAssetEditorData(payload: SerializedTimelineClipAsset): SerializedTimelineClipAsset {
-  const { editorPreview: _editorPreview, ...rest } = payload;
+  const rest = { ...payload };
+  delete rest.editorPreview;
   return rest;
 }
 
