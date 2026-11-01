@@ -403,6 +403,35 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Break Structure](break-structure.md) | Splits a structure value into its individual fields. |
 | [Make Structure](make-structure.md) | Builds a structure value from its fields. |
 
+## Range
+
+| Node | Description |
+| --- | --- |
+| [Clamp Float To Range](clamp-float-to-range.md) | Returns **Value** limited to the range. |
+| [Clamp Integer To Range](clamp-integer-to-range.md) | Returns **Value** limited to the range. |
+| [Clamp Vector To Range](clamp-vector-to-range.md) | Returns **Value** limited to the range, axis by axis. |
+| [Is Float In Range](is-float-in-range.md) | Returns true when **Value** lies inside the range. |
+| [Is Integer In Range](is-integer-in-range.md) | Returns true when **Value** lies inside the range. |
+| [Lerp Float Range](lerp-float-range.md) | Returns the value at **Alpha** between the range's **Min** and **Max**. |
+| [Map Float Range](map-float-range.md) | Maps **Value** from the **From** range to the **To** range. |
+| [Random Float In Range](random-float-in-range.md) | Returns a random number from **Min** up to, but not including, **Max**. |
+| [Random Integer In Range](random-int-in-range.md) | Returns a random whole number from **Min** to **Max**. |
+| [Random Rotator In Range](random-rotator-in-range.md) | Returns a random rotator inside the range, with each axis drawn on its own. |
+| [Random Vector 2 In Range](random-vector2-in-range.md) | Returns a random Vector 2 inside the range, with each axis drawn on its own. |
+| [Random Vector In Range](random-vector-in-range.md) | Returns a random vector inside the range, with each axis drawn on its own. |
+
+## Curve
+
+| Node | Description |
+| --- | --- |
+| [Evaluate Color Curve](evaluate-color-curve.md) | Returns the Color Curve's value at **Time**. |
+| [Evaluate Float Curve](evaluate-float-curve.md) | Returns the Float Curve's value at **Time**. |
+| [Evaluate Vector Curve](evaluate-vector-curve.md) | Returns the Vector Curve's value at **Time**. |
+| [Get Color Curve Time Range](get-color-curve-time-range.md) | Returns the times of the Color Curve's first and last keys. |
+| [Get Float Curve Time Range](get-float-curve-time-range.md) | Returns the times of the Float Curve's first and last keys. |
+| [Get Float Curve Value Range](get-float-curve-value-range.md) | Returns the lowest and highest key values of a Float Curve. |
+| [Get Vector Curve Time Range](get-vector-curve-time-range.md) | Returns the times of the Vector Curve's first and last keys. |
+
 ## Tags
 
 | Node | Description |

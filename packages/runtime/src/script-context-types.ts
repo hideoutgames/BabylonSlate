@@ -1,10 +1,12 @@
 import type {
   AssetLoadHandleState,
   AssetLoadStateName,
+  CurveKind,
   DeviceMotionState,
   InputKey,
   InputTypeValue,
   InputValueState,
+  RangeKind,
   RenderTargetCaptureProperty,
   RenderTargetMode,
   RuntimeAssetPreloadOptions,
@@ -223,6 +225,16 @@ export interface ScriptContext {
   };
   /** @deprecated Prefer `ctx.random.float()`. */
   randomFloat(): number;
+  /** Random In Range nodes: draws from the seeded session RNG (integers inclusive, others from Min up to Max). */
+  randomInRange(kind: RangeKind, range: unknown): unknown;
+  clampToRange(kind: RangeKind, value: unknown, range: unknown): unknown;
+  isInRange(kind: "int" | "float", value: unknown, range: unknown): boolean;
+  lerpFloatRange(range: unknown, alpha: unknown): number;
+  mapFloatRange(value: unknown, from: unknown, to: unknown, clamp: unknown): number;
+  /** Evaluate <Type> Curve: keys in any order, Before and After extrapolation (`evaluateCurve` in core). */
+  evaluateCurve(kind: CurveKind, curve: unknown, time: unknown): unknown;
+  curveTimeRange(curve: unknown): { Min: number; Max: number };
+  floatCurveValueRange(curve: unknown): { Min: number; Max: number };
   getAllActorsOfClass(classId: string): Actor[];
   getActorOfClass(classId: string): Actor | null;
   /** Live world components, including SceneLayers, in actor/component order. */
@@ -592,7 +604,8 @@ export type HostContextKey =
   | "setMaterialColorParameter" | "setMaterialTextureParameter" | "rotatorToQuat" | "quatToRotator"
   | "combineRotators" | "inverseRotator" | "deltaRotator" | "lerpRotator" | "rotatorForward" | "rotatorRight"
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
-  | "normalizeQuat" | "randomFloat" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
+  | "normalizeQuat" | "randomFloat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"
+  | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"

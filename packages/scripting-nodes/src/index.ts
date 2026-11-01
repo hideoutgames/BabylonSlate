@@ -51,6 +51,7 @@ import { colorNodes } from "./color";
 import { quatNodes } from "./quat";
 import { tagNodes } from "./tags";
 import { dispatcherNodes } from "./dispatchers";
+import { curveRangeNodes } from "./curves-ranges";
 
 export * from "./flow";
 export * from "./math";
@@ -104,6 +105,7 @@ export * from "./quat";
 export * from "./tags";
 export * from "./dispatchers";
 export * from "./objects";
+export * from "./curves-ranges";
 
 export function allNodeDefinitions(): NodeDefinition[] {
   return [
@@ -158,6 +160,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...colorNodes,
     ...quatNodes,
     ...tagNodes,
+    ...curveRangeNodes,
   ];
 }
 

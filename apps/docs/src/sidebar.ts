@@ -122,6 +122,7 @@ export function guideSidebar(): SidebarItem[] {
       "object-lifetime",
       "interfaces",
       "structures-and-enums",
+      "curves-and-ranges",
       "tags",
       "data",
       "save-games",

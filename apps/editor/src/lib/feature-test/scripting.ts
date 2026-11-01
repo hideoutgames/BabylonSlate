@@ -1301,10 +1301,26 @@ async function saveDataProbe(
     scaledMesh("prefab-mesh", "box", 0.6, materialGuid),
     textLabel("prefab-label", "Data Probe", font, [0, 1, 0]),
   ];
+  // Built-in range and curve Structures: Begin Play evaluates the curve and clamps into the range.
+  const curveKey = (Time: number, Value: number) =>
+    ({ Time, Value, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 });
+  const spawnCount = varMember("ft-data-var-spawn-count", "SpawnCount", "struct", { Min: 2, Max: 5 }, {
+    typeClassId: "engine:IntRange",
+  });
+  const damageFalloff = varMember("ft-data-var-damage-falloff", "DamageFalloff", "struct", {
+    Keys: [curveKey(0, 100), curveKey(2, 50), curveKey(4, 0)], Before: "constant", After: "constant",
+  }, { typeClassId: "engine:FloatCurve" });
   const graph = classGraph({
+    members: [spawnCount, damageFalloff],
     components,
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
+      getVar("get-falloff", damageFalloff, 940, 400),
+      gNode("falloff", "curve.evaluateFloat", 1180, 400, { "default:time": 1 }),
+      gNode("assert-falloff", "debug.assertEqual", 1420, 0, { "default:expected": 75, "default:message": "Evaluate Float Curve read the wrong Damage Falloff" }),
+      getVar("get-spawn-count", spawnCount, 1420, 400),
+      gNode("clamp-spawn", "range.clampInt", 1660, 400, { "default:value": 9 }),
+      gNode("assert-spawn", "debug.assertEqual", 1660, 0, { "default:expected": 5, "default:message": "Clamp Integer To Range ignored Spawn Count" }),
       gNode("read", "data.readEntry", 220, 160, {
         definitionGuid: types.itemStats,
         "default:tree": types.itemsTree,
@@ -1316,10 +1332,14 @@ async function saveDataProbe(
       format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons)"),
       gNode("assert-found", "debug.assert", 700, 0, { "default:message": "Data Probe could not read Weapons/Sword" }),
       gNode("assert-weapons", "debug.assertEqual", 700, 400, { "default:expected": 2, "default:message": "Data Probe expected two Weapons" }),
-      printText("print", 940, 0, "ft-data-probe", undefined, 8),
+      printText("print", 1900, 0, "ft-data-probe", undefined, 8),
     ],
     edges: [
-      ...gChain("begin", "assert-found", "assert-weapons", "print"),
+      ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "print"),
+      gWire("get-falloff", "value", "falloff", "curve"),
+      gWire("falloff", "value", "assert-falloff", "actual"),
+      gWire("get-spawn-count", "value", "clamp-spawn", "range"),
+      gWire("clamp-spawn", "result", "assert-spawn", "actual"),
       gWire("read", "found", "assert-found", "condition"),
       gWire("child-count", "out", "assert-weapons", "actual"),
       gWire("read", "value", "fields", "in"),
