@@ -46,6 +46,8 @@ export type ClassScriptOptions = {
   parentClassId?: string;
   graph: LogicGraph;
   variables?: CompiledScript["variables"];
+  /** Interface guids the Class implements, such as the engine's Tickable Object. */
+  implementedInterfaces?: string[];
   /** Passed to the compiler as given, for example `stripDevelopmentOnly` for a release export. */
   compile?: Omit<CompileOptions, "assetGuid" | "registry">;
 };
@@ -67,6 +69,7 @@ export function compileClassScript(options: ClassScriptOptions): CompiledScript 
     anchors: compiled.anchors,
     entryPoints: compiled.entryPoints,
     ...(options.variables ? { variables: options.variables } : {}),
+    ...(options.implementedInterfaces ? { implementedInterfaces: options.implementedInterfaces } : {}),
   };
 }
 

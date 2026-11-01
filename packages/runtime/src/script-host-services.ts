@@ -139,6 +139,10 @@ export interface ScriptHostServices {
   ): unknown;
   animGraphControl?(target: unknown): AnimGraphControl | null;
   spawnActor?(classId: string, transform?: unknown, owner?: EngineObject | null): Actor | null;
+  /** Create Object: a collectable instance of a plain Object class, or null. */
+  createObject?(classId: string): EngineObject | null;
+  /** Collect Garbage: request a collection pass at the end of the tick. */
+  collectGarbage?(): void;
   spawnActorAsync?(classId: string, transform?: unknown, owner?: EngineObject | null): Promise<Actor | null>;
   /** Deferred Spawn Actor: the prepared actor outside the World, without Begin Play, until `finishDeferredSpawn`. */
   beginDeferredSpawnAsync?(classId: string, transform?: unknown, owner?: EngineObject | null): Promise<Actor | null>;

@@ -8,6 +8,7 @@ import {
   PinDefaultEditorContext, type PinDefaultEditorRenderer, type PinDefaultEditorRequest,
 } from "@haptic/graph-ui";
 import { pinDefaultPropertyKey, type PinType } from "@haptic/scripting";
+import { CREATE_OBJECT_NODE_ID } from "@haptic/scripting-nodes";
 import { useRegistryState } from "./document-context";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import { classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
@@ -90,8 +91,8 @@ export function GraphPinDefaultEditor({ request, catalogs, editorGraph: hostEdit
     isEditorGraphClass(classConstraint, parentOf) ||
     isEditorGraphClass(String(request.nodeData.classId ?? ""), parentOf);
   const classes = useMemo(() => activePick?.kind === "class"
-    ? subclassClassEntries(activePick.classId, catalogs.assets, { editorGraph }) : [],
-  [activePick, catalogs.assets, editorGraph]);
+    ? subclassClassEntries(activePick.classId, catalogs.assets, { editorGraph, creatableOnly: request.nodeType === CREATE_OBJECT_NODE_ID }) : [],
+  [activePick, catalogs.assets, editorGraph, request.nodeType]);
   const assets = useMemo(() => activePick?.kind === "asset"
     ? filterInspectorPinPickerAssets(catalogs.pickerAssets, catalogs.assets, catalogs.materialDocuments, { nodeType: request.nodeType ?? "" }) : [],
   [activePick, catalogs.pickerAssets, catalogs.assets, catalogs.materialDocuments, request.nodeType]);

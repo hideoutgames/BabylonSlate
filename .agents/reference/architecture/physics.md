@@ -43,7 +43,7 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 
 ## Tick and sync
 
-- `TICK_PHASES`: `gameInstance` → `sceneSubsystems` → `actors` → `components` → `physics` → `postPhysics`. Script phases may query the live backend; `physics` steps, writes body poses back, then `pollContacts()`. `scriptMs` and `physicsMs` are timed separately.
+- `TICK_PHASES`: `gameInstance` → `sceneSubsystems` → `actors` → `components` → `objects` → `physics` → `postPhysics`. Script phases may query the live backend; `physics` steps, writes body poses back, then `pollContacts()`. `scriptMs` and `physicsMs` are timed separately.
 - Steps follow the runtime's fixed tick. Scene and SceneLayer `settings.fixedTimestepMs` is still parsed and saved, but nothing reads it and the editor does not show it.
 - `PhysicsWorldSync.step` runs for the main world, then each SceneLayer world. Only actors owning a participant component class are candidates (filtered once per structural revision); reassigning `sceneLayerId` must call `world.markStructureChanged()`.
 - The pre-step composition is the validation boundary: a parent cycle or unsupported shear throws there, before any native change. Physics uses the same actor-world composition as snapshots (`local × parentWorld`).

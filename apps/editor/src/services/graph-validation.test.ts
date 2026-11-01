@@ -460,6 +460,22 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
   });
 
+  it("types Create Object's Object from the picked Class, or from the Class wired into it", () => {
+    const objectPin = (hydrated: SerializedGraph) =>
+      (hydrated.nodes.find((node) => node.id === "make")?.data.__pins as Array<{ id: string; type: unknown }>)
+        .find((pin) => pin.id === "object")?.type;
+    const make = { id: "make", type: "object.create", position: { x: 200, y: 0 }, data: { "default:class": "Counter" } };
+    expect(objectPin(hydrateSerializedGraphForEditor({ nodes: [make], edges: [] }, registry))).toEqual({ kind: "objectRef", classId: "Counter" });
+    const wired: SerializedGraph = {
+      nodes: [
+        { id: "kind", type: "variables.get", position: { x: 0, y: 0 }, data: { variableName: "Kind", typeId: "class", typeClassId: "Quest", implicitSelf: true } },
+        make,
+      ],
+      edges: [{ id: "e1", source: "kind", target: "make", sourceHandle: "value", targetHandle: "class" }],
+    };
+    expect(objectPin(hydrateSerializedGraphForEditor(wired, registry))).toEqual({ kind: "objectRef", classId: "Quest" });
+  });
+
   it("preserves existing __pins", () => {
     const customPins = [
       {
@@ -3677,5 +3693,50 @@ describe("subsystems", () => {
     ]);
     expect(lineageErrors("Inventory", ["flow.event.sceneExit", "flow.event.init"])).toEqual([]);
     expect(lineageErrors("Hero", ["flow.event.init", "flow.event.beginPlay"])).toEqual(["flow.event.init"]);
+  });
+});
+
+describe("Create Object and Tickable Object", () => {
+  const parents: Record<string, string> = { Counter: "Object", Fancy: "Counter", Hero: "Actor", Inventory: "GameSubsystem" };
+  const parentOf = (id: string) => parents[id];
+  const tickable = [{ guid: "engine:TickableObject", name: "Tickable Object", methods: [] }];
+  const codes = (classId: string, graph: SerializedGraph, implementedInterfaces = tickable.slice(0, 0)) =>
+    validateSerializedGraph(graph, { assetGuid: classId, graphId: "main", classId, parentOf, implementedInterfaces })
+      .filter((entry) => entry.code === "interface.tick_already_exists" || entry.code === "object.create_invalid_class" ||
+        entry.code === "event.wrong_lineage")
+      .map((entry) => [entry.code, entry.nodeId ?? null, entry.severity]);
+  const empty: SerializedGraph = { nodes: [], edges: [] };
+
+  it("runs On Init on a plain Object class without a lineage error", () => {
+    const init = { id: "init", type: "flow.event.init", position: { x: 0, y: 0 }, data: {} };
+    expect(codes("Counter", { nodes: [init], edges: [] })).toEqual([]);
+    expect(codes("Hero", { nodes: [init], edges: [] })).toEqual([["event.wrong_lineage", "init", "error"]]);
+  });
+
+  it("errors on Tickable Object on a class that already receives Event Tick", () => {
+    expect(codes("Hero", empty, tickable)).toEqual([["interface.tick_already_exists", null, "error"]]);
+    expect(codes("Inventory", empty, tickable)).toEqual([["interface.tick_already_exists", null, "error"]]);
+    expect(codes("Fancy", empty, tickable)).toEqual([]);
+    expect(codes("Hero", empty)).toEqual([]);
+  });
+
+  it("errors on a Create Object Class that is not a plain Object class, unless one is wired in", () => {
+    const create = (id: string, classId: string) => ({ id, type: "object.create", position: { x: 0, y: 0 }, data: { "default:class": classId } });
+    const graph: SerializedGraph = {
+      nodes: [
+        create("actor", "Hero"),
+        create("subsystem", "Inventory"),
+        create("engine", "LightComponent"),
+        create("object", "Fancy"),
+        create("wired", "Hero"),
+        { id: "pick", type: "variables.get", position: { x: 0, y: 0 }, data: { variableName: "Kind", typeId: "class", typeClassId: "Object" } },
+      ],
+      edges: [{ id: "e", source: "pick", sourceHandle: "value", target: "wired", targetHandle: "class" }],
+    };
+    expect(codes("Hero", graph)).toEqual([
+      ["object.create_invalid_class", "actor", "error"],
+      ["object.create_invalid_class", "subsystem", "error"],
+      ["object.create_invalid_class", "engine", "error"],
+    ]);
   });
 });

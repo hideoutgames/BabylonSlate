@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   PERFORMANCE_TICK_COLUMNS,
   PERFORMANCE_TICK_COLUMNS_V1,
+  PERFORMANCE_TICK_COLUMNS_V2,
   PerformanceRecorder,
   parsePerformanceProfile,
   serializePerformanceProfile,
@@ -21,7 +22,7 @@ const identity: PerformanceIdentity = {
 /** A tick whose unnamed timings are 0. */
 const tick = (sample: Partial<PerformanceTickSample> & Pick<PerformanceTickSample, "tickId" | "elapsedMs">): PerformanceTickSample => ({
   scriptMs: 0, physicsMs: 0, publishMs: 0, otherMs: 0,
-  gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 0, componentsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0,
+  gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 0, componentsMs: 0, objectsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0,
   ...sample,
 });
 const frame = (frameId: number, completedAtMs: number) => ({
@@ -128,11 +129,12 @@ describe("PerformanceRecorder", () => {
   it("records every tick phase, and opens it again", () => {
     const recorder = new PerformanceRecorder({ now: () => 0 });
     recorder.start(identity);
-    recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3, physicsMs: 2, actorsMs: 1.25, sceneSystemsMs: 0.75 }));
+    recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3, physicsMs: 2, actorsMs: 1.25, objectsMs: 0.5, sceneSystemsMs: 0.75 }));
     const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)));
-    expect(reopened?.version).toBe(4);
+    expect(reopened?.version).toBe(5);
     expect(reopened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS);
     expect(summarizePerformanceColumn(reopened!.ticks, "actorsMs").median).toBe(1.25);
+    expect(summarizePerformanceColumn(reopened!.ticks, "objectsMs").median).toBe(0.5);
     expect(summarizePerformanceColumn(reopened!.ticks, "sceneSystemsMs").median).toBe(0.75);
     // Version 2 tick rows are the full width; version 1 rows under a version 2 label are not.
     const json = JSON.parse(serializePerformanceProfile(reopened!));
@@ -158,7 +160,7 @@ describe("PerformanceRecorder", () => {
     expect(parsePerformanceProfile({ ...json, longTasks: undefined })).toBeNull();
   });
 
-  it("records script costs as version 4, each row naming one of its entries, and opens a version 3 profile with none", () => {
+  it("records script costs, each row naming one of its entries, and opens a version 3 profile with none", () => {
     const recorder = new PerformanceRecorder({ now: () => 0 });
     recorder.start(identity);
     recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3 }));
@@ -168,14 +170,14 @@ describe("PerformanceRecorder", () => {
     expect(recorder.recordScript({ tickId: 1, entry: 0, calls: 2, totalMs: 1.5 })).toBe(true);
     expect(() => recorder.recordScript({ tickId: 1, entry: 1, calls: 1, totalMs: 1 })).toThrow();
     const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)))!;
-    expect(reopened.version).toBe(4);
+    expect(reopened.version).toBe(5);
     expect(reopened.scriptEntries).toEqual([door]);
     expect(Array.from(reopened.scripts.chunks[0]!)).toEqual([1, 0, 2, 1.5]);
     const json = JSON.parse(serializePerformanceProfile(reopened));
     // A row naming an entry the profile lacks, or an entry without its Class, is not a profile.
     expect(parsePerformanceProfile({ ...json, scriptEntries: [] })).toBeNull();
     expect(parsePerformanceProfile({ ...json, scriptEntries: [{ ...door, classId: undefined }] })).toBeNull();
-    const version3 = { ...json, version: 3 };
+    const version3 = { ...json, version: 3, ticks: { columns: [...PERFORMANCE_TICK_COLUMNS_V2], count: 0, chunks: [] } };
     delete version3.scripts;
     delete version3.scriptEntries;
     const opened = parsePerformanceProfile(version3);
@@ -188,8 +190,10 @@ describe("PerformanceRecorder", () => {
     const golden = JSON.parse(readFileSync(new URL("./__fixtures__/profile-v2.golden.json", import.meta.url), "utf8"));
     const opened = parsePerformanceProfile(golden);
     expect(opened?.version).toBe(2);
-    expect(opened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS);
+    expect(opened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS_V2);
     expect(summarizePerformanceColumn(opened!.ticks, "actorsMs").median).toBe(2);
+    // No Objects phase is invented before version 5.
+    expect(summarizePerformanceColumn(opened!.ticks, "objectsMs").count).toBe(0);
     expect(opened?.memory.count).toBe(0);
     expect(opened?.longTasks.count).toBe(0);
     expect(parsePerformanceProfile(JSON.parse(serializePerformanceProfile(opened!)))).toEqual(opened);

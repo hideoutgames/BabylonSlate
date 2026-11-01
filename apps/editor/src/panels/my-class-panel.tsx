@@ -97,6 +97,7 @@ import {
 } from "../lib/overridable-functions";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { engineScriptInterfaceAssets } from "../lib/engine-script-interfaces";
 import {
   EVENT_GRAPH_PANEL_ID,
   openFunctionGraphPanel,
@@ -1456,6 +1457,10 @@ export function MyClassPanel(props: MyClassPanelProps) {
   const host = logicGraphHostClass(doc?.ref.kind, docPath, indexed, classIdForGraphPath);
   const className = host.classId ?? null;
   const embedded = embeddedScriptHost(doc?.ref.kind, indexed);
+  const pickerInterfaceAssets = useMemo(
+    () => [...engineScriptInterfaceAssets(host.parentClass, parentOf), ...interfaceAssets],
+    [host.parentClass, interfaceAssets, parentOf],
+  );
   // Parent graphs and interfaces also read open (unsaved) documents.
   const membersOptions = useMemo(() => {
     void registryEpoch;
@@ -1507,7 +1512,7 @@ export function MyClassPanel(props: MyClassPanelProps) {
         classId={className ?? undefined}
         classPath={docPath}
         canvasDropApi={canvasDropApi}
-        interfaceAssets={interfaceAssets}
+        interfaceAssets={pickerInterfaceAssets}
         membersOptions={membersOptions}
         onGraphChange={persistGraph}
         onFocusEventNode={focusEvent}

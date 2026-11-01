@@ -4,7 +4,7 @@ node: flow.event.init
 
 # Event On Init
 
-Runs once when the Game Instance or a subsystem is created.
+Runs once when the Game Instance, a subsystem or an object made with Create Object is created.
 
 ## Outputs
 
@@ -15,4 +15,5 @@ Runs once when the Game Instance or a subsystem is created.
 ## Notes
 
 - Game Subsystems run it before the Game Instance. A Scene Subsystem runs it when its scene is created, before the scene's actors begin play.
-- Only in Game Instance, Game Subsystem and Scene Subsystem classes.
+- [Create Object](create-object.md) runs it before it returns the new object.
+- Only in Game Instance, Game Subsystem, Scene Subsystem and Object classes.

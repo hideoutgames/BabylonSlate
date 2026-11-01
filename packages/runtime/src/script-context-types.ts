@@ -104,6 +104,13 @@ export interface ScriptContext {
    */
   holdFrame(values: () => readonly unknown[]): () => void;
   /**
+   * Create Object: a new object of a plain Object class, after its On Init
+   * ran; null for any other class. It lives while a reference reaches it.
+   */
+  createObject(classId: unknown): EngineObject | null;
+  /** Collect Garbage: a collection pass runs at the end of the current tick. */
+  collectGarbage(): void;
+  /**
    * An Assert node's check failed. Reports "Assertion failed: <message> (<detail>)" as an error for
    * the node every time, and never throws: the graph continues.
    */
@@ -577,7 +584,7 @@ export type LoadedScript = {
  */
 export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
-  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "holdFrame" | "assertFailed" | "assertEqual" | "print"
+  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
   | "eventDelegate" | "bindDispatcher" | "unbindDispatcher" | "unbindAllDispatcher"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
   | "getMaterialTextureParameter" | "resetMaterialFloatParameter" | "resetMaterialColorParameter"

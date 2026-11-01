@@ -84,6 +84,31 @@ describe("World tick", () => {
     expect(order).toEqual(["gi", "a1", "a2", "c1"]);
   });
 
+  it("ticks Tickable Object objects after components and before physics, in creation order, until destroyed", () => {
+    const order: string[] = [];
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(), onPhysics: () => { order.push("physics"); } });
+    const actor = world.createActor({ classId: "Actor", hooks: { onTick: () => { order.push("actor"); } } });
+    actor.attachComponent(world.createComponent({ classId: "ActorComponent", hooks: { onTick: () => { order.push("component"); } } }));
+    world.spawnActorNow(actor);
+    const late = world.createObject({ classId: "Object", hooks: { onTick: () => { order.push("late"); } } });
+    const first = world.createObject({ classId: "Object", hooks: { onTick: () => {
+      order.push("first");
+      // Added during the phase: it ticks from the next tick.
+      world.addTickingObject(late);
+    } } });
+    const second = world.createObject({ classId: "Object", hooks: { onTick: () => { order.push("second"); } } });
+    world.addTickingObject(first);
+    world.addTickingObject(second);
+    world.addTickingObject(first);
+    world.tick();
+    expect(order).toEqual(["actor", "component", "first", "second", "physics"]);
+
+    order.length = 0;
+    second.destroyed = true;
+    world.tick();
+    expect(order).toEqual(["actor", "component", "first", "late", "physics"]);
+  });
+
   it("keeps Game Instance ticking while scene phases are suspended and resumes those phases later", () => {
     const order: string[] = [];
     let ready = false;

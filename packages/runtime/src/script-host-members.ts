@@ -135,6 +135,8 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     unbindDispatcher: (owner, name, delegate) => host.dispatchers.unbind(owner, name, delegate),
     unbindAllDispatcher: (owner, name) => host.dispatchers.unbindAll(owner, name),
     holdFrame: (values) => host.frames.hold(values),
+    createObject: (classId) => (typeof classId === "string" && classId ? services.createObject?.(classId) ?? null : null),
+    collectGarbage: () => services.collectGarbage?.(),
     assertFailed: (message, detail) => reportAssertion(message, detail),
     assertEqual: (actual, expected, message) => {
       if (scriptValuesEqual(actual, expected)) return;

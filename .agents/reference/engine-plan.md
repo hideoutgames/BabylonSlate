@@ -229,7 +229,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Engine components are listed in [engine-components.ts](../../packages/core/src/engine-components.ts) with their world/overlay placement. Colliders cover 3D and 2D shapes; the scene's physics world decides which apply.
 - Interface calls on a target that does not implement the interface no-op and return pin defaults.
 - Deterministic tick order: GameInstance → GameSubsystems → SceneSubsystems (gated by scene readiness) → Actors in spawn order → their components → physics step → post-physics boundary (deferred spawn/destroy flush). Never depend on Map iteration order across engines.
-- Object lifetime is reference-based, as in Unreal: owned objects end through their own routes; collectable objects live while a root reaches them through strong references and are collected by a deterministic end-of-tick pass. Dispatcher bindings and Delegates are weak ([object-model.md](architecture/object-model.md#object-lifetime)).
+- Object lifetime is reference-based, as in Unreal: owned objects end through their own routes; collectable objects (Create Object, plain Object classes only) live while a root reaches them through strong references and are collected by a deterministic end-of-tick pass. They tick only with the engine Tickable Object interface, in an Objects phase after components. Dispatcher bindings and Delegates are weak ([object-model.md](architecture/object-model.md#object-lifetime)).
 
 ## Visual scripting
 

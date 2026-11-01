@@ -28,14 +28,15 @@ describe("tick phase timing", () => {
     const spend = (phase: (typeof TICK_TIMING_PHASES)[number], ms: number) => { pipeline.markPhase(phase); now += ms; };
     spend("gameInstance", 0.5);
     spend("actors", 2);
+    spend("objects", 0.25);
     spend("physics", 3);
     spend("postPhysics", 1);
     spend("sceneSystems", 4);
     pipeline.closePhaseTiming();
     expect(Object.fromEntries(TICK_TIMING_PHASES.map((phase, index) => [phase, pipeline.lastPhaseMs[index]]))).toEqual({
-      gameInstance: 0.5, sceneSubsystems: 0, actors: 2, components: 0, physics: 3, postPhysics: 1, sceneSystems: 4,
+      gameInstance: 0.5, sceneSubsystems: 0, actors: 2, components: 0, objects: 0.25, physics: 3, postPhysics: 1, sceneSystems: 4,
     });
-    expect(pipeline.lastScriptMs).toBe(7.5);
+    expect(pipeline.lastScriptMs).toBe(7.75);
     expect(pipeline.lastPhysicsMs).toBe(3);
   });
 });

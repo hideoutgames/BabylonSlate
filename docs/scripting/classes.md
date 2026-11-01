@@ -15,7 +15,7 @@ The **Parent Class** list shows engine classes by their class names.
 
 | Parent Class | Use it for |
 | --- | --- |
-| **Object** | The root of every class. A class parented directly to it has no transform and is not placed in scenes. |
+| **Object** | The root of every class. A class parented directly to it has no transform and is not placed in scenes; make one with [Create Object](class/create-object.md). See [Objects and lifetime](object-lifetime.md). |
 | **Actor** | Objects you place in a scene or create with [Spawn Actor](class/spawn-actor.md). Actors have a transform and components. |
 | **RenderTargetCapture** | An actor that starts with a capture component. See [Render targets](../graphics/render-targets.md). |
 | **SceneLayerActor** | Actors that live in a [Scene Layer](../scenes/scene-layers.md). |

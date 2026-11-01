@@ -15,7 +15,7 @@ function recording() {
   recorder.start({ sessionId: "session", mode: "play", sourceSha: null, buildId: null, sceneId: "scene", backend: "webgl2",
     runtimeHost: "worker", quality: "low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: [], gpuTiming: "unavailable" });
   for (const tickId of [1, 2]) recorder.recordTick({ tickId, elapsedMs: tickId * 16, scriptMs: 4, physicsMs: 0, publishMs: 0, otherMs: 0,
-    gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 4, componentsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0 });
+    gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 4, componentsMs: 0, objectsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0 });
   recorder.recordScriptEntries([DOOR_TICK, DOOR_OPEN, HERO_BEGIN, NEVER_RAN]);
   for (const [tickId, entry, calls, totalMs] of [[1, 0, 2, 1], [1, 1, 2, 3], [1, 2, 1, 0.5], [2, 0, 2, 2.5]] as const)
     recorder.recordScript({ tickId, entry, calls, totalMs });

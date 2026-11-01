@@ -17,4 +17,4 @@ Runs on every simulation step, giving the time since the previous one.
 
 - Set **Event Tick** to Disabled in **Actor Defaults** to stop it for an actor; components keep ticking.
 - If the graph waits on a latent node such as [**Delay**](delay.md), further ticks are skipped until that run finishes.
-- Also available in Game Instance and subsystem classes.
+- Also available in Game Instance and subsystem classes, and in Object classes that implement the **Tickable Object** interface; see [Objects and lifetime](../object-lifetime.md#tick).

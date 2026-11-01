@@ -67,6 +67,8 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
       recordPrint: (print) => rt.ticks.recordPrint(print),
       emit,
     }),
+    createObject: (classId) => rt.createScriptedObject(classId),
+    collectGarbage: () => rt.objectLifetime.request(),
     ...createActorHostBindings({
       world: () => rt.world,
       stopped: () => rt.stopped,

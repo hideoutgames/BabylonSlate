@@ -1,13 +1,15 @@
 /**
  * Fixed tick order. `gameInstance` ticks the Game Instance then GameSubsystems
  * and keeps running while the scene prepares; `sceneSubsystems` and later
- * phases are gated by scene readiness.
+ * phases are gated by scene readiness. `objects` ticks Create Object objects
+ * that implement Tickable Object, in creation order.
  */
 export const TICK_PHASES = [
   "gameInstance",
   "sceneSubsystems",
   "actors",
   "components",
+  "objects",
   "physics",
   "postPhysics",
 ] as const;
