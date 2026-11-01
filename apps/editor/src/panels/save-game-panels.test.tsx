@@ -90,6 +90,18 @@ describe("Save Game authoring", () => {
     expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Score", type: "int", defaultValue: 5 });
   });
 
+  it("turns a field into a Structure field with that Structure's defaults", async () => {
+    const view = render(editor());
+    fireEvent.click(screen.getByTestId("save-game-field-type"));
+    fireEvent.click(await screen.findByTestId("search-item-struct"));
+    await waitFor(() => expect(harness.definition.fields[0]).toMatchObject({ id: "score-id", type: "struct" }));
+    const field = harness.definition.fields[0]!;
+    expect(typeof field.structId).toBe("string");
+    expect(field.defaultValue).toEqual(expect.any(Object));
+    view.rerender(editor());
+    expect(screen.getByText("Only Structures without object references can be saved.")).toBeTruthy();
+  });
+
   it("selects search results and removes only that field, restoring remaining details", async () => {
     harness.definition.fields.push({ id: "level-id", name: "Level", type: "int", defaultValue: 1 });
     const view = render(editor());

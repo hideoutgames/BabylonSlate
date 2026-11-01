@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decodeAssetDocument, encodeAssetDocument, readAssetDocumentHeader } from "@haptic/assets";
-import { defaultSaveGameDefinition, loadDefaultSaveGameDefinition } from "./save-game-catalog";
+import { defaultSaveGameDefinition, loadDefaultSaveGameDefinition, saveableStructures } from "./save-game-catalog";
+import { ENGINE_STRUCTS, mergeEngineTypeSchemas } from "@haptic/scripting";
 import { scriptPaletteNodes, defaultNodeRegistry } from "../services/graph-validation";
 
 describe("default Save Game field catalog", () => {
@@ -28,5 +29,22 @@ describe("default Save Game field catalog", () => {
     const rows = scriptPaletteNodes(defaultNodeRegistry, { parentClass: "Actor", saveGameDefinition: selected });
     expect(rows.find((row) => row.id === "saveGame.setField:health-id")?.defaultData).toMatchObject({ "default:value": 100 });
     expect(rows.find((row) => row.id === "saveGame.getField:health-id")?.pins?.find((pin) => pin.id === "value")?.type).toEqual({ kind: "float" });
+  });
+
+  it("offers only Structures without object references, nested ones included", () => {
+    const schemas = mergeEngineTypeSchemas({ structs: {
+      loadout: { name: "Loadout", fields: [{ name: "Spread", typeId: "struct", typeClassId: "engine:FloatRange" }, { name: "Icon", typeId: "asset" }] },
+      squad: { name: "Squad", fields: [{ name: "Leader", typeId: "struct", typeClassId: "member" }] },
+      member: { name: "Member", fields: [{ name: "Actor", typeId: "object", typeClassId: "Actor" }] },
+    } });
+    const structures = [
+      ...ENGINE_STRUCTS.map((entry) => ({ guid: entry.id, name: entry.name })),
+      { guid: "loadout", name: "Loadout" }, { guid: "squad", name: "Squad" }, { guid: "member", name: "Member" },
+    ];
+    const names = saveableStructures(structures, schemas).map((entry) => entry.name);
+    expect(names).toEqual(expect.arrayContaining(["Int Range", "Float Curve", "Color Curve", "Loadout"]));
+    expect(names).not.toContain("Hit Result");
+    expect(names).not.toContain("Squad");
+    expect(names).not.toContain("Member");
   });
 });
