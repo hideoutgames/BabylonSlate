@@ -1,3 +1,4 @@
+import { parseCurveInterpolation, type CurveKey } from "./curves";
 import type { GraphClassMemberPin } from "./project";
 
 /**
@@ -15,14 +16,9 @@ export const DEFAULT_TIMELINE_FRAME_RATE: TimelineFrameRate = 30;
 /** Shortest clip Length, in seconds. */
 export const MIN_TIMELINE_CLIP_LENGTH = 0.1;
 
-/** One key: the shared curve key fields plus a stable id. */
-export interface TimelineKey {
+/** One key: the shared curve key format (`curves.ts`) plus a stable id. */
+export interface TimelineKey extends CurveKey<unknown> {
   id: string;
-  Time: number;
-  Value: unknown;
-  Interpolation: string;
-  ArriveTangent?: unknown;
-  LeaveTangent?: unknown;
 }
 
 export interface TimelinePropertyTrack {
@@ -109,7 +105,14 @@ function normalizeKeys(value: unknown): TimelineKey[] {
     const key = record(entry);
     const id = text(key.id);
     if (!id || typeof key.Time !== "number" || !Number.isFinite(key.Time)) return [];
-    return [{ ...(key as unknown as TimelineKey), id, Interpolation: text(key.Interpolation) ?? "linear" }];
+    return [{
+      id,
+      Time: key.Time,
+      Value: key.Value,
+      Interpolation: parseCurveInterpolation(key.Interpolation),
+      ArriveTangent: key.ArriveTangent ?? 0,
+      LeaveTangent: key.LeaveTangent ?? 0,
+    }];
   });
   return keys.sort((a, b) => a.Time - b.Time);
 }

@@ -19,6 +19,7 @@ export * from "./painter2d";
 export * from "./rich-text";
 export * from "./project";
 export * from "./timeline-clips";
+export * from "./timeline-evaluate";
 export * from "./tags";
 export * from "./cel-shading";
 export * from "./shadows";
