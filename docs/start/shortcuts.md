@@ -87,8 +87,9 @@ Duplicate, Rename, Delete, Search Panel and New Folder act on the panel that has
 | Set Key | <kbd>K</kbd> |
 | Previous Key | <kbd>[</kbd> |
 | Next Key | <kbd>]</kbd> |
+| Add Selected Actors | <kbd>Shift</kbd>+<kbd>A</kbd> |
 
-These act in the [Timeline](../scenes/timeline.md#keys) window when it has keyboard focus. Copy, Paste and Delete there act on keys.
+Set Key, Previous Key and Next Key act in the [Timeline](../scenes/timeline.md#keys) window when it has keyboard focus; Copy, Paste, Duplicate and Delete there act on keys. Add Selected Actors adds the actors selected in the viewport or **Outliner** to the clip while the **Timeline** window is shown.
 
 ### Content Browser
 

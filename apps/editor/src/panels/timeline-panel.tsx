@@ -71,14 +71,11 @@ import {
   VolumeXIcon,
 } from "lucide-react";
 import { IconActionButton } from "../components/icon-action-button";
-import { useDocumentActions, useOpenDocument, useRegistryState } from "../context/document-context";
-import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useRegistryState } from "../context/document-context";
 import { useEditorSessionState } from "../context/editor-session-state-context";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
-import { registryClassParentLookup } from "../lib/class-asset-lookup";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 import {
   authoredTimelineValue,
@@ -109,49 +106,12 @@ import {
   timelineKeyAt,
   timelineKeyTimes,
   timelineKeyValueAt,
-  withTimelineClip,
   type TrackKeyRef,
 } from "../lib/timeline-track-edits";
 import { TIMELINE_EASE_SHORTCUTS, TIMELINE_EASING_CURVES, timelineInterpolationLabel } from "../lib/timeline-interpolation";
-import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
-import { classIdForGraphPath } from "../services/script-compiler";
+import { useTimelineClip, useTimelinePropertyContext } from "../context/use-timeline-clip";
 
-const CLASS_KINDS = ["graph"] as const;
 const newId = () => crypto.randomUUID();
-
-/** The Timeline window's document, clip and the edit that replaces the clip. */
-function useTimelineClip() {
-  const { documentId } = useDocumentWorkspace();
-  const { applySceneChange } = useDocumentActions();
-  const doc = useOpenDocument(documentId);
-  const tools = useSceneTools();
-  const scene = doc && (doc.ref.kind === "scene" || doc.ref.kind === "scene-layer") ? doc.content as SerializedScene : null;
-  const clips = scene?.timelineClips ?? [];
-  const clip = clips.find((entry) => entry.id === tools.timelineClipId) ?? null;
-  const commitClip = useCallback((next: SerializedTimelineClip) => {
-    if (!scene) return;
-    const updated = withTimelineClip(scene, next);
-    if (updated !== scene) void applySceneChange(documentId, updated);
-  }, [applySceneChange, documentId, scene]);
-  return { scene, clips, clip, commitClip, tools };
-}
-
-/** Class graphs and parents for Class variable tracks, kept current with open Class tabs. */
-function usePropertyContext(): Omit<TimelinePropertyContext, "classLabel"> & { classLabel: (classId: string) => string | undefined } {
-  const { assetRegistry, registryEpoch } = useRegistryState();
-  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
-  return useMemo(() => {
-    void registryEpoch;
-    const assets = assetRegistry?.list() ?? [];
-    const names = new Map<string, string>();
-    for (const asset of assets) if (asset.header.type === "Class" && asset.path) names.set(classIdForGraphPath(asset.path), asset.header.name);
-    return {
-      graphs: collectClassGraphsForPalette({ assets, openDocuments: classDocuments, classIdForPath: classIdForGraphPath }),
-      parentOf: registryClassParentLookup(assetRegistry),
-      classLabel: (classId: string) => names.get(classId),
-    };
-  }, [assetRegistry, classDocuments, registryEpoch]);
-}
 
 function TransportButton({ label, shortcut, onClick, disabled, children, testId }: {
   label: string;
@@ -196,7 +156,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   const sceneEditing = useOptionalSceneEditing();
   const selectedActorIds = sceneEditing?.selectedActorIds ?? [];
   const { assetRegistry } = useRegistryState();
-  const property = usePropertyContext();
+  const property = useTimelinePropertyContext();
   const playhead = tools.timelinePlayhead;
   const rawTime = useTimelinePlayheadTime(playhead);
   const time = Math.min(clip.length, Math.max(0, rawTime));
