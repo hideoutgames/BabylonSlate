@@ -11,6 +11,8 @@ export interface KeyframeTimelineKey {
   id: string;
   time: number;
   shape: KeyframeShape;
+  /** Drawn after the key, clipped at the next key (an event key's name or first value). */
+  label?: string;
 }
 
 export interface KeyframeTimelineRow {

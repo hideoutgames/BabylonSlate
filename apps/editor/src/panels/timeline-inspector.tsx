@@ -4,12 +4,24 @@ import {
   type SerializedActor,
   type SerializedTimelineClip,
   type TimelineFrameRate,
+  type TimelineEventTrack,
   type TimelineKey,
   type TimelineLoopMode,
+  type TimelineValueType,
   type TimelinePropertyTrack,
   type TimelineWhenFinished,
 } from "@haptic/core";
-import { PanelFrame, PropertyGrid, frameAt, keyRefFromId, pinPickerLabel, snapToFrame, type PropertyRow } from "@haptic/editor-kit";
+import {
+  PanelFrame,
+  PinListEditor,
+  PropertyGrid,
+  frameAt,
+  keyRefFromId,
+  pinPickerLabel,
+  snapToFrame,
+  type PinListRow,
+  type PropertyRow,
+} from "@haptic/editor-kit";
 import { useRegistryState } from "../context/document-context";
 import { useTimelineClip, useTimelinePropertyContext } from "../context/use-timeline-clip";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
@@ -25,6 +37,17 @@ import {
   setTimelineTrackMuted,
   type TrackKeyRef,
 } from "../lib/timeline-track-edits";
+import {
+  TIMELINE_EVENT_INPUT_TYPES,
+  findTimelineEventTrack,
+  renameTimelineEventTrack,
+  setTimelineEventKeyTime,
+  setTimelineEventKeyValue,
+  setTimelineEventTrackInputs,
+  timelineEventKeyValue,
+  type TimelineEventKey,
+} from "../lib/timeline-event-edits";
+import { memberPinRows, memberPinsFromRows } from "./inspector-member-rows";
 
 const LOOP_MODES: ReadonlyArray<{ value: TimelineLoopMode; label: string }> = [
   { value: "once", label: "Once" },
@@ -40,33 +63,38 @@ const num = (value: unknown, fallback = 0) => (typeof value === "number" && Numb
 const field = (value: unknown, name: string, fallback = 0) =>
   num(value && typeof value === "object" ? (value as Record<string, unknown>)[name] : undefined, fallback);
 
-/** The value row for a key, by the track's value type. */
-function keyValueRow(track: TimelinePropertyTrack, key: TimelineKey, onChange: (value: unknown) => void, assetName: (guid: string) => string | undefined): PropertyRow {
-  const id = "timeline-key-value";
-  const value = key.Value;
-  switch (track.valueType) {
+/** A value row by value type: a property key's Value, or an event key's input. */
+function valueRow(
+  valueType: TimelineValueType,
+  id: string,
+  label: string,
+  value: unknown,
+  onChange: (value: unknown) => void,
+  assetName: (guid: string) => string | undefined,
+): PropertyRow {
+  switch (valueType) {
     case "float":
-      return { kind: "number", id, label: "Value", value: num(value), precision: 3, onChange };
+      return { kind: "number", id, label, value: num(value), precision: 3, onChange };
     case "int":
-      return { kind: "number", id, label: "Value", value: Math.round(num(value)), precision: 0, onChange: (next) => onChange(Math.round(next)) };
+      return { kind: "number", id, label, value: Math.round(num(value)), precision: 0, onChange: (next) => onChange(Math.round(next)) };
     case "bool":
-      return { kind: "boolean", id, label: "Value", value: value === true, onChange };
+      return { kind: "boolean", id, label, value: value === true, onChange };
     case "vec2":
-      return { kind: "vector3", id, label: "Value", axes: ["X", "Y"], value: [field(value, "x"), field(value, "y"), 0],
+      return { kind: "vector3", id, label, axes: ["X", "Y"], value: [field(value, "x"), field(value, "y"), 0],
         onChange: (next) => onChange({ x: next[0], y: next[1] }) };
     case "vec3":
-      return { kind: "vector3", id, label: "Value", value: [field(value, "x"), field(value, "y"), field(value, "z")],
+      return { kind: "vector3", id, label, value: [field(value, "x"), field(value, "y"), field(value, "z")],
         onChange: (next) => onChange({ x: next[0], y: next[1], z: next[2] }) };
     case "rotator":
-      return { kind: "vector3", id, label: "Value", unit: "°", value: [field(value, "pitch"), field(value, "yaw"), field(value, "roll")],
+      return { kind: "vector3", id, label, unit: "°", value: [field(value, "pitch"), field(value, "yaw"), field(value, "roll")],
         onChange: (next) => onChange({ pitch: next[0], yaw: next[1], roll: next[2] }) };
     case "color":
-      return { kind: "color4", id, label: "Value", value: [field(value, "x", 1), field(value, "y", 1), field(value, "z", 1), field(value, "w", 1)],
+      return { kind: "color4", id, label, value: [field(value, "x", 1), field(value, "y", 1), field(value, "z", 1), field(value, "w", 1)],
         onChange: (next) => onChange({ x: next[0], y: next[1], z: next[2], w: next[3] }) };
     case "string":
-      return { kind: "text", id, label: "Value", value: typeof value === "string" ? value : "", onChange };
+      return { kind: "text", id, label, value: typeof value === "string" ? value : "", onChange };
     default:
-      return { kind: "text", id, label: "Value", value: formatTimelineValue(track.valueType, value, assetName), disabled: true, onChange: () => {},
+      return { kind: "text", id, label, value: formatTimelineValue(valueType, value, assetName), disabled: true, onChange: () => {},
         description: "Set it on the property, then key it." };
   }
 }
@@ -118,8 +146,26 @@ export function TimelineInspector() {
     return track && key ? [{ trackId: track.id, keyId: key.id, track, key }] : [];
   });
 
-  const grids: Array<{ title: string; rows: PropertyRow[]; testId: string }> = [];
-  if (keys.length === 1) {
+  const eventKeys = [...tools.timelineKeySelection].map(keyRefFromId).flatMap((ref): Array<TrackKeyRef & { track: TimelineEventTrack; key: TimelineEventKey }> => {
+    const track = findTimelineEventTrack(clip, ref.rowId);
+    const key = track?.keys.find((entry) => entry.id === ref.keyId);
+    return track && key ? [{ trackId: track.id, keyId: key.id, track, key }] : [];
+  });
+  const selectedCount = keys.length + eventKeys.length;
+
+  const grids: Array<{ title: string; rows: PropertyRow[]; testId: string; after?: React.ReactNode }> = [];
+  if (selectedCount === 1 && eventKeys.length === 1) {
+    const [{ track, key, trackId, keyId }] = eventKeys as [typeof eventKeys[number]];
+    const ref = { trackId, keyId };
+    grids.push({ title: "Event Key", testId: "timeline-inspector-event-key", rows: [
+      { kind: "text", id: "timeline-event-key-track", label: "Track", value: track.name, disabled: true, onChange: () => {} },
+      { kind: "number", id: "timeline-event-key-time", label: "Time", unit: "s", min: 0, max: clip.length, precision: 2, value: key.time,
+        labelAccessory: <span className="font-mono text-[11px] text-muted-foreground tabular-nums">Frame {frameAt(key.time, clip.frameRate)}</span>,
+        onChange: (time) => commitClip(setTimelineEventKeyTime(clip, ref, snapToFrame(time, clip.frameRate, clip.length))) },
+      ...track.inputs.map((input, index) => valueRow(input.typeId as TimelineValueType, `timeline-event-key-value-${index}`, input.name,
+        timelineEventKeyValue(key, input), (value) => commitClip(setTimelineEventKeyValue(clip, ref, input.name, value)), assetName)),
+    ] });
+  } else if (keys.length === 1 && selectedCount === 1) {
     const [{ track, key, trackId, keyId }] = keys as [typeof keys[number]];
     const ref = { trackId, keyId };
     const rows: PropertyRow[] = [
@@ -127,7 +173,7 @@ export function TimelineInspector() {
       { kind: "number", id: "timeline-key-time", label: "Time", unit: "s", min: 0, max: clip.length, precision: 2, value: key.Time,
         labelAccessory: <span className="font-mono text-[11px] text-muted-foreground tabular-nums">Frame {frameAt(key.Time, clip.frameRate)}</span>,
         onChange: (time) => commitClip(setTimelineKeyTime(clip, ref, snapToFrame(time, clip.frameRate, clip.length))) },
-      keyValueRow(track, key, (value) => commitClip(setTimelineKeyValue(clip, ref, value)), assetName),
+      valueRow(track.valueType, "timeline-key-value", "Value", key.Value, (value) => commitClip(setTimelineKeyValue(clip, ref, value)), assetName),
     ];
     if (INTERPOLATED_VALUE_TYPES.has(track.valueType)) {
       const options = TIMELINE_INTERPOLATION_OPTIONS.some((option) => option.value === key.Interpolation)
@@ -138,7 +184,7 @@ export function TimelineInspector() {
         onChange: (value) => commitClip(setTimelineKeyInterpolation(clip, [ref], value as TimelineKey["Interpolation"])) });
     }
     grids.push({ title: "Key", rows, testId: "timeline-inspector-key" });
-  } else if (keys.length > 1) {
+  } else if (selectedCount > 1) {
     const interpolated = keys.filter((entry) => INTERPOLATED_VALUE_TYPES.has(entry.track.valueType));
     const values = new Set(interpolated.map((entry) => entry.key.Interpolation));
     const rows: PropertyRow[] = interpolated.length ? [{
@@ -146,9 +192,32 @@ export function TimelineInspector() {
       value: values.size === 1 ? [...values][0]! : "", mixed: values.size > 1, options: [...TIMELINE_INTERPOLATION_OPTIONS],
       onChange: (value) => commitClip(setTimelineKeyInterpolation(clip, interpolated, value as TimelineKey["Interpolation"])),
     }] : [];
-    grids.push({ title: `${keys.length} Keys`, rows, testId: "timeline-inspector-keys" });
+    grids.push({ title: `${selectedCount} Keys`, rows, testId: "timeline-inspector-keys" });
   } else if (tools.timelineRowId) {
     const found = findTimelineTrack(clip, tools.timelineRowId);
+    const eventTrack = findTimelineEventTrack(clip, tools.timelineRowId);
+    if (eventTrack) {
+      const commitInputs = (rows: PinListRow[]) =>
+        commitClip(setTimelineEventTrackInputs(clip, eventTrack.id, memberPinsFromRows(rows, [])));
+      grids.push({ title: "Custom Event Track", testId: "timeline-inspector-event-track", rows: [
+        { kind: "text", id: "timeline-event-track-name", label: "Event Name", value: eventTrack.name, onChange: () => {},
+          onCommit: (name) => commitClip(renameTimelineEventTrack(clip, eventTrack.id, name)),
+          description: "Scripts bind this Event Dispatcher of the clip." },
+        { kind: "number", id: "timeline-event-track-keys", label: "Keys", value: eventTrack.keys.length, disabled: true, onChange: () => {} },
+      ], after: <div className="px-2">
+        <PinListEditor
+          title="Inputs"
+          rows={memberPinRows(eventTrack.inputs, eventTrack.id, "in")}
+          types={TIMELINE_EVENT_INPUT_TYPES}
+          itemLabel="Input"
+          testIdPrefix="timeline-event-in"
+          data-testid="timeline-event-track-inputs"
+          showOptional={false}
+          showDefault={false}
+          onChange={commitInputs}
+        />
+      </div> });
+    }
     if (found) {
       grids.push({ title: "Track", testId: "timeline-inspector-track", rows: [
         { kind: "text", id: "timeline-track-property", label: "Property", value: trackTitle(found.track.id), disabled: true, onChange: () => {} },
@@ -168,8 +237,11 @@ export function TimelineInspector() {
 
   return <PanelFrame data-testid="scene-details-panel">
     <div className="flex flex-col gap-3 pb-4" data-testid="timeline-inspector">
-      {grids.map((grid) => <PropertyGrid key={grid.testId} title={grid.title} rows={grid.rows} data-testid={grid.testId} />)}
-      {keys.length === 0 && !tools.timelineRowId ? (
+      {grids.map((grid) => <div key={grid.testId} className="flex flex-col gap-2">
+        <PropertyGrid title={grid.title} rows={grid.rows} data-testid={grid.testId} />
+        {grid.after}
+      </div>)}
+      {selectedCount === 0 && !tools.timelineRowId ? (
         <p className="px-2 text-xs text-muted-foreground">Select a key or track in the Timeline to edit it here.</p>
       ) : null}
     </div>

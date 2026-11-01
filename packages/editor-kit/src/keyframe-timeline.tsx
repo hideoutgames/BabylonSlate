@@ -308,6 +308,24 @@ export function KeyframeTimeline({
         context.fillRect(from, Math.round(centre), to - from, 1);
       }
       const size = row.kind === "group" ? keySize - 2 : keySize;
+      if (row.keys.some((key) => key.label)) {
+        const sorted = [...row.keys].sort((a, b) => a.time - b.time);
+        context.font = "10px ui-sans-serif, system-ui, sans-serif";
+        context.textBaseline = "middle";
+        context.fillStyle = color("--muted-foreground");
+        sorted.forEach((key, order) => {
+          if (!key.label) return;
+          const left = x(key.time) + size / 2 + 3;
+          const right = Math.min(laneWidth, order + 1 < sorted.length ? x(sorted[order + 1]!.time) - size / 2 - 3 : end);
+          if (right - left < 12 || left > laneWidth) return;
+          context.save();
+          context.beginPath();
+          context.rect(left, centre - rowHeight / 2, right - left, rowHeight);
+          context.clip();
+          context.fillText(key.label, left, centre);
+          context.restore();
+        });
+      }
       for (const key of row.keys) {
         const kx = x(key.time);
         if (kx < -size || kx > laneWidth + size) continue;
