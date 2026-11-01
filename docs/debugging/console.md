@@ -58,6 +58,7 @@ The game keeps running while the console is open, and pressing the game does not
 | `postprocessing` | `on`/`off` | Turns all post-processing off or back on, to measure what it costs. | Yes |
 | `rendertargets` | `on`/`off` | Pauses or resumes Render Target Captures that capture every frame, to measure what they cost. Their textures keep their last image; manual captures still capture when asked. | Yes |
 | `gpubusy` | `on`/`off` | Starts (or restarts) or stops measuring how long the GPU spends on each frame, independently of display pacing. The Feature Test Check's Breakdown reads it. | Yes |
+| `framesinflight` | `off`/`2`/`3` | How many drawn frames may wait for the GPU before the next frame skips drawing (2 by default). A skipped frame keeps the previous image on screen while the game keeps running. `off` draws every frame. **Stats** (`stat draws`) shows frames in flight and skips, and Feature Test reports state the mode. | Yes |
 | `preservebuffer` | `on`/`off` | Keeps (on, the default) or drops the rendering canvas's image between frames, to compare presentation cost. Stored in the browser and applied after the editor reloads or the project is reopened. The Feature Test Check's Breakdown compares both settings by itself and puts yours back. | Yes |
 | `showbounds` | `on`/`off` | Draws the bounding box of each mesh. | Yes |
 | `actorboundingbox` | `on`/`off` | Same as `showbounds`. | Yes |

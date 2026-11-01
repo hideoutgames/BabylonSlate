@@ -58,3 +58,20 @@ it("names where the worker failed when WebKit gives no message", () => {
   FakeWorker.instance.onerror?.({ message: "", filename: "https://example.test/player/worker-worker-entry.js", lineno: 12, colno: 7 } as ErrorEvent);
   expect(errors).toEqual(["The game worker failed to start or stopped unexpectedly (https://example.test/player/worker-worker-entry.js:12:7)."]);
 });
+
+it("reports a worker whose module never evaluates, and not one that started or was stopped", () => {
+  vi.useFakeTimers();
+  try {
+    const errors: string[] = [];
+    const silent = createPlayerWorkerHost();
+    silent.onError((error) => errors.push(error.message));
+    const started = createPlayerWorkerHost();
+    started.onError((error) => errors.push(`started: ${error.message}`));
+    FakeWorker.instance.receive({ channel: "ready" });
+    const stopped = createPlayerWorkerHost();
+    stopped.onError((error) => errors.push(`stopped: ${error.message}`));
+    stopped.terminate();
+    vi.advanceTimersByTime(10_000);
+    expect(errors).toEqual(["The game worker did not start within 10 seconds: its module never finished loading."]);
+  } finally { vi.useRealTimers(); }
+});

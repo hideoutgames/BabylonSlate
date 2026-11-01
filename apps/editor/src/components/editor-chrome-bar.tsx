@@ -1080,7 +1080,7 @@ export function EditorChromeBar({
                     size="sm"
                     variant="ghost"
                     data-testid="play-preview"
-                    className="chrome-action-button chrome-play-button relative"
+                    className="chrome-action-button chrome-play-button"
                     aria-label={simulating
                       ? simulationUnavailableReason ? `Simulate (${simulationUnavailableReason})` : "Simulate"
                       : playChromeLaunchAriaLabel(previewBuild, canPlay, { playFromScene })}
@@ -1109,7 +1109,7 @@ export function EditorChromeBar({
                     : playChromeLaunchLabel(previewBuild)}
                 {errorCount > 0 ? (
                   <span
-                    className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"
+                    className="flex h-4 min-w-4 items-center justify-center rounded-sm bg-destructive px-1 text-[10px] font-semibold tabular-nums text-destructive-foreground"
                     data-testid="play-error-badge"
                   >
                     {errorCount > 9 ? "9+" : errorCount}

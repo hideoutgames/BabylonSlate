@@ -152,7 +152,12 @@ describe("worker entry snapshot transport", () => {
     const deliver = (data: BridgeHostMessage) => host.onmessage!({ data });
     const posts: Post[] = [];
     let batch = 0;
+    let readyPosts = 0;
     vi.stubGlobal("postMessage", (message: BridgeWorkerMessage) => {
+      if (message.channel === "ready") {
+        readyPosts++;
+        return;
+      }
       if (message.channel === "snapshot") {
         const frameId = readSnapshotHeader(new Float32Array(message.payload)).frameId;
         posts.push({ kind: "snapshot", frameId, buffer: message.payload });
@@ -185,13 +190,15 @@ describe("worker entry snapshot transport", () => {
       return runtime;
     });
     await import("./worker-entry");
+    // Evaluated: the module announces itself before any control arrives, and only then.
+    const readyAtImport = readyPosts;
     send = (payload) => deliver({ channel: "control", payload });
     send(load);
     for (const control of before) send(control);
     send({ type: "play" });
     await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0));
     return {
-      deliver, posts, emitted, runtime, saveStorage: () => saveStorage,
+      deliver, posts, emitted, runtime, saveStorage: () => saveStorage, readyAtImport, readyPosts: () => readyPosts,
       runFrames(count: number) {
         for (let i = 0; i < count; i++) {
           now += 1000 / 60;
@@ -207,6 +214,13 @@ describe("worker entry snapshot transport", () => {
       },
     };
   }
+
+  it("announces itself ready once, when its module has evaluated and before any control", async () => {
+    const worker = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: createDefaultScene() });
+    worker.runFrames(3);
+    expect(worker.readyAtImport).toBe(1);
+    expect(worker.readyPosts()).toBe(1);
+  });
 
   it("holds poses at two outstanding transfers, then publishes the newest one before held markers", async () => {
     const { deliver, posts, emitted, runtime, runFrames, kinds, snapshots, newestFrame } = await bootWorker(

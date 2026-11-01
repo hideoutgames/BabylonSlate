@@ -88,7 +88,8 @@ for (const mode of ["Play"] as const) {
     const dialog = page.getByTestId("scene-loading-dialog");
     await expect(dialog).toBeHidden({ timeout: 30_000 });
     const canvas = page.getByTestId("play-canvas");
-    await expect.poll(() => renderedPixels(canvas)).toBeGreaterThan(500);
+    // The first presented frame after a load waits for the GPU's first draw on software GL.
+    await expect.poll(() => renderedPixels(canvas), { timeout: 30_000 }).toBeGreaterThan(500);
     await expect.poll(() => boxes(host)).toBe(48);
     const meshCount = await host.evaluate(() => (globalThis as unknown as { __hapticPlayTest: { liveObjectCounts: () => { meshes: number } } }).__hapticPlayTest.liveObjectCounts().meshes);
     await page.getByTestId("play-console-open").click();
@@ -100,7 +101,7 @@ for (const mode of ["Play"] as const) {
       await expect(dialog).toBeHidden({ timeout: 30_000 });
       await expect.poll(() => observedPhases(host), { timeout: 30_000 }).toContain("Presenting First Frame");
       await expect.poll(() => boxes(host)).toBe(48);
-      await expect.poll(() => renderedPixels(canvas)).toBeGreaterThan(500);
+      await expect.poll(() => renderedPixels(canvas), { timeout: 30_000 }).toBeGreaterThan(500);
       await expect.poll(() => host.evaluate(() => (globalThis as unknown as { __hapticPlayTest: { liveObjectCounts: () => { meshes: number } } }).__hapticPlayTest.liveObjectCounts().meshes)).toBe(meshCount);
     }
     await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();

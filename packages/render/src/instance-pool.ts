@@ -393,14 +393,26 @@ export function setSceneInstancing(scene: Scene, enabled: boolean): void {
   else instancing.delete(scene);
 }
 
+/** Pools where pipelines are deferred too (`setDeferredPipelineInstancing`). */
+let deferredPipelineInstancing = false;
+
+/**
+ * Lets scenes pool where pipelines are deferred (WebGPU): the compile-hold gate turns it on for the cases whose warm
+ * draws, caster warm and reveal already resolve a member to its group source, until every case does.
+ */
+export function setDeferredPipelineInstancing(enabled: boolean): void {
+  deferredPipelineInstancing = enabled;
+}
+
 /**
  * Whether visuals built in `scene` draw through its instance pool (`setSceneInstancing`), which needs hardware
  * instancing: without it Babylon draws each instance on its own, which a pool would only add to. Not where pipelines
- * are deferred (WebGPU) yet: their warm draws, caster warm and reveal lookups still key by mesh, not by group source.
+ * are deferred (WebGPU) yet unless `setDeferredPipelineInstancing` allows it: their warm draws, caster warm and reveal
+ * lookups do not all resolve a member to its group source yet.
  */
 export function sceneInstancing(scene: Scene): boolean {
   const engine = scene.getEngine();
-  return instancing.has(scene) && engine.getCaps().instancedArrays && !pipelinesDeferred(engine);
+  return instancing.has(scene) && engine.getCaps().instancedArrays && (deferredPipelineInstancing || !pipelinesDeferred(engine));
 }
 
 /** The pool member `mesh` is, if it is one. */

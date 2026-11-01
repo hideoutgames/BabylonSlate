@@ -2075,7 +2075,26 @@ describe("GraphEditor", () => {
       />,
     );
 
-    expect(getByLabelText("1 error")).toBeTruthy();
+    expect(getByLabelText("1 Error")).toBeTruthy();
+  });
+
+  it("counts a node's errors on its badge and navigates to the node when the badge is pressed", () => {
+    const graph = singleLogGraph();
+    const nodeId = graph.nodes[0]?.id ?? "";
+    const onNavigateRequest = vi.fn();
+    const { getByLabelText } = render(
+      <GraphEditor
+        initialGraph={graph}
+        onNavigateRequest={onNavigateRequest}
+        diagnostics={[
+          { nodeId, severity: "error", message: "Type mismatch" },
+          { nodeId, severity: "error", message: "Missing target" },
+        ]}
+      />,
+    );
+
+    fireEvent.click(getByLabelText("2 Errors"));
+    expect(onNavigateRequest).toHaveBeenCalledWith({ nodeId });
   });
 
   it("clips the title bar to the shell radius without clipping the error badge", () => {
@@ -2101,7 +2120,7 @@ describe("GraphEditor", () => {
     const title = getByText("Log");
     expect(title.className).toMatch(/\brounded-t-lg\b/);
 
-    const badge = getByLabelText("1 error");
+    const badge = getByLabelText("1 Error");
     expect(shell?.contains(badge)).toBe(false);
   });
 
@@ -2954,7 +2973,7 @@ describe("GraphEditor", () => {
 
     const shell = container.querySelector("[data-node-role]");
     const banner = getByTestId("development-only-banner");
-    const badge = getByLabelText("1 error");
+    const badge = getByLabelText("1 Error");
     expect(shell?.contains(banner)).toBe(true);
     expect(shell?.contains(badge)).toBe(false);
     expect(shell?.className).toMatch(/\boverflow-hidden\b/);

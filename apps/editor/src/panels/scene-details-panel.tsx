@@ -81,6 +81,7 @@ import {
 } from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows, type TransformRowsMode } from "../lib/transform-property-rows";
 import { selectionTransformPropertyRows } from "../lib/selection-transform-property-rows";
+import { scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import {
   fontAssetHasFacetype,
   fontAssetHasMsdfJson,
@@ -122,6 +123,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   const { projectDocument } = useProjectState();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const areaEmissionStatus = useAreaEmissionStatus();
+  const linkedScale = useLinkedScale();
   // Open Model tabs' unsaved material slots win over saved headers.
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
   const { selectedActorIds, setSelectedActorIds, shapeEditTarget, setShapeEditTarget } = useSceneEditing();
@@ -460,12 +462,14 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
           spatialActors,
           transformMode,
           (update) => updateSelectedActors((entry) => isSceneLayerAnchorActor(entry) ? entry : update(entry)),
+          linkedScale,
         )
       : spatialTransformPropertyRows(
           "actor",
           transformMode,
           actor.transform,
           (transform) => updateActor((entry) => ({ ...entry, transform })),
+          { scaleLink: linkedScale.link(scaleLinkKey.actor(actor.id)) },
         )),
     ...(spatialActors.length === 0 ? [] : [{
       kind: "boolean",
@@ -573,7 +577,10 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
                       : candidate,
                   ),
                 })),
-              template?.transform,
+              {
+                defaults: template?.transform,
+                scaleLink: linkedScale.link(scaleLinkKey.actorComponent(actor.id, component.id)),
+              },
             )
           : [];
       const extraLabels = component.classId === "2DDropdownComponent" ? "Options Items Select Dropdown" :

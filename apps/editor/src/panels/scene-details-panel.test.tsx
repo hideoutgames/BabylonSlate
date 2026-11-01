@@ -21,6 +21,8 @@ import {
 } from "@haptic/core";
 import { AssetCreateProvider } from "@haptic/editor-kit";
 import { SceneDetailsPanel } from "./scene-details-panel";
+import { AppSettingsProvider } from "../context/app-settings-context";
+import { MemoryAppSettingsStore } from "@haptic/vfs";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import { diffSceneCommands, EditSession } from "@haptic/edit";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
@@ -402,6 +404,43 @@ describe("shared actor Details", () => {
       [1, 2, -8],
       [4, 5, -8],
     ]);
+  });
+
+  it("remembers the Scale link per actor and scales only linked actors proportionally", async () => {
+    scene().viewportMode = "2d";
+    scene().actors[1]!.transform.scale = [4, 2, 6];
+    const store = new MemoryAppSettingsStore();
+    const panel = () => (
+      <AppSettingsProvider store={store}>
+        <SceneDetailsPanel {...({} as IDockviewPanelProps)} />
+      </AppSettingsProvider>
+    );
+    const link = () => screen.getByRole("button", { name: "Link Scale Axes" });
+    const pressed = () => link().getAttribute("aria-pressed");
+    const scales = () =>
+      harness.applySceneChange.mock.calls.at(-1)![1].actors.map((actor) => actor.transform.scale);
+    harness.selectedActorIds = ["a"];
+    const view = render(panel());
+    await act(async () => {});
+    expect(pressed()).toBe("false");
+    fireEvent.click(link());
+    await waitFor(() => expect(pressed()).toBe("true"));
+    harness.selectedActorIds = ["b"];
+    view.rerender(panel());
+    expect(pressed()).toBe("false");
+    harness.selectedActorIds = ["a"];
+    view.rerender(panel());
+    expect(pressed()).toBe("true");
+
+    harness.selectedActorIds = ["a", "b"];
+    view.rerender(panel());
+    expect(pressed()).toBe("false");
+    fireEvent.change(screen.getByTestId("property-actor-scale-x"), { target: { value: "2" } });
+    expect(scales()).toEqual([[2, 4, 3], [2, 2, 6], [1, 1, 1]]);
+    fireEvent.click(link());
+    await waitFor(() => expect(pressed()).toBe("true"));
+    fireEvent.change(screen.getByTestId("property-actor-scale-x"), { target: { value: "3" } });
+    expect(scales()).toEqual([[3, 6, 3], [3, 1.5, 6], [1, 1, 1]]);
   });
 
   it("treats shared 2D scale as default when only hidden Z differs", () => {
