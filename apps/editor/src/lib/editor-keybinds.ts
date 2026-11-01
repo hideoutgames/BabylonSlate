@@ -64,6 +64,7 @@ const COMMAND_LIST = [
   { id: "timeline.setKey", label: "Set Key", category: "Timeline", defaultChords: ["K"] },
   { id: "timeline.previousKey", label: "Previous Key", category: "Timeline", defaultChords: ["["] },
   { id: "timeline.nextKey", label: "Next Key", category: "Timeline", defaultChords: ["]"] },
+  { id: "timeline.addSelectedActors", label: "Add Selected Actors", category: "Timeline", defaultChords: ["Shift+A"] },
   { id: "browser.newAsset", label: "New Asset", category: "Content Browser", defaultChords: ["Alt+N"] },
   { id: "browser.import", label: "Import Assets", category: "Content Browser", defaultChords: ["Alt+I"] },
   { id: "browser.references", label: "Show References", category: "Content Browser", defaultChords: ["Alt+R"] },
