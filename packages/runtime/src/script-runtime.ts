@@ -249,7 +249,9 @@ export class ScriptRuntime {
     const world = this.host.world();
     const classes = world.classRegistry;
     if (!classes.get(classId)) {
-      this.host.reportLog(`Create Object: there is no Class ${classId}.`, "error", "Script");
+      this.host.reportLog(
+        `Create Object: the Class ${classId} is not loaded. Pick it on the node, or set the reference that holds it to Load With Owner.`,
+        "error", "Script");
       return null;
     }
     if (!isCreatableObjectChain(classes.ancestry(classId))) {

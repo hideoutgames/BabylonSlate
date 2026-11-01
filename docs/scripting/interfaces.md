@@ -31,6 +31,10 @@ In **Add Node**, choose **Call Interface** followed by the method name. This pla
 - The caller continues when the method returns.
 - If the target does not implement the interface, nothing runs: execution continues and the outputs return their default values.
 
+## Tickable Object
+
+**Tickable Object** is an interface built into Haptic. It has no methods: it gives a Class whose parent is Object an [Event Tick](class/event-tick.md), so objects made with [Create Object](class/create-object.md) tick. Pick it under **Interfaces** like any other interface; it is listed only for those Classes. See [Objects and lifetime](object-lifetime.md#tick).
+
 ## Notes
 
 - Changing a method's pins updates every Call Interface node and removes wires to pins that no longer exist. An implementing function whose pins no longer match reports an error in **Compiler Results**.

@@ -131,6 +131,18 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["inventory-module", "item-schema", "items", "move", "unknown-items", "unknown-schema"]);
   });
 
+  it("loads the Class picked on Create Object with its owner, and no Class a Cast names", () => {
+    const metadata = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        { id: "make", type: "object.create", data: { "default:class": "Counter" } },
+        { id: "cast", type: "casting.cast", data: { "default:class": "Hero" } },
+      ],
+      edges: [],
+    }, { classes: [{ guid: "counter-class", classId: "Counter" }, { guid: "hero-class", classId: "Hero" }] });
+    expect(metadata.requiredDependencies).toEqual(["counter-class"]);
+    expect(metadata.requiredClassReferences).toEqual(["Counter"]);
+  });
+
   it("follows data inputs across several hops and edge spellings, in function graphs too, but not through exec wires", () => {
     const literal = (id: string, asset: string) => ({ id, type: "literal.makeAsset", data: { "default:in": asset } });
     const metadata = collectAssetDependencyMetadata("Class", {

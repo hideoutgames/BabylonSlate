@@ -88,6 +88,8 @@ const SPEED_BY_MODE: Record<SpeedMode, number> = { Slow: 20, Medium: 45, Fast: 1
 const CLASS = {
   mathLib: "FT_ScriptMathLib",
   dataObject: "FT_ScriptDataObject",
+  ticker: "FT_ScriptTicker",
+  objectProbe: "FT_ScriptObjectProbe",
   pulseComponent: "FT_ScriptPulseComponent",
   spawned: "FT_ScriptSpawned",
   spinner: "FT_ScriptSpinner",
@@ -155,6 +157,7 @@ interface PlacedClass {
 interface ScriptingRefs {
   spinner: PlacedClass;
   interfaceProbe: PlacedClass;
+  objectProbe: PlacedClass;
   touchProbe: PlacedClass;
   dataProbe: PlacedClass;
   saveProbe: PlacedClass;
@@ -304,6 +307,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   await saveMathLibrary(ctx);
   await saveScoreSubsystem(ctx);
   await saveDataObject(ctx);
+  await saveTicker(ctx);
   await savePulseComponent(ctx);
   await saveSpawned(ctx, materials.emissive ?? null);
   const spinner = await saveSpinner(ctx, types, materials.surface ?? null);
@@ -311,6 +315,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   await saveSceneWatcher(ctx);
   await saveGameInstance(ctx);
   const interfaceProbe = await saveInterfaceProbe(ctx, types, font, materials.surfaceInstance ?? null);
+  const objectProbe = await saveObjectProbe(ctx, font, materials.surfaceInstance ?? null);
   const touchProbe = await saveTouchProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const dataProbe = await saveDataProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const saveProbe = await saveSaveProbe(ctx, font, materials.surfaceInstance ?? null);
@@ -327,7 +332,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
     gameInstanceClass: CLASS.gameInstance,
     editorUtilityObjects: [...new Set([...settings.editorUtilityObjects, CLASS.editorProbe])],
   }));
-  refsByContext.set(ctx, { spinner, interfaceProbe, touchProbe, dataProbe, saveProbe, streamLoader, marker, roomGuid: room });
+  refsByContext.set(ctx, { spinner, interfaceProbe, objectProbe, touchProbe, dataProbe, saveProbe, streamLoader, marker, roomGuid: room });
 }
 
 /** Scripting zone (Spinner grid, Fast Spinner, probes, Prefab instances) and the Stream Loader. */
@@ -555,6 +560,9 @@ const SPAWNED_BY = varMember("ft-script-var-spawned-by", "SpawnedBy", "string", 
 const GI_OBJECT_CLASS = varMember("ft-game-var-object-class", "ObjectClass", "class", CLASS.dataObject, {
   typeClassId: CLASS.dataObject,
 });
+/** Counted by `FT_ScriptTicker`'s Tick, so the Object Probe can see a collected object stop ticking. */
+const GI_OBJECT_TICKS = varMember("ft-game-var-object-ticks", "ObjectTicks", "float", 0);
+const DATA_OBJECT_NOTE = varMember("ft-script-var-note", "Note", "string", "FeatureTest Object");
 const COMPUTE_WAVE = fnMember("ft-script-fn-compute-wave", "ComputeWave", WAVE_PINS, { overridable: true, category: "Spin" });
 
 function describeMember(id: string, interfaceGuid: string): GraphClassMember {
@@ -633,7 +641,7 @@ async function saveScoreSubsystem(ctx: FeatureTestContext): Promise<void> {
 
 /** Object: a variable and a function; referenced as a Class variable by the Game Instance. */
 async function saveDataObject(ctx: FeatureTestContext): Promise<void> {
-  const note = varMember("ft-script-var-note", "Note", "string", "FeatureTest Object");
+  const note = DATA_OBJECT_NOTE;
   const describe = fnMember("ft-script-fn-describe-object", "DescribeObject", [
     { name: "Text", typeId: "string", direction: "out" },
   ]);
@@ -647,6 +655,39 @@ async function saveDataObject(ctx: FeatureTestContext): Promise<void> {
     },
   });
   await saveClass(ctx, CLASS.dataObject, "Object", graph);
+}
+
+/** Object with the engine Tickable Object interface: On Init logs, Tick adds one to the Game Instance's ObjectTicks. */
+async function saveTicker(ctx: FeatureTestContext): Promise<void> {
+  const tickable: GraphClassMember = {
+    id: "ft-script-iface-tickable",
+    kind: "interface",
+    name: "Tickable Object",
+    assetGuid: "engine:TickableObject",
+  };
+  const graph = classGraph({
+    members: [tickable],
+    nodes: [
+      gNode("init", "flow.event.init", 0, 0),
+      logLine("init-log", 240, 0, "FT_ScriptTicker created"),
+      gNode("tick", "flow.event.tick", 0, 200),
+      gNode("game-instance", "gameInstance.get", 0, 380),
+      cast("as-game-instance", 240, 200, CLASS.gameInstance),
+      getVarOn("get-ticks", GI_OBJECT_TICKS, CLASS.gameInstance, 480, 380),
+      gNode("next-ticks", "math.add", 720, 380, { "default:b": 1 }),
+      setVarOn("set-ticks", GI_OBJECT_TICKS, CLASS.gameInstance, 720, 200),
+    ],
+    edges: [
+      ...gChain("init", "init-log"),
+      ...gChain("tick", "as-game-instance", "set-ticks"),
+      gWire("game-instance", "gameInstance", "as-game-instance", "object"),
+      gWire("as-game-instance", "result", "get-ticks", "target"),
+      gWire("as-game-instance", "result", "set-ticks", "target"),
+      gWire("get-ticks", "value", "next-ticks", "a"),
+      gWire("next-ticks", "out", "set-ticks", "value"),
+    ],
+  });
+  await saveClass(ctx, CLASS.ticker, "Object", graph);
 }
 
 /** Actor Component: Begin Play print and a per-tick counter on every Spinner. */
@@ -989,7 +1030,7 @@ async function saveSceneWatcher(ctx: FeatureTestContext): Promise<void> {
  */
 async function saveGameInstance(ctx: FeatureTestContext): Promise<void> {
   const graph = classGraph({
-    members: [GI_BOOTED, GI_OBJECT_CLASS],
+    members: [GI_BOOTED, GI_OBJECT_CLASS, GI_OBJECT_TICKS],
     nodes: [
       gNode("init", "flow.event.init", 0, 0),
       setVar("set-booted", GI_BOOTED, 220, 0, true),
@@ -1082,6 +1123,85 @@ async function saveInterfaceProbe(
     ],
   });
   const ref = await saveClass(ctx, CLASS.interfaceProbe, "Actor", graph);
+  return { ref, components };
+}
+
+/**
+ * Object lifetime in Play: Begin Play keeps an FT_ScriptDataObject in a
+ * variable; Make Ticker and Drop Ticker, which never wait, hold an
+ * FT_ScriptTicker only in Ticker, so nothing else keeps it once Drop Ticker
+ * clears it and runs Collect Garbage. Begin Play then asserts that the ticker
+ * ticked, stopped once collected, and that the kept object is still valid.
+ */
+async function saveObjectProbe(ctx: FeatureTestContext, font: string, materialGuid: string | null): Promise<PlacedClass> {
+  const kept = varMember("ft-script-var-kept-object", "KeptObject", "object", null, { typeClassId: CLASS.dataObject });
+  const ticker = varMember("ft-script-var-ticker", "Ticker", "object", null, { typeClassId: CLASS.ticker });
+  const ticksAtCollection = varMember("ft-script-var-ticks-at-collection", "TicksAtCollection", "float", 0);
+  // Never set: an empty Ticker reference that clears Ticker.
+  const noTicker = varMember("ft-script-var-no-ticker", "NoTicker", "object", null, { typeClassId: CLASS.ticker });
+  const makeTicker: GraphClassMember = { id: "ft-script-evt-make-ticker", kind: "event", name: "Make Ticker", pins: [] };
+  const dropTicker: GraphClassMember = { id: "ft-script-evt-drop-ticker", kind: "event", name: "Drop Ticker", pins: [] };
+  const components = [
+    scaledMesh("prefab-mesh", "box", 0.6, materialGuid),
+    textLabel("prefab-label", "Object Probe", font, [0, 1, 0]),
+  ];
+  const graph = classGraph({
+    members: [kept, ticker, ticksAtCollection, noTicker, makeTicker, dropTicker],
+    components,
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      delay("settle", 220, 0, 1),
+      gNode("make-kept", "object.create", 440, 0, { "default:class": CLASS.dataObject }),
+      setVar("set-kept", kept, 680, 0),
+      callEvent("call-make-ticker", 920, 0, makeTicker, {}),
+      delay("ticking", 1160, 0, 0.5),
+      gNode("game-instance", "gameInstance.get", 1160, 240),
+      cast("as-game-instance", 1400, 0, CLASS.gameInstance),
+      getVarOn("get-ticks", GI_OBJECT_TICKS, CLASS.gameInstance, 1400, 240),
+      gNode("ticked", "math.greater", 1640, 240),
+      gNode("assert-ticked", "debug.assert", 1640, 0, { "default:message": "A Tickable Object made by Create Object did not tick" }),
+      callEvent("call-drop-ticker", 1880, 0, dropTicker, {}),
+      delay("collected", 2120, 0, 0.25),
+      setVar("set-at-collection", ticksAtCollection, 2360, 0),
+      delay("after", 2600, 0, 0.25),
+      getVar("get-at-collection", ticksAtCollection, 2600, 240),
+      gNode("assert-stopped", "debug.assertEqual", 2840, 0, { "default:message": "A collected object kept ticking" }),
+      getVar("get-kept", kept, 2840, 240),
+      gNode("assert-kept", "debug.assertIsValid", 3080, 0, { "default:message": "A referenced object was collected" }),
+      getVarOn("get-note", DATA_OBJECT_NOTE, CLASS.dataObject, 3080, 240),
+      format("report-text", 3320, 240, "Objects: kept {note}, {ticks} ticks before Collect Garbage"),
+      printText("report", 3560, 0, "ft-script-objects", undefined, 8),
+      gNode(makeTicker.id, "flow.event.custom", 0, 600, { title: "Event Make Ticker", name: makeTicker.name, pins: makeTicker.pins }),
+      gNode("make-ticker", "object.create", 240, 600, { "default:class": CLASS.ticker }),
+      setVar("set-ticker", ticker, 480, 600),
+      gNode(dropTicker.id, "flow.event.custom", 0, 900, { title: "Event Drop Ticker", name: dropTicker.name, pins: dropTicker.pins }),
+      setVar("drop-ticker", ticker, 240, 900),
+      getVar("get-no-ticker", noTicker, 240, 1100),
+      gNode("collect", "object.collectGarbage", 480, 900),
+    ],
+    edges: [
+      ...gChain("begin", "settle", "make-kept", "set-kept", "call-make-ticker", "ticking", "as-game-instance",
+        "assert-ticked", "call-drop-ticker", "collected", "set-at-collection", "after", "assert-stopped", "assert-kept", "report"),
+      gWire("make-kept", "object", "set-kept", "value"),
+      gWire("game-instance", "gameInstance", "as-game-instance", "object"),
+      gWire("as-game-instance", "result", "get-ticks", "target"),
+      gWire("get-ticks", "value", "ticked", "a"),
+      gWire("ticked", "out", "assert-ticked", "condition"),
+      gWire("get-ticks", "value", "set-at-collection", "value"),
+      gWire("get-ticks", "value", "assert-stopped", "actual"),
+      gWire("get-at-collection", "value", "assert-stopped", "expected"),
+      gWire("get-kept", "value", "assert-kept", "object"),
+      gWire("get-kept", "value", "get-note", "target"),
+      gWire("get-note", "value", "report-text", fmtArg("note")),
+      gWire("get-at-collection", "value", "report-text", fmtArg("ticks")),
+      gWire("report-text", "out", "report", "inString"),
+      ...gChain(makeTicker.id, "make-ticker", "set-ticker"),
+      gWire("make-ticker", "object", "set-ticker", "value"),
+      ...gChain(dropTicker.id, "drop-ticker", "collect"),
+      gWire("get-no-ticker", "value", "drop-ticker", "value"),
+    ],
+  });
+  const ref = await saveClass(ctx, CLASS.objectProbe, "Actor", graph);
   return { ref, components };
 }
 
@@ -1588,6 +1708,7 @@ function placeScriptingZone(ctx: FeatureTestContext, refs: ScriptingRefs, types:
   });
 
   placeClass("ft-scripting-interface-probe", "Interface Probe", refs.interfaceProbe, zone.at(4.5, 0.6, -9), probesFolder);
+  placeClass("ft-scripting-object-probe", "Object Probe", refs.objectProbe, zone.at(7, 0.6, -6), probesFolder);
   placeClass("ft-scripting-touch-probe", "Touch Probe", refs.touchProbe, zone.at(4.5, 0.6, -6), probesFolder);
   placeClass("ft-scripting-data-probe", "Data Probe", refs.dataProbe, zone.at(7, 0.45, -9), probesFolder);
   placeClass("ft-scripting-save-probe", "Save Probe", refs.saveProbe, zone.at(9.5, 0.45, -9), probesFolder);

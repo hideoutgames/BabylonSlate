@@ -464,6 +464,13 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Owner](set-owner.md) | Records an actor as the owner of another actor, without attaching or moving it. |
 | [Spawn Actor](spawn-actor.md) | Creates a new actor from a Class and returns a reference to it. |
 
+## Object
+
+| Node | Description |
+| --- | --- |
+| [Collect Garbage](collect-garbage.md) | Collects the objects made by **Create Object** that nothing refers to any more, at the end of the current tick. |
+| [Create Object](create-object.md) | Creates an object of a Class whose parent is Object, runs its **Event On Init**, and returns it. |
+
 ## Component
 
 | Node | Description |

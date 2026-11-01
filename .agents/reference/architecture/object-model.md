@@ -36,9 +36,9 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 
 1. `gameInstance`: GameInstance `onTick`, then live GameSubsystems in class-id order.
 2. `sceneSubsystems`: main Scene's SceneSubsystems; gated by `canTickScene` then `canTickSceneSubsystem`.
-3. `actors` (spawn order) → 4. `components` (attach order) → 5. `physics` (backend `step` + write-back, filled by `@haptic/physics`) → 6. `postPhysics` (boundary only).
+3. `actors` (spawn order) → 4. `components` (attach order) → 5. `objects` (`addTickingObject` order: Create Object objects with Tickable Object; destroyed ones are dropped in place, ones added during the phase tick next tick; the list is not a root) → 6. `physics` (backend `step` + write-back, filled by `@haptic/physics`) → 7. `postPhysics` (boundary only).
 
-`WorldOptions.canTickScene` suspends phases 2–6 during cooperative scene preparation while the Game Instance keeps ticking; `canTickActor` gates individual owners and SceneLayers. Both are rechecked mid-tick.
+`WorldOptions.canTickScene` suspends phases 2–7 during cooperative scene preparation while the Game Instance keeps ticking; `canTickActor` gates individual owners and SceneLayers. Both are rechecked mid-tick.
 
 ## Subsystems
 
@@ -65,6 +65,7 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 - A pass marks with a per-pass epoch and a worklist (no recursion through object chains), sets stored references to destroyed objects to None (array slots, map values; map entries with a destroyed key are removed), then destroys unmarked collectables in creation order without script events and runs `onRelease` handlers. Declared variables whose type can never hold an object (`canHoldReference`) are skipped.
 - Runtime: [`object-lifetime.ts`](../../../packages/runtime/src/object-lifetime.ts) `RuntimeObjectLifetime` runs a pass at the end of `runTick`, after `flushComponentCommands`, when no script is mid-call: every `garbageCollectionIntervalTicks` (default 60) while collectables exist or `World.destroyCount` moved, after a Scene change, and on `request()`. Roots are `ScriptRuntime.liveObjects()` plus root sources: waiting latent frames (`LatentFrameRoots`, filled by `ctx.holdFrame` from compiled async entries) and behaviour tree blackboards.
 - Determinism: roots and collectables are visited in fixed order; collection timing comes from tick counts, never wall time.
+- Create Object ([`creatable-objects.ts`](../../../packages/object-model/src/creatable-objects.ts)): `isCreatableObjectChain` accepts a class whose nearest engine base is `Object` (never a locked engine base or a Scene script class). `ScriptRuntime.createObject` builds it with `World.createObject` (class defaults, guid factory), binds interface handlers, registers it with the collector, adds it to the Objects phase when it implements `TICKABLE_OBJECT_INTERFACE_GUID` (`engine:TickableObject`, an engine interface with no methods), then runs its `onInit` through `OwnerAdmission.runCreation`. Its hooks resolve `hooksFor` per call. On release the driver drops its admission queue and `ScriptHost.releaseObject` clears flow state and dispatcher bindings; Delays resume a destroyed owner at once and its continuation is cancelled, so no event runs. `receivesEngineTick` names the chains (Actor, component, Game Instance, subsystems, Scene scripts) for which Tickable Object is `interface.tick_already_exists`.
 
 ## Actor hierarchy
 

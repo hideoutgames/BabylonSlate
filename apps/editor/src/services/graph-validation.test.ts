@@ -460,6 +460,22 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
   });
 
+  it("types Create Object's Object from the picked Class, or from the Class wired into it", () => {
+    const objectPin = (hydrated: SerializedGraph) =>
+      (hydrated.nodes.find((node) => node.id === "make")?.data.__pins as Array<{ id: string; type: unknown }>)
+        .find((pin) => pin.id === "object")?.type;
+    const make = { id: "make", type: "object.create", position: { x: 200, y: 0 }, data: { "default:class": "Counter" } };
+    expect(objectPin(hydrateSerializedGraphForEditor({ nodes: [make], edges: [] }, registry))).toEqual({ kind: "objectRef", classId: "Counter" });
+    const wired: SerializedGraph = {
+      nodes: [
+        { id: "kind", type: "variables.get", position: { x: 0, y: 0 }, data: { variableName: "Kind", typeId: "class", typeClassId: "Quest", implicitSelf: true } },
+        make,
+      ],
+      edges: [{ id: "e1", source: "kind", target: "make", sourceHandle: "value", targetHandle: "class" }],
+    };
+    expect(objectPin(hydrateSerializedGraphForEditor(wired, registry))).toEqual({ kind: "objectRef", classId: "Quest" });
+  });
+
   it("preserves existing __pins", () => {
     const customPins = [
       {

@@ -19,6 +19,7 @@ import { ENGINE_CLASS_SCRIPT_APIS } from "@haptic/object-model";
 import {
   ASSET_REGISTRY_BY_CLASS_NODE_ID,
   CREATE_EVENT_NODE_TYPE_ID,
+  CREATE_OBJECT_NODE_ID,
   castDefaultClassId,
   isDispatcherNodeType,
   callInterfaceTitle,
@@ -110,6 +111,7 @@ export function shouldRegeneratePins(typeId: string): boolean {
     typeId === "component.getNamed" ||
     typeId === "casting.cast" ||
     typeId === ASSET_REGISTRY_BY_CLASS_NODE_ID ||
+    typeId === CREATE_OBJECT_NODE_ID ||
     typeId === SUBSYSTEM_GET_NODE_ID ||
     typeId === OWNED_ACTOR_GET_NODE_ID ||
     typeId === OWNED_COMPONENT_GET_NODE_ID ||
@@ -256,8 +258,9 @@ export function castPinProperties(
 }
 
 /**
- * Get Assets By Class types Classes the way Cast types its result: from the
- * Class wired into it, else from the Class picked on the node.
+ * Get Assets By Class types Classes, and Create Object its Object, the way
+ * Cast types its result: from the Class wired into it, else from the Class
+ * picked on the node.
  */
 export function assetsByClassPinProperties(
   typeId: string,
@@ -266,7 +269,7 @@ export function assetsByClassPinProperties(
   nodeId: string,
   nodeRegistry: NodeRegistry,
 ): Record<string, unknown> {
-  if (typeId !== ASSET_REGISTRY_BY_CLASS_NODE_ID) return properties;
+  if (typeId !== ASSET_REGISTRY_BY_CLASS_NODE_ID && typeId !== CREATE_OBJECT_NODE_ID) return properties;
   const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
   return wiredClassId ? { ...properties, "default:class": wiredClassId } : properties;
 }
