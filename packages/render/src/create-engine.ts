@@ -203,7 +203,6 @@ import {
   sceneLayerFrustumSize,
   walkOverlayPointerHits,
 } from "@haptic/core";
-import { updateSceneTilemapAnimations } from "./tilemap-mesh";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
 import { MaterialLibrary } from "./material-library";
@@ -1884,7 +1883,6 @@ function initializeEngine(
       finishPresentation(key, pending);
     }
   }
-  const tilemapPreviewStart = performance.now();
   function prepareSnapshot() {
     const sampled = snapshots.sample();
     if (!sampled) return null;
@@ -2049,8 +2047,9 @@ function initializeEngine(
     // leaves it to the load's own settle, so spawn batches arriving over frames never settle partial sets.
     if (!worldLoading || pendingPresentations.has("world")) settleSceneWater(scene);
     if (rttPresent) rttPresent.bind();
+    // Animated tiles stay on their first frame in editor views; only Play's
+    // runtime clock (`tilemapAnimationTime`) advances them.
     if (!options.playMode) {
-      updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
       // Editor cables simulate only while this view renders (never in Play or
       // hidden/paused views); sleeping cables skip their anchor math.
       if (stepEditorCables(scene, frameStart)) scheduler.invalidate("asset");
