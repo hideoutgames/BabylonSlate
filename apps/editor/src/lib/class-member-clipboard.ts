@@ -35,7 +35,7 @@ import {
   seedFunctionGraph,
   type ClassEventOptions,
 } from "./class-members";
-import { eventNameKeys } from "./graph-paste";
+import { eventNameKeys, freeCustomEventName } from "./custom-event-names";
 import { customEventsFromGraph } from "./overridable-functions";
 import { defaultPrefabComponents, nextPrefabComponentId } from "./prefab-preview";
 
@@ -364,25 +364,6 @@ function uniqueName(name: string, taken: Set<string>): string {
   const unique = taken.has(name) ? nextCopyName(name, [...taken]) : name;
   taken.add(unique);
   return unique;
-}
-
-/**
- * Events show a copy index as a space (`Open Door 1`) where a variable keeps
- * the underscore, and are unique across case and compiled identifier.
- */
-function uniqueEventName(name: string, taken: ReadonlySet<string>): string {
-  const base = formatEventMemberName(name);
-  const isTaken = (candidate: string) =>
-    eventNameKeys({ name: candidate }).some((key) => taken.has(key));
-  if (!isTaken(base)) return base;
-  const stored = base.replace(/ (\d+)$/, "_$1");
-  const used = [stored];
-  for (;;) {
-    const raw = nextCopyName(stored, used);
-    const candidate = formatEventMemberName(raw);
-    if (!isTaken(candidate)) return candidate;
-    used.push(raw);
-  }
 }
 
 function withClassId(node: GraphNode, classId: string | undefined): GraphNode {
@@ -870,7 +851,7 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     if (source.type === CUSTOM_EVENT) {
       const pins = Array.isArray(source.data.pins) ? (source.data.pins as GraphClassMemberPin[]) : [];
       if (isComponentEvent(source)) {
-        const name = uniqueEventName(componentCustomEventName(source), takenEvents);
+        const name = freeCustomEventName(componentCustomEventName(source), takenEvents);
         customEvent(name, pins);
         // Calls from a pasted function that target the component it came with end up here.
         const copyComponent = refs.pastedComponents.get(String(source.data.componentId))?.componentId;
@@ -878,7 +859,7 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
         continue;
       }
       if (!entry.bound) {
-        const name = uniqueEventName(customEventName(source), takenEvents);
+        const name = freeCustomEventName(customEventName(source), takenEvents);
         customEvent(name, pins);
         refs.pastedEventsByName.set(nameKey(entry.sourceClassId, customEventName(source)), {
           name,
@@ -922,7 +903,7 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
       // custom event that takes its outputs. The native event holds its own name, so its copy is the first duplicate of it.
       const base = nativeEventBaseName(source);
       customEvent(
-        uniqueEventName(base, new Set([...takenEvents, ...eventNameKeys({ name: base })])),
+        freeCustomEventName(base, new Set([...takenEvents, ...eventNameKeys({ name: base })])),
         nativeEventOutputPins(source),
       );
       continue;

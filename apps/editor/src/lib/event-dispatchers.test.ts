@@ -104,13 +104,13 @@ describe("Event Dispatcher members", () => {
 
   it("place Unreal's Assign as a Bind node wired from a matching custom event with a free name", () => {
     const taken = enemy({
-      nodes: [{ id: "old", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { name: "On Damaged Event", pins: [] } }],
+      nodes: [{ id: "old", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { name: "On Damaged", pins: [] } }],
     });
 
     const next = addDispatcherNodes(taken, ON_DAMAGED, "assign", { position: { x: 100, y: 50 }, idFactory: ids() });
 
     expect(next.nodes.slice(1).map((node) => [node.type, node.data.name, node.position])).toEqual([
-      ["flow.event.custom", "On Damaged Event 1", { x: 60, y: 250 }],
+      ["flow.event.custom", "On Damaged_1", { x: 60, y: 250 }],
       ["flow.dispatcher.bind", "On Damaged", { x: 100, y: 50 }],
     ]);
     expect(next.edges).toEqual([
@@ -175,12 +175,28 @@ describe("Event Dispatcher Add Node rows", () => {
     ]);
     const assign = rows.find((row) => row.title === "Assign On Damaged");
     expect(assign?.bundle?.edges).toEqual([{ source: "event", sourceHandle: "OutputDelegate", target: "main", targetHandle: "event" }]);
-    expect(assign?.bundle?.nodes[0]?.node.defaultData).toMatchObject({ name: "On Damaged Event" });
+    expect(assign?.bundle?.nodes[0]?.node.defaultData).toMatchObject({ name: "On Damaged", title: "Event On Damaged" });
     // Only from a dragged delegate pin: a matching custom event or Create Event.
     expect(rows.filter((row) => row.outOfContext).map((row) => row.title)).toEqual([
       "Add Custom Event for On Damaged",
       "Create Event for On Damaged",
     ]);
+  });
+
+  it("name the custom event a dragged delegate pin adds after its dispatcher, free among the Class's events", () => {
+    const options = (graph: SerializedGraph) => ({ classId: "Enemy", graph });
+    const addEvent = (graph: SerializedGraph) =>
+      palette(options(graph)).find((row) => row.title === "Add Custom Event for On Damaged");
+
+    // The row names the action; the node it adds is the event itself.
+    expect(addEvent(enemy())).toMatchObject({ nodeTitle: "Event On Damaged", defaultData: { name: "On Damaged" } });
+    const taken = enemy({
+      nodes: [
+        { id: "a", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { name: "On Damaged", pins: [] } },
+        { id: "b", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { name: "On Damaged_1", pins: [] } },
+      ],
+    });
+    expect(addEvent(taken)).toMatchObject({ nodeTitle: "Event On Damaged_2", defaultData: { name: "On Damaged_2" } });
   });
 
   it("leave out rows that add a custom event inside a function", () => {

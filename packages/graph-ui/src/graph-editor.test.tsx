@@ -136,6 +136,33 @@ describe("toolbar Add Node placement", () => {
     ]);
   });
 
+  it("titles an added node with the row's nodeTitle, not the action the row names", () => {
+    let latest: GraphDocument = { nodes: [], edges: [] };
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={latest}
+        sessionViewport={viewport}
+        paletteNodes={[{
+          id: "flow.event.custom:for:On Hit",
+          nodeType: "flow.event.custom",
+          title: "Add Custom Event for On Hit",
+          nodeTitle: "Event On Hit",
+          category: "flow",
+          defaultData: { name: "On Hit", title: "Event On Hit" },
+        }]}
+        onChange={(graph) => { latest = graph; }}
+      />,
+    );
+    stubGraphBounds(getByTestId("graph-editor"), canvas);
+
+    fireEvent.click(getByTestId("graph-add-node"));
+    fireEvent.click(getByTestId("node-palette-item-flow.event.custom:for:On Hit"));
+
+    expect(latest.nodes).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ name: "On Hit", title: "Event On Hit" }) }),
+    ]);
+  });
+
   it("treats an existing node as its measured size, not the larger estimate", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
@@ -3171,11 +3198,15 @@ describe("GraphEditor", () => {
     expect(container.querySelector('[data-id="loose"] [data-pin-row] [data-pin-id="OutputDelegate"]')).toBeNull();
     expect(container.querySelector('[data-id="loose"] [aria-label="Event"]')).toBeNull();
     const loose = header("loose")?.querySelector('[data-pin-shape="square"]') as HTMLElement;
+    // Unconnected: dark red inside the light-red pin colour; connected swaps them.
     expect(loose.getAttribute("data-pin-connected")).toBe("false");
     expect(loose.style.background).toContain("color-mix");
+    expect(loose.style.borderColor).toBe("var(--pin-delegate)");
     const wired = header("wired")?.querySelector('[data-pin-shape="square"]') as HTMLElement;
     expect(wired.getAttribute("data-pin-connected")).toBe("true");
     expect(wired.style.background).toBe("var(--pin-delegate)");
+    expect(wired.style.borderColor).toContain("color-mix");
+    expect(wired.classList.contains("border-card")).toBe(false);
     // Bind's Event input is the same square, and dispatcher nodes carry their marker.
     expect(container.querySelector('[data-id="bind"] [data-pin-type="delegate"] [data-pin-shape="square"]')).not.toBeNull();
     expect(container.querySelector('[data-id="bind"] [aria-label="Event Dispatcher"]')).not.toBeNull();

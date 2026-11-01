@@ -66,11 +66,21 @@ export function humanizePropertyLabel(key: string): string {
   return words.map(titleCaseToken).join(" ");
 }
 
-/** Class-member event name without the leading "Event" prefix. */
-export function formatEventMemberName(raw: string): string {
-  return humanizePropertyLabel(raw.trim())
+function eventBodyName(raw: string): string {
+  return humanizePropertyLabel(raw)
     .replace(/^(Event\s+)+/, "")
     .trim();
+}
+
+/**
+ * Class-member event name without the leading "Event" prefix. A trailing copy
+ * index keeps its underscore (`Open Door_2`), the suffix a duplicate name gets.
+ */
+export function formatEventMemberName(raw: string): string {
+  const trimmed = raw.trim();
+  const index = /_(\d+)$/.exec(trimmed);
+  const body = index ? eventBodyName(trimmed.slice(0, index.index)) : "";
+  return index && body ? `${body}_${index[1]}` : eventBodyName(trimmed);
 }
 
 /** Graph node title: `Event Begin Play`, `Event On Hit (Collider)`. */

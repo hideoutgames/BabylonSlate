@@ -31,7 +31,7 @@ Drag a dispatcher from the **Class** window onto the graph and choose one of:
 | **Bind** | [Bind Event to Event Dispatcher](class/bind-event-to-event-dispatcher.md), which adds an event. |
 | **Unbind** | [Unbind Event from Event Dispatcher](class/unbind-event-from-event-dispatcher.md), which removes an event. |
 | **Unbind All** | [Unbind All Events from Event Dispatcher](class/unbind-all-events-from-event-dispatcher.md), which removes every event. |
-| **Event** | A custom event that takes the dispatcher's inputs, named like **On Damaged Event**. |
+| **Event** | A custom event that takes the dispatcher's inputs, named after it: **Event On Damaged**, or **Event On Damaged_1** when the class already has an event of that name. |
 | **Assign** | A Bind node and such a custom event, already wired together. |
 
 **Event** and **Assign** add a custom event, so they are offered only in the Event Graph. **Add Node** lists the same nodes under **Event Dispatchers**, named after the dispatcher, such as **Call On Damaged** and **Assign On Damaged**. To use another object's dispatcher, drag from a pin that holds that object; the nodes get a **Target** pin. For a dispatcher of this class, **Target** shows **Self** while it is unconnected.
@@ -44,11 +44,11 @@ Every custom event has a square **Output Delegate** pin at the right end of its 
 - A custom event whose outputs do not match the dispatcher cannot be connected. The wire shows why, for example **Delegate (Float, String) does not connect to Delegate (Float)**.
 - While it is connected, the event's **Outputs** in the **Inspector** cannot be edited, and the **Inspector** shows **Signature From: On Damaged (Enemy)**. Disconnect it to edit them again.
 
-To bind a function, or an event of another object, use [Create Event](class/create-event.md) instead. Dragging from a Bind node's **Event** input offers **Add Custom Event for On Damaged** and **Create Event for On Damaged**, both connected on release.
+To bind a function, or an event of another object, use [Create Event](class/create-event.md) instead. Dragging from a Bind node's **Event** input offers **Add Custom Event for On Damaged**, which adds **Event On Damaged** named like the **Event** choice, and **Create Event for On Damaged**, both connected on release.
 
 ## Delegate values
 
-A delegate pin is a square. While it is unconnected it shows a light red border around a dark red fill; once connected it is solid red.
+A delegate pin is a square. While it is unconnected it is dark red inside a light red border; once connected the colours swap, light red inside a dark red border.
 
 **Delegate** is also a type you can pick for variables, local variables, function inputs and outputs, custom event outputs, Event Dispatcher inputs, Script Interface pins and Execute JavaScript pins. After picking it, choose its **Signature**: an Event Dispatcher whose inputs it takes, or **No Inputs**. A function can then take a listener as an input and bind it itself. See [Pin Types](pin-types.md).
 
