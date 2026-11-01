@@ -20,10 +20,10 @@ Double-tap the asset to open it. The **Proxies** window, beside the **Viewport**
 The **Viewport** window previews the clip: each proxy is drawn the way its **Editor Preview** says and moves with the clip as you scrub or play the Timeline. A 3D clip previews in 3D, and a 2D clip in a 2D overlay frame.
 
 - An **Outline** is a box in a 3D clip and a square in a 2D clip, in the proxy's **Color**, **Size** wide. A **Model**, **Material** or **Texture** draws that asset at **Size**; with none picked, the proxy is an Outline. **Class** draws the Class's own components, and a Component proxy also draws its component.
-- A **Relative** proxy stands at its preview **Location** and **Rotation**, and its transform keys move it from there. An **Absolute** proxy stands exactly where its keys put it.
+- A **Relative** proxy stands at its preview **Location**, **Rotation** and **Scale**, and its transform keys move it from there: **Scale** keys multiply its preview **Scale**. An **Absolute** proxy stands exactly where its keys put it.
 - Tap a proxy to select it in **Proxies** and the **Inspector**, and drag its gizmo to move, turn or scale it, as in a Scene's Timeline mode:
   - A channel with a track (**Location**, **Rotation** or **Scale**) takes a key at the playhead with **Auto Key** on. With it off, the change waits as an unkeyed value, shown amber on the track, until you key it.
-  - **Location** or **Rotation** without a track moves the proxy's preview placement, the same as editing **Location** and **Rotation** in the **Inspector**. **Scale** without a track has nothing to hold it, so the proxy returns to its size.
+  - **Location**, **Rotation** or **Scale** without a track changes the proxy's preview placement, the same as editing them in the **Inspector**. The placement stays when you change the **Representation**.
 - The camera, shading, grid and gizmo controls work as in a Scene.
 
 ## Timeline
@@ -37,7 +37,7 @@ The **Timeline** window below the Viewport is the [Timeline](../scenes/timeline.
 ## Inspector
 
 - **Proxy**: the selected proxy's **Name**, what it represents and its Class.
-- **Editor Preview**: how the editor draws the proxy. **Color**; **Representation**: an **Outline**, a **Model** (3D), a **Material** or **Texture** (2D), or its **Class**'s own look; **Size**; the preview **Location** and **Rotation**; and **Preview As**, which records and shows transform keys as offsets from the preview placement (**Relative**) or as exact values (**Absolute**). In Play, each binding chooses ([Play a clip asset](#play-a-clip-asset)). The Editor Preview never leaves the editor: Play and exports leave it out, and the Models, Materials and Textures picked here never ship with the game.
+- **Editor Preview**: how the editor draws the proxy. **Color**; **Representation**: an **Outline**, a **Model** (3D), a **Material** or **Texture** (2D), or its **Class**'s own look; **Size**; the preview **Location**, **Rotation** and **Scale**; and **Preview As**, which records and shows transform keys as offsets from the preview placement (**Relative**) or as exact values (**Absolute**). In Play, each binding chooses ([Play a clip asset](#play-a-clip-asset)). The Editor Preview never leaves the editor: Play and exports leave it out, and the Models, Materials and Textures picked here never ship with the game.
 - **2D Timeline Clip** or **3D Timeline Clip**: the **Timeline Asset** (required: you can change it, not clear it), **Length**, **Frame Rate**, **Play Rate**, **Loop Mode** and **When Finished**.
 
 The Timeline asset lists the clip with its scene clips; **Open** there opens the clip asset.

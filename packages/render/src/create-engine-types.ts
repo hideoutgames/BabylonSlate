@@ -551,6 +551,8 @@ export interface EditorTools {
   }) => void;
   /** Select actors by id; passing an empty list clears the selection. */
   setSelectedActors: (actorIds: string[]) => void;
+  /** Reattaches the selection gizmo when a selected actor's root or visual meshes were replaced (a loaded texture or model). */
+  refreshSelectionGizmo: () => void;
   /** Pure collision query; the caller commits the resulting authored transforms. */
   dropSelectedActors: (actorIds: readonly string[], maxDistance?: number) => EditorDropTransform[];
   /** Frustum / light / audio debug + 1 Hz Camera or Render Target Capture preview for the current selection. */

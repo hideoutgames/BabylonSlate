@@ -28,7 +28,7 @@ const authored = {
     { id: "classless", name: "Gone", represents: "actor" },
   ],
   eventTracks: [{ id: "e", name: "On Creak", inputs: [], keys: [{ id: "ek", time: 1, values: {} }] }],
-  editorPreview: { proxies: { door: { color: "#FF0000", representation: "model", size: 2, location: [1, 0, 2], rotation: [0, 90, 0], previewAs: "absolute", assetGuid: "door-model" } } },
+  editorPreview: { proxies: { door: { color: "#FF0000", representation: "model", size: 2, location: [1, 0, 2], rotation: [0, 90, 0], scale: [2, 1, 1], previewAs: "absolute", assetGuid: "door-model" } } },
 };
 
 describe("Timeline Clip assets", () => {
@@ -51,10 +51,10 @@ describe("Timeline Clip assets", () => {
     ]);
     expect(payload).toMatchObject({ timelineAsset: "story", length: 3, frameRate: 24, loopMode: "pingPong", eventTracks: [{ name: "On Creak" }] });
     expect(payload.editorPreview?.proxies.door).toEqual({
-      color: "#ff0000", representation: "model", size: 2, location: [1, 0, 2], rotation: [0, 90, 0], previewAs: "absolute", assetGuid: "door-model",
+      color: "#ff0000", representation: "model", size: 2, location: [1, 0, 2], rotation: [0, 90, 0], scale: [2, 1, 1], previewAs: "absolute", assetGuid: "door-model",
     });
     // The others take the palette in order and the defaults.
-    expect(payload.editorPreview?.proxies.glow).toMatchObject({ color: TIMELINE_PROXY_COLORS[1], representation: "outline", previewAs: "relative" });
+    expect(payload.editorPreview?.proxies.glow).toMatchObject({ color: TIMELINE_PROXY_COLORS[1], representation: "outline", scale: [1, 1, 1], previewAs: "relative" });
     expect(normalizeTimelineClipAsset(JSON.parse(JSON.stringify(payload)))).toEqual(payload);
   });
 

@@ -99,10 +99,29 @@ describe("Gizmo drags on proxies", () => {
     expect(turned.payload.proxies).toEqual(payload.proxies);
   });
 
-  it("changes nothing for Scale without a track", () => {
+  it("keeps Scale without a track in the preview placement, which Relative Scale keys then multiply", () => {
     const payload = clipAsset("relative");
-    const edit = timelineProxyGizmoEdit(payload, timelineProxyScene(payload, "Swing", graphs, false), 0, [live("door", [10, 0, 0], 90, [2, 2, 2])], options(true));
-    expect(edit.payload).toBe(payload);
+    const scene = timelineProxyScene(payload, "Swing", graphs, false);
+    const edit = timelineProxyGizmoEdit(payload, scene, 0, [live("door", [10, 0, 0], 90, [2, 3, 1])], options(true));
+    expect(edit.payload.editorPreview!.proxies.door).toEqual({ ...payload.editorPreview!.proxies.door, scale: [2, 3, 1] });
+    expect(edit.payload.proxies).toEqual(payload.proxies);
     expect(edit.unkeyed.size).toBe(0);
+
+    // Drawn at the placement's Scale; a Scale key of 2 on X doubles it, and a drag keys the value divided by it.
+    const scaleTrack = { id: "s", target: { kind: "transform" as const, property: "scale" as const }, valueType: "vec3" as const,
+      keys: [key("s0", 0, { x: 2, y: 1, z: 1 })] };
+    const scaled: SerializedTimelineClipAsset = { ...edit.payload, proxies: [{ ...edit.payload.proxies[0]!, tracks: [...edit.payload.proxies[0]!.tracks, scaleTrack] }, edit.payload.proxies[1]!] };
+    const preview = timelineProxyPreviewScene(timelineProxyScene(scaled, "Swing", graphs, false), scaled, false);
+    const shown = composeTimelineProxyPreview(applyTimelineClipToScene(preview, preview.timelineClips![0]!, 0, new Map()), scaled);
+    expect(close(shown.actors[0]!.transform.scale)).toEqual([4, 3, 1]);
+    const keyed = timelineProxyGizmoEdit(scaled, timelineProxyScene(scaled, "Swing", graphs, false), 0, [live("door", [10, 0, 0], 90, [6, 3, 1])], options(true));
+    expect(keyed.payload.proxies[0]!.tracks[1]!.keys.map((entry) => close(Object.values(entry.Value as object) as number[]))).toEqual([[3, 1, 1]]);
+    expect(keyed.payload.editorPreview!.proxies.door!.scale).toEqual([2, 3, 1]);
+  });
+
+  it("stands an Absolute proxy at its placement's Scale", () => {
+    const payload = clipAsset("absolute");
+    payload.editorPreview!.proxies.door!.scale = [2, 2, 2];
+    expect(timelineProxyScene(payload, "Swing", graphs, false).actors[0]!.transform.scale).toEqual([2, 2, 2]);
   });
 });

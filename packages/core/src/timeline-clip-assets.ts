@@ -50,6 +50,8 @@ export interface TimelineProxyPreview {
   location: [number, number, number];
   /** Degrees: pitch, yaw, roll. */
   rotation: [number, number, number];
+  /** Relative Scale keys multiply it. */
+  scale: [number, number, number];
   previewAs: TimelineProxyPreviewAs;
   /** The Model, Material or Texture drawn for its representation; an editor-only reference. */
   assetGuid?: string;
@@ -97,6 +99,7 @@ export function defaultTimelineProxyPreview(index: number): TimelineProxyPreview
     size: 1,
     location: [index * 2, 0, 0],
     rotation: [0, 0, 0],
+    scale: [1, 1, 1],
     previewAs: "relative",
   };
 }
@@ -114,6 +117,7 @@ function normalizePreview(value: unknown, index: number): TimelineProxyPreview {
     size: Math.max(0.01, finite(source.size, fallback.size)),
     location: triple(source.location, fallback.location),
     rotation: triple(source.rotation, fallback.rotation),
+    scale: triple(source.scale, fallback.scale),
     previewAs: source.previewAs === "absolute" ? "absolute" : "relative",
     ...(assetGuid ? { assetGuid } : {}),
   };

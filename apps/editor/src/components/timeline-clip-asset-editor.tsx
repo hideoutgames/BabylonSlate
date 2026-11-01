@@ -324,6 +324,7 @@ export function TimelineClipInspectorPanel(_props: IDockviewPanelProps) {
     { kind: "number", id: "timeline-proxy-size", label: "Size", min: 0.01, precision: 2, value: preview.size, onChange: (size) => setPreview({ size: Math.max(0.01, size) }, "size") },
     { kind: "vector3", id: "timeline-proxy-location", label: "Location", value: preview.location, onChange: (location) => setPreview({ location: [...location] as [number, number, number] }, "location") },
     { kind: "vector3", id: "timeline-proxy-rotation", label: "Rotation", unit: "°", value: preview.rotation, onChange: (rotation) => setPreview({ rotation: [...rotation] as [number, number, number] }, "rotation") },
+    { kind: "vector3", id: "timeline-proxy-scale", label: "Scale", value: preview.scale, onChange: (scale) => setPreview({ scale: [...scale] as [number, number, number] }, "scale") },
     { kind: "enum", id: "timeline-proxy-preview-as", label: "Preview As", value: preview.previewAs,
       options: [{ value: "relative", label: "Relative" }, { value: "absolute", label: "Absolute" }],
       description: "How transform keys show here: as offsets from the preview placement, or as exact values. In Play, each binding chooses.",

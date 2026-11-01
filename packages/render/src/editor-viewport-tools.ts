@@ -1,7 +1,7 @@
 import { deformerBindings } from "@haptic/core";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost } from "./scene-outline-host";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine, AbstractMesh } from "@babylonjs/core";
 import {
   Mesh,
   Scene,
@@ -262,26 +262,41 @@ export function createEditorViewportTools({
       return isText2DOverlayMesh(mesh) && id !== attachId ? [mesh] : editorSync.visualMeshesForActor(id);
     });
   };
+  // Locked actors are not pickable; keep the gizmo off them so lock is
+  // more than a pick filter. Attach to the first pickable selection root
+  // so a selected child is not the group handle when its parent is too.
+  const selectionAttachId = () => pickGizmoAttachActorId(lastSelectedActorIds, parentIdOf, (id) => {
+    const mesh = editorSync.meshForActor(id);
+    if (!mesh) return false;
+    const locked = editorSync.lastSceneActor(id)?.locked;
+    if (locked) return false;
+    return mesh.isPickable || isEditorModelPlaceholder(mesh);
+  });
+  /** The visuals the gizmo was last attached with; the 2D box reads their bounds every frame. */
+  let attachedVisuals: readonly AbstractMesh[] = [];
   const attachSelectionGizmo = () => {
     const point = splineHandles.selectedNode() ?? deformerHandles.selectedNode();
     if (point) {
+      attachedVisuals = [];
       gizmos.attachTo(point, [], { tool: "translate" });
       return;
     }
-    // Locked actors are not pickable; keep the gizmo off them so lock is
-    // more than a pick filter. Attach to the first pickable selection root
-    // so a selected child is not the group handle when its parent is too.
-    const attachId = pickGizmoAttachActorId(lastSelectedActorIds, parentIdOf, (id) => {
-      const mesh = editorSync.meshForActor(id);
-      if (!mesh) return false;
-      const locked = editorSync.lastSceneActor(id)?.locked;
-      if (locked) return false;
-      return mesh.isPickable || isEditorModelPlaceholder(mesh);
-    });
-    gizmos.attachTo(
-      attachId ? editorSync.meshForActor(attachId) : null,
-      attachId ? selectionBoxVisuals(attachId) : [],
-    );
+    const attachId = selectionAttachId();
+    attachedVisuals = attachId ? selectionBoxVisuals(attachId) : [];
+    gizmos.attachTo(attachId ? editorSync.meshForActor(attachId) : null, [...attachedVisuals]);
+  };
+  // An async visual (a texture, a model) replaces an actor's root mesh after the
+  // scene applied: reattach so the gizmo moves and frames the live mesh, not the
+  // disposed one. Mid-drag or on a selected point, the attachment stays.
+  const refreshSelectionGizmo = () => {
+    if (lastSelectedActorIds.length === 0 || gizmos.isDragging()) return;
+    if (splineHandles.selectedNode() ?? deformerHandles.selectedNode()) return;
+    const attachId = selectionAttachId();
+    const mesh = attachId ? editorSync.meshForActor(attachId) : null;
+    const visuals = attachId ? selectionBoxVisuals(attachId) : [];
+    const same = mesh === gizmos.attachedMesh() && visuals.length === attachedVisuals.length &&
+      visuals.every((visual, index) => visual === attachedVisuals[index]);
+    if (!same) attachSelectionGizmo();
   };
   onRollback(() => splineHandles.dispose());
   const syncShapeHandles = (actorIds: readonly string[]) => {
@@ -479,6 +494,7 @@ export function createEditorViewportTools({
       }
       scheduler.invalidate("asset");
     },
+    refreshSelectionGizmo,
     setSelectedActors: (actorIds: string[]) => {
       if (actorIds.length !== lastSelectedActorIds.length || actorIds.some((id, index) => id !== lastSelectedActorIds[index])) lastSelectedComponentIds = [];
       lastSelectedActorIds = [...actorIds];

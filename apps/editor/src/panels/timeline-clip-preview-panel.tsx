@@ -96,7 +96,7 @@ function ClipPreview(_props: IDockviewPanelProps) {
       return;
     }
     if (edit.unkeyed.size) return;
-    // Nothing holds the change (Scale without a track): the proxy returns to where the clip puts it.
+    // Nothing holds the change: the proxy returns to where the clip puts it.
     // The engine re-poses only actors whose loaded pose changed, so it first learns where the gizmo left them.
     const current = shownRef.current(time);
     if (!current) return;
@@ -252,8 +252,8 @@ function ClipPreview(_props: IDockviewPanelProps) {
         return out;
       },
       setPlayhead: (time: number) => tools.timelinePlayhead.set(time),
-      // A gizmo drag of one proxy by (dx, dy, dz), released.
-      nudgeProxy: (actorId: string, dx: number, dy: number, dz: number) => {
+      // A gizmo drag of one proxy by (dx, dy, dz), scaled by `scale`, released.
+      nudgeProxy: (actorId: string, dx: number, dy: number, dz: number, scale = 1) => {
         const handle = engineRef.current;
         const mesh = handle?.editor?.sync.meshForActor(actorId);
         if (!handle?.editor || !mesh) return false;
@@ -262,8 +262,31 @@ function ClipPreview(_props: IDockviewPanelProps) {
         mesh.position.x += dx;
         mesh.position.y += dy;
         mesh.position.z += dz;
+        mesh.scaling.scaleInPlace(scale);
         commitGizmoRef.current();
         return true;
+      },
+      // The 2D transform box's centre and size, as laid out now.
+      overlayBox: () => {
+        const util = engineRef.current?.editor?.gizmos.layer.utilityLayerScene;
+        const root = util?.getTransformNodeByName("overlay-box-root");
+        const size = util?.getTransformNodeByName("overlay-box-scale");
+        if (!root || !size || !root.isEnabled()) return null;
+        return { center: [root.position.x, root.position.y], size: [size.scaling.x, size.scaling.y] };
+      },
+      // A proxy's drawn bounds, centre and size.
+      proxyBounds: (actorId: string) => {
+        const meshes = engineRef.current?.editor?.sync.visualMeshesForActor(actorId) ?? [];
+        if (meshes.length === 0) return null;
+        let min = [Infinity, Infinity];
+        let max = [-Infinity, -Infinity];
+        for (const mesh of meshes) {
+          mesh.computeWorldMatrix(true);
+          const box = mesh.getBoundingInfo().boundingBox;
+          min = [Math.min(min[0]!, box.minimumWorld.x), Math.min(min[1]!, box.minimumWorld.y)];
+          max = [Math.max(max[0]!, box.maximumWorld.x), Math.max(max[1]!, box.maximumWorld.y)];
+        }
+        return { center: [(min[0]! + max[0]!) / 2, (min[1]! + max[1]!) / 2], size: [max[0]! - min[0]!, max[1]! - min[1]!] };
       },
     };
     return () => { delete host.__hapticClipPreviewTest; };

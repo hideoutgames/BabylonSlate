@@ -86,7 +86,7 @@ function placementTransform(place: TimelineProxyPreview) {
   return {
     position: [...place.location] as [number, number, number],
     rotation: eulerDegreesToQuaternion([...place.rotation] as [number, number, number]),
-    scale: [1, 1, 1] as [number, number, number],
+    scale: [...place.scale] as [number, number, number],
   };
 }
 
@@ -137,8 +137,9 @@ function representationComponent(proxyId: string, preview: TimelineProxyPreview,
 
 /**
  * Places each Relative proxy at its preview placement: its evaluated
- * transform is an offset from there. Absolute proxies already stand where
- * their keys put them.
+ * transform is an offset from there (Location turned by the placement's
+ * Rotation, Scale multiplied by its Scale, as a Relative binding offsets the
+ * bound actor). Absolute proxies already stand where their keys put them.
  */
 export function composeTimelineProxyPreview(scene: SerializedScene, payload: SerializedTimelineClipAsset): SerializedScene {
   const previews = payload.editorPreview?.proxies ?? {};
@@ -153,13 +154,14 @@ export function composeTimelineProxyPreview(scene: SerializedScene, payload: Ser
     const offset = quatRotateVector(placeQuat, { x: px, y: py, z: pz });
     const [rx, ry, rz, rw] = actor.transform.rotation;
     const rotation = multiplyQuats(placeQuat, { x: rx, y: ry, z: rz, w: rw });
+    const [sx, sy, sz] = actor.transform.scale;
     changed = true;
     return {
       ...actor,
       transform: {
-        ...actor.transform,
         position: [place.position[0] + offset.x, place.position[1] + offset.y, place.position[2] + offset.z],
         rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+        scale: [place.scale[0] * sx, place.scale[1] * sy, place.scale[2] * sz],
       },
     };
   });
@@ -174,10 +176,9 @@ const sameTriple = (a: readonly number[], b: readonly number[]) => a.every((valu
  * A gizmo drag on proxies in the clip asset viewport. `lives` are where the
  * proxies were dropped, as drawn (a Relative proxy's preview placement
  * included). A channel with a transform track takes a key at `time` (Auto
- * Key) or an unkeyed value, as in a Scene's Timeline mode; a moved Location
- * or Rotation without a track moves the proxy's Editor Preview placement, so
- * the proxy stays where it was dropped. Scale without a track has nothing to
- * hold it.
+ * Key) or an unkeyed value, as in a Scene's Timeline mode; a changed
+ * Location, Rotation or Scale without a track changes the proxy's Editor
+ * Preview placement, so the proxy stays as it was dropped.
  */
 export function timelineProxyGizmoEdit(
   payload: SerializedTimelineClipAsset,
@@ -199,7 +200,8 @@ export function timelineProxyGizmoEdit(
       x: live.position[0] - place.position[0], y: live.position[1] - place.position[1], z: live.position[2] - place.position[2],
     });
     const rotation = multiplyQuats(inverse, quatOf(live.rotation));
-    return { ...live, position: [offset.x, offset.y, offset.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w] };
+    const scale = live.scale.map((value, axis) => (place.scale[axis] ? value / place.scale[axis]! : value)) as [number, number, number];
+    return { ...live, position: [offset.x, offset.y, offset.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w], scale };
   });
   const edit = timelineTransformEdit(scene, clip, time, local, options);
   const keyed = edit.scene.timelineClips?.find((entry) => entry.id === clip.id);
@@ -215,9 +217,10 @@ export function timelineProxyGizmoEdit(
       const rotation = quaternionToEulerDegrees(live.rotation);
       if (!sameTriple(eulerDegreesToQuaternion(rotation), eulerDegreesToQuaternion(preview.rotation))) placement = { ...placement, rotation };
     }
+    if (!tracked.has("scale") && !sameTriple(live.scale, preview.scale)) placement = { ...placement, scale: [...live.scale] };
     if (!tracked.has("location")) {
       if (!sameTriple(live.position, preview.location)) placement = { ...placement, location: [...live.position] };
-    } else if (placement !== preview && preview.previewAs !== "absolute") {
+    } else if (placement.rotation !== preview.rotation && preview.previewAs !== "absolute") {
       // A Relative proxy turned in place: its Location keys now turn with the new rotation, so the placement follows.
       const offset = local[index]!.position;
       const turned = quatRotateVector(quatOf(eulerDegreesToQuaternion(placement.rotation)), { x: offset[0], y: offset[1], z: offset[2] });

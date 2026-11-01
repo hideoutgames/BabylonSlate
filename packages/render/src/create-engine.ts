@@ -1292,12 +1292,17 @@ function initializeEngine(
   const viewportShading = options.editor
     ? new ViewportShadingOverlay(scene)
     : null;
+  // Set once the editor tools exist; an apply can finish before then.
+  const editorToolsRef: { current: EditorTools | null } = { current: null };
   const editorSync = options.editor
     ? new EditorSceneSync(scene, scheduler, {
         resolveMaterial: (guid, options) => binding.resolveMaterial?.(guid, options) ?? null,
         releaseMaterialInstance: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
         validateMaterialParameter: (guid, name, value) => binding.validateMaterialParameter?.(guid, name, value) ?? false,
-        onAfterApply: () => { viewportShading?.apply(); syncEditorDeformers(); syncEditorOutlines(); syncEditorFogVolumes(); },
+        onAfterApply: () => {
+          viewportShading?.apply(); syncEditorDeformers(); syncEditorOutlines(); syncEditorFogVolumes();
+          editorToolsRef.current?.refreshSelectionGizmo();
+        },
       })
     : null;
   onRollback(() => editorSync?.dispose());
@@ -1608,6 +1613,7 @@ function initializeEngine(
       syncEditorOutlines,
       onRollback,
     }));
+    editorToolsRef.current = editor;
   }
 
   // Play renders snapshot proxy meshes only. Seeding the default scene here
