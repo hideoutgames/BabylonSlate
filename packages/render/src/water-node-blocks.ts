@@ -207,19 +207,30 @@ function emitCopyHelpers(state: NodeMaterialBuildState): void {
   state._emitUniformFromString(SCREEN_UNIFORM, Types.Vector4);
   state._emitUniformFromString(LOOK_UNIFORM, Types.Vector4);
   declareSampler(state, s, "2d", WATER_NODE_COPY_DEFINE);
+  // Filtering blends the copy's depth (alpha) with its colour: a texel filtered far beyond its own depth took in open sky
+  // beside it, whose colour water shows nothing of, so the texel's own colour stands there.
+  const skyBlend = f(WATER_SCENE_COPY_SKY_DEPTH * 0.01);
   const code = wgsl ? `
-fn swSceneColor(uv: vec2f) -> vec3f { return textureSampleLevel(${s}, ${s}Sampler, uv, 0.0).rgb; }
 fn swSceneTexel(uv: vec2f) -> vec4f {
   let swSize = vec2i(textureDimensions(${s}, 0));
   return textureLoad(${s}, clamp(vec2i(uv * vec2f(swSize)), vec2i(0), swSize - vec2i(1)), 0);
 }
+fn swSceneColor(uv: vec2f) -> vec3f {
+  let swFiltered = textureSampleLevel(${s}, ${s}Sampler, uv, 0.0);
+  let swOwn = swSceneTexel(uv);
+  return select(swFiltered.rgb, swOwn.rgb, swFiltered.a - swOwn.a > ${skyBlend});
+}
 fn swSceneDepth(uv: vec2f) -> f32 { return swSceneTexel(uv).a; }
 fn swSceneTexelUv() -> vec2f { return 1.0 / vec2f(textureDimensions(${s}, 0)); }
 ` : `
-vec3 swSceneColor(vec2 uv) { return textureLod(${s}, uv, 0.0).rgb; }
 vec4 swSceneTexel(vec2 uv) {
   ivec2 swSize = textureSize(${s}, 0);
   return texelFetch(${s}, clamp(ivec2(uv * vec2(swSize)), ivec2(0), swSize - ivec2(1)), 0);
+}
+vec3 swSceneColor(vec2 uv) {
+  vec4 swFiltered = textureLod(${s}, uv, 0.0);
+  vec4 swOwn = swSceneTexel(uv);
+  return swFiltered.a - swOwn.a > ${skyBlend} ? swOwn.rgb : swFiltered.rgb;
 }
 float swSceneDepth(vec2 uv) { return swSceneTexel(uv).a; }
 vec2 swSceneTexelUv() { return 1.0 / vec2(textureSize(${s}, 0)); }
@@ -625,7 +636,10 @@ vec2 swnShift = swnTilt * U.${SCREEN_UNIFORM}.zw * (${refraction} * ${f(REFRACTI
 swnShift = swnShift * min(1.0, mix(${f(REFRACTION_SHIFT_PX[0])}, ${f(REFRACTION_SHIFT_PX[1])}, smoothstep(${f(REFRACTION_FAR[0])}, ${f(REFRACTION_FAR[1])}, swnWaterZ)) * U.${SCREEN_UNIFORM}.x / max(length(swnShift), 0.000001));
 vec2 swnBent = swnUv + swnShift;
 float swnZ1 = swSceneDepth(swnBent);
-float swnLeak = step(swnZ1, swnWaterZ);
+// Never what is in front of the water, nor open sky (the copy's sky depth: nothing behind the water) where something
+// lies behind the unbent point: Water Depth Fade lets light through by the unbent point's depth, so past a submerged
+// edge (an underwater landscape's) the bent lookup showed the empty background through it, dashes along the waves.
+float swnLeak = max(step(swnZ1, swnWaterZ), step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swnZ1) * step(swnZ0, ${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}));
 swnBent = mix(swnBent, swnUv, swnLeak);
 float swnSceneZ = mix(swnZ1, swnZ0, swnLeak);
 ${silhouetteFallbackSource("swnBent", "swnSceneZ", "swnWaterZ", `U.${SCREEN_UNIFORM}.x`)}

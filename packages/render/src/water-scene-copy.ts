@@ -173,6 +173,7 @@ uniform float reverseDepth;
 uniform float decodeSrgb;
 #include<helperFunctions>
 float slateNearer(float a, float b) { return reverseDepth > 0.5 ? max(a, b) : min(a, b); }
+float slateSky(float raw) { return reverseDepth > 0.5 ? step(raw, 0.0) : step(1.0, raw); }
 // Decode each tap before averaging: display colour must not be averaged in sRGB.
 vec3 slateSceneColor(vec2 uv) {
   vec3 c = texture2D(sceneColor, uv).rgb;
@@ -184,22 +185,45 @@ void main(void) {
   // ratios (SLATE_COPY_CENTRED_COLOR) colour is one filtered tap at the centre: the grid's taps would
   // each blend neighbouring source texels and blur the copy.
   vec3 rgb = vec3(0.0);
+  vec3 surface = vec3(0.0);
+  float surfaceTaps = 0.0;
+  // Whether the colour read blends open sky in.
+  float blendsSky = 0.0;
   float raw = reverseDepth > 0.5 ? 0.0 : 1.0;
   for (int y = 0; y < SLATE_COPY_TAPS; y++) {
     for (int x = 0; x < SLATE_COPY_TAPS; x++) {
       vec2 uv = vUV + ((vec2(float(x), float(y)) + 0.5) / float(SLATE_COPY_TAPS) - 0.5) * copyTexel;
+      vec3 tap = slateSceneColor(uv);
+      float tapRaw = texture2D(sceneDepth, uv).r;
 #ifndef SLATE_COPY_CENTRED_COLOR
-      rgb += slateSceneColor(uv);
+      rgb += tap;
 #endif
-      raw = slateNearer(raw, texture2D(sceneDepth, uv).r);
+      float open = slateSky(tapRaw);
+      surface += tap * (1.0 - open);
+      surfaceTaps += 1.0 - open;
+      raw = slateNearer(raw, tapRaw);
+#ifndef SLATE_COPY_CENTRED_COLOR
+      blendsSky = max(blendsSky, open);
+#endif
     }
   }
 #ifdef SLATE_COPY_CENTRED_COLOR
   rgb = slateSceneColor(vUV);
+  // The filtered centre tap blends the four source texels around it, open sky among them even where every spread tap
+  // found a surface.
+  vec2 sourceTexel = 1.0 / vec2(textureSize(sceneDepth, 0));
+  for (int corner = 0; corner < 4; corner++) {
+    vec2 offset = vec2(float(corner - (corner / 2) * 2), float(corner / 2)) - 0.5;
+    blendsSky = max(blendsSky, slateSky(texture2D(sceneDepth, vUV + offset * sourceTexel).r));
+  }
 #else
   rgb /= float(SLATE_COPY_TAPS * SLATE_COPY_TAPS);
 #endif
-  float sky = reverseDepth > 0.5 ? step(raw, 0.0) : step(1.0, raw);
+  float sky = slateSky(raw);
+  // A texel whose depth is a surface's takes its colour from that surface's taps alone: blended with the open sky
+  // beside it, its colour is not what its depth lets water show through (water shows nothing of open sky), dark
+  // dashes along a submerged edge.
+  if (sky < 0.5 && blendsSky > 0.5) rgb = surface / surfaceTaps;
   vec4 view = inverseProjection * vec4(vUV * 2.0 - 1.0, raw * depthRange.x + depthRange.y, 1.0);
   float w = abs(view.w) > 1e-8 ? view.w : 1e-8;
   // Positive distance along the view axis for either handedness.
@@ -220,6 +244,7 @@ uniform reverseDepth: f32;
 uniform decodeSrgb: f32;
 #include<helperFunctions>
 fn slateNearer(a: f32, b: f32) -> f32 { return select(min(a, b), max(a, b), uniforms.reverseDepth > 0.5); }
+fn slateSky(raw: f32) -> f32 { return select(step(1.0, raw), step(raw, 0.0), uniforms.reverseDepth > 0.5); }
 fn slateSceneColor(uv: vec2f) -> vec3f {
   let c = textureSampleLevel(sceneColor, sceneColorSampler, uv, 0.0).rgb;
   return select(c, toLinearSpaceVec3(c), uniforms.decodeSrgb > 0.5);
@@ -230,22 +255,40 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let uv = fragmentInputs.vUV;
   let taps = f32(SLATE_COPY_TAPS);
   var rgb = vec3f(0.0);
+  var surface = vec3f(0.0);
+  var surfaceTaps: f32 = 0.0;
+  var blendsSky: f32 = 0.0;
   var raw: f32 = select(1.0, 0.0, uniforms.reverseDepth > 0.5);
   for (var y: i32 = 0; y < SLATE_COPY_TAPS; y++) {
     for (var x: i32 = 0; x < SLATE_COPY_TAPS; x++) {
       let tap = uv + ((vec2f(f32(x), f32(y)) + 0.5) / taps - 0.5) * uniforms.copyTexel;
+      let tapColor = slateSceneColor(tap);
+      let tapRaw = slateSceneDepth(tap);
 #ifndef SLATE_COPY_CENTRED_COLOR
-      rgb += slateSceneColor(tap);
+      rgb += tapColor;
 #endif
-      raw = slateNearer(raw, slateSceneDepth(tap));
+      let open = slateSky(tapRaw);
+      surface += tapColor * (1.0 - open);
+      surfaceTaps += 1.0 - open;
+      raw = slateNearer(raw, tapRaw);
+#ifndef SLATE_COPY_CENTRED_COLOR
+      blendsSky = max(blendsSky, open);
+#endif
     }
   }
 #ifdef SLATE_COPY_CENTRED_COLOR
   rgb = slateSceneColor(uv);
+  let sourceTexel = 1.0 / vec2f(textureDimensions(sceneDepth, 0));
+  for (var corner: i32 = 0; corner < 4; corner++) {
+    let offset = vec2f(f32(corner % 2), f32(corner / 2)) - 0.5;
+    blendsSky = max(blendsSky, slateSky(slateSceneDepth(uv + offset * sourceTexel)));
+  }
 #else
   rgb = rgb / (taps * taps);
 #endif
-  let sky = select(step(1.0, raw), step(raw, 0.0), uniforms.reverseDepth > 0.5);
+  let sky = slateSky(raw);
+  // A surface's texel takes its colour from that surface's taps alone (the GLSL copy's note).
+  if (sky < 0.5 && blendsSky > 0.5) { rgb = surface / surfaceTaps; }
   let view = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, raw * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
   let w = select(1e-8, view.w, abs(view.w) > 1e-8);
   let viewZ = clamp(abs(view.z / w), 0.0, ${WATER_SCENE_COPY_SKY_DEPTH}.0);
