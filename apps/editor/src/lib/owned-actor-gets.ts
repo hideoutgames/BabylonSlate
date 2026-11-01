@@ -1,5 +1,6 @@
-import type { SerializedGraph, SerializedScene } from "@haptic/core";
-import type { Diagnostic } from "@haptic/scripting";
+import type { GraphClassMemberPin, SerializedGraph, SerializedScene } from "@haptic/core";
+import { timelineClipClassId } from "@haptic/object-model";
+import type { ClassMemberSymbol, Diagnostic } from "@haptic/scripting";
 import {
   OWNED_ACTOR_GET_NODE_ID,
   OWNED_COMPONENT_GET_NODE_ID,
@@ -22,16 +23,47 @@ export type OwnedActorEntry = {
   components: Array<{ id: string; classId: string; name: string }>;
 };
 
-/** A Timeline Clip of a SceneScript's Scene or a SceneLayerScript's layer, for Get <Name> Timeline Clip. */
-export type OwnedTimelineClipEntry = { id: string; name: string };
+/**
+ * A Timeline Clip of a SceneScript's Scene or a SceneLayerScript's layer, for
+ * Get <Name> Timeline Clip: its class (`TimelineClip:<document>:<clip>`) and
+ * the Event Dispatchers its Custom Event Tracks declare there.
+ */
+export type OwnedTimelineClipEntry = {
+  id: string;
+  name: string;
+  classId: string;
+  dispatchers: Array<{ name: string; pins: GraphClassMemberPin[] }>;
+};
 
-export function ownedTimelineClipsOfScene(scene: Pick<SerializedScene, "timelineClips"> | null | undefined): OwnedTimelineClipEntry[] {
-  return (scene?.timelineClips ?? []).map((clip) => ({ id: clip.id, name: clip.name }));
+export function ownedTimelineClipsOfScene(
+  documentGuid: string,
+  scene: Pick<SerializedScene, "timelineClips"> | null | undefined,
+): OwnedTimelineClipEntry[] {
+  return (scene?.timelineClips ?? []).map((clip) => ({
+    id: clip.id,
+    name: clip.name,
+    classId: timelineClipClassId(documentGuid, clip.id),
+    dispatchers: (clip.eventTracks ?? []).map((track) => ({
+      name: track.name,
+      pins: track.inputs.map((input) => ({ ...input, direction: "in" as const })),
+    })),
+  }));
 }
 
 /** Node properties naming a Timeline Clip. */
-export function ownedTimelineClipNodeProperties(clip: OwnedTimelineClipEntry): Record<string, string> {
-  return { sceneTimelineClipId: clip.id, sceneTimelineClipName: clip.name };
+export function ownedTimelineClipNodeProperties(clip: Pick<OwnedTimelineClipEntry, "id" | "name" | "classId">): Record<string, string> {
+  return { sceneTimelineClipId: clip.id, sceneTimelineClipName: clip.name, sceneTimelineClipClassId: clip.classId };
+}
+
+/** The document classes of the Timeline Clips' dispatchers, for validation and Bind rows. */
+export function ownedTimelineClipDispatcherSymbols(clips: readonly OwnedTimelineClipEntry[]): ClassMemberSymbol[] {
+  return clips.flatMap((clip) => clip.dispatchers.map((dispatcher) => ({
+    id: `timeline-clip:${clip.classId}:${dispatcher.name}`,
+    name: dispatcher.name,
+    kind: "dispatcher" as const,
+    classId: clip.classId,
+    pins: dispatcher.pins,
+  })));
 }
 
 /** The actors (Outliner order) a Scene or Scene Layer tab places, for Get <Actor> / Get <Component> (<Actor>). */

@@ -58,9 +58,9 @@ describe("Get <Name> Timeline Clip in a SceneScript", () => {
       ],
       edges: [],
     };
-    const clips = ownedTimelineClipsOfScene({ timelineClips: [createTimelineClip("intro", "Intro")] });
+    const clips = ownedTimelineClipsOfScene("hud", { timelineClips: [createTimelineClip("intro", "Intro")] });
     const refreshed = refreshOwnedGetNodes(graph, [], clips);
-    expect(refreshed.nodes[0]!.data).toMatchObject({ sceneTimelineClipName: "Intro", title: "Get Intro Timeline Clip" });
+    expect(refreshed.nodes[0]!.data).toMatchObject({ sceneTimelineClipName: "Intro", sceneTimelineClipClassId: "TimelineClip:hud:intro", title: "Get Intro Timeline Clip" });
     expect(refreshed.nodes[1]).toBe(graph.nodes[1]);
     expect(refreshOwnedGetNodes(refreshed, [], clips)).toBe(refreshed);
     const diagnostics = ownedGetDiagnostics(refreshed, [], { assetGuid: "assets/Hud.scene-layer.hasset", graphId: "g" }, "Scene Layer", clips);

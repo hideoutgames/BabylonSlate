@@ -33,7 +33,7 @@ Add Node lists, under **Scene Actors**, one Get node for each actor the Scene or
 
 They always return this copy's own actor, never one with the same name in another Scene or layer copy. Renaming an actor or component renames the nodes. If you delete the actor or component, the node shows an error until you remove it.
 
-Under **Scene Timeline Clips**, [Get Scene Timeline Clip](class/get-scene-timeline-clip.md) returns one of the document's [Timeline Clips](../scenes/timeline.md), titled with its name: **Get Intro Timeline Clip**. Connect it to **Play Timeline Clip**, **Stop Timeline Clip** and the other [Timeline Clip nodes](../scenes/timeline.md#control-a-clip-from-a-script).
+Under **Scene Timeline Clips**, [Get Scene Timeline Clip](class/get-scene-timeline-clip.md) returns one of the document's [Timeline Clips](../scenes/timeline.md), titled with its name: **Get Intro Timeline Clip**. Connect it to **Play Timeline Clip**, **Stop Timeline Clip** and the other [Timeline Clip nodes](../scenes/timeline.md#control-a-clip-from-a-script), or bind its [events](../scenes/timeline.md#bind-to-a-clips-events).
 
 ## Related
 

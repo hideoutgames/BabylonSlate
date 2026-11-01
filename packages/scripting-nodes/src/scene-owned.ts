@@ -11,9 +11,16 @@ export const OWNED_COMPONENT_GET_NODE_ID = "scene.getOwnedComponent";
 /** Get <Name> Timeline Clip: one of the owning Scene's or Scene Layer's Timeline Clips, for this copy. */
 export const OWNED_TIMELINE_CLIP_GET_NODE_ID = "scene.getOwnedTimelineClip";
 
-/** What a Get <Name> Timeline Clip node names: the clip id (stable across renames) and its name for the title. */
-export function ownedTimelineClipProperties(properties: Record<string, unknown>): { clipId: string; clipName: string } {
-  return { clipId: text(properties.sceneTimelineClipId), clipName: text(properties.sceneTimelineClipName) };
+/**
+ * What a Get <Name> Timeline Clip node names: the clip id (stable across
+ * renames), its name for the title, and its class, which types the output.
+ */
+export function ownedTimelineClipProperties(properties: Record<string, unknown>): { clipId: string; clipName: string; classId: string } {
+  return {
+    clipId: text(properties.sceneTimelineClipId),
+    clipName: text(properties.sceneTimelineClipName),
+    classId: text(properties.sceneTimelineClipClassId),
+  };
 }
 
 /** `Get Intro Timeline Clip`, or `Get Timeline Clip` before it names one. */
@@ -119,7 +126,7 @@ export const sceneOwnedNodes: NodeDefinition[] = [
     description:
       "Returns this Scene's or Scene Layer's Timeline Clip, for this loaded copy; each Scene Layer copy has its own.",
     pure: true,
-    pins: () => [pin("clip", "Timeline Clip", "out", objectRef("TimelineClip"))],
+    pins: (properties) => [pin("clip", "Timeline Clip", "out", objectRef(ownedTimelineClipProperties(properties).classId || "TimelineClip"))],
     codegen: (ctx) => {
       const { clipId } = ownedTimelineClipProperties(ctx.node.properties);
       return { clip: clipId ? `ctx.getOwnedTimelineClip(${JSON.stringify(clipId)})` : "null" };

@@ -1,19 +1,28 @@
 import {
   advanceTimelinePlayback,
   evaluateTimelineTrack,
+  timelineEventKeysInSweeps,
   parseTimelineLoopMode,
   timelineStoredValue,
   type SerializedTimelineClip,
   type TimelineLoopMode,
+  type TimelineSweep,
   type TimelinePropertyTrack,
 } from "@haptic/core";
-import { Actor, ActorComponent, TimelineClipObject, type EngineObject } from "@haptic/object-model";
+import { Actor, ActorComponent, TimelineClipObject, timelineClipClassId, type EngineObject } from "@haptic/object-model";
+import { defaultValueForMember, jsIdent } from "@haptic/scripting";
 import { applyTweenTransform } from "./tween-transforms";
 
 /** What Timeline playback needs from the running game. */
 export interface TimelineRuntimeHost {
-  /** The clips an owner's document authored: the main Scene's or a Scene Layer's. */
-  clipsFor(owner: EngineObject): readonly SerializedTimelineClip[] | undefined;
+  /** The clips an owner's document authored (the main Scene's or a Scene Layer's), and that document's guid. */
+  clipsFor(owner: EngineObject): { documentGuid: string; clips: readonly SerializedTimelineClip[] } | undefined;
+  /** Registers a clip class (`TimelineClip:<document>:<clip>`, parent `TimelineClip`) before its object exists. */
+  ensureClipClass(classId: string): void;
+  /** Runs the listeners bound to `owner`'s dispatcher `name` (its runtime identifier). */
+  fireDispatcher(owner: EngineObject, name: string, values: readonly unknown[]): void;
+  /** A clip object ended: its bindings and latent work go. */
+  release(clip: TimelineClipObject): void;
   /** The live actor an owner placed under an authored actor id, per Scene or Scene Layer copy. */
   ownedActor(owner: EngineObject, actorId: string): Actor | null;
   findActor(guid: string): Actor | null | undefined;
@@ -43,7 +52,12 @@ export class TimelineRuntime {
     if (owner.destroyed) return undefined;
     let clips = this.owners.get(owner);
     if (!clips) {
-      clips = new Map((this.host.clipsFor(owner) ?? []).map((clip) => [clip.id, new TimelineClipObject(clip, owner)]));
+      const document = this.host.clipsFor(owner);
+      clips = new Map((document?.clips ?? []).map((clip) => {
+        const classId = timelineClipClassId(document!.documentGuid, clip.id);
+        this.host.ensureClipClass(classId);
+        return [clip.id, new TimelineClipObject(clip, owner, classId)];
+      }));
       this.owners.set(owner, clips);
     }
     return clips;
@@ -53,8 +67,11 @@ export class TimelineRuntime {
   remove(owner: EngineObject): void {
     const clips = this.owners.get(owner);
     if (!clips) return;
-    for (const clip of clips.values()) clip.destroyed = true;
     this.owners.delete(owner);
+    for (const clip of clips.values()) {
+      clip.destroyed = true;
+      this.host.release(clip);
+    }
   }
 
   reset(): void {
@@ -90,7 +107,7 @@ export class TimelineRuntime {
         const result = advanceTimelinePlayback(clip.playback, clip.clip.length, dt);
         clip.playback = result.state;
         this.apply(clip);
-        if (result.finished && clip.clip.whenFinished === "restore") this.restoreValues(clip);
+        this.fireStep(clip, result.sweeps, result.cycles, result.finished);
       }
     }
   }
@@ -98,6 +115,7 @@ export class TimelineRuntime {
   /** Plays forwards, or in reverse, from where the clip is; a Once clip at the end it plays towards starts over. */
   play(clip: TimelineClipObject, reverse = false): void {
     if (clip.destroyed) return;
+    clip.generation += 1;
     this.captureRestore(clip);
     clip.started = true;
     const playback = clip.playback;
@@ -116,23 +134,33 @@ export class TimelineRuntime {
   }
 
   pause(clip: TimelineClipObject): void {
+    clip.generation += 1;
     clip.playback = { ...clip.playback, playing: false };
   }
 
   /** Stops and returns to the start, or to the end while playing in reverse. */
   stop(clip: TimelineClipObject): void {
     if (clip.destroyed) return;
+    clip.generation += 1;
     clip.started = true;
     const time = clip.playback.direction < 0 ? clip.clip.length : 0;
     clip.playback = { ...clip.playback, playing: false, time };
     this.apply(clip);
   }
 
-  setPosition(clip: TimelineClipObject, time: number): void {
+  /**
+   * Moves to `time` and applies the values there. With `fireEvents`, the event
+   * keys passed over fire in that direction, the start included.
+   */
+  setPosition(clip: TimelineClipObject, time: number, fireEvents = false): void {
     if (clip.destroyed || !Number.isFinite(time)) return;
     this.captureRestore(clip);
-    clip.playback = { ...clip.playback, time: Math.min(clip.clip.length, Math.max(0, time)) };
+    clip.generation += 1;
+    const from = clip.playback.time;
+    const to = Math.min(clip.clip.length, Math.max(0, time));
+    clip.playback = { ...clip.playback, time: to };
     this.apply(clip);
+    if (fireEvents && to !== from) this.fireStep(clip, [{ from, to, includeFrom: true, includeTo: false }], 0, false);
   }
 
   /** Never below 0: Reverse plays backwards. */
@@ -142,6 +170,29 @@ export class TimelineRuntime {
 
   setLoopMode(clip: TimelineClipObject, loopMode: TimelineLoopMode): void {
     clip.playback = { ...clip.playback, loopMode };
+  }
+
+  /**
+   * The step's event keys in playback order, then On Looped per wrap or turn,
+   * then for a Once clip at its end When Finished and On Finished. A listener
+   * that changes the clip's playback ends the rest of the step's firing.
+   */
+  private fireStep(clip: TimelineClipObject, sweeps: readonly TimelineSweep[], cycles: number, finished: boolean): void {
+    const generation = clip.generation;
+    const live = () => !clip.destroyed && clip.generation === generation;
+    for (const { track, key } of timelineEventKeysInSweeps(clip.clip.eventTracks, sweeps)) {
+      const values = track.inputs.map((input) =>
+        Object.hasOwn(key.values, input.name) ? structuredClone(key.values[input.name]) : defaultValueForMember(input.typeId, input.typeClassId));
+      this.host.fireDispatcher(clip, jsIdent(track.name), values);
+      if (!live()) return;
+    }
+    for (let cycle = 0; cycle < cycles; cycle += 1) {
+      this.host.fireDispatcher(clip, jsIdent("On Looped"), []);
+      if (!live()) return;
+    }
+    if (!finished) return;
+    if (clip.clip.whenFinished === "restore") this.restoreValues(clip);
+    this.host.fireDispatcher(clip, jsIdent("On Finished"), []);
   }
 
   /** Writes every unmuted track's value at the clip's time to its actor. */
@@ -240,7 +291,7 @@ export function timelineClipControl(
     case "reverse": timelines.play(clip, true); return;
     case "pause": timelines.pause(clip); return;
     case "stop": timelines.stop(clip); return;
-    case "setPosition": timelines.setPosition(clip, Number(args.time)); return;
+    case "setPosition": timelines.setPosition(clip, Number(args.time), args.fireEvents === true); return;
     case "setPlayRate": timelines.setPlayRate(clip, Number(args.playRate)); return;
     case "setLoopMode": {
       const loopMode = parseTimelineLoopMode(args.loopMode);

@@ -20,7 +20,7 @@ import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_CLASS_SCRIPT_APIS,
   ENGINE_COMPONENT_CLASS_IDS,
-  embeddedScriptParentOf,
+  documentClassParentOf,
 } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import { OUTPUT_DELEGATE_PIN_ID } from "@haptic/scripting-nodes";
@@ -30,7 +30,7 @@ export function parentLookup(
   parentOf?: (id: string) => string | null | undefined,
 ): (id: string) => string | null | undefined {
   return (id) => {
-    const embeddedParent = embeddedScriptParentOf(id);
+    const embeddedParent = documentClassParentOf(id);
     if (embeddedParent) return embeddedParent;
     return parentOf?.(id) ?? engineParentOf(id);
   };
@@ -181,6 +181,15 @@ export function classMemberSymbolsFromGraphs(
     }
   }
   for (const api of ENGINE_CLASS_SCRIPT_APIS) {
+    for (const dispatcher of api.dispatchers ?? []) {
+      symbols.push({
+        id: `engine:${api.classId}:dispatcher:${dispatcher.name}`,
+        name: dispatcher.name,
+        kind: "dispatcher",
+        classId: api.classId,
+        pins: dispatcher.pins.map((pin) => ({ ...pin })),
+      });
+    }
     for (const variable of api.variables ?? []) {
       symbols.push({
         id: `engine:${api.classId}:var:${variable.propertyKey}`,

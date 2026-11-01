@@ -97,7 +97,13 @@ export type ScriptPaletteOptions = ClassEventOptions & {
   ownedTimelineClips?: readonly PaletteOwnedTimelineClip[];
 };
 
-export type PaletteOwnedTimelineClip = { id: string; name: string };
+/** A clip of the owner, its `TimelineClip:<document>:<clip>` class and the dispatchers its Custom Event Tracks declare. */
+export type PaletteOwnedTimelineClip = {
+  id: string;
+  name: string;
+  classId?: string;
+  dispatchers?: ReadonlyArray<{ name: string; pins: GraphClassMemberPin[] }>;
+};
 
 export type PaletteOwnedActor = {
   id: string;
@@ -777,7 +783,7 @@ export function ownedGetPaletteNodes(
   if (!actorDef || !componentDef) return [];
   const clips: PaletteNode[] = clipDef
     ? (options?.ownedTimelineClips ?? []).map((clip) => {
-        const data = { sceneTimelineClipId: clip.id, sceneTimelineClipName: clip.name };
+        const data = { sceneTimelineClipId: clip.id, sceneTimelineClipName: clip.name, ...(clip.classId ? { sceneTimelineClipClassId: clip.classId } : {}) };
         return {
           id: `${OWNED_TIMELINE_CLIP_GET_NODE_ID}:${clip.id}`,
           nodeType: OWNED_TIMELINE_CLIP_GET_NODE_ID,
@@ -866,6 +872,8 @@ type DispatcherRow = {
   name: string;
   pins: GraphClassMemberPin[];
   implicitSelf: boolean;
+  /** Engine-declared (a Timeline Clip's): only the engine fires it, so there is no Call row. */
+  engine?: boolean;
 };
 
 /** Event Dispatchers the host can reach: its own and inherited ones on Self, other Classes' on a Target. */
@@ -889,7 +897,30 @@ function dispatcherRows(options?: ScriptPaletteOptions): DispatcherRow[] {
     if (!otherClassAllowedOnHost(classId, options)) continue;
     push(classId, graph, callImplicitSelf(classId, options));
   }
+  for (const api of ENGINE_CLASS_SCRIPT_APIS) {
+    if (!engineDispatchersReachable(api.classId, options)) continue;
+    for (const dispatcher of api.dispatchers ?? []) {
+      rows.push({ classId: api.classId, name: dispatcher.name, pins: dispatcher.pins.map((pin) => ({ ...pin })), implicitSelf: false, engine: true });
+    }
+  }
+  // The owner's clips: one dispatcher per Custom Event Track, on the clip's own class.
+  for (const clip of options?.ownedTimelineClips ?? []) {
+    if (!clip.classId) continue;
+    for (const dispatcher of clip.dispatchers ?? []) {
+      rows.push({ classId: clip.classId, name: dispatcher.name, pins: dispatcher.pins.map((pin) => ({ ...pin })), implicitSelf: false, engine: true });
+    }
+  }
   return rows;
+}
+
+/**
+ * Whether the host can hold an object of an engine class that declares
+ * dispatchers, so its Bind rows belong in Add Node. A Timeline Clip comes only
+ * from a SceneScript's or SceneLayerScript's Get <Name> Timeline Clip.
+ */
+function engineDispatchersReachable(classId: string, options?: ScriptPaletteOptions): boolean {
+  if (classId === "TimelineClip") return (options?.ownedTimelineClips?.length ?? 0) > 0;
+  return true;
 }
 
 const DISPATCHER_ACTIONS: readonly DispatcherNodeAction[] = ["call", "bind", "unbind", "unbindAll"];
@@ -915,6 +946,7 @@ export function dispatcherPaletteNodes(
     const member = { name: row.name, pins: row.pins };
     const spawn = { classId: row.classId, implicitSelf: row.implicitSelf };
     for (const action of DISPATCHER_ACTIONS) {
+      if (row.engine && action === "call") continue;
       const type = DISPATCHER_NODE_TYPE_IDS[action];
       const def = nodeRegistry.get(type);
       if (!def) continue;

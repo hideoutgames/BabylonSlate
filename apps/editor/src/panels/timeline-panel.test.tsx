@@ -176,6 +176,39 @@ describe("Timeline window", () => {
     expect(track).toMatchObject({ target: { kind: "component", componentId: "light", property: "intensity" }, valueType: "float", keys: [] });
   });
 
+  it("adds a Custom Event Track from the Track menu and keys it at the playhead", async () => {
+    harness.scene = sceneWith(animated());
+    const view = renderPanel();
+    fireEvent.click(screen.getByTestId("timeline-add-menu"));
+    fireEvent.click(await screen.findByTestId("timeline-track-menu-event"));
+    const track = lastClip().eventTracks[0]!;
+    expect(track).toMatchObject({ name: "On Event", inputs: [], keys: [] });
+    view.refresh();
+    expect(screen.getByTestId("timeline-row-timeline:events").textContent).toContain("Events");
+    expect(screen.getByTestId(`timeline-row-${track.id}`).textContent).toContain("On Event");
+    fireEvent.click(screen.getByTestId("timeline-next-key"));
+    fireEvent.click(screen.getByTestId(`timeline-key-toggle-${track.id}`));
+    expect(lastClip().eventTracks[0]!.keys).toEqual([{ id: expect.any(String), time: 2, values: {} }]);
+    view.refresh();
+    fireEvent.click(screen.getByTestId(`timeline-key-toggle-${track.id}`));
+    expect(lastClip().eventTracks[0]!.keys).toEqual([]);
+  });
+
+  it("deletes and reorders event tracks from their row menu", () => {
+    harness.scene = sceneWith({ ...animated(), eventTracks: [
+      { id: "e1", name: "On Open", inputs: [], keys: [{ id: "a", time: 1, values: {} }] },
+      { id: "e2", name: "On Close", inputs: [], keys: [] },
+    ] });
+    const view = renderPanel();
+    fireEvent.contextMenu(screen.getByTestId("timeline-row-e2"));
+    fireEvent.click(screen.getByTestId("timeline-row-menu-up"));
+    expect(lastClip().eventTracks.map((track) => track.id)).toEqual(["e2", "e1"]);
+    view.refresh();
+    fireEvent.contextMenu(screen.getByTestId("timeline-row-e1"));
+    fireEvent.click(screen.getByTestId("timeline-row-menu-delete"));
+    expect(lastClip().eventTracks.map((track) => track.id)).toEqual(["e2"]);
+  });
+
   it("mutes and deletes tracks from the row menu", () => {
     harness.scene = sceneWith(animated());
     const view = renderPanel();

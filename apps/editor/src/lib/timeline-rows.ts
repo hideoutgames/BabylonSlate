@@ -3,6 +3,7 @@ import type {
   SerializedActor,
   SerializedScene,
   SerializedTimelineClip,
+  TimelineEventTrack,
   TimelineObjectTrack,
   TimelinePropertyTrack,
   TimelineValueType,
@@ -16,6 +17,7 @@ import {
   type TimelinePropertyContext,
 } from "./timeline-property-catalog";
 import { INTERPOLATED_VALUE_TYPES, timelineKeyValueAt, type TrackKeyRef } from "./timeline-track-edits";
+import { TIMELINE_EVENTS_ROW_ID, timelineEventKeyValue } from "./timeline-event-edits";
 
 /**
  * What the Timeline window lists for a clip: a group row per animated actor
@@ -26,6 +28,7 @@ export interface TimelineRowKey {
   id: string;
   time: number;
   shape: KeyframeShape;
+  label?: string;
 }
 
 export interface TimelineRowModel {
@@ -35,6 +38,8 @@ export interface TimelineRowModel {
   objectId: string;
   actor: SerializedActor | undefined;
   track?: TimelinePropertyTrack;
+  /** Rows under Events: the Custom Event Track. */
+  eventTrack?: TimelineEventTrack;
   label: string;
   /** The value at the playhead, as text. */
   value?: string;
@@ -175,12 +180,74 @@ export function timelineRows(options: TimelineRowsOptions): TimelineRowModel[] {
     if (!expanded) continue;
     for (const entry of tracks) rows.push(trackRow(object, actor, entry.track, entry.label, options));
   }
+  rows.push(...eventRows(options));
   return rows;
+}
+
+/** An event key's label: its first input's value, or the event's name when it has no inputs. */
+function eventKeyLabel(track: TimelineEventTrack, key: TimelineEventTrack["keys"][number], assetName?: (guid: string) => string | undefined): string {
+  const input = track.inputs[0];
+  if (!input) return track.name;
+  const value = timelineEventKeyValue(key, input);
+  return input.typeId === "string" ? String(value ?? "") || track.name : formatTimelineValue(input.typeId as TimelineValueType, value, assetName);
+}
+
+/** The Events group and, while it is open, a row per Custom Event Track. */
+function eventRows(options: TimelineRowsOptions): TimelineRowModel[] {
+  const { clip, collapsed, filter } = options;
+  if (clip.eventTracks.length === 0) return [];
+  const needle = filter.trim().toLowerCase();
+  const groupMatches = !needle || "events".includes(needle);
+  const tracks = clip.eventTracks.filter((track) => groupMatches || track.name.toLowerCase().includes(needle));
+  if (!groupMatches && tracks.length === 0) return [];
+  const frames = new Map<number, number>();
+  for (const track of clip.eventTracks) for (const key of track.keys) frames.set(frameAt(key.time, clip.frameRate), key.time);
+  const expanded = !collapsed.has(TIMELINE_EVENTS_ROW_ID) || Boolean(needle);
+  const rows: TimelineRowModel[] = [{
+    id: TIMELINE_EVENTS_ROW_ID,
+    kind: "group",
+    objectId: TIMELINE_EVENTS_ROW_ID,
+    actor: undefined,
+    label: "Events",
+    keys: [...frames].sort((a, b) => a[0] - b[0]).map(([frame, keyTime]) => ({ id: summaryKeyId(frame), time: keyTime, shape: "diamond" })),
+    connect: false,
+    muted: false,
+    expanded,
+  }];
+  if (!expanded) return rows;
+  for (const track of tracks) {
+    rows.push({
+      id: track.id,
+      kind: "track",
+      objectId: TIMELINE_EVENTS_ROW_ID,
+      actor: undefined,
+      eventTrack: track,
+      label: track.name,
+      value: track.inputs.length ? track.inputs.map((input) => input.name).join(", ") : undefined,
+      keys: track.keys.map((key) => ({ id: key.id, time: key.time, shape: "diamond", label: eventKeyLabel(track, key, options.assetName) })),
+      connect: false,
+      muted: false,
+    });
+  }
+  return rows;
+}
+
+/** The keys a summary key on `frame` of a group row (an object, or Events) stands for. */
+function groupFrameKeys(clip: SerializedTimelineClip, rowId: string, frame: number): TrackKeyRef[] {
+  if (rowId === TIMELINE_EVENTS_ROW_ID) {
+    return clip.eventTracks.flatMap((track) => track.keys
+      .filter((key) => frameAt(key.time, clip.frameRate) === frame)
+      .map((key) => ({ trackId: track.id, keyId: key.id })));
+  }
+  const object = clip.objects.find((entry) => entry.id === rowId);
+  return (object?.tracks ?? []).flatMap((track) => track.keys
+    .filter((key) => frameAt(key.Time, clip.frameRate) === frame)
+    .map((key) => ({ trackId: track.id, keyId: key.id })));
 }
 
 /**
  * Lane key refs (a group's summary keys included) as track key refs: a
- * summary key stands for every key of its object on that frame.
+ * summary key stands for every key of its object (or of Events) on that frame.
  */
 export function trackKeyRefs(clip: SerializedTimelineClip, refs: readonly KeyRef[]): TrackKeyRef[] {
   const out: TrackKeyRef[] = [];
@@ -192,15 +259,12 @@ export function trackKeyRefs(clip: SerializedTimelineClip, refs: readonly KeyRef
     out.push({ trackId, keyId });
   };
   for (const ref of refs) {
-    const object = clip.objects.find((entry) => entry.id === ref.rowId);
-    if (!object) {
+    const group = ref.rowId === TIMELINE_EVENTS_ROW_ID || clip.objects.some((entry) => entry.id === ref.rowId);
+    if (!group) {
       push(ref.rowId, ref.keyId);
       continue;
     }
-    const frame = Number(ref.keyId.slice(1));
-    for (const track of object.tracks) {
-      for (const key of track.keys) if (frameAt(key.Time, clip.frameRate) === frame) push(track.id, key.id);
-    }
+    for (const key of groupFrameKeys(clip, ref.rowId, Number(ref.keyId.slice(1)))) push(key.trackId, key.keyId);
   }
   return out;
 }
@@ -220,5 +284,13 @@ export function laneSelection(clip: SerializedTimelineClip, selected: ReadonlySe
     }
     for (const [frame, all] of byFrame) if (all) shown.add(keyRefId({ rowId: object.id, keyId: summaryKeyId(frame) }));
   }
+  const eventFrames = new Map<number, boolean>();
+  for (const track of clip.eventTracks) {
+    for (const key of track.keys) {
+      const frame = frameAt(key.time, clip.frameRate);
+      eventFrames.set(frame, (eventFrames.get(frame) ?? true) && selected.has(keyRefId({ rowId: track.id, keyId: key.id })));
+    }
+  }
+  for (const [frame, all] of eventFrames) if (all) shown.add(keyRefId({ rowId: TIMELINE_EVENTS_ROW_ID, keyId: summaryKeyId(frame) }));
   return shown;
 }

@@ -73,6 +73,7 @@ if (typeof HTMLCanvasElement !== "undefined") {
       fill() {},
       stroke() {},
       strokeRect() {},
+      fillText() {},
       createLinearGradient: () => ({ addColorStop() {} }),
     } as unknown as CanvasRenderingContext2D;
   };

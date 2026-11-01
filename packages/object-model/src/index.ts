@@ -27,6 +27,7 @@ export {
   engineScriptApiFor,
   engineScriptEventsFor,
   type EngineClassScriptApi,
+  type EngineScriptDispatcher,
   type EngineScriptEvent,
   type EngineScriptFunction,
   type EngineScriptPin,
@@ -125,4 +126,11 @@ export {
 } from "./live-properties";
 export { ObjectCollector, canHoldReference, type CollectionResult, type RootSource, type RootVisitor, type ScalarVariables } from "./object-collector";
 export { CurveObject } from "./curve-object";
-export { TIMELINE_CLIP_CLASS_ID, TimelineClipObject } from "./timeline-clip-object";
+export {
+  TIMELINE_CLIP_BUILT_IN_DISPATCHERS,
+  TIMELINE_CLIP_CLASS_ID,
+  TimelineClipObject,
+  documentClassParentOf,
+  isTimelineClipClassId,
+  timelineClipClassId,
+} from "./timeline-clip-object";

@@ -62,8 +62,9 @@ export const timelineClipNodes: NodeDefinition[] = [
   control("reverse", "Reverse Timeline Clip", "Plays the clip backwards from where it is. A Once clip at its start starts over from the end."),
   control("pause", "Pause Timeline Clip", "Stops the clip where it is."),
   control("stop", "Stop Timeline Clip", "Stops the clip and returns it to the start, or to the end while it plays in reverse."),
-  control("setPosition", "Set Timeline Clip Position", "Moves the clip to Time, in seconds, and applies its values there.", [
+  control("setPosition", "Set Timeline Clip Position", "Moves the clip to Time, in seconds, and applies its values there. With Fire Events, the event keys it passes over fire.", [
     { id: "time", name: "Time", pin: pin("time", "Time", "in", FLOAT, "data", true, 0) },
+    { id: "fireEvents", name: "Fire Events", pin: pin("fireEvents", "Fire Events", "in", BOOL, "data", true, false) },
   ]),
   control("setPlayRate", "Set Timeline Clip Play Rate", "Sets how fast the clip plays: 1 is its authored speed in seconds. A negative rate counts as 0; use Reverse to play backwards.", [
     { id: "playRate", name: "Play Rate", pin: pin("playRate", "Play Rate", "in", FLOAT, "data", true, 1) },

@@ -95,7 +95,7 @@ export async function applyFeatureTestScaffold(options: {
   await placeFeatureTestAi(ctx);
   await placeFeatureTestScripting(ctx);
   await placeFeatureTestSceneLayers(ctx);
-  placeFeatureTestSceneScript(ctx);
+  await placeFeatureTestSceneScript(ctx);
 
   await saveSceneDocuments(ctx);
   return { applySettings: (settings) => applyFeatureTestProjectSettings(ctx, settings) };

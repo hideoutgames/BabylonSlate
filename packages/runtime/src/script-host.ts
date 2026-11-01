@@ -344,6 +344,16 @@ export class ScriptHost {
   }
 
   /**
+   * Runs the listeners bound to an engine-declared dispatcher (`name` is its
+   * runtime identifier), as Call does: a Timeline Clip's event keys, On
+   * Looped and On Finished. Nothing runs for a destroyed owner.
+   */
+  fireDispatcher(owner: EngineObject, name: string, values: readonly unknown[]): void {
+    if (owner.destroyed) return;
+    this.createContext(null, 0, 0).callDispatcher(owner, name, [...values]);
+  }
+
+  /**
    * A collected object: its latent work ends and its dispatcher bindings go,
    * and no script event runs, so nothing can reach it again.
    */

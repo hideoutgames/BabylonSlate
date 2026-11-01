@@ -73,6 +73,7 @@ import {
   Trash2Icon,
   Volume2Icon,
   VolumeXIcon,
+  ZapIcon,
 } from "lucide-react";
 import { IconActionButton } from "../components/icon-action-button";
 import { useRegistryState } from "../context/document-context";
@@ -93,6 +94,7 @@ import {
   addTimelineObjects,
   addTimelineTracks,
   adjacentTimelineKeyTime,
+  clampTimelineKeyShift,
   copyTimelineKeys,
   deleteTimelineKeys,
   findTimelineTrack,
@@ -115,6 +117,23 @@ import {
 import { TIMELINE_EASE_SHORTCUTS, TIMELINE_EASING_CURVES, timelineInterpolationLabel } from "../lib/timeline-interpolation";
 import { applyTimelineCurve, timelineCurveChannels, timelineCurveKind, timelineTrackCurve } from "../lib/timeline-curves";
 import { useTimelineClip, useTimelinePropertyContext } from "../context/use-timeline-clip";
+import {
+  TIMELINE_EVENTS_ROW_ID,
+  addTimelineEventTrack,
+  clampTimelineEventKeyShift,
+  deleteTimelineEventKeys,
+  findTimelineEventTrack,
+  moveTimelineEventTrack,
+  removeTimelineEventTrack,
+  setTimelineEventKeys,
+  shiftTimelineEventKeys,
+  snapshotTimelineEventKeys,
+  timelineEventKeyAt,
+  timelineEventKeyRefs,
+  timelineEventKeyTimes,
+  toggleTimelineEventKey,
+  type TimelineEventKey,
+} from "../lib/timeline-event-edits";
 
 const newId = () => crypto.randomUUID();
 
@@ -179,7 +198,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   // Keys: the key lanes. Curves: the selected track's curves, with tangent handles.
   const [view, setView] = useState<"keys" | "curves">("keys");
   const lengthDrag = useRef<number | null>(null);
-  const drag = useRef<{ base: SerializedTimelineClip; snapshot: Map<string, TimelineKey[]> } | null>(null);
+  const drag = useRef<{ base: SerializedTimelineClip; snapshot: Map<string, TimelineKey[]>; events: Map<string, TimelineEventKey[]> } | null>(null);
   const clipRef = useRef(clip);
   clipRef.current = clip;
 
@@ -254,12 +273,17 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
 
   const moveKeys = (delta: number, phase: "start" | "move" | "end" | "cancel") => {
     if (phase === "start") {
-      drag.current = { base: clip, snapshot: snapshotTimelineKeys(clip, selectedTrackRefs()) };
+      const refs = selectedTrackRefs();
+      drag.current = { base: clip, snapshot: snapshotTimelineKeys(clip, refs), events: snapshotTimelineEventKeys(clip, refs) };
       return;
     }
     const held = drag.current;
     if (!held) return;
-    commitClip(shiftTimelineKeys(held.base, held.snapshot, phase === "cancel" ? 0 : delta));
+    // Property and event keys move together, as far as both stay inside the clip.
+    let shift = phase === "cancel" ? 0 : delta;
+    if (held.snapshot.size) shift = clampTimelineKeyShift(held.snapshot, shift, held.base.length);
+    if (held.events.size) shift = clampTimelineEventKeyShift(held.events, shift, held.base.length);
+    commitClip(shiftTimelineEventKeys(shiftTimelineKeys(held.base, held.snapshot, shift), held.events, shift));
     if (phase !== "move") drag.current = null;
   };
 
@@ -267,7 +291,8 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   const targetTrackIds = (): string[] => {
     const row = rowId ? clip.objects.find((object) => object.id === rowId) : undefined;
     if (row) return row.tracks.map((track) => track.id);
-    if (rowId && findTimelineTrack(clip, rowId)) return [rowId];
+    if (rowId === TIMELINE_EVENTS_ROW_ID) return clip.eventTracks.map((track) => track.id);
+    if (rowId && (findTimelineTrack(clip, rowId) || findTimelineEventTrack(clip, rowId))) return [rowId];
     return [...new Set(selectedTrackRefs().map((ref) => ref.trackId))];
   };
 
@@ -286,7 +311,11 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
       const value = keyValue(trackId, time);
       return value === undefined ? [] : [{ trackId, time, value }];
     });
-    if (keys.length) commitClip(setTimelineKeys(clip, keys, newId));
+    // Event tracks get a key at the playhead; its values start at the inputs' defaults.
+    const eventTrackIds = trackIds.filter((trackId) => findTimelineEventTrack(clip, trackId));
+    let next = keys.length ? setTimelineKeys(clip, keys, newId) : clip;
+    if (eventTrackIds.length) next = setTimelineEventKeys(next, eventTrackIds, time, newId).clip;
+    if (next !== clip) commitClip(next);
     if (trackIds.some((trackId) => unkeyed.has(trackId))) {
       setUnkeyed(new Map([...unkeyed].filter(([trackId]) => !trackIds.includes(trackId))));
     }
@@ -294,6 +323,10 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
 
   /** A track row's key button: keys an unkeyed change, else removes the key on the playhead's frame, or sets one. */
   const toggleKey = (trackId: string) => {
+    if (findTimelineEventTrack(clip, trackId)) {
+      commitClip(toggleTimelineEventKey(clip, trackId, time, newId));
+      return;
+    }
     const track = findTimelineTrack(clip, trackId)?.track;
     if (!track) return;
     const existing = timelineKeyAt(track, time, clip.frameRate);
@@ -306,17 +339,23 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   };
 
   const jumpToKey = (direction: 1 | -1) => {
-    const target = adjacentTimelineKeyTime(timelineKeyTimes(clip), time, direction, clip.frameRate);
+    const target = adjacentTimelineKeyTime([...timelineKeyTimes(clip), ...timelineEventKeyTimes(clip)], time, direction, clip.frameRate);
     if (target !== undefined) playhead.set(target);
   };
 
   const deleteSelection = () => {
     if (selection.size > 0) {
-      commitClip(deleteTimelineKeys(clip, selectedTrackRefs()));
+      const refs = selectedTrackRefs();
+      commitClip(deleteTimelineEventKeys(deleteTimelineKeys(clip, refs), refs));
       setSelection(new Set());
       return;
     }
-    if (!rowId) return;
+    if (!rowId || rowId === TIMELINE_EVENTS_ROW_ID) return;
+    if (findTimelineEventTrack(clip, rowId)) {
+      commitClip(removeTimelineEventTrack(clip, rowId));
+      setRowId(null);
+      return;
+    }
     const object = clip.objects.find((entry) => entry.id === rowId);
     commitClip(object ? removeTimelineObject(clip, rowId) : removeTimelineTrack(clip, rowId));
     setRowId(null);
@@ -334,7 +373,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
     setSelection(new Set(pasted.map((ref) => keyRefId({ rowId: ref.trackId, keyId: ref.keyId }))));
   };
   const deleteKeys = (refs: readonly TrackKeyRef[] = selectedTrackRefs()) => {
-    commitClip(deleteTimelineKeys(clip, refs));
+    commitClip(deleteTimelineEventKeys(deleteTimelineKeys(clip, refs), refs));
     setSelection(new Set());
   };
   /** Copy and paste at the playhead in one step, without changing what Copy last stored. */
@@ -373,7 +412,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   useKeybindCommand("timeline.setKey", () => setKeys(targetTrackIds()), { ...focus, enabled: () => targetTrackIds().length > 0 });
   useKeybindCommand("timeline.previousKey", () => jumpToKey(-1), focus);
   useKeybindCommand("timeline.nextKey", () => jumpToKey(1), focus);
-  useKeybindCommand("edit.delete", deleteSelection, { ...focus, enabled: () => selection.size > 0 || rowId !== null });
+  useKeybindCommand("edit.delete", deleteSelection, { ...focus, enabled: () => selection.size > 0 || (rowId !== null && rowId !== TIMELINE_EVENTS_ROW_ID) });
   useKeybindCommand("edit.copy", () => copyKeys(), { ...focus, enabled: () => selection.size > 0 });
   useKeybindCommand("edit.duplicate", () => duplicateKeys(), { ...focus, enabled: () => selection.size > 0 });
   useKeybindCommand("edit.paste", pasteKeys, focus);
@@ -384,7 +423,22 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   });
 
   const { menu, closeMenu, openMenuAt } = useContextMenu({ items: () => [] });
-  const selectRowKeys = (id: string) => setSelection(new Set(timelineRowKeyRefs(clip, id).map((ref) => keyRefId({ rowId: ref.trackId, keyId: ref.keyId }))));
+  const rowKeyRefs = (id: string): TrackKeyRef[] => id === TIMELINE_EVENTS_ROW_ID
+    ? timelineEventKeyRefs(clip)
+    : findTimelineEventTrack(clip, id) ? timelineEventKeyRefs(clip, id) : timelineRowKeyRefs(clip, id);
+  const selectRowKeys = (id: string) => setSelection(new Set(rowKeyRefs(id).map((ref) => keyRefId({ rowId: ref.trackId, keyId: ref.keyId }))));
+  const addEventTrack = () => {
+    const added = addTimelineEventTrack(clip, newId);
+    commitClip(added.clip);
+    setCollapsed((current) => {
+      const next = new Set(current);
+      next.delete(TIMELINE_EVENTS_ROW_ID);
+      return next;
+    });
+    // The Inspector names it and adds its inputs.
+    setSelection(new Set());
+    setRowId(added.trackId);
+  };
   const moveItems = (id: string): ContextMenuItem[] => [
     { id: "move-up", label: "Move Up", icon: <ArrowUpIcon />, disabled: moveTimelineRow(clip, id, -1) === clip, testId: "timeline-row-menu-up",
       onSelect: () => commitClip(moveTimelineRow(clip, id, -1)) },
@@ -411,7 +465,33 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
     const next = pasteTimelineTrack(clip, objectId, copied, actor, newId);
     if (next) commitClip(next);
   };
+  const eventRowMenuItems = (row: TimelineRowModel): ContextMenuItem[] => {
+    if (row.id === TIMELINE_EVENTS_ROW_ID) {
+      return [
+        { id: "add-event-track", label: "Add Custom Event Track", icon: <PlusIcon />, testId: "timeline-row-menu-add-event-track", onSelect: addEventTrack },
+        { id: "set-key", label: "Set Key", icon: <DiamondPlusIcon />, shortcut: keybinds.get("timeline.setKey")?.[0], testId: "timeline-row-menu-set-key",
+          onSelect: () => setKeys(clip.eventTracks.map((track) => track.id)) },
+        { id: "select-keys", label: "Select All Keys", icon: <ListChecksIcon />, disabled: timelineEventKeyRefs(clip).length === 0,
+          testId: "timeline-row-menu-select-keys", onSelect: () => selectRowKeys(row.id) },
+      ];
+    }
+    return [
+      { id: "set-key", label: "Set Key", icon: <DiamondPlusIcon />, shortcut: keybinds.get("timeline.setKey")?.[0], testId: "timeline-row-menu-set-key",
+        onSelect: () => setKeys([row.id]) },
+      { id: "select-keys", label: "Select All Keys", icon: <ListChecksIcon />, disabled: !row.eventTrack?.keys.length,
+        testId: "timeline-row-menu-select-keys", onSelect: () => selectRowKeys(row.id) },
+      { type: "separator", id: "move-separator" },
+      { id: "move-up", label: "Move Up", icon: <ArrowUpIcon />, disabled: moveTimelineEventTrack(clip, row.id, -1) === clip, testId: "timeline-row-menu-up",
+        onSelect: () => commitClip(moveTimelineEventTrack(clip, row.id, -1)) },
+      { id: "move-down", label: "Move Down", icon: <ArrowDownIcon />, disabled: moveTimelineEventTrack(clip, row.id, 1) === clip, testId: "timeline-row-menu-down",
+        onSelect: () => commitClip(moveTimelineEventTrack(clip, row.id, 1)) },
+      { type: "separator", id: "delete-separator" },
+      { id: "delete-track", label: "Delete Track", icon: <Trash2Icon />, variant: "destructive", testId: "timeline-row-menu-delete",
+        onSelect: () => commitClip(removeTimelineEventTrack(clip, row.id)) },
+    ];
+  };
   const rowMenuItems = (row: TimelineRowModel): ContextMenuItem[] => {
+    if (row.objectId === TIMELINE_EVENTS_ROW_ID) return eventRowMenuItems(row);
     const reveal: ContextMenuItem = { id: "reveal", label: "Reveal in Outliner", icon: <LocateIcon />, disabled: !row.actor || !sceneEditing,
       testId: "timeline-row-menu-reveal", onSelect: () => { if (row.actor) sceneEditing?.selectActor(row.actor.id); } };
     if (row.kind === "group") {
@@ -457,8 +537,21 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
     const inSelection = clicked.length > 0 && clicked.every((entry) => selection.has(keyRefId({ rowId: entry.trackId, keyId: entry.keyId })));
     const targets = inSelection ? selectedTrackRefs() : clicked;
     const setInterpolation = (value: TimelineKey["Interpolation"]) => commitClip(setTimelineKeyInterpolation(clip, targets, value));
-    const keyTime = clicked.map((entry) => findTimelineTrack(clip, entry.trackId)?.track.keys.find((key) => key.id === entry.keyId)?.Time)
+    const keyTime = clicked.map((entry) => findTimelineTrack(clip, entry.trackId)?.track.keys.find((key) => key.id === entry.keyId)?.Time
+      ?? findTimelineEventTrack(clip, entry.trackId)?.keys.find((key) => key.id === entry.keyId)?.time)
       .find((value) => value !== undefined);
+    // Event keys have no interpolation, and Copy and Paste carry property keys.
+    if (targets.every((entry) => findTimelineEventTrack(clip, entry.trackId))) {
+      return [
+        ...(touch ? [{ id: "select-key", label: "Select", icon: <MousePointerClickIcon />, testId: "timeline-key-menu-select",
+          onSelect: () => selectKeys([ref], "add") } satisfies ContextMenuItem] : []),
+        { id: "go-to-key", label: "Go To Key", icon: <CrosshairIcon />, disabled: keyTime === undefined, testId: "timeline-key-menu-go",
+          onSelect: () => { if (keyTime !== undefined) playhead.set(keyTime); } },
+        { type: "separator", id: "delete-separator" },
+        { id: "delete-keys", label: "Delete", icon: <Trash2Icon />, variant: "destructive", shortcut: keybinds.get("edit.delete")?.[0],
+          testId: "timeline-key-menu-delete", onSelect: () => deleteKeys(targets) },
+      ];
+    }
     return [
       ...(touch ? [{ id: "select-key", label: "Select", icon: <MousePointerClickIcon />, testId: "timeline-key-menu-select",
         onSelect: () => selectKeys([ref], "add") } satisfies ContextMenuItem] : []),
@@ -488,6 +581,27 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
 
   const parentOf = property.parentOf;
   const laneRows: KeyframeTimelineTrackRow[] = rows.map((row) => {
+    if (row.id === TIMELINE_EVENTS_ROW_ID) {
+      return {
+        id: row.id, kind: "group", depth: 0, label: row.label, icon: <ZapIcon />, expanded: row.expanded, keys: row.keys,
+        testId: `timeline-row-${row.id}`,
+        actions: <IconActionButton label="Add Custom Event Track" variant="ghost" size={touch ? "touch-icon" : "icon-xs"}
+          onClick={(event) => { event.stopPropagation(); addEventTrack(); }} data-testid="timeline-add-event-track-row">
+          <PlusIcon />
+        </IconActionButton>,
+      };
+    }
+    if (row.eventTrack) {
+      const keyed = Boolean(timelineEventKeyAt(row.eventTrack, time, clip.frameRate));
+      return {
+        id: row.id, kind: "track", depth: 1, label: row.label, value: row.value, keys: row.keys, testId: `timeline-row-${row.id}`,
+        actions: <IconActionButton label={keyed ? `Remove Key on ${row.label}` : `Set Key on ${row.label}`}
+          variant="ghost" size={touch ? "touch-icon" : "icon-xs"}
+          onClick={(event) => { event.stopPropagation(); toggleKey(row.id); }} data-testid={`timeline-key-toggle-${row.id}`}>
+          <DiamondIcon className={keyed ? "fill-current text-selection" : undefined} />
+        </IconActionButton>,
+      };
+    }
     if (row.kind === "group") {
       return {
         id: row.id,
@@ -538,6 +652,8 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
       testId: "timeline-track-menu-selected", onSelect: () => addActors(selectedActors) },
     { id: "add-actor", label: "Actor From Outliner…", icon: <PlusIcon />, disabled: unanimated.length === 0, testId: "timeline-track-menu-actor",
       onSelect: () => setPickActorOpen(true) },
+    { type: "separator", id: "event-separator" },
+    { id: "add-event-track", label: "Custom Event Track", icon: <ZapIcon />, testId: "timeline-track-menu-event", onSelect: addEventTrack },
   ];
 
   const addTrackActor = addTrackActorId ? scene.actors.find((actor) => actor.id === addTrackActorId) : undefined;

@@ -220,7 +220,7 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   // Scene Layers keep Timeline Clips too; each FT_HUD instance plays its own Reveal.
   const reveal = createTimelineClip("ft-timeline-clip-hud-reveal", "Reveal");
   layer.timelineClips = [reveal];
-  layer.script = ownedActorProbeScript("FT_HUD", title, reveal);
+  layer.script = ownedActorProbeScript("FT_HUD", title, { clip: reveal });
   return layer;
 }
 

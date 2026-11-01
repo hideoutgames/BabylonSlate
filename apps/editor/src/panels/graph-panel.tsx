@@ -72,7 +72,7 @@ import {
 } from "../services/graph-validation";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { logicGraphHostClass } from "../lib/embedded-script";
-import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
+import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipDispatcherSymbols, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
 import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { GraphSteppingBar } from "../components/graph-stepping-bar";
@@ -182,9 +182,10 @@ export function GraphPanel(
   );
   // ... and its Timeline Clips in Get <Name> Timeline Clip.
   const ownerClips = ownerActors ? (doc?.content as SerializedScene | null)?.timelineClips : undefined;
+  const ownerGuid = ownerActors && classId ? classId.slice(classId.indexOf(":") + 1) : undefined;
   const ownedTimelineClips = useMemo(
-    () => ownerActors ? ownedTimelineClipsOfScene({ timelineClips: ownerClips }) : undefined,
-    [ownerActors, ownerClips],
+    () => ownerActors && ownerGuid ? ownedTimelineClipsOfScene(ownerGuid, { timelineClips: ownerClips }) : undefined,
+    [ownerActors, ownerClips, ownerGuid],
   );
   // While a Simulation follows an instance of this Class, the canvas shows what that instance ran in this graph.
   const runGraphId = activeFunctionId
@@ -215,8 +216,11 @@ export function GraphPanel(
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;
-    return classMemberSymbolsFromGraphs(graphs, { parentOf });
-  }, [classId, graphContent, otherClassGraphs, parentOf]);
+    return [
+      ...classMemberSymbolsFromGraphs(graphs, { parentOf }),
+      ...ownedTimelineClipDispatcherSymbols(ownedTimelineClips ?? []),
+    ];
+  }, [classId, graphContent, otherClassGraphs, ownedTimelineClips, parentOf]);
   const knownClassIds = useMemo(
     () =>
       knownClassIdSet(parentOf, [
@@ -224,8 +228,10 @@ export function GraphPanel(
         ...sceneDocuments.map((scene) => sceneAssetClassId(scene.guid)),
         // A Scene Layer script's own `SceneLayer:<guid>` class.
         ...(classId ? [classId] : []),
+        // ... and its Timeline Clips' `TimelineClip:<guid>:<clip>` classes.
+        ...(ownedTimelineClips ?? []).map((clip) => clip.classId),
       ]),
-    [classId, otherClassGraphs, parentOf, sceneDocuments],
+    [classId, otherClassGraphs, ownedTimelineClips, parentOf, sceneDocuments],
   );
   const pinCompatibility = useMemo(
     () => scriptPinCompatibility(hierarchy),

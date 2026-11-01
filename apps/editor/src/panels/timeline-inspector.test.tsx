@@ -53,7 +53,12 @@ function Select({ keys = [], row = null }: { keys?: Array<[string, string]>; row
 }
 
 function renderInspector(selection: { keys?: Array<[string, string]>; row?: string | null } = {}) {
-  harness.scene = { actors: [createActor("door", "Door")], settings: {}, timelineClips: [clip()] } as unknown as SerializedScene;
+  const withEvents = { ...clip(), eventTracks: [{
+    id: "e-line", name: "On Line",
+    inputs: [{ name: "Text", typeId: "string", direction: "in" as const }, { name: "Loud", typeId: "bool", direction: "in" as const }],
+    keys: [{ id: "ek", time: 1, values: { Text: "Hello" } }],
+  }] };
+  harness.scene = { actors: [createActor("door", "Door")], settings: {}, timelineClips: [withEvents] } as unknown as SerializedScene;
   return render(<SceneToolsProvider><Select {...selection} /><TimelineInspector /></SceneToolsProvider>);
 }
 
@@ -119,5 +124,32 @@ describe("TimelineInspector", () => {
     fireEvent.change(name, { target: { value: "Opening" } });
     fireEvent.blur(name);
     expect(lastClip().name).toBe("Opening");
+  });
+
+  it("edits an event key's time and a value per input", () => {
+    renderInspector({ keys: [["e-line", "ek"]] });
+    const grid = screen.getByTestId("timeline-inspector-event-key");
+    expect(within(grid).getByDisplayValue("On Line")).toBeTruthy();
+    expect(within(grid).getByDisplayValue("Hello")).toBeTruthy();
+    fireEvent.click(within(grid).getByText("Off"));
+    expect(lastClip().eventTracks[0]!.keys[0]!.values).toEqual({ Text: "Hello", Loud: true });
+    fireEvent.change(within(grid).getByLabelText("Time"), { target: { value: "2.5" } });
+    expect(lastClip().eventTracks[0]!.keys[0]!.time).toBe(2.5);
+  });
+
+  it("renames a Custom Event Track and adds an input", async () => {
+    renderInspector({ row: "e-line" });
+    const grid = screen.getByTestId("timeline-inspector-event-track");
+    const name = within(grid).getByLabelText("Event Name");
+    name.focus();
+    fireEvent.change(name, { target: { value: "On Finished" } });
+    fireEvent.blur(name);
+    // Built-in event names stay free.
+    expect(lastClip().eventTracks[0]!.name).toBe("On Finished 2");
+    fireEvent.click(screen.getByTestId("timeline-event-in-add"));
+    const menu = within(await screen.findByTestId("timeline-event-in-add-menu"));
+    expect(menu.queryByTestId("search-item-object")).toBeNull();
+    fireEvent.click(menu.getByTestId("search-item-float"));
+    expect(lastClip().eventTracks[0]!.inputs.map((input) => [input.name, input.typeId])).toEqual([["Text", "string"], ["Loud", "bool"], ["NewInput", "float"]]);
   });
 });
