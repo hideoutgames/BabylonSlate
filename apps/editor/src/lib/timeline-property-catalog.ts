@@ -13,7 +13,7 @@ import {
 import { humanizePropertyLabel, walkAncestry } from "@haptic/editor-kit";
 import { engineScriptApiFor, isTimelineAnimatableComponentProperty } from "@haptic/object-model";
 import { defaultComponentAuthoringProperties } from "@haptic/runtime/component-authoring";
-import { sceneComponentTitle } from "./scene-component-entries";
+import { componentTypeLabel } from "../panels/add-component-catalog";
 
 /**
  * What Add Track offers for one actor: its transform and visibility, its
@@ -77,7 +77,7 @@ function classVariables(classId: string, context: TimelinePropertyContext) {
 
 /** The label a component shows in Add Track and the track list: its name, or its class. */
 export function timelineComponentLabel(component: Pick<SerializedComponent, "classId" | "name">): string {
-  return component.name?.trim() || humanizePropertyLabel(sceneComponentTitle(component.classId));
+  return component.name?.trim() || componentTypeLabel(component.classId);
 }
 
 export function timelinePropertyGroups(actor: SerializedActor, context: TimelinePropertyContext): TimelinePropertyGroup[] {
@@ -107,7 +107,7 @@ export function timelinePropertyGroups(actor: SerializedActor, context: Timeline
     groups.push({
       id: `component:${component.id}`,
       kind: "component",
-      label: `${timelineComponentLabel(component)} (${humanizePropertyLabel(component.classId)})`,
+      label: `${timelineComponentLabel(component)} (${componentTypeLabel(component.classId)} Component)`,
       componentClassId: component.classId,
       entries,
     });

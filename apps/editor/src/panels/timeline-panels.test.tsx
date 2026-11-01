@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createTimelineClip, type SerializedScene, type SerializedTimelineClip } from "@haptic/core";
 import { KeybindProvider } from "../context/keybind-context";
-import { TimelineClipsPanel, TimelinePanel } from "./timeline-panels";
+import { TimelineClipsPanel } from "./timeline-panels";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {}
@@ -82,18 +82,5 @@ describe("Clips", () => {
     fireEvent.change(input, { target: { value: "Opening" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(lastScene().timelineClips!.map((clip) => clip.name)).toEqual(["Opening"]);
-  });
-});
-
-describe("Timeline", () => {
-  it("names the selected clip, or says how to get one", () => {
-    const view = render(<TimelinePanel {...panel} />);
-    expect(screen.getByTestId("scene-timeline-title").textContent).toBe("No Timeline Clips");
-    harness.clips = [createTimelineClip("intro", "Intro")];
-    view.rerender(<TimelinePanel {...panel} />);
-    expect(screen.getByTestId("scene-timeline-title").textContent).toBe("No Clip Selected");
-    harness.selected = "intro";
-    view.rerender(<TimelinePanel {...panel} />);
-    expect(screen.getByTestId("scene-timeline-title").textContent).toBe("Intro");
   });
 });

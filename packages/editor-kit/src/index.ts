@@ -74,6 +74,12 @@ export {
   shouldPreventDocumentOverscroll,
 } from "./prevent-document-overscroll";
 export {
+  ChecklistDialog,
+  type ChecklistDialogGroup,
+  type ChecklistDialogItem,
+  type ChecklistDialogProps,
+} from "./checklist-dialog";
+export {
   KeyframeTimeline,
   type GesturePhase,
   type KeyframeTimelineProps,

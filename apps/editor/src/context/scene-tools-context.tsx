@@ -1,5 +1,19 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import type { LandscapeBrush } from "@haptic/core";
+import { TimelinePlayhead } from "../lib/timeline-playhead";
+
+/**
+ * The Timeline window while it shows a clip: the Outliner offers Add to
+ * Timeline Clip, badges the clip's actors, and rows dropped on the window join
+ * the clip.
+ */
+export interface TimelineDropTarget {
+  containsClientPoint(clientX: number, clientY: number): boolean;
+  clipName(): string;
+  addActors(actorIds: readonly string[]): void;
+}
+
+const NO_KEYS: ReadonlySet<string> = new Set();
 
 type FoliageBrush = { radius: number; density: number; spacing: number; maxSlope: number; alignToNormal: boolean; randomYaw: boolean };
 function useSceneToolsState() {
@@ -11,8 +25,14 @@ function useSceneToolsState() {
   const [groupId, setGroupId] = useState<string | null>(null);
   // The clip the Timeline mode's Clips, Timeline and Inspector windows show.
   const [timelineClipId, setTimelineClipId] = useState<string | null>(null);
+  const [timelinePlayhead] = useState(() => new TimelinePlayhead());
+  // Selected keys (`keyRefId` of track id and key id) and the selected track list row.
+  const [timelineKeySelection, setTimelineKeySelection] = useState<ReadonlySet<string>>(NO_KEYS);
+  const [timelineRowId, setTimelineRowId] = useState<string | null>(null);
+  const [timelineDropTarget, setTimelineDropTarget] = useState<TimelineDropTarget | null>(null);
   return { landscapeTool, setLandscapeTool, landscapeBrush, setLandscapeBrush, landscapeSelection, setLandscapeSelection,
-    foliageTool, setFoliageTool, foliageBrush, setFoliageBrush, groupId, setGroupId, timelineClipId, setTimelineClipId };
+    foliageTool, setFoliageTool, foliageBrush, setFoliageBrush, groupId, setGroupId, timelineClipId, setTimelineClipId,
+    timelinePlayhead, timelineKeySelection, setTimelineKeySelection, timelineRowId, setTimelineRowId, timelineDropTarget, setTimelineDropTarget };
 }
 const SceneToolsContext = createContext<ReturnType<typeof useSceneToolsState> | null>(null);
 export function SceneToolsProvider({ children }: { children: ReactNode }) {
@@ -24,4 +44,9 @@ export function useSceneTools() {
   const value = useContext(SceneToolsContext);
   if (!value) throw new Error("Scene tools require SceneToolsProvider");
   return value;
+}
+/** Scene tools, or null outside a Scene or Scene Layer tab. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOptionalSceneTools() {
+  return useContext(SceneToolsContext);
 }
