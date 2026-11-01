@@ -86,9 +86,9 @@ describe("Curve Editor window", () => {
     const framed = across();
     const track = screen.getByTestId("curve-asset-editor-track");
     act(() => {
-      dispatchPointerEvent(track, "pointerdown", { pointerType: "mouse", clientX: 50, clientY: 50 });
-      dispatchPointerEvent(track, "pointermove", { pointerType: "mouse", clientX: 30, clientY: 50 });
-      dispatchPointerEvent(track, "pointerup", { pointerType: "mouse", clientX: 30, clientY: 50 });
+      dispatchPointerEvent(track, "pointerdown", { pointerType: "mouse", button: 2, clientX: 50, clientY: 50 });
+      dispatchPointerEvent(track, "pointermove", { pointerType: "mouse", button: 2, clientX: 30, clientY: 50 });
+      dispatchPointerEvent(track, "pointerup", { pointerType: "mouse", button: 2, clientX: 30, clientY: 50 });
     });
     expect(across()).toBeCloseTo(framed - 20, 1);
     fireEvent.keyDown(document.body, { key: "f", code: "KeyF" });
