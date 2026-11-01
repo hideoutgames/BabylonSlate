@@ -217,9 +217,10 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   // The SceneLayerScript of every FT_HUD instance probes its own title.
   const title = layer.actors.find((actor) => actor.id === "ft-ui-title");
   if (!title) throw new Error("FT_HUD has no title for its Scene Layer Script.");
-  layer.script = ownedActorProbeScript("FT_HUD", title);
-  // Scene Layers keep Timeline Clips too.
-  layer.timelineClips = [createTimelineClip("ft-timeline-clip-hud-reveal", "Reveal")];
+  // Scene Layers keep Timeline Clips too; each FT_HUD instance plays its own Reveal.
+  const reveal = createTimelineClip("ft-timeline-clip-hud-reveal", "Reveal");
+  layer.timelineClips = [reveal];
+  layer.script = ownedActorProbeScript("FT_HUD", title, reveal);
   return layer;
 }
 

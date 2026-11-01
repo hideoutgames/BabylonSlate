@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createMeshComponent, type SerializedGraph } from "@haptic/core";
-import { ownedActorsOfScene, ownedGetDiagnostics, refreshOwnedGetNodes } from "./owned-actor-gets";
+import { createActor, createMeshComponent, createTimelineClip, type SerializedGraph } from "@haptic/core";
+import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "./owned-actor-gets";
 
 const scene = {
   actors: [createActor("hero", "Hero", {
@@ -46,5 +46,26 @@ describe("Get <Actor> and Get <Component> (<Actor>) in a SceneScript", () => {
       ["lost", "scene.owned_actor_missing", "error"],
     ]);
     expect(diagnostics[1]!.message).toBe("Get Crate: the actor is no longer in this Scene.");
+  });
+});
+
+describe("Get <Name> Timeline Clip in a SceneScript", () => {
+  it("shows a renamed clip's current name and reports a clip that is gone", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        getNode("intro", "scene.getOwnedTimelineClip", { sceneTimelineClipId: "intro", sceneTimelineClipName: "Old", title: "Get Old Timeline Clip" }),
+        getNode("gone", "scene.getOwnedTimelineClip", { sceneTimelineClipId: "removed", sceneTimelineClipName: "Outro" }),
+      ],
+      edges: [],
+    };
+    const clips = ownedTimelineClipsOfScene({ timelineClips: [createTimelineClip("intro", "Intro")] });
+    const refreshed = refreshOwnedGetNodes(graph, [], clips);
+    expect(refreshed.nodes[0]!.data).toMatchObject({ sceneTimelineClipName: "Intro", title: "Get Intro Timeline Clip" });
+    expect(refreshed.nodes[1]).toBe(graph.nodes[1]);
+    expect(refreshOwnedGetNodes(refreshed, [], clips)).toBe(refreshed);
+    const diagnostics = ownedGetDiagnostics(refreshed, [], { assetGuid: "assets/Hud.scene-layer.hasset", graphId: "g" }, "Scene Layer", clips);
+    expect(diagnostics.map((entry) => [entry.nodeId, entry.code, entry.message])).toEqual([
+      ["gone", "scene.owned_timeline_clip_missing", "Get Outro Timeline Clip: the Timeline Clip is no longer in this Scene Layer."],
+    ]);
   });
 });

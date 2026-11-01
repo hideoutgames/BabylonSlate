@@ -18,7 +18,6 @@ import {
   EngineObject,
   MaterialObject,
   Scene,
-  SceneLayer,
   dispatchInterface,
   type InterfaceDispatchTarget,
   type TickContext,
@@ -49,6 +48,7 @@ import {
   finiteVector,
   findComponentById,
   findComponentByIdFromTarget,
+  ownedSceneActor,
   refuseParentCycle,
   requireSaveGameService,
   resolveLiveActor,
@@ -394,6 +394,7 @@ export function createScriptContext(
       );
     };
     context.getOwnedActor = (actorId) => ownedActor(services, self, String(actorId ?? ""));
+    context.getOwnedTimelineClip = (clipId) => services.timelineClip?.(self, String(clipId ?? "")) ?? null;
     context.getOwnedComponent = (actorId, componentId) =>
       findComponentById(ownedActor(services, self, String(actorId ?? "")), String(componentId ?? ""));
     context.callComponentFunction = (target, name, args) =>
@@ -747,18 +748,6 @@ export function createScriptContext(
   return context;
 }
 
-/**
- * The actor a Scene or Scene Layer instance placed under an authored actor id:
- * a layer instance's actors are `<layer guid>:<id>`, a streamed Scene's follow
- * its instance id map, and the main Scene's keep their ids (never a layer's).
- */
 function ownedActor(services: ScriptHostServices, owner: EngineObject | null, actorId: string): Actor | null {
-  if (!actorId) return null;
-  if (owner instanceof SceneLayer) {
-    const actor = services.findActor?.(`${owner.guid}:${actorId}`);
-    return actor && actor.sceneLayerId === owner.guid ? actor : null;
-  }
-  if (!(owner instanceof Scene)) return null;
-  const actor = services.findActor?.(services.resolveInstanceId?.(owner, actorId) ?? actorId);
-  return actor && !actor.sceneLayerId ? actor : null;
+  return ownedSceneActor(owner, actorId, (guid) => services.findActor?.(guid), (scene, id) => services.resolveInstanceId?.(scene, id) ?? id);
 }

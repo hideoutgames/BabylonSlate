@@ -108,6 +108,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   FloatCurveObject: "Object",
   VectorCurveObject: "Object",
   ColorCurveObject: "Object",
+  TimelineClip: "Object",
   Actor: "Object",
   RenderTargetCapture: "Actor",
   Scene: "Object",
@@ -358,6 +359,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   FloatCurveObject: SplineIcon,
   VectorCurveObject: SplineIcon,
   ColorCurveObject: SplineIcon,
+  TimelineClip: FilmIcon,
   ScriptInterface: PlugIcon,
   PluginSettings: PuzzleIcon,
 };

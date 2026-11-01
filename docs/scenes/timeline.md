@@ -90,3 +90,34 @@ While a clip is selected, the **Inspector** edits it instead of the actor select
 
 **Interpolation** offers **Constant**, **Linear**, **Auto**, **Ease In**, **Ease Out**, **Ease In Out** and every other easing curve. Enum and Asset values are set on the property itself, then keyed.
 
+
+## Play clips in the game
+
+In Play and in a build, each clip plays on the actors of its Scene or Scene Layer. Every copy of a Scene Layer plays its own clips on its own actors.
+
+- With **Auto Play** on, the clip starts on the first step after its Scene or layer begins play, so its script's **Begin Play** runs first. Otherwise a script starts it.
+- **Play Rate** sets the speed: 2 plays twice as fast.
+- **Loop Mode**: **Once** stops at the end, **Loop** starts over and **Ping Pong** turns around at each end.
+- **When Finished** applies when a **Once** clip reaches its end: **Keep State** leaves the last values, and **Restore State** puts every animated property back as it was when the clip started playing.
+- Clips follow the game's time, so they pause with the game. Muted tracks do not play, and **Location**, **Rotation** and **Scale** are relative to the actor's parent.
+
+A clip moves before actors tick, so an actor's **Tick** sees the clip's values for that step and can override them.
+
+### Control a clip from a script
+
+In the Scene's [Scene Script](../scripting/scene-scripts.md), or a Scene Layer's Scene Layer Script, Add Node lists a [Get Scene Timeline Clip](../scripting/class/get-scene-timeline-clip.md) node for each clip, such as **Get Intro Timeline Clip**. Drag from its pin for these nodes:
+
+| Node | Does |
+| --- | --- |
+| [Play Timeline Clip](../scripting/class/play-timeline-clip.md) | Plays forwards from where the clip is. A **Once** clip at its end starts over. |
+| [Play Timeline Clip From Start](../scripting/class/play-timeline-clip-from-start.md) | Plays forwards from the start. |
+| [Reverse Timeline Clip](../scripting/class/reverse-timeline-clip.md) | Plays backwards from where the clip is. |
+| [Pause Timeline Clip](../scripting/class/pause-timeline-clip.md) | Stops where it is. |
+| [Stop Timeline Clip](../scripting/class/stop-timeline-clip.md) | Stops and goes back to the start, or to the end while reversing. |
+| [Set Timeline Clip Position](../scripting/class/set-timeline-clip-position.md) | Jumps to a time, in seconds, and shows the values there. |
+| [Set Timeline Clip Play Rate](../scripting/class/set-timeline-clip-play-rate.md) | Sets the speed; it cannot be negative. |
+| [Set Timeline Clip Loop Mode](../scripting/class/set-timeline-clip-loop-mode.md) | Sets **Once**, **Loop** or **Ping Pong**. |
+| [Get Timeline Clip Position](../scripting/class/get-timeline-clip-position.md), [Length](../scripting/class/get-timeline-clip-length.md) and [Play Rate](../scripting/class/get-timeline-clip-play-rate.md) | Return the time, the **Length** and the speed. |
+| [Is Timeline Clip Playing](../scripting/class/is-timeline-clip-playing.md) and [Is Timeline Clip Reversed](../scripting/class/is-timeline-clip-reversed.md) | Return whether it plays, and whether in reverse. |
+
+Play rate and loop mode set by a script apply to that copy of the clip only.

@@ -12,7 +12,7 @@ import {
   type SaveGameDefinition,
 } from "@haptic/core";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
-import { isLatentFunctionKey, type NodeRegistry } from "@haptic/scripting";
+import { isLatentFunctionKey, type NodeDefinition, type NodeRegistry } from "@haptic/scripting";
 import {
   ENGINE_CLASS_SCRIPT_APIS,
   isHiddenEngineBaseClassId,
@@ -27,9 +27,11 @@ import {
   SUBSYSTEM_GET_NODE_ID,
   OWNED_ACTOR_GET_NODE_ID,
   OWNED_COMPONENT_GET_NODE_ID,
+  OWNED_TIMELINE_CLIP_GET_NODE_ID,
   ownedActorGetTitle,
   ownedComponentGetTitle,
   ownedGetNodeProperties,
+  ownedTimelineClipGetTitle,
   subsystemGetPaletteCategory,
   subsystemGetProperties,
   subsystemGetTitle,
@@ -91,7 +93,11 @@ export type ScriptPaletteOptions = ClassEventOptions & {
    * row and each of its components a Get <Component> (<Actor>) row.
    */
   ownedActors?: readonly PaletteOwnedActor[];
+  /** The same owner's Timeline Clips: each gets a Get <Name> Timeline Clip row. */
+  ownedTimelineClips?: readonly PaletteOwnedTimelineClip[];
 };
+
+export type PaletteOwnedTimelineClip = { id: string; name: string };
 
 export type PaletteOwnedActor = {
   id: string;
@@ -758,7 +764,8 @@ export function castPaletteNodes(
 
 /**
  * Get <Actor> and Get <Component> (<Actor>) rows for the actors a SceneScript's
- * Scene or a SceneLayerScript's layer places, in Outliner order.
+ * Scene or a SceneLayerScript's layer places, in Outliner order, then one Get
+ * <Name> Timeline Clip row per Timeline Clip.
  */
 export function ownedGetPaletteNodes(
   nodeRegistry: NodeRegistry,
@@ -766,7 +773,31 @@ export function ownedGetPaletteNodes(
 ): PaletteNode[] {
   const actorDef = nodeRegistry.get(OWNED_ACTOR_GET_NODE_ID);
   const componentDef = nodeRegistry.get(OWNED_COMPONENT_GET_NODE_ID);
+  const clipDef = nodeRegistry.get(OWNED_TIMELINE_CLIP_GET_NODE_ID);
   if (!actorDef || !componentDef) return [];
+  const clips: PaletteNode[] = clipDef
+    ? (options?.ownedTimelineClips ?? []).map((clip) => {
+        const data = { sceneTimelineClipId: clip.id, sceneTimelineClipName: clip.name };
+        return {
+          id: `${OWNED_TIMELINE_CLIP_GET_NODE_ID}:${clip.id}`,
+          nodeType: OWNED_TIMELINE_CLIP_GET_NODE_ID,
+          title: ownedTimelineClipGetTitle(data),
+          category: "scene-timeline-clips",
+          pins: clipDef.pins(data),
+          pure: clipDef.pure,
+          latent: clipDef.latent,
+          defaultData: data,
+        };
+      })
+    : [];
+  return [...ownedActorPaletteNodes(actorDef, componentDef, options), ...clips];
+}
+
+function ownedActorPaletteNodes(
+  actorDef: NodeDefinition,
+  componentDef: NodeDefinition,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
   return (options?.ownedActors ?? []).flatMap((actor) => {
     const target = { actorId: actor.id, actorName: actor.name, actorClassId: actor.classId };
     const actorData = ownedGetNodeProperties(target);

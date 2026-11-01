@@ -656,6 +656,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Scene Actor Component](get-scene-actor-component.md) | Returns a component of an actor this Scene or Scene Layer places, in its script. |
 | [Get Scene Load Progress](get-scene-load-progress.md) | Returns how far a streamed Scene has loaded, from 0 to 1. |
 | [Get Scene State](get-scene-state.md) | Returns whether a streamed Scene is unloaded, loading, loaded or unloading. |
+| [Get Scene Timeline Clip](get-scene-timeline-clip.md) | Returns a Timeline Clip of this Scene or Scene Layer, in its script, to play and control. |
 | [Get Target Scene Name](get-target-scene-name.md) | Returns the name of the Scene that a Scene Streaming Actor loads. |
 | [Is Scene Loaded](is-scene-loaded.md) | Returns true once all actors and render resources of a streamed Scene are ready. |
 | [Load Scene Async](load-scene-async.md) | Starts loading a Scene Streaming Actor's Scene while the game keeps running. |
@@ -748,6 +749,24 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Material Float Parameter](set-material-float-parameter.md) | Sets a named Float parameter on a Material Object. |
 | [Set Material Instance](set-material-instance.md) | Assigns a Material Instance to a mesh component and returns its Material Object. |
 | [Set Material Texture Parameter](set-material-texture-parameter.md) | Sets a named Texture parameter on a Material Object, loading the Texture first. |
+
+## Timeline
+
+| Node | Description |
+| --- | --- |
+| [Get Timeline Clip Length](get-timeline-clip-length.md) | Returns a Timeline Clip's Length, in seconds. |
+| [Get Timeline Clip Play Rate](get-timeline-clip-play-rate.md) | Returns a Timeline Clip's current Play Rate. |
+| [Get Timeline Clip Position](get-timeline-clip-position.md) | Returns where a Timeline Clip is, in seconds. |
+| [Is Timeline Clip Playing](is-timeline-clip-playing.md) | Returns true while a Timeline Clip plays, forwards or in reverse. |
+| [Is Timeline Clip Reversed](is-timeline-clip-reversed.md) | Returns true when a Timeline Clip plays, or last played, in reverse. |
+| [Pause Timeline Clip](pause-timeline-clip.md) | Stops a Timeline Clip where it is. |
+| [Play Timeline Clip](play-timeline-clip.md) | Plays a Timeline Clip forwards from where it is. |
+| [Play Timeline Clip From Start](play-timeline-clip-from-start.md) | Plays a Timeline Clip forwards from its start. |
+| [Reverse Timeline Clip](reverse-timeline-clip.md) | Plays a Timeline Clip backwards from where it is. |
+| [Set Timeline Clip Loop Mode](set-timeline-clip-loop-mode.md) | Sets whether a Timeline Clip stops at its end, starts over or turns around. |
+| [Set Timeline Clip Play Rate](set-timeline-clip-play-rate.md) | Sets how fast a Timeline Clip plays. |
+| [Set Timeline Clip Position](set-timeline-clip-position.md) | Moves a Timeline Clip to a time and applies its values there. |
+| [Stop Timeline Clip](stop-timeline-clip.md) | Stops a Timeline Clip and returns it to its start, or to its end while it plays in reverse. |
 
 ## Timers
 

@@ -1,3 +1,4 @@
+import type { TimelineRuntime } from "./timeline-runtime";
 import type { CurveAssetCatalogEntry } from "@haptic/core";
 import type { CommandMessage, GameSessionMode, SessionPauseReason } from "@haptic/bridge";
 import type {
@@ -138,6 +139,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly painters: Painter2DRuntime;
   readonly textAppear: Text2DAppearRuntime;
   readonly tweens: TweenRuntime;
+  readonly timelines: TimelineRuntime;
   readonly subsystems: RuntimeSubsystems;
   readonly admission: OwnerAdmission;
   readonly renderSlots: RenderSlots;

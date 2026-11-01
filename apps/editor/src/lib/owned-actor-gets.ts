@@ -3,6 +3,9 @@ import type { Diagnostic } from "@haptic/scripting";
 import {
   OWNED_ACTOR_GET_NODE_ID,
   OWNED_COMPONENT_GET_NODE_ID,
+  OWNED_TIMELINE_CLIP_GET_NODE_ID,
+  ownedTimelineClipGetTitle,
+  ownedTimelineClipProperties,
   ownedActorGetTitle,
   ownedComponentGetTitle,
   ownedGetNodeProperties,
@@ -18,6 +21,18 @@ export type OwnedActorEntry = {
   /** `name` is the component's label, numbered when two on the actor share one. */
   components: Array<{ id: string; classId: string; name: string }>;
 };
+
+/** A Timeline Clip of a SceneScript's Scene or a SceneLayerScript's layer, for Get <Name> Timeline Clip. */
+export type OwnedTimelineClipEntry = { id: string; name: string };
+
+export function ownedTimelineClipsOfScene(scene: Pick<SerializedScene, "timelineClips"> | null | undefined): OwnedTimelineClipEntry[] {
+  return (scene?.timelineClips ?? []).map((clip) => ({ id: clip.id, name: clip.name }));
+}
+
+/** Node properties naming a Timeline Clip. */
+export function ownedTimelineClipNodeProperties(clip: OwnedTimelineClipEntry): Record<string, string> {
+  return { sceneTimelineClipId: clip.id, sceneTimelineClipName: clip.name };
+}
 
 /** The actors (Outliner order) a Scene or Scene Layer tab places, for Get <Actor> / Get <Component> (<Actor>). */
 export function ownedActorsOfScene(scene: Pick<SerializedScene, "actors"> | null | undefined): OwnedActorEntry[] {
@@ -45,9 +60,18 @@ function isOwnedGet(type: string): boolean {
 
 type GraphNodes = SerializedGraph["nodes"];
 
-function refreshNodes(nodes: GraphNodes, actors: readonly OwnedActorEntry[]): GraphNodes {
+function refreshNodes(nodes: GraphNodes, actors: readonly OwnedActorEntry[], clips?: readonly OwnedTimelineClipEntry[]): GraphNodes {
   let changed = false;
   const next = nodes.map((node) => {
+    if (node.type === OWNED_TIMELINE_CLIP_GET_NODE_ID) {
+      const clip = clips?.find((entry) => entry.id === ownedTimelineClipProperties(node.data).clipId);
+      if (!clip) return node;
+      const data: Record<string, unknown> = { ...node.data, ...ownedTimelineClipNodeProperties(clip) };
+      data.title = ownedTimelineClipGetTitle(data);
+      if (Object.keys(data).every((key) => data[key] === node.data[key])) return node;
+      changed = true;
+      return { ...node, data };
+    }
     if (!isOwnedGet(node.type)) return node;
     const { actorId, componentId } = ownedGetProperties(node.data);
     const actor = actors.find((entry) => entry.id === actorId);
@@ -73,8 +97,12 @@ function refreshNodes(nodes: GraphNodes, actors: readonly OwnedActorEntry[]): Gr
  * current name and class (a renamed actor, a retyped one). Targets that are
  * gone keep their last names; `ownedGetDiagnostics` reports them.
  */
-export function refreshOwnedGetNodes(graph: SerializedGraph, actors: readonly OwnedActorEntry[]): SerializedGraph {
-  const nodes = refreshNodes(graph.nodes, actors);
+export function refreshOwnedGetNodes(
+  graph: SerializedGraph,
+  actors: readonly OwnedActorEntry[],
+  clips?: readonly OwnedTimelineClipEntry[],
+): SerializedGraph {
+  const nodes = refreshNodes(graph.nodes, actors, clips);
   return nodes === graph.nodes ? graph : { ...graph, nodes };
 }
 
@@ -84,10 +112,18 @@ export function ownedGetDiagnostics(
   actors: readonly OwnedActorEntry[],
   anchor: { assetGuid: string; graphId: string },
   owner: "Scene" | "Scene Layer",
+  clips?: readonly OwnedTimelineClipEntry[],
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const slices = [graph.nodes, ...Object.values(graph.functionGraphs ?? {}).map((slice) => slice.nodes)];
   for (const node of slices.flat()) {
+    if (node.type === OWNED_TIMELINE_CLIP_GET_NODE_ID) {
+      if (clips && !clips.some((clip) => clip.id === ownedTimelineClipProperties(node.data).clipId)) {
+        diagnostics.push({ ...anchor, severity: "error", code: "scene.owned_timeline_clip_missing", nodeId: node.id,
+          message: `${ownedTimelineClipGetTitle(node.data)}: the Timeline Clip is no longer in this ${owner}.` });
+      }
+      continue;
+    }
     if (!isOwnedGet(node.type)) continue;
     const properties = ownedGetProperties(node.data);
     const actor = actors.find((entry) => entry.id === properties.actorId);

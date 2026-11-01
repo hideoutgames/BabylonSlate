@@ -296,6 +296,7 @@ export function scriptPaletteInjectorKey(
     scriptInterfaces: options?.scriptInterfaces ?? [],
     subsystemClasses: options?.subsystemClasses ?? [],
     ownedActors: options?.ownedActors ?? [],
+    ownedTimelineClips: options?.ownedTimelineClips ?? [],
     structures: options?.structures ?? [],
     dataDefinitions: options?.dataDefinitions ?? [],
     saveGameDefinition: options?.saveGameDefinition,

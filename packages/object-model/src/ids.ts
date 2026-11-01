@@ -22,6 +22,7 @@ export const ENGINE_BASE_CLASS_IDS = [
   "FloatCurveObject",
   "VectorCurveObject",
   "ColorCurveObject",
+  "TimelineClip",
   "Actor",
   "RenderTargetCapture",
   "Scene",

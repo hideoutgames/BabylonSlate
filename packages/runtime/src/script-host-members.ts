@@ -37,7 +37,8 @@ import {
   type SaveGameValue,
   type SceneLayerCamera,
 } from "@haptic/core";
-import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer } from "@haptic/object-model";
+import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipObject } from "@haptic/object-model";
+import { timelineClipState } from "./timeline-runtime";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { EMPTY_ASSET_CATALOG } from "./asset-catalog";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
@@ -276,6 +277,13 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     curveObjectTimeRange: (target) => curveTimeRange(curveObjectOf(target)?.curve ?? EMPTY_CURVE),
     curveObjectValueRange: (target) => floatCurveValueRange(curveObjectOf(target)?.curve ?? EMPTY_CURVE),
     curveObjectKeyCount: (target) => curveObjectOf(target)?.curve.Keys.length ?? 0,
+    timelineClipControl: (target, action, args) => {
+      if (target instanceof TimelineClipObject && !target.destroyed && host.canInvokeOwner(target.owner)) {
+        services.timelineClipControl?.(target, String(action), args ?? {});
+      }
+    },
+    timelineClipState: (target, field) =>
+      target instanceof TimelineClipObject ? timelineClipState(target, String(field)) : field === "playing" || field === "reversed" ? false : 0,
     curveObjectCurve: (kind, target) => {
       const object = curveObjectOf(target);
       return structuredClone(object && object.kind === kind ? object.curve : EMPTY_CURVE);

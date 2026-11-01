@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@haptic/bridge";
-import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent, type SerializedScene } from "@haptic/core";
+import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent, createTimelineClip, type SerializedScene, type SerializedTimelineClip } from "@haptic/core";
 import { sceneAssetClassId, sceneLayerAssetClassId } from "@haptic/object-model";
 import { compileGraph, STRING, type GraphNode, type LogicGraph } from "@haptic/scripting";
-import { createDefaultNodeRegistry, OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID } from "@haptic/scripting-nodes";
+import { createDefaultNodeRegistry, OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, OWNED_TIMELINE_CLIP_GET_NODE_ID } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 
@@ -153,6 +153,78 @@ describe("Get <Actor> and Get <Component> (<Actor>)", () => {
       expect(references).toContain(`refs:${layer.guid}:${layer.guid}:panel:${layer.guid}:panel:MeshComponent:null`);
     }
     expect(references).toHaveLength(3);
+    runtime.stop();
+  });
+});
+
+describe("Get <Name> Timeline Clip", () => {
+  const registry = createDefaultNodeRegistry();
+  const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode => ({
+    id, typeId, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties), properties,
+  });
+  /** Moves `panel` along `axis` from 0 to 4 over 1 second. */
+  const slide = (id: string, name: string, axis: "x" | "y", autoPlay: boolean): SerializedTimelineClip => ({
+    ...createTimelineClip(id, name),
+    length: 1,
+    autoPlay,
+    objects: [{ id: "o", actorId: "panel", tracks: [{
+      id: "t", target: { kind: "transform", property: "location" }, valueType: "vec3",
+      keys: [0, 1].map((Time) => ({
+        id: `k${Time}`, Time, Value: { x: 0, y: 0, z: 0, [axis]: Time * 4 },
+        Interpolation: "linear" as const, ArriveTangent: 0, LeaveTangent: 0,
+      })),
+    }] }],
+  });
+  /** Begin Play plays the owner's `reveal` clip and logs whether it is playing. */
+  function playScript(classId: string): CompiledScript {
+    const graph: LogicGraph = {
+      id: "event-graph", kind: "event",
+      nodes: [
+        node("begin", "flow.event.beginPlay"),
+        node("clip", OWNED_TIMELINE_CLIP_GET_NODE_ID, { sceneTimelineClipId: "reveal", sceneTimelineClipName: "Reveal" }),
+        node("missing", OWNED_TIMELINE_CLIP_GET_NODE_ID, { sceneTimelineClipId: "gone", sceneTimelineClipName: "Gone" }),
+        node("play", "debug.executeJavaScript", {
+          inputs: [{ name: "clip", type: STRING }, { name: "missing", type: STRING }],
+          outputs: [],
+          body: 'ctx.timelineClipControl(clip, "play", {}); ctx.log("log", "Script", "clip:" + clip?.classId + ":" + ctx.timelineClipState(clip, "playing") + ":" + missing);',
+        }),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "play", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "clip", sourcePinId: "clip", targetNodeId: "play", targetPinId: "in_clip" },
+        { id: "e3", sourceNodeId: "missing", sourcePinId: "clip", targetNodeId: "play", targetPinId: "in_missing" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: classId, registry });
+    return { classId, parentClassId: "SceneLayer", assetGuid: classId, source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints };
+  }
+
+  it("plays each Scene Layer copy's own clip, and Auto Plays the main Scene's", async () => {
+    const commands: CommandMessage[] = [];
+    const panel = () => createActor("panel", "Panel", { components: [createMeshComponent("panel-mesh", "box")] });
+    const level = { ...scene("Level1", ["overlay", "overlay"]), actors: [panel()], timelineClips: [slide("intro", "Intro", "y", true)] };
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: level, playSceneGuid: "level-1",
+      sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), actors: [panel()], timelineClips: [slide("reveal", "Reveal", "x", false)] } },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([playScript(sceneLayerAssetClassId("overlay"))]);
+    runtime.realizePlayWorld();
+    expect(logs(commands).filter((message) => message.startsWith("clip:"))).toEqual(["clip:TimelineClip:true:null", "clip:TimelineClip:true:null"]);
+    runtime.start();
+    const ticks = (count: number) => { for (let index = 0; index < count; index += 1) runtime.tick(); };
+    ticks(30);
+    const world = runtime.getWorld();
+    const layers = world.getSceneLayers();
+    expect(layers).toHaveLength(2);
+    for (const layer of layers) {
+      expect(world.findActor(`${layer.guid}:panel`)!.transform.position.x).toBeCloseTo(2, 1);
+    }
+    expect(world.findActor("panel")!.transform.position.y).toBeCloseTo(2, 1);
+    ticks(60);
+    for (const layer of layers) expect(world.findActor(`${layer.guid}:panel`)!.transform.position.x).toBe(4);
+    expect(world.findActor("panel")!.transform.position).toMatchObject({ x: 0, y: 4 });
     runtime.stop();
   });
 });

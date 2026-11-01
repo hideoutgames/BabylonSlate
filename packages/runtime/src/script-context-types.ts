@@ -34,6 +34,7 @@ import type {
   Scene,
   SceneLayer,
   TickContext,
+  TimelineClipObject,
 } from "@haptic/object-model";
 import type { ColliderShape, OverlapResult, PhysicsTransform, TeleportOptions, Vec3 } from "@haptic/physics";
 import type { AnimStateFacts } from "@haptic/anim-graph";
@@ -245,6 +246,10 @@ export interface ScriptContext {
   curveObjectTimeRange(target: unknown): { Min: number; Max: number };
   curveObjectValueRange(target: unknown): { Min: number; Max: number };
   curveObjectKeyCount(target: unknown): number;
+  /** Timeline Clip control nodes; they wait while the clip's Scene or Scene Layer cannot run. */
+  timelineClipControl(target: unknown, action: string, args: Record<string, unknown>): void;
+  /** Timeline Clip reads: Position, Length, Play Rate, Playing, Reversed. */
+  timelineClipState(target: unknown, field: string): number | boolean;
   /** A copy of the asset's curve as a curve Structure value. */
   curveObjectCurve(kind: CurveKind, target: unknown): unknown;
   getAllActorsOfClass(classId: string): Actor[];
@@ -295,6 +300,8 @@ export interface ScriptContext {
   getOwnedActor(actorId: string): Actor | null;
   /** Get <Component> (<Actor>): that actor's component with the authored `componentId`, else null. */
   getOwnedComponent(actorId: string, componentId: string): ActorComponent | null;
+  /** This Scene or Scene Layer copy's Timeline Clip with the authored clip id. */
+  getOwnedTimelineClip(clipId: string): TimelineClipObject | null;
   callComponentFunction(
     target: EngineObject | null | undefined,
     name: string,
@@ -618,7 +625,7 @@ export type HostContextKey =
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
   | "normalizeQuat" | "randomFloat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
-  | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
+  | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"

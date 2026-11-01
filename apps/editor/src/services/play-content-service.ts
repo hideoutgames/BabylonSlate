@@ -28,7 +28,7 @@ import { parseAnimGraphDocument } from "@haptic/anim-graph";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { embeddedScriptHost } from "../lib/embedded-script";
-import { ownedActorsOfScene, ownedGetDiagnostics, type OwnedActorEntry } from "../lib/owned-actor-gets";
+import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipsOfScene, type OwnedActorEntry, type OwnedTimelineClipEntry } from "../lib/owned-actor-gets";
 import { encodeRgbaPng } from "@haptic/render/png-encode";
 import type { Diagnostic } from "@haptic/scripting";
 import {
@@ -122,7 +122,11 @@ type EmbeddedScriptDocument = {
   parentClassId: string;
   /** The owner's actors, which its Get <Actor> / Get <Component> (<Actor>) nodes name. */
   ownedActors: OwnedActorEntry[];
+  /** The owner's Timeline Clips, which its Get <Name> Timeline Clip nodes name. */
+  ownedTimelineClips: OwnedTimelineClipEntry[];
 };
+
+type EmbeddedScriptOwner = { script?: unknown; actors?: SerializedScene["actors"]; timelineClips?: SerializedScene["timelineClips"] };
 
 function openGraphCompileDocuments(
   openDocuments: readonly OpenDocument[],
@@ -322,10 +326,10 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       const kind = asset.header.type === "Scene" ? "scene" : "scene-layer";
       const host = embeddedScriptHost(kind, asset);
       if (!host) continue;
-      let content = open.get(documentId({ kind, path: asset.path }))?.content as { script?: unknown; actors?: SerializedScene["actors"] } | null | undefined;
+      let content = open.get(documentId({ kind, path: asset.path }))?.content as EmbeddedScriptOwner | null | undefined;
       if (!content) {
         try {
-          content = await projectService.loadDocument(kind, asset.path) as { script?: unknown; actors?: SerializedScene["actors"] };
+          content = await projectService.loadDocument(kind, asset.path) as EmbeddedScriptOwner;
         } catch (error) {
           reportLoadFailure(kind === "scene" ? "Scene" : "Scene Layer", asset.path, error, strict);
           continue;
@@ -337,6 +341,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         path: asset.path, content: script, documentKind: kind,
         classId: host.classId, className: host.className, parentClassId: host.parentClass,
         ownedActors: ownedActorsOfScene({ actors: Array.isArray(content?.actors) ? content.actors : [] }),
+        ownedTimelineClips: ownedTimelineClipsOfScene({ timelineClips: Array.isArray(content?.timelineClips) ? content.timelineClips : [] }),
       });
     }
     return documents;
@@ -477,7 +482,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     for (const doc of embeddedDocuments) {
       diagnostics.push(...ownedGetDiagnostics(doc.content, doc.ownedActors,
         { assetGuid: doc.path, graphId: documentId({ kind: doc.documentKind, path: doc.path }) },
-        doc.documentKind === "scene" ? "Scene" : "Scene Layer"));
+        doc.documentKind === "scene" ? "Scene" : "Scene Layer", doc.ownedTimelineClips));
     }
     const bundles = [
       ...compileGraphDocuments(documents, {

@@ -301,3 +301,25 @@ export function sceneLayerGuidOf(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) return value.trim();
   return value instanceof SceneLayer && !value.destroyed ? value.guid : null;
 }
+
+/**
+ * The actor a Scene or Scene Layer instance placed under an authored actor id:
+ * a layer instance's actors are `<layer guid>:<id>`, a streamed Scene's follow
+ * its instance id map, and the main Scene's keep their ids (never a layer's).
+ */
+export function ownedSceneActor(
+  owner: EngineObject | null,
+  actorId: string,
+  findActor: ((guid: string) => Actor | null | undefined) | undefined,
+  resolveInstanceId: ((owner: EngineObject, id: string) => string) | undefined,
+): Actor | null {
+  if (!actorId) return null;
+  if (owner instanceof SceneLayer) {
+    const actor = findActor?.(`${owner.guid}:${actorId}`);
+    return actor && actor.sceneLayerId === owner.guid ? actor : null;
+  }
+  if (!(owner instanceof Scene)) return null;
+  const actor = findActor?.(resolveInstanceId?.(owner, actorId) ?? actorId);
+  return actor && !actor.sceneLayerId ? actor : null;
+}
+
