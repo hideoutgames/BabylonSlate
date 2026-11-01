@@ -1,3 +1,4 @@
+import { CurveAssetDetailsPanel, CurveAssetEditorPanel } from "../components/curve-asset-editor";
 import { BreakpointsPanel } from "../panels/breakpoints-panel";
 import { WatchesPanel } from "../panels/watches-panel";
 import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "../panels/save-game-panels";
@@ -238,6 +239,8 @@ export const panelComponents = {
   "audio-channel-details": (props: IDockviewPanelProps) => (
     <AudioChannelDetailsPanel {...props} />
   ),
+  "curve-asset-editor": (props: IDockviewPanelProps) => <CurveAssetEditorPanel {...props} />,
+  "curve-asset-details": (props: IDockviewPanelProps) => <CurveAssetDetailsPanel {...props} />,
   "sound-attenuation-details": (props: IDockviewPanelProps) => (
     <SoundAttenuationDetailsPanel {...props} />
   ),
