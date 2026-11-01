@@ -1,14 +1,15 @@
-export const SCENE_MODES = ["design", "landscape", "foliage", "script"] as const;
+export const SCENE_MODES = ["design", "landscape", "foliage", "script", "timeline"] as const;
 export type SceneMode = (typeof SCENE_MODES)[number];
 
 /** A Scene Layer has no Landscape or Foliage. */
-export const SCENE_LAYER_MODES = ["design", "script"] as const satisfies readonly SceneMode[];
+export const SCENE_LAYER_MODES = ["design", "script", "timeline"] as const satisfies readonly SceneMode[];
 
 export const SCENE_MODE_LABELS: Record<SceneMode, string> = {
   design: "Design",
   landscape: "Landscape",
   foliage: "Foliage",
   script: "Script",
+  timeline: "Timeline",
 };
 
 export type SceneDocumentLayout = {
@@ -20,7 +21,7 @@ export function hasSceneModes(kind: string | undefined): kind is "scene" | "scen
   return kind === "scene" || kind === "scene-layer";
 }
 
-/** The modes a Scene (all) or Scene Layer (Design, Script) tab offers. */
+/** The modes a Scene (all) or Scene Layer (Design, Script, Timeline) tab offers. */
 export function sceneModesForKind(kind: string | undefined): readonly SceneMode[] {
   return kind === "scene-layer" ? SCENE_LAYER_MODES : SCENE_MODES;
 }
@@ -34,7 +35,7 @@ function record(value: unknown): Record<string, unknown> | null {
     ? value as Record<string, unknown> : null;
 }
 
-/** Read the stored `{ sceneMode, design, landscape, foliage, script }` scene layout. */
+/** Read the stored `{ sceneMode, design, landscape, foliage, script, timeline }` scene layout. */
 export function parseSceneDocumentLayout(
   layout: Record<string, unknown> | null | undefined,
   kind?: string,
@@ -46,6 +47,7 @@ export function parseSceneDocumentLayout(
     landscape: record(layout?.landscape),
     foliage: record(layout?.foliage),
     script: record(layout?.script),
+    timeline: record(layout?.timeline),
   };
 }
 

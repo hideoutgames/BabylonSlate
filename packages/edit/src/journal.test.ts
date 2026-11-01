@@ -3,6 +3,7 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  createTimelineClip,
 } from "@haptic/core";
 import { MoveNodeCommand, SetGraphActorDefaultsCommand, SetGraphFunctionGraphsCommand, SetGraphOverlayDesignCommand } from "./commands/graph";
 import {
@@ -34,6 +35,12 @@ import {
 import { SetAssetDocumentCommand } from "./commands/asset-document";
 import { ReplaceSceneCommand } from "./commands/replace-scene";
 import { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";
+import {
+  AddTimelineClipCommand,
+  RemoveTimelineClipCommand,
+  ReorderTimelineClipCommand,
+  SetTimelineClipCommand,
+} from "./commands/scene-timeline";
 import {
   ReorderFolderCommand,
   SetActorClassCommand,
@@ -226,6 +233,10 @@ describe("journal", () => {
       new RenameFolderCommand("f1", "One", "Renamed"),
       new ReparentFolderCommand("f1", null, "f2"),
       new SetActorFolderCommand(actorId, null, "f1"),
+      new AddTimelineClipCommand(createTimelineClip("c1", "Intro")),
+      new RemoveTimelineClipCommand(createTimelineClip("c1", "Intro"), 0),
+      new SetTimelineClipCommand("c1", createTimelineClip("c1", "Intro"), createTimelineClip("c1", "Outro"), "timelineClip:c1"),
+      new ReorderTimelineClipCommand("c1", 0, 1),
     ];
 
     for (const command of commands) {

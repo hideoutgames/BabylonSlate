@@ -1,4 +1,4 @@
-import type { SerializedActor, SerializedGraph } from "@haptic/core";
+import { createTimelineClip, type SerializedActor, type SerializedGraph } from "@haptic/core";
 import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, ownedGetNodeProperties } from "@haptic/scripting-nodes";
 import type { FeatureTestContext } from "./context";
 import { classGraph, gChain, gNode, gWire, printString } from "./graph";
@@ -36,4 +36,6 @@ export function placeFeatureTestSceneScript(ctx: FeatureTestContext): void {
   const mannequin = ctx.mainScene.actors.find((actor) => actor.id === ctx.assets.mannequin.actorId);
   if (!mannequin) throw new Error("FeatureTest main scene has no Mannequin for its Scene Script.");
   ctx.mainScene.script = ownedActorProbeScript("Feature Test scene", mannequin);
+  // A Timeline Clip on the main scene; Timeline mode lists it in Clips.
+  ctx.mainScene.timelineClips = [{ ...createTimelineClip("ft-timeline-clip-intro", "Intro"), length: 4 }];
 }

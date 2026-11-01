@@ -1,4 +1,5 @@
 import type { SerializedGraph } from "./project";
+import type { SerializedTimelineClip } from "./timeline-clips";
 import {
   createDefaultSceneSettings,
   normalizeScene,
@@ -138,6 +139,8 @@ export interface SerializedSceneLayer {
    * this layer, for that instance's lifetime. Absent until authored.
    */
   script?: SerializedGraph;
+  /** Timeline Clips authored in Timeline mode; absent until one is created. */
+  timelineClips?: SerializedTimelineClip[];
 }
 
 const DENIED = new Set<string>(SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS);
@@ -238,6 +241,7 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
     actors: scene.actors.map(stripDeniedComponents),
     folders: scene.folders,
     ...(scene.script ? { script: scene.script } : {}),
+    ...(scene.timelineClips ? { timelineClips: scene.timelineClips } : {}),
   };
 }
 
@@ -542,6 +546,7 @@ export function editorSceneToSceneLayer(
     actors: scene.actors,
     folders: scene.folders,
     script: scene.script,
+    timelineClips: scene.timelineClips,
   });
 }
 
@@ -566,5 +571,6 @@ export function sceneLayerToEditorScene(
     actors: layer.actors,
     folders: layer.folders,
     ...(layer.script ? { script: layer.script } : {}),
+    ...(layer.timelineClips ? { timelineClips: layer.timelineClips } : {}),
   };
 }

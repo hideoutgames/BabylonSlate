@@ -359,6 +359,54 @@ const SCENE_SCRIPT_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+/**
+ * Scene and Scene Layer Timeline mode: the Viewport with the Outliner, the
+ * document's Timeline Clips and the Timeline below the Viewport. New ids:
+ * Trace already has `trace-timeline` and Audio `audio-clips`.
+ */
+const SCENE_TIMELINE_WINDOWS: DockWindowDefinition[] = [
+  { id: "viewport", component: "viewport", title: "Viewport" },
+  {
+    id: "scene-outliner",
+    component: "scene-outliner",
+    title: "Outliner",
+    defaultPosition: { referencePanelId: "viewport", direction: "left", initialWidth: 250 },
+  },
+  {
+    id: "timeline-clips",
+    component: "timeline-clips",
+    title: "Clips",
+    defaultPosition: { referencePanelId: "scene-outliner", direction: "below", initialHeight: 300 },
+  },
+  {
+    id: "scene-details",
+    component: "scene-details",
+    title: "Inspector",
+    defaultPosition: { referencePanelId: "viewport", direction: "right", initialWidth: 290 },
+  },
+  {
+    id: "scene-timeline",
+    component: "scene-timeline",
+    title: "Timeline",
+    defaultPosition: { referencePanelId: "viewport", direction: "below", initialHeight: 340 },
+  },
+  {
+    id: "output-log",
+    component: "output-log",
+    title: "Output Log",
+    defaultPosition: { referencePanelId: "scene-timeline", direction: "within" },
+    openByDefault: false,
+  },
+  {
+    id: "compiler-results",
+    component: "compiler-results",
+    title: "Compiler Results",
+    defaultPosition: { referencePanelId: "scene-timeline", direction: "within" },
+    openByDefault: false,
+  },
+  BREAKPOINTS_WINDOW,
+];
+
 const GRAPH_WINDOWS: DockWindowDefinition[] = [
   { id: "graph", component: "graph", title: EVENT_GRAPH_TITLE },
   {
@@ -1089,6 +1137,7 @@ export function listDockWindows(
 ): DockWindowDefinition[] {
   if (kind === "scene" || kind === "scene-layer") {
     if (options?.sceneMode === "script") return withOptionalLocks(kind, SCENE_SCRIPT_WINDOWS, options);
+    if (options?.sceneMode === "timeline") return withOptionalLocks(kind, SCENE_TIMELINE_WINDOWS, options);
     if (kind === "scene" && options?.sceneMode === "landscape") return withOptionalLocks(kind, LANDSCAPE_WINDOWS, options);
     if (kind === "scene" && options?.sceneMode === "foliage") return withOptionalLocks(kind, FOLIAGE_WINDOWS, options);
     return withOptionalLocks(kind, SCENE_WINDOWS, options);

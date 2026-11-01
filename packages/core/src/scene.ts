@@ -7,6 +7,7 @@ import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverride
 import { parseSplineProperties, SPLINE_COMPONENT_CLASS_ID } from "./spline-component";
 import { normalizeSceneStreamingProperties } from "./scene-streaming";
 import type { SerializedGraph } from "./project";
+import { normalizeTimelineClips, type SerializedTimelineClip } from "./timeline-clips";
 
 
 /**
@@ -235,6 +236,8 @@ export interface SerializedScene {
    * Absent until authored.
    */
   script?: SerializedGraph;
+  /** Timeline Clips authored in Timeline mode; absent until one is created. */
+  timelineClips?: SerializedTimelineClip[];
 }
 
 export const SCENE_SCHEMA_VERSION = 4;
@@ -761,6 +764,7 @@ export function normalizeScene(value: unknown): SerializedScene {
   const actors = rawActors.map((entry, index) => normalizeActor(entry, index, takenIds));
   assertUniqueSceneActorIds(actors, name);
   const script = normalizeEmbeddedScript(source.script);
+  const timelineClips = normalizeTimelineClips(source.timelineClips);
   return {
     name,
     viewportMode,
@@ -768,6 +772,7 @@ export function normalizeScene(value: unknown): SerializedScene {
     actors: withResolvedFolderIds(actors, folders),
     folders,
     ...(script ? { script } : {}),
+    ...(timelineClips ? { timelineClips } : {}),
   };
 }
 

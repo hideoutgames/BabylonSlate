@@ -52,6 +52,7 @@ const COMMAND_LIST = [
   { id: "scene.modeLandscape", label: "Landscape Mode", category: "Viewport", defaultChords: ["Shift+2"] },
   { id: "scene.modeFoliage", label: "Foliage Mode", category: "Viewport", defaultChords: ["Shift+3"] },
   { id: "scene.modeScript", label: "Script Mode", category: "Viewport", defaultChords: ["Shift+4"] },
+  { id: "scene.modeTimeline", label: "Timeline Mode", category: "Viewport", defaultChords: ["Shift+5"] },
   { id: "edit.copy", label: "Copy", category: "Editing", defaultChords: ["Mod+C"] },
   { id: "edit.paste", label: "Paste", category: "Editing", defaultChords: ["Mod+V"] },
   { id: "edit.duplicate", label: "Duplicate", category: "Editing", defaultChords: ["Mod+D"] },
