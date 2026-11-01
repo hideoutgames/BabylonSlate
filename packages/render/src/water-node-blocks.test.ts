@@ -124,6 +124,9 @@ describe("Water material nodes", () => {
       expect(fragment).toMatch(/swShoreSlope = mix\(length\(swTerrainSlope\), 1\.0, swFineClamped\);/);
       expect(fragment).toMatch(/smoothstep\(0\.35, 1\.0, swShoreSlope\)/);
       expect(fragment).toContain("swCopyTexel");
+      // It lets nothing through over open sky, nor one copy texel in from it: a multisampled silhouette's resolved colour
+      // there holds the background while its depth is the surface's (dark dashes along a submerged landscape's border).
+      expect(fragment).toMatch(/swnOpenSky = step\([\d.]+, max\(swnSceneZ, swnNearSky\)\);/);
       // Its lighting takes Water Reflection's normal: the half vector toward the reflected ray, lifted above the horizon
       // as built-in water lifts it, from the waves' normal flattened by the horizon haze through the scene's fog.
       expect(fragment).toMatch(/\w+ = swnH;/);

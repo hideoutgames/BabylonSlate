@@ -63,6 +63,23 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     }
     expect(floor).toBeGreaterThan(result.width * result.height / 6);
     expect(apart / (floor * 3)).toBeLessThan(3);
+    // Nor does the floor take in the background beside its silhouette: a copy texel holding the floor's depth holds the
+    // floor's colour alone (water shows nothing of open sky), whether it averages four of the view's texels or filters
+    // one, and the water's filtered read of it takes in no open-sky texel either. The silhouette's own pixels may map to
+    // a copy texel of open sky, which water shows nothing of (this window water shows its colour regardless).
+    const magenta = (pixels: number[], index: number) => (pixels[index]! + pixels[index + 2]!) / 2 - pixels[index + 1]!;
+    const besideSky = (x: number, y: number) => [-1, 0, 1].some((dy) => [-1, 0, 1].some((dx) =>
+      x + dx >= 0 && y + dy >= 0 && x + dx < result.width && y + dy < result.height &&
+      background(result.fogDirect, ((y + dy) * result.width + x + dx) * 4)));
+    const bled = (through: number[]) => {
+      let count = 0;
+      for (let y = 0; y < result.height; y++) for (let x = 0; x < result.width; x++) {
+        const index = (y * result.width + x) * 4;
+        if (!besideSky(x, y) && magenta(through, index) - magenta(result.fogDirect, index) > 40) count++;
+      }
+      return count;
+    };
+    expect({ default: bled(result.fogThrough), half: bled(result.fogThroughHalf) }).toEqual({ default: 0, half: 0 });
     // The glint's coverage rose by its brightest channel (to 60% over the magenta background, not 20% of a clipped white).
     let raised = 0;
     for (let index = 0; index < result.glintPixels.length; index += 4) if (result.glintPixels[index + 1]! > 120) raised++;

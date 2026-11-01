@@ -3,8 +3,8 @@
  * FrameGraph (opaque, translucent with its depth pre-pass, translucent with Water Waves on the GPU path, and lit by
  * HapticLightingBlock), each without and with a removal volume over part of it; and the water starter graph, which
  * reads every water node, drawn once with ambient occlusion and Real-Time Reflections, so it also draws the scene
- * effects' geometry pass; in dense fog, water that shows only what Water Scene Color refracts, unbent, over a floor,
- * and the floor without it; and a faint translucent Material three times brighter than white, whose coverage rises.
+ * effects' geometry pass; in dense fog, water that shows only what Water Scene Color refracts, unbent, over a floor
+ * (at the Default tier's copy resolution and at half), and the floor without it; and a faint translucent Material three times brighter than white, whose coverage rises.
  */
 import {
   Color3, Color4, DirectionalLight, Engine, FreeCamera, Matrix, MeshBuilder, Scene, StandardMaterial, Vector3, type AbstractEngine, type Effect, type NodeMaterial,
@@ -154,6 +154,11 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     await glass.ready;
     const windowWater = createWaterMesh(scene, "window water", normalizeWaterBody({ width: 8, length: 8, resolution: 8 }), createDefaultWaterDefinition(), glass.material);
     const fogThrough = await draw(6);
+    // The same at half the copy's resolution, where each copy texel averages four of the view's (the Default tier's copy
+    // takes one filtered tap per texel).
+    setSceneRenderSettings(scene, { mode: "pbr", quality: normalizeRenderingQuality({ water: { refractionScale: 0.5 } }), shadows });
+    const fogThroughHalf = await draw(6);
+    setSceneRenderSettings(scene, { mode: "pbr", quality: normalizeRenderingQuality({}), shadows });
     windowWater.dispose();
     glass.dispose();
     floor.dispose();
@@ -181,7 +186,10 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     // Water's depth pre-pass draws its own program, which discards removed water and returns before the look.
     const prePassEffects = Object.values(effects).filter((effect) => /#define DEPTHPREPASS/.test(effect.defines) && /#define SLATE_WATER_SURFACE/.test(effect.defines)).length;
     graph.dispose();
-    return { width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, geometryEffects, starterPixels, starterCopied, fogDirect, fogThrough, glintPixels };
+    return {
+      width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, geometryEffects, starterPixels, starterCopied,
+      fogDirect, fogThrough, fogThroughHalf, glintPixels,
+    };
   } finally {
     scene.dispose();
     engine.dispose();
