@@ -77,12 +77,14 @@ Tap the row to expand the editor in place. A **Color Curve** opens as a gradient
 
 In the curve plot:
 
-- Tap or click a key to select it, and drag it to change its time and value. On a **Vector Curve**, each axis has its own handle on the same key; use **X**, **Y** and **Z** to show or hide axes.
+- A time ruler runs along the top and a value ruler down the side. Outside the first and last key the plot is hatched and the curve is dashed: that part follows **Before** and **After**.
+- Tap or click a key to select it, and drag it to change its time and value. On a **Vector Curve**, each axis has its own handle on the same key; use **X**, **Y** and **Z** to show or hide axes. The selected axis draws on top.
 - Arrow keys nudge the selected key; hold Shift to move ten times as far. **Delete** removes it.
 - Double-click empty space to add a key there. On touch, hold empty space and choose **Add Key Here**.
-- Drag empty space to pan, pinch or Ctrl/Cmd-scroll to zoom, and choose **Fit** to frame every key.
-- A **Custom** key shows two tangent handles; drag either to set its slope.
-- Below the plot, edit the selected key's **Time**, **Value** and **Interpolation**, and the curve's **Before** and **After**.
+- Drag empty space to pan, and pinch or Ctrl/Cmd-scroll to zoom. Editing keys leaves the view where it is; choose **Fit** to frame every key again.
+- **Auto** and **Custom** keys show tangent handles. Drag a handle to set the key's slope; an **Auto** key becomes **Custom** and keeps its shape until you move the handle.
+- With a mouse, hover over the plot to read each channel's value at that time.
+- Below the plot, edit the selected key's **Time**, **Value** and **Interpolation** (the easing curves are grouped under **Ease**), and the curve's **Before** and **After**.
 
 Each drag, and each other change, is one step in **Undo**. Data Tree grids and the Play **Inspector** show the same previews.
 

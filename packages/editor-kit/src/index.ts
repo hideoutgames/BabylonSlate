@@ -208,7 +208,7 @@ export {
   type ValueModeOption,
 } from "./value-mode-field";
 export { CurveField, type CurveFieldProps } from "./curve-field";
-export { CurveEditor, type CurveEditorProps } from "./curve-editor";
+export { CurveEditor, type CurveEditorHandle, type CurveEditorProps } from "./curve-editor";
 export { GradientEditor, type GradientEditorProps } from "./gradient-editor";
 export { CurvePreview, CurveValueField, type CurveValueFieldProps } from "./curve-value-field";
 export {

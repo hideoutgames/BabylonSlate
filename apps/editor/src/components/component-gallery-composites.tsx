@@ -25,6 +25,7 @@ import {
   PinTypePicker,
   VariableTypeFields,
   PropertyGrid,
+  CurveEditor,
   SearchDialog,
   SearchDropdown,
   MultilineTextField,
@@ -124,6 +125,7 @@ export function GalleryComposites() {
     Keys: [galleryKey(0, { x: 1, y: 0.9, z: 0.6, w: 1 }, "linear", zero4), galleryKey(0.45, { x: 1, y: 0.6, z: 0.24, w: 1 }, "linear", zero4), galleryKey(1, { x: 0.3, y: 0.1, z: 0.1, w: 0 }, "linear", zero4)],
     Before: "constant", After: "constant",
   });
+  const [notes, setNotes] = useState("Tint for the fire particles.\nFades out at the end of life.");
   const [fadeCurve, setFadeCurve] = useState<CurveKey[]>([
     { t: 0, value: 1 },
     { t: 1, value: 0 },
@@ -289,6 +291,15 @@ export function GalleryComposites() {
       onChange: setTintOverLife,
     },
     {
+      kind: "text",
+      id: "gallery-notes",
+      label: "Notes",
+      multiline: true,
+      value: notes,
+      onChange: () => {},
+      onCommit: setNotes,
+    },
+    {
       kind: "curve",
       id: "gallery-fade",
       label: "Fade",
@@ -378,8 +389,22 @@ export function GalleryComposites() {
                 value: 10,
                 onChange: () => {},
               },
+              {
+                kind: "info",
+                id: "gallery-inspect-keys",
+                label: "Keys",
+                value: "3",
+              },
             ]}
           />
+        </PanelFrame>
+      </div>
+      <div className="rounded-lg border border-border">
+        <PanelFrame title="Curve editor (window)" data-testid="gallery-curve-window">
+          <div className="h-[420px]">
+            <CurveEditor layout="window" kind="color" aria-label="Tint Over Life" value={tintOverLife}
+              onChange={setTintOverLife} fitShortcut="F" data-testid="gallery-curve-window-editor" />
+          </div>
         </PanelFrame>
       </div>
       <div className="rounded-lg border border-border">

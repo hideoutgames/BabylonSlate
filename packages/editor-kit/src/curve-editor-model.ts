@@ -1,6 +1,7 @@
 import {
   CURVE_INTERPOLATIONS,
   MIN_CURVE_KEY_GAP,
+  curveKeyTangent,
   evaluateCurve,
   parseCurveExtrapolation,
   parseCurveInterpolation,
@@ -199,10 +200,12 @@ function niceCeil(value: number): number {
 /**
  * The view that frames every visible key. A fixed time axis shows 0–1 and a value axis from the
  * constraint range (or 0 up to a rounded headroom); otherwise both axes pad the keys and the
- * sampled curve, so overshoot stays in view.
+ * sampled curve, so overshoot stays in view. `timePad` is the share of the key span shown on
+ * each side, where the plot hatches the extrapolated curve.
  */
 export function fitView(
   kind: CurveEditorKind, keys: readonly EditorKey[], visible: readonly boolean[], constraints: CurveEditorConstraints = {},
+  timePad = 0.05,
 ): CurveView {
   const channels = CURVE_CHANNELS[kind].map((_, index) => index).filter((index) => visible[index] !== false);
   if (constraints.fixedTime) {
@@ -227,9 +230,9 @@ export function fitView(
   }
   if (!Number.isFinite(v0)) { v0 = 0; v1 = 1; }
   if (v1 - v0 < 1e-6) { v0 -= 0.5; v1 += 0.5; }
-  const timePad = (t1 - t0) * 0.05;
+  const padding = (t1 - t0) * timePad;
   const valuePad = (v1 - v0) * 0.1;
-  return { t0: t0 - timePad, t1: t1 + timePad, v0: v0 - valuePad, v1: v1 + valuePad };
+  return { t0: t0 - padding, t1: t1 + padding, v0: v0 - valuePad, v1: v1 + valuePad };
 }
 
 /** Zooms `view` by `factor` (above 1 zooms in) around the normalised point (`fx`, `fy`). */
@@ -245,19 +248,65 @@ export function zoomView(view: CurveView, factor: number, fx: number, fy: number
   };
 }
 
-/** Polyline points (0–100 view space) for one channel, sampled across the view. */
+/**
+ * Polyline points (0–100 view space) for one channel, sampled from `from` to `to` (fractions of the view's
+ * width; outside 0–1 reaches past the view's edges). Empty when the range is empty or there are no keys.
+ */
 export function channelPoints(
   kind: CurveEditorKind, curve: ReturnType<typeof curveValue>, channel: number, view: CurveView, samples = 96,
+  from = 0, to = 1,
 ): string {
-  if (curve.Keys.length === 0) return "";
+  if (curve.Keys.length === 0 || !(to > from)) return "";
   const points: string[] = [];
-  for (let step = 0; step <= samples; step += 1) {
-    const fx = step / samples;
+  const count = Math.max(2, Math.ceil(samples * (to - from)));
+  for (let step = 0; step <= count; step += 1) {
+    const fx = from + ((to - from) * step) / count;
     const value = sampleChannel(kind, curve, channel, view.t0 + (view.t1 - view.t0) * fx);
     const fy = (view.v1 - value) / (view.v1 - view.v0);
     points.push(`${(fx * 100).toFixed(2)},${(clampNumber(fy, -1, 2) * 100).toFixed(2)}`);
   }
   return points.join(" ");
+}
+
+/** Ruler ticks across `[min, max]`: a 1, 2, 2.5 or 5 step about `spacing` px apart, its decimals, and half-step minors. */
+export function rulerTicks(min: number, max: number, pixels: number, spacing: number): { step: number; decimals: number; major: number[]; minor: number[] } {
+  const span = max - min;
+  if (!(span > 0) || !(pixels > 0)) return { step: 1, decimals: 0, major: [], minor: [] };
+  const raw = span / Math.max(1, pixels / spacing);
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const fraction = raw / magnitude;
+  const mantissa = fraction < 1.5 ? 1 : fraction < 2.25 ? 2 : fraction < 3.5 ? 2.5 : fraction < 7.5 ? 5 : 10;
+  const step = mantissa * magnitude;
+  const decimals = step >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log10(step) - 1e-9) + (mantissa === 2.5 ? 1 : 0));
+  const major: number[] = [];
+  const minor: number[] = [];
+  const first = Math.ceil(min / (step / 2) - 1e-9);
+  for (let index = first; index * (step / 2) <= max + 1e-9 && major.length + minor.length < 400; index += 1) {
+    const value = Math.abs(index * (step / 2)) < step * 1e-6 ? 0 : index * (step / 2);
+    (index % 2 === 0 ? major : minor).push(value);
+  }
+  return { step, decimals, major, minor };
+}
+
+/** Tangent of `keys[index]` on `channel`, per second, as the runtime evaluates it (Auto keys get the automatic one). */
+export function keyTangent(
+  kind: CurveEditorKind, keys: readonly EditorKey[], index: number, channel: number, side: "arrive" | "leave",
+): number {
+  return curveKeyTangent(kind, curveValue(kind, keys, "constant", "constant"), index, channel, side);
+}
+
+/**
+ * `keys` with key `index` switched to Custom, every channel's tangents seeded from the ones it plays with
+ * now, so the curve keeps its shape until a handle moves.
+ */
+export function withCustomTangents(kind: CurveEditorKind, keys: readonly EditorKey[], index: number): EditorKey[] {
+  const next = keys.map((key) => ({ ...key, values: [...key.values], arrive: [...key.arrive], leave: [...key.leave] }));
+  const key = next[index];
+  if (!key || key.interpolation === "custom") return next;
+  key.arrive = key.values.map((_, channel) => keyTangent(kind, keys, index, channel, "arrive"));
+  key.leave = key.values.map((_, channel) => keyTangent(kind, keys, index, channel, "leave"));
+  key.interpolation = "custom";
+  return next;
 }
 
 /** Interpolations offered by the picker, in the enum's order. */
