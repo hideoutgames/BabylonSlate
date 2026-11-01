@@ -145,6 +145,10 @@ export interface FeatureTestAssets {
   materials: Partial<Record<FeatureTestMaterialKey, string>>;
   /** `FT_Timeline` Timeline Asset guid; scenes bind their clips to it. */
   timeline: string;
+  /** `FT_DoorSwing` 3D Timeline Clip asset guid; FT_SwingDoor creates instances of it. */
+  doorSwing: string;
+  /** `FT_HudPulse` 2D Timeline Clip asset guid; each FT_HUD instance's script creates one of it. */
+  hudPulse: string;
   /** Every FeatureTest Class keyed by class id. */
   classes: Record<string, FeatureTestClassRef>;
 }
@@ -254,6 +258,21 @@ export function tf(
   };
 }
 
+/**
+ * A Class instance's copies of the Class's components: `prefab-<suffix>`
+ * becomes `<actorId>-<suffix>`, with `sourceId` naming the template, as
+ * placing the Class in the editor does.
+ */
+export function instanceComponents(actorId: string, templates: readonly SerializedComponent[]): SerializedComponent[] {
+  const idOf = (id: string) => `${actorId}-${id.replace(/^prefab-/, "")}`;
+  return templates.map((template) => ({
+    ...structuredClone(template),
+    id: idOf(template.id),
+    parentId: template.parentId ? idOf(template.parentId) : null,
+    sourceId: template.id,
+  }));
+}
+
 /** Engine component with the editor's Add Component defaults plus overrides. */
 export function comp(
   id: string,
@@ -326,6 +345,8 @@ function emptyAssets(): FeatureTestAssets {
     audio: { loop: null, oneShot: null, mixer: null, channel: null, attenuation: null },
     materials: {},
     timeline: "",
+    doorSwing: "",
+    hudPulse: "",
     classes: {},
   };
 }

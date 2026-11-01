@@ -12,7 +12,7 @@ import {
   SCENE_SUBSYSTEM_CLASS_ID,
   engineNativeEventsFor,
 } from "@haptic/object-model";
-import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, OWNED_TIMELINE_CLIP_GET_NODE_ID, SUBSYSTEM_GET_NODE_ID, TIMELINE_GET_CLIP_NODE_ID, isDispatcherNodeType } from "@haptic/scripting-nodes";
+import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, OWNED_TIMELINE_CLIP_GET_NODE_ID, SUBSYSTEM_GET_NODE_ID, TIMELINE_CREATE_CLIP_NODE_ID, TIMELINE_GET_CLIP_NODE_ID, isDispatcherNodeType } from "@haptic/scripting-nodes";
 
 export const NATIVE_CLASS_EVENT_TYPES = [
   "flow.event.gameLoaded",
@@ -400,8 +400,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === OWNED_ACTOR_GET_NODE_ID || nodeId === OWNED_COMPONENT_GET_NODE_ID || nodeId === OWNED_TIMELINE_CLIP_GET_NODE_ID) {
     return false;
   }
-  // One Get <Name> Timeline Clip row per scene clip of each Timeline Asset is injected instead.
-  if (nodeId === TIMELINE_GET_CLIP_NODE_ID) {
+  // One Get <Name> Timeline Clip row per scene clip, and one Create <Name> Timeline Clip row per
+  // clip asset, of each Timeline Asset is injected instead.
+  if (nodeId === TIMELINE_GET_CLIP_NODE_ID || nodeId === TIMELINE_CREATE_CLIP_NODE_ID) {
     return false;
   }
   if (nodeId === "struct.break") {

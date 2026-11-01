@@ -1,6 +1,6 @@
-import { createTimelinePlayback, type SerializedTimelineClip, type TimelinePlaybackState } from "@haptic/core";
+import { createTimelinePlayback, type SerializedTimelineClip, type TimelinePlaybackState, type Transform } from "@haptic/core";
 import { embeddedScriptParentOf } from "./ids";
-import { EngineObject } from "./objects";
+import { Actor, ActorComponent, EngineObject } from "./objects";
 import { TIMELINE_CLASS_ID, isTimelineClassId } from "./timeline-object";
 
 export const TIMELINE_CLIP_CLASS_ID = "TimelineClip";
@@ -45,10 +45,53 @@ export class TimelineClipObject extends EngineObject {
   /** Counts playback changes, so a key's listener that moves the clip ends that step's firing. */
   generation = 0;
 
-  constructor(clip: SerializedTimelineClip, owner: EngineObject, classId: string = TIMELINE_CLIP_CLASS_ID) {
-    super({ classId, guid: `${owner.guid}:timeline-clip:${clip.id}` });
+  constructor(clip: SerializedTimelineClip, owner: EngineObject, classId: string = TIMELINE_CLIP_CLASS_ID, guid = `${owner.guid}:timeline-clip:${clip.id}`) {
+    super({ classId, guid });
     this.clip = clip;
     this.owner = owner;
     this.playback = createTimelinePlayback(clip);
   }
+}
+
+/** A proxy's runtime stand-in: the object its tracks write to, and how. */
+export interface TimelineProxyBinding {
+  target: Actor | ActorComponent;
+  /** Keys set the transform directly (world for an actor, parent-relative for a component); else they offset `base`. */
+  absolute: boolean;
+  /** The target's local transform when it was bound, which Relative keys offset. */
+  base: Transform;
+}
+
+/**
+ * One instance of a 2D or 3D Timeline Clip asset (`Create <Name> Timeline
+ * Clip`): its own playback and proxy bindings over the asset's shared keys.
+ * Unlike a scene clip it is collectable: it lives while a script reference
+ * reaches it or while it plays. Its owner is its Timeline Asset's Timeline.
+ */
+export class TimelineClipInstance extends TimelineClipObject {
+  /** The clip asset's guid. */
+  readonly assetGuid: string;
+  /** Each proxy's kind, by proxy id (the clip's object track actor ids). */
+  readonly proxies: ReadonlyMap<string, { name: string; represents: "actor" | "component" }>;
+  readonly bindings = new Map<string, TimelineProxyBinding>();
+  /** Proxies already reported unbound to the Output Log. */
+  readonly unboundWarned = new Set<string>();
+
+  constructor(
+    clip: SerializedTimelineClip,
+    owner: EngineObject,
+    classId: string,
+    assetGuid: string,
+    proxies: ReadonlyMap<string, { name: string; represents: "actor" | "component" }>,
+    guid: string,
+  ) {
+    super(clip, owner, classId, guid);
+    this.assetGuid = assetGuid;
+    this.proxies = proxies;
+  }
+}
+
+/** Whether `object` can stand in for a proxy that `represents` an actor or a component. */
+export function timelineProxyAccepts(represents: "actor" | "component", object: unknown): object is Actor | ActorComponent {
+  return represents === "actor" ? object instanceof Actor : object instanceof ActorComponent;
 }

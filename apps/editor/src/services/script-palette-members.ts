@@ -21,7 +21,7 @@ import {
   type EngineScriptPin,
 } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
-import { timelineClipNodeData, timelineRefiredDispatchers, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
+import { timelineClipNodeData, timelineCreateClipNodeData, timelineRefiredDispatchers, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
 import { prefabComponentLabel } from "../panels/add-component-catalog";
 import {
   callInterfaceTitle,
@@ -29,8 +29,10 @@ import {
   OWNED_ACTOR_GET_NODE_ID,
   OWNED_COMPONENT_GET_NODE_ID,
   OWNED_TIMELINE_CLIP_GET_NODE_ID,
+  TIMELINE_CREATE_CLIP_NODE_ID,
   TIMELINE_GET_CLIP_NODE_ID,
   timelineClipNodeTitle,
+  timelineCreateClipNodeTitle,
   ownedActorGetTitle,
   ownedComponentGetTitle,
   ownedGetNodeProperties,
@@ -877,28 +879,45 @@ export function subsystemGetPaletteNodes(
 
 /**
  * Get <Name> Timeline Clip rows on each Timeline Asset's Timeline, one per
- * scene clip the asset holds, in project order.
+ * scene clip the asset holds, then Create <Name> Timeline Clip rows, one per
+ * clip asset, in project order.
  */
 export function timelineClipPaletteNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
 ): PaletteNode[] {
-  const def = nodeRegistry.get(TIMELINE_GET_CLIP_NODE_ID);
-  if (!def) return [];
-  return (options?.timelineAssets ?? []).flatMap((asset) => asset.clips.map((clip): PaletteNode => {
-    const data = timelineClipNodeData(asset, clip);
-    return {
-      id: `${TIMELINE_GET_CLIP_NODE_ID}:${asset.guid}:${clip.documentGuid}:${clip.id}`,
-      nodeType: TIMELINE_GET_CLIP_NODE_ID,
-      title: timelineClipNodeTitle(data),
-      description: `${clip.name} of ${asset.name}, from ${clip.documentName}. None while ${clip.documentName} is not loaded.`,
-      category: def.category,
-      pins: def.pins(data),
-      pure: def.pure,
-      latent: def.latent,
-      defaultData: data,
-    };
-  }));
+  const get = nodeRegistry.get(TIMELINE_GET_CLIP_NODE_ID);
+  const create = nodeRegistry.get(TIMELINE_CREATE_CLIP_NODE_ID);
+  return (options?.timelineAssets ?? []).flatMap((asset) => [
+    ...(get ? asset.clips.map((clip): PaletteNode => {
+      const data = timelineClipNodeData(asset, clip);
+      return {
+        id: `${TIMELINE_GET_CLIP_NODE_ID}:${asset.guid}:${clip.documentGuid}:${clip.id}`,
+        nodeType: TIMELINE_GET_CLIP_NODE_ID,
+        title: timelineClipNodeTitle(data),
+        description: `${clip.name} of ${asset.name}, from ${clip.documentName}. None while ${clip.documentName} is not loaded.`,
+        category: get.category,
+        pins: get.pins(data),
+        pure: get.pure,
+        latent: get.latent,
+        defaultData: data,
+      };
+    }) : []),
+    ...(create ? asset.clipAssets.map((clip): PaletteNode => {
+      const data = timelineCreateClipNodeData(asset, clip);
+      return {
+        id: `${TIMELINE_CREATE_CLIP_NODE_ID}:${asset.guid}:${clip.documentGuid}`,
+        nodeType: TIMELINE_CREATE_CLIP_NODE_ID,
+        title: timelineCreateClipNodeTitle(data),
+        description: `A new instance of ${clip.name} on ${asset.name}'s Timeline, with each connected proxy bound Relative.`,
+        category: create.category,
+        pins: create.pins(data),
+        pure: create.pure,
+        latent: create.latent,
+        defaultData: data,
+      };
+    }) : []),
+  ]);
 }
 
 type DispatcherRow = {
@@ -940,7 +959,7 @@ function dispatcherRows(options?: ScriptPaletteOptions): DispatcherRow[] {
   // Clips a script reaches: one dispatcher per Custom Event Track, on the clip's own class. The
   // owner's clips come first; a Timeline Asset's clips are reached through its Timeline.
   const clipClasses = new Set<string>();
-  const clips = [...(options?.ownedTimelineClips ?? []), ...(options?.timelineAssets ?? []).flatMap((asset) => asset.clips)];
+  const clips = [...(options?.ownedTimelineClips ?? []), ...(options?.timelineAssets ?? []).flatMap((asset) => [...asset.clips, ...asset.clipAssets])];
   for (const clip of clips) {
     if (!clip.classId || clipClasses.has(clip.classId)) continue;
     clipClasses.add(clip.classId);

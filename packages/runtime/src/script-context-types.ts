@@ -256,6 +256,8 @@ export interface ScriptContext {
   getTimelineClip(target: unknown, documentGuid: string, clipId: string): EngineObject | null;
   /** The Timeline's loaded scene clips. */
   getLoadedTimelineClips(target: unknown): EngineObject[];
+  /** A new instance of one of the Timeline's clip assets, its connected proxies bound Relative; null when the asset is not in the game. */
+  createTimelineClip(target: unknown, assetGuid: string, inputs: Record<string, unknown>): EngineObject | null;
   /** A copy of the asset's curve as a curve Structure value. */
   curveObjectCurve(kind: CurveKind, target: unknown): unknown;
   getAllActorsOfClass(classId: string): Actor[];
@@ -631,7 +633,7 @@ export type HostContextKey =
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
   | "normalizeQuat" | "randomFloat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
-  | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
+  | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "createTimelineClip" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"

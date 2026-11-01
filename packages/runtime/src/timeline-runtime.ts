@@ -1,10 +1,16 @@
 import {
+  TIMELINE_CLIP_ASSET_CLIP_ID,
   advanceTimelinePlayback,
   evaluateTimelineTrack,
+  multiplyQuats,
+  quatRotateVector,
+  rotatorToQuat,
+  timelineClipOfAsset,
   timelineEventKeysInSweeps,
   parseTimelineLoopMode,
   timelineStoredValue,
   type SerializedTimelineClip,
+  type TimelineClipAssetCatalogEntry,
   type TimelineLoopMode,
   type TimelineSweep,
   type TimelinePropertyTrack,
@@ -12,13 +18,17 @@ import {
 import {
   Actor,
   ActorComponent,
+  TimelineClipInstance,
   TimelineClipObject,
   TimelineObject,
   timelineClipClassId,
+  timelineProxyAccepts,
   timelineRefiredDispatcherName,
   type EngineObject,
+  type TimelineProxyBinding,
 } from "@haptic/object-model";
 import { defaultValueForMember, jsIdent } from "@haptic/scripting";
+import { copyTransform } from "./actor-world-transform";
 import { applyTweenTransform } from "./tween-transforms";
 
 /** What Timeline playback needs from the running game. */
@@ -39,21 +49,36 @@ export interface TimelineRuntimeHost {
   component(actor: Actor, componentId: string): ActorComponent | null;
   teleportActor(actor: Actor): void;
   refreshComponent(component: ActorComponent, property: string): void;
+  /** A 2D or 3D Timeline Clip asset the game packed, for Create. */
+  clipAsset(guid: string): TimelineClipAssetCatalogEntry | undefined;
+  /** Puts a clip asset instance under reference-based lifetime. */
+  register(object: EngineObject): void;
+  /** An Output Log warning. */
+  warn(message: string): void;
 }
+
+/** What one object track writes to: an actor, or a Component proxy's component, and the proxy's binding. */
+type TrackTarget = { object: Actor | ActorComponent; binding?: TimelineProxyBinding };
 
 const CHANNEL = { location: "position", rotation: "rotation", scale: "scale" } as const;
 
 /**
- * Plays the Timeline Clips of every loaded Scene and Scene Layer copy. Each
- * copy gets its own Timeline Clip objects when it loads; they end with it.
- * Playing clips advance once per tick, before actors tick, and write their
- * tracks' values to the animated actors through the same paths tweens use.
+ * Plays the Timeline Clips of every loaded Scene and Scene Layer copy, and
+ * the instances scripts create of 2D and 3D Timeline Clip assets. Each copy
+ * gets its own Timeline Clip objects when it loads; they end with it. An
+ * instance lives while a reference reaches it or while it plays. Playing
+ * clips advance once per tick, before actors tick, and write their tracks'
+ * values to the animated actors (an instance: to its proxies' bound objects)
+ * through the same paths tweens use.
  */
 export class TimelineRuntime {
   private readonly host: TimelineRuntimeHost;
   private readonly owners = new Map<EngineObject, Map<string, TimelineClipObject>>();
   /** One Timeline object per Timeline Asset for the session, made on first use. */
   private readonly timelines = new Map<string, TimelineObject>();
+  /** Live clip asset instances, in creation order. */
+  private readonly instances = new Set<TimelineClipInstance>();
+  private instanceCount = 0;
 
   constructor(host: TimelineRuntimeHost) {
     this.host = host;
@@ -86,9 +111,14 @@ export class TimelineRuntime {
     }
   }
 
-  /** Ends every clip and Timeline object: Play stopped. */
+  /** Ends every clip, instance and Timeline object: Play stopped. */
   reset(): void {
     for (const owner of [...this.owners.keys()]) this.remove(owner);
+    for (const instance of [...this.instances]) {
+      instance.destroyed = true;
+      this.host.release(instance);
+    }
+    this.instances.clear();
     for (const timeline of this.timelines.values()) {
       timeline.destroyed = true;
       this.host.release(timeline);
@@ -127,6 +157,56 @@ export class TimelineRuntime {
     return found;
   }
 
+  /**
+   * A new instance of the clip asset `assetGuid` on its Timeline, with each
+   * object in `inputs` (by proxy id) bound Relative. None when the asset is
+   * not packed or belongs to another Timeline Asset.
+   */
+  createInstance(timeline: TimelineObject, assetGuid: string, inputs: Readonly<Record<string, unknown>> = {}): TimelineClipInstance | null {
+    if (timeline.destroyed) return null;
+    const entry = this.host.clipAsset(assetGuid);
+    if (!entry || entry.payload.timelineAsset !== timeline.assetGuid) return null;
+    const classId = timelineClipClassId(entry.guid, TIMELINE_CLIP_ASSET_CLIP_ID);
+    this.host.ensureClipClass(classId);
+    const proxies = new Map(entry.payload.proxies.map((proxy) => [proxy.id, { name: proxy.name, represents: proxy.represents }]));
+    this.instanceCount += 1;
+    const instance = new TimelineClipInstance(timelineClipOfAsset(entry.payload, entry.name), timeline, classId, entry.guid, proxies,
+      `${entry.guid}:timeline-clip-instance:${this.instanceCount}`);
+    for (const [proxyId, object] of Object.entries(inputs)) {
+      if (object !== null && object !== undefined) this.bind(instance, proxyId, object, false);
+    }
+    this.instances.add(instance);
+    this.host.register(instance);
+    return instance;
+  }
+
+  /**
+   * Binds a proxy to `object`, which must be a live actor for an Actor proxy
+   * or a component for a Component proxy. Relative keys offset the transform
+   * it has now; the next tick applies it. False when it cannot stand in.
+   */
+  bind(instance: TimelineClipInstance, proxyId: string, object: unknown, absolute: boolean): boolean {
+    const proxy = instance.proxies.get(proxyId);
+    if (instance.destroyed || !proxy || !timelineProxyAccepts(proxy.represents, object) || object.destroyed) return false;
+    instance.bindings.set(proxyId, { target: object, absolute, base: copyTransform(object.transform) });
+    return true;
+  }
+
+  /** Keeps playing instances alive: hands each to the collector's root visitor. */
+  forEachPlayingInstance(visit: (instance: TimelineClipInstance) => void): void {
+    for (const instance of this.instances) if (!instance.destroyed && instance.playback.playing) visit(instance);
+  }
+
+  /** An instance the collector destroyed: it stops advancing. */
+  forget(object: EngineObject): void {
+    if (object instanceof TimelineClipInstance) this.instances.delete(object);
+  }
+
+  /** Live clip asset instances, in creation order. */
+  liveInstances(): TimelineClipInstance[] {
+    return [...this.instances].filter((instance) => !instance.destroyed);
+  }
+
   clip(owner: EngineObject | null | undefined, clipId: string): TimelineClipObject | null {
     if (!owner) return null;
     const clip = this.ensure(owner)?.get(clipId);
@@ -152,13 +232,22 @@ export class TimelineRuntime {
       if (!canRun(owner)) continue;
       for (const clip of clips.values()) {
         if (!clip.started && clip.clip.autoPlay) this.play(clip);
-        if (!clip.playback.playing) continue;
-        const result = advanceTimelinePlayback(clip.playback, clip.clip.length, dt);
-        clip.playback = result.state;
-        this.apply(clip);
-        this.fireStep(clip, result.sweeps, result.cycles, result.finished);
+        this.step(clip, dt);
       }
     }
+    // Instances never Auto Play; one created this tick by an actor waits for the next.
+    for (const instance of [...this.instances]) {
+      if (instance.destroyed) this.instances.delete(instance);
+      else if (canRun(instance.owner)) this.step(instance, dt);
+    }
+  }
+
+  private step(clip: TimelineClipObject, dt: number): void {
+    if (!clip.playback.playing) return;
+    const result = advanceTimelinePlayback(clip.playback, clip.clip.length, dt);
+    clip.playback = result.state;
+    this.apply(clip);
+    this.fireStep(clip, result.sweeps, result.cycles, result.finished);
   }
 
   /** Plays forwards, or in reverse, from where the clip is; a Once clip at the end it plays towards starts over. */
@@ -258,39 +347,101 @@ export class TimelineRuntime {
     return live();
   }
 
-  /** Writes every unmuted track's value at the clip's time to its actor. */
+  /** Writes every unmuted track's value at the clip's time to its actor or bound object. */
   apply(clip: TimelineClipObject): void {
     if (clip.destroyed) return;
     for (const object of clip.clip.objects) {
-      const actor = this.host.ownedActor(clip.owner, object.actorId);
-      if (!actor || actor.destroyed) continue;
+      const target = this.trackTarget(clip, object.actorId, true);
+      if (!target) continue;
       for (const track of object.tracks) {
         if (track.muted) continue;
         const value = evaluateTimelineTrack(track, clip.playback.time);
-        if (value !== undefined) this.write(actor, track, value);
+        if (value !== undefined) this.write(target, object.actorId, track, value);
       }
     }
   }
 
-  private write(actor: Actor, track: TimelinePropertyTrack, value: unknown): void {
+  /**
+   * The object an object track animates: a scene clip's placed actor, or an
+   * instance's bound object (a destroyed one unbinds itself; an unbound
+   * proxy is reported once per Play when `report` is set).
+   */
+  private trackTarget(clip: TimelineClipObject, actorId: string, report: boolean): TrackTarget | null {
+    if (!(clip instanceof TimelineClipInstance)) {
+      const actor = this.host.ownedActor(clip.owner, actorId);
+      return actor && !actor.destroyed ? { object: actor } : null;
+    }
+    const binding = clip.bindings.get(actorId);
+    if (binding && (binding.target.destroyed || (binding.target instanceof ActorComponent && binding.target.owner?.destroyed))) {
+      clip.bindings.delete(actorId);
+    } else if (binding) {
+      return { object: binding.target, binding };
+    }
+    if (report && !clip.unboundWarned.has(actorId)) {
+      clip.unboundWarned.add(actorId);
+      const proxy = clip.proxies.get(actorId);
+      if (proxy) this.host.warn(`${clip.clip.name}: the ${proxy.name} proxy is not bound.`);
+    }
+    return null;
+  }
+
+  private write({ object, binding }: TrackTarget, actorId: string, track: TimelinePropertyTrack, value: unknown): void {
     const { target } = track;
     if (target.kind === "transform") {
       const channel = CHANNEL[target.property as keyof typeof CHANNEL];
-      if (channel && applyTweenTransform(actor, channel, value, "local", (id) => this.host.findActor(id) ?? undefined)) this.host.teleportActor(actor);
+      if (channel && this.writeTransform(object, channel, value, binding)) {
+        if (object instanceof Actor) this.host.teleportActor(object);
+        else this.host.refreshComponent(object, "transform");
+      }
       return;
     }
     if (target.kind === "visible") {
-      actor.setVariable("visible", value === true);
+      object.setVariable("visible", value === true);
+      if (object instanceof ActorComponent) this.host.refreshComponent(object, "visible");
       return;
     }
     if (target.kind === "variable") {
-      actor.setVariable(target.property, timelineStoredValue(track, value, actor.getVariable(target.property), false));
+      object.setVariable(target.property, timelineStoredValue(track, value, object.getVariable(target.property), object instanceof ActorComponent));
+      if (object instanceof ActorComponent) this.host.refreshComponent(object, target.property);
       return;
     }
-    const component = target.componentId ? this.host.component(actor, target.componentId) : null;
+    const component = this.trackComponent(object, actorId, target.componentId);
     if (!component) return;
     component.setVariable(target.property, timelineStoredValue(track, value, component.getVariable(target.property), true));
     this.host.refreshComponent(component, target.property);
+  }
+
+  /** A component track's component: on an actor by its authored id, or a Component proxy's own (its id is the proxy's). */
+  private trackComponent(object: Actor | ActorComponent, actorId: string, componentId: string | undefined): ActorComponent | null {
+    if (!componentId) return null;
+    if (object instanceof ActorComponent) return componentId === actorId ? object : null;
+    return this.host.component(object, componentId);
+  }
+
+  /**
+   * A transform key. Scene clips and Absolute bindings set it (an Absolute
+   * actor in world space); a Relative binding offsets the transform it had
+   * when bound: location turned by its rotation, rotation after it, scale
+   * multiplied.
+   */
+  private writeTransform(object: Actor | ActorComponent, channel: (typeof CHANNEL)[keyof typeof CHANNEL], value: unknown, binding: TimelineProxyBinding | undefined): boolean {
+    const findActor = (id: string) => this.host.findActor(id) ?? undefined;
+    if (!binding || binding.absolute) {
+      return applyTweenTransform(object, channel, value, binding && object instanceof Actor ? "world" : "local", findActor);
+    }
+    const base = binding.base;
+    const next = copyTransform(object.transform);
+    const offset = value as Record<string, unknown>;
+    if (channel === "position") {
+      const turned = quatRotateVector(base.rotation, offset as { x: number; y: number; z: number });
+      next.position = { x: base.position.x + turned.x, y: base.position.y + turned.y, z: base.position.z + turned.z };
+    } else if (channel === "rotation") {
+      next.rotation = multiplyQuats(base.rotation, rotatorToQuat(offset as { pitch: number; yaw: number; roll: number }));
+    } else {
+      const scale = offset as { x: number; y: number; z: number };
+      next.scale = { x: base.scale.x * scale.x, y: base.scale.y * scale.y, z: base.scale.z * scale.z };
+    }
+    return applyTweenTransform(object, "transform", next, "local", findActor);
   }
 
   /** The animated properties' values when Play starts, for When Finished: Restore State. */
@@ -298,8 +449,9 @@ export class TimelineRuntime {
     if (clip.restore || clip.clip.whenFinished !== "restore") return;
     const restore = new Map<string, () => void>();
     for (const object of clip.clip.objects) {
-      const actor = this.host.ownedActor(clip.owner, object.actorId);
-      if (!actor) continue;
+      const bound = this.trackTarget(clip, object.actorId, false);
+      if (!bound) continue;
+      const owner = bound.object;
       for (const track of object.tracks) {
         const { target } = track;
         const key = `${object.actorId}:${target.kind}:${target.componentId ?? ""}:${target.property}`;
@@ -307,28 +459,24 @@ export class TimelineRuntime {
         if (target.kind === "transform") {
           const channel = CHANNEL[target.property as keyof typeof CHANNEL];
           if (!channel) continue;
-          const saved = structuredClone(actor.transform[channel]);
+          const saved = structuredClone(owner.transform[channel]);
           restore.set(key, () => {
-            if (actor.destroyed) return;
-            Object.assign(actor.transform[channel], saved);
-            this.host.teleportActor(actor);
+            if (owner.destroyed) return;
+            Object.assign(owner.transform[channel], saved);
+            if (owner instanceof Actor) this.host.teleportActor(owner);
+            else this.host.refreshComponent(owner, "transform");
           });
-        } else if (target.kind === "component") {
-          const component = target.componentId ? this.host.component(actor, target.componentId) : null;
-          if (!component) continue;
-          const saved = structuredClone(component.getVariable(target.property));
-          restore.set(key, () => {
-            if (component.destroyed) return;
-            component.setVariable(target.property, structuredClone(saved));
-            this.host.refreshComponent(component, target.property);
-          });
-        } else {
-          const name = target.kind === "visible" ? "visible" : target.property;
-          const saved = structuredClone(actor.getVariable(name));
-          restore.set(key, () => {
-            if (!actor.destroyed) actor.setVariable(name, structuredClone(saved));
-          });
+          continue;
         }
+        const component = target.kind === "component" ? this.trackComponent(owner, object.actorId, target.componentId) : owner;
+        if (!component) continue;
+        const name = target.kind === "visible" ? "visible" : target.property;
+        const saved = structuredClone(component.getVariable(name));
+        restore.set(key, () => {
+          if (component.destroyed) return;
+          component.setVariable(name, structuredClone(saved));
+          if (component instanceof ActorComponent) this.host.refreshComponent(component, name);
+        });
       }
     }
     clip.restore = restore;

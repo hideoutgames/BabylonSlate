@@ -754,6 +754,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Create Timeline Clip](create-timeline-clip.md) | Creates an instance of a 2D or 3D Timeline Clip asset, with its own playhead and proxy bindings, and binds the objects connected to its proxy inputs. |
 | [Get Loaded Timeline Clips](get-loaded-timeline-clips.md) | Returns every loaded clip of a Timeline asset. |
 | [Get Timeline Asset Clip](get-timeline-asset-clip.md) | Returns one of a Timeline asset's clips through its Timeline, to play and control from any script. |
 | [Get Timeline Clip Length](get-timeline-clip-length.md) | Returns a Timeline Clip's Length, in seconds. |

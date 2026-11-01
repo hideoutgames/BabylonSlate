@@ -1,4 +1,5 @@
 import {
+  TIMELINE_CLIP_ASSET_CLIP_ID,
   createDefaultTimelineClipAsset,
   createTimelineClip,
   defaultTimelineProxyPreview,
@@ -9,6 +10,7 @@ import {
   type GraphClassMemberPin,
   type SerializedActor,
   type SerializedComponent,
+  type SerializedGraph,
   type SerializedScene,
   type SerializedTimelineClip,
   type TimelineKey,
@@ -19,16 +21,23 @@ import {
   timelineClipClassId,
   timelineRefiredDispatcherName,
 } from "@haptic/object-model";
-import { TIMELINE_FROM_ASSET_NODE_ID, TIMELINE_LOADED_CLIPS_NODE_ID } from "@haptic/scripting-nodes";
-import { actor, comp, meshComp, requireRef, tf, type FeatureTestContext, type Vec3 } from "./context";
-import { classGraph, gChain, gNode, gWire, getVar, printString, varMember } from "./graph";
+import {
+  TIMELINE_CREATE_CLIP_NODE_ID,
+  TIMELINE_FROM_ASSET_NODE_ID,
+  TIMELINE_LOADED_CLIPS_NODE_ID,
+  timelineCreateClipNodeTitle,
+  timelineProxyPinId,
+} from "@haptic/scripting-nodes";
+import { actor, comp, instanceComponents, meshComp, requireRef, tf, type FeatureTestContext, type Vec3 } from "./context";
+import { classGraph, gChain, gNode, gWire, getVar, printString, setVar, varMember } from "./graph";
 
 /**
  * Timeline showcase. `FT_Timeline` (created before any scene binds a clip to
  * it) holds the main scene's Intro, FT_HUD's Reveal and FT_World's Door Loop.
  * FT_World's Timeline Pavilion: a door and a lamp that Door Loop animates on
- * an Auto Play loop, and `FT_TimelineListener`, which reaches the clip through
- * a Timeline Asset variable and binds its re-fired On Door Open.
+ * an Auto Play loop, `FT_TimelineListener`, which reaches the clip through
+ * a Timeline Asset variable and binds its re-fired On Door Open, and two
+ * `FT_SwingDoor`s, each playing its own instance of the FT_DoorSwing clip asset.
  */
 
 const FOLDER = "Timeline";
@@ -47,52 +56,68 @@ const CLIP_NAME = "Door Loop";
 const DOOR_OPEN_EVENT = "On Door Open";
 const DOOR_OPEN_TIME = 1;
 const ANGLE_INPUT = "Angle";
+export const FEATURE_TEST_SWING_DOOR = "FT_SwingDoor";
+const DOOR_SWING = "FT_DoorSwing";
+const SWING_OPEN_EVENT = "On Swing Open";
+const HUD_PULSE = "FT_HudPulse";
+const HUD_PULSE_PROXIES = [{ id: "ft-hud-pulse-badge", name: "Badge", represents: "component" as const, classId: "2DTextComponent" }];
+const DOOR_SWING_PROXIES = [
+  { id: "ft-door-swing-door", name: "Door", represents: "actor" as const, classId: "Actor" },
+  { id: "ft-door-swing-glow", name: "Handle Glow", represents: "component" as const, classId: "LightComponent" },
+];
 
 /**
  * `FT_Timeline`, which scenes bind their clips to, and the clip assets it
- * holds: `FT_DoorSwing` (3D: a Door actor proxy and a Handle Glow light
- * proxy) and `FT_HudPulse` (2D: a Badge text proxy). Their instances and
- * proxy bindings come with clip asset Play.
+ * holds: `FT_DoorSwing` (3D, looping: a Door actor proxy and a Handle Glow
+ * light proxy; FT_SwingDoor plays it) and `FT_HudPulse` (2D, ping-pong: a
+ * Badge text proxy whose Opacity dips; each FT_HUD instance plays one on its title).
  */
 export async function buildFeatureTestTimeline(ctx: FeatureTestContext): Promise<void> {
   const { guid } = await ctx.createAsset("Timeline", FOLDER, FEATURE_TEST_TIMELINE_ASSET, {
     payload: () => ({ description: "The Feature Test's Timeline Clips: Intro (main scene), Reveal (FT_HUD), Door Loop (FT_World), and the FT_DoorSwing and FT_HudPulse clip assets." }),
   });
   ctx.assets.timeline = guid;
-  await createClipAsset(ctx, "TimelineClip3D", "FT_DoorSwing", {
+  const [door, glow] = DOOR_SWING_PROXIES;
+  ctx.assets.doorSwing = await createClipAsset(ctx, "TimelineClip3D", DOOR_SWING, {
     ...createDefaultTimelineClipAsset(guid),
     length: 2,
+    loopMode: "loop",
     proxies: [
-      { id: "ft-door-swing-door", name: "Door", represents: "actor", classId: "Actor", tracks: [{
+      { ...door!, tracks: [{
         id: "ft-door-swing-rotation", target: { kind: "transform", property: "rotation" }, valueType: "rotator",
         keys: [key("swing-0", 0, { pitch: 0, yaw: 0, roll: 0 }), key("swing-1", 1, { pitch: 0, yaw: DOOR.openYaw, roll: 0 }), key("swing-2", 2, { pitch: 0, yaw: 0, roll: 0 })],
       }] },
-      { id: "ft-door-swing-glow", name: "Handle Glow", represents: "component", classId: "LightComponent", tracks: [{
+      { ...glow!, tracks: [{
         id: "ft-door-swing-intensity", target: { kind: "component", componentId: "ft-door-swing-glow", property: "intensity" }, valueType: "float",
         keys: [key("glow-0", 0, LAMP.intensity), key("glow-1", 1, LAMP.bright), key("glow-2", 2, LAMP.intensity)],
       }] },
     ],
-    eventTracks: [{ id: "ft-door-swing-event", name: "On Swing Open", inputs: [], keys: [{ id: "ft-door-swing-event-key", time: 1, values: {} }] }],
+    eventTracks: [{ id: "ft-door-swing-event", name: SWING_OPEN_EVENT, inputs: [], keys: [{ id: "ft-door-swing-event-key", time: 1, values: {} }] }],
     editorPreview: { proxies: {
       "ft-door-swing-door": { ...defaultTimelineProxyPreview(0), size: 2 },
       "ft-door-swing-glow": { ...defaultTimelineProxyPreview(1), location: [1, 1.2, 0], size: 0.3 },
     } },
   });
-  await createClipAsset(ctx, "TimelineClip2D", "FT_HudPulse", {
+  const [badge] = HUD_PULSE_PROXIES;
+  ctx.assets.hudPulse = await createClipAsset(ctx, "TimelineClip2D", HUD_PULSE, {
     ...createDefaultTimelineClipAsset(guid),
     length: 1,
     loopMode: "pingPong",
-    proxies: [{ id: "ft-hud-pulse-badge", name: "Badge", represents: "component", classId: "2DTextComponent", tracks: [] }],
-    editorPreview: { proxies: { "ft-hud-pulse-badge": { ...defaultTimelineProxyPreview(0), size: 120 } } },
+    proxies: [{ ...badge!, tracks: [{
+      id: "ft-hud-pulse-opacity", target: { kind: "component", componentId: badge!.id, property: "opacity" }, valueType: "float",
+      keys: [key("pulse-0", 0, 1), key("pulse-1", 1, 0.6)],
+    }] }],
+    editorPreview: { proxies: { [badge!.id]: { ...defaultTimelineProxyPreview(0), size: 120 } } },
   });
 }
 
-/** Writes a clip asset whose header already lists its clip, as New Asset does. */
-async function createClipAsset(ctx: FeatureTestContext, type: TimelineClipAssetType, name: string, clip: SerializedTimelineClipAsset): Promise<void> {
-  await ctx.createAsset(type, FOLDER, name, {
+/** Writes a clip asset whose header already lists its clip, as New Asset does; its guid. */
+async function createClipAsset(ctx: FeatureTestContext, type: TimelineClipAssetType, name: string, clip: SerializedTimelineClipAsset): Promise<string> {
+  const { guid } = await ctx.createAsset(type, FOLDER, name, {
     build: { timelineAsset: clip.timelineAsset },
     payload: () => ({ ...clip, ...timelineClipAssetSummaries(clip, "") }),
   });
+  return guid;
 }
 
 const key = (id: string, Time: number, Value: unknown): TimelineKey => ({
@@ -209,4 +234,108 @@ export async function placeTimelineListener(ctx: FeatureTestContext, scene: Seri
   });
   const ref = await ctx.saveClass({ folder: FOLDER, name: FEATURE_TEST_TIMELINE_LISTENER, parentClass: "Actor", graph });
   ctx.addActor(actor("ft-world-timeline-listener", "Timeline Listener", tf(position), [], { classId: ref.classId }), { scene });
+}
+
+/**
+ * `FT_SwingDoor`: a door panel hinged at the actor with a light at its
+ * handle. Begin Play: Create FT_DoorSwing Timeline Clip on FT_Timeline's
+ * Timeline with Door bound to Self and Handle Glow to its light (both
+ * Relative, so each door swings from where it stands), keep the instance in
+ * `Swing`, Bind Event to its On Swing Open and play it. Two are placed,
+ * turned differently, beside the pavilion.
+ */
+export async function placeTimelineSwingDoors(ctx: FeatureTestContext, scene: SerializedScene, positions: ReadonlyArray<{ position: Vec3; yaw: number }>): Promise<void> {
+  const timelineGuid = requireRef(ctx.assets.timeline, "FT_Timeline");
+  const swingGuid = requireRef(ctx.assets.doorSwing, DOOR_SWING);
+  const create = createClipNodeData(timelineGuid, swingGuid, DOOR_SWING, DOOR_SWING_PROXIES);
+  const clipClassId = create.timelineClipClassId;
+  const swing = varMember("ft-swing-door-swing", "Swing", "object", undefined, { typeClassId: clipClassId });
+  const opened: GraphClassMember = { id: "ft-swing-door-opened", kind: "event", name: "Swing Opened", pins: [] };
+  const half = DOOR.width / 2;
+  const graph = classGraph({
+    members: [swing, opened],
+    components: [
+      box("ft-swing-door-panel", [half, DOOR.height / 2, 0], [DOOR.width, DOOR.height, DOOR.depth]),
+      comp("ft-swing-door-glow", "LightComponent", {
+        enabled: true, lightKind: "point", color: [WARM.x, WARM.y, WARM.z], intensity: LAMP.intensity, range: 4, castShadows: false, shadowPriority: 0,
+      }, tf([DOOR.width - 0.15, DOOR.height / 2, 0.2])),
+    ],
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("timeline", TIMELINE_FROM_ASSET_NODE_ID, 0, 200, { "default:timelineAsset": timelineGuid }),
+      gNode("self", "actor.getSelf", 0, 320),
+      gNode("glow", "component.getNamed", 0, 420, { componentClassId: "LightComponent", implicitSelf: true }),
+      gNode("create", TIMELINE_CREATE_CLIP_NODE_ID, 280, 0, create),
+      setVar("keep", swing, 560, 0),
+      gNode("bind", "flow.dispatcher.bind", 820, 0, {
+        title: `Bind Event to ${SWING_OPEN_EVENT}`, name: SWING_OPEN_EVENT, classId: clipClassId, implicitSelf: false, pins: [],
+      }),
+      gNode("play", "timelineClip.play", 1080, 0),
+      printString("ready", 1320, 0, `${FEATURE_TEST_SWING_DOOR} plays its own ${DOOR_SWING}`),
+      gNode(opened.id, "flow.event.custom", 0, 600, { title: `Event ${opened.name}`, name: opened.name, pins: [] }),
+      printString("heard", 280, 600, `${FEATURE_TEST_SWING_DOOR} heard ${SWING_OPEN_EVENT} (${DOOR_SWING})`),
+    ],
+    edges: [
+      ...gChain("begin", "create", "keep", "bind", "play", "ready"),
+      gWire("timeline", "timeline", "create", "target"),
+      gWire("self", "out", "create", timelineProxyPinId(DOOR_SWING_PROXIES[0]!.id)),
+      gWire("glow", "out", "create", timelineProxyPinId(DOOR_SWING_PROXIES[1]!.id)),
+      gWire("create", "clip", "keep", "value"),
+      gWire("create", "clip", "bind", "target"),
+      gWire("create", "clip", "play", "target"),
+      gWire(opened.id, "OutputDelegate", "bind", "event"),
+      ...gChain(opened.id, "heard"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: FOLDER, name: FEATURE_TEST_SWING_DOOR, parentClass: "Actor", graph });
+  positions.forEach(({ position, yaw }, index) => {
+    const id = `ft-world-swing-door-${index + 1}`;
+    ctx.addActor(actor(id, `Swing Door ${index + 1}`, tf(position, { rotationDeg: [0, yaw, 0] }),
+      instanceComponents(id, graph.components ?? []), { classId: ref.classId }), { scene });
+  });
+}
+
+/** Create <Name> Timeline Clip's node properties for one of FT_Timeline's clip assets. */
+function createClipNodeData(timelineGuid: string, assetGuid: string, name: string, proxies: ReadonlyArray<Record<string, unknown>>) {
+  const data = {
+    timelineAssetGuid: timelineGuid,
+    timelineClipDocument: assetGuid,
+    timelineClipId: TIMELINE_CLIP_ASSET_CLIP_ID,
+    timelineClipName: name,
+    timelineClipClassId: timelineClipClassId(assetGuid, TIMELINE_CLIP_ASSET_CLIP_ID),
+    timelineClipProxies: proxies.map((proxy) => ({ ...proxy })),
+  };
+  return { ...data, title: timelineCreateClipNodeTitle(data) };
+}
+
+/**
+ * FT_HUD's script, after its probe's report: Create FT_HudPulse Timeline
+ * Clip with Badge bound to the probed title text (`componentNode`'s
+ * `component`), kept in `Pulse`, and played; every FT_HUD instance pulses
+ * its own title.
+ */
+export function withFeatureTestHudPulse(graph: SerializedGraph, refs: { timeline: string; hudPulse: string }, after: string, componentNode: string): SerializedGraph {
+  const data = createClipNodeData(refs.timeline, refs.hudPulse, HUD_PULSE, HUD_PULSE_PROXIES);
+  const pulse = varMember("ft-hud-pulse-instance", "Pulse", "object", undefined, { typeClassId: data.timelineClipClassId });
+  const y = 2000;
+  return {
+    ...graph,
+    members: [...(graph.members ?? []), pulse],
+    nodes: [
+      ...graph.nodes,
+      gNode("pulse-timeline", TIMELINE_FROM_ASSET_NODE_ID, 0, y + 180, { "default:timelineAsset": refs.timeline }),
+      gNode("pulse-create", TIMELINE_CREATE_CLIP_NODE_ID, 260, y, data),
+      setVar("pulse-keep", pulse, 520, y),
+      gNode("pulse-play", "timelineClip.play", 780, y),
+      printString("pulse-report", 1040, y, `FT_HUD script plays its own ${HUD_PULSE}`),
+    ],
+    edges: [
+      ...graph.edges,
+      ...gChain(after, "pulse-create", "pulse-keep", "pulse-play", "pulse-report"),
+      gWire("pulse-timeline", "timeline", "pulse-create", "target"),
+      gWire(componentNode, "component", "pulse-create", timelineProxyPinId(HUD_PULSE_PROXIES[0]!.id)),
+      gWire("pulse-create", "clip", "pulse-keep", "value"),
+      gWire("pulse-create", "clip", "pulse-play", "target"),
+    ],
+  };
 }

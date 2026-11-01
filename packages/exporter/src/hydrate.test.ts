@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COLLISION_PRESETS, DEFAULT_RENDER_PROJECT_SETTINGS } from "@haptic/core";
 import { createDefaultSpriteAnimationPayload } from "@haptic/assets";
-import { packedContentFromGame } from "./hydrate";
+import { packedContentFromGame, packedSourceControls } from "./hydrate";
 import { gameSourceSubset, type GameSourceContent } from "./source-content";
 import type { GameAssetIndexEntry } from "./types";
 
@@ -36,6 +36,21 @@ describe("packedContentFromGame", () => {
     const game = sources([{ guid: "stats", type: "Structure", name: "Weapon Stats", encoding: "json" }],
       { stats: { fields: [{ name: "Power", typeId: "int" }] } });
     expect(packedContentFromGame(game).dataAssets).toMatchObject([{ guid: "stats", name: "Weapon Stats" }]);
+  });
+
+  it("packs 2D and 3D Timeline Clip assets for Create, without their Editor Preview", () => {
+    const swing = {
+      timelineAsset: "story", length: 2,
+      proxies: [{ id: "door", name: "Door", represents: "actor", classId: "Door", tracks: [] }],
+      eventTracks: [],
+      editorPreview: { proxies: { door: { representation: "model", assetGuid: "door-model" } } },
+    };
+    const game = sources([{ guid: "swing", type: "TimelineClip3D", name: "Door Swing", encoding: "json" }], { swing });
+    const content = packedContentFromGame(game);
+    expect(content.timelineClipAssets).toMatchObject([{ guid: "swing", type: "TimelineClip3D", name: "Door Swing", payload: { timelineAsset: "story", length: 2 } }]);
+    expect(content.timelineClipAssets[0]!.payload).not.toHaveProperty("editorPreview");
+    const load = packedSourceControls(game, content).find((control) => control.type === "loadSceneContent");
+    expect(load).toMatchObject({ timelineClipAssets: [{ guid: "swing" }] });
   });
 });
 

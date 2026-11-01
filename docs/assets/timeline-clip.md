@@ -34,7 +34,21 @@ The **Timeline** window below the Viewport is the [Timeline](../scenes/timeline.
 ## Inspector
 
 - **Proxy**: the selected proxy's **Name**, what it represents and its Class.
-- **Editor Preview**: how the editor draws the proxy. **Color**; **Representation**: an **Outline**, a **Model** (3D), a **Material** or **Texture** (2D), or its **Class**'s own look; **Size**; the preview **Location** and **Rotation**; and **Preview As**, which records and shows transform keys as offsets from the preview placement (**Relative**) or as exact values (**Absolute**). In Play, each binding chooses. The Editor Preview never leaves the editor: Play and exports leave it out, and the Models, Materials and Textures picked here never ship with the game.
+- **Editor Preview**: how the editor draws the proxy. **Color**; **Representation**: an **Outline**, a **Model** (3D), a **Material** or **Texture** (2D), or its **Class**'s own look; **Size**; the preview **Location** and **Rotation**; and **Preview As**, which records and shows transform keys as offsets from the preview placement (**Relative**) or as exact values (**Absolute**). In Play, each binding chooses ([Play a clip asset](#play-a-clip-asset)). The Editor Preview never leaves the editor: Play and exports leave it out, and the Models, Materials and Textures picked here never ship with the game.
 - **2D Timeline Clip** or **3D Timeline Clip**: the **Timeline Asset** (required: you can change it, not clear it), **Length**, **Frame Rate**, **Play Rate**, **Loop Mode** and **When Finished**.
 
 The Timeline asset lists the clip with its scene clips; **Open** there opens the clip asset.
+
+## Play a clip asset
+
+A clip asset never plays by itself: a script creates an instance of it, and each instance has its own playhead, Play Rate and proxy bindings.
+
+1. Get the Timeline of the clip's Timeline asset with [Get Timeline Object Reference From Timeline Asset](../scripting/class/get-timeline-object-reference-from-timeline-asset.md).
+2. Drag from its **Timeline** pin and add the clip's [Create Timeline Clip](../scripting/class/create-timeline-clip.md) node, titled with its name, such as **Create Door Swing Timeline Clip**. It has one input per proxy, typed to the proxy's Class.
+3. Connect the objects to animate, for example **Get Self** to the Door proxy and the door's light to Handle Glow, and store the **Timeline Clip** in a variable.
+4. Play it with the [Timeline Clip nodes](../scenes/timeline.md#control-a-clip-from-a-script), and Bind to its events, such as **On Swing Open**, or to the Timeline's **On Swing Open (Door Swing)**.
+
+- Create binds each connected proxy **Relative**: transform keys offset the object from where it stood when it was bound, turned with it, so one swing works on every door whatever its position and facing. Scale keys multiply its scale.
+- A proxy with nothing connected is unbound: its tracks are skipped, and the **Output Log** warns once, such as **Door Swing: the Handle Glow proxy is not bound.** A bound object that is destroyed unbinds itself.
+- An instance lives while a variable, array, map or structure holds it, or while it plays, and is then collected. Every placed actor that creates one gets its own; there is no limit.
+- The clip asset ships with the game when a script creates it. Play and exports carry its keys, events and proxies, never its Editor Preview.

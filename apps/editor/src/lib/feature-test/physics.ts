@@ -15,6 +15,7 @@ import {
   meshComp,
   requireRef,
   tf,
+  instanceComponents,
   type FeatureTestClassRef,
   type FeatureTestContext,
   type Vec3,
@@ -343,17 +344,6 @@ const TROUGH_SHAPE: Extra = {
   ],
   indices: [0, 1, 4, 0, 4, 3, 1, 2, 5, 1, 5, 4],
 };
-
-/** Class instance rows: `prefab-<suffix>` becomes `<actorId>-<suffix>` with `sourceId` kept. */
-function instanceComponents(actorId: string, templates: readonly SerializedComponent[]): SerializedComponent[] {
-  const idOf = (id: string) => `${actorId}-${id.replace(/^prefab-/, "")}`;
-  return templates.map((template) => ({
-    ...structuredClone(template),
-    id: idOf(template.id),
-    parentId: template.parentId ? idOf(template.parentId) : null,
-    sourceId: template.id,
-  }));
-}
 
 function classActor(
   placed: PlacedClass,

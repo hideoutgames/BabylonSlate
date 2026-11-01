@@ -1,4 +1,5 @@
-import { arrayOf, assetRef, objectRef, pin, type NodeDefinition } from "@haptic/scripting";
+import type { TimelineClipProxySummary } from "@haptic/core";
+import { EXEC, arrayOf, assetRef, objectRef, pin, type NodeDefinition } from "@haptic/scripting";
 import { subject } from "./self-pin";
 import { TIMELINE_CLIP_CATEGORY } from "./timeline-clips";
 
@@ -8,6 +9,8 @@ export const TIMELINE_FROM_ASSET_NODE_ID = "timeline.fromAsset";
 export const TIMELINE_GET_CLIP_NODE_ID = "timeline.getClip";
 /** Get Loaded Timeline Clips: every loaded scene clip of a Timeline's asset. */
 export const TIMELINE_LOADED_CLIPS_NODE_ID = "timeline.getLoadedClips";
+/** Create <Name> Timeline Clip on a Timeline: a new instance of one of its clip assets. Hidden; the editor adds one row per clip asset. */
+export const TIMELINE_CREATE_CLIP_NODE_ID = "timeline.createClip";
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
@@ -45,6 +48,31 @@ export function timelineClipNodeProperties(properties: Record<string, unknown>):
 export function timelineClipNodeTitle(properties: Record<string, unknown>): string {
   const { clipName } = timelineClipNodeProperties(properties);
   return clipName ? `Get ${clipName} Timeline Clip` : "Get Timeline Clip";
+}
+
+/** The proxies a Create <Name> Timeline Clip node offers inputs for, as the editor last stored them. */
+export function timelineCreateClipProxies(properties: Record<string, unknown>): TimelineClipProxySummary[] {
+  const raw = properties.timelineClipProxies;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry): TimelineClipProxySummary[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const row = entry as Record<string, unknown>;
+    const id = text(row.id);
+    const classId = text(row.classId);
+    if (!id || !classId) return [];
+    return [{ id, name: text(row.name) || classId, represents: row.represents === "component" ? "component" : "actor", classId }];
+  });
+}
+
+/** A Create node's input for one proxy; its id never changes with the proxy's name. */
+export function timelineProxyPinId(proxyId: string): string {
+  return `proxy:${proxyId}`;
+}
+
+/** `Create Door Swing Timeline Clip`, or `Create Timeline Clip` before it names one. */
+export function timelineCreateClipNodeTitle(properties: Record<string, unknown>): string {
+  const { clipName } = timelineClipNodeProperties(properties);
+  return clipName ? `Create ${clipName} Timeline Clip` : "Create Timeline Clip";
 }
 
 /**
@@ -98,5 +126,30 @@ export const timelineAssetNodes: NodeDefinition[] = [
       pin("clips", "Timeline Clips", "out", arrayOf(objectRef("TimelineClip"))),
     ],
     codegen: (ctx) => ({ clips: `ctx.getLoadedTimelineClips(${ctx.input("target")})` }),
+  },
+  {
+    id: TIMELINE_CREATE_CLIP_NODE_ID,
+    title: "Create Timeline Clip",
+    category: TIMELINE_CLIP_CATEGORY,
+    description:
+      "Creates an instance of a 2D or 3D Timeline Clip asset, with its own playhead and proxy bindings, and binds each connected proxy input Relative: its keys offset that object's transform from where it stands now. Unconnected proxies stay unbound. The instance lives while a variable holds it or while it plays.",
+    pins: (properties) => {
+      const { assetGuid, clipClassId } = timelineClipNodeProperties(properties);
+      return [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        subject(pin("target", "Target", "in", objectRef(timelineClass(assetGuid)))),
+        ...timelineCreateClipProxies(properties).map((proxy) => pin(timelineProxyPinId(proxy.id), proxy.name, "in", objectRef(proxy.classId))),
+        pin("clip", "Timeline Clip", "out", objectRef(clipClassId || "TimelineClip")),
+      ];
+    },
+    codegen: (ctx) => {
+      const { documentGuid } = timelineClipNodeProperties(ctx.node.properties);
+      const inputs = timelineCreateClipProxies(ctx.node.properties)
+        .map((proxy) => `${JSON.stringify(proxy.id)}: ${ctx.input(timelineProxyPinId(proxy.id))}`);
+      ctx.emit(documentGuid
+        ? `${ctx.output("clip")} = ctx.createTimelineClip(${ctx.input("target")}, ${JSON.stringify(documentGuid)}, { ${inputs.join(", ")} });`
+        : `${ctx.output("clip")} = null;`);
+    },
   },
 ];

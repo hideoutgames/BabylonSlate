@@ -177,6 +177,15 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual([]);
   });
 
+  it("loads the clip asset a Create <Name> Timeline Clip makes with its owner", () => {
+    const metadata = collectAssetDependencyMetadata("Class", {
+      nodes: [{ id: "create", type: "timeline.createClip", data: { timelineAssetGuid: "story", timelineClipDocument: "swing", timelineClipId: "clip" } }],
+      edges: [],
+    });
+    expect(metadata.dependencies).toEqual(["swing"]);
+    expect(metadata.requiredDependencies).toEqual(["swing"]);
+  });
+
   it("loads the Class picked on Create Object with its owner, and no Class a Cast names", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
       nodes: [

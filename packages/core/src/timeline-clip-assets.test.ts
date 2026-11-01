@@ -82,6 +82,14 @@ describe("Timeline Clip assets", () => {
 
   it("lists its clip in its header as Scene headers do", () => {
     const meta = timelineClipAssetSummaries(normalizeTimelineClipAsset(authored), "Door Swing");
-    expect(readTimelineClipSummaries(meta)).toEqual([{ id: "clip", name: "Door Swing", timelineAsset: "story", length: 3, events: [{ name: "On Creak", inputs: [] }] }]);
+    expect(readTimelineClipSummaries(meta)).toEqual([{
+      id: "clip", name: "Door Swing", timelineAsset: "story", length: 3, events: [{ name: "On Creak", inputs: [] }],
+      // The proxies, so Create's inputs need no load of the asset.
+      proxies: [
+        { id: "door", name: "Door", represents: "actor", classId: "Door" },
+        { id: "glow", name: "Handle Glow", represents: "component", classId: "LightComponent" },
+        { id: "nameless", name: "Lantern", represents: "actor", classId: "Lantern" },
+      ],
+    }]);
   });
 });

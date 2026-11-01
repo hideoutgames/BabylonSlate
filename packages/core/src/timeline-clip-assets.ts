@@ -213,6 +213,20 @@ export function timelineClipAssetSummaries(payload: SerializedTimelineClipAsset,
     ...(payload.timelineAsset ? { timelineAsset: payload.timelineAsset } : {}),
     length: payload.length,
     events: payload.eventTracks.map((track) => ({ name: track.name, inputs: track.inputs.map((input) => ({ ...input })) })),
+    proxies: payload.proxies.map(({ id, name: proxyName, represents, classId }) => ({ id, name: proxyName, represents, classId })),
   };
   return { [TIMELINE_CLIPS_META]: [summary] };
+}
+
+/** A clip asset as Play and exported games hold it: no Editor Preview. Create makes instances of it. */
+export interface TimelineClipAssetCatalogEntry {
+  guid: string;
+  type: TimelineClipAssetType;
+  /** The asset's name: its clip's name, which the Timeline's re-fired events carry. */
+  name: string;
+  payload: SerializedTimelineClipAsset;
+}
+
+export function timelineClipAssetCatalogEntry(guid: string, type: TimelineClipAssetType, name: string, raw: unknown): TimelineClipAssetCatalogEntry {
+  return { guid, type, name, payload: stripTimelineClipAssetEditorData(normalizeTimelineClipAsset(raw)) };
 }

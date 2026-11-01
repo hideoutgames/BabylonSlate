@@ -1,5 +1,5 @@
-import type { CurveAssetCatalogEntry, DataAssetCatalogEntry } from "@haptic/core";
-import { CURVE_ASSET_TYPES, curveKindForAssetType, normalizeCurveAssetPayload } from "@haptic/core";
+import type { CurveAssetCatalogEntry, DataAssetCatalogEntry, TimelineClipAssetCatalogEntry } from "@haptic/core";
+import { CURVE_ASSET_TYPES, curveKindForAssetType, isTimelineClipAssetType, normalizeCurveAssetPayload, timelineClipAssetCatalogEntry } from "@haptic/core";
 import { normalizeWaterDefinition, type WaterDefinition } from "@haptic/core";
 import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@haptic/core";
 import {
@@ -65,6 +65,7 @@ const JSON_CONTENT_TYPES = new Set([
   "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
   "SoundAttenuation", "Animation", "Audio",
   "DataDefinition", "DataTree", "Structure", "Enum", "FloatCurve", "VectorCurve", "ColorCurve",
+  "TimelineClip2D", "TimelineClip3D",
 ]);
 
 export type PackedAudioLibrary = {
@@ -79,6 +80,7 @@ export type PackedAudioLibrary = {
 export type PackedGameContent = {
   dataAssets: DataAssetCatalogEntry[];
   curveAssets: CurveAssetCatalogEntry[];
+  timelineClipAssets: TimelineClipAssetCatalogEntry[];
   spritePayloads: Map<string, SpritePayload>;
   spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
   waterPayloads: Map<string, WaterDefinition>;
@@ -167,6 +169,7 @@ export function gameComplexCollisionModelGuids(game: GameSourceContent): Set<str
 export function packedContentFromGame(game: GameSourceContent): PackedGameContent {
   const dataAssets: DataAssetCatalogEntry[] = [];
   const curveAssets: CurveAssetCatalogEntry[] = [];
+  const timelineClipAssets: TimelineClipAssetCatalogEntry[] = [];
   const spritePayloads = new Map<string, SpritePayload>();
   const spriteAnimationPayloads = new Map<string, SpriteAnimationPayload>();
   const waterPayloads = new Map<string, WaterDefinition>();
@@ -203,6 +206,11 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     const curveKind = curveKindForAssetType(entry.type);
     if (curveKind) {
       if (parsed) curveAssets.push({ guid: entry.guid, type: CURVE_ASSET_TYPES[curveKind], name: entry.name ?? entry.guid, payload: normalizeCurveAssetPayload(curveKind, parsed) });
+      continue;
+    }
+    if (isTimelineClipAssetType(entry.type)) {
+      // Keys, events and proxies only: the Editor Preview never ships.
+      if (parsed) timelineClipAssets.push(timelineClipAssetCatalogEntry(entry.guid, entry.type, entry.name ?? entry.guid, parsed));
       continue;
     }
     if (entry.type === "RenderTarget" && parsed) {
@@ -350,6 +358,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   return {
     dataAssets,
     curveAssets,
+    timelineClipAssets,
     spritePayloads,
     spriteAnimationPayloads: sizedSpriteAnimations,
     waterPayloads,
@@ -481,7 +490,7 @@ export function packedSourceControls(game: GameSourceContent, content = packedCo
     type: "loadSceneContent", assetGuids: [...game.payloads.keys(), ...(game.decodedPayloads?.keys() ?? [])],
     sceneLayers: [...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })),
     sceneNavmeshBytes: Object.fromEntries(game.navmeshBytes),
-    dataAssets: content.dataAssets, curveAssets: content.curveAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
+    dataAssets: content.dataAssets, curveAssets: content.curveAssets, timelineClipAssets: content.timelineClipAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),
     renderTargets: Object.fromEntries(content.renderTargets), renderTargetTextures: Object.fromEntries(content.renderTargetTextures),
