@@ -354,6 +354,13 @@ export function pinTypeDisplayName(
       const guid = typeof type.guid === "string" ? type.guid.trim() : "";
       return names?.[guid] ?? (pinTypeText(guid) || PIN_TYPE_LABEL[type.kind]!);
     }
+    case "delegate": {
+      // A delegate is told apart by what it takes: `Delegate (Float, Actor)`.
+      const inputs = Array.isArray(type.inputs) ? (type.inputs as PinTypeLike[]) : [];
+      return inputs.length === 0
+        ? `${PIN_TYPE_LABEL.delegate} (No Inputs)`
+        : `${PIN_TYPE_LABEL.delegate} (${inputs.map((input) => pinTypeDisplayName(input, names)).join(", ")})`;
+    }
     default:
       return PIN_TYPE_LABEL[type.kind] ?? humanizePropertyLabel(type.kind);
   }

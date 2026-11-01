@@ -18,7 +18,9 @@ import {
 import { ENGINE_CLASS_SCRIPT_APIS } from "@haptic/object-model";
 import {
   ASSET_REGISTRY_BY_CLASS_NODE_ID,
+  CREATE_EVENT_NODE_TYPE_ID,
   castDefaultClassId,
+  isDispatcherNodeType,
   callInterfaceTitle,
   isCallInterfaceMethodPin,
   SUBSYSTEM_GET_NODE_ID,
@@ -28,8 +30,10 @@ import {
   ownedComponentGetTitle,
   subsystemGetClassId,
   subsystemGetTitle,
+  DATA_DEFINITION_PIN_ID,
 } from "@haptic/scripting-nodes";
 import {
+  dataGraphDefinitionGuid,
   dataGraphMetadata,
   selectedDataGraphEntry,
   dataGraphNodeTitle,
@@ -89,7 +93,11 @@ export function shouldRegeneratePins(typeId: string): boolean {
   if (typeId === "debug.executeJavaScript") return true;
   if (isInputEvent(typeId)) return true;
   if (SELF_ACTOR_NODE_IDS.has(typeId)) return true;
+  // Signature pins of Event Dispatcher nodes and Create Event follow their `pins` rows.
+  if (isDispatcherNodeType(typeId) || typeId === CREATE_EVENT_NODE_TYPE_ID) return true;
   return (
+    // Custom events saved before the Output Delegate existed gain it.
+    typeId === "flow.event.custom" ||
     typeId === "flow.event.call" ||
     typeId === "flow.event.callParent" ||
     typeId === "functions.call" ||
@@ -313,13 +321,23 @@ export function applyStructEnumSchema(
     const node = dataGraphMetadata(typeId)!;
     if (node.schema === false) return;
     if (typeId === "editorData.addEntry" && properties.definitionMode === "none") return;
-    let guid = typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
-    if (!guid && node.definitionPath && !graph.edges.some((edge) => edge.target === nodeId && ["tree", node.definitionPath].includes(edge.targetHandle ?? ""))) {
+    let guid = dataGraphDefinitionGuid(typeId, properties);
+    if (!guid && node.definitionPath && !node.definitionPin && !graph.edges.some((edge) => edge.target === nodeId && ["tree", node.definitionPath].includes(edge.targetHandle ?? ""))) {
       guid = selectedDataGraphEntry(typeId, properties, options?.dataAssets ?? [])?.effectiveDefinitionGuid ?? "";
       if (guid) properties.definitionGuid = guid;
     }
     const schema = options?.dataDefinitions?.[guid];
     properties.title = dataGraphNodeTitle(typeId, schema?.name);
+    if (node.definitionPin) {
+      // Graphs saved before the Data Definition pin keep the Definition in `definitionGuid`;
+      // the pin owns it from the next save. A pin edit never clears the snapshot as the
+      // Inspector's Definition picker does, and these reads author no values, so the
+      // snapshot is retaken from the picked Definition.
+      const pinKey = `default:${DATA_DEFINITION_PIN_ID}`;
+      if (typeof properties[pinKey] !== "string" && guid) properties[pinKey] = guid;
+      delete properties.definitionGuid;
+      delete properties.dataSchema;
+    }
     if (schema && !Array.isArray(properties.dataSchema)) {
       const literal = properties["default:values"];
       const values = literal && typeof literal === "object" && !Array.isArray(literal) ? literal as Record<string, unknown> : {};

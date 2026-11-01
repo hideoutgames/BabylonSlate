@@ -1,6 +1,7 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, Constants, DiscardBlock, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, VectorMergerBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
+import { ArcRotateCamera, Constants, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, VectorMergerBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
+import { CoverageClipBlock } from "./alpha-to-coverage";
 import { createDefaultMaterialDocument, lowerMaterialDocument, newCustomGlslProperties, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -389,7 +390,7 @@ describe("material node contracts", () => {
     node(doc, "mask", "const.float", { value: [0.1] });
     wire(doc, "mask", "out", "output", "alphaClip");
     const result = await compile(doc);
-    const discard = result.material.getBlockByPredicate((block) => block instanceof DiscardBlock) as DiscardBlock;
+    const discard = result.material.getBlockByPredicate((block) => block instanceof CoverageClipBlock) as CoverageClipBlock;
     expect(discard?.value.connectedPoint?.ownerBlock.name).toContain("mask");
     expect(result.material.getInputBlockByPredicate((block) => block.name.endsWith("_alphaCutoff"))?.value).toBe(0.23);
     const fragment = result.material.getBlockByPredicate((block) => block instanceof FragmentOutputBlock) as FragmentOutputBlock;

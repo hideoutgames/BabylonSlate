@@ -15,6 +15,7 @@ import {
   type ExecScope,
 } from "./compile-codegen-state";
 import { ensurePure, makeCtx } from "./compile-expressions";
+import { deadReference } from "./compile-pin-values";
 import { emitExecProbes, emitStatementNode } from "./compile-statements";
 import { emitFlowSwitch, emitStructuredFlow } from "./compile-structured-flow";
 import { emitInputEventEntry } from "./compile-input-events";
@@ -128,10 +129,11 @@ export function emitExecChain(
         graphId: s.graph.id,
         nodeId: node.id,
       };
-      // An empty Target leaves the value empty, so execution takes Not Valid.
+      // An empty Target leaves the value empty, so execution takes Not Valid,
+      // as does a destroyed object.
       const { ctx } = emitStatementNode(s, node, def);
       const value = ctx.output("value");
-      emitBody(s, `  if (${value} != null) {`, anchor);
+      emitBody(s, `  if (!${deadReference(value)}) {`, anchor);
       emitAlong(s, execSuccessorEdges(s.index, node.id, "isValid"), visited);
       emitBody(s, `  } else {`, anchor);
       emitAlong(s, execSuccessorEdges(s.index, node.id, "notValid"), visited);

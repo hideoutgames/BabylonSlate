@@ -32,6 +32,7 @@ import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
+import { scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import {
   componentPropertyRows,
   type AssetPickRequest,
@@ -99,6 +100,7 @@ export function PrefabComponentDetails({
 }) {
   const { assetRegistry, registryEpoch } = useRegistryState();
   const areaEmissionStatus = useAreaEmissionStatus();
+  const linkedScale = useLinkedScale();
   // Open Class and Model tabs override saved content in these rows.
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
@@ -126,6 +128,7 @@ export function PrefabComponentDetails({
           viewportMode,
           component.transform ?? identitySerializedTransform(),
           onUpdateTransform,
+          { scaleLink: linkedScale.link(scaleLinkKey.classComponent(actorClassId, component.id)) },
         )}
         data-testid="prefab-component-transform-grid"
       />}

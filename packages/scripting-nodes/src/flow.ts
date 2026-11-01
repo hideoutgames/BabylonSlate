@@ -29,6 +29,21 @@ import {
   objectLiteralKey,
   pinTypeForMember,
 } from "./member-pins";
+import {
+  OUTPUT_DELEGATE_PIN_ID,
+  eventDelegateExpression,
+  signatureDelegateType,
+  signatureParameterNames,
+} from "./dispatchers";
+
+/**
+ * Fixed pins of Event Custom: its exec pins plus the title-bar Output Delegate.
+ * An output named like one of them takes the `__arg` suffix.
+ */
+const CUSTOM_EVENT_PIN_IDS: ReadonlySet<string> = new Set([
+  ...EXEC_PIN_IDS,
+  OUTPUT_DELEGATE_PIN_ID,
+]);
 
 /**
  * On Command Run's only fixed pin. A parameter named `execIn` keeps that id,
@@ -501,13 +516,30 @@ export const flowNodes: NodeDefinition[] = [
     pure: true,
     pins: (properties) => [
       pin("execOut", "then", "out", EXEC),
-      ...dataMemberPins(properties, "out", EXEC_PIN_IDS),
+      // A delegate running this event on the object that owns it, drawn in
+      // the title bar like Unreal's: connect it to Bind Event and similar.
+      {
+        ...pin(OUTPUT_DELEGATE_PIN_ID, "Output Delegate", "out", signatureDelegateType(properties)),
+        placement: "header",
+      },
+      ...dataMemberPins(properties, "out", CUSTOM_EVENT_PIN_IDS),
     ],
     codegen: (ctx) => {
       const out: Record<string, string> = {};
       for (const pinDef of ctx.node.pins) {
         if (pinDef.kind === "exec" || pinDef.direction !== "out") continue;
+        if (pinDef.id === OUTPUT_DELEGATE_PIN_ID) continue;
         out[pinDef.id] = `(ctx.commandArgs[${JSON.stringify(pinDef.name)}])`;
+      }
+      const name = typeof ctx.node.properties.name === "string" ? ctx.node.properties.name : "";
+      if (name && ctx.node.pins.some((pinDef) => pinDef.id === OUTPUT_DELEGATE_PIN_ID)) {
+        out[OUTPUT_DELEGATE_PIN_ID] = eventDelegateExpression(
+          ctx,
+          "ctx.self",
+          name,
+          "event",
+          signatureParameterNames(ctx.node.properties),
+        );
       }
       if (Object.keys(out).length === 0) return;
       return out;

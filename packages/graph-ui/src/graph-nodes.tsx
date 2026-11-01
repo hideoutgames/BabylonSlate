@@ -13,7 +13,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon } from "lucide-react";
+import { CircleAlertIcon, ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
 import {
   humanizePropertyLabel,
   PinShapeGlyph,
@@ -21,6 +21,7 @@ import {
   useTags,
 } from "@haptic/editor-kit";
 import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode, isTouchEventNodeType } from "@haptic/scripting";
+import { Badge } from "@haptic/ui/components/badge";
 import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { nodeCanBreak, useNodeBreakpoint } from "./graph-breakpoints";
@@ -211,6 +212,42 @@ function PinHandle({
   );
 }
 
+/**
+ * An output drawn at the right end of the title bar, aligned with the output
+ * handles of the rows below: a custom event's Output Delegate, as in Unreal.
+ */
+function HeaderPin({
+  nodeId,
+  pin,
+  disabled,
+}: {
+  nodeId: string;
+  pin: SerializedPin;
+  disabled: boolean;
+}) {
+  const { pendingPin, pinHasError } = useGraphEditorContext();
+  const connected = useStore((state) => isPinWired(state.edges, nodeId, pin));
+  const label = humanizePropertyLabel(pin.name);
+  return (
+    <span
+      className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center"
+      data-pin-side={pin.direction}
+      data-pin-id={pin.id}
+      data-header-pin
+    >
+      <PinHandle
+        nodeId={nodeId}
+        pin={pin}
+        label={label}
+        pending={pendingPin?.nodeId === nodeId && pendingPin.pinId === pin.id}
+        hasError={pinHasError(nodeId, pin.id)}
+        connected={connected}
+        disabled={disabled}
+      />
+    </span>
+  );
+}
+
 function PinRow({
   nodeId,
   data,
@@ -324,6 +361,11 @@ function PinRow({
   );
 }
 
+/**
+ * A node's error count: a destructive Badge sitting just above the node's top edge, so it never covers
+ * the title, the breakpoint dot or the corner marker (it moves to the left edge when a marker is shown).
+ * Its 44px button reaches down to the node.
+ */
 function NodeErrorBadge({
   nodeId,
   count,
@@ -344,19 +386,28 @@ function NodeErrorBadge({
   );
 
   if (count <= 0) return null;
+  const label = count === 1 ? "1 Error" : `${count} Errors`;
 
   return (
     <button
       type="button"
       className={cn(
-        "absolute -top-2 z-10 flex size-11 items-center justify-center",
-        leading ? "-left-2" : "-right-2",
+        "group/node-error absolute bottom-full z-10 flex h-11 items-end pb-1.5 outline-none",
+        leading ? "left-0" : "right-0",
       )}
-      aria-label={`${count} error${count === 1 ? "" : "s"}`}
+      aria-label={label}
       onClick={handleClick}
     >
-      <span className="flex size-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-        {count > 9 ? "9+" : count}
+      <span className="rounded-sm bg-graph-node shadow-md">
+        {/* Node chrome is drawn at twice chrome scale (16px titles), so the badge is too. */}
+        <Badge
+          variant="destructive"
+          size="lg"
+          className="h-8 gap-1.5 text-sm tabular-nums has-data-[icon=inline-start]:pl-2 [&>svg]:size-4! dark:group-hover/node-error:bg-destructive/30 group-focus-visible/node-error:ring-[3px] group-focus-visible/node-error:ring-destructive/40"
+        >
+          <CircleAlertIcon data-icon="inline-start" aria-hidden="true" />
+          {label}
+        </Badge>
       </span>
     </button>
   );
@@ -428,9 +479,19 @@ function isInheritedCustomEvent(nodeType: string, data: Record<string, unknown> 
   return data?.eventQualifier === "Inherited" || (typeof data?.parentClassId === "string" && data.parentClassId !== "");
 }
 
+/** Pins drawn in the title bar rather than in a pin row. */
+function headerPinsOf(data: Record<string, unknown> | undefined): SerializedPin[] {
+  return hasSerializedPins(data) ? data.__pins.filter((pin) => pin.placement === "header") : [];
+}
+
 function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   if (data?.__material || data?.__particleRole) return null;
   const nodeType = typeof data?.__nodeType === "string" ? data.__nodeType : "";
+  // A title-bar pin takes the corner (an inherited custom event's delegate square).
+  if (headerPinsOf(data).length > 0) return null;
+  if (nodeType.startsWith("flow.dispatcher.")) {
+    return { Icon: RadioTowerIcon, label: "Event Dispatcher" };
+  }
   if (data?.__latent === true || (nodeType === "debug.executeJavaScript" && data?.async === true)) {
     return { Icon: ClockIcon, label: "Latent Action" };
   }
@@ -469,10 +530,11 @@ export function BlueprintNodeShell({
   const editorOnly = data?.__editorOnly === true;
   const disabled = data?.__disabled === true;
   const marker = nodeCornerMarker(data);
+  const headerPins = card ? [] : headerPinsOf(data);
 
   return (
     <div className={cn("relative", card && "group/title")}>
-      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker} />
+      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker || headerPins.length > 0} />
       {/* Outside the card's clipped body, straddling its left border at the header. */}
       {card ? <NodeBreakpointDot nodeId={nodeId} data={data} className="-left-1.5 top-6 z-10" /> : null}
       {marker ? (
@@ -504,11 +566,15 @@ export function BlueprintNodeShell({
             className={cn(
               "group/title relative rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
               marker && "pr-10",
+              headerPins.length > 0 && "pr-12",
               nodeRoleClass(role),
             )}
           >
             <NodeBreakpointDot nodeId={nodeId} data={data} />
             {title}
+            {headerPins.map((pin) => (
+              <HeaderPin key={pin.id} nodeId={nodeId} pin={pin} disabled={disabled} />
+            ))}
           </div>
         )}
         {children}
@@ -538,7 +604,7 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
   const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const { title, role } = visualFromData(data, type);
-  const rows = zipPinRows(pins, {
+  const rows = zipPinRows(pins.filter((pin) => pin.placement !== "header"), {
     declaredOrder: data.__declaredPinOrder === true,
   });
   // Reordering pins moves handles without resizing the node, so React Flow

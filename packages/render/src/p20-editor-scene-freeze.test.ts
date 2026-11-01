@@ -7,7 +7,9 @@ import {
   NullEngine,
   ScenePerformancePriority,
   ShaderMaterial,
+  VertexBuffer,
 } from "@babylonjs/core";
+import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
 import {
   createActor,
   createDefaultScene,
@@ -22,6 +24,7 @@ import { isEngineDefaultMaterial } from "./default-material";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { createTilemapMeshes } from "./tilemap-mesh";
 import { visualMeshes } from "./visual-meshes";
 
 class FakeCanvas {
@@ -161,6 +164,35 @@ describe("p20-editor-scene-freeze", () => {
     expect(freeze).not.toHaveBeenCalled();
     expect(handle.scene._activeMeshesFrozen).toBe(false);
     expect(activeMeshesOf(handle.scene)).toContain(handle.editor!.sync.meshForActor("extra"));
+  });
+
+  it("keeps animated tiles on their first frame while the editor view renders", () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    const tilemap = {
+      ...setTile(createDefaultTilemapPayload(), "layer-1", 0, 0, 1),
+      tilesets: [{ guid: "atlas", firstGid: 1, tileCount: 2 }],
+    };
+    const tileset = normalizeTilesetPayload({
+      atlasWidth: 32,
+      tiles: [{ id: 1, animation: [1, 2] }],
+    });
+    const root = createTilemapMeshes(handle.scene, "map", tilemap, new Map([["atlas", tileset]]), 1, 1);
+    const animated = root.getChildMeshes().find((mesh) => mesh.name.endsWith(":anim"));
+    expect(animated).toBeDefined();
+    const firstFrame = [...animated!.getVerticesData(VertexBuffer.UVKind)!];
+    const renderLoop = runRenderLoop.mock.calls[0]![0];
+    // Each time falls in the second 100 ms tile frame of a running clock.
+    for (now of [150, 350, 550]) renderLoop();
+    expect(handle.renderDiagnostics().presentation!.attempted).toBeGreaterThan(0);
+    expect([...animated!.getVerticesData(VertexBuffer.UVKind)!]).toEqual(firstFrame);
   });
 
   it("collects a visible box actor on the next editor frame", () => {

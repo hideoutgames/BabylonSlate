@@ -14,9 +14,11 @@ import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import { endAlphaToCoverage, guardAlphaToCoverageBlending } from "./alpha-to-coverage";
 import { sceneMultisampleCount, sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
 import { isBuiltInWaterMesh } from "./water-mesh";
 import { WaterSceneCopyGraph, waterSceneCopyDemand } from "./water-scene-copy";
+import { MultisamplePresentTask, presentsMultisampleByBlit } from "./multisample-present";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
 import type { AbstractMesh, Camera, Effect, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
@@ -265,6 +267,7 @@ export class ForwardSceneFrameGraph {
   /** An auxiliary view's own scene targets, charged to the shared ledger. */
   private ownScene: {
     color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle; lease: ManagedRenderLease; committed: boolean; samples: number;
+    colorType: number;
   } | undefined;
   private readinessDirtyFlag = true;
   /**
@@ -1146,6 +1149,9 @@ export class ForwardSceneFrameGraph {
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
+        // Alpha-tested draws turn alpha-to-coverage on for themselves (`alpha-to-coverage.ts`); nothing after the pass keeps it.
+        guardAlphaToCoverageBlending(scene.getEngine());
+        this.objects.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
         this.objects.warmsPipelines = !this.auxiliary;
         if (waterDemand > 0) {
           // The water scene copy samples the scene depth after this pass: resolve it too.
@@ -1163,6 +1169,7 @@ export class ForwardSceneFrameGraph {
             output: { color, texture: Boolean(output.color) },
           });
         }
+        this.water?.transparent.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
         this.objects.neverDraws = this.water && this.skipCopyWater;
         // Screen-Space Shadows draw before the objects, which read them (as does the water split's own opaque pass, which
         // draws through the objects' renderer and so its render pass).
@@ -1206,7 +1213,21 @@ export class ForwardSceneFrameGraph {
           this.effectsGraph?.outputTexture ??
           (this.postProcessGraph ? this.outlineTask?.outputTexture ?? this.postProcessGraph.outputTexture : undefined) ??
           (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
-        if (chainOutput) {
+        const engine = scene.getEngine();
+        const own = this.ownScene;
+        if (own && !this.outlineTask && presentsMultisampleByBlit({
+          webGl2: !engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
+          backbuffer: !output.color, outputSized: renderSize.width === output.width && renderSize.height === output.height,
+          laterReaders: this.water !== undefined,
+        })) {
+          // The objects pass is the scene colour's last writer and nothing samples its resolve: one blit from the
+          // multisampled colour to the backbuffer replaces the resolve and the output copy.
+          this.objects.resolveMSAAColors = false;
+          const present = new MultisamplePresentTask("Multisample present", this.graph);
+          present.sourceTexture = own.color;
+          this.outputCopy = present;
+          this.graph.addTask(present);
+        } else if (chainOutput) {
           if (output.color) {
             const copy = new FrameGraphCopyToTextureTask(this.ownScene ? this.ownScene.samples > 1 ? "Multisample output" : "Capture output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
@@ -1336,6 +1357,7 @@ export class ForwardSceneFrameGraph {
       lease,
       committed: false,
       samples,
+      colorType,
     };
   }
 

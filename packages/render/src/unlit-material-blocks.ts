@@ -5,6 +5,7 @@ import {
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { ALPHA_COVERAGE_UNIFORM, coverageClip, drawsAlphaCoverage } from "./alpha-to-coverage";
 import { geometryOutputWrite } from "./geometry-surface-output-block";
 import { overlayVisualStyle } from "./overlay-visual-style";
 
@@ -136,6 +137,8 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
   msdf = false;
   /** The Material whose blending decides whether alpha is kept (a pass variant's surface); the drawing one otherwise. */
   alphaOwner: NodeMaterial | null = null;
+  /** Build-time: the colour graph, which writes alpha-to-coverage for an alpha-tested mesh under MSAA. */
+  coverage = false;
   private fallback: RawTexture | null = null;
 
   constructor(name: string) {
@@ -160,7 +163,9 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
   }
 
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
-    if (mesh) bindUnlitUniforms(effect, this.alphaOwner ?? material, mesh, this.fallback, this.textured, this.msdf);
+    if (!mesh) return;
+    bindUnlitUniforms(effect, this.alphaOwner ?? material, mesh, this.fallback, this.textured, this.msdf);
+    if (this.coverage) effect.setFloat(ALPHA_COVERAGE_UNIFORM, drawsAlphaCoverage(material.getScene().getEngine(), material, mesh) ? 1 : 0);
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -211,7 +216,8 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
       const color = this.vertexColor.associatedVariableName;
       state.compilationString += `#ifdef VERTEXCOLOR_NME\n${rgb} *= ${color}.rgb;\n${a} *= mix(1.0, ${color}.a, ${u}${U.alpha}.w);\n#endif\n`;
     }
-    state.compilationString += `if (${a} < ${u}${U.alpha}.x) { discard; }\n`;
+    if (this.coverage) coverageClip(state, a, `${u}${U.alpha}.x`);
+    else state.compilationString += `if (${a} < ${u}${U.alpha}.x) { discard; }\n`;
     state.compilationString += `if (${u}${U.alpha}.x > 0.0 && ${u}${U.alpha}.y < 0.5) { ${a} = 1.0; }\n`;
     state.compilationString += `${rgb} = max(${rgb}, ${vec3}(0.0));\n`;
     return this;

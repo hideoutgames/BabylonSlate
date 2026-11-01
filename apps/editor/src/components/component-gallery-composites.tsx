@@ -21,6 +21,7 @@ import {
   ParameterListEditor,
   AssetLoadingField,
   PinListEditor,
+  CLASS_PIN_PICKER_TYPES,
   PinTypePicker,
   VariableTypeFields,
   PropertyGrid,
@@ -83,8 +84,21 @@ function GalleryDisclosure() {
   );
 }
 
+/** A Signature choice for the gallery's Delegate rows. */
+const GALLERY_DELEGATE_SIGNATURES = [
+  {
+    id: "Enemy::On Damaged",
+    label: "On Damaged",
+    description: "Enemy",
+    signature: [{ typeId: "float" }, { typeId: "object", typeClassId: "Actor" }],
+    parameterNames: ["Damage", "Instigator"],
+  },
+];
+
 export function GalleryComposites() {
   const [position, setPosition] = useState<[number, number, number]>([0, 1, 0]);
+  const [scale, setScale] = useState<[number, number, number]>([1, 2, 1]);
+  const [scaleLinked, setScaleLinked] = useState(false);
   const [speed, setSpeed] = useState(4);
   const [friction, setFriction] = useState(0.5);
   const [physicsLayer, setPhysicsLayer] = useState(1);
@@ -147,6 +161,16 @@ export function GalleryComposites() {
       value: position,
       defaultValue: [0, 0, 0],
       onChange: (value) => setPosition([value[0], value[1], value[2]]),
+    },
+    {
+      kind: "vector3",
+      id: "gallery-scale",
+      label: "Scale",
+      value: scale,
+      defaultValue: [1, 1, 1],
+      linked: scaleLinked,
+      onLinkedChange: setScaleLinked,
+      onChange: (value) => setScale([value[0], value[1], value[2]]),
     },
     {
       kind: "number",
@@ -332,7 +356,12 @@ export function GalleryComposites() {
       </div>
       <div className="rounded-lg border border-border p-3" data-testid="gallery-variable-type-fields">
         <div className="mb-2 text-sm font-medium">Variable Type Fields</div>
-        <VariableTypeFields value={variableType} onChange={setVariableType} />
+        <VariableTypeFields
+          value={variableType}
+          onChange={setVariableType}
+          types={CLASS_PIN_PICKER_TYPES}
+          delegateSignatures={GALLERY_DELEGATE_SIGNATURES}
+        />
       </div>
       <div className="rounded-lg border border-border p-3" data-testid="gallery-asset-loading-field">
         <div className="mb-2 text-sm font-medium">Asset Loading Field</div>
@@ -355,6 +384,8 @@ export function GalleryComposites() {
             selectedId={selectedPinId}
             onSelect={setSelectedPinId}
             showDirection
+            types={CLASS_PIN_PICKER_TYPES}
+            delegateSignatures={GALLERY_DELEGATE_SIGNATURES}
             classEntries={[
               { id: "Actor", name: "Actor", group: "Engine" },
               { id: "MyGame", name: "My Game", group: "Project" },
@@ -366,6 +397,7 @@ export function GalleryComposites() {
         <div className="mb-2 text-sm font-medium">Data Types</div>
         <div className="flex flex-wrap gap-3">
           <TypeColorMark colorVar={PIN_COLOR_VAR.bool} label="Bool" />
+          <TypeColorMark colorVar={PIN_COLOR_VAR.delegate} shape="square" label="Delegate" />
           <TypeColorMark colorVar={PIN_COLOR_VAR.float} label="Float" />
           <TypeColorMark colorVar={PIN_COLOR_VAR.vector} label="Vector" />
           <TypeColorMark colorVar={PIN_COLOR_VAR.object} label="Object" />

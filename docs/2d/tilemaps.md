@@ -99,7 +99,7 @@ Each layer with **Collision** on becomes solid ground from its Full and Chain ti
 
 - **Bucket** spreads only through the part of the layer that already has tiles. On an empty layer it fills one cell.
 - Removing a Tileset from a map erases its tiles from every layer. The editor asks first, and you can undo it.
-- Animated tiles play in the scene viewport and in Play, and pause when the game pauses.
+- Animated tiles play in Play, Simulate and Preview Build, and pause when the game pauses. The editor viewport shows each animated tile's first frame.
 - Parallax applies only in Play, not in the editor viewport.
 
 ## Related

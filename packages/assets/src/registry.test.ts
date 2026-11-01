@@ -108,6 +108,42 @@ describe("AssetRegistry", () => {
     expect((await decodeAssetDocument(await storage.readBinary(renamed.path))).payload).toEqual(payload);
     expect(registry.showReferences("definition").inbound).toEqual([copy.header.guid]);
   });
+  it("resolves a saved asset for concurrent readers while the save re-indexes it, and fails them only for a real change", async () => {
+    const storage = await createStorage();
+    const path = "assets/main.scene.hasset";
+    await writeAsset(storage, path, { guid: "scene-1", type: "Scene", name: "Main", payloadBytes: new Uint8Array([1]) });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.getAssetLocator("scene-1");
+    // Play saves the open Scene, then prepares it: its catalog reads (each with its own signal, so not shared) run while
+    // the save's own re-index of the same bytes lands.
+    await writeAsset(storage, path, { guid: "scene-1", type: "Scene", name: "Main", payloadBytes: new Uint8Array([1, 2]) });
+    const signal = new AbortController().signal;
+    const [first, second, reindexed] = await Promise.all([
+      registry.getAssetLocator("scene-1", { signal }),
+      registry.getAssetLocator("scene-1", { signal }),
+      registry.reindexPath(path),
+    ]);
+    expect(second).toEqual(first);
+    expect(reindexed?.locator).toEqual(first);
+    // Indexing the same bytes again keeps the entry that readers hold.
+    const entry = registry.getByGuid("scene-1");
+    await registry.reindexPath(path);
+    expect(registry.getByGuid("scene-1")).toBe(entry);
+    // A real change under a read still fails it: the read's storage probe sees the bytes before another save, which
+    // lands and is indexed before the read resumes.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const probe = storage.readBinaryRange.bind(storage);
+    const spy = vi.spyOn(storage, "readBinaryRange").mockImplementationOnce(async (...args) => { const bytes = await probe(...args); await gate; return bytes; });
+    const read = registry.getAssetLocator("scene-1", { signal });
+    await writeAsset(storage, path, { guid: "scene-1", type: "Scene", name: "Renamed", payloadBytes: new Uint8Array([3]) });
+    await registry.reindexPath(path);
+    release();
+    await expect(read).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    spy.mockRestore();
+  });
+
   it("indexes the saved header when a save lands between a scan's header reads", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("SaveDuringScan");

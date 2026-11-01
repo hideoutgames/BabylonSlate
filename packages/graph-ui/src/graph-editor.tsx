@@ -1930,44 +1930,54 @@ function GraphEditorCanvas({
           graphStateRef.current.nodes,
         );
       }
-      const id = uniqueNodeId(
-        `${paletteNode.id}-${Date.now()}`,
-        new Set(graphStateRef.current.nodes.map((node) => node.id)),
-      );
-      const data: Record<string, unknown> = {
-        ...(paletteNode.defaultData ?? {}),
-        title: paletteNode.title,
-        __nodeType: paletteNode.nodeType ?? paletteNode.id,
-        __category: paletteNode.category,
-        __pure: paletteNode.pure ?? false,
-        __latent: paletteNode.latent ?? false,
-      };
-      if (paletteNode.editorOnly === true) {
-        data.__editorOnly = true;
-      }
-      if (paletteNode.pins && paletteNode.pins.length > 0) {
-        data.__pins = paletteNode.pins;
-      }
-      const nextNode: CanvasNode = withDragHandle(
-        {
-          id,
-          type: resolveNodeType(
-            paletteNode.nodeType ?? paletteNode.id,
+      const takenIds = new Set(graphStateRef.current.nodes.map((node) => node.id));
+      const canvasNode = (entry: PaletteNode, at: { x: number; y: number }, selected: boolean): CanvasNode => {
+        const nodeId = uniqueNodeId(`${entry.id}-${Date.now()}`, takenIds);
+        takenIds.add(nodeId);
+        const data: Record<string, unknown> = {
+          ...(entry.defaultData ?? {}),
+          title: entry.title,
+          __nodeType: entry.nodeType ?? entry.id,
+          __category: entry.category,
+          __pure: entry.pure ?? false,
+          __latent: entry.latent ?? false,
+        };
+        if (entry.editorOnly === true) {
+          data.__editorOnly = true;
+        }
+        if (entry.pins && entry.pins.length > 0) {
+          data.__pins = entry.pins;
+        }
+        return withDragHandle(
+          {
+            id: nodeId,
+            type: resolveNodeType(entry.nodeType ?? entry.id, data, knownTypes),
+            position: at,
+            selected,
             data,
-            knownTypes,
-          ),
-          position,
-          selected: true,
-          data,
-        },
-        nodeDragHandle,
-      );
+          },
+          nodeDragHandle,
+        );
+      };
+      const nextNode = canvasNode(paletteNode, position, true);
+      const id = nextNode.id;
+      const bundleIds = new Map<string, string>([["main", id]]);
+      const bundleNodes = (paletteNode.bundle?.nodes ?? []).map((entry) => {
+        const added = canvasNode(
+          entry.node,
+          { x: position.x + entry.offset.x, y: position.y + entry.offset.y },
+          false,
+        );
+        bundleIds.set(entry.key, added.id);
+        return added;
+      });
 
       const next = [
         ...graphStateRef.current.nodes.map((node) =>
           node.selected ? { ...node, selected: false } : node,
         ),
         nextNode,
+        ...bundleNodes,
       ];
       const connect = pendingConnect;
       let nextEdges = withoutEdgeSelection(graphStateRef.current.edges);
@@ -2014,6 +2024,22 @@ function GraphEditorCanvas({
             { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect, singleExecOutput: singleExecOutputOnConnect },
           );
         }
+      }
+      for (const wire of paletteNode.bundle?.edges ?? []) {
+        const source = bundleIds.get(wire.source);
+        const target = bundleIds.get(wire.target);
+        if (!source || !target) continue;
+        nextEdges = [
+          ...nextEdges,
+          {
+            id: createEdgeId(source, wire.sourceHandle, target, wire.targetHandle),
+            source,
+            target,
+            sourceHandle: wire.sourceHandle,
+            targetHandle: wire.targetHandle,
+            ...(defaultEdgeOptions.type ? { type: defaultEdgeOptions.type } : {}),
+          },
+        ];
       }
       commitGraph(next, nextEdges);
       if (replacedWire) noteReplacedWire();

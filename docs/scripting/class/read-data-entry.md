@@ -29,5 +29,6 @@ Reads an entry's values from a Data Tree that is already loaded and returns a co
 ## Notes
 
 - **Found** is false, and **Value** empty, when the tree or entry is missing, the values are invalid, or the entry uses a different Data Definition.
-- A tree chosen at run time must be loaded first, with [**Async Load Asset**](async-load-asset.md) or [**Read Data Entry Async**](read-data-entry-async.md).
+- A tree chosen at run time must be loaded first, with [**Async Load Asset**](async-load-asset.md) or [**Async Read Unknown Data Entry**](async-read-unknown-data-entry.md).
+- When the tree or path comes from a connection, [**Read Unknown Data Entry**](read-unknown-data-entry.md) shows the Data Definition as a pin on the node.
 - Changing **Value** never alters the authored data.

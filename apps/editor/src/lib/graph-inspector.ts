@@ -715,7 +715,8 @@ export function dataNodePropertyRows(
 ): PropertyRow[] {
   if (!isDataGraphNode(typeId)) return [];
   const metadata = dataGraphMetadata(typeId)!;
-  if (metadata.schema === false) return [];
+  // Unknown reads show their Definition as the Data Definition pin's row instead.
+  if (metadata.schema === false || metadata.definitionPin) return [];
   const adding = typeId === "editorData.addEntry";
   const inherited = adding && (data.definitionMode === "inherit" || (!data.definitionMode && !data.definitionGuid));
   const required = metadata.required || (adding && data.definitionMode === "override");

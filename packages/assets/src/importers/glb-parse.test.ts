@@ -433,6 +433,7 @@ describe("parseGlbForBrowse", () => {
       modelGuid: model.guid,
       skeletonGuid: skeleton.guid,
       durationMs: 1000,
+      clipDurationMs: 1000,
     });
     expect(model.dependencies).toContain(skeleton.guid);
     expect(model.dependencies).toContain(animation.guid);

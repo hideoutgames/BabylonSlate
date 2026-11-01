@@ -18,6 +18,14 @@ function claimReload(target: PreloadErrorTarget): boolean {
 }
 
 /**
+ * Loads the deployed build into this tab: the one reload for an editor whose build a newer deploy replaced, whether a
+ * lazy chunk could not load (automatically, once per session) or a Play worker's files are gone (the user's Reload).
+ */
+export function reloadForNewBuild(target: Pick<PreloadErrorTarget, "location"> = window): void {
+  target.location.reload();
+}
+
+/**
  * Vite fires `vite:preloadError` when a lazy chunk cannot be fetched, from a
  * transient server error or because a newer deploy replaced the assets. The
  * first one in a session reloads the page for a consistent build; later ones
@@ -29,7 +37,7 @@ export function installPreloadErrorReload(
   const onPreloadError = (event: Event) => {
     if (!claimReload(target)) return;
     event.preventDefault();
-    target.location.reload();
+    reloadForNewBuild(target);
   };
   target.addEventListener("vite:preloadError", onPreloadError);
   return () => target.removeEventListener("vite:preloadError", onPreloadError);

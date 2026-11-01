@@ -242,7 +242,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
           </span>
         </span>
         <span
-          className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium tabular-nums text-muted-foreground"
+          className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-muted text-[10px] font-medium tabular-nums text-muted-foreground"
           title="Priority"
           data-testid={`bt-sort-${id}`}
         >

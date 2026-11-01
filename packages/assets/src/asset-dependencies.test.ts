@@ -114,15 +114,21 @@ describe("typed asset dependencies", () => {
         { id: "tree", type: "literal.makeAsset", data: { "default:in": "items" } },
         { id: "read", type: "data.readEntry", data: { definitionGuid: "item-schema" } },
         { id: "later", type: "data.readEntryAsync", data: { "default:tree": "later-items", definitionGuid: "later-schema" } },
+        { id: "laterPin", type: "data.readEntryAsync", data: { "default:tree": "later-items", "default:definition": "later-pin-schema" } },
+        { id: "unknownTree", type: "literal.makeAsset", data: { "default:in": "unknown-items" } },
+        { id: "unknown", type: "data.readUnknownEntry", data: { "default:definition": "unknown-schema" } },
         { id: "call", type: "functions.call", data: { classId: "InventoryFunctions", static: true } },
       ],
       edges: [
         { source: "binding", target: "input", targetHandle: "binding" },
         { source: "tree", target: "read", targetHandle: "tree" },
+        { source: "unknownTree", target: "unknown", targetHandle: "tree" },
       ],
     }, { classes: [{ guid: "inventory-module", classId: "InventoryFunctions" }] });
-    expect(metadata.dependencies).toEqual(["inventory-module", "item-schema", "items", "later-items", "later-schema", "move"]);
-    expect(metadata.requiredDependencies).toEqual(["inventory-module", "item-schema", "items", "move"]);
+    expect(metadata.dependencies).toEqual([
+      "inventory-module", "item-schema", "items", "later-items", "later-pin-schema", "later-schema", "move", "unknown-items", "unknown-schema",
+    ]);
+    expect(metadata.requiredDependencies).toEqual(["inventory-module", "item-schema", "items", "move", "unknown-items", "unknown-schema"]);
   });
 
   it("follows data inputs across several hops and edge spellings, in function graphs too, but not through exec wires", () => {

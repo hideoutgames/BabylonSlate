@@ -629,3 +629,6 @@ self.addEventListener("unhandledrejection", (event) => {
     flushCommands();
   }
 });
+
+// Last: the module has evaluated and its handlers are installed. A host that never hears this reports the worker as not started.
+postMessage({ channel: "ready" } satisfies BridgeWorkerMessage);

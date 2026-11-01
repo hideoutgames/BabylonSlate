@@ -265,4 +265,14 @@ describe("Data Definition and owned entry reference lifecycle", () => {
       .toMatchObject({ "default:entryPath": "texture", "default:name": "texture", "default:values": { Icon: "" } });
     expect(replaced.nodes[2]!.data.properties).toMatchObject({ "default:entryPaths": ["texture", "unused"] });
   });
+
+  it("follows an Unknown read's Data Definition pin through import, deletion and dependencies", () => {
+    const graph = { nodes: [{ type: "data.readUnknownEntry", data: { properties: { "default:definition": "weapon", "default:entryPath": "weapon" } } }] };
+    expect(dataGraphAssetDependencies(graph)).toEqual(["weapon"]);
+    const mapped = remapImportResultGuids([imported("Class", "class", graph), imported("DataDefinition", "weapon", {})], new Set(["weapon"]));
+    expect(mapped[1]!.guid).not.toBe("weapon");
+    expect(body(mapped[0]!).nodes).toMatchObject([{ data: { properties: { "default:definition": mapped[1]!.guid, "default:entryPath": "weapon" } } }]);
+    expect(clearDeletedAssetRefs(graph, new Set(["weapon"])).value.nodes[0]!.data.properties)
+      .toEqual({ "default:definition": "", "default:entryPath": "weapon" });
+  });
 });

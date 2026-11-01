@@ -1,9 +1,18 @@
 import {
   declaredValueUnit,
+  formatEventTitle,
   type GraphClassMember,
+  type GraphClassMemberPin,
   type SerializedGraph,
 } from "@haptic/core";
 import { formatEventMemberName } from "@haptic/editor-kit";
+import {
+  CREATE_EVENT_NODE_TYPE_ID,
+  DISPATCHER_NODE_TYPE_IDS,
+  OUTPUT_DELEGATE_PIN_ID,
+  dispatcherNodeTitle,
+  type DispatcherNodeAction,
+} from "@haptic/scripting-nodes";
 
 export function nextId(factory?: () => string): string {
   return factory?.() ?? crypto.randomUUID();
@@ -28,10 +37,12 @@ function stampVariableTypeOnData(
   data: Record<string, unknown>,
   member: Pick<
     GraphClassMember,
-    "typeId" | "typeClassId" | "container" | "keyTypeId" | "keyTypeClassId" | "unit"
+    "typeId" | "typeClassId" | "container" | "keyTypeId" | "keyTypeClassId" | "unit" | "signature"
   >,
 ): void {
   data.typeId = member.typeId ?? "float";
+  if (member.typeId === "delegate") data.signature = member.signature ?? [];
+  else delete data.signature;
   const unit = declaredValueUnit(member.typeId ?? "float", member.unit);
   if (unit) data.unit = unit;
   else delete data.unit;
@@ -305,4 +316,147 @@ export function addCallFunctionNode(
     },
     options?.functionId,
   );
+}
+
+/** What the Event Dispatcher drop chooser offers, as in Unreal. */
+export type DispatcherDropAction = DispatcherNodeAction | "event" | "assign";
+
+/** A dispatcher's inputs as the custom event bound to it declares them: its outputs. */
+export function dispatcherEventPins(
+  member: Pick<GraphClassMember, "pins">,
+): GraphClassMemberPin[] {
+  return (member.pins ?? [])
+    .filter((pin) => pin.typeId !== "exec")
+    .map((pin) => ({ ...pin, direction: "out" as const }));
+}
+
+/** Custom event names in use anywhere in the Class, compared case-folded. */
+function takenCustomEventNames(graph: SerializedGraph): Set<string> {
+  const taken = new Set<string>();
+  const add = (raw: unknown) => {
+    if (typeof raw !== "string") return;
+    const name = formatEventMemberName(raw);
+    if (name) taken.add(name.toLowerCase());
+  };
+  const slices = [graph, ...Object.values(graph.functionGraphs ?? {})];
+  for (const slice of slices) {
+    for (const node of slice.nodes) {
+      if (node.type === "flow.event.custom") add(node.data.name ?? node.data.title);
+    }
+  }
+  for (const member of graph.members ?? []) {
+    if (member.kind === "event") add(member.name);
+  }
+  return taken;
+}
+
+/** `On Damaged Event`, then `On Damaged Event 1`, … free among the Class's custom events. */
+export function freeDispatcherEventName(
+  graph: SerializedGraph,
+  dispatcherName: string,
+): string {
+  const base = `${formatEventMemberName(dispatcherName) || dispatcherName} Event`;
+  const taken = takenCustomEventNames(graph);
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let index = 1; ; index++) {
+    const candidate = `${base} ${index}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
+/** Node data of a Call, Bind, Unbind or Unbind All node for `member`. */
+export function dispatcherNodeData(
+  member: Pick<GraphClassMember, "name" | "pins">,
+  action: DispatcherNodeAction,
+  options?: Pick<GraphSpawnOptions, "classId" | "implicitSelf">,
+): Record<string, unknown> {
+  const type = DISPATCHER_NODE_TYPE_IDS[action];
+  const data: Record<string, unknown> = {
+    title: dispatcherNodeTitle(action, member.name),
+    name: member.name,
+    implicitSelf: options?.implicitSelf ?? true,
+    pins: (member.pins ?? []).filter((pin) => pin.typeId !== "exec"),
+    __nodeType: type,
+  };
+  if (options?.classId) data.classId = options.classId;
+  return data;
+}
+
+/** Node data of a custom event that takes `member`'s inputs, named `name`. */
+export function dispatcherEventNodeData(
+  member: Pick<GraphClassMember, "pins">,
+  name: string,
+): Record<string, unknown> {
+  return {
+    title: formatEventTitle(name),
+    name,
+    pins: dispatcherEventPins(member),
+    __nodeType: "flow.event.custom",
+  };
+}
+
+/**
+ * Spawn the nodes the Event Dispatcher drop chooser names: one Call, Bind,
+ * Unbind or Unbind All node; a custom event with the dispatcher's inputs
+ * (Event); or a Bind node with such an event already wired to it (Assign).
+ * Custom events only go to the Event Graph, so Event and Assign there too.
+ */
+export function addDispatcherNodes(
+  graph: SerializedGraph,
+  member: Pick<GraphClassMember, "name" | "pins">,
+  action: DispatcherDropAction,
+  options?: GraphSpawnOptions,
+): SerializedGraph {
+  const position = spawnPosition(graph, options);
+  if (action === "event" || action === "assign") {
+    const eventId = nextId(options?.idFactory);
+    const event = {
+      id: eventId,
+      type: "flow.event.custom",
+      position: action === "assign" ? { x: position.x - 40, y: position.y + 200 } : position,
+      data: dispatcherEventNodeData(member, freeDispatcherEventName(graph, member.name)),
+    };
+    const withEvent = appendGraphNode(graph, event, null);
+    if (action === "event") return withEvent;
+    const bindId = nextId(options?.idFactory);
+    const bound = appendGraphNode(
+      withEvent,
+      { id: bindId, type: DISPATCHER_NODE_TYPE_IDS.bind, position, data: dispatcherNodeData(member, "bind", options) },
+      null,
+    );
+    return {
+      ...bound,
+      edges: [
+        ...bound.edges,
+        {
+          id: `e:${eventId}:${OUTPUT_DELEGATE_PIN_ID}:${bindId}:event`,
+          source: eventId,
+          target: bindId,
+          sourceHandle: OUTPUT_DELEGATE_PIN_ID,
+          targetHandle: "event",
+        },
+      ],
+    };
+  }
+  return appendGraphNode(
+    graph,
+    {
+      id: nextId(options?.idFactory),
+      type: DISPATCHER_NODE_TYPE_IDS[action],
+      position,
+      data: dispatcherNodeData(member, action, options),
+    },
+    options?.functionId,
+  );
+}
+
+/** Node data of a Create Event node for a member's signature, member not yet chosen. */
+export function createEventNodeData(
+  signature: readonly GraphClassMemberPin[],
+): Record<string, unknown> {
+  return {
+    title: "Create Event",
+    pins: signature.filter((pin) => pin.typeId !== "exec").map((pin) => ({ ...pin, direction: "in" as const })),
+    __nodeType: CREATE_EVENT_NODE_TYPE_ID,
+  };
 }

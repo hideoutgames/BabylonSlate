@@ -35,6 +35,7 @@ function variablePinType(properties: Record<string, unknown>) {
       typeof properties.keyTypeClassId === "string"
         ? properties.keyTypeClassId
         : undefined,
+    signature: Array.isArray(properties.signature) ? properties.signature : undefined,
   });
 }
 

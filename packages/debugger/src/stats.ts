@@ -64,6 +64,8 @@ export type StatsHudRendering = {
   qualityLimits: readonly string[];
   /** Play on WebGL2: shaders first drawn since the scene presented, and the frames that held them. */
   firstDraws?: { draws: number; loadCompiled: number; stalls: number; worstFrameMs: number } | null;
+  /** The Engine's GPU backpressure: its `framesinflight` mode, frames queued now and renders skipped so far. */
+  frameBackpressure?: { mode: "off" | 2 | 3; inFlight: number; skipped: number } | null;
 };
 
 /** What a host knows; an absent value leaves its metric out. */
@@ -187,6 +189,12 @@ function groupMetrics(group: StatGroup, input: StatsHudInput, overBudget: boolea
           { id: "shadows", label: "shadows", text: `${rendering.shadowDrawCalls} draws`, raw: rendering.shadowDrawCalls },
           rendering.readbackMs === null ? null : { id: "readback", label: "readback", text: ms(rendering.readbackMs), raw: rendering.readbackMs },
           rendering.autoLod.meshes ? { id: "lod", label: "lod", text: `${rendering.autoLod.reduced}/${rendering.autoLod.meshes}` } : null,
+          rendering.frameBackpressure ? {
+            id: "frames-in-flight",
+            label: "frames in flight",
+            text: `${rendering.frameBackpressure.inFlight}/${rendering.frameBackpressure.mode} · ${rendering.frameBackpressure.skipped} skipped`,
+            raw: rendering.frameBackpressure.skipped,
+          } : null,
           rendering.occlusion ? {
             id: "occlusion",
             label: "occlusion culled",

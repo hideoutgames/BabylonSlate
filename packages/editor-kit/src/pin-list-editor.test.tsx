@@ -335,6 +335,60 @@ describe("PinListEditor", () => {
     ]);
   });
 
+  it("gives a Delegate row the Signature of a picked Event Dispatcher", async () => {
+    const onRows = vi.fn();
+    function Probe() {
+      const [current, setCurrent] = useState<PinListRow[]>([{ id: "cb", name: "Callback", type: "float" }]);
+      return (
+        <PinListEditor
+          rows={current}
+          selectedId="cb"
+          showOptional={false}
+          showDefault={false}
+          types={["float", "delegate"]}
+          delegateSignatures={[{
+            id: "Enemy::On Damaged", label: "On Damaged", description: "Enemy",
+            signature: [{ typeId: "float" }, { typeId: "object", typeClassId: "Actor" }],
+          }]}
+          onChange={(next) => { setCurrent(next); onRows(next); }}
+        />
+      );
+    }
+    render(<Probe />);
+
+    fireEvent.click(screen.getByTestId("pin-cb-type"));
+    fireEvent.click(await screen.findByTestId("search-item-delegate"));
+    expect(onRows).toHaveBeenLastCalledWith([expect.objectContaining({ type: "delegate", signature: [] })]);
+    expect(screen.getByTestId("pin-cb-signature").textContent).toBe("No Inputs");
+
+    fireEvent.click(screen.getByTestId("pin-cb-signature"));
+    fireEvent.click(await screen.findByTestId("search-item-Enemy::On Damaged"));
+    expect(onRows).toHaveBeenLastCalledWith([expect.objectContaining({
+      type: "delegate",
+      typeClassId: "Enemy::On Damaged",
+      signature: [{ typeId: "float" }, { typeId: "object", typeClassId: "Actor" }],
+    })]);
+    expect(screen.getByTestId("pin-cb-signature").textContent).toBe("On Damaged (Enemy)");
+  });
+
+  it("drops a Delegate row's signature and its dispatcher when the type changes", async () => {
+    const onChange = vi.fn();
+    render(
+      <PinListEditor
+        rows={[{ id: "cb", name: "Callback", type: "delegate", typeClassId: "Enemy::On Damaged", signature: [{ typeId: "float" }] }]}
+        types={["float", "delegate"]}
+        onChange={onChange}
+      />,
+    );
+
+    await pickAddType("pin-cb-type", "float");
+
+    const row = onChange.mock.calls.at(-1)![0][0] as PinListRow;
+    expect(row.type).toBe("float");
+    expect(row).not.toHaveProperty("signature");
+    expect(row).not.toHaveProperty("typeClassId");
+  });
+
   it("adds an output pin of the picked type", async () => {
     const onChange = vi.fn();
     render(

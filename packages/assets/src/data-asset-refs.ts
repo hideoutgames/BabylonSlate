@@ -253,7 +253,8 @@ export function mapDataGraphReferences<T>(value: T, map: ReferenceMapper, defini
     if (type === "variables.set") {
       if (Object.hasOwn(props, "default:value")) mapped = withValue(mapped, "default:value", variable(props, props["default:value"]));
     } else {
-      for (const key of ["definitionGuid", "default:tree"]) {
+      // `default:definition` is an Unknown read's Data Definition pin.
+      for (const key of ["definitionGuid", "default:tree", "default:definition"]) {
         if (Object.hasOwn(props, key)) mapped = withValue(mapped, key, guid(props[key]));
       }
       if (Array.isArray(props.dataSchema)) {

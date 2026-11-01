@@ -597,7 +597,6 @@ describe("variables.get / variables.set", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain('ctx.getVariable("Target")');
-    expect(compiled.source).toMatch(/if \(.+ != null\) \{/);
     expect(compiled.source).toContain("} else {");
 
     const body = compiled.source.replace(
@@ -623,6 +622,11 @@ describe("variables.get / variables.set", () => {
     expect(messages).toEqual(["missing"]);
     messages.length = 0;
     ctx.getVariable = () => undefined;
+    onBeginPlay(ctx);
+    expect(messages).toEqual(["missing"]);
+    messages.length = 0;
+    // A destroyed object is not valid either.
+    ctx.getVariable = () => ({ classId: "Actor", destroyed: true });
     onBeginPlay(ctx);
     expect(messages).toEqual(["missing"]);
   });

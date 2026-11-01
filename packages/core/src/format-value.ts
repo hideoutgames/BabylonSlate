@@ -5,6 +5,24 @@ export type FormatValueOptions = {
   maxDepth?: number;
 };
 
+/**
+ * Marks a runtime event delegate (Create Event, a custom event's Output
+ * Delegate). Formatting names its target instead of walking the object.
+ */
+export const EVENT_DELEGATE_BRAND: unique symbol = Symbol.for("haptic.eventDelegate");
+
+function formatDelegate(
+  value: Record<PropertyKey, unknown>,
+  classNameByGuid: ReadonlyMap<string, string> | undefined,
+): string | null {
+  if (value[EVENT_DELEGATE_BRAND] !== true) return null;
+  const object = value.object;
+  const target = object && typeof object === "object"
+    ? formatRef(object as Record<string, unknown>, classNameByGuid)
+    : null;
+  return `Delegate(${String(value.name)} on ${target ?? "null"})`;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
     typeof value === "object" &&
@@ -67,6 +85,8 @@ function formatInner(
     if ("tag" in value && "value" in value && Object.keys(value).length === 2) {
       return `Wildcard(${String(value.tag)}, ${formatInner(value.value, depth + 1, maxDepth, classNameByGuid)})`;
     }
+    const delegate = formatDelegate(value, classNameByGuid);
+    if (delegate) return delegate;
     const ref = formatRef(value, classNameByGuid);
     if (ref) return ref;
 

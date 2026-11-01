@@ -5,10 +5,13 @@ import type {
   SessionReportAsset,
   SessionReportLocationSources,
 } from "../lib/session-report-locations";
+import { reloadForNewBuild } from "../lib/preload-error-reload";
 import {
   PreviewSessionReport,
   type PreviewSessionReportProps,
 } from "./preview-session-report";
+
+vi.mock("../lib/preload-error-reload", () => ({ reloadForNewBuild: vi.fn() }));
 
 afterEach(() => {
   cleanup();
@@ -351,4 +354,14 @@ it("shows an empty report as such when the last session reported nothing", () =>
   renderReport([], sources());
   expect(screen.getByTestId("session-report-empty").textContent).toContain("No Entries");
   expect(screen.getByTestId("session-report-close")).toBeTruthy();
+});
+
+it("offers Reload Editor only when a newer deploy replaced the editor's build, and reloads through the shared reload", () => {
+  renderReport([entry({ code: "runtime.worker.failed", message: "The Play worker failed to start" })], sources(), vi.fn(), vi.fn());
+  expect(screen.queryByTestId("session-report-reload")).toBeNull();
+  cleanup();
+  renderReport([entry({ code: "editor.build.replaced", message: "The editor is out of date" })], sources(), vi.fn(), vi.fn());
+  fireEvent.click(screen.getByTestId("session-report-reload"));
+  expect(screen.getByTestId("session-report-reload").textContent).toBe("Reload Editor");
+  expect(reloadForNewBuild).toHaveBeenCalledOnce();
 });

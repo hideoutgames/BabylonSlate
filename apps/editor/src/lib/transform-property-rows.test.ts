@@ -66,9 +66,11 @@ describe("spatialTransformPropertyRows", () => {
       },
       vi.fn(),
       {
-        position: [1, 2, 3],
-        rotation: [0, 0, 0, 1],
-        scale: [4, 4, 4],
+        defaults: {
+          position: [1, 2, 3],
+          rotation: [0, 0, 0, 1],
+          scale: [4, 4, 4],
+        },
       },
     );
     expect(rows.find((row) => row.id === "mesh-position")).toMatchObject({
