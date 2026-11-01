@@ -59,6 +59,15 @@ export const ENGINE_RANGE_STRUCT_IDS = {
   rotator: ENGINE_ROTATOR_RANGE_STRUCT_ID,
 } as const;
 
+export type EngineRangeKind = keyof typeof ENGINE_RANGE_STRUCT_IDS;
+
+/** The range kind of a built-in range Structure id, else undefined. */
+export function rangeKindForStruct(structId: string | null | undefined): EngineRangeKind | undefined {
+  if (!structId) return undefined;
+  for (const [kind, id] of Object.entries(ENGINE_RANGE_STRUCT_IDS)) if (id === structId) return kind as EngineRangeKind;
+  return undefined;
+}
+
 /** Curve Structures by the value kind their keys hold (`CurveKind` in core). */
 export const ENGINE_CURVE_STRUCT_IDS = {
   float: ENGINE_FLOAT_CURVE_STRUCT_ID,

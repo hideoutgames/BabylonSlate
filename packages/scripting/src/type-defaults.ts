@@ -1,7 +1,8 @@
 import { defaultJsValue } from "./pin-defaults";
 import type { PinType } from "./types";
 import { pinTypeForMember, pinTypeForVariable } from "./member-pin-type";
-import { ENGINE_ENUMS, ENGINE_STRUCTS } from "./engine-types";
+import { ENGINE_ENUMS, ENGINE_STRUCTS, rangeKindForStruct } from "./engine-types";
+import { normalizeRange } from "@haptic/core";
 import type { EnumMember, StructField } from "./type-assets";
 import type { DataFieldSnapshot } from "@haptic/core";
 import { defaultFieldSnapshot, projectStoredDataDefault } from "./data-default-projection";
@@ -150,6 +151,9 @@ export function hydrateStructInstance(
 /** Structures nested in arrays and map entries hydrate like a single field. */
 function hydrateValue(type: PinType, value: unknown, schemas?: TypeSchemas): unknown {
   if (type.kind === "structRef") {
+    // A loaded range whose ends cross reads as swapped, as every range node treats it.
+    const range = rangeKindForStruct(type.guid);
+    if (range) return normalizeRange(range, value);
     const nested = type.guid ? schemas?.structs[type.guid] : undefined;
     return nested ? hydrateStructInstance(nested.fields, value, schemas) : value;
   }

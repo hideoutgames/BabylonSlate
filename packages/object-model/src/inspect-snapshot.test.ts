@@ -33,12 +33,14 @@ describe("createDebugInspectSnapshot", () => {
       variables: [
         { name: "states", type: "tag", container: "array", defaultValue: [2, 7] },
         { name: "rules", type: "struct:engine:TagContainer", container: "map", keyTypeId: "tag", defaultValue: [{ key: 2, value: { Tags: [7] } }] },
+        { name: "spawn", type: "struct", typeClassId: "engine:IntRange", defaultValue: { Min: 2, Max: 5 } },
+        { name: "config", type: "struct", typeClassId: "project-config", defaultValue: {} },
       ],
     });
     world.spawnActorNow(world.createActor({ guid: "tagged", classId: "TaggedActor" }));
     const node = createDebugInspectSnapshot(world).nodes.find((entry) => entry.id === "tagged");
     expect(node).toMatchObject({
-      variableTypes: { states: "array:tag", rules: "map:tag=>struct:engine:TagContainer" },
+      variableTypes: { states: "array:tag", rules: "map:tag=>struct:engine:TagContainer", spawn: "struct:engine:IntRange", config: "struct" },
       variables: { states: [2, 7], rules: [{ key: 2, value: { Tags: [7] } }] },
     });
   });

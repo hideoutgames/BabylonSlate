@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@haptic/core";
-import { createDataEntryForDefinition, dataEntryNeedsDefinitionApply, dataEntryStructuralIssue, reconcileDataEntry, type StructField } from "@haptic/scripting";
+import { createDataEntryForDefinition, dataEntryNeedsDefinitionApply, dataEntryStructuralIssue, rangeKindForStruct, reconcileDataEntry, type StructField } from "@haptic/scripting";
 import { normalizeTag, type TagContainer } from "@haptic/core";
-import { AssetPicker, ContextMenuOverlay, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TOUCH_ROW_HEIGHT, TREE_ROW_HEIGHT, TagPicker, TreeView, TypeVisualIcon, WindowedList, humanizePropertyLabel, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, useTouchUi, type NestedMenuItem, type TreeViewNode } from "@haptic/editor-kit";
+import { AssetPicker, ContextMenuOverlay, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TOUCH_ROW_HEIGHT, TREE_ROW_HEIGHT, TagPicker, TreeView, TypeVisualIcon, WindowedList, formatRangeSummary, humanizePropertyLabel, normalizeRangeFieldValue, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, useTouchUi, type NestedMenuItem, type RangeFieldValue, type TreeViewNode } from "@haptic/editor-kit";
 import { ArrowUpIcon, BetweenHorizontalStartIcon, ChevronDownIcon, DatabaseIcon, ListPlusIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
 import { Input } from "@haptic/ui/components/input";
@@ -126,6 +126,12 @@ function DataEntryCell({ field, value, label, editable, enums, onChange, preview
     const names = tagValue.Tags.map((tag) => tagDisplayName(tags, tag)).join(", ") || "No Tags";
     if (!editable) return <span title={names} className="block truncate px-1">{names}</span>;
     return <TagPicker mode="multiple" value={tagValue} onChange={onChange} aria-label={label} className={cn(GRID_CONTROL, "justify-start gap-1 font-normal")} />;
+  }
+  const rangeKind = !collection && field.typeId === "struct" ? rangeKindForStruct(field.typeClassId) : undefined;
+  if (rangeKind) {
+    // Ranges edit in Values; the cell shows Min – Max, as collapsed Inspector rows do.
+    const summary = formatRangeSummary(rangeKind, normalizeRangeFieldValue(rangeKind, value as RangeFieldValue), field.unit);
+    return <span title={summary} className="block truncate px-1 tabular-nums" data-testid="data-range-cell">{summary}</span>;
   }
   if (!editable || collection) return <span title={preview} className="block truncate px-1 text-muted-foreground">{preview}</span>;
   if (field.typeId === "float" || field.typeId === "int") return <NumberField aria-label={label} className={cn(GRID_CONTROL, "tabular-nums")} value={typeof value === "number" ? value : 0} onChange={(next) => onChange(field.typeId === "int" ? Math.trunc(next) : next)} />;

@@ -5,9 +5,11 @@ import type {
   PinListRow,
   ParameterValueType,
   PropertyRow,
+  RangeFieldValue,
 } from "@haptic/editor-kit";
 import {
   ASSET_REF_PICKER_TYPES,
+  normalizeRangeFieldValue,
   classRowIdentity,
   assetRowIdentity,
   humanizePropertyLabel,
@@ -17,6 +19,7 @@ import { displayPinTypesForGraph } from "@haptic/graph-ui";
 import {
   BOOL,
   ENGINE_ENUMS,
+  ENGINE_STRUCTS,
   FLOAT,
   INT,
   STRING,
@@ -24,6 +27,7 @@ import {
   defaultJsValue,
   hydrateStructInstance,
   isDevelopmentOnlyNode,
+  rangeKindForStruct,
   isDevelopmentOnlyByDefaultTypeId,
   listUnconnectedLiteralPinDefaults,
   normalizeIntSwitchCases,
@@ -144,6 +148,20 @@ function inputTypeRow(value: unknown, onChange: (value: Record<string, unknown>)
   };
 }
 
+/** A built-in range Structure as one Min – Max row (`RangeField`); crossing loaded ends read as swapped. */
+function rangeStructRow(id: string, label: string, structId: string, value: unknown, onChange: (value: RangeFieldValue) => void, unit?: string): PropertyRow | undefined {
+  const rangeKind = rangeKindForStruct(structId);
+  if (!rangeKind) return undefined;
+  const fields = ENGINE_STRUCTS.find((entry) => entry.id === structId)?.fields ?? [];
+  const defaults = Object.fromEntries(fields.map((field) => [field.name, field.defaultValue])) as RangeFieldValue;
+  return {
+    kind: "value-range", id, label, rangeKind, unit,
+    value: normalizeRangeFieldValue(rangeKind, value as RangeFieldValue),
+    defaultValue: defaults,
+    onChange,
+  };
+}
+
 function flattenStructFieldRows(
   fields: readonly StructField[],
   value: unknown,
@@ -165,6 +183,13 @@ function flattenStructFieldRows(
     const fieldValue = instance[field.name];
     if (type.kind === "structRef" && type.guid === "engine:InputType") {
       rows.push(inputTypeRow(fieldValue, (next) => onChange({ ...instance, [field.name]: next }), mapping?.assetEntries, label));
+      continue;
+    }
+    const range = type.kind === "structRef"
+      ? rangeStructRow(`${labelPrefix}:${field.name}`, label, type.guid, fieldValue, (next) => onChange({ ...instance, [field.name]: next }), field.unit)
+      : undefined;
+    if (range) {
+      rows.push(range);
       continue;
     }
     if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
@@ -472,6 +497,11 @@ function pushPinDefaultRows(
           });
           break;
         }
+        const range = rangeStructRow(entry.pinId, entry.name, entry.type.guid, entry.value, (next) => onPatch({ [key]: next }), entry.unit);
+        if (range) {
+          rows.push(range);
+          break;
+        }
         if (entry.type.guid === "engine:InputType") {
           rows.push(inputTypeRow(entry.value, (next) => onPatch({ [pinDefaultPropertyKey(entry.pinId)]: next }), mappingNames?.assetEntries, entry.name));
           break;
@@ -537,6 +567,10 @@ export function variableDefaultPropertyRows(
     onPickClass: options?.onPickClass,
   };
   if (type.kind === "structRef" && type.guid === "engine:InputType") return [inputTypeRow(value, onChange, options?.assetEntries, label)];
+  if (type.kind === "structRef" && rangeKindForStruct(type.guid)) {
+    const range = rangeStructRow(pinId, label, type.guid, value, onChange, options?.unit);
+    return range ? [range] : [];
+  }
   if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
     const schema = type.guid ? options?.schemas?.structs[type.guid] : undefined;
     if (!schema) return [];

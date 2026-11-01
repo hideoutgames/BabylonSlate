@@ -38,6 +38,8 @@ import { PickerIdentity } from "./picker-identity";
 import { type TypeVisualQuery } from "./type-visuals";
 import { AssetPickerControl } from "./asset-picker-control";
 import { CurveField, type CurveKey } from "./curve-field";
+import { RangeField } from "./range-field";
+import type { RangeFieldKind, RangeFieldValue } from "./range-values";
 import { GradientField, type GradientStop } from "./gradient-field";
 import { editVectorAxis } from "./linked-axes";
 import "./styles/property-grid.css";
@@ -205,6 +207,15 @@ export type PropertyRow =
       onCommit?: (value: RangeValue) => void;
     })
   | (PropertyRowBase & {
+      /** A built-in range Structure value (`{ Min, Max }`); vector and rotator kinds expand per axis. */
+      kind: "value-range";
+      rangeKind: RangeFieldKind;
+      value: RangeFieldValue;
+      defaultValue?: RangeFieldValue;
+      onChange: (value: RangeFieldValue) => void;
+      onCommit?: (value: RangeFieldValue) => void;
+    })
+  | (PropertyRowBase & {
       kind: "curve";
       value: CurveKey[];
       defaultValue?: CurveKey[];
@@ -310,6 +321,10 @@ function resetRow(row: PropertyRow): void {
       row.onChange(row.defaultValue!);
       row.onCommit?.(row.defaultValue!);
       break;
+    case "value-range":
+      row.onChange(row.defaultValue!);
+      row.onCommit?.(row.defaultValue!);
+      break;
     case "curve":
       row.onChange(row.defaultValue!);
       break;
@@ -329,6 +344,7 @@ function rowHasLabelTarget(row: PropertyRow): boolean {
     case "flags":
     case "collision-responses":
     case "range":
+    case "value-range":
     case "curve":
     case "gradient":
       return false;
@@ -683,38 +699,37 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
     }
     case "range": {
       const [low, high] = row.value;
-      const name = humanizePropertyLabel(row.label);
+      const tuple = (next: RangeFieldValue): RangeValue => [Number(next.Min), Number(next.Max)];
       return (
-        <div className="grid min-w-0 grid-cols-2 gap-1">
-          <NumericDragField
-            label="Min"
-            aria-label={`${name} Min`}
-            value={low}
-            mixed={row.mixed}
-            min={row.min}
-            max={row.max}
-            sensitivity={row.sensitivity}
-            disabled={row.disabled}
-            onChange={(next) => row.onChange([next, Math.max(high, next)])}
-            onDragEnd={(next) => row.onCommit?.([next, Math.max(high, next)])}
-            data-testid={`property-${row.id}-min`}
-          />
-          <NumericDragField
-            label="Max"
-            aria-label={`${name} Max`}
-            value={high}
-            mixed={row.mixed}
-            min={row.min}
-            max={row.max}
-            sensitivity={row.sensitivity}
-            disabled={row.disabled}
-            onChange={(next) => row.onChange([Math.min(low, next), next])}
-            onDragEnd={(next) => row.onCommit?.([Math.min(low, next), next])}
-            data-testid={`property-${row.id}-max`}
-          />
-        </div>
+        <RangeField
+          kind="float"
+          aria-label={humanizePropertyLabel(row.label)}
+          value={{ Min: low, Max: high }}
+          mixed={row.mixed}
+          min={row.min}
+          max={row.max}
+          sensitivity={row.sensitivity}
+          disabled={row.disabled}
+          onChange={(next) => row.onChange(tuple(next))}
+          onCommit={(next) => row.onCommit?.(tuple(next))}
+          data-testid={`property-${row.id}`}
+        />
       );
     }
+    case "value-range":
+      return (
+        <RangeField
+          kind={row.rangeKind}
+          aria-label={humanizePropertyLabel(row.label)}
+          value={row.value}
+          unit={row.unit}
+          mixed={row.mixed}
+          disabled={row.disabled}
+          onChange={row.onChange}
+          onCommit={row.onCommit}
+          data-testid={`property-${row.id}`}
+        />
+      );
     case "curve":
       return (
         <CurveField

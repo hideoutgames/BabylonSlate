@@ -443,3 +443,17 @@ it("re-enables an open entry menu once the tree change in flight finishes", asyn
   await act(async () => { finish(true); });
   await waitFor(() => expect(screen.getByRole("menuitem", { name: "Rename" }).hasAttribute("data-disabled")).toBe(false));
 });
+
+it("shows range fields as Min – Max in the grid and edits them with a range field in Values", async () => {
+  const rangeFields: DataDefinitionField[] = [{ id: "spawn", name: "Spawn", typeId: "struct", typeClassId: "engine:IntRange", defaultValue: { Min: 0, Max: 1 } }];
+  configureEntries(rangeFields, [{ id: "goblin", name: "Goblin", values: { Spawn: { Min: 5, Max: 2 } } }]);
+  render(<TreeViewFixture />);
+  // A stored range whose ends cross reads as swapped.
+  expect(screen.getByTestId("data-range-cell").textContent).toBe("2–5");
+  fireEvent.click(screen.getByTestId("data-tree-entry-goblin"));
+  const max = screen.getByRole("textbox", { name: "Spawn Max" });
+  fireEvent.focus(max);
+  fireEvent.change(max, { target: { value: "8" } });
+  fireEvent.blur(max);
+  await waitFor(() => expect(tree().entries[0]?.values).toEqual({ Spawn: { Min: 2, Max: 8 } }));
+});
