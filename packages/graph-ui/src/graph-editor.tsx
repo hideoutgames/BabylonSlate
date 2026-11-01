@@ -1936,7 +1936,7 @@ function GraphEditorCanvas({
         takenIds.add(nodeId);
         const data: Record<string, unknown> = {
           ...(entry.defaultData ?? {}),
-          title: entry.title,
+          title: entry.nodeTitle ?? entry.title,
           __nodeType: entry.nodeType ?? entry.id,
           __category: entry.category,
           __pure: entry.pure ?? false,

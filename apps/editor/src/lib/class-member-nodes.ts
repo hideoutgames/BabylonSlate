@@ -13,6 +13,7 @@ import {
   dispatcherNodeTitle,
   type DispatcherNodeAction,
 } from "@haptic/scripting-nodes";
+import { freeCustomEventName, takenCustomEventNames } from "./custom-event-names";
 
 export function nextId(factory?: () => string): string {
   return factory?.() ?? crypto.randomUUID();
@@ -330,38 +331,18 @@ export function dispatcherEventPins(
     .map((pin) => ({ ...pin, direction: "out" as const }));
 }
 
-/** Custom event names in use anywhere in the Class, compared case-folded. */
-function takenCustomEventNames(graph: SerializedGraph): Set<string> {
-  const taken = new Set<string>();
-  const add = (raw: unknown) => {
-    if (typeof raw !== "string") return;
-    const name = formatEventMemberName(raw);
-    if (name) taken.add(name.toLowerCase());
-  };
-  const slices = [graph, ...Object.values(graph.functionGraphs ?? {})];
-  for (const slice of slices) {
-    for (const node of slice.nodes) {
-      if (node.type === "flow.event.custom") add(node.data.name ?? node.data.title);
-    }
-  }
-  for (const member of graph.members ?? []) {
-    if (member.kind === "event") add(member.name);
-  }
-  return taken;
-}
-
-/** `On Damaged Event`, then `On Damaged Event 1`, … free among the Class's custom events. */
+/**
+ * A custom event named like the dispatcher it serves (`On Damaged`, shown as
+ * `Event On Damaged`), or the first free `On Damaged_1`, `On Damaged_2`, ….
+ */
 export function freeDispatcherEventName(
   graph: SerializedGraph,
   dispatcherName: string,
 ): string {
-  const base = `${formatEventMemberName(dispatcherName) || dispatcherName} Event`;
-  const taken = takenCustomEventNames(graph);
-  if (!taken.has(base.toLowerCase())) return base;
-  for (let index = 1; ; index++) {
-    const candidate = `${base} ${index}`;
-    if (!taken.has(candidate.toLowerCase())) return candidate;
-  }
+  return freeCustomEventName(
+    formatEventMemberName(dispatcherName) || dispatcherName,
+    takenCustomEventNames(graph),
+  );
 }
 
 /** Node data of a Call, Bind, Unbind or Unbind All node for `member`. */

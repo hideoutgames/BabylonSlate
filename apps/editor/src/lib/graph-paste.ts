@@ -2,9 +2,8 @@ import type { SerializedGraph } from "@haptic/core";
 import { formatEventMemberName, formatEventTitle } from "@haptic/editor-kit";
 import type { GraphPasteElements, GraphPasteResult } from "@haptic/graph-ui";
 import { singletonEventKey } from "@haptic/scripting";
-import { jsIdent } from "@haptic/scripting-nodes";
 import { canRenameCustomEvent } from "./class-members";
-import { duplicateBaseName } from "./scene-actor-names";
+import { eventNameKeys, freeCustomEventName } from "./custom-event-names";
 
 type PasteNode = GraphPasteElements["nodes"][number];
 type PasteEdge = GraphPasteElements["edges"][number];
@@ -20,31 +19,6 @@ function bindingWiredNodes(edges: readonly PasteEdge[]): Set<string> {
   return new Set(edges.filter((edge) => edge.targetHandle === "binding").map((edge) => edge.target));
 }
 
-/**
- * Names collide when they compile to one identifier (the validator's rule) or
- * differ only in case (the rename rule).
- */
-export function eventNameKeys(data: Record<string, unknown>): string[] {
-  const name = formatEventMemberName(String(data.name ?? data.title ?? "")).toLowerCase();
-  return [
-    ...(typeof data.name === "string" && data.name ? [`id:${jsIdent(data.name)}`] : []),
-    ...(name ? [`name:${name}`] : []),
-  ];
-}
-
-/** `Open Door` → `Open Door Copy`, `Open Door Copy 2`, …, skipping names taken. */
-function freeEventName(name: string, taken: ReadonlySet<string>): string {
-  const isFree = (candidate: string) =>
-    eventNameKeys({ name: candidate }).every((key) => !taken.has(key));
-  if (isFree(name)) return name;
-  const base = duplicateBaseName(name);
-  let candidate = formatEventMemberName(base);
-  for (let suffix = 2; !isFree(candidate); suffix += 1) {
-    candidate = formatEventMemberName(`${base} ${suffix}`);
-  }
-  return candidate;
-}
-
 function leftOutNotice(titles: readonly string[]): string {
   const list =
     titles.length > 1
@@ -55,8 +29,8 @@ function leftOutNotice(titles: readonly string[]): string {
 
 /**
  * What Paste and Duplicate do with event nodes, so a copy never shares an
- * identity with a node already there. A custom event gets a free name, shaped
- * like an actor's duplicate; an event that cannot be renamed (an engine or
+ * identity with a node already there. A custom event gets a free name
+ * (`Open Door_1`); an event that cannot be renamed (an engine or
  * component event, an input event, an override of a parent's event) is left
  * out when this graph already has it, with the wires to and from it.
  *
@@ -113,7 +87,7 @@ export function prepareClassGraphPaste(
     const typeId = canvasTypeId(node);
     const name = formatEventMemberName(String(node.data.name ?? node.data.title ?? ""));
     if (typeId === CUSTOM_EVENT && name && canRenameCustomEvent(pastedGraph, node.id)) {
-      const unique = freeEventName(name, takenNames);
+      const unique = freeCustomEventName(name, takenNames);
       claim(typeId, { name: unique });
       nodes.push({
         ...node,

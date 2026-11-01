@@ -256,7 +256,7 @@ describe("Graph panel", () => {
     const nodes = openContent<SerializedGraph>(MAIN_CLASS_ID).nodes;
     expect(
       nodes.filter((node) => node.type === "flow.event.custom").map((node) => node.data.name),
-    ).toEqual(["Open Door", "Open Door Copy"]);
+    ).toEqual(["Open Door", "Open Door_1"]);
     expect(nodes.filter((node) => node.type === "flow.event.tick")).toHaveLength(1);
     expect(screen.getByTestId("graph-notice").textContent).toBe("Event Tick is already in this graph.");
   });
