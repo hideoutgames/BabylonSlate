@@ -36,6 +36,8 @@ const ASSET_FILE_SUFFIXES = [
   ".datatree.hasset",
   ".floatcurve.hasset",
   ".timeline.hasset",
+  ".timelineclip2d.hasset",
+  ".timelineclip3d.hasset",
   ".vectorcurve.hasset",
   ".colorcurve.hasset",
   ".rendertargettexture.hasset",

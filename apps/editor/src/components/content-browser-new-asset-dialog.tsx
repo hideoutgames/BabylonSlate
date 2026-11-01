@@ -64,6 +64,10 @@ export interface ContentBrowserNewAssetDialogProps {
   definitionGuid?: string | null;
   onDefinitionGuidChange?: (guid: string | null) => void;
   definitionAssets?: readonly { guid: string; name: string; type: string }[];
+  /** A 2D or 3D Timeline Clip's Timeline Asset; null creates one named after the clip. */
+  timelineAssetGuid?: string | null;
+  onTimelineAssetGuidChange?: (guid: string | null) => void;
+  timelineAssets?: readonly { guid: string; name: string; type: string }[];
   /** Project + enabled-plugin Class assets for the Parent Class tree. */
   classAssets?: readonly NewAssetClassAssetRef[];
   /** Why the name is taken: by a file in the folder, or by another Class's id. */
@@ -202,6 +206,9 @@ export function ContentBrowserNewAssetDialog({
   definitionGuid = null,
   onDefinitionGuidChange,
   definitionAssets = [],
+  timelineAssetGuid = null,
+  onTimelineAssetGuidChange,
+  timelineAssets = [],
   classAssets = [],
   takenNameError = null,
   destinationFolder,
@@ -216,11 +223,13 @@ export function ContentBrowserNewAssetDialog({
   const touchSizing = usePhoneTouchSizing();
   const [parentSearch, setParentSearch] = useState("");
   const [definitionPickerOpen, setDefinitionPickerOpen] = useState(false);
+  const [timelinePickerOpen, setTimelinePickerOpen] = useState(false);
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   const detailsRef = useRef<HTMLElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
   const isData = type === "DataTree";
+  const isClip = type === "TimelineClip2D" || type === "TimelineClip3D";
   // The same rule as Rename, so a created name can always be renamed back.
   const nameError = name.trim() ? contentEntryNameError(name) : null;
   const nameInvalid = Boolean(takenNameError) || Boolean(nameError);
@@ -336,6 +345,27 @@ export function ContentBrowserNewAssetDialog({
                   </Button>
                 </AssetPickerControl>
                 <AssetPicker open={definitionPickerOpen} onOpenChange={setDefinitionPickerOpen} assets={[...definitionAssets]} allowedTypes={["DataDefinition"]} allowNone title="Choose Default Definition" onPick={guid => { onDefinitionGuidChange?.(guid); setDefinitionPickerOpen(false); }} />
+              </Field></FieldGroup>
+            ) : null}
+            {isClip ? (
+              <FieldGroup><Field><FieldLabel>Timeline Asset</FieldLabel>
+                <AssetPickerControl value={timelineAssetGuid}>
+                  <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setTimelinePickerOpen(true)} data-testid="new-asset-timeline" disabled={busy}>
+                    {timelineAssets.find((asset) => asset.guid === timelineAssetGuid)?.name ?? "New Timeline Asset"}
+                  </Button>
+                </AssetPickerControl>
+                <FieldDescription>
+                  {timelineAssetGuid
+                    ? "Scripts reach the clip through this Timeline Asset."
+                    : `Required. A new Timeline Asset named ${name.trim() || "after the clip"}${name.trim() ? " Timeline" : ""} is created beside the clip.`}
+                </FieldDescription>
+                {timelineAssetGuid ? (
+                  <Button variant="ghost" size="sm" className="self-start" onClick={() => onTimelineAssetGuidChange?.(null)} data-testid="new-asset-timeline-new" disabled={busy}>
+                    New Timeline Asset Instead
+                  </Button>
+                ) : null}
+                <AssetPicker open={timelinePickerOpen} onOpenChange={setTimelinePickerOpen} assets={[...timelineAssets]} allowedTypes={["Timeline"]} title="Choose Timeline Asset"
+                  onPick={(guid) => { if (guid) onTimelineAssetGuidChange?.(guid); setTimelinePickerOpen(false); }} />
               </Field></FieldGroup>
             ) : null}
             {destinationFolder ? (

@@ -1,5 +1,10 @@
 import {
+  createDefaultTimelineClipAsset,
   createTimelineClip,
+  defaultTimelineProxyPreview,
+  timelineClipAssetSummaries,
+  type SerializedTimelineClipAsset,
+  type TimelineClipAssetType,
   type GraphClassMember,
   type GraphClassMemberPin,
   type SerializedActor,
@@ -43,12 +48,51 @@ const DOOR_OPEN_EVENT = "On Door Open";
 const DOOR_OPEN_TIME = 1;
 const ANGLE_INPUT = "Angle";
 
-/** `FT_Timeline`, with no clips until scenes bind theirs. */
+/**
+ * `FT_Timeline`, which scenes bind their clips to, and the clip assets it
+ * holds: `FT_DoorSwing` (3D: a Door actor proxy and a Handle Glow light
+ * proxy) and `FT_HudPulse` (2D: a Badge text proxy). Their instances and
+ * proxy bindings come with clip asset Play.
+ */
 export async function buildFeatureTestTimeline(ctx: FeatureTestContext): Promise<void> {
   const { guid } = await ctx.createAsset("Timeline", FOLDER, FEATURE_TEST_TIMELINE_ASSET, {
-    payload: () => ({ description: "The Feature Test's Timeline Clips: Intro (main scene), Reveal (FT_HUD) and Door Loop (FT_World)." }),
+    payload: () => ({ description: "The Feature Test's Timeline Clips: Intro (main scene), Reveal (FT_HUD), Door Loop (FT_World), and the FT_DoorSwing and FT_HudPulse clip assets." }),
   });
   ctx.assets.timeline = guid;
+  await createClipAsset(ctx, "TimelineClip3D", "FT_DoorSwing", {
+    ...createDefaultTimelineClipAsset(guid),
+    length: 2,
+    proxies: [
+      { id: "ft-door-swing-door", name: "Door", represents: "actor", classId: "Actor", tracks: [{
+        id: "ft-door-swing-rotation", target: { kind: "transform", property: "rotation" }, valueType: "rotator",
+        keys: [key("swing-0", 0, { pitch: 0, yaw: 0, roll: 0 }), key("swing-1", 1, { pitch: 0, yaw: DOOR.openYaw, roll: 0 }), key("swing-2", 2, { pitch: 0, yaw: 0, roll: 0 })],
+      }] },
+      { id: "ft-door-swing-glow", name: "Handle Glow", represents: "component", classId: "LightComponent", tracks: [{
+        id: "ft-door-swing-intensity", target: { kind: "component", componentId: "ft-door-swing-glow", property: "intensity" }, valueType: "float",
+        keys: [key("glow-0", 0, LAMP.intensity), key("glow-1", 1, LAMP.bright), key("glow-2", 2, LAMP.intensity)],
+      }] },
+    ],
+    eventTracks: [{ id: "ft-door-swing-event", name: "On Swing Open", inputs: [], keys: [{ id: "ft-door-swing-event-key", time: 1, values: {} }] }],
+    editorPreview: { proxies: {
+      "ft-door-swing-door": { ...defaultTimelineProxyPreview(0), size: 2 },
+      "ft-door-swing-glow": { ...defaultTimelineProxyPreview(1), location: [1, 1.2, 0], size: 0.3 },
+    } },
+  });
+  await createClipAsset(ctx, "TimelineClip2D", "FT_HudPulse", {
+    ...createDefaultTimelineClipAsset(guid),
+    length: 1,
+    loopMode: "pingPong",
+    proxies: [{ id: "ft-hud-pulse-badge", name: "Badge", represents: "component", classId: "2DTextComponent", tracks: [] }],
+    editorPreview: { proxies: { "ft-hud-pulse-badge": { ...defaultTimelineProxyPreview(0), size: 120 } } },
+  });
+}
+
+/** Writes a clip asset whose header already lists its clip, as New Asset does. */
+async function createClipAsset(ctx: FeatureTestContext, type: TimelineClipAssetType, name: string, clip: SerializedTimelineClipAsset): Promise<void> {
+  await ctx.createAsset(type, FOLDER, name, {
+    build: { timelineAsset: clip.timelineAsset },
+    payload: () => ({ ...clip, ...timelineClipAssetSummaries(clip, "") }),
+  });
 }
 
 const key = (id: string, Time: number, Value: unknown): TimelineKey => ({

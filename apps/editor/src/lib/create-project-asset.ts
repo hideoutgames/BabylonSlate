@@ -51,6 +51,8 @@ export async function createProjectAsset(options: {
   parentGraphs?: Record<string, SerializedGraph>;
   /** The mode of the open Scene; a new Prefab starts empty in 2D. */
   viewportMode?: ViewportMode;
+  /** A new 2D or 3D Timeline Clip's required Timeline Asset guid. */
+  timelineAsset?: string;
 }): Promise<IndexedAsset> {
   const { type, name } = options;
   const defaultDefinitionGuid = options.dataTree ? options.dataTree.defaultDefinitionGuid : options.defaultDefinitionGuid ?? null;
@@ -95,6 +97,7 @@ export async function createProjectAsset(options: {
     dataDefinition,
     dataTree: options.dataTree,
     viewportMode: options.viewportMode,
+    timelineAsset: options.timelineAsset,
   });
   if (type === "DataDefinition" || type === "DataTree") {
     Object.assign(result, assetHeaderDependencyMetadata(type, result.payload, options.registry.list?.() ?? [], result.parentClass));
@@ -106,12 +109,14 @@ export async function createProjectAsset(options: {
   );
 }
 
-/** Types a picker may offer as Create New rows (editor-only tools excluded). */
+/** Types a picker may offer as Create New rows (editor-only tools, and clips that need a Timeline Asset first, excluded). */
 export function isPickerCreatableAssetType(
   type: string,
 ): type is CreatableAssetType {
   return (
     type !== "SkyboxCreator" &&
+    type !== "TimelineClip2D" &&
+    type !== "TimelineClip3D" &&
     (CREATABLE_ASSET_TYPES as readonly string[]).includes(type)
   );
 }

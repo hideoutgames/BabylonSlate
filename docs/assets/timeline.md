@@ -1,6 +1,6 @@
 # Timeline
 
-A **Timeline** asset groups [Timeline Clips](../scenes/timeline.md) from any number of Scenes and Scene Layers. A clip keeps living in its Scene or Scene Layer; binding it to a Timeline Asset only records that the asset holds it.
+A **Timeline** asset groups [Timeline Clips](../scenes/timeline.md) from any number of Scenes and Scene Layers, and [Timeline Clip](timeline-clip.md) assets. A clip keeps living in its Scene or Scene Layer; binding it to a Timeline Asset only records that the asset holds it.
 
 ## Create
 
@@ -27,7 +27,7 @@ A bound clip shows a link icon in **Clips**. Binding is part of the document's u
 
 Double-tap a Timeline asset to open it.
 
-- **Timeline Clips**: the asset's **Description**, and every clip bound to it with its Scene or Scene Layer and its **Length**. **Open** shows that document in Timeline mode with the clip selected. The list is read from the documents that hold the clips, so it follows binds, renames and unsaved edits there.
+- **Timeline Clips**: the asset's **Description**, and every clip bound to it with its Scene, Scene Layer or Timeline Clip asset and its **Length**. **Open** shows a scene clip's document in Timeline mode with the clip selected, or opens a Timeline Clip asset. The list is read from the documents that hold the clips, so it follows binds, renames and unsaved edits there.
 - **Events**: the selected clip's events: one per [Custom Event Track](../scenes/timeline.md#custom-event-tracks), with its inputs, plus **On Finished** and **On Looped**. The list is read-only; edit the tracks in the clip's Scene or Scene Layer.
 
 Reopen a closed window from the **Windows** menu.

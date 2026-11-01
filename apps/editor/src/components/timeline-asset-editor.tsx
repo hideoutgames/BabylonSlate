@@ -2,18 +2,18 @@ import { useMemo, useSyncExternalStore } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { documentId, labelFromPath, normalizeTimelineAsset } from "@haptic/core";
 import { TIMELINE_CLIP_BUILT_IN_DISPATCHERS } from "@haptic/object-model";
-import { PanelFrame, PropertyGrid, TreeView, pinPickerLabel, useTouchUi, type PropertyRow, type TreeViewNode } from "@haptic/editor-kit";
+import { PanelFrame, PropertyGrid, TreeView, TypeVisualIcon, pinPickerLabel, resolveTypeVisual, useTouchUi, type PropertyRow, type TreeViewNode } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@haptic/ui/components/empty";
 import { FieldDescription } from "@haptic/ui/components/field";
 import { FilmIcon, LayersIcon, MapIcon, ZapIcon } from "lucide-react";
 import { useDocumentActions, useOpenDocument, useRegistryState } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { projectTimelineClips, timelineAssetClips, type ProjectTimelineClip } from "../lib/timeline-asset-index";
+import { isSceneClipDocument, projectTimelineClips, timelineAssetClips, type ProjectTimelineClip } from "../lib/timeline-asset-index";
 import { requestTimelineClipFocus } from "../lib/timeline-clip-focus";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 
-const SCENE_KINDS = ["scene", "scene-layer"] as const;
+const CLIP_DOCUMENT_KINDS = ["scene", "scene-layer", "timeline-clip-2d", "timeline-clip-3d"] as const;
 
 /** The clip each Timeline Asset document shows in Events, by document id. */
 const selectedClips = new Map<string, string>();
@@ -40,7 +40,7 @@ function useTimelineAsset() {
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(id);
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
+  const sceneDocuments = useOpenDocumentsOfKinds(CLIP_DOCUMENT_KINDS);
   const asset = normalizeTimelineAsset(doc?.content);
   const guid = doc ? assetRegistry?.getByPath(doc.ref.path)?.header.guid : undefined;
   const clips = useMemo(() => {
@@ -64,10 +64,12 @@ export function TimelineAssetClipsPanel(_props: IDockviewPanelProps) {
   const selected = useSelectedClip(id) ?? (clips[0] ? clipKey(clips[0]) : undefined);
   const open = async (entry: ProjectTimelineClip) => {
     const target = documentId({ kind: entry.documentKind, path: entry.documentPath });
-    requestTimelineClipFocus(target, entry.clip.id);
+    // A scene clip opens its Scene or Scene Layer in Timeline mode on that clip; a clip asset opens itself.
+    const scene = isSceneClipDocument(entry.documentKind);
+    if (scene) requestTimelineClipFocus(target, entry.clip.id);
     if (getOpenDocuments().some((doc) => doc.id === target)) setActiveDocument(target);
     else await openDocument({ kind: entry.documentKind, path: entry.documentPath, label: labelFromPath(entry.documentPath) });
-    setSceneMode(target, "timeline");
+    if (scene) setSceneMode(target, "timeline");
   };
   const rows: PropertyRow[] = [{
     id: "timeline-asset-description", kind: "text", label: "Description", value: asset.description,
@@ -83,7 +85,9 @@ export function TimelineAssetClipsPanel(_props: IDockviewPanelProps) {
     draggable: false,
     icon: <FilmIcon className="size-3.5 text-muted-foreground" />,
     trailing: <span className="flex items-center gap-2 text-xs text-muted-foreground">
-      {entry.documentKind === "scene" ? <MapIcon className="size-3.5" aria-hidden /> : <LayersIcon className="size-3.5" aria-hidden />}
+      {entry.documentKind === "scene" ? <MapIcon className="size-3.5" aria-hidden />
+        : entry.documentKind === "scene-layer" ? <LayersIcon className="size-3.5" aria-hidden />
+          : <TypeVisualIcon visual={resolveTypeVisual({ assetType: entry.documentKind === "timeline-clip-2d" ? "TimelineClip2D" : "TimelineClip3D" })} />}
       <span className="max-w-32 truncate">{entry.documentName}</span>
       <span className="tabular-nums">{entry.clip.length.toFixed(2)} s</span>
       <Button size={touch ? "sm" : "xs"} variant="ghost" onClick={(event) => { event.stopPropagation(); void open(entry); }}

@@ -165,6 +165,14 @@ describe("material dock catalog", () => {
       ["timeline-asset-events", "Events"],
     ]);
     expect(primaryDockPanel("timeline")).toBe("timeline-asset-clips");
+    for (const kind of ["timeline-clip-2d", "timeline-clip-3d"] as const) {
+      expect(isDockviewDocumentKind(kind)).toBe(true);
+      expect(listDockWindows(kind).map((entry) => [entry.id, entry.title])).toEqual([
+        ["timeline-clip-proxies", "Proxies"],
+        ["timeline-clip-inspector", "Inspector"],
+      ]);
+      expect(primaryDockPanel(kind)).toBe("timeline-clip-proxies");
+    }
   });
 
   it("opens a Blackboard in DockView on its Keys with the Inspector beside it", () => {

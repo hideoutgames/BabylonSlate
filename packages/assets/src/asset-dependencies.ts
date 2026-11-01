@@ -460,6 +460,11 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     for (const clip of rows(payload.timelineClips)) add(clip.timelineAsset, false);
     // The SceneScript / SceneLayerScript references assets like a Class graph.
     if (payload.script) graph(payload.script);
+  } else if (assetType === "TimelineClip2D" || assetType === "TimelineClip3D") {
+    // Its Timeline Asset and the proxies' Classes ship with it; the Editor Preview's Models,
+    // Materials and Textures are editor-only and never become dependencies.
+    add(payload.timelineAsset, false);
+    for (const proxy of rows(payload.proxies)) addClass(proxy.classId, false);
   } else if (assetType === "Class") {
     addClass(context.parentClass);
     components(payload.components);

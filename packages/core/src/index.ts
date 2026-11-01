@@ -22,6 +22,7 @@ export * from "./timeline-clips";
 export * from "./timeline-evaluate";
 export * from "./timeline-playback";
 export * from "./timeline-assets";
+export * from "./timeline-clip-assets";
 export * from "./tags";
 export * from "./cel-shading";
 export * from "./shadows";

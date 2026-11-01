@@ -15,6 +15,8 @@ export type DockviewDocumentKind =
   | "vector-curve"
   | "color-curve"
   | "timeline"
+  | "timeline-clip-2d"
+  | "timeline-clip-3d"
   | "script-interface"
   | "sprite"
   | "sprite-animation"
@@ -62,6 +64,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "vector-curve",
   "color-curve",
   "timeline",
+  "timeline-clip-2d",
+  "timeline-clip-3d",
   "script-interface",
   "sprite",
   "sprite-animation",
@@ -135,6 +139,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "vector-curve": "curve-asset-editor",
   "color-curve": "curve-asset-editor",
   timeline: "timeline-asset-clips",
+  "timeline-clip-2d": "timeline-clip-proxies",
+  "timeline-clip-3d": "timeline-clip-proxies",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
   "sprite-animation": "sprite-animation-preview",
@@ -1161,6 +1167,10 @@ export function listDockWindows(
   if (kind === "data-definition") return withOptionalLocks(kind, [
     { id: "data-definition-fields", component: "data-definition-fields", title: "Fields" },
     { id: "data-definition-details", component: "data-definition-details", title: "Inspector", defaultPosition: { referencePanelId: "data-definition-fields", direction: "right", initialWidth: 320 } },
+  ], options);
+  if (kind === "timeline-clip-2d" || kind === "timeline-clip-3d") return withOptionalLocks(kind, [
+    { id: "timeline-clip-proxies", component: "timeline-clip-proxies", title: "Proxies" },
+    { id: "timeline-clip-inspector", component: "timeline-clip-inspector", title: "Inspector", defaultPosition: { referencePanelId: "timeline-clip-proxies", direction: "right", initialWidth: 320 } },
   ], options);
   if (kind === "timeline") return withOptionalLocks(kind, [
     { id: "timeline-asset-clips", component: "timeline-asset-clips", title: "Timeline Clips" },
