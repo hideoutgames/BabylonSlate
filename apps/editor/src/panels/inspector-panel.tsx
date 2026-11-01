@@ -67,6 +67,7 @@ import {
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 import { isDataGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { delegateSignatureEntries } from "../lib/delegate-signatures";
 import { logicGraphHostClass } from "../lib/embedded-script";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { ClassMemberDetails } from "./inspector-class-member-details";
@@ -277,6 +278,17 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     typeSchemas,
     dataAssets,
   ]);
+  // Event Dispatchers of every Class, for a Delegate type's Signature: the open one first.
+  const delegateSignatures = useMemo(() => {
+    void registryEpoch;
+    const graphs = collectClassGraphsForPalette({
+      assets: assetRegistry?.list() ?? [],
+      openDocuments: classDocuments,
+      classIdForPath: classIdForGraphPath,
+    });
+    if (graph && graphClassId) graphs[graphClassId] = graph;
+    return delegateSignatureEntries(graphs, graphClassId);
+  }, [assetRegistry, classDocuments, graph, graphClassId, registryEpoch]);
   const selectedNode = hydratedInspectGraph
     ? hydratedInspectGraph.nodes.find(
         (node) => node.id === selectedSerializedNode?.id,
@@ -418,6 +430,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           schemas={typeSchemas}
           enumMembers={enumMembers}
           classId={graphClassId}
+          delegateSignatures={delegateSignatures}
           onChange={persistGraph}
         />
       </PanelFrame>
@@ -564,6 +577,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         setEventPinRowIds={setEventPinRowIds}
         commandRowIds={commandRowIds}
         setCommandRowIds={setCommandRowIds}
+        delegateSignatures={delegateSignatures}
       />
     </PanelFrame>
   );

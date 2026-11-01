@@ -362,6 +362,7 @@ describe("My Class members", () => {
       "section-variables",
       "section-events",
       "begin",
+      "section-dispatchers",
       "section-interfaces",
     ]);
     expect(rows.find((row) => row.id === "begin")?.label).toBe(

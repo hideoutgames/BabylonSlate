@@ -5,6 +5,7 @@ import { compiledNodeIds, entryNodes } from "./compiled-nodes";
 import { diagnostic, type Diagnostic } from "./diagnostics";
 import {
   listValidationRules,
+  type ClassMemberSymbol,
   type TypeContext,
   type ValidateOptions,
 } from "./type-context";
@@ -14,7 +15,11 @@ import {
   isClassConstraintTypeId,
   isMemberTypeId,
   isStructOrEnumTypeId,
+  parseDelegateSignatureSource,
+  pinTypeForVariable,
+  type VariableTypeSpec,
 } from "./member-pin-type";
+import { jsIdent } from "./compile-events";
 import {
   pinAcceptsLiteralDefault,
   pinRejectsStoredDefault,
@@ -494,7 +499,7 @@ function validatePinTyping(
           !readsSelf &&
           (!literalPin || interfaceOutput)
         ) {
-          const liveRef = pin.type.kind === "objectRef";
+          const liveRef = pin.type.kind === "objectRef" || pin.type.kind === "delegate";
           out.push(
             diagnostic({
               severity: requiresReference || liveRef || interfaceOutput ? "error" : "warning",
@@ -838,9 +843,174 @@ function validateMemberBindings(
           }),
         );
       }
+      continue;
+    }
+    if (node.typeId.startsWith("flow.dispatcher.")) {
+      const name = stringProp(node.properties, "name");
+      const classId = stringProp(node.properties, "classId") ?? ctx.classId;
+      const found = members.some(
+        (member) =>
+          member.kind === "dispatcher" &&
+          member.name === name &&
+          (!classId || member.classId === classId),
+      );
+      if (!found) {
+        out.push(
+          diagnostic({
+            code: "member.missing_dispatcher",
+            message: `Event Dispatcher "${name ?? "unknown"}" is not declared`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      }
+      continue;
+    }
+    if (node.typeId === CREATE_EVENT_TYPE_ID) {
+      out.push(...validateCreateEvent(graph, node, ctx, members));
     }
   }
 
+  return out;
+}
+
+const CREATE_EVENT_TYPE_ID = "flow.delegate.create";
+
+type SignatureRow = {
+  name?: string;
+  typeId?: string;
+  direction?: string;
+} & VariableTypeSpec;
+
+/** Names and types of a signature's data rows, comparable as text. */
+function signatureKey(rows: readonly SignatureRow[]): string {
+  return JSON.stringify(
+    rows
+      .filter((row) => row && typeof row === "object" && row.typeId !== "exec")
+      .map((row) => [row.name ?? "", pinTypeForVariable(row)]),
+  );
+}
+
+/** The inputs a delegate to `member` takes: a function's inputs, a custom event's outputs. */
+function delegateTargetRows(member: ClassMemberSymbol): SignatureRow[] {
+  return (member.pins ?? []).filter(
+    (row) => row.typeId !== "exec" && (member.kind !== "function" || row.direction === "in"),
+  );
+}
+
+function validateCreateEvent(
+  graph: LogicGraph,
+  node: GraphNode,
+  ctx: TypeContext,
+  members: readonly ClassMemberSymbol[],
+): Diagnostic[] {
+  const memberName = stringProp(node.properties, "memberName");
+  const classId = stringProp(node.properties, "classId") ?? ctx.classId;
+  const kind = node.properties.memberKind === "function" ? "function" : "event";
+  const member = memberName
+    ? members.find(
+        (entry) =>
+          entry.kind === kind &&
+          (kind === "event"
+            ? eventBindingName(entry.name) === eventBindingName(memberName)
+            : entry.name === memberName) &&
+          (!classId || entry.classId === classId),
+      )
+    : undefined;
+  const at = { assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: node.id };
+  if (!member) {
+    return [
+      diagnostic({
+        code: "delegate.missing_member",
+        message: memberName
+          ? `Create Event: "${memberName}" is not a ${kind === "function" ? "function" : "custom event"} of ${classId ?? "this class"}`
+          : "Create Event has no function or event chosen",
+        ...at,
+      }),
+    ];
+  }
+  const rows = Array.isArray(node.properties.pins) ? (node.properties.pins as SignatureRow[]) : [];
+  if (signatureKey(rows) === signatureKey(delegateTargetRows(member))) return [];
+  return [
+    diagnostic({
+      code: "delegate.signature_mismatch",
+      message: `Create Event: the inputs of "${memberName}" have changed; choose it again`,
+      ...at,
+    }),
+  ];
+}
+
+/**
+ * Class-level Event Dispatcher checks, once per `validateGraphs` call: two
+ * dispatchers in the class lineage that compile to one runtime name, and
+ * Delegate types whose copied signature no longer matches the dispatcher it
+ * names.
+ */
+function validateDispatcherDeclarations(
+  graphs: readonly LogicGraph[],
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const graphId = graphs[0]?.id ?? "";
+  const members = ctx.members ?? [];
+  const own = (member: ClassMemberSymbol) => !ctx.classId || member.classId === ctx.classId;
+  const inLineage = (member: ClassMemberSymbol) =>
+    own(member) || (ctx.classId !== undefined && ctx.hierarchy?.isSubclassOf(ctx.classId, member.classId) === true);
+  const dispatchers = members.filter((member) => member.kind === "dispatcher" && inLineage(member));
+  dispatchers.forEach((member, index) => {
+    if (!own(member)) return;
+    const ident = jsIdent(member.name);
+    const other = dispatchers.find(
+      (entry, otherIndex) =>
+        entry !== member &&
+        jsIdent(entry.name) === ident &&
+        // Report a pair of own dispatchers once.
+        (!own(entry) || otherIndex < index),
+    );
+    if (!other) return;
+    out.push(
+      diagnostic({
+        code: "dispatcher.name_collision",
+        message:
+          other.name === member.name
+            ? `Event Dispatcher "${member.name}" is declared more than once in this class and its parents`
+            : `Event Dispatchers "${other.name}" and "${member.name}" compile to the same name "${ident}"; rename one of them`,
+        assetGuid: ctx.assetGuid,
+        graphId,
+      }),
+    );
+  });
+
+  const staleDelegate = (label: string, row: VariableTypeSpec) => {
+    if (row.typeId !== "delegate") return;
+    const source = parseDelegateSignatureSource(row.typeClassId);
+    if (!source) return;
+    const dispatcher = members.find(
+      (entry) =>
+        entry.kind === "dispatcher" &&
+        entry.name === source.name &&
+        entry.classId === source.classId,
+    );
+    if (!dispatcher) return;
+    const expected = JSON.stringify(delegateTargetRows(dispatcher).map((entry) => pinTypeForVariable(entry)));
+    const actual = JSON.stringify((row.signature ?? []).map((entry) => pinTypeForVariable(entry)));
+    if (expected === actual) return;
+    out.push(
+      diagnostic({
+        severity: "warning",
+        code: "delegate.signature_mismatch",
+        message: `Delegate "${label}" copies the inputs of ${source.name} (${source.classId}), which have changed; choose its Signature again`,
+        assetGuid: ctx.assetGuid,
+        graphId,
+      }),
+    );
+  };
+  for (const member of members) {
+    if (!own(member)) continue;
+    staleDelegate(member.name, member);
+    for (const row of member.pins ?? []) staleDelegate(`${member.name}: ${row.name}`, row);
+  }
   return out;
 }
 
@@ -850,11 +1020,16 @@ type SignaturePin = {
   direction: "in" | "out";
   typeClassId?: string;
   container?: "single" | "array" | "map";
+  signature?: readonly VariableTypeSpec[];
 };
 
 function signaturePinKey(pin: SignaturePin): string {
   const container = pin.container === "array" || pin.container === "map" ? pin.container : "single";
-  return `${pin.direction}:${pin.name}:${container}:${pin.typeId}:${pin.typeClassId ?? ""}`;
+  // Delegates match by signature, not by the dispatcher it was copied from.
+  const parameter = pin.typeId === "delegate"
+    ? JSON.stringify(pinTypeForVariable(pin))
+    : pin.typeClassId ?? "";
+  return `${pin.direction}:${pin.name}:${container}:${pin.typeId}:${parameter}`;
 }
 
 function pinsMatch(
@@ -1311,6 +1486,7 @@ export function validateGraphs(
   diagnostics.push(...validateMemberTypes(graphs, ctx));
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
   diagnostics.push(...validateCustomEventNames(graphs, ctx));
+  diagnostics.push(...validateDispatcherDeclarations(graphs, ctx));
   // Registered rules see every graph; their node diagnostics follow the same compiled-node filter.
   for (const rule of listValidationRules()) {
     for (const d of rule.run(graphs, ctx)) {

@@ -7,8 +7,10 @@ import { NODE_PLACEMENT_GAP, estimateGraphNodeSize } from "@haptic/graph-ui";
 import {
   addCallEventNode,
   addCallFunctionNode,
+  addDispatcherNodes,
   addVariableAccessNode,
   isObjectInstanceVariableType,
+  type DispatcherDropAction,
   type GraphSpawnOptions,
   type VariableAccessKind,
 } from "./class-member-nodes";
@@ -71,15 +73,25 @@ export type ClassMemberDropResult =
       /** Names of the dragged rows that cannot be dropped on a graph. */
       skipped: string[];
     }
+  | {
+      kind: "choose-dispatcher";
+      /** Droppable rows, in drop order; the Event Dispatchers among them take the chosen node. */
+      memberIds: string[];
+      position: { x: number; y: number };
+      skipped: string[];
+      /** Variables are dropped too, so Get / Set is asked next. */
+      variables: boolean;
+    }
   | { kind: "spawn"; graph: SerializedGraph; skipped: string[] };
 
-/** Whether dragging this member onto a graph spawns a node: variables, functions and custom events. */
+/** Whether dragging this member onto a graph spawns a node: variables, functions, custom events and Event Dispatchers. */
 export function canDropClassMember(
   row: Pick<ClassMemberDropRow, "kind" | "eventType">,
 ): boolean {
   return (
     row.kind === "variable" ||
     row.kind === "function" ||
+    row.kind === "dispatcher" ||
     (row.kind === "event" && row.eventType === "flow.event.custom")
   );
 }
@@ -144,6 +156,7 @@ export function placeClassMemberDrop(options: {
   rows: readonly ClassMemberDropRow[];
   position: { x: number; y: number };
   access?: VariableAccessKind;
+  dispatcherAction?: DispatcherDropAction;
   functionId?: string | null;
   classId?: string;
   idFactory?: () => string;
@@ -174,6 +187,14 @@ export function placeClassMemberDrop(options: {
       );
       graph = addCallFunctionNode(graph, declared ?? row, spawn);
       height = dropNodeHeight(null, (declared ?? row).pins);
+    } else if (row.kind === "dispatcher") {
+      const declared = (graph.members ?? []).find(
+        (entry) => entry.kind === "dispatcher" && (entry.id === row.id || entry.name === row.name),
+      );
+      const action = options.dispatcherAction ?? "call";
+      graph = addDispatcherNodes(graph, declared ?? row, action, spawn);
+      // Assign also places the custom event below its Bind node.
+      height = dropNodeHeight(null, (declared ?? row).pins) + (action === "assign" ? 200 : 0);
     } else if (canDropClassMember(row)) {
       const declared = (graph.members ?? []).find(
         (entry) => entry.kind === "event" && (entry.id === row.id || entry.name === row.name),
@@ -232,6 +253,15 @@ export function resolveClassMemberDrop(options: {
     options.clientX,
     options.clientY,
   );
+  if (droppable.some((row) => row.kind === "dispatcher")) {
+    return {
+      kind: "choose-dispatcher",
+      memberIds: droppable.map((row) => row.id),
+      position,
+      skipped,
+      variables: droppable.some((row) => row.kind === "variable"),
+    };
+  }
   if (droppable.some((row) => row.kind === "variable")) {
     return {
       kind: "choose-access",
@@ -244,13 +274,14 @@ export function resolveClassMemberDrop(options: {
   return { kind: "spawn", graph: placed.graph, skipped };
 }
 
-/** Finish a drop that asked Get / Set first: place every row with the chosen `access`. */
+/** Finish a drop that asked Get / Set or the dispatcher node first: place every row with the choices. */
 export function completeClassMemberDrop(options: {
   graph: SerializedGraph;
   memberIds: readonly string[];
   members: readonly ClassMemberDropRow[];
   position: { x: number; y: number };
-  access: VariableAccessKind;
+  access?: VariableAccessKind;
+  dispatcherAction?: DispatcherDropAction;
   functionId?: string | null;
   classId?: string;
   idFactory?: () => string;

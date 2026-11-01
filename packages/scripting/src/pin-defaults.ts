@@ -23,9 +23,9 @@ export function pinAcceptsLiteralDefault(type: PinType): boolean {
   return LITERAL_DEFAULT_KINDS.has(type.kind);
 }
 
-/** Live instance pins must not compile a stored name/guid as a JS literal. */
+/** Live instance and delegate pins must not compile a stored name/guid as a JS literal. */
 export function pinRejectsStoredDefault(type: PinType): boolean {
-  return type.kind === "objectRef";
+  return type.kind === "objectRef" || type.kind === "delegate";
 }
 
 /** Authored literals live under `default:<pinId>`, apart from node fields. */

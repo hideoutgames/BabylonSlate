@@ -95,6 +95,47 @@ describe("toolbar Add Node placement", () => {
     }
   });
 
+  it("adds a bundled row's extra nodes beside it, unselected and wired to it", () => {
+    const delegate = { kind: "delegate", inputs: [], outputs: [] };
+    const bindPins = [{ id: "event", name: "Event", kind: "data" as const, direction: "in" as const, type: delegate }];
+    const eventPins = [{ id: "OutputDelegate", name: "Output Delegate", kind: "data" as const, direction: "out" as const, type: delegate, placement: "header" as const }];
+    let latest: GraphDocument = { nodes: [], edges: [] };
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={latest}
+        sessionViewport={viewport}
+        paletteNodes={[{
+          id: "flow.dispatcher.bind:assign",
+          nodeType: "flow.dispatcher.bind",
+          title: "Assign On Hit",
+          category: "eventDispatchers",
+          pins: bindPins,
+          bundle: {
+            nodes: [{
+              key: "event",
+              node: { id: "flow.event.custom", title: "On Hit Event", category: "flow", pins: eventPins, defaultData: { name: "On Hit Event" } },
+              offset: { x: -400, y: 120 },
+            }],
+            edges: [{ source: "event", sourceHandle: "OutputDelegate", target: "main", targetHandle: "event" }],
+          },
+        }]}
+        onChange={(graph) => { latest = graph; }}
+      />,
+    );
+    stubGraphBounds(getByTestId("graph-editor"), canvas);
+
+    fireEvent.click(getByTestId("graph-add-node"));
+    fireEvent.click(getByTestId("node-palette-item-flow.dispatcher.bind:assign"));
+
+    const bind = latest.nodes.find((node) => node.type === "flow.dispatcher.bind")!;
+    const event = latest.nodes.find((node) => node.type === "flow.event.custom")!;
+    expect(event.position).toEqual({ x: bind.position.x - 400, y: bind.position.y + 120 });
+    expect(event.data.name).toBe("On Hit Event");
+    expect(latest.edges).toEqual([
+      expect.objectContaining({ source: event.id, sourceHandle: "OutputDelegate", target: bind.id, targetHandle: "event" }),
+    ]);
+  });
+
   it("treats an existing node as its measured size, not the larger estimate", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
@@ -3078,6 +3119,66 @@ describe("GraphEditor", () => {
     const intHandle = container.querySelector('[data-pin-type="int"]');
     expect(intHandle).not.toBeNull();
     expect(intHandle?.querySelector('[data-pin-shape="circle"]')).not.toBeNull();
+  });
+
+  it("draws a custom event's delegate as a square in its title bar, dark-filled until wired", () => {
+    const delegate = { kind: "delegate", inputs: [{ kind: "float" }], outputs: [] };
+    const customEvent = (id: string, y: number) => ({
+      id,
+      type: "flow.event.custom",
+      position: { x: 0, y },
+      data: {
+        title: "Took Hit",
+        name: "Took Hit",
+        eventQualifier: "Inherited",
+        __nodeType: "flow.event.custom",
+        __category: "flow",
+        __pure: true,
+        __pins: [
+          { id: "execOut", name: "then", kind: "exec" as const, direction: "out" as const, type: { kind: "exec" } },
+          { id: "OutputDelegate", name: "Output Delegate", kind: "data" as const, direction: "out" as const, type: delegate, placement: "header" as const },
+          { id: "Amount", name: "Amount", kind: "data" as const, direction: "out" as const, type: { kind: "float" } },
+        ],
+      },
+    });
+    const graph: GraphDocument = {
+      nodes: [
+        customEvent("wired", 0),
+        customEvent("loose", 300),
+        {
+          id: "bind",
+          type: "flow.dispatcher.bind",
+          position: { x: 400, y: 0 },
+          data: {
+            title: "Bind Event to On Hit",
+            __nodeType: "flow.dispatcher.bind",
+            __category: "eventDispatchers",
+            __pins: [
+              { id: "execIn", name: "exec", kind: "exec", direction: "in", type: { kind: "exec" } },
+              { id: "event", name: "Event", kind: "data", direction: "in", type: delegate },
+            ],
+          },
+        },
+      ],
+      edges: [{ id: "e", source: "wired", sourceHandle: "OutputDelegate", target: "bind", targetHandle: "event" }],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const header = (id: string) => container.querySelector(`[data-id="${id}"] [data-header-pin]`);
+
+    // In the title bar, not a pin row, and in place of the inherited event's Plug Zap marker.
+    expect(header("loose")?.closest("[data-pin-row]")).toBeNull();
+    expect(container.querySelector('[data-id="loose"] [data-pin-row] [data-pin-id="OutputDelegate"]')).toBeNull();
+    expect(container.querySelector('[data-id="loose"] [aria-label="Event"]')).toBeNull();
+    const loose = header("loose")?.querySelector('[data-pin-shape="square"]') as HTMLElement;
+    expect(loose.getAttribute("data-pin-connected")).toBe("false");
+    expect(loose.style.background).toContain("color-mix");
+    const wired = header("wired")?.querySelector('[data-pin-shape="square"]') as HTMLElement;
+    expect(wired.getAttribute("data-pin-connected")).toBe("true");
+    expect(wired.style.background).toBe("var(--pin-delegate)");
+    // Bind's Event input is the same square, and dispatcher nodes carry their marker.
+    expect(container.querySelector('[data-id="bind"] [data-pin-type="delegate"] [data-pin-shape="square"]')).not.toBeNull();
+    expect(container.querySelector('[data-id="bind"] [aria-label="Event Dispatcher"]')).not.toBeNull();
   });
 
   it("renders map pins with a map icon distinct from array list bars", () => {

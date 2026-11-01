@@ -7,6 +7,7 @@ import {
   normalizeDataDefinitionAsset,
   normalizeScene,
   type DataDefinitionField,
+  type DelegateSignatureType,
   type GraphClassMember,
   type GraphClassMemberPin,
   type SerializedGraph,
@@ -140,9 +141,27 @@ function normalizeHeaderPins(value: unknown): GraphClassMemberPin[] {
     }
     const unit = declaredValueUnit(pin.typeId, (row as { unit?: unknown }).unit);
     if (unit) pin.unit = unit;
+    if (pin.typeId === "delegate") pin.signature = normalizeHeaderSignature((row as { signature?: unknown }).signature);
     pins.push(pin);
   }
   return pins;
+}
+
+/** A Delegate's signature as a header stores it: type picker rows, possibly nested. */
+function normalizeHeaderSignature(value: unknown): DelegateSignatureType[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): DelegateSignatureType[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const { typeId, typeClassId, container, keyTypeId, keyTypeClassId, signature } = entry as Record<string, unknown>;
+    if (typeof typeId !== "string" || !typeId) return [];
+    const input: DelegateSignatureType = { typeId };
+    if (typeof typeClassId === "string" && typeClassId.trim()) input.typeClassId = typeClassId.trim();
+    if (container === "array" || container === "map") input.container = container;
+    if (typeof keyTypeId === "string" && keyTypeId) input.keyTypeId = keyTypeId;
+    if (typeof keyTypeClassId === "string" && keyTypeClassId.trim()) input.keyTypeClassId = keyTypeClassId.trim();
+    if (typeId === "delegate") input.signature = normalizeHeaderSignature(signature);
+    return [input];
+  });
 }
 
 /** Closed FunctionLibrary assets use header.payload.functions; open docs prefer members. */
@@ -347,6 +366,9 @@ export function classGraphFromHeaderPayload(
       if (loading === "hard") member.loading = "hard";
       const variableUnit = declaredValueUnit(member.typeId, unit);
       if (variableUnit) member.unit = variableUnit;
+      if (member.typeId === "delegate") {
+        member.signature = normalizeHeaderSignature((entry as { signature?: unknown }).signature);
+      }
       const variableCategory = normalizeClassMemberCategory(
         (entry as { category?: unknown }).category,
       );
@@ -367,6 +389,26 @@ export function classGraphFromHeaderPayload(
         name,
         pins: normalizeHeaderPins((entry as { pins?: unknown }).pins),
       });
+    }
+  }
+  const dispatchers = payload?.dispatchers;
+  if (Array.isArray(dispatchers)) {
+    for (const entry of dispatchers) {
+      if (!entry || typeof entry !== "object") continue;
+      const name = (entry as { name?: unknown }).name;
+      const id = headerMemberId(entry);
+      if (typeof name !== "string" || !name || !id) continue;
+      const dispatcher: GraphClassMember = {
+        id,
+        kind: "dispatcher",
+        name,
+        pins: normalizeHeaderPins((entry as { pins?: unknown }).pins),
+      };
+      const dispatcherCategory = normalizeClassMemberCategory(
+        (entry as { category?: unknown }).category,
+      );
+      if (dispatcherCategory) dispatcher.category = dispatcherCategory;
+      members.push(dispatcher);
     }
   }
   const interfaces = payload?.interfaces;

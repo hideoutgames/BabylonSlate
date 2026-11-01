@@ -19,9 +19,13 @@ function catalogPinDefault(
   return catalogPin?.defaultValue;
 }
 
-/** Object reference inputs are the only pins that read Self or act as a node's subject. */
+/**
+ * Object and delegate inputs are the only pins that act as a node's subject;
+ * only object inputs read Self.
+ */
 function isObjectReferenceInput(pin: GraphPin): boolean {
-  return pin.direction === "in" && pin.kind === "data" && pin.type.kind === "objectRef";
+  return pin.direction === "in" && pin.kind === "data" &&
+    (pin.type.kind === "objectRef" || pin.type.kind === "delegate");
 }
 
 /**

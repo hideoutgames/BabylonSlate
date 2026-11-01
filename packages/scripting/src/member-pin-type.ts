@@ -16,6 +16,7 @@ import {
   arrayOf,
   assetRef,
   classRef,
+  delegateOf,
   enumRef,
   mapOf,
   objectRef,
@@ -44,13 +45,34 @@ export type VariableTypeSpec = {
   container?: VariableContainer | string;
   keyTypeId?: string;
   keyTypeClassId?: string;
+  /** Delegate types only: the input types of the delegate's signature. */
+  signature?: readonly VariableTypeSpec[];
 };
+
+/**
+ * `typeClassId` of a Delegate type: the Event Dispatcher whose inputs are its
+ * signature (`<classId>::<dispatcher name>`). The signature itself is copied
+ * onto the row (`signature`), so pins never need a lookup.
+ */
+export function delegateSignatureSource(classId: string, dispatcherName: string): string {
+  return `${classId}::${dispatcherName}`;
+}
+
+/** Class id and dispatcher name of a Delegate type's `typeClassId`, if it names one. */
+export function parseDelegateSignatureSource(
+  typeClassId: string | undefined,
+): { classId: string; name: string } | undefined {
+  const value = typeClassId?.trim() ?? "";
+  const split = value.indexOf("::");
+  if (split <= 0 || split + 2 >= value.length) return undefined;
+  return { classId: value.slice(0, split), name: value.slice(split + 2) };
+}
 
 /** Picker ids `pinTypeForMember` maps; it reads any other id as Float. */
 const MEMBER_TYPE_IDS = new Set([
   "exec", "bool", "int", "tag", "float", "string", "vec2", "vec3", "vec4",
   "rotator", "quat", "color", "transform", "object", "class",
-  "asset", "struct", "enum", "wildcard",
+  "asset", "struct", "enum", "wildcard", "delegate",
 ]);
 
 export function isMemberTypeId(typeId: string): boolean {
@@ -65,6 +87,7 @@ export function isMemberTypeId(typeId: string): boolean {
 export function pinTypeForMember(
   typeId: string | undefined,
   typeClassId?: string,
+  signature?: readonly VariableTypeSpec[],
 ): PinType {
   switch (typeId) {
     case "exec":
@@ -105,6 +128,8 @@ export function pinTypeForMember(
       return enumRef(trimmedOrEmpty(typeClassId));
     case "wildcard":
       return BOXED_WILDCARD;
+    case "delegate":
+      return delegateOf((signature ?? []).map(pinTypeForVariable));
     default:
       return FLOAT;
   }
@@ -112,7 +137,7 @@ export function pinTypeForMember(
 
 /** Wrap a member value type with Single / Array / Map. */
 export function pinTypeForVariable(spec: VariableTypeSpec): PinType {
-  const inner = pinTypeForMember(spec.typeId, spec.typeClassId);
+  const inner = pinTypeForMember(spec.typeId, spec.typeClassId, spec.signature);
   const container = normalizeVariableContainer(spec.container);
   if (container === "array") return arrayOf(inner);
   if (container === "map") {
@@ -176,6 +201,8 @@ export function typeIdFromPinType(type: PinType): string {
       return "enum";
     case "boxedWildcard":
       return "wildcard";
+    case "delegate":
+      return "delegate";
     default:
       return "float";
   }
@@ -201,13 +228,16 @@ export function typeClassIdFromPinType(type: PinType): string | undefined {
   }
 }
 
-export function variableTypeFromPinType(type: PinType): {
+export type VariableTypeFromPin = {
   typeId: string;
   typeClassId?: string;
   container: VariableContainer;
   keyTypeId?: string;
   keyTypeClassId?: string;
-} {
+  signature?: VariableTypeFromPin[];
+};
+
+export function variableTypeFromPinType(type: PinType): VariableTypeFromPin {
   if (type.kind === "array") {
     const inner = variableTypeFromPinType(type.element);
     return {
@@ -225,6 +255,13 @@ export function variableTypeFromPinType(type: PinType): {
       container: "map",
       keyTypeId: key.typeId,
       ...(key.typeClassId ? { keyTypeClassId: key.typeClassId } : {}),
+    };
+  }
+  if (type.kind === "delegate") {
+    return {
+      typeId: "delegate",
+      container: "single",
+      signature: type.inputs.map(variableTypeFromPinType),
     };
   }
   const typeId = typeIdFromPinType(type);

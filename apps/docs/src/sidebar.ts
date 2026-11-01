@@ -117,6 +117,7 @@ export function guideSidebar(): SidebarItem[] {
       "variables",
       "functions",
       "events",
+      "event-dispatchers",
       "pin-types",
       "interfaces",
       "structures-and-enums",

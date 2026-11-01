@@ -12,7 +12,9 @@ import {
   type PaletteNode,
 } from "@haptic/graph-ui";
 import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
-import { isEditorGraphHost, type SerializedGraph, type SerializedScene } from "@haptic/core";
+import { isEditorGraphHost, type GraphClassMemberPin, type SerializedGraph, type SerializedScene } from "@haptic/core";
+import { variableTypeFromPinType, type PinType } from "@haptic/scripting";
+import { nextCopyName } from "@haptic/assets";
 import {
   Empty,
   EmptyDescription,
@@ -41,7 +43,21 @@ import { useAppSettings } from "../context/app-settings-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { applyDataGraphAssetPicks } from "../lib/data-graph";
 import { prepareClassGraphPaste } from "../lib/graph-paste";
-import { canRenameCustomEvent, customEventRenameError, functionLibraryShowsEventGraphEmpty, renameCustomEvent } from "../lib/class-members";
+import {
+  DEFAULT_FUNCTION_PINS,
+  addClassMember,
+  adoptBoundEventSignatures,
+  canRenameCustomEvent,
+  customEventRenameError,
+  dispatcherEventNodeData,
+  dispatcherEventPins,
+  freeDispatcherEventName,
+  functionLibraryShowsEventGraphEmpty,
+  renameCustomEvent,
+} from "../lib/class-members";
+import { createEventCandidates, createEventPickData } from "../lib/create-event-members";
+import { CreateEventMemberPicker } from "../components/create-event-member-picker";
+import { CREATE_EVENT_NODE_TYPE_ID, isDispatcherNodeType } from "@haptic/scripting-nodes";
 import {
   classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
@@ -544,17 +560,122 @@ export function GraphPanel(
       : graphContent?.nodes;
     return new Map((nodes ?? []).map((node) => [node.id, node.type]));
   }, [activeFunctionId, graphContent]);
+  /** Commit a change to one node's data in the open graph (Event Graph or function). */
+  const commitNodeData = useCallback(
+    (base: SerializedGraph, nodeId: string, patch: Record<string, unknown>) => {
+      if (!doc) return;
+      const patchNode = (node: SerializedGraph["nodes"][number]) => {
+        if (node.id !== nodeId) return node;
+        const data: Record<string, unknown> = { ...node.data, ...patch };
+        delete data.__pins;
+        return { ...node, data };
+      };
+      const slice = activeFunctionId ? base.functionGraphs?.[activeFunctionId] : undefined;
+      const next: SerializedGraph = slice && activeFunctionId
+        ? { ...base, functionGraphs: { ...base.functionGraphs, [activeFunctionId]: { ...slice, nodes: slice.nodes.map(patchNode) } } }
+        : { ...base, nodes: base.nodes.map(patchNode) };
+      applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
+    },
+    [activeFunctionId, doc, documentActions, documentId],
+  );
+  const renderCreateEventBody = useCallback(
+    (nodeId: string, data: Record<string, unknown>) => {
+      if (!graphContent) return null;
+      const { nodes, edges } = latestGraph.current;
+      const pinOf = (id: string, pinId: string | null | undefined) => {
+        const node = nodes.find((candidate) => candidate.id === id);
+        return hasSerializedPins(node?.data) ? node.data.__pins.find((pin) => pin.id === pinId) : undefined;
+      };
+      // The Object wired in names the Class; unwired, it is Self.
+      const objectWire = edges.find((edge) => edge.target === nodeId && edge.targetHandle === "object");
+      const objectType = objectWire ? pinOf(objectWire.source, objectWire.sourceHandle)?.type : undefined;
+      const objectClassId = objectType?.kind === "objectRef" && typeof objectType.classId === "string" && objectType.classId
+        ? objectType.classId
+        : (classId ?? "Object");
+      const eventWire = edges.find((edge) => edge.source === nodeId && edge.sourceHandle === "event");
+      const delegate = eventWire ? pinOf(eventWire.target, eventWire.targetHandle)?.type : undefined;
+      const feeds = eventWire ? graphContent.nodes.find((node) => node.id === eventWire.target) : undefined;
+      const graphs = { ...otherClassGraphs, ...(classId ? { [classId]: graphContent } : {}) };
+      const candidates = createEventCandidates({
+        objectClassId,
+        ownClassId: classId,
+        graphs,
+        parentOf,
+        delegate: delegate as PinType | undefined,
+        hierarchy,
+      });
+      const inputs = delegate?.kind === "delegate" && Array.isArray(delegate.inputs)
+        ? (delegate.inputs as PinType[])
+        : null;
+      // The rows a new matching member takes: a dispatcher's own inputs, else one per type.
+      const matchingRows = (): GraphClassMemberPin[] => {
+        if (feeds && isDispatcherNodeType(feeds.type) && Array.isArray(feeds.data.pins)) {
+          return dispatcherEventPins({ pins: feeds.data.pins as GraphClassMemberPin[] })
+            .map((pin) => ({ ...pin, direction: "in" as const }));
+        }
+        return (inputs ?? []).map((type, index) => ({
+          ...variableTypeFromPinType(type),
+          name: `Input ${index + 1}`,
+          direction: "in" as const,
+        })) as GraphClassMemberPin[];
+      };
+      const baseName = feeds && typeof feeds.data.name === "string" ? feeds.data.name : "Delegate";
+      return (
+        <CreateEventMemberPicker
+          nodeId={nodeId}
+          memberName={typeof data.memberName === "string" ? data.memberName : ""}
+          candidates={candidates}
+          canCreate={inputs !== null && objectClassId === classId}
+          onPick={(candidate) => commitNodeData(graphContent, nodeId, createEventPickData(candidate))}
+          onCreate={(kind) => {
+            const rows = matchingRows();
+            if (kind === "event") {
+              const name = freeDispatcherEventName(graphContent, baseName);
+              const withEvent: SerializedGraph = {
+                ...graphContent,
+                nodes: [
+                  ...graphContent.nodes,
+                  {
+                    id: crypto.randomUUID(),
+                    type: "flow.event.custom",
+                    position: { x: 80, y: 80 + graphContent.nodes.length * 80 },
+                    data: dispatcherEventNodeData({ pins: rows }, name),
+                  },
+                ],
+              };
+              commitNodeData(withEvent, nodeId, createEventPickData({
+                id: name, kind: "event", name, classId: classId ?? "Object", implicitSelf: true, pins: rows,
+              }));
+              return;
+            }
+            const taken = (graphContent.members ?? []).filter((member) => member.kind === "function").map((member) => member.name);
+            const name = nextCopyName(`${baseName.replace(/\s+/g, "")}Handler`, taken);
+            const withFunction = addClassMember(graphContent, "function", name, undefined, {
+              pins: [...DEFAULT_FUNCTION_PINS, ...rows],
+            });
+            commitNodeData(withFunction, nodeId, createEventPickData({
+              id: name, kind: "function", name, classId: classId ?? "Object", implicitSelf: true, pins: rows,
+            }));
+          }}
+        />
+      );
+    },
+    [classId, commitNodeData, graphContent, hierarchy, otherClassGraphs, parentOf],
+  );
   const renderNodeBody = useCallback(
-    (nodeId: string, data: Record<string, unknown>) =>
-      nodeTypeById.get(nodeId) === "debug.executeJavaScript" ? (
+    (nodeId: string, data: Record<string, unknown>) => {
+      const type = nodeTypeById.get(nodeId);
+      if (type === CREATE_EVENT_NODE_TYPE_ID) return renderCreateEventBody(nodeId, data);
+      return type === "debug.executeJavaScript" ? (
         <div className="w-88 border-t px-3 py-2">
           <GlslCodePreview
             value={String(data.body ?? "")}
             language="javascript"
           />
         </div>
-      ) : null,
-    [nodeTypeById],
+      ) : null;
+    },
+    [nodeTypeById, renderCreateEventBody],
   );
   const onNavigateRequest = useCallback(
     () => setFocusDiagnostic(null),
@@ -660,12 +781,12 @@ export function GraphPanel(
                       },
                     },
                   }
-                : {
+                : adoptBoundEventSignatures({
                     ...edited,
                     members: edited.members ?? current.members,
                     components: edited.components ?? current.components,
                     functionGraphs: current.functionGraphs,
-                  };
+                  }, classId);
               applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, merged));
             }}
           />

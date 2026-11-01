@@ -18,7 +18,9 @@ import {
 import { ENGINE_CLASS_SCRIPT_APIS } from "@haptic/object-model";
 import {
   ASSET_REGISTRY_BY_CLASS_NODE_ID,
+  CREATE_EVENT_NODE_TYPE_ID,
   castDefaultClassId,
+  isDispatcherNodeType,
   callInterfaceTitle,
   isCallInterfaceMethodPin,
   SUBSYSTEM_GET_NODE_ID,
@@ -89,7 +91,11 @@ export function shouldRegeneratePins(typeId: string): boolean {
   if (typeId === "debug.executeJavaScript") return true;
   if (isInputEvent(typeId)) return true;
   if (SELF_ACTOR_NODE_IDS.has(typeId)) return true;
+  // Signature pins of Event Dispatcher nodes and Create Event follow their `pins` rows.
+  if (isDispatcherNodeType(typeId) || typeId === CREATE_EVENT_NODE_TYPE_ID) return true;
   return (
+    // Custom events saved before the Output Delegate existed gain it.
+    typeId === "flow.event.custom" ||
     typeId === "flow.event.call" ||
     typeId === "flow.event.callParent" ||
     typeId === "functions.call" ||

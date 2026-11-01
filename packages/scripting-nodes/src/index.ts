@@ -49,6 +49,7 @@ import { rotatorNodes } from "./rotator";
 import { colorNodes } from "./color";
 import { quatNodes } from "./quat";
 import { tagNodes } from "./tags";
+import { dispatcherNodes } from "./dispatchers";
 
 export * from "./flow";
 export * from "./math";
@@ -100,6 +101,7 @@ export * from "./rotator";
 export * from "./color";
 export * from "./quat";
 export * from "./tags";
+export * from "./dispatchers";
 
 export function allNodeDefinitions(): NodeDefinition[] {
   return [
@@ -136,6 +138,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...interfaceNodes,
     ...variableNodes,
     ...functionCallNodes,
+    ...dispatcherNodes,
     ...castingNodes,
     ...timerNodes,
     ...tweenNodes,

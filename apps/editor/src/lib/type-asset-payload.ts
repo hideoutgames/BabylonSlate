@@ -4,6 +4,7 @@ import {
   type EnumAsset,
   type ScriptInterfaceAsset,
   type StructureAsset,
+  type VariableTypeSpec,
 } from "@haptic/scripting";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -85,6 +86,9 @@ export function asScriptInterfaceAsset(
             direction: pinRow.direction === "out" ? "out" : "in",
             ...(typeof pinRow.typeClassId === "string" && pinRow.typeClassId.trim()
               ? { typeClassId: pinRow.typeClassId.trim() }
+              : {}),
+            ...(pinRow.typeId === "delegate"
+              ? { signature: Array.isArray(pinRow.signature) ? (pinRow.signature as VariableTypeSpec[]) : [] }
               : {}),
           };
         }),

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PlusIcon } from "lucide-react";
-import { VALUE_UNITS, normalizeTag, normalizeValueUnit, typeAcceptsUnit } from "@haptic/core";
+import { VALUE_UNITS, normalizeTag, normalizeValueUnit, typeAcceptsUnit, type DelegateSignatureType } from "@haptic/core";
 import { nextCopyName } from "@haptic/assets";
 import { cn } from "@haptic/ui/lib/utils";
 import { EditableName } from "./inline-rename";
@@ -37,8 +37,13 @@ import {
   ASSET_REF_PICKER_TYPES,
   pinPickerColorVar,
   pinPickerKeepsTypeClassId,
+  pinPickerShape,
   type PinPickerType,
 } from "./pin-types";
+import {
+  DelegateSignatureField,
+  type DelegateSignatureEntry,
+} from "./delegate-signature-field";
 
 export type PinListRow = {
   container?: VariableContainer;
@@ -54,6 +59,8 @@ export type PinListRow = {
   typeClassId?: string;
   /** Number and vector rows: display unit (`VALUE_UNITS`). */
   unit?: string;
+  /** Delegate rows: the input types of the signature named by `typeClassId`. */
+  signature?: readonly DelegateSignatureType[];
 };
 
 export type PinListEditorProps = {
@@ -75,6 +82,8 @@ export type PinListEditorProps = {
   classEntries?: readonly ClassPickerEntry[];
   typeAssets?: readonly AssetPickerEntry[];
   structAssetType?: "Structure" | "DataDefinition";
+  /** Signatures a Delegate row can take (Event Dispatchers of every Class). */
+  delegateSignatures?: readonly DelegateSignatureEntry[];
   itemLabel?: string;
   testIdPrefix?: string;
   readOnly?: boolean;
@@ -113,6 +122,9 @@ function patchRow(
       delete next.typeClassId;
     }
     if (!next.unit || !typeAcceptsUnit(String(next.type))) delete next.unit;
+    // A Delegate starts with No Inputs; any other type has no signature.
+    if (next.type !== "delegate") delete next.signature;
+    else if (!next.signature) next.signature = [];
     return next;
   });
 }
@@ -165,6 +177,7 @@ export function PinListEditor({
   classEntries = [],
   typeAssets,
   structAssetType,
+  delegateSignatures = [],
   itemLabel = "Pin",
   testIdPrefix = "pin",
   readOnly = false,
@@ -255,8 +268,9 @@ export function PinListEditor({
         const showClassType = isReferencePinType(row.type);
         const showAssetType = isAssetPinType(row.type);
         const showTypeAsset = isTypeAssetPinType(row.type) && hasTypeAssets;
+        const showSignature = row.type === "delegate";
         const showDefaultField =
-          showDefault && !showClassType && !showAssetType && !showTypeAsset;
+          showDefault && !showClassType && !showAssetType && !showTypeAsset && !showSignature;
         const showEnumValues = row.type === "enum" && !hasTypeAssets;
         const showUnitField = showUnit && typeAcceptsUnit(String(row.type));
         const showExtras =
@@ -268,6 +282,7 @@ export function PinListEditor({
             showClassType ||
             showAssetType ||
             showTypeAsset ||
+            showSignature ||
             showEnumValues);
         return (
           <div
@@ -284,7 +299,10 @@ export function PinListEditor({
               onClick={() => select(row.id)}
               onFocus={() => select(row.id)}
             >
-              <TypeColorMark colorVar={pinPickerColorVar(row.type === "struct" && row.typeClassId === "engine:TagContainer" ? "tagContainer" : row.type)} />
+              <TypeColorMark
+                colorVar={pinPickerColorVar(row.type === "struct" && row.typeClassId === "engine:TagContainer" ? "tagContainer" : row.type)}
+                shape={pinPickerShape(row.type)}
+              />
               <EditableName
                 value={row.name}
                 aria-label={`${itemLabel} ${index + 1} name`}
@@ -365,6 +383,15 @@ export function PinListEditor({
                       </SelectContent>
                     </Select>
                   </Field>
+                ) : null}
+                {showSignature ? (
+                  <DelegateSignatureField
+                    id={`${testIdPrefix}-${row.id}-signature`}
+                    entries={delegateSignatures}
+                    value={row}
+                    onChange={(signature) => onChange(patchRow(rows, row.id, signature))}
+                    data-testid={`${testIdPrefix}-${row.id}-signature`}
+                  />
                 ) : null}
                 {showClassType ? (
                   <Field className="min-w-32 flex-1">

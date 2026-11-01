@@ -26,6 +26,8 @@ export type SerializedPin = {
    * fanning out. Outputs fan out by default (Particle Graph spine outputs opt in).
    */
   singleLink?: boolean;
+  /** Drawn at the right end of the title bar instead of in a pin row (a custom event's Output Delegate). */
+  placement?: "header";
 };
 
 /** Serialized graph with optional pin handles on edges (backward compatible with core). */
@@ -69,6 +71,19 @@ export type PaletteNode = {
    * a dragged pin makes them compatible.
    */
   outOfContext?: boolean;
+  /**
+   * More nodes added together with this one and wired to it (Assign: a Bind
+   * node and the custom event bound by it). A dragged pin connects to this
+   * node only.
+   */
+  bundle?: PaletteBundle;
+};
+
+export type PaletteBundle = {
+  /** Placed at the new node's position plus `offset`, unselected. */
+  nodes: ReadonlyArray<{ key: string; node: PaletteNode; offset: { x: number; y: number } }>;
+  /** Wires between them; `"main"` names the node the row adds, any other end a `nodes` key. */
+  edges: ReadonlyArray<{ source: string; sourceHandle: string; target: string; targetHandle: string }>;
 };
 
 export type NavigateRequest = {
