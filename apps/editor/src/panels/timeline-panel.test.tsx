@@ -267,5 +267,24 @@ describe("Timeline window", () => {
     expect(tools!.timelineAutoKey).toBe(true);
     view.unmount();
   });
+
+  it("shows the selected track's curves in the Curves view", () => {
+    harness.scene = sceneWith(animated());
+    renderPanel();
+    fireEvent.click(screen.getByTestId("timeline-view-curves"));
+    const curves = screen.getByTestId("timeline-curves");
+    expect(within(curves).getByText("Pick a track to edit its curves.")).toBeTruthy();
+    expect(within(curves).getByText("Door › Location")).toBeTruthy();
+    // The track selected in the Keys view shows its curves.
+    fireEvent.click(screen.getByTestId("timeline-view-keys"));
+    fireEvent.click(screen.getByTestId("timeline-row-t-loc"));
+    fireEvent.click(screen.getByTestId("timeline-view-curves"));
+    expect(screen.getByTestId("timeline-curve-key-0-x")).toBeTruthy();
+    expect(screen.getByTestId("timeline-curve-key-1-x")).toBeTruthy();
+    // The shared curve editor's ends are fixed for a clip.
+    expect(screen.queryByTestId("timeline-curve-before")).toBeNull();
+    fireEvent.click(screen.getByTestId("timeline-view-keys"));
+    expect(screen.getByTestId("keyframe-timeline-lanes")).toBeTruthy();
+  });
 });
 

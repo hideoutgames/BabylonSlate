@@ -26,6 +26,7 @@ import {
   insertionTime,
   keyAt,
   roundTime,
+  snapTime,
   zoomView,
   type CurveEditorConstraints,
   type CurveEditorKind,
@@ -164,7 +165,7 @@ export function CurveEditor({
   });
 
   const emit = (next: readonly EditorKey[], before: unknown = value.Before, after: unknown = value.After) =>
-    onChange(curveValue(kind, next, before, after));
+    onChange(curveValue(kind, next, constraints.extrapolation ?? before, constraints.extrapolation ?? after));
 
   const fraction = (clientX: number, clientY: number) => {
     const rect = trackRef.current?.getBoundingClientRect();
@@ -183,7 +184,7 @@ export function CurveEditor({
 
   const insertKey = (time: number) => {
     if (disabled || keys.length >= maxKeys) return;
-    const t = roundTime(constraints.fixedTime ? clampNumber(time, 0, 1) : time);
+    const t = roundTime(constraints.fixedTime ? clampNumber(time, 0, 1) : snapTime(time, constraints));
     const gap = constraints.keyGap ?? 0.001;
     if (keys.some((key) => Math.abs(key.time - t) < gap)) return;
     if (constraints.lockEnds && (t <= 0 || t >= 1)) return;
@@ -569,8 +570,8 @@ export function CurveEditor({
               <NumericDragField
                 aria-label={`${ariaLabel} Key ${selectedIndex + 1} Time`}
                 value={selectedKey.time}
-                min={constraints.fixedTime ? 0 : undefined}
-                max={constraints.fixedTime ? 1 : undefined}
+                min={constraints.fixedTime ? 0 : constraints.timeRange?.[0]}
+                max={constraints.fixedTime ? 1 : constraints.timeRange?.[1]}
                 sensitivity={constraints.fixedTime ? 0.005 : spanT / 200}
                 disabled={disabled || endpoint}
                 onChange={(time) => editSelected((key, next) => { key.time = clampKeyTimeTo(next, selectedIndex, time, constraints); }, false)}
@@ -611,7 +612,7 @@ export function CurveEditor({
           )}
         </div>
       ) : null}
-      {constraints.fixedTime ? null : (
+      {constraints.fixedTime || constraints.extrapolation ? null : (
         <div className="grid grid-cols-2 gap-1">
           {(["Before", "After"] as const).map((end) => (
             <EnumSelect

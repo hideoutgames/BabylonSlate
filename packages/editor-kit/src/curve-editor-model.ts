@@ -55,6 +55,12 @@ export interface CurveEditorConstraints {
   valueMax?: number;
   /** Smallest gap between neighbouring keys. */
   keyGap?: number;
+  /** Key times stay inside this range (a Timeline clip's 0 to Length). */
+  timeRange?: readonly [number, number];
+  /** Key times land on multiples of this step (a Timeline clip's frames). */
+  timeSnap?: number;
+  /** Before and After are always this; their pickers are hidden. */
+  extrapolation?: CurveExtrapolation;
 }
 
 export type CurveView = { t0: number; t1: number; v0: number; v1: number };
@@ -129,10 +135,19 @@ export function clampKeyTimeTo(
   const last = keys.length - 1;
   if (constraints.lockEnds && index === 0) return 0;
   if (constraints.lockEnds && index === last) return 1;
-  let low = index > 0 ? keys[index - 1]!.time + gap : constraints.fixedTime ? 0 : Number.NEGATIVE_INFINITY;
-  let high = index < last ? keys[index + 1]!.time - gap : constraints.fixedTime ? 1 : Number.POSITIVE_INFINITY;
+  const range = constraints.timeRange;
+  let low = index > 0 ? keys[index - 1]!.time + gap : constraints.fixedTime ? 0 : range ? range[0] : Number.NEGATIVE_INFINITY;
+  let high = index < last ? keys[index + 1]!.time - gap : constraints.fixedTime ? 1 : range ? range[1] : Number.POSITIVE_INFINITY;
   if (low > high) { low = keys[index]!.time; high = keys[index]!.time; }
-  return roundTime(clampNumber(time, low, high));
+  return roundTime(clampNumber(snapTime(time, constraints), low, high));
+}
+
+/** `time` on the constraints' step, inside their range. */
+export function snapTime(time: number, constraints: CurveEditorConstraints = {}): number {
+  const step = constraints.timeSnap;
+  const snapped = step && step > 0 ? Math.round(time / step) * step : time;
+  const range = constraints.timeRange;
+  return range ? clampNumber(snapped, range[0], range[1]) : snapped;
 }
 
 export function clampValue(value: number, constraints: CurveEditorConstraints = {}): number {
