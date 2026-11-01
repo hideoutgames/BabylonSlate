@@ -50,21 +50,25 @@ if (typeof window === 'undefined') {
                     }
                     newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
 
-                    return new Response(response.body, {
-                        status: response.status,
-                        statusText: response.statusText,
-                        headers: newHeaders,
-                    });
+                    const nullBody = [101, 103, 204, 205, 304].includes(response.status);
+                    if (nullBody) report("null-body status " + response.status, "");
+                    try {
+                        return new Response(nullBody ? null : response.body, {
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: newHeaders,
+                        });
+                    } catch (error) {
+                        report("wrap failed for status " + response.status + " type " + response.type, (error && error.name) + ": " + (error && error.message));
+                        throw error;
+                    }
         };
         event.respondWith(
             fetch(request)
                 .then(withHeaders)
                 .catch((e) => {
-                    report("first", e);
-                    return fetch(r.url, { credentials: "same-origin" }).then(withHeaders).catch((e2) => {
-                        report("retry", e2);
-                        return Response.error();
-                    });
+                    report("failed (no retry)", e);
+                    return Response.error();
                 })
         );
     });
