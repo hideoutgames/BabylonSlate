@@ -158,6 +158,12 @@ describe("members of another class", () => {
     expect(result.logged).toEqual([`Hero: ${subject.title} (Target) tried to access null.`]);
   });
 
+  it.each(members(false))("$typeId does nothing and logs when the wired Target was destroyed", (subject) => {
+    const result = run(registry, subject, { wired: true, value: { who: "gone", destroyed: true } });
+    expect(result.calls).toEqual([]);
+    expect(result.logged).toEqual([`Hero: ${subject.title} (Target) tried to access a destroyed object.`]);
+  });
+
   it.each(members(false))("$typeId calls the wired object", (subject) => {
     const other = { who: "other" };
     expect(run(registry, subject, { wired: true, value: other }).calls.map((call) => call[0])).toEqual([other]);
@@ -211,6 +217,21 @@ describe("inputs where null is a legitimate value", () => {
       [node(registry, "begin", "flow.event.beginPlay"), node(registry, "valid", "actor.isValid"), node(registry, "print", "debug.print")],
       [edge("begin", "execOut", "print", "execIn"), edge("valid", "out", "print", "value")],
       { formatValue: (value: unknown) => { printed.push(value); return String(value); } },
+    );
+    expect(printed).toEqual([false]);
+    expect(logged).toEqual([]);
+  });
+
+  it("Is Valid answers false for a destroyed object without an error", () => {
+    const printed: unknown[] = [];
+    const { logged } = runGraph(
+      [node(registry, "begin", "flow.event.beginPlay"), node(registry, "source", "actor.getOfClass"),
+        node(registry, "valid", "actor.isValid"), node(registry, "print", "debug.print")],
+      [edge("begin", "execOut", "print", "execIn"), edge("source", "out", "valid", "target"), edge("valid", "out", "print", "value")],
+      {
+        getActorOfClass: () => ({ who: "gone", destroyed: true }),
+        formatValue: (value: unknown) => { printed.push(value); return String(value); },
+      },
     );
     expect(printed).toEqual([false]);
     expect(logged).toEqual([]);
