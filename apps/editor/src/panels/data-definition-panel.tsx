@@ -115,7 +115,7 @@ function SelectedFieldDetails() {
       onPick={classId => { if (classId) changeSelectedType({ typeClassId: classId }); setClassPickerOpen(false); }}
     />
     <AssetPicker open={typePickerOpen} onOpenChange={setTypePickerOpen}
-      assets={typeAssets} allowedTypes={[selected.typeId === "enum" ? "Enum" : "DataDefinition"]}
+      assets={typeAssets} allowedTypes={selected.typeId === "enum" ? ["Enum"] : ["DataDefinition", "Structure"]}
       title={selected.typeId === "enum" ? "Pick Enum Type" : "Pick Data Definition Type"} allowNone
       onPick={guid => { changeSelectedType({ typeClassId: guid ?? undefined }); setTypePickerOpen(false); }}
     />

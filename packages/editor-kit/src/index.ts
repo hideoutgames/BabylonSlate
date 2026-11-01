@@ -175,6 +175,14 @@ export {
   type ValueModeOption,
 } from "./value-mode-field";
 export { CurveField, type CurveFieldProps } from "./curve-field";
+export {
+  RangeField,
+  formatRangeSummary,
+  normalizeRangeFieldValue,
+  type RangeFieldKind,
+  type RangeFieldProps,
+  type RangeFieldValue,
+} from "./range-field";
 export { TimelineChart, type TimelineChartProps, type TimelineSelection } from "./timeline-chart";
 export {
   timelineBucket,
