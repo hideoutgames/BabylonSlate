@@ -520,6 +520,15 @@ export class ForwardSceneFrameGraph {
     };
   }
 
+  /**
+   * Frees the prepared graph's tasks and render targets while nothing draws the view (an editor view under Play); the
+   * next readiness asks for preparation again. A preparation in flight keeps them.
+   */
+  releaseResources(): void {
+    if (this.disposed || this.pending) return;
+    this.releaseGraph();
+  }
+
   /** Settle CPU ownership before a host releases a borrowed output target. */
   retire(): Promise<void> {
     if (this.retirement) return this.retirement;

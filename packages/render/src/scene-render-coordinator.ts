@@ -189,6 +189,16 @@ export class SceneRenderCoordinator {
 
   retainResources(): () => void { return this.graph.retainResources(); }
 
+  /**
+   * Frees the view's prepared graph and its render targets while nothing draws the view (an editor view under Play):
+   * its next drawn frame prepares them again, as after an invalidation. A view still preparing keeps them.
+   */
+  releaseResources(): void {
+    if (this.disposed || this.pending) return;
+    this.invalidate();
+    this.graph.releaseResources();
+  }
+
   async retire(): Promise<void> {
     this.dispose();
     await this.graph.retire();

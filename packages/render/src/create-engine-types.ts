@@ -124,6 +124,11 @@ export interface EngineHandle {
   setSceneStreamingPaused: (paused: boolean) => void;
   /** Enable or disable this canvas's `registerView` client (overlay Play). */
   setRegisterViewEnabled: (enabled: boolean) => void;
+  /**
+   * Free the world view's prepared graph and its render targets while nothing draws it (an editor view under overlay
+   * Play); its next drawn frame prepares them again. A view still preparing keeps them.
+   */
+  releaseViewResources: () => void;
   /** Live Babylon mesh/texture counts for Play leak assertions. */
   liveObjectCounts: () => { meshes: number; textures: number };
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */

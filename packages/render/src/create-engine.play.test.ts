@@ -63,6 +63,7 @@ import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { DEFAULT_CAMERA_PREVIEW_FRAME_RATE } from "./editor-debug-overlay";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
+import { managedRenderReservations } from "./managed-render-resources";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import * as waterMesh from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
@@ -2785,6 +2786,21 @@ describe("Play createEngine view", () => {
 
     expect(handle.scheduler.shouldRender()).toBe(true);
     expect(resize).toHaveBeenCalled();
+  });
+
+  it("frees the editor view's render targets while Play covers it, and prepares them again when Play ends", async () => {
+    const engine = sharedEngine();
+    engine.getCaps().maxMSAASamples = 4;
+    const { handle } = editorHandle(engine);
+    await handle.prewarmSceneMaterials();
+    // The world view's multisampled scene colour: Play's targets come on top of it on the shared Engine.
+    const held = () => managedRenderReservations(engine).categoryBytes.sceneColor;
+    expect(held()).toBeGreaterThan(0);
+    syncEditorPlayState(handle, true);
+    expect(held()).toBe(0);
+    syncEditorPlayState(handle, false);
+    const frame = () => { engine.beginFrame(); renderViews(engine); engine.endFrame(); };
+    await vi.waitFor(() => { frame(); expect(held()).toBeGreaterThan(0); }, { timeout: 5_000 });
   });
 
   it("disables the Scene registerView while overlay Play owns the framebuffer", () => {

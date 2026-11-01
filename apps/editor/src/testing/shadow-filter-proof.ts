@@ -12,6 +12,7 @@ import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngin
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
+import { shadowAtlasTexture } from "../../../../packages/render/src/shadow-atlas";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 160;
@@ -119,9 +120,12 @@ export async function runShadowFilterProof(backend: "webgl2" | "webgpu") {
       const viewWidth = 2 * camera.position.y * Math.tan(camera.fov / 2) * (WIDTH / HEIGHT);
       captures.push({ quality, lit, pixelsPerTexel: texel / (viewWidth / WIDTH) });
     }
+    // The atlas's depth texture is its framebuffer's only depth: no depth renderbuffer of its size beside it (WebGL).
+    const atlasTarget = shadowAtlasTexture(scene).renderTarget as unknown as { _depthStencilBuffer?: unknown } | null;
+    const atlasDepthRenderbuffer = !!atlasTarget?._depthStencilBuffer;
     graph.dispose();
     await graph.whenReleased();
-    return { width: WIDTH, height: HEIGHT, captures };
+    return { width: WIDTH, height: HEIGHT, captures, atlasDepthRenderbuffer };
   } finally {
     scene.dispose();
     engine.dispose();
