@@ -23,6 +23,7 @@ const key = (id: string, Time: number, Value: unknown): TimelineKey => ({ id, Ti
 const harness = vi.hoisted(() => ({
   scene: null as unknown as SerializedScene,
   selectedActorIds: [] as string[],
+  selectActor: vi.fn<(id: string) => void>(),
   applySceneChange: vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async (_id, scene) => {
     harness.scene = scene;
     return true;
@@ -37,7 +38,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   applySceneChange: harness.applySceneChange,
 })));
 vi.mock("../context/scene-editing-context", () => ({
-  useOptionalSceneEditing: () => ({ selectedActorIds: harness.selectedActorIds }),
+  useOptionalSceneEditing: () => ({ selectedActorIds: harness.selectedActorIds, selectActor: harness.selectActor }),
 }));
 
 const panel = {} as IDockviewPanelProps;
@@ -274,6 +275,17 @@ describe("Timeline window", () => {
     fireEvent.contextMenu(screen.getByTestId("timeline-row-o-door"));
     fireEvent.click(screen.getByTestId("timeline-row-menu-down"));
     expect(lastClip().objects.map((object) => object.id)).toEqual(["o-lamp", "o-door"]);
+  });
+
+  it("selects a row's actor in the viewport and Outliner from the row menu", () => {
+    harness.scene = sceneWith(animated());
+    harness.selectActor.mockClear();
+    renderPanel();
+    fireEvent.contextMenu(screen.getByTestId("timeline-row-t-loc"));
+    const item = screen.getByTestId("timeline-row-menu-reveal");
+    expect(item.textContent).toContain("Select in Viewport and Outliner");
+    fireEvent.click(item);
+    expect(harness.selectActor).toHaveBeenCalledWith("door");
   });
 
   it("keys an unkeyed change from the amber key button, and moving the playhead discards one", () => {

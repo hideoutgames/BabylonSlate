@@ -173,7 +173,11 @@ describe("SceneOutlinerPanel in Timeline mode", () => {
       timelineClips: [{ ...createTimelineClip("intro", "Intro"), objects: [{ id: "o1", actorId: "actor-1", tracks: [] }] }],
     };
     renderOutliner(withClip);
-    expect(screen.getByTestId("outliner-timeline-badge-actor-1").getAttribute("aria-label")).toBe("In Intro");
+    const badge = screen.getByTestId("outliner-timeline-badge-actor-1");
+    expect(badge.getAttribute("aria-label")).toBe("In Intro");
+    // With the row's actions, which never shrink, not in the preview slot that gives way to a narrow Outliner.
+    expect(badge.closest('[id$="-preview"]')).toBeNull();
+    expect(badge.parentElement?.className).toContain("shrink-0");
     dragRowOutside(screen.getByTestId(`tree-row-${actorRowId("actor-1")}`));
     expect(addActors).toHaveBeenCalledWith(["actor-1"]);
     // The drop joined the clip instead of duplicating into the viewport.

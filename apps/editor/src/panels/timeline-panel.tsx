@@ -492,7 +492,8 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   };
   const rowMenuItems = (row: TimelineRowModel): ContextMenuItem[] => {
     if (row.objectId === TIMELINE_EVENTS_ROW_ID) return eventRowMenuItems(row);
-    const reveal: ContextMenuItem = { id: "reveal", label: "Reveal in Outliner", icon: <LocateIcon />, disabled: !row.actor || !sceneEditing,
+    // The viewport and the Outliner share the scene selection.
+    const reveal: ContextMenuItem = { id: "reveal", label: "Select in Viewport and Outliner", icon: <LocateIcon />, disabled: !row.actor || !sceneEditing,
       testId: "timeline-row-menu-reveal", onSelect: () => { if (row.actor) sceneEditing?.selectActor(row.actor.id); } };
     if (row.kind === "group") {
       const tracks = clip.objects.find((object) => object.id === row.id)?.tracks ?? [];

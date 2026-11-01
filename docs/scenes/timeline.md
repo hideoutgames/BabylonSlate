@@ -45,8 +45,8 @@ Right-click or long-press a track or an actor's row for its menu:
 
 | Row | Menu |
 | --- | --- |
-| Track | **Set Key**, **Mute Track** (a muted track keeps its keys but does not animate), **Copy Track**, **Select All Keys**, **Reveal in Outliner**, **Move Up**, **Move Down** and **Delete Track**. |
-| Actor | **Add Track…**, **Set Key**, **Paste Track** (a copied track goes onto the same property of this actor, replacing that track's keys), **Select All Keys**, **Reveal in Outliner**, **Move Up**, **Move Down** and **Remove From Clip**. |
+| Track | **Set Key**, **Mute Track** (a muted track keeps its keys but does not animate), **Copy Track**, **Select All Keys**, **Select in Viewport and Outliner** (selects the actor), **Move Up**, **Move Down** and **Delete Track**. |
+| Actor | **Add Track…**, **Set Key**, **Paste Track** (a copied track goes onto the same property of this actor, replacing that track's keys), **Select All Keys**, **Select in Viewport and Outliner** (selects the actor), **Move Up**, **Move Down** and **Remove From Clip**. |
 
 ## Keys
 
@@ -74,7 +74,7 @@ Drag a key to change its time and value; times stay within the clip, and on whol
 
 ## Preview in the viewport
 
-While a clip is selected, the viewport shows the scene as the clip has it at the playhead, and follows the playhead as you scrub or play. A note in the viewport's corner names the clip and the time. The preview never changes the scene: switching back to **Design** shows the actors where you placed them.
+While a clip is selected, the viewport shows the scene as the clip has it at the playhead, and follows the playhead as you scrub or play. The preview never changes the scene: switching back to **Design** shows the actors where you placed them.
 
 Moving, rotating or scaling an actor with the viewport gizmo works on what the clip animates:
 
@@ -101,8 +101,11 @@ While a clip is selected, the **Inspector** edits it instead of the actor select
 - **Key**: the selected key's track, **Time** (with its frame; a new time lands on the nearest frame), **Value** and **Interpolation**. With several keys selected, **Interpolation** sets theirs together.
 - **Event Key**: the selected event key's track, **Time**, and a value for each of the track's inputs.
 - **Track**: the selected track's property, type and number of keys, and **Muted**.
+- **Actor**: the selected actor row's actor and number of tracks.
 - **Custom Event Track**: **Event Name**, its number of keys, and **Inputs**.
 - **Timeline Clip**: **Name**, **Length**, **Frame Rate**, **Play Rate**, **Loop Mode**, **Auto Play** and **When Finished**.
+
+Below a track or an actor's row, **Values** shows the value at the playhead: the track's property, or every track of the actor. Editing a value there sets a key at the playhead, replacing the key already on that frame, whether **Auto Key** is on or not; a change made in the viewport but not yet keyed shows here, and editing it keys it.
 
 **Interpolation** offers **Constant**, **Linear**, **Auto**, **Ease In**, **Ease Out**, **Ease In Out** and every other easing curve. Enum and Asset values are set on the property itself, then keyed.
 
