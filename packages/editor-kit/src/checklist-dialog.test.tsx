@@ -45,4 +45,30 @@ describe("ChecklistDialog", () => {
     fireEvent.keyDown(search, { key: "Enter" });
     expect(onConfirm).toHaveBeenCalledWith(["visible"]);
   });
+
+  it("picks one item at a time, skips items it cannot take and runs its action row", () => {
+    const onConfirm = vi.fn();
+    const onAction = vi.fn();
+    const onOpenChange = vi.fn();
+    render(<ChecklistDialog
+      open onOpenChange={onOpenChange} title="Bind to Timeline Asset" selection="single" confirmLabel="Bind" onConfirm={onConfirm}
+      action={{ label: "New Timeline Asset…", onSelect: onAction, testId: "new" }}
+      groups={[{ id: "timelines", label: "Timeline Assets", items: [
+        { id: "hall", label: "Hall", description: "Intro, Door Open" },
+        { id: "lobby", label: "Lobby", description: "No clips" },
+        { id: "busy", label: "Busy", disabledReason: "Already holds a clip named Intro (Main)." },
+      ] }]}
+    />);
+    expect(screen.getByText("Intro, Door Open")).toBeTruthy();
+    expect(screen.getByText("Already holds a clip named Intro (Main).")).toBeTruthy();
+    fireEvent.click(screen.getByText("Busy"));
+    fireEvent.click(screen.getByText("Hall"));
+    fireEvent.click(screen.getByText("Lobby"));
+    expect(screen.queryByText(/selected/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Bind" }));
+    expect(onConfirm).toHaveBeenCalledWith(["lobby"]);
+    fireEvent.click(screen.getByTestId("new"));
+    expect(onAction).toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });

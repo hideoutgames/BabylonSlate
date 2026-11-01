@@ -51,6 +51,7 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 
 - Required: active actor/component resources, materials, textures, clips, emitters, audio routing, font fallbacks, enabled default SceneLayers, input bindings, called function modules, data schemas, the Class picked on Create Object (it creates synchronously, so its class must already be registered). Deferred: streamed scenes, gameplay Class/asset literals, data values, disabled layers.
 - Class variables and Structure/Data fields of asset or Class type are **Soft** (Load On Demand) by default; `loading: "hard"` (Load With Owner) adds them to `requiredDependencies`.
+- Header meta (`headerMetaForSave`, `apps/editor/src/services/project-document-meta.ts`) lands in `header.payload` and lets the editor read a closed document without loading it: Class members, Structure/Enum fields, Curve and Data payloads, Prefab components, atlases, and a Scene's or Scene Layer's `timelineClips` summaries (`TimelineClipSummary`: id, name, bound `timelineAsset`, length, event dispatchers). The Timeline Asset index (`apps/editor/src/lib/timeline-asset-index.ts`) is built from those summaries, with open documents' clips in place of their headers.
 - Ordinary strings, names and source text are never references. Native engine class ids never become asset reads. Missing/ambiguous required custom classes throw an actionable error.
 
 ## Reads and rewrites

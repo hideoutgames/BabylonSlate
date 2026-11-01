@@ -49,6 +49,7 @@ Assets are the building blocks of a project: Scenes, Classes, Materials, sounds,
 | --- | --- |
 | [Animation Graph](animation-graph.md) | A state machine that plays Animation or Sprite Animation clips. |
 | [Sprite Animation](sprite-animation.md) | A 2D clip of Texture frames, played by an Animation Graph. |
+| [Timeline](timeline.md) | Groups Timeline Clips from Scenes and Scene Layers. |
 
 ## Rendering
 

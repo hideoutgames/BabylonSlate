@@ -31,7 +31,8 @@ import {
 } from "../lib/physics-pairing-diagnostics";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { actorTransformDiagnostics } from "../lib/actor-transform-diagnostics";
-import { timelineClipDiagnostics } from "../lib/timeline-clip-diagnostics";
+import { timelineClipBindingDiagnostics, timelineClipDiagnostics } from "../lib/timeline-clip-diagnostics";
+import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { MessageDetails } from "../components/message-details";
 import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 
@@ -58,6 +59,8 @@ function flattenCompilerRows(diagnostics: readonly Diagnostic[]): CompilerRow[] 
   return rows;
 }
 
+const SCENE_DOCUMENT_KINDS = ["scene", "scene-layer"] as const;
+
 export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
@@ -79,6 +82,7 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   // A Model's simple collision shapes come from its open tab first, then the registry.
   const { assetRegistry, registryEpoch } = useRegistryState();
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_DOCUMENT_KINDS);
+  const sceneDocuments = useOpenDocumentsOfKinds(SCENE_DOCUMENT_KINDS);
 
   useEffect(() => {
     if (!documentId || documentId !== activeDocumentId) return;
@@ -95,8 +99,12 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
       }) : []),
       ...(mainScene ? actorTransformDiagnostics(actors, options) : []),
       ...timelineClipDiagnostics(scene?.timelineClips, options),
+      ...timelineClipBindingDiagnostics(
+        projectTimelineClips(assetRegistry?.list() ?? [], sceneDocuments), scenePath!, options,
+        (guid) => assetRegistry?.getByGuid?.(guid)?.header.name,
+      ),
     ]);
-  }, [activeDocumentId, assetRegistry, documentId, mainScene, modelDocuments, registryEpoch, sceneContent, sceneKind, scenePath, setDiagnostics]);
+  }, [activeDocumentId, assetRegistry, documentId, mainScene, modelDocuments, registryEpoch, sceneContent, sceneDocuments, sceneKind, scenePath, setDiagnostics]);
 
   const rows = useMemo(() => flattenCompilerRows(diagnostics), [diagnostics]);
   // Stable per row list, so the windowed list can reuse its row offsets.
