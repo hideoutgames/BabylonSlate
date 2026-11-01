@@ -496,6 +496,7 @@ function initializePlayer(
     physicsWorld: manifest.physicsWorld,
     inputAssets: manifest.inputAssets,
     dataAssets: content.dataAssets,
+    curveAssets: content.curveAssets,
     assetCatalog: runtimeAssetCatalogFromManifest(manifest.assets),
     focusNavigation: manifest.focusNavigation,
     pixelsPerUnit: content.pixelsPerUnit,

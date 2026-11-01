@@ -180,6 +180,8 @@ export interface RuntimeSceneContent {
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+  /** Float, Vector and Color Curve assets of the current sources; `Get <Type> Curve Object` reads them. */
+  curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
   audioAssetGuids?: string[];
   materialParameterCatalog?: MaterialParameterCatalog;
   materialTextureAssetGuids?: string[];
@@ -207,6 +209,7 @@ export type ControlMessage =
       simulationAssetGuids?: string[];
       saveGame?: import("@haptic/core").SaveGameConfiguration;
       dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+      curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
       /** Packaged authored assets for the Asset Registry nodes, snapshotted when the session starts. */
       assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */

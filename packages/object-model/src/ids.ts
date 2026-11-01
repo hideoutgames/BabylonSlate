@@ -19,6 +19,9 @@ export const SCENE_SUBSYSTEM_CLASS_ID = "SceneSubsystem";
 export const ENGINE_BASE_CLASS_IDS = [
   "Object",
   "MaterialObject",
+  "FloatCurveObject",
+  "VectorCurveObject",
+  "ColorCurveObject",
   "Actor",
   "RenderTargetCapture",
   "Scene",

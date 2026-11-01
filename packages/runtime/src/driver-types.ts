@@ -67,6 +67,8 @@ export interface RuntimeDriverOptions {
   consoleCommands?: ReadonlyArray<import("@haptic/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
   /** JSON data and shared Structures snapshotted at session startup. */
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+  /** Curve assets of the initial sources; later sources replace them with `registerSceneContent`. */
+  curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
   /** Packaged authored assets the Asset Registry nodes query; omitted means an empty catalog. */
   assetCatalog?: readonly import("@haptic/core").RuntimeAssetCatalogEntry[];
   renderSettings?: Partial<RenderProjectSettings>;

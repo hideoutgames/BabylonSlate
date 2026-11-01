@@ -131,6 +131,26 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["inventory-module", "item-schema", "items", "move", "unknown-items", "unknown-schema"]);
   });
 
+  it("loads a curve asset read by Get Curve Object with its owner, through a literal or a variable", () => {
+    const literal = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        { id: "get", type: "curveObject.getFloat", data: { "default:curveAsset": "falloff-curve" } },
+        { id: "unused", type: "literal.makeAsset", data: { "default:in": "spare-curve" } },
+      ],
+      edges: [],
+    });
+    expect(literal.dependencies).toEqual(["falloff-curve", "spare-curve"]);
+    expect(literal.requiredDependencies).toEqual(["falloff-curve"]);
+    const variable = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        { id: "value", type: "variables.get", data: { variableName: "Tint", propertyKey: "tint" } },
+        { id: "get", type: "curveObject.getColor", data: {} },
+      ],
+      edges: [{ source: "value", target: "get", targetHandle: "curveAsset" }],
+    });
+    expect(variable.requiredVariableNames).toEqual(["tint"]);
+  });
+
   it("loads the Class picked on Create Object with its owner, and no Class a Cast names", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
       nodes: [

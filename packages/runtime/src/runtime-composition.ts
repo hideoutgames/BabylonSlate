@@ -1,3 +1,4 @@
+import type { CurveAssetCatalogEntry } from "@haptic/core";
 import type { CommandMessage, GameSessionMode, SessionPauseReason } from "@haptic/bridge";
 import type {
   RenderTargetPayload,
@@ -172,6 +173,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly overlay: SceneLayerOverlay;
   readonly layers: SceneLayers;
   readonly dataCatalog: RuntimeDataCatalog;
+  readonly curveCatalog: ReadonlyMap<string, CurveAssetCatalogEntry>;
   readonly scriptHost: ScriptHost;
   readonly scriptDebug: ScriptDebugObserver;
 

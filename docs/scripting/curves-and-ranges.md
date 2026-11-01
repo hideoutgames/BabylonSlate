@@ -84,6 +84,10 @@ In the curve plot:
 
 Each drag, and each other change, is one step in **Undo**. Data Tree grids and the Play **Inspector** show the same previews.
 
+## Curve assets
+
+When many classes should share one curve, make a **Float Curve**, **Vector Curve** or **Color Curve** asset instead of a curve variable. Scripts read it through a read-only **Curve Object**: [Get Float Curve Object](class/get-float-curve-object.md) turns the asset into the object, and nodes such as [Get Value At Time](class/get-value-at-time-float-curve.md) read it. See [Curve](../assets/curve.md).
+
 ## Nodes
 
 | Node | What it does |
