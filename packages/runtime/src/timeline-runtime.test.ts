@@ -398,6 +398,18 @@ describe("Timeline Clip asset instances", () => {
     expect(lamp.getVariable("intensity")).toBe(1);
   });
 
+  it("lets the instance created later win a property both instances animate on one object", () => {
+    const { runtime, timeline, lamp } = instanceSetup();
+    const first = runtime.createInstance(timeline, "swing", { glow: lamp })!;
+    const second = runtime.createInstance(timeline, "swing", { glow: lamp })!;
+    runtime.play(second);
+    runtime.play(first);
+    runtime.setPosition(second, 0.5);
+    runtime.advance(1, [], () => true);
+    // first is at 1 s (5), second at 1.5 s (7.5); the later instance writes last.
+    expect(lamp.getVariable("intensity")).toBeCloseTo(7.5);
+  });
+
   it("makes nothing for a clip asset the game does not have or that belongs to another Timeline Asset", () => {
     const { runtime, timeline } = instanceSetup();
     expect(runtime.createInstance(timeline, "missing")).toBeNull();
