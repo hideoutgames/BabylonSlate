@@ -74,6 +74,12 @@ const textDecoder = new TextDecoder();
  * Scanning and browsing only ever call `readHassetHeader`; payload bytes
  * load on demand through `payloadLoader`.
  */
+/** Whether two catalog reads describe the same stored bytes. */
+function sameLocator(a: AssetSourceLocator, b: AssetSourceLocator): boolean {
+  return a.path === b.path && a.revision === b.revision && a.storageRevision === b.storageRevision &&
+    a.totalSize === b.totalSize && a.payloadOffset === b.payloadOffset;
+}
+
 export class AssetRegistry {
   private readonly storage: ProjectStorage;
   private readonly blobs: BlobStore;
@@ -308,7 +314,13 @@ export class AssetRegistry {
     if (asset.locator && storage.hasStrongSourceRevisions) {
       const current = await storage.readBinaryRange(asset.path, 0, 0, undefined, options);
       options.signal?.throwIfAborted();
-      if (this.byGuid.get(guid) !== asset) throw new SourceRevisionChangedError(`Asset changed while resolving its catalog entry: ${guid}`);
+      // Another read or a save may have re-indexed the entry meanwhile: what counts is whether the bytes just read are
+      // the ones the current entry describes.
+      const now = this.byGuid.get(guid);
+      if (now !== asset) {
+        if (now?.locator && now.path === asset.path && current.revision === now.locator.storageRevision && current.totalSize === now.locator.totalSize) return now.locator;
+        throw new SourceRevisionChangedError(`Asset changed while resolving its catalog entry: ${guid}`);
+      }
       if (current.revision === asset.locator.storageRevision && current.totalSize === asset.locator.totalSize) return asset.locator;
     }
     // Only unsignaled metadata refreshes share this promise. A scoped request
@@ -318,7 +330,11 @@ export class AssetRegistry {
     const promise = (async () => {
       const { header, locator } = await readAssetCatalog(this.storageForAsset(asset), asset.path, options);
       options.signal?.throwIfAborted();
-      if (this.byGuid.get(guid) !== asset || header.guid !== guid) {
+      const now = this.byGuid.get(guid);
+      if (header.guid !== guid) throw new SourceRevisionChangedError(`Asset changed while resolving its catalog entry: ${guid}`);
+      if (now !== asset) {
+        // A concurrent read or save indexed this same catalog: accept it; anything else changed under the read.
+        if (now?.locator && now.path === asset.path && sameLocator(now.locator, locator)) return now.locator;
         throw new SourceRevisionChangedError(`Asset changed while resolving its catalog entry: ${guid}`);
       }
       if (asset.locator?.revision === locator.revision && asset.locator.totalSize === locator.totalSize) return asset.locator;
@@ -925,6 +941,15 @@ export class AssetRegistry {
     const indexed: IndexedAsset = { rootId, path, header, placeholder, mtime, locator };
     // A write that finishes after its root was unmounted leaves the index alone.
     if (!placeholder && !this.roots.has(rootId)) return indexed;
+    // The same catalog indexed again (a save's re-index after a read already indexed its bytes) keeps the entry: its
+    // identity is what in-flight reads check for a change, so replacing it would fail them for nothing. A locator's
+    // revision digests the header, so an equal locator means an equal header.
+    const same = this.byGuid.get(header.guid);
+    if (!placeholder && same && !same.placeholder && same.rootId === rootId && same.path === path &&
+      this.byPath.get(path) === same && same.locator && locator && sameLocator(same.locator, locator)) {
+      if (mtime !== null) same.mtime = mtime;
+      return same;
+    }
     const existingAtPath = this.byPath.get(path);
     if (existingAtPath) this.removeFromIndex(existingAtPath, existingAtPath.header.guid === header.guid);
     const existingByGuid = this.byGuid.get(header.guid);

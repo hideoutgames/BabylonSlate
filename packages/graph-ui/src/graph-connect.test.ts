@@ -216,6 +216,13 @@ describe("pinTypeDisplayName", () => {
     expect(pinTypeDisplayName({ kind: "structRef", guid: "engine:TagContainer" })).toBe("TagContainer");
     expect(pinTypeDisplayName({ kind: "boxedWildcard" })).toBe("Wildcard");
   });
+
+  it("names a delegate by the types it takes", () => {
+    expect(pinTypeDisplayName({ kind: "delegate", inputs: [], outputs: [] })).toBe("Delegate (No Inputs)");
+    expect(
+      pinTypeDisplayName({ kind: "delegate", inputs: [{ kind: "float" }, { kind: "objectRef", classId: "Actor" }], outputs: [] }),
+    ).toBe("Delegate (Float, Actor)");
+  });
 });
 
 describe("replacesExecOutputWire", () => {

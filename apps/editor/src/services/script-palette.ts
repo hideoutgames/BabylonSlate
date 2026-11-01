@@ -19,6 +19,7 @@ import {
   callImplicitSelf,
   callInterfacePaletteNodes,
   castPaletteNodes,
+  dispatcherPaletteNodes,
   functionRows,
   subsystemGetPaletteNodes,
   ownedGetPaletteNodes,
@@ -434,6 +435,7 @@ function scriptPaletteInjectorNodes(
     [
       ...inputEventPaletteNodes(nodeRegistry, options),
       ...callCustomEventPaletteNodes(nodeRegistry, options),
+      ...dispatcherPaletteNodes(nodeRegistry, options),
       ...callFunctionPaletteNodes(nodeRegistry, options),
       ...callInterfacePaletteNodes(nodeRegistry, options),
       ...variableAccessPaletteNodes(nodeRegistry, options),

@@ -1,5 +1,6 @@
 /** Enum / Structure / ScriptInterface type asset payloads (P5). */
 import type { DataFieldSnapshot } from "@haptic/core";
+import type { VariableTypeSpec } from "./member-pin-type";
 
 export type EnumMember = { name: string; value: number };
 
@@ -52,6 +53,8 @@ export type InterfaceMethodPin = {
   typeId: string;
   direction: "in" | "out";
   typeClassId?: string;
+  /** Delegate pins: the signature's input types. */
+  signature?: VariableTypeSpec[];
 };
 
 export type InterfaceMethod = {

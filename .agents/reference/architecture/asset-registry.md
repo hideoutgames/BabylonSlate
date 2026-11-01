@@ -59,6 +59,7 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 - `decodeAssetDocument` reads only the `document` chunk. Readers pairing documents and chunks use `loadDocumentWithChunks` ([containers](containers.md#documents)).
 - `carryStoredChunks` (`hasset-carry.ts`): rewrites that change the header, `document` or one derived chunk carry other chunks by stored sha256 without reading blobs; output is byte-identical to a full re-encode, and anything unproven falls back to full decode. A save whose header and file are unchanged writes nothing (no mtime or generation change).
 - Document saves, renames and derived commits share one per-asset write queue.
+- An indexed entry's object identity is what in-flight catalog reads (`getAssetLocator`) check for a change, so indexing the same catalog again (equal locator: path, revision, storage revision, size, payload offset; the revision digests the header) keeps the entry and only refreshes its mtime. A read whose entry was replaced meanwhile accepts the current entry when that entry describes the bytes it read, and fails with `SourceRevisionChangedError` otherwise. A save's `reindexPath` racing Play preparation's reads of the bytes it just wrote therefore fails nothing.
 
 ## Scoped loading
 

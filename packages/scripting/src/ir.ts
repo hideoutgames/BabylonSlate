@@ -27,6 +27,8 @@ export type GraphPin = {
    * Inputs where null is a legitimate value never set it.
    */
   subject?: boolean;
+  /** Drawn in the node's title bar instead of a pin row (a custom event's Output Delegate). */
+  placement?: "header";
 };
 
 export type GraphNode = {

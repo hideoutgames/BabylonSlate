@@ -7,6 +7,7 @@ import {
   PIN_PICKER_TYPES,
   pinPickerColorVar,
   pinPickerLabel,
+  pinPickerShape,
   type PinPickerType,
 } from "./pin-types";
 
@@ -41,7 +42,7 @@ export function PinTypeMenu({
       items={types.map((type) => ({
         id: type,
         label: labels?.[type] ?? pinPickerLabel(type),
-        leading: <TypeColorMark colorVar={pinPickerColorVar(type)} />,
+        leading: <TypeColorMark colorVar={pinPickerColorVar(type)} shape={pinPickerShape(type)} />,
       }))}
       onSelect={(id) => onSelect(id as PinPickerType)}
       placeholder="Search types"
@@ -104,6 +105,7 @@ export function PinTypePicker({
         {/* Names the stored type, even one this picker does not offer. */}
         <TypeColorMark
           colorVar={pinPickerColorVar(value)}
+          shape={pinPickerShape(value)}
           label={labels?.[value] ?? pinPickerLabel(value)}
         />
       </Button>

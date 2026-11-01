@@ -116,7 +116,7 @@ describe("ScriptContext shape", () => {
     "getComponentById", "getOwnedActor", "getOwnedComponent", "callComponentFunction", "addComponent", "spawnActor", "spawnActorAsync",
     "beginDeferredSpawnActorAsync", "finishDeferredSpawnActor",
     "requestAssetLoad", "requestClassLoad", "waitForAssetLoad", "unloadAsset", "prepareAssets",
-    "loadSceneBlocking", "unloadSceneBlocking", "getSceneReference", "invokeCustomEvent", "invokeEvent",
+    "loadSceneBlocking", "unloadSceneBlocking", "getSceneReference", "invokeCustomEvent", "callDispatcher", "invokeEvent",
     "invokeFunction", "isActionHeld", "inputBindings", "getInputState", "wasActionPressed", "wasActionReleased",
     "getPressedKeys", "getAxis", "getAxis2D", "getCursorPosition", "getTouches", "getTouchEvents", "getDeviceMotion", "calibrateTilt", "setCursorVisible",
     "setGamepadRumble", "vibrateDevice", "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "projectTouchToScene",

@@ -4,12 +4,14 @@ import {
   normalizeClassMemberCategory,
   parseMapDefaultEntries,
   type GraphClassMember,
+  type GraphClassMemberPin,
   type SerializedGraph,
 } from "@haptic/core";
 import {
   AssetLoadingField,
   AssetPicker,
   AssetPickerControl,
+  CLASS_PIN_PICKER_TYPES,
   ClassPicker,
   FUNCTION_PIN_PICKER_TYPES,
   EntryListEditor,
@@ -22,6 +24,7 @@ import {
   selectedPickerIdentity,
   ASSET_REF_PICKER_TYPES,
   type ClassPickerEntry,
+  type DelegateSignatureEntry,
   type PinListRow,
   type VariableTypeFieldsValue,
 } from "@haptic/editor-kit";
@@ -58,6 +61,7 @@ export function ClassMemberDetails({
   schemas,
   enumMembers,
   classId,
+  delegateSignatures = [],
   onChange,
 }: {
   graph: SerializedGraph;
@@ -75,6 +79,8 @@ export function ClassMemberDetails({
   enumMembers: Record<string, string[]>;
   /** This document's class id, so renames and signature edits reach only its own Calls. */
   classId?: string;
+  /** Event Dispatchers a Delegate type can take its signature from. */
+  delegateSignatures?: readonly DelegateSignatureEntry[];
   onChange: (next: SerializedGraph) => void;
 }) {
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
@@ -152,7 +158,13 @@ export function ClassMemberDetails({
         keyTypeClassId:
           nextContainer === "map" ? next.keyTypeClassId : undefined,
         typeClassId: nextClassId,
+        signature: undefined,
       };
+      if (next.typeId === "delegate") {
+        // The signature's source dispatcher and a copy of its inputs.
+        patch.typeClassId = next.typeClassId;
+        patch.signature = (next.signature ?? []).map((input) => ({ ...input }));
+      }
       // Loading only applies to asset and Class references.
       if (member.loading && !carriesLoadingPolicy(patch)) patch.loading = undefined;
       if (member.unit) Object.assign(patch, unitPatchForType(next.typeId));
@@ -173,7 +185,8 @@ export function ClassMemberDetails({
       }
       commit(patch);
     };
-    const singleDefaultRows = variableDefaultPropertyRows(
+    // A delegate has no literal default; it is unbound until set.
+    const singleDefaultRows = typeId === "delegate" ? [] : variableDefaultPropertyRows(
       typeId,
       member.defaultValue,
       (value) => commit({ defaultValue: value }),
@@ -213,10 +226,13 @@ export function ClassMemberDetails({
             container,
             keyTypeId: member.keyTypeId,
             keyTypeClassId: member.keyTypeClassId,
+            signature: member.signature,
           }}
           onChange={commitTypeFields}
           classEntries={classEntries}
           typeAssets={typeAssets}
+          types={CLASS_PIN_PICKER_TYPES}
+          delegateSignatures={delegateSignatures}
         />
         {isObject || isClass ? (
           <Field>
@@ -603,6 +619,7 @@ export function ClassMemberDetails({
           itemLabel="Input"
           testIdPrefix="class-fn-in"
           data-testid="inspector-member-inputs"
+          delegateSignatures={delegateSignatures}
           showOptional={false}
           showDefault={false}
           showUnit
@@ -618,10 +635,84 @@ export function ClassMemberDetails({
           itemLabel="Output"
           testIdPrefix="class-fn-out"
           data-testid="inspector-member-outputs"
+          delegateSignatures={delegateSignatures}
           showOptional={false}
           showDefault={false}
           readOnly={lockSignature}
           onChange={(nextRows) => commitPins(inputRows, nextRows)}
+        />
+      </div>
+    );
+  }
+
+  if (member.kind === "dispatcher") {
+    const inputRows = memberPinRows(member.pins, member.id, "in",
+      pinRowIdsFor(pinRowIds, member.id, member.pins, "in"));
+    const commitInputs = (nextInputs: PinListRow[]) => {
+      const pins = memberPinsFromRows(nextInputs, []);
+      setPinRowIds(committedPinRowIds(member.id, pins, nextInputs, []));
+      commit({ pins });
+    };
+    const sources = signatureCopySources(graph, member.id, delegateSignatures);
+    return (
+      <div
+        className="flex flex-col gap-3 p-3"
+        data-testid="inspector-member-dispatcher"
+      >
+        <div className="text-sm font-medium">{member.name}</div>
+        <PropertyGrid
+          rows={[
+            {
+              id: "name",
+              kind: "text",
+              label: "Name",
+              value: member.name,
+              onChange: (name) => commit({ name }),
+            },
+            categoryRow,
+          ]}
+        />
+        <Field>
+          <FieldLabel>Copy Signature From</FieldLabel>
+          <SearchDropdown
+            title="Copy Signature From"
+            placeholder="Search functions, events and dispatchers"
+            items={sources.map((source) => ({
+              id: source.id,
+              label: source.label,
+              description: source.description,
+              group: source.group,
+            }))}
+            onSelect={(id) => {
+              const source = sources.find((entry) => entry.id === id);
+              if (source) commit({ pins: source.pins });
+            }}
+            data-testid="inspector-dispatcher-copy-signature-picker"
+          >
+            <Button
+              type="button"
+              variant="outline"
+              className="h-auto w-full justify-start text-muted-foreground"
+              data-testid="inspector-dispatcher-copy-signature"
+            >
+              Choose…
+            </Button>
+          </SearchDropdown>
+        </Field>
+        <PinListEditor
+          title="Inputs"
+          rows={inputRows}
+          types={CLASS_PIN_PICKER_TYPES}
+          classEntries={classEntries}
+          typeAssets={typeAssets}
+          delegateSignatures={delegateSignatures.filter((entry) => !entry.id.endsWith(`::${member.name}`))}
+          itemLabel="Input"
+          testIdPrefix="class-dispatcher-in"
+          data-testid="inspector-dispatcher-inputs"
+          showOptional={false}
+          showDefault={false}
+          showUnit
+          onChange={commitInputs}
         />
       </div>
     );
@@ -687,4 +778,54 @@ export function ClassMemberDetails({
   }
 
   return null;
+}
+
+/**
+ * Signatures an Event Dispatcher can copy its inputs from, once: this Class's
+ * functions (their inputs), custom events (their outputs) and every other
+ * Event Dispatcher.
+ */
+function signatureCopySources(
+  graph: SerializedGraph,
+  dispatcherId: string,
+  dispatchers: readonly DelegateSignatureEntry[],
+): Array<{ id: string; label: string; description?: string; group: string; pins: GraphClassMemberPin[] }> {
+  const asInputs = (pins: readonly GraphClassMemberPin[] | undefined) =>
+    (pins ?? []).filter((pin) => pin.typeId !== "exec").map((pin) => ({ ...pin, direction: "in" as const }));
+  const sources: Array<{ id: string; label: string; description?: string; group: string; pins: GraphClassMemberPin[] }> = [];
+  for (const member of graph.members ?? []) {
+    if (member.kind === "function") {
+      sources.push({
+        id: `function:${member.id}`,
+        label: member.name,
+        group: "Functions",
+        pins: asInputs(member.pins?.filter((pin) => pin.direction === "in")),
+      });
+    }
+  }
+  for (const node of graph.nodes) {
+    if (node.type !== "flow.event.custom" || typeof node.data.name !== "string") continue;
+    sources.push({
+      id: `event:${node.id}`,
+      label: node.data.name,
+      group: "Events",
+      pins: asInputs(Array.isArray(node.data.pins) ? (node.data.pins as GraphClassMemberPin[]) : []),
+    });
+  }
+  const own = (graph.members ?? []).find((member) => member.id === dispatcherId);
+  for (const entry of dispatchers) {
+    if (own && entry.label === own.name) continue;
+    sources.push({
+      id: `dispatcher:${entry.id}`,
+      label: entry.label,
+      description: entry.description,
+      group: "Event Dispatchers",
+      pins: entry.signature.map((input, index) => ({
+        ...input,
+        name: entry.parameterNames?.[index] ?? `Input ${index + 1}`,
+        direction: "in" as const,
+      })),
+    });
+  }
+  return sources;
 }

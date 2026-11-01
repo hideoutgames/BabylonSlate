@@ -39,6 +39,7 @@ import type {
   ScriptExtras,
 } from "./script-context-types";
 import type { ScriptDebugTrace } from "./script-debug";
+import { DISPATCHER_MAX_DEPTH, type DispatcherBindings } from "./script-dispatchers";
 import {
   asActor,
   asActorComponent,
@@ -76,6 +77,7 @@ const NO_INTERFACE_RECEIVER: InterfaceDispatchTarget = { guid: "", classId: "", 
  */
 export interface ScriptContextHost extends ComponentFunctionHost {
   readonly rng: Rng;
+  readonly dispatchers: DispatcherBindings;
   readonly materials: ScriptMaterialOwnership;
   /** The prototype of every context. */
   readonly hostMembers: HostContextMembers;
@@ -466,6 +468,22 @@ export function createScriptContext(
       };
       dispatch(receiver);
       if (receiver instanceof ActorComponent && receiver.owner) dispatch(receiver.owner, receiver.guid);
+    };
+    context.callDispatcher = (owner, name, values) => {
+      host.dispatchers.call(
+        owner,
+        name,
+        Array.isArray(values) ? values : [],
+        (delegate, args) => {
+          if (delegate.kind === "function") void context.invokeFunction(delegate.object, delegate.name, args);
+          else context.invokeCustomEvent(delegate.object, delegate.name, args);
+        },
+        () => services.log(
+          "error",
+          "Script",
+          `Event Dispatcher "${name}" was called inside its own listeners more than ${DISPATCHER_MAX_DEPTH} times; the deeper Calls were skipped.`,
+        ),
+      );
     };
     context.invokeEvent = (classId, eventName, eventArgs) => {
       if (self && !host.canInvokeOwner(self)) return;

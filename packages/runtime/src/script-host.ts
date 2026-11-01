@@ -27,6 +27,7 @@ import type { ScriptCostMeter } from "./script-cost-meter";
 import type { ScriptDebugTrace } from "./script-debug";
 import { entryMatchesComponentInvoke, isTextComponent } from "./script-host-helpers";
 import { createHostMembers } from "./script-host-members";
+import { DispatcherBindings } from "./script-dispatchers";
 import type { ScriptHostServices } from "./script-host-services";
 import { ScriptMaterialOwnership } from "./script-material-ownership";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
@@ -99,6 +100,8 @@ export class ScriptHost {
   private readonly hostMembers: HostContextMembers;
   /** Material replacement versions and the preloads they hold, per owner and scope. */
   private readonly materials: ScriptMaterialOwnership;
+  /** Event Dispatcher bindings of this session. */
+  private readonly dispatchers = new DispatcherBindings();
   /** What `createScriptContext` reads from this host; built once in the constructor. */
   private readonly contextHost: ScriptContextHost;
 
@@ -112,6 +115,7 @@ export class ScriptHost {
       services,
       rng: this.rng,
       materials: this.materials,
+      dispatchers: this.dispatchers,
       canInvokeOwner,
       applyComponentVariable: (component: ActorComponent, name: string, value: unknown, previous?: unknown) =>
         this.applyComponentVariable(component, name, value, previous),
@@ -326,6 +330,8 @@ export class ScriptHost {
         this.clearFlowState(self);
         const loaded = this.lifecycleScriptsFor(classId, "onDestroyed");
         if (loaded) this.dispatchFinalEvent(loaded, "onDestroyed", self);
+        // After its last event, which may still Call its dispatchers.
+        this.dispatchers.forget(self);
       },
     };
     this.hooksByClassId.set(classId, hooks);

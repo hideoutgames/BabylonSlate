@@ -1,0 +1,58 @@
+{
+  "id": "dispatcher-name-collision",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [],
+  "context": {
+    "classId": "Hero",
+    "members": [
+      {
+        "id": "on-hit",
+        "name": "On Hit",
+        "kind": "dispatcher",
+        "classId": "Hero",
+        "pins": [
+          {
+            "name": "Damage",
+            "typeId": "float",
+            "direction": "in"
+          }
+        ]
+      },
+      {
+        "id": "on-hit-2",
+        "name": "On/Hit",
+        "kind": "dispatcher",
+        "classId": "Hero",
+        "pins": [
+          {
+            "name": "Damage",
+            "typeId": "float",
+            "direction": "in"
+          }
+        ]
+      }
+    ]
+  }
+}
