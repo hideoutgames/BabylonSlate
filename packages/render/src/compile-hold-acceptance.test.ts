@@ -95,7 +95,7 @@ import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
 import { sceneInstancePool, setDeferredPipelineInstancing } from "./instance-pool";
 import { drawingMesh, isInstanceSource } from "./instance-source";
 import { POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
-import { pooledLeafOf } from "./pooled-visuals";
+import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
 import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
@@ -510,23 +510,25 @@ const INSTANCING_BY_DEFAULT = process.env.HAPTIC_GATE_INSTANCING === "1";
  * (`setDeferredPipelineInstancing`). `HAPTIC_GATE_WEBGPU_POOL=1` pools these as well.
  */
 const WEBGPU_UNPOOLED_CASES: ReadonlySet<string> = new Set<string>([
-  // Geometry pass.
-  "a geometry pass whose complete frames drew nothing holds for its first draws",
-  "a steady frame whose deferral counts a geometry pass's left-out draws holds and reports the hold",
-  "an invalidated view holds for its geometry pass's next draws",
-  "with a geometry pass, a spawned actor is revealed with no frame held and fills the geometry buffers once its pipeline exists",
-  "with a geometry pass, an actor's Material changes with no frame held and fills the geometry buffers once its pipeline exists",
-  // Frame reports.
-  "a frame report requested right after the change, before a steady frame probes it settles and the view draws again",
-  "a frame report requested while a steady frame draws the previous variant settles and the view draws again",
   "a frame report's frame never leaves a geometry draw out",
-  // Remaining holds and lookups.
-  "a Fog Volume pass that went idle holds again for its next draws",
   "an Anti-Aliasing change mid-game compiles no Material and holds as a quality change does",
   "a lookup whose preparation throws leaves no deferral scope open, and the mesh still appears",
   "a mesh whose Effect drew only with another vertex layout waits hidden for its own pipeline, holding nothing",
 ]);
 const WEBGPU_POOL_ALL = process.env.HAPTIC_GATE_WEBGPU_POOL === "1";
+
+/**
+ * The meshes a `Mesh.render(subMesh, …, replacement)` call drew: the mesh, the member Babylon draws on its own through
+ * its source (`replacement`), or a pool source's batch, by the names of the actors they draw (a pooled leaf's root's).
+ */
+function renderedNames(mesh: Mesh, subMesh: { _id: number }, replacement?: AbstractMesh | null): string[] {
+  const actorName = (drawn: AbstractMesh) => drawn.name.endsWith(POOLED_LEAF_SUFFIX) ? drawn.name.slice(0, -POOLED_LEAF_SUFFIX.length) : drawn.name;
+  if (replacement) return [actorName(replacement)];
+  if (!isInstanceSource(mesh)) return [mesh.name];
+  const storage = (mesh as unknown as { _getInstanceDataStorage(): { previousBatch?: { visibleInstances: Record<number, AbstractMesh[] | null> } } })
+    ._getInstanceDataStorage();
+  return (storage.previousBatch?.visibleInstances[subMesh._id] ?? []).map(actorName);
+}
 
 /** The mesh whose render observables fire for actor `name`'s drawn surface: its own, or a pooled leaf's source's batch. */
 function surfaceDraws(scene: Scene, name: string): Mesh {
@@ -1774,7 +1776,9 @@ describe("compile holds after the first frame", () => {
     vi.spyOn(Mesh.prototype, "render").mockImplementation(function (this: Mesh, ...args) {
       const before = world.driver.draws();
       const result = render.apply(this, args);
-      if (world.driver.draws() > before) drawn.add(`${world.engine.getCurrentRenderPassName()}:${this.name}`);
+      if (world.driver.draws() > before) {
+        for (const name of renderedNames(this, args[0], args[2])) drawn.add(`${world.engine.getCurrentRenderPassName()}:${name}`);
+      }
       return result;
     });
     await settle(world);
@@ -1855,7 +1859,8 @@ describe("compile holds after the first frame", () => {
   /** A native PBR Material of each mesh's own, as an imported model's preserved slot has. */
   const ownMaterials = (world: PlayWorld, ...names: string[]) => names.map((name) => {
     const material = new PBRMaterial(name, world.handle.scene);
-    world.handle.scene.getMeshByName(name)!.material = material;
+    // A pooled primitive's leaf moves to the group drawn with it.
+    setActorMeshMaterial(world.handle.scene.getMeshByName(name)!, material);
     return material;
   });
   /**
