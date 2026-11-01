@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyTimelineClipToScene, createDefaultTimelineClipAsset, defaultTimelineProxyPreview, type SerializedTimelineClipAsset } from "@haptic/core";
+import { applyTimelineClipToScene, createDefaultTimelineClipAsset, defaultTimelineProxyPreview, eulerDegreesToQuaternion, type SerializedTimelineClipAsset } from "@haptic/core";
 import { TIMELINE_PROXY_OUTLINE_CLASS_ID } from "@haptic/render";
-import { composeTimelineProxyPreview, timelineProxyPreviewScene, timelineProxyScene } from "./timeline-proxy-scene";
+import { composeTimelineProxyPreview, timelineProxyGizmoEdit, timelineProxyPreviewScene, timelineProxyScene } from "./timeline-proxy-scene";
 
 const key = (id: string, Time: number, Value: unknown) => ({ id, Time, Value, Interpolation: "linear" as const, ArriveTangent: 0, LeaveTangent: 0 });
 
@@ -23,7 +23,7 @@ function clipAsset(previewAs: "relative" | "absolute", representation: "outline"
   };
 }
 const graphs = { Door: { nodes: [], edges: [], components: [{ id: "panel", classId: "MeshComponent", properties: {}, parentId: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } }] } } as never;
-const close = (values: readonly number[]) => values.map((value) => Math.round(value * 1000) / 1000);
+const close = (values: readonly number[]) => values.map((value) => Math.round(value * 1000) / 1000 + 0);
 
 describe("Timeline proxy preview", () => {
   it("keys a Relative proxy from the origin and an Absolute one from its placement", () => {
@@ -54,5 +54,55 @@ describe("Timeline proxy preview", () => {
       // An offset of +1 on X, turned 90 degrees about Y, from (10, 0, 0); else the keyed (1, 0, 0).
       expect(close(door.transform.position)).toEqual(previewAs === "relative" ? [10, 0, -1] : [1, 0, 0]);
     }
+  });
+});
+
+describe("Gizmo drags on proxies", () => {
+  let ids = 0;
+  const options = (autoKey: boolean) => ({ autoKey, unkeyed: new Map<string, unknown>(), newId: () => `k${ids++}` });
+  const live = (actorId: string, position: [number, number, number], yaw = 0, scale: [number, number, number] = [1, 1, 1]) => ({
+    actorId, position, rotation: eulerDegreesToQuaternion([0, yaw, 0]), scale,
+  });
+  const doorKeys = (payload: SerializedTimelineClipAsset) => payload.proxies[0]!.tracks[0]!.keys.map((entry) => [entry.Time, close(Object.values(entry.Value as object) as number[])]);
+
+  it("keys a Relative proxy's tracked Location as the offset from its turned placement (Auto Key)", () => {
+    const payload = clipAsset("relative");
+    // Dropped at (10, 0, -1.5): 1.5 units along the placement's turned X axis, where the clip had 1.
+    const edit = timelineProxyGizmoEdit(payload, timelineProxyScene(payload, "Swing", graphs, false), 1, [live("door", [10, 0, -1.5], 90)], options(true));
+    expect(doorKeys(edit.payload)).toEqual([[0, [0, 0, 0]], [1, [1.5, 0, 0]], [2, [2, 0, 0]]]);
+    // Rotation has no track and did not change: the placement stays.
+    expect(edit.payload.editorPreview!.proxies.door).toEqual(payload.editorPreview!.proxies.door);
+  });
+
+  it("keeps a tracked change unkeyed without Auto Key, and keys an Absolute proxy's world value", () => {
+    const relative = clipAsset("relative");
+    const pending = timelineProxyGizmoEdit(relative, timelineProxyScene(relative, "Swing", graphs, false), 1, [live("door", [10, 0, -3], 90)], options(false));
+    expect(pending.payload).toBe(relative);
+    expect([...pending.unkeyed].map(([id, value]) => [id, close(Object.values(value as object) as number[])])).toEqual([["t", [3, 0, 0]]]);
+    const absolute = clipAsset("absolute");
+    const keyed = timelineProxyGizmoEdit(absolute, timelineProxyScene(absolute, "Swing", graphs, false), 1, [live("door", [4, 0, 0], 90)], options(true));
+    expect(doorKeys(keyed.payload)).toContainEqual([1, [4, 0, 0]]);
+  });
+
+  it("moves an untracked proxy's preview placement, and turns a Relative one in place", () => {
+    const payload = clipAsset("relative");
+    const scene = timelineProxyScene(payload, "Swing", graphs, false);
+    // Glow has no tracks: its placement follows the drop.
+    const moved = timelineProxyGizmoEdit(payload, scene, 0, [live("glow", [5, 1, 0], 45)], options(true));
+    expect(close(moved.payload.editorPreview!.proxies.glow!.location)).toEqual([5, 1, 0]);
+    expect(close(moved.payload.editorPreview!.proxies.glow!.rotation)).toEqual([0, 45, 0]);
+    expect(moved.payload.proxies).toEqual(payload.proxies);
+    // Door turned to 0 degrees where it stands at 1 s, (10, 0, -1): its keyed offset now runs along world X, so the placement moves back by it.
+    const turned = timelineProxyGizmoEdit(payload, scene, 1, [live("door", [10, 0, -1], 0)], options(true));
+    expect(close(turned.payload.editorPreview!.proxies.door!.rotation)).toEqual([0, 0, 0]);
+    expect(close(turned.payload.editorPreview!.proxies.door!.location)).toEqual([9, 0, -1]);
+    expect(turned.payload.proxies).toEqual(payload.proxies);
+  });
+
+  it("changes nothing for Scale without a track", () => {
+    const payload = clipAsset("relative");
+    const edit = timelineProxyGizmoEdit(payload, timelineProxyScene(payload, "Swing", graphs, false), 0, [live("door", [10, 0, 0], 90, [2, 2, 2])], options(true));
+    expect(edit.payload).toBe(payload);
+    expect(edit.unkeyed.size).toBe(0);
   });
 });
