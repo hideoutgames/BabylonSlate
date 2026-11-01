@@ -6,10 +6,9 @@ import type { AttachedPostProcessStack } from "./post-process-material";
 import {
   Camera,
   Color4,
-  Constants,
   MeshBuilder,
   Quaternion,
-  RenderTargetTexture,
+  type RenderTargetTexture,
   Scene,
   UniversalCamera,
   Vector3,
@@ -38,6 +37,7 @@ import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+import { createDepthTextureTarget } from "./depth-texture-target";
 
 /** A layer's output over the world: its target's colour, blended by its alpha, without fog. */
 const SCENE_LAYER_BLIT: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "world" };
@@ -713,20 +713,12 @@ export class SceneLayerCompositor {
     }
     const width = Math.max(1, this.engine.getRenderWidth(true));
     const height = Math.max(1, this.engine.getRenderHeight(true));
-    layer.rtt = new RenderTargetTexture(
-      `sceneLayerRtt:${layer.layerId}`,
-      { width, height },
-      layer.scene,
-      false,
-      true,
-    );
+    // The graph borrows both native attachments; the host retains their owner.
+    // Without depth textures the coordinator reports the layer as unsupported.
+    layer.rtt = createDepthTextureTarget(`sceneLayerRtt:${layer.layerId}`, { width, height }, layer.scene);
     // The unlit Material reads a texture's alpha only when the texture advertises it.
     // The layer clear is transparent; preserve world pixels outside its content.
     layer.rtt.hasAlpha = true;
-    // The graph borrows both native attachments; the host retains their owner.
-    // Without depth textures the coordinator reports the layer as unsupported.
-    if (this.engine.getCaps().depthTextureExtension)
-      layer.rtt.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
     layer.camera.outputRenderTarget = layer.rtt;
     layer.scene.autoClear = true;
     layer.attachedPostProcess =

@@ -1,6 +1,7 @@
-import { Constants, NullEngine, RenderTargetTexture, type Scene } from "@babylonjs/core";
+import { NullEngine, type RenderTargetTexture, type Scene } from "@babylonjs/core";
 import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
+import { createDepthTextureTarget } from "./depth-texture-target";
 
 export type RttCanvasPresent = {
   /** Size the RTT from the canvas and assign `camera.outputRenderTarget`. */
@@ -61,13 +62,7 @@ export function createRttCanvasPresent(
       generation = new AbortController();
       camera.outputRenderTarget = null;
       rtt?.dispose();
-      rtt = new RenderTargetTexture(
-        name,
-        { width, height },
-        scene,
-        false,
-      );
-      rtt.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
+      rtt = createDepthTextureTarget(name, { width, height }, scene);
     }
     camera.outputRenderTarget = rtt;
   };

@@ -3,6 +3,53 @@ import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode } fro
 import { createAppWebGpuEngine, disposeMeshLatticeDeformer, MaterialLibrary, RenderTargetCaptures, setMeshLatticeDeformer } from "@haptic/render";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
+import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
+import { createDepthTextureTarget } from "../../../../packages/render/src/depth-texture-target";
+
+/**
+ * A colour target whose depth is a depth texture (material previews, views presented through a target, SceneLayers),
+ * drawn into by the forward graph: a plane facing the eye crossed by one turned 45°, so only the target's depth test
+ * shows each on its own side whatever their draw order. Returns a pixel left and right of the crossing and whether a
+ * depth renderbuffer sits beside the texture.
+ */
+async function drawDepthTextureTarget(engine: Engine | Awaited<ReturnType<typeof createAppWebGpuEngine>>) {
+  const scene = new Scene(engine);
+  try {
+    scene.clearColor = new Color4(0, 0, 0, 1);
+    const eye = new FreeCamera("Depth Eye", new Vector3(0, 0, -5), scene);
+    eye.setTarget(Vector3.Zero());
+    scene.activeCamera = eye;
+    const unlit = (name: string, color: Color3) => {
+      const surface = new StandardMaterial(name, scene);
+      surface.disableLighting = true;
+      surface.emissiveColor = color;
+      surface.diffuseColor = Color3.Black();
+      return surface;
+    };
+    const facing = MeshBuilder.CreatePlane("Facing Plane", { size: 4 }, scene);
+    facing.material = unlit("Facing", new Color3(1, 0, 0));
+    // Its right half nearer the eye than the facing plane, its left half farther.
+    const turned = MeshBuilder.CreatePlane("Turned Plane", { size: 4 }, scene);
+    turned.rotation.y = Math.PI / 4;
+    turned.material = unlit("Turned", new Color3(0, 1, 0));
+    const target = createDepthTextureTarget("Depth Texture Target", { width: 32, height: 32 }, scene);
+    eye.outputRenderTarget = target;
+    const view = new ForwardSceneFrameGraph(scene);
+    await view.prepare(eye);
+    engine.beginFrame();
+    try { view.render(eye, false); } finally { engine.endFrame(); }
+    const pixel = async (x: number) => Array.from(await target.readPixels(0, 0, null, true, false, x, 16, 1, 1) as Uint8Array).slice(0, 3);
+    const result = {
+      left: await pixel(10), right: await pixel(22),
+      depthRenderbuffer: !!(target.renderTarget as unknown as { _depthStencilBuffer?: unknown } | null)?._depthStencilBuffer,
+    };
+    view.dispose();
+    await view.whenReleased();
+    eye.outputRenderTarget = null;
+    target.dispose();
+    return result;
+  } finally { scene.dispose(); }
+}
 
 /** Real capture shaders and texture sampling, with numeric primitive fixtures. */
 export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
@@ -220,6 +267,7 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
     await nextFeedback("Feedback Updated First");
     await nextFeedback("Feedback Updated Second");
     await sampleMaterial("Material After Feedback");
+    const depthTexture = await drawDepthTextureTarget(engine);
     captures.clear();
     captures.dispose();
     const mainCameraPreserved = scene.activeCamera === main;
@@ -229,6 +277,6 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     engine.beginFrame();
     engine.endFrame();
-    return { results, retainedBytes: managedRenderReservations(engine).reservedBytes, mainCameraPreserved };
+    return { results, retainedBytes: managedRenderReservations(engine).reservedBytes, mainCameraPreserved, depthTexture };
   } finally { library.dispose(); materialScene.dispose(); captures.dispose(); scene.dispose(); engine.dispose(); canvas.remove(); }
 }
