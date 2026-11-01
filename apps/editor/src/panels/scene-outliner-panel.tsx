@@ -1306,32 +1306,34 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
           };
         }
         const actorId = target?.id ?? node.id;
+        // An icon, so the actor's name keeps the row's width; the clip's name is its label. It sits with
+        // the row's actions, which never shrink, so it stays full size in a narrow Outliner.
+        const timelineBadge = timelineClip && timelineActorIds.has(actorId) ? (
+          <span
+            role="img"
+            aria-label={`In ${timelineClip.name}`}
+            title={`In ${timelineClip.name}`}
+            className="flex shrink-0 items-center text-muted-foreground"
+            data-testid={`outliner-timeline-badge-${actorId}`}
+          >
+            <DiamondIcon className="size-3 shrink-0" aria-hidden="true" />
+          </span>
+        ) : null;
         return {
           ...node,
-          ...(timelineClip && timelineActorIds.has(actorId) ? {
-            // An icon, so the actor's name keeps the row's width; the clip's name is its label.
-            preview: (
-              <span
-                role="img"
-                aria-label={`In ${timelineClip.name}`}
-                title={`In ${timelineClip.name}`}
-                className="flex items-center text-muted-foreground"
-                data-testid={`outliner-timeline-badge-${actorId}`}
-              >
-                <DiamondIcon className="size-3" aria-hidden="true" />
-              </span>
-            ),
-          } : {}),
           trailing: (
-            <ActorRowActions
-              actorId={actorId}
-              label={node.label}
-              muted={node.muted === true}
-              locked={lockedIds.has(actorId)}
-              touchSizing={touchSizing}
-              actionSize={actionSize}
-              actions={rowActions}
-            />
+            <>
+              {timelineBadge}
+              <ActorRowActions
+                actorId={actorId}
+                label={node.label}
+                muted={node.muted === true}
+                locked={lockedIds.has(actorId)}
+                touchSizing={touchSizing}
+                actionSize={actionSize}
+                actions={rowActions}
+              />
+            </>
           ),
         };
       }),

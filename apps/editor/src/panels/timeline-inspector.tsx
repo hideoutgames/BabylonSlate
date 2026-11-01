@@ -22,19 +22,24 @@ import {
   type PinListRow,
   type PropertyRow,
 } from "@haptic/editor-kit";
+import type { Dispatch, SetStateAction } from "react";
 import { useRegistryState } from "../context/document-context";
 import { useTimelineClip, useTimelinePropertyContext } from "../context/use-timeline-clip";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 import { TIMELINE_INTERPOLATION_OPTIONS, timelineInterpolationLabel } from "../lib/timeline-interpolation";
 import { formatTimelineValue, timelinePropertyLabels, timelineTrackLabel } from "../lib/timeline-rows";
 import { renameClip } from "../lib/timeline-clip-edits";
+import { useTimelinePlayheadTime, type TimelinePlayhead } from "../lib/timeline-playhead";
+import { authoredTimelineValue, type TimelinePropertyContext } from "../lib/timeline-property-catalog";
 import {
   INTERPOLATED_VALUE_TYPES,
   findTimelineTrack,
   setTimelineKeyInterpolation,
   setTimelineKeyTime,
   setTimelineKeyValue,
+  setTimelineKeys,
   setTimelineTrackMuted,
+  timelineKeyValueAt,
   withTimelineClip,
   type TrackKeyRef,
 } from "../lib/timeline-track-edits";
@@ -120,9 +125,53 @@ function clipRows(clip: SerializedTimelineClip, commitClip: (clip: SerializedTim
   ];
 }
 
+const newId = () => crypto.randomUUID();
+
+interface TrackValuesProps {
+  title: string;
+  testId: string;
+  entries: ReadonlyArray<{ id: string; label: string; track: TimelinePropertyTrack }>;
+  actor: SerializedActor | undefined;
+  context: TimelinePropertyContext;
+  clip: SerializedTimelineClip;
+  commitClip: (clip: SerializedTimelineClip) => void;
+  assetName: (guid: string) => string | undefined;
+  playhead: TimelinePlayhead;
+  unkeyed: ReadonlyMap<string, unknown>;
+  setUnkeyed: Dispatch<SetStateAction<ReadonlyMap<string, unknown>>>;
+}
+
+/**
+ * Tracked properties' values at the playhead, in their own component so
+ * playback re-renders only these rows. An edit keys the value there: it
+ * changes the key on the playhead's frame, else adds one.
+ */
+function TimelineTrackValues({ title, testId, entries, actor, context, clip, commitClip, assetName, playhead, unkeyed, setUnkeyed }: TrackValuesProps) {
+  const time = Math.min(clip.length, Math.max(0, useTimelinePlayheadTime(playhead)));
+  const rows = entries.map(({ id, label, track }) => {
+    // An unkeyed change is what the viewport shows, so it is the value shown here.
+    const value = unkeyed.has(track.id) ? unkeyed.get(track.id)
+      : timelineKeyValueAt(track, time, actor ? authoredTimelineValue(actor, track.target, track.valueType, context) : undefined);
+    return valueRow(track.valueType, id, label, value, (next) => {
+      commitClip(setTimelineKeys(clip, [{ trackId: track.id, time, value: next }], newId));
+      setUnkeyed((current) => {
+        if (!current.has(track.id)) return current;
+        const rest = new Map(current);
+        rest.delete(track.id);
+        return rest;
+      });
+    }, assetName);
+  });
+  return <div className="flex flex-col gap-2">
+    <PropertyGrid title={title} rows={rows} data-testid={testId} />
+    <p className="px-2 text-xs text-muted-foreground">Editing a value sets a key at the playhead.</p>
+  </div>;
+}
+
 /**
  * The Inspector in Timeline mode while a clip is selected: the selected key
- * (or keys, or track), then the clip's settings.
+ * (or keys, or track or actor, with the values at the playhead), then the
+ * clip's settings.
  */
 export function TimelineInspector() {
   const { scene, clip, commitClip, commitScene, tools } = useTimelineClip();
@@ -154,6 +203,15 @@ export function TimelineInspector() {
     return track && key ? [{ trackId: track.id, keyId: key.id, track, key }] : [];
   });
   const selectedCount = keys.length + eventKeys.length;
+
+  const contextFor = (actor: SerializedActor): TimelinePropertyContext => ({
+    graphs: property.graphs, parentOf: property.parentOf, classLabel: property.classLabel(actor.classId),
+  });
+  const trackValues = (title: string, testId: string, actor: SerializedActor | undefined,
+    entries: TrackValuesProps["entries"]) => entries.length === 0 ? null : <TimelineTrackValues
+    title={title} testId={testId} entries={entries} actor={actor} context={actor ? contextFor(actor) : { graphs: property.graphs, parentOf: property.parentOf }}
+    clip={clip} commitClip={commitClip} assetName={assetName}
+    playhead={tools.timelinePlayhead} unkeyed={tools.timelineUnkeyed} setUnkeyed={tools.setTimelineUnkeyed} />;
 
   const grids: Array<{ title: string; rows: PropertyRow[]; testId: string; after?: React.ReactNode }> = [];
   if (selectedCount === 1 && eventKeys.length === 1) {
@@ -198,6 +256,18 @@ export function TimelineInspector() {
   } else if (tools.timelineRowId) {
     const found = findTimelineTrack(clip, tools.timelineRowId);
     const eventTrack = findTimelineEventTrack(clip, tools.timelineRowId);
+    const object = clip.objects.find((entry) => entry.id === tools.timelineRowId);
+    if (object) {
+      // An actor's row: its name, then every track's value.
+      const actor = actorOf(object.actorId);
+      const labels = timelinePropertyLabels(actor, { graphs: property.graphs, parentOf: property.parentOf });
+      grids.push({ title: "Actor", testId: "timeline-inspector-actor", rows: [
+        { kind: "text", id: "timeline-actor-name", label: "Name", value: actor ? actorNames.get(actor.id) ?? actor.name : "Missing Actor",
+          disabled: true, onChange: () => {} },
+        { kind: "number", id: "timeline-actor-tracks", label: "Tracks", value: object.tracks.length, disabled: true, onChange: () => {} },
+      ], after: trackValues("Values", "timeline-inspector-actor-values", actor, object.tracks.map((track) => ({
+        id: `timeline-actor-value-${track.id}`, label: timelineTrackLabel(actor, track, labels), track }))) });
+    }
     if (eventTrack) {
       // The scene's script follows: its Bind nodes on this dispatcher take the new name and inputs.
       const commitTrack = (next: SerializedTimelineClip) => {
@@ -226,6 +296,8 @@ export function TimelineInspector() {
       </div> });
     }
     if (found) {
+      const actor = actorOf(found.object.actorId);
+      const labels = timelinePropertyLabels(actor, { graphs: property.graphs, parentOf: property.parentOf });
       grids.push({ title: "Track", testId: "timeline-inspector-track", rows: [
         { kind: "text", id: "timeline-track-property", label: "Property", value: trackTitle(found.track.id), disabled: true, onChange: () => {} },
         { kind: "text", id: "timeline-track-type", label: "Type", value: pinPickerLabel(found.track.valueType), disabled: true, onChange: () => {} },
@@ -233,7 +305,8 @@ export function TimelineInspector() {
         { kind: "boolean", id: "timeline-track-muted", label: "Muted", value: found.track.muted === true,
           description: "A muted track keeps its keys but does not animate.",
           onChange: (muted) => commitClip(setTimelineTrackMuted(clip, found.track.id, muted)) },
-      ] });
+      ], after: trackValues("Values", "timeline-inspector-track-values", actor, [
+        { id: "timeline-track-value", label: timelineTrackLabel(actor, found.track, labels), track: found.track }]) });
     }
   }
   grids.push({
