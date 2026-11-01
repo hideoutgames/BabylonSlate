@@ -164,4 +164,36 @@ test.describe("Scene modes", () => {
     await waitForSceneViewportReady(page);
     expect((await foliage())[0]!.properties.batches).toEqual(batches);
   });
+  test("creates, renames and keeps a Timeline Clip in Timeline mode, with the Clips and Timeline windows", async ({ page }) => {
+    test.setTimeout(120_000);
+    await openMinimalTestProject(page, await minimalProjectFiles()); await openMainScene(page);
+    await page.keyboard.press("Shift+5");
+    await expect(page.getByTestId("scene-mode-select")).toContainText("Timeline");
+    await waitForSceneViewportReady(page);
+    await expect(page.getByTestId("timeline-clips-empty")).toBeVisible();
+    await expect(page.getByTestId("scene-timeline-title")).toHaveText("No Timeline Clips");
+    // Both windows sit in the default layout beside the Viewport, not on top of it.
+    const viewport = (await page.getByTestId("viewport-panel-frame").boundingBox())!;
+    const timeline = (await page.getByTestId("scene-timeline-panel").boundingBox())!;
+    expect(timeline.y).toBeGreaterThanOrEqual(viewport.y + viewport.height - 1);
+    await page.getByTestId("timeline-clips-new").click();
+    const rename = page.getByTestId("timeline-clips-list").getByRole("textbox");
+    await rename.fill("Intro");
+    await rename.press("Enter");
+    await expect(page.getByTestId("scene-timeline-title")).toHaveText("Intro");
+    await expect.poll(async () => (await content(page)).timelineClips?.map((clip) => clip.name)).toEqual(["Intro"]);
+    await page.getByTestId("undo-document").click();
+    await expect.poll(async () => (await content(page)).timelineClips?.map((clip) => clip.name)).toEqual(["Timeline Clip"]);
+    await page.getByTestId("redo-document").click();
+    await expect.poll(async () => (await content(page)).timelineClips?.map((clip) => clip.name)).toEqual(["Intro"]);
+    await saveAllIfEnabled(page);
+    await closeProjectViaSettings(page);
+    await page.getByTestId("open-listed-project-TestProject").click();
+    await waitForEditorInteractive(page);
+    await openMainScene(page);
+    await waitForSceneViewportReady(page);
+    expect((await content(page)).timelineClips?.map((clip) => clip.name)).toEqual(["Intro"]);
+    // The tab reopens in the mode it was saved in.
+    await expect(page.getByTestId("scene-mode-select")).toContainText("Timeline");
+  });
 });
