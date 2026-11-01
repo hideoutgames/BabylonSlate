@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { NavigateRequest } from "./graph-types";
+import type { GraphPinDragSource, NavigateRequest } from "./graph-types";
 import type { PinTypeRef } from "./node-theme";
 import type { NestedMenuItem } from "@haptic/editor-kit";
 import type { PinDefaultEditorRenderer } from "./pin-default-editor-context";
@@ -54,6 +54,8 @@ export type GraphEditorContextValue = {
     from: { nodeId: string; pinId: string },
     to: { nodeId: string; pinId: string },
   ) => string | null;
+  /** Whether a node's body takes the dragged wire as a new pin (`GraphPinDrop.accepts`). */
+  acceptsPinDrop?: (targetNodeId: string, source: GraphPinDragSource) => boolean;
 };
 
 const GraphEditorContext = createContext<GraphEditorContextValue | null>(null);

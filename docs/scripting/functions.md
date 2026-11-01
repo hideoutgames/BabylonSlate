@@ -24,6 +24,8 @@ Select the function in the **Class** window to edit it in the **Inspector**.
 
 Move a pin up or down in **Inputs** or **Outputs** to reorder it on the nodes.
 
+You can also add a pin from the graph. Drag a wire from an output pin onto the body of the **Output** node, or from an input pin onto the body of the **Input** node. A **+ Add Pin** label appears; release to add an output or input of the wire's type and connect it. The pin is named after its type, such as **Float**, then **Float_1** and **Float_2** when that name is taken by another input or output. Exec wires connect to the node's exec pin instead. Wires whose type is still open, such as an unconnected Wildcard, and Map wires add nothing, and neither does an Interface implementation, whose inputs and outputs come from its Script Interface.
+
 ## Call a function
 
 - Drag the function from the **Class** window onto the graph, or choose **Call** followed by its name in **Add Node**. Both place a [Call Function](class/call-function.md) node. Select several entries to drop a node for each; see [Select, copy and paste members](classes.md#select-copy-and-paste-members).

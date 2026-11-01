@@ -955,6 +955,27 @@ export function isClientPointOverGraphNode(
   return false;
 }
 
+/** The id of the topmost graph node under a client point, or null. */
+export function graphNodeIdAtClientPoint(
+  pointer: { x: number; y: number },
+  root: ParentNode = document,
+): string | null {
+  const nodes = Array.from(root.querySelectorAll(".react-flow__node"));
+  // Later nodes paint over earlier ones.
+  for (const node of nodes.reverse()) {
+    const rect = node.getBoundingClientRect();
+    if (
+      pointer.x >= rect.left &&
+      pointer.x <= rect.right &&
+      pointer.y >= rect.top &&
+      pointer.y <= rect.bottom
+    ) {
+      return node.getAttribute("data-id");
+    }
+  }
+  return null;
+}
+
 export function isClientPointOverHandle(
   pointer: { x: number; y: number },
   nodeId: string,

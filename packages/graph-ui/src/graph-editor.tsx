@@ -59,6 +59,7 @@ import {
   hasSerializedPins,
   type GraphDiagnostic,
   type GraphDocument,
+  type GraphPinDrop,
   type NavigateRequest,
   type PaletteNode,
   type SerializedPin,
@@ -107,6 +108,7 @@ import {
   edgesTouchingNodes,
   edgeTouchesPin,
   firstCompatiblePin,
+  graphNodeIdAtClientPoint,
   isClientPointOverGraphNode,
   isClientPointOverHandle,
   nearestSnapConnectPin,
@@ -259,6 +261,8 @@ export interface GraphEditorProps {
    * opens Add State; near tap/release cancels without breaking transitions).
    */
   connectEndMode?: ConnectEndMode;
+  /** Node bodies that take a dragged wire as a new pin (function Input and Output nodes). */
+  pinDrop?: GraphPinDrop;
   /** Replace existing edges into the same target handle (tree parent pin). */
   replaceIncomingOnConnect?: boolean;
   /** One visual edge per source→target pair (Animation Graph transitions). */
@@ -735,6 +739,7 @@ function GraphEditorCanvas({
   lockNodeDragAxis: lockDragAxis,
   nodeDragHandle,
   connectEndMode = "default",
+  pinDrop,
   replaceIncomingOnConnect = false,
   uniqueDirectedPairOnConnect = false,
   singleExecOutputOnConnect = false,
@@ -1805,6 +1810,21 @@ function GraphEditorCanvas({
         return;
       }
       const root = wrapperRef.current ?? document;
+      // Released over the body of a node that takes the wire as a new pin.
+      const pinDropNodeId =
+        pinDrop && !state.toHandle ? graphNodeIdAtClientPoint(point, root) : null;
+      if (pinDrop && pinDropNodeId && pinDropNodeId !== fromNode.id) {
+        const source = {
+          nodeId: fromNode.id,
+          pin,
+          type: displayTypeLookup(pinDisplayTypesRef.current)(fromNode.id, pinId) ?? pin.type,
+        };
+        if (pinDrop.accepts(pinDropNodeId, source)) {
+          pinDrop.drop(pinDropNodeId, source);
+          finishGesture();
+          return;
+        }
+      }
       const located = screenPinsForSafeRefs(
         root,
         collectDisplayConnectPins(
@@ -1874,6 +1894,7 @@ function GraphEditorCanvas({
       isValidConnection,
       normalizeConnection,
       pinCompatibility,
+      pinDrop,
       readOnly,
       screenToFlowPosition,
       storeApi,
@@ -2935,6 +2956,7 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      acceptsPinDrop: pinDrop?.accepts,
       runTrace,
       breakpoints,
       connectionLineKind:
@@ -2966,6 +2988,7 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      pinDrop,
       runTrace,
       breakpoints,
       defaultEdgeOptions.type,

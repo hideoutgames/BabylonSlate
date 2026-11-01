@@ -1651,6 +1651,44 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("hands a wire released over an accepting node's body to pinDrop instead of wiring it", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const drop = vi.fn();
+      const accepts = vi.fn((nodeId: string) => nodeId === "log-b");
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          paletteNodes={pinDragPalette}
+          pinDrop={{ accepts, drop }}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      onChange.mockClear();
+      // log-b's body spans x 280-460; its pins sit elsewhere.
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, { x: 400, y: 60 });
+      });
+
+      const execOut = debugLogPins.find((pin) => pin.id === "execOut");
+      expect(drop).toHaveBeenCalledWith("log-b", { nodeId: "log-a", pin: execOut, type: { kind: "exec" } });
+      expect(onChange).not.toHaveBeenCalled();
+      expect(queryByTestId("node-palette-body")).toBeNull();
+
+      // A node that does not take it leaves the release as it was.
+      accepts.mockReturnValue(false);
+      drop.mockClear();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, { x: 400, y: 60 });
+      });
+      expect(drop).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("does not open Add Node when a second pointer lands in the source safe zone", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

@@ -91,6 +91,24 @@ export type PaletteBundle = {
   edges: ReadonlyArray<{ source: string; sourceHandle: string; target: string; targetHandle: string }>;
 };
 
+/** The pin a wire is being dragged from, with its resolved type (a connected Wildcard's). */
+export type GraphPinDragSource = {
+  nodeId: string;
+  pin: SerializedPin;
+  type: SerializedPin["type"];
+};
+
+/**
+ * Lets a node's body take a dragged wire as a new pin of that type (a
+ * function's Input and Output nodes). While the wire is over a node that
+ * `accepts` it, it shows **+ Add Pin**; released there, `drop` adds the pin
+ * and its wire as one graph change. A release on a pin connects as usual.
+ */
+export type GraphPinDrop = {
+  accepts: (targetNodeId: string, source: GraphPinDragSource) => boolean;
+  drop: (targetNodeId: string, source: GraphPinDragSource) => void;
+};
+
 export type NavigateRequest = {
   nodeId?: string;
   pinId?: string;

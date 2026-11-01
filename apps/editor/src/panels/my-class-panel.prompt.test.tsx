@@ -138,6 +138,21 @@ describe("MyClassPanel name prompt", () => {
     prompt.mockRestore();
   });
 
+  it("adds an Event Dispatcher under a generated name, like New Function, with no name dialog", () => {
+    render(
+      <GraphEditingProvider>
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("class-add-dispatchers"));
+
+    expect(screen.queryByTestId("name-prompt-input")).toBeNull();
+    expect(applyGraphChange).toHaveBeenCalledTimes(1);
+    expect(applyGraphChange.mock.calls[0]![1].members).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "dispatcher", name: "NewEventDispatcher", pins: [] }),
+    ]));
+  });
+
   it("hides Local Variables on the event graph and shows them on a function graph", () => {
     const { rerender } = render(
       <GraphEditingProvider key="event">

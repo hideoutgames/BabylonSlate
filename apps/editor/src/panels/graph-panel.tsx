@@ -9,6 +9,7 @@ import {
   hasSerializedPins,
   type GraphCanvasDropApi,
   type GraphPasteElements,
+  type GraphPinDrop,
   type PaletteNode,
 } from "@haptic/graph-ui";
 import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
@@ -43,6 +44,7 @@ import { useAppSettings } from "../context/app-settings-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { applyDataGraphAssetPicks } from "../lib/data-graph";
 import { prepareClassGraphPaste } from "../lib/graph-paste";
+import { acceptsFunctionPinDrop, addFunctionPinFromDrop } from "../lib/function-pin-drop";
 import {
   DEFAULT_FUNCTION_PINS,
   addClassMember,
@@ -743,6 +745,26 @@ export function GraphPanel(
     [breakpointAsset, breakpointLabel, breakpointStore, classId, editBreakpoint, graphContent, runGraphId, toggleBreakpointChord, watchAsset, watchStore],
   );
 
+  // In a function graph, a wire dropped on the Input or Output node's body adds a pin of its type.
+  // It reads the latest graph through a ref, so an edit does not hand every node a new context.
+  const pinDropSourceRef = useRef({ graphContent, doc, classId });
+  pinDropSourceRef.current = { graphContent, doc, classId };
+  const pinDrop = useMemo<GraphPinDrop | undefined>(() => {
+    if (!activeFunctionId) return undefined;
+    return {
+      accepts: (targetNodeId, source) => {
+        const { graphContent: current } = pinDropSourceRef.current;
+        return Boolean(current) && acceptsFunctionPinDrop(current!, activeFunctionId, targetNodeId, source);
+      },
+      drop: (targetNodeId, source) => {
+        const { graphContent: current, doc: target, classId: owner } = pinDropSourceRef.current;
+        if (!current || !target) return;
+        const next = addFunctionPinFromDrop(current, activeFunctionId, targetNodeId, source, owner);
+        if (next) applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(target.ref.kind, target.content, next));
+      },
+    };
+  }, [activeFunctionId, documentActions, documentId]);
+
   const preparePaste = useCallback(
     (pasted: GraphPasteElements, current: GraphPasteElements) =>
       prepareClassGraphPaste(pasted, current, graphContent, activeFunctionId),
@@ -787,6 +809,7 @@ export function GraphPanel(
             paletteNodes={paletteNodes}
             onPaletteOpenChange={setPaletteOpen}
             pinCompatibility={pinCompatibility}
+            pinDrop={pinDrop}
             addNodeHistoryScope="script"
             pinTypeNames={pinTypeNames}
             onCanvasApi={setCanvasApi}
