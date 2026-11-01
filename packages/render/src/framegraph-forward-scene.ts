@@ -18,6 +18,7 @@ import { endAlphaToCoverage, guardAlphaToCoverageBlending } from "./alpha-to-cov
 import { sceneMultisampleCount, sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
 import { isBuiltInWaterMesh } from "./water-mesh";
 import { WaterSceneCopyGraph, waterSceneCopyDemand } from "./water-scene-copy";
+import { MultisamplePresentTask, presentsMultisampleByBlit } from "./multisample-present";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
 import type { AbstractMesh, Camera, Effect, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
@@ -266,6 +267,7 @@ export class ForwardSceneFrameGraph {
   /** An auxiliary view's own scene targets, charged to the shared ledger. */
   private ownScene: {
     color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle; lease: ManagedRenderLease; committed: boolean; samples: number;
+    colorType: number;
   } | undefined;
   private readinessDirtyFlag = true;
   /**
@@ -1211,7 +1213,21 @@ export class ForwardSceneFrameGraph {
           this.effectsGraph?.outputTexture ??
           (this.postProcessGraph ? this.outlineTask?.outputTexture ?? this.postProcessGraph.outputTexture : undefined) ??
           (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
-        if (chainOutput) {
+        const engine = scene.getEngine();
+        const own = this.ownScene;
+        if (own && !this.outlineTask && presentsMultisampleByBlit({
+          webGl2: !engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
+          backbuffer: !output.color, outputSized: renderSize.width === output.width && renderSize.height === output.height,
+          laterReaders: this.water !== undefined,
+        })) {
+          // The objects pass is the scene colour's last writer and nothing samples its resolve: one blit from the
+          // multisampled colour to the backbuffer replaces the resolve and the output copy.
+          this.objects.resolveMSAAColors = false;
+          const present = new MultisamplePresentTask("Multisample present", this.graph);
+          present.sourceTexture = own.color;
+          this.outputCopy = present;
+          this.graph.addTask(present);
+        } else if (chainOutput) {
           if (output.color) {
             const copy = new FrameGraphCopyToTextureTask(this.ownScene ? this.ownScene.samples > 1 ? "Multisample output" : "Capture output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
@@ -1341,6 +1357,7 @@ export class ForwardSceneFrameGraph {
       lease,
       committed: false,
       samples,
+      colorType,
     };
   }
 
