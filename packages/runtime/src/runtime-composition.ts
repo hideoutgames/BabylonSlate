@@ -58,6 +58,7 @@ import type { TickPipeline } from "./tick-pipeline";
 import type { TweenRuntime } from "./tween-runtime";
 import type { UIControls2DRuntime } from "./ui-controls2d-runtime";
 import type { WaterClock } from "./water-world";
+import type { RuntimeObjectLifetime } from "./object-lifetime";
 
 /**
  * What the session's subsystem wiring (`runtime-composition-*.ts`), tick
@@ -148,6 +149,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly boundaries: SessionBoundaries;
   readonly animGraphs: AnimGraphRuntime;
   readonly behaviourTrees: BehaviourTreeRuntime;
+  readonly objectLifetime: RuntimeObjectLifetime;
   readonly actors: ActorRealization;
   readonly camera: RuntimeCamera;
   readonly waits: SimulationWaits;
@@ -240,4 +242,5 @@ export function registerRuntimeSubsystems(rt: RuntimeComposition): void {
   rt.subsystems.register(rt.camera);
   rt.subsystems.register(rt.layers);
   rt.subsystems.register(rt.sceneRealizer);
+  rt.subsystems.register(rt.objectLifetime);
 }

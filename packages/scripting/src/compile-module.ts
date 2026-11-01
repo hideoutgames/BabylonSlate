@@ -145,16 +145,24 @@ export function assembleModule(
     finalLines.push(
       `export ${compiled.entry.isAsync ? "async " : ""}function ${compiled.entry.name}(ctx) {`,
     );
-    if (s.options.localPreamble?.length) {
-      finalLines.push(...s.options.localPreamble);
+    const preamble = s.options.localPreamble ?? [];
+    if (preamble.length) {
+      finalLines.push(...preamble);
     }
     finalLines.push(...compiled.declLines);
+    // A waiting latent frame holds its locals in a promise the engine cannot
+    // see; registering them keeps the objects they hold alive meanwhile.
+    const held = compiled.entry.isAsync ? declaredLocals([...preamble, ...compiled.declLines]) : [];
+    if (held.length > 0) {
+      finalLines.push(`  const __haptic_frame = ctx.holdFrame?.(() => [${held.join(", ")}]);`, `  try {`);
+    }
     for (const line of compiled.bodyLines) {
       finalLines.push(line.text);
       if (line.anchor) {
         anchors.push({ ...line.anchor, line: finalLines.length });
       }
     }
+    if (held.length > 0) finalLines.push(`  } finally { __haptic_frame?.(); }`);
     finalLines.push(`}`);
   }
 
@@ -184,4 +192,18 @@ function entryComponentId(entry: GraphNode): { componentId?: string } {
   const id = entry.properties.componentId;
   if (typeof id !== "string" || !id.trim()) return {};
   return { componentId: id.trim() };
+}
+
+/** Names declared by `let` lines: locals, node outputs and subject slots. */
+function declaredLocals(lines: readonly string[]): string[] {
+  const names: string[] = [];
+  for (const line of lines) {
+    const match = /^\s*let\s+([^;=]+)/.exec(line);
+    if (!match) continue;
+    for (const part of match[1]!.split(",")) {
+      const name = part.trim();
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) names.push(name);
+    }
+  }
+  return names;
 }

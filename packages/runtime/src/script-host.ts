@@ -41,6 +41,7 @@ export type {
   ScriptExtras,
   VariableStore,
 } from "./script-context-types";
+import { LatentFrameRoots } from "./latent-frame-roots";
 
 /** An AnimationGraph asset may own several independently compiled Class modules. */
 export function compiledScriptKey(script: Pick<CompiledScript, "assetGuid" | "classId">): string {
@@ -104,6 +105,8 @@ export class ScriptHost {
   private readonly dispatchers = new DispatcherBindings();
   /** What `createScriptContext` reads from this host; built once in the constructor. */
   private readonly contextHost: ScriptContextHost;
+  /** Locals of latent frames that are waiting: roots for object lifetime. */
+  readonly latentFrames = new LatentFrameRoots();
 
   constructor(services: ScriptHostServices) {
     this.services = services;
@@ -120,7 +123,7 @@ export class ScriptHost {
       applyComponentVariable: (component: ActorComponent, name: string, value: unknown, previous?: unknown) =>
         this.applyComponentVariable(component, name, value, previous),
     };
-    this.hostMembers = createHostMembers({ ...shared, breakpoints: () => this.breakpoints });
+    this.hostMembers = createHostMembers({ ...shared, frames: this.latentFrames, breakpoints: () => this.breakpoints });
     this.contextHost = {
       ...shared,
       hostMembers: this.hostMembers,

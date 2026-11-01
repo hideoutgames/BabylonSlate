@@ -106,6 +106,11 @@ export class World {
   /** Identity/hierarchy revision; no properties or world snapshots are collected. */
   structuralRevision = 0;
   markStructureChanged(): void { this.structuralRevision++; }
+  /**
+   * Advances each time an actor or Scene Layer is destroyed. A collection pass
+   * runs when it moved, to clear stored references to the destroyed objects.
+   */
+  destroyCount = 0;
 
   readonly classRegistry: ClassRegistry;
   readonly interfaceRegistry: InterfaceRegistry;
@@ -577,6 +582,7 @@ export class World {
       }
     }
     layer.destroyed = true;
+    this.destroyCount++;
     layer.callOnDestroyed();
   }
 
@@ -740,6 +746,7 @@ export class World {
     }
     actor.components.length = 0;
     actor.destroyed = true;
+    this.destroyCount++;
     actor.callOnDestroyed();
     actor.world = null;
     // Reassign dense spawn indices so order stays contiguous after removal.

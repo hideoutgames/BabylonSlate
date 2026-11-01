@@ -40,6 +40,8 @@ export function runTick(rt: RuntimeComposition): void {
   rt.ticks.closePhaseTiming();
   rt.scriptDebug.flush(rt.world.clock.tickIndex);
   flushComponentCommands(rt);
+  // Every script of the tick has returned; waiting latent frames registered their locals.
+  rt.objectLifetime.afterTick(rt.world.clock.tickIndex);
   const completedFrameId = rt.frameId;
   rt.frameId += 1;
   publishTick(rt);
