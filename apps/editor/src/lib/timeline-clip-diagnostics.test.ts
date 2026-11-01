@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultTimelineClipAsset, createTimelineClip, type SerializedTimelineClipAsset } from "@haptic/core";
-import { timelineClipAssetDiagnostics, timelineClipDiagnostics } from "./timeline-clip-diagnostics";
+import { createActor, createDefaultTimelineClipAsset, createTimelineClip, type SerializedTimelineClipAsset } from "@haptic/core";
+import { timelineClipAssetDiagnostics, timelineClipDiagnostics, timelineTrackDiagnostics } from "./timeline-clip-diagnostics";
 
 const track = (name: string) => ({ id: name, name, inputs: [], keys: [] });
 
@@ -53,5 +53,31 @@ describe("timelineClipAssetDiagnostics", () => {
     ]);
     // In a 2D clip the 2D Text suits; a component Scene Layers refuse does not.
     expect(check({ ...payload, proxies: payload.proxies.slice(3) }, true).map((entry) => entry[2])).not.toContain(expect.stringContaining("Badge"));
+  });
+});
+
+describe("timelineTrackDiagnostics", () => {
+  it("warns for tracks whose actor or component is gone and for properties that can no longer be animated", () => {
+    const clip = {
+      ...createTimelineClip("intro", "Intro"),
+      objects: [
+        { id: "o1", actorId: "door", tracks: [
+          { id: "ok", target: { kind: "transform" as const, property: "location" }, valueType: "vec3" as const, keys: [] },
+          { id: "var", target: { kind: "variable" as const, property: "Glow" }, valueType: "float" as const, keys: [] },
+          { id: "comp", target: { kind: "component" as const, componentId: "removed", property: "intensity" }, valueType: "float" as const, keys: [] },
+        ] },
+        { id: "o2", actorId: "gone", tracks: [
+          { id: "a", target: { kind: "visible" as const, property: "visible" }, valueType: "bool" as const, keys: [] },
+          { id: "b", target: { kind: "transform" as const, property: "scale" }, valueType: "vec3" as const, keys: [] },
+        ] },
+      ],
+    };
+    const diagnostics = timelineTrackDiagnostics({ actors: [createActor("door", "Door")], timelineClips: [clip] },
+      { graphs: {}, parentOf: () => null }, { assetGuid: "level", graphId: "doc" });
+    expect(diagnostics.map((entry) => [entry.severity, entry.code, entry.message])).toEqual([
+      ["warning", "timeline.property_unavailable", "Intro: Door › Glow can no longer be animated, or its type changed."],
+      ["warning", "timeline.missing_target", "Intro: Door › Missing Component › intensity: its component no longer exists. Play skips the track."],
+      ["warning", "timeline.missing_target", "Intro: the actor its 2 tracks animate no longer exists. Play skips them."],
+    ]);
   });
 });

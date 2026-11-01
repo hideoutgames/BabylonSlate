@@ -47,6 +47,35 @@ describe("timelineRows", () => {
     expect(rows[5]!.muted).toBe(true);
   });
 
+  it("marks rows that cannot animate: a missing actor or component, a property gone or of another type", () => {
+    const broken: SerializedTimelineClip = {
+      ...clip,
+      objects: [
+        { id: "o-door", actorId: "door", tracks: [
+          { id: "loc", target: { kind: "transform", property: "location" }, valueType: "vec3", keys: [] },
+          // A Class variable the actor's Class no longer has.
+          { id: "glow", target: { kind: "variable", property: "Glow" }, valueType: "float", keys: [] },
+          // Location keyed as a float: its type changed.
+          { id: "odd", target: { kind: "transform", property: "location" }, valueType: "float", keys: [] },
+        ] },
+        { id: "o-lamp", actorId: "lamp", tracks: [
+          { id: "gone", target: { kind: "component", componentId: "removed", property: "intensity" }, valueType: "float", keys: [] },
+        ] },
+        { id: "o-gone", actorId: "missing", tracks: [{ id: "lost", target: { kind: "visible", property: "visible" }, valueType: "bool", keys: [] }] },
+      ],
+    };
+    expect(timelineRows({ ...options, clip: broken }).map((row) => [row.id, row.problem ?? null])).toEqual([
+      ["o-door", null],
+      ["loc", null],
+      ["glow", "property_unavailable"],
+      ["odd", "property_unavailable"],
+      ["o-lamp", null],
+      ["gone", "missing_target"],
+      ["o-gone", "missing_target"],
+      ["lost", "missing_target"],
+    ]);
+  });
+
   it("hides collapsed objects' tracks and filters by actor or track", () => {
     expect(timelineRows({ ...options, collapsed: new Set(["o-door"]) }).map((row) => row.label)).toEqual(["Door", "Lamp", "Glow › Color", "Missing Actor"]);
     expect(timelineRows({ ...options, filter: "vis" }).map((row) => row.label)).toEqual(["Door", "Visible"]);

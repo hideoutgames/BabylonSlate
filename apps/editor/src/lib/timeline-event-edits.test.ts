@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createTimelineClip, type SerializedScene, type SerializedTimelineClip } from "@haptic/core";
 import {
   addTimelineEventTrack,
+  copyTimelineSelectedKeys,
+  pasteTimelineSelectedKeys,
   deleteTimelineEventKeys,
   moveTimelineEventTrack,
   renameTimelineEventTrack,
@@ -88,5 +90,43 @@ describe("Custom Event Track edits", () => {
     expect(next.nodes[0]!.data).toMatchObject({ name: "On Subtitle", pins: track.inputs, title: "Bind Event to On Subtitle" });
     expect(next.nodes[1]!.data.name).toBe("On Line");
     expect(next.nodes[2]!.data.pins).toEqual([{ name: "Text", typeId: "string", direction: "out" }]);
+  });
+});
+
+describe("copying and pasting event keys", () => {
+  const key = (id: string, Time: number, Value: unknown) => ({ id, Time, Value, Interpolation: "linear" as const, ArriveTangent: 0, LeaveTangent: 0 });
+
+  it("copies event keys with property keys and pastes both at the playhead, keeping the values of inputs the track has", () => {
+    let clip = clipWithTracks();
+    const [line] = clip.eventTracks;
+    clip = setTimelineEventTrackInputs(clip, line!.id, [{ name: "Text", typeId: "string", direction: "in" }]);
+    clip = setTimelineEventKeys(clip, [line!.id], 0.5, newId).clip;
+    const lineKey = clip.eventTracks[0]!.keys[0]!;
+    clip = setTimelineEventKeyValue(clip, { trackId: line!.id, keyId: lineKey.id }, "Text", "Hello");
+    clip = { ...clip, objects: [{ id: "o", actorId: "door", tracks: [
+      { id: "loc", target: { kind: "transform", property: "location" }, valueType: "vec3", keys: [key("k", 1, { x: 1, y: 0, z: 0 })] },
+    ] }] };
+    const copied = copyTimelineSelectedKeys(clip, [{ trackId: line!.id, keyId: lineKey.id }, { trackId: "loc", keyId: "k" }])!;
+    expect(copied.origin).toBe(0.5);
+    const { clip: pasted, pasted: refs } = pasteTimelineSelectedKeys(clip, copied, 1.25, newId);
+    expect(pasted.eventTracks[0]!.keys.map((entry) => [entry.time, entry.values])).toEqual([[0.5, { Text: "Hello" }], [1.25, { Text: "Hello" }]]);
+    expect(pasted.objects[0]!.tracks[0]!.keys.map((entry) => entry.Time)).toEqual([1, 1.75]);
+    expect(refs).toHaveLength(2);
+  });
+
+  it("pastes event keys onto an event track of the same name in another clip, and drops keys past the end", () => {
+    let source = clipWithTracks();
+    const trackId = source.eventTracks[1]!.id;
+    source = setTimelineEventKeys(source, [trackId], 0, newId).clip;
+    source = setTimelineEventKeys(source, [trackId], 1, newId).clip;
+    const copied = copyTimelineSelectedKeys(source, source.eventTracks[1]!.keys.map((entry) => ({ trackId, keyId: entry.id })))!;
+    // Another clip: its "On Event 2" track has another id, and it is 1.5 s long.
+    let target: SerializedTimelineClip = { ...createTimelineClip("outro", "Outro"), length: 1.5 };
+    target = addTimelineEventTrack(target, newId).clip;
+    target = addTimelineEventTrack(target, newId).clip;
+    const pasted = pasteTimelineSelectedKeys(target, copied, 1, newId).clip;
+    expect(pasted.eventTracks[1]!.keys.map((entry) => entry.time)).toEqual([1]);
+    expect(pasted.eventTracks[0]!.keys).toEqual([]);
+    expect(copyTimelineSelectedKeys(source, [])).toBeNull();
   });
 });

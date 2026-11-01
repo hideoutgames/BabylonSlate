@@ -52,6 +52,8 @@ export interface ChecklistDialogProps {
   selection?: "multiple" | "single";
   /** A row above the list that runs a command instead of being picked, such as `New Timeline Asset…`. */
   action?: { label: string; icon?: ReactNode; onSelect: () => void; testId?: string };
+  /** Fields above the search that go with the pick, such as a Name; the caller owns their state. */
+  fields?: ReactNode;
   "data-testid"?: string;
 }
 
@@ -76,6 +78,7 @@ export function ChecklistDialog({
   emptyLabel = "No Matches",
   selection = "multiple",
   action,
+  fields,
   "data-testid": testId,
 }: ChecklistDialogProps) {
   const touch = useTouchUi();
@@ -124,6 +127,7 @@ export function ChecklistDialog({
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
+        {fields ? <div className="shrink-0" data-slot="checklist-fields">{fields}</div> : null}
         {/* SearchInput grows in a toolbar row; here the list below takes the free height. */}
         <div className="flex shrink-0" data-slot="checklist-search">
           <SearchInput

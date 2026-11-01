@@ -108,7 +108,7 @@ export function registryClassParentLookup(registry: Pick<AssetRegistry, "generat
   if (!registry) return classParentLookup([]);
   const generation = registry.generation;
   const cached = registryParentLookups.get(registry);
-  if (cached?.generation === generation) return cached.parentOf;
+  if (cached && cached.generation === generation) return cached.parentOf;
   const parentOf = classParentLookup(registry.list());
   registryParentLookups.set(registry, { generation, parentOf });
   return parentOf;

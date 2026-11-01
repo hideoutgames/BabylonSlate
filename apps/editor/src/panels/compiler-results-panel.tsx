@@ -31,7 +31,9 @@ import {
 } from "../lib/physics-pairing-diagnostics";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { actorTransformDiagnostics } from "../lib/actor-transform-diagnostics";
-import { timelineClipAssetDiagnostics, timelineClipBindingDiagnostics, timelineClipDiagnostics } from "../lib/timeline-clip-diagnostics";
+import { timelineClipAssetDiagnostics, timelineClipBindingDiagnostics, timelineClipDiagnostics, timelineTrackDiagnostics } from "../lib/timeline-clip-diagnostics";
+import { timelineProxyScene } from "../lib/timeline-proxy-scene";
+import { useTimelinePropertyContext } from "../context/use-timeline-clip";
 import { registryClassParentLookup } from "../lib/class-asset-lookup";
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { MessageDetails } from "../components/message-details";
@@ -84,6 +86,9 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   const { assetRegistry, registryEpoch } = useRegistryState();
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_DOCUMENT_KINDS);
   const sceneDocuments = useOpenDocumentsOfKinds(SCENE_DOCUMENT_KINDS);
+  // Class graphs for the Timeline track checks: a track whose Class variable or component is gone.
+  const { graphs: classGraphs, parentOf: classParentOf } = useTimelinePropertyContext();
+  const timelineProperties = useMemo(() => ({ graphs: classGraphs, parentOf: classParentOf }), [classGraphs, classParentOf]);
 
   useEffect(() => {
     if (!documentId || documentId !== activeDocumentId) return;
@@ -100,12 +105,13 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
       }) : []),
       ...(mainScene ? actorTransformDiagnostics(actors, options) : []),
       ...timelineClipDiagnostics(scene?.timelineClips, options),
+      ...(scene ? timelineTrackDiagnostics(scene, timelineProperties, options) : []),
       ...timelineClipBindingDiagnostics(
         projectTimelineClips(assetRegistry?.list() ?? [], sceneDocuments), scenePath!, options,
         (guid) => assetRegistry?.getByGuid?.(guid)?.header.name,
       ),
     ]);
-  }, [activeDocumentId, assetRegistry, documentId, mainScene, modelDocuments, registryEpoch, sceneContent, sceneDocuments, sceneKind, scenePath, setDiagnostics]);
+  }, [activeDocumentId, assetRegistry, documentId, mainScene, modelDocuments, registryEpoch, sceneContent, sceneDocuments, sceneKind, scenePath, setDiagnostics, timelineProperties]);
 
   // A 2D or 3D Timeline Clip asset: its Timeline Asset and its proxies' names, Classes and placement.
   const clipKind = doc?.ref.kind === "timeline-clip-2d" || doc?.ref.kind === "timeline-clip-3d" ? doc.ref.kind : undefined;
@@ -113,15 +119,21 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
     if (!documentId || documentId !== activeDocumentId || !clipKind || !sceneContent) return;
     void registryEpoch;
     const parentOf = registryClassParentLookup(assetRegistry);
-    setDiagnostics(timelineClipAssetDiagnostics(normalizeTimelineClipAsset(sceneContent), {
-      twoD: clipKind === "timeline-clip-2d",
+    const payload = normalizeTimelineClipAsset(sceneContent);
+    const twoD = clipKind === "timeline-clip-2d";
+    const anchor = { assetGuid: scenePath!, graphId: documentId };
+    const name = assetRegistry?.getByPath?.(scenePath!)?.header.name ?? "Clip";
+    setDiagnostics([...timelineClipAssetDiagnostics(payload, {
+      twoD,
       timelineAssetName: (guid) => {
         const asset = assetRegistry?.getByGuid?.(guid);
         return asset?.header.type === "Timeline" ? asset.header.name : undefined;
       },
       classExists: (classId) => parentOf(classId) !== null,
-    }, { assetGuid: scenePath!, graphId: documentId }));
-  }, [activeDocumentId, assetRegistry, clipKind, documentId, registryEpoch, sceneContent, scenePath, setDiagnostics]);
+    }, anchor),
+    // The proxies as the Timeline lists them: a component a proxy's Class lost, or a variable it dropped.
+    ...timelineTrackDiagnostics(timelineProxyScene(payload, name, timelineProperties.graphs, twoD), timelineProperties, anchor)]);
+  }, [activeDocumentId, assetRegistry, clipKind, documentId, registryEpoch, sceneContent, scenePath, setDiagnostics, timelineProperties]);
 
   const rows = useMemo(() => flattenCompilerRows(diagnostics), [diagnostics]);
   // Stable per row list, so the windowed list can reuse its row offsets.

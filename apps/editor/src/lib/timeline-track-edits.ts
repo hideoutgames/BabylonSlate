@@ -208,6 +208,8 @@ export interface CopiedTimelineKeys {
   /** Seconds of the earliest copied key; pasting puts it at the playhead. */
   origin: number;
   tracks: Array<{ trackId: string; target: TimelinePropertyTrack["target"]; actorId: string; keys: TimelineKey[] }>;
+  /** Custom Event Track keys, by track and its event name (`copyTimelineSelectedKeys`). */
+  events?: Array<{ trackId: string; name: string; keys: Array<{ id: string; time: number; values: Record<string, unknown> }> }>;
 }
 
 export function copyTimelineKeys(clip: SerializedTimelineClip, refs: readonly TrackKeyRef[]): CopiedTimelineKeys | null {
