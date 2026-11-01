@@ -1,6 +1,7 @@
 import type { SerializedTimelineClip } from "@haptic/core";
 import { TIMELINE_CLIP_BUILT_IN_DISPATCHERS } from "@haptic/object-model";
 import { diagnostic, jsIdent, type Diagnostic } from "@haptic/scripting";
+import { timelineClipNameCollisions, type ProjectTimelineClip } from "./timeline-asset-index";
 
 /**
  * Errors for Custom Event Tracks whose dispatcher a script could not tell
@@ -27,4 +28,32 @@ export function timelineClipDiagnostics(
     }
   }
   return out;
+}
+
+/**
+ * Errors for this document's clips that share a name with another clip of the
+ * Timeline Asset they are bound to, for example after a rename in another
+ * Scene: scripts reach an asset's clips by name.
+ */
+export function timelineClipBindingDiagnostics(
+  clips: readonly ProjectTimelineClip[],
+  documentPath: string,
+  anchor: { assetGuid: string; graphId: string },
+  assetName: (guid: string) => string | undefined,
+): Diagnostic[] {
+  const collisions = timelineClipNameCollisions(clips);
+  return collisions
+    .filter((entry) => entry.documentPath === documentPath)
+    .map((entry) => {
+      const other = collisions.find((candidate) => candidate !== entry && candidate.clip.timelineAsset === entry.clip.timelineAsset
+        && candidate.clip.name === entry.clip.name);
+      const asset = assetName(entry.clip.timelineAsset!) ?? "Its Timeline Asset";
+      const where = other ? ` (${other.documentPath === documentPath ? "this document" : other.documentName})` : "";
+      return diagnostic({
+        ...anchor,
+        severity: "error",
+        code: "timeline.clip_name_collision",
+        message: `${entry.clip.name}: ${asset} already holds another clip with this name${where}. Rename one of them.`,
+      });
+    });
 }

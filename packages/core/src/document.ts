@@ -25,6 +25,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "float-curve",
   "vector-curve",
   "color-curve",
+  "timeline",
   "script-interface",
   "plugin-settings",
   "audio",
@@ -128,6 +129,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "VectorCurve";
     case "color-curve":
       return "ColorCurve";
+    case "timeline":
+      return "Timeline";
     case "script-interface":
       return "ScriptInterface";
     case "plugin-settings":
@@ -219,6 +222,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "vector-curve";
     case "ColorCurve":
       return "color-curve";
+    case "Timeline":
+      return "timeline";
     case "ScriptInterface":
       return "script-interface";
     case "PluginSettings":
@@ -310,6 +315,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Vector Curve";
     case "color-curve":
       return "Color Curve";
+    case "timeline":
+      return "Timeline";
     case "script-interface":
       return "Script Interface";
     case "plugin-settings":

@@ -43,6 +43,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   DataDefinition: ".datadefinition.hasset",
   DataTree: ".datatree.hasset",
   FloatCurve: ".floatcurve.hasset",
+  Timeline: ".timeline.hasset",
   VectorCurve: ".vectorcurve.hasset",
   ColorCurve: ".colorcurve.hasset",
   InputAxis: ".inputaxis.hasset",

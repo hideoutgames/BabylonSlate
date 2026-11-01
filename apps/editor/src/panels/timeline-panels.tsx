@@ -1,8 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene, SerializedTimelineClip } from "@haptic/core";
 import {
+  ChecklistDialog,
   ContextMenuOverlay,
+  NamePromptDialog,
   PanelFrame,
   ToolbarStrip,
   TreeView,
@@ -10,6 +12,7 @@ import {
   useTouchUi,
   type ContextMenuItem,
   type TreeViewNode,
+  useAssetCreate,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@haptic/ui/components/empty";
@@ -18,14 +21,20 @@ import {
   CopyIcon,
   CopyPlusIcon,
   FilmIcon,
+  FolderSearchIcon,
   Link2Icon,
+  Link2OffIcon,
   PencilIcon,
   PlayIcon,
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
 import { IconActionButton } from "../components/icon-action-button";
-import { useDocumentActions, useOpenDocument } from "../context/document-context";
+import { useDocumentActions, useOpenDocument, useRegistryState } from "../context/document-context";
+import { useOptionalProjectSearch } from "../context/project-search-context";
+import { bindTimelineClip, projectTimelineClips, timelineAssetClips, timelineBindBlocker } from "../lib/timeline-asset-index";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { takeTimelineClipFocus, usePendingTimelineClipFocus } from "../lib/timeline-clip-focus";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useEditorSessionState } from "../context/editor-session-state-context";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
@@ -44,7 +53,25 @@ function useTimelineScene() {
   const commit = (next: SerializedScene | null) => {
     if (next) void applySceneChange(documentId, next);
   };
-  return { scene, clips, clip, commit, setClipId: tools.setTimelineClipId };
+  return { scene, clips, clip, commit, setClipId: tools.setTimelineClipId, documentPath: doc?.ref.path ?? "", documentId };
+}
+
+const SCENE_KINDS = ["scene", "scene-layer"] as const;
+
+/** The project's Timeline Assets and the clips each holds, with this document's unsaved clips. */
+function useTimelineAssets() {
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
+  return useMemo(() => {
+    void registryEpoch;
+    const assets = assetRegistry?.list() ?? [];
+    return {
+      timelines: assets.filter((asset) => asset.header.type === "Timeline")
+        .map((asset) => ({ guid: asset.header.guid, name: asset.header.name, path: asset.path }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      clips: projectTimelineClips(assets, sceneDocuments),
+    };
+  }, [assetRegistry, registryEpoch, sceneDocuments]);
 }
 
 function clipBadges(clip: SerializedTimelineClip) {
@@ -58,7 +85,20 @@ function clipBadges(clip: SerializedTimelineClip) {
 /** Timeline mode: the document's Timeline Clips. Create, rename, duplicate, copy, paste and delete them here. */
 export function TimelineClipsPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { scene, clips, clip: selected, commit, setClipId } = useTimelineScene();
+  const { scene, clips, clip: selected, commit, setClipId, documentPath, documentId } = useTimelineScene();
+  // Timeline Asset › Open asks this document to show one of its clips.
+  const focusRequest = usePendingTimelineClipFocus(documentId);
+  useEffect(() => {
+    if (!focusRequest || !clips.some((entry) => entry.id === focusRequest)) return;
+    takeTimelineClipFocus(documentId);
+    setClipId(focusRequest);
+  }, [clips, documentId, focusRequest, setClipId]);
+  const timelineAssets = useTimelineAssets();
+  const assetCreate = useAssetCreate();
+  const projectSearch = useOptionalProjectSearch();
+  const [bindClipId, setBindClipId] = useState<string | null>(null);
+  const [newAssetClipId, setNewAssetClipId] = useState<string | null>(null);
+  const [bindError, setBindError] = useState<string | null>(null);
   const session = useEditorSessionState();
   const keybinds = useKeybindings();
   const touch = useTouchUi();
@@ -104,11 +144,61 @@ export function TimelineClipsPanel(_props: IDockviewPanelProps) {
     setRenamingId(null);
     if (scene && name !== null) commit(renameClip(scene, id, name));
   };
+  const bind = (clipId: string, assetGuid: string | undefined) => {
+    if (scene) commit(bindTimelineClip(scene, clipId, assetGuid));
+  };
+  const createAndBind = async (clipId: string, name: string) => {
+    if (!assetCreate) return;
+    setBindError(null);
+    try {
+      // Beside this document, like assets a picker creates for it.
+      const guid = await assetCreate.createAsset({ type: "Timeline", name, ownerPath: documentPath });
+      bind(clipId, guid);
+    } catch (error) {
+      setBindError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const bindClip = clips.find((entry) => entry.id === bindClipId);
+  const bindGroups = bindClip ? [{
+    id: "timelines",
+    label: "Timeline Assets",
+    items: timelineAssets.timelines.map((timeline) => {
+      const held = timelineAssetClips(timelineAssets.clips, timeline.guid).map((entry) => entry.clip.name);
+      return {
+        id: timeline.guid,
+        label: timeline.name,
+        description: held.length ? held.join(", ") : "No clips",
+        included: bindClip.timelineAsset === timeline.guid,
+        disabledReason: timelineBindBlocker(timelineAssets.clips, timeline.guid, {
+          documentPath, clipId: bindClip.id, clipName: bindClip.name,
+        }),
+        keywords: held.join(" "),
+        testId: `timeline-bind-asset-${timeline.guid}`,
+      };
+    }),
+  }] : [];
 
   const pasteItem = (): ContextMenuItem => ({
     id: "paste-clip", label: "Paste", icon: <ClipboardPasteIcon />, shortcut: keybinds.get("edit.paste")?.[0],
     disabled: !canPaste, testId: "timeline-clip-menu-paste", onSelect: paste,
   });
+  const bindingItems = (id: string): ContextMenuItem[] => {
+    const bound = clips.find((entry) => entry.id === id)?.timelineAsset;
+    const timeline = bound ? timelineAssets.timelines.find((entry) => entry.guid === bound) : undefined;
+    return [
+      { type: "separator", id: "bind-separator" },
+      { id: "bind-clip", label: "Bind to Timeline Asset…", icon: <Link2Icon />, testId: "timeline-clip-menu-bind",
+        onSelect: () => setBindClipId(id) },
+      { id: "new-and-bind-clip", label: "New Timeline Asset and Bind…", icon: <PlusIcon />, disabled: !assetCreate,
+        testId: "timeline-clip-menu-new-bind", onSelect: () => setNewAssetClipId(id) },
+      ...(bound ? [
+        { id: "unbind-clip", label: "Unbind Timeline Asset", icon: <Link2OffIcon />, testId: "timeline-clip-menu-unbind",
+          onSelect: () => bind(id, undefined) },
+        { id: "show-timeline", label: "Show Timeline Asset in Content Browser", icon: <FolderSearchIcon />, disabled: !timeline || !projectSearch,
+          testId: "timeline-clip-menu-show-asset", onSelect: () => { if (timeline) projectSearch?.revealAsset(timeline.guid, timeline.path); } },
+      ] satisfies ContextMenuItem[] : []),
+    ];
+  };
   const rowItems = (id: string): ContextMenuItem[] => [
     { id: "rename-clip", label: "Rename", icon: <PencilIcon />, shortcut: keybinds.get("edit.rename")?.[0],
       testId: "timeline-clip-menu-rename", onSelect: () => setRenamingId(id) },
@@ -117,6 +207,7 @@ export function TimelineClipsPanel(_props: IDockviewPanelProps) {
     { id: "copy-clip", label: "Copy", icon: <CopyIcon />, shortcut: keybinds.get("edit.copy")?.[0],
       testId: "timeline-clip-menu-copy", onSelect: () => copy(id) },
     pasteItem(),
+    ...bindingItems(id),
     { type: "separator", id: "delete-separator" },
     { id: "delete-clip", label: "Delete", icon: <Trash2Icon />, variant: "destructive", shortcut: keybinds.get("edit.delete")?.[0],
       testId: "timeline-clip-menu-delete", onSelect: () => remove(id) },
@@ -187,6 +278,33 @@ export function TimelineClipsPanel(_props: IDockviewPanelProps) {
         </Empty>}
       </div>
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+      <ChecklistDialog
+        open={bindClip !== undefined}
+        onOpenChange={(open) => { if (!open) setBindClipId(null); }}
+        title="Bind to Timeline Asset"
+        description={bindClip ? `Any class can reach ${bindClip.name} through the Timeline Asset it is bound to. A clip belongs to one asset at a time.` : undefined}
+        groups={bindGroups}
+        selection="single"
+        confirmLabel="Bind"
+        emptyLabel="No Timeline Assets"
+        searchPlaceholder="Search Timeline Assets"
+        action={assetCreate ? { label: "New Timeline Asset…", icon: <PlusIcon />, testId: "timeline-bind-new",
+          onSelect: () => setNewAssetClipId(bindClipId) } : undefined}
+        onConfirm={([guid]) => { if (bindClipId && guid) bind(bindClipId, guid); }}
+        data-testid="timeline-bind-dialog"
+      />
+      <NamePromptDialog
+        open={newAssetClipId !== null}
+        onOpenChange={(open) => { if (!open) setNewAssetClipId(null); }}
+        title="New Timeline Asset and Bind"
+        label="Name"
+        description="The asset is created beside this document and the clip is bound to it."
+        confirmLabel="Create and Bind"
+        initialValue={`${clips.find((entry) => entry.id === newAssetClipId)?.name ?? "New"} Timeline`}
+        onSubmit={(name) => { if (newAssetClipId) void createAndBind(newAssetClipId, name); }}
+        data-testid="timeline-new-asset-dialog"
+      />
+      {bindError ? <p className="px-2 pb-2 text-xs text-destructive" role="alert" data-testid="timeline-bind-error">{bindError}</p> : null}
     </div>
   </PanelFrame>;
 }

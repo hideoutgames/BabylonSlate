@@ -157,4 +157,21 @@ export async function placeFeatureTestSceneScript(ctx: FeatureTestContext): Prom
   ctx.mainScene.timelineClips = [intro];
   const documentGuid = await ctx.host.guidForAsset(ctx.mainScenePath);
   ctx.mainScene.script = ownedActorProbeScript("Feature Test scene", mannequin, { clip: intro, documentGuid });
+  await bindFeatureTestTimelineAsset(ctx, intro);
+}
+
+/**
+ * `FT_Timeline` holds the main scene's Intro and FT_HUD's Reveal, one clip
+ * from a Scene and one from a Scene Layer; its document lists both.
+ */
+async function bindFeatureTestTimelineAsset(ctx: FeatureTestContext, intro: SerializedTimelineClip): Promise<void> {
+  const { guid } = await ctx.createAsset("Timeline", "Timeline", "FT_Timeline", {
+    payload: () => ({ description: "The Feature Test's Timeline Clips: Intro (main scene) and Reveal (FT_HUD)." }),
+  });
+  intro.timelineAsset = guid;
+  const reveal = ctx.sceneDocuments
+    .flatMap((doc) => (doc.content as { timelineClips?: SerializedTimelineClip[] }).timelineClips ?? [])
+    .find((clip) => clip.id === "ft-timeline-clip-hud-reveal");
+  if (!reveal) throw new Error("FT_HUD has no Reveal Timeline Clip to bind to FT_Timeline.");
+  reveal.timelineAsset = guid;
 }

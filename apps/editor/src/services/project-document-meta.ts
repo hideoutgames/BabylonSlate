@@ -1,4 +1,12 @@
-import { curveKindForAssetType, normalizeCurveAssetPayload, normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
+import {
+  TIMELINE_CLIPS_META,
+  curveKindForAssetType,
+  normalizeCurveAssetPayload,
+  normalizeDataDefinitionAsset,
+  normalizeDataTreeAsset,
+  normalizeTimelineAsset,
+  timelineClipSummaries,
+} from "@haptic/core";
 import type {
   DocumentKind,
   SerializedGraph,
@@ -43,6 +51,12 @@ export function headerMetaForSave(
   if (type === "DataTree") return { ...normalizeDataTreeAsset(content) };
   const curveKind = curveKindForAssetType(type);
   if (curveKind) return { ...normalizeCurveAssetPayload(curveKind, content) };
+  if (type === "Timeline") return { ...normalizeTimelineAsset(content) };
+  // The registry indexes which clips each Timeline Asset holds from these, without loading the scenes.
+  if (type === "Scene" || type === "SceneLayer") {
+    const clips = (content as { timelineClips?: SerializedScene["timelineClips"] }).timelineClips;
+    return clips?.length ? { [TIMELINE_CLIPS_META]: timelineClipSummaries(clips) } : undefined;
+  }
   if (isInputAssetType(type)) {
     const input = normalizeInputAssetPayload(type, content);
     return { valueType: input.valueType };

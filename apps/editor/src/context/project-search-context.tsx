@@ -33,6 +33,8 @@ interface ProjectSearchContextValue {
   pendingTarget: SearchOpenTarget | null;
   clearPendingTarget: () => void;
   openSearchResult: (entry: SearchEntry) => Promise<void>;
+  /** Shows the Content Browser with the asset selected in its folder, even one that opens as a document. */
+  revealAsset: (guid: string, path: string) => void;
 }
 
 const ProjectSearchContext = createContext<ProjectSearchContextValue | null>(
@@ -150,6 +152,12 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
     [getOpenDocuments, openDocument, setActiveDocument, setFocusDiagnostic],
   );
 
+  const revealAsset = useCallback((guid: string, path: string) => {
+    // A Class target with a path is revealed, never opened, by the Content Browser.
+    setPendingTarget({ kind: "class", classId: "", guid, path });
+    setActiveDocument(CONTENT_BROWSER_ID);
+  }, [setActiveDocument]);
+
   const value = useMemo<ProjectSearchContextValue>(
     () => ({
       query,
@@ -159,12 +167,14 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
       pendingTarget,
       clearPendingTarget,
       openSearchResult,
+      revealAsset,
     }),
     [
       beginSearchRebuild,
       cancelSearchRebuild,
       clearPendingTarget,
       openSearchResult,
+      revealAsset,
       pendingTarget,
       query,
       searchStatus,
@@ -179,6 +189,11 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
 }
 
 /* eslint-disable react-refresh/only-export-components -- context module */
+/** The project search, or null outside `ProjectSearchProvider` (a window rendered on its own). */
+export function useOptionalProjectSearch(): ProjectSearchContextValue | null {
+  return useContext(ProjectSearchContext);
+}
+
 export function useProjectSearch(): ProjectSearchContextValue {
   const context = useContext(ProjectSearchContext);
   if (!context) {
