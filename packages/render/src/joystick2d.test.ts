@@ -125,7 +125,9 @@ describe("SceneLayer joystick", () => {
     const thumb = new StandardMaterial("thumb", layer.scene);
     const materials = new Map([["bg", background], ["thumb", thumb]]);
     const resolveMaterial = (guid: string, options?: { scene?: unknown; unlit?: boolean }) => {
-      expect(options).toMatchObject({ scene: layer.scene, unlit: true });
+      // By identity: a subset match walks the whole Scene graph on every call (seconds under coverage).
+      expect(options?.scene).toBe(layer.scene);
+      expect(options?.unlit).toBe(true);
       return materials.get(guid) ?? null;
     };
     const scene = createDefaultScene();
