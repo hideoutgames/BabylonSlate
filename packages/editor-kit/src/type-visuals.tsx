@@ -12,6 +12,7 @@ import {
   CircleDashedIcon,
   CloudIcon,
   Columns3Icon,
+  ChartGanttIcon,
   CylinderIcon,
   DatabaseIcon,
   FileBoxIcon,
@@ -341,7 +342,8 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   Skeleton: PersonStandingIcon,
   AnimationGraph: WorkflowIcon,
   SpriteAnimation: FilmIcon,
-  Timeline: FilmIcon,
+  // Tracks over time, so it reads apart from the Film icon of animations and clips.
+  Timeline: ChartGanttIcon,
   BehaviourTree: ListTreeIcon,
   Blackboard: ListIcon,
   SaveGame: SaveIcon,

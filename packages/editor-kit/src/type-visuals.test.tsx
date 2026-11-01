@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { ENGINE_COMPONENT_CLASS_IDS } from "@haptic/core";
 import {
+  ChartGanttIcon,
   CloudIcon,
   FileBoxIcon,
   FileAxis3dIcon,
@@ -26,6 +27,13 @@ import {
 } from "./type-visuals";
 
 describe("resolveTypeVisual", () => {
+  it("gives Timeline assets their own glyph, apart from the animation assets'", () => {
+    const timeline = resolveTypeVisual({ assetType: "Timeline" });
+    expect(timeline.icon).toBe(ChartGanttIcon);
+    expect(timeline.family).toBe("animation");
+    for (const assetType of ["SpriteAnimation", "Animation"]) expect(resolveTypeVisual({ assetType }).icon).not.toBe(timeline.icon);
+  });
+
   it("recognizes Material Object references as objects with the material glyph", () => {
     expect(walkAncestry("MaterialObject", engineParentOf)).toEqual(["MaterialObject", "Object"]);
     const visual = resolveTypeVisual({ classId: "MaterialObject" });
