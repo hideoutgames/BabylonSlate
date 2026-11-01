@@ -70,7 +70,7 @@ const ARRAY_VALUE_TYPES = new Set<TimelinePropertyTrack["valueType"]>(["vec2", "
  * vectors, rotators and colours as arrays, and a colour keeps its 3 or 4
  * channels (as tweens do). An unset property takes its owner's usual shape.
  */
-function storedValue(track: TimelinePropertyTrack, value: unknown, previous: unknown, arrays: boolean): unknown {
+export function timelineStoredValue(track: TimelinePropertyTrack, value: unknown, previous: unknown, arrays: boolean): unknown {
   if (!ARRAY_VALUE_TYPES.has(track.valueType)) return value;
   const asArray = Array.isArray(previous) || (arrays && (previous === undefined || previous === null));
   if (!asArray) return value;
@@ -100,11 +100,11 @@ function applyTrack(actor: SerializedActor, track: TimelinePropertyTrack, value:
   }
   if (target.kind === "visible") return { ...actor, visible: value === true };
   if (target.kind === "variable") {
-    const stored = storedValue(track, value, actor.properties?.[target.property], false);
+    const stored = timelineStoredValue(track, value, actor.properties?.[target.property], false);
     return { ...actor, properties: { ...actor.properties, [target.property]: stored } };
   }
   const components = actor.components.map((component): SerializedComponent => component.id === target.componentId
-    ? { ...component, properties: { ...component.properties, [target.property]: storedValue(track, value, component.properties[target.property], true) } }
+    ? { ...component, properties: { ...component.properties, [target.property]: timelineStoredValue(track, value, component.properties[target.property], true) } }
     : component);
   return { ...actor, components };
 }

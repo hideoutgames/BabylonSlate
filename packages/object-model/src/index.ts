@@ -125,3 +125,4 @@ export {
 } from "./live-properties";
 export { ObjectCollector, canHoldReference, type CollectionResult, type RootSource, type RootVisitor, type ScalarVariables } from "./object-collector";
 export { CurveObject } from "./curve-object";
+export { TIMELINE_CLIP_CLASS_ID, TimelineClipObject } from "./timeline-clip-object";
