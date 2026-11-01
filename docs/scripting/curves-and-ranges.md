@@ -63,6 +63,27 @@ Each key has a **Time**, a **Value**, an **Interpolation** and two tangents, **A
 
 A curve without keys is zero everywhere, and a curve with one key holds that key's value. Keys are kept at least 0.001 seconds apart.
 
+## Edit curves in the Inspector
+
+A curve variable, Structure field, Data Definition field or unwired node pin shows one row with a preview and its key count:
+
+- A **Float Curve** shows a sparkline.
+- A **Vector Curve** shows one sparkline per axis, in the axis colours.
+- A **Color Curve** shows its gradient.
+
+Tap the row to expand the editor in place. A **Color Curve** opens as a gradient with stops; tap **Channels** to edit its red, green, blue and alpha curves instead.
+
+In the curve plot:
+
+- Tap or click a key to select it, and drag it to change its time and value. On a **Vector Curve**, each axis has its own handle on the same key; use **X**, **Y** and **Z** to show or hide axes.
+- Arrow keys nudge the selected key; hold Shift to move ten times as far. **Delete** removes it.
+- Double-click empty space to add a key there. On touch, hold empty space and choose **Add Key Here**.
+- Drag empty space to pan, pinch or Ctrl/Cmd-scroll to zoom, and choose **Fit** to frame every key.
+- A **Custom** key shows two tangent handles; drag either to set its slope.
+- Below the plot, edit the selected key's **Time**, **Value** and **Interpolation**, and the curve's **Before** and **After**.
+
+Each drag, and each other change, is one step in **Undo**. Data Tree grids and the Play **Inspector** show the same previews.
+
 ## Nodes
 
 | Node | What it does |

@@ -56,7 +56,7 @@ export function GradientEditor({
   // Pointer events can arrive before React re-renders, so handlers read the latest draft from a ref.
   const draftRef = useRef<EditorKey[] | null>(null);
   const setDraft = (next: EditorKey[] | null) => { draftRef.current = next; setDraftState(next); };
-  const keys = draftRef.current ?? committed;
+  const keys = draft ?? committed;
   const [selected, setSelected] = useState(0);
   const [frozenDomain, setFrozenDomain] = useState<[number, number] | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
