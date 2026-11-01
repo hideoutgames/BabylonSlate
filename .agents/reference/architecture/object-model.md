@@ -59,6 +59,13 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 - Scripts treat an object with `destroyed === true` as not valid: subject guards skip it and log, and Is Valid, Validated Get, Assert Is Valid, Cast (`ctx.isA`) and breakpoint conditions report it as not valid. An actor queued for destruction stays valid until the commit.
 - `World.findActor` uses an incremental guid index; queued spawns stay invisible and queued destroys visible until commit.
 
+## Object lifetime
+
+- [`object-collector.ts`](../../../packages/object-model/src/object-collector.ts) `ObjectCollector`: owned objects (actors, components, Scenes, Scene Layers, subsystems, the Game Instance) end only through their own routes and are roots while alive; collectable objects (`register`) live while a root reaches them through object variables, arrays, maps (keys and values) and plain structure records. Other class instances (delegates, handles) are never scanned, so they are weak.
+- A pass marks with a per-pass epoch and a worklist (no recursion through object chains), sets stored references to destroyed objects to None (array slots, map values; map entries with a destroyed key are removed), then destroys unmarked collectables in creation order without script events and runs `onRelease` handlers. Declared variables whose type can never hold an object (`canHoldReference`) are skipped.
+- Runtime: [`object-lifetime.ts`](../../../packages/runtime/src/object-lifetime.ts) `RuntimeObjectLifetime` runs a pass at the end of `runTick`, after `flushComponentCommands`, when no script is mid-call: every `garbageCollectionIntervalTicks` (default 60) while collectables exist or `World.destroyCount` moved, after a Scene change, and on `request()`. Roots are `ScriptRuntime.liveObjects()` plus root sources: waiting latent frames (`LatentFrameRoots`, filled by `ctx.holdFrame` from compiled async entries) and behaviour tree blackboards.
+- Determinism: roots and collectables are visited in fixed order; collection timing comes from tick counts, never wall time.
+
 ## Actor hierarchy
 
 - `parentId` names the parent guid; parents resolve through the live guid index. Child world matrix = `local × parentWorld` (Babylon parenting; math in [`packages/core/src/affine-transform.ts`](../../../packages/core/src/affine-transform.ts)).
