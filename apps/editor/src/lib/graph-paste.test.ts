@@ -32,26 +32,26 @@ const storedNode = (node: CanvasNode): SerializedGraph["nodes"][number] => ({
 });
 
 describe("prepareClassGraphPaste custom events", () => {
-  it("renames a duplicated custom event to a free name, in the shape of an actor's duplicate", () => {
+  it("renames a duplicated custom event to the first free Name_1, Name_2", () => {
     const original = customEvent("open", "Open Door");
     const first = prepareClassGraphPaste(graphOf([customEvent("open-1", "Open Door")]), graphOf([original]), null, null);
     expect(first.notice).toBeUndefined();
-    expect(first.nodes[0]!.data).toMatchObject({ name: "Open Door Copy", title: "Event Open Door Copy" });
+    expect(first.nodes[0]!.data).toMatchObject({ name: "Open Door_1", title: "Event Open Door_1" });
     const second = prepareClassGraphPaste(
       graphOf([customEvent("open-2", "Open Door")]),
       graphOf([original, ...first.nodes]),
       null,
       null,
     );
-    expect(names(second.nodes)).toEqual(["Open Door Copy 2"]);
-    // Copying the copy numbers it instead of growing "Copy Copy".
+    expect(names(second.nodes)).toEqual(["Open Door_2"]);
+    // Copying the copy numbers it from its stem instead of growing "Open Door_1_1".
     const third = prepareClassGraphPaste(
-      graphOf([customEvent("open-3", "Open Door Copy")]),
+      graphOf([customEvent("open-3", "Open Door_1")]),
       graphOf([original, ...first.nodes, ...second.nodes]),
       null,
       null,
     );
-    expect(names(third.nodes)).toEqual(["Open Door Copy 3"]);
+    expect(names(third.nodes)).toEqual(["Open Door_3"]);
   });
 
   it("passes the rename rule and keeps the copy's own pins", () => {
@@ -73,9 +73,9 @@ describe("prepareClassGraphPaste custom events", () => {
       nodes: [],
       edges: [],
       functionGraphs: {
-        helper: { nodes: [storedNode(customEvent("h", "Open/Door Copy"))], edges: [] },
+        helper: { nodes: [storedNode(customEvent("h", "Open/Door_1"))], edges: [] },
       },
-      members: [{ id: "m", kind: "event", name: "Open Door Copy 2" }],
+      members: [{ id: "m", kind: "event", name: "Open Door_2" }],
     };
     const result = prepareClassGraphPaste(
       graphOf([customEvent("open-1", "Open Door")]),
@@ -83,13 +83,13 @@ describe("prepareClassGraphPaste custom events", () => {
       stored,
       null,
     );
-    // "Open/Door Copy" compiles to the same event as "Open Door Copy".
-    expect(names(result.nodes)).toEqual(["Open Door Copy 3"]);
+    // "Open/Door_1" compiles to the same event as "Open Door_1".
+    expect(names(result.nodes)).toEqual(["Open Door_3"]);
   });
 
   it("looks in the event graph when pasting into a function graph, not its stale stored slice", () => {
     const stored: SerializedGraph = {
-      nodes: [storedNode(customEvent("e", "Open Door Copy"))],
+      nodes: [storedNode(customEvent("e", "Open Door_1"))],
       edges: [],
       functionGraphs: { fn: { nodes: [], edges: [] } },
     };
@@ -99,7 +99,7 @@ describe("prepareClassGraphPaste custom events", () => {
       stored,
       "fn",
     );
-    expect(names(result.nodes)).toEqual(["Open Door Copy 2"]);
+    expect(names(result.nodes)).toEqual(["Open Door_2"]);
   });
 
   it("keeps a name nothing else uses, and gives two copies of one name different names", () => {
@@ -111,7 +111,7 @@ describe("prepareClassGraphPaste custom events", () => {
       null,
       null,
     );
-    expect(names(pair.nodes)).toEqual(["Ping Copy", "Ping Copy 2"]);
+    expect(names(pair.nodes)).toEqual(["Ping_1", "Ping_2"]);
   });
 
   it("leaves the wires and the other values of the copies alone", () => {
@@ -120,7 +120,7 @@ describe("prepareClassGraphPaste custom events", () => {
       edges: [wire("a", "log")],
     };
     const result = prepareClassGraphPaste(pasted, graphOf([customEvent("ping", "Ping")]), null, null);
-    expect(result.nodes[0]!.data).toMatchObject({ name: "Ping Copy", custom: { nested: 1 } });
+    expect(result.nodes[0]!.data).toMatchObject({ name: "Ping_1", custom: { nested: 1 } });
     expect(result.nodes[1]).toEqual(pasted.nodes[1]);
   });
 });

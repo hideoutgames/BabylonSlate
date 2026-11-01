@@ -13,6 +13,7 @@ import {
   ensureEventNodeOnGraph,
   functionLibraryShowsEventGraphEmpty,
   isObjectInstanceVariableType,
+  nextNewMemberName,
   patchClassMember,
   pruneEventMembersToNodes,
   removeClassMember,
@@ -187,6 +188,27 @@ describe("addClassMember", () => {
     expect(graph.nodes[0]?.data.title).toBe("Event On Hit");
     expect(graph.nodes[0]?.data.name).toBe("On Hit");
     expect(graph.nodes[0]?.data.pins).toEqual([]);
+  });
+
+  it("never gives Events + a name another custom event has, numbering it Name_1, Name_2", () => {
+    // What the Class window's + does, three times: the generated name collides once formatted.
+    let graph = emptyGraph();
+    for (let index = 0; index < 3; index++) {
+      const names = (graph.members ?? []).filter((member) => member.kind === "event").map((member) => member.name);
+      graph = addClassMember(graph, "event", nextNewMemberName("event", names), () => `evt-${index}`);
+    }
+    // A pasted or hand-placed event claims its name too, across case and compiled identifier.
+    graph = {
+      ...graph,
+      nodes: [...graph.nodes, { id: "placed", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { name: "On Hit 1" } }],
+    };
+    graph = addClassMember(graph, "event", "on hit", () => "evt-3");
+    graph = addClassMember(graph, "event", "On Hit", () => "evt-4");
+
+    expect(graph.members?.map((member) => member.name)).toEqual([
+      "NewEvent", "NewEvent_1", "NewEvent_2", "On Hit", "On Hit_2",
+    ]);
+    expect(graph.nodes.find((node) => node.id === "evt-4")?.data).toMatchObject({ name: "On Hit_2", title: "Event On Hit_2" });
   });
 
   it("syncs custom event output pins onto the event node and matching Call nodes", () => {

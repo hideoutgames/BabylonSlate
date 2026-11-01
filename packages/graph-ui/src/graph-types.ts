@@ -51,6 +51,11 @@ export type GraphDiagnostic = {
 export type PaletteNode = {
   id: string;
   title: string;
+  /**
+   * The added node's title when the row names an action instead of the node
+   * (`Add Custom Event for On Damaged` adds `Event On Damaged`); else `title`.
+   */
+  nodeTitle?: string;
   category: string;
   description?: string;
   /** Additional names, operators and formulas accepted by Add Node search. */

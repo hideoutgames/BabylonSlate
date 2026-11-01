@@ -1,5 +1,5 @@
 import { cn } from "@haptic/ui/lib/utils";
-import { emptySquareFill } from "./pin-shape-glyph";
+import { squareShade } from "./pin-shape-glyph";
 
 /**
  * Colored type swatch for pin / asset labels. Color comes from DataTypes
@@ -28,7 +28,7 @@ export function TypeColorMark({
         className={cn("size-2.5 shrink-0", shape === "square" ? "rounded-sm border-2" : "rounded-full")}
         style={
           shape === "square"
-            ? { backgroundColor: emptySquareFill(colorVar), borderColor: colorVar }
+            ? { backgroundColor: squareShade(colorVar), borderColor: colorVar }
             : { backgroundColor: colorVar }
         }
         data-type-color-swatch={shape}
