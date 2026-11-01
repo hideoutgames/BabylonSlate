@@ -48,6 +48,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "data-definition": ["data-definition-fields"],
   "data-tree": ["data-tree-entries"],
   "float-curve": ["curve-asset-editor"],
+  timeline: ["timeline-asset-clips"],
   "vector-curve": ["curve-asset-editor"],
   "color-curve": ["curve-asset-editor"],
   "script-interface": ["script-interface-preview"],

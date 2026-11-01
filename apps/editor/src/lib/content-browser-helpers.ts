@@ -285,6 +285,7 @@ export const CREATABLE_ASSET_TYPES = [
   "FloatCurve",
   "VectorCurve",
   "ColorCurve",
+  "Timeline",
   "ScriptInterface",
   "AudioMixer",
   "AudioChannel",
@@ -326,7 +327,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "animation",
     label: "Animation",
-    types: ["AnimationGraph", "SpriteAnimation"],
+    types: ["AnimationGraph", "SpriteAnimation", "Timeline"],
   },
   {
     id: "rendering",
@@ -370,6 +371,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   FloatCurve: "A number that changes over time, shared by every script that reads it.",
   VectorCurve: "A vector that changes over time, shared by every script that reads it.",
   ColorCurve: "A colour and alpha that change over time, shared by every script that reads it.",
+  Timeline: "Groups Timeline Clips from Scenes and Scene Layers, so any class can play them and bind their events.",
   ScriptInterface: "A contract of methods that classes can implement.",
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",

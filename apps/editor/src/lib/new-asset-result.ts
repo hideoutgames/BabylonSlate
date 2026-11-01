@@ -8,6 +8,7 @@ import {
   createDataTreeAsset,
   createDefaultRenderTargetCaptureProperties,
   createDefaultCurveAssetPayload,
+  createDefaultTimelineAsset,
   createDefaultRenderTargetPayload,
   curveKindForAssetType,
   createDefaultRenderTargetTexturePayload,
@@ -325,6 +326,10 @@ export function buildNewAssetResult(options: {
       guid,
       createDefaultAudioChannelPayload() as unknown as Record<string, unknown>,
     );
+  }
+
+  if (type === "Timeline") {
+    return documentAsset(type, name, guid, createDefaultTimelineAsset() as unknown as Record<string, unknown>);
   }
 
   if (type === "FloatCurve" || type === "VectorCurve" || type === "ColorCurve") {

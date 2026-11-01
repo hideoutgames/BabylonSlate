@@ -14,6 +14,7 @@ export type DockviewDocumentKind =
   | "float-curve"
   | "vector-curve"
   | "color-curve"
+  | "timeline"
   | "script-interface"
   | "sprite"
   | "sprite-animation"
@@ -60,6 +61,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "float-curve",
   "vector-curve",
   "color-curve",
+  "timeline",
   "script-interface",
   "sprite",
   "sprite-animation",
@@ -132,6 +134,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "float-curve": "curve-asset-editor",
   "vector-curve": "curve-asset-editor",
   "color-curve": "curve-asset-editor",
+  timeline: "timeline-asset-clips",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
   "sprite-animation": "sprite-animation-preview",
@@ -1158,6 +1161,10 @@ export function listDockWindows(
   if (kind === "data-definition") return withOptionalLocks(kind, [
     { id: "data-definition-fields", component: "data-definition-fields", title: "Fields" },
     { id: "data-definition-details", component: "data-definition-details", title: "Inspector", defaultPosition: { referencePanelId: "data-definition-fields", direction: "right", initialWidth: 320 } },
+  ], options);
+  if (kind === "timeline") return withOptionalLocks(kind, [
+    { id: "timeline-asset-clips", component: "timeline-asset-clips", title: "Timeline Clips" },
+    { id: "timeline-asset-events", component: "timeline-asset-events", title: "Events", defaultPosition: { referencePanelId: "timeline-asset-clips", direction: "right", initialWidth: 300 } },
   ], options);
   if (kind === "float-curve" || kind === "vector-curve" || kind === "color-curve") return withOptionalLocks(kind, [
     { id: "curve-asset-editor", component: "curve-asset-editor", title: "Curve Editor" },

@@ -23,6 +23,10 @@ export interface ChecklistDialogItem {
   keywords?: string;
   /** Already included: shown with a check and not selectable. */
   included?: boolean;
+  /** Muted text after the label, such as what the item already holds. */
+  description?: string;
+  /** Why the item cannot be picked; shown in place of the description. */
+  disabledReason?: string;
   testId?: string;
 }
 
@@ -44,6 +48,10 @@ export interface ChecklistDialogProps {
   onConfirm: (ids: string[]) => void;
   searchPlaceholder?: string;
   emptyLabel?: string;
+  /** `single`: one item at a time, and no count in the footer. */
+  selection?: "multiple" | "single";
+  /** A row above the list that runs a command instead of being picked, such as `New Timeline Asset…`. */
+  action?: { label: string; icon?: ReactNode; onSelect: () => void; testId?: string };
   "data-testid"?: string;
 }
 
@@ -66,6 +74,8 @@ export function ChecklistDialog({
   onConfirm,
   searchPlaceholder = "Search",
   emptyLabel = "No Matches",
+  selection = "multiple",
+  action,
   "data-testid": testId,
 }: ChecklistDialogProps) {
   const touch = useTouchUi();
@@ -89,6 +99,7 @@ export function ChecklistDialog({
   }, [groups, query]);
 
   const toggle = (id: string, on: boolean) => setChecked((current) => {
+    if (selection === "single") return on ? new Set([id]) : new Set();
     const next = new Set(current);
     if (on) next.add(id);
     else next.delete(id);
@@ -128,6 +139,19 @@ export function ChecklistDialog({
           data-testid={testId ? `${testId}-search` : undefined}
         />
         <div className="-mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1" role="list">
+          {action ? <button
+            type="button"
+            className={cn("flex w-full items-center gap-2 rounded-md px-1.5 text-left font-medium hover:bg-accent/50 [&_svg]:size-4",
+              touch ? "min-h-11" : "h-7")}
+            onClick={() => {
+              onOpenChange(false);
+              action.onSelect();
+            }}
+            data-testid={action.testId}
+          >
+            {action.icon}
+            <span className="min-w-0 flex-1 truncate">{action.label}</span>
+          </button> : null}
           {visible.length === 0 ? <p className="py-6 text-center text-muted-foreground">{emptyLabel}</p> : null}
           {visible.map((group) => (
             <div key={group.id} role="group" aria-labelledby={`${idPrefix}-${group.id}`} className="pb-2">
@@ -138,24 +162,31 @@ export function ChecklistDialog({
               {group.items.map((item) => {
                 const isChecked = checked.has(item.id);
                 const inputId = `${idPrefix}-${group.id}-${item.id}`;
+                const unavailable = item.included || Boolean(item.disabledReason);
+                const note = item.disabledReason ?? item.description;
                 return (
                   <label
                     key={item.id}
-                    htmlFor={item.included ? undefined : inputId}
+                    htmlFor={unavailable ? undefined : inputId}
                     role="listitem"
                     data-testid={item.testId}
                     data-included={item.included ? "true" : undefined}
+                    data-disabled={item.disabledReason ? "true" : undefined}
                     className={cn(
                       "flex items-center gap-2 rounded-md px-1.5",
                       touch ? "min-h-11" : "h-7",
-                      item.included ? "text-muted-foreground" : "cursor-pointer hover:bg-accent/50",
+                      unavailable ? "text-muted-foreground" : "cursor-pointer hover:bg-accent/50",
                       isChecked && "bg-accent/60",
                     )}
                   >
                     {item.included
                       ? <CheckIcon className="size-4 shrink-0" aria-label="Included" />
-                      : <Checkbox id={inputId} checked={isChecked} onCheckedChange={(on) => toggle(item.id, on === true)} />}
-                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      : <Checkbox id={inputId} checked={isChecked} disabled={Boolean(item.disabledReason)}
+                        onCheckedChange={(on) => toggle(item.id, on === true)} />}
+                    <span className="min-w-0 flex-1 truncate">
+                      {item.label}
+                      {note ? <span className="ml-2 text-xs text-muted-foreground">{note}</span> : null}
+                    </span>
                     {item.trailing ? <span className="shrink-0 text-xs text-muted-foreground">{item.trailing}</span> : null}
                   </label>
                 );
@@ -164,7 +195,7 @@ export function ChecklistDialog({
           ))}
         </div>
         <DialogFooter className="justify-between">
-          <span className="text-xs text-muted-foreground" aria-live="polite">{checked.size} selected</span>
+          <span className="text-xs text-muted-foreground" aria-live="polite">{selection === "multiple" ? `${checked.size} selected` : null}</span>
           <span className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button size="sm" disabled={checked.size === 0} onClick={confirm} data-testid={testId ? `${testId}-confirm` : undefined}>

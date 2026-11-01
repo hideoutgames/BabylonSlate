@@ -52,6 +52,7 @@ const KINDS = Object.keys({
   texture: true,
   font: true,
   blackboard: true,
+  timeline: true,
 } satisfies Record<DockviewDocumentKind, true>) as DockviewDocumentKind[];
 
 const OPTION_VARIANTS: DockWindowOptions[] = [
