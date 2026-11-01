@@ -656,6 +656,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Scene Actor Component](get-scene-actor-component.md) | Returns a component of an actor this Scene or Scene Layer places, in its script. |
 | [Get Scene Load Progress](get-scene-load-progress.md) | Returns how far a streamed Scene has loaded, from 0 to 1. |
 | [Get Scene State](get-scene-state.md) | Returns whether a streamed Scene is unloaded, loading, loaded or unloading. |
+| [Get Scene Timeline Clip](get-scene-timeline-clip.md) | Returns a Timeline Clip of this Scene or Scene Layer, in its script, to play and control. |
 | [Get Target Scene Name](get-target-scene-name.md) | Returns the name of the Scene that a Scene Streaming Actor loads. |
 | [Is Scene Loaded](is-scene-loaded.md) | Returns true once all actors and render resources of a streamed Scene are ready. |
 | [Load Scene Async](load-scene-async.md) | Starts loading a Scene Streaming Actor's Scene while the game keeps running. |

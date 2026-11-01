@@ -428,4 +428,4 @@ Deliberate product decisions that can look like bugs. Do not "fix" them without 
 - Console arguments containing spaces need quotes; `actorboundingbox` takes a Boolean.
 - Space activates a focused toolbar button (native button semantics) until focus returns to the canvas.
 - No networking, replication, game HUD or AI controller exists; their absence is scope, not a defect.
-- Timeline Clips are authored per Scene and Scene Layer (`timelineClips`, Timeline mode); keyframe editing, playback, Timeline Assets and Timeline Clip assets build on that field.
+- Timeline Clips are authored per Scene and Scene Layer (`timelineClips`, Timeline mode) and play in Play per Scene or Scene Layer copy; keyframe editing, Play playback, Timeline Assets and Timeline Clip assets build on that field.

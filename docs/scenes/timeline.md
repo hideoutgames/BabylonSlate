@@ -74,3 +74,31 @@ While a clip is selected, the **Inspector** edits it instead of the actor select
 
 **Interpolation** offers **Constant**, **Linear**, **Auto**, **Ease In**, **Ease Out**, **Ease In Out** and every other easing curve. Enum and Asset values are set on the property itself, then keyed.
 
+
+## Play clips in the game
+
+In Play and in a build, each clip plays on the actors of its Scene or Scene Layer. Every copy of a Scene Layer plays its own clips on its own actors.
+
+- With **Auto Play** on, the clip starts as soon as its Scene or layer runs. Otherwise a script starts it.
+- **Play Rate** sets the speed: 2 plays twice as fast.
+- **Loop Mode**: **Once** stops at the end, **Loop** starts over and **Ping Pong** turns around at each end.
+- **When Finished** applies when a **Once** clip reaches its end: **Keep State** leaves the last values, and **Restore** puts every animated property back as it was before the clip first played.
+- Clips pause with the game. Muted tracks do not play, and **Location**, **Rotation** and **Scale** are relative to the actor's parent.
+
+A clip moves before actors tick, so an actor's **Tick** sees the clip's values for that step.
+
+### Control a clip from a script
+
+In the Scene's [Scene Script](../scripting/scene-scripts.md), or a Scene Layer's Scene Layer Script, Add Node lists a [Get Scene Timeline Clip](../scripting/class/get-scene-timeline-clip.md) node for each clip, such as **Get Intro Timeline Clip**. Drag from its pin for these functions:
+
+| Function | Does |
+| --- | --- |
+| **Play** | Plays forwards from the current time. A **Once** clip at its end starts over. |
+| **Play Reverse** | Plays backwards from the current time. |
+| **Pause** | Stops where it is. |
+| **Stop** | Stops and goes back to the start, showing the clip's first values. |
+| **Set Time** | Jumps to **Time**, in seconds, and shows the values there. |
+| **Set Play Rate** | Multiplies the clip's **Play Rate**: 1 plays at it, 0 holds still. |
+| **Get Time** | Returns the current time in seconds. |
+| **Get Length** | Returns the clip's **Length**. |
+| **Is Playing** | Returns whether the clip is playing. |
