@@ -78,6 +78,7 @@ function saveGamePaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPalett
       const write = operation === "setField" || operation === "migrationSetField";
       const title = `${write ? "Set" : "Get"} ${migration ? "Migration" : "Save"} ${field.name}`;
       const defaultData = { fieldId: field.id, fieldName: field.name, typeId: field.type, array: field.array === true, title,
+        ...(field.structId ? { typeClassId: field.structId } : {}),
         ...(write ? { "default:value": field.defaultValue } : {}) };
       return { id: `${def.id}:${field.id}`, nodeType: def.id, title, category: "save-game", description: def.description,
         pins: def.pins(defaultData), pure: def.pure, latent: def.latent, defaultData };

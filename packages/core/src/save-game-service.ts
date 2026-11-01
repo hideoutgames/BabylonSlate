@@ -18,7 +18,9 @@ import {
   type SaveGameValue,
 } from "./save-game";
 
-const FORMAT_VERSION = 1;
+/** Version 2 added Structure fields; version 1 saves still load (their fields are a subset). */
+const FORMAT_VERSION = 2;
+const READABLE_FORMAT_VERSIONS: ReadonlySet<number> = new Set([1, 2]);
 const MAX_SAVE_BYTES = 16 * 1024 * 1024;
 const generationNames = ["generation-a.save", "generation-b.save"] as const;
 interface SaveBody extends SaveGameMigrationData {
@@ -329,7 +331,7 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     let outer: unknown;
     try { outer = JSON.parse(text); } catch { throw new SaveGameError("corrupt", "Save file is not valid JSON."); }
     if (!isSaveGameRecord(outer) || !Number.isSafeInteger(outer.formatVersion)) throw new SaveGameError("corrupt", "Save envelope is invalid.");
-    if (outer.formatVersion !== FORMAT_VERSION) throw new SaveGameError("incompatible", "This save uses an unsupported format version.");
+    if (!READABLE_FORMAT_VERSIONS.has(outer.formatVersion as number)) throw new SaveGameError("incompatible", "This save uses an unsupported format version.");
     if (typeof outer.payload !== "string" || typeof outer.checksum !== "string" || !/^[a-f0-9]{64}$/.test(outer.checksum)) throw new SaveGameError("corrupt", "Save checksum is missing or invalid.");
     let hash: string;
     try { hash = await checksum(outer.payload); }
@@ -338,7 +340,7 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     let parsed: unknown;
     try { parsed = cloneSaveGameValue(JSON.parse(outer.payload)); }
     catch { throw new SaveGameError("corrupt", "Save payload is invalid."); }
-    if (!isSaveGameRecord(parsed) || parsed.formatVersion !== FORMAT_VERSION || typeof parsed.projectId !== "string" || typeof parsed.definitionId !== "string" || typeof parsed.profile !== "string" || typeof parsed.slot !== "string" || !Number.isSafeInteger(parsed.schemaVersion) || (parsed.schemaVersion as number) < 1 || !Number.isSafeInteger(parsed.sequence) || (parsed.sequence as number) < 1 || typeof parsed.createdAt !== "string" || !Number.isFinite(Date.parse(parsed.createdAt)) || !isSaveGameRecord(parsed.fields) || !Object.hasOwn(parsed, "state")) throw new SaveGameError("corrupt", "Save metadata or gameplay fields are invalid.");
+    if (!isSaveGameRecord(parsed) || parsed.formatVersion !== outer.formatVersion || typeof parsed.projectId !== "string" || typeof parsed.definitionId !== "string" || typeof parsed.profile !== "string" || typeof parsed.slot !== "string" || !Number.isSafeInteger(parsed.schemaVersion) || (parsed.schemaVersion as number) < 1 || !Number.isSafeInteger(parsed.sequence) || (parsed.sequence as number) < 1 || typeof parsed.createdAt !== "string" || !Number.isFinite(Date.parse(parsed.createdAt)) || !isSaveGameRecord(parsed.fields) || !Object.hasOwn(parsed, "state")) throw new SaveGameError("corrupt", "Save metadata or gameplay fields are invalid.");
     return parsed as unknown as SaveBody;
   }
 

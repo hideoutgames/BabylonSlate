@@ -28,9 +28,9 @@ Typed Save Game definitions, the save/load service shared by Play, Preview Build
 
 ## Definitions
 
-- Asset type `SaveGame`, `.savegame.hasset`. Field types: `bool`, `int`, `float`, `string`, `vector3`, `actor`, `asset`, and arrays of those. Actor and Asset values persist stable ids or `null`. Map fields are not definition types.
+- Asset type `SaveGame`, `.savegame.hasset`. Field types: `bool`, `int`, `float`, `string`, `vector3`, `actor`, `asset`, `struct` (with `structId`, a Structure GUID or `engine:` id; values are plain records), and arrays of those. The editor offers only Structures with no object, class, delegate, wildcard or actor field at any depth (`saveableStructures`); field nodes carry the Structure as `typeClassId`, the property the type-reference validator reads for `typeId` `struct`. Actor and Asset values persist stable ids or `null`. Map fields are not definition types.
 - Each field has an immutable internal id separate from its editable name: renaming keeps existing saves; delete-and-add creates a different field. Raw ids are not shown in authoring controls. Added fields take their defaults when an older save loads.
-- `schemaVersion` describes gameplay data and is separate from the save file format version and the project release version.
+- `schemaVersion` describes gameplay data and is separate from the save file format version and the project release version. The format version is 2 (Structure fields); the service reads versions 1 and 2 and writes 2.
 - The default definition generates **Get/Set Save _Field_** nodes keyed by field id, and a `SaveData` interface (`generateSaveGameTypes`) for code tooling. JavaScript reads fields by name, so renames need code updates.
 - Project defaults: `defaultProfile` and `defaultSlot` (`default`), `wipeOnPlay` (editor previews only).
 

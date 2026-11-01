@@ -17,6 +17,14 @@ function compile(nodes: GraphNode[], edges: LogicGraph["edges"]) {
 }
 
 describe("Save Game graph execution", () => {
+  it("types a Structure Save field's value pin as its Structure", () => {
+    const properties = { fieldId: "spawn", fieldName: "Spawn", typeId: "struct", array: false, typeClassId: "engine:IntRange" };
+    expect(node("get", "saveGame.getField", properties).pins.find((entry) => entry.id === "value")?.type)
+      .toEqual({ kind: "structRef", guid: "engine:IntRange" });
+    expect(node("set", "saveGame.setField", { ...properties, array: true }).pins.find((entry) => entry.id === "value")?.type)
+      .toEqual({ kind: "array", element: { kind: "structRef", guid: "engine:IntRange" } });
+  });
+
   it.each(["newGame", "saveGame", "loadGame", "listSaves", "deleteSave"])("%s waits and takes exactly the matching completion branch", async (method) => {
     const run = compile([
       node("entry", "flow.entry"), node("save", `saveGame.${method}`),
