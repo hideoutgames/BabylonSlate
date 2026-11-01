@@ -55,7 +55,11 @@ export class ObjectCollector {
   private result: CollectionResult = { marked: 0, collected: 0, cleared: 0 };
   private readonly visitRoot: RootVisitor = (value) => this.visitValue(value, 0);
 
-  constructor(private readonly scalarVariables: ScalarVariables = () => undefined) {}
+  private readonly scalarVariables: ScalarVariables;
+
+  constructor(scalarVariables: ScalarVariables = () => undefined) {
+    this.scalarVariables = scalarVariables;
+  }
 
   /** Collectable objects alive now, in creation order. */
   get size(): number {

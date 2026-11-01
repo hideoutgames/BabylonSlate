@@ -41,7 +41,10 @@ export class RuntimeObjectLifetime implements RuntimeSubsystem {
   private last: ObjectLifetimeStats | null = null;
   private readonly scalarCache = new Map<string, ReadonlySet<string>>();
 
-  constructor(private readonly deps: ObjectLifetimeDeps) {
+  private readonly deps: ObjectLifetimeDeps;
+
+  constructor(deps: ObjectLifetimeDeps) {
+    this.deps = deps;
     this.collector = new ObjectCollector((classId) => this.scalarVariables(classId));
   }
 
