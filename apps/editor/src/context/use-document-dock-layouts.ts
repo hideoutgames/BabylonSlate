@@ -335,7 +335,8 @@ export function useDocumentDockLayouts({
         parentOf,
         sourceControlRef.current.enabled,
         animSurfaceMode,
-        surface === "design" || surface === "landscape" || surface === "foliage" || surface === "script" ? surface : undefined,
+        surface === "design" || surface === "landscape" || surface === "foliage" || surface === "script" || surface === "timeline"
+          ? surface : undefined,
       );
       for (const panel of listDockPanels(dock)) {
         // Function graph tabs persist in the DockView snapshot, not as

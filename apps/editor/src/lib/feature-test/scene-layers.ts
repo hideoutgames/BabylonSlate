@@ -1,6 +1,7 @@
 import {
   createActor,
   createDefaultSceneLayer,
+  createTimelineClip,
   type AxisBinding,
   type PainterCommand,
   type SceneLayerSpawnEntry,
@@ -217,6 +218,8 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   const title = layer.actors.find((actor) => actor.id === "ft-ui-title");
   if (!title) throw new Error("FT_HUD has no title for its Scene Layer Script.");
   layer.script = ownedActorProbeScript("FT_HUD", title);
+  // Scene Layers keep Timeline Clips too.
+  layer.timelineClips = [createTimelineClip("ft-timeline-clip-hud-reveal", "Reveal")];
   return layer;
 }
 

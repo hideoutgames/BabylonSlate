@@ -44,6 +44,8 @@ export function focusKeepPanelIds(
   if (kind === "scene" && options?.sceneMode === "foliage") return panels.sceneFoliage;
   if (kind === "scene" && options?.sceneMode === "script") return panels.sceneScript;
   if (kind === "scene-layer" && options?.sceneMode === "script") return panels.sceneLayerScript;
+  if (kind === "scene" && options?.sceneMode === "timeline") return panels.sceneTimeline;
+  if (kind === "scene-layer" && options?.sceneMode === "timeline") return panels.sceneLayerTimeline;
   if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
     return panels.animGraphObject;
   }

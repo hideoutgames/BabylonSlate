@@ -29,13 +29,14 @@ describe("SceneModeSelect", () => {
     ]);
   });
 
-  it("offers a Scene Layer only Design and Script, with Shift+4 for Script", () => {
+  it("offers a Scene Layer only Design, Script and Timeline, with Shift+4 and Shift+5", () => {
     render(<KeybindProvider><SceneModeSelect kind="scene-layer" /></KeybindProvider>);
     fireEvent.keyDown(document.body, shiftDigit(2));
     fireEvent.keyDown(document.body, shiftDigit(4));
-    expect(setSceneMode.mock.calls).toEqual([["scene-1", "script"]]);
+    fireEvent.keyDown(document.body, shiftDigit(5));
+    expect(setSceneMode.mock.calls).toEqual([["scene-1", "script"], ["scene-1", "timeline"]]);
     fireEvent.click(screen.getByTestId("scene-mode-select"));
-    expect(screen.getAllByRole("option").map((option) => option.getAttribute("aria-keyshortcuts"))).toEqual(["Shift+1", "Shift+4"]);
+    expect(screen.getAllByRole("option").map((option) => option.getAttribute("aria-keyshortcuts"))).toEqual(["Shift+1", "Shift+4", "Shift+5"]);
     expect(screen.queryByRole("option", { name: /Landscape/ })).toBeNull();
   });
 

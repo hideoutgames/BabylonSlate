@@ -355,5 +355,8 @@ export const panelComponents = {
   "foliage-groups": FoliageGroupsPanel,
   "foliage-settings": FoliageSettingsPanel,
   "foliage-outliner": FoliageOutlinerPanel,
+  "timeline-clips": TimelineClipsPanel,
+  "scene-timeline": TimelinePanel,
 };
 import { LandscapeOutlinerPanel, LandscapeSettingsPanel, FoliageGroupsPanel, FoliageSettingsPanel, FoliageOutlinerPanel } from "../panels/scene-environment-panels";
+import { TimelineClipsPanel, TimelinePanel } from "../panels/timeline-panels";

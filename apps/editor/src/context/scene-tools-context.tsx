@@ -9,8 +9,10 @@ function useSceneToolsState() {
   const [foliageTool, setFoliageTool] = useState<"navigate" | "paint" | "erase">("navigate");
   const [foliageBrush, setFoliageBrush] = useState<FoliageBrush>({ radius: 4, density: 0.25, spacing: 0.5, maxSlope: 60, alignToNormal: true, randomYaw: true });
   const [groupId, setGroupId] = useState<string | null>(null);
+  // The clip the Timeline mode's Clips, Timeline and Inspector windows show.
+  const [timelineClipId, setTimelineClipId] = useState<string | null>(null);
   return { landscapeTool, setLandscapeTool, landscapeBrush, setLandscapeBrush, landscapeSelection, setLandscapeSelection,
-    foliageTool, setFoliageTool, foliageBrush, setFoliageBrush, groupId, setGroupId };
+    foliageTool, setFoliageTool, foliageBrush, setFoliageBrush, groupId, setGroupId, timelineClipId, setTimelineClipId };
 }
 const SceneToolsContext = createContext<ReturnType<typeof useSceneToolsState> | null>(null);
 export function SceneToolsProvider({ children }: { children: ReactNode }) {

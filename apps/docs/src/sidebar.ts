@@ -111,7 +111,7 @@ export function guideSidebar(): SidebarItem[] {
     },
     section("Editor", "editor", ["content-browser", "importing", "search", "undo-and-saving", "settings"]),
     section("Projects", "projects", ["storage", "plugins", "extensions", "source-control"]),
-    section("Scenes", "scenes", ["actors", "prefabs", "streaming", "scene-layers", "landscape"]),
+    section("Scenes", "scenes", ["actors", "prefabs", "streaming", "scene-layers", "landscape", "timeline"]),
     section("Scripting", "scripting", [
       "classes",
       "variables",

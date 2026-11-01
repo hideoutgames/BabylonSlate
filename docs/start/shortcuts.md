@@ -59,8 +59,9 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | Landscape Mode | <kbd>Shift</kbd>+<kbd>2</kbd> |
 | Foliage Mode | <kbd>Shift</kbd>+<kbd>3</kbd> |
 | Script Mode | <kbd>Shift</kbd>+<kbd>4</kbd> |
+| Timeline Mode | <kbd>Shift</kbd>+<kbd>5</kbd> |
 
-The mode shortcuts switch the active Scene between its Design, Landscape, Foliage and Script modes, as the Scene Mode menu in the toolbar does; a Scene Layer has only Design and Script. They do nothing during Play.
+The mode shortcuts switch the active Scene between its Design, Landscape, Foliage, Script and [Timeline](../scenes/timeline.md) modes, as the Scene Mode menu in the toolbar does; a Scene Layer has only Design, Script and Timeline. They do nothing during Play.
 
 <kbd>W</kbd>, <kbd>A</kbd>, <kbd>S</kbd> and <kbd>D</kbd> fly the camera in 3D and pan it in 2D. They are not editor commands and cannot be rebound.
 

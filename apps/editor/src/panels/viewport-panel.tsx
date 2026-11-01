@@ -181,7 +181,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   });
 
   const doc = useOpenDocument(documentId);
-  // The viewport is a Design, Landscape or Foliage window; Script mode has none.
+  // The viewport is a Design, Landscape, Foliage or Timeline window (Timeline edits as Design); Script mode has none.
   const layoutMode = doc?.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : "design";
   const sceneMode = layoutMode === "landscape" || layoutMode === "foliage" ? layoutMode : "design";
   const sceneTools = useSceneTools();

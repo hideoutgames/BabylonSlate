@@ -13,9 +13,10 @@ const SCENE_MODE_COMMANDS: Record<SceneMode, EditorCommandId> = {
   landscape: "scene.modeLandscape",
   foliage: "scene.modeFoliage",
   script: "scene.modeScript",
+  timeline: "scene.modeTimeline",
 };
 
-/** Scene: Design / Landscape / Foliage / Script. Scene Layer: Design / Script. */
+/** Scene: Design / Landscape / Foliage / Script / Timeline. Scene Layer: Design / Script / Timeline. */
 export function SceneModeSelect({ kind = "scene", disabled = false }: { kind?: "scene" | "scene-layer"; disabled?: boolean }) {
   const { setSceneMode } = useDocumentActions();
   const { sceneMode, activeDocumentId } = useActiveDocumentState();
@@ -30,6 +31,7 @@ export function SceneModeSelect({ kind = "scene", disabled = false }: { kind?: "
   useKeybindCommand(SCENE_MODE_COMMANDS.landscape, () => chooseMode("landscape"), modeKeys("landscape"));
   useKeybindCommand(SCENE_MODE_COMMANDS.foliage, () => chooseMode("foliage"), modeKeys("foliage"));
   useKeybindCommand(SCENE_MODE_COMMANDS.script, () => chooseMode("script"), modeKeys("script"));
+  useKeybindCommand(SCENE_MODE_COMMANDS.timeline, () => chooseMode("timeline"), modeKeys("timeline"));
   const chordFor = (mode: SceneMode) => bindings.get(SCENE_MODE_COMMANDS[mode])?.[0];
   // Collapsed into the toolbar's More Actions menu when the bar is too narrow.
   useToolbarOverflowEntry("scene-mode", TOOLBAR_OVERFLOW_PRIORITY.sceneMode, [{

@@ -5,7 +5,7 @@ A Scene and a Scene Layer can each carry a script of their own: the **Scene Scri
 ## Open a script
 
 1. Open the Scene or Scene Layer.
-2. In the toolbar, set **Scene Mode** to **Script**. A Scene offers **Design**, **Landscape**, **Foliage** and **Script**; a Scene Layer offers **Design** and **Script**.
+2. In the toolbar, set **Scene Mode** to **Script**. A Scene offers **Design**, **Landscape**, **Foliage**, **Script** and **Timeline**; a Scene Layer offers **Design**, **Script** and **Timeline**.
 3. Script mode shows the **Event Graph**, the **Script** panel with its variables, functions and events, the **Inspector** and **Compiler Results**. **Design** returns to the viewport.
 
 A new script starts with [Event Begin Play](class/event-begin-play.md) and [Event Tick](class/event-tick.md). Add **Event Destroyed** ([Event On Actor Destroyed](class/event-on-actor-destroyed.md)) from the **Script** panel's events to clean up.
