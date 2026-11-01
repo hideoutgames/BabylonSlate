@@ -160,6 +160,11 @@ export class ScriptRuntime {
     return work;
   }
 
+  /** Owned objects alive now, in a fixed order: the collector's roots. */
+  liveObjects(): EngineObject[] {
+    return this.liveScriptOwners();
+  }
+
   /** Every live object that can own script handlers. */
   private liveScriptOwners(): EngineObject[] {
     const world = this.host.world();

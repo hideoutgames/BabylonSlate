@@ -99,6 +99,11 @@ export interface ScriptContext {
    */
   nullAccess(message: string): void;
   /**
+   * Compiled async entries register their locals while they run, so objects a
+   * waiting Delay holds stay alive. Returns the function that ends the frame.
+   */
+  holdFrame(values: () => readonly unknown[]): () => void;
+  /**
    * An Assert node's check failed. Reports "Assertion failed: <message> (<detail>)" as an error for
    * the node every time, and never throws: the graph continues.
    */
@@ -572,7 +577,7 @@ export type LoadedScript = {
  */
 export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
-  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "assertFailed" | "assertEqual" | "print"
+  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "holdFrame" | "assertFailed" | "assertEqual" | "print"
   | "eventDelegate" | "bindDispatcher" | "unbindDispatcher" | "unbindAllDispatcher"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
   | "getMaterialTextureParameter" | "resetMaterialFloatParameter" | "resetMaterialColorParameter"

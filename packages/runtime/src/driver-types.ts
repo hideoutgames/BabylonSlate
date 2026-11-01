@@ -59,6 +59,8 @@ import type { AnchorEntry } from "./stack-map";
 
 export interface RuntimeDriverOptions {
   sessionGeneration?: number;
+  /** Ticks between object collection passes (Project Settings › Garbage Collection Interval). */
+  garbageCollectionIntervalTicks?: number;
   sessionMode?: GameSessionMode;
   /** Catalog identity only; registering an available class never reads its source. */
   classAssetGuids?: Readonly<Record<string, string>>;

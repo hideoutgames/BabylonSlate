@@ -133,6 +133,11 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.blackboards.set(guid, document);
   }
 
+  /** Hands every running tree's blackboard values to `visit`: they keep the objects they hold alive. */
+  forEachBlackboardValue(visit: (value: unknown) => void): void {
+    for (const state of this.evalBySlot.values()) visit(state.blackboard);
+  }
+
   /** Drop trees and blackboards a replaced source catalog no longer retains. */
   retain(retained: ReadonlySet<string>): void {
     for (const map of [this.documents, this.blackboards]) for (const guid of map.keys()) if (!retained.has(guid)) map.delete(guid);

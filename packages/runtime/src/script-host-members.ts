@@ -50,11 +50,14 @@ import {
 import type { ScriptHostServices } from "./script-host-services";
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
 import { scriptValuesEqual } from "./script-values-equal";
+import type { LatentFrameRoots } from "./latent-frame-roots";
 
 /** What `createHostMembers` reads from its `ScriptHost`. */
 export interface HostMembersHost extends ComponentFunctionHost {
   readonly rng: Rng;
   readonly dispatchers: DispatcherBindings;
+  /** Locals of waiting latent frames, which keep objects alive. */
+  readonly frames: Pick<LatentFrameRoots, "hold">;
   readonly materials: ScriptMaterialOwnership;
   /** Read on each call because `setBreakpoints` replaces them after construction. */
   breakpoints(): ScriptBreakpoints | null;
@@ -131,6 +134,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     bindDispatcher: (owner, name, delegate) => host.dispatchers.bind(owner, name, delegate),
     unbindDispatcher: (owner, name, delegate) => host.dispatchers.unbind(owner, name, delegate),
     unbindAllDispatcher: (owner, name) => host.dispatchers.unbindAll(owner, name),
+    holdFrame: (values) => host.frames.hold(values),
     assertFailed: (message, detail) => reportAssertion(message, detail),
     assertEqual: (actual, expected, message) => {
       if (scriptValuesEqual(actual, expected)) return;

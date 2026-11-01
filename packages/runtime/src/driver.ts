@@ -118,6 +118,7 @@ import type { RuntimeCamera } from "./runtime-camera";
 import type { RuntimePropertyWrites } from "./runtime-property-writes";
 import { SimulationBlocks } from "./simulation-blocks";
 import type { SimulationWaits } from "./simulation-waits";
+import { DEFAULT_GARBAGE_COLLECTION_INTERVAL_TICKS, RuntimeObjectLifetime } from "./object-lifetime";
 import { createClassRegistry, registerRuntimeSubsystems, type RuntimeComposition } from "./runtime-composition";
 import {
   createActorRealization,
@@ -332,6 +333,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly layers: SceneLayers;
   readonly dataCatalog: RuntimeDataCatalog;
   readonly scriptHost: ScriptHost;
+  readonly objectLifetime: RuntimeObjectLifetime;
   readonly scriptDebug: ScriptDebugObserver;
 
   get lastScriptMs(): number {
@@ -492,6 +494,14 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.breakpoints.set(options.breakpoints ?? []);
     this.scriptHost.setBreakpoints(this.breakpoints);
     this.scriptDebug = createScriptDebug(this);
+    this.objectLifetime = new RuntimeObjectLifetime({
+      world: () => this.world,
+      roots: () => this.scriptRuntime.liveObjects(),
+      intervalTicks: () => options.garbageCollectionIntervalTicks ?? DEFAULT_GARBAGE_COLLECTION_INTERVAL_TICKS,
+      now: () => performance.now(),
+    });
+    this.objectLifetime.collector.addRootSource((visit) => this.scriptHost.latentFrames.forEach(visit));
+    this.objectLifetime.collector.addRootSource((visit) => this.behaviourTrees.forEachBlackboardValue(visit));
 
     // 8. Lifecycle hooks, in Stop order.
     registerRuntimeSubsystems(this);
