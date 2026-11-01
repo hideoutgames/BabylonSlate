@@ -196,4 +196,86 @@ test.describe("Scene modes", () => {
     // The tab reopens in the mode it was saved in.
     await expect(page.getByTestId("scene-mode-select")).toContainText("Timeline");
   });
+  test("animates an actor in the Timeline window: track, keys, a key drag and undo", async ({ page }) => {
+    test.setTimeout(120_000);
+    await openMinimalTestProject(page, await minimalProjectFiles()); await openMainScene(page);
+    await page.keyboard.press("Shift+5");
+    await waitForSceneViewportReady(page);
+    await page.getByTestId("timeline-clips-new").click();
+    await page.getByTestId("timeline-clips-list").getByRole("textbox").press("Enter");
+    await expect(page.getByTestId("scene-timeline-empty")).toBeVisible();
+
+    // Drag the actor's Outliner row onto the Timeline window.
+    const row = page.getByTestId("tree-row-actor:actor-1");
+    const rowBox = (await row.boundingBox())!;
+    const timeline = (await page.getByTestId("scene-timeline-panel").boundingBox())!;
+    await page.mouse.move(rowBox.x + 30, rowBox.y + rowBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(rowBox.x + 60, rowBox.y + rowBox.height / 2 + 20, { steps: 4 });
+    await page.mouse.move(timeline.x + timeline.width / 2, timeline.y + timeline.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(async () => (await content(page)).timelineClips?.[0]?.objects.map((object) => object.actorId)).toEqual(["actor-1"]);
+    const objectId = (await content(page)).timelineClips![0]!.objects[0]!.id;
+    await expect(page.getByTestId("outliner-timeline-badge-actor-1")).toHaveText("Timeline Clip");
+
+    await page.getByTestId(`timeline-add-track-${objectId}`).click();
+    const dialog = page.getByTestId("timeline-add-track-dialog");
+    await dialog.getByText("Location", { exact: true }).click();
+    await dialog.getByText("Visible", { exact: true }).click();
+    await dialog.getByRole("button", { name: "Add Tracks" }).click();
+    await expect.poll(async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks.map((track) => track.target.property)).toEqual(["location", "visible"]);
+    const locationId = (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.id;
+    const keyTimes = async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.keys.map((key) => key.Time);
+
+    // Keys at the start and, after Go to End, at 5 s.
+    await page.getByTestId(`timeline-key-toggle-${locationId}`).click();
+    await page.getByTestId("timeline-go-end").click();
+    await page.getByTestId(`timeline-key-toggle-${locationId}`).click();
+    await expect.poll(keyTimes).toEqual([0, 5]);
+
+    // Drag the 5 s key to 2.5 s: one undo entry, snapped to a frame.
+    const lanes = (await page.getByTestId("keyframe-timeline-lanes").boundingBox())!;
+    const x = (time: number) => lanes.x + 10 + time * ((lanes.width - 20) / 5);
+    const y = lanes.y + 24 * 1.5;
+    await page.mouse.move(x(5), y);
+    await page.mouse.down();
+    await page.mouse.move(x(4), y, { steps: 4 });
+    await page.mouse.move(x(2.5), y, { steps: 4 });
+    await page.mouse.up();
+    await expect.poll(keyTimes).toEqual([0, 2.5]);
+    await page.getByTestId("undo-document").click();
+    await expect.poll(keyTimes).toEqual([0, 5]);
+
+    // Previous Key moves the playhead to the key before it.
+    await page.getByTestId("timeline-previous-key").click();
+    await expect(page.getByLabel("Playhead Time")).toHaveValue(/^0(\.00)?/);
+  });
+  test("keys a track on a touch screen with 44 pt rows, the Add Track dialog and a long-press menu", { tag: IPAD_TEST_TAG }, async ({ page }) => {
+    test.setTimeout(120_000);
+    await openMinimalTestProject(page, await minimalProjectFiles()); await openMainScene(page);
+    await page.keyboard.press("Shift+5");
+    await waitForSceneViewportReady(page);
+    await page.getByTestId("timeline-clips-new").click();
+    await page.getByTestId("timeline-clips-list").getByRole("textbox").press("Enter");
+    await page.getByTestId("tree-row-actor:actor-1").click();
+    await page.getByTestId("timeline-add-menu").click();
+    await page.getByTestId("timeline-track-menu-selected").click();
+    await expect.poll(async () => (await content(page)).timelineClips?.[0]?.objects.length).toBe(1);
+    const objectId = (await content(page)).timelineClips![0]!.objects[0]!.id;
+    await page.getByTestId(`timeline-add-track-${objectId}`).click();
+    const dialog = page.getByTestId("timeline-add-track-dialog");
+    await dialog.getByText("Scale", { exact: true }).click();
+    await dialog.getByRole("button", { name: "Add Tracks" }).click();
+    await expect.poll(async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks.length).toBe(1);
+    const trackId = (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.id;
+    const isMobileLayout = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+    if (isMobileLayout) expect((await page.getByTestId(`timeline-row-${trackId}`).boundingBox())!.height).toBeGreaterThanOrEqual(43);
+    await page.getByTestId(`timeline-key-toggle-${trackId}`).click();
+    await expect.poll(async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.keys.map((key) => key.Value))
+      .toEqual([{ x: 1, y: 1, z: 1 }]);
+    // Right-click stands in for a long-press here; both open the row menu.
+    await page.getByTestId(`timeline-row-${trackId}`).click({ button: "right" });
+    await page.getByTestId("timeline-row-menu-mute").click();
+    await expect.poll(async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.muted).toBe(true);
+  });
 });

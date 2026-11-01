@@ -4,7 +4,10 @@ import { TagGallery } from "./tag-gallery";
 import { GalleryComposites } from "./component-gallery-composites";
 import {
   CatalogDialog,
+  ChecklistDialog,
   ColorPicker,
+  TypeColorMark,
+  pinPickerColorVar,
   KeyframeTimeline,
   keyRefId,
   type KeyRef,
@@ -161,6 +164,39 @@ function GalleryKeyframeTimeline() {
           aria-label="Example Keyframes"
         />
       </div>
+    </section>
+  );
+}
+
+function GalleryChecklistDialog() {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const mark = (type: string, label: string) => <TypeColorMark colorVar={pinPickerColorVar(type)} label={label} />;
+  return (
+    <section className="flex flex-wrap items-center gap-3" data-testid="gallery-checklist-dialog">
+      <h2 className="w-full text-lg font-medium">Checklist Dialog</h2>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>Add Track…</Button>
+      <span className="text-sm text-muted-foreground">{picked.length ? `Added: ${picked.join(", ")}` : "Nothing added yet."}</span>
+      <ChecklistDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Add Track to Door"
+        description="Pick one or more properties. Properties already on this clip are checked."
+        groups={[
+          { id: "actor", label: "Actor", items: [
+            { id: "Location", label: "Location", included: true, trailing: mark("vec3", "Vector 3") },
+            { id: "Scale", label: "Scale", trailing: mark("vec3", "Vector 3") },
+            { id: "Visible", label: "Visible", trailing: mark("bool", "Bool") },
+          ] },
+          { id: "glow", label: "Handle Glow (Light Component)", items: [
+            { id: "Intensity", label: "Intensity", trailing: mark("float", "Float") },
+            { id: "Color", label: "Color", trailing: mark("color", "Color") },
+          ] },
+        ]}
+        confirmLabel="Add Tracks"
+        onConfirm={setPicked}
+        searchPlaceholder="Search Properties"
+      />
     </section>
   );
 }
@@ -492,6 +528,7 @@ export function ComponentGallery() {
           <GalleryColorPickers />
           <GalleryTimelineChart />
           <GalleryKeyframeTimeline />
+          <GalleryChecklistDialog />
 
           <TagGallery />
 

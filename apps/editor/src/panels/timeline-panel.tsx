@@ -410,7 +410,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
         keys: row.keys,
         muted: row.muted,
         testId: `timeline-row-${row.id}`,
-        actions: row.actor ? <IconActionButton label={`Add Track to ${row.label}`} variant="ghost" size="icon-xs"
+        actions: row.actor ? <IconActionButton label={`Add Track to ${row.label}`} variant="ghost" size={touch ? "touch-icon" : "icon-xs"}
           onClick={(event) => { event.stopPropagation(); setAddTrackActorId(row.actor!.id); }} data-testid={`timeline-add-track-${row.id}`}>
           <PlusIcon />
         </IconActionButton> : undefined,
@@ -428,7 +428,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
       ...(row.gradient ? { gradient: row.gradient } : {}),
       muted: row.muted,
       testId: `timeline-row-${row.id}`,
-      actions: <IconActionButton label={keyed ? `Remove Key on ${row.label}` : `Set Key on ${row.label}`} variant="ghost" size="icon-xs"
+      actions: <IconActionButton label={keyed ? `Remove Key on ${row.label}` : `Set Key on ${row.label}`} variant="ghost" size={touch ? "touch-icon" : "icon-xs"}
         onClick={(event) => { event.stopPropagation(); toggleKey(row.id); }} data-testid={`timeline-key-toggle-${row.id}`}>
         <DiamondIcon className={keyed ? "fill-current text-selection" : undefined} />
       </IconActionButton>,
