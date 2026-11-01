@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatValue } from "./format-value";
+import { EVENT_DELEGATE_BRAND, formatValue } from "./format-value";
 
 describe("formatValue", () => {
   it("formats primitives", () => {
@@ -29,6 +29,17 @@ describe("formatValue", () => {
 
   it("formats structs with sorted keys", () => {
     expect(formatValue({ z: 1, a: 2 })).toBe("{a: 2, z: 1}");
+  });
+
+  it("formats an event delegate by its member and target, not its fields", () => {
+    const delegate = {
+      [EVENT_DELEGATE_BRAND]: true,
+      object: { guid: "g3", classId: "Health_Bar", variables: { hp: 3 } },
+      name: "Enemy_Damaged",
+      kind: "event",
+      params: ["Damage"],
+    };
+    expect(formatValue(delegate)).toBe("Delegate(Enemy_Damaged on Health_Bar(g3))");
   });
 
   it("formats boxed wildcards", () => {

@@ -296,6 +296,25 @@ describe("runtime data catalog", () => {
     expect(await runOutput("data.getParent", "Weapons/Swords", "parentPath")).toBe("Weapons");
     expect(await runOutput("data.getParent", "Weapons", "found")).toBe("true");
     expect(await runOutput("data.getParent", "", "found")).toBe("false");
+    // Read Unknown Data Entry gates and types its read by the Data Definition pin, not a stale `definitionGuid`.
+    const runUnknown = async (properties: Record<string, unknown>, output: "found" | "Health") => {
+      graph.nodes = [
+        node("start", "flow.entry"),
+        node("read", "data.readUnknownEntry", { "default:tree": "equipment", "default:entryPath": "Weapons/Swords/Iron Sword", ...properties }),
+        node("break", "struct.break", { structGuid: "stats", fields: [{ name: "Health", typeId: "int" }] }), node("log", "debug.log"),
+      ];
+      graph.edges = [graph.edges[0]!, ...(output === "found"
+        ? [{ id: "found", sourceNodeId: "read", sourcePinId: "found", targetNodeId: "log", targetPinId: "message" }]
+        : [
+          { id: "value", sourceNodeId: "read", sourcePinId: "value", targetNodeId: "break", targetPinId: "in" },
+          { id: "health", sourceNodeId: "break", sourcePinId: "Health", targetNodeId: "log", targetPinId: "message" },
+        ])];
+      await (await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "actor" }).source, `unknown-${output}`)).run!(context);
+      return logs.at(-1);
+    };
+    expect(await runUnknown({ "default:definition": "stats", definitionGuid: "other" }, "Health")).toBe("20");
+    expect(await runUnknown({ "default:definition": "stats" }, "found")).toBe("true");
+    expect(await runUnknown({ "default:definition": "other", definitionGuid: "stats" }, "found")).toBe("false");
   });
 
   it("suspends a compiled dynamic data read until its owner prepares the tree", async () => {

@@ -4,7 +4,7 @@ node: debug.assertIsValid
 
 # Assert Is Valid
 
-Reports an error for this node when an object reference is empty. Use it where a graph needs an object to exist, such as an actor it looked up.
+Reports an error for this node when an object reference is empty or its object has been destroyed. Use it where a graph needs an object to exist, such as an actor it looked up.
 
 ## Inputs
 

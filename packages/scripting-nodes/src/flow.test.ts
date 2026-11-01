@@ -295,6 +295,8 @@ describe("flow nodes", () => {
       })),
     ).toEqual([
       { id: "execOut", direction: "out", type: EXEC },
+      // The title-bar delegate takes the event's inputs.
+      { id: "OutputDelegate", direction: "out", type: { kind: "delegate", inputs: [FLOAT, BOOL], outputs: [] } },
       { id: "amount", direction: "out", type: FLOAT },
       { id: "stunned", direction: "out", type: BOOL },
     ]);

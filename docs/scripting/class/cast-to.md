@@ -26,4 +26,5 @@ Tests whether an object belongs to a class and returns it as that class if so.
 
 - Execution always continues through the single output, so check **Success** with a [**Branch**](branch.md).
 - Objects of a derived class pass the test, and **Result** is empty when the cast fails.
+- A destroyed object fails every cast.
 - **Add Node** lists a Cast to row for each class, with **Class** already filled in.

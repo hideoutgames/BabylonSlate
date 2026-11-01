@@ -1,16 +1,20 @@
 import { buildDataTreeIndex, isDataTreeAsset, normalizeDataTreeAsset, type SerializedGraph } from "@haptic/core";
+import { DATA_DEFINITION_PIN_ID, dataDefinitionPinGuid } from "@haptic/scripting-nodes";
 
 type DataGraphMetadata = {
   title: string; operation: string; required: boolean; schema?: false;
   assetPin?: "tree"; assetType?: "DataTree";
   pathPins?: readonly { pinId: string; root: boolean }[];
   definitionPath?: string;
+  /** The Definition is a literal on the node's Data Definition pin: no per-Definition rows, title or inference. */
+  definitionPin?: true;
 };
 
 /** Metadata shared by graph hydration, validation and both default editors. */
 export const DATA_GRAPH_NODES = {
-  "data.readEntryAsync": { title: "Read Data Entry Async", operation: "Read", required: true, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: false }], definitionPath: "entryPath" },
+  "data.readEntryAsync": { title: "Async Read Unknown Data Entry", operation: "Read", required: true, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: false }], definitionPath: "entryPath", definitionPin: true },
   "data.readEntry": { title: "Read Data Entry", operation: "Read", required: true, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: false }], definitionPath: "entryPath" },
+  "data.readUnknownEntry": { title: "Read Unknown Data Entry", operation: "Read", required: true, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: false }], definitionPath: "entryPath", definitionPin: true },
   "data.getChildren": { title: "Get Data Children", operation: "Get", required: false, schema: false, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: true }] },
   "data.getDescendants": { title: "Get Data Descendants", operation: "Get", required: false, schema: false, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: true }] },
   "data.getParent": { title: "Get Data Parent", operation: "Get", required: false, schema: false, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: false }] },
@@ -34,9 +38,20 @@ export function isDataGraphNode(typeId: string): typeId is DataGraphNodeType {
 export function dataGraphMetadata(typeId: string): DataGraphMetadata | undefined {
   return isDataGraphNode(typeId) ? DATA_GRAPH_NODES[typeId] : undefined;
 }
+/** The Definition a data node reads or writes: its pin literal on Unknown reads, else its `definitionGuid`. */
+export function dataGraphDefinitionGuid(typeId: string, properties: Record<string, unknown>): string {
+  if (dataGraphMetadata(typeId)?.definitionPin) return dataDefinitionPinGuid(properties);
+  return typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
+}
+
+/** A Definition pin types Value only from its literal; a wire cannot. */
+export function isDataGraphDefinitionPin(typeId: string, pinId: string): boolean {
+  return pinId === DATA_DEFINITION_PIN_ID && !!dataGraphMetadata(typeId)?.definitionPin;
+}
+
 export function dataGraphNodeTitle(typeId: DataGraphNodeType, definitionName?: string): string {
   const node = dataGraphMetadata(typeId)!;
-  if (!definitionName || node.schema === false) return node.title;
+  if (!definitionName || node.schema === false || node.definitionPin) return node.title;
   return node.title.replace("Data Entry", `${definitionName} Data`).replace("Data Tree", `${definitionName} Data Tree`);
 }
 export type DataGraphTreeEntry = { id: string; path: string; parentPath: string; effectiveDefinitionGuid: string | null };
@@ -94,7 +109,7 @@ export function selectedDataGraphEntry(typeId: string, properties: Record<string
 export function dataGraphAssetCreateOptions(typeId: string, pinId: string, properties: Record<string, unknown>): { defaultDefinitionGuid: string } | undefined {
   const metadata = dataGraphMetadata(typeId);
   if (metadata?.assetPin !== pinId || metadata.schema === false || (typeId === "editorData.addEntry" && properties.definitionMode === "none")) return undefined;
-  const guid = typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
+  const guid = dataGraphDefinitionGuid(typeId, properties);
   return guid ? { defaultDefinitionGuid: guid } : undefined;
 }
 
@@ -102,7 +117,7 @@ export function dataGraphAssetCreateOptions(typeId: string, pinId: string, prope
 export function dataGraphAssetPickPatch(typeId: string, pinId: string, value: string | null, assets: readonly DataGraphAssetEntry[], current: Record<string, unknown> = {}, wired: (pinId: string) => boolean = () => false): Record<string, unknown> {
   const patch: Record<string, unknown> = { [`default:${pinId}`]: value ?? "" };
   const metadata = dataGraphMetadata(typeId);
-  if (!metadata?.definitionPath || (pinId !== metadata.assetPin && pinId !== metadata.definitionPath)) return patch;
+  if (!metadata?.definitionPath || metadata.definitionPin || (pinId !== metadata.assetPin && pinId !== metadata.definitionPath)) return patch;
   if (wired("tree") || wired(metadata.definitionPath)) return patch;
   const selected = selectedDataGraphEntry(typeId, { ...current, ...patch }, assets);
   if (selected) {
@@ -124,7 +139,7 @@ export function applyDataGraphAssetPicks(previous: SerializedGraph, next: Serial
     if (!before || before.data === node.data) return node;
     const typeId = typeof node.data.__nodeType === "string" ? node.data.__nodeType : node.type;
     const metadata = dataGraphMetadata(typeId);
-    if (!metadata?.assetPin || !metadata.definitionPath) return node;
+    if (!metadata?.assetPin || !metadata.definitionPath || metadata.definitionPin) return node;
     if (next.edges.some((edge) => edge.target === node.id && [metadata.assetPin, metadata.definitionPath].includes(edge.targetHandle ?? ""))) return node;
     const pinId = [metadata.definitionPath, metadata.assetPin].find((pin) => before.data[`default:${pin}`] !== node.data[`default:${pin}`]);
     if (!pinId || typeof node.data[`default:${pinId}`] !== "string") return node;

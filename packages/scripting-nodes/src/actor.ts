@@ -10,6 +10,7 @@ import {
   TRANSFORM,
 } from "@haptic/scripting";
 import { selfActorPin, subject } from "./self-pin";
+import { liveReferenceCall } from "./live-reference";
 
 export const actorNodes: NodeDefinition[] = [
   {
@@ -55,7 +56,7 @@ export const actorNodes: NodeDefinition[] = [
       pin("target", "Object", "in", objectRef("Object")),
       pin("out", "out", "out", BOOL),
     ],
-    codegen: (ctx) => ({ out: `(${ctx.input("target")} != null)` }),
+    codegen: (ctx) => ({ out: liveReferenceCall(ctx, ctx.input("target")) }),
   },
   {
     id: "actor.spawn",

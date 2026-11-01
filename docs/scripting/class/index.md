@@ -101,6 +101,16 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Call Function](call-function.md) | Calls a function defined on a class and continues when it returns. |
 
+## Event Dispatchers
+
+| Node | Description |
+| --- | --- |
+| [Bind Event to Event Dispatcher](bind-event-to-event-dispatcher.md) | Adds an event to an Event Dispatcher, so each Call runs it. |
+| [Call Event Dispatcher](call-event-dispatcher.md) | Runs every event bound to an Event Dispatcher, in the order they were bound, then continues. |
+| [Create Event](create-event.md) | A delegate that runs a chosen custom event or function on an object. |
+| [Unbind All Events from Event Dispatcher](unbind-all-events-from-event-dispatcher.md) | Removes every event bound to an Event Dispatcher. |
+| [Unbind Event from Event Dispatcher](unbind-event-from-event-dispatcher.md) | Removes an event from an Event Dispatcher. |
+
 ## Interface
 
 | Node | Description |
@@ -427,11 +437,12 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Async Read Unknown Data Entry](async-read-unknown-data-entry.md) | Loads a Data Tree and the Data Definition picked on the node in the background, then reads one entry from it. |
 | [Get Data Children](get-data-children.md) | Returns the paths of an entry's immediate children, in sibling order. |
 | [Get Data Descendants](get-data-descendants.md) | Returns the paths of every entry below an entry, with parents listed before their children. |
 | [Get Data Parent](get-data-parent.md) | Returns the path of an entry's parent. |
 | [Read Data Entry](read-data-entry.md) | Reads an entry's values from a Data Tree that is already loaded and returns a copy. |
-| [Read Data Entry Async](read-data-entry-async.md) | Loads a Data Tree and its Data Definition in the background, then reads one entry from it. |
+| [Read Unknown Data Entry](read-unknown-data-entry.md) | Reads an entry's values from a loaded Data Tree as the Data Definition picked on the node, and returns a copy. |
 
 ## Actor
 

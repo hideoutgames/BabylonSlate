@@ -280,7 +280,21 @@ export type GraphClassMemberKind =
   | "function"
   | "variable"
   | "event"
-  | "interface";
+  | "interface"
+  | "dispatcher";
+
+/**
+ * One input of a Delegate type's signature: a type picker id with its
+ * parameter, container and (for a Delegate input) its own signature.
+ */
+export interface DelegateSignatureType {
+  typeId: string;
+  typeClassId?: string;
+  container?: "single" | "array" | "map";
+  keyTypeId?: string;
+  keyTypeClassId?: string;
+  signature?: DelegateSignatureType[];
+}
 
 /** Lightweight Class panel rows stored on the graph until class documents exist. */
 export interface GraphClassMemberPin {
@@ -292,6 +306,11 @@ export interface GraphClassMemberPin {
   typeClassId?: string;
   /** Number and vector inputs: display unit (`VALUE_UNITS`) on the pin's literal. Missing is none. */
   unit?: string;
+  /**
+   * Delegate pins only: the input types of the delegate's signature, copied
+   * from the Event Dispatcher `typeClassId` names (`<classId>::<name>`).
+   */
+  signature?: DelegateSignatureType[];
 }
 
 export interface GraphClassMemberImplementsInterface {
@@ -310,7 +329,11 @@ export interface GraphClassMember {
   name: string;
   /** Variable pin type (bool, float, …). */
   typeId?: string;
-  /** Object/class constraint, Structure/Enum asset guid, or Content Browser kind when typeId is asset. */
+  /**
+   * Object/class constraint, Structure/Enum asset guid, Content Browser kind
+   * when typeId is asset, or the Event Dispatcher a Delegate's signature comes
+   * from (`<classId>::<name>`).
+   */
   typeClassId?: string;
   /** Variable container. Missing or `"single"` is a scalar. Array/Map wrap `typeId`. */
   container?: "single" | "array" | "map";
@@ -319,8 +342,10 @@ export interface GraphClassMember {
   /** Map key Class/Structure/Enum/Asset parameter. */
   keyTypeClassId?: string;
   defaultValue?: unknown;
-  /** Function and custom-event signature pins. */
+  /** Function, custom-event and Event Dispatcher signature pins (a dispatcher has inputs only). */
   pins?: GraphClassMemberPin[];
+  /** Delegate variables only: the delegate's input types (see `GraphClassMemberPin.signature`). */
+  signature?: DelegateSignatureType[];
   /** ScriptInterface asset guid. */
   assetGuid?: string;
   /** When set, this variable is local to that function member. */

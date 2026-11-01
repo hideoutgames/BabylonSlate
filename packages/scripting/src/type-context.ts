@@ -2,11 +2,12 @@ import type { LogicGraph } from "./ir";
 import type { Diagnostic } from "./diagnostics";
 import type { ClassHierarchy } from "./types";
 import type { StructField } from "./type-assets";
+import type { VariableTypeSpec } from "./member-pin-type";
 
 export type ClassMemberSymbol = {
   id: string;
   name: string;
-  kind: "variable" | "function" | "event";
+  kind: "variable" | "function" | "event" | "dispatcher";
   classId: string;
   functionId?: string;
   typeId?: string;
@@ -14,12 +15,15 @@ export type ClassMemberSymbol = {
   container?: "single" | "array" | "map";
   keyTypeId?: string;
   keyTypeClassId?: string;
+  /** Delegate variables: the signature's input types. */
+  signature?: readonly VariableTypeSpec[];
   pins?: Array<{
     container?: "single" | "array" | "map";
     name: string;
     typeId: string;
     direction: "in" | "out";
     typeClassId?: string;
+    signature?: readonly VariableTypeSpec[];
   }>;
   implementsInterface?: { assetGuid: string; methodName: string };
   overrides?: { classId: string; name: string };

@@ -44,6 +44,7 @@ import type { LogSeverity } from "./log-ring";
 import type { CompiledModuleExports } from "./module-loader";
 import type { ScriptBreakpoints } from "./script-breakpoints";
 import type { ScriptDebugTrace } from "./script-debug";
+import type { EventDelegate } from "./script-dispatchers";
 import type { ScriptAssetLoadResult, ScriptColor } from "./script-host-services";
 import type { TweenReference } from "./tween-runtime";
 
@@ -321,6 +322,31 @@ export interface ScriptContext {
     args?: Record<string, unknown>,
   ): void;
   /**
+   * Create Event and a custom event's Output Delegate: a delegate running the
+   * custom event (`kind` "event") or function export `name` on `object`, whose
+   * parameters are `params` in signature order. One value per object and
+   * member, so Unbind finds what Bind added. Null without an object.
+   */
+  eventDelegate(
+    object: unknown,
+    name: string,
+    kind: "event" | "function",
+    params: readonly string[],
+  ): EventDelegate | null;
+  /** Bind Event to <Dispatcher>: adds `delegate` once to `owner`'s dispatcher `name`. */
+  bindDispatcher(owner: unknown, name: string, delegate: unknown): void;
+  /** Unbind Event from <Dispatcher>. */
+  unbindDispatcher(owner: unknown, name: string, delegate: unknown): void;
+  /** Unbind All Events from <Dispatcher>. */
+  unbindAllDispatcher(owner: unknown, name: string): void;
+  /**
+   * Call <Dispatcher>: runs every event bound to `owner`'s dispatcher `name`
+   * in bind order, each with `values` keyed by its own parameter names, in the
+   * caller's frame like Call Custom Event. Latent work in a listener does not
+   * hold the caller.
+   */
+  callDispatcher(owner: unknown, name: string, values: readonly unknown[]): void;
+  /**
    * Run a compiled entry point on a specific classId (Call Parent Event).
    * Uses `self` as the receiver so parent graphs see the child instance.
    */
@@ -547,6 +573,7 @@ export type LoadedScript = {
 export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
   | "deleteSave" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "assertFailed" | "assertEqual" | "print"
+  | "eventDelegate" | "bindDispatcher" | "unbindDispatcher" | "unbindAllDispatcher"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
   | "getMaterialTextureParameter" | "resetMaterialFloatParameter" | "resetMaterialColorParameter"
   | "resetMaterialTextureParameter" | "setMeshMaterial" | "getMaterialAsset" | "setMaterialFloatParameter"

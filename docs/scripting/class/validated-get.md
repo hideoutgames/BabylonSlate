@@ -4,7 +4,7 @@ node: variables.getValidated
 
 # Validated Get
 
-Reads an object variable and runs **Is Valid** only if it holds an object.
+Reads an object variable and runs **Is Valid** only if it holds an object that still exists.
 
 ## Inputs
 
@@ -23,5 +23,5 @@ Reads an object variable and runs **Is Valid** only if it holds an object.
 
 ## Notes
 
-- **Not Valid** runs when the variable is empty, or when **Target** is connected to an empty reference, which also logs an error. It does not check whether the object has since been destroyed.
+- **Not Valid** runs when the variable is empty, when it holds an object that has been destroyed, or when **Target** is connected to an empty or destroyed reference, which also logs an error.
 - Works with single Object variables. For arrays, maps, classes and assets, use [**Get Variable**](get-variable.md).

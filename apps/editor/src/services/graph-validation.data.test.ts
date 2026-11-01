@@ -185,6 +185,48 @@ describe("Data graph integration", () => {
     graph.nodes[0]!.data.definitionGuid = "";
     expect(dataErrors()).toEqual([]);
   });
+  it("types Unknown reads only from the picked Data Definition pin and moves a saved async Definition onto it", () => {
+    const palette = scriptPaletteNodes(createDefaultNodeRegistry(), { dataDefinitions: [{ guid: "weapon", ...structures.weapon! }], parentClass: "Actor" });
+    expect(palette.map((entry) => entry.id).filter((id) => /^data\.(readUnknownEntry|readEntryAsync)/.test(id)).sort())
+      .toEqual(["data.readEntryAsync", "data.readUnknownEntry"]);
+    const graph: SerializedGraph = {
+      nodes: [
+        node("sheet", "variables.get", { name: "Sheet", typeId: "asset", typeClassId: "DataTree" }),
+        node("read", "data.readUnknownEntry", { "default:definition": "weapon" }),
+        node("weapon", "struct.break", { structGuid: "weapon" }),
+        node("saved", "data.readEntryAsync", { definitionGuid: "armor", dataSchema: [{ id: "damage", name: "Damage", typeId: "float" }] }),
+        node("literal", "data.readUnknownEntry", { "default:tree": "sword", "default:entryPath": "Weapons/Sword" }),
+      ],
+      edges: [
+        { id: "sheet", source: "sheet", sourceHandle: "value", target: "read", targetHandle: "tree" },
+        { id: "value", source: "read", sourceHandle: "value", target: "weapon", targetHandle: "in" },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, undefined, options);
+    const data = (id: string) => hydrated.nodes.find((entry) => entry.id === id)!.data;
+    expect(data("read")).toMatchObject({ "default:definition": "weapon", title: "Read Unknown Data Entry" });
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["sheet", "value"]);
+    expect(data("saved")).toMatchObject({ "default:definition": "armor", dataSchema: [expect.objectContaining({ id: "defense" })] });
+    expect(data("saved")).not.toHaveProperty("definitionGuid");
+    expect(data("literal")).not.toHaveProperty("default:definition");
+    expect(data("literal")).not.toHaveProperty("definitionGuid");
+    const valueType = (id: string) => materializeLogicGraph(graph, "graph", "event", options).nodes
+      .find((entry) => entry.id === id)!.pins.find((pin) => pin.id === "value")?.type;
+    expect([valueType("read"), valueType("saved"), valueType("literal")]).toEqual([
+      { kind: "structRef", guid: "weapon" }, { kind: "structRef", guid: "armor" }, { kind: "structRef", guid: "" },
+    ]);
+
+    const dataDiagnostics = () => validateSerializedGraph(graph, options).filter((entry) => entry.code.startsWith("data."))
+      .map((entry) => [entry.nodeId, entry.code, entry.pinId]);
+    expect(dataDiagnostics()).toEqual([["literal", "data.missing_definition", "definition"]]);
+    graph.nodes[4]!.data["default:definition"] = "armor";
+    expect(dataDiagnostics()).toEqual([["literal", "data.definition_mismatch", "entryPath"]]);
+    graph.nodes[4]!.data["default:definition"] = "weapon";
+    graph.nodes.push(node("schema", "variables.get", { name: "Schema", typeId: "asset", typeClassId: "DataDefinition" }));
+    graph.edges.push({ id: "schema", source: "schema", sourceHandle: "value", target: "read", targetHandle: "definition" });
+    expect(dataDiagnostics()).toEqual([["read", "data.wired_definition", "definition"]]);
+  });
+
   it("rejects a plain Structure as the root Data Definition", () => {
     const graph = { nodes: [node("read", "data.readEntry", { definitionGuid: "weapon" })], edges: [] };
     expect(validateSerializedGraph(graph, { ...options, dataDefinitions: {} })).toEqual(expect.arrayContaining([

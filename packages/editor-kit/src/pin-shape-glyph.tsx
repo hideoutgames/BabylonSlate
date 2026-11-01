@@ -1,6 +1,15 @@
 import { cn } from "@haptic/ui/lib/utils";
 
-export type PinShape = "diamond" | "circle" | "list" | "map";
+export type PinShape = "diamond" | "circle" | "list" | "map" | "square";
+
+/**
+ * Fill of an unconnected delegate square: its own colour darkened, so an empty
+ * delegate reads as a dark-red square inside its light-red border. It derives
+ * from the pin colour, so an editor theme that recolours delegates keeps it.
+ */
+export function emptySquareFill(color: string | undefined): string {
+  return `color-mix(in oklch, ${color ?? "currentColor"} 50%, black)`;
+}
 
 const LIST_ROWS = [3, 9, 15] as const;
 
@@ -72,13 +81,16 @@ export function PinShapeGlyph({
     );
   }
 
+  // A square reads larger than a circle of the same size, so it is drawn smaller.
+  const square = shape === "square";
+  const side = square ? `calc(${styleSize} * 0.82)` : styleSize;
   return (
     <span
       className={cn(
         "block",
         connected && !outlined ? "" : "border-2",
         connected && outlined ? "border-card" : "",
-        shape === "diamond" ? "rotate-45 rounded-sm" : "rounded-full",
+        shape === "diamond" ? "rotate-45 rounded-sm" : square ? "rounded-sm" : "rounded-full",
         className,
       )}
       data-pin-shape={shape}
@@ -87,9 +99,9 @@ export function PinShapeGlyph({
       data-icon={dataIcon}
       aria-hidden="true"
       style={{
-        width: styleSize,
-        height: styleSize,
-        background: connected ? color : "transparent",
+        width: side,
+        height: side,
+        background: connected ? color : square ? emptySquareFill(color) : "transparent",
         borderColor: connected ? undefined : color,
       }}
     />

@@ -720,6 +720,21 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
     name: "Pulse",
     pins: [{ name: "Strength", typeId: "float", direction: "out" }],
   };
+  // Event Dispatcher: Begin Play binds Pulsed Echo to On Pulsed; each Pulse calls it.
+  const onPulsed: GraphClassMember = {
+    id: "ft-script-dispatcher-on-pulsed",
+    kind: "dispatcher",
+    name: "On Pulsed",
+    pins: [{ name: "Strength", typeId: "float", direction: "in" }],
+  };
+  const pulsedEcho: GraphClassMember = {
+    id: "ft-script-evt-pulsed-echo",
+    kind: "event",
+    name: "Pulsed Echo",
+    pins: [{ name: "Strength", typeId: "float", direction: "out" }],
+  };
+  const onPulsedNode = (id: string, x: number, y: number, typeId: string, title: string) =>
+    gNode(id, typeId, x, y, { title, name: onPulsed.name, implicitSelf: true, pins: onPulsed.pins });
   const describable: GraphClassMember = {
     id: "ft-script-iface-describable",
     kind: "interface",
@@ -735,10 +750,10 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
     comp("prefab-pulse", CLASS.pulseComponent),
   ];
   const graph = classGraph({
-    members: [spinSpeed, speedMode, config, actorTags, elapsed, pulseCount, pulse, COMPUTE_WAVE, describable, describe],
+    members: [spinSpeed, speedMode, config, actorTags, elapsed, pulseCount, pulse, onPulsed, pulsedEcho, COMPUTE_WAVE, describable, describe],
     components,
     nodes: [
-      // Begin Play: ready print | Speed Mode switch | Tag branch | delayed Pulse.
+      // Begin Play: ready print | Speed Mode switch | Tag branch | bind On Pulsed, then a delayed Pulse.
       gNode("begin", "flow.event.beginPlay", 0, 0),
       gNode("begin-steps", "flow.sequence", 220, 0, { count: 4 }),
       printText("ready", 480, -240, "ft-script-spinner", "FT_ScriptSpinner Begin Play"),
@@ -750,8 +765,11 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
       gNode("has-tag", "tags.has", 480, 420, { "default:tag": types.tags.scripting, "default:exact": false }),
       gNode("tag-branch", "flow.branch", 760, 260),
       printText("tagged", 1000, 260, "ft-script-tag", "Spinner tagged FeatureTest.Scripting"),
-      delay("pulse-delay", 480, 600, 2),
-      callEvent("pulse-call", 760, 600, pulse, { "default:Strength": 2.5 }),
+      onPulsedNode("bind-pulsed", 480, 600, "flow.dispatcher.bind", "Bind Event to On Pulsed"),
+      delay("pulse-delay", 760, 600, 2),
+      callEvent("pulse-call", 1040, 600, pulse, { "default:Strength": 2.5 }),
+      gNode(pulsedEcho.id, "flow.event.custom", 1240, 860, { title: "Event Pulsed Echo", name: pulsedEcho.name, pins: pulsedEcho.pins }),
+      printText("pulsed-print", 1500, 860, "ft-script-pulsed", "On Pulsed reached its bound event"),
       // Pulse: count, add score through the Game Subsystem, print.
       gNode(pulse.id, "flow.event.custom", 0, 860, { title: "Event Pulse", name: pulse.name, pins: pulse.pins }),
       getVar("get-pulses", pulseCount, 0, 1020),
@@ -761,6 +779,7 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
       callOn("add-score", 700, 860, CLASS.scoreSubsystem, ADD_SCORE, { "default:Amount": 1 }),
       format("pulse-text", 700, 1060, "Pulse {strength} (#{count})"),
       printText("pulse-print", 960, 860, "ft-script-pulse"),
+      onPulsedNode("call-pulsed", 960, 1060, "flow.dispatcher.call", "Call On Pulsed"),
       // Input Action / Axis events (evaluated on Tick).
       gNode("on-pulse", "input.actionEvent", 0, 1300, {
         valueType: "button",
@@ -807,7 +826,10 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
       gWire("begin-steps", "then0", "ready", "execIn"),
       gWire("begin-steps", "then1", "mode-switch", "execIn"),
       gWire("begin-steps", "then2", "tag-branch", "execIn"),
-      gWire("begin-steps", "then3", "pulse-delay", "execIn"),
+      gWire("begin-steps", "then3", "bind-pulsed", "execIn"),
+      gExec("bind-pulsed", "pulse-delay"),
+      gWire(pulsedEcho.id, "OutputDelegate", "bind-pulsed", "event"),
+      gExec(pulsedEcho.id, "pulsed-print"),
       gWire("get-mode", "value", "mode-switch", "value"),
       ...SPEED_MODES.map((mode) => gWire("mode-switch", `case:${mode}`, `speed-${mode.toLowerCase()}`, "execIn")),
       gWire("get-tags", "value", "has-tag", "container"),
@@ -824,6 +846,8 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
       gWire(pulse.id, "Strength", "pulse-text", fmtArg("strength")),
       gWire("set-pulses", "out", "pulse-text", fmtArg("count")),
       gWire("pulse-text", "out", "pulse-print", "inString"),
+      gExec("pulse-print", "call-pulsed"),
+      gWire(pulse.id, "Strength", "call-pulsed", "Strength"),
 
       gWire("on-pulse", "started", "input-pulse", "execIn"),
       gExec("input-pulse", "pulse-rumble"),

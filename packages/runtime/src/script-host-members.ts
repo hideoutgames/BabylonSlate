@@ -30,6 +30,7 @@ import { isInfiniteLoopError } from "@haptic/debugger";
 import { EMPTY_ASSET_CATALOG } from "./asset-catalog";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
 import type { ScriptBreakpoints } from "./script-breakpoints";
+import type { DispatcherBindings } from "./script-dispatchers";
 import type { ComponentFunctionHost } from "./script-component-functions";
 import type { HostContextMembers } from "./script-context-types";
 import {
@@ -53,6 +54,7 @@ import { scriptValuesEqual } from "./script-values-equal";
 /** What `createHostMembers` reads from its `ScriptHost`. */
 export interface HostMembersHost extends ComponentFunctionHost {
   readonly rng: Rng;
+  readonly dispatchers: DispatcherBindings;
   readonly materials: ScriptMaterialOwnership;
   /** Read on each call because `setBreakpoints` replaces them after construction. */
   breakpoints(): ScriptBreakpoints | null;
@@ -125,6 +127,10 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     log: (severity, category, message) =>
       services.log(severity, category, message),
     nullAccess: (message) => services.log("error", "Script", message),
+    eventDelegate: (object, name, kind, params) => host.dispatchers.delegate(object, name, kind, params),
+    bindDispatcher: (owner, name, delegate) => host.dispatchers.bind(owner, name, delegate),
+    unbindDispatcher: (owner, name, delegate) => host.dispatchers.unbind(owner, name, delegate),
+    unbindAllDispatcher: (owner, name) => host.dispatchers.unbindAll(owner, name),
     assertFailed: (message, detail) => reportAssertion(message, detail),
     assertEqual: (actual, expected, message) => {
       if (scriptValuesEqual(actual, expected)) return;
@@ -324,6 +330,8 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getGameInstance: () => services.getGameInstance?.() ?? null,
     isA: (instance, classId) => {
       if (instance == null || typeof instance !== "object") return false;
+      // A destroyed object is no longer any class: Cast fails and returns None.
+      if ((instance as { destroyed?: unknown }).destroyed === true) return false;
       const id = (instance as { classId?: unknown }).classId;
       if (typeof id !== "string" || !id) return false;
       const target = String(classId ?? "");

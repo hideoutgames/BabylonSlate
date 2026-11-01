@@ -44,11 +44,16 @@ function equals(value: unknown, operand: BreakpointCondition["value"]): boolean 
   return value === operand;
 }
 
+/** Is Valid as nodes mean it: not empty, and not a destroyed object. */
+function isLiveReference(value: unknown): boolean {
+  return value != null && (value as { destroyed?: unknown }).destroyed !== true;
+}
+
 /** Whether `value`, as the script holds it, meets the condition. Order compares numbers only. */
 export function meetsBreakpointCondition({ op, value: operand }: BreakpointCondition, value: unknown): boolean {
   switch (op) {
-    case "isValid": return value != null;
-    case "isNotValid": return value == null;
+    case "isValid": return isLiveReference(value);
+    case "isNotValid": return !isLiveReference(value);
     case "==": return equals(value, operand);
     case "!=": return !equals(value, operand);
     default: {

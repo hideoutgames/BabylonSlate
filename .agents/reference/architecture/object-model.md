@@ -55,7 +55,8 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 - Two live actors never share a guid. `spawnActor` throws `DuplicateActorGuidError` (queued destroys still hold their guid). Documents repeating an actor id are rejected at load (`normalizeScene`, `normalizeSceneLayer`, realization), never repaired.
 - Replacement commits the predecessor's destruction first (Change Scene, Save Game restore).
 - Instanced ids are scoped: streamed actors `scene-stream:${JSON.stringify([instance, id])}`, SceneLayer actors `<layerGuid>:<id>`; scripted spawns get fresh guids.
-- Cleanup that may race a successor reusing a guid works by object identity: `destroyActorInstance`, render slots (owned by actor objects), physics body incarnations, inspector tokens, stale load cleanup.
+- Cleanup that may race a successor reusing a guid works by object identity: `destroyActorInstance`, script Destroy Actor (`runtime-host-actors.ts`: a destroyed or detached actor is a no-op; one still in the spawn queue keeps the guid route so it commits, then goes), render slots (owned by actor objects), physics body incarnations, inspector tokens, stale load cleanup.
+- Scripts treat an object with `destroyed === true` as not valid: subject guards skip it and log, and Is Valid, Validated Get, Assert Is Valid, Cast (`ctx.isA`) and breakpoint conditions report it as not valid. An actor queued for destruction stays valid until the commit.
 - `World.findActor` uses an incremental guid index; queued spawns stay invisible and queued destroys visible until commit.
 
 ## Actor hierarchy

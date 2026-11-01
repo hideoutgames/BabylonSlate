@@ -12,6 +12,8 @@ import {
   walkAncestry,
 } from "@haptic/editor-kit";
 import {
+  dispatcherEventPins,
+  dispatcherNodeData,
   dropGraphNodes,
   isOwnFunctionCall,
   isVariableAccessNode,
@@ -19,6 +21,13 @@ import {
   nextId,
   syncVariableAccessNodes,
 } from "./class-member-nodes";
+import {
+  DISPATCHER_NODE_TYPE_IDS,
+  OUTPUT_DELEGATE_PIN_ID,
+  type DispatcherNodeAction,
+} from "@haptic/scripting-nodes";
+import { delegateSignatureSource } from "@haptic/scripting";
+import { signatureOfPins } from "./delegate-signatures";
 
 export {
   COLLISION_EVENT_TYPE_IDS,
@@ -51,6 +60,13 @@ export {
 export {
   addCallEventNode,
   addCallFunctionNode,
+  addDispatcherNodes,
+  createEventNodeData,
+  dispatcherEventNodeData,
+  dispatcherEventPins,
+  dispatcherNodeData,
+  freeDispatcherEventName,
+  type DispatcherDropAction,
   addVariableAccessNode,
   isObjectInstanceVariableType,
   patchVariableAccessNode,
@@ -121,7 +137,7 @@ function memberDefaults(
   if (kind === "interface") {
     return { assetGuid: extras?.assetGuid ?? "" };
   }
-  if (kind === "event") {
+  if (kind === "event" || kind === "dispatcher") {
     return { pins: extras?.pins ?? [] };
   }
   return {};
@@ -458,6 +474,114 @@ function renameFunctionCalls(
   );
 }
 
+const DISPATCHER_ACTION_BY_TYPE: Record<string, DispatcherNodeAction> = Object.fromEntries(
+  Object.entries(DISPATCHER_NODE_TYPE_IDS).map(([action, type]) => [type, action as DispatcherNodeAction]),
+);
+
+/** A Call, Bind, Unbind or Unbind All node of this Class's own dispatcher `name`. */
+function isOwnDispatcherNode(
+  node: SerializedGraph["nodes"][number],
+  name: string,
+  classId: string | undefined,
+): boolean {
+  return (
+    node.type in DISPATCHER_ACTION_BY_TYPE &&
+    node.data.name === name &&
+    (node.data.implicitSelf === true || !node.data.classId || node.data.classId === classId)
+  );
+}
+
+/**
+ * Carry a dispatcher's new name or inputs to everything this Class built from
+ * it: its own Call / Bind / Unbind nodes, the custom events wired to a Bind or
+ * Unbind (they take its signature, as in Unreal) and the Delegate types whose
+ * signature was copied from it.
+ */
+function syncDispatcher(
+  graph: SerializedGraph,
+  previousName: string,
+  member: GraphClassMember,
+  classId: string | undefined,
+): SerializedGraph {
+  const dispatcherNodeIds = new Set<string>();
+  let next = mapGraphNodes(graph, (node) => {
+    if (!isOwnDispatcherNode(node, previousName, classId)) return node;
+    dispatcherNodeIds.add(node.id);
+    const action = DISPATCHER_ACTION_BY_TYPE[node.type]!;
+    const nextData: Record<string, unknown> = {
+      ...node.data,
+      ...dispatcherNodeData(member, action, {
+        classId: typeof node.data.classId === "string" ? node.data.classId : undefined,
+        implicitSelf: node.data.implicitSelf === true,
+      }),
+    };
+    delete nextData.__pins;
+    return { ...node, data: nextData };
+  });
+  // Custom events live in the Event Graph, so the wires that bind them do too.
+  const boundEventIds = new Set(
+    next.edges
+      .filter((edge) =>
+        edge.sourceHandle === OUTPUT_DELEGATE_PIN_ID &&
+        edge.targetHandle === "event" &&
+        dispatcherNodeIds.has(edge.target))
+      .map((edge) => edge.source),
+  );
+  const eventPins = dispatcherEventPins(member);
+  for (const node of next.nodes) {
+    if (!boundEventIds.has(node.id) || node.type !== "flow.event.custom") continue;
+    const name = formatEventMemberName(String(node.data.name ?? ""));
+    const eventMember = (next.members ?? []).find(
+      (entry) => entry.kind === "event" && (entry.id === node.id || formatEventMemberName(entry.name) === name),
+    );
+    next = syncEventPins(next, eventMember ?? { id: node.id, kind: "event", name }, eventPins);
+    if (eventMember) {
+      next = {
+        ...next,
+        members: (next.members ?? []).map((entry) => entry === eventMember ? { ...entry, pins: eventPins } : entry),
+      };
+    }
+  }
+  return syncDelegateCopies(
+    next,
+    delegateSignatureSource(classId ?? "", previousName),
+    delegateSignatureSource(classId ?? "", member.name),
+    signatureOfPins(member.pins),
+    classId,
+  );
+}
+
+/** Retarget this Class's Delegate types copied from one dispatcher to its new name and inputs. */
+function syncDelegateCopies(
+  graph: SerializedGraph,
+  previousSource: string,
+  nextSource: string,
+  signature: NonNullable<GraphClassMember["signature"]>,
+  classId: string | undefined,
+): SerializedGraph {
+  const copy = <T extends { typeId?: string; typeClassId?: string }>(row: T): T =>
+    row.typeId === "delegate" && row.typeClassId === previousSource
+      ? { ...row, typeClassId: nextSource, signature: signature.map((input) => ({ ...input })) }
+      : row;
+  let next = graph;
+  for (const member of graph.members ?? []) {
+    const variable = member.kind === "variable" ? copy(member) : member;
+    const pins = member.pins?.map(copy);
+    const changedPins = pins?.some((pin, index) => pin !== member.pins![index]) === true;
+    if (variable === member && !changedPins) continue;
+    const updated: GraphClassMember = { ...variable, ...(changedPins ? { pins } : {}) };
+    next = {
+      ...next,
+      members: (next.members ?? []).map((entry) => entry.id === member.id ? updated : entry),
+    };
+    if (updated.kind === "variable") next = syncVariableAccessNodes(next, updated);
+    else if (changedPins && updated.kind === "event") next = syncEventPins(next, updated, pins!);
+    else if (changedPins && updated.kind === "function") next = syncFunctionGraphPins(next, updated.id, pins!, classId);
+    else if (changedPins && updated.kind === "dispatcher") next = syncDispatcher(next, updated.name, updated, classId);
+  }
+  return next;
+}
+
 export function patchClassMember(
   graph: SerializedGraph,
   memberId: string,
@@ -500,6 +624,11 @@ export function patchClassMember(
   const declared = next.members?.find((member) => member.id === memberId);
   if (declared?.kind === "variable") {
     return syncVariableAccessNodes(next, declared);
+  }
+  if (declared?.kind === "dispatcher" && previous) {
+    return patch.name !== undefined || patch.pins
+      ? syncDispatcher(next, previous.name, declared, classId)
+      : next;
   }
   if (!patch.pins) return next;
   if (declared?.kind === "event") {
@@ -598,6 +727,12 @@ export function removeClassMember(
       isVariableAccessNode(node, declared),
     );
   }
+  if (declared?.kind === "dispatcher") {
+    // Its Call / Bind / Unbind nodes go with it, as a rename retargets them.
+    return dropGraphNodes({ ...graph, members }, (node) =>
+      isOwnDispatcherNode(node, declared.name, context?.classId),
+    );
+  }
   if (declared) {
     return { ...graph, members };
   }
@@ -610,4 +745,55 @@ export function removeClassMember(
       (edge) => edge.source !== memberId && edge.target !== memberId,
     ),
   };
+}
+
+/** The signature rows a delegate input stands for: a dispatcher node's inputs, else the input's own signature. */
+function delegateInputRows(
+  node: SerializedGraph["nodes"][number],
+  pinId: string,
+): GraphClassMemberPin[] | null {
+  const rows = Array.isArray(node.data.pins) ? (node.data.pins as GraphClassMemberPin[]) : [];
+  if (node.type in DISPATCHER_ACTION_BY_TYPE && pinId === "event") {
+    return dispatcherEventPins({ pins: rows });
+  }
+  const row = rows.find((entry) => entry.name === pinId && entry.typeId === "delegate");
+  if (!row) return null;
+  return (row.signature ?? []).map((input, index) => ({
+    ...input,
+    name: `Input ${index + 1}`,
+    direction: "out" as const,
+  }));
+}
+
+/**
+ * Give each custom event that takes nothing the signature of the delegate
+ * input its Output Delegate was just wired to, as Unreal does: wiring an empty
+ * event to Bind Event to On Damaged gives it On Damaged's inputs, names
+ * included, in the same change.
+ */
+export function adoptBoundEventSignatures(
+  graph: SerializedGraph,
+  classId?: string,
+): SerializedGraph {
+  let next = graph;
+  for (const edge of graph.edges) {
+    if (edge.sourceHandle !== OUTPUT_DELEGATE_PIN_ID || !edge.targetHandle) continue;
+    const event = next.nodes.find((node) => node.id === edge.source);
+    if (event?.type !== "flow.event.custom") continue;
+    const current = Array.isArray(event.data.pins) ? (event.data.pins as GraphClassMemberPin[]) : [];
+    if (current.some((pin) => pin.typeId !== "exec")) continue;
+    const target = next.nodes.find((node) => node.id === edge.target);
+    const pins = target ? delegateInputRows(target, edge.targetHandle) : null;
+    if (!pins || pins.length === 0) continue;
+    const name = formatEventMemberName(String(event.data.name ?? event.data.title ?? "Custom"));
+    const member = (next.members ?? []).find(
+      (entry) => entry.kind === "event" && (entry.id === event.id || formatEventMemberName(entry.name) === name),
+    );
+    // A canvas-only event gets its member row here, as the Inspector's first pin edit gives it one.
+    const withMember: SerializedGraph = member
+      ? next
+      : { ...next, members: [...(next.members ?? []), { id: event.id, kind: "event", name, pins: [] }] };
+    next = patchClassMember(withMember, member?.id ?? event.id, { pins }, classId);
+  }
+  return next;
 }

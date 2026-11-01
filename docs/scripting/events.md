@@ -40,6 +40,8 @@ To run a custom event on another object, drag from a pin that holds that object 
 
 A child class can override an inherited custom event by adding it from **Add Event**. It comes wired to [Call Parent Event](class/call-parent-event.md), which runs the parent's version.
 
+To let other objects run their events when something happens here, without this class naming them, declare an [Event Dispatcher](event-dispatchers.md). A custom event's square **Output Delegate** pin, at the right end of its title bar, binds it to one.
+
 ## Copy and duplicate events
 
 **Paste** and **Duplicate** (<kbd>Mod</kbd>+<kbd>D</kbd>) copy a selection of nodes as new nodes with the same values and the wires between them. For events, each one stays on the graph once:
