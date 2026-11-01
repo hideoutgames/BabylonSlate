@@ -898,6 +898,7 @@ function dispatcherRows(options?: ScriptPaletteOptions): DispatcherRow[] {
     push(classId, graph, callImplicitSelf(classId, options));
   }
   for (const api of ENGINE_CLASS_SCRIPT_APIS) {
+    if (!engineDispatchersReachable(api.classId, options)) continue;
     for (const dispatcher of api.dispatchers ?? []) {
       rows.push({ classId: api.classId, name: dispatcher.name, pins: dispatcher.pins.map((pin) => ({ ...pin })), implicitSelf: false, engine: true });
     }
@@ -910,6 +911,16 @@ function dispatcherRows(options?: ScriptPaletteOptions): DispatcherRow[] {
     }
   }
   return rows;
+}
+
+/**
+ * Whether the host can hold an object of an engine class that declares
+ * dispatchers, so its Bind rows belong in Add Node. A Timeline Clip comes only
+ * from a SceneScript's or SceneLayerScript's Get <Name> Timeline Clip.
+ */
+function engineDispatchersReachable(classId: string, options?: ScriptPaletteOptions): boolean {
+  if (classId === "TimelineClip") return (options?.ownedTimelineClips?.length ?? 0) > 0;
+  return true;
 }
 
 const DISPATCHER_ACTIONS: readonly DispatcherNodeAction[] = ["call", "bind", "unbind", "unbindAll"];
