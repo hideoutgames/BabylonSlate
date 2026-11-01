@@ -14,6 +14,7 @@ export interface PointerInit {
   ctrlKey?: boolean;
   metaKey?: boolean;
   shiftKey?: boolean;
+  altKey?: boolean;
   button?: number;
   buttons?: number;
 }
@@ -32,6 +33,7 @@ export function dispatchPointerEvent(
     ctrlKey = false,
     metaKey = false,
     shiftKey = false,
+    altKey = false,
     button = 0,
     buttons = 0,
   } = init;
@@ -44,6 +46,7 @@ export function dispatchPointerEvent(
     ctrlKey,
     metaKey,
     shiftKey,
+    altKey,
     button,
     buttons,
   });

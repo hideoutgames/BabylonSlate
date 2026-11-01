@@ -16,7 +16,6 @@ import {
   NestedMenu,
   NumberField,
   PanelFrame,
-  SearchDialog,
   SearchInput,
   ToolbarStrip,
   TypeColorMark,
@@ -41,8 +40,20 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@h
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@haptic/ui/components/select";
 import { Toggle } from "@haptic/ui/components/toggle";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   BoxIcon,
   ChevronDownIcon,
+  ClipboardPasteIcon,
+  CopyIcon,
+  CopyPlusIcon,
+  CrosshairIcon,
+  ListChecksIcon,
+  LocateIcon,
+  MousePointerClickIcon,
+  ScissorsIcon,
+  SplineIcon,
+  UnfoldHorizontalIcon,
   DiamondIcon,
   DiamondPlusIcon,
   FilmIcon,
@@ -85,8 +96,12 @@ import {
   deleteTimelineKeys,
   findTimelineTrack,
   pasteTimelineKeys,
+  moveTimelineRow,
+  pasteTimelineTrack,
   removeTimelineObject,
   removeTimelineTrack,
+  setTimelineKeyInterpolation,
+  timelineRowKeyRefs,
   setTimelineKeys,
   setTimelineTrackMuted,
   shiftTimelineKeys,
@@ -97,6 +112,7 @@ import {
   withTimelineClip,
   type TrackKeyRef,
 } from "../lib/timeline-track-edits";
+import { TIMELINE_EASE_SHORTCUTS, TIMELINE_EASING_CURVES, timelineInterpolationLabel } from "../lib/timeline-interpolation";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { classIdForGraphPath } from "../services/script-compiler";
 
@@ -177,7 +193,8 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   const session = useEditorSessionState();
   const keybinds = useKeybindings();
   const touch = useTouchUi();
-  const selectedActorIds = useOptionalSceneEditing()?.selectedActorIds ?? [];
+  const sceneEditing = useOptionalSceneEditing();
+  const selectedActorIds = sceneEditing?.selectedActorIds ?? [];
   const { assetRegistry } = useRegistryState();
   const property = usePropertyContext();
   const playhead = tools.timelinePlayhead;
@@ -192,6 +209,8 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   const [playing, setPlaying] = useState(false);
   const [addTrackActorId, setAddTrackActorId] = useState<string | null>(null);
   const [pickActorOpen, setPickActorOpen] = useState(false);
+  const [fitToken, setFitToken] = useState(0);
+  const lengthDrag = useRef<number | null>(null);
   const drag = useRef<{ base: SerializedTimelineClip; snapshot: Map<string, TimelineKey[]> } | null>(null);
   const clipRef = useRef(clip);
   clipRef.current = clip;
@@ -326,12 +345,24 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
     setRowId(null);
   };
 
-  const copyKeys = () => {
-    const copied = copyTimelineKeys(clip, selectedTrackRefs());
+  const copyKeys = (refs: readonly TrackKeyRef[] = selectedTrackRefs()) => {
+    const copied = copyTimelineKeys(clip, refs);
     if (copied) session.copyTimelineKeys(copied);
   };
   const pasteKeys = () => {
     const copied = session.readCopiedTimelineKeys();
+    if (!copied) return;
+    const { clip: next, pasted } = pasteTimelineKeys(clip, copied, time, newId);
+    commitClip(next);
+    setSelection(new Set(pasted.map((ref) => keyRefId({ rowId: ref.trackId, keyId: ref.keyId }))));
+  };
+  const deleteKeys = (refs: readonly TrackKeyRef[] = selectedTrackRefs()) => {
+    commitClip(deleteTimelineKeys(clip, refs));
+    setSelection(new Set());
+  };
+  /** Copy and paste at the playhead in one step, without changing what Copy last stored. */
+  const duplicateKeys = (refs: readonly TrackKeyRef[] = selectedTrackRefs()) => {
+    const copied = copyTimelineKeys(clip, refs);
     if (!copied) return;
     const { clip: next, pasted } = pasteTimelineKeys(clip, copied, time, newId);
     commitClip(next);
@@ -360,23 +391,66 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
     return () => setTimelineDropTarget(null);
   }, [addActors, setTimelineDropTarget]);
 
+  const selectedActors = selectedActorIds.filter((id) => scene.actors.some((actor) => actor.id === id));
   const focus = { focusWithinRef: rootRef };
   useKeybindCommand("timeline.setKey", () => setKeys(targetTrackIds()), { ...focus, enabled: () => targetTrackIds().length > 0 });
   useKeybindCommand("timeline.previousKey", () => jumpToKey(-1), focus);
   useKeybindCommand("timeline.nextKey", () => jumpToKey(1), focus);
   useKeybindCommand("edit.delete", deleteSelection, { ...focus, enabled: () => selection.size > 0 || rowId !== null });
-  useKeybindCommand("edit.copy", copyKeys, { ...focus, enabled: () => selection.size > 0 });
+  useKeybindCommand("edit.copy", () => copyKeys(), { ...focus, enabled: () => selection.size > 0 });
+  useKeybindCommand("edit.duplicate", () => duplicateKeys(), { ...focus, enabled: () => selection.size > 0 });
   useKeybindCommand("edit.paste", pasteKeys, focus);
+  // The selection is made in the Outliner or the viewport, so this works while the window is shown.
+  useKeybindCommand("timeline.addSelectedActors", () => addActors(selectedActors), {
+    scopeRef: rootRef,
+    enabled: () => selectedActors.some((id) => !clip.objects.some((object) => object.actorId === id)),
+  });
 
   const { menu, closeMenu, openMenuAt } = useContextMenu({ items: () => [] });
+  const selectRowKeys = (id: string) => setSelection(new Set(timelineRowKeyRefs(clip, id).map((ref) => keyRefId({ rowId: ref.trackId, keyId: ref.keyId }))));
+  const moveItems = (id: string): ContextMenuItem[] => [
+    { id: "move-up", label: "Move Up", icon: <ArrowUpIcon />, disabled: moveTimelineRow(clip, id, -1) === clip, testId: "timeline-row-menu-up",
+      onSelect: () => commitClip(moveTimelineRow(clip, id, -1)) },
+    { id: "move-down", label: "Move Down", icon: <ArrowDownIcon />, disabled: moveTimelineRow(clip, id, 1) === clip, testId: "timeline-row-menu-down",
+      onSelect: () => commitClip(moveTimelineRow(clip, id, 1)) },
+  ];
+  const copyTrack = (trackId: string) => {
+    const found = findTimelineTrack(clip, trackId);
+    if (!found) return;
+    const actor = scene.actors.find((entry) => entry.id === found.object.actorId);
+    const component = actor?.components.find((entry) => entry.id === found.track.target.componentId);
+    session.copyTimelineTrack({
+      target: found.track.target,
+      valueType: found.track.valueType,
+      ...(component ? { componentClassId: component.classId } : {}),
+      keys: found.track.keys,
+    });
+  };
+  const pasteTrack = (objectId: string) => {
+    const copied = session.readCopiedTimelineTrack();
+    const object = clip.objects.find((entry) => entry.id === objectId);
+    const actor = object && scene.actors.find((entry) => entry.id === object.actorId);
+    if (!copied || !actor) return;
+    const next = pasteTimelineTrack(clip, objectId, copied, actor, newId);
+    if (next) commitClip(next);
+  };
   const rowMenuItems = (row: TimelineRowModel): ContextMenuItem[] => {
+    const reveal: ContextMenuItem = { id: "reveal", label: "Reveal in Outliner", icon: <LocateIcon />, disabled: !row.actor || !sceneEditing,
+      testId: "timeline-row-menu-reveal", onSelect: () => { if (row.actor) sceneEditing?.selectActor(row.actor.id); } };
     if (row.kind === "group") {
+      const tracks = clip.objects.find((object) => object.id === row.id)?.tracks ?? [];
       return [
         { id: "add-track", label: "Add Track…", icon: <PlusIcon />, disabled: !row.actor, testId: "timeline-row-menu-add-track",
           onSelect: () => row.actor && setAddTrackActorId(row.actor.id) },
         { id: "set-key", label: "Set Key", icon: <DiamondPlusIcon />, shortcut: keybinds.get("timeline.setKey")?.[0],
-          disabled: !clip.objects.find((object) => object.id === row.id)?.tracks.length, testId: "timeline-row-menu-set-key",
-          onSelect: () => setKeys(clip.objects.find((object) => object.id === row.id)?.tracks.map((track) => track.id) ?? []) },
+          disabled: tracks.length === 0, testId: "timeline-row-menu-set-key", onSelect: () => setKeys(tracks.map((track) => track.id)) },
+        { id: "paste-track", label: "Paste Track", icon: <ClipboardPasteIcon />, testId: "timeline-row-menu-paste-track",
+          disabled: !session.readCopiedTimelineTrack() || !row.actor, onSelect: () => pasteTrack(row.id) },
+        { id: "select-keys", label: "Select All Keys", icon: <ListChecksIcon />, disabled: tracks.every((track) => track.keys.length === 0),
+          testId: "timeline-row-menu-select-keys", onSelect: () => selectRowKeys(row.id) },
+        reveal,
+        { type: "separator", id: "move-separator" },
+        ...moveItems(row.id),
         { type: "separator", id: "remove-separator" },
         { id: "remove-object", label: "Remove From Clip", icon: <Trash2Icon />, variant: "destructive", testId: "timeline-row-menu-remove",
           onSelect: () => commitClip(removeTimelineObject(clip, row.id)) },
@@ -388,9 +462,50 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
         onSelect: () => setKeys([row.id]) },
       { id: "mute-track", label: muted ? "Unmute Track" : "Mute Track", icon: muted ? <Volume2Icon /> : <VolumeXIcon />, testId: "timeline-row-menu-mute",
         onSelect: () => commitClip(setTimelineTrackMuted(clip, row.id, !muted)) },
+      { id: "copy-track", label: "Copy Track", icon: <CopyIcon />, testId: "timeline-row-menu-copy-track", onSelect: () => copyTrack(row.id) },
+      { id: "select-keys", label: "Select All Keys", icon: <ListChecksIcon />, disabled: !row.track?.keys.length,
+        testId: "timeline-row-menu-select-keys", onSelect: () => selectRowKeys(row.id) },
+      reveal,
+      { type: "separator", id: "move-separator" },
+      ...moveItems(row.id),
       { type: "separator", id: "delete-separator" },
       { id: "delete-track", label: "Delete Track", icon: <Trash2Icon />, variant: "destructive", testId: "timeline-row-menu-delete",
         onSelect: () => commitClip(removeTimelineTrack(clip, row.id)) },
+    ];
+  };
+
+  const keyMenuItems = (ref: KeyRef): ContextMenuItem[] => {
+    // The menu acts on the selection when the key is in it; otherwise the press just selected this key alone.
+    const clicked = trackKeyRefs(clip, [ref]);
+    const inSelection = clicked.length > 0 && clicked.every((entry) => selection.has(keyRefId({ rowId: entry.trackId, keyId: entry.keyId })));
+    const targets = inSelection ? selectedTrackRefs() : clicked;
+    const setInterpolation = (value: TimelineKey["Interpolation"]) => commitClip(setTimelineKeyInterpolation(clip, targets, value));
+    const keyTime = clicked.map((entry) => findTimelineTrack(clip, entry.trackId)?.track.keys.find((key) => key.id === entry.keyId)?.Time)
+      .find((value) => value !== undefined);
+    return [
+      ...(touch ? [{ id: "select-key", label: "Select", icon: <MousePointerClickIcon />, testId: "timeline-key-menu-select",
+        onSelect: () => selectKeys([ref], "add") } satisfies ContextMenuItem] : []),
+      { id: "go-to-key", label: "Go To Key", icon: <CrosshairIcon />, disabled: keyTime === undefined, testId: "timeline-key-menu-go",
+        onSelect: () => { if (keyTime !== undefined) playhead.set(keyTime); } },
+      { type: "submenu", id: "interpolation", label: "Interpolation", icon: <SplineIcon />, testId: "timeline-key-menu-interpolation", items: [
+        ...(["constant", "linear", "auto"] as const).map((value) => ({ id: `interp-${value}`, label: timelineInterpolationLabel(value),
+          testId: `timeline-key-menu-interp-${value}`, onSelect: () => setInterpolation(value) })),
+        ...TIMELINE_EASE_SHORTCUTS.map((entry) => ({ id: `interp-${entry.value}`, label: entry.label,
+          testId: `timeline-key-menu-interp-${entry.value}`, onSelect: () => setInterpolation(entry.value) })),
+        { type: "submenu", id: "more-curves", label: "More Curves", items: TIMELINE_EASING_CURVES.map((curve) => ({
+          id: `curve-${curve}`, label: timelineInterpolationLabel(curve), testId: `timeline-key-menu-curve-${curve}`,
+          onSelect: () => setInterpolation(curve) })) },
+      ] },
+      { type: "separator", id: "edit-separator" },
+      { id: "cut-keys", label: "Cut", icon: <ScissorsIcon />, testId: "timeline-key-menu-cut", onSelect: () => { copyKeys(targets); deleteKeys(targets); } },
+      { id: "copy-keys", label: "Copy", icon: <CopyIcon />, shortcut: keybinds.get("edit.copy")?.[0], testId: "timeline-key-menu-copy", onSelect: () => copyKeys(targets) },
+      { id: "paste-keys", label: "Paste", icon: <ClipboardPasteIcon />, shortcut: keybinds.get("edit.paste")?.[0],
+        disabled: !session.readCopiedTimelineKeys(), testId: "timeline-key-menu-paste", onSelect: pasteKeys },
+      { id: "duplicate-keys", label: "Duplicate", icon: <CopyPlusIcon />, shortcut: keybinds.get("edit.duplicate")?.[0],
+        testId: "timeline-key-menu-duplicate", onSelect: () => duplicateKeys(targets) },
+      { type: "separator", id: "delete-separator" },
+      { id: "delete-keys", label: "Delete", icon: <Trash2Icon />, variant: "destructive", shortcut: keybinds.get("edit.delete")?.[0],
+        testId: "timeline-key-menu-delete", onSelect: () => deleteKeys(targets) },
     ];
   };
 
@@ -435,14 +550,13 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
     };
   });
 
-  const selectedActors = selectedActorIds.filter((id) => scene.actors.some((actor) => actor.id === id));
   const unanimated = scene.actors.filter((actor) => !clip.objects.some((object) => object.actorId === actor.id));
   const trackMenu: NestedMenuItem[] = [
     { id: "add-selected", label: selectedActors.length === 1
         ? `Selected Actor (${actorNames.get(selectedActors[0]!) ?? "Actor"})`
         : `Selected Actors (${selectedActors.length})`,
-      icon: <BoxIcon />, disabled: selectedActors.length === 0, testId: "timeline-track-menu-selected",
-      onSelect: () => addActors(selectedActors) },
+      icon: <BoxIcon />, disabled: selectedActors.length === 0, shortcut: keybinds.get("timeline.addSelectedActors")?.[0],
+      testId: "timeline-track-menu-selected", onSelect: () => addActors(selectedActors) },
     { id: "add-actor", label: "Actor From Outliner…", icon: <PlusIcon />, disabled: unanimated.length === 0, testId: "timeline-track-menu-actor",
       onSelect: () => setPickActorOpen(true) },
   ];
@@ -505,6 +619,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
           <SelectContent>{frameRateItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
         </Select>
         <Toggle size="sm" aria-label="Snap to Frames" pressed={snap} onPressedChange={setSnap} data-testid="timeline-snap"><MagnetIcon /></Toggle>
+        <TransportButton label="Zoom To Fit" onClick={() => setFitToken((token) => token + 1)} testId="timeline-zoom-fit"><UnfoldHorizontalIcon /></TransportButton>
         <span className="flex-1" />
         <NestedMenu items={trackMenu} trigger={<Button variant="ghost" size="sm" data-testid="timeline-add-menu">
           <PlusIcon data-icon="inline-start" />Track<ChevronDownIcon data-icon="inline-end" />
@@ -541,6 +656,15 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
             const row = rowById.get(id);
             if (row) openMenuAt(x, y, rowMenuItems(row));
           }}
+          onKeyContextMenu={(ref, x, y) => openMenuAt(x, y, keyMenuItems(ref))}
+          onLengthChange={(length, phase) => {
+            // One undo step: every move replaces the clip at the drag's start length.
+            if (phase === "start") lengthDrag.current = clip.length;
+            const next = phase === "cancel" ? lengthDrag.current ?? clip.length : Math.max(MIN_TIMELINE_CLIP_LENGTH, length);
+            if (next !== clip.length) commitClip({ ...clip, length: next });
+            if (phase === "end" || phase === "cancel") lengthDrag.current = null;
+          }}
+          fitToken={fitToken}
           header={<SearchInput value={filter} onChange={setFilter} placeholder="Filter Tracks" aria-label="Filter Tracks" className="h-6 text-xs" />}
           rowHeight={rowHeight}
           aria-label={`${clip.name} Keys`}
@@ -560,17 +684,21 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
         emptyLabel="No Matching Properties"
         data-testid="timeline-add-track-dialog"
       />
-      <SearchDialog
+      <ChecklistDialog
         open={pickActorOpen}
         onOpenChange={setPickActorOpen}
-        title="Add Actor to Clip"
-        items={unanimated.map((actor) => ({ id: actor.id, label: actorNames.get(actor.id) ?? actor.name }))}
-        onSelect={(id) => {
-          setPickActorOpen(false);
-          addActors([id]);
-        }}
-        placeholder="Search Actors"
-        emptyLabel="No Actors"
+        title={`Add Actors to ${clip.name}`}
+        description="Pick the actors this clip animates. Actors already in it are checked."
+        groups={[{ id: "actors", label: "Actors", items: scene.actors.map((actor) => ({
+          id: actor.id,
+          label: actorNames.get(actor.id) ?? actor.name,
+          included: clip.objects.some((object) => object.actorId === actor.id),
+          testId: `timeline-pick-actor-${actor.id}`,
+        })) }]}
+        confirmLabel="Add Actors"
+        onConfirm={addActors}
+        searchPlaceholder="Search Actors"
+        emptyLabel="No Matching Actors"
         data-testid="timeline-pick-actor"
       />
     </div>
