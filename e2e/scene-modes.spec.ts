@@ -220,6 +220,12 @@ test.describe("Scene modes", () => {
 
     await page.getByTestId(`timeline-add-track-${objectId}`).click();
     const dialog = page.getByTestId("timeline-add-track-dialog");
+    // The list fills the dialog right below the search field, down to the footer.
+    const searchBox = (await dialog.getByTestId("timeline-add-track-dialog-search").boundingBox())!;
+    const listBox = (await dialog.getByRole("list").boundingBox())!;
+    const footerBox = (await dialog.getByRole("button", { name: "Add Tracks" }).boundingBox())!;
+    expect(listBox.y - (searchBox.y + searchBox.height)).toBeLessThan(24);
+    expect(footerBox.y - (listBox.y + listBox.height)).toBeLessThan(40);
     await dialog.getByText("Location", { exact: true }).click();
     await dialog.getByText("Visible", { exact: true }).click();
     await dialog.getByRole("button", { name: "Add Tracks" }).click();

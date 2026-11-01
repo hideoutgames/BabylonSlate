@@ -124,20 +124,23 @@ export function ChecklistDialog({
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder={searchPlaceholder}
-          aria-label={searchPlaceholder}
-          autoFocus={!touch}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              confirm();
-            }
-          }}
-          data-testid={testId ? `${testId}-search` : undefined}
-        />
+        {/* SearchInput grows in a toolbar row; here the list below takes the free height. */}
+        <div className="flex shrink-0" data-slot="checklist-search">
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            autoFocus={!touch}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                confirm();
+              }
+            }}
+            data-testid={testId ? `${testId}-search` : undefined}
+          />
+        </div>
         <div className="-mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1" role="list">
           {action ? <button
             type="button"
