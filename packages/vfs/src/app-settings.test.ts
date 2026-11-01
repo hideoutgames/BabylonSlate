@@ -46,6 +46,16 @@ describe("app settings", () => {
     expect(settings.debuggerDefaults.overlayConsole).toBe(false);
   });
 
+  it("keeps the newest thousand linked Scale keys and drops unreadable lists", () => {
+    expect(engineSettingsSchema.parse({}).linkedScaleKeys).toEqual([]);
+    const keys = Array.from({ length: 1001 }, (_, index) => `actor:${index}`);
+    const kept = engineSettingsSchema.parse({ linkedScaleKeys: keys }).linkedScaleKeys;
+    expect(kept).toHaveLength(1000);
+    expect(kept[0]).toBe("actor:1");
+    expect(kept.at(-1)).toBe("actor:1000");
+    expect(engineSettingsSchema.parse({ linkedScaleKeys: [1, 2] }).linkedScaleKeys).toEqual([]);
+  });
+
   it("keeps ten traces by default and between one and fifty", () => {
     expect(engineSettingsSchema.parse({}).tracesKept).toBe(10);
     expect(engineSettingsSchema.parse({ tracesKept: 0 }).tracesKept).toBe(1);

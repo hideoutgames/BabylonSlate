@@ -9,6 +9,7 @@ import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { useSimulationInspection } from "../context/simulation-inspection-context";
 import { runtimeIdentityKey, type SimulationInspectionStore } from "../services/simulation-inspection-store";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
+import { scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 
 const MATERIAL_ASSET_TYPES = ["Material", "MaterialInstance"];
 const TEXTURE_ASSET_TYPES = ["Texture"];
@@ -50,7 +51,12 @@ function RuntimeTransformFields({ store, target, transform, mode, disabled, reas
   const field = useRuntimeDraft(transform);
   const update = (next: SerializedTransform, final: boolean) => field.write(next, () => store.request(
     { kind: "setTransform", target, transform: next }, final ? { final: true } : { continuous: true }));
-  const rows = spatialTransformPropertyRows("simulation-transform", mode, field.draft, next => update(next, false));
+  const linkedScale = useLinkedScale();
+  const scaleKey = target.componentGuid
+    ? scaleLinkKey.actorComponent(target.actorGuid, target.componentGuid)
+    : scaleLinkKey.actor(target.actorGuid);
+  const rows = spatialTransformPropertyRows("simulation-transform", mode, field.draft, next => update(next, false),
+    { scaleLink: linkedScale.link(scaleKey) });
   const commits = spatialTransformPropertyRows("simulation-transform", mode, field.draft, next => update(next, true));
   for (const [index, row] of rows.entries()) {
     row.disabled = disabled;

@@ -1,4 +1,4 @@
-import { Camera, Constants, Matrix, RawTexture, ThinTexture, Vector3, type Effect, type Scene } from "@babylonjs/core";
+import { Camera, Constants, Matrix, RawTexture, ThinTexture, Vector3, type DirectionalLight, type Effect, type Scene } from "@babylonjs/core";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
@@ -7,6 +7,8 @@ import { syntax } from "./ambient-occlusion-shader";
 import type { EffectCompileFailure } from "./effect-compile-failure";
 import { hapticShadowedSun } from "./haptic-lights";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
+import { AtlasCascadedShadowGenerator, shadowTileSize } from "./shadow-atlas";
+import { SHADOW_FILTER_REACH_TEXELS } from "./shadow-filter";
 import { customWrapper } from "./spatial-effects";
 
 /**
@@ -16,6 +18,13 @@ import { customWrapper } from "./spatial-effects";
  * occlude, so Cast Shadows holds for the march as for the map. The light block reads it at its own pixel for a surface at
  * that distance, so glass, water and anything the geometry pass did not see in front keep the sun's map alone, and
  * combines it with the cascades by min, on receivers only.
+ *
+ * The march only sees each surface's front, so it assumes a surface it passes behind is some thickness deep. It adds the
+ * contact shadows finer than the sun's cascades resolve; a deeper occluder is the cascades' to shadow. So the assumed
+ * thickness is capped at the filter's reach in the world of the cascade at the pixel's depth (`screenShadowThicknessCaps`),
+ * never less than the ray's depth change over one step, so no crossing falls between two steps. Without that cap a ray
+ * passing a few tenths of a metre behind a nearer object (a limb beside a head) read as blocked where the cascades,
+ * at a centimetre a texel, show the sun reaching it.
  */
 
 /** Per level: march steps, the march's screen cap in pixels and world cap in metres, and the eye-distance fade. */
@@ -32,7 +41,8 @@ const MAX_STEPS = 16;
  * The march (GLSL or WGSL). Uniforms: `ssProjection`, `ssInverseProjection` (the camera's projection, which the geometry pass
  * drew with), `ssSun` (the view-space direction toward the sun; w 0 writes lit: no shadowed
  * sun, an orthographic view), `ssMarch` (steps, pixel cap, world cap; w unused), `ssFade` (fade start and end, the
- * render height times the projection's y scale), `ssTexel`. Derivatives come first: WGSL takes them in uniform control flow.
+ * render height times the projection's y scale), `ssTexel`, `ssCascadeEnds` and `ssCascadeCaps` (`screenShadowThicknessCaps`;
+ * an unused cascade ends at -1). Derivatives come first: WGSL takes them in uniform control flow.
  */
 export function screenShadowsShader(wgsl: boolean): string {
   const { v2, v3, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax(wgsl);
@@ -40,7 +50,7 @@ export function screenShadowsShader(wgsl: boolean): string {
   const header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
 ${texture("depthSampler")}
 ${field(wgsl ? "mat4x4f" : "mat4", "ssProjection")}${field(wgsl ? "mat4x4f" : "mat4", "ssInverseProjection")}
-${field(v4, "ssSun")}${field(v4, "ssMarch")}${field(v4, "ssFade")}${field(v2, "ssTexel")}
+${field(v4, "ssSun")}${field(v4, "ssMarch")}${field(v4, "ssFade")}${field(v2, "ssTexel")}${field(v4, "ssCascadeEnds")}${field(v4, "ssCascadeCaps")}
 `;
   const body = `
 ${decl(f, "depth", `abs(${sample("depthSampler", uv)}.r)`)}
@@ -61,7 +71,17 @@ if (NdotL <= 0.0) { ${lit("eye")} }
 ${decl(f, "footprint", `2.0 * depth / ${u("ssFade")}.z`)}
 ${decl(f, "reach", `min(${u("ssMarch")}.z, ${u("ssMarch")}.y * footprint)`)}
 ${decl(f, "bias", "(0.004 * depth + 0.01) / max(NdotL, 0.25)")}
-${decl(f, "thickness", "0.15 + 0.02 * depth")}
+// The deepest a surface the ray passes behind is taken to be: 0.15 m + 0.02 z, at most the bias plus the reach of the
+// cascade filtering this depth (none beyond the last), and at least the bias plus the ray's depth change over a step.
+${decl(v4, "ends", u("ssCascadeEnds"))}
+${decl(v4, "caps", u("ssCascadeCaps"))}
+${decl(f, "cap", "1.0e4")}
+if (depth <= ends.w) { cap = caps.w; }
+if (depth <= ends.z) { cap = caps.z; }
+if (depth <= ends.y) { cap = caps.y; }
+if (depth <= ends.x) { cap = caps.x; }
+${decl(f, "stepDepth", `abs(L.z) * reach / ${u("ssMarch")}.x`)}
+${decl(f, "thickness", "min(0.15 + 0.02 * depth, bias + max(stepDepth, cap))")}
 ${decl(v3, "start", "P + L * (1.5 * footprint)")}
 ${decl(v2, "pixel", `floor(${uv} / ${u("ssTexel")})`)}
 ${decl(f, "dither", `fract(52.9829189 * fract(dot(pixel, ${v2}(0.06711056, 0.00583715))))`)}
@@ -87,6 +107,31 @@ ${decl(f, "fade", `1.0 - smoothstep(${u("ssFade")}.x, ${u("ssFade")}.y, eye)`)}
 ${output(`${v4}(1.0 - occlusion * fade, eye, 0.0, 1.0)`)}
 `;
   return header + main(body);
+}
+
+const NO_CASCADES = [-1, -1, -1, -1] as const;
+
+/**
+ * What the march takes a surface's thickness to be at most, per cascade of `light`'s map as `camera` samples it (its
+ * own map, else the light's): its far end in view depth and its filter's reach in metres (`SHADOW_FILTER_REACH_TEXELS`
+ * of its world texels, on the coarser axis), four each, an unused cascade ending at -1. Null without a cascaded map in
+ * the atlas, or before its cascades were first drawn: the march then keeps its general thickness.
+ */
+export function screenShadowThicknessCaps(light: DirectionalLight, camera: Camera):
+  { ends: [number, number, number, number]; caps: [number, number, number, number] } | null {
+  const own = light.getShadowGenerator(camera);
+  const shadow = own instanceof AtlasCascadedShadowGenerator ? own : light.getShadowGenerator();
+  if (!(shadow instanceof AtlasCascadedShadowGenerator) || !shadow.cascadeEnds.length) return null;
+  const ends: [number, number, number, number] = [-1, -1, -1, -1];
+  const caps: [number, number, number, number] = [0, 0, 0, 0];
+  for (let index = 0; index < Math.min(4, shadow.cascadeEnds.length); index++) {
+    const min = shadow.getCascadeMinExtents(index), max = shadow.getCascadeMaxExtents(index);
+    const size = shadowTileSize(shadow, index);
+    if (!min || !max || !(size > 0)) return null;
+    ends[index] = shadow.cascadeEnds[index]!;
+    caps[index] = SHADOW_FILTER_REACH_TEXELS * Math.max(max.x - min.x, max.y - min.y) / size;
+  }
+  return { ends, caps };
 }
 
 type PassEntry = { texture: ThinTexture };
@@ -166,7 +211,7 @@ export class ScreenShadowsGraph {
     this.scene = scene;
     const settings = SCREEN_SHADOW_LEVELS[level];
     const wrapper = customWrapper(scene, "Screen shadows", screenShadowsShader(scene.getEngine().isWebGPU),
-      ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel"], ["depthSampler"], failure);
+      ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"], ["depthSampler"], failure);
     this.output = graph.textureManager.createRenderTargetTexture("Screen shadows", {
       size: { width, height },
       sizeIsPercentage: false,
@@ -192,6 +237,10 @@ export class ScreenShadowsGraph {
         toSun.normalize().scaleInPlace(-1);
         effect.setFloat4("ssSun", toSun.x, toSun.y, toSun.z, 1);
       } else effect.setFloat4("ssSun", 0, 0, 1, 0);
+      const caps = sun ? screenShadowThicknessCaps(sun, camera) : null;
+      const ends = caps?.ends ?? NO_CASCADES, reach = caps?.caps ?? NO_CASCADES;
+      effect.setFloat4("ssCascadeEnds", ends[0], ends[1], ends[2], ends[3]);
+      effect.setFloat4("ssCascadeCaps", reach[0], reach[1], reach[2], reach[3]);
       effect.setFloat4("ssMarch", settings.steps, settings.pixels, settings.length, 0);
       effect.setFloat4("ssFade", settings.fadeStart, settings.fadeEnd, height * Math.abs(projection.m[5]!), 0);
       effect.setFloat2("ssTexel", 1 / width, 1 / height);

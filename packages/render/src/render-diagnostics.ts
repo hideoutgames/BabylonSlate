@@ -17,6 +17,7 @@ import { sceneOcclusionDiagnostics } from "./view-occlusion";
 import type { RenderScheduler } from "./render-scheduler";
 import type { FirstDrawStats } from "./first-draw-stats";
 import type { GpuBusyStats } from "./gpu-busy-probe";
+import type { FrameBackpressureStats } from "./frame-backpressure";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
 import { deviceProfile, deviceTextureLimits } from "./device-profile";
@@ -27,9 +28,9 @@ export type RenderDiagnostics = {
   firstDraws?: FirstDrawStats | null;
   /**
    * A compact fingerprint of the effective settings the Feature Test Check's Breakdown steps change (`field: value`):
-   * shadows, device-clamped water refraction, reflections and shading detail, post-processing tier flags and whether
-   * post-processing runs, every-frame captures, resolution scale, occlusion culling, and the live context's
-   * preserveDrawingBuffer. A step that changes more than its own fields shows.
+   * `qualitySettingsFingerprint` (shadows and their filter, device-clamped water, post-processing tier values, resolution
+   * scale, occlusion culling), plus the scene pass's live MSAA samples, whether post-processing runs, every-frame
+   * captures and the live context's preserveDrawingBuffer. A step that changes more than its own fields shows.
    */
   settings?: Record<string, string>;
   /**
@@ -37,6 +38,8 @@ export type RenderDiagnostics = {
    * not measured a frame or the Engine has no fences.
    */
   gpuBusy?: GpuBusyStats | null;
+  /** The Engine frame loop's GPU backpressure (`frame-backpressure.ts`): its `framesinflight` mode, frames queued, renders skipped. */
+  frameBackpressure?: FrameBackpressureStats | null;
   /** View-owned draw/copy counts. A held draw never replaces the visible bitmap.
    * Phase timing is enabled by requesting diagnostics, independently of GPU timers. */
   presentation?: {

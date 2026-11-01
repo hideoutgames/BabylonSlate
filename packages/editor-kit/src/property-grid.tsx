@@ -1,9 +1,16 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Link2Icon, Link2OffIcon } from "lucide-react";
 import { useEditorReadOnly } from "./editor-read-only";
 import type { Tag, TagContainer } from "@haptic/core";
 import { TagPicker } from "./tag-picker";
 import { Button } from "@haptic/ui/components/button";
 import { Checkbox } from "@haptic/ui/components/checkbox";
+import { Toggle } from "@haptic/ui/components/toggle";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@haptic/ui/components/tooltip";
 import {
   Field,
   FieldContent,
@@ -32,6 +39,7 @@ import { type TypeVisualQuery } from "./type-visuals";
 import { AssetPickerControl } from "./asset-picker-control";
 import { CurveField, type CurveKey } from "./curve-field";
 import { GradientField, type GradientStop } from "./gradient-field";
+import { editVectorAxis } from "./linked-axes";
 import "./styles/property-grid.css";
 
 export type Vector3Value =
@@ -100,6 +108,22 @@ export type PropertyRow =
       /** Optional per-axis edit; `onChange` still handles whole-row reset. */
       onAxisChange?: (axis: number, value: number) => void;
       onCommit?: (value: Vector3Value) => void;
+      /**
+       * While linked, an axis edit scales the other shown axes by the same
+       * factor, measured from the values where the edit began. Vertical grids
+       * only; `onLinkedChange` adds the link toggle after the label.
+       */
+      linked?: boolean;
+      onLinkedChange?: (linked: boolean) => void;
+      /**
+       * A multi-selection's per-item values in `axes` order, `value`'s item
+       * first. With any item linked, an edit sets the axis on every item, scales
+       * each linked item by its own factor and reports them here, not `onChange`.
+       */
+      itemValues?: Vector3Value[];
+      /** Per-item link state; `linked` (pressed only when all are) otherwise. */
+      itemLinked?: boolean[];
+      onItemValuesChange?: (values: Vector3Value[]) => void;
     })
   | (PropertyRowBase & {
       kind: "boolean";
@@ -355,7 +379,126 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
   />;
 }
 
-function RowControl({ row }: { row: PropertyRow }) {
+type Vector3Row = Extract<PropertyRow, { kind: "vector3" }>;
+
+function Vector3RowControl({ row, linkable }: { row: Vector3Row; linkable: boolean }) {
+  const axes = row.axes ?? ["X", "Y", "Z"];
+  const items = row.itemValues && row.onItemValuesChange ? row.itemValues : undefined;
+  const itemLinked = items?.map((_, index) => row.itemLinked?.[index] ?? row.linked === true);
+  const primaryLinked = itemLinked?.[0] ?? row.linked === true;
+  const linked = linkable && (itemLinked ? itemLinked.some(Boolean) : primaryLinked);
+  // Scaling from where the edit began keeps proportions through typed
+  // prefixes ("0" of "0.5") and scrubs that cross zero.
+  const linkedEditRef = useRef<{
+    value: Vector3Value;
+    items?: Vector3Value[];
+    latest: Vector3Value;
+  } | null>(null);
+  // A value changed elsewhere (gizmo, undo) starts the next edit from it.
+  useEffect(() => {
+    const edit = linkedEditRef.current;
+    if (edit && row.value.some((value, index) => !Object.is(value, edit.latest[index])))
+      linkedEditRef.current = null;
+  });
+  const editLinked = (index: number, next: number) => {
+    const edit = (linkedEditRef.current ??= {
+      value: [...row.value],
+      items: items?.map((item) => [...item] as Vector3Value),
+      latest: row.value,
+    });
+    edit.latest = editVectorAxis(edit.value, index, next, axes.length, primaryLinked);
+    if (edit.items && row.onItemValuesChange) {
+      row.onItemValuesChange(
+        edit.items.map((item, itemIndex) =>
+          editVectorAxis(item, index, next, axes.length, itemLinked?.[itemIndex] === true),
+        ),
+      );
+    } else {
+      row.onChange(edit.latest);
+    }
+  };
+  return (
+    <div
+      className="flex min-w-0 flex-nowrap gap-1"
+      data-testid={`property-vector3-${row.id}`}
+    >
+      {axes.map((axis, index) => (
+        <div key={axis} className="min-w-0 flex-1">
+          <NumericDragField
+            label={axis}
+            aria-label={`${humanizePropertyLabel(row.label)} ${axis}`}
+            value={row.value[index] ?? 0}
+            mixed={row.mixedAxes?.[index] ?? row.mixed}
+            accent={axis.toLowerCase() as "x" | "y" | "z"}
+            sensitivity={row.sensitivity}
+            unit={inlineUnit(row)}
+            disabled={row.disabled}
+            onChange={(next) => {
+              if (linked) {
+                editLinked(index, next);
+                return;
+              }
+              if (row.onAxisChange) {
+                row.onAxisChange(index, next);
+                return;
+              }
+              const value = [...row.value];
+              value[index] = next;
+              row.onChange(value as typeof row.value);
+            }}
+            onDragEnd={(next) => {
+              if (linked) {
+                const base = linkedEditRef.current?.value ?? row.value;
+                linkedEditRef.current = null;
+                row.onCommit?.(editVectorAxis(base, index, next, axes.length, primaryLinked));
+                return;
+              }
+              // The finished axis value may not have re-rendered into row.value yet.
+              const value = [...row.value];
+              value[index] = next;
+              row.onCommit?.(value as typeof row.value);
+            }}
+            data-testid={`property-${row.id}-${axis.toLowerCase()}`}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LinkAxesToggle({
+  row,
+  onLinkedChange,
+}: {
+  row: Vector3Row;
+  onLinkedChange: (linked: boolean) => void;
+}) {
+  const name = `Link ${humanizePropertyLabel(row.label)} Axes`;
+  const linked = row.linked === true;
+  const Icon = linked ? Link2Icon : Link2OffIcon;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Toggle
+            size="sm"
+            className="mr-auto size-6 min-w-6 px-0 text-muted-foreground pointer-coarse:size-[var(--touch-target)]"
+            pressed={linked}
+            disabled={row.disabled}
+            aria-label={name}
+            onPressedChange={(pressed) => onLinkedChange(pressed)}
+            data-testid={`property-${row.id}-link`}
+          />
+        }
+      >
+        <Icon aria-hidden="true" />
+      </TooltipTrigger>
+      <TooltipContent>{name}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: boolean }) {
   switch (row.kind) {
     case "tag":
       return <TagPicker mode="single" id={`property-${row.id}`} value={row.value} onChange={row.onChange}
@@ -381,46 +524,8 @@ function RowControl({ row }: { row: PropertyRow }) {
           data-testid={`property-${row.id}`}
         />
       );
-    case "vector3": {
-      const axes = row.axes ?? ["X", "Y", "Z"];
-      return (
-        <div
-          className="flex min-w-0 flex-nowrap gap-1"
-          data-testid={`property-vector3-${row.id}`}
-        >
-          {axes.map((axis, index) => (
-            <div key={axis} className="min-w-0 flex-1">
-              <NumericDragField
-                label={axis}
-                aria-label={`${humanizePropertyLabel(row.label)} ${axis}`}
-                value={row.value[index] ?? 0}
-                mixed={row.mixedAxes?.[index] ?? row.mixed}
-                accent={axis.toLowerCase() as "x" | "y" | "z"}
-                sensitivity={row.sensitivity}
-                unit={inlineUnit(row)}
-                disabled={row.disabled}
-                onChange={(next) => {
-                  if (row.onAxisChange) {
-                    row.onAxisChange(index, next);
-                    return;
-                  }
-                  const value = [...row.value];
-                  value[index] = next;
-                  row.onChange(value as typeof row.value);
-                }}
-                onDragEnd={(next) => {
-                  // The finished axis value may not have re-rendered into row.value yet.
-                  const value = [...row.value];
-                  value[index] = next;
-                  row.onCommit?.(value as typeof row.value);
-                }}
-                data-testid={`property-${row.id}-${axis.toLowerCase()}`}
-              />
-            </div>
-          ))}
-        </div>
-      );
-    }
+    case "vector3":
+      return <Vector3RowControl row={row} linkable={linkable} />;
     case "boolean":
       return (
         <FieldLabel
@@ -680,6 +785,7 @@ function readOnlyPropertyRow(row: PropertyRow): PropertyRow {
   const next = { ...row, disabled: true, onChange: () => {} };
   if ("onCommit" in next) next.onCommit = undefined;
   if ("onAxisChange" in next) next.onAxisChange = undefined;
+  if ("onItemValuesChange" in next) next.onItemValuesChange = undefined;
   if ("onPick" in next) next.onPick = () => {};
   return next;
 }
@@ -726,6 +832,8 @@ export function PropertyGrid({
       <FieldGroup className="gap-0">
         {rows.map((source) => {
           const row = readOnly ? readOnlyPropertyRow(source) : source;
+          const onLinkedChange =
+            orientation === "vertical" && row.kind === "vector3" ? row.onLinkedChange : undefined;
           const label = (
             <FieldLabel
               id={`property-${row.id}-caption`}
@@ -733,7 +841,11 @@ export function PropertyGrid({
               className={
                 hideLabels
                   ? "sr-only"
-                  : cn("w-auto min-w-0 flex-1 truncate", row.unit && !inlineUnit(row) && "gap-1")
+                  : cn(
+                      "w-auto min-w-0 truncate",
+                      !onLinkedChange && "flex-1",
+                      row.unit && !inlineUnit(row) && "gap-1",
+                    )
               }
             >
               {humanizePropertyLabel(row.label)}
@@ -772,11 +884,14 @@ export function PropertyGrid({
                 <>
                   <div className="flex min-w-0 items-center gap-1">
                     {label}
+                    {onLinkedChange && row.kind === "vector3" ? (
+                      <LinkAxesToggle row={row} onLinkedChange={onLinkedChange} />
+                    ) : null}
                     {row.labelAccessory}
                     {rowResetButton(row)}
                   </div>
                   <div className="min-w-0">
-                    <RowControl row={row} />
+                    <RowControl row={row} linkable />
                     {row.description ? (
                       <FieldDescription>{row.description}</FieldDescription>
                     ) : null}

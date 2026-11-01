@@ -50,7 +50,7 @@ Right-click a node (long-press on touch) for a menu with **Copy**, **Paste**, **
 
 ## Compile and play
 
-Graphs are checked as you edit. Problems appear in **Compiler Results** and as red badges on nodes; tap a result to jump to the node.
+Graphs are checked as you edit. Problems appear in **Compiler Results**, and each node with errors shows a red badge above it with its error count; tap a result to jump to the node.
 
 1. Tap **Compile** in the toolbar, or press <kbd>F7</kbd>. **Compiler Results** lists the errors and warnings of the class you have open, and **Compilation Error** appears next to the button while it has errors.
 2. Press Play. Play compiles the graphs the game uses: the scene it starts in, the Game Instance, the Game and Scene Subsystems, and every class they use. Other classes are not checked.

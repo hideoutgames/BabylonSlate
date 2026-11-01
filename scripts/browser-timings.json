@@ -81,6 +81,8 @@
     "[desktop-chrome] > phone-content-browser.spec.ts > Phone Content Browser > browses Assets in the drawer and opens a scene from its selection action": 16600,
     "[desktop-chrome] > phone-editor.spec.ts > Phone Editor > shows one scene window, switches windows, and restores the tablet arrangement": 16400,
     "[desktop-chrome] > play-debug-console.spec.ts > Play console overlays the view, captures warnings and runs debug commands": 39900,
+    "[desktop-chrome] > play-worker-failure.spec.ts > Play ends with its cause when the game worker's module throws while evaluating, instead of waiting at Preparing Scene": 18000,
+    "[desktop-chrome] > play-worker-failure.spec.ts > Play says the editor is out of date and offers Reload when a newer deploy removed its worker's files": 20000,
     "[desktop-chrome] > player-backend.spec.ts > standalone player uses the packed webgpu backend and presents its scene": 3200,
     "[desktop-chrome] > preview-build-preparation.spec.ts > Play requests migration approval and launches after approval": 10500,
     "[desktop-chrome] > preview-build-preparation.spec.ts > Preview Build keeps export failures visible and can launch after correction": 12500,

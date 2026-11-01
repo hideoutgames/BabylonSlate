@@ -142,6 +142,8 @@ describe("Playwright WebKit smoke lane", () => {
       "editor-smoke.spec.ts › Haptic editor smoke › loads shell, opens project, and shows viewport canvas",
       "p14-export.spec.ts › P14 export smoke › unzip-serve-boot-tick on range and range-blind servers",
       "p4-play.spec.ts › P4 Play overlay and session report › Play opens overlay; fixture throw shows report and focuses node",
+      // Safari's module-worker failure reporting, which a silent Play hang on iPad depended on.
+      "play-worker-failure.spec.ts › Play ends with its cause when the game worker's module throws while evaluating, instead of waiting at Preparing Scene",
     ]);
     const desktopKeys = new Set(
       listProject("desktop-chrome").map((test) => `${test.file} › ${test.title}`),
