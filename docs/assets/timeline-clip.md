@@ -12,7 +12,7 @@ In the **Content Browser**, choose **New Asset > Animation > 2D Timeline Clip** 
 
 Double-tap the asset to open it. The **Proxies** window, beside the **Viewport**, lists the clip's stand-ins.
 
-- Tap **Proxy**, then **Actor Proxy…** or **Component Proxy…**, pick the Class the proxy stands in for and tap **Add Proxy**. A 3D clip offers world components; a 2D clip offers overlay components. The proxy takes the Class's name; rename it in the list or in the **Inspector**. Proxy names are unique within the clip.
+- Tap **Proxy**, then **Actor Proxy…** or **Component Proxy…**, give it a **Name**, pick the Class the proxy stands in for and tap **Add Proxy**. A 3D clip offers world components; a 2D clip offers overlay components. Without a name, the proxy takes the Class's name; rename it later in the list or in the **Inspector**. Proxy names are unique within the clip, so a name that is taken gets a number.
 - Each row shows what the proxy represents and its Class. The trash button removes the proxy and its tracks.
 
 ## Viewport
@@ -77,5 +77,6 @@ Drag from an instance's **Timeline Clip** pin for each proxy's nodes, titled wit
 - **Error**: the clip has no Timeline Asset, or it was deleted.
 - **Error**: two proxies share a name, or a proxy's Class was deleted.
 - **Warning**: a Component proxy's Class does not suit the clip, such as a 2D component in a 3D clip.
+- **Warning**: a track's property can no longer be animated or changed type, or a component an Actor proxy's Class defined is gone. The Timeline draws such tracks in red.
 
 In scripts, a Bind, Unbind or Get node whose proxy was removed, or that picks none, shows an error, as does a Bind Actor node on a Component proxy or the other way round.

@@ -1,12 +1,15 @@
 import {
   SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
   isSceneLayerDeniedComponent,
+  type SerializedScene,
   type SerializedTimelineClip,
   type SerializedTimelineClipAsset,
 } from "@haptic/core";
 import { TIMELINE_CLIP_BUILT_IN_DISPATCHERS } from "@haptic/object-model";
 import { diagnostic, jsIdent, type Diagnostic } from "@haptic/scripting";
 import { timelineClipNameCollisions, type ProjectTimelineClip } from "./timeline-asset-index";
+import { timelinePropertyEntries, timelineTrackProblem, type TimelinePropertyContext } from "./timeline-property-catalog";
+import { timelineTrackLabel } from "./timeline-rows";
 
 /**
  * Errors for Custom Event Tracks whose dispatcher a script could not tell
@@ -94,6 +97,42 @@ export function timelineClipAssetDiagnostics(
       push("error", "timeline.proxy_class_missing", `${proxy.name}: its Class ${proxy.classId} no longer exists. Remove the proxy or add it again with another Class.`);
     } else if (proxy.represents === "component" && (context.twoD ? isSceneLayerDeniedComponent(proxy.classId) : overlayOnly.has(proxy.classId))) {
       push("warning", "timeline.proxy_placement", `${proxy.name}: ${proxy.classId} is not a ${context.twoD ? "2D" : "3D"} component, so no object in a ${context.twoD ? "Scene Layer" : "Scene"} can stand in for it.`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Warnings for tracks that cannot animate (the Timeline draws them in red):
+ * `timeline.missing_target` when a track's actor or component no longer
+ * exists, so Play skips it, and `timeline.property_unavailable` when its
+ * property can no longer be animated or its type changed.
+ */
+export function timelineTrackDiagnostics(
+  scene: Pick<SerializedScene, "actors" | "timelineClips">,
+  context: TimelinePropertyContext,
+  anchor: { assetGuid: string; graphId: string },
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const push = (code: string, message: string) => out.push(diagnostic({ ...anchor, severity: "warning", code, message }));
+  for (const clip of scene.timelineClips ?? []) {
+    for (const object of clip.objects) {
+      const actor = scene.actors.find((entry) => entry.id === object.actorId);
+      if (!actor) {
+        if (object.tracks.length) {
+          push("timeline.missing_target", `${clip.name}: the actor its ${object.tracks.length === 1 ? "track animates" : `${object.tracks.length} tracks animate`} no longer exists. Play skips ${object.tracks.length === 1 ? "it" : "them"}.`);
+        }
+        continue;
+      }
+      const entries = timelinePropertyEntries(actor, context);
+      const labels = new Map([...entries].map(([key, entry]) => [key, entry.label]));
+      for (const track of object.tracks) {
+        const problem = timelineTrackProblem(actor, track, entries);
+        if (!problem) continue;
+        const where = `${clip.name}: ${actor.name} › ${timelineTrackLabel(actor, track, labels)}`;
+        if (problem === "missing_target") push("timeline.missing_target", `${where}: its component no longer exists. Play skips the track.`);
+        else push("timeline.property_unavailable", `${where} can no longer be animated, or its type changed.`);
+      }
     }
   }
   return out;

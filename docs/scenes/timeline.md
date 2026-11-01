@@ -48,6 +48,8 @@ Right-click or long-press a track or an actor's row for its menu:
 | Track | **Set Key**, **Mute Track** (a muted track keeps its keys but does not animate), **Copy Track**, **Select All Keys**, **Select in Viewport and Outliner** (selects the actor), **Move Up**, **Move Down** and **Delete Track**. |
 | Actor | **Add Track…**, **Set Key**, **Paste Track** (a copied track goes onto the same property of this actor, replacing that track's keys), **Select All Keys**, **Select in Viewport and Outliner** (selects the actor), **Move Up**, **Move Down** and **Remove From Clip**. |
 
+A track whose actor or component was deleted, or whose property can no longer be animated or changed type (for example a removed Class variable), stays in the clip with its keys, drawn in red; hover it to see why. Play skips a track whose actor or component is gone. **Compiler Results** lists these tracks as warnings.
+
 ## Keys
 
 The ruler above the tracks shows seconds, and frames when you zoom in. The playhead marks the current time, and each track shows its value there.
@@ -90,7 +92,7 @@ A Custom Event Track calls scripts at moments of the clip, for example to show a
 - Select the track to name it in the **Inspector** (**Event Name**) and give it **Inputs**, such as a **Line** string. An input can be a Boolean, Integer, Float, String, Vector 2, Vector, Rotator or Color.
 - Tap the diamond on the track's row to add a key at the playhead, or to remove the one there. Keys show their first input's value, or the event's name when it has no inputs.
 - Select a key to set its **Time** and a value for each input in the **Inspector**. A key keeps its values when you rename the track or add inputs; removing an input or changing its type drops that value.
-- Keys move, select and delete like other keys. Right-click or long-press an event track for **Set Key**, **Select All Keys**, **Move Up**, **Move Down** and **Delete Track**.
+- Keys move, select, delete, copy and paste like other keys; a key's menu has **Go To Key**, **Cut**, **Copy**, **Paste**, **Duplicate** and **Delete**. Pasted event keys go onto the track they came from, or onto an event track of the same name in another clip, with the values of the inputs it has. Right-click or long-press an event track for **Set Key**, **Select All Keys**, **Move Up**, **Move Down** and **Delete Track**.
 
 Two event tracks of one clip cannot share a name, and **On Finished** and **On Looped** belong to every clip; such a name gets a number. Renaming a track or changing its inputs updates the script's nodes that bind it.
 

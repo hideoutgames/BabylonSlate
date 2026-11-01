@@ -71,6 +71,7 @@ import {
   StepBackIcon,
   StepForwardIcon,
   Trash2Icon,
+  TriangleAlertIcon,
   Volume2Icon,
   VolumeXIcon,
   ZapIcon,
@@ -86,6 +87,7 @@ import {
   authoredTimelineValue,
   timelinePropertyGroups,
   timelineTargetKey,
+  timelineTrackProblemText,
   type TimelinePropertyContext,
 } from "../lib/timeline-property-catalog";
 import { useTimelinePlayheadTime } from "../lib/timeline-playhead";
@@ -95,10 +97,8 @@ import {
   addTimelineTracks,
   adjacentTimelineKeyTime,
   clampTimelineKeyShift,
-  copyTimelineKeys,
   deleteTimelineKeys,
   findTimelineTrack,
-  pasteTimelineKeys,
   moveTimelineRow,
   pasteTimelineTrack,
   removeTimelineObject,
@@ -122,8 +122,10 @@ import {
   addTimelineEventTrack,
   clampTimelineEventKeyShift,
   deleteTimelineEventKeys,
+  copyTimelineSelectedKeys,
   findTimelineEventTrack,
   moveTimelineEventTrack,
+  pasteTimelineSelectedKeys,
   removeTimelineEventTrack,
   setTimelineEventKeys,
   shiftTimelineEventKeys,
@@ -136,6 +138,12 @@ import {
 } from "../lib/timeline-event-edits";
 
 const newId = () => crypto.randomUUID();
+
+/** A row that cannot animate reads in red, with why in its tooltip. */
+function problemLabel(row: TimelineRowModel): React.ReactNode {
+  if (!row.problem) return row.label;
+  return <span className="text-destructive" title={timelineTrackProblemText(row.problem)} data-problem={row.problem}>{row.label}</span>;
+}
 
 function TransportButton({ label, shortcut, onClick, disabled, children, testId }: {
   label: string;
@@ -366,13 +374,13 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
   };
 
   const copyKeys = (refs: readonly TrackKeyRef[] = selectedTrackRefs()) => {
-    const copied = copyTimelineKeys(clip, refs);
+    const copied = copyTimelineSelectedKeys(clip, refs);
     if (copied) session.copyTimelineKeys(copied);
   };
   const pasteKeys = () => {
     const copied = session.readCopiedTimelineKeys();
     if (!copied) return;
-    const { clip: next, pasted } = pasteTimelineKeys(clip, copied, time, newId);
+    const { clip: next, pasted } = pasteTimelineSelectedKeys(clip, copied, time, newId);
     commitClip(next);
     setSelection(new Set(pasted.map((ref) => keyRefId({ rowId: ref.trackId, keyId: ref.keyId }))));
   };
@@ -382,9 +390,9 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
   };
   /** Copy and paste at the playhead in one step, without changing what Copy last stored. */
   const duplicateKeys = (refs: readonly TrackKeyRef[] = selectedTrackRefs()) => {
-    const copied = copyTimelineKeys(clip, refs);
+    const copied = copyTimelineSelectedKeys(clip, refs);
     if (!copied) return;
-    const { clip: next, pasted } = pasteTimelineKeys(clip, copied, time, newId);
+    const { clip: next, pasted } = pasteTimelineSelectedKeys(clip, copied, time, newId);
     commitClip(next);
     setSelection(new Set(pasted.map((ref) => keyRefId({ rowId: ref.trackId, keyId: ref.keyId }))));
   };
@@ -548,13 +556,23 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
     const keyTime = clicked.map((entry) => findTimelineTrack(clip, entry.trackId)?.track.keys.find((key) => key.id === entry.keyId)?.Time
       ?? findTimelineEventTrack(clip, entry.trackId)?.keys.find((key) => key.id === entry.keyId)?.time)
       .find((value) => value !== undefined);
-    // Event keys have no interpolation, and Copy and Paste carry property keys.
+    const editItems: ContextMenuItem[] = [
+      { type: "separator", id: "edit-separator" },
+      { id: "cut-keys", label: "Cut", icon: <ScissorsIcon />, testId: "timeline-key-menu-cut", onSelect: () => { copyKeys(targets); deleteKeys(targets); } },
+      { id: "copy-keys", label: "Copy", icon: <CopyIcon />, shortcut: keybinds.get("edit.copy")?.[0], testId: "timeline-key-menu-copy", onSelect: () => copyKeys(targets) },
+      { id: "paste-keys", label: "Paste", icon: <ClipboardPasteIcon />, shortcut: keybinds.get("edit.paste")?.[0],
+        disabled: !session.readCopiedTimelineKeys(), testId: "timeline-key-menu-paste", onSelect: pasteKeys },
+      { id: "duplicate-keys", label: "Duplicate", icon: <CopyPlusIcon />, shortcut: keybinds.get("edit.duplicate")?.[0],
+        testId: "timeline-key-menu-duplicate", onSelect: () => duplicateKeys(targets) },
+    ];
+    // Event keys have no interpolation; Copy and Paste carry them with property keys.
     if (targets.every((entry) => findTimelineEventTrack(clip, entry.trackId))) {
       return [
         ...(touch ? [{ id: "select-key", label: "Select", icon: <MousePointerClickIcon />, testId: "timeline-key-menu-select",
           onSelect: () => selectKeys([ref], "add") } satisfies ContextMenuItem] : []),
         { id: "go-to-key", label: "Go To Key", icon: <CrosshairIcon />, disabled: keyTime === undefined, testId: "timeline-key-menu-go",
           onSelect: () => { if (keyTime !== undefined) playhead.set(keyTime); } },
+        ...editItems,
         { type: "separator", id: "delete-separator" },
         { id: "delete-keys", label: "Delete", icon: <Trash2Icon />, variant: "destructive", shortcut: keybinds.get("edit.delete")?.[0],
           testId: "timeline-key-menu-delete", onSelect: () => deleteKeys(targets) },
@@ -574,13 +592,7 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
           id: `curve-${curve}`, label: timelineInterpolationLabel(curve), testId: `timeline-key-menu-curve-${curve}`,
           onSelect: () => setInterpolation(curve) })) },
       ] },
-      { type: "separator", id: "edit-separator" },
-      { id: "cut-keys", label: "Cut", icon: <ScissorsIcon />, testId: "timeline-key-menu-cut", onSelect: () => { copyKeys(targets); deleteKeys(targets); } },
-      { id: "copy-keys", label: "Copy", icon: <CopyIcon />, shortcut: keybinds.get("edit.copy")?.[0], testId: "timeline-key-menu-copy", onSelect: () => copyKeys(targets) },
-      { id: "paste-keys", label: "Paste", icon: <ClipboardPasteIcon />, shortcut: keybinds.get("edit.paste")?.[0],
-        disabled: !session.readCopiedTimelineKeys(), testId: "timeline-key-menu-paste", onSelect: pasteKeys },
-      { id: "duplicate-keys", label: "Duplicate", icon: <CopyPlusIcon />, shortcut: keybinds.get("edit.duplicate")?.[0],
-        testId: "timeline-key-menu-duplicate", onSelect: () => duplicateKeys(targets) },
+      ...editItems,
       { type: "separator", id: "delete-separator" },
       { id: "delete-keys", label: "Delete", icon: <Trash2Icon />, variant: "destructive", shortcut: keybinds.get("edit.delete")?.[0],
         testId: "timeline-key-menu-delete", onSelect: () => deleteKeys(targets) },
@@ -615,7 +627,7 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
         id: row.id,
         kind: "group",
         depth: 0,
-        label: row.label,
+        label: problemLabel(row),
         icon: row.actor
           ? <TypeVisualIcon visual={resolveActorTypeVisual({ classId: row.actor.classId, components: row.actor.components, ancestry: walkAncestry(row.actor.classId, parentOf) })} />
           : <BoxIcon />,
@@ -636,7 +648,8 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
       id: row.id,
       kind: "track",
       depth: 1,
-      label: row.label,
+      label: problemLabel(row),
+      ...(row.problem ? { icon: <TriangleAlertIcon className="text-destructive" /> } : {}),
       value: row.value,
       keys: row.keys,
       connect: row.connect,

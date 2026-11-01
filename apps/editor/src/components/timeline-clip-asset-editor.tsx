@@ -36,6 +36,8 @@ import {
   type TreeViewNode,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@haptic/ui/components/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@haptic/ui/components/empty";
 import { BoxIcon, BoxesIcon, PlusIcon, Trash2Icon } from "lucide-react";
@@ -144,10 +146,17 @@ export function timelineProxyClassEntries(
   return entries.filter((entry) => (twoD ? !isSceneLayerDeniedComponent(entry.id) : !overlayOnly.has(entry.id)));
 }
 
-/** A new proxy for `classId`, named after it (numbered when taken), with the next preview colour. */
-export function addTimelineProxy(payload: SerializedTimelineClipAsset, represents: TimelineProxyRepresents, classId: string, id: string): SerializedTimelineClipAsset {
-  const name = uniqueTimelineClipName(classId.replace(/Component$/, "") || classId, payload.proxies.map((proxy) => proxy.name));
-  const proxy: TimelineProxy = { id, name, represents, classId, tracks: [] };
+/** A new proxy for `classId`, named `name` or after its Class (numbered when taken), with the next preview colour. */
+export function addTimelineProxy(
+  payload: SerializedTimelineClipAsset,
+  represents: TimelineProxyRepresents,
+  classId: string,
+  id: string,
+  name?: string,
+): SerializedTimelineClipAsset {
+  const base = name?.trim() || classId.replace(/Component$/, "") || classId;
+  const unique = uniqueTimelineClipName(base, payload.proxies.map((proxy) => proxy.name));
+  const proxy: TimelineProxy = { id, name: unique, represents, classId, tracks: [] };
   return {
     ...payload,
     proxies: [...payload.proxies, proxy],
@@ -176,6 +185,8 @@ export function TimelineClipProxiesPanel(_props: IDockviewPanelProps) {
   const touch = useTouchUi();
   const selected = useSelectedProxy(id);
   const [adding, setAdding] = useState<TimelineProxyRepresents | null>(null);
+  // The new proxy's Name; empty names it after its Class.
+  const [proxyName, setProxyName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const groups = useMemo((): ChecklistDialogGroup[] => {
     void registryEpoch;
@@ -192,7 +203,7 @@ export function TimelineClipProxiesPanel(_props: IDockviewPanelProps) {
 
   const add = (represents: TimelineProxyRepresents, classId: string) => {
     const proxyId = crypto.randomUUID();
-    commit(addTimelineProxy(payload, represents, classId, proxyId), `timeline-clip-asset:add-proxy:${proxyId}`);
+    commit(addTimelineProxy(payload, represents, classId, proxyId, proxyName), `timeline-clip-asset:add-proxy:${proxyId}`);
     selectProxy(id, proxyId);
   };
   const nodes: TreeViewNode[] = payload.proxies.map((proxy) => {
@@ -221,8 +232,8 @@ export function TimelineClipProxiesPanel(_props: IDockviewPanelProps) {
     <DropdownMenuTrigger render={<Button size="sm" variant="ghost" data-testid="timeline-proxies-add"><PlusIcon data-icon="inline-start" />Proxy</Button>} />
     <DropdownMenuContent align="end">
       <DropdownMenuGroup>
-        <DropdownMenuItem onClick={() => setAdding("actor")} data-testid="timeline-proxies-add-actor"><BoxIcon />Actor Proxy…</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setAdding("component")} data-testid="timeline-proxies-add-component"><BoxesIcon />Component Proxy…</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => { setProxyName(""); setAdding("actor"); }} data-testid="timeline-proxies-add-actor"><BoxIcon />Actor Proxy…</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => { setProxyName(""); setAdding("component"); }} data-testid="timeline-proxies-add-component"><BoxesIcon />Component Proxy…</DropdownMenuItem>
       </DropdownMenuGroup>
     </DropdownMenuContent>
   </DropdownMenu>;
@@ -263,6 +274,11 @@ export function TimelineClipProxiesPanel(_props: IDockviewPanelProps) {
       confirmLabel="Add Proxy"
       searchPlaceholder="Search Classes"
       onConfirm={([classId]) => { if (adding && classId) add(adding, classId); }}
+      fields={<Field>
+        <FieldLabel htmlFor="timeline-proxy-name">Name</FieldLabel>
+        <Input id="timeline-proxy-name" value={proxyName} placeholder="The Class's name" onChange={(event) => setProxyName(event.target.value)}
+          className="pointer-coarse:min-h-11" data-testid="timeline-proxy-name" />
+      </Field>}
       data-testid="timeline-proxy-class-dialog"
     />
   </PanelFrame>;

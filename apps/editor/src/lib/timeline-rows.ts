@@ -12,9 +12,11 @@ import { frameAt, keyRefId, type KeyRef, type KeyframeShape } from "@haptic/edit
 import {
   authoredTimelineValue,
   timelineComponentLabel,
-  timelinePropertyGroups,
+  timelinePropertyEntries,
   timelineTargetKey,
+  timelineTrackProblem,
   type TimelinePropertyContext,
+  type TimelineTrackProblem,
 } from "./timeline-property-catalog";
 import { INTERPOLATED_VALUE_TYPES, timelineKeyValueAt, type TrackKeyRef } from "./timeline-track-edits";
 import { TIMELINE_EVENTS_ROW_ID, timelineEventKeyValue } from "./timeline-event-edits";
@@ -48,6 +50,8 @@ export interface TimelineRowModel {
   gradient?: Array<{ time: number; color: string }>;
   muted: boolean;
   expanded?: boolean;
+  /** A track (or an object's group) that cannot animate: drawn in red, reported in Compiler Results. */
+  problem?: TimelineTrackProblem;
 }
 
 /** Constant steps (square), Linear (diamond), Auto and Custom (circle), easings (hourglass). */
@@ -90,12 +94,7 @@ export function timelineCssColor(value: unknown): string {
 
 /** Property labels by `timelineTargetKey`, for one actor. */
 export function timelinePropertyLabels(actor: SerializedActor | undefined, context: TimelinePropertyContext): Map<string, string> {
-  const labels = new Map<string, string>();
-  if (!actor) return labels;
-  for (const group of timelinePropertyGroups(actor, context)) {
-    for (const entry of group.entries) labels.set(timelineTargetKey(entry.target), entry.label);
-  }
-  return labels;
+  return new Map([...timelinePropertyEntries(actor, context)].map(([key, entry]) => [key, entry.label]));
 }
 
 /** A track's label: the property, after the component's name for component tracks. */
@@ -157,9 +156,10 @@ export function timelineRows(options: TimelineRowsOptions): TimelineRowModel[] {
     const actor = scene.actors.find((entry) => entry.id === object.actorId);
     const label = actor ? actorName(actor) : "Missing Actor";
     const groupMatches = !needle || label.toLowerCase().includes(needle);
-    const labels = timelinePropertyLabels(actor, context);
+    const entries = timelinePropertyEntries(actor, context);
+    const labels = new Map([...entries].map(([key, entry]) => [key, entry.label]));
     const tracks = object.tracks
-      .map((track) => ({ track, label: timelineTrackLabel(actor, track, labels) }))
+      .map((track) => ({ track, label: timelineTrackLabel(actor, track, labels), problem: timelineTrackProblem(actor, track, entries) }))
       .filter((entry) => groupMatches || entry.label.toLowerCase().includes(needle));
     if (!groupMatches && tracks.length === 0) continue;
     const frames = new Map<number, number>();
@@ -176,9 +176,13 @@ export function timelineRows(options: TimelineRowsOptions): TimelineRowModel[] {
       connect: false,
       muted: !actor,
       ...(object.tracks.length > 0 ? { expanded } : {}),
+      ...(actor ? {} : { problem: "missing_target" as const }),
     });
     if (!expanded) continue;
-    for (const entry of tracks) rows.push(trackRow(object, actor, entry.track, entry.label, options));
+    for (const entry of tracks) {
+      const row = trackRow(object, actor, entry.track, entry.label, options);
+      rows.push(entry.problem ? { ...row, problem: entry.problem } : row);
+    }
   }
   rows.push(...eventRows(options));
   return rows;

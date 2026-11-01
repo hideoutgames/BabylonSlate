@@ -129,6 +129,39 @@ export function timelinePropertyEntry(
   return undefined;
 }
 
+/**
+ * Why a track cannot animate: `missing_target` when its actor or component
+ * no longer exists (Play skips it), `property_unavailable` when the property
+ * can no longer be animated or its type changed.
+ */
+export type TimelineTrackProblem = "missing_target" | "property_unavailable";
+
+export function timelineTrackProblem(
+  actor: SerializedActor | undefined,
+  track: { target: TimelineTrackTarget; valueType: TimelineValueType },
+  entries: ReadonlyMap<string, TimelinePropertyEntry>,
+): TimelineTrackProblem | undefined {
+  if (!actor) return "missing_target";
+  if (track.target.kind === "component" && !actor.components.some((component) => component.id === track.target.componentId)) return "missing_target";
+  const entry = entries.get(timelineTargetKey(track.target));
+  return !entry || entry.valueType !== track.valueType ? "property_unavailable" : undefined;
+}
+
+/** What a track's problem means, for its row's tooltip. */
+export function timelineTrackProblemText(problem: TimelineTrackProblem): string {
+  return problem === "missing_target"
+    ? "Its actor or component no longer exists. Play skips it."
+    : "Its property can no longer be animated, or its type changed.";
+}
+
+/** Every property an actor's tracks can target, by `timelineTargetKey`. */
+export function timelinePropertyEntries(actor: SerializedActor | undefined, context: TimelinePropertyContext): Map<string, TimelinePropertyEntry> {
+  const entries = new Map<string, TimelinePropertyEntry>();
+  if (!actor) return entries;
+  for (const group of timelinePropertyGroups(actor, context)) for (const entry of group.entries) entries.set(timelineTargetKey(entry.target), entry);
+  return entries;
+}
+
 const num = (value: unknown, fallback = 0) => (typeof value === "number" && Number.isFinite(value) ? value : fallback);
 
 /** A stored value (array or script object) as a key value of `valueType`. */

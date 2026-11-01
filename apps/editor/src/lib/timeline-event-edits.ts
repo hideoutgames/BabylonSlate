@@ -9,7 +9,7 @@ import { frameAt } from "@haptic/editor-kit";
 import { TIMELINE_CLIP_BUILT_IN_DISPATCHERS, isTimelineClipClassId } from "@haptic/object-model";
 import { defaultValueForMember } from "@haptic/scripting";
 import { syncDispatcher } from "./class-members";
-import type { NewId, TrackKeyRef } from "./timeline-track-edits";
+import { copyTimelineKeys, pasteTimelineKeys, type CopiedTimelineKeys, type NewId, type TrackKeyRef } from "./timeline-track-edits";
 
 /**
  * Pure edits of a clip's Custom Event Tracks: each declares one Event
@@ -227,4 +227,56 @@ export function syncTimelineEventDispatcher(
     next = syncDispatcher(next, previousName, { id: track.id, kind: "dispatcher", name: track.name, pins: track.inputs }, classId);
   }
   return next === script ? scene : { ...scene, script: next };
+}
+
+/**
+ * Copy of the selected property and event keys; the earliest of either is
+ * the paste origin.
+ */
+export function copyTimelineSelectedKeys(clip: SerializedTimelineClip, refs: readonly TrackKeyRef[]): CopiedTimelineKeys | null {
+  const properties = copyTimelineKeys(clip, refs);
+  const events = [...snapshotTimelineEventKeys(clip, refs)].map(([trackId, keys]) => ({
+    trackId, name: findTimelineEventTrack(clip, trackId)?.name ?? "", keys: structuredClone(keys),
+  }));
+  if (!properties && events.length === 0) return null;
+  const origin = Math.min(properties?.origin ?? Number.POSITIVE_INFINITY, ...events.flatMap((track) => track.keys.map((key) => key.time)));
+  return { origin, tracks: properties?.tracks ?? [], ...(events.length ? { events } : {}) };
+}
+
+/**
+ * Pastes copied keys at `time`: property keys as `pasteTimelineKeys` does,
+ * event keys onto the event track they came from or one of this clip with
+ * the same name, keeping the values of inputs it still has. A pasted key
+ * replaces one on its frame; keys past the clip's end are dropped.
+ */
+export function pasteTimelineSelectedKeys(
+  clip: SerializedTimelineClip,
+  copied: CopiedTimelineKeys,
+  time: number,
+  newId: NewId,
+): { clip: SerializedTimelineClip; pasted: TrackKeyRef[] } {
+  const { clip: withProperties, pasted } = pasteTimelineKeys(clip, copied, time, newId);
+  const byTrack = new Map<string, TimelineEventKey[]>();
+  for (const source of copied.events ?? []) {
+    const target = findTimelineEventTrack(withProperties, source.trackId)
+      ?? withProperties.eventTracks.find((track) => track.name === source.name);
+    if (!target) continue;
+    const inputs = new Set(target.inputs.map((input) => input.name));
+    const keys = source.keys
+      .map((key) => ({
+        id: newId(),
+        time: Number((key.time - copied.origin + time).toFixed(6)),
+        values: Object.fromEntries(Object.entries(structuredClone(key.values)).filter(([name]) => inputs.has(name))),
+      }))
+      .filter((key) => key.time >= 0 && key.time <= clip.length + 1e-9);
+    if (keys.length) byTrack.set(target.id, [...(byTrack.get(target.id) ?? []), ...keys]);
+  }
+  const next = mapEventTracks(withProperties, (track) => {
+    const added = byTrack.get(track.id);
+    if (!added) return track;
+    const frames = new Set(added.map((key) => frameAt(key.time, clip.frameRate)));
+    for (const key of added) pasted.push({ trackId: track.id, keyId: key.id });
+    return { ...track, keys: sortKeys([...track.keys.filter((key) => !frames.has(frameAt(key.time, clip.frameRate))), ...added]) };
+  });
+  return { clip: next, pasted };
 }

@@ -107,6 +107,25 @@ describe("Timeline Clip asset proxies", () => {
     expect(last().editorPreview!.proxies[proxyId]!.representation).toBe("model");
   });
 
+  it("names a new proxy from the dialog's Name field, numbered when another proxy has it", () => {
+    const view = renderBoth();
+    const addNamed = (name: string) => {
+      fireEvent.click(screen.getByTestId("timeline-proxies-add"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Actor Proxy…" }));
+      const dialog = screen.getByTestId("timeline-proxy-class-dialog");
+      fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: name } });
+      fireEvent.click(within(dialog).getByTestId("timeline-proxy-class-Door"));
+      fireEvent.click(screen.getByTestId("timeline-proxy-class-dialog-confirm"));
+      view.refresh();
+    };
+    addNamed("Front Door");
+    addNamed("Front Door");
+    expect(last().proxies.map((proxy) => proxy.name)).toEqual(["Front Door", "Front Door 2"]);
+    // A new dialog starts empty, so the next proxy is named after its Class.
+    addNamed("");
+    expect(last().proxies.at(-1)!.name).toBe("Door");
+  });
+
   it("offers Material and Texture in 2D, and keeps the Timeline Asset required", () => {
     harness.kind = "timeline-clip-2d";
     harness.content = addTimelineProxy(createDefaultTimelineClipAsset("story"), "component", "2DTextComponent", "badge");
