@@ -26,6 +26,7 @@ import type {
   PostProcessMaterialObject,
   Scene,
   SceneLayer,
+  TimelineClipObject,
 } from "@haptic/object-model";
 import type {
   ColliderShape,
@@ -231,6 +232,10 @@ export interface ScriptHostServices {
   removeSceneLayer?(layerGuid: string): void;
   clearSceneLayers?(): void;
   switchSceneLayerActor?(target: unknown, index: unknown): Actor | null;
+  /** A Scene or Scene Layer copy's Timeline Clip (`Get <Name> Timeline Clip`). */
+  timelineClip?(owner: EngineObject | null, clipId: string): TimelineClipObject | null;
+  /** A Timeline Clip function (`timelinePlay`, `timelineGetTime`, ...). */
+  timelineClipCall?(clip: TimelineClipObject, name: string, args: Record<string, unknown>): Record<string, unknown>;
   getCurrentSceneLayerActor?(target: unknown): Actor | null;
   setFocusTarget?(target: unknown): boolean;
   clearFocusTarget?(target: unknown): void;

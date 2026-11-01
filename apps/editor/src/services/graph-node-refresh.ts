@@ -27,8 +27,10 @@ import {
   SUBSYSTEM_GET_NODE_ID,
   OWNED_ACTOR_GET_NODE_ID,
   OWNED_COMPONENT_GET_NODE_ID,
+  OWNED_TIMELINE_CLIP_GET_NODE_ID,
   ownedActorGetTitle,
   ownedComponentGetTitle,
+  ownedTimelineClipGetTitle,
   subsystemGetClassId,
   subsystemGetTitle,
   DATA_DEFINITION_PIN_ID,
@@ -115,6 +117,7 @@ export function shouldRegeneratePins(typeId: string): boolean {
     typeId === SUBSYSTEM_GET_NODE_ID ||
     typeId === OWNED_ACTOR_GET_NODE_ID ||
     typeId === OWNED_COMPONENT_GET_NODE_ID ||
+    typeId === OWNED_TIMELINE_CLIP_GET_NODE_ID ||
     typeId === "struct.make" ||
     typeId === "struct.break" ||
     typeId === "enum.make" ||
@@ -450,6 +453,7 @@ export function hydratedNodeTitle(
   }
   if (typeId === OWNED_ACTOR_GET_NODE_ID) return ownedActorGetTitle(properties);
   if (typeId === OWNED_COMPONENT_GET_NODE_ID) return ownedComponentGetTitle(properties);
+  if (typeId === OWNED_TIMELINE_CLIP_GET_NODE_ID) return ownedTimelineClipGetTitle(properties);
   if (
     typeof properties.title === "string" &&
     (typeId === "flow.event.call" ||

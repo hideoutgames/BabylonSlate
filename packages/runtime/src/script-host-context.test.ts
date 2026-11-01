@@ -157,7 +157,7 @@ describe("ScriptContext shape", () => {
     "setVariable", "getVariableFrom", "setVariableOn", "setMeshMaterialAsync", "setMaterialTextureParameterAsync",
     "destroyActor", "setActorLocation", "addActorWorldOffset", "setActorRotation", "setActorScale",
     "setActorTransform", "attachToBone", "executeConsoleCommandAsync", "delay", "callInterface", "getComponent",
-    "getComponentById", "getOwnedActor", "getOwnedComponent", "callComponentFunction", "addComponent", "spawnActor", "spawnActorAsync",
+    "getComponentById", "getOwnedActor", "getOwnedTimelineClip", "getOwnedComponent", "callComponentFunction", "addComponent", "spawnActor", "spawnActorAsync",
     "beginDeferredSpawnActorAsync", "finishDeferredSpawnActor",
     "requestAssetLoad", "requestClassLoad", "waitForAssetLoad", "unloadAsset", "prepareAssets",
     "loadSceneBlocking", "unloadSceneBlocking", "getSceneReference", "invokeCustomEvent", "callDispatcher", "invokeEvent",

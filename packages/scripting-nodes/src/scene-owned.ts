@@ -8,6 +8,19 @@ import { pin, type NodeDefinition, objectRef } from "@haptic/scripting";
  */
 export const OWNED_ACTOR_GET_NODE_ID = "scene.getOwnedActor";
 export const OWNED_COMPONENT_GET_NODE_ID = "scene.getOwnedComponent";
+/** Get <Name> Timeline Clip: one of the owning Scene's or Scene Layer's Timeline Clips, for this copy. */
+export const OWNED_TIMELINE_CLIP_GET_NODE_ID = "scene.getOwnedTimelineClip";
+
+/** What a Get <Name> Timeline Clip node names: the clip id (stable across renames) and its name for the title. */
+export function ownedTimelineClipProperties(properties: Record<string, unknown>): { clipId: string; clipName: string } {
+  return { clipId: text(properties.sceneTimelineClipId), clipName: text(properties.sceneTimelineClipName) };
+}
+
+/** `Get Intro Timeline Clip`, or `Get Timeline Clip` before it names one. */
+export function ownedTimelineClipGetTitle(properties: Record<string, unknown>): string {
+  const { clipName } = ownedTimelineClipProperties(properties);
+  return clipName ? `Get ${clipName} Timeline Clip` : "Get Timeline Clip";
+}
 
 /**
  * What a Get <Actor> / Get <Component> (<Actor>) node names. Stored as
@@ -97,6 +110,19 @@ export const sceneOwnedNodes: NodeDefinition[] = [
           ? `ctx.getOwnedComponent(${JSON.stringify(actorId)}, ${JSON.stringify(componentId)})`
           : "null",
       };
+    },
+  },
+  {
+    id: OWNED_TIMELINE_CLIP_GET_NODE_ID,
+    title: "Get Timeline Clip",
+    category: "scene",
+    description:
+      "Returns this Scene's or Scene Layer's Timeline Clip, for this loaded copy; each Scene Layer copy has its own.",
+    pure: true,
+    pins: () => [pin("clip", "Timeline Clip", "out", objectRef("TimelineClip"))],
+    codegen: (ctx) => {
+      const { clipId } = ownedTimelineClipProperties(ctx.node.properties);
+      return { clip: clipId ? `ctx.getOwnedTimelineClip(${JSON.stringify(clipId)})` : "null" };
     },
   },
 ];

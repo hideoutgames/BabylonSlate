@@ -34,6 +34,7 @@ import type {
   Scene,
   SceneLayer,
   TickContext,
+  TimelineClipObject,
 } from "@haptic/object-model";
 import type { ColliderShape, OverlapResult, PhysicsTransform, TeleportOptions, Vec3 } from "@haptic/physics";
 import type { AnimStateFacts } from "@haptic/anim-graph";
@@ -295,6 +296,8 @@ export interface ScriptContext {
   getOwnedActor(actorId: string): Actor | null;
   /** Get <Component> (<Actor>): that actor's component with the authored `componentId`, else null. */
   getOwnedComponent(actorId: string, componentId: string): ActorComponent | null;
+  /** This Scene or Scene Layer copy's Timeline Clip with the authored clip id. */
+  getOwnedTimelineClip(clipId: string): TimelineClipObject | null;
   callComponentFunction(
     target: EngineObject | null | undefined,
     name: string,

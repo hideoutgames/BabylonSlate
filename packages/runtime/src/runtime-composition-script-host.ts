@@ -1,3 +1,4 @@
+import { timelineClipCall } from "./timeline-runtime";
 import type { CommandMessage } from "@haptic/bridge";
 import type { Actor, ClassRegistry, EngineObject } from "@haptic/object-model";
 import { RuntimeAssetCatalog } from "./asset-catalog";
@@ -146,6 +147,8 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
       flushTextAppear: () => flushTextAppear(rt),
       refreshComponent: (component, propertyName) => rt.propertyWrites.refreshComponent(component, propertyName),
     }),
+    timelineClip: (owner, clipId) => rt.timelines.clip(owner, clipId),
+    timelineClipCall: (clip, name, args) => timelineClipCall(rt.timelines, clip, name, args),
     ...createAudioHostBindings({ frameId, scriptVoiceId: () => rt.voices.scriptVoiceId(), emit }),
     ...createNavigationHostBindings({ navigation: () => rt.navigation }),
     ...createSceneStreamHostBindings({ streams: rt.streams, world: () => rt.world }),

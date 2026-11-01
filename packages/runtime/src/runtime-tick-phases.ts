@@ -1,6 +1,6 @@
 import { isInfiniteLoopError } from "@haptic/debugger";
 import type { RawInputEvent } from "@haptic/input";
-import type { Actor } from "@haptic/object-model";
+import type { Actor, EngineObject } from "@haptic/object-model";
 import { actorGuidIndex } from "./actor-world-transform";
 import type { RuntimeComposition } from "./runtime-composition";
 
@@ -88,6 +88,8 @@ export function requestDeviceMotion(rt: RuntimeComposition): void {
 function tickWorld(rt: RuntimeComposition, pending: readonly RawInputEvent[], simDt: number): void {
   rt.loopGuard.reset();
   rt.tweens.advance(simDt);
+  // Timeline Clips after tweens, before actors tick and physics syncs, so both see the animated values.
+  rt.timelines.advance(simDt, timelineOwners(rt), (owner) => rt.admission.canRun(owner));
   rt.textAppear.advance(rt.world, simDt, (actor) => rt.admission.canTickActor(actor));
   rt.painters.beginFrame(rt.world, (actor) => rt.admission.canTickActor(actor));
   try {
@@ -169,3 +171,10 @@ export function flushTextAppear(rt: RuntimeComposition): void {
     if (slotId !== undefined) rt.emit({ type: "setText2DAppear", slotId, componentId: component.guid, progress });
   });
 }
+
+/** The main Scene and each loaded Scene Layer copy: the owners of Timeline Clips. */
+function* timelineOwners(rt: RuntimeComposition): Iterable<EngineObject> {
+  if (rt.world.currentScene) yield rt.world.currentScene;
+  yield* rt.world.getSceneLayers();
+}
+

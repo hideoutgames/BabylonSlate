@@ -10,6 +10,8 @@ import { applyTweenTransform } from "./tween-transforms";
 
 /** What Timeline playback needs from the running game. */
 export interface TimelineRuntimeHost {
+  /** The clips an owner's document authored: the main Scene's or a Scene Layer's. */
+  clipsFor(owner: EngineObject): readonly SerializedTimelineClip[] | undefined;
   /** The live actor an owner placed under an authored actor id, per Scene or Scene Layer copy. */
   ownedActor(owner: EngineObject, actorId: string): Actor | null;
   findActor(guid: string): Actor | null | undefined;
@@ -34,11 +36,15 @@ export class TimelineRuntime {
     this.host = host;
   }
 
-  /** Creates the clip objects of a Scene or Scene Layer copy that just loaded. */
-  register(owner: EngineObject, clips: readonly SerializedTimelineClip[] | undefined): void {
-    if (!clips?.length) return;
-    this.remove(owner);
-    this.owners.set(owner, new Map(clips.map((clip) => [clip.id, new TimelineClipObject(clip, owner)])));
+  /** Creates a Scene or Scene Layer copy's clip objects the first time they are needed. */
+  private ensure(owner: EngineObject): Map<string, TimelineClipObject> | undefined {
+    if (owner.destroyed) return undefined;
+    let clips = this.owners.get(owner);
+    if (!clips) {
+      clips = new Map((this.host.clipsFor(owner) ?? []).map((clip) => [clip.id, new TimelineClipObject(clip, owner)]));
+      this.owners.set(owner, clips);
+    }
+    return clips;
   }
 
   /** Ends the clips of a copy that unloaded; references to them read as empty. */
@@ -55,7 +61,7 @@ export class TimelineRuntime {
 
   clip(owner: EngineObject | null | undefined, clipId: string): TimelineClipObject | null {
     if (!owner) return null;
-    const clip = this.owners.get(owner)?.get(clipId);
+    const clip = this.ensure(owner)?.get(clipId);
     return clip && !clip.destroyed ? clip : null;
   }
 
@@ -64,8 +70,12 @@ export class TimelineRuntime {
     return [...this.owners.values()].flatMap((clips) => [...clips.values()]);
   }
 
-  /** One tick: Auto Play starts, playing clips move on and apply their values. */
-  advance(dt: number, canRun: (owner: EngineObject) => boolean): void {
+  /**
+   * One tick for the live `owners`: Auto Play starts, playing clips move on and
+   * apply their values. Copies that ended are dropped.
+   */
+  advance(dt: number, owners: Iterable<EngineObject>, canRun: (owner: EngineObject) => boolean): void {
+    for (const owner of owners) this.ensure(owner);
     for (const [owner, clips] of [...this.owners]) {
       if (owner.destroyed) {
         this.remove(owner);
@@ -198,3 +208,26 @@ export class TimelineRuntime {
     for (const restore of clip.restore?.values() ?? []) restore();
   }
 }
+
+/** Runs a Timeline Clip function by its script runtime name. */
+export function timelineClipCall(
+  timelines: TimelineRuntime,
+  clip: TimelineClipObject,
+  name: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const number = (value: unknown, fallback: number) => (typeof value === "number" && Number.isFinite(value) ? value : fallback);
+  switch (name) {
+    case "timelinePlay": timelines.play(clip); return {};
+    case "timelinePlayReverse": timelines.play(clip, true); return {};
+    case "timelinePause": timelines.pause(clip); return {};
+    case "timelineStop": timelines.stop(clip); return {};
+    case "timelineSetTime": timelines.setTime(clip, number(args.time, clip.playback.time)); return {};
+    case "timelineSetPlayRate": timelines.setPlayRate(clip, number(args.rate, 1)); return {};
+    case "timelineGetTime": return { time: clip.playback.time };
+    case "timelineGetLength": return { length: clip.clip.length };
+    case "timelineIsPlaying": return { playing: clip.playback.playing };
+    default: return {};
+  }
+}
+

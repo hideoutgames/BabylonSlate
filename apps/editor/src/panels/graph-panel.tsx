@@ -72,7 +72,7 @@ import {
 } from "../services/graph-validation";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { logicGraphHostClass } from "../lib/embedded-script";
-import { ownedActorsOfScene, ownedGetDiagnostics, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
+import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
 import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { GraphSteppingBar } from "../components/graph-stepping-bar";
@@ -180,6 +180,12 @@ export function GraphPanel(
     () => ownerActors ? ownedActorsOfScene({ actors: ownerActors }) : undefined,
     [ownerActors],
   );
+  // ... and its Timeline Clips in Get <Name> Timeline Clip.
+  const ownerClips = ownerActors ? (doc?.content as SerializedScene | null)?.timelineClips : undefined;
+  const ownedTimelineClips = useMemo(
+    () => ownerActors ? ownedTimelineClipsOfScene({ timelineClips: ownerClips }) : undefined,
+    [ownerActors, ownerClips],
+  );
   // While a Simulation follows an instance of this Class, the canvas shows what that instance ran in this graph.
   const runGraphId = activeFunctionId
     ? functionGraphExportName({
@@ -249,7 +255,7 @@ export function GraphPanel(
         }
       : graphContent;
     return hydrateSerializedGraphForEditor(
-      (visible && ownedActors ? refreshOwnedGetNodes(visible, ownedActors) : visible) ??
+      (visible && ownedActors ? refreshOwnedGetNodes(visible, ownedActors, ownedTimelineClips) : visible) ??
         createDefaultLogicGraphSerialized(registry, {
           parentClass,
           parentOf,
@@ -277,6 +283,7 @@ export function GraphPanel(
     indexed?.header.type,
     otherClassGraphs,
     ownedActors,
+    ownedTimelineClips,
     parentClass,
     parentOf,
     scriptInterfaces,
@@ -449,7 +456,7 @@ export function GraphPanel(
         }),
         ...(ownedActors
           ? ownedGetDiagnostics(graphPayload, ownedActors, { assetGuid, graphId: documentId },
-            doc?.ref.kind === "scene" ? "Scene" : "Scene Layer")
+            doc?.ref.kind === "scene" ? "Scene" : "Scene Layer", ownedTimelineClips)
           : []),
         ...physicsPairingDiagnostics(
           [
@@ -495,6 +502,7 @@ export function GraphPanel(
     materialDomains,
     subsystemClasses,
     ownedActors,
+    ownedTimelineClips,
   ]);
 
   const paletteInput = {
@@ -517,6 +525,7 @@ export function GraphPanel(
     sceneDocuments,
     subsystemClasses,
     ownedActors,
+    ownedTimelineClips,
     animationGraphHost:
       doc?.ref.kind === "anim-graph" ? ("object" as const) : undefined,
   };

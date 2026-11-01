@@ -40,7 +40,7 @@ import {
   createDebugInspectSnapshot,
   type Actor,
   type EngineObject,
-  type SceneLayer,
+  SceneLayer,
   type DebugInspectSnapshot,
 } from "@haptic/object-model";
 import {
@@ -84,6 +84,8 @@ import { Painter2DRuntime } from "./painter2d-runtime";
 import type { UIControls2DRuntime } from "./ui-controls2d-runtime";
 import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import { TweenRuntime } from "./tween-runtime";
+import { TimelineRuntime } from "./timeline-runtime";
+import { findComponentById, ownedSceneActor } from "./script-host-helpers";
 import type { AnimGraphDocument } from "@haptic/anim-graph";
 import type { BehaviourTreeDocument, BlackboardDocument } from "@haptic/behaviour-tree";
 import type { ScriptHost, CompiledScript } from "./script-host";
@@ -290,6 +292,16 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   });
   readonly painters = new Painter2DRuntime();
   readonly textAppear = new Text2DAppearRuntime();
+  /** Timeline Clips of the main Scene and every loaded Scene Layer copy. */
+  readonly timelines = new TimelineRuntime({
+    clipsFor: (owner) => owner instanceof SceneLayer ? this.sceneLayerLibrary.get(owner.assetGuid)?.timelineClips
+      : owner === this.world.currentScene ? this.playScene?.timelineClips : undefined,
+    ownedActor: (owner, id) => ownedSceneActor(owner, id, (guid) => this.world.findActor(guid), (scene, actorId) => this.streams.resolveInstanceId(scene, actorId)),
+    findActor: (guid) => this.world.findActor(guid),
+    component: (actor, id) => findComponentById(actor, id),
+    teleportActor: (actor) => this.scriptHost.teleportActor(actor),
+    refreshComponent: (component, property) => this.propertyWrites.refreshComponent(component, property),
+  });
   readonly tweens = new TweenRuntime((owner) => !this.stopped && !this.paused && !this.blocks.active &&
     (!owner || this.admission.canRunActions(owner)));
   /**
@@ -1024,6 +1036,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.boundaries.flush();
     this.pendingPauseChanges.clear();
     this.tweens.stop();
+    this.timelines.reset();
     this.overlay.clear();
     // Cancel.
     this.lifecycleId++;

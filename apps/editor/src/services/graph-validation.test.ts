@@ -3581,6 +3581,22 @@ describe("subsystems", () => {
     expect(other.some((node) => node.nodeType === "variables.get" && node.defaultData?.componentId === "body")).toBe(true);
   });
 
+  it("offers a Scene's own script one Get <Name> Timeline Clip row per clip, with the Timeline Clip functions", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Scene", classId: "Scene:level", parentOf,
+      ownedActors: [], ownedTimelineClips: [{ id: "intro", name: "Intro" }, { id: "door", name: "Door Open" }],
+    });
+    const rows = nodes.filter((node) => node.nodeType === "scene.getOwnedTimelineClip");
+    expect(rows.map((row) => [row.title, row.defaultData])).toEqual([
+      ["Get Intro Timeline Clip", { sceneTimelineClipId: "intro", sceneTimelineClipName: "Intro" }],
+      ["Get Door Open Timeline Clip", { sceneTimelineClipId: "door", sceneTimelineClipName: "Door Open" }],
+    ]);
+    expect(rows[0]?.pins).toEqual([expect.objectContaining({ id: "clip", type: objectRef("TimelineClip") })]);
+    expect(nodes.some((node) => node.id === "scene.getOwnedTimelineClip")).toBe(false);
+    const functions = nodes.filter((node) => node.nodeType === "functions.call" && node.defaultData?.classId === "TimelineClip");
+    expect(functions.map((node) => node.title)).toEqual(expect.arrayContaining(["Call Play", "Call Play Reverse", "Call Pause", "Call Stop", "Call Set Time", "Call Get Time", "Call Is Playing"]));
+  });
+
   it("never offers Cast to the hidden Subsystem base", () => {
     const ids = scriptPaletteNodes(registry, { parentClass: "Actor", parentOf, subsystemClasses }).map(
       (node) => node.id,
