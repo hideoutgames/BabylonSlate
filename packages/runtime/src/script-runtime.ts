@@ -3,7 +3,9 @@ import {
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
   embeddedScriptParentOf,
+  TICKABLE_OBJECT_INTERFACE_GUID,
   instantiableSubsystemClassIds,
+  isCreatableObjectChain,
   isLockedEngineClassId,
   hydrateClassVariableValue,
   type Actor,
@@ -234,6 +236,40 @@ export class ScriptRuntime {
     const engineBase = classes.ancestry(classId).find(isLockedEngineClassId);
     const kind = classes.get(engineBase ?? classId)?.kind;
     return kind !== "object" && kind !== "gameInstance";
+  }
+
+  /**
+   * Create Object: an instance of a plain Object class with its class
+   * defaults and interface handlers, handed to `register` (the collector)
+   * before its On Init runs. A class implementing Tickable Object ticks in the
+   * World's Objects phase from the next tick. Null, with an error, for a
+   * class that is not registered or not a plain Object class.
+   */
+  createObject(classId: string, register: (object: EngineObject) => void): EngineObject | null {
+    const world = this.host.world();
+    const classes = world.classRegistry;
+    if (!classes.get(classId)) {
+      this.host.reportLog(`Create Object: there is no Class ${classId}.`, "error", "Script");
+      return null;
+    }
+    if (!isCreatableObjectChain(classes.ancestry(classId))) {
+      this.host.reportLog(`Create Object cannot create ${classId}: choose a Class whose parent is Object.`, "error", "Script");
+      return null;
+    }
+    const scripts = () => this.host.scriptHost();
+    const object = world.createObject({
+      classId,
+      // Resolved per call, like a Scene script's, so replaced sources apply.
+      hooks: {
+        onCreation: (self) => this.admission.runCreation(self, () => scripts().hooksFor(self.classId)?.onCreation?.(self)),
+        onTick: (self, ctx) => this.admission.guard(() => scripts().hooksFor(self.classId)?.onTick?.(self, ctx)),
+      },
+    });
+    scripts().bindInterfaceHandlers(object);
+    register(object);
+    if (object.implementedInterfaces.includes(TICKABLE_OBJECT_INTERFACE_GUID)) world.addTickingObject(object);
+    object.callOnCreation();
+    return object;
   }
 
   /**

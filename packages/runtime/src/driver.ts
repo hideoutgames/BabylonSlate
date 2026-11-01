@@ -502,6 +502,10 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     });
     this.objectLifetime.collector.addRootSource((visit) => this.scriptHost.latentFrames.forEach(visit));
     this.objectLifetime.collector.addRootSource((visit) => this.behaviourTrees.forEachBlackboardValue(visit));
+    this.objectLifetime.collector.onRelease((object) => {
+      this.admission.drop(object);
+      this.scriptHost.releaseObject(object);
+    });
 
     // 8. Lifecycle hooks, in Stop order.
     registerRuntimeSubsystems(this);
@@ -717,6 +721,10 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
 
   prepareScriptedActor(options: ScriptedActorSpawn): Actor | null {
     return this.actors.prepareScripted(options);
+  }
+
+  createScriptedObject(classId: string): EngineObject | null {
+    return this.scriptRuntime.createObject(classId, (object) => this.objectLifetime.collector.register(object));
   }
 
   finishScriptedActor(actor: Actor): Actor | null {

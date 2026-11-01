@@ -112,4 +112,10 @@ export {
 } from "./inspect-snapshot";
 export { hydrateScenePropertyReferences } from "./scene-property-values";
 export { sceneActorProvenance, sceneComponentProvenance } from "./scene-provenance";
+export {
+  TICKABLE_OBJECT_INTERFACE_GUID,
+  TICKABLE_OBJECT_INTERFACE_NAME,
+  isCreatableObjectChain,
+  receivesEngineTick,
+} from "./creatable-objects";
 export { ObjectCollector, canHoldReference, type CollectionResult, type RootSource, type RootVisitor, type ScalarVariables } from "./object-collector";

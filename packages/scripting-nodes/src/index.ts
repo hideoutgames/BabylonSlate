@@ -8,6 +8,7 @@ import { selectNodes } from "./select";
 import { arrayMapNodes } from "./array-map";
 import { mapNodes } from "./map";
 import { actorNodes } from "./actor";
+import { objectNodes } from "./objects";
 import { componentNodes } from "./component";
 import { transformNodes } from "./transform";
 import { physicsNodes } from "./physics";
@@ -102,6 +103,7 @@ export * from "./color";
 export * from "./quat";
 export * from "./tags";
 export * from "./dispatchers";
+export * from "./objects";
 
 export function allNodeDefinitions(): NodeDefinition[] {
   return [
@@ -113,6 +115,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...arrayMapNodes,
     ...mapNodes,
     ...actorNodes,
+    ...objectNodes,
     ...componentNodes,
     ...transformNodes,
     ...physicsNodes,

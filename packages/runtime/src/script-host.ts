@@ -1,6 +1,7 @@
 import { createSeededRng, SaveGameError, type Rng, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
 import {
   interfaceHandlerKey,
+  isCreatableObjectChain,
   isLockedEngineClassId,
   SUBSYSTEM_CLASS_ID,
   type Actor,
@@ -299,8 +300,9 @@ export class ScriptHost {
   /**
    * Lifecycle hooks for `classId`. Each event runs the nearest implementation
    * in the class lineage, so a child inherits its parent's events. Creation is
-   * On Init for the Game Instance and subsystems, Begin Play for the rest.
-   * The hooks carry no per-object state, so one object serves every instance.
+   * On Init for the Game Instance, subsystems and Create Object classes, Begin
+   * Play for the rest. The hooks carry no per-object state, so one object
+   * serves every instance.
    */
   hooksFor(classId: string): LifecycleHooks<EngineObject> | undefined {
     const cached = this.hooksByClassId.get(classId);
@@ -308,7 +310,7 @@ export class ScriptHost {
     if (this.scriptLineage(classId).length === 0) return undefined;
     const ancestry = this.services.classRegistry?.ancestry(classId) ?? [classId];
     const creationEvent =
-      ancestry.includes("GameInstance") || ancestry.includes(SUBSYSTEM_CLASS_ID)
+      ancestry.includes("GameInstance") || ancestry.includes(SUBSYSTEM_CLASS_ID) || isCreatableObjectChain(ancestry)
         ? "onInit"
         : "onBeginPlay";
     const hooks: LifecycleHooks<EngineObject> = {
@@ -339,6 +341,15 @@ export class ScriptHost {
     };
     this.hooksByClassId.set(classId, hooks);
     return hooks;
+  }
+
+  /**
+   * A collected object: its latent work ends and its dispatcher bindings go,
+   * and no script event runs, so nothing can reach it again.
+   */
+  releaseObject(self: EngineObject): void {
+    this.clearFlowState(self);
+    this.dispatchers.forget(self);
   }
 
   invokeCommand(

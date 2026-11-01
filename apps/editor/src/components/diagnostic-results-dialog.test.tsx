@@ -21,7 +21,7 @@ function recording(frames = 3, slow: readonly number[] = [], memory = false) {
     recorder.recordFrame({ frameId: index, tickId: index, sceneGeneration: 1, completedAtMs: now, preparationMs: 1, submissionMs: 2, copyMs: 0.5,
       drawCalls: 8, width: 640, height: 360, resolutionScale: 0.5 });
     recorder.recordTick({ tickId: index, elapsedMs: now, scriptMs: 1, physicsMs: 2, publishMs: 0.25, otherMs: 0,
-      gameInstanceMs: 0.1, sceneSubsystemsMs: 0, actorsMs: 0.5, componentsMs: 0.2, postPhysicsMs: 0.05, sceneSystemsMs: 0.15 });
+      gameInstanceMs: 0.1, sceneSubsystemsMs: 0, actorsMs: 0.5, componentsMs: 0.2, objectsMs: 0, postPhysicsMs: 0.05, sceneSystemsMs: 0.15 });
     if (memory) recorder.recordMemory({ sampledAtMs: now, textureBytes: (index + 1) * 1024 * 1024, geometryBytes: 1024 * 1024 });
   }
   return recorder.stop()!;

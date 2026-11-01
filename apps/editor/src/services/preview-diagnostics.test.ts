@@ -28,7 +28,7 @@ describe("Preview diagnostics lifecycle", () => {
       sceneId: "scene", backend: "webgl2", runtimeHost: "worker",
       quality: "Low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "unavailable" });
     recorder.recordTick({ tickId: 14, elapsedMs: 0, scriptMs: 2, physicsMs: 1, publishMs: 0.1, otherMs: 0,
-      gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 2, componentsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0 });
+      gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 2, componentsMs: 0, objectsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0 });
     recorder.recordMemory({ sampledAtMs: 0, textureBytes: 4096, geometryBytes: 1024 });
     recorder.recordLongTask({ startedAtMs: 0, durationMs: 75 });
     recorder.recordScriptEntries([{ assetGuid: "Hero.class", classId: "Hero", className: "Hero", exportName: "onTick", event: "onTick", title: "Event Tick" }]);

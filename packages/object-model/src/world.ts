@@ -10,6 +10,7 @@ import { InterfaceRegistry } from "./interfaces";
 import {
   Actor,
   ActorComponent,
+  EngineObject,
   GameInstance,
   GameSubsystem,
   Scene,
@@ -164,6 +165,8 @@ export class World {
   private spawnCursor = 0;
   private readonly pendingDestroy: Array<Guid | Actor> = [];
   private destroyCursor = 0;
+  /** Tickable Object objects in creation order; not roots, and destroyed ones are dropped as the phase runs. */
+  private readonly tickingObjects: EngineObject[] = [];
   private started = false;
   /** Set once `start()` reaches the Game Instance's On Init; replacements then end and init. */
   private gameInstanceStarted = false;
@@ -828,6 +831,9 @@ export class World {
         case "components":
           this.tickComponents(ctx);
           break;
+        case "objects":
+          this.tickObjects(ctx);
+          break;
         case "physics":
           this.onPhysics?.(ctx);
           break;
@@ -876,6 +882,22 @@ export class World {
       scratch.fill(undefined);
       this.endActorIteration();
     }
+  }
+
+  /** Objects added while the phase runs tick from the next tick. */
+  private tickObjects(ctx: TickContext): void {
+    const list = this.tickingObjects;
+    const count = list.length;
+    let kept = 0;
+    for (let i = 0; i < count; i++) {
+      const object = list[i]!;
+      if (object.destroyed) continue;
+      list[kept++] = object;
+      if (this.sceneTickable()) object.callOnTick(ctx);
+    }
+    // Entries appended by a Tick move down over the dropped ones.
+    for (let i = count; i < list.length; i++) list[kept++] = list[i]!;
+    list.length = kept;
   }
 
   /**
@@ -950,6 +972,31 @@ export class World {
       implementedInterfaces: defaults.implementedInterfaces,
       guidFactory: this.guidFactory,
     });
+  }
+
+  /**
+   * Build a plain object with class defaults applied (Create Object). The
+   * World does not keep it; `addTickingObject` ticks it in the Objects phase.
+   */
+  createObject(options: {
+    classId: string;
+    guid?: Guid;
+    variables?: Record<string, unknown>;
+    hooks?: LifecycleHooks;
+    implementedInterfaces?: string[];
+  }): EngineObject {
+    const defaults = this.classDefaults(options.classId, options);
+    return new EngineObject({
+      ...options,
+      variables: defaults.variables,
+      implementedInterfaces: defaults.implementedInterfaces,
+      guidFactory: this.guidFactory,
+    });
+  }
+
+  /** Ticks `object` in the Objects phase, after components, until it is destroyed. */
+  addTickingObject(object: EngineObject): void {
+    if (!object.destroyed && !this.tickingObjects.includes(object)) this.tickingObjects.push(object);
   }
 
   createGameInstance(options: {

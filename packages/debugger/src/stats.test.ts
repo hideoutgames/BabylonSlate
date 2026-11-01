@@ -48,12 +48,12 @@ describe("statsHudModel", () => {
   });
 
   it("splits the Unit row into the tick's timed phases when the host reports them", () => {
-    const phaseMs = [0.1, 0.2, 1.5, 0.5, 2, 0.3, 0.4];
+    const phaseMs = [0.1, 0.2, 1.5, 0.5, 0.25, 2, 0.3, 0.4];
     const row = (input: Parameters<typeof statsHudModel>[0]) =>
       statsHudModel(input, ["unit"]).rows[0]!.metrics.map(({ label, text }) => `${label} ${text}`);
     expect(row({ fps: 60, scriptMs: 3, physicsMs: 2, publishMs: 0.5, phaseMs })).toEqual([
       "tick 5.00 / 8 ms",
-      "game 0.10 ms", "subsystems 0.20 ms", "actors 1.50 ms", "components 0.50 ms",
+      "game 0.10 ms", "subsystems 0.20 ms", "actors 1.50 ms", "components 0.50 ms", "objects 0.25 ms",
       "physics 2.00 ms", "post-physics 0.30 ms", "systems 0.40 ms",
       "publish 0.50 ms",
     ]);

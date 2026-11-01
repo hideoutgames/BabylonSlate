@@ -139,6 +139,7 @@ const PHASE_LABELS: Readonly<Record<TickTimingPhase, string>> = {
   sceneSubsystems: "subsystems",
   actors: "actors",
   components: "components",
+  objects: "objects",
   physics: "physics",
   postPhysics: "post-physics",
   sceneSystems: "systems",
