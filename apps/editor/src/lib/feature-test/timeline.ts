@@ -97,8 +97,8 @@ export async function buildFeatureTestTimeline(ctx: FeatureTestContext): Promise
     ],
     eventTracks: [{ id: "ft-door-swing-event", name: SWING_OPEN_EVENT, inputs: [], keys: [{ id: "ft-door-swing-event-key", time: 1, values: {} }] }],
     editorPreview: { proxies: {
-      "ft-door-swing-door": { ...defaultTimelineProxyPreview(0), size: 2 },
-      "ft-door-swing-glow": { ...defaultTimelineProxyPreview(1), location: [1, 1.2, 0], size: 0.3 },
+      "ft-door-swing-door": { ...defaultTimelineProxyPreview(0), scale: [2, 2, 2] },
+      "ft-door-swing-glow": { ...defaultTimelineProxyPreview(1), location: [1, 1.2, 0] },
     } },
   });
   const [badge] = HUD_PULSE_PROXIES;
@@ -110,7 +110,7 @@ export async function buildFeatureTestTimeline(ctx: FeatureTestContext): Promise
       id: "ft-hud-pulse-opacity", target: { kind: "component", componentId: badge!.id, property: "opacity" }, valueType: "float",
       keys: [key("pulse-0", 0, 1), key("pulse-1", 1, 0.6)],
     }] }],
-    editorPreview: { proxies: { [badge!.id]: { ...defaultTimelineProxyPreview(0), size: 120 } } },
+    editorPreview: { proxies: { [badge!.id]: defaultTimelineProxyPreview(0) } },
   });
 }
 

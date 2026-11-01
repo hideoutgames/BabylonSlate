@@ -54,8 +54,8 @@ async function clipProjectFiles() {
       { id: "lamp", name: "Lamp", represents: "actor", classId: "Actor", tracks: [] },
     ],
     editorPreview: { proxies: {
-      door: { color: "#f97316", representation: "outline", size: 1, location: [3, 0, 0], rotation: [0, 0, 0], previewAs: "relative" },
-      lamp: { color: "#22d3ee", representation: "outline", size: 1, location: [-3, 0, 0], rotation: [0, 0, 0], previewAs: "relative" },
+      door: { color: "#f97316", representation: "outline", location: [3, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" },
+      lamp: { color: "#22d3ee", representation: "outline", location: [-3, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" },
     } },
   };
   files.set("assets/Swing.timelineclip3d.hasset", await encodeAssetDocument(
@@ -79,7 +79,7 @@ async function clip2DProjectFiles() {
     ...createDefaultTimelineClipAsset("story-guid"),
     length: 2,
     proxies: [{ id: "badge", name: "Badge", represents: "actor", classId: "Actor", tracks: [] }],
-    editorPreview: { proxies: { badge: { color: "#f97316", representation: "outline", size: 1, location: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" } } },
+    editorPreview: { proxies: { badge: { color: "#f97316", representation: "outline", location: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" } } },
   };
   files.set("assets/Pulse.timelineclip2d.hasset", await encodeAssetDocument(
     { guid: "pulse-guid", type: "TimelineClip2D", name: "Pulse", version: 1, payload: payload as unknown as Record<string, unknown> },
@@ -132,7 +132,7 @@ test.describe("Timeline Clip asset proxies", () => {
 
   });
 
-  test("keep their place and size across representations, and the 2D box frames a loaded Texture", async ({ page }) => {
+  test("keep their place, size and picked Texture across representations, and the 2D box frames a loaded Texture", async ({ page }) => {
     test.setTimeout(180_000);
     await openMinimalTestProject(page, await clip2DProjectFiles());
     await waitForEditorInteractive(page);
@@ -156,5 +156,9 @@ test.describe("Timeline Clip asset proxies", () => {
 
     await chooseRepresentation(page, "Outline");
     await expect.poll(() => framing(page, "badge"), { timeout: 10_000 }).toEqual(doubled);
+    // Back to Texture: the one picked before draws again.
+    await chooseRepresentation(page, "Texture");
+    await expect(page.getByTestId("timeline-clip-inspector-preview").getByTestId("property-timeline-proxy-asset")).toContainText("Sprite");
+    await expect.poll(() => framing(page, "badge"), { timeout: 20_000 }).toEqual(textured);
   });
 });

@@ -62,36 +62,44 @@ export function createEditorVolumeMesh(
 /** The editor-only stand-in that draws a Timeline Clip proxy's Outline representation. */
 export const TIMELINE_PROXY_OUTLINE_CLASS_ID = "TimelineProxyOutlineComponent";
 
-/** An Outline component's size (edge length), `#rrggbb` colour and 2D flag. */
-export function timelineProxyOutlineOptions(properties: Record<string, unknown>): { size: number; color: string; twoD: boolean } {
-  const size = typeof properties.size === "number" && Number.isFinite(properties.size) ? properties.size : 1;
-  return { size, color: typeof properties.color === "string" ? properties.color : "", twoD: properties.twoD === true };
+export type TimelineProxyOutlineSize = [number, number, number];
+
+/** An Outline component's size (edge lengths along X, Y and Z; one number for all three), `#rrggbb` colour and 2D flag. */
+export function timelineProxyOutlineOptions(properties: Record<string, unknown>): { size: TimelineProxyOutlineSize; color: string; twoD: boolean } {
+  const edge = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 1);
+  const { size } = properties;
+  return {
+    size: Array.isArray(size) && size.length === 3 ? [edge(size[0]), edge(size[1]), edge(size[2])] : [edge(size), edge(size), edge(size)],
+    color: typeof properties.color === "string" ? properties.color : "",
+    twoD: properties.twoD === true,
+  };
 }
 
 /**
  * A Timeline Clip proxy's Outline: a pickable invisible fill of `size` with a
- * dashed edge in the proxy's colour, a cube in 3D or a square in 2D. The size
- * is baked into the geometry so the dashes keep their thickness.
+ * dashed edge in the proxy's colour, a box in 3D or a rectangle in 2D. The
+ * size is baked into the geometry so the dashes keep their thickness.
  */
 export function createTimelineProxyOutlineMesh(
   scene: Scene,
   name: string,
-  options: { size: number; color: string; twoD: boolean },
+  options: { size: number | TimelineProxyOutlineSize; color: string; twoD: boolean },
 ): Mesh {
-  const size = Math.max(0.01, options.size);
+  const edges = typeof options.size === "number" ? [options.size, options.size, options.size] : options.size;
+  const [width, height, depth] = edges.map((edge) => Math.max(0.01, Math.abs(edge))) as TimelineProxyOutlineSize;
   const fill = options.twoD
-    ? MeshBuilder.CreatePlane(name, { width: size, height: size }, scene)
-    : MeshBuilder.CreateBox(name, { size }, scene);
+    ? MeshBuilder.CreatePlane(name, { width, height }, scene)
+    : MeshBuilder.CreateBox(name, { width, height, depth }, scene);
   fill.metadata = { ...(fill.metadata ?? {}), editorVolume: true };
   fill.isPickable = true;
   fill.renderingGroupId = RENDERING_GROUP.world;
   applyVolumeFillMaterial(fill);
-  const half = size / 2;
+  const half = { x: width / 2, y: height / 2, z: depth / 2 };
   const color = /^#[0-9a-f]{6}$/i.test(options.color) ? Color3.FromHexString(options.color) : COLLIDER_COLOR;
   const outline = createColliderVisualMesh(
     scene,
     `${name}:outline`,
-    options.twoD ? { kind: "box2d", halfExtents: { x: half, y: half } } : { kind: "box", halfExtents: { x: half, y: half, z: half } },
+    options.twoD ? { kind: "box2d", halfExtents: { x: half.x, y: half.y } } : { kind: "box", halfExtents: half },
     color,
   );
   outline.parent = fill;

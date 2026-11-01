@@ -8,6 +8,7 @@ import {
   SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
   TIMELINE_FRAME_RATES,
   defaultTimelineProxyPreview,
+  timelineProxyPreviewAsset,
   isSceneLayerDeniedComponent,
   normalizeTimelineClipAsset,
   uniqueTimelineClipName,
@@ -15,6 +16,7 @@ import {
   type TimelineFrameRate,
   type TimelineLoopMode,
   type TimelineProxy,
+  type TimelineProxyAssetRepresentation,
   type TimelineProxyPreview,
   type TimelineProxyRepresentation,
   type TimelineProxyRepresents,
@@ -305,6 +307,15 @@ export function TimelineClipInspectorPanel(_props: IDockviewPanelProps) {
   // A Model draws only in 3D; a Material or Texture only in 2D.
   const representations = (["outline", twoD ? "material" : "model", ...(twoD ? ["texture" as const] : []), "class"] as TimelineProxyRepresentation[]);
   const representationType = preview?.representation === "model" ? "Model" : preview?.representation === "material" ? "Material" : preview?.representation === "texture" ? "Texture" : undefined;
+  const representationAsset = preview ? timelineProxyPreviewAsset(preview) : undefined;
+  // Each of Model, Material and Texture keeps its own pick, so switching back shows it again.
+  const setRepresentationAsset = (guid: string | null) => {
+    if (!preview || !representationType) return;
+    const kind = preview.representation as TimelineProxyAssetRepresentation;
+    const others = Object.fromEntries(Object.entries(preview.assets ?? {}).filter(([entry]) => entry !== kind));
+    const assets: Partial<Record<TimelineProxyAssetRepresentation, string>> = guid ? { ...others, [kind]: guid } : others;
+    setPreview({ assets: Object.keys(assets).length ? assets : undefined }, "asset");
+  };
 
   const proxyRows: PropertyRow[] = proxy && preview ? [
     { kind: "text", id: "timeline-proxy-name", label: "Name", value: proxy.name, onChange: () => {},
@@ -316,12 +327,11 @@ export function TimelineClipInspectorPanel(_props: IDockviewPanelProps) {
     { kind: "color", id: "timeline-proxy-color", label: "Color", value: toColor(preview.color), onChange: (color) => setPreview({ color: toHex(color) }, "color") },
     { kind: "enum", id: "timeline-proxy-representation", label: "Representation", value: preview.representation,
       options: representations.map((value) => ({ value, label: REPRESENTATION_LABELS[value] })),
-      onChange: (representation) => setPreview({ representation: representation as TimelineProxyRepresentation, assetGuid: undefined }, "representation") },
+      onChange: (representation) => setPreview({ representation: representation as TimelineProxyRepresentation }, "representation") },
     ...(representationType ? [{
-      kind: "asset" as const, id: "timeline-proxy-asset", label: representationType, value: preview.assetGuid ?? null, displayLabel: nameOf(preview.assetGuid),
-      displayType: representationType, onPick: () => setPicker("representation"), onChange: (guid: string | null) => setPreview({ assetGuid: guid ?? undefined }, "asset"),
+      kind: "asset" as const, id: "timeline-proxy-asset", label: representationType, value: representationAsset ?? null, displayLabel: nameOf(representationAsset),
+      displayType: representationType, onPick: () => setPicker("representation"), onChange: (guid: string | null) => setRepresentationAsset(guid),
     }] : []),
-    { kind: "number", id: "timeline-proxy-size", label: "Size", min: 0.01, precision: 2, value: preview.size, onChange: (size) => setPreview({ size: Math.max(0.01, size) }, "size") },
     { kind: "vector3", id: "timeline-proxy-location", label: "Location", value: preview.location, onChange: (location) => setPreview({ location: [...location] as [number, number, number] }, "location") },
     { kind: "vector3", id: "timeline-proxy-rotation", label: "Rotation", unit: "°", value: preview.rotation, onChange: (rotation) => setPreview({ rotation: [...rotation] as [number, number, number] }, "rotation") },
     { kind: "vector3", id: "timeline-proxy-scale", label: "Scale", value: preview.scale, onChange: (scale) => setPreview({ scale: [...scale] as [number, number, number] }, "scale") },
@@ -367,7 +377,7 @@ export function TimelineClipInspectorPanel(_props: IDockviewPanelProps) {
       title={picker === "timeline" ? "Choose Timeline Asset" : `Choose ${representationType ?? "Asset"}`}
       onPick={(guid) => {
         if (picker === "timeline" && guid) commit({ ...payload, timelineAsset: guid }, "timeline-clip-asset:timeline");
-        if (picker === "representation") setPreview({ assetGuid: guid ?? undefined }, "asset");
+        if (picker === "representation") setRepresentationAsset(guid);
         setPicker(null);
       }}
     />

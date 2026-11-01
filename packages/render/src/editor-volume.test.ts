@@ -53,7 +53,7 @@ describe("editor volume", () => {
     expect(outlineDashCount(mesh)).toBeGreaterThan(8);
   });
 
-  it("builds a Timeline proxy Outline sized by Size, a cube in 3D and a square in 2D", () => {
+  it("builds a Timeline proxy Outline sized per axis, a box in 3D and a rectangle in 2D", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const cube = createTimelineProxyOutlineMesh(handle.scene, "proxy", { size: 2, color: "#22d3ee", twoD: false });
@@ -66,8 +66,15 @@ describe("editor volume", () => {
     const square = createTimelineProxyOutlineMesh(handle.scene, "proxy2d", { size: 2, color: "#22d3ee", twoD: true });
     // A square has a third of a cube's edges (4 of 12), so fewer dashes.
     expect(outlineDashCount(square)).toBeLessThan(outlineDashCount(cube));
-    expect(timelineProxyOutlineOptions({ size: 3, color: "#ffffff", twoD: true })).toEqual({ size: 3, color: "#ffffff", twoD: true });
-    expect(timelineProxyOutlineOptions({})).toEqual({ size: 1, color: "", twoD: false });
+    expect(timelineProxyOutlineOptions({ size: 3, color: "#ffffff", twoD: true })).toEqual({ size: [3, 3, 3], color: "#ffffff", twoD: true });
+    expect(timelineProxyOutlineOptions({ size: [2, 0.5, 1] })).toEqual({ size: [2, 0.5, 1], color: "", twoD: false });
+    expect(timelineProxyOutlineOptions({})).toEqual({ size: [1, 1, 1], color: "", twoD: false });
+    // Per-axis edges: the dashes keep their thickness at any size.
+    const slab = createTimelineProxyOutlineMesh(handle.scene, "slab", { size: [4, 1, 2], color: "#22d3ee", twoD: false });
+    slab.computeWorldMatrix(true);
+    const slabExtent = slab.getBoundingInfo().boundingBox.extendSize;
+    expect([slabExtent.x, slabExtent.y, slabExtent.z]).toEqual([2, 0.5, 1]);
+    expect(outlineDashCount(slab)).toBeGreaterThan(outlineDashCount(cube));
   });
 
   it("draws a Timeline proxy outline component in an editor scene, moving it without a rebuild and rebuilding on a new size", () => {

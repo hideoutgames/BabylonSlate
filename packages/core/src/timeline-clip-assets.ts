@@ -38,23 +38,33 @@ export interface TimelineProxy {
 export const TIMELINE_PROXY_REPRESENTATIONS = ["outline", "model", "material", "texture", "class"] as const;
 export type TimelineProxyRepresentation = (typeof TIMELINE_PROXY_REPRESENTATIONS)[number];
 export type TimelineProxyPreviewAs = "relative" | "absolute";
+/** The representations that draw a picked asset. */
+export type TimelineProxyAssetRepresentation = "model" | "material" | "texture";
+const ASSET_REPRESENTATIONS: readonly TimelineProxyAssetRepresentation[] = ["model", "material", "texture"];
 
 /** How the editor draws a proxy. Editor only: never in Play or an export. */
 export interface TimelineProxyPreview {
   /** `#rrggbb`. */
   color: string;
   representation: TimelineProxyRepresentation;
-  /** The Outline's edge, in metres (3D) or units (2D). */
-  size: number;
   /** Where the proxy stands in the preview; Relative keys offset it. */
   location: [number, number, number];
   /** Degrees: pitch, yaw, roll. */
   rotation: [number, number, number];
-  /** Relative Scale keys multiply it. */
+  /** The proxy's size: an Outline is one metre (3D) or unit (2D) at 1, a Model, Material or Texture its own size. Relative Scale keys multiply it. */
   scale: [number, number, number];
   previewAs: TimelineProxyPreviewAs;
-  /** The Model, Material or Texture drawn for its representation; an editor-only reference. */
-  assetGuid?: string;
+  /**
+   * The Model, Material and Texture picked for those representations, kept
+   * while another representation is shown. Editor-only references.
+   */
+  assets?: Partial<Record<TimelineProxyAssetRepresentation, string>>;
+}
+
+/** The asset the proxy's current representation draws, if it draws one and one is picked. */
+export function timelineProxyPreviewAsset(preview: TimelineProxyPreview): string | undefined {
+  const representation = preview.representation as TimelineProxyAssetRepresentation;
+  return ASSET_REPRESENTATIONS.includes(representation) ? preview.assets?.[representation] : undefined;
 }
 
 export interface SerializedTimelineClipAsset {
@@ -96,7 +106,6 @@ export function defaultTimelineProxyPreview(index: number): TimelineProxyPreview
   return {
     color: TIMELINE_PROXY_COLORS[index % TIMELINE_PROXY_COLORS.length]!,
     representation: "outline",
-    size: 1,
     location: [index * 2, 0, 0],
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
@@ -104,22 +113,34 @@ export function defaultTimelineProxyPreview(index: number): TimelineProxyPreview
   };
 }
 
-function normalizePreview(value: unknown, index: number): TimelineProxyPreview {
+function normalizePreview(value: unknown, index: number, represents: TimelineProxy["represents"]): TimelineProxyPreview {
   const source = record(value);
   const fallback = defaultTimelineProxyPreview(index);
   const color = text(source.color);
-  const assetGuid = text(source.assetGuid);
+  const representation = (TIMELINE_PROXY_REPRESENTATIONS as readonly string[]).includes(source.representation as string)
+    ? (source.representation as TimelineProxyRepresentation)
+    : "outline";
+  // An earlier preview sized the representation alone by a uniform Size. An Actor proxy's Scale takes it (it draws
+  // nothing else); a Component proxy's would also scale its component, so there it goes.
+  const size = representation === "class" || represents === "component" ? 1 : Math.max(0.01, finite(source.size, 1));
+  const authoredAssets = record(source.assets);
+  const assets: Partial<Record<TimelineProxyAssetRepresentation, string>> = {};
+  for (const kind of ASSET_REPRESENTATIONS) {
+    const guid = text(authoredAssets[kind]);
+    if (guid) assets[kind] = guid;
+  }
+  // An earlier preview kept one asset, for its representation.
+  const legacyAsset = text(source.assetGuid);
+  const legacyKind = representation as TimelineProxyAssetRepresentation;
+  if (legacyAsset && ASSET_REPRESENTATIONS.includes(legacyKind) && !assets[legacyKind]) assets[legacyKind] = legacyAsset;
   return {
     color: /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : fallback.color,
-    representation: (TIMELINE_PROXY_REPRESENTATIONS as readonly string[]).includes(source.representation as string)
-      ? (source.representation as TimelineProxyRepresentation)
-      : "outline",
-    size: Math.max(0.01, finite(source.size, fallback.size)),
+    representation,
     location: triple(source.location, fallback.location),
     rotation: triple(source.rotation, fallback.rotation),
-    scale: triple(source.scale, fallback.scale),
+    scale: triple(source.scale, [size, size, size]),
     previewAs: source.previewAs === "absolute" ? "absolute" : "relative",
-    ...(assetGuid ? { assetGuid } : {}),
+    ...(Object.keys(assets).length ? { assets } : {}),
   };
 }
 
@@ -160,7 +181,7 @@ export function normalizeTimelineClipAsset(value: unknown): SerializedTimelineCl
     whenFinished: clip.whenFinished,
     proxies,
     eventTracks: clip.eventTracks,
-    editorPreview: { proxies: Object.fromEntries(proxies.map((proxy, index) => [proxy.id, normalizePreview(previews[proxy.id], index)])) },
+    editorPreview: { proxies: Object.fromEntries(proxies.map((proxy, index) => [proxy.id, normalizePreview(previews[proxy.id], index, proxy.represents)])) },
   };
 }
 

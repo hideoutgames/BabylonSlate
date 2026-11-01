@@ -17,8 +17,8 @@ function clipAsset(previewAs: "relative" | "absolute", representation: "outline"
       { id: "glow", name: "Glow", represents: "component", classId: "LightComponent", tracks: [] },
     ],
     editorPreview: { proxies: {
-      door: { ...defaultTimelineProxyPreview(0), location: [10, 0, 0], rotation: [0, 90, 0], previewAs, representation, ...(representation === "model" ? { assetGuid: "door-model" } : {}) },
-      glow: { ...defaultTimelineProxyPreview(1), location: [0, 3, 0], size: 0.5 },
+      door: { ...defaultTimelineProxyPreview(0), location: [10, 0, 0], rotation: [0, 90, 0], previewAs, representation, assets: { model: "door-model", texture: "door-sprite" } },
+      glow: { ...defaultTimelineProxyPreview(1), location: [0, 3, 0], scale: [0.5, 2, 1] },
     } },
   };
 }
@@ -37,9 +37,11 @@ describe("Timeline proxy preview", () => {
     const outline = timelineProxyPreviewScene(timelineProxyScene(clipAsset("relative"), "Swing", graphs, false), clipAsset("relative"), false);
     expect(outline.actors[0]!.components.map((component) => [component.id, component.classId])).toEqual([["door:preview", TIMELINE_PROXY_OUTLINE_CLASS_ID]]);
     expect(outline.actors[1]!.components.map((component) => component.id)).toEqual(["glow", "glow:preview"]);
-    expect(outline.actors[1]!.components[1]!.properties).toMatchObject({ size: 0.5, twoD: false });
+    // The Outline is built at the proxy's Scale and undoes it, so its dashes keep their thickness.
+    expect(outline.actors[1]!.components[1]).toMatchObject({ properties: { size: [0.5, 2, 1], twoD: false }, transform: { scale: [2, 0.5, 1] } });
     const model = timelineProxyPreviewScene(timelineProxyScene(clipAsset("relative", "model"), "Swing", graphs, false), clipAsset("relative", "model"), false);
-    expect(model.actors[0]!.components[0]).toMatchObject({ classId: "MeshComponent", properties: { assetGuid: "door-model" } });
+    // A Model, Material or Texture draws its own asset at the proxy's Scale.
+    expect(model.actors[0]!.components[0]).toMatchObject({ classId: "MeshComponent", properties: { assetGuid: "door-model" }, transform: { scale: [1, 1, 1] } });
     const own = timelineProxyPreviewScene(timelineProxyScene(clipAsset("relative", "class"), "Swing", graphs, false), clipAsset("relative", "class"), false);
     expect(own.actors[0]!.components.map((component) => component.id)).toEqual(["panel"]);
   });

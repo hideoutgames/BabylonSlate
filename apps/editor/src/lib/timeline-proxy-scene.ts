@@ -12,6 +12,7 @@ import {
   quatRotateVector,
   sceneLayerToEditorScene,
   timelineClipOfAsset,
+  timelineProxyPreviewAsset,
   withTimelineClipOfAsset,
   type SerializedActor,
   type SerializedComponent,
@@ -92,10 +93,10 @@ function placementTransform(place: TimelineProxyPreview) {
 
 /**
  * How the clip asset viewport draws each proxy: its Editor Preview
- * representation (an Outline, a Model in 3D, a Material or Texture in 2D,
- * sized by Size) in place of an Actor proxy's Class components, or with Class
- * those components. A Component proxy keeps its component beside it, so its
- * property tracks still apply.
+ * representation (an Outline, a Model in 3D, a Material or Texture in 2D) in
+ * place of an Actor proxy's Class components, or with Class those
+ * components. The proxy's Scale sizes it. A Component proxy keeps its
+ * component beside it, so its property tracks still apply.
  */
 export function timelineProxyPreviewScene(scene: SerializedScene, payload: SerializedTimelineClipAsset, twoD: boolean): SerializedScene {
   const proxies = new Map(payload.proxies.map((proxy) => [proxy.id, proxy]));
@@ -115,24 +116,26 @@ export function timelineProxyPreviewScene(scene: SerializedScene, payload: Seria
 
 function representationComponent(proxyId: string, preview: TimelineProxyPreview, twoD: boolean): SerializedComponent {
   const id = `${proxyId}:preview`;
-  const scaled = { ...identitySerializedTransform(), scale: [preview.size, preview.size, preview.size] as [number, number, number] };
-  const outline: SerializedComponent = {
-    id, classId: TIMELINE_PROXY_OUTLINE_CLASS_ID, parentId: null, transform: identitySerializedTransform(),
-    properties: { size: preview.size, color: preview.color, twoD },
-  };
-  if (!preview.assetGuid) return outline;
-  if (preview.representation === "model" && !twoD) {
+  const transform = identitySerializedTransform();
+  const asset = timelineProxyPreviewAsset(preview);
+  if (asset && preview.representation === "model" && !twoD) {
     const mesh = createMeshComponent(id, "box");
-    mesh.properties.assetGuid = preview.assetGuid;
-    return { ...mesh, transform: scaled };
+    mesh.properties.assetGuid = asset;
+    return { ...mesh, transform };
   }
-  if (preview.representation === "texture" && twoD) {
-    return { id, classId: "2DTextureComponent", parentId: null, transform: scaled, properties: { textureGuid: preview.assetGuid, hitTest: "ignore" } };
+  if (asset && preview.representation === "texture" && twoD) {
+    return { id, classId: "2DTextureComponent", parentId: null, transform, properties: { textureGuid: asset, hitTest: "ignore" } };
   }
-  if (preview.representation === "material" && twoD) {
-    return { id, classId: "2DMaterialComponent", parentId: null, transform: scaled, properties: { materialGuid: preview.assetGuid, hitTest: "ignore" } };
+  if (asset && preview.representation === "material" && twoD) {
+    return { id, classId: "2DMaterialComponent", parentId: null, transform, properties: { materialGuid: asset, hitTest: "ignore" } };
   }
-  return outline;
+  // The Outline is built at the placement's Scale and undoes it, so its dashes keep their thickness at any size.
+  const size = preview.scale.map((axis) => Math.max(0.01, Math.abs(axis))) as [number, number, number];
+  return {
+    id, classId: TIMELINE_PROXY_OUTLINE_CLASS_ID, parentId: null,
+    transform: { ...transform, scale: size.map((axis) => 1 / axis) as [number, number, number] },
+    properties: { size, color: preview.color, twoD },
+  };
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   stripTimelineClipAssetEditorData,
   timelineClipAssetSummaries,
   timelineClipOfAsset,
+  timelineProxyPreviewAsset,
   withTimelineClipOfAsset,
 } from "./timeline-clip-assets";
 import { readTimelineClipSummaries } from "./timeline-assets";
@@ -28,7 +29,8 @@ const authored = {
     { id: "classless", name: "Gone", represents: "actor" },
   ],
   eventTracks: [{ id: "e", name: "On Creak", inputs: [], keys: [{ id: "ek", time: 1, values: {} }] }],
-  editorPreview: { proxies: { door: { color: "#FF0000", representation: "model", size: 2, location: [1, 0, 2], rotation: [0, 90, 0], scale: [2, 1, 1], previewAs: "absolute", assetGuid: "door-model" } } },
+  editorPreview: { proxies: { door: { color: "#FF0000", representation: "model", location: [1, 0, 2], rotation: [0, 90, 0], scale: [2, 1, 1], previewAs: "absolute",
+    assets: { model: "door-model", texture: "door-sprite", sound: "creak" } } } },
 };
 
 describe("Timeline Clip assets", () => {
@@ -51,11 +53,28 @@ describe("Timeline Clip assets", () => {
     ]);
     expect(payload).toMatchObject({ timelineAsset: "story", length: 3, frameRate: 24, loopMode: "pingPong", eventTracks: [{ name: "On Creak" }] });
     expect(payload.editorPreview?.proxies.door).toEqual({
-      color: "#ff0000", representation: "model", size: 2, location: [1, 0, 2], rotation: [0, 90, 0], scale: [2, 1, 1], previewAs: "absolute", assetGuid: "door-model",
+      color: "#ff0000", representation: "model", location: [1, 0, 2], rotation: [0, 90, 0], scale: [2, 1, 1], previewAs: "absolute",
+      assets: { model: "door-model", texture: "door-sprite" },
     });
+    expect(timelineProxyPreviewAsset(payload.editorPreview!.proxies.door!)).toBe("door-model");
+    expect(timelineProxyPreviewAsset({ ...payload.editorPreview!.proxies.door!, representation: "material" })).toBeUndefined();
     // The others take the palette in order and the defaults.
     expect(payload.editorPreview?.proxies.glow).toMatchObject({ color: TIMELINE_PROXY_COLORS[1], representation: "outline", scale: [1, 1, 1], previewAs: "relative" });
     expect(normalizeTimelineClipAsset(JSON.parse(JSON.stringify(payload)))).toEqual(payload);
+  });
+
+  it("reads an earlier preview's Size as its Scale and its one asset as its representation's", () => {
+    const earlier = (representation: string, size: number, id = "door") => normalizeTimelineClipAsset({ ...authored, editorPreview: { proxies: {
+      [id]: { color: "#ff0000", representation, size, location: [0, 0, 0], rotation: [0, 0, 0], previewAs: "relative", assetGuid: "door-asset" },
+    } } }).editorPreview!.proxies[id]!;
+    expect(earlier("texture", 2)).toMatchObject({ scale: [2, 2, 2], assets: { texture: "door-asset" } });
+    expect(earlier("texture", 2)).not.toHaveProperty("size");
+    expect(earlier("texture", 2)).not.toHaveProperty("assetGuid");
+    expect(earlier("outline", 0.5).scale).toEqual([0.5, 0.5, 0.5]);
+    // Size never sized the Class's own look, or a Component proxy's component.
+    expect(earlier("class", 3)).toMatchObject({ scale: [1, 1, 1] });
+    expect(earlier("outline", 3, "glow")).toMatchObject({ scale: [1, 1, 1] });
+    expect(earlier("class", 3)).not.toHaveProperty("assets");
   });
 
   it("strips the editor-only preview for Play and export", () => {

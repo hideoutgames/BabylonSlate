@@ -147,7 +147,7 @@ function componentVisualKind(
   }
   if (component.classId === "TimelineProxyOutlineComponent") {
     const { size, color, twoD } = timelineProxyOutlineOptions(component.properties);
-    return `proxyOutline:${twoD ? "2d" : "3d"}:${size}:${color}`;
+    return `proxyOutline:${twoD ? "2d" : "3d"}:${size.join(",")}:${color}`;
   }
   if (component.classId === "ColliderComponent") {
     return `collider:${JSON.stringify(component.properties.shape ?? {})}`;
