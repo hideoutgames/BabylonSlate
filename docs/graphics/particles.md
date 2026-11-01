@@ -46,7 +46,7 @@ The **Inspector** shows the modules in stages. Modules with a switch keep their 
 | Forces | **Gravity** (default 0, −9.81, 0 m/s²) |
 | Render | **Render**: Blend Mode and Billboard |
 
-Many values can be a **Constant**, a **Random Range** or a **Curve** (a **Gradient** for colour). Rate and Lifetime curves run over the emitter's loop; other curves run over each particle's life.
+Many values can be a **Constant**, a **Random Range** or a **Curve** (a **Gradient** for colour). Rate and Lifetime curves run over the emitter's loop; other curves run over each particle's life. Particle curves and gradients use the same editors as [curve values](../scripting/curves-and-ranges.md#edit-curves-in-the-inspector), limited to 2 to 8 Linear keys between 0 and 1 with the first and last key fixed in time.
 
 - Units are seconds, metres per second and degrees.
 - **Pre Warm** starts an Infinite emitter as if it had already run for that many seconds. It is not available for Once.

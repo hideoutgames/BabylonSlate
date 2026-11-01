@@ -2,11 +2,12 @@ import { formatValue, normalizeTag, normalizeTagContainer, parseMapDefaultEntrie
 import { normalizeRangeFieldValue } from "@haptic/editor-kit";
 import type {
   ColorValue,
+  CurveEditorValue,
   PropertyRow,
   RangeFieldValue,
   Vector3Value,
 } from "@haptic/editor-kit";
-import { rangeKindForStruct } from "@haptic/scripting";
+import { curveKindForStruct, rangeKindForStruct } from "@haptic/scripting";
 
 export type PlayInspectRowSource = {
   id: string;
@@ -120,6 +121,11 @@ function toRow(source: PlayInspectRowSource): PropertyRow {
       value: normalizeRangeFieldValue(rangeKind, source.value as RangeFieldValue),
       onChange: noop,
     };
+  }
+  const curveKind = type.startsWith("struct:") ? curveKindForStruct(type.slice("struct:".length)) : undefined;
+  if (curveKind) {
+    const curve = isRecord(source.value) && Array.isArray(source.value.Keys) ? source.value as CurveEditorValue : { Keys: [] };
+    return { ...base, kind: "value-curve", curveKind, value: curve, onChange: noop };
   }
   switch (type) {
     case "tag":

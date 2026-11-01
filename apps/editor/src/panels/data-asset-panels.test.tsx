@@ -457,3 +457,10 @@ it("shows range fields as Min – Max in the grid and edits them with a range fi
   fireEvent.blur(max);
   await waitFor(() => expect(tree().entries[0]?.values).toEqual({ Spawn: { Min: 2, Max: 8 } }));
 });
+
+it("previews curve fields in the grid", () => {
+  const curveFields: DataDefinitionField[] = [{ id: "falloff", name: "Falloff", typeId: "struct", typeClassId: "engine:FloatCurve", defaultValue: { Keys: [], Before: "constant", After: "constant" } }];
+  configureEntries(curveFields, [{ id: "goblin", name: "Goblin", values: { Falloff: { Keys: [{ Time: 0, Value: 1, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 }, { Time: 2, Value: 0, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 }], Before: "constant", After: "constant" } } }]);
+  render(<TreeViewFixture />);
+  expect(screen.getByTestId("data-curve-cell").getAttribute("title")).toBe("2 Keys");
+});

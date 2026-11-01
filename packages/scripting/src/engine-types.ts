@@ -75,6 +75,15 @@ export const ENGINE_CURVE_STRUCT_IDS = {
   color: ENGINE_COLOR_CURVE_STRUCT_ID,
 } as const;
 
+export type EngineCurveKind = keyof typeof ENGINE_CURVE_STRUCT_IDS;
+
+/** The curve kind of a built-in curve Structure id, else undefined. */
+export function curveKindForStruct(structId: string | null | undefined): EngineCurveKind | undefined {
+  if (!structId) return undefined;
+  for (const [kind, id] of Object.entries(ENGINE_CURVE_STRUCT_IDS)) if (id === structId) return kind as EngineCurveKind;
+  return undefined;
+}
+
 /**
  * Query categories, stored by member name in graphs. `PhysicsQueryChannels.options` in the runtime is the only
  * place that gives them meaning: Static and Dynamic follow a body's motion, Character an actor with a Movement

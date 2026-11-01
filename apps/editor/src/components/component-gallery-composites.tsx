@@ -41,6 +41,7 @@ import {
   type ParameterRow,
   type PinListRow,
   type PinPickerType,
+  type CurveEditorValue,
   type PropertyRow,
   type RangeFieldValue,
   type VariableTypeFieldsValue,
@@ -108,6 +109,21 @@ export function GalleryComposites() {
   const [lifetimeRange, setLifetimeRange] = useState<[number, number]>([0.8, 1.2]);
   const [spawnCount, setSpawnCount] = useState<RangeFieldValue>({ Min: 2, Max: 5 });
   const [spawnArea, setSpawnArea] = useState<RangeFieldValue>({ Min: { x: -5, y: 0, z: -5 }, Max: { x: 5, y: 2, z: 5 } });
+  const galleryKey = (Time: number, Value: unknown, Interpolation = "auto", tangent: unknown = 0) =>
+    ({ Time, Value, Interpolation, ArriveTangent: tangent, LeaveTangent: tangent });
+  const [damageFalloff, setDamageFalloff] = useState<CurveEditorValue>({
+    Keys: [galleryKey(0, 100), galleryKey(2, 70), galleryKey(4, 55, "custom", -11.2)], Before: "constant", After: "constant",
+  });
+  const zero3 = { x: 0, y: 0, z: 0 };
+  const [sway, setSway] = useState<CurveEditorValue>({
+    Keys: [galleryKey(0, zero3, "auto", zero3), galleryKey(1, { x: -0.4, y: 0.2, z: 0 }, "auto", zero3), galleryKey(2, zero3, "auto", zero3)],
+    Before: "cycle", After: "cycle",
+  });
+  const zero4 = { x: 0, y: 0, z: 0, w: 0 };
+  const [tintOverLife, setTintOverLife] = useState<CurveEditorValue>({
+    Keys: [galleryKey(0, { x: 1, y: 0.9, z: 0.6, w: 1 }, "linear", zero4), galleryKey(0.45, { x: 1, y: 0.6, z: 0.24, w: 1 }, "linear", zero4), galleryKey(1, { x: 0.3, y: 0.1, z: 0.1, w: 0 }, "linear", zero4)],
+    Before: "constant", After: "constant",
+  });
   const [fadeCurve, setFadeCurve] = useState<CurveKey[]>([
     { t: 0, value: 1 },
     { t: 1, value: 0 },
@@ -247,6 +263,30 @@ export function GalleryComposites() {
       value: spawnArea,
       defaultValue: { Min: { x: 0, y: 0, z: 0 }, Max: { x: 0, y: 0, z: 0 } },
       onChange: setSpawnArea,
+    },
+    {
+      kind: "value-curve",
+      id: "gallery-damage-falloff",
+      label: "Damage Falloff",
+      curveKind: "float",
+      value: damageFalloff,
+      onChange: setDamageFalloff,
+    },
+    {
+      kind: "value-curve",
+      id: "gallery-sway",
+      label: "Sway",
+      curveKind: "vec3",
+      value: sway,
+      onChange: setSway,
+    },
+    {
+      kind: "value-curve",
+      id: "gallery-tint-over-life",
+      label: "Tint Over Life",
+      curveKind: "color",
+      value: tintOverLife,
+      onChange: setTintOverLife,
     },
     {
       kind: "curve",
