@@ -28,7 +28,14 @@ import { parseAnimGraphDocument } from "@haptic/anim-graph";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { embeddedScriptHost } from "../lib/embedded-script";
-import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipsOfScene, type OwnedActorEntry, type OwnedTimelineClipEntry } from "../lib/owned-actor-gets";
+import {
+  ownedActorsOfScene,
+  ownedGetDiagnostics,
+  ownedTimelineClipDispatcherSymbols,
+  ownedTimelineClipsOfScene,
+  type OwnedActorEntry,
+  type OwnedTimelineClipEntry,
+} from "../lib/owned-actor-gets";
 import { encodeRgbaPng } from "@haptic/render/png-encode";
 import type { Diagnostic } from "@haptic/scripting";
 import {
@@ -341,7 +348,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         path: asset.path, content: script, documentKind: kind,
         classId: host.classId, className: host.className, parentClassId: host.parentClass,
         ownedActors: ownedActorsOfScene({ actors: Array.isArray(content?.actors) ? content.actors : [] }),
-        ownedTimelineClips: ownedTimelineClipsOfScene({ timelineClips: Array.isArray(content?.timelineClips) ? content.timelineClips : [] }),
+        ownedTimelineClips: ownedTimelineClipsOfScene(host.assetGuid, { timelineClips: Array.isArray(content?.timelineClips) ? content.timelineClips : [] }),
       });
     }
     return documents;
@@ -454,17 +461,25 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       parentOf,
       classIdForPath: classIdForGraphPath,
     });
+    // Embedded scripts also reach their owner's Timeline Clip classes and the dispatchers their event tracks declare.
+    const ownedClips = embeddedDocuments.flatMap((doc) => doc.ownedTimelineClips);
+    const memberSymbols = [
+      ...classMemberSymbolsFromGraphs(classGraphs, { parentOf }),
+      ...ownedTimelineClipDispatcherSymbols(ownedClips),
+    ];
+    const knownClassIds = knownClassIdSet(parentOf, [
+      ...Object.keys(classGraphs),
+      ...sceneClassIds,
+      ...ownedClips.map((clip) => clip.classId),
+    ]);
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
         graphId: documentId({ kind: "documentKind" in doc ? (doc as EmbeddedScriptDocument).documentKind : "graph", path: doc.path }),
         classId: doc.classId ?? classIdForGraphPath(doc.path),
         hierarchy: classHierarchyFromParentOf(parentOf),
-        members: classMemberSymbolsFromGraphs(classGraphs, { parentOf }),
-        knownClassIds: knownClassIdSet(parentOf, [
-          ...Object.keys(classGraphs),
-          ...sceneClassIds,
-        ]),
+        members: memberSymbols,
+        knownClassIds,
         inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], openDocuments),
         dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], openDocuments),
         enums: typeSchemas.enums,

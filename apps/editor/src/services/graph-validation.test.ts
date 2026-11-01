@@ -4,6 +4,7 @@ import { createText3DComponent } from "@haptic/core";
 import { objectRef } from "@haptic/scripting";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@haptic/scripting-nodes";
 import { filterPaletteForPin, type SerializedPin } from "@haptic/graph-ui";
+import { ownedTimelineClipDispatcherSymbols } from "../lib/owned-actor-gets";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -54,6 +55,51 @@ describe("custom event declaration validation", () => {
       expect(members.filter((member) => member.classId === "Hero" && member.kind === "event" && member.name === "Ping")).toHaveLength(1);
       expect(diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
     }
+  });
+});
+
+describe("Timeline Clip dispatchers", () => {
+  const clips = [{
+    id: "intro", name: "Intro", classId: "TimelineClip:level:intro",
+    dispatchers: [{ name: "On Line", pins: [{ name: "Text", typeId: "string", direction: "in" as const }] }],
+  }];
+  const parentOf = (id: string) => (id.startsWith("TimelineClip:") ? "TimelineClip" : id === "TimelineClip" ? "Object" : id.startsWith("Scene:") ? "Scene" : null);
+
+  it("offers Bind, Unbind and Assign but no Call for a clip's track and the built-in events", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Scene", classId: "Scene:level", parentOf, ownedActors: [], ownedTimelineClips: clips });
+    const titles = (classId: string) => nodes.filter((node) => node.defaultData?.classId === classId && node.category === "eventDispatchers").map((node) => node.title);
+    expect(titles("TimelineClip:level:intro")).toEqual(expect.arrayContaining(["Bind Event to On Line", "Unbind Event from On Line", "Unbind All Events from On Line", "Assign On Line"]));
+    expect(titles("TimelineClip")).toEqual(expect.arrayContaining(["Bind Event to On Finished", "Bind Event to On Looped"]));
+    expect(nodes.some((node) => node.title === "Call On Line" || node.title === "Call On Finished")).toBe(false);
+    const getter = nodes.find((node) => node.nodeType === "scene.getOwnedTimelineClip")!;
+    expect(getter.pins?.[0]?.type).toEqual(objectRef("TimelineClip:level:intro"));
+  });
+
+  it("checks Bind nodes against the clip's Custom Event Tracks", () => {
+    const graph = (name: string): SerializedGraph => ({
+      nodes: [
+        { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+        { id: "clip", type: "scene.getOwnedTimelineClip", position: { x: 0, y: 200 }, data: { sceneTimelineClipId: "intro", sceneTimelineClipName: "Intro", sceneTimelineClipClassId: "TimelineClip:level:intro" } },
+        { id: "bind", type: "flow.dispatcher.bind", position: { x: 300, y: 0 }, data: { name, classId: "TimelineClip:level:intro", implicitSelf: false, pins: [{ name: "Text", typeId: "string", direction: "in" }] } },
+        { id: "done", type: "flow.dispatcher.bind", position: { x: 600, y: 0 }, data: { name: "On Finished", classId: "TimelineClip", implicitSelf: false, pins: [] } },
+      ],
+      edges: [
+        { id: "x1", source: "begin", sourceHandle: "execOut", target: "bind", targetHandle: "execIn" },
+        { id: "x2", source: "bind", sourceHandle: "execOut", target: "done", targetHandle: "execIn" },
+        { id: "d1", source: "clip", sourceHandle: "clip", target: "bind", targetHandle: "target" },
+        { id: "d2", source: "clip", sourceHandle: "clip", target: "done", targetHandle: "target" },
+      ],
+    });
+    const members = [...classMemberSymbolsFromGraphs({}), ...ownedTimelineClipDispatcherSymbols(clips)];
+    const options = {
+      assetGuid: "level", graphId: "scene:level", classId: "Scene:level", members,
+      hierarchy: classHierarchyFromParentOf(parentOf),
+      knownClassIds: knownClassIdSet(parentOf, ["Scene:level", "TimelineClip:level:intro"]),
+    };
+    // The clip's class reaches its Target and the Bind nodes name declared dispatchers; only Event is left unwired.
+    expect(validateSerializedGraph(graph("On Line"), options).filter((entry) => entry.severity === "error").map((entry) => entry.code))
+      .toEqual(["pin.missing_input", "pin.missing_input"]);
+    expect(validateSerializedGraph(graph("On Gone"), options).map((entry) => entry.code)).toContain("member.missing_dispatcher");
   });
 });
 

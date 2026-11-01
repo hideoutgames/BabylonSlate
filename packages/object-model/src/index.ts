@@ -27,6 +27,7 @@ export {
   engineScriptApiFor,
   engineScriptEventsFor,
   type EngineClassScriptApi,
+  type EngineScriptDispatcher,
   type EngineScriptEvent,
   type EngineScriptFunction,
   type EngineScriptPin,
@@ -129,6 +130,7 @@ export {
   TIMELINE_CLIP_BUILT_IN_DISPATCHERS,
   TIMELINE_CLIP_CLASS_ID,
   TimelineClipObject,
+  documentClassParentOf,
   isTimelineClipClassId,
   timelineClipClassId,
 } from "./timeline-clip-object";
