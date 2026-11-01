@@ -59,6 +59,45 @@ export function createEditorVolumeMesh(
   return fill;
 }
 
+/** The editor-only stand-in that draws a Timeline Clip proxy's Outline representation. */
+export const TIMELINE_PROXY_OUTLINE_CLASS_ID = "TimelineProxyOutlineComponent";
+
+/** An Outline component's size (edge length), `#rrggbb` colour and 2D flag. */
+export function timelineProxyOutlineOptions(properties: Record<string, unknown>): { size: number; color: string; twoD: boolean } {
+  const size = typeof properties.size === "number" && Number.isFinite(properties.size) ? properties.size : 1;
+  return { size, color: typeof properties.color === "string" ? properties.color : "", twoD: properties.twoD === true };
+}
+
+/**
+ * A Timeline Clip proxy's Outline: a pickable invisible fill of `size` with a
+ * dashed edge in the proxy's colour, a cube in 3D or a square in 2D. The size
+ * is baked into the geometry so the dashes keep their thickness.
+ */
+export function createTimelineProxyOutlineMesh(
+  scene: Scene,
+  name: string,
+  options: { size: number; color: string; twoD: boolean },
+): Mesh {
+  const size = Math.max(0.01, options.size);
+  const fill = options.twoD
+    ? MeshBuilder.CreatePlane(name, { width: size, height: size }, scene)
+    : MeshBuilder.CreateBox(name, { size }, scene);
+  fill.metadata = { ...(fill.metadata ?? {}), editorVolume: true };
+  fill.isPickable = true;
+  fill.renderingGroupId = RENDERING_GROUP.world;
+  applyVolumeFillMaterial(fill);
+  const half = size / 2;
+  const color = /^#[0-9a-f]{6}$/i.test(options.color) ? Color3.FromHexString(options.color) : COLLIDER_COLOR;
+  const outline = createColliderVisualMesh(
+    scene,
+    `${name}:outline`,
+    options.twoD ? { kind: "box2d", halfExtents: { x: half, y: half } } : { kind: "box", halfExtents: { x: half, y: half, z: half } },
+    color,
+  );
+  outline.parent = fill;
+  return fill;
+}
+
 export function createNavDebugBlockerMesh(
   scene: Scene,
   name: string,

@@ -12,6 +12,7 @@ import {
 } from "@haptic/core";
 import { meshCollisionFingerprint } from "@haptic/assets";
 import { editorBillboardKind, lightBillboardIcon } from "./editor-billboard";
+import { timelineProxyOutlineOptions } from "./editor-volume";
 import { EDITOR_CAMERA_MODEL_KIND } from "./editor-camera-model";
 import { foliagePropertiesFingerprint, foliageSourceFingerprint } from "./foliage-mesh";
 import type { MeshAssetContext } from "./mesh-assets";
@@ -143,6 +144,10 @@ function componentVisualKind(
   }
   if (component.classId === "BlockingVolumeComponent") {
     return "volume:blocking";
+  }
+  if (component.classId === "TimelineProxyOutlineComponent") {
+    const { size, color, twoD } = timelineProxyOutlineOptions(component.properties);
+    return `proxyOutline:${twoD ? "2d" : "3d"}:${size}:${color}`;
   }
   if (component.classId === "ColliderComponent") {
     return `collider:${JSON.stringify(component.properties.shape ?? {})}`;

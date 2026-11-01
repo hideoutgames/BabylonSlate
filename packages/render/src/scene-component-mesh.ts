@@ -17,7 +17,15 @@ import { createColliderVisualMesh } from "./collider-visual";
 import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { applyEditorBillboardFromActor, applyEditorBillboardPass, createEditorBillboard, lightBillboardIcon } from "./editor-billboard";
 import { createEditorCameraModel } from "./editor-camera-model";
-import { BLOCKING_VOLUME_COLOR, createEditorVolumeMesh, NAV_BLOCKER_VOLUME_COLOR, type EditorVolumeKind } from "./editor-volume";
+import {
+  BLOCKING_VOLUME_COLOR,
+  createEditorVolumeMesh,
+  createTimelineProxyOutlineMesh,
+  NAV_BLOCKER_VOLUME_COLOR,
+  TIMELINE_PROXY_OUTLINE_CLASS_ID,
+  timelineProxyOutlineOptions,
+  type EditorVolumeKind,
+} from "./editor-volume";
 import { createFogVolumeGuide, createReflectionProbeGuide } from "./fog-volume-guide";
 import { createFoliageMesh } from "./foliage-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
@@ -358,6 +366,9 @@ function createComponentMesh(
   }
   if (component.classId === "BlockingVolumeComponent") {
     return createEditorVolumeMesh(scene, name, "box", BLOCKING_VOLUME_COLOR);
+  }
+  if (component.classId === TIMELINE_PROXY_OUTLINE_CLASS_ID) {
+    return createTimelineProxyOutlineMesh(scene, name, timelineProxyOutlineOptions(component.properties));
   }
   if (component.classId === "ColliderComponent") {
     const world =
