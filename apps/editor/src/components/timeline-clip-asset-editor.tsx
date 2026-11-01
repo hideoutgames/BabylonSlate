@@ -1,7 +1,10 @@
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   MIN_TIMELINE_CLIP_LENGTH,
+  TIMELINE_CLIP_ASSET_CLIP_ID,
+  labelFromPath,
+  withTimelineClipOfAsset,
   SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
   TIMELINE_FRAME_RATES,
   defaultTimelineProxyPreview,
@@ -39,6 +42,11 @@ import { BoxIcon, BoxesIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useDocumentActions, useOpenDocument, useRegistryState } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { subclassClassEntries } from "../lib/component-property-rows";
+import { useSceneTools } from "../context/scene-tools-context";
+import { TimelineClipSourceProvider, useTimelinePropertyContext, type TimelineClipSource } from "../context/use-timeline-clip";
+import { timelineProxyScene } from "../lib/timeline-proxy-scene";
+import { TimelinePanel } from "../panels/timeline-panel";
+import { TimelineInspectorContent } from "../panels/timeline-inspector";
 
 /** The proxy the Inspector shows, per clip asset document. */
 const selectedProxies = new Map<string, string>();
@@ -82,9 +90,46 @@ export function useTimelineClipAsset() {
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(id);
   const payload = useMemo(() => normalizeTimelineClipAsset(doc?.content), [doc?.content]);
-  const commit = (next: SerializedTimelineClipAsset, mergeKey: string) =>
-    void applyAssetDocumentChange(id, next as unknown as Record<string, unknown>, mergeKey);
+  const commit = useCallback((next: SerializedTimelineClipAsset, mergeKey: string) =>
+    void applyAssetDocumentChange(id, next as unknown as Record<string, unknown>, mergeKey), [applyAssetDocumentChange, id]);
   return { id, doc, payload, twoD: doc?.ref.kind === "timeline-clip-2d", commit };
+}
+
+/**
+ * The Timeline windows' clip for a clip asset document: its proxies as the
+ * actors, its one clip named after the asset, and edits written back to the
+ * asset. The document's Timeline tools always show that clip.
+ */
+export function TimelineClipAssetSource({ children }: { children: ReactNode }) {
+  const { doc, payload, twoD, commit } = useTimelineClipAsset();
+  const { assetRegistry } = useRegistryState();
+  const property = useTimelinePropertyContext();
+  const tools = useSceneTools();
+  const name = doc ? assetRegistry?.getByPath(doc.ref.path)?.header.name ?? labelFromPath(doc.ref.path) : "";
+  const scene = useMemo(() => timelineProxyScene(payload, name, property.graphs, twoD), [name, payload, property.graphs, twoD]);
+  const { timelineClipId, setTimelineClipId } = tools;
+  useEffect(() => {
+    if (timelineClipId !== TIMELINE_CLIP_ASSET_CLIP_ID) setTimelineClipId(TIMELINE_CLIP_ASSET_CLIP_ID);
+  }, [setTimelineClipId, timelineClipId]);
+  const source = useMemo((): TimelineClipSource => {
+    const clip = scene.timelineClips![0]!;
+    const commitClip = (next: typeof clip) => commit(withTimelineClipOfAsset(payload, next), "timeline-clip-asset:clip");
+    return {
+      scene,
+      clips: [clip],
+      clip,
+      commitClip,
+      // Scene edits reach a clip asset only through its clip.
+      commitScene: (next) => { const edited = next?.timelineClips?.[0]; if (edited) commitClip(edited); },
+      proxies: true,
+    };
+  }, [commit, payload, scene]);
+  return <TimelineClipSourceProvider value={source}>{children}</TimelineClipSourceProvider>;
+}
+
+/** Timeline window of a clip asset: the Timeline panel over its proxies. */
+export function TimelineClipTimelinePanel(props: IDockviewPanelProps) {
+  return <TimelineClipAssetSource><TimelinePanel {...props} /></TimelineClipAssetSource>;
 }
 
 /** The Classes a new proxy can stand in for: Actor or ActorComponent subclasses, components filtered by 2D or 3D. */
@@ -287,6 +332,8 @@ export function TimelineClipInspectorPanel(_props: IDockviewPanelProps) {
 
   return <PanelFrame data-testid="timeline-clip-inspector">
     <div className="flex flex-col gap-3 pb-4">
+      {/* The key, keys or track selected in the Timeline come first, as in a Scene's Timeline mode. */}
+      <TimelineClipAssetSource><TimelineInspectorContent showClip={false} /></TimelineClipAssetSource>
       {proxy ? <>
         <PropertyGrid title="Proxy" rows={proxyRows} data-testid="timeline-clip-inspector-proxy" />
         <PropertyGrid title="Editor Preview" rows={previewRows} data-testid="timeline-clip-inspector-preview" />

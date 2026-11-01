@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultTimelineClipAsset, normalizeTimelineClipAsset, type SerializedTimelineClipAsset } from "@haptic/core";
+import { SceneToolsProvider } from "../context/scene-tools-context";
 import {
   TimelineClipInspectorPanel,
   TimelineClipProxiesPanel,
@@ -33,15 +34,17 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   get openDocuments() {
     return [{ id: DOC, ref: { kind: harness.kind, path: "assets/Swing.timelineclip3d.hasset" }, content: harness.content }];
   },
-  assetRegistry: { list: () => assets, getByPath: (path: string) => assets.find((asset) => asset.path === path) } as never,
+  assetRegistry: { generation: 1, list: () => assets, getByPath: (path: string) => assets.find((asset) => asset.path === path) } as never,
   applyAssetDocumentChange: harness.applyAssetDocumentChange,
 })));
 
 const panel = {} as IDockviewPanelProps;
 const last = () => normalizeTimelineClipAsset(harness.applyAssetDocumentChange.mock.calls.at(-1)![1]);
 function renderBoth() {
-  const view = render(<><TimelineClipProxiesPanel {...panel} /><TimelineClipInspectorPanel {...panel} /></>);
-  return { ...view, refresh: () => view.rerender(<><TimelineClipProxiesPanel {...panel} /><TimelineClipInspectorPanel {...panel} /></>) };
+  // The document's Timeline tools, which the Inspector's key and track grids read.
+  const tree = () => <SceneToolsProvider><TimelineClipProxiesPanel {...panel} /><TimelineClipInspectorPanel {...panel} /></SceneToolsProvider>;
+  const view = render(tree());
+  return { ...view, refresh: () => view.rerender(tree()) };
 }
 
 beforeEach(() => {

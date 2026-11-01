@@ -15,6 +15,14 @@ Double-tap the asset to open it. The **Proxies** window lists the clip's stand-i
 - Tap **Proxy**, then **Actor Proxy…** or **Component Proxy…**, pick the Class the proxy stands in for and tap **Add Proxy**. A 3D clip offers world components; a 2D clip offers overlay components. The proxy takes the Class's name; rename it in the list or in the **Inspector**. Proxy names are unique within the clip.
 - Each row shows what the proxy represents and its Class. The trash button removes the proxy and its tracks.
 
+## Timeline
+
+The **Timeline** window below the proxies is the [Timeline](../scenes/timeline.md) of a Scene's clips, with one row per proxy. It works the same way: set keys, drag them, change their interpolation and use the Curves view.
+
+- Tap **+** on a proxy's row to add tracks. An Actor proxy offers **Location**, **Rotation**, **Scale** and **Visible**, its Class's variables and the properties of the components its Class defines. A Component proxy offers that component's properties.
+- A proxy's row stays as long as the proxy: add and remove proxies in **Proxies**. **Track** in the toolbar adds Custom Event Tracks.
+- Select a key or a track to edit it in the **Inspector**, above the proxy and clip settings.
+
 ## Inspector
 
 - **Proxy**: the selected proxy's **Name**, what it represents and its Class.

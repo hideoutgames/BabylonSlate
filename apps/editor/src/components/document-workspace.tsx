@@ -691,21 +691,27 @@ export function DocumentWorkspace() {
           doc.ref.kind === "font"
         ) {
           if (!shouldMount) return null;
+          const shell = (
+            <DocumentShell
+              id={id}
+              path={doc.ref.path}
+              testId={`document-workspace-${doc.ref.kind}`}
+              active={active}
+            >
+              <RegisteredDockviewShell
+                id={id}
+                documentKind={doc.ref.kind}
+                initialLayout={doc.layout}
+              />
+            </DocumentShell>
+          );
           return (
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
-                <DocumentShell
-                  id={id}
-                  path={doc.ref.path}
-                  testId={`document-workspace-${doc.ref.kind}`}
-                  active={active}
-                >
-                  <RegisteredDockviewShell
-                    id={id}
-                    documentKind={doc.ref.kind}
-                    initialLayout={doc.layout}
-                  />
-                </DocumentShell>
+                {/* A clip asset's Timeline windows share a playhead and key selection, as a Scene's do. */}
+                {doc.ref.kind === "timeline-clip-2d" || doc.ref.kind === "timeline-clip-3d"
+                  ? <SceneToolsProvider>{shell}</SceneToolsProvider>
+                  : shell}
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );
