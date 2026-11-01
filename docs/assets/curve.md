@@ -12,8 +12,14 @@ In the **Content Browser**, choose **New Asset > Data > Float Curve**, **Vector 
 
 Double-tap a curve asset to open it.
 
-- **Curve Editor**: a large curve plot with the same keys, tangents, pan, zoom and **Fit** as the [Inspector curve editor](../scripting/curves-and-ranges.md#edit-curves-in-the-inspector). A **Color Curve** also shows its gradient above the channel curves.
-- **Details**: the number of keys, the time range, and a **Description**.
+- **Curve Editor**: the curve plot fills the window, with the same keys, tangents, pan, zoom and hover readout as the [Inspector curve editor](../scripting/curves-and-ranges.md#edit-curves-in-the-inspector).
+  - The toolbar has the channel toggles, **Add Key**, **Remove Key** and **Fit**. **Frame Selection** (<kbd>F</kbd>) also fits the keys.
+  - The bar under the plot edits the selected key: step between keys with the arrows, then set its **Time**, each channel's value and its **Interpolation**.
+  - A **Color Curve** shows its gradient in a strip above the plot, on the same time axis. Each stop in the strip is a key: tap one to select it, or drag it to change its time. The key bar adds a colour swatch and hex code.
+- **Details**:
+  - **Curve**: the type, the number of keys, the time range and the value range.
+  - **Extrapolation**: **Before** and **After** set what the curve does outside its keys: **Constant** holds the end value, **Linear** continues the end slope, **Cycle** repeats the keys and **Oscillate** repeats them back and forth. The plot hatches these ranges and draws them dashed.
+  - **Description**: a note for your team. It can span several lines.
 
 Reopen a closed window from the **Windows** menu.
 
