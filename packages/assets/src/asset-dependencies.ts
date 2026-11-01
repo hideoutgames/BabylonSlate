@@ -85,6 +85,7 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
   "curveObject.getFloat": "curveAsset",
   "curveObject.getVector": "curveAsset",
   "curveObject.getColor": "curveAsset",
+  "timeline.fromAsset": "timelineAsset",
   "audio.play": "asset",
   "audio.setChannelVolume": "channel",
   "scene.change": "scene",
@@ -455,6 +456,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       }
       components(actor.components);
     }
+    // A clip's Timeline Asset ships with the game but loads nothing: the clip is in this document.
+    for (const clip of rows(payload.timelineClips)) add(clip.timelineAsset, false);
     // The SceneScript / SceneLayerScript references assets like a Class graph.
     if (payload.script) graph(payload.script);
   } else if (assetType === "Class") {

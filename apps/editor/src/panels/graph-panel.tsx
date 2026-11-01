@@ -73,6 +73,7 @@ import {
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { logicGraphHostClass } from "../lib/embedded-script";
 import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipDispatcherSymbols, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
+import { refreshTimelineClipNodes, timelineGraphDiagnostics, timelineScriptClassIds, timelineScriptSymbols } from "../lib/timeline-script-catalog";
 import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { GraphSteppingBar } from "../components/graph-stepping-bar";
@@ -167,6 +168,7 @@ export function GraphPanel(
     saveGameDefinition,
     materialDomains,
     dataAssets,
+    timelineAssets,
   } = useGraphPanelCatalogs();
   const graphContent = useMemo(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
@@ -216,11 +218,15 @@ export function GraphPanel(
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;
-    return [
+    const symbols = [
       ...classMemberSymbolsFromGraphs(graphs, { parentOf }),
       ...ownedTimelineClipDispatcherSymbols(ownedTimelineClips ?? []),
+      // Timeline Assets' re-fired events, and the dispatchers of the clips they hold.
+      ...timelineScriptSymbols(timelineAssets),
     ];
-  }, [classId, graphContent, otherClassGraphs, ownedTimelineClips, parentOf]);
+    const seen = new Set<string>();
+    return symbols.filter((symbol) => !seen.has(symbol.id) && Boolean(seen.add(symbol.id)));
+  }, [classId, graphContent, otherClassGraphs, ownedTimelineClips, parentOf, timelineAssets]);
   const knownClassIds = useMemo(
     () =>
       knownClassIdSet(parentOf, [
@@ -230,8 +236,10 @@ export function GraphPanel(
         ...(classId ? [classId] : []),
         // ... and its Timeline Clips' `TimelineClip:<guid>:<clip>` classes.
         ...(ownedTimelineClips ?? []).map((clip) => clip.classId),
+        // Each Timeline Asset's `Timeline:<guid>` and its clips' classes.
+        ...timelineScriptClassIds(timelineAssets),
       ]),
-    [classId, otherClassGraphs, ownedTimelineClips, parentOf, sceneDocuments],
+    [classId, otherClassGraphs, ownedTimelineClips, parentOf, sceneDocuments, timelineAssets],
   );
   const pinCompatibility = useMemo(
     () => scriptPinCompatibility(hierarchy),
@@ -260,8 +268,9 @@ export function GraphPanel(
           components: graphContent?.components,
         }
       : graphContent;
+    const owned = visible && ownedActors ? refreshOwnedGetNodes(visible, ownedActors, ownedTimelineClips) : visible;
     return hydrateSerializedGraphForEditor(
-      (visible && ownedActors ? refreshOwnedGetNodes(visible, ownedActors, ownedTimelineClips) : visible) ??
+      (owned ? refreshTimelineClipNodes(owned, timelineAssets) : owned) ??
         createDefaultLogicGraphSerialized(registry, {
           parentClass,
           parentOf,
@@ -296,6 +305,7 @@ export function GraphPanel(
     typeSchemas,
     inputAssets,
     dataAssets,
+    timelineAssets,
   ]);
 
   const assetGuid = doc?.ref.path ?? documentId;
@@ -464,6 +474,7 @@ export function GraphPanel(
           ? ownedGetDiagnostics(graphPayload, ownedActors, { assetGuid, graphId: documentId },
             doc?.ref.kind === "scene" ? "Scene" : "Scene Layer", ownedTimelineClips)
           : []),
+        ...timelineGraphDiagnostics(graphPayload, timelineAssets, { assetGuid, graphId: documentId }),
         ...physicsPairingDiagnostics(
           [
             {
@@ -509,6 +520,7 @@ export function GraphPanel(
     subsystemClasses,
     ownedActors,
     ownedTimelineClips,
+    timelineAssets,
   ]);
 
   const paletteInput = {
@@ -532,6 +544,7 @@ export function GraphPanel(
     subsystemClasses,
     ownedActors,
     ownedTimelineClips,
+    timelineAssets,
     animationGraphHost:
       doc?.ref.kind === "anim-graph" ? ("object" as const) : undefined,
   };

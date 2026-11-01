@@ -26,6 +26,7 @@ import { gameInstanceNodes } from "./game-instance";
 import { subsystemNodes } from "./subsystem";
 import { sceneOwnedNodes } from "./scene-owned";
 import { timelineClipNodes } from "./timeline-clips";
+import { timelineAssetNodes } from "./timeline-assets";
 import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
 import { scalabilityNodes } from "./scalability";
 import { renderTargetNodes } from "./render-target";
@@ -79,6 +80,7 @@ export * from "./game-instance";
 export * from "./subsystem";
 export * from "./scene-owned";
 export * from "./timeline-clips";
+export * from "./timeline-assets";
 export * from "./scene-layer";
 export * from "./render-target";
 export * from "./scalability";
@@ -137,6 +139,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...subsystemNodes,
     ...sceneOwnedNodes,
     ...timelineClipNodes,
+    ...timelineAssetNodes,
     ...sceneLayerNodes,
     ...renderTargetNodes,
     ...scalabilityNodes,

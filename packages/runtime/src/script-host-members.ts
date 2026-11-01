@@ -37,7 +37,7 @@ import {
   type SaveGameValue,
   type SceneLayerCamera,
 } from "@haptic/core";
-import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipObject } from "@haptic/object-model";
+import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipObject, TimelineObject } from "@haptic/object-model";
 import { timelineClipState } from "./timeline-runtime";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { EMPTY_ASSET_CATALOG } from "./asset-catalog";
@@ -284,6 +284,11 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     },
     timelineClipState: (target, field) =>
       target instanceof TimelineClipObject ? timelineClipState(target, String(field)) : field === "playing" || field === "reversed" ? false : 0,
+    getTimeline: (asset) => services.timeline?.(asset) ?? null,
+    getTimelineClip: (target, documentGuid, clipId) => target instanceof TimelineObject && !target.destroyed
+      ? services.timelineClips?.(target, { documentGuid: String(documentGuid), clipId: String(clipId) })[0] ?? null
+      : null,
+    getLoadedTimelineClips: (target) => target instanceof TimelineObject && !target.destroyed ? services.timelineClips?.(target) ?? [] : [],
     curveObjectCurve: (kind, target) => {
       const object = curveObjectOf(target);
       return structuredClone(object && object.kind === kind ? object.curve : EMPTY_CURVE);

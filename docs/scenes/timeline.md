@@ -151,7 +151,7 @@ Dragging from a [Get Scene Timeline Clip](../scripting/class/get-scene-timeline-
 | **On Looped** | When a **Loop** clip starts over, or a **Ping Pong** clip turns around. |
 | **On Finished** | When a **Once** clip reaches its end, after **When Finished**. |
 
-Only the clip calls its events, so there is no **Call** node for them. Bind them in **Begin Play**, before an **Auto Play** clip starts.
+Only the clip calls its events, so there is no **Call** node for them. Bind them in **Begin Play**, before an **Auto Play** clip starts. A clip bound to a [Timeline asset](../assets/timeline.md#scripting) can also be reached, and listened to, from any script through that asset.
 
 - Keys fire in the order playback reaches them: in time order, or in reverse order while reversing. A **Loop** clip fires the keys up to its end, then those from its start, then **On Looped**.
 - A key fires once, even when it sits exactly where one step ends and the next begins.

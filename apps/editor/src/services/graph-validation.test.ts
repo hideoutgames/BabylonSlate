@@ -5,6 +5,7 @@ import { objectRef } from "@haptic/scripting";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@haptic/scripting-nodes";
 import { filterPaletteForPin, type SerializedPin } from "@haptic/graph-ui";
 import { ownedTimelineClipDispatcherSymbols } from "../lib/owned-actor-gets";
+import { timelineScriptClassIds, timelineScriptSymbols, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -100,6 +101,77 @@ describe("Timeline Clip dispatchers", () => {
     expect(validateSerializedGraph(graph("On Line"), options).filter((entry) => entry.severity === "error").map((entry) => entry.code))
       .toEqual(["pin.missing_input", "pin.missing_input"]);
     expect(validateSerializedGraph(graph("On Gone"), options).map((entry) => entry.code)).toContain("member.missing_dispatcher");
+  });
+});
+
+describe("Timeline Asset scripting", () => {
+  const story: TimelineScriptAsset = {
+    guid: "story", name: "Story", classId: "Timeline:story",
+    clips: [{
+      id: "intro", name: "Intro", classId: "TimelineClip:level:intro", documentGuid: "level", documentName: "Main",
+      dispatchers: [{ name: "On Line", pins: [{ name: "Text", typeId: "string", direction: "in" }] }],
+    }],
+  };
+  const parentOf = (id: string) => (id.startsWith("TimelineClip:") ? "TimelineClip" : id.startsWith("Timeline:") ? "Timeline"
+    : id === "TimelineClip" || id === "Timeline" || id === "Actor" ? "Object" : id === "Door" ? "Actor" : null);
+
+  it("offers each clip's getter on its Timeline, Bind rows for the re-fired events and Cast to the asset", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Door", parentOf, timelineAssets: [story] });
+    const getter = nodes.find((node) => node.nodeType === "timeline.getClip")!;
+    expect(getter.title).toBe("Get Intro Timeline Clip");
+    expect(getter.pins?.map((pin) => pin.type)).toEqual([objectRef("Timeline:story"), objectRef("TimelineClip:level:intro")]);
+    // The plain row is never offered: it names no clip.
+    expect(nodes.some((node) => node.id === "timeline.getClip")).toBe(false);
+    const titles = (classId: string) => nodes.filter((node) => node.defaultData?.classId === classId && node.category === "eventDispatchers").map((node) => node.title);
+    expect(titles("Timeline:story")).toEqual(expect.arrayContaining([
+      "Bind Event to On Line (Intro)", "Bind Event to On Finished (Intro)", "Unbind Event from On Looped (Intro)", "Assign On Line (Intro)",
+    ]));
+    expect(nodes.find((node) => node.title === "Bind Event to On Line (Intro)")?.defaultData?.pins).toEqual([
+      { name: "Text", typeId: "string", direction: "in" },
+      { name: "Timeline Clip", typeId: "object", typeClassId: "TimelineClip:level:intro", direction: "in" },
+    ]);
+    // The clip reached through the Timeline has its own and the built-in Bind rows, and none has Call.
+    expect(titles("TimelineClip:level:intro")).toContain("Bind Event to On Line");
+    expect(titles("TimelineClip")).toContain("Bind Event to On Finished");
+    expect(nodes.some((node) => node.title.startsWith("Call On"))).toBe(false);
+    expect(nodes.find((node) => node.id === "casting.cast:Timeline:story")?.title).toBe("Cast to Story");
+    // Without Timeline Assets a Class reaches no Timeline Clip.
+    expect(scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Door", parentOf })
+      .some((node) => node.title === "Bind Event to On Finished")).toBe(false);
+  });
+
+  it("types the Timeline from the default of the variable wired into it, and checks Binds on it", () => {
+    const graph = (name: string): SerializedGraph => ({
+      members: [{ id: "v", kind: "variable", name: "Story Timeline", typeId: "asset", typeClassId: "Timeline", defaultValue: "story" }],
+      nodes: [
+        { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+        { id: "asset", type: "variables.get", position: { x: 0, y: 200 }, data: { variableId: "v", variableName: "Story Timeline", typeId: "asset", typeClassId: "Timeline", implicitSelf: true } },
+        { id: "timeline", type: "timeline.fromAsset", position: { x: 200, y: 200 }, data: {} },
+        { id: "bind", type: "flow.dispatcher.bind", position: { x: 400, y: 0 }, data: {
+          name, classId: "Timeline:story", implicitSelf: false,
+          pins: [{ name: "Text", typeId: "string", direction: "in" }, { name: "Timeline Clip", typeId: "object", typeClassId: "TimelineClip:level:intro", direction: "in" }],
+        } },
+      ],
+      edges: [
+        { id: "x1", source: "begin", sourceHandle: "execOut", target: "bind", targetHandle: "execIn" },
+        { id: "d1", source: "asset", sourceHandle: "value", target: "timeline", targetHandle: "timelineAsset" },
+        { id: "d2", source: "timeline", sourceHandle: "timeline", target: "bind", targetHandle: "target" },
+      ],
+    });
+    const hydrated = hydrateSerializedGraphForEditor(graph("On Line (Intro)"), registry, { parentOf, classId: "Door" });
+    const pins = hydrated.nodes.find((node) => node.id === "timeline")!.data.__pins as SerializedPin[];
+    expect(pins.find((pin) => pin.id === "timeline")?.type).toEqual(objectRef("Timeline:story"));
+
+    const options = {
+      assetGuid: "door", graphId: "graph:door", classId: "Door", parentOf,
+      members: [...classMemberSymbolsFromGraphs({ Door: graph("On Line (Intro)") }, { parentOf }), ...timelineScriptSymbols([story])],
+      hierarchy: classHierarchyFromParentOf(parentOf),
+      knownClassIds: knownClassIdSet(parentOf, ["Door", ...timelineScriptClassIds([story])]),
+    };
+    // The Timeline's class reaches the Target and the Bind names a re-fired event; only Event is left unwired.
+    expect(validateSerializedGraph(graph("On Line (Intro)"), options).filter((entry) => entry.severity === "error").map((entry) => entry.code))
+      .toEqual(["pin.missing_input"]);
+    expect(validateSerializedGraph(graph("On Gone (Intro)"), options).map((entry) => entry.code)).toContain("member.missing_dispatcher");
   });
 });
 

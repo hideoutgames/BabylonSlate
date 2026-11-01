@@ -21,6 +21,7 @@ import {
   type EngineScriptPin,
 } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
+import { timelineClipNodeData, timelineRefiredDispatchers, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
 import { prefabComponentLabel } from "../panels/add-component-catalog";
 import {
   callInterfaceTitle,
@@ -28,6 +29,8 @@ import {
   OWNED_ACTOR_GET_NODE_ID,
   OWNED_COMPONENT_GET_NODE_ID,
   OWNED_TIMELINE_CLIP_GET_NODE_ID,
+  TIMELINE_GET_CLIP_NODE_ID,
+  timelineClipNodeTitle,
   ownedActorGetTitle,
   ownedComponentGetTitle,
   ownedGetNodeProperties,
@@ -95,6 +98,12 @@ export type ScriptPaletteOptions = ClassEventOptions & {
   ownedActors?: readonly PaletteOwnedActor[];
   /** The same owner's Timeline Clips: each gets a Get <Name> Timeline Clip row. */
   ownedTimelineClips?: readonly PaletteOwnedTimelineClip[];
+  /**
+   * The project's Timeline Assets: Cast to <Asset>, a Get <Name> Timeline Clip
+   * row per scene clip on the asset's Timeline, and Bind rows for the
+   * Timeline's re-fired events and the clips' own.
+   */
+  timelineAssets?: readonly TimelineScriptAsset[];
 };
 
 /** A clip of the owner, its `TimelineClip:<document>:<clip>` class and the dispatchers its Custom Event Tracks declare. */
@@ -733,12 +742,10 @@ export function castPaletteNodes(
   const sceneIds = (options?.sceneDocuments ?? []).map((scene) =>
     sceneAssetClassId(scene.guid),
   );
-  const sceneTitles = new Map(
-    (options?.sceneDocuments ?? []).map((scene) => [
-      sceneAssetClassId(scene.guid),
-      scene.name,
-    ]),
-  );
+  const sceneTitles = new Map([
+    ...(options?.sceneDocuments ?? []).map((scene) => [sceneAssetClassId(scene.guid), scene.name] as const),
+    ...(options?.timelineAssets ?? []).map((asset) => [asset.classId, asset.name] as const),
+  ]);
   const classIds = [
     ...knownClassIdSet(
       parentOf,
@@ -746,6 +753,7 @@ export function castPaletteNodes(
         options?.classId,
         ...Object.keys(options?.otherClassGraphs ?? {}),
         ...sceneIds,
+        ...(options?.timelineAssets ?? []).map((asset) => asset.classId),
       ].filter((id): id is string => Boolean(id)),
     ),
   ]
@@ -867,6 +875,32 @@ export function subsystemGetPaletteNodes(
   });
 }
 
+/**
+ * Get <Name> Timeline Clip rows on each Timeline Asset's Timeline, one per
+ * scene clip the asset holds, in project order.
+ */
+export function timelineClipPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const def = nodeRegistry.get(TIMELINE_GET_CLIP_NODE_ID);
+  if (!def) return [];
+  return (options?.timelineAssets ?? []).flatMap((asset) => asset.clips.map((clip): PaletteNode => {
+    const data = timelineClipNodeData(asset, clip);
+    return {
+      id: `${TIMELINE_GET_CLIP_NODE_ID}:${asset.guid}:${clip.documentGuid}:${clip.id}`,
+      nodeType: TIMELINE_GET_CLIP_NODE_ID,
+      title: timelineClipNodeTitle(data),
+      description: `${clip.name} of ${asset.name}, from ${clip.documentName}. None while ${clip.documentName} is not loaded.`,
+      category: def.category,
+      pins: def.pins(data),
+      pure: def.pure,
+      latent: def.latent,
+      defaultData: data,
+    };
+  }));
+}
+
 type DispatcherRow = {
   classId: string;
   name: string;
@@ -903,11 +937,21 @@ function dispatcherRows(options?: ScriptPaletteOptions): DispatcherRow[] {
       rows.push({ classId: api.classId, name: dispatcher.name, pins: dispatcher.pins.map((pin) => ({ ...pin })), implicitSelf: false, engine: true });
     }
   }
-  // The owner's clips: one dispatcher per Custom Event Track, on the clip's own class.
-  for (const clip of options?.ownedTimelineClips ?? []) {
-    if (!clip.classId) continue;
+  // Clips a script reaches: one dispatcher per Custom Event Track, on the clip's own class. The
+  // owner's clips come first; a Timeline Asset's clips are reached through its Timeline.
+  const clipClasses = new Set<string>();
+  const clips = [...(options?.ownedTimelineClips ?? []), ...(options?.timelineAssets ?? []).flatMap((asset) => asset.clips)];
+  for (const clip of clips) {
+    if (!clip.classId || clipClasses.has(clip.classId)) continue;
+    clipClasses.add(clip.classId);
     for (const dispatcher of clip.dispatchers ?? []) {
       rows.push({ classId: clip.classId, name: dispatcher.name, pins: dispatcher.pins.map((pin) => ({ ...pin })), implicitSelf: false, engine: true });
+    }
+  }
+  // Each Timeline re-fires its clips' events as `<Event> (<Clip>)`.
+  for (const asset of options?.timelineAssets ?? []) {
+    for (const dispatcher of timelineRefiredDispatchers(asset)) {
+      rows.push({ classId: asset.classId, name: dispatcher.name, pins: dispatcher.pins, implicitSelf: false, engine: true });
     }
   }
   return rows;
@@ -915,11 +959,14 @@ function dispatcherRows(options?: ScriptPaletteOptions): DispatcherRow[] {
 
 /**
  * Whether the host can hold an object of an engine class that declares
- * dispatchers, so its Bind rows belong in Add Node. A Timeline Clip comes only
- * from a SceneScript's or SceneLayerScript's Get <Name> Timeline Clip.
+ * dispatchers, so its Bind rows belong in Add Node. A Timeline Clip comes from
+ * a SceneScript's or SceneLayerScript's Get <Name> Timeline Clip, or from a
+ * Timeline Asset that holds one.
  */
 function engineDispatchersReachable(classId: string, options?: ScriptPaletteOptions): boolean {
-  if (classId === "TimelineClip") return (options?.ownedTimelineClips?.length ?? 0) > 0;
+  if (classId === "TimelineClip") {
+    return (options?.ownedTimelineClips?.length ?? 0) > 0 || (options?.timelineAssets ?? []).some((asset) => asset.clips.length > 0);
+  }
   return true;
 }
 

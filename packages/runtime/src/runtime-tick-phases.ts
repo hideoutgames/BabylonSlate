@@ -173,7 +173,7 @@ export function flushTextAppear(rt: RuntimeComposition): void {
 }
 
 /** The main Scene and each loaded Scene Layer copy: the owners of Timeline Clips. */
-function* timelineOwners(rt: RuntimeComposition): Iterable<EngineObject> {
+export function* timelineOwners(rt: RuntimeComposition): Iterable<EngineObject> {
   if (rt.world.currentScene) yield rt.world.currentScene;
   yield* rt.world.getSceneLayers();
 }

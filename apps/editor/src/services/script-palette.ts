@@ -23,6 +23,7 @@ import {
   functionRows,
   subsystemGetPaletteNodes,
   ownedGetPaletteNodes,
+  timelineClipPaletteNodes,
   variableAccessPaletteNodes,
   type ScriptPaletteOptions,
 } from "./script-palette-members";
@@ -297,6 +298,7 @@ export function scriptPaletteInjectorKey(
     subsystemClasses: options?.subsystemClasses ?? [],
     ownedActors: options?.ownedActors ?? [],
     ownedTimelineClips: options?.ownedTimelineClips ?? [],
+    timelineAssets: options?.timelineAssets ?? [],
     structures: options?.structures ?? [],
     dataDefinitions: options?.dataDefinitions ?? [],
     saveGameDefinition: options?.saveGameDefinition,
@@ -446,6 +448,7 @@ function scriptPaletteInjectorNodes(
       ...castPaletteNodes(nodeRegistry, options),
       ...subsystemGetPaletteNodes(nodeRegistry, options),
       ...ownedGetPaletteNodes(nodeRegistry, options),
+      ...timelineClipPaletteNodes(nodeRegistry, options),
       ...structPaletteNodes(nodeRegistry, options),
       ...saveGamePaletteNodes(nodeRegistry, options),
       ...dataPaletteNodes(nodeRegistry, options),

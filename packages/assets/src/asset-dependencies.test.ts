@@ -151,6 +151,22 @@ describe("typed asset dependencies", () => {
     expect(variable.requiredVariableNames).toEqual(["tint"]);
   });
 
+  it("ships a Timeline Asset a node names or a clip is bound to, without loading it with its owner", () => {
+    const graph = collectAssetDependencyMetadata("Class", {
+      nodes: [{ id: "timeline", type: "timeline.fromAsset", data: { "default:timelineAsset": "story" } }],
+      edges: [],
+    });
+    expect(graph.dependencies).toEqual(["story"]);
+    expect(graph.requiredDependencies).toEqual([]);
+    const scene = collectAssetDependencyMetadata("Scene", {
+      actors: [],
+      settings: {},
+      timelineClips: [{ id: "intro", name: "Intro", timelineAsset: "story" }, { id: "free", name: "Free" }],
+    });
+    expect(scene.dependencies).toEqual(["story"]);
+    expect(scene.requiredDependencies).toEqual([]);
+  });
+
   it("loads the Class picked on Create Object with its owner, and no Class a Cast names", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
       nodes: [

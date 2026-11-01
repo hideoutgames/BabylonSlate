@@ -87,7 +87,7 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
-    for (const id of ["FloatCurveObject", "VectorCurveObject", "ColorCurveObject", "TimelineClip"]) {
+    for (const id of ["FloatCurveObject", "VectorCurveObject", "ColorCurveObject", "TimelineClip", "Timeline"]) {
       this.register({ id, parentClassId: "Object", kind: "object", variables: [], implementedInterfaces: [] });
     }
     this.register({

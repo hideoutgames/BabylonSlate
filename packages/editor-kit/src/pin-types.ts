@@ -159,4 +159,5 @@ export const ASSET_REF_PICKER_TYPES = [
   "Water",
   "Model",
   "Animation",
+  "Timeline",
 ] as const;

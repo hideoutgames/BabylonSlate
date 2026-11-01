@@ -1,6 +1,7 @@
 import { createTimelinePlayback, type SerializedTimelineClip, type TimelinePlaybackState } from "@haptic/core";
 import { embeddedScriptParentOf } from "./ids";
 import { EngineObject } from "./objects";
+import { TIMELINE_CLASS_ID, isTimelineClassId } from "./timeline-object";
 
 export const TIMELINE_CLIP_CLASS_ID = "TimelineClip";
 
@@ -17,9 +18,11 @@ export function isTimelineClipClassId(classId: string): boolean {
   return classId.startsWith(`${TIMELINE_CLIP_CLASS_ID}:`);
 }
 
-/** Parent of a class the engine makes for a document (a Scene, Scene Layer or clip); undefined for any other id. */
-export function documentClassParentOf(classId: string): "Scene" | "SceneLayer" | "TimelineClip" | undefined {
-  return embeddedScriptParentOf(classId) ?? (isTimelineClipClassId(classId) ? TIMELINE_CLIP_CLASS_ID : undefined);
+/** Parent of a class the engine makes for a document (a Scene, Scene Layer, clip or Timeline Asset); undefined for any other id. */
+export function documentClassParentOf(classId: string): "Scene" | "SceneLayer" | "TimelineClip" | "Timeline" | undefined {
+  if (isTimelineClipClassId(classId)) return TIMELINE_CLIP_CLASS_ID;
+  if (isTimelineClassId(classId)) return TIMELINE_CLASS_ID;
+  return embeddedScriptParentOf(classId);
 }
 
 /** Engine-declared Timeline Clip dispatchers; Custom Event Tracks cannot take these names. */

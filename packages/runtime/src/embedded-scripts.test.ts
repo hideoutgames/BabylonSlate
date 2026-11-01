@@ -3,7 +3,8 @@ import type { CommandMessage } from "@haptic/bridge";
 import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent, createTimelineClip, type SerializedScene, type SerializedTimelineClip } from "@haptic/core";
 import { sceneAssetClassId, sceneLayerAssetClassId } from "@haptic/object-model";
 import { compileGraph, STRING, type GraphNode, type LogicGraph } from "@haptic/scripting";
-import { createDefaultNodeRegistry, OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, OWNED_TIMELINE_CLIP_GET_NODE_ID } from "@haptic/scripting-nodes";
+import { createDefaultNodeRegistry, OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, OWNED_TIMELINE_CLIP_GET_NODE_ID,
+  TIMELINE_FROM_ASSET_NODE_ID, TIMELINE_GET_CLIP_NODE_ID, TIMELINE_LOADED_CLIPS_NODE_ID } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 
@@ -284,6 +285,76 @@ describe("Get <Name> Timeline Clip", () => {
     const events = logs(commands).filter((message) => message.startsWith("line:") || message.startsWith("done:"));
     expect(events).toEqual(expect.arrayContaining(layers.flatMap((guid) => [`line:${guid}:Welcome`, `done:${guid}`])));
     expect(events).toHaveLength(4);
+    runtime.stop();
+  });
+
+  it("plays a clip through its Timeline Asset's Timeline, which re-fires the clip's events", async () => {
+    const commands: CommandMessage[] = [];
+    const clipClass = "TimelineClip:overlay:reveal";
+    const refired = {
+      name: "On Line (Reveal)", classId: "Timeline:story", implicitSelf: false,
+      pins: [{ name: "Text", typeId: "string", direction: "in" }, { name: "Timeline Clip", typeId: "object", typeClassId: clipClass, direction: "in" }],
+    };
+    const graph: LogicGraph = {
+      id: "event-graph", kind: "event",
+      nodes: [
+        node("begin", "flow.event.beginPlay"),
+        node("timeline", TIMELINE_FROM_ASSET_NODE_ID, { "default:timelineAsset": "story" }),
+        node("clip", TIMELINE_GET_CLIP_NODE_ID, {
+          timelineAssetGuid: "story", timelineClipDocument: "overlay", timelineClipId: "reveal", timelineClipName: "Reveal", timelineClipClassId: clipClass,
+        }),
+        node("loaded", TIMELINE_LOADED_CLIPS_NODE_ID),
+        node("bind", "flow.dispatcher.bind", refired),
+        node("play", "timelineClip.play"),
+        node("log-loaded", "debug.executeJavaScript", {
+          inputs: [{ name: "clips", type: STRING }], outputs: [],
+          body: 'ctx.log("log", "Script", "loaded:" + clips.map((entry) => entry.classId).join(","));',
+        }),
+        node("on-line", "flow.event.custom", { name: "Heard", pins: [
+          { name: "Said", typeId: "string", direction: "out" },
+          { name: "Clip", typeId: "object", typeClassId: clipClass, direction: "out" },
+        ] }),
+        node("log-line", "debug.executeJavaScript", {
+          inputs: [{ name: "said", type: STRING }, { name: "clip", type: STRING }], outputs: [],
+          body: 'ctx.log("log", "Script", "refired:" + said + ":" + clip?.classId);',
+        }),
+      ],
+      edges: [
+        { id: "x1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "bind", targetPinId: "execIn" },
+        { id: "x2", sourceNodeId: "bind", sourcePinId: "execOut", targetNodeId: "play", targetPinId: "execIn" },
+        { id: "x3", sourceNodeId: "play", sourcePinId: "execOut", targetNodeId: "log-loaded", targetPinId: "execIn" },
+        { id: "x4", sourceNodeId: "on-line", sourcePinId: "execOut", targetNodeId: "log-line", targetPinId: "execIn" },
+        { id: "d1", sourceNodeId: "timeline", sourcePinId: "timeline", targetNodeId: "bind", targetPinId: "target" },
+        { id: "d2", sourceNodeId: "timeline", sourcePinId: "timeline", targetNodeId: "clip", targetPinId: "target" },
+        { id: "d3", sourceNodeId: "timeline", sourcePinId: "timeline", targetNodeId: "loaded", targetPinId: "target" },
+        { id: "d4", sourceNodeId: "clip", sourcePinId: "clip", targetNodeId: "play", targetPinId: "target" },
+        { id: "d5", sourceNodeId: "loaded", sourcePinId: "clips", targetNodeId: "log-loaded", targetPinId: "in_clips" },
+        { id: "d6", sourceNodeId: "on-line", sourcePinId: "OutputDelegate", targetNodeId: "bind", targetPinId: "event" },
+        { id: "d7", sourceNodeId: "on-line", sourcePinId: "Said", targetNodeId: "log-line", targetPinId: "in_said" },
+        { id: "d8", sourceNodeId: "on-line", sourcePinId: "Clip", targetNodeId: "log-line", targetPinId: "in_clip" },
+      ],
+    };
+    const classId = sceneLayerAssetClassId("overlay");
+    const compiled = compileGraph(graph, { assetGuid: classId, registry });
+    const reveal = {
+      ...slide("reveal", "Reveal", "x", false),
+      timelineAsset: "story",
+      eventTracks: [{ id: "lines", name: "On Line", inputs: [{ name: "Text", typeId: "string", direction: "in" as const }],
+        keys: [{ id: "k", time: 0.25, values: { Text: "Welcome" } }] }],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: { ...scene("Level1", ["overlay"]), actors: [] }, playSceneGuid: "level-1",
+      sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), actors: [createActor("panel", "Panel")], timelineClips: [reveal] } },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{ classId, parentClassId: "SceneLayer", assetGuid: classId, source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    for (let index = 0; index < 30; index += 1) runtime.tick();
+    expect(logs(commands).filter((message) => message.startsWith("loaded:") || message.startsWith("refired:")))
+      .toEqual([`loaded:${clipClass}`, `refired:Welcome:${clipClass}`]);
+    expect(runtime.getWorld().classRegistry.isA("Timeline:story", "Timeline")).toBe(true);
     runtime.stop();
   });
 });

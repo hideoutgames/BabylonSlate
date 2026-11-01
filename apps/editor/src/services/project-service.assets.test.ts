@@ -9,6 +9,8 @@ import {
   MAIN_SCENE_FILE,
   PROJECT_FILE,
   SCENE_SCHEMA_VERSION,
+  TIMELINE_CLIPS_META,
+  createTimelineClip,
   type SerializedScene,
 } from "@haptic/core";
 import {
@@ -1464,6 +1466,18 @@ describe("project documents as .hasset", () => {
     expect(
       await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID),
     ).toEqual(again);
+  });
+
+  it("keeps the header's Timeline Clip index when a navmesh is baked", async () => {
+    const { service } = await scaffolded();
+    const scene = (await service.loadDocument("scene", MAIN_SCENE_FILE)) as SerializedScene;
+    const withClip = { ...scene, timelineClips: [{ ...createTimelineClip("intro", "Intro"), timelineAsset: "story" }] };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, withClip);
+    await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([1]), withClip as unknown as Record<string, unknown>);
+    await service.registry!.reindexPath(MAIN_SCENE_FILE);
+    expect(service.registry!.getByPath(MAIN_SCENE_FILE)!.header.payload[TIMELINE_CLIPS_META]).toEqual([
+      expect.objectContaining({ id: "intro", name: "Intro", timelineAsset: "story" }),
+    ]);
   });
 
   it("keeps a Scene navmesh extra chunk when saveDocument rewrites the JSON body", async () => {

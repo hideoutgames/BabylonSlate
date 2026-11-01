@@ -41,6 +41,7 @@ import {
   type Actor,
   type EngineObject,
   SceneLayer,
+  TIMELINE_CLASS_ID,
   TIMELINE_CLIP_CLASS_ID,
   type DebugInspectSnapshot,
 } from "@haptic/object-model";
@@ -300,8 +301,11 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     ensureClipClass: (classId) => this.world.classRegistry.ensure({
       id: classId, parentClassId: TIMELINE_CLIP_CLASS_ID, kind: "object", variables: [], implementedInterfaces: [],
     }),
+    ensureTimelineClass: (classId) => this.world.classRegistry.ensure({
+      id: classId, parentClassId: TIMELINE_CLASS_ID, kind: "object", variables: [], implementedInterfaces: [],
+    }),
     fireDispatcher: (owner, name, values) => this.scriptHost.fireDispatcher(owner, name, values),
-    release: (clip) => this.scriptHost.releaseObject(clip),
+    release: (object) => this.scriptHost.releaseObject(object),
     ownedActor: (owner, id) => ownedSceneActor(owner, id, (guid) => this.world.findActor(guid), (scene, actorId) => this.streams.resolveInstanceId(scene, actorId)),
     findActor: (guid) => this.world.findActor(guid),
     component: (actor, id) => findComponentById(actor, id),

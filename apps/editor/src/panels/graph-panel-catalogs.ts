@@ -27,9 +27,12 @@ import {
 import { classHierarchyFromParentOf } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { defaultSaveGameDefinition, loadDefaultSaveGameDefinition } from "../lib/save-game-catalog";
+import { projectTimelineClips } from "../lib/timeline-asset-index";
+import { timelineScriptAssets, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
 
 const CLASS_KINDS = ["graph"] as const;
 const SCENE_KINDS = ["scene"] as const;
+const CLIP_DOCUMENT_KINDS = ["scene", "scene-layer"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
 const INPUT_KINDS = ["input-action", "input-axis"] as const;
@@ -154,6 +157,15 @@ export function useGraphPanelCatalogs() {
     void registryEpoch;
     return collectDataGraphAssets(assetRegistry?.list() ?? [], dataDocuments);
   }, [assetRegistry, dataDocuments, registryEpoch]);
+  // Timeline Assets and the scene clips bound to them; open Scenes and Scene Layers, saved or not, win.
+  // Kept by value, so a scene edit that leaves every clip's name and events alone keeps the palette.
+  const clipDocuments = useOpenDocumentsOfKinds(CLIP_DOCUMENT_KINDS);
+  const timelineSignature = useMemo(() => {
+    void registryEpoch;
+    const assets = assetRegistry?.list() ?? [];
+    return JSON.stringify(timelineScriptAssets(assets, projectTimelineClips(assets, clipDocuments)));
+  }, [assetRegistry, clipDocuments, registryEpoch]);
+  const timelineAssets = useMemo(() => JSON.parse(timelineSignature) as TimelineScriptAsset[], [timelineSignature]);
 
   return {
     parentOf,
@@ -169,5 +181,6 @@ export function useGraphPanelCatalogs() {
     saveGameDefinition,
     materialDomains,
     dataAssets,
+    timelineAssets,
   };
 }

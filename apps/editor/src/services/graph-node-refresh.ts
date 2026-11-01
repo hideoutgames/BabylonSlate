@@ -28,6 +28,9 @@ import {
   OWNED_ACTOR_GET_NODE_ID,
   OWNED_COMPONENT_GET_NODE_ID,
   OWNED_TIMELINE_CLIP_GET_NODE_ID,
+  TIMELINE_FROM_ASSET_NODE_ID,
+  TIMELINE_GET_CLIP_NODE_ID,
+  timelineClipNodeTitle,
   ownedActorGetTitle,
   ownedComponentGetTitle,
   ownedTimelineClipGetTitle,
@@ -118,6 +121,8 @@ export function shouldRegeneratePins(typeId: string): boolean {
     typeId === OWNED_ACTOR_GET_NODE_ID ||
     typeId === OWNED_COMPONENT_GET_NODE_ID ||
     typeId === OWNED_TIMELINE_CLIP_GET_NODE_ID ||
+    typeId === TIMELINE_FROM_ASSET_NODE_ID ||
+    typeId === TIMELINE_GET_CLIP_NODE_ID ||
     typeId === "struct.make" ||
     typeId === "struct.break" ||
     typeId === "enum.make" ||
@@ -272,9 +277,39 @@ export function assetsByClassPinProperties(
   nodeId: string,
   nodeRegistry: NodeRegistry,
 ): Record<string, unknown> {
+  if (typeId === TIMELINE_FROM_ASSET_NODE_ID) return timelineFromAssetPinProperties(properties, graph, nodeId);
   if (typeId !== ASSET_REGISTRY_BY_CLASS_NODE_ID && typeId !== CREATE_OBJECT_NODE_ID) return properties;
   const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
   return wiredClassId ? { ...properties, "default:class": wiredClassId } : properties;
+}
+
+const VARIABLE_GET_NODE_IDS = new Set(["variables.get", "variables.getValidated"]);
+
+/**
+ * Get Timeline Object Reference From Timeline Asset types its Timeline from
+ * the asset it names while you edit: the Timeline Asset input's own value, or
+ * the default of this Class's variable wired into it. Anything else wired
+ * there gives a plain Timeline; Cast narrows it.
+ */
+function timelineFromAssetPinProperties(
+  properties: Record<string, unknown>,
+  graph: SerializedGraph,
+  nodeId: string,
+): Record<string, unknown> {
+  const edge = graph.edges.find((entry) => entry.target === nodeId && entry.targetHandle === "timelineAsset");
+  if (!edge) return properties;
+  const source = graph.nodes.find((node) => node.id === edge.source);
+  const data = (source?.data ?? {}) as Record<string, unknown>;
+  const type = typeof data.__nodeType === "string" ? data.__nodeType : source?.type;
+  // Only this Class's own variables have their default here.
+  const variable = type && VARIABLE_GET_NODE_IDS.has(type) && data.implicitSelf === true
+    ? graph.members?.find((member) => member.kind === "variable" && !member.functionId &&
+      (typeof data.variableId === "string" && data.variableId ? member.id === data.variableId : member.name === data.variableName))
+    : undefined;
+  const guid = variable?.typeId === "asset" && variable.typeClassId === "Timeline" && typeof variable.defaultValue === "string"
+    ? variable.defaultValue.trim()
+    : "";
+  return { ...properties, timelineAssetGuid: guid };
 }
 
 function isEnumCatalogType(typeId: string): boolean {
@@ -454,6 +489,7 @@ export function hydratedNodeTitle(
   if (typeId === OWNED_ACTOR_GET_NODE_ID) return ownedActorGetTitle(properties);
   if (typeId === OWNED_COMPONENT_GET_NODE_ID) return ownedComponentGetTitle(properties);
   if (typeId === OWNED_TIMELINE_CLIP_GET_NODE_ID) return ownedTimelineClipGetTitle(properties);
+  if (typeId === TIMELINE_GET_CLIP_NODE_ID) return timelineClipNodeTitle(properties);
   if (
     typeof properties.title === "string" &&
     (typeId === "flow.event.call" ||
