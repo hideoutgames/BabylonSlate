@@ -62,6 +62,17 @@ describe("Range Structure rows", () => {
     expect(onChange).toHaveBeenCalledWith({ SpawnCount: { Min: 3, Max: 6 }, Label: "Goblin" });
   });
 
+  it("edits a curve variable or Structure field as one expanding curve row", () => {
+    const onChange = vi.fn();
+    const curve = { Keys: [{ Time: 0, Value: 1, Interpolation: "auto", ArriveTangent: 0, LeaveTangent: 0 }], Before: "constant", After: "linear" };
+    const [row, ...rest] = variableDefaultPropertyRows("struct", curve, onChange, { typeClassId: "engine:FloatCurve", schemas });
+    expect(rest).toEqual([]);
+    expect(row).toMatchObject({ kind: "value-curve", curveKind: "float", value: curve });
+    const curveSchemas = mergeEngineTypeSchemas({ structs: { fx: { name: "Fx", fields: [{ name: "Tint", typeId: "struct", typeClassId: "engine:ColorCurve" }] } } });
+    const [tint] = variableDefaultPropertyRows("struct", {}, onChange, { typeClassId: "fx", schemas: curveSchemas });
+    expect(tint).toMatchObject({ kind: "value-curve", curveKind: "color", label: "Tint" });
+  });
+
   it("shows an unwired range pin as a range row", () => {
     const onPatch = vi.fn();
     const [row] = pinDefaultPropertyRows([{ pinId: "range", name: "Range", type: { kind: "structRef", guid: "engine:VectorRange" }, value: undefined }], onPatch, { schemas });

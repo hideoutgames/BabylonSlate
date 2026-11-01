@@ -52,8 +52,11 @@ export function GradientEditor({
   "data-testid": testId = "gradient-editor",
 }: GradientEditorProps) {
   const committed = editorKeys("color", value);
-  const [draft, setDraft] = useState<EditorKey[] | null>(null);
-  const keys = draft ?? committed;
+  const [draft, setDraftState] = useState<EditorKey[] | null>(null);
+  // Pointer events can arrive before React re-renders, so handlers read the latest draft from a ref.
+  const draftRef = useRef<EditorKey[] | null>(null);
+  const setDraft = (next: EditorKey[] | null) => { draftRef.current = next; setDraftState(next); };
+  const keys = draftRef.current ?? committed;
   const [selected, setSelected] = useState(0);
   const [frozenDomain, setFrozenDomain] = useState<[number, number] | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -129,15 +132,16 @@ export function GradientEditor({
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId || locked(drag.index)) return;
     const time = pointerToTime(event.clientX);
-    if (time !== null) setDraft(moved(draft ?? committed, drag.index, clampNumber(time, start, end)));
+    if (time !== null) setDraft(moved(draftRef.current ?? committed, drag.index, clampNumber(time, start, end)));
   };
 
   const endStopDrag = (event: PointerEvent<HTMLButtonElement>, commit: boolean) => {
     if (dragRef.current?.pointerId !== event.pointerId) return;
     dragRef.current = null;
     setFrozenDomain(null);
-    if (commit && draft && JSON.stringify(draft) !== JSON.stringify(committed)) emit(draft);
+    const final = draftRef.current;
     setDraft(null);
+    if (commit && final && JSON.stringify(final) !== JSON.stringify(committed)) emit(final);
   };
 
   const onStopKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -247,7 +251,7 @@ export function GradientEditor({
                 max={bound(Number.POSITIVE_INFINITY)}
                 sensitivity={span / 200}
                 disabled={disabled || locked(selectedIndex)}
-                onChange={(time) => setDraft(moved(draft ?? committed, selectedIndex, time))}
+                onChange={(time) => setDraft(moved(draftRef.current ?? committed, selectedIndex, time))}
                 onDragEnd={(time) => { setDraft(null); emit(moved(committed, selectedIndex, time)); }}
                 data-testid={`${testId}-location`}
               />

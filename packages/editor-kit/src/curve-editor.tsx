@@ -104,7 +104,10 @@ export function CurveEditor({
   const [channelState, setChannelState] = useState<boolean[]>(() => channelInfo.map(() => true));
   const visible = controlledChannels ?? channelState;
   const committed = editorKeys(kind, value);
-  const [draft, setDraft] = useState<EditorKey[] | null>(null);
+  const [draft, setDraftState] = useState<EditorKey[] | null>(null);
+  // Pointer events can arrive before React re-renders, so handlers read the latest draft from a ref.
+  const draftRef = useRef<EditorKey[] | null>(null);
+  const setDraft = (next: EditorKey[] | null) => { draftRef.current = next; setDraftState(next); };
   const keys = draft ?? committed;
   const [selected, setSelected] = useState<{ index: number; channel: number }>({ index: 0, channel: 0 });
   const [userView, setUserView] = useState<CurveView | null>(null);
@@ -222,7 +225,7 @@ export function CurveEditor({
     if (!gesture || (gesture.kind !== "key" && gesture.kind !== "tangent") || gesture.pointerId !== event.pointerId) return;
     const point = fraction(event.clientX, event.clientY);
     if (!point) return;
-    const source = draft ?? committed;
+    const source = draftRef.current ?? committed;
     if (gesture.kind === "key") {
       const data = toData(point.fx, point.fy);
       gesture.moved = true;
@@ -248,8 +251,9 @@ export function CurveEditor({
     if (!gesture || (gesture.kind !== "key" && gesture.kind !== "tangent") || gesture.pointerId !== event.pointerId) return;
     endGesture();
     setFrozenView(null);
-    if (draft && JSON.stringify(draft) !== JSON.stringify(committed)) emit(draft);
+    const final = draftRef.current;
     setDraft(null);
+    if (final && JSON.stringify(final) !== JSON.stringify(committed)) emit(final);
   };
 
   const onHandlePointerCancel = (event: PointerEvent<HTMLButtonElement>) => {
@@ -351,7 +355,7 @@ export function CurveEditor({
   // Selected key fields: live drafts, one change when the scrub or typed edit ends --------------------
 
   const editSelected = (change: (key: EditorKey, next: EditorKey[]) => void, commit: boolean) => {
-    const next = cloneKeys(draft ?? committed);
+    const next = cloneKeys(draftRef.current ?? committed);
     const key = next[selectedIndex];
     if (!key) return;
     change(key, next);
@@ -554,8 +558,8 @@ export function CurveEditor({
         </div>
       </div>
       <div className="flex justify-between text-[10px] text-muted-foreground">
-        <span>{timeLabels.start}</span>
-        <span>{timeLabels.end}</span>
+        <span data-testid={`${testId}-time-start`}>{timeLabels.start}</span>
+        <span data-testid={`${testId}-time-end`}>{timeLabels.end}</span>
       </div>
       {selectedKey ? (
         <div className="grid grid-cols-2 gap-1">
