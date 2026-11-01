@@ -100,6 +100,7 @@ export const NEW_MEMBER_NAMES = {
   variable: "NewVariable",
   function: "NewFunction",
   event: "NewEvent",
+  dispatcher: "NewEventDispatcher",
 } as const;
 
 /** `NewVariable`, then `NewVariable_1`, … skipping names already used by the same kind. */
@@ -137,27 +138,4 @@ export function variableFieldsForPickerType(
     ...(typeClassId ? { typeClassId } : {}),
     ...(defaultValue !== undefined ? { defaultValue } : {}),
   };
-}
-
-export function memberNamePromptCopy(
-  kind: GraphClassMemberKind,
-  options?: { local?: boolean },
-): {
-  title: string;
-  label: string;
-} {
-  switch (kind) {
-    case "function":
-      return { title: "Add Function", label: "Function Name" };
-    case "variable":
-      return options?.local
-        ? { title: "Add Local Variable", label: "Variable Name" }
-        : { title: "Add Variable", label: "Variable Name" };
-    case "event":
-      return { title: "Add Event", label: "Event Name" };
-    case "dispatcher":
-      return { title: "Add Event Dispatcher", label: "Event Dispatcher Name" };
-    default:
-      return { title: "Add Interface", label: "Interface Name" };
-  }
 }

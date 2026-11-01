@@ -6,7 +6,7 @@ For example, an **Enemy** class declares **On Damaged** with a **Damage** input.
 
 ## Add an Event Dispatcher
 
-1. In the **Class** window, tap **+** next to **Event Dispatchers**.
+1. In the **Class** window, tap **+** next to **Event Dispatchers**. A new dispatcher, **NewEventDispatcher**, appears with its name ready to edit.
 2. Type a name, such as **On Damaged**, and press <kbd>Enter</kbd>.
 3. With the dispatcher selected, add **Inputs** in the **Inspector** for the values it passes to the bound events.
 

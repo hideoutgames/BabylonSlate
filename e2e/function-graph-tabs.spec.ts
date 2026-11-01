@@ -84,4 +84,40 @@ test.describe("Class function graphs", () => {
       })
       .toBe(true);
   });
+
+  test("add a pin of a wire's type where it is dropped on the Output node's body", async ({ page }) => {
+    await openTestProject(page);
+    await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
+    await expect(page.getByTestId("my-class-panel")).toBeVisible({ timeout: 15_000 });
+    await addFunction(page, "Score");
+    const graph = page.getByTestId("graph-panel");
+    const inputNode = graph.locator('.react-flow__node[data-id$="-input"]');
+    const outputNode = graph.locator('.react-flow__node[data-id$="-output"]');
+    await expect(outputNode).toBeVisible();
+    await page.getByTestId("class-fn-in-add").click();
+    await page.getByTestId("class-fn-in-add-menu").getByTestId("search-item-float").click();
+    const floatOut = inputNode.locator('.react-flow__handle:not([data-handleid="exec"])');
+    await expect(floatOut).toHaveCount(1);
+
+    // Drag the Float wire over the Output node's body, clear of its pins, and release it there.
+    const dropOnOutputBody = async () => {
+      const from = (await floatOut.boundingBox())!;
+      const body = (await outputNode.boundingBox())!;
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      const to = { x: body.x + body.width * 0.6, y: body.y + body.height / 2 };
+      await page.mouse.move(to.x, to.y, { steps: 12 });
+      await expect(graph.getByTestId("add-pin-hint")).toHaveText("+Add Pin");
+      await page.mouse.up();
+    };
+    await dropOnOutputBody();
+    const outputPins = outputNode.locator(".react-flow__handle");
+    await expect(outputNode.locator('.react-flow__handle[data-handleid="Float"]')).toHaveCount(1);
+    await expect(graph.locator('.react-flow__edge[data-id$=":Float"]')).toHaveCount(1);
+
+    // A second drop gets the next free name.
+    await dropOnOutputBody();
+    await expect(outputNode.locator('.react-flow__handle[data-handleid="Float_1"]')).toHaveCount(1);
+    await expect(outputPins).toHaveCount(3);
+  });
 });

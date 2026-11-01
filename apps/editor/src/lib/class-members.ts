@@ -52,7 +52,6 @@ export {
   blueprintSectionsForClass,
   classAllowsMemberKind,
   functionLibraryShowsEventGraphEmpty,
-  memberNamePromptCopy,
   nextNewMemberName,
   variableFieldsForPickerType,
   type BlueprintSection,

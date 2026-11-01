@@ -201,6 +201,30 @@ describe("GraphConnectionLineView", () => {
     });
     expect(queryByTestId("add-node-hint")).toBeNull();
   });
+
+  it("shows + Add Pin over the body of a node that takes the wire as a new pin, asking with its resolved type", () => {
+    const body = document.createElement("div");
+    body.className = "react-flow__node";
+    body.dataset.id = "output";
+    mockRect(body, { left: 150, top: -40, width: 120, height: 80 });
+    document.body.append(body);
+    const accepts = vi.fn((nodeId: string) => nodeId === "output");
+
+    const over = renderLine({
+      fromHandle: { id: "value" },
+      acceptsPinDrop: accepts,
+      pinDisplayType: () => ({ kind: "float" }),
+    });
+    expect(over.getByTestId("add-pin-hint").textContent).toBe("+Add Pin");
+    // It replaces the Add Node hint, which a release there would not open.
+    expect(over.queryByTestId("add-node-hint")).toBeNull();
+    expect(accepts).toHaveBeenCalledWith("output", { nodeId: "source", pin: stringOut, type: { kind: "float" } });
+    over.unmount();
+
+    body.dataset.id = "log";
+    const elsewhere = renderLine({ fromHandle: { id: "value" }, acceptsPinDrop: accepts });
+    expect(elsewhere.queryByTestId("add-pin-hint")).toBeNull();
+  });
 });
 
 describe("GraphConnectionLineView refusal", () => {

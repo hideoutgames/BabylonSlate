@@ -17,6 +17,8 @@ import {
   mapOf,
   RESOLVING_WILDCARD,
   ENGINE_HIT_RESULT_STRUCT_ID,
+  pinTypeForVariable,
+  type VariableTypeSpec,
 } from "@haptic/scripting";
 import {
   CALL_PIN_IDS,
@@ -1069,10 +1071,8 @@ function functionEndpointPins(
   endpoint: "input" | "output",
 ) {
   const rows = Array.isArray(properties.pins)
-    ? (properties.pins as Array<{
+    ? (properties.pins as Array<VariableTypeSpec & {
         name?: string;
-        typeId?: string;
-        typeClassId?: string;
         direction?: string;
       }>)
     : [];
@@ -1083,12 +1083,13 @@ function functionEndpointPins(
       return [];
     }
     if (row.direction !== want) return [];
+    // Typed like the function's Call nodes: an Array stays an Array and a Delegate keeps its Signature.
     return [
       pin(
         row.name,
         row.name,
         asDirection,
-        pinTypeForMember(row.typeId, row.typeClassId),
+        row.typeId === "exec" ? EXEC : pinTypeForVariable(row),
       ),
     ];
   });
