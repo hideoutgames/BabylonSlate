@@ -20,7 +20,7 @@ import {
   TIMELINE_GET_CLIP_NODE_ID,
   ownedGetNodeProperties,
 } from "@haptic/scripting-nodes";
-import type { FeatureTestContext } from "./context";
+import { requireRef, type FeatureTestContext } from "./context";
 import { classGraph, gChain, gNode, gWire, printString } from "./graph";
 
 /**
@@ -224,13 +224,11 @@ function withTimelineAssetProbe(graph: SerializedGraph, timelineGuid: string, in
 }
 
 /**
- * `FT_Timeline` holds the main scene's Intro and FT_HUD's Reveal, one clip
- * from a Scene and one from a Scene Layer; its document lists both.
+ * Binds the main scene's Intro and FT_HUD's Reveal to `FT_Timeline` (one clip
+ * from a Scene, one from a Scene Layer; FT_World binds Door Loop too).
  */
 async function bindFeatureTestTimelineAsset(ctx: FeatureTestContext, intro: SerializedTimelineClip): Promise<string> {
-  const { guid } = await ctx.createAsset("Timeline", "Timeline", "FT_Timeline", {
-    payload: () => ({ description: "The Feature Test's Timeline Clips: Intro (main scene) and Reveal (FT_HUD)." }),
-  });
+  const guid = requireRef(ctx.assets.timeline, "FT_Timeline");
   intro.timelineAsset = guid;
   const reveal = ctx.sceneDocuments
     .flatMap((doc) => (doc.content as { timelineClips?: SerializedTimelineClip[] }).timelineClips ?? [])
