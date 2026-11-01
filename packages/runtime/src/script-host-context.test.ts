@@ -50,6 +50,20 @@ describe("ScriptContext members used apart from their context", () => {
     expect(getAllActorsOfClass("Hero")).toEqual([hero]);
   });
 
+  it("draws Random In Range values from the seeded session generator, in call order", () => {
+    const draws = (seed: number) => {
+      const host = new ScriptHost(services({ seed }));
+      const a = host.createContext(null, 0, 0);
+      const b = host.createContext(null, 0, 0);
+      return [a.randomInRange("int", { Min: 1, Max: 6 }), a.random.float(), b.randomInRange("float", { Min: 10, Max: 20 })];
+    };
+    const rng = createSeededRng(11);
+    const expected = [1 + (rng.next() % 6), rng.nextFloat(), 10 + 10 * rng.nextFloat()];
+    expect(draws(11)).toEqual(expected);
+    expect(draws(11)).toEqual(draws(11));
+    expect(draws(12)).not.toEqual(expected);
+  });
+
   it("lets a script patch ctx.random or a ctx member without changing any other context", () => {
     const logged: string[] = [];
     const host = new ScriptHost(services({ seed: 7, log: (_severity, _category, message) => { logged.push(message); } }));

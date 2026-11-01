@@ -20,7 +20,7 @@ Every data pin and variable has a type. A wire connects two pins only when their
 | Object | A live object of a chosen class, or nothing. Choose **Actor** or one of its subclasses as the class to hold an actor. Pins show the class name, such as **Actor** or **Door**. |
 | Class | A class itself rather than an object, such as the class to pass to [Spawn Actor](class/spawn-actor.md). |
 | Asset | An asset of one type, such as an Audio or Material asset. |
-| Structure / Data Definition | A record of named fields. See [Structures and Enums](structures-and-enums.md) and [Data](data.md). |
+| Structure / Data Definition | A record of named fields. See [Structures and Enums](structures-and-enums.md) and [Data](data.md). Ranges and curves are built-in Structures; see [Curves and ranges](curves-and-ranges.md). |
 | Delegate | An event or function to run on an object, such as a custom event bound to an [Event Dispatcher](event-dispatchers.md). Its **Signature** is the inputs it takes. Delegate pins are squares: dark red inside a light red border while unconnected, solid once connected. Delegate is offered for variables and the inputs and outputs of functions, events, Event Dispatchers and Script Interfaces, not for Structure fields, Data Definitions, Save Games or Blackboard keys. |
 | Wildcard | Any value. Node reference pages call this type Any. |
 
