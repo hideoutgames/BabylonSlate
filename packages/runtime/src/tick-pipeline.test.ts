@@ -32,11 +32,12 @@ describe("tick phase timing", () => {
     spend("physics", 3);
     spend("postPhysics", 1);
     spend("sceneSystems", 4);
+    spend("garbageCollection", 0.5);
     pipeline.closePhaseTiming();
     expect(Object.fromEntries(TICK_TIMING_PHASES.map((phase, index) => [phase, pipeline.lastPhaseMs[index]]))).toEqual({
-      gameInstance: 0.5, sceneSubsystems: 0, actors: 2, components: 0, objects: 0.25, physics: 3, postPhysics: 1, sceneSystems: 4,
+      gameInstance: 0.5, sceneSubsystems: 0, actors: 2, components: 0, objects: 0.25, physics: 3, postPhysics: 1, sceneSystems: 4, garbageCollection: 0.5,
     });
-    expect(pipeline.lastScriptMs).toBe(7.75);
+    expect(pipeline.lastScriptMs).toBe(8.25);
     expect(pipeline.lastPhysicsMs).toBe(3);
   });
 });

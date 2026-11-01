@@ -164,6 +164,8 @@ export interface PlayHudStats {
   ticks?: number;
   liveActors?: number;
   snapshotCapacity?: number;
+  collectableObjects?: number;
+  garbageCollectionMs?: number;
 }
 
 /** What `startPlaySession` takes. The session works on its own shallow copy, which releasing the initial sources prunes. */
@@ -212,6 +214,8 @@ export type PlaySessionOptions = {
   onPrint?: (entry: PlayPrintEntry) => void;
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
+  /** Project Garbage Collection Interval in ticks; omitted → 60. */
+  garbageCollectionIntervalTicks?: number;
   /** Engine Settings trace retention budget, captured when Play starts. */
   traceByteBudget?: number;
   onProfile?: (profile: PerformanceProfile) => void;

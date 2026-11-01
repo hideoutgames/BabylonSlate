@@ -136,6 +136,8 @@ export type GameManifest = {
   bundleDebugger: boolean;
   render: RenderProjectSettings;
   playFrameCap: number;
+  /** Project Garbage Collection Interval in ticks. */
+  garbageCollectionIntervalTicks: number;
   touchMinTargetPx?: number;
   pixelsPerUnit: number;
   /** Ordered 2D sorting layers. */
@@ -170,6 +172,7 @@ export type ExportGameOptions = {
   /** Complete authored rendering defaults, serialized as game.json `render`. */
   renderSettings: RenderProjectSettings;
   playFrameCap?: number;
+  garbageCollectionIntervalTicks?: number;
   touchMinTargetPx?: number;
   pixelsPerUnit?: number;
   sortingLayers?: readonly string[];

@@ -99,6 +99,10 @@ export type StatsHudInput = {
   liveActors?: number;
   snapshotCapacity?: number;
   ticks?: number;
+  /** Create Object objects alive now (`stat memory`). */
+  collectableObjects?: number;
+  /** The last object collection pass (`stat memory`). */
+  garbageCollectionMs?: number;
 };
 
 export type StatsHudMetric = {
@@ -143,6 +147,7 @@ const PHASE_LABELS: Readonly<Record<TickTimingPhase, string>> = {
   physics: "physics",
   postPhysics: "post-physics",
   sceneSystems: "systems",
+  garbageCollection: "gc",
 };
 
 function present(metrics: readonly (StatsHudMetric | null)[]): StatsHudMetric[] {
@@ -176,6 +181,10 @@ function groupMetrics(group: StatGroup, input: StatsHudInput, overBudget: boolea
         bytesMetric("renderer-process", "renderer", input.rendererProcessBytes),
         bytesMetric("gpu-process", "gpu proc", input.gpuProcessBytes),
         bytesMetric("geo", "geo", input.geometryBytes, input.geometryHigh),
+        input.collectableObjects == null ? null
+          : { id: "objects", label: "objects", text: String(input.collectableObjects), raw: input.collectableObjects },
+        input.garbageCollectionMs == null ? null
+          : { id: "gc", label: "gc", text: ms(input.garbageCollectionMs), raw: input.garbageCollectionMs },
       ]);
     case "draws": {
       const rendering = input.rendering;

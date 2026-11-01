@@ -34,6 +34,8 @@ interface TickPipelineHost {
   /** The frame id after the completed tick's increment. */
   frameId(): number;
   liveActors(): number;
+  /** Collectable objects alive now, and the last collection pass's milliseconds (null before the first). */
+  objectLifetime(): { collectable: number; lastPassMs: number | null };
   /** Behaviour tree, voice, sprite clip and Animation Graph state that `restoreFromTrace` resumes. */
   traceState(): Required<Pick<TraceFrame, "bt" | "audio" | "sprites" | "animGraphs">>;
   reportLog(message: string, severity: LogSeverity, category: string): void;
@@ -207,6 +209,7 @@ export class TickPipeline {
         phaseMs: Array.from(this._lastPhaseMs),
         publishMs: this.snapshots.lastPublishMs,
         liveActors: this.host.liveActors(),
+        ...this.objectLifetimeStats(),
         snapshotCapacity: this.snapshots.capacity,
       });
     }
@@ -286,6 +289,11 @@ export class TickPipeline {
   }
 
   stopDiagnostics(): void { this.diagnosticRecorder?.stop(); }
+
+  private objectLifetimeStats(): { collectableObjects: number; garbageCollectionMs?: number } {
+    const lifetime = this.host.objectLifetime();
+    return { collectableObjects: lifetime.collectable, ...(lifetime.lastPassMs === null ? {} : { garbageCollectionMs: lifetime.lastPassMs }) };
+  }
 
   private closeTimingPhase(now: number): void {
     if (this.currentTimingPhase < 0) return;

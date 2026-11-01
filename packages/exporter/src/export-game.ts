@@ -1,4 +1,4 @@
-import { err, ok, classIdForAssetPath, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, type Result } from "@haptic/core";
+import { err, ok, classIdForAssetPath, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, type Result } from "@haptic/core";
 import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
@@ -335,6 +335,7 @@ export async function exportGame(
     bundleDebugger: options.bundleDebugger,
     render: normalizeRenderProjectSettings(options.renderSettings),
     playFrameCap: normalizePlayFrameCap(options.playFrameCap),
+    garbageCollectionIntervalTicks: normalizeGarbageCollectionIntervalTicks(options.garbageCollectionIntervalTicks),
     touchMinTargetPx:
       typeof options.touchMinTargetPx === "number" &&
       options.touchMinTargetPx > 0
@@ -402,7 +403,7 @@ const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";
 /** Fields `exportGame` always writes; a manifest without one predates the current exporter. */
 const REQUIRED_MANIFEST_FIELDS = [
   "project", "focusNavigation", "startupSceneGuid", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
-  "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "touchMinTargetPx", "pixelsPerUnit",
+  "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "garbageCollectionIntervalTicks", "touchMinTargetPx", "pixelsPerUnit",
   "pixelPerfect", "sortingLayers", "physicsWorld", "collisionPresets", "assets",
 ] as const satisfies readonly (keyof GameManifest)[];
 const DEBUGGER_MANIFEST_FIELDS = ["infiniteLoopDetection", "loopCount"] as const satisfies readonly (keyof GameManifest)[];
@@ -438,6 +439,7 @@ export function parseGameManifest(source: string): GameManifest {
     render: normalizeRenderProjectSettings(parsed.render),
     focusNavigation: normalizeFocusNavigationSettings(parsed.focusNavigation),
     playFrameCap: normalizePlayFrameCap(parsed.playFrameCap),
+    garbageCollectionIntervalTicks: normalizeGarbageCollectionIntervalTicks(parsed.garbageCollectionIntervalTicks),
     project: { name: parsed.project!.name, version: parsed.project!.version },
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(audioMixerGuid ? { audioMixerGuid } : {}),

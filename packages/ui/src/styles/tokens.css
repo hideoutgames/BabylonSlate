@@ -25,6 +25,7 @@
     --color-tick-physics: var(--tick-physics);
     --color-tick-post-physics: var(--tick-post-physics);
     --color-tick-scene-systems: var(--tick-scene-systems);
+    --color-tick-garbage-collection: var(--tick-garbage-collection);
     --font-heading: var(--font-sans);
     --font-sans: 'Onest Variable', ui-sans-serif, system-ui, sans-serif;
     --color-brand-red: var(--brand-red);
@@ -147,6 +148,7 @@
     --tick-physics: oklch(0.716 0.141 357.4);
     --tick-post-physics: oklch(0.529 0.180 142.5);
     --tick-scene-systems: oklch(0.527 0.197 283.4);
+    --tick-garbage-collection: oklch(0.560 0.040 250.0);
     --radius: 0.5rem;
     --sidebar: oklch(0.978 0.002 85);
     --sidebar-border: var(--border);
@@ -269,6 +271,7 @@
     --tick-physics: oklch(0.622 0.171 0.8);
     --tick-post-physics: oklch(0.529 0.180 142.5);
     --tick-scene-systems: oklch(0.670 0.145 286.8);
+    --tick-garbage-collection: oklch(0.680 0.040 250.0);
     --sidebar: oklch(0.185 0.004 75);
     --sidebar-border: var(--border);
     --shadow-color: oklch(0 0 0);

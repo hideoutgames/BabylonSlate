@@ -175,6 +175,11 @@ export interface ProjectSettings {
   infiniteLoopDetection: boolean;
   /** Iterations in one tick that count as infinite when detection is on. */
   loopCount: number;
+  /**
+   * Ticks between collection passes while Create Object objects exist or an
+   * actor was destroyed (Play, Preview Build and exported games).
+   */
+  garbageCollectionIntervalTicks: number;
   /** Idle interval before dirty documents are written. */
   autoSaveIntervalMs: number;
   /** Play overlay letterbox; used when `render.customResolution` is off. */
@@ -468,6 +473,8 @@ export const DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS: SourceControlProjectSettin
 export const DEFAULT_PLAY_FRAME_CAP = 60;
 export const DEFAULT_INFINITE_LOOP_DETECTION = true;
 export const DEFAULT_LOOP_COUNT = 1_000_000;
+/** About one second at the default 60 Hz simulation step. */
+export const DEFAULT_GARBAGE_COLLECTION_INTERVAL_TICKS = 60;
 export const DEFAULT_AUTO_SAVE_INTERVAL_MS = 120_000;
 export const DEFAULT_PLAY_PREVIEW_ASPECT_WIDTH = 16;
 export const DEFAULT_PLAY_PREVIEW_ASPECT_HEIGHT = 9;
@@ -574,6 +581,13 @@ function normalizePositiveInt(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? Math.max(1, Math.round(value))
     : fallback;
+}
+
+/** A whole number of ticks, at least 1; shared by project loading, export and player boot. */
+export function normalizeGarbageCollectionIntervalTicks(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 1
+    ? Math.round(value)
+    : DEFAULT_GARBAGE_COLLECTION_INTERVAL_TICKS;
 }
 
 /** Presentation default shared by project loading, export and player boot. */
@@ -705,6 +719,7 @@ export function normalizeProjectSettings(
       settings.loopCount >= 1
         ? Math.round(settings.loopCount)
         : DEFAULT_LOOP_COUNT,
+    garbageCollectionIntervalTicks: normalizeGarbageCollectionIntervalTicks(settings?.garbageCollectionIntervalTicks),
     autoSaveIntervalMs:
       typeof settings?.autoSaveIntervalMs === "number" &&
       settings.autoSaveIntervalMs > 0

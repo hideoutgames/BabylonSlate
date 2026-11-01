@@ -42,9 +42,11 @@ These never keep an object alive:
 
 Haptic checks which created objects are still reachable at the end of a tick, when no graph is running:
 
-- about once a second while created objects exist or an actor was destroyed,
+- every **Garbage Collection Interval** ticks while created objects exist or an actor was destroyed (Project Settings > General; the default, 60 ticks, is about once a second),
 - when the main Scene changes,
-- and at the end of the tick in which [Collect Garbage](class/collect-garbage.md) runs.
+- and at the end of the tick in which [Collect Garbage](class/collect-garbage.md) or the `gc` [console command](../debugging/console.md) runs.
+
+`gc stats` in the console prints how many created objects are alive and what the last check found. `stat memory` shows the count and the time the last check took, and the [Profiler](../debugging/profiler.md) shows a **Garbage Collection** phase.
 
 A collected object runs no events. Its waiting nodes stop, and every reference to it reads as empty.
 

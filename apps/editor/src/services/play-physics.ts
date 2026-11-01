@@ -184,6 +184,7 @@ export function playLoadControl(options: {
   sessionGeneration?: number;
   saveGame?: import("@haptic/core").SaveGameConfiguration;
   frameCap?: number;
+  garbageCollectionIntervalTicks?: number;
   traceByteBudget?: number;
   renderSettings?: Partial<import("@haptic/core").RenderProjectSettings>;
   project?: { name: string; version: string };
@@ -238,6 +239,7 @@ export function playLoadControl(options: {
     simulationAssetGuids: options.simulationAssetGuids,
     saveGame: options.saveGame,
     frameCap: options.frameCap,
+    ...(options.garbageCollectionIntervalTicks !== undefined ? { garbageCollectionIntervalTicks: options.garbageCollectionIntervalTicks } : {}),
     traceByteBudget: options.traceByteBudget,
     renderSettings: options.renderSettings,
     ...(options.project ? { project: options.project } : {}),

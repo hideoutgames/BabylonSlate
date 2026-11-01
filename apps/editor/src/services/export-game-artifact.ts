@@ -129,6 +129,7 @@ export async function exportProjectGameArtifact(
       exportDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
     playFrameCap:
       exportDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP,
+    garbageCollectionIntervalTicks: exportDocument?.settings.garbageCollectionIntervalTicks,
     touchMinTargetPx:
       exportDocument?.settings.touchMinTargetPx ?? 44,
     pixelsPerUnit: exportDocument?.settings.twoD.pixelsPerUnit ?? 100,

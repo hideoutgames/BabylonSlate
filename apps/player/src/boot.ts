@@ -484,6 +484,7 @@ function initializePlayer(
     sessionMode: options.previewDiagnostics ? "preview" as const : "play" as const,
     sessionGeneration: 0,
     frameCap: manifest.playFrameCap,
+    garbageCollectionIntervalTicks: manifest.garbageCollectionIntervalTicks,
     traceByteBudget: options.traceByteBudget,
     renderSettings: manifest.render,
     project: manifest.project,
@@ -1001,6 +1002,8 @@ function initializePlayer(
           ...(Array.isArray(command.phaseMs) ? { phaseMs: command.phaseMs.map(Number) } : {}),
           liveActors: Number(command.liveActors ?? 0),
           snapshotCapacity: Number(command.snapshotCapacity ?? 0),
+          ...(typeof command.collectableObjects === "number" ? { collectableObjects: command.collectableObjects } : {}),
+          ...(typeof command.garbageCollectionMs === "number" ? { garbageCollectionMs: command.garbageCollectionMs } : {}),
         }),
       );
     }

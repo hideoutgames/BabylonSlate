@@ -22,6 +22,7 @@ export function runtimeOptionsFromLoadControl(
   | "sessionGeneration"
   | "sessionMode"
   | "frameCap"
+  | "garbageCollectionIntervalTicks"
   | "traceByteBudget"
   | "renderSettings"
   | "focusNavigation"
@@ -94,6 +95,7 @@ export function runtimeOptionsFromLoadControl(
     simulationAssetGuids: msg.simulationAssetGuids,
     cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
+    ...(msg.garbageCollectionIntervalTicks !== undefined ? { garbageCollectionIntervalTicks: msg.garbageCollectionIntervalTicks } : {}),
     ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),
     renderSettings: msg.renderSettings,
     dataAssets: msg.dataAssets,

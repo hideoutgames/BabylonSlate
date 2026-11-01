@@ -1180,6 +1180,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             frameCap={
               projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
             }
+            garbageCollectionIntervalTicks={projectDocument?.settings.garbageCollectionIntervalTicks}
             infiniteLoopDetection={
               projectDocument?.settings.infiniteLoopDetection ??
               DEFAULT_INFINITE_LOOP_DETECTION

@@ -44,11 +44,13 @@ The game keeps running while the console is open, and pressing the game does not
 | `unpause` |  | Same as `resume`. | Yes |
 | `step` |  | Advances one tick and stays paused. | Yes |
 | `slomo` | rate, 0 to 8 | Slows or speeds up game time. 1 is normal speed; 0 freezes time. | Yes |
+| `gc` |  | Collects the objects made by Create Object that nothing refers to, at the end of the current tick. See [Objects and lifetime](../scripting/object-lifetime.md). | Yes |
+| `gc stats` |  | Prints how many created objects are alive and what the last collection found and took. | Yes |
 | `freecam` | `on`/`off` | Flies a separate camera while the game keeps running. Pointer, touch and WASD move the camera, and an on-screen fly stick appears; a gamepad still controls the game. `off`, `possess` or `changescene` return to the game camera. | Yes |
 | `possess` | actor name or GUID | Views the game through that actor's camera. | Yes |
 | `showfps` | `on`/`off` | Shows or hides Stats. | Yes |
 | `stat unit` | `on`/`off` | Adds the tick total, the time of each tick phase, the publish time and a history graph to Stats. | Yes |
-| `stat memory` | `on`/`off` | Adds memory use to Stats. | Yes |
+| `stat memory` | `on`/`off` | Adds memory use, the number of created objects and the time of the last collection to Stats. | Yes |
 | `stat draws` | `on`/`off` | Adds draw calls, meshes, textures, render timings and first shader draws to Stats. | Yes |
 | `stat threads` | `on`/`off` | Adds message traffic, actor count and tick count to Stats. | Yes |
 | `lightsdebug` | `on`/`off` | Shows which lights illuminate and which cast shadows. | Yes |

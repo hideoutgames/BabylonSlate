@@ -330,6 +330,8 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   ctx.patchSettings((settings) => ({
     ...settings,
     gameInstanceClass: CLASS.gameInstance,
+    // Twice the default rate, so the Object Probe's created objects see more automatic passes.
+    garbageCollectionIntervalTicks: 30,
     editorUtilityObjects: [...new Set([...settings.editorUtilityObjects, CLASS.editorProbe])],
   }));
   refsByContext.set(ctx, { spinner, interfaceProbe, objectProbe, touchProbe, dataProbe, saveProbe, streamLoader, marker, roomGuid: room });

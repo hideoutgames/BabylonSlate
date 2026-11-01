@@ -121,6 +121,7 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
     simulationAssetGuids: options.simulationAssetGuids ? [...options.simulationAssetGuids] : undefined,
     saveGame: options.saveGame,
     frameCap: resolvePlayFrameCap(options.frameCap),
+    ...(options.garbageCollectionIntervalTicks !== undefined ? { garbageCollectionIntervalTicks: options.garbageCollectionIntervalTicks } : {}),
     traceByteBudget: options.traceByteBudget,
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",

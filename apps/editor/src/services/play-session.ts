@@ -595,6 +595,8 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
           ticks: command.tickIndex ?? lastWorkerTickIndex,
           liveActors: command.liveActors,
           snapshotCapacity: command.snapshotCapacity,
+          collectableObjects: command.collectableObjects,
+          garbageCollectionMs: command.garbageCollectionMs,
         }),
       );
     }

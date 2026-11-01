@@ -60,6 +60,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["general", "Compile On Save", "settings-compile-on-save"],
   ["general", "Infinite Loop Detection", "settings-infinite-loop-detection"],
   ["general", "Loop Count", "settings-loop-count"],
+  ["general", "Garbage Collection Interval", "settings-garbage-collection-interval"],
   ["general", "Autosave Interval", "settings-autosave-interval"],
   ["general", "Editor Utility Objects"],
   ["saveGames", "Default Definition", "settings-save-definition"],
