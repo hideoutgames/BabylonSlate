@@ -187,4 +187,60 @@ describe("Timeline window", () => {
     fireEvent.click(screen.getByTestId("timeline-row-menu-delete"));
     expect(lastClip().objects[0]!.tracks).toEqual([]);
   });
+
+  it("adds actors from the Actor From Outliner dialog, with the clip's actors checked", async () => {
+    harness.scene = sceneWith(animated());
+    renderPanel();
+    fireEvent.click(screen.getByTestId("timeline-add-menu"));
+    fireEvent.click(await screen.findByTestId("timeline-track-menu-actor"));
+    const dialog = await screen.findByTestId("timeline-pick-actor");
+    expect(within(dialog).getByTestId("timeline-pick-actor-door").getAttribute("data-included")).toBe("true");
+    fireEvent.click(within(dialog).getByText("Lamp"));
+    fireEvent.click(within(dialog).getByText("Add Actors"));
+    expect(lastClip().objects.map((object) => object.actorId)).toEqual(["door", "lamp"]);
+  });
+
+  it("adds the selected actors with Shift+A while the window is shown", () => {
+    harness.scene = sceneWith(animated());
+    harness.selectedActorIds = ["lamp"];
+    renderPanel();
+    fireEvent.keyDown(document.body, { key: "A", code: "KeyA", shiftKey: true });
+    expect(lastClip().objects.map((object) => object.actorId)).toEqual(["door", "lamp"]);
+  });
+
+  it("acts on a right-clicked key from its menu", async () => {
+    harness.scene = sceneWith(animated());
+    renderPanel();
+    // 400 px lanes show the 4 s clip between gutters of 10 and 24 px; the Location row is the second.
+    const lanes = screen.getByTestId("keyframe-timeline-lanes");
+    vi.spyOn(lanes, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 72));
+    fireEvent.contextMenu(lanes, { clientX: 10 + 2 * 91.5, clientY: 36 });
+    expect(await screen.findByTestId("timeline-key-menu-interpolation")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("timeline-key-menu-go"));
+    expect(screen.getByTestId("timeline-row-t-loc").textContent).toContain("4, 0, 0");
+
+    fireEvent.contextMenu(lanes, { clientX: 10 + 2 * 91.5, clientY: 36 });
+    fireEvent.click(await screen.findByTestId("timeline-key-menu-delete"));
+    expect(lastClip().objects[0]!.tracks[0]!.keys.map((entry) => entry.id)).toEqual(["k0"]);
+  });
+
+  it("selects a row's keys and moves rows from the row menu", () => {
+    harness.scene = sceneWith({
+      ...animated(),
+      objects: [...animated().objects, { id: "o-lamp", actorId: "lamp", tracks: [] }],
+    });
+    const view = renderPanel();
+    fireEvent.contextMenu(screen.getByTestId("timeline-row-o-door"));
+    fireEvent.click(screen.getByTestId("timeline-row-menu-select-keys"));
+    const lanes = screen.getByTestId("keyframe-timeline-lanes");
+    act(() => lanes.focus());
+    fireEvent.keyDown(lanes, { key: "Delete", code: "Delete" });
+    expect(lastClip().objects[0]!.tracks[0]!.keys).toEqual([]);
+
+    view.refresh();
+    fireEvent.contextMenu(screen.getByTestId("timeline-row-o-door"));
+    fireEvent.click(screen.getByTestId("timeline-row-menu-down"));
+    expect(lastClip().objects.map((object) => object.id)).toEqual(["o-lamp", "o-door"]);
+  });
 });
+

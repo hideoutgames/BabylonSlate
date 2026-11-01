@@ -30,7 +30,7 @@ Clip names are unique within the document: a name that is taken, a duplicate or 
 A clip animates actors through tracks. Each actor in the clip has a row in the **Timeline**, with a row for each of its tracks below it.
 
 - While the **Timeline** shows a clip, drag an actor from the **Outliner** onto it, or open the actor's **⋯** menu in the **Outliner** and choose **Add to Timeline Clip**. Actors in the clip show a diamond in the **Outliner**.
-- In the **Timeline** toolbar, **Track** adds the actors selected in the viewport or **Outliner**, or any actor you pick from a list.
+- In the **Timeline** toolbar, **Track** adds the actors selected in the viewport or **Outliner** (<kbd>Shift</kbd>+<kbd>A</kbd>), or opens **Actor From Outliner…**, a list of the document's actors to check and add.
 - Tap **+** on an actor's row to choose its tracks. The **Add Track** dialog lists what a track can animate; properties the clip already animates are checked. Check one or more and tap **Add Tracks**.
 
 | Group | Properties |
@@ -39,7 +39,12 @@ A clip animates actors through tracks. Each actor in the clip has a row in the *
 | **Class Variables** | The actor's Class variables (inherited ones too) of a single Bool, Int, Float, String, Vector 2, Vector 3, Rotator, Color, Enum or Asset value. |
 | A component | The properties Play can change while the game runs: for example a Light's **Intensity** and **Color**, a Mesh's **Cast Shadows** and **Material**, an Audio component's **Volume**, and the opacity, tint, offset, size and text values of 2D components. |
 
-Right-click or long-press a track for **Set Key**, **Mute Track** and **Delete Track**. A muted track keeps its keys but does not animate. Right-click or long-press an actor's row for **Add Track…**, **Set Key** and **Remove From Clip**.
+Right-click or long-press a track or an actor's row for its menu:
+
+| Row | Menu |
+| --- | --- |
+| Track | **Set Key**, **Mute Track** (a muted track keeps its keys but does not animate), **Copy Track**, **Select All Keys**, **Reveal in Outliner**, **Move Up**, **Move Down** and **Delete Track**. |
+| Actor | **Add Track…**, **Set Key**, **Paste Track** (a copied track goes onto the same property of this actor, replacing that track's keys), **Select All Keys**, **Reveal in Outliner**, **Move Up**, **Move Down** and **Remove From Clip**. |
 
 ## Keys
 
@@ -49,11 +54,23 @@ The ruler above the tracks shows seconds, and frames when you zoom in. The playh
 - Tap the diamond at the end of a track's row to set a key at the playhead with the value shown; tap it again to remove that key. **Set Key** (<kbd>K</kbd>) keys the selected track, or every track of the selected actor.
 - **Previous Key** (<kbd>[</kbd>) and **Next Key** (<kbd>]</kbd>), and the buttons beside **Play**, move the playhead to the nearest key.
 - Tap a key to select it; <kbd>Shift</kbd> adds to the selection and <kbd>Ctrl</kbd> or <kbd>Command</kbd> toggles a key. Drag across empty space to select the keys inside, or on a touch screen hold, then drag. A key on an actor's row stands for all of that actor's keys at that time.
-- Drag selected keys to move them. With **Snap to Frames** on, they land on whole frames. A key moved onto another key replaces it, and keys stay within the clip.
-- **Delete** removes the selected keys, or the selected track or actor when no key is selected. **Copy** and **Paste** copy keys to the playhead, also into another clip that animates the same properties.
-- <kbd>Ctrl</kbd>+scroll or <kbd>Command</kbd>+scroll, or a pinch, zooms the time scale; <kbd>Shift</kbd>+scroll pans it. On a touch screen, drag empty space to scroll the tracks.
+- Drag selected keys to move them. With **Snap to Frames** on, they land on whole frames; hold <kbd>Alt</kbd> to place them between frames. A key moved onto another key replaces it, and keys stay within the clip.
+- **Delete** removes the selected keys, or the selected track or actor when no key is selected. **Copy** and **Paste** copy keys to the playhead, also into another clip that animates the same properties. **Duplicate** pastes a copy of the selected keys at the playhead.
+- Right-click a key, or hold a finger on it, for **Go To Key**, **Interpolation**, **Cut**, **Copy**, **Paste**, **Duplicate** and **Delete**; on a touch screen **Select** adds the key to the selection. The menu acts on all selected keys when the key is one of them.
+- <kbd>Ctrl</kbd>+scroll or <kbd>Command</kbd>+scroll, or a pinch, zooms the time scale; <kbd>Shift</kbd>+scroll pans it, and **Zoom To Fit** shows the whole clip again. On a touch screen, drag empty space to scroll the tracks.
+- Drag the clip's end on the ruler, where the hatching starts, to change its **Length**.
 
 Keys are drawn by how the value moves to the next key: a circle eases smoothly (**Auto**), a diamond moves in a straight line (**Linear**), a square holds until the next key (**Constant**), and an hourglass follows an easing curve. True or false values, whole numbers, text, enums and assets always hold. Color tracks show their colours across the clip.
 
-**Play** in the **Timeline** toolbar moves the playhead through the clip at its **Play Rate**; **Loop Preview** repeats it. The toolbar also sets the clip's **Length** and **Frame Rate**. Every edit is one step of the document's undo history, and dragging keys is a single step.
+**Play** in the **Timeline** toolbar moves the playhead through the clip at its **Play Rate**; **Loop Preview** repeats it. The toolbar also sets the clip's **Length** and **Frame Rate**. Every edit is one step of the document's undo history, and dragging keys or the clip's end is a single step.
+
+## Inspector
+
+While a clip is selected, the **Inspector** edits it instead of the actor selection:
+
+- **Key**: the selected key's track, **Time** (with its frame; a new time lands on the nearest frame), **Value** and **Interpolation**. With several keys selected, **Interpolation** sets theirs together.
+- **Track**: the selected track's property, type and number of keys, and **Muted**.
+- **Timeline Clip**: **Name**, **Length**, **Frame Rate**, **Play Rate**, **Loop Mode**, **Auto Play** and **When Finished**.
+
+**Interpolation** offers **Constant**, **Linear**, **Auto**, **Ease In**, **Ease Out**, **Ease In Out** and every other easing curve. Enum and Asset values are set on the property itself, then keyed.
 

@@ -290,3 +290,103 @@ export function timelineKeyValueAt(track: TimelinePropertyTrack, time: number, a
   const value = evaluateTimelineTrack(track, time);
   return value === undefined ? authored : value;
 }
+
+/** Sets the interpolation of each key `refs` names (it shapes the move to the next key). */
+export function setTimelineKeyInterpolation(
+  clip: SerializedTimelineClip,
+  refs: readonly TrackKeyRef[],
+  interpolation: TimelineKey["Interpolation"],
+): SerializedTimelineClip {
+  const ids = new Set(refs.map((ref) => `${ref.trackId}\u0000${ref.keyId}`));
+  return mapTracks(clip, (track) => {
+    if (!track.keys.some((key) => ids.has(`${track.id}\u0000${key.id}`) && key.Interpolation !== interpolation)) return track;
+    return { ...track, keys: track.keys.map((key) => (ids.has(`${track.id}\u0000${key.id}`) ? { ...key, Interpolation: interpolation } : key)) };
+  });
+}
+
+/** Changes one key's value. */
+export function setTimelineKeyValue(clip: SerializedTimelineClip, ref: TrackKeyRef, value: unknown): SerializedTimelineClip {
+  return mapTracks(clip, (track) => {
+    if (track.id !== ref.trackId) return track;
+    const index = track.keys.findIndex((key) => key.id === ref.keyId);
+    if (index < 0) return track;
+    const keys = [...track.keys];
+    keys[index] = { ...keys[index]!, Value: structuredClone(value) };
+    return { ...track, keys };
+  });
+}
+
+/** Moves one key to `time` (kept inside the clip); it replaces a key already on that frame. */
+export function setTimelineKeyTime(clip: SerializedTimelineClip, ref: TrackKeyRef, time: number): SerializedTimelineClip {
+  const key = findTimelineTrack(clip, ref.trackId)?.track.keys.find((entry) => entry.id === ref.keyId);
+  if (!key) return clip;
+  return shiftTimelineKeys(clip, new Map([[ref.trackId, [key]]]), time - key.Time);
+}
+
+/** Moves a track one place up or down among its object's tracks, or an object among the clip's. */
+export function moveTimelineRow(clip: SerializedTimelineClip, rowId: string, direction: -1 | 1): SerializedTimelineClip {
+  const swap = <T>(list: readonly T[], index: number): T[] | null => {
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= list.length) return null;
+    const next = [...list];
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    return next;
+  };
+  const objectIndex = clip.objects.findIndex((object) => object.id === rowId);
+  if (objectIndex >= 0) {
+    const objects = swap(clip.objects, objectIndex);
+    return objects ? { ...clip, objects } : clip;
+  }
+  for (const object of clip.objects) {
+    const tracks = swap(object.tracks, object.tracks.findIndex((track) => track.id === rowId));
+    if (tracks) return { ...clip, objects: clip.objects.map((entry) => (entry === object ? { ...object, tracks } : entry)) };
+  }
+  return clip;
+}
+
+/** Every key of a track, or of every track of an object. */
+export function timelineRowKeyRefs(clip: SerializedTimelineClip, rowId: string): TrackKeyRef[] {
+  const object = clip.objects.find((entry) => entry.id === rowId);
+  const tracks = object ? object.tracks : [findTimelineTrack(clip, rowId)?.track].filter((track) => track !== undefined);
+  return tracks.flatMap((track) => track.keys.map((key) => ({ trackId: track.id, keyId: key.id })));
+}
+
+export interface CopiedTimelineTrack {
+  target: TimelinePropertyTrack["target"];
+  valueType: TimelineValueType;
+  /** The component's class, so a component track pastes onto a component of the same class. */
+  componentClassId?: string;
+  keys: TimelineKey[];
+}
+
+/**
+ * Pastes a copied track onto an object: onto its track for the same property,
+ * replacing that track's keys, or as a new track when the actor has the
+ * property. A component track lands on the actor's first component of the
+ * copied class. Null when the actor cannot take it.
+ */
+export function pasteTimelineTrack(
+  clip: SerializedTimelineClip,
+  objectId: string,
+  copied: CopiedTimelineTrack,
+  actor: { components: ReadonlyArray<{ id: string; classId: string }> },
+  newId: NewId,
+): SerializedTimelineClip | null {
+  const object = clip.objects.find((entry) => entry.id === objectId);
+  if (!object) return null;
+  let target = copied.target;
+  if (target.kind === "component") {
+    const component = actor.components.find((entry) => entry.id === target.componentId && (!copied.componentClassId || entry.classId === copied.componentClassId))
+      ?? actor.components.find((entry) => entry.classId === copied.componentClassId);
+    if (!component) return null;
+    target = { ...target, componentId: component.id };
+  }
+  const keys = copied.keys
+    .filter((key) => key.Time <= clip.length + 1e-9)
+    .map((key) => ({ ...structuredClone(key), id: newId() }));
+  const existing = object.tracks.find((track) => timelineTargetKey(track.target) === timelineTargetKey(target));
+  const tracks = existing
+    ? object.tracks.map((track) => (track === existing ? { ...track, keys } : track))
+    : [...object.tracks, { id: newId(), target, valueType: copied.valueType, keys }];
+  return { ...clip, objects: clip.objects.map((entry) => (entry === object ? { ...object, tracks } : entry)) };
+}

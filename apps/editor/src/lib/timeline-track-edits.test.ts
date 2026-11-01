@@ -6,6 +6,12 @@ import {
   adjacentTimelineKeyTime,
   copyTimelineKeys,
   deleteTimelineKeys,
+  moveTimelineRow,
+  pasteTimelineTrack,
+  setTimelineKeyInterpolation,
+  setTimelineKeyTime,
+  setTimelineKeyValue,
+  timelineRowKeyRefs,
   pasteTimelineKeys,
   removeTimelineObject,
   removeTimelineTrack,
@@ -123,3 +129,38 @@ describe("withTimelineClip", () => {
     expect(withTimelineClip(scene, renamed).timelineClips![0]!.name).toBe("Renamed");
   });
 });
+
+describe("key settings, rows and copied tracks", () => {
+  it("sets interpolation, value and time of keys", () => {
+    const eased = setTimelineKeyInterpolation(clip(), [{ trackId: "a", keyId: "a2" }], "cubicIn");
+    expect(eased.objects[0]!.tracks[0]!.keys.map((entry) => entry.Interpolation)).toEqual(["linear", "cubicIn"]);
+    expect(setTimelineKeyInterpolation(eased, [{ trackId: "a", keyId: "a2" }], "cubicIn")).toBe(eased);
+    expect(setTimelineKeyValue(clip(), { trackId: "a", keyId: "a0" }, 7).objects[0]!.tracks[0]!.keys[0]!.Value).toBe(7);
+    // Moving onto another key's frame replaces it; the time stays inside the clip.
+    expect(setTimelineKeyTime(clip(), { trackId: "a", keyId: "a0" }, 2).objects[0]!.tracks[0]!.keys.map((entry) => entry.id)).toEqual(["a0"]);
+    expect(times(setTimelineKeyTime(clip(), { trackId: "a", keyId: "a2" }, 9), "a")).toEqual([0, 4]);
+  });
+
+  it("moves tracks and objects up and down, and lists a row's keys", () => {
+    expect(moveTimelineRow(clip(), "b", -1).objects[0]!.tracks.map((track) => track.id)).toEqual(["b", "a"]);
+    const base = clip();
+    expect(moveTimelineRow(base, "a", -1)).toBe(base);
+    const two = addTimelineObjects(clip(), ["lamp"], ids());
+    expect(moveTimelineRow(two, "o1", 1).objects.map((object) => object.actorId)).toEqual(["lamp", "door"]);
+    expect(timelineRowKeyRefs(clip(), "o1")).toHaveLength(3);
+    expect(timelineRowKeyRefs(clip(), "b")).toEqual([{ trackId: "b", keyId: "b1" }]);
+  });
+
+  it("pastes a copied track onto the same property, or onto a component of the copied class", () => {
+    const copied = { target: { kind: "variable" as const, property: "Open" }, valueType: "float" as const, keys: [key("x", 1, 5)] };
+    const replaced = pasteTimelineTrack(clip(), "o1", copied, { components: [] }, ids())!;
+    expect(replaced.objects[0]!.tracks[0]!.keys.map((entry) => [entry.Time, entry.Value])).toEqual([[1, 5]]);
+
+    const light = { target: { kind: "component" as const, componentId: "glow", property: "intensity" }, valueType: "float" as const,
+      componentClassId: "LightComponent", keys: [key("y", 0, 2)] };
+    const pasted = pasteTimelineTrack(clip(), "o1", light, { components: [{ id: "lamp-light", classId: "LightComponent" }] }, ids())!;
+    expect(pasted.objects[0]!.tracks[2]).toMatchObject({ target: { kind: "component", componentId: "lamp-light", property: "intensity" }, keys: [{ Time: 0, Value: 2 }] });
+    expect(pasteTimelineTrack(clip(), "o1", light, { components: [] }, ids())).toBeNull();
+  });
+});
+

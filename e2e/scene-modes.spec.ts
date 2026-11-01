@@ -249,6 +249,16 @@ test.describe("Scene modes", () => {
     // Previous Key moves the playhead to the key before it.
     await page.getByTestId("timeline-previous-key").click();
     await expect(page.getByLabel("Playhead Time")).toHaveValue(/^0(\.00)?/);
+
+    // A selected key shows in the Inspector; its menu sets the interpolation.
+    await page.mouse.click(x(5), y);
+    const keyGrid = page.getByTestId("timeline-inspector-key");
+    await expect(keyGrid.getByLabel("Track")).toHaveValue("Actor › Location");
+    await page.mouse.click(x(5), y, { button: "right" });
+    await page.getByTestId("timeline-key-menu-interpolation").click();
+    await page.getByTestId("timeline-key-menu-interp-constant").click();
+    await expect.poll(async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.keys[1]!.Interpolation).toBe("constant");
+    await expect(page.getByTestId("timeline-inspector-clip").getByLabel("Name")).toHaveValue("Timeline Clip");
   });
   test("keys a track on a touch screen with 44 pt rows, the Add Track dialog and a long-press menu", { tag: IPAD_TEST_TAG }, async ({ page }) => {
     test.setTimeout(120_000);

@@ -52,6 +52,9 @@ import {
   useOpenDocument,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOptionalSceneTools } from "../context/scene-tools-context";
+import { documentSceneMode } from "../shell/scene-document-layout";
+import { TimelineInspector } from "./timeline-inspector";
 import {
   useSceneEditing,
   selectionAfterLockChange,
@@ -111,9 +114,14 @@ export function SceneDetailsPanel(props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const simulationDocumentId = usePlaySimulationDocumentId();
   const store = useSimulationInspectionStore();
-  return store && simulationDocumentId === documentId
-    ? <SimulationInspector store={store} panel={props} />
-    : <AuthoringSceneDetailsPanel {...props} />;
+  const doc = useOpenDocument(documentId);
+  const sceneTools = useOptionalSceneTools();
+  if (store && simulationDocumentId === documentId) return <SimulationInspector store={store} panel={props} />;
+  // Timeline mode edits the selected clip's keys, tracks and settings here.
+  const timelineClip = documentSceneMode(doc?.ref.kind, doc?.layout) === "timeline" && sceneTools?.timelineClipId
+    ? (doc?.content as SerializedScene | undefined)?.timelineClips?.some((clip) => clip.id === sceneTools.timelineClipId)
+    : false;
+  return timelineClip ? <TimelineInspector /> : <AuthoringSceneDetailsPanel {...props} />;
 }
 
 function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {

@@ -135,8 +135,11 @@ export function rulerTicks(view: KeyframeTimelineView, width: number, frameRate:
   return ticks;
 }
 
-/** Half the hit box of a key, in pixels: about 44 pt across for a finger. */
-export const keyReach = (coarse: boolean): number => (coarse ? 14 : 6);
+/**
+ * Half the hit box of a key, in pixels: 44 pt across for a finger. Boxes never
+ * overlap in effect, since a press takes the nearest key within reach.
+ */
+export const keyReach = (coarse: boolean): number => (coarse ? 22 : 6);
 
 /** The nearest key to `x` in `row` within `reach` pixels. */
 export function keyAt(

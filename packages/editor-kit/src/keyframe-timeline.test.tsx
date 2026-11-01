@@ -24,6 +24,9 @@ function Harness(props: {
   onTime?: (time: number, phase: string) => void;
   onRowMenu?: (rowId: string) => void;
   onToggle?: (rowId: string) => void;
+  onKeyMenu?: (ref: KeyRef) => void;
+  onLength?: (length: number, phase: string) => void;
+  fitToken?: number;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [time, setTime] = useState(0.5);
@@ -54,6 +57,9 @@ function Harness(props: {
         onSelectRow={setRow}
         onToggleRow={props.onToggle}
         onRowContextMenu={(id) => props.onRowMenu?.(id)}
+        onKeyContextMenu={props.onKeyMenu ? (ref) => props.onKeyMenu!(ref) : undefined}
+        onLengthChange={props.onLength}
+        fitToken={props.fitToken}
         header={<span>Filter</span>}
         footer={<button type="button">Add Track</button>}
         aria-label="Intro"
@@ -163,5 +169,70 @@ describe("KeyframeTimeline", () => {
     expect(screen.getByTestId("row").textContent).toBe("vis");
     expect(screen.getByText("0, 0, 1")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add Track" })).toBeTruthy();
+  });
+
+  it("moves keys off the frame grid while Alt is held", () => {
+    const onMove = vi.fn();
+    render(<Harness onMove={onMove} />);
+    press("pointerdown", x(1), y(1));
+    press("pointermove", x(1.51), y(1), { altKey: true });
+    press("pointerup", x(1.51), y(1), { altKey: true });
+    expect(onMove.mock.calls.at(-1)![0]).toBeCloseTo(0.51, 2);
+  });
+
+  it("opens a key's menu on right-click or a held finger, selecting the key first", () => {
+    vi.useFakeTimers();
+    try {
+      const onKeyMenu = vi.fn();
+      const onMove = vi.fn();
+      render(<Harness onKeyMenu={onKeyMenu} onMove={onMove} />);
+      fireEvent.contextMenu(lanes(), { clientX: x(3), clientY: y(2) });
+      expect(onKeyMenu).toHaveBeenCalledWith({ rowId: "vis", keyId: "k3" });
+      expect(screen.getByTestId("selected").textContent).toBe("k3");
+      // Empty space has no key menu.
+      fireEvent.contextMenu(lanes(), { clientX: x(0.3), clientY: y(2) });
+      expect(onKeyMenu).toHaveBeenCalledTimes(1);
+
+      act(() => dispatchPointerEvent(lanes(), "pointerdown", { pointerType: "touch", clientX: x(2) + 15, clientY: y(1) }));
+      act(() => { vi.advanceTimersByTime(520); });
+      expect(onKeyMenu).toHaveBeenLastCalledWith({ rowId: "loc", keyId: "k2" });
+      act(() => dispatchPointerEvent(lanes(), "pointermove", { pointerType: "touch", clientX: x(3), clientY: y(1) }));
+      act(() => dispatchPointerEvent(lanes(), "pointerup", { pointerType: "touch", clientX: x(3), clientY: y(1) }));
+      expect(onMove).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drags the clip's end on the ruler to change the length, on frames", () => {
+    const onLength = vi.fn();
+    const onTime = vi.fn();
+    render(<Harness onLength={onLength} onTime={onTime} />);
+    const ruler = screen.getByRole("slider", { name: "Playhead" });
+    expect(screen.getByTestId("keyframe-timeline-end")).toBeTruthy();
+    act(() => dispatchPointerEvent(ruler, "pointerdown", { pointerType: "mouse", clientX: x(4) + 2 }));
+    act(() => dispatchPointerEvent(ruler, "pointermove", { pointerType: "mouse", clientX: x(3.01) }));
+    act(() => dispatchPointerEvent(ruler, "pointerup", { pointerType: "mouse", clientX: x(3.01) }));
+    expect(onLength.mock.calls.map(([length, phase]) => [Number(length.toFixed(4)), phase])).toEqual([[4, "start"], [3, "move"], [3, "end"]]);
+    expect(onTime).not.toHaveBeenCalled();
+  });
+
+  it("selects an unselected key on a finger's tap or drag, not on a hold", () => {
+    const onMove = vi.fn();
+    render(<Harness onKeyMenu={() => {}} onMove={onMove} />);
+    const touch = (type: "pointerdown" | "pointermove" | "pointerup", clientX: number) =>
+      act(() => dispatchPointerEvent(lanes(), type, { pointerType: "touch", clientX, clientY: y(1) }));
+    touch("pointerdown", x(1));
+    expect(screen.getByTestId("selected").textContent).toBe("");
+    touch("pointerup", x(1));
+    expect(screen.getByTestId("selected").textContent).toBe("k1");
+    // Dragging an unselected key selects it, then moves it from the next event on.
+    touch("pointerdown", x(2));
+    touch("pointermove", x(2) + 20);
+    expect(screen.getByTestId("selected").textContent).toBe("k2");
+    expect(onMove).not.toHaveBeenCalled();
+    touch("pointermove", x(2.5));
+    touch("pointerup", x(2.5));
+    expect(onMove.mock.calls.map(([, phase]) => phase)).toEqual(["start", "move", "end"]);
   });
 });

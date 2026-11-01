@@ -70,6 +70,15 @@ export interface KeyframeTimelineProps {
   onToggleRow?: (rowId: string) => void;
   /** Right-click or long-press on a track list row. */
   onRowContextMenu?: (rowId: string, x: number, y: number) => void;
+  /** Right-click or long-press on a key; the key is selected first unless it already is. */
+  onKeyContextMenu?: (ref: KeyRef, x: number, y: number) => void;
+  /**
+   * Dragging the clip's end on the ruler (where the hatching starts). The
+   * length is on a frame when `snap` is on; the caller clamps it.
+   */
+  onLengthChange?: (length: number, phase: GesturePhase) => void;
+  /** Changing this number fits 0 s to the clip's end in the lanes again (Zoom To Fit). */
+  fitToken?: number;
   /** Above the track list, beside the ruler (a filter field). */
   header?: ReactNode;
   /** Below the last track list row (Add Track). */
@@ -88,7 +97,12 @@ const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP_PX = 8;
 
 type Press =
-  | { kind: "key"; pointerId: number; x: number; grabTime: number; moving: boolean; delta: number }
+  | {
+    kind: "key"; pointerId: number; x: number; y: number; ref: KeyRef; grabTime: number; moving: boolean; delta: number;
+    holdTimer: number | null;
+    /** A finger on an unselected key selects it only on a tap or a drag, so a hold can add it from the menu. */
+    pendingSelect: boolean;
+  }
   | { kind: "marquee"; pointerId: number; x: number; y: number; mode: KeySelectMode; active: boolean }
   | { kind: "pan"; pointerId: number; x: number; y: number; scrollTop: number; view: KeyframeTimelineView; holdTimer: number | null; moved: boolean };
 
@@ -99,11 +113,13 @@ type Press =
  * values and the ruler are HTML. Colours are CSS custom properties read on
  * every draw.
  *
- * Mouse: drag the ruler to scrub; click a key to select it (Shift adds,
- * Ctrl/⌘ toggles) and drag to move the selection; drag empty lane space to
- * marquee; Ctrl/⌘+wheel zooms and Shift+wheel pans. Touch: tap selects, drag a
- * key to move it, drag empty space to scroll and pan, hold then move to
- * marquee, and pinch to zoom.
+ * Mouse: drag the ruler to scrub, or the clip's end on it to change the
+ * length; click a key to select it (Shift adds, Ctrl/⌘ toggles) and drag to
+ * move the selection (Alt leaves the frame grid); right-click a key for its
+ * menu; drag empty lane space to marquee; Ctrl/⌘+wheel zooms and Shift+wheel
+ * pans. Touch: tap selects, drag a key to move it, hold a key for its menu,
+ * drag empty space to scroll and pan, hold then move to marquee, and pinch to
+ * zoom.
  */
 export function KeyframeTimeline({
   rows,
@@ -119,6 +135,9 @@ export function KeyframeTimeline({
   onSelectRow,
   onToggleRow,
   onRowContextMenu,
+  onKeyContextMenu,
+  onLengthChange,
+  fitToken,
   header,
   footer,
   rowHeight = 24,
@@ -141,7 +160,7 @@ export function KeyframeTimeline({
   const press = useRef<Press | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; view: KeyframeTimelineView; centre: number } | null>(null);
-  const scrub = useRef<number | null>(null);
+  const ruler = useRef<{ pointerId: number; mode: "scrub" | "length"; length: number } | null>(null);
 
   const fitted = useMemo(() => fitKeyframeView(length, laneWidth), [length, laneWidth]);
   const view = zoomed ?? fitted;
@@ -166,8 +185,11 @@ export function KeyframeTimeline({
     return () => observer.disconnect();
   }, []);
 
-  // A new clip length refits the lanes.
-  useEffect(() => setZoomed(null), [length]);
+  // A new clip length refits the lanes, except while its end is being dragged; so does Zoom To Fit.
+  useEffect(() => {
+    if (ruler.current?.mode !== "length") setZoomed(null);
+  }, [length]);
+  useEffect(() => setZoomed(null), [fitToken]);
 
   // The colours are tokens: redraw when the theme or the system scheme changes.
   useEffect(() => {
@@ -329,7 +351,7 @@ export function KeyframeTimeline({
     const held = press.current;
     press.current = null;
     if (!held) return;
-    if (held.kind === "pan" && held.holdTimer !== null) clearTimeout(held.holdTimer);
+    if ((held.kind === "pan" || held.kind === "key") && held.holdTimer !== null) clearTimeout(held.holdTimer);
     if (held.kind === "key" && held.moving) onMoveKeys?.(phase === "cancel" ? 0 : held.delta, phase);
     if (held.kind === "marquee") setMarquee(null);
   };
@@ -357,9 +379,23 @@ export function KeyframeTimeline({
     const key = keyAt(row, view, point.x, keyReach(touch || coarse));
     const mode: KeySelectMode = event.shiftKey ? "add" : event.ctrlKey || event.metaKey ? "toggle" : "replace";
     if (row && key) {
-      const id = keyRefId({ rowId: row.id, keyId: key.id });
-      if (mode !== "replace" || !selectedKeys.has(id)) onSelectKeys([{ rowId: row.id, keyId: key.id }], mode);
-      press.current = { kind: "key", pointerId: event.pointerId, x: event.clientX, grabTime: key.time, moving: false, delta: 0 };
+      const ref = { rowId: row.id, keyId: key.id };
+      const unselected = !selectedKeys.has(keyRefId(ref));
+      const pendingSelect = touch && Boolean(onKeyContextMenu) && mode === "replace" && unselected;
+      if (!pendingSelect && (mode !== "replace" || unselected)) onSelectKeys([ref], mode);
+      const keyPress: Press = {
+        kind: "key", pointerId: event.pointerId, x: event.clientX, y: event.clientY, ref, grabTime: key.time,
+        moving: false, delta: 0, holdTimer: null, pendingSelect,
+      };
+      // A finger held still on a key opens its menu instead of dragging it.
+      if (touch && onKeyContextMenu) {
+        keyPress.holdTimer = window.setTimeout(() => {
+          if (press.current !== keyPress || keyPress.moving) return;
+          press.current = null;
+          onKeyContextMenu(ref, keyPress.x, keyPress.y);
+        }, LONG_PRESS_MS);
+      }
+      press.current = keyPress;
       return;
     }
     if (!touch) {
@@ -387,14 +423,26 @@ export function KeyframeTimeline({
     const held = press.current;
     if (!held || held.pointerId !== event.pointerId) return;
     if (held.kind === "key") {
-      if (!held.moving && Math.abs(event.clientX - held.x) <= DRAG_PX) return;
+      const slop = event.pointerType === "mouse" ? DRAG_PX : LONG_PRESS_SLOP_PX;
+      if (!held.moving && Math.abs(event.clientX - held.x) <= slop) return;
+      if (held.holdTimer !== null) {
+        clearTimeout(held.holdTimer);
+        held.holdTimer = null;
+      }
+      if (held.pendingSelect) {
+        // Select first; the move starts with the next event, once the selection includes the key.
+        held.pendingSelect = false;
+        onSelectKeys([held.ref], "replace");
+        return;
+      }
       if (!onMoveKeys) return;
       if (!held.moving) {
         held.moving = true;
         onMoveKeys(0, "start");
       }
       const raw = (event.clientX - held.x) / view.pixelsPerSecond;
-      held.delta = snap ? snapToFrame(held.grabTime + raw, frameRate, Number.POSITIVE_INFINITY) - held.grabTime : raw;
+      // Alt moves keys off the frame grid.
+      held.delta = snap && !event.altKey ? snapToFrame(held.grabTime + raw, frameRate, Number.POSITIVE_INFINITY) - held.grabTime : raw;
       onMoveKeys(held.delta, "move");
       return;
     }
@@ -425,7 +473,8 @@ export function KeyframeTimeline({
     const held = press.current;
     if (!held || held.pointerId !== event.pointerId) return;
     if (held.kind === "key") {
-      if (!held.moving) {
+      if (held.pendingSelect) onSelectKeys([held.ref], "replace");
+      else if (!held.moving) {
         // A click on a key of a group selected with others selects it alone.
         const point = lanePoint(event);
         const row = rows[Math.floor(point.y / rowHeight)];
@@ -461,23 +510,56 @@ export function KeyframeTimeline({
     if (press.current?.pointerId === event.pointerId) endPress("cancel");
   };
 
-  const rulerTime = (event: { clientX: number }) => {
-    const rect = lanesRef.current!.getBoundingClientRect();
-    return snapped(xToTime(view, event.clientX - rect.left));
+  const rulerX = (event: { clientX: number }) => event.clientX - lanesRef.current!.getBoundingClientRect().left;
+  const rulerTime = (event: { clientX: number; altKey?: boolean }) => {
+    const seconds = xToTime(view, rulerX(event));
+    return snap && !event.altKey ? snapToFrame(seconds, frameRate, length) : Math.min(length, Math.max(0, seconds));
+  };
+  const rulerLength = (event: { clientX: number; altKey?: boolean }) => {
+    const seconds = Math.max(0, xToTime(view, rulerX(event)));
+    return snap && !event.altKey ? snapToFrame(seconds, frameRate, Number.POSITIVE_INFINITY) : seconds;
   };
   const onRulerPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    scrub.current = event.pointerId;
+    const onEnd = onLengthChange && Math.abs(rulerX(event) - timeToX(view, length)) <= keyReach(event.pointerType !== "mouse" || coarse);
+    if (onEnd) {
+      // The lanes keep their scale while the end moves, so the edge follows the pointer.
+      setZoomed(view);
+      ruler.current = { pointerId: event.pointerId, mode: "length", length };
+      onLengthChange(length, "start");
+      return;
+    }
+    ruler.current = { pointerId: event.pointerId, mode: "scrub", length };
     onTimeChange(rulerTime(event), "start");
   };
   const onRulerPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (scrub.current === event.pointerId) onTimeChange(rulerTime(event), "move");
+    const held = ruler.current;
+    if (held?.pointerId !== event.pointerId) return;
+    if (held.mode === "length") {
+      held.length = rulerLength(event);
+      onLengthChange?.(held.length, "move");
+    } else onTimeChange(rulerTime(event), "move");
   };
   const onRulerPointerEnd = (event: ReactPointerEvent<HTMLDivElement>, phase: "end" | "cancel") => {
-    if (scrub.current !== event.pointerId) return;
-    scrub.current = null;
-    onTimeChange(rulerTime(event), phase);
+    const held = ruler.current;
+    if (held?.pointerId !== event.pointerId) return;
+    ruler.current = null;
+    if (held.mode === "length") {
+      onLengthChange?.(held.length, phase);
+      setZoomed(null);
+    } else onTimeChange(rulerTime(event), phase);
+  };
+  const onLaneContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!onKeyContextMenu) return;
+    const point = lanePoint(event);
+    const row = rows[Math.floor(point.y / rowHeight)];
+    const key = keyAt(row, view, point.x, keyReach(coarse));
+    if (!row || !key) return;
+    event.preventDefault();
+    const ref = { rowId: row.id, keyId: key.id };
+    if (!selectedKeys.has(keyRefId(ref))) onSelectKeys([ref], "replace");
+    onKeyContextMenu(ref, event.clientX, event.clientY);
   };
 
   const endX = timeToX(view, length);
@@ -516,6 +598,14 @@ export function KeyframeTimeline({
             aria-hidden="true"
             className="absolute inset-y-0 right-0 bg-[repeating-linear-gradient(135deg,var(--border)_0_1px,transparent_1px_6px)] opacity-70"
             style={{ left: Math.max(0, endX) }}
+          />
+        ) : null}
+        {onLengthChange && endX >= 0 && endX <= laneWidth ? (
+          <div
+            aria-hidden="true"
+            data-testid="keyframe-timeline-end"
+            className="absolute inset-y-0 w-2 -translate-x-1/2 cursor-col-resize after:absolute after:inset-y-1 after:left-1/2 after:w-px after:bg-muted-foreground"
+            style={{ left: endX }}
           />
         ) : null}
         {ticks.map((tick) => (
@@ -568,6 +658,7 @@ export function KeyframeTimeline({
             onPointerMove={onLanePointerMove}
             onPointerUp={onLanePointerUp}
             onPointerCancel={onLanePointerCancel}
+            onContextMenu={onLaneContextMenu}
           >
             <canvas
               ref={canvasRef}
