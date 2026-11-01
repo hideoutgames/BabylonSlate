@@ -119,6 +119,20 @@ describe("Gizmo drags on proxies", () => {
     expect(keyed.payload.editorPreview!.proxies.door!.scale).toEqual([2, 3, 1]);
   });
 
+  it("overwrites the preview placement for transform tracks without keys, with Auto Key on or off", () => {
+    const empty = (property: "location" | "rotation" | "scale") => ({ id: property, target: { kind: "transform" as const, property }, valueType: "vec3" as const, keys: [] });
+    const base = clipAsset("relative");
+    const payload: SerializedTimelineClipAsset = { ...base, proxies: [base.proxies[0]!, { ...base.proxies[1]!, tracks: [empty("location"), empty("rotation"), empty("scale")] }] };
+    const scene = timelineProxyScene(payload, "Swing", graphs, false);
+    for (const autoKey of [true, false]) {
+      const edit = timelineProxyGizmoEdit(payload, scene, 1, [live("glow", [5, 1, 0], 45, [2, 2, 2])], options(autoKey));
+      expect(edit.payload.editorPreview!.proxies.glow).toMatchObject({ location: [5, 1, 0], scale: [2, 2, 2] });
+      expect(close(edit.payload.editorPreview!.proxies.glow!.rotation)).toEqual([0, 45, 0]);
+      expect(edit.payload.proxies).toEqual(payload.proxies);
+      expect(edit.unkeyed.size).toBe(0);
+    }
+  });
+
   it("stands an Absolute proxy at its placement's Scale", () => {
     const payload = clipAsset("absolute");
     payload.editorPreview!.proxies.door!.scale = [2, 2, 2];

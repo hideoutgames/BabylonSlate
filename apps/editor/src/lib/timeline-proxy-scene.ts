@@ -175,10 +175,11 @@ const sameTriple = (a: readonly number[], b: readonly number[]) => a.every((valu
 /**
  * A gizmo drag on proxies in the clip asset viewport. `lives` are where the
  * proxies were dropped, as drawn (a Relative proxy's preview placement
- * included). A channel with a transform track takes a key at `time` (Auto
- * Key) or an unkeyed value, as in a Scene's Timeline mode; a changed
- * Location, Rotation or Scale without a track changes the proxy's Editor
- * Preview placement, so the proxy stays as it was dropped.
+ * included). A channel whose transform track has keys takes a key at
+ * `time` (Auto Key) or an unkeyed value, as in a Scene's Timeline mode; a
+ * changed Location, Rotation or Scale without a track, or whose track has no
+ * keys yet, overwrites the proxy's Editor Preview placement, so the proxy
+ * stays as it was dropped.
  */
 export function timelineProxyGizmoEdit(
   payload: SerializedTimelineClipAsset,
@@ -203,7 +204,7 @@ export function timelineProxyGizmoEdit(
     const scale = live.scale.map((value, axis) => (place.scale[axis] ? value / place.scale[axis]! : value)) as [number, number, number];
     return { ...live, position: [offset.x, offset.y, offset.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w], scale };
   });
-  const edit = timelineTransformEdit(scene, clip, time, local, options);
+  const edit = timelineTransformEdit(scene, clip, time, local, { ...options, keyedTracksOnly: true });
   const keyed = edit.scene.timelineClips?.find((entry) => entry.id === clip.id);
   let next = keyed && keyed !== clip ? withTimelineClipOfAsset(payload, keyed) : payload;
   const moved: Record<string, TimelineProxyPreview> = {};
@@ -211,7 +212,7 @@ export function timelineProxyGizmoEdit(
     const preview = previews[live.actorId];
     if (!preview) return;
     const tracked = new Set((clip.objects.find((object) => object.actorId === live.actorId)?.tracks ?? [])
-      .filter((track) => !track.muted && track.target.kind === "transform").map((track) => track.target.property));
+      .filter((track) => !track.muted && track.target.kind === "transform" && track.keys.length > 0).map((track) => track.target.property));
     let placement = preview;
     if (!tracked.has("rotation")) {
       const rotation = quaternionToEulerDegrees(live.rotation);

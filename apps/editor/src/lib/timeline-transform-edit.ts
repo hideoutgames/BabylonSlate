@@ -55,7 +55,13 @@ export function timelineTransformEdit(
   clip: SerializedTimelineClip,
   time: number,
   lives: readonly LiveGizmoTransform[],
-  options: { autoKey: boolean; unkeyed: ReadonlyMap<string, unknown>; newId: NewId },
+  options: {
+    autoKey: boolean;
+    unkeyed: ReadonlyMap<string, unknown>;
+    newId: NewId;
+    /** A track without keys leaves its channel to edit the actor (the clip asset Viewport's proxies). */
+    keyedTracksOnly?: boolean;
+  },
 ): TimelineTransformEdit {
   const unkeyed = new Map<string, unknown>();
   const keys: Array<{ trackId: string; time: number; value: unknown }> = [];
@@ -66,6 +72,7 @@ export function timelineTransformEdit(
     const edited = applyLiveGizmoToActor(actor, live);
     const tracks = new Map<Channel, TimelinePropertyTrack>();
     for (const track of clip.objects.find((object) => object.actorId === actor.id)?.tracks ?? []) {
+      if (options.keyedTracksOnly && track.keys.length === 0) continue;
       if (!track.muted && track.target.kind === "transform" && CHANNELS.includes(track.target.property as Channel)) {
         tracks.set(track.target.property as Channel, track);
       }
