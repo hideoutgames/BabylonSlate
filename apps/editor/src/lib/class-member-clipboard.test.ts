@@ -613,12 +613,12 @@ describe("pasteClassMembers variables", () => {
       const helper = result.pasted.find((entry) => entry.kind === "function")!;
       const { nodes, edges } = result.graph.functionGraphs![helper.id]!;
 
-      expect(result.graph.nodes.at(-1)!.data).toMatchObject({ name: "Opened 1" });
+      expect(result.graph.nodes.at(-1)!.data).toMatchObject({ name: "Opened_1" });
       const byTitle = (title: string) => nodes.filter((entry) => entry.data.title === title);
       // The calls now run the copy on the running object, with the same pins and argument wire.
-      const [retargeted, retargetedShared] = byTitle("Call Opened 1");
-      expect(retargeted!.data).toMatchObject({ name: "Opened 1", implicitSelf: true, classId: "Enemy", pins: EVENT_PINS });
-      expect(retargetedShared!.data).toMatchObject({ name: "Opened 1", implicitSelf: true, classId: "Enemy" });
+      const [retargeted, retargetedShared] = byTitle("Call Opened_1");
+      expect(retargeted!.data).toMatchObject({ name: "Opened_1", implicitSelf: true, classId: "Enemy", pins: EVENT_PINS });
+      expect(retargetedShared!.data).toMatchObject({ name: "Opened_1", implicitSelf: true, classId: "Enemy" });
       expect(edges.map((edge) => [edge.sourceHandle, edge.targetHandle])).toEqual([
         ["value", "Amount"],
         ["value", "target"],
@@ -722,7 +722,7 @@ describe("pasteClassMembers functions", () => {
       });
       expect(body.callHelper).toMatchObject({ functionName: "Helper_1", title: "Call Helper_1", classId: "Hero" });
       expect(body.callSelf).toMatchObject({ functionName: "Heal_1", title: "Call Heal_1" });
-      expect(body.callEvent).toMatchObject({ name: "On Healed 1", title: "Call On Healed 1" });
+      expect(body.callEvent).toMatchObject({ name: "On Healed_1", title: "Call On Healed_1" });
       // Mana was not copied, and the same Class still has it with the same type.
       expect(body.setMana).toMatchObject({ variableId: "var-mana", variableName: "Mana", classId: "Hero" });
     });
@@ -823,22 +823,22 @@ describe("pasteClassMembers events", () => {
     expect(added).toMatchObject({
       id: "new-1",
       type: "flow.event.custom",
-      data: { name: "On Healed 1", title: "Event On Healed 1", pins: EVENT_PINS },
+      data: { name: "On Healed_1", title: "Event On Healed_1", pins: EVENT_PINS },
     });
     expect(added.position.x).toBe(80);
     expect(added.position.y).toBeGreaterThan(80 + 120);
-    expect(result.graph.members!.at(-1)).toEqual({ id: "new-1", kind: "event", name: "On Healed 1", pins: EVENT_PINS });
+    expect(result.graph.members!.at(-1)).toEqual({ id: "new-1", kind: "event", name: "On Healed_1", pins: EVENT_PINS });
     // The next copy is free of both.
     const again = paste(clip, result.graph, { idFactory: sequence("more-") });
-    expect(again.graph.nodes.at(-1)!.data.name).toBe("On Healed 2");
+    expect(again.graph.nodes.at(-1)!.data.name).toBe("On Healed_2");
   });
 
   it("treats names that differ only in case, or compile to one identifier, as taken", () => {
     const clip = copy([{ id: "evt-healed", kind: "event", name: "On Healed" }]);
     const target = emptyTarget([], [node("t", "flow.event.custom", { name: "on healed" })]);
-    expect(paste(clip, target).graph.nodes.at(-1)!.data.name).toBe("On Healed 1");
+    expect(paste(clip, target).graph.nodes.at(-1)!.data.name).toBe("On Healed_1");
     const spaced = emptyTarget([], [node("t", "flow.event.custom", { name: "On_Healed" })]);
-    expect(paste(clip, spaced).graph.nodes.at(-1)!.data.name).toBe("On Healed 1");
+    expect(paste(clip, spaced).graph.nodes.at(-1)!.data.name).toBe("On Healed_1");
   });
 
   it("starts the event graph at the usual corner when it has no nodes", () => {
@@ -880,12 +880,12 @@ describe("pasteClassMembers events", () => {
     const first = paste(clip, target);
     expect(first.graph.nodes.at(-1)).toMatchObject({
       type: "flow.event.custom",
-      data: { name: "Begin Play 1", title: "Event Begin Play 1", pins: [] },
+      data: { name: "Begin Play_1", title: "Event Begin Play_1", pins: [] },
     });
-    expect(first.graph.members).toEqual([{ id: "new-1", kind: "event", name: "Begin Play 1", pins: [] }]);
-    expect(first.pasted).toEqual([{ kind: "event", id: "new-1", name: "Begin Play 1" }]);
+    expect(first.graph.members).toEqual([{ id: "new-1", kind: "event", name: "Begin Play_1", pins: [] }]);
+    expect(first.pasted).toEqual([{ kind: "event", id: "new-1", name: "Begin Play_1" }]);
     const second = paste(clip, first.graph, { idFactory: sequence("more-") });
-    expect(second.graph.nodes.at(-1)!.data.name).toBe("Begin Play 2");
+    expect(second.graph.nodes.at(-1)!.data.name).toBe("Begin Play_2");
     // The authored native event is still the only one of its kind.
     expect(second.graph.nodes.filter((entry) => entry.type === "flow.event.beginPlay")).toHaveLength(1);
   });
@@ -927,7 +927,7 @@ describe("pasteClassMembers events", () => {
     const result = paste(clip, emptyTarget());
     expect(result.graph.nodes.map((entry) => [entry.type, entry.data.name])).toEqual([
       ["flow.event.beginPlay", undefined],
-      ["flow.event.custom", "Begin Play 1"],
+      ["flow.event.custom", "Begin Play_1"],
     ]);
   });
 
@@ -935,7 +935,7 @@ describe("pasteClassMembers events", () => {
     const clip = copy([{ id: "evt-begin", kind: "event", name: "Event Begin Play" }]);
     const result = paste(clip, emptyTarget(), { eventOptions: { parentClass: "GameInstance" } });
     expect(result.graph.nodes).toHaveLength(1);
-    expect(result.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "Begin Play 1" } });
+    expect(result.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "Begin Play_1" } });
     expect(result.skipped).toEqual([]);
   });
 
@@ -956,7 +956,7 @@ describe("pasteClassMembers events", () => {
     const result = paste(clip, target);
     const [tick, hit] = result.graph.nodes.slice(2);
     expect(tick!.data).toMatchObject({
-      name: "Tick 1",
+      name: "Tick_1",
       pins: [{ name: "deltaSeconds", typeId: "float", direction: "out" }],
     });
     expect(hit!.data.pins).toEqual([
@@ -966,7 +966,7 @@ describe("pasteClassMembers events", () => {
       { name: "Normal", typeId: "vec3", direction: "out" },
     ]);
     // The Class member row carries the same signature as the node.
-    expect(result.graph.members!.find((member) => member.name === "On Hit 1")!.pins).toEqual(hit!.data.pins);
+    expect(result.graph.members!.find((member) => member.name === "On Hit_1")!.pins).toEqual(hit!.data.pins);
   });
 
   it("leaves a bound event out when the target already has it, and keeps one it can host", () => {
@@ -1029,11 +1029,11 @@ describe("pasteClassMembers events", () => {
       expect(result.graph.nodes).toHaveLength(1);
       expect(result.graph.nodes[0]).toMatchObject({
         type: "flow.event.custom",
-        data: { name: "On Hit 1", title: "Event On Hit 1", pins: hitPins },
+        data: { name: "On Hit_1", title: "Event On Hit_1", pins: hitPins },
       });
       expect(result.graph.nodes[0]!.data.componentId).toBeUndefined();
       expect(result.graph.nodes[0]!.data.eventQualifier).toBeUndefined();
-      expect(result.pasted).toEqual([{ kind: "event", id: "new-1", name: "On Hit 1" }]);
+      expect(result.pasted).toEqual([{ kind: "event", id: "new-1", name: "On Hit_1" }]);
     }
   });
 
@@ -1070,7 +1070,7 @@ describe("pasteClassMembers events", () => {
     const again = paste(clip, { ...target, components: [{ id: "prefab-door", classId: "DoorComponent", properties: {}, parentId: null }] });
     expect(again.skipped).toEqual([]);
     expect(again.graph.nodes.map((entry) => entry.type)).toEqual(["flow.event.custom", "flow.event.custom"]);
-    expect(again.graph.nodes[1]!.data).toMatchObject({ name: "Opened 1" });
+    expect(again.graph.nodes[1]!.data).toMatchObject({ name: "Opened_1" });
     expect(again.graph.nodes[1]!.data.componentId).toBeUndefined();
   });
 
@@ -1087,7 +1087,7 @@ describe("pasteClassMembers events", () => {
     const result = paste(clip, { ...emptyTarget(), components: [] });
     expect(result.graph.components).toHaveLength(1);
     expect(result.graph.nodes).toHaveLength(1);
-    expect(result.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "On Hit 1" } });
+    expect(result.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "On Hit_1" } });
     expect(result.graph.nodes[0]!.data.componentId).toBeUndefined();
     expect(result.skipped).toEqual([]);
   });
@@ -1126,7 +1126,7 @@ describe("pasteClassMembers a whole selection", () => {
       "variable:Scores",
       "function:Heal",
       "function:Helper",
-      "event:Begin Play 1",
+      "event:Begin Play_1",
     ]);
     expect(result.graph.members!.find((member) => member.name === "Health")!.category).toBe("Stats|Core");
     expect(Object.keys(result.graph.functionGraphs!)).toEqual(

@@ -497,6 +497,11 @@ describe("PropertyGrid", () => {
     expect(formatEventMemberName("beginPlay")).toBe("Begin Play");
     expect(formatEventMemberName("Event beginPlay")).toBe("Begin Play");
     expect(formatEventMemberName("eventBeginPlay")).toBe("Begin Play");
+    // A duplicate's copy index keeps its underscore; other underscores still split words.
+    expect(formatEventMemberName("open_door_2")).toBe("Open Door_2");
+    expect(formatEventMemberName("On Damaged_1")).toBe("On Damaged_1");
+    expect(formatEventMemberName("_3")).toBe("3");
+    expect(formatEventTitle("Open Door_1")).toBe("Event Open Door_1");
     expect(formatEventTitle("on hit")).toBe("Event On Hit");
     expect(formatEventTitle("Event Begin Play")).toBe("Event Begin Play");
     expect(formatEventTitle("camera2D")).toBe("Event Camera 2D");

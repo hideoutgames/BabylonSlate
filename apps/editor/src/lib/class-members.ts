@@ -28,6 +28,7 @@ import {
 } from "@haptic/scripting-nodes";
 import { delegateSignatureSource } from "@haptic/scripting";
 import { signatureOfPins } from "./delegate-signatures";
+import { freeCustomEventName, takenCustomEventNames } from "./custom-event-names";
 
 export {
   COLLISION_EVENT_TYPE_IDS,
@@ -320,8 +321,11 @@ export function addClassMember(
 ): SerializedGraph {
   const trimmed = name.trim();
   if (!trimmed) return graph;
+  // Two custom events never share a name: a taken one gets the next `_1`, `_2`, ….
   const displayName =
-    kind === "event" ? formatEventMemberName(trimmed) : trimmed;
+    kind === "event"
+      ? formatEventMemberName(trimmed) && freeCustomEventName(trimmed, takenCustomEventNames(graph))
+      : trimmed;
   if (!displayName) return graph;
   if (
     kind === "variable" &&
@@ -350,7 +354,7 @@ export function addClassMember(
             y: 80 + graph.nodes.length * 80,
           },
           data: {
-            title: formatEventTitle(trimmed),
+            title: formatEventTitle(displayName),
             name: displayName,
             pins: member.pins ?? [],
             __nodeType: "flow.event.custom",

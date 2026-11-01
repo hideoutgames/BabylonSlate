@@ -924,11 +924,13 @@ export function dispatcherPaletteNodes(
       },
     });
     // From a dragged delegate pin only: a matching custom event, or Create Event for one.
+    // The row names the action; the event it adds is named after the dispatcher.
     nodes.push({
       ...eventNode,
       id: `flow.event.custom:for:${row.classId}:${row.name}`,
       nodeType: "flow.event.custom",
       title: `Add Custom Event for ${row.name}`,
+      nodeTitle: eventNode.title,
       outOfContext: true,
     });
     const createData = { ...createEventNodeData(row.pins), implicitSelf: true };
