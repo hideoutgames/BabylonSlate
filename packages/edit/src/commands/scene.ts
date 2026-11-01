@@ -21,6 +21,12 @@ import type {
   SetSceneOverlayEditorCommand,
   SetSceneScriptCommand,
 } from "./scene-fields";
+import {
+  AddTimelineClipCommand,
+  RemoveTimelineClipCommand,
+  ReorderTimelineClipCommand,
+  SetTimelineClipCommand,
+} from "./scene-timeline";
 import { snapshotBytes } from "../snapshot-bytes";
 import { replaceActor, replaceComponent } from "./scene-actor";
 
@@ -854,6 +860,10 @@ export type SceneEditCommand =
   | ReorderFolderCommand
   | SetSceneOverlayEditorCommand
   | SetSceneScriptCommand
+  | AddTimelineClipCommand
+  | RemoveTimelineClipCommand
+  | SetTimelineClipCommand
+  | ReorderTimelineClipCommand
   | ReplaceSceneCommand
   | AddActorCommand
   | RemoveActorCommand
@@ -890,6 +900,10 @@ export const SCENE_COMMAND_TYPES = [
   "scene.reorderFolder",
   "scene.setOverlayEditor",
   "scene.setScript",
+  "scene.addTimelineClip",
+  "scene.removeTimelineClip",
+  "scene.setTimelineClip",
+  "scene.reorderTimelineClip",
   "scene.replace",
   "scene.addActor",
   "scene.removeActor",

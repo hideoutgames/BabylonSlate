@@ -73,6 +73,12 @@ export {
   SetSceneOverlayEditorCommand,
   SetSceneScriptCommand,
 } from "./commands/scene-fields";
+export {
+  AddTimelineClipCommand,
+  RemoveTimelineClipCommand,
+  ReorderTimelineClipCommand,
+  SetTimelineClipCommand,
+} from "./commands/scene-timeline";
 export { ReplaceSceneCommand, createReplaceSceneCommandFromJson } from "./commands/replace-scene";
 export { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";
 export {

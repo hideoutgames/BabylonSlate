@@ -4,6 +4,7 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  createTimelineClip,
   type MaterialInstanceOverrides,
   type SerializedActor,
   type SerializedComponent,
@@ -37,6 +38,7 @@ import {
   type SceneEditCommand,
 } from "./scene";
 import { ReorderFolderCommand, SetSceneScriptCommand } from "./scene-fields";
+import { SetTimelineClipCommand } from "./scene-timeline";
 import { diffSceneCommands, planSceneChange } from "./scene-diff";
 import { EditSession } from "../session";
 import { commandToJournalPayload, reviveCommand } from "../journal";
@@ -442,6 +444,37 @@ describe("diffSceneCommands", () => {
     expect(removed).toHaveLength(1);
     expect(removed[0]!.apply(before)).not.toHaveProperty("script");
     expect((removed[0] as SetSceneScriptCommand).mergeKey).toBeUndefined();
+  });
+
+  it("records Timeline Clip creation, edits, reordering and removal as deltas that replay exactly", () => {
+    const intro = createTimelineClip("intro", "Intro");
+    const outro = createTimelineClip("outro", "Outro");
+    const steps: SerializedScene[] = [
+      baseScene(),
+      { ...baseScene(), timelineClips: [intro] },
+      { ...baseScene(), timelineClips: [intro, outro] },
+      { ...baseScene(), timelineClips: [{ ...outro, name: "Finale", length: 8 }, intro] },
+      { ...baseScene(), timelineClips: [intro] },
+      baseScene(),
+    ];
+    const types: string[][] = [];
+    for (let index = 1; index < steps.length; index++) {
+      const [before, after] = [steps[index - 1]!, steps[index]!];
+      const commands = planSceneChange(before, after);
+      types.push(commands.map((command) => command.type));
+      expect(commands.reduce((doc, command) => command.apply(doc), before)).toStrictEqual(after);
+      expect([...commands].reverse().reduce((doc, command) => command.invert().apply(doc), after)).toStrictEqual(before);
+    }
+    expect(types).toEqual([
+      ["scene.addTimelineClip"],
+      ["scene.addTimelineClip"],
+      ["scene.setTimelineClip", "scene.reorderTimelineClip"],
+      ["scene.removeTimelineClip"],
+      ["scene.removeTimelineClip"],
+    ]);
+    // One clip edited twice in a row continues one gesture.
+    const renamed = planSceneChange(steps[2]!, { ...steps[2]!, timelineClips: [{ ...intro, name: "Opening" }, outro] });
+    expect((renamed[0] as SetTimelineClipCommand).mergeKey).toBe("timelineClip:intro");
   });
 
   it("derives no commands for an unchanged scene", () => {

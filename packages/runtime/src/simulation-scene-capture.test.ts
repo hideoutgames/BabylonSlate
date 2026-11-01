@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings, createMeshComponent, normalizeScene, type SerializedScene } from "@haptic/core";
+import { createActor, createDefaultSceneSettings, createMeshComponent, createTimelineClip, normalizeScene, type SerializedScene } from "@haptic/core";
 import { ClassRegistry, createActorFromSerialized, hydrateScenePropertyReferences, MaterialObject, World, type Actor } from "@haptic/object-model";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { captureSimulationScene, type SimulationSceneCaptureInput, type SimulationSceneCaptureResult } from "./simulation-scene-capture";
@@ -65,6 +65,13 @@ describe("complete simulation scene capture", () => {
     const script = { nodes: [{ id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} }], edges: [], members: [] };
     const baseline = { ...input.baseline, script };
     expect(complete(captureSimulationScene({ ...input, baseline })).scene.script).toEqual(script);
+  });
+
+  it("keeps the authored Timeline Clips", () => {
+    const { input } = fixture();
+    const timelineClips = [createTimelineClip("intro", "Intro")];
+    const baseline = { ...input.baseline, timelineClips };
+    expect(complete(captureSimulationScene({ ...input, baseline })).scene.timelineClips).toEqual(timelineClips);
   });
 
   it("round-trips gameplay spawns, deletions, local transforms, typed references and private material values", () => {

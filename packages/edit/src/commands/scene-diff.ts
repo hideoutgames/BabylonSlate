@@ -34,6 +34,12 @@ import {
 } from "./scene";
 import { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./scene-instance";
 import {
+  AddTimelineClipCommand,
+  RemoveTimelineClipCommand,
+  ReorderTimelineClipCommand,
+  SetTimelineClipCommand,
+} from "./scene-timeline";
+import {
   ReorderFolderCommand,
   SetActorClassCommand,
   SetActorPropertiesCommand,
@@ -243,6 +249,24 @@ function diffFolders(
   }
 }
 
+/** Clip edits first (on clips in both), then removals, moves and additions, as for folders. */
+function diffTimelineClips(before: SerializedScene, after: SerializedScene, commands: SceneEditCommand[]): void {
+  if (before.timelineClips === after.timelineClips) return;
+  const beforeClips = before.timelineClips ?? [];
+  const afterClips = after.timelineClips ?? [];
+  const previousById = new Map(beforeClips.map((clip) => [clip.id, clip]));
+  for (const clip of afterClips) {
+    const previous = previousById.get(clip.id);
+    if (previous && previous !== clip && JSON.stringify(previous) !== JSON.stringify(clip)) {
+      commands.push(new SetTimelineClipCommand(clip.id, previous, clip, `timelineClip:${clip.id}`));
+    }
+  }
+  const plan = planList(beforeClips, afterClips);
+  for (const { item, index } of plan.removed) commands.push(new RemoveTimelineClipCommand(item, index));
+  for (const { id, from, to } of plan.moves) commands.push(new ReorderTimelineClipCommand(id, from, to));
+  for (const { item, index } of plan.added) commands.push(new AddTimelineClipCommand(item, index));
+}
+
 function diffActor(previous: SerializedActor, actor: SerializedActor, commands: SceneEditCommand[]): void {
   const id = actor.id;
   if (previous.classId !== actor.classId) {
@@ -356,6 +380,7 @@ export function diffSceneCommands(
   }
 
   diffFolders(before, after, commands);
+  diffTimelineClips(before, after, commands);
 
   const beforeActors = new Map(before.actors.map((actor) => [actor.id, actor]));
   for (const actor of after.actors) {

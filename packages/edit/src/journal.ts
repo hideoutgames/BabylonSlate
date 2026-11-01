@@ -64,6 +64,12 @@ import {
   createSetSceneOverlayEditorCommandFromJson,
   createSetSceneScriptCommandFromJson,
 } from "./commands/scene-fields";
+import {
+  createAddTimelineClipCommandFromJson,
+  createRemoveTimelineClipCommandFromJson,
+  createReorderTimelineClipCommandFromJson,
+  createSetTimelineClipCommandFromJson,
+} from "./commands/scene-timeline";
 
 export interface JournalLine {
   v: 1;
@@ -297,6 +303,7 @@ const SUPERSEDING_COMMAND_TYPES = new Set([
   "scene.setComponentTransform",
   "scene.setSceneSetting",
   "scene.setScript",
+  "scene.setTimelineClip",
   "scene.renameActor",
   "scene.renameFolder",
 ]);
@@ -412,6 +419,10 @@ export function registerSceneCommandRevivers(): void {
   registerCommandReviver("scene.reorderFolder", createReorderFolderCommandFromJson);
   registerCommandReviver("scene.setOverlayEditor", createSetSceneOverlayEditorCommandFromJson);
   registerCommandReviver("scene.setScript", createSetSceneScriptCommandFromJson);
+  registerCommandReviver("scene.addTimelineClip", createAddTimelineClipCommandFromJson);
+  registerCommandReviver("scene.removeTimelineClip", createRemoveTimelineClipCommandFromJson);
+  registerCommandReviver("scene.setTimelineClip", createSetTimelineClipCommandFromJson);
+  registerCommandReviver("scene.reorderTimelineClip", createReorderTimelineClipCommandFromJson);
   registerCommandReviver("scene.replace", createReplaceSceneCommandFromJson);
   registerCommandReviver("scene.setComponentLinkage", createSetComponentLinkageCommandFromJson);
   registerCommandReviver("scene.addActor", createAddActorCommandFromJson);
