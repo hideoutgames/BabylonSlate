@@ -490,6 +490,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
 
     // 7. Script data and the ScriptHost.
     this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
+    for (const entry of options.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);
     for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.scriptHost = createScriptHost(this, options, registry);

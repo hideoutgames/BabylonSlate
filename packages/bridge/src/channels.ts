@@ -209,6 +209,7 @@ export type ControlMessage =
       simulationAssetGuids?: string[];
       saveGame?: import("@haptic/core").SaveGameConfiguration;
       dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+      curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
       /** Packaged authored assets for the Asset Registry nodes, snapshotted when the session starts. */
       assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
