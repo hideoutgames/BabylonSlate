@@ -4,7 +4,6 @@ import {
   AddMemberMenu,
   AssetPicker,
   ContextMenuOverlay,
-  NamePromptDialog,
   PanelFrame,
   PinTypeMenu,
   TreeView,
@@ -39,7 +38,6 @@ import {
   classAllowsMemberKind,
   ensureEventNodeOnGraph,
   isObjectInstanceVariableType,
-  memberNamePromptCopy,
   nativeStubId,
   nextNewMemberName,
   variableFieldsForPickerType,
@@ -523,9 +521,6 @@ export function ClassMembersView({
   const sessionState = useEditorSessionState();
   const treeRef = useRef<HTMLDivElement | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [memberPromptKind, setMemberPromptKind] =
-    useState<GraphClassMemberKind | null>(null);
-  const [memberPromptLocal, setMemberPromptLocal] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
   const [accessDrop, setAccessDrop] = useState<{
@@ -628,15 +623,20 @@ export function ClassMembersView({
   };
   const addVariableRef = useRef(addVariable);
   addVariableRef.current = addVariable;
-  const addKind = (kind: GraphClassMemberKind, local = false) => {
+  const addKind = (kind: GraphClassMemberKind) => {
     if (kind === "interface") {
       setInterfacePickerOpen(true);
       return;
     }
-    setMemberPromptLocal(local);
-    setMemberPromptKind(kind);
+    // Like New Function: a generated name, renamed inline.
+    if (kind === "dispatcher" && graph) {
+      selectAddedMember(
+        addClassMember(graph, "dispatcher", nextNewMemberName("dispatcher", namesOfKind("dispatcher"))),
+        true,
+      );
+    }
   };
-  const selectAddedFunction = (next: SerializedGraph, rename = false) => {
+  const selectAddedMember = (next: SerializedGraph, rename = false) => {
     onGraphChange(next);
     const added = next.members?.[next.members.length - 1];
     if (added) {
@@ -674,7 +674,7 @@ export function ClassMembersView({
   );
   const createEmptyFunction = () => {
     if (!graph) return;
-    selectAddedFunction(
+    selectAddedMember(
       addClassMember(graph, "function", nextNewMemberName("function", namesOfKind("function"))),
       true,
     );
@@ -690,7 +690,7 @@ export function ClassMembersView({
       row.kind === "interface" && functionNames.includes(row.name)
         ? nextCopyName(row.name, functionNames)
         : row.name;
-    selectAddedFunction(
+    selectAddedMember(
       addClassMember(graph, "function", name, undefined, {
         pins: row.pins,
         implementsInterface: row.implementsInterface,
@@ -905,7 +905,7 @@ export function ClassMembersView({
               data-testid={`class-add-${section.id}`}
               onClick={(event) => {
                 event.stopPropagation();
-                addKind(kind, section.local === true);
+                addKind(kind);
               }}
             >
               <PlusIcon />
@@ -1324,57 +1324,6 @@ export function ClassMembersView({
           if (!open) setAccessDrop(null);
         }}
         onChoose={chooseAccess}
-      />
-      <NamePromptDialog
-        open={memberPromptKind !== null}
-        onOpenChange={(open) => {
-          if (!open) setMemberPromptKind(null);
-        }}
-        title={
-          memberPromptKind
-            ? memberNamePromptCopy(memberPromptKind, {
-                local: memberPromptLocal,
-              }).title
-            : "Add Member"
-        }
-        label={
-          memberPromptKind
-            ? memberNamePromptCopy(memberPromptKind, {
-                local: memberPromptLocal,
-              }).label
-            : "Name"
-        }
-        onSubmit={(name) => {
-          if (!graph || !memberPromptKind) return;
-          const extras =
-            memberPromptLocal && activeFunctionId
-              ? { functionId: activeFunctionId }
-              : undefined;
-          const next = addClassMember(
-            graph,
-            memberPromptKind,
-            name,
-            undefined,
-            extras,
-          );
-          onGraphChange(next);
-          if (memberPromptKind === "event") {
-            const node = next.nodes[next.nodes.length - 1];
-            if (node) {
-              onFocusEventNode?.(node.id, node.data.name as string);
-            }
-            return;
-          }
-          const added = next.members?.[next.members.length - 1];
-          if (added) {
-            onSelectMember?.(added.id, {
-              kind: added.kind,
-              name: added.name,
-              detail: added.id,
-              typeId: added.typeId,
-            });
-          }
-        }}
       />
       <AssetPicker
         open={interfacePickerOpen}

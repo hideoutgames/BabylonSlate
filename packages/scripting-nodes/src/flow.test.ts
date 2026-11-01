@@ -277,6 +277,22 @@ describe("flow nodes", () => {
     );
   });
 
+  it("types function Input and Output pins like the function's Call nodes, keeping Arrays and Signatures", () => {
+    const rows = [
+      { name: "Targets", typeId: "object", typeClassId: "Actor", container: "array", direction: "in" },
+      { name: "On Done", typeId: "delegate", signature: [{ typeId: "float" }], direction: "in" },
+      { name: "Scores", typeId: "int", container: "array", direction: "out" },
+    ];
+    const typesOf = (id: string) =>
+      flowNodes.find((node) => node.id === id)!.pins({ pins: rows }).map((pin) => [pin.id, pin.type]);
+
+    expect(typesOf("flow.function.input")).toEqual([
+      ["Targets", { kind: "array", element: objectRef("Actor") }],
+      ["On Done", { kind: "delegate", inputs: [FLOAT], outputs: [] }],
+    ]);
+    expect(typesOf("flow.function.output")).toEqual([["Scores", { kind: "array", element: { kind: "int" } }]]);
+  });
+
   it("maps custom event data pins as outputs beside Then", () => {
     const custom = flowNodes.find((node) => node.id === "flow.event.custom");
     const pins = custom?.pins({

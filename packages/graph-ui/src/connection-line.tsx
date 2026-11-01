@@ -9,6 +9,7 @@ import { Badge } from "@haptic/ui/components/badge";
 import {
   collectDisplayConnectPins,
   containerPointerToClient,
+  graphNodeIdAtClientPoint,
   isClientPointOverGraphNode,
   screenCentersForSafePins,
   shouldOpenAddNodeOnConnectEnd,
@@ -16,7 +17,7 @@ import {
   type PinCompatibilityRule,
 } from "./graph-connect";
 import { useGraphEditorContext } from "./graph-editor-context";
-import { hasSerializedPins } from "./graph-types";
+import { hasSerializedPins, type GraphPinDragSource } from "./graph-types";
 import { edgeStyleForPin, type PinTypeRef } from "./node-theme";
 import { animTransitionPath } from "./anim-transition-path";
 
@@ -41,6 +42,8 @@ export type GraphConnectionLineViewProps = {
   connectionLineKind?: "default" | "animTransition";
   /** Why the pin under the wire refuses it; shown next to the pointer. */
   refusal?: string | null;
+  /** Whether the node under the pointer takes the wire as a new pin (shows **+ Add Pin**). */
+  acceptsPinDrop?: (targetNodeId: string, source: GraphPinDragSource) => boolean;
 };
 
 function pinOnDraggedNode(
@@ -87,6 +90,7 @@ export function GraphConnectionLineView({
   pinCompatibility,
   connectionLineKind = "default",
   refusal = null,
+  acceptsPinDrop,
 }: GraphConnectionLineViewProps) {
   const declaredPin = pinOnDraggedNode(fromNode, fromHandle.id);
   const pinStyle = edgeStyleForPin(
@@ -120,8 +124,22 @@ export function GraphConnectionLineView({
           targetY: toY,
           targetPosition: toPosition,
         })[0];
+  // Over a node body that takes the wire as a new pin, a release adds one there.
+  const pinDropNodeId =
+    declaredPin && !toHandle && acceptsPinDrop
+      ? graphNodeIdAtClientPoint(pointer, root)
+      : null;
+  const showAddPin =
+    declaredPin !== undefined &&
+    pinDropNodeId !== null &&
+    pinDropNodeId !== fromNode.id &&
+    acceptsPinDrop!(pinDropNodeId, {
+      nodeId: fromNode.id,
+      pin: declaredPin,
+      type: pinDisplayType(fromNode.id, declaredPin.id) ?? declaredPin.type,
+    });
   // Measure the DOM only when the zone decides the hint.
-  const showHint = !declaredPin || toHandle
+  const showHint = !declaredPin || toHandle || showAddPin
     ? false
     : connectEndMode === "add-node" ||
       (!isClientPointOverGraphNode(pointer, root) &&
@@ -162,6 +180,26 @@ export function GraphConnectionLineView({
           </Badge>
         </foreignObject>
       ) : null}
+      {showAddPin ? (
+        <foreignObject
+          x={badge.x}
+          y={badge.y - 10}
+          width={180}
+          height={24}
+          overflow="visible"
+          className="pointer-events-none"
+        >
+          <Badge
+            variant="default"
+            data-testid="add-pin-hint"
+            aria-hidden="true"
+            className="pointer-events-none flex items-center gap-1 whitespace-nowrap shadow-md"
+          >
+            <span aria-hidden="true" className="text-sm font-semibold leading-none">+</span>
+            Add Pin
+          </Badge>
+        </foreignObject>
+      ) : null}
       {showHint ? (
         <foreignObject
           x={badge.x}
@@ -188,7 +226,7 @@ export function GraphConnectionLineView({
 export function GraphConnectionLine(props: ConnectionLineComponentProps) {
   const nodes = useStore((state) => state.nodes);
   const flow = useStore((state) => state.domNode);
-  const { connectEndMode, connectionLineKind, connectionRefusal, pinCompatibility, pinDisplayType } = useGraphEditorContext();
+  const { acceptsPinDrop, connectEndMode, connectionLineKind, connectionRefusal, pinCompatibility, pinDisplayType } = useGraphEditorContext();
   const fromNodeId = props.fromNode.id;
   const fromPinId = props.fromHandle.id;
   const toNodeId = props.toNode?.id;
@@ -228,6 +266,7 @@ export function GraphConnectionLine(props: ConnectionLineComponentProps) {
       pinCompatibility={pinCompatibility}
       connectionLineKind={connectionLineKind}
       refusal={refusal}
+      acceptsPinDrop={acceptsPinDrop}
     />
   );
 }
