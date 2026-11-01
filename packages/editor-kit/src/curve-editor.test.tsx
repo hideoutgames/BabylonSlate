@@ -112,6 +112,27 @@ describe("CurveEditor", () => {
     expect(keysOf(onChange.mock.lastCall![0]).map((entry) => [entry.Time, entry.Value])).toEqual([[0, 0], [0.5, 5], [1, 10]]);
   });
 
+  it("keeps key times on the step and inside the range, with fixed ends and no extrapolation pickers", () => {
+    const onChange = vi.fn();
+    render(<Stateful initial={curve(key(1, 0), key(3, 5))} onChange={onChange}
+      constraints={{ timeRange: [0, 4], timeSnap: 0.5, extrapolation: "constant" }} />);
+    expect(screen.queryByTestId("curve-before")).toBeNull();
+    fireEvent.pointerDown(screen.getByTestId("curve-key-0"));
+    fireEvent.pointerUp(screen.getByTestId("curve-key-0"));
+    const time = screen.getByTestId("curve-time");
+    const type = (value: string) => {
+      act(() => time.focus());
+      fireEvent.change(time, { target: { value } });
+      fireEvent.keyDown(time, { key: "Enter" });
+      act(() => time.blur());
+    };
+    type("1.3");
+    expect(keysOf(onChange.mock.lastCall![0])[0]!.Time).toBe(1.5);
+    type("-2");
+    expect(keysOf(onChange.mock.lastCall![0])[0]!.Time).toBe(0);
+    expect(onChange.mock.lastCall![0]).toMatchObject({ Before: "constant", After: "constant" });
+  });
+
   it("drags one channel of a Vector key and leaves the others", () => {
     const onChange = vi.fn();
     const zero = { x: 0, y: 0, z: 0 };
