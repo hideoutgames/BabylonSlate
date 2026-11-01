@@ -2987,6 +2987,9 @@ function initializeEngine(
     setRegisterViewEnabled: (enabled: boolean) => {
       if (registeredView) setRegisteredViewEnabled(registeredView, enabled);
     },
+    releaseViewResources: () => {
+      if (!disposed) worldRenderer.releaseResources();
+    },
     liveObjectCounts: () => ({
       meshes: liveMeshCount(scene),
       textures: engine.getLoadedTexturesCache().length,
@@ -3484,8 +3487,10 @@ function initializeEngine(
 /**
  * Pause the editor viewport while Play is open. Disable this canvas's
  * registerView so Babylon `_renderViews` cannot setSize from the dock while
- * the overlay owns the framebuffer. On close, restore the view, engine size,
- * and invalidate so render-on-demand redraws the docked view.
+ * the overlay owns the framebuffer, and free the view's render targets (its
+ * multisampled scene colour and depth, effect and water targets) for Play's
+ * on the shared Engine. On close, restore the view, engine size, and
+ * invalidate so render-on-demand redraws the docked view, preparing them again.
  */
 export function syncEditorPlayState(
   handle: EngineHandle,
@@ -3493,7 +3498,8 @@ export function syncEditorPlayState(
 ): void {
   handle.setPaused(playing);
   handle.setRegisterViewEnabled(!playing);
-  if (!playing) {
+  if (playing) handle.releaseViewResources();
+  else {
     handle.resize();
     handle.scheduler.invalidate("play");
   }
