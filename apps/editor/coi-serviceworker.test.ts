@@ -166,6 +166,10 @@ function isolationWorker(network: () => Promise<unknown>) {
   runInNewContext(source, { self, fetch: network, Request, Response, Headers, console });
   return {
     console,
+    /** Deliver a page's message to the worker. */
+    message(data: unknown): void {
+      listeners.get("message")?.({ data });
+    },
     /** Dispatch a fetch event and resolve to the worker's answer (undefined when it answers with nothing). */
     fetch(url: string): Promise<Response | undefined> {
       let answer: Promise<Response | undefined> = Promise.resolve(undefined);
@@ -194,6 +198,22 @@ describe("COI service worker fetch", () => {
     expect(response?.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin");
     expect(worker.console.error).not.toHaveBeenCalled();
   });
+
+  it.each([["WebKit", {}], ["Chromium", { chrome: {} }]] as const)(
+    "answers a %s page's later navigations with require-corp, which isolates it", async (_, browser) => {
+      // WebKit implements no COEP credentialless: a reload the page's live worker answered with it (the Breakdown's A/B
+      // pass) was not isolated, its timers coarsened.
+      const page = bootstrap();
+      Object.assign(page.window, { chrome: undefined }, browser);
+      page.serviceWorker.controller = controller();
+      page.start();
+      const worker = isolationWorker(async () =>
+        new Response("<!doctype html>", { status: 200, headers: { "content-type": "text/html" } }));
+      for (const [message] of page.serviceWorker.controller.postMessage.mock.calls) worker.message(message);
+      const reload = await worker.fetch("https://editor.example/");
+      expect(reload?.headers.get("Cross-Origin-Embedder-Policy")).toBe("require-corp");
+      expect(reload?.headers.get("Cross-Origin-Resource-Policy")).toBe("cross-origin");
+    });
 
   it("keeps the body of an ordinary response", async () => {
     const worker = isolationWorker(async () =>

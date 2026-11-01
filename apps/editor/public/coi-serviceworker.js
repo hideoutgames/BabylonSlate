@@ -67,7 +67,9 @@ if (typeof window === 'undefined') {
         const coi = {
             shouldRegister: () => true,
             shouldDeregister: () => false,
-            coepCredentialless: () => !(window.chrome || window.netscape),
+            // Local change: require-corp everywhere. WebKit implements no credentialless, so a navigation answered with
+            // it (any after the page told its live worker to use it, such as a reload) was not cross-origin isolated.
+            coepCredentialless: () => false,
             doReload: () => window.location.reload(),
             quiet: false,
             ...window.coi
