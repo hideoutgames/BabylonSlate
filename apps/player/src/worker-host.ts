@@ -27,11 +27,18 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
   const errorHandlers: Array<(error: Error) => void> = [];
   let installedGeneration = 0;
   let stopped = false;
+  // A worker whose module never evaluates posts nothing and may raise no error: report it after the boundary timeout.
+  let started = false;
+  const startTimer = setTimeout(() => {
+    if (!started) reportError(new Error("The game worker did not start within 10 seconds: its module never finished loading."));
+  }, 10_000);
   const post = (message: BridgeHostMessage, transfer?: Transferable[]) => {
     worker.postMessage(message, transfer ?? []);
   };
   const reportError = (error: Error) => {
     if (stopped) return;
+    // One cause per worker: an error before the start timeout already said why it never started.
+    clearTimeout(startTimer);
     for (const handler of [...errorHandlers]) handler(error);
   };
   worker.onerror = (event) => {
@@ -50,6 +57,11 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
   worker.onmessage = (event: MessageEvent<BridgeWorkerMessage>) => {
     if (stopped) return;
     const msg = event.data;
+    if (msg.channel === "ready") {
+      started = true;
+      clearTimeout(startTimer);
+      return;
+    }
     if (msg.channel === "command") {
       dispatchCommand(msg.payload);
       return;
@@ -91,6 +103,7 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
     terminate: () => {
       if (stopped) return;
       stopped = true;
+      clearTimeout(startTimer);
       worker.onmessage = null;
       worker.onerror = null;
       worker.onmessageerror = null;

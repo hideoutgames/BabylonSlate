@@ -1127,4 +1127,6 @@ export type BridgeWorkerMessage =
   | { channel: "command"; payload: CommandMessage }
   /** Plain commands emitted since the worker's last post, in emission order; hosts dispatch each as a lone `command`. */
   | { channel: "commands"; payload: CommandMessage[] }
-  | { channel: "snapshot"; payload: ArrayBuffer; generation: number };
+  | { channel: "snapshot"; payload: ArrayBuffer; generation: number }
+  /** Posted once when the worker's module has evaluated: a host that never receives it reports the worker as not started. */
+  | { channel: "ready" };

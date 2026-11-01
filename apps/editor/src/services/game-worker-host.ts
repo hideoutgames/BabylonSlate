@@ -14,7 +14,18 @@ export interface GameWorkerHost {
   pushInput: (events: readonly RawInputEvent[]) => void;
   onCommand: (handler: (command: CommandMessage) => void) => void;
   onSnapshot: (handler: (buffer: Float32Array) => void) => void;
+  /** The worker cannot run: it failed to load or evaluate, never started, or cannot read a message. Reported once. */
+  onFailure: (handler: (message: string) => void) => void;
   terminate: () => void;
+}
+
+/** How long a worker may take to evaluate its module: the session boundary timeout, which a live worker answers well within. */
+export const GAME_WORKER_START_TIMEOUT_MS = 10_000;
+
+/** A worker error event as the host Worker reports it: where the module failed to load or evaluate. */
+function describeWorkerError(event: ErrorEvent): string {
+  const where = event.filename ? ` (${event.filename}${event.lineno ? `:${event.lineno}${event.colno ? `:${event.colno}` : ""}` : ""})` : "";
+  return `The Play worker failed to start: ${event.message || "its module could not be loaded"}${where}`;
 }
 
 /**
@@ -32,8 +43,28 @@ export function createGameWorkerHost(): GameWorkerHost {
 
   const commandHandlers: Array<(command: CommandMessage) => void> = [];
   const snapshotHandlers: Array<(buffer: Float32Array) => void> = [];
+  const failureHandlers: Array<(message: string) => void> = [];
   let installedGeneration = 0;
   let terminated = false;
+  let started = false;
+  let failure: string | null = null;
+  const fail = (message: string) => {
+    if (terminated || failure !== null) return;
+    failure = message;
+    clearTimeout(startTimer);
+    for (const handler of failureHandlers) handler(message);
+  };
+  // A module worker that fails to fetch, parse or evaluate reports it only here: its own handlers never installed.
+  // Once started, the worker reports its own uncaught errors as runtime diagnostics, and Play goes on.
+  worker.onerror = (event: ErrorEvent) => {
+    if (started) return;
+    event.preventDefault?.();
+    fail(describeWorkerError(event));
+  };
+  worker.onmessageerror = () => fail("The Play worker could not read a message from the game runtime.");
+  const startTimer = setTimeout(() => {
+    if (!started) fail(`The Play worker did not start within ${GAME_WORKER_START_TIMEOUT_MS / 1000} seconds: its module never finished loading.`);
+  }, GAME_WORKER_START_TIMEOUT_MS);
 
   const post = (message: BridgeHostMessage, transfer?: Transferable[]) => {
     worker.postMessage(message, transfer ?? []);
@@ -49,6 +80,11 @@ export function createGameWorkerHost(): GameWorkerHost {
 
   worker.onmessage = (event: MessageEvent<BridgeWorkerMessage>) => {
     const msg = event.data;
+    if (msg.channel === "ready") {
+      started = true;
+      clearTimeout(startTimer);
+      return;
+    }
     if (msg.channel === "command") {
       dispatchCommand(msg.payload);
       return;
@@ -88,8 +124,13 @@ export function createGameWorkerHost(): GameWorkerHost {
     onSnapshot: (handler) => {
       snapshotHandlers.push(handler);
     },
+    onFailure: (handler) => {
+      failureHandlers.push(handler);
+      if (failure !== null) handler(failure);
+    },
     terminate: () => {
       terminated = true;
+      clearTimeout(startTimer);
       worker.terminate();
     },
   };
