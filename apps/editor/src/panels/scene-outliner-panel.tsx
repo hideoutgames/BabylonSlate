@@ -57,8 +57,10 @@ import {
   CopyIcon,
   ClipboardPasteIcon,
   CopyPlusIcon,
+  DiamondIcon,
   EyeIcon,
   EyeOffIcon,
+  FilmIcon,
   FocusIcon,
   FolderIcon,
   FolderPlusIcon,
@@ -78,6 +80,8 @@ import {
   useEditorShellState,
   useOpenDocument,
 } from "../context/document-context";
+import { useOptionalSceneTools } from "../context/scene-tools-context";
+import { addTimelineObjects, withTimelineClip } from "../lib/timeline-track-edits";
 import { useEditorSessionState } from "../context/editor-session-state-context";
 import { copySceneActors, pasteSceneActors } from "../lib/scene-actor-clipboard";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
@@ -595,6 +599,16 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     ? (doc.content as SerializedScene)
     : null;
   const overlay = doc?.ref.kind === "scene-layer";
+  // Timeline mode: the clip the Timeline window shows, which rows can join.
+  const sceneTools = useOptionalSceneTools();
+  const timelineTarget = sceneTools?.timelineDropTarget ?? null;
+  const timelineClip = timelineTarget
+    ? scene?.timelineClips?.find((clip) => clip.id === sceneTools?.timelineClipId) ?? null
+    : null;
+  const timelineActorIds = useMemo(
+    () => new Set(timelineClip?.objects.map((object) => object.actorId) ?? []),
+    [timelineClip],
+  );
 
   const actorById = useMemo(() => {
     const actors = new Map<string, SerializedActor>();
@@ -643,6 +657,12 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     },
     [applySceneChange, documentId],
   );
+
+  const addToTimelineClip = useCallback((ids: readonly string[]) => {
+    if (!scene || !timelineClip) return;
+    const next = addTimelineObjects(timelineClip, ids, () => crypto.randomUUID());
+    if (next !== timelineClip) mutate(withTimelineClip(scene, next));
+  }, [mutate, scene, timelineClip]);
 
   const copyActors = useCallback((ids: readonly string[]) => {
     if (!scene || ids.length === 0) return;
@@ -1008,6 +1028,10 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       if (!scene) return;
       const target = outlinerRowTarget(rowId);
       if (target?.kind !== "actor") return;
+      if (timelineTarget?.containsClientPoint(clientX, clientY)) {
+        timelineTarget.addActors(selectedActorIdSet.has(target.id) ? selectedActorIds : [target.id]);
+        return;
+      }
       if (!viewportDropApi?.containsClientPoint(clientX, clientY)) return;
       const source = scene.actors.find((actor) => actor.id === target.id);
       if (!source || isSceneLayerAnchorActor(source)) return;
@@ -1023,7 +1047,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       });
       selectActor(copy.id);
     },
-    [mutate, scene, selectActor, viewportDropApi],
+    [mutate, scene, timelineTarget, selectActor, selectedActorIdSet, selectedActorIds, viewportDropApi],
   );
 
   const moveActorDropHint = useCallback(
@@ -1031,6 +1055,10 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       const target = outlinerRowTarget(rowId);
       if (target?.kind !== "actor") {
         setDropHint({ clientX, clientY, allowed: false });
+        return;
+      }
+      if (timelineTarget?.containsClientPoint(clientX, clientY)) {
+        setDropHint({ clientX, clientY, allowed: true, label: `Add to ${timelineTarget.clipName()}` });
         return;
       }
       const actor = scene?.actors.find((actor) => actor.id === target.id);
@@ -1044,7 +1072,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         label: name,
       });
     },
-    [scene, viewportDropApi],
+    [scene, timelineTarget, viewportDropApi],
   );
 
   const actorMenuItems = useCallback((actorId: string): NestedMenuItem[] => {
@@ -1082,6 +1110,14 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         testId: `outliner-frame-${actorId}`,
         onSelect: () => frameActor(actorId),
       },
+      ...(timelineClip ? [{
+        id: "add-to-timeline-clip",
+        label: "Add to Timeline Clip",
+        icon: <FilmIcon />,
+        testId: `outliner-add-to-timeline-${actorId}`,
+        disabled: (selectedActorIdSet.has(actorId) ? selectedActorIds : [actorId]).every((id) => timelineActorIds.has(id)),
+        onSelect: () => addToTimelineClip(selectedActorIdSet.has(actorId) ? selectedActorIds : [actorId]),
+      }] : []),
       {
         id: "copy-actors",
         label: "Copy",
@@ -1126,6 +1162,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     return items;
   }, [
     actorById,
+    addToTimelineClip,
     canPaste,
     copyActors,
     pasteActors,
@@ -1138,6 +1175,8 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     selectActor,
     selectedActorIdSet,
     selectedActorIds,
+    timelineActorIds,
+    timelineClip,
   ]);
 
   const folderMenuItems = useCallback(
@@ -1269,6 +1308,20 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         const actorId = target?.id ?? node.id;
         return {
           ...node,
+          ...(timelineClip && timelineActorIds.has(actorId) ? {
+            // An icon, so the actor's name keeps the row's width; the clip's name is its label.
+            preview: (
+              <span
+                role="img"
+                aria-label={`In ${timelineClip.name}`}
+                title={`In ${timelineClip.name}`}
+                className="flex items-center text-muted-foreground"
+                data-testid={`outliner-timeline-badge-${actorId}`}
+              >
+                <DiamondIcon className="size-3" aria-hidden="true" />
+              </span>
+            ),
+          } : {}),
           trailing: (
             <ActorRowActions
               actorId={actorId}
@@ -1282,7 +1335,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
           ),
         };
       }),
-    [actionSize, lockedIds, nodes, touchSizing, rowActions],
+    [actionSize, lockedIds, nodes, touchSizing, rowActions, timelineActorIds, timelineClip],
   );
 
   // Other documents' edits re-render this panel through the document

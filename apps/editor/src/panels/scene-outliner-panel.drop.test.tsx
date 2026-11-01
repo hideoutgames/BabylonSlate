@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@haptic/core";
-import { createDefaultScene } from "@haptic/core";
+import { createDefaultScene, createTimelineClip } from "@haptic/core";
 import { actorRowId } from "../lib/outliner-drop";
 import { SceneOutlinerPanel } from "./scene-outliner-panel";
 
@@ -38,7 +38,13 @@ const viewportDropApi = vi.hoisted(() => ({
 }));
 const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
+  tools: null as null | {
+    timelineClipId: string;
+    timelineDropTarget: { containsClientPoint: (x: number) => boolean; clipName: () => string; addActors: (ids: readonly string[]) => void };
+  },
 }));
+
+vi.mock("../context/scene-tools-context", () => ({ useOptionalSceneTools: () => harness.tools }));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "scene:assets/Main.scene.hasset" }),
@@ -72,6 +78,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 
 afterEach(() => {
   cleanup();
+  harness.tools = null;
   applySceneChange.mockClear();
   selectActor.mockClear();
   viewportDropApi.containsClientPoint.mockClear();
@@ -149,6 +156,27 @@ describe("SceneOutlinerPanel viewport drop", () => {
     act(() => {
       dispatchPointerEvent(row, "pointerup", { clientX: 260, clientY: 80 });
     });
+    expect(applySceneChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("SceneOutlinerPanel in Timeline mode", () => {
+  it("adds an actor dropped on the Timeline window to its clip, and badges the clip's actors", () => {
+    const addActors = vi.fn();
+    harness.tools = {
+      timelineClipId: "intro",
+      timelineDropTarget: { containsClientPoint: (x) => x >= 200, clipName: () => "Intro", addActors },
+    };
+    const scene = createDefaultScene();
+    const withClip = {
+      ...scene,
+      timelineClips: [{ ...createTimelineClip("intro", "Intro"), objects: [{ id: "o1", actorId: "actor-1", tracks: [] }] }],
+    };
+    renderOutliner(withClip);
+    expect(screen.getByTestId("outliner-timeline-badge-actor-1").getAttribute("aria-label")).toBe("In Intro");
+    dragRowOutside(screen.getByTestId(`tree-row-${actorRowId("actor-1")}`));
+    expect(addActors).toHaveBeenCalledWith(["actor-1"]);
+    // The drop joined the clip instead of duplicating into the viewport.
     expect(applySceneChange).not.toHaveBeenCalled();
   });
 });

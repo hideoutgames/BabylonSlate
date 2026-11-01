@@ -108,6 +108,7 @@ describe("Playwright iPad project filter", () => {
     expect(landscape.map((test) => test.title).sort()).toEqual([
       "@ipad SceneLayer joystick touch moves its custom material and resets on cancellation in Play",
       "P10 tilemaps › 2D project paints tiles, binds a sprite and animation graph, and reports physics",
+      "Scene modes › keys a track on a touch screen with 44 pt rows, the Add Track dialog and a long-press menu",
       "Scene modes › sculpts terrain and restores independent mode layouts, Focus, and saved content",
       "Touch shell UX › pointer context menus",
       "Touch shell UX › project long-press stays open after release and can edit",

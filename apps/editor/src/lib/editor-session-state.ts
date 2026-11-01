@@ -1,6 +1,7 @@
 import type { SerializedActor, SerializedTimelineClip } from "@haptic/core";
 import type { EditorCameraSessionState } from "@haptic/render";
 import type { ClassMemberClipboard } from "./class-member-clipboard";
+import type { CopiedTimelineKeys } from "./timeline-track-edits";
 import { moveKeyedEntry } from "./move-keyed-entry";
 import type { ParticleModuleId } from "./particle-value-modes";
 
@@ -10,7 +11,7 @@ export type GraphSessionViewport = { x: number; y: number; zoom: number };
  * Editor state for one project session, keyed by document id: editor
  * camera poses, graph pan/zoom per surface and particle module cards the
  * user closed, plus the clipboards of the Outliner (actors), the Class tree
- * (members) and the Clips window (Timeline Clips), which outlive the document they were copied from. It is deliberately non-reactive: callers read it when they
+ * (members), the Clips window (Timeline Clips) and the Timeline window (keys), which outlive the document they were copied from. It is deliberately non-reactive: callers read it when they
  * mount or render and write it without notifying anyone, so saving a camera
  * pose or a pan never re-renders the editor. Closing a tab keeps its entries
  * (reopening a Scene restores its view); a new project session starts empty.
@@ -19,6 +20,7 @@ export class EditorSessionState {
   private actorClipboard: { overlay: boolean; actors: SerializedActor[] } | null = null;
   private classMemberClipboard: ClassMemberClipboard | null = null;
   private timelineClipClipboard: SerializedTimelineClip[] | null = null;
+  private timelineKeyClipboard: CopiedTimelineKeys | null = null;
 
   copyActors(actors: SerializedActor[], overlay: boolean): void {
     this.actorClipboard = { actors: structuredClone(actors), overlay };
@@ -44,6 +46,14 @@ export class EditorSessionState {
 
   readCopiedTimelineClips(): SerializedTimelineClip[] {
     return this.timelineClipClipboard ? structuredClone(this.timelineClipClipboard) : [];
+  }
+
+  copyTimelineKeys(keys: CopiedTimelineKeys): void {
+    this.timelineKeyClipboard = structuredClone(keys);
+  }
+
+  readCopiedTimelineKeys(): CopiedTimelineKeys | null {
+    return this.timelineKeyClipboard ? structuredClone(this.timelineKeyClipboard) : null;
   }
 
   copyClassMembers(members: ClassMemberClipboard): void {

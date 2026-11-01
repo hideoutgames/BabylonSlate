@@ -191,19 +191,4 @@ export function TimelineClipsPanel(_props: IDockviewPanelProps) {
   </PanelFrame>;
 }
 
-/** Timeline mode: the selected clip's keyframe timeline. */
-export function TimelinePanel(_props: IDockviewPanelProps) {
-  void _props;
-  const { clip, clips } = useTimelineScene();
-  return <PanelFrame>
-    <Empty className="h-full gap-3 p-4" data-testid="scene-timeline-panel">
-      <EmptyHeader>
-        <EmptyMedia variant="icon"><FilmIcon /></EmptyMedia>
-        <EmptyTitle data-testid="scene-timeline-title">{clip ? clip.name : clips.length ? "No Clip Selected" : "No Timeline Clips"}</EmptyTitle>
-        <EmptyDescription>
-          {clip ? `${clip.length} s at ${clip.frameRate} fps` : clips.length ? "Pick a clip in Clips to show its timeline." : "Create a clip in Clips."}
-        </EmptyDescription>
-      </EmptyHeader>
-    </Empty>
-  </PanelFrame>;
-}
+export { TimelinePanel } from "./timeline-panel";

@@ -80,6 +80,16 @@ The mode shortcuts switch the active Scene between its Design, Landscape, Foliag
 
 Duplicate, Rename, Delete, Search Panel and New Folder act on the panel that has keyboard focus, the **Outliner** or the **Content Browser**. Place Actors needs the Outliner to have focus. Copy and Paste copy actors when the Outliner has focus, and copy Class members when the **Class** window has focus ([Select, copy and paste members](../scripting/classes.md#select-copy-and-paste-members)). In a graph, Copy, Paste, Duplicate and Delete act on the selected nodes; see [When shortcuts work](#when-shortcuts-work).
 
+### Timeline
+
+| Command | Shortcut |
+| --- | --- |
+| Set Key | <kbd>K</kbd> |
+| Previous Key | <kbd>[</kbd> |
+| Next Key | <kbd>]</kbd> |
+
+These act in the [Timeline](../scenes/timeline.md#keys) window when it has keyboard focus. Copy, Paste and Delete there act on keys.
+
 ### Content Browser
 
 | Command | Shortcut |

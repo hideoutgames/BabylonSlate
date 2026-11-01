@@ -1,6 +1,6 @@
 import { chordStartsWith, normalizeChord, type KeyChord } from "@haptic/editor-kit";
 
-export type EditorCommandCategory = "General" | "Documents" | "Play" | "Viewport" | "Editing" | "Content Browser";
+export type EditorCommandCategory = "General" | "Documents" | "Play" | "Viewport" | "Editing" | "Timeline" | "Content Browser";
 
 export interface EditorCommandDefinition {
   id: EditorCommandId;
@@ -61,6 +61,9 @@ const COMMAND_LIST = [
   { id: "edit.find", label: "Search Panel", category: "Editing", defaultChords: ["Mod+F"], allowInTextInput: true },
   { id: "edit.newFolder", label: "New Folder", category: "Editing", defaultChords: ["Alt+Shift+N"] },
   { id: "scene.placeActor", label: "Place Actors", category: "Editing", defaultChords: ["Alt+A"] },
+  { id: "timeline.setKey", label: "Set Key", category: "Timeline", defaultChords: ["K"] },
+  { id: "timeline.previousKey", label: "Previous Key", category: "Timeline", defaultChords: ["["] },
+  { id: "timeline.nextKey", label: "Next Key", category: "Timeline", defaultChords: ["]"] },
   { id: "browser.newAsset", label: "New Asset", category: "Content Browser", defaultChords: ["Alt+N"] },
   { id: "browser.import", label: "Import Assets", category: "Content Browser", defaultChords: ["Alt+I"] },
   { id: "browser.references", label: "Show References", category: "Content Browser", defaultChords: ["Alt+R"] },
@@ -76,6 +79,7 @@ export const EDITOR_COMMAND_CATEGORIES: readonly EditorCommandCategory[] = [
   "Play",
   "Viewport",
   "Editing",
+  "Timeline",
   "Content Browser",
 ];
 

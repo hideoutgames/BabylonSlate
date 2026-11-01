@@ -5,16 +5,15 @@ import type {
   RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeInspectorValue, RuntimeObjectIdentity,
   RuntimePropertyCapability, RuntimePropertyDescriptor,
 } from "@haptic/bridge";
-import { Actor, ActorComponent, EngineObject, MaterialObject, engineScriptApiFor, type World } from "@haptic/object-model";
+import {
+  Actor, ActorComponent, EngineObject, LIVE_SCALAR_TYPE_IDS, MaterialObject, engineComponentPropertyCapability, engineScriptApiFor, type World,
+} from "@haptic/object-model";
 import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 
 const MAX_BATCH_BYTES = 64 * 1024;
 const MAX_VALUE_BYTES = 48 * 1024;
 const PAGE_ROWS = 128;
 const FORBIDDEN = new Set(["__proto__", "constructor", "prototype", "parentId", "ownerId", "guid", "classId", "locked", "sourceId", "world"]);
-const SCALAR_TYPES = new Set(["bool", "boolean", "float", "int", "number", "string", "vec2", "vec3", "vec4", "color", "quat", "actor", "object", "component", "class", "asset"]);
-const LIVE_COMPONENTS = new Set(["MeshComponent", "DynamicRuntimeMeshComponent", "CameraComponent", "LightComponent", "HemisphericFillLightComponent", "OutlineComponent", "RigidBodyComponent", "ColliderComponent", "NavAgentComponent"]);
-const LIVE_MESH_PROPERTIES = new Set(["castShadows", "receiveShadows", "materialGuid"]);
 
 type Target = Actor | ActorComponent;
 type Descriptor = Omit<RuntimePropertyDescriptor, "value"> & { keyTypeId?: string };
@@ -149,10 +148,8 @@ export class RuntimeInspector {
       for (const variable of engineScriptApiFor(classId)?.variables ?? []) {
         const { propertyKey: key, name, typeId, typeClassId, container } = variable;
         let capability: RuntimePropertyCapability = variable.getOnly || FORBIDDEN.has(key) ? "readOnly" : "restart";
-        if (capability !== "readOnly" && target instanceof ActorComponent && classId === target.classId && SCALAR_TYPES.has(typeId) && container !== "map") {
-          if (LIVE_COMPONENTS.has(classId) && (!["MeshComponent", "DynamicRuntimeMeshComponent"].includes(classId) || LIVE_MESH_PROPERTIES.has(key))) capability = "live";
-          if (classId === "AudioComponent" && key === "volume") capability = "live";
-          if (classId === "ColliderComponent") capability = "rebuild";
+        if (capability !== "readOnly" && target instanceof ActorComponent && classId === target.classId) {
+          capability = engineComponentPropertyCapability(classId, variable) ?? capability;
         }
         if (typeId === "asset" && key !== "materialGuid") capability = "restart";
         values.set(key, { key, name, typeId, ...(typeClassId ? { typeClassId } : {}), ...(container ? { container } : {}), capability,
@@ -161,7 +158,7 @@ export class RuntimeInspector {
     }
     for (const variable of this.host.world.classRegistry.inheritedVariables(target.classId)) {
       if (FORBIDDEN.has(variable.name) || values.has(variable.name)) continue;
-      const capability = SCALAR_TYPES.has(variable.type) && !["class", "asset"].includes(variable.type) ? "live" : "readOnly";
+      const capability = LIVE_SCALAR_TYPE_IDS.has(variable.type) && !["class", "asset"].includes(variable.type) ? "live" : "readOnly";
       values.set(variable.name, { key: variable.name, name: variable.name, typeId: variable.type,
         ...(variable.typeClassId ? { typeClassId: variable.typeClassId } : {}), ...(variable.container ? { container: variable.container } : {}),
         ...(variable.keyTypeId ? { keyTypeId: variable.keyTypeId } : {}), capability,

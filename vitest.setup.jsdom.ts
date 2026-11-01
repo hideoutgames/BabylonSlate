@@ -59,6 +59,21 @@ if (typeof HTMLCanvasElement !== "undefined") {
       drawImage() {},
       getImageData: () => ({ data: new Uint8ClampedArray(4) }),
       putImageData() {},
+      // Path drawing (KeyframeTimeline lanes) is a no-op here.
+      setTransform() {},
+      save() {},
+      restore() {},
+      beginPath() {},
+      closePath() {},
+      moveTo() {},
+      lineTo() {},
+      arc() {},
+      rect() {},
+      clip() {},
+      fill() {},
+      stroke() {},
+      strokeRect() {},
+      createLinearGradient: () => ({ addColorStop() {} }),
     } as unknown as CanvasRenderingContext2D;
   };
 }
