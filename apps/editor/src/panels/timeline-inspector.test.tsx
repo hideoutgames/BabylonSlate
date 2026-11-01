@@ -40,19 +40,24 @@ function choose(name: string) {
   fireEvent.click(option);
 }
 
-function Select({ keys = [], row = null }: { keys?: Array<[string, string]>; row?: string | null }) {
+interface Selection { keys?: Array<[string, string]>; row?: string | null; time?: number; unkeyed?: Array<[string, unknown]> }
+
+function Select({ keys = [], row = null, time = 0, unkeyed = [] }: Selection) {
   const tools = useSceneTools();
   useEffect(() => {
     tools.setTimelineClipId("intro");
     tools.setTimelineKeySelection(new Set(keys.map(([rowId, keyId]) => keyRefId({ rowId, keyId }))));
     tools.setTimelineRowId(row);
+    tools.timelinePlayhead.set(time);
+    // After the playhead, which discards unkeyed changes.
+    if (unkeyed.length) tools.setTimelineUnkeyed(new Map(unkeyed));
     // Once, on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return null;
 }
 
-function renderInspector(selection: { keys?: Array<[string, string]>; row?: string | null } = {}) {
+function renderInspector(selection: Selection = {}) {
   const withEvents = { ...clip(), eventTracks: [{
     id: "e-line", name: "On Line",
     inputs: [{ name: "Text", typeId: "string", direction: "in" as const }, { name: "Loud", typeId: "bool", direction: "in" as const }],
@@ -108,6 +113,38 @@ describe("TimelineInspector", () => {
     expect(within(grid).getByRole("checkbox", { name: "Muted" })).toBeTruthy();
     fireEvent.click(within(grid).getByText("Off"));
     expect(lastClip().objects[0]!.tracks[1]!.muted).toBe(true);
+  });
+
+  it("shows every track's value at the playhead for an actor's row and keys an edit there", () => {
+    renderInspector({ row: "o-door", time: 1 });
+    const actor = screen.getByTestId("timeline-inspector-actor");
+    expect(within(actor).getByDisplayValue("Door")).toBeTruthy();
+    const values = screen.getByTestId("timeline-inspector-actor-values");
+    // Halfway between the Location keys; Visible is keyed Off at 1 s.
+    expect((within(values).getByLabelText("Location X") as HTMLInputElement).value).toBe("2");
+    expect(within(values).getByRole("checkbox", { name: "Visible" }).getAttribute("aria-checked")).toBe("false");
+
+    fireEvent.change(within(values).getByLabelText("Location X"), { target: { value: "3" } });
+    const location = lastClip().objects[0]!.tracks[0]!;
+    expect(location.keys.map((entry) => [entry.Time, entry.Value])).toEqual([
+      [0, { x: 0, y: 0, z: 0 }], [1, { x: 3, y: 0, z: 0 }], [2, { x: 4, y: 0, z: 0 }]]);
+  });
+
+  it("shows only the selected track's value and edits the key on the playhead's frame", () => {
+    renderInspector({ row: "t-vis", time: 1 });
+    const values = screen.getByTestId("timeline-inspector-track-values");
+    expect(within(values).queryByLabelText("Location X")).toBeNull();
+    fireEvent.click(within(values).getByText("Off"));
+    expect(lastClip().objects[0]!.tracks[1]!.keys.map((entry) => [entry.id, entry.Time, entry.Value])).toEqual([["v1", 1, true]]);
+  });
+
+  it("shows an unkeyed change and keys it when edited", async () => {
+    renderInspector({ row: "t-loc", time: 3, unkeyed: [["t-loc", { x: 9, y: 0, z: 0 }]] });
+    const values = screen.getByTestId("timeline-inspector-track-values");
+    expect((await within(values).findByDisplayValue("9")).getAttribute("aria-label")).toBe("Location X");
+    fireEvent.change(within(values).getByLabelText("Location Y"), { target: { value: "1" } });
+    expect(lastClip().objects[0]!.tracks[0]!.keys.at(-1)).toMatchObject({ Time: 3, Value: { x: 9, y: 1, z: 0 } });
+    expect((within(values).getByLabelText("Location X") as HTMLInputElement).value).toBe("9");
   });
 
   it("edits the clip's settings and keeps its name unique", () => {
