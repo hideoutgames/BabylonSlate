@@ -45,7 +45,7 @@ describe("Timeline Clip nodes", () => {
     expect(source).toMatch(/ctx\.timelineClipControl\([^)]*, "setPlayRate", \{ "playRate": 2 \}\)/);
     expect(source).toMatch(/ctx\.timelineClipControl\([^)]*, "setLoopMode", \{ "loopMode": "Ping Pong" \}\)/);
     expect(source).toContain('ctx.timelineClipState(');
-    expect(source).toMatch(/"setPosition", \{ "time": /);
+    expect(source).toMatch(/"setPosition", \{ "time": .*, "fireEvents": false \}\);/);
     // A null clip logs instead of running the node.
     expect(source).toContain("Set Timeline Clip Play Rate (Target) tried to access null.");
   });

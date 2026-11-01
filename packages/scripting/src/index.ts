@@ -6,6 +6,7 @@ export * from "./validate";
 export * from "./compiled-nodes";
 export * from "./node-registry";
 export * from "./compile";
+export { jsIdent } from "./compile-events";
 export * from "./latent-functions";
 export * from "./variable-references";
 export * from "./development-only";

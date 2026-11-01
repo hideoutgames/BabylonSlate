@@ -15,8 +15,18 @@ function setup(clipOverrides: Partial<SerializedTimelineClip> = {}) {
   const teleportActor = vi.fn();
   const refreshComponent = vi.fn();
   let clips: SerializedTimelineClip[] = [];
+  const fired: Array<[string, unknown[]]> = [];
+  const listeners = new Map<string, (values: unknown[]) => void>();
+  const ensureClipClass = vi.fn();
+  const release = vi.fn();
   const runtime = new TimelineRuntime({
-    clipsFor: (candidate) => (candidate === owner ? clips : undefined),
+    clipsFor: (candidate) => (candidate === owner ? { documentGuid: "level", clips } : undefined),
+    ensureClipClass,
+    fireDispatcher: (_clip, name, values) => {
+      fired.push([name, [...values]]);
+      listeners.get(name)?.([...values]);
+    },
+    release,
     ownedActor: (_owner, id) => (id === "door" ? door : null),
     findActor: (guid) => world.findActor(guid),
     component: (actor: Actor, id) => actor.components.find((entry) => entry.guid === id) ?? null,
@@ -35,7 +45,7 @@ function setup(clipOverrides: Partial<SerializedTimelineClip> = {}) {
     ...clipOverrides,
   };
   clips = [clip];
-  return { runtime, owner, door, light, teleportActor, refreshComponent, clip: runtime.clip(owner, "intro")! };
+  return { runtime, owner, door, light, teleportActor, refreshComponent, fired, listeners, ensureClipClass, release, clip: runtime.clip(owner, "intro")! };
 }
 
 describe("TimelineRuntime", () => {
@@ -76,7 +86,7 @@ describe("TimelineRuntime", () => {
   });
 
   it("pauses, stops at the start, sets the position, plays in reverse and ends with its owner", () => {
-    const { runtime, owner, clip, door } = setup();
+    const { runtime, owner, clip, door, release } = setup();
     runtime.play(clip);
     runtime.advance(0.5, [owner], () => true);
     runtime.pause(clip);
@@ -106,6 +116,7 @@ describe("TimelineRuntime", () => {
     owner.destroyed = true;
     runtime.advance(0.1, [], () => true);
     expect(clip.destroyed).toBe(true);
+    expect(release).toHaveBeenCalledWith(clip);
     expect(runtime.clip(owner, "intro")).toBeNull();
   });
 
@@ -121,5 +132,54 @@ describe("TimelineRuntime", () => {
     expect(clip.playback).toMatchObject({ time: 2, playing: false });
     // The authored clip is unchanged.
     expect(clip.clip.loopMode).toBe("loop");
+  });
+
+  it("is an object of its document's clip class", () => {
+    const { clip, ensureClipClass } = setup();
+    expect(clip.classId).toBe("TimelineClip:level:intro");
+    expect(ensureClipClass).toHaveBeenCalledWith("TimelineClip:level:intro");
+  });
+
+  it("fires event keys with their values, then On Looped, in playback order", () => {
+    const { runtime, owner, clip, fired } = setup({
+      loopMode: "loop",
+      eventTracks: [{
+        id: "e", name: "On Line", inputs: [{ name: "Text", typeId: "string", direction: "in" }, { name: "Volume", typeId: "float", direction: "in" }],
+        keys: [{ id: "k0", time: 0.5, values: { Text: "Hello" } }, { id: "k1", time: 1.5, values: { Text: "Bye", Volume: 2 } }],
+      }],
+    });
+    runtime.play(clip);
+    runtime.advance(1, [owner], () => true);
+    expect(fired).toEqual([["On_Line", ["Hello", 0]]]);
+    runtime.advance(1.75, [owner], () => true);
+    expect(fired.slice(1)).toEqual([["On_Line", ["Bye", 2]], ["On_Line", ["Hello", 0]], ["On_Looped", []]]);
+  });
+
+  it("fires On Finished after When Finished, and a listener that stops the clip ends the step", () => {
+    const { runtime, owner, clip, fired, listeners, door } = setup({
+      whenFinished: "restore",
+      eventTracks: [{ id: "e", name: "Beat", inputs: [], keys: [{ id: "a", time: 1, values: {} }, { id: "b", time: 1, values: {} }] }],
+    });
+    listeners.set("On_Finished", () => expect(door.getVariable("Glow")).toBe(1));
+    runtime.play(clip);
+    runtime.advance(3, [owner], () => true);
+    expect(fired.map(([name]) => name)).toEqual(["Beat", "Beat", "On_Finished"]);
+    fired.length = 0;
+    listeners.set("Beat", () => runtime.stop(clip));
+    runtime.play(clip);
+    runtime.advance(3, [owner], () => true);
+    expect(fired.map(([name]) => name)).toEqual(["Beat"]);
+    expect(clip.playback).toMatchObject({ playing: false, time: 0 });
+  });
+
+  it("fires the keys passed over only when Set Position asks", () => {
+    const { runtime, clip, fired } = setup({
+      eventTracks: [{ id: "e", name: "Beat", inputs: [], keys: [{ id: "a", time: 0.5, values: {} }, { id: "b", time: 1.5, values: {} }] }],
+    });
+    runtime.setPosition(clip, 1);
+    expect(fired).toEqual([]);
+    timelineClipControl(runtime, clip, "setPosition", { time: 2, fireEvents: true });
+    timelineClipControl(runtime, clip, "setPosition", { time: 0, fireEvents: true });
+    expect(fired.map(([name]) => name)).toEqual(["Beat", "Beat", "Beat"]);
   });
 });

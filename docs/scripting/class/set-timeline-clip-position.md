@@ -13,6 +13,7 @@ Moves a Timeline Clip to a time and applies its values there.
 | In | Exec |  |
 | Target | Timeline Clip Reference | The clip, from [Get Scene Timeline Clip](get-scene-timeline-clip.md). |
 | Time | Float | Seconds from the clip's start, kept within its **Length**. |
+| Fire Events | Boolean | When on, the event keys between the old and the new time fire, in that direction. Off by default. |
 
 ## Outputs
 

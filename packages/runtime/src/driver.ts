@@ -41,12 +41,14 @@ import {
   type Actor,
   type EngineObject,
   SceneLayer,
+  TIMELINE_CLIP_CLASS_ID,
   type DebugInspectSnapshot,
 } from "@haptic/object-model";
 import {
   idleDeviceMotion,
   type SerializedScene,
   type SerializedSceneLayer,
+  type SerializedTimelineClip,
   type SceneStreamingState,
 } from "@haptic/core";
 import {
@@ -294,14 +296,29 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly textAppear = new Text2DAppearRuntime();
   /** Timeline Clips of the main Scene and every loaded Scene Layer copy. */
   readonly timelines = new TimelineRuntime({
-    clipsFor: (owner) => owner instanceof SceneLayer ? this.sceneLayerLibrary.get(owner.assetGuid)?.timelineClips
-      : owner === this.world.currentScene ? this.playScene?.timelineClips : undefined,
+    clipsFor: (owner) => this.timelineClipsFor(owner),
+    ensureClipClass: (classId) => this.world.classRegistry.ensure({
+      id: classId, parentClassId: TIMELINE_CLIP_CLASS_ID, kind: "object", variables: [], implementedInterfaces: [],
+    }),
+    fireDispatcher: (owner, name, values) => this.scriptHost.fireDispatcher(owner, name, values),
+    release: (clip) => this.scriptHost.releaseObject(clip),
     ownedActor: (owner, id) => ownedSceneActor(owner, id, (guid) => this.world.findActor(guid), (scene, actorId) => this.streams.resolveInstanceId(scene, actorId)),
     findActor: (guid) => this.world.findActor(guid),
     component: (actor, id) => findComponentById(actor, id),
     teleportActor: (actor) => this.scriptHost.teleportActor(actor),
     refreshComponent: (component, property) => this.propertyWrites.refreshComponent(component, property),
   });
+  /** A Scene Layer copy's or the current Scene's clips, from its document. */
+  private timelineClipsFor(owner: EngineObject): { documentGuid: string; clips: readonly SerializedTimelineClip[] } | undefined {
+    if (owner instanceof SceneLayer) {
+      const clips = this.sceneLayerLibrary.get(owner.assetGuid)?.timelineClips;
+      return clips?.length ? { documentGuid: owner.assetGuid, clips } : undefined;
+    }
+    if (owner !== this.world.currentScene || !owner.classId.startsWith("Scene:")) return undefined;
+    const guid = owner.classId.slice("Scene:".length);
+    const clips = (guid === this.playSceneGuid ? this.playScene : this.sceneLibrary.get(guid))?.timelineClips;
+    return clips?.length ? { documentGuid: guid, clips } : undefined;
+  }
   readonly tweens = new TweenRuntime((owner) => !this.stopped && !this.paused && !this.blocks.active &&
     (!owner || this.admission.canRunActions(owner)));
   /**

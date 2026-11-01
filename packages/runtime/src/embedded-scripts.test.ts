@@ -211,7 +211,7 @@ describe("Get <Name> Timeline Clip", () => {
     });
     await runtime.loadScripts([playScript(sceneLayerAssetClassId("overlay"))]);
     runtime.realizePlayWorld();
-    expect(logs(commands).filter((message) => message.startsWith("clip:"))).toEqual(["clip:TimelineClip:true:null", "clip:TimelineClip:true:null"]);
+    expect(logs(commands).filter((message) => message.startsWith("clip:"))).toEqual(["clip:TimelineClip:overlay:reveal:true:null", "clip:TimelineClip:overlay:reveal:true:null"]);
     runtime.start();
     const ticks = (count: number) => { for (let index = 0; index < count; index += 1) runtime.tick(); };
     ticks(30);
@@ -225,6 +225,65 @@ describe("Get <Name> Timeline Clip", () => {
     ticks(60);
     for (const layer of layers) expect(world.findActor(`${layer.guid}:panel`)!.transform.position.x).toBe(4);
     expect(world.findActor("panel")!.transform.position).toMatchObject({ x: 0, y: 4 });
+    runtime.stop();
+  });
+
+  it("runs events bound to the clip's Custom Event Track and On Finished, per copy", async () => {
+    const commands: CommandMessage[] = [];
+    const clipClass = "TimelineClip:overlay:reveal";
+    const line = { name: "On Line", classId: clipClass, implicitSelf: false, pins: [{ name: "Text", typeId: "string", direction: "in" }] };
+    const finished = { name: "On Finished", classId: "TimelineClip", implicitSelf: false, pins: [] };
+    const graph: LogicGraph = {
+      id: "event-graph", kind: "event",
+      nodes: [
+        node("begin", "flow.event.beginPlay"),
+        node("clip", OWNED_TIMELINE_CLIP_GET_NODE_ID, { sceneTimelineClipId: "reveal", sceneTimelineClipName: "Reveal" }),
+        node("bind-line", "flow.dispatcher.bind", line),
+        node("bind-finished", "flow.dispatcher.bind", finished),
+        node("play", "timelineClip.play"),
+        node("on-line", "flow.event.custom", { name: "Show Line", pins: [{ name: "Said", typeId: "string", direction: "out" }] }),
+        node("log-line", "debug.executeJavaScript", {
+          inputs: [{ name: "said", type: STRING }], outputs: [],
+          body: 'ctx.log("log", "Script", "line:" + ctx.self.guid + ":" + said);',
+        }),
+        node("on-finished", "flow.event.custom", { name: "Done", pins: [] }),
+        node("log-finished", "debug.executeJavaScript", { inputs: [], outputs: [], body: 'ctx.log("log", "Script", "done:" + ctx.self.guid);' }),
+      ],
+      edges: [
+        { id: "x1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "bind-line", targetPinId: "execIn" },
+        { id: "x2", sourceNodeId: "bind-line", sourcePinId: "execOut", targetNodeId: "bind-finished", targetPinId: "execIn" },
+        { id: "x3", sourceNodeId: "bind-finished", sourcePinId: "execOut", targetNodeId: "play", targetPinId: "execIn" },
+        { id: "x4", sourceNodeId: "on-line", sourcePinId: "execOut", targetNodeId: "log-line", targetPinId: "execIn" },
+        { id: "x5", sourceNodeId: "on-finished", sourcePinId: "execOut", targetNodeId: "log-finished", targetPinId: "execIn" },
+        { id: "d1", sourceNodeId: "clip", sourcePinId: "clip", targetNodeId: "bind-line", targetPinId: "target" },
+        { id: "d2", sourceNodeId: "clip", sourcePinId: "clip", targetNodeId: "bind-finished", targetPinId: "target" },
+        { id: "d3", sourceNodeId: "clip", sourcePinId: "clip", targetNodeId: "play", targetPinId: "target" },
+        { id: "d4", sourceNodeId: "on-line", sourcePinId: "OutputDelegate", targetNodeId: "bind-line", targetPinId: "event" },
+        { id: "d5", sourceNodeId: "on-finished", sourcePinId: "OutputDelegate", targetNodeId: "bind-finished", targetPinId: "event" },
+        { id: "d6", sourceNodeId: "on-line", sourcePinId: "Said", targetNodeId: "log-line", targetPinId: "in_said" },
+      ],
+    };
+    const classId = sceneLayerAssetClassId("overlay");
+    const compiled = compileGraph(graph, { assetGuid: classId, registry });
+    const reveal = {
+      ...slide("reveal", "Reveal", "x", false),
+      eventTracks: [{ id: "lines", name: "On Line", inputs: line.pins.map((entry) => ({ ...entry, direction: "in" as const })),
+        keys: [{ id: "k", time: 0.25, values: { Text: "Welcome" } }] }],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: { ...scene("Level1", ["overlay", "overlay"]), actors: [] }, playSceneGuid: "level-1",
+      sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), actors: [createActor("panel", "Panel")], timelineClips: [reveal] } },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{ classId, parentClassId: "SceneLayer", assetGuid: classId, source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    for (let index = 0; index < 70; index += 1) runtime.tick();
+    const layers = runtime.getWorld().getSceneLayers().map((layer) => layer.guid);
+    const events = logs(commands).filter((message) => message.startsWith("line:") || message.startsWith("done:"));
+    expect(events).toEqual(expect.arrayContaining(layers.flatMap((guid) => [`line:${guid}:Welcome`, `done:${guid}`])));
+    expect(events).toHaveLength(4);
     runtime.stop();
   });
 });
