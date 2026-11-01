@@ -30,15 +30,16 @@ describe("Timeline Clips", () => {
       ...createTimelineClip("a", "Intro"),
       objects: [{ id: "o", actorId: "door", tracks: [
         { id: "t", target: { kind: "transform", property: "location" }, valueType: "vec3", keys: [
-          { id: "k2", Time: 2, Value: [0, 1, 0], Interpolation: "linear" },
-          { id: "k1", Time: 1, Value: [0, 0, 0] },
+          { id: "k2", Time: 2, Value: { x: 0, y: 1, z: 0 }, Interpolation: "linear" },
+          { id: "k1", Time: 1, Value: { x: 0, y: 0, z: 0 } },
           { id: "bad", Time: Number.NaN, Value: 0 },
         ] },
         { id: "u", target: { kind: "nowhere", property: "x" }, valueType: "float", keys: [] },
       ] }],
       eventTracks: [{ id: "e", name: "On Door Open", inputs: [], keys: [{ id: "e2", time: 3, values: {} }, { id: "e1", time: 1, values: { Volume: 1 } }] }],
     }])!;
-    expect(clip.objects[0]!.tracks.map((track) => track.keys.map((key) => [key.id, key.Interpolation]))).toEqual([[["k1", "linear"], ["k2", "linear"]]]);
+    // A key without an interpolation is Auto, as in every curve.
+    expect(clip.objects[0]!.tracks.map((track) => track.keys.map((key) => [key.id, key.Interpolation]))).toEqual([[["k1", "auto"], ["k2", "linear"]]]);
     expect(clip.eventTracks[0]!.keys.map((key) => key.id)).toEqual(["e1", "e2"]);
   });
 
