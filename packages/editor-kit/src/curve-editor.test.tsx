@@ -35,7 +35,7 @@ function Stateful({ kind = "float", initial, constraints, onChange }: {
     onChange={(next) => { setValue(next); onChange(next); }} data-testid="curve" />;
 }
 
-const keysOf = (value: CurveEditorValue) => value.Keys as Array<{ Time: number; Value: unknown; ArriveTangent: unknown; LeaveTangent: unknown }>;
+const keysOf = (value: CurveEditorValue) => value.Keys as Array<{ Time: number; Value: unknown; Interpolation: string; ArriveTangent: unknown; LeaveTangent: unknown }>;
 
 describe("CurveEditor", () => {
   it("moves a dragged key with the pointer and reports one change when the drag ends", () => {
@@ -81,7 +81,7 @@ describe("CurveEditor", () => {
     dispatchPointerEvent(leave, "pointermove", { clientX: 50, clientY: 75 });
     dispatchPointerEvent(leave, "pointerup", { clientX: 50, clientY: 75 });
     expect(onChange).toHaveBeenCalledTimes(1);
-    const first = keysOf(onChange.mock.lastCall![0])[0] as { Interpolation: string; ArriveTangent: unknown; LeaveTangent: unknown };
+    const first = keysOf(onChange.mock.lastCall![0])[0];
     // Y follows the handle (a quarter of 10 over half a second); X and Z keep the slopes they played with (10 and 5).
     expect(first).toMatchObject({ Interpolation: "custom", ArriveTangent: { x: 10, y: 5, z: 5 }, LeaveTangent: { x: 10, y: 5, z: 5 } });
     expect(keysOf(onChange.mock.lastCall![0])[1]).toMatchObject({ Interpolation: "auto" });
