@@ -56,9 +56,14 @@ function disposeWithScene(scene: Scene, target: RenderTargetTexture, forget: () 
   });
 }
 
-/** A depth-only render target whose depth texture compares, as the light block samples it. */
+/**
+ * A depth-only render target whose depth texture compares, as the light block samples it. The texture is its depth
+ * attachment: without `generateDepthBuffer: false` Babylon's WebGL depth texture also allocates an unused depth
+ * renderbuffer of the same size (64 MB at a 4096-texel atlas, 256 MB at 8192), again each time the atlas is made.
+ */
 function depthTarget(name: string, edge: number, scene: Scene): RenderTargetTexture {
-  const target = new RenderTargetTexture(name, edge, scene, { generateMipMaps: false, doNotChangeAspectRatio: true, noColorAttachment: true });
+  const target = new RenderTargetTexture(name, edge, scene,
+    { generateMipMaps: false, doNotChangeAspectRatio: true, noColorAttachment: true, generateDepthBuffer: false });
   const reverse = scene.getEngine().useReverseDepthBuffer;
   target.createDepthStencilTexture(reverse ? Constants.GREATER : Constants.LESS, true, false, 1, Constants.TEXTUREFORMAT_DEPTH32_FLOAT, name);
   return target;

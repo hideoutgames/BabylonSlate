@@ -67,5 +67,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // The measures see stairs where they are: Low's single bilinear tap steps with the texels.
     expect(low.rise).toBeGreaterThan(0.15);
     expect(low.stairs).toBeGreaterThan(0.3 * low.pixelsPerTexel);
+    // Drawn into its depth texture alone: the atlas keeps no unused depth renderbuffer of its size.
+    expect(result.atlasDepthRenderbuffer).toBe(false);
   });
 }
