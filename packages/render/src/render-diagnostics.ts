@@ -17,6 +17,7 @@ import { sceneOcclusionDiagnostics } from "./view-occlusion";
 import type { RenderScheduler } from "./render-scheduler";
 import type { FirstDrawStats } from "./first-draw-stats";
 import type { GpuBusyStats } from "./gpu-busy-probe";
+import type { FrameBackpressureStats } from "./frame-backpressure";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
 import { deviceProfile, deviceTextureLimits } from "./device-profile";
@@ -37,6 +38,8 @@ export type RenderDiagnostics = {
    * not measured a frame or the Engine has no fences.
    */
   gpuBusy?: GpuBusyStats | null;
+  /** The Engine frame loop's GPU backpressure (`frame-backpressure.ts`): its `framesinflight` mode, frames queued, renders skipped. */
+  frameBackpressure?: FrameBackpressureStats | null;
   /** View-owned draw/copy counts. A held draw never replaces the visible bitmap.
    * Phase timing is enabled by requesting diagnostics, independently of GPU timers. */
   presentation?: {
