@@ -191,6 +191,7 @@ export function playLoadControl(options: {
   thirdPartyNoticesUrl?: string;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+  curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
   /** Packaged authored assets the Asset Registry nodes query. */
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
@@ -246,6 +247,7 @@ export function playLoadControl(options: {
     ...(options.thirdPartyNoticesUrl ? { thirdPartyNoticesUrl: options.thirdPartyNoticesUrl } : {}),
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
+    ...(options.curveAssets ? { curveAssets: options.curveAssets } : {}),
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,

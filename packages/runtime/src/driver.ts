@@ -2,7 +2,7 @@ import type { SimulationSceneCaptureResult } from "./simulation-scene-capture";
 import type { SimulationSession } from "./simulation-session";
 import type { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
-import type { SaveGameService } from "@haptic/core";
+import type { CurveAssetCatalogEntry, SaveGameService } from "@haptic/core";
 import type { SessionBoundaries, RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
@@ -332,6 +332,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly overlay: SceneLayerOverlay;
   readonly layers: SceneLayers;
   readonly dataCatalog: RuntimeDataCatalog;
+  /** Curve assets of the current sources, by guid; absent means not loaded. */
+  readonly curveCatalog = new Map<string, CurveAssetCatalogEntry>();
   readonly scriptHost: ScriptHost;
   readonly objectLifetime: RuntimeObjectLifetime;
   readonly scriptDebug: ScriptDebugObserver;
@@ -488,6 +490,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
 
     // 7. Script data and the ScriptHost.
     this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
+    for (const entry of options.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);
     for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.scriptHost = createScriptHost(this, options, registry);
@@ -865,6 +868,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     for (const [guid, value] of Object.entries(content.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.materialParameters.replaceCatalog(content.materialParameterCatalog, content.materialTextureAssetGuids);
     this.dataCatalog.replace(content.dataAssets ?? []);
+    this.curveCatalog.clear();
+    for (const entry of content.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);
   }
 
   registerWaterContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {

@@ -432,6 +432,27 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Float Curve Value Range](get-float-curve-value-range.md) | Returns the lowest and highest key values of a Float Curve. |
 | [Get Vector Curve Time Range](get-vector-curve-time-range.md) | Returns the times of the Vector Curve's first and last keys. |
 
+## Curve Object
+
+| Node | Description |
+| --- | --- |
+| [Get Color Curve](get-color-curve.md) | Returns a copy of the asset's curve as a **Color Curve** value. |
+| [Get Color Curve Object](get-color-curve-object.md) | Returns the read-only object for a Color Curve asset. |
+| [Get Float Curve](get-float-curve.md) | Returns a copy of the asset's curve as a **Float Curve** value. |
+| [Get Float Curve Object](get-float-curve-object.md) | Returns the read-only object for a Float Curve asset. |
+| [Get Key Count (Color Curve)](get-key-count-color-curve.md) | Returns how many keys the Color Curve has. |
+| [Get Key Count (Float Curve)](get-key-count-float-curve.md) | Returns how many keys the Float Curve has. |
+| [Get Key Count (Vector Curve)](get-key-count-vector-curve.md) | Returns how many keys the Vector Curve has. |
+| [Get Time Range (Color Curve)](get-time-range-color-curve.md) | Returns the times of the Color Curve's first and last keys. |
+| [Get Time Range (Float Curve)](get-time-range-float-curve.md) | Returns the times of the Float Curve's first and last keys. |
+| [Get Time Range (Vector Curve)](get-time-range-vector-curve.md) | Returns the times of the Vector Curve's first and last keys. |
+| [Get Value At Time (Color Curve)](get-value-at-time-color-curve.md) | Returns the Color Curve's value at **Time**. |
+| [Get Value At Time (Float Curve)](get-value-at-time-float-curve.md) | Returns the Float Curve's value at **Time**. |
+| [Get Value At Time (Vector Curve)](get-value-at-time-vector-curve.md) | Returns the Vector Curve's value at **Time**. |
+| [Get Value Range (Float Curve)](get-value-range-float-curve.md) | Returns the lowest and highest key values of the Float Curve. |
+| [Get Vector Curve](get-vector-curve.md) | Returns a copy of the asset's curve as a **Vector Curve** value. |
+| [Get Vector Curve Object](get-vector-curve-object.md) | Returns the read-only object for a Vector Curve asset. |
+
 ## Tags
 
 | Node | Description |

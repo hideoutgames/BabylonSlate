@@ -137,6 +137,9 @@ export function pinPickerKeepsTypeClassId(from: string, to: string): boolean {
 export const ASSET_REF_PICKER_TYPES = [
   "DataDefinition",
   "DataTree",
+  "FloatCurve",
+  "VectorCurve",
+  "ColorCurve",
   "InputAction",
   "InputAxis",
   "Audio",

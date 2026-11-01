@@ -1,4 +1,5 @@
-import type { DataAssetCatalogEntry } from "@haptic/core";
+import type { CurveAssetCatalogEntry, DataAssetCatalogEntry } from "@haptic/core";
+import { CURVE_ASSET_TYPES, curveKindForAssetType, normalizeCurveAssetPayload } from "@haptic/core";
 import { normalizeWaterDefinition, type WaterDefinition } from "@haptic/core";
 import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@haptic/core";
 import {
@@ -63,7 +64,7 @@ const JSON_CONTENT_TYPES = new Set([
   "Tilemap", "Tileset", "AnimationGraph", "BehaviourTree", "Blackboard",
   "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
   "SoundAttenuation", "Animation", "Audio",
-  "DataDefinition", "DataTree", "Structure", "Enum",
+  "DataDefinition", "DataTree", "Structure", "Enum", "FloatCurve", "VectorCurve", "ColorCurve",
 ]);
 
 export type PackedAudioLibrary = {
@@ -77,6 +78,7 @@ export type PackedAudioLibrary = {
 
 export type PackedGameContent = {
   dataAssets: DataAssetCatalogEntry[];
+  curveAssets: CurveAssetCatalogEntry[];
   spritePayloads: Map<string, SpritePayload>;
   spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
   waterPayloads: Map<string, WaterDefinition>;
@@ -164,6 +166,7 @@ export function gameComplexCollisionModelGuids(game: GameSourceContent): Set<str
 
 export function packedContentFromGame(game: GameSourceContent): PackedGameContent {
   const dataAssets: DataAssetCatalogEntry[] = [];
+  const curveAssets: CurveAssetCatalogEntry[] = [];
   const spritePayloads = new Map<string, SpritePayload>();
   const spriteAnimationPayloads = new Map<string, SpriteAnimationPayload>();
   const waterPayloads = new Map<string, WaterDefinition>();
@@ -195,6 +198,11 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     const parsed = decoded ?? jsonFromBytes(bytes!);
     if (entry.type === "DataDefinition" || entry.type === "DataTree" || entry.type === "Structure" || entry.type === "Enum") {
       if (parsed) dataAssets.push({ guid: entry.guid, type: entry.type, name: entry.name ?? entry.guid, payload: parsed });
+      continue;
+    }
+    const curveKind = curveKindForAssetType(entry.type);
+    if (curveKind) {
+      if (parsed) curveAssets.push({ guid: entry.guid, type: CURVE_ASSET_TYPES[curveKind], name: entry.name ?? entry.guid, payload: normalizeCurveAssetPayload(curveKind, parsed) });
       continue;
     }
     if (entry.type === "RenderTarget" && parsed) {
@@ -341,6 +349,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
 
   return {
     dataAssets,
+    curveAssets,
     spritePayloads,
     spriteAnimationPayloads: sizedSpriteAnimations,
     waterPayloads,
@@ -472,7 +481,7 @@ export function packedSourceControls(game: GameSourceContent, content = packedCo
     type: "loadSceneContent", assetGuids: [...game.payloads.keys(), ...(game.decodedPayloads?.keys() ?? [])],
     sceneLayers: [...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })),
     sceneNavmeshBytes: Object.fromEntries(game.navmeshBytes),
-    dataAssets: content.dataAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
+    dataAssets: content.dataAssets, curveAssets: content.curveAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),
     renderTargets: Object.fromEntries(content.renderTargets), renderTargetTextures: Object.fromEntries(content.renderTargetTextures),
