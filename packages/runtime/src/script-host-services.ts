@@ -1,3 +1,4 @@
+import type { CurveAssetCatalogEntry } from "@haptic/core";
 import type {
   AssetLoadHandleState,
   InputTypeValue,
@@ -66,6 +67,8 @@ export interface ScriptHostServices {
   resolveSaveActor?(id: string): Actor | undefined;
   /** Read-only session data, shared by runtime and editor utility graphs. */
   data?: RuntimeDataApi;
+  /** Curve assets of the current sources, by guid; a missing entry means the asset is not loaded. */
+  curves?: ReadonlyMap<string, CurveAssetCatalogEntry>;
   /** Explicit editor-only capability; absent in every game runtime. */
   editorData?: EditorDataApi;
   /** Session seed shared with the world and trace metadata. */

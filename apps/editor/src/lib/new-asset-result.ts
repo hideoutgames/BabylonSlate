@@ -7,7 +7,9 @@ import {
   createDataDefinitionAsset,
   createDataTreeAsset,
   createDefaultRenderTargetCaptureProperties,
+  createDefaultCurveAssetPayload,
   createDefaultRenderTargetPayload,
+  curveKindForAssetType,
   createDefaultRenderTargetTexturePayload,
   createDefaultSaveGameDefinition,
   createDefaultScene,
@@ -323,6 +325,11 @@ export function buildNewAssetResult(options: {
       guid,
       createDefaultAudioChannelPayload() as unknown as Record<string, unknown>,
     );
+  }
+
+  const curveKind = curveKindForAssetType(type);
+  if (curveKind) {
+    return documentAsset(type, name, guid, createDefaultCurveAssetPayload(curveKind) as unknown as Record<string, unknown>);
   }
 
   if (type === "SoundAttenuation") {

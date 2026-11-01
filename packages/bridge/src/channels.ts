@@ -180,6 +180,8 @@ export interface RuntimeSceneContent {
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+  /** Float, Vector and Color Curve assets of the current sources; `Get <Type> Curve Object` reads them. */
+  curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
   audioAssetGuids?: string[];
   materialParameterCatalog?: MaterialParameterCatalog;
   materialTextureAssetGuids?: string[];

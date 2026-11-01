@@ -105,6 +105,9 @@ const ACTOR_ICON = FileBoxIcon;
 const ENGINE_PARENT: Record<string, string | null> = {
   Object: null,
   MaterialObject: "Object",
+  FloatCurveObject: "Object",
+  VectorCurveObject: "Object",
+  ColorCurveObject: "Object",
   Actor: "Object",
   RenderTargetCapture: "Actor",
   Scene: "Object",
@@ -349,6 +352,12 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   Structure: BracesIcon,
   DataDefinition: FileBoxIcon,
   DataTree: DatabaseIcon,
+  FloatCurve: SplineIcon,
+  VectorCurve: SplineIcon,
+  ColorCurve: SplineIcon,
+  FloatCurveObject: SplineIcon,
+  VectorCurveObject: SplineIcon,
+  ColorCurveObject: SplineIcon,
   ScriptInterface: PlugIcon,
   PluginSettings: PuzzleIcon,
 };
@@ -395,6 +404,9 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   Structure: "struct",
   DataDefinition: "struct",
   DataTree: "struct",
+  FloatCurve: "struct",
+  VectorCurve: "struct",
+  ColorCurve: "struct",
   ScriptInterface: "class",
   PluginSettings: "scriptType",
 };

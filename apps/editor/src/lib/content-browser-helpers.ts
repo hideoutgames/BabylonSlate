@@ -282,6 +282,9 @@ export const CREATABLE_ASSET_TYPES = [
   "Structure",
   "DataDefinition",
   "DataTree",
+  "FloatCurve",
+  "VectorCurve",
+  "ColorCurve",
   "ScriptInterface",
   "AudioMixer",
   "AudioChannel",
@@ -309,7 +312,7 @@ export type CreatableAssetTypeGroup = {
 export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   { id: "world", label: "World", types: ["Scene", "SceneLayer", "Prefab"] },
   { id: "input", label: "Input", types: ["InputAction", "InputAxis"] },
-  { id: "data", label: "Data", types: ["DataDefinition", "DataTree"] },
+  { id: "data", label: "Data", types: ["DataDefinition", "DataTree", "FloatCurve", "VectorCurve", "ColorCurve"] },
   {
     id: "scripting",
     label: "Scripting",
@@ -364,6 +367,9 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Structure: "A user-defined struct of typed fields.",
   DataDefinition: "Define fields, defaults, and validation for Data Tree entries.",
   DataTree: "Organize typed entries in a hierarchy. Branches can use different Data Definitions.",
+  FloatCurve: "A number that changes over time, shared by every script that reads it.",
+  VectorCurve: "A vector that changes over time, shared by every script that reads it.",
+  ColorCurve: "A colour and alpha that change over time, shared by every script that reads it.",
   ScriptInterface: "A contract of methods that classes can implement.",
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",

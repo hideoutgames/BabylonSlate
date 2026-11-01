@@ -50,6 +50,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
   const assetCatalog = new RuntimeAssetCatalog(options.assetCatalog);
   return new ScriptHost({
     data: rt.dataCatalog,
+    curves: rt.curveCatalog,
     getAssetCatalog: () => assetCatalog,
     seed: options.seed,
     canRunOwner: (owner) => rt.admission.canRun(owner),

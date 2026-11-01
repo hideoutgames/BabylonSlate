@@ -82,6 +82,9 @@ const values = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 // Dynamic pins use host schemas.
 const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
   "literal.makeAsset": "in",
+  "curveObject.getFloat": "curveAsset",
+  "curveObject.getVector": "curveAsset",
+  "curveObject.getColor": "curveAsset",
   "audio.play": "asset",
   "audio.setChannelVolume": "channel",
   "scene.change": "scene",
@@ -351,7 +354,9 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         }
       };
       for (const entry of nodes) if (entry.nodeType.startsWith("input.") ||
-        ["data.readEntry", "data.readUnknownEntry", "data.getChildren", "data.getDescendants", "data.getParent"].includes(entry.nodeType)) requireInputs(String(entry.node.id));
+        ["data.readEntry", "data.readUnknownEntry", "data.getChildren", "data.getDescendants", "data.getParent"].includes(entry.nodeType) ||
+        // Get <Type> Curve Object reads the asset synchronously, so its Curve Asset loads with the owner.
+        entry.nodeType.startsWith("curveObject.get")) requireInputs(String(entry.node.id));
       for (const { node, properties, nodeType, pins } of nodes) {
         const needed = requiredNodes.has(String(node.id));
         const schemaNeeded = nodeType !== "data.readEntryAsync";

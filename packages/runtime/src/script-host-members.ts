@@ -6,6 +6,8 @@ import {
   curveTimeRange,
   createDefaultRenderTargetCaptureProperties,
   deltaRotator,
+  curveKindForAssetType,
+  evaluateCurve,
   evaluateCurveAnyOrder,
   floatCurveValueRange,
   formatValue,
@@ -28,12 +30,14 @@ import {
   SaveGameError,
   SCENE_LAYER_DEFAULT_CAMERA,
   slerpQuats,
+  type CurveAssetCatalogEntry,
+  type CurveKind,
   type Rng,
   type SaveGameResult,
   type SaveGameValue,
   type SceneLayerCamera,
 } from "@haptic/core";
-import { Actor, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer } from "@haptic/object-model";
+import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer } from "@haptic/object-model";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { EMPTY_ASSET_CATALOG } from "./asset-catalog";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
@@ -78,6 +82,7 @@ export interface HostMembersHost extends ComponentFunctionHost {
  */
 export function createHostMembers(host: HostMembersHost): HostContextMembers {
   const services = host.services;
+  const curveObjects = new CurveObjectCache(() => services.curves);
   const unavailable = async <T>(): Promise<SaveGameResult<T>> => ({ ok: false, error: {
     code: "unavailable", message: "Select a default Save Game in Project Settings before using saves.",
   } });
@@ -265,6 +270,16 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     lerpFloatRange,
     mapFloatRange,
     evaluateCurve: (kind, curve, time) => evaluateCurveAnyOrder(kind, curve, Number(time)),
+    getCurveObject: (kind, asset) => curveObjects.get(kind, asset),
+    curveObjectValue: (kind, target, time) =>
+      evaluateCurve(kind, curveObjectOf(target)?.curve ?? EMPTY_CURVE, Number(time)),
+    curveObjectTimeRange: (target) => curveTimeRange(curveObjectOf(target)?.curve ?? EMPTY_CURVE),
+    curveObjectValueRange: (target) => floatCurveValueRange(curveObjectOf(target)?.curve ?? EMPTY_CURVE),
+    curveObjectKeyCount: (target) => curveObjectOf(target)?.curve.Keys.length ?? 0,
+    curveObjectCurve: (kind, target) => {
+      const object = curveObjectOf(target);
+      return structuredClone(object && object.kind === kind ? object.curve : EMPTY_CURVE);
+    },
     curveTimeRange,
     floatCurveValueRange,
     getAllActorsOfClass: (classId) => {
@@ -499,4 +514,40 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     },
   };
   return members;
+}
+
+const EMPTY_CURVE = { Keys: [], Before: "constant", After: "constant" } as const;
+
+function curveObjectOf(target: unknown): CurveObject | null {
+  return target instanceof CurveObject ? target : null;
+}
+
+/**
+ * One read-only Curve Object per curve asset for the host's session. Objects are never registered for
+ * collection; a reloaded payload updates the existing object, so references stay valid.
+ */
+class CurveObjectCache {
+  private readonly objects = new Map<string, { entry: CurveAssetCatalogEntry; object: CurveObject }>();
+  private readonly catalog: () => ReadonlyMap<string, CurveAssetCatalogEntry> | undefined;
+
+  constructor(catalog: () => ReadonlyMap<string, CurveAssetCatalogEntry> | undefined) {
+    this.catalog = catalog;
+  }
+
+  get(kind: CurveKind, asset: unknown): CurveObject | null {
+    const guid = typeof asset === "string" ? asset.trim() : "";
+    const entry = guid ? this.catalog()?.get(guid) : undefined;
+    if (!entry || curveKindForAssetType(entry.type) !== kind) return null;
+    const cached = this.objects.get(guid);
+    if (cached) {
+      if (cached.entry !== entry) {
+        cached.object.replaceCurve(entry.payload.curve);
+        cached.entry = entry;
+      }
+      return cached.object;
+    }
+    const object = new CurveObject(kind, guid, entry.payload.curve);
+    this.objects.set(guid, { entry, object });
+    return object;
+  }
 }
