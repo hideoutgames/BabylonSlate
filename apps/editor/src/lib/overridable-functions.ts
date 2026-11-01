@@ -4,7 +4,7 @@ import type {
   SerializedGraph,
 } from "@haptic/core";
 import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@haptic/editor-kit";
-import { engineScriptEventsFor } from "@haptic/object-model";
+import { TICKABLE_OBJECT_INTERFACE_GUID, TICKABLE_OBJECT_INTERFACE_NAME, engineScriptEventsFor } from "@haptic/object-model";
 import {
   DEFAULT_FUNCTION_PINS,
   nativeEventStubs,
@@ -188,6 +188,11 @@ export function collectImplementedInterfaceContexts(options: {
   const contexts = [];
   for (const member of members) {
     const guid = member.assetGuid ?? "";
+    // The engine's Tickable Object has no functions to implement.
+    if (guid === TICKABLE_OBJECT_INTERFACE_GUID) {
+      contexts.push({ guid, name: TICKABLE_OBJECT_INTERFACE_NAME, methods: [] });
+      continue;
+    }
     const iface = catalog.get(guid);
     if (!iface) continue;
     contexts.push({
@@ -357,6 +362,8 @@ export function collectOverridableEventRows(options: {
       parentClass: options.parentClass,
       parentOf: options.parentOf,
       assetType: options.assetType,
+      graph: options.graph,
+      parentGraphs: options.parentGraphs,
     }),
   ];
   for (const stub of native) {

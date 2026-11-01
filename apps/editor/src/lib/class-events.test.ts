@@ -49,8 +49,22 @@ describe("nativeEventStubs", () => {
     }
   });
 
-  it("lists no Begin Play or Tick on Object", () => {
-    expect(nativeEventStubs({ parentClass: "Object" })).toEqual([]);
+  it("lists On Init on an Object class, and Tick only once it or a parent implements Tickable Object", () => {
+    const tickable: SerializedGraph = {
+      nodes: [], edges: [], members: [{ id: "tickable", kind: "interface", name: "Tickable Object", assetGuid: "engine:TickableObject" }],
+    };
+    const parentOf = (id: string) => (id === "Counter" ? "Object" : null);
+    const types = (options: Parameters<typeof nativeEventStubs>[0]) => nativeEventStubs(options).map((stub) => stub.eventType);
+    expect(types({ parentClass: "Object" })).toEqual(["flow.event.init"]);
+    expect(isScriptCatalogNodeAllowed("flow.event.tick", { parentClass: "Object" })).toBe(false);
+    expect(isScriptCatalogNodeAllowed("flow.event.beginPlay", { parentClass: "Object" })).toBe(false);
+    expect(types({ parentClass: "Object", graph: tickable })).toEqual(["flow.event.init", "flow.event.tick"]);
+    expect(isScriptCatalogNodeAllowed("flow.event.tick", { parentClass: "Object", graph: tickable })).toBe(true);
+    // Inherited from the parent Class's graph.
+    const child = { parentClass: "Counter", parentOf, parentGraphs: { Counter: tickable } };
+    expect(types(child)).toEqual(["flow.event.init", "flow.event.tick"]);
+    // An Actor neither gains On Init nor depends on the interface for Tick.
+    expect(types({ parentClass: "Actor", graph: tickable })).not.toContain("flow.event.init");
   });
 
   it("lists Game Instance lifecycle and scene events, not Actor Begin Play or Destroyed", () => {

@@ -17,6 +17,7 @@ import {
 import { collectDataGraphAssets } from "../lib/data-graph";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { embeddedScriptHost } from "../lib/embedded-script";
+import { engineScriptInterfaceAssets } from "../lib/engine-script-interfaces";
 
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
 const DATA_KINDS = ["data-tree"] as const;
@@ -76,7 +77,11 @@ export function useInspectorCatalogs(docPath: string | undefined, docKind?: stri
         })),
     };
   }, [assetRegistry, editorGraph, registryEpoch]);
-  const { interfaceAssets, pickerAssets, objectClassEntries, projectClasses } = registryViews;
+  const { pickerAssets, objectClassEntries, projectClasses } = registryViews;
+  const interfaceAssets = useMemo(
+    () => [...engineScriptInterfaceAssets(parentClass, parentOf), ...registryViews.interfaceAssets],
+    [parentClass, parentOf, registryViews.interfaceAssets],
+  );
   // Other open tabs' unsaved content these catalogs read, by kind.
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const dataDocuments = useOpenDocumentsOfKinds(DATA_KINDS);

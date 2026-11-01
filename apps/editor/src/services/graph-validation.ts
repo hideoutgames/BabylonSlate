@@ -25,9 +25,14 @@ import {
   type LogicGraph,
   type TypeSchemas,
   diagnostic,
+  readPinDefault,
 } from "@haptic/scripting";
 import {
+  TICKABLE_OBJECT_INTERFACE_GUID,
   engineEventTypeClassIds,
+  isCreatableObjectChain,
+  isLockedEngineClassId,
+  receivesEngineTick,
   subsystemBaseClassIdOf,
   subsystemClassIdsForGet,
   type SubsystemClassHierarchy,
@@ -35,6 +40,7 @@ import {
 import { mergedPrefabViewsForGraph } from "../lib/component-graph-members";
 import { collectParentEventNames } from "../lib/overridable-functions";
 import {
+  CREATE_OBJECT_NODE_ID,
   DATA_DEFINITION_PIN_ID,
   SUBSYSTEM_GET_NODE_ID,
   subsystemGetClassId,
@@ -144,6 +150,15 @@ function hostLineageDiagnostics(
     (entry) => entry.classId,
   );
   const out: Diagnostic[] = [];
+  const engineTickBase = hostChain && receivesEngineTick(hostChain) ? hostChain.find(isLockedEngineClassId) ?? "Scene" : null;
+  if (engineTickBase && options.implementedInterfaces?.some((entry) => entry.guid === TICKABLE_OBJECT_INTERFACE_GUID)) {
+    out.push(diagnostic({
+      code: "interface.tick_already_exists",
+      message: `${engineTickBase} classes already receive Event Tick. Remove the Tickable Object interface`,
+      assetGuid: options.assetGuid,
+      graphId: graphs[0]?.id ?? options.graphId,
+    }));
+  }
   for (const graph of graphs) {
     const report = (code: string, message: string, nodeId: string) =>
       out.push(
@@ -155,7 +170,20 @@ function hostLineageDiagnostics(
           nodeId,
         }),
       );
+    const wiredClassPins = new Set(graph.edges.filter((edge) => edge.targetPinId === "class").map((edge) => edge.targetNodeId));
     for (const node of graph.nodes) {
+      if (node.typeId === CREATE_OBJECT_NODE_ID && !wiredClassPins.has(node.id)) {
+        const classId = readPinDefault(node.properties, "class");
+        const chain = typeof classId === "string" && classId ? walkAncestry(classId, parentOf) : [];
+        // A Class the lookup does not know is left to the missing-class checks.
+        if ((chain.length > 1 || isLockedEngineClassId(String(classId))) && !isCreatableObjectChain(chain)) {
+          report(
+            "object.create_invalid_class",
+            `Create Object cannot create ${String(classId)}. Choose a Class whose parent is Object`,
+            node.id,
+          );
+        }
+      }
       if (hostChain && !isLineageNativeEventAllowed(node.typeId, hostChain)) {
         report(
           "event.wrong_lineage",

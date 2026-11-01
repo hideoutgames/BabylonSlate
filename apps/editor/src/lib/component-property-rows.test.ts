@@ -1180,6 +1180,16 @@ describe("subclassClassEntries", () => {
     expect(componentEntries.map((entry) => entry.id)).not.toContain("Actor");
   });
 
+  it("lists only plain Object classes for Create Object", () => {
+    const ids = subclassClassEntries("Object", [
+      { header: { type: "Class", name: "Counter", parentClass: "Object" } },
+      { header: { type: "Class", name: "FancyCounter", parentClass: "Counter" } },
+      { header: { type: "Class", name: "Hero", parentClass: "Actor" } },
+      { header: { type: "Class", name: "Inventory", parentClass: "GameSubsystem" } },
+    ], { creatableOnly: true }).map((entry) => entry.id);
+    expect(ids).toEqual(["Object", "Counter", "FancyCounter"]);
+  });
+
   it("hides editor graph classes from a runtime class picker", () => {
     const entries = subclassClassEntries("Object", [
       { header: { type: "Class", name: "Hero", parentClass: "Actor" } },

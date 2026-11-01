@@ -7,6 +7,8 @@ import {
 import {
   ENGINE_CLASS_SCRIPT_APIS,
   GAME_SUBSYSTEM_CLASS_ID,
+  TICKABLE_OBJECT_INTERFACE_GUID,
+  isCreatableObjectChain,
   SCENE_SUBSYSTEM_CLASS_ID,
   engineNativeEventsFor,
 } from "@haptic/object-model";
@@ -190,6 +192,8 @@ export type ClassEventOptions = {
   editorGraph?: boolean;
   /** Animation Object event graph vs nested transition-rule graph. */
   animationGraphHost?: "object" | "rule";
+  /** The class's own graph: its interface members (Tickable Object) add events. */
+  graph?: SerializedGraph;
 };
 
 function ancestryChain(options?: ClassEventOptions): string[] {
@@ -218,7 +222,20 @@ function isSubsystemChain(chain: readonly string[]): boolean {
 export function lineageNativeEventTypes(
   chain: readonly string[],
 ): ReadonlySet<string> {
-  return new Set(engineNativeEventsFor(chain).map((event) => event.eventType));
+  const types = new Set(engineNativeEventsFor(chain).map((event) => event.eventType));
+  // Create Object runs a plain Object class's On Init.
+  if (isCreatableObjectChain(chain)) types.add("flow.event.init");
+  return types;
+}
+
+/**
+ * Whether a plain Object class (or a parent) lists the Tickable Object
+ * interface, which gives it Event Tick. `chain` is its parent ancestry.
+ */
+function implementsTickableObject(options: ClassEventOptions | undefined, chain: readonly string[]): boolean {
+  if (!isCreatableObjectChain(chain)) return false;
+  return [options?.graph, ...chain.map((classId) => options?.parentGraphs?.[classId])].some((graph) =>
+    graph?.members?.some((member) => member.kind === "interface" && member.assetGuid === TICKABLE_OBJECT_INTERFACE_GUID));
 }
 
 /**
@@ -236,9 +253,10 @@ export function isLineageNativeEventAllowed(
 
 /** Engine bases whose catalog declares a lineage lifecycle event, root order. */
 export function lineageNativeEventBases(eventType: string): string[] {
-  return ENGINE_CLASS_SCRIPT_APIS.filter((api) =>
+  const bases = ENGINE_CLASS_SCRIPT_APIS.filter((api) =>
     (api.nativeEvents ?? []).some((event) => event.eventType === eventType),
   ).map((api) => api.classId);
+  return eventType === "flow.event.init" ? [...bases, "Object"] : bases;
 }
 
 /** Title Case node title for a native event type (`Event On Scene Loaded`). */
@@ -258,7 +276,10 @@ export function isEditorUtilityChain(chain: readonly string[]): boolean {
 export function seededNativeEventTypes(
   options?: ClassEventOptions,
 ): readonly string[] {
-  return isSubsystemChain(ancestryChain(options))
+  const chain = ancestryChain(options);
+  // A new Object class starts empty; On Init is in Events +.
+  if (isCreatableObjectChain(chain)) return [];
+  return isSubsystemChain(chain)
     ? SEEDED_SUBSYSTEM_EVENT_TYPES
     : SEEDED_NATIVE_EVENT_TYPES;
 }
@@ -297,6 +318,8 @@ export function nativeEventStubs(
   ) {
     return [];
   }
+  // Only a Class asset is an object Create Object makes.
+  if (options?.assetType && options.assetType !== "Class" && isCreatableObjectChain(chain)) return [];
   const types: string[] = [];
   if (chain.includes("Actor") || chain.includes("ActorComponent")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
@@ -306,6 +329,7 @@ export function nativeEventStubs(
   // Game Instance, GameSubsystem and SceneSubsystem lifecycles come from the
   // engine catalog so the editor and runtime share one table.
   types.push(...lineageNativeEventTypes(chain));
+  if (implementsTickableObject(options, chain)) types.push("flow.event.tick");
   if (chain.includes("DebugCommand")) {
     types.push("flow.event.commandRun");
   }
@@ -501,7 +525,8 @@ export function isScriptCatalogNodeAllowed(
     return chain.includes("Actor") || chain.includes("ActorComponent") || isEmbeddedScriptChain(chain);
   }
   if (nodeId === "flow.event.tick") {
-    return chain.includes("Actor") || chain.includes("ActorComponent") || isEmbeddedScriptChain(chain) || lineageEvents.has(nodeId);
+    return chain.includes("Actor") || chain.includes("ActorComponent") || isEmbeddedScriptChain(chain) || lineageEvents.has(nodeId) ||
+      implementsTickableObject(options, chain);
   }
   if (nodeId === "flow.event.commandRun") {
     return chain.includes("Actor") || chain.includes("DebugCommand");

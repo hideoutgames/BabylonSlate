@@ -20,6 +20,7 @@ import { MODEL_MATERIALS_PICKER_VALUE } from "./mesh-material-properties";
 import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_COMPONENT_CLASS_IDS,
+  isCreatableObjectChain,
   isHiddenEngineBaseClassId,
 } from "@haptic/object-model";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
@@ -204,7 +205,10 @@ export function gameInstanceClassEntries(
   return entries;
 }
 
-/** Engine plus project Class assets assignable to a classRef constraint. */
+/**
+ * Engine plus project Class assets assignable to a classRef constraint;
+ * `creatableOnly` keeps the plain Object classes Create Object accepts.
+ */
 export function subclassClassEntries(
   baseClassId: string,
   assets: ReadonlyArray<{
@@ -216,7 +220,7 @@ export function subclassClassEntries(
       guid?: string;
     };
   }>,
-  options?: { editorGraph?: boolean },
+  options?: { editorGraph?: boolean; creatableOnly?: boolean },
 ): ClassPickerEntry[] {
   const parentOf = classParentLookup(assets);
   const entries: ClassPickerEntry[] = [];
@@ -230,6 +234,7 @@ export function subclassClassEntries(
     if (options?.editorGraph !== true && isEditorGraphClass(id, parentOf)) {
       return;
     }
+    if (options?.creatableOnly && !isCreatableObjectChain(ancestry)) return;
     seen.add(id);
     entries.push({ id, name, group, ancestry });
   };
