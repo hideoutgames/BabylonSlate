@@ -30,6 +30,8 @@ const emptySaveStorage: SaveGameStorage = {
 export type ProjectSceneRun = {
   /** Session errors: failed asserts, uncaught errors, failed scene loads and a failed boot. */
   problems: string[];
+  /** Print String and Output Log lines, in order. */
+  logs: string[];
   /** Ticks the session completed. */
   tickIndex: number;
 };
@@ -146,14 +148,16 @@ export async function runProjectScene(options: {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
     }
+    const logs: string[] = [];
     for (const command of commands) {
+      if (command.type === "log" || command.type === "print") logs.push(String((command as { message?: unknown }).message ?? ""));
       if (command.type === "diagnostic" && command.severity === "error") {
         problems.push(`${command.message} (${[command.assetGuid, command.nodeId].filter(Boolean).join(" › ") || command.code})`);
       } else if (command.type === "sceneLoadFailed" || command.type === "sceneLayerLoadFailed") {
         problems.push(command.message);
       }
     }
-    return { problems, tickIndex: runtime.getWorld().clock.tickIndex };
+    return { problems, logs, tickIndex: runtime.getWorld().clock.tickIndex };
   } finally {
     runtime?.stop();
     lifetime.abort();

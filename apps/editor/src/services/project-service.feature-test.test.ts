@@ -315,11 +315,17 @@ describe("FeatureTest starter", () => {
   });
 
   // Each scene plays headlessly as in editor Play: its probes assert what they check, so a broken feature fails here.
+  // Event handlers whose asserts would pass by never running also print a line, which must appear.
+  const HEARD: Partial<Record<(typeof FEATURE_TEST_CHECK_SCENES)[number]["name"], string[]>> = {
+    main: ["Feature Test scene script heard On Intro Line (Intro) through FT_Timeline"],
+    FT_World: ["FT_TimelineListener heard On Door Open (Door Loop)"],
+  };
   for (const scene of FEATURE_TEST_CHECK_SCENES) {
     it(`plays ${scene.name} without session errors or failed asserts`, async () => {
       const run = await runProjectScene({ project: reopened, document, scenePath: scene.path, ticks: PLAY_TICKS });
       expect(run.problems).toEqual([]);
       expect(run.tickIndex).toBe(PLAY_TICKS);
+      for (const line of HEARD[scene.name] ?? []) expect(run.logs.filter((log) => log.includes(line)), line).not.toEqual([]);
     }, 120_000);
   }
 });

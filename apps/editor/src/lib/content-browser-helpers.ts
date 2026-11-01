@@ -286,6 +286,8 @@ export const CREATABLE_ASSET_TYPES = [
   "VectorCurve",
   "ColorCurve",
   "Timeline",
+  "TimelineClip2D",
+  "TimelineClip3D",
   "ScriptInterface",
   "AudioMixer",
   "AudioChannel",
@@ -327,7 +329,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "animation",
     label: "Animation",
-    types: ["AnimationGraph", "SpriteAnimation", "Timeline"],
+    types: ["AnimationGraph", "SpriteAnimation", "Timeline", "TimelineClip2D", "TimelineClip3D"],
   },
   {
     id: "rendering",
@@ -372,6 +374,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   VectorCurve: "A vector that changes over time, shared by every script that reads it.",
   ColorCurve: "A colour and alpha that change over time, shared by every script that reads it.",
   Timeline: "Groups Timeline Clips from Scenes and Scene Layers, so any class can play them and bind their events.",
+  TimelineClip2D: "A Timeline Clip in its own file that animates 2D stand-ins, which each instance binds to overlay actors or components.",
+  TimelineClip3D: "A Timeline Clip in its own file that animates 3D stand-ins, which each instance binds to actors or components.",
   ScriptInterface: "A contract of methods that classes can implement.",
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",

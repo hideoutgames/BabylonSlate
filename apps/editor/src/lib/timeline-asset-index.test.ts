@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { TIMELINE_CLIPS_META, createTimelineClip, timelineClipSummaries, type SerializedScene } from "@haptic/core";
+import {
+  TIMELINE_CLIPS_META,
+  createDefaultTimelineClipAsset,
+  createTimelineClip,
+  timelineClipAssetSummaries,
+  timelineClipSummaries,
+  type SerializedScene,
+} from "@haptic/core";
 import {
   bindTimelineClip,
+  isSceneClipDocument,
   projectTimelineClips,
   timelineAssetClips,
   timelineBindBlocker,
@@ -28,6 +36,20 @@ describe("Timeline Asset index", () => {
     // The open Main has the door bound and the intro unbound, not yet saved.
     const open = { ref: { kind: "scene", path: "assets/Main.scene.hasset" }, content: { timelineClips: [clip("intro", "Intro"), clip("door", "Door Open", "hall")] } };
     expect(timelineAssetClips(projectTimelineClips(assets, [open]), "hall").map((entry) => entry.clip.name)).toEqual(["Door Open", "Hall Lights"]);
+  });
+
+  it("lists a clip asset's clip under the asset's name, an open clip asset's edits first", () => {
+    const swing = { ...createDefaultTimelineClipAsset("hall"), length: 2 };
+    const clipAssets = [
+      ...assets,
+      { path: "assets/Swing.timelineclip3d.hasset", header: { type: "TimelineClip3D", guid: "swing", name: "Door Swing", payload: timelineClipAssetSummaries(swing, "") } },
+    ];
+    const listed = timelineAssetClips(projectTimelineClips(clipAssets, []), "hall");
+    expect(listed.map((entry) => [entry.clip.name, entry.clip.length, entry.documentKind, isSceneClipDocument(entry.documentKind)])).toEqual([
+      ["Intro", 5, "scene", true], ["Hall Lights", 5, "scene-layer", true], ["Door Swing", 2, "timeline-clip-3d", false],
+    ]);
+    const open = { ref: { kind: "timeline-clip-3d", path: "assets/Swing.timelineclip3d.hasset" }, content: { ...swing, timelineAsset: "other" } };
+    expect(timelineAssetClips(projectTimelineClips(clipAssets, [open]), "hall").map((entry) => entry.clip.name)).toEqual(["Intro", "Hall Lights"]);
   });
 
   it("refuses a clip whose name the asset already holds, but not the clip itself", () => {

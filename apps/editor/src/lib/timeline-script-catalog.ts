@@ -15,7 +15,7 @@ import {
   timelineClipNodeTitle,
 } from "@haptic/scripting-nodes";
 import { ownedTimelineClipDispatcherSymbols, type OwnedTimelineClipEntry } from "./owned-actor-gets";
-import { timelineAssetClips, type ProjectTimelineClip } from "./timeline-asset-index";
+import { isSceneClipDocument, timelineAssetClips, type ProjectTimelineClip } from "./timeline-asset-index";
 
 /** A scene clip a Timeline Asset holds, as scripts see it through the asset's Timeline. */
 export type TimelineScriptClip = OwnedTimelineClipEntry & { documentGuid: string; documentName: string };
@@ -34,7 +34,8 @@ export function timelineScriptAssets(assets: readonly TimelineAssetEntry[], clip
     guid: header.guid,
     name: header.name,
     classId: timelineClassId(header.guid),
-    clips: timelineAssetClips(clips, header.guid).map((entry) => ({
+    // Scene clips have Get nodes; clip assets are reached by Create instead.
+    clips: timelineAssetClips(clips, header.guid).filter((entry) => isSceneClipDocument(entry.documentKind)).map((entry) => ({
       id: entry.clip.id,
       name: entry.clip.name,
       classId: timelineClipClassId(entry.documentGuid, entry.clip.id),

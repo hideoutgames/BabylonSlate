@@ -34,6 +34,7 @@ import {
 import type { FeatureTestHolidayModel } from "./engine-content-files";
 import { stressPoint } from "./layout";
 import { monitorMaterial } from "./rendering";
+import { TIMELINE_PAVILION, placeTimelineListener, placeTimelinePavilion } from "./timeline";
 
 /**
  * `FT_World` scene: an island Landscape (painted layers, collision,
@@ -376,6 +377,11 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
   const ridge = [[-12, -4.5], [-15, 2], [-18.5, 8], [-20, 13]] as const;
   add(splineActor("ft-world-ridge", "Ridge Path Spline", ridge, ground, land, { closed: false, curvature: 0.5 }));
 
+  // Timeline Pavilion: a door and a lamp on FT_World's Door Loop clip (`timeline.ts`).
+  const pavilion = TIMELINE_PAVILION;
+  placeTimelinePavilion(ctx, scene, land(pavilion.x, ground(pavilion.x, pavilion.z), pavilion.z));
+  keepOut.push([pavilion.x, pavilion.z, pavilion.radius]);
+
   // Island Foliage and the Foliage Group used by the Foliage mode brush.
   const models = ctx.assets.models;
   add(actor("ft-world-foliage", "Island Foliage", tf(land(0, 0, 0)), [
@@ -396,13 +402,16 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
     }),
   ]), { scene: ctx.stressScene });
 
-  await ctx.addSceneDocument({
+  const { guid } = await ctx.addSceneDocument({
     kind: "scene",
     folder: SCENES_FOLDER,
     name: FEATURE_TEST_WORLD_SCENE,
     content: scene,
     order: SCENE_SAVE_ORDER.scene,
   });
+  // The listener's Bind node names Door Loop's class, which carries this scene's guid.
+  const listener = { x: pavilion.x - 2.5, z: pavilion.z - 1.5 };
+  await placeTimelineListener(ctx, scene, guid, land(listener.x, ground(listener.x, listener.z), listener.z));
 }
 
 /** Basic 3D sky, shadowed sun and a camera framing the island and the Ocean. */

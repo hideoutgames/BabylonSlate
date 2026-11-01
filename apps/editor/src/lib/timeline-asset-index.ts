@@ -1,5 +1,8 @@
 import {
+  TIMELINE_CLIP_ASSET_CLIP_ID,
+  normalizeTimelineClipAsset,
   readTimelineClipSummaries,
+  timelineClipAssetSummaries,
   timelineClipSummaries,
   type SerializedScene,
   type TimelineClipSummary,
@@ -8,15 +11,27 @@ import {
 /**
  * Which Timeline Clips each Timeline Asset holds. A clip names its asset
  * (`timelineAsset`); the project's clips come from Scene and Scene Layer
- * headers (`TIMELINE_CLIPS_META`), and an open document's own clips, saved or
- * not, take the place of its header's.
+ * headers and 2D or 3D Timeline Clip asset headers (`TIMELINE_CLIPS_META`),
+ * and an open document's own clips, saved or not, take the place of its
+ * header's. A clip asset's one clip is named after the asset.
  */
 export interface ProjectTimelineClip {
   clip: TimelineClipSummary;
   documentPath: string;
-  documentKind: "scene" | "scene-layer";
+  documentKind: TimelineClipDocumentKind;
   documentName: string;
   documentGuid: string;
+}
+
+export type TimelineClipDocumentKind = "scene" | "scene-layer" | "timeline-clip-2d" | "timeline-clip-3d";
+
+const DOCUMENT_KIND_BY_TYPE: Record<string, TimelineClipDocumentKind> = {
+  Scene: "scene", SceneLayer: "scene-layer", TimelineClip2D: "timeline-clip-2d", TimelineClip3D: "timeline-clip-3d",
+};
+
+/** A Scene or Scene Layer: its clips are scene clips, reached with Get rather than Create. */
+export function isSceneClipDocument(kind: TimelineClipDocumentKind): kind is "scene" | "scene-layer" {
+  return kind === "scene" || kind === "scene-layer";
 }
 
 type IndexedSceneAsset = {
@@ -31,16 +46,20 @@ export function projectTimelineClips(
 ): ProjectTimelineClip[] {
   const open = new Map<string, readonly TimelineClipSummary[]>();
   for (const doc of openDocuments) {
-    if ((doc.ref.kind === "scene" || doc.ref.kind === "scene-layer") && doc.content) {
+    if (!doc.content) continue;
+    if (doc.ref.kind === "scene" || doc.ref.kind === "scene-layer") {
       open.set(doc.ref.path, timelineClipSummaries((doc.content as SerializedScene).timelineClips));
+    } else if (doc.ref.kind === "timeline-clip-2d" || doc.ref.kind === "timeline-clip-3d") {
+      open.set(doc.ref.path, readTimelineClipSummaries(timelineClipAssetSummaries(normalizeTimelineClipAsset(doc.content), "")));
     }
   }
   return assets.flatMap((asset): ProjectTimelineClip[] => {
-    const documentKind = asset.header.type === "Scene" ? "scene" : asset.header.type === "SceneLayer" ? "scene-layer" : null;
+    const documentKind = DOCUMENT_KIND_BY_TYPE[asset.header.type];
     if (!documentKind) return [];
     const clips = open.get(asset.path) ?? readTimelineClipSummaries(asset.header.payload);
-    return clips.map((clip) => ({
-      clip,
+    const clipAsset = !isSceneClipDocument(documentKind);
+    return clips.filter((clip) => !clipAsset || clip.id === TIMELINE_CLIP_ASSET_CLIP_ID).map((clip) => ({
+      clip: clipAsset ? { ...clip, name: asset.header.name } : clip,
       documentPath: asset.path,
       documentKind,
       documentName: asset.header.name,

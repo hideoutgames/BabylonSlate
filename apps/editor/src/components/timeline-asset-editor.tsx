@@ -2,18 +2,18 @@ import { useMemo, useSyncExternalStore } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { documentId, labelFromPath, normalizeTimelineAsset } from "@haptic/core";
 import { TIMELINE_CLIP_BUILT_IN_DISPATCHERS } from "@haptic/object-model";
-import { PanelFrame, PropertyGrid, TreeView, pinPickerLabel, useTouchUi, type PropertyRow, type TreeViewNode } from "@haptic/editor-kit";
+import { PanelFrame, PropertyGrid, TreeView, TypeVisualIcon, pinPickerLabel, resolveTypeVisual, useTouchUi, type PropertyRow, type TreeViewNode } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@haptic/ui/components/empty";
 import { FieldDescription } from "@haptic/ui/components/field";
 import { FilmIcon, LayersIcon, MapIcon, ZapIcon } from "lucide-react";
 import { useDocumentActions, useOpenDocument, useRegistryState } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { projectTimelineClips, timelineAssetClips, type ProjectTimelineClip } from "../lib/timeline-asset-index";
+import { isSceneClipDocument, projectTimelineClips, timelineAssetClips, type ProjectTimelineClip } from "../lib/timeline-asset-index";
 import { requestTimelineClipFocus } from "../lib/timeline-clip-focus";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 
-const SCENE_KINDS = ["scene", "scene-layer"] as const;
+const CLIP_DOCUMENT_KINDS = ["scene", "scene-layer", "timeline-clip-2d", "timeline-clip-3d"] as const;
 
 /** The clip each Timeline Asset document shows in Events, by document id. */
 const selectedClips = new Map<string, string>();
@@ -40,7 +40,7 @@ function useTimelineAsset() {
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(id);
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
+  const sceneDocuments = useOpenDocumentsOfKinds(CLIP_DOCUMENT_KINDS);
   const asset = normalizeTimelineAsset(doc?.content);
   const guid = doc ? assetRegistry?.getByPath(doc.ref.path)?.header.guid : undefined;
   const clips = useMemo(() => {
@@ -64,10 +64,12 @@ export function TimelineAssetClipsPanel(_props: IDockviewPanelProps) {
   const selected = useSelectedClip(id) ?? (clips[0] ? clipKey(clips[0]) : undefined);
   const open = async (entry: ProjectTimelineClip) => {
     const target = documentId({ kind: entry.documentKind, path: entry.documentPath });
-    requestTimelineClipFocus(target, entry.clip.id);
+    // A scene clip opens its Scene or Scene Layer in Timeline mode on that clip; a clip asset opens itself.
+    const scene = isSceneClipDocument(entry.documentKind);
+    if (scene) requestTimelineClipFocus(target, entry.clip.id);
     if (getOpenDocuments().some((doc) => doc.id === target)) setActiveDocument(target);
     else await openDocument({ kind: entry.documentKind, path: entry.documentPath, label: labelFromPath(entry.documentPath) });
-    setSceneMode(target, "timeline");
+    if (scene) setSceneMode(target, "timeline");
   };
   const rows: PropertyRow[] = [{
     id: "timeline-asset-description", kind: "text", label: "Description", value: asset.description,
@@ -83,7 +85,9 @@ export function TimelineAssetClipsPanel(_props: IDockviewPanelProps) {
     draggable: false,
     icon: <FilmIcon className="size-3.5 text-muted-foreground" />,
     trailing: <span className="flex items-center gap-2 text-xs text-muted-foreground">
-      {entry.documentKind === "scene" ? <MapIcon className="size-3.5" aria-hidden /> : <LayersIcon className="size-3.5" aria-hidden />}
+      {entry.documentKind === "scene" ? <MapIcon className="size-3.5" aria-hidden />
+        : entry.documentKind === "scene-layer" ? <LayersIcon className="size-3.5" aria-hidden />
+          : <TypeVisualIcon visual={resolveTypeVisual({ assetType: entry.documentKind === "timeline-clip-2d" ? "TimelineClip2D" : "TimelineClip3D" })} />}
       <span className="max-w-32 truncate">{entry.documentName}</span>
       <span className="tabular-nums">{entry.clip.length.toFixed(2)} s</span>
       <Button size={touch ? "sm" : "xs"} variant="ghost" onClick={(event) => { event.stopPropagation(); void open(entry); }}
@@ -122,20 +126,26 @@ export function TimelineAssetEventsPanel(_props: IDockviewPanelProps) {
   const { id, clips } = useTimelineAsset();
   const key = useSelectedClip(id);
   const clip = clips.find((entry) => clipKey(entry) === key) ?? clips[0];
-  const rows: PropertyRow[] = clip ? [
-    ...clip.clip.events.map((event, index): PropertyRow => ({
-      id: `timeline-asset-event-${index}`, kind: "text", label: event.name, readOnly: true, onChange: () => {},
-      value: event.inputs.length ? event.inputs.map((input) => `${input.name}: ${pinPickerLabel(input.typeId)}`).join(", ") : "No inputs",
+  // What the clip declares, to read: the clip's Custom Event Tracks are edited in its Scene or Scene Layer.
+  const events = clip ? [
+    ...clip.clip.events.map((event) => ({
+      name: event.name,
+      detail: event.inputs.length ? event.inputs.map((input) => `${input.name}: ${pinPickerLabel(input.typeId)}`).join(", ") : "No Inputs",
     })),
-    ...TIMELINE_CLIP_BUILT_IN_DISPATCHERS.map((name): PropertyRow => ({
-      id: `timeline-asset-event-${name}`, kind: "text", label: name, value: "Built in", readOnly: true, onChange: () => {},
-    })),
+    ...TIMELINE_CLIP_BUILT_IN_DISPATCHERS.map((name) => ({ name, detail: "Built In" })),
   ] : [];
   return <PanelFrame data-testid="timeline-asset-events-panel">
     {clip ? <div className="flex flex-col gap-2 p-2">
       <div className="flex items-center gap-1.5 px-2 text-sm font-medium [&_svg]:size-4"><ZapIcon />{clip.clip.name}</div>
-      <PropertyGrid rows={rows} data-testid="timeline-asset-events" />
-      <FieldDescription className="px-2 text-xs">Event Dispatchers of the selected clip, from its Custom Event Tracks.</FieldDescription>
+      <ul className="flex flex-col" aria-label={`${clip.clip.name} Events`} data-testid="timeline-asset-events">
+        {events.map((event) => (
+          <li key={event.name} className="flex h-7 min-w-0 items-center gap-2 px-2 text-sm" data-testid={`timeline-asset-event-${event.name}`}>
+            <span className="min-w-0 truncate" title={event.name}>{event.name}</span>
+            <span className="ml-auto min-w-0 shrink-[2] truncate text-xs text-muted-foreground" title={event.detail}>{event.detail}</span>
+          </li>
+        ))}
+      </ul>
+      <FieldDescription className="px-2 text-xs">Event Dispatchers of the selected clip, from its Custom Event Tracks. Edit them in the clip's Scene or Scene Layer.</FieldDescription>
     </div> : <Empty className="h-full gap-3 p-4">
       <EmptyHeader>
         <EmptyMedia variant="icon"><ZapIcon /></EmptyMedia>
