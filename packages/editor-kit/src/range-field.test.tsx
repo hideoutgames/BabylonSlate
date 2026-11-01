@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { RangeField, formatRangeSummary, type RangeFieldKind, type RangeFieldValue } from "./range-field";
+import { RangeField } from "./range-field";
+import { formatRangeSummary, type RangeFieldKind, type RangeFieldValue } from "./range-values";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 afterEach(cleanup);

@@ -42,6 +42,7 @@ import {
   type PinListRow,
   type PinPickerType,
   type PropertyRow,
+  type RangeFieldValue,
   type VariableTypeFieldsValue,
 } from "@haptic/editor-kit";
 import { ensureTilesetTiles, normalizeTilesetPayload } from "@haptic/assets";
@@ -105,6 +106,8 @@ export function GalleryComposites() {
   const [visible, setVisible] = useState(true);
   const [tint, setTint] = useState<[number, number, number]>([1, 0, 0]);
   const [lifetimeRange, setLifetimeRange] = useState<[number, number]>([0.8, 1.2]);
+  const [spawnCount, setSpawnCount] = useState<RangeFieldValue>({ Min: 2, Max: 5 });
+  const [spawnArea, setSpawnArea] = useState<RangeFieldValue>({ Min: { x: -5, y: 0, z: -5 }, Max: { x: 5, y: 2, z: 5 } });
   const [fadeCurve, setFadeCurve] = useState<CurveKey[]>([
     { t: 0, value: 1 },
     { t: 1, value: 0 },
@@ -226,6 +229,24 @@ export function GalleryComposites() {
       defaultValue: [0.8, 1.2],
       min: 0.01,
       onChange: setLifetimeRange,
+    },
+    {
+      kind: "value-range",
+      id: "gallery-spawn-count",
+      label: "Spawn Count",
+      rangeKind: "int",
+      value: spawnCount,
+      defaultValue: { Min: 0, Max: 1 },
+      onChange: setSpawnCount,
+    },
+    {
+      kind: "value-range",
+      id: "gallery-spawn-area",
+      label: "Spawn Area",
+      rangeKind: "vec3",
+      value: spawnArea,
+      defaultValue: { Min: { x: 0, y: 0, z: 0 }, Max: { x: 0, y: 0, z: 0 } },
+      onChange: setSpawnArea,
     },
     {
       kind: "curve",
