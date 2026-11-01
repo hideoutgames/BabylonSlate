@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { IconActionButton } from "../components/icon-action-button";
 import { useDocumentActions, useOpenDocument, useRegistryState } from "../context/document-context";
-import { useProjectSearch } from "../context/project-search-context";
+import { useOptionalProjectSearch } from "../context/project-search-context";
 import { bindTimelineClip, projectTimelineClips, timelineAssetClips, timelineBindBlocker } from "../lib/timeline-asset-index";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { takeTimelineClipFocus, usePendingTimelineClipFocus } from "../lib/timeline-clip-focus";
@@ -95,7 +95,7 @@ export function TimelineClipsPanel(_props: IDockviewPanelProps) {
   }, [clips, documentId, focusRequest, setClipId]);
   const timelineAssets = useTimelineAssets();
   const assetCreate = useAssetCreate();
-  const { revealAsset } = useProjectSearch();
+  const projectSearch = useOptionalProjectSearch();
   const [bindClipId, setBindClipId] = useState<string | null>(null);
   const [newAssetClipId, setNewAssetClipId] = useState<string | null>(null);
   const [bindError, setBindError] = useState<string | null>(null);
@@ -194,8 +194,8 @@ export function TimelineClipsPanel(_props: IDockviewPanelProps) {
       ...(bound ? [
         { id: "unbind-clip", label: "Unbind Timeline Asset", icon: <Link2OffIcon />, testId: "timeline-clip-menu-unbind",
           onSelect: () => bind(id, undefined) },
-        { id: "show-timeline", label: "Show Timeline Asset in Content Browser", icon: <FolderSearchIcon />, disabled: !timeline,
-          testId: "timeline-clip-menu-show-asset", onSelect: () => { if (timeline) revealAsset(timeline.guid, timeline.path); } },
+        { id: "show-timeline", label: "Show Timeline Asset in Content Browser", icon: <FolderSearchIcon />, disabled: !timeline || !projectSearch,
+          testId: "timeline-clip-menu-show-asset", onSelect: () => { if (timeline) projectSearch?.revealAsset(timeline.guid, timeline.path); } },
       ] satisfies ContextMenuItem[] : []),
     ];
   };

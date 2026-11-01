@@ -189,6 +189,11 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
 }
 
 /* eslint-disable react-refresh/only-export-components -- context module */
+/** The project search, or null outside `ProjectSearchProvider` (a window rendered on its own). */
+export function useOptionalProjectSearch(): ProjectSearchContextValue | null {
+  return useContext(ProjectSearchContext);
+}
+
 export function useProjectSearch(): ProjectSearchContextValue {
   const context = useContext(ProjectSearchContext);
   if (!context) {
