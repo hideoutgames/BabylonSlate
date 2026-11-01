@@ -21,6 +21,8 @@ Changing the inputs updates every Call, Bind and Unbind node for the dispatcher 
 
 Child classes inherit their parents' dispatchers. A child cannot declare a dispatcher with a name its parents already use. Function Libraries have no Event Dispatchers, and [Scene scripts](scene-scripts.md) can bind to other objects' dispatchers but not declare their own.
 
+Some engine objects have events of their own: a [Timeline Clip](../scenes/timeline.md#bind-to-a-clips-events) has **On Finished**, **On Looped** and one event per Custom Event Track. Scripts bind them with the same nodes; only the engine calls them, so they have no **Call** node.
+
 ## Add its nodes
 
 Drag a dispatcher from the **Class** window onto the graph and choose one of:

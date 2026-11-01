@@ -80,12 +80,26 @@ Moving, rotating or scaling an actor with the viewport gizmo works on what the c
 - With **Auto Key** on in the **Timeline** toolbar, a channel that has a track gets a key at the playhead with the new value.
 - With **Auto Key** off, the change is only previewed and the track's key button turns amber. Tap it, or use **Set Key**, to keep the change as a key; moving the playhead discards it.
 
+## Custom Event Tracks
+
+A Custom Event Track calls scripts at moments of the clip, for example to show a subtitle or play a sound. Each one is an event of the clip that the Scene's or layer's script can bind to; see [Bind to a clip's events](#bind-to-a-clips-events).
+
+- In the **Timeline** toolbar, **Track** › **Custom Event Track** adds one, named **On Event**. Event tracks are listed under **Events**, below the actors.
+- Select the track to name it in the **Inspector** (**Event Name**) and give it **Inputs**, such as a **Line** string. An input can be a Boolean, Integer, Float, String, Vector 2, Vector, Rotator or Color.
+- Tap the diamond on the track's row to add a key at the playhead, or to remove the one there. Keys show their first input's value, or the event's name when it has no inputs.
+- Select a key to set its **Time** and a value for each input in the **Inspector**. A key keeps its values when you rename the track or add inputs; removing an input or changing its type drops that value.
+- Keys move, select and delete like other keys. Right-click or long-press an event track for **Set Key**, **Select All Keys**, **Move Up**, **Move Down** and **Delete Track**.
+
+Two event tracks of one clip cannot share a name, and **On Finished** and **On Looped** belong to every clip; such a name gets a number. Renaming a track or changing its inputs updates the script's nodes that bind it.
+
 ## Inspector
 
 While a clip is selected, the **Inspector** edits it instead of the actor selection:
 
 - **Key**: the selected key's track, **Time** (with its frame; a new time lands on the nearest frame), **Value** and **Interpolation**. With several keys selected, **Interpolation** sets theirs together.
+- **Event Key**: the selected event key's track, **Time**, and a value for each of the track's inputs.
 - **Track**: the selected track's property, type and number of keys, and **Muted**.
+- **Custom Event Track**: **Event Name**, its number of keys, and **Inputs**.
 - **Timeline Clip**: **Name**, **Length**, **Frame Rate**, **Play Rate**, **Loop Mode**, **Auto Play** and **When Finished**.
 
 **Interpolation** offers **Constant**, **Linear**, **Auto**, **Ease In**, **Ease Out**, **Ease In Out** and every other easing curve. Enum and Asset values are set on the property itself, then keyed.
@@ -121,3 +135,21 @@ In the Scene's [Scene Script](../scripting/scene-scripts.md), or a Scene Layer's
 | [Is Timeline Clip Playing](../scripting/class/is-timeline-clip-playing.md) and [Is Timeline Clip Reversed](../scripting/class/is-timeline-clip-reversed.md) | Return whether it plays, and whether in reverse. |
 
 Play rate and loop mode set by a script apply to that copy of the clip only.
+
+### Bind to a clip's events
+
+Dragging from a [Get Scene Timeline Clip](../scripting/class/get-scene-timeline-clip.md) pin also offers the clip's events, with **Bind Event to**, **Unbind Event from**, **Unbind All Events from** and **Assign** (a Bind node with a matching custom event), as for a Class's [Event Dispatchers](../scripting/event-dispatchers.md):
+
+| Event | Runs |
+| --- | --- |
+| Each Custom Event Track | When playback reaches one of its keys, with that key's values as inputs. |
+| **On Looped** | When a **Loop** clip starts over, or a **Ping Pong** clip turns around. |
+| **On Finished** | When a **Once** clip reaches its end, after **When Finished**. |
+
+Only the clip calls its events, so there is no **Call** node for them. Bind them in **Begin Play**, before an **Auto Play** clip starts.
+
+- Keys fire in the order playback reaches them: in time order, or in reverse order while reversing. A **Loop** clip fires the keys up to its end, then those from its start, then **On Looped**.
+- A key fires once, even when it sits exactly where one step ends and the next begins.
+- An event that changes the clip, for example with **Stop Timeline Clip**, ends that step's events.
+- **Set Timeline Clip Position** fires the keys it passes over only with **Fire Events** on.
+- Each copy of a Scene Layer fires its own clips' events.
