@@ -23,6 +23,7 @@ Assets are the building blocks of a project: Scenes, Classes, Materials, sounds,
 | --- | --- |
 | [Data Definition](data-definition.md) | Define fields, defaults and validation for Data Tree entries. |
 | [Data Tree](data-tree.md) | Organise typed entries in a hierarchy. Branches can use different Data Definitions. |
+| [Float Curve, Vector Curve, Color Curve](curve.md) | A value that changes over time, edited once and read by every script that uses it. |
 
 ## Scripting
 
