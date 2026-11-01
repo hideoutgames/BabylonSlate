@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { parseMapDefaultEntries } from "@haptic/core";
-import { defaultValueForMember, rangeKindForStruct, structInstanceDefault, type StructField } from "@haptic/scripting";
+import { curveKindForStruct, defaultValueForMember, rangeKindForStruct, structInstanceDefault, type StructField } from "@haptic/scripting";
 import { AssetPicker, ClassPicker, EntryListEditor, PropertyGrid, humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { FieldLegend, FieldSet } from "@haptic/ui/components/field";
@@ -58,7 +58,7 @@ export function DataValueEditor({ field, value, defaultValue, onChange, label, p
     </FieldSet>;
   }
   const nested = field.typeId === "struct" && field.typeClassId && !["engine:TagContainer", "engine:InputType"].includes(field.typeClassId) &&
-    !rangeKindForStruct(field.typeClassId) ? catalog.schemas.structs[field.typeClassId] : undefined;
+    !rangeKindForStruct(field.typeClassId) && !curveKindForStruct(field.typeClassId) ? catalog.schemas.structs[field.typeClassId] : undefined;
   if (nested) {
     const nestedShared = { ...shared, visitedDefinitions: new Set([...visitedDefinitions, field.typeClassId!]) };
     const authored = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};

@@ -55,6 +55,13 @@ describe("playInspectPropertyRows", () => {
     expect(other?.kind).toBe("text");
   });
 
+  it("shows built-in curve Structures as read-only curve rows", () => {
+    const [falloff] = playInspectPropertyRows([
+      { id: "falloff", label: "Falloff", value: { Keys: [{ Time: 0, Value: 1 }], Before: "constant", After: "constant" }, type: "struct:engine:FloatCurve" },
+    ]);
+    expect(falloff).toMatchObject({ kind: "value-curve", curveKind: "float", disabled: true });
+  });
+
   it("maps bool values to disabled checkboxes", () => {
     const [row] = playInspectPropertyRows([
       { id: "alive", label: "alive", value: true, type: "bool" },

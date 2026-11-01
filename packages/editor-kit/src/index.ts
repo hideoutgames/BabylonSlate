@@ -208,6 +208,17 @@ export {
   type ValueModeOption,
 } from "./value-mode-field";
 export { CurveField, type CurveFieldProps } from "./curve-field";
+export { CurveEditor, type CurveEditorProps } from "./curve-editor";
+export { GradientEditor, type GradientEditorProps } from "./gradient-editor";
+export { CurvePreview, CurveValueField, type CurveValueFieldProps } from "./curve-value-field";
+export {
+  CURVE_CHANNELS,
+  curveValue,
+  editorKeys,
+  type CurveEditorConstraints,
+  type CurveEditorKind,
+  type CurveEditorValue,
+} from "./curve-editor-model";
 export { RangeField, type RangeFieldProps } from "./range-field";
 export {
   formatRangeSummary,

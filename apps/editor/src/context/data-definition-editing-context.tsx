@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- context module */
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import { carriesLoadingPolicy, normalizeDataDefinitionAsset, type AssetLoadingPolicy, type DataDefinitionField } from "@haptic/core";
-import { ENGINE_RANGE_STRUCT_IDS, ENGINE_STRUCTS, reconcileDataDefinitionDefault, structInstanceDefaultWithSchema, validateDataDefinition } from "@haptic/scripting";
+import { ENGINE_CURVE_STRUCT_IDS, ENGINE_RANGE_STRUCT_IDS, ENGINE_STRUCTS, reconcileDataDefinitionDefault, structInstanceDefaultWithSchema, validateDataDefinition } from "@haptic/scripting";
 import type { PinListRow } from "@haptic/editor-kit";
 import {
   useDocumentActions,
@@ -34,8 +34,8 @@ function useDataDefinitionState() {
   const typeAssets = useMemo(() => [
     ...catalog.types.dataDefinitions.filter(entry => entry.guid !== asset?.header.guid).map(entry => ({ guid: entry.guid, name: entry.name, type: "DataDefinition" })),
     ...catalog.types.enums.map(entry => ({ guid: entry.guid, name: entry.name, type: "Enum" })),
-    // Built-in range Structures; the Inspector edits them with a Min – Max row.
-    ...Object.values(ENGINE_RANGE_STRUCT_IDS).map(guid => ({ guid, name: ENGINE_STRUCTS.find(entry => entry.id === guid)?.name ?? guid, type: "Structure" })),
+    // Built-in range and curve Structures; the Inspector edits them with their own rows.
+    ...[...Object.values(ENGINE_RANGE_STRUCT_IDS), ...Object.values(ENGINE_CURVE_STRUCT_IDS)].map(guid => ({ guid, name: ENGINE_STRUCTS.find(entry => entry.id === guid)?.name ?? guid, type: "Structure" })),
   ], [catalog.types, asset?.header.guid]);
 
   const commit = (fields: DataDefinitionField[], mergeKey?: string) => {

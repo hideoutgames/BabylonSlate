@@ -69,6 +69,7 @@ In the **Class** window, tap selects one entry and a two-finger tap selects the 
 
 - Drag a slider's thumb to change the value. Swiping across the track scrolls the panel instead.
 - Tap a collapsed curve or gradient to expand it, then drag keys or stops with one finger. **Add Key** and **Add Stop** add new ones.
+- In a curve plot, hold empty space and choose **Add Key Here** to add a key at that time. Drag empty space to pan, pinch to zoom, and tap **Fit** to frame every key again. Dragging inside the plot never scrolls the panel.
 
 ## Tilesets and tilemaps
 
