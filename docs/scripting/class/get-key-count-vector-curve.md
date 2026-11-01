@@ -21,4 +21,5 @@ Returns how many keys the Vector Curve has.
 ## Notes
 
 - An empty **Target** returns 0.
+- A key that sets only some axes counts as one key. See [Curves and ranges](../curves-and-ranges.md#curves).
 - See [Curve](../../assets/curve.md).

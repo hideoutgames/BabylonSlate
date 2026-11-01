@@ -36,7 +36,7 @@ Ranges and curves can also be [Save Game](save-games.md) fields: set the field's
 | Structure | Keys |
 | --- | --- |
 | **Float Curve** | **Float Curve Key** values. |
-| **Vector Curve** | **Vector Curve Key** values: one key holds the whole vector. |
+| **Vector Curve** | **Vector Curve Key** values: a key sets all three axes, or only the axes in its **Axes**. |
 | **Color Curve** | **Color Curve Key** values: one key holds the whole color, including alpha. |
 
 A curve has three fields:
@@ -53,6 +53,8 @@ Each key has a **Time**, a **Value**, an **Interpolation** and two tangents, **A
 | **Auto** | A smooth curve shaped by the neighbouring keys. It stays flat at a peak or a dip, so it does not overshoot them. |
 | **Custom** | A smooth curve shaped by the tangents. A tangent is a slope in value per second; Vector and Color keys have one per channel. |
 | An easing curve, such as **Quad In** or **Bounce Out** | The same shape as that [easing curve](class/index.md#tween) in Tween nodes. |
+
+A **Vector Curve Key** also has **Axes**: the axes it sets, added up from X 1, Y 2 and Z 4. The default, 7, sets all three. A key that sets fewer leaves the other axes to their own keys, so each axis can have keys at different times and with its own interpolation. Between the curve's first and last key, an axis outside its own keys holds its nearest value; **Before** and **After** apply to the whole curve.
 
 **Before** and **After** take a **Curve Extrapolation**:
 
@@ -78,7 +80,8 @@ Tap the row to expand the editor in place. A **Color Curve** opens as a gradient
 In the curve plot:
 
 - A time ruler runs along the top and a value ruler down the side. Outside the first and last key the plot is hatched and the curve is dashed: that part follows **Before** and **After**.
-- Tap or click a key to select it, and drag it to change its time and value. On a **Vector Curve**, each axis has its own handle on the same key; use **X**, **Y** and **Z** to show or hide axes. The selected axis draws on top.
+- Tap or click a key to select it, and drag it to change its time and value. On a **Vector Curve**, each axis has its own handle; use **X**, **Y** and **Z** to show or hide axes. The selected axis draws on top.
+- On a **Vector Curve**, dragging one axis's handle sideways moves that axis on its own, as its own key; drag it back onto the other axes to join them again. Removing a handle removes only that axis, choosing an interpolation for one axis changes only that axis, and a new key sets the axes that are shown.
 - To select several keys, Shift-click to add a key and Ctrl/Cmd-click to add or drop one. With a mouse, drag across empty space to select the keys in a box; on touch, hold empty space, then drag. Tap or click empty space to clear the selection.
 - Drag any selected key to move them all together. Arrow keys nudge the selected keys; hold Shift to move ten times as far. **Delete** removes them.
 - Double-click empty space to add a key there, or right-click it and choose **Add Key Here**. On touch, hold empty space, lift your finger without moving it, and choose **Add Key Here**.

@@ -6,6 +6,7 @@ import {
   ASSET_LOAD_HANDLE_STATES, ASSET_LOAD_PRIORITIES, ASSET_LOAD_STATES,
   INPUT_KEYS, SCENE_STREAMING_STATES, ENGINE_RENDER_TARGET_MODE_ENUM_ID, RENDER_TARGET_MODES,
   TOUCH_PHASES, TOUCH_TYPES,
+  CURVE_ALL_AXES,
 } from "@haptic/core";
 import { ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID,
   TEXT2D_APPEAR_MODES, TEXT2D_APPEAR_TRANSITIONS, TEXT2D_APPEAR_STARTS } from "@haptic/core";
@@ -230,7 +231,7 @@ const RANGE_STRUCTS: readonly EngineStruct[] = [
   rangeStruct(ENGINE_ROTATOR_RANGE_STRUCT_ID, "Rotator Range", "rotator", ZERO_ROTATOR, ZERO_ROTATOR),
 ];
 
-function curveStructs(curveId: string, keyId: string, name: string, typeId: string, zero: unknown): EngineStruct[] {
+function curveStructs(curveId: string, keyId: string, name: string, typeId: string, zero: unknown, extraKeyFields: EngineStruct["fields"] = []): EngineStruct[] {
   return [
     {
       id: keyId,
@@ -241,6 +242,7 @@ function curveStructs(curveId: string, keyId: string, name: string, typeId: stri
         { name: "Interpolation", typeId: "enum", typeClassId: ENGINE_CURVE_INTERPOLATION_ENUM_ID, defaultValue: "auto" },
         { name: "ArriveTangent", typeId, defaultValue: zero },
         { name: "LeaveTangent", typeId, defaultValue: zero },
+        ...extraKeyFields,
       ],
     },
     {
@@ -255,10 +257,14 @@ function curveStructs(curveId: string, keyId: string, name: string, typeId: stri
   ];
 }
 
-/** Keys are sorted by time (`normalizeCurve` in core); one key holds the whole value, with tangents per channel. */
+/**
+ * Keys are sorted by time (`normalizeCurve` in core); one key holds the whole value, with tangents per channel.
+ * A Vector Curve Key's `Axes` (X 1, Y 2, Z 4; 7 all) lets it set only some axes, so each axis has its own keys.
+ */
 const CURVE_STRUCTS: readonly EngineStruct[] = [
   ...curveStructs(ENGINE_FLOAT_CURVE_STRUCT_ID, ENGINE_FLOAT_CURVE_KEY_STRUCT_ID, "Float", "float", 0),
-  ...curveStructs(ENGINE_VECTOR_CURVE_STRUCT_ID, ENGINE_VECTOR_CURVE_KEY_STRUCT_ID, "Vector", "vec3", ZERO_VECTOR),
+  ...curveStructs(ENGINE_VECTOR_CURVE_STRUCT_ID, ENGINE_VECTOR_CURVE_KEY_STRUCT_ID, "Vector", "vec3", ZERO_VECTOR,
+    [{ name: "Axes", typeId: "int", defaultValue: CURVE_ALL_AXES }]),
   ...curveStructs(ENGINE_COLOR_CURVE_STRUCT_ID, ENGINE_COLOR_CURVE_KEY_STRUCT_ID, "Color", "color", ZERO_COLOR),
 ];
 

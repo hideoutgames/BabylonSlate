@@ -35,7 +35,7 @@ function Stateful({ kind = "float", initial, constraints, onChange }: {
     onChange={(next) => { setValue(next); onChange(next); }} data-testid="curve" />;
 }
 
-const keysOf = (value: CurveEditorValue) => value.Keys as Array<{ Time: number; Value: unknown; Interpolation: string; ArriveTangent: unknown; LeaveTangent: unknown }>;
+const keysOf = (value: CurveEditorValue) => value.Keys as Array<{ Time: number; Value: unknown; Interpolation: string; ArriveTangent: unknown; LeaveTangent: unknown; Axes?: number }>;
 
 describe("CurveEditor", () => {
   it("moves a dragged key with the pointer and reports one change when the drag ends", () => {
@@ -304,6 +304,95 @@ describe("CurveEditor multi-select", () => {
     act(() => { dispatchPointerEvent(track, "pointerup", { pointerType: "touch", clientX: 100, clientY: 100 }); });
     expect([0, 1, 2].map((index) => screen.getByTestId(`curve-key-${index}`).getAttribute("aria-pressed"))).toEqual(["false", "true", "true"]);
     expect(screen.queryByTestId("curve-add-here")).toBeNull();
+  });
+});
+
+describe("CurveEditor Vector axes", () => {
+  const v = (x: number, y: number, z: number) => ({ x, y, z });
+  const zero = v(0, 0, 0);
+  // Fixed 0–1 s and 0–10: a key at (t, value) sits at (100t, 100 - 10 value) px.
+  const vector = () => curve(key(0, zero, "linear", zero), key(0.5, v(5, 5, 5), "linear", zero), key(1, v(10, 10, 10), "linear", zero));
+  const shape = (value: CurveEditorValue) => keysOf(value).map((entry) => [entry.Time, entry.Axes ?? 7]);
+  const drag = (testId: string, from: number, to: number) => act(() => {
+    const handle = screen.getByTestId(testId);
+    dispatchPointerEvent(handle, "pointerdown", { pointerType: "mouse", clientX: from, clientY: 50 });
+    dispatchPointerEvent(handle, "pointermove", { pointerType: "mouse", clientX: to, clientY: 50 });
+    dispatchPointerEvent(handle, "pointerup", { pointerType: "mouse", clientX: to, clientY: 50 });
+  });
+
+  it("moves one axis of a key in time on its own, and merges it back when it meets its other axes", () => {
+    const onChange = vi.fn();
+    render(<Stateful kind="vec3" initial={vector()} constraints={FIXED} onChange={onChange} />);
+    drag("curve-key-1-x", 50, 70);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    // X splits off to 0.7 s with its value; Y and Z stay at 0.5 s.
+    expect(shape(onChange.mock.lastCall![0])).toEqual([[0, 7], [0.5, 6], [0.7, 1], [1, 7]]);
+    expect(keysOf(onChange.mock.lastCall![0])[2]!.Value).toEqual(v(5, 5, 5));
+    expect(screen.queryByTestId("curve-key-1-x")).toBeNull();
+    // Dropped within 6 px of 0.5 s, X lands on its other axes and the key is whole again.
+    drag("curve-key-2-x", 70, 52);
+    expect(shape(onChange.mock.lastCall![0])).toEqual([[0, 7], [0.5, 7], [1, 7]]);
+  });
+
+  it("keeps dragging an axis after it splits off, with the plot holding the pointer", () => {
+    const onChange = vi.fn();
+    render(<Stateful kind="vec3" initial={vector()} constraints={FIXED} onChange={onChange} />);
+    const track = screen.getByTestId("curve-track");
+    act(() => { dispatchPointerEvent(screen.getByTestId("curve-key-1-x"), "pointerdown", { pointerType: "mouse", clientX: 50, clientY: 50 }); });
+    // Once X splits off, its handle renders as another element; the captured moves reach the plot.
+    act(() => { dispatchPointerEvent(track, "pointermove", { pointerType: "mouse", clientX: 60, clientY: 50 }); });
+    expect(screen.queryByTestId("curve-key-1-x")).toBeNull();
+    act(() => { dispatchPointerEvent(track, "pointermove", { pointerType: "mouse", clientX: 80, clientY: 50 }); });
+    act(() => { dispatchPointerEvent(track, "pointerup", { pointerType: "mouse", clientX: 80, clientY: 50 }); });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(shape(onChange.mock.lastCall![0])).toEqual([[0, 7], [0.5, 6], [0.8, 1], [1, 7]]);
+  });
+
+  it("removes only the selected axis of a key", () => {
+    const onChange = vi.fn();
+    render(<Stateful kind="vec3" initial={vector()} constraints={FIXED} onChange={onChange} />);
+    act(() => {
+      const handle = screen.getByTestId("curve-key-1-y");
+      dispatchPointerEvent(handle, "pointerdown", { pointerType: "mouse", clientX: 50, clientY: 50 });
+      dispatchPointerEvent(handle, "pointerup", { pointerType: "mouse", clientX: 50, clientY: 50 });
+    });
+    fireEvent.keyDown(screen.getByTestId("curve-key-1-y"), { key: "Delete" });
+    expect(shape(onChange.mock.lastCall![0])).toEqual([[0, 7], [0.5, 5], [1, 7]]);
+    // The key bar shows only the axes the selected key sets.
+    expect(screen.queryByTestId("curve-key-1-y")).toBeNull();
+  });
+
+  it("changes the interpolation of the selected axis only", () => {
+    const onChange = vi.fn();
+    render(<Stateful kind="vec3" initial={vector()} constraints={FIXED} onChange={onChange} />);
+    act(() => {
+      const handle = screen.getByTestId("curve-key-1-x");
+      dispatchPointerEvent(handle, "pointerdown", { pointerType: "mouse", clientX: 50, clientY: 50 });
+      dispatchPointerEvent(handle, "pointerup", { pointerType: "mouse", clientX: 50, clientY: 50 });
+    });
+    fireEvent.click(screen.getByTestId("curve-interpolation"));
+    const constant = screen.getByRole("option", { name: "Constant" });
+    fireEvent.pointerDown(constant);
+    fireEvent.click(constant);
+    const keys = keysOf(onChange.mock.lastCall![0]);
+    expect(keys.map((entry) => [entry.Time, entry.Axes ?? 7, entry.Interpolation])).toEqual([
+      [0, 7, "linear"], [0.5, 6, "linear"], [0.5, 1, "constant"], [1, 7, "linear"],
+    ]);
+  });
+
+  it("adds keys for the visible axes only", () => {
+    const onChange = vi.fn();
+    render(<CurveEditor kind="vec3" aria-label="Sway" value={vector()} constraints={FIXED} channels={[true, false, false]}
+      onChange={onChange} data-testid="curve" />);
+    fireEvent.doubleClick(screen.getByTestId("curve-track"), { clientX: 25, clientY: 50 });
+    expect(shape(onChange.mock.lastCall![0])).toEqual([[0, 7], [0.25, 1], [0.5, 7], [1, 7]]);
+  });
+
+  it("keeps every axis together on a Timeline track", () => {
+    const onChange = vi.fn();
+    render(<Stateful kind="vec3" initial={vector()} constraints={{ ...FIXED, sharedKeys: true }} onChange={onChange} />);
+    drag("curve-key-1-x", 50, 70);
+    expect(shape(onChange.mock.lastCall![0])).toEqual([[0, 7], [0.7, 7], [1, 7]]);
   });
 });
 

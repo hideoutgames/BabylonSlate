@@ -1,6 +1,7 @@
 import {
   CURVE_INTERPOLATIONS,
   MIN_CURVE_KEY_GAP,
+  curveKeyAxes,
   curveKeyTangent,
   evaluateCurve,
   parseCurveExtrapolation,
@@ -32,14 +33,28 @@ export const CURVE_CHANNELS: Record<CurveEditorKind, readonly CurveChannel[]> = 
   ],
 };
 
-/** One key as the editors work on it: a value and two tangents per channel. */
+/**
+ * One key as the editors work on it: a value and two tangents per channel, and the channels it sets as bits
+ * (`axes`; every channel except on a Vector key that sets only some axes).
+ */
 export type EditorKey = {
   time: number;
   values: number[];
   interpolation: CurveInterpolation;
   arrive: number[];
   leave: number[];
+  axes: number;
 };
+
+/** Every channel's bit for `kind`: Float 1, Vector 7, Color 15. */
+export function allAxes(kind: CurveEditorKind): number {
+  return (1 << CURVE_CHANNELS[kind].length) - 1;
+}
+
+/** True when `key` sets `channel`. */
+export function holdsAxis(key: EditorKey, channel: number): boolean {
+  return ((key.axes >> channel) & 1) === 1;
+}
 
 /**
  * Limits for hosts with stricter data (particles): a fixed 0–1 time axis, end keys locked at 0 and 1,
@@ -62,6 +77,8 @@ export interface CurveEditorConstraints {
   timeSnap?: number;
   /** Before and After are always this; their pickers are hidden. */
   extrapolation?: CurveExtrapolation;
+  /** Every Vector key sets every axis (a Timeline track's keys); moving one axis moves the whole key. */
+  sharedKeys?: boolean;
 }
 
 export type CurveView = { t0: number; t1: number; v0: number; v1: number };
@@ -91,6 +108,7 @@ export function editorKeys(kind: CurveEditorKind, value: CurveEditorValue | null
       interpolation: parseCurveInterpolation(key.Interpolation),
       arrive: readChannels(kind, key.ArriveTangent),
       leave: readChannels(kind, key.LeaveTangent),
+      axes: curveKeyAxes(kind, key),
     }))
     .sort((a, b) => a.time - b.time);
 }
@@ -105,6 +123,7 @@ export function curveValue(
       Interpolation: key.interpolation,
       ArriveTangent: writeChannels(kind, key.arrive),
       LeaveTangent: writeChannels(kind, key.leave),
+      ...(kind === "vec3" && key.axes !== allAxes(kind) ? { Axes: key.axes } : {}),
     })),
     Before: parseCurveExtrapolation(before),
     After: parseCurveExtrapolation(after),
@@ -186,7 +205,7 @@ export function keyAt(
     (sampleChannel(kind, curve, channel, time + h) - sampleChannel(kind, curve, channel, time - h)) / (2 * h));
   const previous = [...keys].reverse().find((key) => key.time <= time);
   const interpolation = constraints.interpolation ?? previous?.interpolation ?? "auto";
-  return { time, values, interpolation, arrive: [...slope], leave: [...slope] };
+  return { time, values, interpolation, arrive: [...slope], leave: [...slope], axes: allAxes(kind) };
 }
 
 function niceCeil(value: number): number {

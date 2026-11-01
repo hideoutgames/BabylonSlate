@@ -23,6 +23,9 @@ export type CurveExtrapolation = (typeof CURVE_EXTRAPOLATIONS)[number];
 /** Keys closer than this in time are pushed apart, so every segment has a positive duration. */
 export const MIN_CURVE_KEY_GAP = 0.001;
 
+/** A Vector Curve key's `Axes` when it sets every axis: X 1, Y 2 and Z 4. */
+export const CURVE_ALL_AXES = 7;
+
 export interface Vec2Value { x: number; y: number }
 export interface Vec3Value { x: number; y: number; z: number }
 /** RGBA, as the Color pin type stores it. */
@@ -38,10 +41,15 @@ export interface CurveKey<V> {
   ArriveTangent: V;
   /** Slope per second out of this key, per channel; used when the key is Custom. */
   LeaveTangent: V;
+  /**
+   * Vector Curves only: the axes this key sets (X 1, Y 2, Z 4). Missing, zero or 7 means every axis; a key
+   * that sets fewer leaves the other axes to the keys that set them, so each axis has its own keys.
+   */
+  Axes?: number;
 }
 
 export interface Curve<V> {
-  /** Sorted by time, at least `MIN_CURVE_KEY_GAP` apart. */
+  /** Sorted by time; keys that set a common axis are at least `MIN_CURVE_KEY_GAP` apart. */
   Keys: CurveKey<V>[];
   Before: CurveExtrapolation;
   After: CurveExtrapolation;
@@ -189,16 +197,54 @@ function keyInterpolation(key: CurveKey<unknown>): CurveInterpolation {
   return parseCurveInterpolation(key?.Interpolation);
 }
 
+/**
+ * The channels a key sets, as bits (X 1, Y 2, Z 4, W 8). Only Vector Curve keys set fewer than all, through
+ * `Axes`; a missing, zero or non-numeric `Axes` sets every axis.
+ */
+export function curveKeyAxes(kind: CurveKind, key: unknown): number {
+  const all = (1 << channelCount(kind)) - 1;
+  if (kind !== "vec3" || !key || typeof key !== "object") return all;
+  const bits = Math.trunc(finite((key as { Axes?: unknown }).Axes, all)) & all;
+  return bits === 0 ? all : bits;
+}
+
+/** A key's `Axes` bits for order checks that do not know the curve's kind: every bit unless it names some. */
+function axesBits(key: unknown): number {
+  const axes = key && typeof key === "object" ? (key as { Axes?: unknown }).Axes : undefined;
+  const bits = typeof axes === "number" && Number.isFinite(axes) ? Math.trunc(axes) & CURVE_ALL_AXES : 0;
+  return bits === 0 ? -1 : bits;
+}
+
 function isSorted(keys: readonly CurveKey<unknown>[]): boolean {
   for (let index = 1; index < keys.length; index++) {
-    if (!(keyTime(keys[index]) - keyTime(keys[index - 1]) >= MIN_CURVE_KEY_GAP * 0.5)) return false;
+    const gap = keyTime(keys[index]) - keyTime(keys[index - 1]);
+    if (!(gap >= 0)) return false;
+    if (gap < MIN_CURVE_KEY_GAP * 0.5 && (axesBits(keys[index]) & axesBits(keys[index - 1])) !== 0) return false;
   }
   return true;
 }
 
 /**
- * A copy with keys sorted by time and at least `MIN_CURVE_KEY_GAP` apart (a later key is pushed forward),
- * interpolation and extrapolation names resolved, and missing values and tangents filled with zero.
+ * Each axis's own keys for a Vector Curve whose keys set only some axes; null when every key sets every axis
+ * (every other kind), so ordinary curves evaluate without allocating.
+ */
+function axisKeys(kind: CurveKind, keys: readonly CurveKey<unknown>[]): readonly (readonly CurveKey<unknown>[])[] | null {
+  if (kind !== "vec3") return null;
+  let partial = false;
+  for (const key of keys) {
+    if (curveKeyAxes(kind, key) !== CURVE_ALL_AXES) {
+      partial = true;
+      break;
+    }
+  }
+  if (!partial) return null;
+  return [0, 1, 2].map((axis) => keys.filter((key) => (curveKeyAxes(kind, key) >> axis) & 1));
+}
+
+/**
+ * A copy with keys sorted by time, keys that set a common axis at least `MIN_CURVE_KEY_GAP` apart (a later
+ * key is pushed forward), interpolation and extrapolation names resolved, and missing values and tangents
+ * filled with zero. A Vector key keeps `Axes` only when it sets fewer than every axis.
  */
 export function normalizeCurve<K extends CurveKind>(kind: K, curve: unknown): Curve<CurveValueOf<K>> {
   const source = curve && typeof curve === "object" ? curve as Record<string, unknown> : {};
@@ -207,17 +253,33 @@ export function normalizeCurve<K extends CurveKind>(kind: K, curve: unknown): Cu
     .filter((key) => key && typeof key === "object")
     .map((key, order) => ({ key, order, time: keyTime(key) }))
     .sort((a, b) => a.time - b.time || a.order - b.order)
-    .map(({ key }) => ({
-      Time: keyTime(key),
-      Value: zero(key.Value),
-      Interpolation: keyInterpolation(key),
-      ArriveTangent: zero(key.ArriveTangent),
-      LeaveTangent: zero(key.LeaveTangent),
-    }));
+    .map(({ key }): CurveKey<CurveValueOf<K>> => {
+      const axes = curveKeyAxes(kind, key);
+      return {
+        Time: keyTime(key),
+        Value: zero(key.Value),
+        Interpolation: keyInterpolation(key),
+        ArriveTangent: zero(key.ArriveTangent),
+        LeaveTangent: zero(key.LeaveTangent),
+        ...(kind === "vec3" && axes !== CURVE_ALL_AXES ? { Axes: axes } : {}),
+      };
+    });
+  let pushed = false;
   for (let index = 1; index < keys.length; index++) {
-    const previous = keys[index - 1]!.Time;
-    if (keys[index]!.Time - previous < MIN_CURVE_KEY_GAP) keys[index]!.Time = previous + MIN_CURVE_KEY_GAP;
+    const axes = curveKeyAxes(kind, keys[index]);
+    // Only the nearest earlier key that sets a common axis holds this one off; Vector keys of other axes may share its time.
+    for (let back = index - 1; back >= 0; back--) {
+      if ((curveKeyAxes(kind, keys[back]) & axes) === 0) continue;
+      const previous = keys[back]!.Time;
+      if (keys[index]!.Time - previous < MIN_CURVE_KEY_GAP) {
+        keys[index]!.Time = previous + MIN_CURVE_KEY_GAP;
+        pushed = true;
+      }
+      break;
+    }
   }
+  // A pushed key can pass a later key of other axes; keep the list in time order.
+  if (pushed && kind === "vec3") keys.sort((a, b) => a.Time - b.Time);
   return { Keys: keys, Before: parseCurveExtrapolation(source.Before), After: parseCurveExtrapolation(source.After) };
 }
 
@@ -289,6 +351,57 @@ function endSlope(keys: readonly CurveKey<unknown>[], kind: CurveKind, c: number
   return (channel(b.Value, kind, c) - channel(a.Value, kind, c)) / (keyTime(b) - keyTime(a));
 }
 
+/**
+ * One axis of a Vector Curve whose keys set only some axes, at `time` already inside the curve's time range
+ * (Cycle and Oscillate mapped). Outside its own keys an axis holds its end value; past the curve's ends,
+ * Linear (`end`, `offset`) continues the axis's end slope when its keys reach that end.
+ */
+function axisValue(
+  axis: readonly CurveKey<unknown>[], c: number, time: number,
+  end: "before" | "after" | null, offset: number, first: number, last: number,
+): number {
+  if (axis.length === 0) return 0;
+  const axisFirst = keyTime(axis[0]);
+  const axisLast = keyTime(axis[axis.length - 1]);
+  let value: number;
+  if (axis.length === 1 || time <= axisFirst) value = channel(axis[0]!.Value, "vec3", c);
+  else if (time >= axisLast) value = channel(axis[axis.length - 1]!.Value, "vec3", c);
+  else value = segmentValue(axis, segmentIndex(axis, time), "vec3", c, time);
+  if (end && offset !== 0 && (end === "before" ? axisFirst <= first : axisLast >= last)) {
+    value += endSlope(axis, "vec3", c, end) * offset;
+  }
+  return value;
+}
+
+/** `evaluateCurve` for a Vector Curve whose keys set only some axes: the whole curve's time range, each axis its own keys. */
+function evaluateAxes(curve: unknown, keys: readonly CurveKey<unknown>[], axes: readonly (readonly CurveKey<unknown>[])[], time: number): Vec3Value {
+  const first = keyTime(keys[0]);
+  const last = keyTime(keys[keys.length - 1]);
+  let t = Number.isFinite(time) ? time : first;
+  let end: "before" | "after" | null = null;
+  let offset = 0;
+  if (last > first && (t < first || t > last)) {
+    const side = t < first ? "before" : "after";
+    const source = curve as { Before?: unknown; After?: unknown };
+    const mode = parseCurveExtrapolation(side === "before" ? source.Before : source.After);
+    const span = last - first;
+    if (mode === "cycle") {
+      t = first + (((t - first) % span) + span) % span;
+    } else if (mode === "oscillate") {
+      const phase = (((t - first) % (2 * span)) + 2 * span) % (2 * span);
+      t = first + (phase > span ? 2 * span - phase : phase);
+    } else {
+      const edge = side === "before" ? first : last;
+      if (mode === "linear") {
+        end = side;
+        offset = t - edge;
+      }
+      t = edge;
+    }
+  }
+  return { x: axisValue(axes[0]!, 0, t, end, offset, first, last), y: axisValue(axes[1]!, 1, t, end, offset, first, last), z: axisValue(axes[2]!, 2, t, end, offset, first, last) };
+}
+
 /** Largest index whose key time is at or before `time`; keys must be sorted and `time` inside them. */
 function segmentIndex(keys: readonly CurveKey<unknown>[], time: number): number {
   let lo = 0;
@@ -306,12 +419,15 @@ function segmentIndex(keys: readonly CurveKey<unknown>[], time: number): number 
  * After decide the value outside the keys (Constant holds the end value, Linear continues the end slope,
  * Cycle repeats the keys and Oscillate repeats them back and forth). A curve without keys is zero, and one
  * key is a constant. Keys must be sorted by time (`normalizeCurve`); the segment is found by binary search
- * and nothing but the returned value is allocated.
+ * and nothing but the returned value is allocated. A Vector Curve whose keys set only some axes evaluates
+ * each axis from its own keys within the whole curve's time range (`evaluateAxes`).
  */
 export function evaluateCurve<K extends CurveKind>(kind: K, curve: unknown, time: number): CurveValueOf<K> {
   const keys = keysOf(curve);
   const count = channelCount(kind);
   if (keys.length === 0) return compose(kind, () => 0) as CurveValueOf<K>;
+  const axes = axisKeys(kind, keys);
+  if (axes) return evaluateAxes(curve, keys, axes, time) as CurveValueOf<K>;
   const first = keyTime(keys[0]);
   const last = keyTime(keys[keys.length - 1]);
   const at = Number.isFinite(time) ? time : first;
@@ -355,7 +471,12 @@ export function evaluateCurve<K extends CurveKind>(kind: K, curve: unknown, time
 export function curveKeyTangent(kind: CurveKind, curve: unknown, index: number, c: number, side: "arrive" | "leave"): number {
   const keys = keysOf(curve);
   if (!Number.isInteger(index) || index < 0 || index >= keys.length) return 0;
-  return keyTangent(keys, index, kind, c, side);
+  const axes = axisKeys(kind, keys);
+  if (!axes) return keyTangent(keys, index, kind, c, side);
+  // A key that sets only some axes has its tangent among that axis's own keys, and none on the others.
+  const axis = axes[c];
+  const at = axis ? axis.indexOf(keys[index]!) : -1;
+  return at < 0 ? 0 : keyTangent(axis!, at, kind, c, side);
 }
 
 /** `evaluateCurve` for keys in any order: sorts a copy only when the keys are out of order. */

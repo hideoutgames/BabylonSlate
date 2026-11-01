@@ -31,12 +31,14 @@ import { ColorField } from "./color-field";
 import {
   CURVE_CHANNELS,
   INTERPOLATION_OPTIONS,
+  allAxes,
   channelPoints,
   clampNumber,
   clampValue,
   curveValue,
   editorKeys,
   fitView,
+  holdsAxis,
   insertionTime,
   keyAt,
   keyTangent,
@@ -152,6 +154,13 @@ function cloneKeys(keys: readonly EditorKey[]): EditorKey[] {
   return keys.map((key) => ({ ...key, values: [...key.values], arrive: [...key.arrive], leave: [...key.leave] }));
 }
 
+/** A key while an edit reorders, splits or merges keys: `origins` are the indices it came from (-1 for a new key). */
+type TrackedKey = EditorKey & { origins: number[] };
+
+function untrack(key: TrackedKey): EditorKey {
+  return { time: key.time, values: key.values, interpolation: key.interpolation, arrive: key.arrive, leave: key.leave, axes: key.axes };
+}
+
 /** Offset (in plot fractions, y down) from a key to its handle on `slope`, `length` px long once the plot is measured. */
 function tangentOffset(slope: number, view: CurveView, width: number, height: number, length: number): [number, number] {
   const spanT = view.t1 - view.t0;
@@ -200,6 +209,8 @@ export function CurveEditor({
   const [channelState, setChannelState] = useState<boolean[]>(() => channelInfo.map(() => true));
   const visible = controlledChannels ?? channelState;
   const visibleChannels = channelInfo.map((_, index) => index).filter((index) => visible[index] !== false);
+  // Vector keys may set only some axes, so each axis has its own keys; Timeline tracks keep every axis together.
+  const independent = kind === "vec3" && !constraints.sharedKeys;
   const committed = editorKeys(kind, value);
   const [draft, setDraftState] = useState<EditorKey[] | null>(null);
   // Pointer events can arrive before React re-renders, so handlers read the latest draft from a ref.
@@ -226,6 +237,8 @@ export function CurveEditor({
   const focusKeyRef = useRef<string | null>(null);
   // A key pressed with a pointer has its selection settled already; its focus event must not replace it.
   const pointerSelectRef = useRef(false);
+  // A Time scrub moves the keys selected when it began, from the committed curve.
+  const timeBaseRef = useRef<KeyHandle[] | null>(null);
 
   const view = userView ?? frozenView ?? fitView(kind, keys, visible, constraints, isWindow ? WINDOW_TIME_PAD : undefined);
   const curve = curveValue(kind, keys, value.Before, value.After);
@@ -242,7 +255,7 @@ export function CurveEditor({
   const insertion = insertionTime(keys, constraints);
   const canAdd = !disabled && keys.length < maxKeys && insertion !== null;
   const removable = selectedIndices.filter((index) => !locked(index));
-  const canRemove = !disabled && removable.length > 0 && keys.length > minKeys;
+  const canRemove = !disabled && (independent ? selection.length > 0 : removable.length > 0 && keys.length > minKeys);
   const timeLocked = selectedIndices.some(locked);
   const lockedInterpolation = constraints.interpolation;
   const spanT = view.t1 - view.t0;
@@ -330,57 +343,123 @@ export function CurveEditor({
   const fallbackChannel = () => primary?.channel ?? visibleChannels[0] ?? 0;
 
   /**
-   * `source` with the keys of `handles` moved `dt` seconds together, held between their unselected
-   * neighbours, inside the time range and off locked ends, and each handle's channel moved by `dv`.
+   * `source` with the keys of `handles` moved `dt` seconds together and each handle's channel moved by `dv`.
+   * A key moves only as far as the unselected keys that set one of its axes allow, and stays inside the time
+   * range and off locked ends. With independent axes a Vector key whose selected axes are fewer than its own
+   * splits when it moves in time (or with `split`): the selected axes become their own key. `change` edits
+   * each moved key; then keys of other axes that meet with the same interpolation merge into one. `remap`
+   * finds a handle's key in the result.
    */
-  const shiftKeys = (source: readonly EditorKey[], handles: readonly KeyHandle[], dt: number, dv: number | null) => {
-    const next = cloneKeys(source);
-    const indices = [...new Set(handles.map((handle) => handle.index))].filter((index) => index >= 0 && index < source.length);
-    const moving = new Set(indices);
+  const shiftKeys = (
+    source: readonly EditorKey[], handles: readonly KeyHandle[], dt: number, dv: number | null,
+    options: { split?: boolean; change?: (key: EditorKey, origin: number) => void } = {},
+  ): { keys: EditorKey[]; remap: (handle: KeyHandle) => KeyHandle } => {
+    const next: TrackedKey[] = cloneKeys(source).map((key, index) => ({ ...key, origins: [index] }));
+    const masks = new Map<number, number>();
+    for (const handle of handles) {
+      if (handle.index < 0 || handle.index >= source.length) continue;
+      masks.set(handle.index, (masks.get(handle.index) ?? 0) | (independent ? 1 << handle.channel : allAxes(kind)));
+    }
+    const moving = new Set<TrackedKey>();
+    const movingByOrigin = new Map<number, TrackedKey>();
+    for (const [index, mask] of masks) {
+      const key = next[index]!;
+      const axes = mask & key.axes;
+      let moved = key;
+      if (independent && axes !== 0 && axes !== key.axes && (dt !== 0 || options.split)) {
+        moved = { ...cloneKeys([key])[0]!, axes, origins: [index] };
+        key.axes &= ~axes;
+        next.push(moved);
+      }
+      moving.add(moved);
+      movingByOrigin.set(index, moved);
+    }
     const gap = constraints.keyGap ?? MIN_CURVE_KEY_GAP;
     const range = constraints.fixedTime ? ([0, 1] as const) : constraints.timeRange;
-    const end = source.length - 1;
     let low = 0;
     let high = 0;
     if (dt !== 0) {
       low = Number.NEGATIVE_INFINITY;
       high = Number.POSITIVE_INFINITY;
-      for (const index of indices) {
-        const time = source[index]!.time;
-        if (constraints.lockEnds && (index === 0 || index === end)) { low = 0; high = 0; }
-        if (index > 0 && !moving.has(index - 1)) low = Math.max(low, source[index - 1]!.time + gap - time);
-        if (index < end && !moving.has(index + 1)) high = Math.min(high, source[index + 1]!.time - gap - time);
-        if (range) { low = Math.max(low, range[0] - time); high = Math.min(high, range[1] - time); }
+      for (const key of moving) {
+        const origin = key.origins[0]!;
+        if (constraints.lockEnds && (origin === 0 || origin === source.length - 1)) { low = 0; high = 0; }
+        for (const other of next) {
+          if (moving.has(other) || (other.axes & key.axes) === 0) continue;
+          if (other.time < key.time || (other.time === key.time && other.origins[0]! < origin)) low = Math.max(low, other.time + gap - key.time);
+          else high = Math.min(high, other.time - gap - key.time);
+        }
+        if (range) { low = Math.max(low, range[0] - key.time); high = Math.min(high, range[1] - key.time); }
       }
       // Never forced to move: keys already closer than the gap may stay where they are.
       low = Math.min(low, 0);
       high = Math.max(high, 0);
     }
     const shift = clampNumber(dt, low, high);
-    for (const index of indices) next[index]!.time = roundTime(source[index]!.time + shift);
+    for (const key of moving) key.time = roundTime(key.time + shift);
     if (dv !== null) {
       for (const handle of handles) {
-        const key = next[handle.index];
-        if (key) key.values[handle.channel] = clampValue(source[handle.index]!.values[handle.channel]! + dv, constraints);
+        const key = movingByOrigin.get(handle.index);
+        if (key && holdsAxis(key, handle.channel)) {
+          key.values[handle.channel] = clampValue(source[handle.index]!.values[handle.channel]! + dv, constraints);
+        }
       }
     }
-    return next;
+    if (options.change) for (const key of moving) options.change(key, key.origins[0]!);
+    // Time order; a key that split off sorts after the key it left at the same time.
+    next.sort((x, y) => x.time - y.time || x.origins[0]! - y.origins[0]! || Number(moving.has(x)) - Number(moving.has(y)));
+    const result = independent ? mergeMeetingKeys(next) : next;
+    return {
+      keys: result.map(untrack),
+      remap: (handle) => {
+        const at = result.findIndex((key) => key.origins.includes(handle.index) && holdsAxis(key, handle.channel));
+        return { index: at < 0 ? handle.index : at, channel: handle.channel };
+      },
+    };
+  };
+  /** Vector keys of other axes that meet within the key gap with the same interpolation become one key. */
+  const mergeMeetingKeys = (list: readonly TrackedKey[]): TrackedKey[] => {
+    const gap = constraints.keyGap ?? MIN_CURVE_KEY_GAP;
+    const out: TrackedKey[] = [];
+    for (const key of list) {
+      const target = out.find((other) => Math.abs(other.time - key.time) < gap && (other.axes & key.axes) === 0
+        && other.interpolation === key.interpolation);
+      if (!target) {
+        out.push(key);
+        continue;
+      }
+      for (let channel = 0; channel < key.values.length; channel += 1) {
+        if (!holdsAxis(key, channel)) continue;
+        target.values[channel] = key.values[channel]!;
+        target.arrive[channel] = key.arrive[channel]!;
+        target.leave[channel] = key.leave[channel]!;
+      }
+      target.axes |= key.axes;
+      target.origins.push(...key.origins);
+    }
+    return out;
   };
   /** The shift that lands key `index` on `time` after snapping it to the time step and range. */
   const snappedShift = (source: readonly EditorKey[], index: number, time: number) => snapTime(time, constraints) - source[index]!.time;
+  const visibleAxes = visibleChannels.reduce((mask, channel) => mask | (1 << channel), 0) || allAxes(kind);
+  const firstAxis = (axes: number) => channelInfo.findIndex((_, channel) => ((axes >> channel) & 1) === 1);
 
   const insertKey = (time: number) => {
     if (disabled || keys.length >= maxKeys) return;
     const t = roundTime(constraints.fixedTime ? clampNumber(time, 0, 1) : snapTime(time, constraints));
     const gap = constraints.keyGap ?? 0.001;
-    if (keys.some((key) => Math.abs(key.time - t) < gap)) return;
+    // With independent axes the new key sets the visible axes only.
+    const axes = independent ? visibleAxes : allAxes(kind);
+    if (keys.some((key) => (key.axes & axes) !== 0 && Math.abs(key.time - t) < gap)) return;
     if (constraints.lockEnds && (t <= 0 || t >= 1)) return;
     const index = keys.findIndex((key) => key.time > t);
     const at = index < 0 ? keys.length : index;
-    const next = cloneKeys(keys);
-    next.splice(at, 0, keyAt(kind, keys, t, constraints));
-    select([{ index: at, channel: fallbackChannel() }]);
-    emit(next);
+    const next: TrackedKey[] = cloneKeys(keys).map((key, origin) => ({ ...key, origins: [origin] }));
+    next.splice(at, 0, { ...keyAt(kind, keys, t, constraints), axes, origins: [-1] });
+    const result = independent ? mergeMeetingKeys(next) : next;
+    const created = result.findIndex((key) => key.origins.includes(-1));
+    select([{ index: created, channel: holdsAxis(result[created]!, fallbackChannel()) ? fallbackChannel() : firstAxis(axes) }]);
+    emit(result.map(untrack));
   };
 
   /** Removes the keys at `indices` except locked ends, keeping at least `minKeys`; returns the first removed index. */
@@ -394,7 +473,37 @@ export function CurveEditor({
     emit(keys.filter((_, index) => !removing.has(index)));
     return allowed[0]!;
   };
-  const removeSelected = () => { removeKeys(removable, fallbackChannel()); };
+  /**
+   * Removes what the handles point at: whole keys, or with independent axes each handle's axis from its key
+   * (a key left with no axes goes). Returns the index to select next, or null when nothing changed.
+   */
+  const removeHandles = (handles: readonly KeyHandle[]): number | null => {
+    const channel = handles[handles.length - 1]?.channel ?? fallbackChannel();
+    if (!independent) {
+      const first = removeKeys(handles.map((handle) => handle.index), channel);
+      return first === null ? null : Math.max(0, first - 1);
+    }
+    if (disabled) return null;
+    const next = cloneKeys(keys);
+    let first = Number.POSITIVE_INFINITY;
+    for (const handle of handles) {
+      const key = next[handle.index];
+      if (!key || !holdsAxis(key, handle.channel)) continue;
+      key.axes &= ~(1 << handle.channel);
+      first = Math.min(first, handle.index);
+    }
+    if (!Number.isFinite(first)) return null;
+    const removedTime = keys[first]!.time;
+    const kept = next.filter((key) => key.axes !== 0);
+    // The nearest earlier key that still sets the channel, else the first one that does.
+    let index = -1;
+    kept.forEach((key, at) => { if (holdsAxis(key, channel) && key.time < removedTime) index = at; });
+    if (index < 0) index = kept.findIndex((key) => holdsAxis(key, channel));
+    select(index < 0 ? [] : [{ index, channel }]);
+    emit(kept);
+    return index;
+  };
+  const removeSelected = () => { removeHandles(selection); };
 
   const endGesture = () => {
     gestureRef.current = null;
@@ -403,6 +512,25 @@ export function CurveEditor({
   };
 
   // Keys -------------------------------------------------------------------------------------------
+
+  /**
+   * With independent axes, a dragged key lands on a key of its other axes when it comes within 6 px of it, so
+   * a split key can meet its axes again (and merge back when the interpolation matches).
+   */
+  const meetShift = (gesture: KeyDrag, primaryTime: number, dt: number) => {
+    const moving = gesture.handles.filter((handle) => handle.index === gesture.primary.index)
+      .reduce((mask, handle) => mask | (1 << handle.channel), 0);
+    const reach = trackWidth > 0 ? (6 / trackWidth) * spanT : 0;
+    const target = primaryTime + dt;
+    let best: number | null = null;
+    committed.forEach((key, index) => {
+      const remaining = index === gesture.primary.index ? key.axes & ~moving : key.axes;
+      if (remaining === 0 || (remaining & moving) !== 0) return;
+      const distance = Math.abs(key.time - target);
+      if (distance <= reach && (best === null || distance < Math.abs(best - target))) best = key.time;
+    });
+    return best === null ? dt : best - primaryTime;
+  };
 
   const onKeyPointerDown = (event: PointerEvent<HTMLButtonElement>, handle: KeyHandle, timeOnly: boolean) => {
     event.stopPropagation();
@@ -425,10 +553,11 @@ export function CurveEditor({
       moved: false, collapse: mode === "replace" && already && current.length > 1,
     };
     setFrozenView(view);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    // The plot holds the capture: a key that splits or reorders mid-drag re-renders its handle elsewhere.
+    trackRef.current?.setPointerCapture?.(event.pointerId);
   };
 
-  const onHandlePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+  const onHandlePointerMove = (event: PointerEvent<Element>) => {
     const gesture = gestureRef.current;
     if (!gesture || (gesture.kind !== "key" && gesture.kind !== "tangent") || gesture.pointerId !== event.pointerId) return;
     const point = fraction(event.clientX, event.clientY);
@@ -439,8 +568,11 @@ export function CurveEditor({
       gesture.moved = true;
       const data = toData(point.fx, point.fy);
       const primaryTime = committed[gesture.primary.index]!.time;
-      const dt = snappedShift(committed, gesture.primary.index, primaryTime + data.time - gesture.startTime);
-      setDraft(shiftKeys(committed, gesture.handles, dt, gesture.timeOnly ? null : data.value - gesture.startValue));
+      let dt = snappedShift(committed, gesture.primary.index, primaryTime + data.time - gesture.startTime);
+      if (independent) dt = meetShift(gesture, primaryTime, dt);
+      const shifted = shiftKeys(committed, gesture.handles, dt, gesture.timeOnly ? null : data.value - gesture.startValue);
+      setDraft(shifted.keys);
+      select(gesture.handles.map(shifted.remap));
       return;
     }
     const source = draftRef.current ?? committed;
@@ -459,7 +591,7 @@ export function CurveEditor({
     setDraft(next);
   };
 
-  const onHandlePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+  const onHandlePointerUp = (event: PointerEvent<Element>) => {
     pointerSelectRef.current = false;
     const gesture = gestureRef.current;
     if (!gesture || (gesture.kind !== "key" && gesture.kind !== "tangent") || gesture.pointerId !== event.pointerId) return;
@@ -471,9 +603,11 @@ export function CurveEditor({
     if (final && JSON.stringify(final) !== JSON.stringify(committed)) emit(final);
   };
 
-  const onHandlePointerCancel = (event: PointerEvent<HTMLButtonElement>) => {
+  const onHandlePointerCancel = (event: PointerEvent<Element>) => {
     pointerSelectRef.current = false;
-    if (gestureRef.current && "pointerId" in gestureRef.current && gestureRef.current.pointerId !== event.pointerId) return;
+    const gesture = gestureRef.current;
+    if (gesture && "pointerId" in gesture && gesture.pointerId !== event.pointerId) return;
+    if (gesture?.kind === "key") select(gesture.handles);
     endGesture();
     setFrozenView(null);
     setDraft(null);
@@ -496,20 +630,28 @@ export function CurveEditor({
     const large = event.shiftKey ? 10 : 1;
     const timeStep = (constraints.fixedTime ? 0.01 : spanT / 100) * large;
     const valueStep = (spanV / 100) * large;
+    const nudge = (dt: number, dv: number | null) => {
+      const shifted = shiftKeys(keys, handles, dt, dv);
+      if (handles === current) select(current.map(shifted.remap));
+      // Keep focus on the moved handle, wherever its key now sits.
+      const moved = shifted.remap(handle);
+      focusKeyRef.current = `${moved.index}:${moved.channel}`;
+      emit(shifted.keys);
+    };
     switch (event.key) {
       case "ArrowLeft":
       case "ArrowRight":
-        emit(shiftKeys(keys, handles, snappedShift(keys, handle.index, key.time + timeStep * (event.key === "ArrowLeft" ? -1 : 1)), null));
+        nudge(snappedShift(keys, handle.index, key.time + timeStep * (event.key === "ArrowLeft" ? -1 : 1)), null);
         break;
       case "ArrowUp":
       case "ArrowDown":
-        emit(shiftKeys(keys, handles, 0, valueStep * (event.key === "ArrowDown" ? -1 : 1)));
+        nudge(0, valueStep * (event.key === "ArrowDown" ? -1 : 1));
         break;
       case "Delete":
       case "Backspace": {
         // The focused key alone, or the whole selection when it belongs to it.
-        const first = removeKeys(handles.map((entry) => entry.index), handle.channel);
-        if (first !== null) focusKeyRef.current = `${Math.max(0, first - 1)}:${handle.channel}`;
+        const next = removeHandles(handles);
+        if (next !== null && next >= 0) focusKeyRef.current = `${next}:${handle.channel}`;
         break;
       }
       default:
@@ -533,6 +675,7 @@ export function CurveEditor({
       const fx = fxOf(key.time);
       if (fx < left || fx > right) return;
       for (const channel of visibleChannels) {
+        if (!holdsAxis(key, channel)) continue;
         const fy = handleFy(key, channel);
         if (fy >= top && fy <= bottom) inside.push({ index, channel });
       }
@@ -582,7 +725,17 @@ export function CurveEditor({
     }
   };
 
+  /** A key or tangent drag the plot captured: its moves and release arrive here. */
+  const handleGestureOf = (event: PointerEvent<Element>) => {
+    const gesture = gestureRef.current;
+    return gesture && (gesture.kind === "key" || gesture.kind === "tangent") && gesture.pointerId === event.pointerId ? gesture : null;
+  };
+
   const onTrackPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (handleGestureOf(event)) {
+      onHandlePointerMove(event);
+      return;
+    }
     if (!pointersRef.current.has(event.pointerId)) {
       // A mouse over the plot with no button down reads out the curve.
       if (event.pointerType === "mouse" && !gestureRef.current) {
@@ -633,6 +786,11 @@ export function CurveEditor({
   };
 
   const onTrackPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (handleGestureOf(event)) {
+      if (event.type === "pointerup") onHandlePointerUp(event);
+      else onHandlePointerCancel(event);
+      return;
+    }
     const gesture = gestureRef.current;
     if (event.type === "pointerup" && gesture && gesture.kind !== "pinch" && gesture.pointerId === event.pointerId) {
       if (gesture.kind === "pan" && !gesture.moved) {
@@ -677,14 +835,40 @@ export function CurveEditor({
   };
   /** Time moves every selected key by the primary key's change, so they keep their spacing. */
   const setSelectedTime = (time: number, commit: boolean) => {
-    if (!primary) return;
-    applyEdit(shiftKeys(committed, selection, snappedShift(committed, primary.index, time), null), commit);
+    const base = timeBaseRef.current ?? selection;
+    timeBaseRef.current = commit ? null : base;
+    const anchor = base[base.length - 1];
+    if (!anchor) return;
+    const shifted = shiftKeys(committed, base, snappedShift(committed, anchor.index, time), null);
+    select(base.map(shifted.remap));
+    applyEdit(shifted.keys, commit);
   };
-  const differs = (read: (key: EditorKey) => unknown) =>
-    !!selectedKey && selectedIndices.some((index) => keys[index] && read(keys[index]!) !== read(selectedKey));
+  /** The selected keys that set `channel` (every selected key without one). */
+  const holders = (channel?: number) => selectedIndices.map((index) => keys[index]).filter(
+    (key): key is EditorKey => !!key && (channel === undefined || holdsAxis(key, channel)));
+  const differs = (read: (key: EditorKey) => unknown, channel?: number) => {
+    const [first, ...rest] = holders(channel);
+    return !!first && rest.some((key) => read(key) !== read(first));
+  };
 
   const setInterpolation = (interpolation: CurveInterpolation) => {
     if (!selectedKey) return;
+    if (independent) {
+      // Only the selected axes change: they split into their own key at the same time, and merge back when they match.
+      const shifted = shiftKeys(keys, selection, 0, null, {
+        split: true,
+        change: (key, origin) => {
+          if (interpolation === "custom" && key.interpolation !== "custom") {
+            key.arrive = key.values.map((_, channel) => keyTangent(kind, keys, origin, channel, "arrive"));
+            key.leave = key.values.map((_, channel) => keyTangent(kind, keys, origin, channel, "leave"));
+          }
+          key.interpolation = interpolation;
+        },
+      });
+      select(selection.map(shifted.remap));
+      emit(shifted.keys);
+      return;
+    }
     let next = cloneKeys(keys);
     for (const index of selectedIndices) {
       // Custom starts from the tangents the key plays with now, so choosing it never moves the curve.
@@ -701,9 +885,16 @@ export function CurveEditor({
 
   const keyId = (index: number, channel: number) =>
     channelInfo.length === 1 ? `${testId}-key-${index}` : `${testId}-key-${index}-${channelInfo[channel]!.key}`;
-  const hitFraction = (index: number) => {
-    const left = index > 0 ? (keys[index]!.time - keys[index - 1]!.time) / spanT : 1;
-    const right = index < last ? (keys[index + 1]!.time - keys[index]!.time) / spanT : 1;
+  /** Share of the plot to the nearest key that sets `channel`, which caps a touch hit area. */
+  const hitFraction = (index: number, channel: number) => {
+    let left = 1;
+    let right = 1;
+    for (let other = index - 1; other >= 0; other -= 1) {
+      if (holdsAxis(keys[other]!, channel)) { left = (keys[index]!.time - keys[other]!.time) / spanT; break; }
+    }
+    for (let other = index + 1; other <= last; other += 1) {
+      if (holdsAxis(keys[other]!, channel)) { right = (keys[other]!.time - keys[index]!.time) / spanT; break; }
+    }
     return Math.max(0, Math.min(left, right, 1));
   };
   const activeChannel = primary && visible[primary.channel] !== false ? primary.channel : visibleChannels[0] ?? 0;
@@ -784,6 +975,7 @@ export function CurveEditor({
   );
 
   const keyRow = (index: number, key: EditorKey, channel: number) => {
+    if (!holdsAxis(key, channel)) return null;
     const fx = fxOf(key.time);
     const fy = handleFy(key, channel);
     if (fx < -0.02 - reachFx || fx > 1.02 + reachFx || fy < -0.04 || fy > 1.04) return null;
@@ -803,7 +995,7 @@ export function CurveEditor({
           "absolute flex size-7 -translate-x-1/2 -translate-y-1/2 touch-none items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default pointer-coarse:h-11 pointer-coarse:w-[min(44px,var(--curve-key-hit))]",
           isSelected && "z-10",
         )}
-        style={{ left: `${fx * 100}%`, top: `${fy * 100}%`, "--curve-key-hit": `${hitFraction(index) * 100}%` } as CSSProperties}
+        style={{ left: `${fx * 100}%`, top: `${fy * 100}%`, "--curve-key-hit": `${hitFraction(index, channel) * 100}%` } as CSSProperties}
         aria-label={label}
         aria-pressed={isSelected}
         disabled={disabled}
@@ -905,7 +1097,7 @@ export function CurveEditor({
                       "absolute top-1/2 flex h-7 w-[min(28px,var(--curve-key-hit))] -translate-x-1/2 -translate-y-1/2 touch-none items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default pointer-coarse:h-11 pointer-coarse:w-[min(44px,var(--curve-key-hit))]",
                       isSelected && "z-10",
                     )}
-                    style={{ left: `${fx * 100}%`, "--curve-key-hit": `${(trackWidth ? hitFraction(index) * trackWidth : 28)}px` } as CSSProperties}
+                    style={{ left: `${fx * 100}%`, "--curve-key-hit": `${(trackWidth ? hitFraction(index, activeChannel) * trackWidth : 28)}px` } as CSSProperties}
                     aria-label={`Stop ${index + 1}, Time ${key.time.toFixed(2)}`}
                     aria-pressed={isSelected}
                     disabled={disabled}
@@ -1119,15 +1311,15 @@ export function CurveEditor({
     return (
       <NumericDragField
         aria-label={`${fieldLabel} ${!multi ? "Value" : channel.label}`}
-        value={selectedKey!.values[index]!}
-        mixed={differs((key) => key.values[index])}
+        value={(holders(index)[0] ?? selectedKey!).values[index]!}
+        mixed={differs((key) => key.values[index], index)}
         min={constraints.valueMin}
         max={constraints.valueMax}
         accent={channel.accent}
         sensitivity={spanV / 200}
         disabled={disabled}
-        onChange={(next) => editSelectedKeys((key) => { key.values[index] = clampValue(next, constraints); }, false)}
-        onDragEnd={(next) => editSelectedKeys((key) => { key.values[index] = clampValue(next, constraints); }, true)}
+        onChange={(next) => editSelectedKeys((key) => { if (holdsAxis(key, index)) key.values[index] = clampValue(next, constraints); }, false)}
+        onDragEnd={(next) => editSelectedKeys((key) => { if (holdsAxis(key, index)) key.values[index] = clampValue(next, constraints); }, true)}
         data-testid={!multi ? `${testId}-value` : `${testId}-value-${channel.label}`}
       />
     );
@@ -1192,11 +1384,11 @@ export function CurveEditor({
                     />
                   </div>
                 ) : null}
-                {channelInfo.map((channel, index) => (
+                {channelInfo.map((channel, index) => (holders(index).length === 0 ? null : (
                   <KeyBarField key={channel.label} label={!multi ? "Value" : channel.label} width="w-20" accent={multi ? channel.stroke : undefined}>
                     {valueField(index)}
                   </KeyBarField>
-                ))}
+                )))}
               </div>
               {interpolationSelect ? (
                 <>
@@ -1224,12 +1416,12 @@ export function CurveEditor({
             <span aria-hidden="true" className="shrink-0 text-xs text-muted-foreground">Time</span>
             <div className="min-w-0 flex-1">{timeField}</div>
           </div>
-          {channelInfo.map((channel, index) => (
+          {channelInfo.map((channel, index) => (holders(index).length === 0 ? null : (
             <div key={channel.label} className="flex min-w-0 items-center gap-1">
               <span aria-hidden="true" className="shrink-0 text-xs text-muted-foreground">{!multi ? "Value" : channel.label}</span>
               <div className="min-w-0 flex-1">{valueField(index)}</div>
             </div>
-          ))}
+          )))}
           {interpolationSelect ? (
             <div className="flex min-w-0 items-center gap-1">
               <span aria-hidden="true" className="shrink-0 text-xs text-muted-foreground">Interpolation</span>
