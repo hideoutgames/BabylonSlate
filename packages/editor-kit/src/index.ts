@@ -116,8 +116,17 @@ export {
   type PinListRow,
 } from "./pin-list-editor";
 export {
+  DelegateSignatureField,
+  delegateSignatureLabel,
+  delegateSignaturePatch,
+  type DelegateSignatureEntry,
+  type DelegateSignatureValue,
+} from "./delegate-signature-field";
+export {
   PIN_PICKER_TYPES,
+  CLASS_PIN_PICKER_TYPES,
   FUNCTION_PIN_PICKER_TYPES,
+  pinPickerShape,
   pinPickerColorVar,
   pinPickerLabel,
   pinPickerKeepsTypeClassId,

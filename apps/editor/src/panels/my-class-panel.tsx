@@ -14,6 +14,8 @@ import {
   pinShapeForContainer,
   formatEventTitle,
   pinPickerColorVar,
+  pinPickerShape,
+  CLASS_PIN_PICKER_TYPES,
   rangeSelectTreeIds,
   useContextMenu,
   type ContextMenuItem,
@@ -49,6 +51,7 @@ import {
   droppedRowsNotice,
   resolveClassMemberDrop,
   type ClassMemberDropRow,
+  type DispatcherDropAction,
   type GraphDropPoint,
   type VariableAccessKind,
 } from "../lib/class-members";
@@ -61,7 +64,8 @@ import {
   type ClassMemberCopyRow,
 } from "../lib/class-member-clipboard";
 import { MemberAccessChooser } from "../components/member-access-chooser";
-import { FolderIcon, PlusIcon } from "lucide-react";
+import { DispatcherActionChooser } from "../components/dispatcher-action-chooser";
+import { FolderIcon, PlugIcon, PlugZapIcon, PlusIcon, RadioTowerIcon, SquareFunctionIcon } from "lucide-react";
 import { GraphDropHint, type GraphDropHintState } from "@haptic/graph-ui";
 import {
   useDocumentActions,
@@ -102,7 +106,7 @@ const CLASS_KINDS = ["graph"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 
 export type MyClassMember = {
-  kind: "variable" | "function" | "event" | "interface";
+  kind: "variable" | "function" | "event" | "interface" | "dispatcher";
   name: string;
   detail?: string;
   inherited?: boolean;
@@ -227,18 +231,22 @@ function memberIcon(member: MyClassMember) {
     const color = pinPickerColorVar(variablePickerType(member));
     const testId = `class-var-type-${member.detail ?? member.name}`;
     return shape === "circle" ? (
-      <TypeColorMark colorVar={color} data-testid={testId} />
+      <TypeColorMark colorVar={color} shape={pinPickerShape(variablePickerType(member))} data-testid={testId} />
     ) : (
       <PinShapeGlyph shape={shape} connected outlined={false} color={color} size={12} data-testid={testId} />
     );
   }
+  // Kind icons match the graph's node markers: Plug Zap events, Radio Tower dispatchers, Plug interfaces.
   if (member.kind === "function") {
-    return <TypeColorMark colorVar="var(--node-function)" />;
+    return <SquareFunctionIcon className="size-3.5 text-muted-foreground" aria-hidden data-member-icon="function" />;
   }
   if (member.kind === "event") {
-    return <TypeColorMark colorVar="var(--node-event)" />;
+    return <PlugZapIcon className="size-3.5 text-muted-foreground" aria-hidden data-member-icon="event" />;
   }
-  return <TypeColorMark colorVar="var(--asset-script-type)" />;
+  if (member.kind === "dispatcher") {
+    return <RadioTowerIcon className="size-3.5 text-muted-foreground" aria-hidden data-member-icon="dispatcher" />;
+  }
+  return <PlugIcon className="size-3.5 text-muted-foreground" aria-hidden data-member-icon="interface" />;
 }
 
 function inheritedMembers(
@@ -271,6 +279,7 @@ function inheritedMembers(
       if (
         member.kind === "variable" ||
         member.kind === "function" ||
+        member.kind === "dispatcher" ||
         member.kind === "interface"
       ) {
         push({
@@ -522,6 +531,14 @@ export function ClassMembersView({
     memberIds: string[];
     position: { x: number; y: number };
     skipped: string[];
+    /** Chosen first when the drop also held Event Dispatchers. */
+    dispatcherAction?: DispatcherDropAction;
+  } | null>(null);
+  const [dispatcherDrop, setDispatcherDrop] = useState<{
+    memberIds: string[];
+    position: { x: number; y: number };
+    skipped: string[];
+    variables: boolean;
   } | null>(null);
   const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
   // The selected entries when there are several; `primary` is the one the
@@ -556,7 +573,7 @@ export function ClassMembersView({
   const renamableIds = useMemo(() => {
     const ids = new Set<string>();
     for (const member of graph?.members ?? []) {
-      if (member.kind === "variable" || member.kind === "function") ids.add(member.id);
+      if (member.kind === "variable" || member.kind === "function" || member.kind === "dispatcher") ids.add(member.id);
       else if (
         member.kind === "event" &&
         graph?.nodes.some((node) => node.id === member.id && node.type === "flow.event.custom")
@@ -751,6 +768,15 @@ export function ClassMembersView({
       showNotice(droppedRowsNotice(result.skipped));
       return;
     }
+    if (result.kind === "choose-dispatcher") {
+      setDispatcherDrop({
+        memberIds: result.memberIds,
+        position: result.position,
+        skipped: result.skipped,
+        variables: result.variables,
+      });
+      return;
+    }
     if (result.kind === "choose-access") {
       setAccessDrop({
         memberIds: result.memberIds,
@@ -758,6 +784,25 @@ export function ClassMembersView({
         skipped: result.skipped,
       });
     }
+  };
+  const chooseDispatcherAction = (dispatcherAction: DispatcherDropAction) => {
+    if (!graph || !dispatcherDrop) return;
+    setDispatcherDrop(null);
+    if (dispatcherDrop.variables) {
+      setAccessDrop({ ...dispatcherDrop, dispatcherAction });
+      return;
+    }
+    const completed = completeClassMemberDrop({
+      graph,
+      memberIds: dispatcherDrop.memberIds,
+      members: members.map(dropRowOf),
+      position: dispatcherDrop.position,
+      dispatcherAction,
+      functionId: activeFunctionId,
+      classId,
+    });
+    onGraphChange(completed.graph);
+    showNotice(droppedRowsNotice(dispatcherDrop.skipped, completed.skipped));
   };
   const chooseAccess = (access: VariableAccessKind) => {
     if (!graph || !accessDrop) return;
@@ -767,6 +812,7 @@ export function ClassMembersView({
       members: members.map(dropRowOf),
       position: accessDrop.position,
       access,
+      dispatcherAction: accessDrop.dispatcherAction,
       functionId: activeFunctionId,
       classId,
     });
@@ -804,6 +850,7 @@ export function ClassMembersView({
             trailing: (
               <PinTypeMenu
                 title={`${addLabel} Type`}
+                types={CLASS_PIN_PICKER_TYPES}
                 onSelect={(type) => addVariableRef.current(type, section.local === true)}
                 data-testid={`class-add-${section.id}-menu`}
               >
@@ -1242,6 +1289,24 @@ export function ClassMembersView({
           </Alert>
         </div>
       )}
+      <DispatcherActionChooser
+        open={dispatcherDrop !== null}
+        dispatcherName={
+          dispatcherDrop && dispatcherDrop.memberIds.length > 1
+            ? `${dispatcherDrop.memberIds.length} Members`
+            : (members.find((member) => dispatcherDrop?.memberIds.includes(rowIdOf(member)) && member.kind === "dispatcher")?.name ?? "Event Dispatcher")
+        }
+        dispatcherCount={
+          dispatcherDrop
+            ? members.filter((member) => member.kind === "dispatcher" && dispatcherDrop.memberIds.includes(rowIdOf(member))).length
+            : 1
+        }
+        inEventGraph={!activeFunctionId}
+        onOpenChange={(open) => {
+          if (!open) setDispatcherDrop(null);
+        }}
+        onChoose={chooseDispatcherAction}
+      />
       <MemberAccessChooser
         open={accessDrop !== null}
         memberName={

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
+  CLASS_PIN_PICKER_TYPES,
   PanelFrame,
   PinListEditor,
   PropertyGrid,
@@ -17,9 +18,12 @@ import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { patchScriptInterfaceMethod } from "../lib/asset-settings";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import {
+  collectClassGraphsForPalette,
   collectGraphTypeAssets,
   typeAssetPickerEntries,
 } from "../lib/logic-graph-document";
+import { delegateSignatureEntries } from "../lib/delegate-signatures";
+import { classIdForGraphPath } from "../services/script-compiler";
 import {
   asScriptInterfaceAsset,
   parseMemberIndex,
@@ -28,13 +32,15 @@ import {
 
 /** Open Structure, Enum and Data Definition tabs override their saved types. */
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
+const CLASS_KINDS = ["graph"] as const;
 
 export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
+  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const { selectedMemberId, selectedPinId, setSelectedPinId } =
     useTypeAssetEditing();
   const doc = useOpenDocument(documentId);
@@ -57,8 +63,18 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
       type: pin.typeId,
       direction: pin.direction,
       ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
+      ...(pin.typeId === "delegate" ? { signature: (pin.signature ?? []) as PinListRow["signature"] } : {}),
     }));
   }, [method, selectedIndex]);
+  // Event Dispatchers of every Class, for a Delegate pin's Signature.
+  const delegateSignatures = useMemo(() => {
+    void registryEpoch;
+    return delegateSignatureEntries(collectClassGraphsForPalette({
+      assets: assetRegistry?.list() ?? [],
+      openDocuments: classDocuments,
+      classIdForPath: classIdForGraphPath,
+    }));
+  }, [assetRegistry, classDocuments, registryEpoch]);
 
   if (!method || selectedIndex === null) {
     return (
@@ -97,6 +113,8 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
           showDirection
           showOptional={false}
           showDefault={false}
+          types={CLASS_PIN_PICKER_TYPES}
+          delegateSignatures={delegateSignatures}
           classEntries={subclassClassEntries(
             "Object",
             assetRegistry?.list() ?? [],
@@ -115,6 +133,7 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
               ...(row.typeClassId?.trim()
                 ? { typeClassId: row.typeClassId.trim() }
                 : {}),
+              ...(row.type === "delegate" ? { signature: [...(row.signature ?? [])] } : {}),
             }));
             commit(
               patchScriptInterfaceMethod(asset, selectedIndex, { pins }),

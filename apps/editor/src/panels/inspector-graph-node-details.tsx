@@ -2,9 +2,9 @@ import type { Dispatch, SetStateAction } from "react";
 import type { SerializedGraph } from "@haptic/core";
 import {
   AssetPicker,
+  CLASS_PIN_PICKER_TYPES,
   ClassPicker,
   MultilineTextField,
-  PIN_PICKER_TYPES,
   ParameterListEditor,
   NamedListEditor,
   NamePromptDialog,
@@ -12,8 +12,10 @@ import {
   PropertyGrid,
   formatEventMemberName,
   useTags,
+  type DelegateSignatureEntry,
   type PinListRow,
 } from "@haptic/editor-kit";
+import { OUTPUT_DELEGATE_PIN_ID, isDispatcherNodeType } from "@haptic/scripting-nodes";
 import {
   Field,
   FieldError,
@@ -108,6 +110,8 @@ export interface GraphNodeDetailsProps {
   setEventPinRowIds: Dispatch<SetStateAction<CommittedPinRowIds | null>>;
   commandRowIds: CommandRowIds | null;
   setCommandRowIds: Dispatch<SetStateAction<CommandRowIds | null>>;
+  /** Event Dispatchers a Delegate type can take its signature from. */
+  delegateSignatures?: readonly DelegateSignatureEntry[];
 }
 
 /** The selected graph node's property rows, pin defaults and pin pickers. */
@@ -133,6 +137,7 @@ export function GraphNodeDetails({
   setEventPinRowIds,
   commandRowIds,
   setCommandRowIds,
+  delegateSignatures = [],
 }: GraphNodeDetailsProps) {
   const {
     dataAssets,
@@ -201,7 +206,12 @@ export function GraphNodeDetails({
       ...("typeClassId" in pin && pin.typeClassId
         ? { typeClassId: pin.typeClassId }
         : {}),
+      ...(pin.typeId === "delegate"
+        ? { signature: (pin as { signature?: PinListRow["signature"] }).signature ?? [] }
+        : {}),
     }));
+  // Wired to a delegate input, a custom event takes that delegate's signature (as in Unreal).
+  const eventSignatureFrom = isCustomEvent ? customEventSignatureSource(graph, selectedNode.id) : null;
   const title =
     typeof selectedNode.data.title === "string" && selectedNode.data.title
       ? selectedNode.data.title
@@ -389,6 +399,8 @@ export function GraphNodeDetails({
               selectedId={selectedJsPin} onSelect={selectJsPin}
               classEntries={objectClassEntries}
               typeAssets={typeAssets}
+              types={CLASS_PIN_PICKER_TYPES}
+              delegateSignatures={delegateSignatures}
               itemLabel="Input"
               testIdPrefix="js-input"
               onChange={(rows) =>
@@ -402,6 +414,8 @@ export function GraphNodeDetails({
               selectedId={selectedJsPin} onSelect={selectJsPin}
               classEntries={objectClassEntries}
               typeAssets={typeAssets}
+              types={CLASS_PIN_PICKER_TYPES}
+              delegateSignatures={delegateSignatures}
               itemLabel="Output"
               testIdPrefix="js-output"
               onChange={(rows) =>
@@ -515,15 +529,22 @@ export function GraphNodeDetails({
             validate={(name) => customEventRenameError(graph, selectedNode.id, name)}
             onSubmit={(name) => persistGraph(renameCustomEvent(graph, selectedNode.id, name, docPath ? classIdForGraphPath(docPath) : undefined))}
           />
+          {eventSignatureFrom ? (
+            <div className="text-xs text-muted-foreground" data-testid="inspector-event-signature-from">
+              Signature From: {eventSignatureFrom}
+            </div>
+          ) : null}
           <PinListEditor
             title="Outputs"
             rows={eventOutputRows}
-            types={PIN_PICKER_TYPES}
+            types={CLASS_PIN_PICKER_TYPES}
             classEntries={objectClassEntries}
             typeAssets={typeAssets}
+            delegateSignatures={delegateSignatures}
             itemLabel="Output"
             testIdPrefix="event-out"
             data-testid="inspector-event-outputs"
+            readOnly={eventSignatureFrom !== null}
             showOptional={false}
             showDefault={false}
             showUnit
@@ -641,4 +662,24 @@ export function GraphNodeDetails({
       />
     </>
   );
+}
+
+/**
+ * What a custom event's signature follows while its Output Delegate is wired:
+ * `On Damaged (Enemy)` for a dispatcher's Bind or Unbind, else the title of
+ * the node it feeds. Null while unwired.
+ */
+function customEventSignatureSource(graph: SerializedGraph, eventId: string): string | null {
+  const wire = graph.edges.find(
+    (edge) => edge.source === eventId && edge.sourceHandle === OUTPUT_DELEGATE_PIN_ID,
+  );
+  if (!wire) return null;
+  const target = graph.nodes.find((node) => node.id === wire.target);
+  if (!target) return null;
+  if (isDispatcherNodeType(target.type) && typeof target.data.name === "string") {
+    return typeof target.data.classId === "string" && target.data.classId
+      ? `${target.data.name} (${target.data.classId})`
+      : target.data.name;
+  }
+  return typeof target.data.title === "string" && target.data.title ? target.data.title : target.type;
 }
