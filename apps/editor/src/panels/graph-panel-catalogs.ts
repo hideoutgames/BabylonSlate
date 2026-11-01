@@ -32,7 +32,7 @@ import { timelineScriptAssets, type TimelineScriptAsset } from "../lib/timeline-
 
 const CLASS_KINDS = ["graph"] as const;
 const SCENE_KINDS = ["scene"] as const;
-const CLIP_DOCUMENT_KINDS = ["scene", "scene-layer"] as const;
+const CLIP_DOCUMENT_KINDS = ["scene", "scene-layer", "timeline-clip-2d", "timeline-clip-3d"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
 const INPUT_KINDS = ["input-action", "input-axis"] as const;
@@ -157,7 +157,7 @@ export function useGraphPanelCatalogs() {
     void registryEpoch;
     return collectDataGraphAssets(assetRegistry?.list() ?? [], dataDocuments);
   }, [assetRegistry, dataDocuments, registryEpoch]);
-  // Timeline Assets and the scene clips bound to them; open Scenes and Scene Layers, saved or not, win.
+  // Timeline Assets and the clips bound to them; open Scenes, Scene Layers and clip assets, saved or not, win.
   // Kept by value, so a scene edit that leaves every clip's name and events alone keeps the palette.
   const clipDocuments = useOpenDocumentsOfKinds(CLIP_DOCUMENT_KINDS);
   const timelineSignature = useMemo(() => {

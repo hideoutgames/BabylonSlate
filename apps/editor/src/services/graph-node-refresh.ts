@@ -33,6 +33,8 @@ import {
   TIMELINE_GET_CLIP_NODE_ID,
   timelineClipNodeTitle,
   timelineCreateClipNodeTitle,
+  isTimelineProxyPickerNode,
+  timelineProxyNodeTitle,
   ownedActorGetTitle,
   ownedComponentGetTitle,
   ownedTimelineClipGetTitle,
@@ -126,6 +128,7 @@ export function shouldRegeneratePins(typeId: string): boolean {
     typeId === TIMELINE_FROM_ASSET_NODE_ID ||
     typeId === TIMELINE_GET_CLIP_NODE_ID ||
     typeId === TIMELINE_CREATE_CLIP_NODE_ID ||
+    isTimelineProxyPickerNode(typeId) ||
     typeId === "struct.make" ||
     typeId === "struct.break" ||
     typeId === "enum.make" ||
@@ -494,6 +497,7 @@ export function hydratedNodeTitle(
   if (typeId === OWNED_TIMELINE_CLIP_GET_NODE_ID) return ownedTimelineClipGetTitle(properties);
   if (typeId === TIMELINE_GET_CLIP_NODE_ID) return timelineClipNodeTitle(properties);
   if (typeId === TIMELINE_CREATE_CLIP_NODE_ID) return timelineCreateClipNodeTitle(properties);
+  if (isTimelineProxyPickerNode(typeId)) return timelineProxyNodeTitle(typeId, properties);
   if (
     typeof properties.title === "string" &&
     (typeId === "flow.event.call" ||

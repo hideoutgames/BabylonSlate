@@ -172,7 +172,10 @@ describe("material dock catalog", () => {
         ["timeline-clip-proxies", "Proxies"],
         ["timeline-clip-inspector", "Inspector"],
         ["timeline-clip-timeline", "Timeline"],
+        ["compiler-results", "Compiler Results"],
       ]);
+      // Compiler Results opens from the Windows menu.
+      expect(listDockWindows(kind).filter((entry) => entry.openByDefault !== false).map((entry) => entry.id)).not.toContain("compiler-results");
       expect(primaryDockPanel(kind)).toBe("timeline-clip-viewport");
     }
   });

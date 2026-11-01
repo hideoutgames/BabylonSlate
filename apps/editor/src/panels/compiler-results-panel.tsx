@@ -10,7 +10,7 @@ import {
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
 } from "@haptic/editor-kit";
-import type { SerializedScene } from "@haptic/core";
+import { normalizeTimelineClipAsset, type SerializedScene } from "@haptic/core";
 import type { Diagnostic } from "@haptic/scripting";
 import { useValidation } from "../context/validation-context";
 import { usePlay } from "../context/play-context";
@@ -31,7 +31,8 @@ import {
 } from "../lib/physics-pairing-diagnostics";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { actorTransformDiagnostics } from "../lib/actor-transform-diagnostics";
-import { timelineClipBindingDiagnostics, timelineClipDiagnostics } from "../lib/timeline-clip-diagnostics";
+import { timelineClipAssetDiagnostics, timelineClipBindingDiagnostics, timelineClipDiagnostics } from "../lib/timeline-clip-diagnostics";
+import { registryClassParentLookup } from "../lib/class-asset-lookup";
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { MessageDetails } from "../components/message-details";
 import { DiagnosticResultRow } from "../components/diagnostic-result-row";
@@ -105,6 +106,22 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
       ),
     ]);
   }, [activeDocumentId, assetRegistry, documentId, mainScene, modelDocuments, registryEpoch, sceneContent, sceneDocuments, sceneKind, scenePath, setDiagnostics]);
+
+  // A 2D or 3D Timeline Clip asset: its Timeline Asset and its proxies' names, Classes and placement.
+  const clipKind = doc?.ref.kind === "timeline-clip-2d" || doc?.ref.kind === "timeline-clip-3d" ? doc.ref.kind : undefined;
+  useEffect(() => {
+    if (!documentId || documentId !== activeDocumentId || !clipKind || !sceneContent) return;
+    void registryEpoch;
+    const parentOf = registryClassParentLookup(assetRegistry);
+    setDiagnostics(timelineClipAssetDiagnostics(normalizeTimelineClipAsset(sceneContent), {
+      twoD: clipKind === "timeline-clip-2d",
+      timelineAssetName: (guid) => {
+        const asset = assetRegistry?.getByGuid?.(guid);
+        return asset?.header.type === "Timeline" ? asset.header.name : undefined;
+      },
+      classExists: (classId) => parentOf(classId) !== null,
+    }, { assetGuid: scenePath!, graphId: documentId }));
+  }, [activeDocumentId, assetRegistry, clipKind, documentId, registryEpoch, sceneContent, scenePath, setDiagnostics]);
 
   const rows = useMemo(() => flattenCompilerRows(diagnostics), [diagnostics]);
   // Stable per row list, so the windowed list can reuse its row offsets.

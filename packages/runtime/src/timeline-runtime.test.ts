@@ -10,7 +10,7 @@ import {
   type TimelineKey,
 } from "@haptic/core";
 import { ClassRegistry, EngineObject, ObjectCollector, TimelineClipInstance, TimelineObject, World, type Actor } from "@haptic/object-model";
-import { TimelineRuntime, timelineClipControl, timelineClipState } from "./timeline-runtime";
+import { TimelineRuntime, timelineClipControl, timelineClipState, timelineProxyControl } from "./timeline-runtime";
 
 const key = (id: string, Time: number, Value: unknown): TimelineKey => ({ id, Time, Value, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 });
 
@@ -376,6 +376,26 @@ describe("Timeline Clip asset instances", () => {
     front.destroyed = true;
     runtime.setPosition(swing, 1);
     expect(swing.bindings.has("door")).toBe(false);
+  });
+
+  it("rebinds a proxy from the next apply, reads what it is bound to, and unbinds one or all", () => {
+    const { runtime, timeline, front, back, lamp } = instanceSetup();
+    const swing = runtime.createInstance(timeline, "swing", { door: front, glow: lamp })!;
+    expect(runtime.bound(swing, "door")).toBe(front);
+    // Absolute Transform: the key is the world location.
+    timelineProxyControl(runtime, swing, "bind", "door", { object: back, absolute: true });
+    expect(runtime.bound(swing, "door")).toBe(back);
+    runtime.setPosition(swing, 2);
+    near(back.transform.position, { x: 2, y: 0, z: 0 });
+    near(front.transform.position, { x: 10, y: 0, z: 0 });
+    timelineProxyControl(runtime, swing, "unbind", "door", {});
+    expect(runtime.bound(swing, "door")).toBeNull();
+    expect(runtime.bound(swing, "glow")).toBe(lamp);
+    timelineProxyControl(runtime, swing, "unbindAll", "", {});
+    expect(swing.bindings.size).toBe(0);
+    lamp.setVariable("intensity", 1);
+    runtime.setPosition(swing, 1);
+    expect(lamp.getVariable("intensity")).toBe(1);
   });
 
   it("makes nothing for a clip asset the game does not have or that belongs to another Timeline Asset", () => {

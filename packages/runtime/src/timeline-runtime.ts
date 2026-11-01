@@ -192,6 +192,22 @@ export class TimelineRuntime {
     return true;
   }
 
+  /** Clears a proxy: its tracks stop applying. */
+  unbind(instance: TimelineClipInstance, proxyId: string): void {
+    instance.bindings.delete(proxyId);
+  }
+
+  /** Clears every proxy of the instance. */
+  unbindAll(instance: TimelineClipInstance): void {
+    instance.bindings.clear();
+  }
+
+  /** The object bound to a proxy, or none (a destroyed one reads as none). */
+  bound(instance: TimelineClipInstance, proxyId: string): Actor | ActorComponent | null {
+    const binding = instance.bindings.get(proxyId);
+    return binding && !binding.target.destroyed ? binding.target : null;
+  }
+
   /** Keeps playing instances alive: hands each to the collector's root visitor. */
   forEachPlayingInstance(visit: (instance: TimelineClipInstance) => void): void {
     for (const instance of this.instances) if (!instance.destroyed && instance.playback.playing) visit(instance);
@@ -521,5 +537,20 @@ export function timelineClipState(clip: TimelineClipObject, field: string): numb
     case "playing": return clip.playback.playing;
     case "reversed": return clip.playback.direction < 0;
     default: return 0;
+  }
+}
+
+/** Runs a Timeline Proxy node (`timelineProxy.bind*`, `unbind`, `unbindAll`) on a clip asset instance. */
+export function timelineProxyControl(
+  timelines: TimelineRuntime,
+  instance: TimelineClipInstance,
+  action: string,
+  proxyId: string,
+  args: Record<string, unknown>,
+): void {
+  switch (action) {
+    case "bind": timelines.bind(instance, proxyId, args.object, args.absolute === true); return;
+    case "unbind": timelines.unbind(instance, proxyId); return;
+    case "unbindAll": timelines.unbindAll(instance); return;
   }
 }

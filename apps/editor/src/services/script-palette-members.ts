@@ -21,7 +21,14 @@ import {
   type EngineScriptPin,
 } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
-import { timelineClipNodeData, timelineCreateClipNodeData, timelineRefiredDispatchers, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
+import {
+  timelineClipNodeData,
+  timelineCreateClipNodeData,
+  timelineProxyNodeData,
+  timelineRefiredDispatchers,
+  type TimelineScriptAsset,
+  type TimelineScriptClipAsset,
+} from "../lib/timeline-script-catalog";
 import { prefabComponentLabel } from "../panels/add-component-catalog";
 import {
   callInterfaceTitle,
@@ -31,8 +38,13 @@ import {
   OWNED_TIMELINE_CLIP_GET_NODE_ID,
   TIMELINE_CREATE_CLIP_NODE_ID,
   TIMELINE_GET_CLIP_NODE_ID,
+  TIMELINE_PROXY_BIND_ACTOR_NODE_ID,
+  TIMELINE_PROXY_BIND_COMPONENT_NODE_ID,
+  TIMELINE_PROXY_GET_NODE_ID,
+  TIMELINE_PROXY_UNBIND_NODE_ID,
   timelineClipNodeTitle,
   timelineCreateClipNodeTitle,
+  timelineProxyNodeTitle,
   ownedActorGetTitle,
   ownedComponentGetTitle,
   ownedGetNodeProperties,
@@ -903,6 +915,7 @@ export function timelineClipPaletteNodes(
         defaultData: data,
       };
     }) : []),
+    ...asset.clipAssets.flatMap((clip) => timelineProxyPaletteNodes(nodeRegistry, clip)),
     ...(create ? asset.clipAssets.map((clip): PaletteNode => {
       const data = timelineCreateClipNodeData(asset, clip);
       return {
@@ -918,6 +931,33 @@ export function timelineClipPaletteNodes(
       };
     }) : []),
   ]);
+}
+
+/**
+ * Bind, Unbind and Get rows for each proxy of a clip asset, on its class
+ * (`Bind Door Proxy`): Bind Actor to Timeline Proxy for an Actor proxy, Bind
+ * Component to Timeline Proxy for a Component proxy.
+ */
+function timelineProxyPaletteNodes(nodeRegistry: NodeRegistry, clip: TimelineScriptClipAsset): PaletteNode[] {
+  return clip.proxies.flatMap((proxy) => {
+    const bind = proxy.represents === "actor" ? TIMELINE_PROXY_BIND_ACTOR_NODE_ID : TIMELINE_PROXY_BIND_COMPONENT_NODE_ID;
+    return [bind, TIMELINE_PROXY_UNBIND_NODE_ID, TIMELINE_PROXY_GET_NODE_ID].flatMap((nodeType): PaletteNode[] => {
+      const def = nodeRegistry.get(nodeType);
+      if (!def) return [];
+      const data = timelineProxyNodeData(clip, proxy);
+      return [{
+        id: `${nodeType}:${clip.documentGuid}:${proxy.id}`,
+        nodeType,
+        title: timelineProxyNodeTitle(nodeType, data),
+        description: `${def.description ?? ""} Proxy: ${proxy.name} of ${clip.name}.`.trim(),
+        category: def.category,
+        pins: def.pins(data),
+        pure: def.pure,
+        latent: def.latent,
+        defaultData: data,
+      }];
+    });
+  });
 }
 
 type DispatcherRow = {

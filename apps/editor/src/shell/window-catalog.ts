@@ -1173,6 +1173,8 @@ export function listDockWindows(
     { id: "timeline-clip-proxies", component: "timeline-clip-proxies", title: "Proxies", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "left", initialWidth: 260 } },
     { id: "timeline-clip-inspector", component: "timeline-clip-inspector", title: "Inspector", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "right", initialWidth: 320 } },
     { id: "timeline-clip-timeline", component: "timeline-clip-timeline", title: "Timeline", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "below", initialHeight: 320 } },
+    // The clip asset's own checks (Timeline Asset, proxy names, Classes and placement).
+    { id: "compiler-results", component: "compiler-results", title: "Compiler Results", openByDefault: false, defaultPosition: { referencePanelId: "timeline-clip-timeline", direction: "within" } },
   ], options);
   if (kind === "timeline") return withOptionalLocks(kind, [
     { id: "timeline-asset-clips", component: "timeline-asset-clips", title: "Timeline Clips" },

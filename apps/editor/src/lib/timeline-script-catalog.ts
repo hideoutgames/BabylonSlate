@@ -7,14 +7,20 @@ import {
   timelineClipClassId,
   timelineRefiredDispatcherName,
 } from "@haptic/object-model";
+import type { PropertyRow } from "@haptic/editor-kit";
 import type { ClassMemberSymbol, Diagnostic } from "@haptic/scripting";
 import {
   TIMELINE_CREATE_CLIP_NODE_ID,
   TIMELINE_FROM_ASSET_NODE_ID,
   TIMELINE_GET_CLIP_NODE_ID,
+  TIMELINE_PROXY_BIND_ACTOR_NODE_ID,
+  TIMELINE_PROXY_BIND_COMPONENT_NODE_ID,
+  isTimelineProxyPickerNode,
   timelineClipNodeProperties,
   timelineClipNodeTitle,
   timelineCreateClipNodeTitle,
+  timelineProxyNodeProperties,
+  timelineProxyNodeTitle,
 } from "@haptic/scripting-nodes";
 import { ownedTimelineClipDispatcherSymbols, type OwnedTimelineClipEntry } from "./owned-actor-gets";
 import { isSceneClipDocument, timelineAssetClips, type ProjectTimelineClip } from "./timeline-asset-index";
@@ -119,6 +125,64 @@ export function timelineCreateClipNodeData(asset: TimelineScriptAsset, clip: Tim
   };
 }
 
+/** Node properties of a Bind, Unbind or Get Timeline Proxy node that picks `proxy` of `clip`. */
+export function timelineProxyNodeData(clip: TimelineScriptClipAsset, proxy: TimelineClipProxySummary): Record<string, string> {
+  return {
+    timelineClipDocument: clip.documentGuid,
+    timelineClipName: clip.name,
+    timelineClipClassId: clip.classId,
+    timelineProxyId: proxy.id,
+    timelineProxyName: proxy.name,
+    timelineProxyClassId: proxy.classId,
+    timelineProxyRepresents: proxy.represents,
+  };
+}
+
+/** The clip asset a proxy node names, and its picked proxy while the clip still has it. */
+export function timelineProxyNodeTarget(assets: readonly TimelineScriptAsset[], data: Record<string, unknown>) {
+  const { clipAssetGuid, proxyId } = timelineProxyNodeProperties(data);
+  const clip = clipAssetGuid ? assets.flatMap((asset) => asset.clipAssets).find((entry) => entry.documentGuid === clipAssetGuid) : undefined;
+  return { clip, proxy: proxyId ? clip?.proxies.find((entry) => entry.id === proxyId) : undefined };
+}
+
+/**
+ * The Inspector's Proxy row for a Bind, Unbind or Get Timeline Proxy node:
+ * the clip asset's proxies (a Bind node lists those of its kind). Picking one
+ * renames, retypes and retitles the node.
+ */
+export function timelineProxyPickerRows(
+  nodeType: string,
+  data: Record<string, unknown>,
+  clip: TimelineScriptClipAsset | undefined,
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  if (!isTimelineProxyPickerNode(nodeType)) return [];
+  const { proxyId, proxyName } = timelineProxyNodeProperties(data);
+  const proxies = (clip?.proxies ?? []).filter((proxy) => !proxyKindMismatch(nodeType, proxy));
+  const options = proxies.map((proxy) => ({ value: proxy.id, label: proxy.name }));
+  // A picked proxy that left the clip keeps its row, so the error names what to replace.
+  if (proxyId && !options.some((option) => option.value === proxyId)) options.unshift({ value: proxyId, label: proxyName || proxyId });
+  return [{
+    kind: "enum",
+    id: "timelineProxy",
+    label: "Proxy",
+    value: proxyId,
+    options,
+    onChange: (value) => {
+      const proxy = proxies.find((entry) => entry.id === value);
+      if (!clip || !proxy) return;
+      const next = { ...data, ...timelineProxyNodeData(clip, proxy) };
+      onPatch({ ...timelineProxyNodeData(clip, proxy), title: timelineProxyNodeTitle(nodeType, next) });
+    },
+  }];
+}
+
+/** Whether a Bind node's kind cannot take `proxy` (Bind Actor on a Component proxy, or the other way round). */
+function proxyKindMismatch(nodeType: string, proxy: TimelineClipProxySummary): boolean {
+  return (nodeType === TIMELINE_PROXY_BIND_ACTOR_NODE_ID && proxy.represents !== "actor")
+    || (nodeType === TIMELINE_PROXY_BIND_COMPONENT_NODE_ID && proxy.represents !== "component");
+}
+
 function findClip(assets: readonly TimelineScriptAsset[], data: Record<string, unknown>, create: boolean) {
   const { assetGuid, documentGuid, clipId } = timelineClipNodeProperties(data);
   const asset = assets.find((entry) => entry.guid === assetGuid);
@@ -137,6 +201,16 @@ const sameValue = (a: unknown, b: unknown) => a === b || (Array.isArray(a) && JS
 export function refreshTimelineClipNodes(graph: SerializedGraph, assets: readonly TimelineScriptAsset[]): SerializedGraph {
   let changed = false;
   const nodes = graph.nodes.map((node) => {
+    if (isTimelineProxyPickerNode(node.type)) {
+      // A proxy node follows its proxy's rename and Class; a removed proxy keeps its last names.
+      const { clip, proxy } = timelineProxyNodeTarget(assets, node.data);
+      if (!clip || !proxy) return node;
+      const data: Record<string, unknown> = { ...node.data, ...timelineProxyNodeData(clip, proxy) };
+      data.title = timelineProxyNodeTitle(node.type, data);
+      if (Object.keys(data).every((key) => data[key] === node.data[key])) return node;
+      changed = true;
+      return { ...node, data };
+    }
     const create = node.type === TIMELINE_CREATE_CLIP_NODE_ID;
     if (!create && node.type !== TIMELINE_GET_CLIP_NODE_ID) return node;
     const { asset, clip } = findClip(assets, node.data, create);
@@ -171,6 +245,21 @@ export function timelineGraphDiagnostics(
   };
   const slices = [graph.nodes, ...Object.values(graph.functionGraphs ?? {}).map((slice) => slice.nodes)];
   for (const node of slices.flat()) {
+    if (isTimelineProxyPickerNode(node.type)) {
+      const { clip, proxy } = timelineProxyNodeTarget(assets, node.data);
+      const { clipName, proxyName } = timelineProxyNodeProperties(node.data);
+      const title = timelineProxyNodeTitle(node.type, node.data);
+      if (!proxy) {
+        diagnostics.push({ ...anchor, severity: "error", code: "timeline.proxy_member_missing", nodeId: node.id,
+          message: proxyName
+            ? `${title}: ${clip?.name ?? (clipName || "its Timeline Clip asset")} has no ${proxyName} proxy any more.`
+            : `${title}: pick a proxy in the Inspector.` });
+      } else if (proxyKindMismatch(node.type, proxy)) {
+        diagnostics.push({ ...anchor, severity: "error", code: "timeline.proxy_kind_mismatch", nodeId: node.id,
+          message: `${title}: ${proxy.name} stands in for ${proxy.represents === "actor" ? "an actor" : "a component"}. Use Bind ${proxy.represents === "actor" ? "Actor" : "Component"} to Timeline Proxy.` });
+      }
+      continue;
+    }
     if (node.type === TIMELINE_GET_CLIP_NODE_ID || node.type === TIMELINE_CREATE_CLIP_NODE_ID) {
       const create = node.type === TIMELINE_CREATE_CLIP_NODE_ID;
       const { asset, clip } = findClip(assets, node.data, create);
