@@ -554,8 +554,13 @@ float swnOrtho = U.${LOOK_UNIFORM}.w;
 float swnDrop = mix(abs(${eye}.y - ${position}.y) / max(swnWaterZ, 0.001), abs(${view}[1][2]), swnOrtho);
 float swnBehind = step(swnWaterZ, swnSceneZ);
 swnDepth = mix(swnDepth, min(swnDepth, max(swnSceneZ - swnWaterZ, 0.0) * swnDrop), swnBehind);
-// No geometry behind the water in the copy (its sky depth): open water lets nothing through, as built-in water.
-swnOpenSky = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swnSceneZ);
+// No geometry behind the water in the copy (its sky depth): open water lets nothing through, as built-in water. Nor
+// beside it, one copy texel in: a silhouette there against open sky (an underwater landscape's border) has its colour
+// blended with the background by the view's multisampled resolve, while its depth is one sample's, the surface's.
+vec2 swnTexel = swSceneTexelUv();
+float swnNearSky = max(max(swSceneDepth(swnUv + vec2(swnTexel.x, 0.0)), swSceneDepth(swnUv - vec2(swnTexel.x, 0.0))),
+  max(swSceneDepth(swnUv + vec2(0.0, swnTexel.y)), swSceneDepth(swnUv - vec2(0.0, swnTexel.y))));
+swnOpenSky = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, max(swnSceneZ, swnNearSky));
 `, wgsl)
       + "#endif\n"
       + (this.depth.hasEndpoints ? `${depth} = swnDepth;\n` : "")
