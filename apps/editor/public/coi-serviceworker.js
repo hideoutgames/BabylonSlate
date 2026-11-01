@@ -48,7 +48,10 @@ if (typeof window === 'undefined') {
                     }
                     newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
 
-                    return new Response(response.body, {
+                    // Local change: WebKit hands a revalidated script its 304 with an empty body stream, which the
+                    // Response constructor rejects for a null-body status, failing the load (a worker's module).
+                    const nullBody = [101, 103, 204, 205, 304].includes(response.status);
+                    return new Response(nullBody ? null : response.body, {
                         status: response.status,
                         statusText: response.statusText,
                         headers: newHeaders,
