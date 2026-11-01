@@ -216,7 +216,7 @@ test.describe("Scene modes", () => {
     await page.mouse.up();
     await expect.poll(async () => (await content(page)).timelineClips?.[0]?.objects.map((object) => object.actorId)).toEqual(["actor-1"]);
     const objectId = (await content(page)).timelineClips![0]!.objects[0]!.id;
-    await expect(page.getByTestId("outliner-timeline-badge-actor-1")).toHaveText("Timeline Clip");
+    await expect(page.getByTestId("outliner-timeline-badge-actor-1")).toHaveAttribute("aria-label", "In Timeline Clip");
 
     await page.getByTestId(`timeline-add-track-${objectId}`).click();
     const dialog = page.getByTestId("timeline-add-track-dialog");
@@ -235,7 +235,7 @@ test.describe("Scene modes", () => {
 
     // Drag the 5 s key to 2.5 s: one undo entry, snapped to a frame.
     const lanes = (await page.getByTestId("keyframe-timeline-lanes").boundingBox())!;
-    const x = (time: number) => lanes.x + 10 + time * ((lanes.width - 20) / 5);
+    const x = (time: number) => lanes.x + 10 + time * ((lanes.width - 34) / 5);
     const y = lanes.y + 24 * 1.5;
     await page.mouse.move(x(5), y);
     await page.mouse.down();

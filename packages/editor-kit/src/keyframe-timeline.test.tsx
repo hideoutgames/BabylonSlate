@@ -5,9 +5,9 @@ import { KeyframeTimeline, type KeyframeTimelineTrackRow } from "./keyframe-time
 import { keyRefId, type KeyRef } from "./keyframe-timeline-model";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
-// Lanes 400 px wide showing a 4 s clip: 95 px per second after the 10 px gutter, so t sits at x = 95t + 10.
+// Lanes 400 px wide showing a 4 s clip between gutters of 10 and 24 px: 91.5 px per second, so t sits at x = 91.5t + 10.
 const WIDTH = 400;
-const x = (time: number) => time * 95 + 10;
+const x = (time: number) => time * 91.5 + 10;
 const ROW = 24;
 const y = (row: number) => row * ROW + ROW / 2;
 

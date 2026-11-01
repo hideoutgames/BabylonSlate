@@ -1309,10 +1309,16 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         return {
           ...node,
           ...(timelineClip && timelineActorIds.has(actorId) ? {
+            // An icon, so the actor's name keeps the row's width; the clip's name is its label.
             preview: (
-              <span className="flex min-w-0 items-center gap-0.5 rounded-sm bg-muted px-1 text-[10px] text-muted-foreground" data-testid={`outliner-timeline-badge-${actorId}`}>
-                <DiamondIcon className="size-2.5 shrink-0" aria-hidden="true" />
-                <span className="truncate">{timelineClip.name}</span>
+              <span
+                role="img"
+                aria-label={`In ${timelineClip.name}`}
+                title={`In ${timelineClip.name}`}
+                className="flex items-center text-muted-foreground"
+                data-testid={`outliner-timeline-badge-${actorId}`}
+              >
+                <DiamondIcon className="size-3" aria-hidden="true" />
               </span>
             ),
           } : {}),

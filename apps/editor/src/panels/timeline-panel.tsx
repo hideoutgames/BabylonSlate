@@ -486,7 +486,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   return <PanelFrame>
     <div ref={rootRef} className="flex min-h-0 flex-1 flex-col" data-testid="scene-timeline-panel">
       <ToolbarStrip data-testid="scene-timeline-toolbar">
-        <span className="max-w-32 truncate px-1 font-medium" data-testid="scene-timeline-title">{clip.name}</span>
+        <span className="max-w-28 truncate px-1 font-medium" data-testid="scene-timeline-title">{clip.name}</span>
         <TransportButton label="Go to Start" onClick={() => setTime(0)} testId="timeline-go-start"><SkipBackIcon /></TransportButton>
         <TransportButton label="Previous Key" shortcut={keybinds.get("timeline.previousKey")?.[0]} onClick={() => jumpToKey(-1)} testId="timeline-previous-key"><StepBackIcon /></TransportButton>
         <TransportButton label={playing ? "Pause" : "Play"} onClick={() => setPlaying((value) => !value)} testId="timeline-play">
@@ -495,10 +495,10 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
         <TransportButton label="Next Key" shortcut={keybinds.get("timeline.nextKey")?.[0]} onClick={() => jumpToKey(1)} testId="timeline-next-key"><StepForwardIcon /></TransportButton>
         <TransportButton label="Go to End" onClick={() => setTime(clip.length)} testId="timeline-go-end"><SkipForwardIcon /></TransportButton>
         <Toggle size="sm" aria-label="Loop Preview" pressed={looping} onPressedChange={setLooping} data-testid="timeline-loop"><RepeatIcon /></Toggle>
-        <NumberField className="h-7 w-20 text-xs" aria-label="Playhead Time" unit="s" min={0} max={clip.length}
+        <NumberField className="h-7 w-16 text-xs" aria-label="Playhead Time" unit="s" min={0} max={clip.length}
           value={Number(time.toFixed(2))} onChange={setTime} data-testid="timeline-time" />
         <span className="text-muted-foreground">of</span>
-        <NumberField className="h-7 w-20 text-xs" aria-label="Clip Length" unit="s" min={MIN_TIMELINE_CLIP_LENGTH}
+        <NumberField className="h-7 w-16 text-xs" aria-label="Clip Length" unit="s" min={MIN_TIMELINE_CLIP_LENGTH}
           value={clip.length} onChange={(length) => commitClip({ ...clip, length: Math.max(MIN_TIMELINE_CLIP_LENGTH, length) })} data-testid="timeline-length" />
         <Select value={String(clip.frameRate)} onValueChange={(value) => commitClip({ ...clip, frameRate: Number(value) as TimelineFrameRate })}>
           <SelectTrigger size="sm" aria-label="Frame Rate" className="w-22" data-testid="timeline-frame-rate"><SelectValue>{`${clip.frameRate} fps`}</SelectValue></SelectTrigger>

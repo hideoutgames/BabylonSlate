@@ -38,8 +38,13 @@ export interface KeyframeTimelineView {
   pixelsPerSecond: number;
 }
 
-/** Room left of 0 s and right of the clip's end, so their keys stay whole. */
+/** Room left of 0 s, so its keys stay whole. */
 export const KEYFRAME_TIMELINE_GUTTER_PX = 10;
+/**
+ * Room right of the clip's end: wider, so a key on the last frame stays clear
+ * of a docked window's resize handle, whose hit area reaches into the window.
+ */
+export const KEYFRAME_TIMELINE_END_GUTTER_PX = 24;
 const MIN_PIXELS_PER_SECOND = 4;
 const MAX_PIXELS_PER_SECOND = 4000;
 /** The closest two labelled ruler ticks may be. */
@@ -57,7 +62,7 @@ export const xToTime = (view: KeyframeTimelineView, x: number): number => view.s
 
 /** Shows 0 s to `length` across `width`, with a gutter at each end. */
 export function fitKeyframeView(length: number, width: number): KeyframeTimelineView {
-  const usable = Math.max(1, width - KEYFRAME_TIMELINE_GUTTER_PX * 2);
+  const usable = Math.max(1, width - KEYFRAME_TIMELINE_GUTTER_PX - KEYFRAME_TIMELINE_END_GUTTER_PX);
   const pixelsPerSecond = clampScale(usable / Math.max(length, 0.01));
   return { start: -KEYFRAME_TIMELINE_GUTTER_PX / pixelsPerSecond, pixelsPerSecond };
 }

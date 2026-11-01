@@ -29,7 +29,7 @@ Clip names are unique within the document: a name that is taken, a duplicate or 
 
 A clip animates actors through tracks. Each actor in the clip has a row in the **Timeline**, with a row for each of its tracks below it.
 
-- While the **Timeline** shows a clip, drag an actor from the **Outliner** onto it, or open the actor's **⋯** menu in the **Outliner** and choose **Add to Timeline Clip**. Actors in the clip show the clip's name in the **Outliner**.
+- While the **Timeline** shows a clip, drag an actor from the **Outliner** onto it, or open the actor's **⋯** menu in the **Outliner** and choose **Add to Timeline Clip**. Actors in the clip show a diamond in the **Outliner**.
 - In the **Timeline** toolbar, **Track** adds the actors selected in the viewport or **Outliner**, or any actor you pick from a list.
 - Tap **+** on an actor's row to choose its tracks. The **Add Track** dialog lists what a track can animate; properties the clip already animates are checked. Check one or more and tap **Add Tracks**.
 

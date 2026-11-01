@@ -87,6 +87,7 @@ export {
   type KeySelectMode,
 } from "./keyframe-timeline";
 export {
+  KEYFRAME_TIMELINE_END_GUTTER_PX,
   KEYFRAME_TIMELINE_GUTTER_PX,
   fitKeyframeView,
   frameAt,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  KEYFRAME_TIMELINE_END_GUTTER_PX,
   KEYFRAME_TIMELINE_GUTTER_PX,
   fitKeyframeView,
   keyAt,
@@ -22,7 +23,7 @@ describe("keyframe timeline view", () => {
   it("fits 0 s to the clip's end inside the gutters", () => {
     const view = fitKeyframeView(8, 820);
     expect(timeToX(view, 0)).toBeCloseTo(KEYFRAME_TIMELINE_GUTTER_PX);
-    expect(timeToX(view, 8)).toBeCloseTo(820 - KEYFRAME_TIMELINE_GUTTER_PX);
+    expect(timeToX(view, 8)).toBeCloseTo(820 - KEYFRAME_TIMELINE_END_GUTTER_PX);
     expect(xToTime(view, timeToX(view, 3.25))).toBeCloseTo(3.25);
   });
 
