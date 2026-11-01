@@ -64,6 +64,16 @@ Keys are drawn by how the value moves to the next key: a circle eases smoothly (
 
 **Play** in the **Timeline** toolbar moves the playhead through the clip at its **Play Rate**; **Loop Preview** repeats it. The toolbar also sets the clip's **Length** and **Frame Rate**. Every edit is one step of the document's undo history, and dragging keys or the clip's end is a single step.
 
+## Preview in the viewport
+
+While a clip is selected, the viewport shows the scene as the clip has it at the playhead, and follows the playhead as you scrub or play. A note in the viewport's corner names the clip and the time. The preview never changes the scene: switching back to **Design** shows the actors where you placed them.
+
+Moving, rotating or scaling an actor with the viewport gizmo works on what the clip animates:
+
+- A channel the clip has no track for (for example **Scale** when only **Location** is animated) changes the actor itself, as in Design mode.
+- With **Auto Key** on in the **Timeline** toolbar, a channel that has a track gets a key at the playhead with the new value.
+- With **Auto Key** off, the change is only previewed and the track's key button turns amber. Tap it, or use **Set Key**, to keep the change as a key; moving the playhead discards it.
+
 ## Inspector
 
 While a clip is selected, the **Inspector** edits it instead of the actor selection:
