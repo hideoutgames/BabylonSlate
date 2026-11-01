@@ -397,6 +397,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         for (const key of ["classId", "classRef", "actorClass", "componentClass"]) addClass(properties[`default:${key}`] ?? properties[key], nodeType === "functions.call");
         // Create Object (`object.create`) runs at once, so the Class picked on it loads with the owner.
         if (nodeType === "object.create") addClass(properties["default:class"], true);
+        // Create <Name> Timeline Clip answers at once, so its clip asset loads with the owner.
+        if (nodeType === "timeline.createClip") add(properties.timelineClipDocument, true);
       }
     }
   };

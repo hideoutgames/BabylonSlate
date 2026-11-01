@@ -33,6 +33,16 @@ export interface TimelineClipSummary {
   length: number;
   /** Its Custom Event Tracks' dispatchers. */
   events: Array<{ name: string; inputs: GraphClassMemberPin[] }>;
+  /** A 2D or 3D Timeline Clip asset's proxies, for its Create node's inputs. */
+  proxies?: TimelineClipProxySummary[];
+}
+
+/** What a clip asset's header says about one proxy. */
+export interface TimelineClipProxySummary {
+  id: string;
+  name: string;
+  represents: "actor" | "component";
+  classId: string;
 }
 
 export function timelineClipSummaries(clips: readonly SerializedTimelineClip[] | undefined): TimelineClipSummary[] {
@@ -64,6 +74,21 @@ export function readTimelineClipSummaries(meta: Record<string, unknown> | undefi
             ? [{ name: event.name, inputs: Array.isArray(event.inputs) ? (event.inputs as GraphClassMemberPin[]) : [] }]
             : [])
         : [],
+      ...(Array.isArray(row.proxies) ? { proxies: readProxySummaries(row.proxies) } : {}),
+    }];
+  });
+}
+
+function readProxySummaries(raw: unknown[]): TimelineClipProxySummary[] {
+  return raw.flatMap((entry): TimelineClipProxySummary[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const row = entry as Record<string, unknown>;
+    if (typeof row.id !== "string" || !row.id || typeof row.classId !== "string" || !row.classId) return [];
+    return [{
+      id: row.id,
+      name: typeof row.name === "string" && row.name ? row.name : row.classId,
+      represents: row.represents === "component" ? "component" : "actor",
+      classId: row.classId,
     }];
   });
 }

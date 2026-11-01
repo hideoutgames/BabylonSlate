@@ -44,10 +44,11 @@ Any script can reach a Timeline asset's clips, even one that runs before their S
 | --- | --- |
 | [Get Timeline Asset Clip](../scripting/class/get-timeline-asset-clip.md), one per clip, such as **Get Intro Timeline Clip** | Returns that clip while its Scene or Scene Layer is loaded, else None. Connect it to the [Timeline Clip nodes](../scenes/timeline.md#control-a-clip-from-a-script). |
 | [Get Loaded Timeline Clips](../scripting/class/get-loaded-timeline-clips.md) | Returns every loaded clip of the asset. |
+| [Create Timeline Clip](../scripting/class/create-timeline-clip.md), one per [2D or 3D Timeline Clip](timeline-clip.md) asset, such as **Create Door Swing Timeline Clip** | Creates an instance of that clip asset, with an input per proxy. See [Play a clip asset](timeline-clip.md#play-a-clip-asset). |
 | An event for each event of each clip, named after both, such as **On Door Open (Intro)**, **On Finished (Intro)** and **On Looped (Intro)** | Runs whenever that clip fires the event, with the event's inputs and then the **Timeline Clip** that fired it. Bind it with **Bind Event to** or **Assign**, as for a clip's own [events](../scenes/timeline.md#bind-to-a-clips-events). |
 
-Bind to the Timeline's events once, for example in **Begin Play** of a Game Instance or Game Subsystem, to hear a clip in every Scene or Scene Layer copy that plays it, before any of them loads.
+Bind to the Timeline's events once, for example in **Begin Play** of a Game Instance or Game Subsystem, to hear a clip in every Scene or Scene Layer copy, or every clip asset instance, that plays it, before any of them loads.
 
 - The nodes and events follow the asset the pin or the variable's default names while you edit. With anything else wired into the asset pin, the Timeline is a plain one with only **Get Loaded Timeline Clips**; **Cast to** the asset narrows it.
-- A node whose clip was deleted or unbound from the asset shows an error. A node or variable that names an asset holding no clips shows a warning.
+- A node whose clip was deleted or unbound from the asset, or whose clip asset moved to another Timeline asset, shows an error. A node or variable that names an asset holding no clips shows a warning.
 - The asset ships with the game when a script or a bound clip names it.

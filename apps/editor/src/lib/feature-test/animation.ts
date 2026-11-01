@@ -21,6 +21,7 @@ import {
   meshComp,
   requireRef,
   tf,
+  instanceComponents,
   type FeatureTestClassRef,
   type FeatureTestContext,
   type Vec3,
@@ -412,17 +413,6 @@ async function saveLocomotor(ctx: FeatureTestContext, graphGuid: string): Promis
 
 // ---------------------------------------------------------------------------
 // Actors
-
-/** Class instance rows: `prefab-<suffix>` becomes `<actorId>-<suffix>` with `sourceId` kept. */
-function instanceComponents(actorId: string, templates: readonly SerializedComponent[]): SerializedComponent[] {
-  const idOf = (id: string) => `${actorId}-${id.replace(/^prefab-/, "")}`;
-  return templates.map((template) => ({
-    ...structuredClone(template),
-    id: idOf(template.id),
-    parentId: template.parentId ? idOf(template.parentId) : null,
-    sourceId: template.id,
-  }));
-}
 
 /** Locomotor instance with a per-instance Phase (seconds) override. */
 function locomotorActor(placed: PlacedClass, id: string, name: string, position: Vec3, phase: number): SerializedActor {

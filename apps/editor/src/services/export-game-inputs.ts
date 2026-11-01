@@ -1,5 +1,8 @@
 import {
   documentKindForAssetType,
+  isTimelineClipAssetType,
+  normalizeTimelineClipAsset,
+  stripTimelineClipAssetEditorData,
   type SerializedGraph,
   type SerializedScene,
 } from "@haptic/core";
@@ -62,6 +65,8 @@ const JSON_TYPES = new Set<string>([
   "Animation",
   "Skeleton",
   "SceneLayer",
+  "TimelineClip2D",
+  "TimelineClip3D",
 ]);
 
 const encoder = new TextEncoder();
@@ -223,6 +228,10 @@ async function bytesForAsset(
   snapshot: ExportDocumentSnapshot | null,
   readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
 ): Promise<Uint8Array | null> {
+  // A Timeline Clip asset ships its keys, events and proxies; its Editor Preview never leaves the editor.
+  if (isTimelineClipAssetType(asset.header.type) && document) {
+    return encoder.encode(JSON.stringify(stripTimelineClipAssetEditorData(normalizeTimelineClipAsset(document))));
+  }
   if (JSON_TYPES.has(asset.header.type) && document) {
     return encoder.encode(JSON.stringify(document));
   }

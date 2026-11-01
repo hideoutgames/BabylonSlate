@@ -38,6 +38,7 @@ import {
   requireRef,
   SCENE_SAVE_ORDER,
   tf,
+  instanceComponents,
   type FeatureTestClassRef,
   type FeatureTestContext,
   type Vec3,
@@ -258,17 +259,6 @@ export function mirrorRippleMaterial(name: string): Record<string, unknown> {
     id: `${from}:${fromPin}:${to}:${toPin}`, sourceNodeId: from, sourcePinId: fromPin, targetNodeId: to, targetPinId: toPin,
   }));
   return doc as unknown as Record<string, unknown>;
-}
-
-/** Class instance rows: `prefab-<suffix>` becomes `<actorId>-<suffix>` with `sourceId` kept. */
-function instanceComponents(actorId: string, templates: readonly SerializedComponent[]): SerializedComponent[] {
-  const idOf = (id: string) => `${actorId}-${id.replace(/^prefab-/, "")}`;
-  return templates.map((template) => ({
-    ...structuredClone(template),
-    id: idOf(template.id),
-    parentId: template.parentId ? idOf(template.parentId) : null,
-    sourceId: template.id,
-  }));
 }
 
 /** Array member getter (the shared helper reads scalars only). */

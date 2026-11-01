@@ -34,7 +34,7 @@ import {
 import type { FeatureTestHolidayModel } from "./engine-content-files";
 import { stressPoint } from "./layout";
 import { monitorMaterial } from "./rendering";
-import { TIMELINE_PAVILION, placeTimelineListener, placeTimelinePavilion } from "./timeline";
+import { TIMELINE_PAVILION, placeTimelineListener, placeTimelinePavilion, placeTimelineSwingDoors } from "./timeline";
 
 /**
  * `FT_World` scene: an island Landscape (painted layers, collision,
@@ -412,6 +412,9 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
   // The listener's Bind node names Door Loop's class, which carries this scene's guid.
   const listener = { x: pavilion.x - 2.5, z: pavilion.z - 1.5 };
   await placeTimelineListener(ctx, scene, guid, land(listener.x, ground(listener.x, listener.z), listener.z));
+  // Two FT_SwingDoors, turned differently: each swings from where it stands.
+  const swingDoors = [{ x: pavilion.x + 3.5, z: pavilion.z + 2, yaw: 0 }, { x: pavilion.x - 4.5, z: pavilion.z + 2, yaw: 150 }];
+  await placeTimelineSwingDoors(ctx, scene, swingDoors.map((door) => ({ position: land(door.x, ground(door.x, door.z), door.z), yaw: door.yaw })));
 }
 
 /** Basic 3D sky, shadowed sun and a camera framing the island and the Ocean. */

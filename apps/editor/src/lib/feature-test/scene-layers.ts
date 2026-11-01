@@ -23,6 +23,7 @@ import {
 import { classGraph, gChain, getVar, gNode, gWire, setVar, varMember, type GraphNode } from "./graph";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 import { ownedActorProbeScript } from "./scene-scripts";
+import { withFeatureTestHudPulse } from "./timeline";
 
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
 export const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
@@ -89,6 +90,8 @@ interface LayerRefs {
   panelTexture: string;
   icons: Record<"camera" | "audio" | "particles" | "point_light" | "spot_light" | "navmesh" | "default", string>;
   classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton" | "pitCounter" | "cameraRig", PlacedClass>;
+  /** FT_Timeline and its FT_HudPulse clip asset, which FT_HUD's script plays. */
+  timeline: { timeline: string; hudPulse: string };
 }
 
 /** A Class plus the prefab components its layer instances copy. */
@@ -140,6 +143,7 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
       pitCounter: await savePitCounter(ctx, base),
       cameraRig: await saveCameraRig(ctx),
     },
+    timeline: { timeline: requireRef(ctx.assets.timeline, "FT_Timeline"), hudPulse: requireRef(ctx.assets.hudPulse, "FT_HudPulse") },
   };
 
   const hud = await ctx.addSceneDocument({
@@ -220,7 +224,7 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   // Scene Layers keep Timeline Clips too; each FT_HUD instance plays its own Reveal.
   const reveal = createTimelineClip("ft-timeline-clip-hud-reveal", "Reveal");
   layer.timelineClips = [reveal];
-  layer.script = ownedActorProbeScript("FT_HUD", title, { clip: reveal });
+  layer.script = withFeatureTestHudPulse(ownedActorProbeScript("FT_HUD", title, { clip: reveal }), refs.timeline, "report", "get-component");
   return layer;
 }
 
@@ -786,7 +790,7 @@ function boxCollider(id: string, half: number): SerializedComponent {
 // ---------------------------------------------------------------------------
 // Classes
 
-type ClassBase = Omit<LayerRefs, "classes">;
+type ClassBase = Omit<LayerRefs, "classes" | "timeline">;
 
 /** Virtualized List row: Begin Play writes `Row <Item Index>` into its label. */
 async function saveListItem(ctx: FeatureTestContext, refs: ClassBase): Promise<PlacedClass> {

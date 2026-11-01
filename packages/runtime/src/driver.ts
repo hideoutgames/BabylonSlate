@@ -2,7 +2,7 @@ import type { SimulationSceneCaptureResult } from "./simulation-scene-capture";
 import type { SimulationSession } from "./simulation-session";
 import type { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
-import type { CurveAssetCatalogEntry, SaveGameService } from "@haptic/core";
+import type { CurveAssetCatalogEntry, SaveGameService, TimelineClipAssetCatalogEntry } from "@haptic/core";
 import type { SessionBoundaries, RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
@@ -311,6 +311,9 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     component: (actor, id) => findComponentById(actor, id),
     teleportActor: (actor) => this.scriptHost.teleportActor(actor),
     refreshComponent: (component, property) => this.propertyWrites.refreshComponent(component, property),
+    clipAsset: (guid) => this.timelineClipCatalog.get(guid),
+    register: (object) => this.objectLifetime.collector.register(object),
+    warn: (message) => this.reportLog(message, "warning", "Timeline"),
   });
   /** A Scene Layer copy's or the current Scene's clips, from its document. */
   private timelineClipsFor(owner: EngineObject): { documentGuid: string; clips: readonly SerializedTimelineClip[] } | undefined {
@@ -367,6 +370,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly dataCatalog: RuntimeDataCatalog;
   /** Curve assets of the current sources, by guid; absent means not loaded. */
   readonly curveCatalog = new Map<string, CurveAssetCatalogEntry>();
+  /** 2D and 3D Timeline Clip assets of the current sources, by guid, for Create. */
+  readonly timelineClipCatalog = new Map<string, TimelineClipAssetCatalogEntry>();
   readonly scriptHost: ScriptHost;
   readonly objectLifetime: RuntimeObjectLifetime;
   readonly scriptDebug: ScriptDebugObserver;
@@ -524,6 +529,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     // 7. Script data and the ScriptHost.
     this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
     for (const entry of options.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);
+    for (const entry of options.timelineClipAssets ?? []) this.timelineClipCatalog.set(entry.guid, entry);
     for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.scriptHost = createScriptHost(this, options, registry);
@@ -538,7 +544,10 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     });
     this.objectLifetime.collector.addRootSource((visit) => this.scriptHost.latentFrames.forEach(visit));
     this.objectLifetime.collector.addRootSource((visit) => this.behaviourTrees.forEachBlackboardValue(visit));
+    // A clip asset instance lives while it plays, even with no reference left.
+    this.objectLifetime.collector.addRootSource((visit) => this.timelines.forEachPlayingInstance(visit));
     this.objectLifetime.collector.onRelease((object) => {
+      this.timelines.forget(object);
       this.admission.drop(object);
       this.scriptHost.releaseObject(object);
     });
@@ -903,6 +912,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.dataCatalog.replace(content.dataAssets ?? []);
     this.curveCatalog.clear();
     for (const entry of content.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);
+    this.timelineClipCatalog.clear();
+    for (const entry of content.timelineClipAssets ?? []) this.timelineClipCatalog.set(entry.guid, entry);
   }
 
   registerWaterContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {

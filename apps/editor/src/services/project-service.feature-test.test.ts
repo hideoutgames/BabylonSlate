@@ -317,8 +317,8 @@ describe("FeatureTest starter", () => {
   // Each scene plays headlessly as in editor Play: its probes assert what they check, so a broken feature fails here.
   // Event handlers whose asserts would pass by never running also print a line, which must appear.
   const HEARD: Partial<Record<(typeof FEATURE_TEST_CHECK_SCENES)[number]["name"], string[]>> = {
-    main: ["Feature Test scene script heard On Intro Line (Intro) through FT_Timeline"],
-    FT_World: ["FT_TimelineListener heard On Door Open (Door Loop)"],
+    main: ["Feature Test scene script heard On Intro Line (Intro) through FT_Timeline", "FT_HUD script plays its own FT_HudPulse"],
+    FT_World: ["FT_TimelineListener heard On Door Open (Door Loop)", "FT_SwingDoor heard On Swing Open (FT_DoorSwing)"],
   };
   for (const scene of FEATURE_TEST_CHECK_SCENES) {
     it(`plays ${scene.name} without session errors or failed asserts`, async () => {

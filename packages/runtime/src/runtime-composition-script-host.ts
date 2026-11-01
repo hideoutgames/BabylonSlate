@@ -151,6 +151,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     timelineClipControl: (clip, action, args) => timelineClipControl(rt.timelines, clip, action, args),
     timeline: (asset) => rt.timelines.timeline(asset),
     timelineClips: (timeline, only) => rt.timelines.timelineClips(timeline, timelineOwners(rt), only),
+    createTimelineClip: (timeline, assetGuid, inputs) => rt.timelines.createInstance(timeline, assetGuid, inputs),
     ...createAudioHostBindings({ frameId, scriptVoiceId: () => rt.voices.scriptVoiceId(), emit }),
     ...createNavigationHostBindings({ navigation: () => rt.navigation }),
     ...createSceneStreamHostBindings({ streams: rt.streams, world: () => rt.world }),

@@ -241,6 +241,8 @@ export interface ScriptHostServices {
   timeline?(asset: unknown): TimelineObject | null;
   /** The Timeline's loaded scene clips, main Scene first; `only` picks one document's clip. */
   timelineClips?(timeline: TimelineObject, only?: { documentGuid: string; clipId: string }): TimelineClipObject[];
+  /** A new instance of a clip asset on its Timeline (`Create <Name> Timeline Clip`). */
+  createTimelineClip?(timeline: TimelineObject, assetGuid: string, inputs: Record<string, unknown>): TimelineClipObject | null;
   getCurrentSceneLayerActor?(target: unknown): Actor | null;
   setFocusTarget?(target: unknown): boolean;
   clearFocusTarget?(target: unknown): void;

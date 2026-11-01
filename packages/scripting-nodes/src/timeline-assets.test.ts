@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { arrayOf, assetRef, compileGraph, objectRef, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { EXEC, arrayOf, assetRef, compileGraph, objectRef, validateGraphs, type GraphNode, type LogicGraph } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 import {
+  TIMELINE_CREATE_CLIP_NODE_ID,
   TIMELINE_FROM_ASSET_NODE_ID,
   TIMELINE_GET_CLIP_NODE_ID,
   TIMELINE_LOADED_CLIPS_NODE_ID,
   timelineClipNodeTitle,
+  timelineCreateClipNodeTitle,
 } from "./timeline-assets";
 
 const registry = createDefaultNodeRegistry();
@@ -67,5 +69,60 @@ describe("Timeline Asset nodes", () => {
     // The Target is null-checked first, like any subject.
     expect(source).toMatch(/ctx\.getTimelineClip\(\w+, "level", "intro"\)/);
     expect(source).toContain("ctx.getLoadedTimelineClips(");
+  });
+
+  const swing = {
+    timelineAssetGuid: "fx", timelineClipDocument: "swing", timelineClipId: "clip", timelineClipName: "Door Swing", timelineClipClassId: "TimelineClip:swing:clip",
+    timelineClipProxies: [
+      { id: "door", name: "Door", represents: "actor", classId: "Door" },
+      { id: "glow", name: "Glow", represents: "component", classId: "LightComponent" },
+    ],
+  };
+
+  it("give Create <Name> Timeline Clip an input per proxy, typed to its Class, and the clip asset's class", () => {
+    expect(registry.get(TIMELINE_CREATE_CLIP_NODE_ID)!.pins(swing).map((entry) => [entry.id, entry.name, entry.type])).toEqual([
+      ["execIn", "exec", EXEC],
+      ["execOut", "then", EXEC],
+      ["target", "Target", objectRef("Timeline:fx")],
+      ["proxy:door", "Door", objectRef("Door")],
+      ["proxy:glow", "Glow", objectRef("LightComponent")],
+      ["clip", "Timeline Clip", objectRef("TimelineClip:swing:clip")],
+    ]);
+    expect(timelineCreateClipNodeTitle(swing)).toBe("Create Door Swing Timeline Clip");
+    expect(timelineCreateClipNodeTitle({})).toBe("Create Timeline Clip");
+  });
+
+  it("leave Create's proxy inputs optional: an unconnected proxy stays unbound", () => {
+    const graph: LogicGraph = {
+      id: "event-graph", kind: "event",
+      nodes: [node("begin", "flow.event.beginPlay"), node("create", TIMELINE_CREATE_CLIP_NODE_ID, swing)],
+      edges: [{ id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "create", targetPinId: "execIn" }],
+    };
+    // Only the Target is required.
+    expect(validateGraphs([graph], { assetGuid: "a" }, { registry }).filter((entry) => entry.code === "pin.missing_input").map((entry) => entry.pinId))
+      .toEqual(["target"]);
+  });
+
+  it("compile Create to the host member, with unconnected proxies left unbound", () => {
+    const graph: LogicGraph = {
+      id: "event-graph", kind: "event",
+      nodes: [
+        node("begin", "flow.event.beginPlay"),
+        node("timeline", TIMELINE_FROM_ASSET_NODE_ID, { "default:timelineAsset": "fx" }),
+        node("self", "actor.getSelf"),
+        node("create", TIMELINE_CREATE_CLIP_NODE_ID, swing),
+        node("play", "timelineClip.play"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "create", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "create", sourcePinId: "execOut", targetNodeId: "play", targetPinId: "execIn" },
+        { id: "w1", sourceNodeId: "timeline", sourcePinId: "timeline", targetNodeId: "create", targetPinId: "target" },
+        { id: "w2", sourceNodeId: "self", sourcePinId: "out", targetNodeId: "create", targetPinId: "proxy:door" },
+        { id: "w3", sourceNodeId: "create", sourcePinId: "clip", targetNodeId: "play", targetPinId: "target" },
+      ],
+    };
+    const { source } = compileGraph(graph, { assetGuid: "class:door", registry });
+    expect(source).toMatch(/= ctx\.createTimelineClip\(\w+, "swing", \{ "door": [^,]+, "glow": null \}\);/);
+    expect(source).toContain("ctx.timelineClipControl(");
   });
 });

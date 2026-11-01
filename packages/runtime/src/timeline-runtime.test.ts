@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTimelineClip, type SerializedTimelineClip, type TimelineKey } from "@haptic/core";
-import { ClassRegistry, EngineObject, TimelineObject, World, type Actor } from "@haptic/object-model";
+import {
+  createDefaultTimelineClipAsset,
+  createTimelineClip,
+  quatRotateVector,
+  rotatorToQuat,
+  timelineClipAssetCatalogEntry,
+  type SerializedTimelineClip,
+  type TimelineClipAssetCatalogEntry,
+  type TimelineKey,
+} from "@haptic/core";
+import { ClassRegistry, EngineObject, ObjectCollector, TimelineClipInstance, TimelineObject, World, type Actor } from "@haptic/object-model";
 import { TimelineRuntime, timelineClipControl, timelineClipState } from "./timeline-runtime";
 
 const key = (id: string, Time: number, Value: unknown): TimelineKey => ({ id, Time, Value, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 });
@@ -38,6 +47,9 @@ function setup(clipOverrides: Partial<SerializedTimelineClip> = {}) {
     component: (actor: Actor, id) => actor.components.find((entry) => entry.guid === id) ?? null,
     teleportActor,
     refreshComponent,
+    clipAsset: () => undefined,
+    register: vi.fn(),
+    warn: vi.fn(),
   });
   const clip: SerializedTimelineClip = {
     ...createTimelineClip("intro", "Intro"),
@@ -233,5 +245,173 @@ describe("TimelineRuntime", () => {
     timelineClipControl(runtime, clip, "setPosition", { time: 2, fireEvents: true });
     timelineClipControl(runtime, clip, "setPosition", { time: 0, fireEvents: true });
     expect(fired.map(([name]) => name)).toEqual(["Beat", "Beat", "Beat"]);
+  });
+});
+
+/** A 3D clip asset, Door Swing, bound to the Timeline Asset `story`: a Door actor proxy and a Glow light proxy. */
+function instanceSetup() {
+  const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+  const quarterTurn = rotatorToQuat({ pitch: 0, yaw: 90, roll: 0 });
+  const makeDoor = (guid: string, x: number) => {
+    const actor = world.createActor({ classId: "Actor", guid, variables: { visible: true } });
+    actor.transform.position = { x, y: 0, z: 0 };
+    actor.transform.rotation = { ...quarterTurn };
+    world.spawnActorNow(actor);
+    return actor;
+  };
+  const front = makeDoor("front", 10);
+  const back = makeDoor("back", -10);
+  const lamp = world.createComponent({ classId: "LightComponent", guid: "lamp", variables: { intensity: 1 } });
+  front.attachComponent(lamp);
+  const payload = {
+    ...createDefaultTimelineClipAsset("story"),
+    length: 2,
+    proxies: [
+      { id: "door", name: "Door", represents: "actor" as const, classId: "Actor", tracks: [
+        { id: "loc", target: { kind: "transform" as const, property: "location" }, valueType: "vec3" as const,
+          keys: [key("a", 0, { x: 0, y: 0, z: 0 }), key("b", 2, { x: 2, y: 0, z: 0 })] },
+      ] },
+      { id: "glow", name: "Glow", represents: "component" as const, classId: "LightComponent", tracks: [
+        { id: "int", target: { kind: "component" as const, componentId: "glow", property: "intensity" }, valueType: "float" as const,
+          keys: [key("i0", 0, 0), key("i1", 2, 10)] },
+      ] },
+    ],
+    eventTracks: [{ id: "e", name: "On Open", inputs: [], keys: [{ id: "k", time: 0.5, values: {} }] }],
+    editorPreview: { proxies: {} },
+  };
+  const catalog = new Map<string, TimelineClipAssetCatalogEntry>([
+    ["swing", timelineClipAssetCatalogEntry("swing", "TimelineClip3D", "Door Swing", payload)],
+    ["other", timelineClipAssetCatalogEntry("other", "TimelineClip3D", "Other", { ...payload, timelineAsset: "elsewhere" })],
+  ]);
+  const collector = new ObjectCollector();
+  const firedOn: Array<[EngineObject, string]> = [];
+  const warn = vi.fn();
+  const refreshComponent = vi.fn();
+  const release = vi.fn();
+  const ensureClipClass = vi.fn();
+  const runtime = new TimelineRuntime({
+    clipsFor: () => undefined,
+    ensureClipClass,
+    ensureTimelineClass: vi.fn(),
+    fireDispatcher: (target, name) => firedOn.push([target, name]),
+    release,
+    ownedActor: () => null,
+    findActor: (guid) => world.findActor(guid),
+    component: (actor: Actor, id) => actor.components.find((entry) => entry.guid === id) ?? null,
+    teleportActor: vi.fn(),
+    refreshComponent,
+    clipAsset: (guid) => catalog.get(guid),
+    register: (object) => collector.register(object),
+    warn,
+  });
+  const timeline = runtime.timeline("story")!;
+  return { world, runtime, timeline, front, back, lamp, quarterTurn, collector, firedOn, warn, refreshComponent, release, ensureClipClass };
+}
+
+const near = (actual: { x: number; y: number; z: number }, expected: { x: number; y: number; z: number }) => {
+  expect(actual.x).toBeCloseTo(expected.x);
+  expect(actual.y).toBeCloseTo(expected.y);
+  expect(actual.z).toBeCloseTo(expected.z);
+};
+
+describe("Timeline Clip asset instances", () => {
+  it("creates an instance of the clip asset's class on its Timeline, binding connected proxies Relative", () => {
+    const { runtime, timeline, front, lamp, quarterTurn, refreshComponent, ensureClipClass } = instanceSetup();
+    const swing = runtime.createInstance(timeline, "swing", { door: front, glow: lamp })!;
+    expect(swing).toBeInstanceOf(TimelineClipInstance);
+    expect(swing.classId).toBe("TimelineClip:swing:clip");
+    expect(ensureClipClass).toHaveBeenCalledWith("TimelineClip:swing:clip");
+    expect(swing.owner).toBe(timeline);
+    expect(swing.clip).toMatchObject({ name: "Door Swing", timelineAsset: "story", autoPlay: false });
+    runtime.play(swing);
+    runtime.advance(1, [], () => true);
+    // The offset (1, 0, 0) turns with the door, from where it stood when bound.
+    const offset = quatRotateVector(quarterTurn, { x: 1, y: 0, z: 0 });
+    near(front.transform.position, { x: 10 + offset.x, y: offset.y, z: offset.z });
+    expect(lamp.getVariable("intensity")).toBe(5);
+    expect(refreshComponent).toHaveBeenCalledWith(lamp, "intensity");
+  });
+
+  it("gives each instance its own playhead and bindings", () => {
+    const { runtime, timeline, front, back } = instanceSetup();
+    const first = runtime.createInstance(timeline, "swing", { door: front })!;
+    const second = runtime.createInstance(timeline, "swing", { door: back })!;
+    expect(first.guid).not.toBe(second.guid);
+    runtime.play(first);
+    runtime.advance(2, [], () => true);
+    runtime.play(second);
+    runtime.advance(1, [], () => true);
+    expect(first.playback).toMatchObject({ time: 2, playing: false });
+    expect(second.playback.time).toBe(1);
+    expect(front.transform.position.x).toBeCloseTo(10);
+    expect(back.transform.position.x).toBeCloseTo(-10);
+    expect(front.transform.position.z).not.toBeCloseTo(back.transform.position.z);
+  });
+
+  it("sets an Absolute binding's transform in world space", () => {
+    const { runtime, timeline, back } = instanceSetup();
+    const swing = runtime.createInstance(timeline, "swing")!;
+    expect(runtime.bind(swing, "door", back, true)).toBe(true);
+    runtime.setPosition(swing, 1);
+    near(back.transform.position, { x: 1, y: 0, z: 0 });
+  });
+
+  it("skips an unbound proxy's tracks and warns once, and refuses an object of the wrong kind", () => {
+    const { runtime, timeline, front, lamp, warn } = instanceSetup();
+    const swing = runtime.createInstance(timeline, "swing", { door: lamp, glow: front })!;
+    expect(swing.bindings.size).toBe(0);
+    runtime.play(swing);
+    runtime.advance(0.5, [], () => true);
+    runtime.advance(0.5, [], () => true);
+    expect(lamp.getVariable("intensity")).toBe(1);
+    expect(warn.mock.calls.map((call) => call[0])).toEqual([
+      "Door Swing: the Door proxy is not bound.",
+      "Door Swing: the Glow proxy is not bound.",
+    ]);
+  });
+
+  it("unbinds a bound object that was destroyed", () => {
+    const { runtime, timeline, front } = instanceSetup();
+    const swing = runtime.createInstance(timeline, "swing", { door: front })!;
+    front.destroyed = true;
+    runtime.setPosition(swing, 1);
+    expect(swing.bindings.has("door")).toBe(false);
+  });
+
+  it("makes nothing for a clip asset the game does not have or that belongs to another Timeline Asset", () => {
+    const { runtime, timeline } = instanceSetup();
+    expect(runtime.createInstance(timeline, "missing")).toBeNull();
+    expect(runtime.createInstance(timeline, "other")).toBeNull();
+  });
+
+  it("re-fires an instance's events on its Timeline under the clip asset's name", () => {
+    const { runtime, timeline, firedOn } = instanceSetup();
+    const swing = runtime.createInstance(timeline, "swing")!;
+    runtime.play(swing);
+    runtime.advance(1, [], () => true);
+    expect(firedOn).toEqual([[swing, "On_Open"], [timeline, "On_Open__Door_Swing_"]]);
+  });
+
+  it("lives while a reference reaches it or while it plays, and is collected otherwise", () => {
+    const { runtime, timeline, collector, release } = instanceSetup();
+    collector.addRootSource((visit) => runtime.forEachPlayingInstance(visit));
+    collector.onRelease((object) => runtime.forget(object));
+    const playing = runtime.createInstance(timeline, "swing")!;
+    const idle = runtime.createInstance(timeline, "swing")!;
+    const held = runtime.createInstance(timeline, "swing")!;
+    runtime.play(playing);
+    const holder = new EngineObject({ classId: "Object", guid: "holder", variables: { clip: held } });
+    collector.collect([holder]);
+    expect(idle.destroyed).toBe(true);
+    expect(playing.destroyed).toBe(false);
+    expect(held.destroyed).toBe(false);
+    expect(runtime.liveInstances()).toEqual([playing, held]);
+    // Once it finishes, nothing keeps it.
+    runtime.advance(5, [], () => true);
+    collector.collect([holder]);
+    expect(playing.destroyed).toBe(true);
+    runtime.reset();
+    expect(held.destroyed).toBe(true);
+    expect(release).toHaveBeenCalledWith(held);
   });
 });

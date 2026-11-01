@@ -111,6 +111,10 @@ describe("Timeline Asset scripting", () => {
       id: "intro", name: "Intro", classId: "TimelineClip:level:intro", documentGuid: "level", documentName: "Main",
       dispatchers: [{ name: "On Line", pins: [{ name: "Text", typeId: "string", direction: "in" }] }],
     }],
+    clipAssets: [{
+      id: "clip", name: "Door Swing", classId: "TimelineClip:swing:clip", documentGuid: "swing", documentName: "Door Swing",
+      dispatchers: [], proxies: [{ id: "door", name: "Door", represents: "actor", classId: "Door" }],
+    }],
   };
   const parentOf = (id: string) => (id.startsWith("TimelineClip:") ? "TimelineClip" : id.startsWith("Timeline:") ? "Timeline"
     : id === "TimelineClip" || id === "Timeline" || id === "Actor" ? "Object" : id === "Door" ? "Actor" : null);
@@ -135,6 +139,13 @@ describe("Timeline Asset scripting", () => {
     expect(titles("TimelineClip")).toContain("Bind Event to On Finished");
     expect(nodes.some((node) => node.title.startsWith("Call On"))).toBe(false);
     expect(nodes.find((node) => node.id === "casting.cast:Timeline:story")?.title).toBe("Cast to Story");
+    // A clip asset has a Create row on its Timeline, with an input per proxy typed to its Class.
+    const create = nodes.find((node) => node.id === "timeline.createClip:story:swing")!;
+    expect(create.title).toBe("Create Door Swing Timeline Clip");
+    expect(create.pins?.map((pin) => [pin.name, pin.type])).toEqual([
+      ["exec", { kind: "exec" }], ["then", { kind: "exec" }], ["Target", objectRef("Timeline:story")], ["Door", objectRef("Door")], ["Timeline Clip", objectRef("TimelineClip:swing:clip")],
+    ]);
+    expect(nodes.some((node) => node.id === "timeline.createClip")).toBe(false);
     // Without Timeline Assets a Class reaches no Timeline Clip.
     expect(scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Door", parentOf })
       .some((node) => node.title === "Bind Event to On Finished")).toBe(false);

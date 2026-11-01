@@ -129,10 +129,13 @@ export { CurveObject } from "./curve-object";
 export {
   TIMELINE_CLIP_BUILT_IN_DISPATCHERS,
   TIMELINE_CLIP_CLASS_ID,
+  TimelineClipInstance,
   TimelineClipObject,
   documentClassParentOf,
   isTimelineClipClassId,
   timelineClipClassId,
+  timelineProxyAccepts,
+  type TimelineProxyBinding,
 } from "./timeline-clip-object";
 export {
   TIMELINE_CLASS_ID,

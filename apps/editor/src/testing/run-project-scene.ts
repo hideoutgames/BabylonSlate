@@ -91,6 +91,7 @@ export async function runProjectScene(options: {
       inputAssets: await playContent.collectPlayInputAssets(prepared.required),
       dataAssets: content.dataAssets,
       curveAssets: content.curveAssets,
+      timelineClipAssets: content.timelineClipAssets,
       assetCatalog: playAssetCatalog({ registry, settings: document.settings, sceneGuid }),
       collisionPresets: document.settings.physics.collisionPresets,
       pixelsPerUnit: document.settings.twoD.pixelsPerUnit ?? 100,

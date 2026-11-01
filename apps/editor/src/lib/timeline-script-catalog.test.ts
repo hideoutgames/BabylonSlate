@@ -19,18 +19,33 @@ const clip = (documentGuid: string, id: string, name: string, timelineAsset?: st
   documentGuid,
 });
 
+const swing: ProjectTimelineClip = {
+  clip: {
+    id: "clip", name: "Door Swing", length: 2, timelineAsset: "story",
+    events: [{ name: "On Open", inputs: [] }],
+    proxies: [{ id: "door", name: "Door", represents: "actor", classId: "Door" }, { id: "glow", name: "Glow", represents: "component", classId: "LightComponent" }],
+  },
+  documentPath: "/swing.timelineclip3d.hasset",
+  documentKind: "timeline-clip-3d",
+  documentName: "Door Swing",
+  documentGuid: "swing",
+};
+
 const assets = timelineScriptAssets(
   [asset("story", "Story"), asset("empty", "Empty"), { header: { type: "Scene", guid: "level", name: "Main" } }],
-  [clip("level", "intro", "Intro", "story"), clip("hud", "reveal", "Reveal", "story"), clip("level", "free", "Free")],
+  [clip("level", "intro", "Intro", "story"), clip("hud", "reveal", "Reveal", "story"), clip("level", "free", "Free"), swing],
 );
 
 describe("timelineScriptAssets", () => {
-  it("lists every Timeline Asset with the scene clips bound to it", () => {
-    expect(assets.map((entry) => [entry.classId, entry.clips.map((entry) => entry.classId)])).toEqual([
-      ["Timeline:story", ["TimelineClip:level:intro", "TimelineClip:hud:reveal"]],
-      ["Timeline:empty", []],
+  it("lists every Timeline Asset with the scene clips and clip assets bound to it", () => {
+    expect(assets.map((entry) => [entry.classId, entry.clips.map((entry) => entry.classId), entry.clipAssets.map((entry) => entry.classId)])).toEqual([
+      ["Timeline:story", ["TimelineClip:level:intro", "TimelineClip:hud:reveal"], ["TimelineClip:swing:clip"]],
+      ["Timeline:empty", [], []],
     ]);
-    expect(timelineScriptClassIds(assets)).toEqual(["Timeline:story", "TimelineClip:level:intro", "TimelineClip:hud:reveal", "Timeline:empty"]);
+    expect(assets[0]!.clipAssets[0]!.proxies.map((proxy) => proxy.name)).toEqual(["Door", "Glow"]);
+    expect(timelineScriptClassIds(assets)).toEqual([
+      "Timeline:story", "TimelineClip:level:intro", "TimelineClip:hud:reveal", "TimelineClip:swing:clip", "Timeline:empty",
+    ]);
   });
 
   it("re-fires each clip's events and On Finished and On Looped, with the clip as the last input", () => {
@@ -40,11 +55,15 @@ describe("timelineScriptAssets", () => {
       ["On Looped (Intro)", ["Timeline Clip"]],
       ["On Finished (Reveal)", ["Timeline Clip"]],
       ["On Looped (Reveal)", ["Timeline Clip"]],
+      ["On Open (Door Swing)", ["Timeline Clip"]],
+      ["On Finished (Door Swing)", ["Timeline Clip"]],
+      ["On Looped (Door Swing)", ["Timeline Clip"]],
     ]);
     const symbols = timelineScriptSymbols(assets);
     expect(symbols.find((entry) => entry.name === "On Line (Intro)")).toMatchObject({ kind: "dispatcher", classId: "Timeline:story" });
     // The clip's own Custom Event Track is a dispatcher of its class too.
     expect(symbols.find((entry) => entry.name === "On Line")).toMatchObject({ kind: "dispatcher", classId: "TimelineClip:level:intro" });
+    expect(symbols.find((entry) => entry.name === "On Open")).toMatchObject({ kind: "dispatcher", classId: "TimelineClip:swing:clip" });
   });
 });
 
@@ -71,6 +90,25 @@ describe("Timeline graph nodes", () => {
     })]);
   });
 
+  it("gives a Create node the clip asset's current name and an input per current proxy, and reports one that left", () => {
+    const stale = {
+      timelineAssetGuid: "story", timelineClipDocument: "swing", timelineClipId: "clip", timelineClipName: "Swing",
+      timelineClipProxies: [{ id: "door", name: "Door", represents: "actor", classId: "Door" }],
+    };
+    const create = (data: Record<string, unknown>): SerializedGraph => ({ nodes: [{ id: "create", type: "timeline.createClip", position: { x: 0, y: 0 }, data }], edges: [] });
+    const refreshed = refreshTimelineClipNodes(create(stale), assets);
+    expect(refreshed.nodes[0]!.data).toMatchObject({
+      title: "Create Door Swing Timeline Clip", timelineClipClassId: "TimelineClip:swing:clip",
+      timelineClipProxies: [expect.objectContaining({ id: "door" }), expect.objectContaining({ id: "glow", represents: "component" })],
+    });
+    // Already current: nothing changes.
+    expect(refreshTimelineClipNodes(refreshed, assets)).toBe(refreshed);
+    expect(timelineGraphDiagnostics(create(stale), assets, anchor)).toEqual([]);
+    expect(timelineGraphDiagnostics(create({ ...stale, timelineClipDocument: "gone" }), assets, anchor)).toEqual([expect.objectContaining({
+      code: "timeline.clip_not_in_asset", nodeId: "create", message: "Create Swing Timeline Clip: the Timeline Clip is no longer in Story.",
+    })]);
+  });
+
   it("warns where a node or a variable's default names a Timeline Asset with no clips", () => {
     const named = (guid: string): SerializedGraph => ({
       nodes: [{ id: "from", type: "timeline.fromAsset", position: { x: 0, y: 0 }, data: { "default:timelineAsset": guid } }],
@@ -78,7 +116,7 @@ describe("Timeline graph nodes", () => {
       members: [{ id: "v", kind: "variable", name: "Cutscene", typeId: "asset", typeClassId: "Timeline", defaultValue: guid }],
     });
     expect(timelineGraphDiagnostics(named("empty"), assets, anchor).map((entry) => [entry.severity, entry.code, entry.nodeId, entry.message])).toEqual([
-      ["warning", "timeline.asset_empty", "from", "Empty holds no Timeline Clips yet. Bind a clip to it in a Scene's or Scene Layer's Clips window."],
+      ["warning", "timeline.asset_empty", "from", "Empty holds no Timeline Clips yet. Bind a clip to it in a Scene's or Scene Layer's Clips window, or create a 2D or 3D Timeline Clip asset for it."],
       ["warning", "timeline.asset_empty", undefined, "Cutscene: Empty holds no Timeline Clips yet."],
     ]);
     expect(timelineGraphDiagnostics(named("story"), assets, anchor)).toEqual([]);
