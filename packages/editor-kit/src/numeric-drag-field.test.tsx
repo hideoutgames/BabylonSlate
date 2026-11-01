@@ -120,7 +120,7 @@ describe("NumericDragField", () => {
     dispatchPointerEvent(scrub, "pointerup", { clientX: 9 });
 
     expect(onDragEnd).toHaveBeenCalledTimes(1);
-    expect(onDragEnd).toHaveBeenCalledWith(9);
+    expect(onDragEnd).toHaveBeenCalledWith(9, "drag");
   });
 
   it("restores the starting value when the platform cancels a scrub", () => {
@@ -142,7 +142,7 @@ describe("NumericDragField", () => {
     dispatchPointerEvent(scrub, "pointercancel", { clientX: 5 });
 
     expect(onChange).toHaveBeenLastCalledWith(2);
-    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(2);
+    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(2, "drag");
   });
 
   it("scrubs only with the primary button and pointer", () => {
@@ -264,7 +264,7 @@ describe("NumericDragField", () => {
     fireEvent.blur(input);
 
     expect(input.value).toBe("12");
-    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(12);
+    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(12, "typed");
   });
 
   it("keeps out-of-range text as a draft and explains clamping on blur", () => {
@@ -339,13 +339,13 @@ describe("NumericDragField", () => {
 
     fireEvent.keyDown(input, { key: "Enter" });
     expect(input.value).toBe("15");
-    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(15);
+    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(15, "typed");
 
     input.focus();
     fireEvent.change(input, { target: { value: "/3" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(input.value).toBe("5");
-    expect(onDragEnd).toHaveBeenLastCalledWith(5);
+    expect(onDragEnd).toHaveBeenLastCalledWith(5, "typed");
   });
 
   it("restores the last value with feedback when Enter finishes an invalid expression", () => {

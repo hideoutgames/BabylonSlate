@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, objectRef, pin, type PinType } from "@haptic/scripting";
+import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, mergeEngineTypeSchemas, objectRef, pin, type PinType } from "@haptic/scripting";
 import {
   collectEnumMemberNames,
   commandParameterRows,
@@ -34,6 +34,38 @@ describe("Value units", () => {
     const schemas = { structs: { size: { fields: [{ name: "Width", typeId: "float", unit: "px" }, { name: "Label", typeId: "string" }] } }, enums: {} };
     const rows = variableDefaultPropertyRows("struct", undefined, vi.fn(), { typeClassId: "size", schemas } as never);
     expect(rows.map((row) => [row.label, "unit" in row ? row.unit : undefined])).toEqual([["Width", "px"], ["Label", undefined]]);
+  });
+});
+
+describe("Range Structure rows", () => {
+  const schemas = mergeEngineTypeSchemas({ structs: {
+    tuning: { name: "Tuning", fields: [{ name: "SpawnCount", typeId: "struct", typeClassId: "engine:IntRange" }, { name: "Label", typeId: "string" }] },
+  } });
+
+  it("edits a range variable as one Min – Max row and reads crossing ends as swapped", () => {
+    const onChange = vi.fn();
+    const [row, ...rest] = variableDefaultPropertyRows("struct", { Min: 5, Max: 2 }, onChange, { typeClassId: "engine:FloatRange", schemas, unit: "m/s" });
+    expect(rest).toEqual([]);
+    expect(row).toMatchObject({ kind: "value-range", rangeKind: "float", value: { Min: 2, Max: 5 }, defaultValue: { Min: 0, Max: 1 }, unit: "m/s" });
+    if (row?.kind !== "value-range") throw new Error("expected a range row");
+    row.onChange({ Min: 1, Max: 3 });
+    expect(onChange).toHaveBeenCalledWith({ Min: 1, Max: 3 });
+  });
+
+  it("gives a range field of a Structure its own row and writes it back into the Structure", () => {
+    const onChange = vi.fn();
+    const rows = variableDefaultPropertyRows("struct", { SpawnCount: { Min: 2, Max: 5 }, Label: "Goblin" }, onChange, { typeClassId: "tuning", schemas });
+    expect(rows.map((row) => [row.label, row.kind])).toEqual([["SpawnCount", "value-range"], ["Label", "text"]]);
+    const range = rows[0]!;
+    if (range.kind !== "value-range") throw new Error("expected a range row");
+    range.onChange({ Min: 3, Max: 6 });
+    expect(onChange).toHaveBeenCalledWith({ SpawnCount: { Min: 3, Max: 6 }, Label: "Goblin" });
+  });
+
+  it("shows an unwired range pin as a range row", () => {
+    const onPatch = vi.fn();
+    const [row] = pinDefaultPropertyRows([{ pinId: "range", name: "Range", type: { kind: "structRef", guid: "engine:VectorRange" }, value: undefined }], onPatch, { schemas });
+    expect(row).toMatchObject({ kind: "value-range", rangeKind: "vec3", value: { Min: { x: 0, y: 0, z: 0 }, Max: { x: 0, y: 0, z: 0 } } });
   });
 });
 

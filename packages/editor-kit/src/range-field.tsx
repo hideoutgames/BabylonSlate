@@ -156,7 +156,7 @@ export function RangeField({
             disabled={disabled}
             onChange={(next) => change(axis, end, next)}
             onDragEnd={(next, source) => commit(axis, end, next, source)}
-            data-testid={testId ? `${testId}-${axes[axis]?.key ?? "value"}-${end}` : undefined}
+            data-testid={testId ? `${testId}-${axes[axis] ? `${axes[axis].key}-` : ""}${end}` : undefined}
           />
         );
         return index === 0 ? field : [<span key="dash" aria-hidden="true" className="text-xs text-muted-foreground">{"–"}</span>, field];
