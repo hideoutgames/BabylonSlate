@@ -220,6 +220,13 @@ describe("project schema", () => {
     });
   });
 
+  it("defaults the Garbage Collection Interval to 60 ticks and keeps a whole number of at least one", () => {
+    expect(normalizeProjectSettings(undefined).garbageCollectionIntervalTicks).toBe(60);
+    for (const [value, expected] of [[120, 120], [2.6, 3], [1, 1], [0, 60], [-4, 60], ["30", 60], [Number.NaN, 60]] as const) {
+      expect(normalizeProjectSettings({ garbageCollectionIntervalTicks: value as number }).garbageCollectionIntervalTicks).toBe(expected);
+    }
+  });
+
   it("defaults infinite loop detection on with a one-million loopCount", () => {
     const defaults = normalizeProjectSettings(undefined);
     expect(defaults.infiniteLoopDetection).toBe(true);

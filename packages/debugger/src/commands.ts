@@ -50,6 +50,8 @@ export const DEBUG_COMMAND_NAMES = [
   "unpause",
   "step",
   "slomo",
+  "gc",
+  "gc stats",
   "dumplog",
   "snapshot start",
   "snapshot stop",
@@ -356,6 +358,29 @@ export function builtinCommands(): RegisteredCommand[] {
         }
         host.setTimeDilation?.(rate);
         return ok(`slomo ${host.getTimeDilation?.() ?? rate}`);
+      },
+    },
+    {
+      name: "gc",
+      tier: "debug",
+      category: "engine",
+      description: "Collect unreferenced Create Object objects at the end of this tick",
+      parameters: [],
+      run(_args, host) {
+        if (!host.collectGarbage) return fail("gc is not available in this session");
+        host.collectGarbage();
+        return ok("gc requested for the end of this tick");
+      },
+    },
+    {
+      name: "gc stats",
+      tier: "debug",
+      category: "engine",
+      description: "Print the collectable object count and the last collection pass",
+      parameters: [],
+      run(_args, host) {
+        if (!host.garbageStats) return fail("gc is not available in this session");
+        return ok(host.garbageStats());
       },
     },
     {

@@ -128,6 +128,22 @@ describe("ObjectCollector", () => {
   });
 });
 
+describe("ObjectCollector cost", () => {
+  it("marks each reachable object once, however many references reach it", () => {
+    const gc = collector({ Node: ["Index"] });
+    const nodes = Array.from({ length: 2000 }, (_, index) => object({ Index: index }, "Node"));
+    for (const node of nodes) gc.register(node);
+    // A chain, every node also listed in one array, and a cycle back to the start.
+    nodes.forEach((node, index) => node.setVariable("Next", nodes[(index + 1) % nodes.length]));
+    const root = object({ All: [...nodes], First: nodes[0], Twice: [nodes[0], nodes[0]] });
+
+    const result = gc.collect([root, root]);
+
+    expect(result).toEqual({ marked: nodes.length + 1, collected: 0, cleared: 0 });
+    expect(gc.collect([root]).marked).toBe(nodes.length + 1);
+  });
+});
+
 describe("canHoldReference", () => {
   it.each([
     [{ type: "object" }, true],

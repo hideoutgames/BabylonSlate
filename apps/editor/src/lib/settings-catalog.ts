@@ -9,7 +9,7 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
     id: "general",
     label: "General",
     keywords:
-      "project version build compile autosave editor utility objects infinite loop detection loop count",
+      "project version build compile autosave editor utility objects infinite loop detection loop count garbage collection interval",
   },
   {
     id: "game",

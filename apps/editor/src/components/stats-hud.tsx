@@ -24,6 +24,8 @@ export type StatsHudProps = {
   liveActors?: number;
   snapshotCapacity?: number;
   ticks?: number;
+  collectableObjects?: number;
+  garbageCollectionMs?: number;
   /** Optional rows enabled with `stat <group>`, in display order. */
   groups?: readonly StatGroup[];
   /** False while a parent keeps the HUD mounted but hidden; the `stat unit` graph stops sampling. */
@@ -98,6 +100,8 @@ export function StatsHud({
   liveActors,
   snapshotCapacity,
   ticks,
+  collectableObjects,
+  garbageCollectionMs,
   groups = [],
   visible = true,
 }: StatsHudProps) {
@@ -141,6 +145,8 @@ export function StatsHud({
     liveActors,
     snapshotCapacity,
     ticks,
+    collectableObjects,
+    garbageCollectionMs,
   }, groups);
 
   return (

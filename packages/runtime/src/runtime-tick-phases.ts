@@ -17,8 +17,9 @@ import type { RuntimeComposition } from "./runtime-composition";
  * 3. Scene systems (timed): tween cleanup, Delays, animation graphs, tile
  *    animation time, behaviour trees and the crowd. The tick also ends here
  *    when one of them stopped the session.
- * 4. Component commands changed during the tick: painters, text reveal, deformers.
- * 5. Publish: advance the frame id, then the pose snapshot and debug views;
+ * 4. Garbage collection (timed): `RuntimeObjectLifetime.afterTick`, when a pass is due.
+ * 5. Component commands changed during the tick: painters, text reveal, deformers.
+ * 6. Publish: advance the frame id, then the pose snapshot and debug views;
  *    `TickPipeline` records stats and the trace frame last.
  */
 export function runTick(rt: RuntimeComposition): void {
@@ -37,11 +38,12 @@ export function runTick(rt: RuntimeComposition): void {
   if (rt.stopped) return;
   tickSceneSystems(rt, simDt);
   if (rt.stopped) return;
+  // Every script of the tick has returned; waiting latent frames registered their locals.
+  rt.ticks.markPhase("garbageCollection");
+  rt.objectLifetime.afterTick(rt.world.clock.tickIndex);
   rt.ticks.closePhaseTiming();
   rt.scriptDebug.flush(rt.world.clock.tickIndex);
   flushComponentCommands(rt);
-  // Every script of the tick has returned; waiting latent frames registered their locals.
-  rt.objectLifetime.afterTick(rt.world.clock.tickIndex);
   const completedFrameId = rt.frameId;
   rt.frameId += 1;
   publishTick(rt);

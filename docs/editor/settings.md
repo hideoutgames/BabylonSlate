@@ -70,7 +70,7 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 
 | Page | Covers |
 | --- | --- |
-| General | Project version, Compile On Save, infinite loop detection, Auto-Save Interval, Editor Utility Objects |
+| General | Project version, Compile On Save, infinite loop detection, Garbage Collection Interval, Auto-Save Interval, Editor Utility Objects |
 | Game | Startup Scene, Game Instance, 2D pixels per unit and sorting layers |
 | Save Games | Default save definition, slot and profile; preview saves |
 | Physics | Collision layers |

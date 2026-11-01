@@ -7,8 +7,7 @@ import {
 } from "@haptic/object-model";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 
-/** About one second at the default 60 Hz simulation step. */
-export const DEFAULT_GARBAGE_COLLECTION_INTERVAL_TICKS = 60;
+export { DEFAULT_GARBAGE_COLLECTION_INTERVAL_TICKS } from "@haptic/core";
 
 export type ObjectLifetimeStats = CollectionResult & {
   /** The tick the pass ran at. */
@@ -18,6 +17,13 @@ export type ObjectLifetimeStats = CollectionResult & {
   /** Collectable objects still alive after the pass. */
   collectable: number;
 };
+
+/** `gc stats` and the Stats line read the same numbers. */
+export function formatObjectLifetimeStats(collectable: number, last: ObjectLifetimeStats | null): string {
+  if (!last) return `${collectable} collectable objects; no collection pass yet`;
+  return `${collectable} collectable objects; last pass at tick ${last.tickIndex}: ${last.marked} reached, ` +
+    `${last.collected} collected, ${last.cleared} references cleared, ${last.ms.toFixed(2)} ms`;
+}
 
 interface ObjectLifetimeDeps {
   world(): World;

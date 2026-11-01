@@ -249,6 +249,8 @@ export function applyWorkerPlayStats(
     ticks?: number;
     liveActors?: number;
     snapshotCapacity?: number;
+    collectableObjects?: number;
+    garbageCollectionMs?: number;
   },
 ): PlayHudStats {
   return {
@@ -262,6 +264,14 @@ export function applyWorkerPlayStats(
     liveActors: command.liveActors ?? previous?.liveActors ?? 0,
     snapshotCapacity:
       command.snapshotCapacity ?? previous?.snapshotCapacity ?? 0,
+    ...objectLifetimeStats(command.collectableObjects ?? previous?.collectableObjects, command.garbageCollectionMs ?? previous?.garbageCollectionMs),
+  };
+}
+
+function objectLifetimeStats(collectableObjects: number | undefined, garbageCollectionMs: number | undefined) {
+  return {
+    ...(collectableObjects === undefined ? {} : { collectableObjects }),
+    ...(garbageCollectionMs === undefined ? {} : { garbageCollectionMs }),
   };
 }
 
@@ -280,5 +290,6 @@ export function applyPlayFpsSample(
     ticks: previous?.ticks ?? 0,
     liveActors: previous?.liveActors ?? 0,
     snapshotCapacity: previous?.snapshotCapacity ?? 0,
+    ...objectLifetimeStats(previous?.collectableObjects, previous?.garbageCollectionMs),
   };
 }

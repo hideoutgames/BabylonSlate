@@ -134,6 +134,7 @@ export type CollectExportGameParams = {
   renderSettings: RenderProjectSettings;
   defaultFontGuid?: string | null;
   playFrameCap: number;
+  garbageCollectionIntervalTicks?: number;
   touchMinTargetPx?: number;
   pixelsPerUnit?: number;
   sortingLayers?: readonly string[];
@@ -620,6 +621,7 @@ export async function collectAndExportGame(
     renderSettings: params.renderSettings,
     defaultFontGuid: params.defaultFontGuid,
     playFrameCap: params.playFrameCap,
+    garbageCollectionIntervalTicks: params.garbageCollectionIntervalTicks,
     touchMinTargetPx: params.touchMinTargetPx,
     pixelsPerUnit: params.pixelsPerUnit,
     sortingLayers: params.sortingLayers,

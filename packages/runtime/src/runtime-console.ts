@@ -24,6 +24,7 @@ import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import type { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { formatDumpActors, formatInspectActor } from "./console-inspect";
 import type { LogRingBuffer } from "./log-ring";
+import { formatObjectLifetimeStats, type RuntimeObjectLifetime } from "./object-lifetime";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import type { SceneRealizer } from "./scene-realizer";
@@ -72,6 +73,7 @@ interface RuntimeConsoleHost {
   userPaused(): boolean;
   timeDilation(): number;
   setTimeDilation(rate: number): void;
+  objectLifetime(): Pick<RuntimeObjectLifetime, "request" | "lastPass" | "collector">;
   emit(command: CommandMessage): void;
 }
 
@@ -265,6 +267,11 @@ export class RuntimeConsole {
         host.setTimeDilation(Number(rate));
       },
       getTimeDilation: () => host.timeDilation(),
+      collectGarbage: () => host.objectLifetime().request(),
+      garbageStats: () => {
+        const lifetime = host.objectLifetime();
+        return formatObjectLifetimeStats(lifetime.collector.size, lifetime.lastPass);
+      },
       dumpLog: () =>
         host.logs()
           .entries()
