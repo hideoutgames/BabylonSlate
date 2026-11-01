@@ -1,5 +1,5 @@
 import { documentSceneMode, parseSceneDocumentLayout } from "../shell/scene-document-layout";
-import { useTimelinePlayheadTime, type TimelinePlayhead } from "../lib/timeline-playhead";
+import type { TimelinePlayhead } from "../lib/timeline-playhead";
 import { timelineTransformEdit } from "../lib/timeline-transform-edit";
 import { SceneBrushToolbar } from "../components/scene-brush-toolbar";
 import { useSceneTools } from "../context/scene-tools-context";
@@ -24,7 +24,7 @@ import {
   engineAdapterInfo,
   type EngineHandle,
 } from "@haptic/render";
-import { type SerializedScene, type SerializedTimelineClip, applyTimelineClipToScene, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus, sceneEnvironmentTextureGuid } from "@haptic/core";
+import { type SerializedScene, applyTimelineClipToScene, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus, sceneEnvironmentTextureGuid } from "@haptic/core";
 import {
   useActiveDocumentId,
   useDocumentActions,
@@ -575,7 +575,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         className="h-full min-h-0 min-w-0 w-full flex-1 touch-none"
         data-testid="viewport-canvas"
       />
-      {timelineClip ? <TimelinePreviewBadge clip={timelineClip} playhead={timelinePlayhead} /> : null}
       {sceneLoad.failed && !sceneLoad.open ? (
         // The failed load released the Engine; keep Retry reachable after Close.
         <Empty
@@ -661,20 +660,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         onDismiss={() => setSceneLoad((current) => ({ ...current, open: false }))}
         onCopyDetails={debugMode ? copyLoadDetails : undefined}
       />
-    </div>
-  );
-}
-
-/** Names the clip and time the viewport shows, and that the document is untouched. */
-function TimelinePreviewBadge({ clip, playhead }: { clip: SerializedTimelineClip; playhead: TimelinePlayhead }) {
-  const time = Math.min(clip.length, useTimelinePlayheadTime(playhead));
-  return (
-    <div
-      className="pointer-events-none absolute right-2 bottom-2 z-10 max-w-[calc(100%-1rem)] truncate rounded-md border bg-popover/90 px-2 py-1 text-xs text-muted-foreground shadow-sm"
-      data-testid="viewport-timeline-preview"
-    >
-      Previewing <span className="font-medium text-foreground">{clip.name}</span> at{" "}
-      <span className="font-mono tabular-nums">{time.toFixed(2)} s</span> · scene not modified
     </div>
   );
 }

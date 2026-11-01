@@ -72,7 +72,7 @@ Drag a key to change its time and value; times stay within the clip, and on whol
 
 ## Preview in the viewport
 
-While a clip is selected, the viewport shows the scene as the clip has it at the playhead, and follows the playhead as you scrub or play. A note in the viewport's corner names the clip and the time. The preview never changes the scene: switching back to **Design** shows the actors where you placed them.
+While a clip is selected, the viewport shows the scene as the clip has it at the playhead, and follows the playhead as you scrub or play. The preview never changes the scene: switching back to **Design** shows the actors where you placed them.
 
 Moving, rotating or scaling an actor with the viewport gizmo works on what the clip animates:
 

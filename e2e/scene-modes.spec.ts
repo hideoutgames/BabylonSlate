@@ -321,7 +321,6 @@ test.describe("Scene modes", () => {
     expect(await nudge()).toBe(true);
     await expect.poll(keys).toEqual([[0, startX], [5, startX + 1.5]]);
     expect((await content(page)).actors.find((actor) => actor.id === "actor-1")!.transform.position[0]).toBe(startX);
-    await expect(page.getByTestId("viewport-timeline-preview")).toContainText("at 5.00 s");
 
     // The viewport follows the playhead.
     await expect.poll(actorX).toBeCloseTo(startX + 1.5, 3);
