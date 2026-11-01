@@ -56,6 +56,12 @@ test("FT_2D Play probe in WebKit", { tag: WEBKIT_SMOKE_TAG }, async ({ page }, t
   page.context().on("response", (response) => {
     if (response.status() >= 400) add(`response ${response.status()}: ${response.url()}`);
   });
+  await page.addInitScript(() => {
+    navigator.serviceWorker?.addEventListener("message", (event: MessageEvent) => {
+      if (event.data?.coiProbe) console.log(`COI-PROBE ${JSON.stringify(event.data)}`);
+    });
+    navigator.serviceWorker?.startMessages?.();
+  });
   const outcomes: Outcome[] = [];
   try {
     await seedEngineSettings(page);

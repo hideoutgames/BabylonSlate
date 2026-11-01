@@ -32,9 +32,11 @@ if (typeof window === 'undefined') {
                 credentials: "omit",
             })
             : r;
-        event.respondWith(
-            fetch(request)
-                .then((response) => {
+        const report = (stage, error) => self.clients.matchAll({ includeUncontrolled: true }).then((clients) => {
+            for (const client of clients) client.postMessage({ coiProbe: stage, url: r.url, destination: r.destination, mode: r.mode,
+                credentials: r.credentials, redirect: r.redirect, cache: r.cache, error: String(error && (error.stack || error.message) || error) });
+        });
+        const withHeaders = (response) => {
                     if (response.status === 0) {
                         return response;
                     }
@@ -53,8 +55,17 @@ if (typeof window === 'undefined') {
                         statusText: response.statusText,
                         headers: newHeaders,
                     });
+        };
+        event.respondWith(
+            fetch(request)
+                .then(withHeaders)
+                .catch((e) => {
+                    report("first", e);
+                    return fetch(r.url, { credentials: "same-origin" }).then(withHeaders).catch((e2) => {
+                        report("retry", e2);
+                        return Response.error();
+                    });
                 })
-                .catch((e) => console.error(e))
         );
     });
 
