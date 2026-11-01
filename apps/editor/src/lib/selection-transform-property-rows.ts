@@ -5,12 +5,14 @@ import {
   type SerializedActor,
 } from "@haptic/core";
 import { depthFromZOrder, zOrderFromDepth, type TransformRowsMode } from "./transform-property-rows";
+import { scaleLinkKey, type LinkedScale } from "./linked-scale";
 
 /** Shared axis edits are absolute values; other axes retain each actor's values. */
 export function selectionTransformPropertyRows(
   actors: readonly SerializedActor[],
   mode: TransformRowsMode,
   updateSelected: (update: (actor: SerializedActor) => SerializedActor) => void,
+  linkedScale?: LinkedScale,
 ): PropertyRow[] {
   const primary = actors[0];
   if (!primary) return [];
@@ -49,10 +51,15 @@ export function selectionTransformPropertyRows(
         };
       });
     };
-    const value: [number, number, number] = [0, 0, 0];
-    axes.forEach((axis, index) => {
-      value[index] = primaryValues[axis]!;
-    });
+    const shownValues = (values: [number, number, number]) => {
+      const shown: [number, number, number] = [0, 0, 0];
+      axes.forEach((axis, index) => {
+        shown[index] = values[axis]!;
+      });
+      return shown;
+    };
+    const value = shownValues(primaryValues);
+    const actorIndex = new Map(actors.map((actor, index) => [actor.id, index]));
     rows.push({
       kind: "vector3",
       id: `actor-${property}`,
@@ -70,6 +77,26 @@ export function selectionTransformPropertyRows(
         values[axis] = next;
         apply(values, axis);
       },
+      // Each actor keeps its own link; linked actors scale by their own factor.
+      ...(property === "scale" && linkedScale
+        ? {
+            linked: actors.every((actor) => linkedScale.isLinked(scaleLinkKey.actor(actor.id))),
+            onLinkedChange: (linked: boolean) =>
+              linkedScale.setLinked(actors.map((actor) => scaleLinkKey.actor(actor.id)), linked),
+            itemLinked: actors.map((actor) => linkedScale.isLinked(scaleLinkKey.actor(actor.id))),
+            itemValues: actors.map((actor) => shownValues(valuesFor(actor))),
+            onItemValuesChange: (itemValues: Vector3Value[]) =>
+              updateSelected((actor) => {
+                const shown = itemValues[actorIndex.get(actor.id) ?? -1];
+                if (!shown) return actor;
+                const next = valuesFor(actor);
+                axes.forEach((axis, index) => {
+                  next[axis] = shown[index]!;
+                });
+                return { ...actor, transform: { ...actor.transform, scale: next } };
+              }),
+          }
+        : {}),
     });
     if (planar && property === "position") {
       rows.push({

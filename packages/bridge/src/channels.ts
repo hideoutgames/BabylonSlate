@@ -1073,6 +1073,8 @@ export type CommandMessage =
   | { type: "setRenderTargetCapturesDebug"; enabled: boolean }
   /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */
   | { type: "setGpuBusyProbeDebug"; enabled: boolean }
+  /** Debug: how many rendered frames the Engine may queue on the GPU (the `framesinflight` console command; default 2). */
+  | { type: "setFramesInFlightDebug"; mode: "off" | 2 | 3 }
   /** Debug: store whether the next project Engine keeps its drawing buffer (the `preservebuffer` console command). */
   | { type: "setPreserveDrawingBufferDebug"; enabled: boolean }
   | { type: "setFreeCam"; enabled: boolean }

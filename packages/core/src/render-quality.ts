@@ -821,3 +821,28 @@ export class RenderingQualitySession {
     };
   }
 }
+
+/**
+ * The quality part of `RenderDiagnostics.settings`: every quality field a Feature Test Check Breakdown step changes,
+ * as text, so a step's sample can say what it changed. `quality` carries the device-clamped water values.
+ */
+export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): Record<string, string> {
+  const { shadows, water, postprocessing: post } = quality;
+  return {
+    shadows: shadows.enabled ? `${shadows.profile} ${shadows.mapSize}` : "off",
+    "shadows.filter": shadows.filterQuality,
+    "water.refraction": String(water.refraction),
+    "water.refractionScale": String(water.refractionScale),
+    "water.reflections": water.reflections,
+    "water.planarScale": String(water.planarScale),
+    "water.shadingDetail": water.shadingDetail,
+    "water.fft": `${water.fftSize}x${water.fftCascades}`,
+    "post.scale": String(post.resolutionScale),
+    "post.ambientOcclusion": String(post.ambientOcclusion),
+    "post.reflections": String(post.reflections),
+    "post.volumetricLighting": String(post.volumetricLighting),
+    "post.antiAliasing": post.antiAliasing,
+    "resolution.scale": String(quality.resolution.scale),
+    "geometry.occlusion": String(quality.geometry.occlusionCulling),
+  };
+}

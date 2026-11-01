@@ -218,6 +218,7 @@ function importFromBrowse(
           modelGuid,
           skeletonGuid,
           durationMs: animation.durationMs,
+          clipDurationMs: animation.durationMs,
         }),
       },
       chunks: [],
