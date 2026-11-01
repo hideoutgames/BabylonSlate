@@ -64,6 +64,36 @@ describe("ScriptContext members used apart from their context", () => {
     expect(draws(12)).not.toEqual(expected);
   });
 
+  it("gives one read-only Curve Object per loaded curve asset and None for missing or other kinds", () => {
+    const key = (Time: number, Value: number) => ({ Time, Value, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 });
+    const entry = (keys: unknown[]) => ({
+      guid: "falloff", type: "FloatCurve" as const, name: "Falloff",
+      payload: { curve: { Keys: keys, Before: "constant" as const, After: "constant" as const }, description: "" },
+    });
+    const curves = new Map([["falloff", entry([key(0, 100), key(2, 50)])]]) as Map<string, ReturnType<typeof entry>>;
+    const ctx = new ScriptHost(services({ curves } as Partial<ScriptHostServices>)).createContext(null, 0, 0);
+
+    const object = ctx.getCurveObject("float", "falloff");
+    expect(object?.classId).toBe("FloatCurveObject");
+    expect(ctx.getCurveObject("float", "falloff")).toBe(object);
+    expect(ctx.getCurveObject("vec3", "falloff")).toBeNull();
+    expect(ctx.getCurveObject("float", "not-loaded")).toBeNull();
+    expect(ctx.curveObjectValue("float", object, 1)).toBe(75);
+    expect(ctx.curveObjectKeyCount(object)).toBe(2);
+    expect(ctx.curveObjectTimeRange(object)).toEqual({ Min: 0, Max: 2 });
+    expect(ctx.curveObjectValueRange(object)).toEqual({ Min: 50, Max: 100 });
+    // Get Float Curve returns a copy: changing it leaves the asset's object alone.
+    const copy = ctx.curveObjectCurve("float", object) as { Keys: Array<{ Value: number }> };
+    copy.Keys[0]!.Value = -1;
+    expect(ctx.curveObjectValue("float", object, 0)).toBe(100);
+    expect(ctx.curveObjectValue("float", null, 1)).toBe(0);
+
+    // A reloaded payload updates the same object, so stored references stay valid.
+    curves.set("falloff", entry([key(0, 10), key(2, 30)]));
+    expect(ctx.getCurveObject("float", "falloff")).toBe(object);
+    expect(ctx.curveObjectValue("float", object, 1)).toBe(20);
+  });
+
   it("lets a script patch ctx.random or a ctx member without changing any other context", () => {
     const logged: string[] = [];
     const host = new ScriptHost(services({ seed: 7, log: (_severity, _category, message) => { logged.push(message); } }));

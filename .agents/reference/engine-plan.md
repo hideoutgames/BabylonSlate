@@ -208,7 +208,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 | --- | --- |
 | World | Scene (one Scene tab at a time), SceneLayer (2D overlay), Prefab (placeable components without logic) |
 | Scripting | Class, Enum, Structure, ScriptInterface, SaveGame |
-| Data and input | DataDefinition, DataTree, InputAction, InputAxis |
+| Data and input | DataDefinition, DataTree, FloatCurve, VectorCurve, ColorCurve, InputAction, InputAxis |
 | 2D and animation | Sprite, SpriteAnimation, Tileset, Tilemap, AnimationGraph |
 | Rendering | Material (the shader graph; there is no separate Shader type), MaterialFunction, MaterialInstance, RenderTarget, RenderTargetTexture, Water, ParticleEmitter, ParticleGraph, ParticleSystem, SkyboxCreator (editor-only helper) |
 | Audio | AudioMixer, AudioChannel, SoundAttenuation |

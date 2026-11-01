@@ -1,4 +1,6 @@
 import {
+  assetRef,
+  objectRef,
   pin,
   structRef,
   type NodeDefinition,
@@ -99,13 +101,44 @@ function inRangeNode(id: string, title: string, spec: RangeSpec): NodeDefinition
   };
 }
 
-type CurveSpec = { id: string; title: string; kind: string; curve: PinType; value: PinType };
+type CurveSpec = { id: string; title: string; kind: string; curve: PinType; value: PinType; asset: PinType; object: PinType };
 
 const CURVES: readonly CurveSpec[] = [
-  { id: "Float", title: "Float", kind: "float", curve: FLOAT_CURVE, value: FLOAT },
-  { id: "Vector", title: "Vector", kind: "vec3", curve: VECTOR_CURVE, value: VEC3 },
-  { id: "Color", title: "Color", kind: "color", curve: COLOR_CURVE, value: COLOR },
+  { id: "Float", title: "Float", kind: "float", curve: FLOAT_CURVE, value: FLOAT, asset: assetRef("FloatCurve"), object: objectRef("FloatCurveObject") },
+  { id: "Vector", title: "Vector", kind: "vec3", curve: VECTOR_CURVE, value: VEC3, asset: assetRef("VectorCurve"), object: objectRef("VectorCurveObject") },
+  { id: "Color", title: "Color", kind: "color", curve: COLOR_CURVE, value: COLOR, asset: assetRef("ColorCurve"), object: objectRef("ColorCurveObject") },
 ];
+
+/** Get <Type> Curve Object node ids; their Curve Asset input loads with the owner (`asset-dependencies.ts`). */
+export const CURVE_OBJECT_NODE_IDS: readonly string[] = CURVES.map((spec) => `curveObject.get${spec.id}`);
+
+function curveObjectNodes(spec: CurveSpec): NodeDefinition[] {
+  const kind = JSON.stringify(spec.kind);
+  const target = () => pin("target", "Target", "in", spec.object);
+  const read = (id: string, title: string, pins: NodeDefinition["pins"], codegen: NodeDefinition["codegen"]): NodeDefinition => ({
+    id: `curveObject.${id}${spec.id}`, title, category: "curve", pure: true, pins, codegen,
+  });
+  return [
+    {
+      id: `curveObject.get${spec.id}`,
+      title: `Get ${spec.title} Curve Object`,
+      category: "curve",
+      pure: true,
+      pins: () => [pin("curveAsset", "Curve Asset", "in", spec.asset), pin("object", "Object", "out", spec.object)],
+      codegen: (ctx) => ({ object: `ctx.getCurveObject(${kind}, ${ctx.input("curveAsset")})` }),
+    },
+    read("valueAtTime", "Get Value At Time", () => [target(), pin("time", "Time", "in", FLOAT), pin("value", "Value", "out", spec.value)],
+      (ctx) => ({ value: `ctx.curveObjectValue(${kind}, ${ctx.input("target")}, ${ctx.input("time")})` })),
+    read("timeRange", "Get Time Range", () => [target(), pin("timeRange", "Time Range", "out", FLOAT_RANGE)],
+      (ctx) => ({ timeRange: `ctx.curveObjectTimeRange(${ctx.input("target")})` })),
+    read("keyCount", "Get Key Count", () => [target(), pin("count", "Count", "out", INT)],
+      (ctx) => ({ count: `ctx.curveObjectKeyCount(${ctx.input("target")})` })),
+    read("curve", `Get ${spec.title} Curve`, () => [target(), pin("curve", "Curve", "out", spec.curve)],
+      (ctx) => ({ curve: `ctx.curveObjectCurve(${kind}, ${ctx.input("target")})` })),
+    ...(spec.kind === "float" ? [read("valueRange", "Get Value Range", () => [target(), pin("valueRange", "Value Range", "out", FLOAT_RANGE)],
+      (ctx) => ({ valueRange: `ctx.curveObjectValueRange(${ctx.input("target")})` }))] : []),
+  ];
+}
 
 function curvePin(spec: CurveSpec) {
   return pin("curve", "Curve", "in", spec.curve, "data", true, EMPTY_CURVE);
@@ -193,4 +226,5 @@ export const curveRangeNodes: NodeDefinition[] = [
     pins: () => [curvePin(CURVES[0]!), pin("valueRange", "Value Range", "out", FLOAT_RANGE)],
     codegen: (ctx) => ({ valueRange: `ctx.floatCurveValueRange(${ctx.input("curve")})` }),
   },
+  ...CURVES.flatMap(curveObjectNodes),
 ];

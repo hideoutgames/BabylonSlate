@@ -83,6 +83,9 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   { kind: "structure", keepKey: "structure", label: "Structure" },
   { kind: "data-definition", keepKey: "data-definition", label: "Data Definition" },
   { kind: "data-tree", keepKey: "data-tree", label: "Data Tree" },
+  { kind: "float-curve", keepKey: "float-curve", label: "Float Curve" },
+  { kind: "vector-curve", keepKey: "vector-curve", label: "Vector Curve" },
+  { kind: "color-curve", keepKey: "color-curve", label: "Color Curve" },
   {
     kind: "script-interface",
     keepKey: "script-interface",

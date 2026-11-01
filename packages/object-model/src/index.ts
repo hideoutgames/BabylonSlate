@@ -124,3 +124,4 @@ export {
   isTimelineAnimatableComponentProperty,
 } from "./live-properties";
 export { ObjectCollector, canHoldReference, type CollectionResult, type RootSource, type RootVisitor, type ScalarVariables } from "./object-collector";
+export { CurveObject } from "./curve-object";

@@ -142,6 +142,8 @@ interface ScriptingTypes {
   describable: string;
   itemStats: string;
   itemsTree: string;
+  /** Float, Vector and Color Curve assets; the Data Probe reads the Float one through its Curve Object. */
+  curves: { float: string; vector: string; color: string };
   pulseAction: string;
   nudgeAxis: string;
   touchGestureAction: string;
@@ -222,6 +224,22 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
   const itemsTree = await saveDocumentGuid(ctx, "data-tree", DATA_FOLDER, newAssetFileName("DataTree", "FT_DataItems"),
     { ...createDataTreeAsset(itemStats, itemEntries(itemStats)) });
 
+  const curveKey = (Time: number, Value: unknown, zero: unknown) =>
+    ({ Time, Value, Interpolation: "linear", ArriveTangent: zero, LeaveTangent: zero });
+  const curveAsset = async (type: "FloatCurve" | "VectorCurve" | "ColorCurve", name: string, keys: unknown[], description: string) =>
+    (await ctx.createAsset(type, DATA_FOLDER, name, {
+      payload: () => ({ curve: { Keys: keys, Before: "constant", After: "constant" }, description }),
+    })).guid;
+  const zero3 = { x: 0, y: 0, z: 0 };
+  const zero4 = { x: 0, y: 0, z: 0, w: 0 };
+  const curves = {
+    float: await curveAsset("FloatCurve", "FT_DataFalloffCurve", [curveKey(0, 100, 0), curveKey(4, 20, 0)], "Damage by distance."),
+    vector: await curveAsset("VectorCurve", "FT_DataSwayCurve",
+      [curveKey(0, zero3, zero3), curveKey(1, { x: 1, y: 0.5, z: 0 }, zero3), curveKey(2, zero3, zero3)], "Sway offset over two seconds."),
+    color: await curveAsset("ColorCurve", "FT_DataTintCurve",
+      [curveKey(0, { x: 1, y: 0.9, z: 0.6, w: 1 }, zero4), curveKey(1, { x: 0.3, y: 0.1, z: 0.1, w: 0 }, zero4)], "Tint over life."),
+  };
+
   const pulseAction = await saveDocumentGuid(ctx, "input-action", INPUT_FOLDER,
     newAssetFileName("InputAction", "FT_ScriptPulse"), {
       ...normalizeInputAssetPayload("InputAction", {
@@ -284,6 +302,7 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
     describable: describable.guid,
     itemStats,
     itemsTree,
+    curves,
     pulseAction,
     nudgeAxis,
     touchGestureAction,
@@ -1323,6 +1342,9 @@ async function saveDataProbe(
       getVar("get-spawn-count", spawnCount, 1420, 400),
       gNode("clamp-spawn", "range.clampInt", 1660, 400, { "default:value": 9 }),
       gNode("assert-spawn", "debug.assertEqual", 1660, 0, { "default:expected": 5, "default:message": "Clamp Integer To Range ignored Spawn Count" }),
+      gNode("falloff-object", "curveObject.getFloat", 2140, 400, { "default:curveAsset": types.curves.float }),
+      gNode("falloff-at", "curveObject.valueAtTimeFloat", 2380, 400, { "default:time": 1 }),
+      gNode("assert-asset", "debug.assertEqual", 2140, 0, { "default:expected": 80, "default:message": "Get Float Curve Object read the wrong FT_DataFalloffCurve value" }),
       gNode("roll-in-range", "range.isFloatInRange", 1900, 400),
       gNode("assert-roll", "debug.assert", 1900, 0, { "default:message": "Sword Damage is outside its Damage Roll range" }),
       gNode("read", "data.readEntry", 220, 160, {
@@ -1336,10 +1358,12 @@ async function saveDataProbe(
       format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons)"),
       gNode("assert-found", "debug.assert", 700, 0, { "default:message": "Data Probe could not read Weapons/Sword" }),
       gNode("assert-weapons", "debug.assertEqual", 700, 400, { "default:expected": 2, "default:message": "Data Probe expected two Weapons" }),
-      printText("print", 2140, 0, "ft-data-probe", undefined, 8),
+      printText("print", 2380, 0, "ft-data-probe", undefined, 8),
     ],
     edges: [
-      ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "assert-roll", "print"),
+      ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "assert-roll", "assert-asset", "print"),
+      gWire("falloff-object", "object", "falloff-at", "target"),
+      gWire("falloff-at", "value", "assert-asset", "actual"),
       gWire("fields", "Damage", "roll-in-range", "value"),
       gWire("fields", "DamageRoll", "roll-in-range", "range"),
       gWire("roll-in-range", "result", "assert-roll", "condition"),

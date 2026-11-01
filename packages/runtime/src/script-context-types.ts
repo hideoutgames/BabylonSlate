@@ -235,6 +235,18 @@ export interface ScriptContext {
   evaluateCurve(kind: CurveKind, curve: unknown, time: unknown): unknown;
   curveTimeRange(curve: unknown): { Min: number; Max: number };
   floatCurveValueRange(curve: unknown): { Min: number; Max: number };
+  /**
+   * Get <Type> Curve Object: the session's read-only object for a loaded curve asset of that kind, or
+   * null while the asset is not loaded (or is another kind). One object per asset, never collected.
+   */
+  getCurveObject(kind: CurveKind, asset: unknown): EngineObject | null;
+  /** Curve Object reads; a missing or other target reads as an empty curve of `kind`. */
+  curveObjectValue(kind: CurveKind, target: unknown, time: unknown): unknown;
+  curveObjectTimeRange(target: unknown): { Min: number; Max: number };
+  curveObjectValueRange(target: unknown): { Min: number; Max: number };
+  curveObjectKeyCount(target: unknown): number;
+  /** A copy of the asset's curve as a curve Structure value. */
+  curveObjectCurve(kind: CurveKind, target: unknown): unknown;
   getAllActorsOfClass(classId: string): Actor[];
   getActorOfClass(classId: string): Actor | null;
   /** Live world components, including SceneLayers, in actor/component order. */
@@ -605,7 +617,8 @@ export type HostContextKey =
   | "combineRotators" | "inverseRotator" | "deltaRotator" | "lerpRotator" | "rotatorForward" | "rotatorRight"
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
   | "normalizeQuat" | "randomFloat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"
-  | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
+  | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
+  | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"

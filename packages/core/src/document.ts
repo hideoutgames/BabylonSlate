@@ -22,6 +22,9 @@ export const ASSET_DOCUMENT_KINDS = [
   "structure",
   "data-definition",
   "data-tree",
+  "float-curve",
+  "vector-curve",
+  "color-curve",
   "script-interface",
   "plugin-settings",
   "audio",
@@ -119,6 +122,12 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "DataDefinition";
     case "data-tree":
       return "DataTree";
+    case "float-curve":
+      return "FloatCurve";
+    case "vector-curve":
+      return "VectorCurve";
+    case "color-curve":
+      return "ColorCurve";
     case "script-interface":
       return "ScriptInterface";
     case "plugin-settings":
@@ -204,6 +213,12 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "data-definition";
     case "DataTree":
       return "data-tree";
+    case "FloatCurve":
+      return "float-curve";
+    case "VectorCurve":
+      return "vector-curve";
+    case "ColorCurve":
+      return "color-curve";
     case "ScriptInterface":
       return "script-interface";
     case "PluginSettings":
@@ -289,6 +304,12 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Data Definition";
     case "data-tree":
       return "Data Tree";
+    case "float-curve":
+      return "Float Curve";
+    case "vector-curve":
+      return "Vector Curve";
+    case "color-curve":
+      return "Color Curve";
     case "script-interface":
       return "Script Interface";
     case "plugin-settings":

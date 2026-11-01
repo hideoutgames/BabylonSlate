@@ -1,4 +1,4 @@
-import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
+import { curveKindForAssetType, normalizeCurveAssetPayload, normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import type {
   DocumentKind,
   SerializedGraph,
@@ -41,6 +41,8 @@ export function headerMetaForSave(
   // This header snapshot is always derived from the body being saved.
   if (type === "DataDefinition") return { ...normalizeDataDefinitionAsset(content) };
   if (type === "DataTree") return { ...normalizeDataTreeAsset(content) };
+  const curveKind = curveKindForAssetType(type);
+  if (curveKind) return { ...normalizeCurveAssetPayload(curveKind, content) };
   if (isInputAssetType(type)) {
     const input = normalizeInputAssetPayload(type, content);
     return { valueType: input.valueType };
