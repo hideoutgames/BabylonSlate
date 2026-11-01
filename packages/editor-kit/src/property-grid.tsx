@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link2Icon, Link2OffIcon } from "lucide-react";
 import { useEditorReadOnly } from "./editor-read-only";
 import type { Tag, TagContainer } from "@haptic/core";
@@ -19,6 +19,8 @@ import {
   FieldLabel,
 } from "@haptic/ui/components/field";
 import { SelectAllInput } from "./select-all-input";
+import { SelectableText } from "./selectable-text";
+import { Textarea } from "@haptic/ui/components/textarea";
 import {
   Select,
   SelectContent,
@@ -136,9 +138,18 @@ export type PropertyRow =
       onChange: (value: boolean) => void;
     })
   | (PropertyRowBase & {
+      /** A read-only fact shown as selectable text rather than a field (a key count, a time range). */
+      kind: "info";
+      value: string;
+      /** Facts have no default to reset to. */
+      defaultValue?: never;
+    })
+  | (PropertyRowBase & {
       kind: "text";
       /** Keep text focusable and selectable for native copy without allowing edits. */
       readOnly?: boolean;
+      /** A three-line text area: Enter adds a line, leaving the field commits, Escape restores. */
+      multiline?: boolean;
       value: string;
       defaultValue?: string;
       onChange: (value: string) => void;
@@ -353,6 +364,7 @@ function resetRow(row: PropertyRow): void {
 /** Labels point only at a single real control; compound rows name their parts. */
 function rowHasLabelTarget(row: PropertyRow): boolean {
   switch (row.kind) {
+    case "info":
     case "vector3":
     case "flags":
     case "collision-responses":
@@ -371,19 +383,14 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
   const [draft, setDraft] = useState<string | null>(null);
   const baselineRef = useRef(row.value);
   const cancelledRef = useRef(false);
-  return <SelectAllInput
-    id={`property-${row.id}`}
-    className="min-h-[var(--chrome-row,28px)] px-2"
-    value={draft ?? row.value}
-    disabled={row.disabled}
-    readOnly={row.readOnly}
-    onChange={(event) => {
+  const handlers = {
+    onChange: (event: { target: { value: string } }) => {
       if (row.readOnly) return;
       if (draft === null) baselineRef.current = row.value;
       setDraft(event.target.value);
       row.onChange(event.target.value);
-    }}
-    onKeyDown={(event) => {
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (row.readOnly || event.nativeEvent.isComposing || event.keyCode === 229) return;
       if (event.key === "Escape") {
         event.preventDefault();
@@ -392,19 +399,39 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
         if (draft !== null) row.onChange(baselineRef.current);
         setDraft(null);
         event.currentTarget.blur();
-      } else if (event.key === "Enter") {
+      } else if (event.key === "Enter" && !row.multiline) {
         event.preventDefault();
         event.currentTarget.blur();
       }
-    }}
-    onBlur={(event) => {
+    },
+    onBlur: (event: { target: { value: string } }) => {
       // Focus alone is not an edit; commit only text typed since focus.
       if (!row.readOnly && !cancelledRef.current && draft !== null) {
         row.onCommit?.(event.target.value);
       }
       cancelledRef.current = false;
       setDraft(null);
-    }}
+    },
+  };
+  if (row.multiline) {
+    return <Textarea
+      id={`property-${row.id}`}
+      rows={3}
+      className="min-h-16 resize-y px-2 py-1.5"
+      value={draft ?? row.value}
+      disabled={row.disabled}
+      readOnly={row.readOnly}
+      {...handlers}
+      data-testid={`property-${row.id}`}
+    />;
+  }
+  return <SelectAllInput
+    id={`property-${row.id}`}
+    className="min-h-[var(--chrome-row,28px)] px-2"
+    value={draft ?? row.value}
+    disabled={row.disabled}
+    readOnly={row.readOnly}
+    {...handlers}
     data-testid={`property-${row.id}`}
   />;
 }
@@ -576,6 +603,12 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
             {row.mixed ? "Mixed" : row.value ? "On" : "Off"}
           </span>
         </FieldLabel>
+      );
+    case "info":
+      return (
+        <span id={`property-${row.id}`} className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center px-2 text-sm text-muted-foreground tabular-nums" data-testid={`property-${row.id}`}>
+          <SelectableText className="min-w-0 truncate">{row.value}</SelectableText>
+        </span>
       );
     case "text":
       return <TextRowControl row={row} />;

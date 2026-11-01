@@ -347,6 +347,17 @@ export function evaluateCurve<K extends CurveKind>(kind: K, curve: unknown, time
   return compose(kind, (c) => segmentValue(keys, index, kind, c, t)) as CurveValueOf<K>;
 }
 
+/**
+ * Tangent of key `index` on channel `c` (Float: 0; Vector and Color: x, y, z, w), per second, exactly as
+ * evaluation uses it: a Custom key's stored tangent, any other key's automatic tangent. Keys must be sorted;
+ * an index outside the keys is zero. Editors draw and seed tangent handles from it.
+ */
+export function curveKeyTangent(kind: CurveKind, curve: unknown, index: number, c: number, side: "arrive" | "leave"): number {
+  const keys = keysOf(curve);
+  if (!Number.isInteger(index) || index < 0 || index >= keys.length) return 0;
+  return keyTangent(keys, index, kind, c, side);
+}
+
 /** `evaluateCurve` for keys in any order: sorts a copy only when the keys are out of order. */
 export function evaluateCurveAnyOrder<K extends CurveKind>(kind: K, curve: unknown, time: number): CurveValueOf<K> {
   return evaluateCurve(kind, isSorted(keysOf(curve)) ? curve : normalizeCurve(kind, curve), time);
