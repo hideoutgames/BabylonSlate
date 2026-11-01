@@ -26,6 +26,7 @@ const assets = [
   { path: "assets/Story.timeline.hasset", header: { type: "Timeline", guid: "story", name: "Story" } },
   { path: "assets/Hall.timeline.hasset", header: { type: "Timeline", guid: "hall", name: "Hall" } },
   { path: "assets/Door.class.hasset", header: { type: "Class", guid: "door", name: "Door", parentClass: "Actor" } },
+  { path: "assets/Door.model.hasset", header: { type: "Model", guid: "door-model", name: "Door Model" } },
 ];
 const DOC = "timeline-clip-3d:assets/Swing.timelineclip3d.hasset";
 
@@ -105,6 +106,28 @@ describe("Timeline Clip asset proxies", () => {
     fireEvent.click(model);
     const proxyId = last().proxies[0]!.id;
     expect(last().editorPreview!.proxies[proxyId]!.representation).toBe("model");
+
+    // Scale sizes the proxy; there is no Size.
+    view.refresh();
+    expect(within(screen.getByTestId("timeline-clip-inspector-preview")).getByLabelText("Scale X")).toBeTruthy();
+    expect(within(screen.getByTestId("timeline-clip-inspector-preview")).queryByLabelText("Size")).toBeNull();
+
+    // The picked Model stays while another representation shows, and draws again on the way back.
+    const chosen = last();
+    harness.content = { ...chosen, editorPreview: { proxies: { [proxyId]: { ...chosen.editorPreview!.proxies[proxyId]!, assets: { model: "door-model" } } } } };
+    view.refresh();
+    const choose = (label: string) => {
+      fireEvent.click(within(screen.getByTestId("timeline-clip-inspector-preview")).getByRole("combobox", { name: "Representation" }));
+      const option = screen.getByRole("option", { name: label });
+      fireEvent.pointerDown(option);
+      fireEvent.click(option);
+      view.refresh();
+    };
+    choose("Outline");
+    expect(last().editorPreview!.proxies[proxyId]).toMatchObject({ representation: "outline", assets: { model: "door-model" } });
+    choose("Model");
+    expect(last().editorPreview!.proxies[proxyId]).toMatchObject({ representation: "model", assets: { model: "door-model" } });
+    expect(within(screen.getByTestId("timeline-clip-inspector-preview")).getByTestId("property-timeline-proxy-asset").textContent).toContain("Door Model");
   });
 
   it("names a new proxy from the dialog's Name field, numbered when another proxy has it", () => {

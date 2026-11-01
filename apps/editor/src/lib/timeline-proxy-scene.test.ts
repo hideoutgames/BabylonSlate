@@ -17,8 +17,8 @@ function clipAsset(previewAs: "relative" | "absolute", representation: "outline"
       { id: "glow", name: "Glow", represents: "component", classId: "LightComponent", tracks: [] },
     ],
     editorPreview: { proxies: {
-      door: { ...defaultTimelineProxyPreview(0), location: [10, 0, 0], rotation: [0, 90, 0], previewAs, representation, ...(representation === "model" ? { assetGuid: "door-model" } : {}) },
-      glow: { ...defaultTimelineProxyPreview(1), location: [0, 3, 0], size: 0.5 },
+      door: { ...defaultTimelineProxyPreview(0), location: [10, 0, 0], rotation: [0, 90, 0], previewAs, representation, assets: { model: "door-model", texture: "door-sprite" } },
+      glow: { ...defaultTimelineProxyPreview(1), location: [0, 3, 0], scale: [0.5, 2, 1] },
     } },
   };
 }
@@ -37,9 +37,11 @@ describe("Timeline proxy preview", () => {
     const outline = timelineProxyPreviewScene(timelineProxyScene(clipAsset("relative"), "Swing", graphs, false), clipAsset("relative"), false);
     expect(outline.actors[0]!.components.map((component) => [component.id, component.classId])).toEqual([["door:preview", TIMELINE_PROXY_OUTLINE_CLASS_ID]]);
     expect(outline.actors[1]!.components.map((component) => component.id)).toEqual(["glow", "glow:preview"]);
-    expect(outline.actors[1]!.components[1]!.properties).toMatchObject({ size: 0.5, twoD: false });
+    // The Outline is built at the proxy's Scale and undoes it, so its dashes keep their thickness.
+    expect(outline.actors[1]!.components[1]).toMatchObject({ properties: { size: [0.5, 2, 1], twoD: false }, transform: { scale: [2, 0.5, 1] } });
     const model = timelineProxyPreviewScene(timelineProxyScene(clipAsset("relative", "model"), "Swing", graphs, false), clipAsset("relative", "model"), false);
-    expect(model.actors[0]!.components[0]).toMatchObject({ classId: "MeshComponent", properties: { assetGuid: "door-model" } });
+    // A Model, Material or Texture draws its own asset at the proxy's Scale.
+    expect(model.actors[0]!.components[0]).toMatchObject({ classId: "MeshComponent", properties: { assetGuid: "door-model" }, transform: { scale: [1, 1, 1] } });
     const own = timelineProxyPreviewScene(timelineProxyScene(clipAsset("relative", "class"), "Swing", graphs, false), clipAsset("relative", "class"), false);
     expect(own.actors[0]!.components.map((component) => component.id)).toEqual(["panel"]);
   });
@@ -99,10 +101,43 @@ describe("Gizmo drags on proxies", () => {
     expect(turned.payload.proxies).toEqual(payload.proxies);
   });
 
-  it("changes nothing for Scale without a track", () => {
+  it("keeps Scale without a track in the preview placement, which Relative Scale keys then multiply", () => {
     const payload = clipAsset("relative");
-    const edit = timelineProxyGizmoEdit(payload, timelineProxyScene(payload, "Swing", graphs, false), 0, [live("door", [10, 0, 0], 90, [2, 2, 2])], options(true));
-    expect(edit.payload).toBe(payload);
+    const scene = timelineProxyScene(payload, "Swing", graphs, false);
+    const edit = timelineProxyGizmoEdit(payload, scene, 0, [live("door", [10, 0, 0], 90, [2, 3, 1])], options(true));
+    expect(edit.payload.editorPreview!.proxies.door).toEqual({ ...payload.editorPreview!.proxies.door, scale: [2, 3, 1] });
+    expect(edit.payload.proxies).toEqual(payload.proxies);
     expect(edit.unkeyed.size).toBe(0);
+
+    // Drawn at the placement's Scale; a Scale key of 2 on X doubles it, and a drag keys the value divided by it.
+    const scaleTrack = { id: "s", target: { kind: "transform" as const, property: "scale" as const }, valueType: "vec3" as const,
+      keys: [key("s0", 0, { x: 2, y: 1, z: 1 })] };
+    const scaled: SerializedTimelineClipAsset = { ...edit.payload, proxies: [{ ...edit.payload.proxies[0]!, tracks: [...edit.payload.proxies[0]!.tracks, scaleTrack] }, edit.payload.proxies[1]!] };
+    const preview = timelineProxyPreviewScene(timelineProxyScene(scaled, "Swing", graphs, false), scaled, false);
+    const shown = composeTimelineProxyPreview(applyTimelineClipToScene(preview, preview.timelineClips![0]!, 0, new Map()), scaled);
+    expect(close(shown.actors[0]!.transform.scale)).toEqual([4, 3, 1]);
+    const keyed = timelineProxyGizmoEdit(scaled, timelineProxyScene(scaled, "Swing", graphs, false), 0, [live("door", [10, 0, 0], 90, [6, 3, 1])], options(true));
+    expect(keyed.payload.proxies[0]!.tracks[1]!.keys.map((entry) => close(Object.values(entry.Value as object) as number[]))).toEqual([[3, 1, 1]]);
+    expect(keyed.payload.editorPreview!.proxies.door!.scale).toEqual([2, 3, 1]);
+  });
+
+  it("overwrites the preview placement for transform tracks without keys, with Auto Key on or off", () => {
+    const empty = (property: "location" | "rotation" | "scale") => ({ id: property, target: { kind: "transform" as const, property }, valueType: "vec3" as const, keys: [] });
+    const base = clipAsset("relative");
+    const payload: SerializedTimelineClipAsset = { ...base, proxies: [base.proxies[0]!, { ...base.proxies[1]!, tracks: [empty("location"), empty("rotation"), empty("scale")] }] };
+    const scene = timelineProxyScene(payload, "Swing", graphs, false);
+    for (const autoKey of [true, false]) {
+      const edit = timelineProxyGizmoEdit(payload, scene, 1, [live("glow", [5, 1, 0], 45, [2, 2, 2])], options(autoKey));
+      expect(edit.payload.editorPreview!.proxies.glow).toMatchObject({ location: [5, 1, 0], scale: [2, 2, 2] });
+      expect(close(edit.payload.editorPreview!.proxies.glow!.rotation)).toEqual([0, 45, 0]);
+      expect(edit.payload.proxies).toEqual(payload.proxies);
+      expect(edit.unkeyed.size).toBe(0);
+    }
+  });
+
+  it("stands an Absolute proxy at its placement's Scale", () => {
+    const payload = clipAsset("absolute");
+    payload.editorPreview!.proxies.door!.scale = [2, 2, 2];
+    expect(timelineProxyScene(payload, "Swing", graphs, false).actors[0]!.transform.scale).toEqual([2, 2, 2]);
   });
 });

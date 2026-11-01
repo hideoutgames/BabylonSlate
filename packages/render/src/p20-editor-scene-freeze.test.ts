@@ -400,6 +400,26 @@ describe("p20-editor-scene-freeze", () => {
     expect(root!.isWorldMatrixFrozen).toBe(true);
   });
 
+  it("moves the selection gizmo to the mesh an async visual load replaces the actor root with", async () => {
+    const handle = editorHandle();
+    const editor = handle.editor!;
+    handle.setMeshAssets({ modelBytes: new Map([["model-1", encodeTriangleGlb()]]) });
+    handle.loadScene({ ...createDefaultScene(), actors: [createActor("hero", "Hero", { components: [createMeshComponent("c1", "box")] })] });
+    editor.setSelectedActors(["hero"]);
+    const box = editor.sync.meshForActor("hero");
+    expect(editor.gizmos.attachedMesh()).toBe(box);
+
+    // The model stages beside the box and replaces it once loaded, after the apply finished.
+    const model = createMeshComponent("c1", "box");
+    model.properties.assetGuid = "model-1";
+    handle.loadScene({ ...createDefaultScene(), actors: [createActor("hero", "Hero", { components: [model] })] });
+    await handle.whenEditorModelsReady();
+    const root = editor.sync.meshForActor("hero");
+    expect(root).not.toBe(box);
+    expect(box!.isDisposed()).toBe(true);
+    expect(editor.gizmos.attachedMesh()).toBe(root);
+  });
+
   it("freezes static actor world matrices and unfreezes them on gizmo drag", () => {
     const handle = editorHandle();
     const editor = handle.editor;

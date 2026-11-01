@@ -93,7 +93,7 @@ beforeEach(() => {
       id: "t", target: { kind: "transform", property: "location" }, valueType: "vec3",
       keys: [key("a", 0, { x: 0, y: 0, z: 0 }), key("b", 2, { x: 2, y: 0, z: 0 })],
     }] }],
-    editorPreview: { proxies: { door: { ...defaultTimelineProxyPreview(0), location: [5, 0, 0], size: 2 } } },
+    editorPreview: { proxies: { door: { ...defaultTimelineProxyPreview(0), location: [5, 0, 0], scale: [2, 2, 2] } } },
   };
   harness.createEngineMock.mockClear();
   harness.handle.loadScene.mockClear();
@@ -110,7 +110,10 @@ describe("TimelineClipPreviewPanel", () => {
     await waitFor(() => expect(harness.handle.loadScene).toHaveBeenCalled());
     expect(harness.createEngineMock.mock.calls[0]![1]).toMatchObject({ editor: true, present: "rtt", viewportMode: "3d", previewLighting: true, sharedEngine: { id: "shared" } });
     const door = lastScene().actors.find((actor) => actor.id === "door")!;
-    expect(door.components).toEqual([expect.objectContaining({ classId: TIMELINE_PROXY_OUTLINE_CLASS_ID, properties: expect.objectContaining({ size: 2 }) })]);
+    // The Outline is built at the Scale the proxy stands at, and undoes it.
+    expect(door.components).toEqual([expect.objectContaining({ classId: TIMELINE_PROXY_OUTLINE_CLASS_ID, properties: expect.objectContaining({ size: [2, 2, 2] }),
+      transform: expect.objectContaining({ scale: [0.5, 0.5, 0.5] }) })]);
+    expect(door.transform.scale).toEqual([2, 2, 2]);
     // Relative: the keyed offset at 0 s is the preview placement itself.
     expect(door.transform.position).toEqual([5, 0, 0]);
   });
@@ -133,13 +136,13 @@ describe("TimelineClipPreviewPanel", () => {
     const { onGizmoDragEnd } = harness.createEngineMock.mock.calls[0]![1] as { onGizmoDragEnd: () => void };
     // Turned 30 degrees where it stands: Rotation has no track, so the placement turns.
     const yaw30: [number, number, number, number] = [0, Math.sin(Math.PI / 12), 0, Math.cos(Math.PI / 12)];
-    harness.handle.editor.selectedActorTransforms.mockReturnValue([{ actorId: "door", position: [5, 0, 0], rotation: yaw30, scale: [1, 1, 1] }]);
+    harness.handle.editor.selectedActorTransforms.mockReturnValue([{ actorId: "door", position: [5, 0, 0], rotation: yaw30, scale: [2, 2, 2] }]);
     act(() => onGizmoDragEnd());
     const placed = harness.applyAssetDocumentChange.mock.calls.at(-1)![1] as SerializedTimelineClipAsset;
     expect(placed.editorPreview!.proxies.door!.rotation.map((value) => Math.round(value))).toEqual([0, 30, 0]);
     // Moved along the tracked Location while Auto Key is off: an unkeyed value, the asset unchanged.
     harness.applyAssetDocumentChange.mockClear();
-    harness.handle.editor.selectedActorTransforms.mockReturnValue([{ actorId: "door", position: [7, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }]);
+    harness.handle.editor.selectedActorTransforms.mockReturnValue([{ actorId: "door", position: [7, 0, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] }]);
     act(() => onGizmoDragEnd());
     expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
     expect([...tools!.timelineUnkeyed.keys()]).toEqual(["t"]);

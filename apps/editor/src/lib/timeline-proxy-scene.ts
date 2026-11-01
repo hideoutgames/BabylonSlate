@@ -12,6 +12,7 @@ import {
   quatRotateVector,
   sceneLayerToEditorScene,
   timelineClipOfAsset,
+  timelineProxyPreviewAsset,
   withTimelineClipOfAsset,
   type SerializedActor,
   type SerializedComponent,
@@ -86,16 +87,16 @@ function placementTransform(place: TimelineProxyPreview) {
   return {
     position: [...place.location] as [number, number, number],
     rotation: eulerDegreesToQuaternion([...place.rotation] as [number, number, number]),
-    scale: [1, 1, 1] as [number, number, number],
+    scale: [...place.scale] as [number, number, number],
   };
 }
 
 /**
  * How the clip asset viewport draws each proxy: its Editor Preview
- * representation (an Outline, a Model in 3D, a Material or Texture in 2D,
- * sized by Size) in place of an Actor proxy's Class components, or with Class
- * those components. A Component proxy keeps its component beside it, so its
- * property tracks still apply.
+ * representation (an Outline, a Model in 3D, a Material or Texture in 2D) in
+ * place of an Actor proxy's Class components, or with Class those
+ * components. The proxy's Scale sizes it. A Component proxy keeps its
+ * component beside it, so its property tracks still apply.
  */
 export function timelineProxyPreviewScene(scene: SerializedScene, payload: SerializedTimelineClipAsset, twoD: boolean): SerializedScene {
   const proxies = new Map(payload.proxies.map((proxy) => [proxy.id, proxy]));
@@ -115,30 +116,33 @@ export function timelineProxyPreviewScene(scene: SerializedScene, payload: Seria
 
 function representationComponent(proxyId: string, preview: TimelineProxyPreview, twoD: boolean): SerializedComponent {
   const id = `${proxyId}:preview`;
-  const scaled = { ...identitySerializedTransform(), scale: [preview.size, preview.size, preview.size] as [number, number, number] };
-  const outline: SerializedComponent = {
-    id, classId: TIMELINE_PROXY_OUTLINE_CLASS_ID, parentId: null, transform: identitySerializedTransform(),
-    properties: { size: preview.size, color: preview.color, twoD },
-  };
-  if (!preview.assetGuid) return outline;
-  if (preview.representation === "model" && !twoD) {
+  const transform = identitySerializedTransform();
+  const asset = timelineProxyPreviewAsset(preview);
+  if (asset && preview.representation === "model" && !twoD) {
     const mesh = createMeshComponent(id, "box");
-    mesh.properties.assetGuid = preview.assetGuid;
-    return { ...mesh, transform: scaled };
+    mesh.properties.assetGuid = asset;
+    return { ...mesh, transform };
   }
-  if (preview.representation === "texture" && twoD) {
-    return { id, classId: "2DTextureComponent", parentId: null, transform: scaled, properties: { textureGuid: preview.assetGuid, hitTest: "ignore" } };
+  if (asset && preview.representation === "texture" && twoD) {
+    return { id, classId: "2DTextureComponent", parentId: null, transform, properties: { textureGuid: asset, hitTest: "ignore" } };
   }
-  if (preview.representation === "material" && twoD) {
-    return { id, classId: "2DMaterialComponent", parentId: null, transform: scaled, properties: { materialGuid: preview.assetGuid, hitTest: "ignore" } };
+  if (asset && preview.representation === "material" && twoD) {
+    return { id, classId: "2DMaterialComponent", parentId: null, transform, properties: { materialGuid: asset, hitTest: "ignore" } };
   }
-  return outline;
+  // The Outline is built at the placement's Scale and undoes it, so its dashes keep their thickness at any size.
+  const size = preview.scale.map((axis) => Math.max(0.01, Math.abs(axis))) as [number, number, number];
+  return {
+    id, classId: TIMELINE_PROXY_OUTLINE_CLASS_ID, parentId: null,
+    transform: { ...transform, scale: size.map((axis) => 1 / axis) as [number, number, number] },
+    properties: { size, color: preview.color, twoD },
+  };
 }
 
 /**
  * Places each Relative proxy at its preview placement: its evaluated
- * transform is an offset from there. Absolute proxies already stand where
- * their keys put them.
+ * transform is an offset from there (Location turned by the placement's
+ * Rotation, Scale multiplied by its Scale, as a Relative binding offsets the
+ * bound actor). Absolute proxies already stand where their keys put them.
  */
 export function composeTimelineProxyPreview(scene: SerializedScene, payload: SerializedTimelineClipAsset): SerializedScene {
   const previews = payload.editorPreview?.proxies ?? {};
@@ -153,13 +157,14 @@ export function composeTimelineProxyPreview(scene: SerializedScene, payload: Ser
     const offset = quatRotateVector(placeQuat, { x: px, y: py, z: pz });
     const [rx, ry, rz, rw] = actor.transform.rotation;
     const rotation = multiplyQuats(placeQuat, { x: rx, y: ry, z: rz, w: rw });
+    const [sx, sy, sz] = actor.transform.scale;
     changed = true;
     return {
       ...actor,
       transform: {
-        ...actor.transform,
         position: [place.position[0] + offset.x, place.position[1] + offset.y, place.position[2] + offset.z],
         rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+        scale: [place.scale[0] * sx, place.scale[1] * sy, place.scale[2] * sz],
       },
     };
   });
@@ -173,11 +178,11 @@ const sameTriple = (a: readonly number[], b: readonly number[]) => a.every((valu
 /**
  * A gizmo drag on proxies in the clip asset viewport. `lives` are where the
  * proxies were dropped, as drawn (a Relative proxy's preview placement
- * included). A channel with a transform track takes a key at `time` (Auto
- * Key) or an unkeyed value, as in a Scene's Timeline mode; a moved Location
- * or Rotation without a track moves the proxy's Editor Preview placement, so
- * the proxy stays where it was dropped. Scale without a track has nothing to
- * hold it.
+ * included). A channel whose transform track has keys takes a key at
+ * `time` (Auto Key) or an unkeyed value, as in a Scene's Timeline mode; a
+ * changed Location, Rotation or Scale without a track, or whose track has no
+ * keys yet, overwrites the proxy's Editor Preview placement, so the proxy
+ * stays as it was dropped.
  */
 export function timelineProxyGizmoEdit(
   payload: SerializedTimelineClipAsset,
@@ -199,9 +204,10 @@ export function timelineProxyGizmoEdit(
       x: live.position[0] - place.position[0], y: live.position[1] - place.position[1], z: live.position[2] - place.position[2],
     });
     const rotation = multiplyQuats(inverse, quatOf(live.rotation));
-    return { ...live, position: [offset.x, offset.y, offset.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w] };
+    const scale = live.scale.map((value, axis) => (place.scale[axis] ? value / place.scale[axis]! : value)) as [number, number, number];
+    return { ...live, position: [offset.x, offset.y, offset.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w], scale };
   });
-  const edit = timelineTransformEdit(scene, clip, time, local, options);
+  const edit = timelineTransformEdit(scene, clip, time, local, { ...options, keyedTracksOnly: true });
   const keyed = edit.scene.timelineClips?.find((entry) => entry.id === clip.id);
   let next = keyed && keyed !== clip ? withTimelineClipOfAsset(payload, keyed) : payload;
   const moved: Record<string, TimelineProxyPreview> = {};
@@ -209,15 +215,16 @@ export function timelineProxyGizmoEdit(
     const preview = previews[live.actorId];
     if (!preview) return;
     const tracked = new Set((clip.objects.find((object) => object.actorId === live.actorId)?.tracks ?? [])
-      .filter((track) => !track.muted && track.target.kind === "transform").map((track) => track.target.property));
+      .filter((track) => !track.muted && track.target.kind === "transform" && track.keys.length > 0).map((track) => track.target.property));
     let placement = preview;
     if (!tracked.has("rotation")) {
       const rotation = quaternionToEulerDegrees(live.rotation);
       if (!sameTriple(eulerDegreesToQuaternion(rotation), eulerDegreesToQuaternion(preview.rotation))) placement = { ...placement, rotation };
     }
+    if (!tracked.has("scale") && !sameTriple(live.scale, preview.scale)) placement = { ...placement, scale: [...live.scale] };
     if (!tracked.has("location")) {
       if (!sameTriple(live.position, preview.location)) placement = { ...placement, location: [...live.position] };
-    } else if (placement !== preview && preview.previewAs !== "absolute") {
+    } else if (placement.rotation !== preview.rotation && preview.previewAs !== "absolute") {
       // A Relative proxy turned in place: its Location keys now turn with the new rotation, so the placement follows.
       const offset = local[index]!.position;
       const turned = quatRotateVector(quatOf(eulerDegreesToQuaternion(placement.rotation)), { x: offset[0], y: offset[1], z: offset[2] });
