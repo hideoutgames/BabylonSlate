@@ -19,7 +19,7 @@ import {
   createScalabilityHostBindings,
 } from "./runtime-host-render";
 import { createTimingHostBindings } from "./runtime-host-timing";
-import { flushPainters, flushTextAppear } from "./runtime-tick-phases";
+import { flushPainters, flushTextAppear, timelineOwners } from "./runtime-tick-phases";
 import { createSceneLayerOverlayHostBindings } from "./scene-layer-overlay";
 import { createSceneLayerHostBindings } from "./scene-layers";
 import { createSceneStreamHostBindings } from "./scene-streams";
@@ -149,6 +149,8 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     }),
     timelineClip: (owner, clipId) => rt.timelines.clip(owner, clipId),
     timelineClipControl: (clip, action, args) => timelineClipControl(rt.timelines, clip, action, args),
+    timeline: (asset) => rt.timelines.timeline(asset),
+    timelineClips: (timeline, only) => rt.timelines.timelineClips(timeline, timelineOwners(rt), only),
     ...createAudioHostBindings({ frameId, scriptVoiceId: () => rt.voices.scriptVoiceId(), emit }),
     ...createNavigationHostBindings({ navigation: () => rt.navigation }),
     ...createSceneStreamHostBindings({ streams: rt.streams, world: () => rt.world }),

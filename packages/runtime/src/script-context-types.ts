@@ -250,6 +250,12 @@ export interface ScriptContext {
   timelineClipControl(target: unknown, action: string, args: Record<string, unknown>): void;
   /** Timeline Clip reads: Position, Length, Play Rate, Playing, Reversed. */
   timelineClipState(target: unknown, field: string): number | boolean;
+  /** A Timeline Asset's Timeline object for the session, or null for no asset. */
+  getTimeline(asset: unknown): EngineObject | null;
+  /** One document's clip of the Timeline's asset, while that Scene or Scene Layer is loaded. */
+  getTimelineClip(target: unknown, documentGuid: string, clipId: string): EngineObject | null;
+  /** The Timeline's loaded scene clips. */
+  getLoadedTimelineClips(target: unknown): EngineObject[];
   /** A copy of the asset's curve as a curve Structure value. */
   curveObjectCurve(kind: CurveKind, target: unknown): unknown;
   getAllActorsOfClass(classId: string): Actor[];
@@ -625,7 +631,7 @@ export type HostContextKey =
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
   | "normalizeQuat" | "randomFloat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
-  | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
+  | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"

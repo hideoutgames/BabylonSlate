@@ -109,6 +109,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   VectorCurveObject: "Object",
   ColorCurveObject: "Object",
   TimelineClip: "Object",
+  Timeline: "Object",
   Actor: "Object",
   RenderTargetCapture: "Actor",
   Scene: "Object",

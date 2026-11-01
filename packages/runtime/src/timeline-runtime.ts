@@ -9,7 +9,15 @@ import {
   type TimelineSweep,
   type TimelinePropertyTrack,
 } from "@haptic/core";
-import { Actor, ActorComponent, TimelineClipObject, timelineClipClassId, type EngineObject } from "@haptic/object-model";
+import {
+  Actor,
+  ActorComponent,
+  TimelineClipObject,
+  TimelineObject,
+  timelineClipClassId,
+  timelineRefiredDispatcherName,
+  type EngineObject,
+} from "@haptic/object-model";
 import { defaultValueForMember, jsIdent } from "@haptic/scripting";
 import { applyTweenTransform } from "./tween-transforms";
 
@@ -19,10 +27,12 @@ export interface TimelineRuntimeHost {
   clipsFor(owner: EngineObject): { documentGuid: string; clips: readonly SerializedTimelineClip[] } | undefined;
   /** Registers a clip class (`TimelineClip:<document>:<clip>`, parent `TimelineClip`) before its object exists. */
   ensureClipClass(classId: string): void;
+  /** Registers a Timeline Asset's class (`Timeline:<guid>`, parent `Timeline`) before its object exists. */
+  ensureTimelineClass(classId: string): void;
   /** Runs the listeners bound to `owner`'s dispatcher `name` (its runtime identifier). */
   fireDispatcher(owner: EngineObject, name: string, values: readonly unknown[]): void;
-  /** A clip object ended: its bindings and latent work go. */
-  release(clip: TimelineClipObject): void;
+  /** A clip or Timeline object ended: its bindings and latent work go. */
+  release(object: EngineObject): void;
   /** The live actor an owner placed under an authored actor id, per Scene or Scene Layer copy. */
   ownedActor(owner: EngineObject, actorId: string): Actor | null;
   findActor(guid: string): Actor | null | undefined;
@@ -42,6 +52,8 @@ const CHANNEL = { location: "position", rotation: "rotation", scale: "scale" } a
 export class TimelineRuntime {
   private readonly host: TimelineRuntimeHost;
   private readonly owners = new Map<EngineObject, Map<string, TimelineClipObject>>();
+  /** One Timeline object per Timeline Asset for the session, made on first use. */
+  private readonly timelines = new Map<string, TimelineObject>();
 
   constructor(host: TimelineRuntimeHost) {
     this.host = host;
@@ -74,8 +86,45 @@ export class TimelineRuntime {
     }
   }
 
+  /** Ends every clip and Timeline object: Play stopped. */
   reset(): void {
     for (const owner of [...this.owners.keys()]) this.remove(owner);
+    for (const timeline of this.timelines.values()) {
+      timeline.destroyed = true;
+      this.host.release(timeline);
+    }
+    this.timelines.clear();
+  }
+
+  /** A Timeline Asset's Timeline object, made the first time a script asks for it. */
+  timeline(assetGuid: unknown): TimelineObject | null {
+    const guid = typeof assetGuid === "string" ? assetGuid.trim() : "";
+    if (!guid) return null;
+    let timeline = this.timelines.get(guid);
+    if (!timeline) {
+      timeline = new TimelineObject(guid);
+      this.host.ensureTimelineClass(timeline.classId);
+      this.timelines.set(guid, timeline);
+    }
+    return timeline;
+  }
+
+  /**
+   * The asset's clips in the live `owners` (the main Scene, then Scene Layer
+   * copies in creation order), optionally only one document's clip.
+   */
+  timelineClips(timeline: TimelineObject, owners: Iterable<EngineObject>, only?: { documentGuid: string; clipId: string }): TimelineClipObject[] {
+    const found: TimelineClipObject[] = [];
+    const classId = only ? timelineClipClassId(only.documentGuid, only.clipId) : undefined;
+    for (const owner of owners) {
+      for (const clip of this.ensure(owner)?.values() ?? []) {
+        if (clip.destroyed || clip.clip.timelineAsset !== timeline.assetGuid) continue;
+        if (classId && clip.classId !== classId) continue;
+        found.push(clip);
+        if (classId) return found;
+      }
+    }
+    return found;
   }
 
   clip(owner: EngineObject | null | undefined, clipId: string): TimelineClipObject | null {
@@ -183,16 +232,30 @@ export class TimelineRuntime {
     for (const { track, key } of timelineEventKeysInSweeps(clip.clip.eventTracks, sweeps)) {
       const values = track.inputs.map((input) =>
         Object.hasOwn(key.values, input.name) ? structuredClone(key.values[input.name]) : defaultValueForMember(input.typeId, input.typeClassId));
-      this.host.fireDispatcher(clip, jsIdent(track.name), values);
-      if (!live()) return;
+      if (!this.fire(clip, track.name, values, live)) return;
     }
     for (let cycle = 0; cycle < cycles; cycle += 1) {
-      this.host.fireDispatcher(clip, jsIdent("On Looped"), []);
-      if (!live()) return;
+      if (!this.fire(clip, "On Looped", [], live)) return;
     }
     if (!finished) return;
     if (clip.clip.whenFinished === "restore") this.restoreValues(clip);
-    this.host.fireDispatcher(clip, jsIdent("On Finished"), []);
+    this.fire(clip, "On Finished", [], live);
+  }
+
+  /**
+   * Fires a clip's dispatcher, then its Timeline's `<Event> (<Clip>)` with
+   * the clip as the last input. A Timeline no script asked for has no
+   * listeners. False once a listener changed the clip's playback.
+   */
+  private fire(clip: TimelineClipObject, event: string, values: readonly unknown[], live: () => boolean): boolean {
+    this.host.fireDispatcher(clip, jsIdent(event), values);
+    if (!live()) return false;
+    const timeline = clip.clip.timelineAsset ? this.timelines.get(clip.clip.timelineAsset) : undefined;
+    if (!timeline || timeline.destroyed) return true;
+    // Its listeners get their own copies of the key's values.
+    const refired = [...values.map((value) => structuredClone(value)), clip];
+    this.host.fireDispatcher(timeline, jsIdent(timelineRefiredDispatcherName(event, clip.clip.name)), refired);
+    return live();
   }
 
   /** Writes every unmuted track's value at the clip's time to its actor. */

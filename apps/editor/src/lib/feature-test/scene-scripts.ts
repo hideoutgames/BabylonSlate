@@ -6,11 +6,18 @@ import {
   type SerializedTimelineClip,
   type TimelineEventTrack,
 } from "@haptic/core";
-import { timelineClipClassId } from "@haptic/object-model";
+import {
+  TIMELINE_REFIRED_CLIP_INPUT,
+  timelineClassId,
+  timelineClipClassId,
+  timelineRefiredDispatcherName,
+} from "@haptic/object-model";
 import {
   OWNED_ACTOR_GET_NODE_ID,
   OWNED_COMPONENT_GET_NODE_ID,
   OWNED_TIMELINE_CLIP_GET_NODE_ID,
+  TIMELINE_FROM_ASSET_NODE_ID,
+  TIMELINE_GET_CLIP_NODE_ID,
   ownedGetNodeProperties,
 } from "@haptic/scripting-nodes";
 import type { FeatureTestContext } from "./context";
@@ -156,15 +163,71 @@ export async function placeFeatureTestSceneScript(ctx: FeatureTestContext): Prom
   const intro: SerializedTimelineClip = { ...createTimelineClip("ft-timeline-clip-intro", "Intro"), length: 4, eventTracks: [INTRO_LINE] };
   ctx.mainScene.timelineClips = [intro];
   const documentGuid = await ctx.host.guidForAsset(ctx.mainScenePath);
-  ctx.mainScene.script = ownedActorProbeScript("Feature Test scene", mannequin, { clip: intro, documentGuid });
-  await bindFeatureTestTimelineAsset(ctx, intro);
+  const timelineGuid = await bindFeatureTestTimelineAsset(ctx, intro);
+  ctx.mainScene.script = withTimelineAssetProbe(
+    ownedActorProbeScript("Feature Test scene", mannequin, { clip: intro, documentGuid }),
+    timelineGuid, intro, documentGuid,
+  );
+}
+
+/**
+ * After the probe's report: Get Timeline Object Reference From Timeline Asset
+ * (FT_Timeline), Get Intro Timeline Clip on it (asserted valid), and Bind
+ * Event to On Intro Line (Intro), the Timeline's re-fired event, whose
+ * listener asserts the line and the clip that fired it.
+ */
+function withTimelineAssetProbe(graph: SerializedGraph, timelineGuid: string, intro: SerializedTimelineClip, documentGuid: string): SerializedGraph {
+  const clipClassId = timelineClipClassId(documentGuid, intro.id);
+  const name = timelineRefiredDispatcherName(INTRO_LINE.name, intro.name);
+  const pins = [
+    ...INTRO_LINE.inputs.map((pin) => ({ ...pin })),
+    { name: TIMELINE_REFIRED_CLIP_INPUT, typeId: "object", typeClassId: clipClassId, direction: "in" as const },
+  ];
+  const event: GraphClassMember = {
+    id: "ft-scene-script-evt-timeline-intro-line", kind: "event", name: `Handle ${name}`,
+    pins: pins.map((pin) => ({ ...pin, direction: "out" as const })),
+  };
+  const y = 1200;
+  return {
+    ...graph,
+    members: [...(graph.members ?? []), event],
+    nodes: [
+      ...graph.nodes,
+      gNode("timeline", TIMELINE_FROM_ASSET_NODE_ID, 0, y + 180, { "default:timelineAsset": timelineGuid }),
+      gNode("timeline-clip", TIMELINE_GET_CLIP_NODE_ID, 260, y + 180, {
+        title: `Get ${intro.name} Timeline Clip`, timelineAssetGuid: timelineGuid, timelineClipDocument: documentGuid,
+        timelineClipId: intro.id, timelineClipName: intro.name, timelineClipClassId: clipClassId,
+      }),
+      gNode("timeline-assert-clip", "debug.assertIsValid", 520, y, { "default:message": "Feature Test scene script could not get Intro through FT_Timeline" }),
+      gNode("timeline-bind", "flow.dispatcher.bind", 780, y, {
+        title: `Bind Event to ${name}`, name, classId: timelineClassId(timelineGuid), implicitSelf: false, pins,
+      }),
+      gNode(event.id, "flow.event.custom", 0, y + 400, { title: `Event ${event.name}`, name: event.name, pins: event.pins }),
+      gNode("timeline-assert-line", "debug.assertEqual", 260, y + 400, {
+        "default:expected": INTRO_LINE.keys[0]?.values.Line, "default:message": `FT_Timeline's ${name} carried the wrong Line`,
+      }),
+      gNode("timeline-assert-source", "debug.assertIsValid", 520, y + 400, { "default:message": `FT_Timeline's ${name} came without its Timeline Clip` }),
+      printString("timeline-print", 780, y + 400, `Feature Test scene script heard ${name} through FT_Timeline`),
+    ],
+    edges: [
+      ...graph.edges,
+      ...gChain("report", "timeline-assert-clip", "timeline-bind"),
+      gWire("timeline", "timeline", "timeline-clip", "target"),
+      gWire("timeline", "timeline", "timeline-bind", "target"),
+      gWire("timeline-clip", "clip", "timeline-assert-clip", "object"),
+      gWire(event.id, "OutputDelegate", "timeline-bind", "event"),
+      ...gChain(event.id, "timeline-assert-line", "timeline-assert-source", "timeline-print"),
+      gWire(event.id, "Line", "timeline-assert-line", "actual"),
+      gWire(event.id, TIMELINE_REFIRED_CLIP_INPUT, "timeline-assert-source", "object"),
+    ],
+  };
 }
 
 /**
  * `FT_Timeline` holds the main scene's Intro and FT_HUD's Reveal, one clip
  * from a Scene and one from a Scene Layer; its document lists both.
  */
-async function bindFeatureTestTimelineAsset(ctx: FeatureTestContext, intro: SerializedTimelineClip): Promise<void> {
+async function bindFeatureTestTimelineAsset(ctx: FeatureTestContext, intro: SerializedTimelineClip): Promise<string> {
   const { guid } = await ctx.createAsset("Timeline", "Timeline", "FT_Timeline", {
     payload: () => ({ description: "The Feature Test's Timeline Clips: Intro (main scene) and Reveal (FT_HUD)." }),
   });
@@ -174,4 +237,5 @@ async function bindFeatureTestTimelineAsset(ctx: FeatureTestContext, intro: Seri
     .find((clip) => clip.id === "ft-timeline-clip-hud-reveal");
   if (!reveal) throw new Error("FT_HUD has no Reveal Timeline Clip to bind to FT_Timeline.");
   reveal.timelineAsset = guid;
+  return guid;
 }

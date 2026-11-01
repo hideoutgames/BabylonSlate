@@ -1753,6 +1753,8 @@ export class ProjectService {
         blobs: this.blobsForPath(path),
         extraChunks: chunks,
         parentClass: existing?.parentClass ?? null,
+        // The header's index of the scene's Timeline Clips survives a bake.
+        headerMeta: headerMetaForSave(type, payload),
         dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list()),
       },
     );

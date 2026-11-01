@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTimelineClip, type SerializedTimelineClip, type TimelineKey } from "@haptic/core";
-import { ClassRegistry, EngineObject, World, type Actor } from "@haptic/object-model";
+import { ClassRegistry, EngineObject, TimelineObject, World, type Actor } from "@haptic/object-model";
 import { TimelineRuntime, timelineClipControl, timelineClipState } from "./timeline-runtime";
 
 const key = (id: string, Time: number, Value: unknown): TimelineKey => ({ id, Time, Value, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 });
@@ -16,13 +16,19 @@ function setup(clipOverrides: Partial<SerializedTimelineClip> = {}) {
   const refreshComponent = vi.fn();
   let clips: SerializedTimelineClip[] = [];
   const fired: Array<[string, unknown[]]> = [];
+  // With the object each fired on: a clip, or the Timeline that re-fires it.
+  const firedOn: Array<[EngineObject, string, unknown[]]> = [];
   const listeners = new Map<string, (values: unknown[]) => void>();
   const ensureClipClass = vi.fn();
+  const ensureTimelineClass = vi.fn();
   const release = vi.fn();
   const runtime = new TimelineRuntime({
     clipsFor: (candidate) => (candidate === owner ? { documentGuid: "level", clips } : undefined),
     ensureClipClass,
-    fireDispatcher: (_clip, name, values) => {
+    ensureTimelineClass,
+    fireDispatcher: (target, name, values) => {
+      firedOn.push([target, name, [...values]]);
+      if (target instanceof TimelineObject) return;
       fired.push([name, [...values]]);
       listeners.get(name)?.([...values]);
     },
@@ -45,7 +51,10 @@ function setup(clipOverrides: Partial<SerializedTimelineClip> = {}) {
     ...clipOverrides,
   };
   clips = [clip];
-  return { runtime, owner, door, light, teleportActor, refreshComponent, fired, listeners, ensureClipClass, release, clip: runtime.clip(owner, "intro")! };
+  return {
+    runtime, owner, door, light, teleportActor, refreshComponent, fired, firedOn, listeners, ensureClipClass, ensureTimelineClass, release,
+    clip: runtime.clip(owner, "intro")!,
+  };
 }
 
 describe("TimelineRuntime", () => {
@@ -138,6 +147,49 @@ describe("TimelineRuntime", () => {
     const { clip, ensureClipClass } = setup();
     expect(clip.classId).toBe("TimelineClip:level:intro");
     expect(ensureClipClass).toHaveBeenCalledWith("TimelineClip:level:intro");
+  });
+
+  it("makes one Timeline object per Timeline Asset and finds the asset's loaded clips", () => {
+    const { runtime, owner, clip, ensureTimelineClass, release } = setup({ timelineAsset: "fx" });
+    const timeline = runtime.timeline("fx")!;
+    expect(runtime.timeline(" fx ")).toBe(timeline);
+    expect(runtime.timeline("")).toBeNull();
+    expect(timeline.classId).toBe("Timeline:fx");
+    expect(ensureTimelineClass).toHaveBeenCalledWith("Timeline:fx");
+    expect(runtime.timelineClips(timeline, [owner])).toEqual([clip]);
+    expect(runtime.timelineClips(timeline, [owner], { documentGuid: "level", clipId: "intro" })).toEqual([clip]);
+    expect(runtime.timelineClips(timeline, [owner], { documentGuid: "other", clipId: "intro" })).toEqual([]);
+    // Another asset's Timeline holds none of them, and an unloaded owner has none.
+    expect(runtime.timelineClips(runtime.timeline("other")!, [owner])).toEqual([]);
+    expect(runtime.timelineClips(timeline, [])).toEqual([]);
+
+    runtime.reset();
+    expect(timeline.destroyed).toBe(true);
+    expect(release).toHaveBeenCalledWith(timeline);
+    expect(runtime.timeline("fx")).not.toBe(timeline);
+  });
+
+  it("re-fires a bound clip's events on its Timeline, with the clip as the last input", () => {
+    const { runtime, owner, clip, firedOn } = setup({
+      timelineAsset: "fx",
+      loopMode: "once",
+      eventTracks: [{ id: "e", name: "On Line", inputs: [{ name: "Text", typeId: "string", direction: "in" }], keys: [{ id: "k", time: 0.5, values: { Text: "Hi" } }] }],
+    });
+    runtime.play(clip);
+    runtime.advance(1, [owner], () => true);
+    // No script asked for the Timeline yet, so nothing listens on it.
+    expect(firedOn.map(([target, name]) => [target === clip ? "clip" : "timeline", name])).toEqual([["clip", "On_Line"]]);
+
+    const timeline = runtime.timeline("fx")!;
+    firedOn.length = 0;
+    runtime.playFromStart(clip);
+    runtime.advance(2, [owner], () => true);
+    expect(firedOn).toEqual([
+      [clip, "On_Line", ["Hi"]],
+      [timeline, "On_Line__Intro_", ["Hi", clip]],
+      [clip, "On_Finished", []],
+      [timeline, "On_Finished__Intro_", [clip]],
+    ]);
   });
 
   it("fires event keys with their values, then On Looped, in playback order", () => {

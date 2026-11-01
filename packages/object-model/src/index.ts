@@ -134,3 +134,12 @@ export {
   isTimelineClipClassId,
   timelineClipClassId,
 } from "./timeline-clip-object";
+export {
+  TIMELINE_CLASS_ID,
+  TIMELINE_REFIRED_CLIP_INPUT,
+  TimelineObject,
+  isTimelineClassId,
+  timelineAssetGuidOf,
+  timelineClassId,
+  timelineRefiredDispatcherName,
+} from "./timeline-object";

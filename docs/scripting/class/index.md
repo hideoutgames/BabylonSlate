@@ -754,9 +754,12 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Get Loaded Timeline Clips](get-loaded-timeline-clips.md) | Returns every loaded clip of a Timeline asset. |
+| [Get Timeline Asset Clip](get-timeline-asset-clip.md) | Returns one of a Timeline asset's clips through its Timeline, to play and control from any script. |
 | [Get Timeline Clip Length](get-timeline-clip-length.md) | Returns a Timeline Clip's Length, in seconds. |
 | [Get Timeline Clip Play Rate](get-timeline-clip-play-rate.md) | Returns a Timeline Clip's current Play Rate. |
 | [Get Timeline Clip Position](get-timeline-clip-position.md) | Returns where a Timeline Clip is, in seconds. |
+| [Get Timeline Object Reference From Timeline Asset](get-timeline-object-reference-from-timeline-asset.md) | Returns the Timeline object of a Timeline asset, to reach its clips and listen to their events from any script. |
 | [Is Timeline Clip Playing](is-timeline-clip-playing.md) | Returns true while a Timeline Clip plays, forwards or in reverse. |
 | [Is Timeline Clip Reversed](is-timeline-clip-reversed.md) | Returns true when a Timeline Clip plays, or last played, in reverse. |
 | [Pause Timeline Clip](pause-timeline-clip.md) | Stops a Timeline Clip where it is. |

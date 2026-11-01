@@ -36,6 +36,8 @@ import {
   type OwnedActorEntry,
   type OwnedTimelineClipEntry,
 } from "../lib/owned-actor-gets";
+import { projectTimelineClips } from "../lib/timeline-asset-index";
+import { timelineGraphDiagnostics, timelineScriptAssets, timelineScriptClassIds, timelineScriptSymbols } from "../lib/timeline-script-catalog";
 import { encodeRgbaPng } from "@haptic/render/png-encode";
 import type { Diagnostic } from "@haptic/scripting";
 import {
@@ -463,14 +465,19 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     });
     // Embedded scripts also reach their owner's Timeline Clip classes and the dispatchers their event tracks declare.
     const ownedClips = embeddedDocuments.flatMap((doc) => doc.ownedTimelineClips);
+    // Every script reaches the Timeline Assets' Timelines, their re-fired events and the clips they hold.
+    const timelineAssets = timelineScriptAssets(assets, projectTimelineClips(assets, openDocuments));
+    const seenSymbols = new Set<string>();
     const memberSymbols = [
       ...classMemberSymbolsFromGraphs(classGraphs, { parentOf }),
       ...ownedTimelineClipDispatcherSymbols(ownedClips),
-    ];
+      ...timelineScriptSymbols(timelineAssets),
+    ].filter((symbol) => !seenSymbols.has(symbol.id) && Boolean(seenSymbols.add(symbol.id)));
     const knownClassIds = knownClassIdSet(parentOf, [
       ...Object.keys(classGraphs),
       ...sceneClassIds,
       ...ownedClips.map((clip) => clip.classId),
+      ...timelineScriptClassIds(timelineAssets),
     ]);
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
@@ -494,6 +501,12 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         subsystemClasses,
       }),
     );
+    for (const doc of documents) {
+      diagnostics.push(...timelineGraphDiagnostics(doc.content, timelineAssets, {
+        assetGuid: doc.path,
+        graphId: documentId({ kind: "documentKind" in doc ? (doc as EmbeddedScriptDocument).documentKind : "graph", path: doc.path }),
+      }));
+    }
     for (const doc of embeddedDocuments) {
       diagnostics.push(...ownedGetDiagnostics(doc.content, doc.ownedActors,
         { assetGuid: doc.path, graphId: documentId({ kind: doc.documentKind, path: doc.path }) },

@@ -27,6 +27,7 @@ import type {
   Scene,
   SceneLayer,
   TimelineClipObject,
+  TimelineObject,
 } from "@haptic/object-model";
 import type {
   ColliderShape,
@@ -236,6 +237,10 @@ export interface ScriptHostServices {
   timelineClip?(owner: EngineObject | null, clipId: string): TimelineClipObject | null;
   /** A Timeline Clip control node (`timelineClip.play`, `timelineClip.setPosition`, ...). */
   timelineClipControl?(clip: TimelineClipObject, action: string, args: Record<string, unknown>): void;
+  /** A Timeline Asset's Timeline object for the session (Get Timeline Object Reference From Timeline Asset). */
+  timeline?(asset: unknown): TimelineObject | null;
+  /** The Timeline's loaded scene clips, main Scene first; `only` picks one document's clip. */
+  timelineClips?(timeline: TimelineObject, only?: { documentGuid: string; clipId: string }): TimelineClipObject[];
   getCurrentSceneLayerActor?(target: unknown): Actor | null;
   setFocusTarget?(target: unknown): boolean;
   clearFocusTarget?(target: unknown): void;
