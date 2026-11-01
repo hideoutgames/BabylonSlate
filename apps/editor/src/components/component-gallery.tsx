@@ -1,10 +1,14 @@
-import { OctagonAlertIcon, SaveIcon } from "lucide-react";
+import { BoxIcon, LightbulbIcon, OctagonAlertIcon, SaveIcon } from "lucide-react";
 import { useState } from "react";
 import { TagGallery } from "./tag-gallery";
 import { GalleryComposites } from "./component-gallery-composites";
 import {
   CatalogDialog,
   ColorPicker,
+  KeyframeTimeline,
+  keyRefId,
+  type KeyRef,
+  type KeyframeTimelineTrackRow,
   TimelineChart,
   type TimelineDomain,
   type TimelineSelection,
@@ -106,6 +110,57 @@ function GalleryTimelineChart() {
         onRangeChange={setRange}
         aria-label="Example Timeline"
       />
+    </section>
+  );
+}
+
+const GALLERY_KEYFRAME_ROWS: KeyframeTimelineTrackRow[] = [
+  { id: "door", kind: "group", depth: 0, label: "Door", icon: <BoxIcon />, expanded: true,
+    keys: [0, 1.5, 3].map((time) => ({ id: `d${time}`, time, shape: "diamond" as const })) },
+  { id: "door-location", kind: "track", depth: 1, label: "Location", value: "0, 0, 1.20", connect: true,
+    keys: [{ id: "a", time: 0, shape: "circle" }, { id: "b", time: 1.5, shape: "diamond" }, { id: "c", time: 3, shape: "circle" }] },
+  { id: "door-visible", kind: "track", depth: 1, label: "Visible", value: "True",
+    keys: [{ id: "v", time: 1.5, shape: "square" }] },
+  { id: "lamp", kind: "group", depth: 0, label: "Spot Light", icon: <LightbulbIcon />, expanded: true,
+    keys: [0, 6].map((time) => ({ id: `l${time}`, time, shape: "diamond" as const })) },
+  { id: "lamp-color", kind: "track", depth: 1, label: "Light › Color", value: "#ffd9a0",
+    gradient: [{ time: 0, color: "#ffd9a0" }, { time: 6, color: "#e2553b" }],
+    keys: [{ id: "c0", time: 0, shape: "diamond" }, { id: "c6", time: 6, shape: "diamond" }] },
+  { id: "lamp-intensity", kind: "track", depth: 1, label: "Light › Intensity", value: "3.10", connect: true, muted: true,
+    keys: [{ id: "i0", time: 0, shape: "diamond" }, { id: "i6", time: 6, shape: "hourglass" }] },
+];
+
+function GalleryKeyframeTimeline() {
+  const [time, setTime] = useState(1.5);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set([keyRefId({ rowId: "door-location", keyId: "b" })]));
+  const [row, setRow] = useState<string | null>("door-location");
+  const select = (refs: KeyRef[], mode: "replace" | "toggle" | "add") => setSelected((current) => {
+    const next = new Set(mode === "replace" ? [] : current);
+    for (const ref of refs) {
+      const id = keyRefId(ref);
+      if (mode === "toggle" && next.has(id)) next.delete(id);
+      else next.add(id);
+    }
+    return next;
+  });
+  return (
+    <section className="flex flex-col rounded-lg border border-border" data-testid="gallery-keyframe-timeline">
+      <div className="px-3 pt-2 pb-1 text-sm font-medium">Keyframe Timeline</div>
+      <div className="flex h-56 flex-col">
+        <KeyframeTimeline
+          rows={GALLERY_KEYFRAME_ROWS}
+          length={8}
+          frameRate={30}
+          time={time}
+          onTimeChange={setTime}
+          selectedKeys={selected}
+          onSelectKeys={select}
+          selectedRowId={row}
+          onSelectRow={setRow}
+          header={<span className="px-1 text-muted-foreground">Tracks</span>}
+          aria-label="Example Keyframes"
+        />
+      </div>
     </section>
   );
 }
@@ -436,6 +491,7 @@ export function ComponentGallery() {
 
           <GalleryColorPickers />
           <GalleryTimelineChart />
+          <GalleryKeyframeTimeline />
 
           <TagGallery />
 

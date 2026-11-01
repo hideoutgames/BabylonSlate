@@ -73,6 +73,32 @@ export {
   isCoarsePointerEnvironment,
   shouldPreventDocumentOverscroll,
 } from "./prevent-document-overscroll";
+export {
+  KeyframeTimeline,
+  type GesturePhase,
+  type KeyframeTimelineProps,
+  type KeyframeTimelineTrackRow,
+  type KeySelectMode,
+} from "./keyframe-timeline";
+export {
+  KEYFRAME_TIMELINE_GUTTER_PX,
+  fitKeyframeView,
+  frameAt,
+  keyAt,
+  keyRefFromId,
+  keyRefId,
+  keysInRect,
+  rulerTicks,
+  snapToFrame,
+  timeToX,
+  xToTime,
+  zoomKeyframeView,
+  type KeyRef,
+  type KeyframeShape,
+  type KeyframeTimelineKey,
+  type KeyframeTimelineRow,
+  type KeyframeTimelineView,
+} from "./keyframe-timeline-model";
 export { TOUCH_ROW_HEIGHT, isTouchUi, setTouchUi, useTouchUi } from "./touch-ui";
 export {
   useContextMenu,

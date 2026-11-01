@@ -21,10 +21,12 @@ export interface TimelineKey extends CurveKey<unknown> {
   id: string;
 }
 
+export type TimelineValueType = "float" | "int" | "bool" | "vec2" | "vec3" | "rotator" | "color" | "string" | "enum" | "asset";
+
 export interface TimelinePropertyTrack {
   id: string;
   target: { kind: "transform" | "visible" | "variable" | "component"; componentId?: string; property: string };
-  valueType: "float" | "int" | "bool" | "vec2" | "vec3" | "rotator" | "color" | "string" | "enum" | "asset";
+  valueType: TimelineValueType;
   muted?: boolean;
   /** Sorted by Time. */
   keys: TimelineKey[];
@@ -115,6 +117,30 @@ function normalizeKeys(value: unknown): TimelineKey[] {
     }];
   });
   return keys.sort((a, b) => a.Time - b.Time);
+}
+
+const VALUE_TYPE_FOR_TYPE_ID: Readonly<Record<string, TimelineValueType>> = {
+  float: "float", number: "float", int: "int", bool: "bool", boolean: "bool", string: "string",
+  vec2: "vec2", vec3: "vec3", rotator: "rotator", color: "color", enum: "enum", asset: "asset",
+};
+
+/** The track value type for a variable or property type id, or undefined when tracks cannot animate it. */
+export function timelineValueTypeFor(typeId: string | undefined): TimelineValueType | undefined {
+  return typeId ? VALUE_TYPE_FOR_TYPE_ID[typeId] : undefined;
+}
+
+/** A key value of `valueType` for a property that has no value: zero, false, empty or white. */
+export function defaultTimelineValue(valueType: TimelineValueType): unknown {
+  switch (valueType) {
+    case "float": case "int": return 0;
+    case "bool": return false;
+    case "vec2": return { x: 0, y: 0 };
+    case "vec3": return { x: 0, y: 0, z: 0 };
+    case "rotator": return { pitch: 0, yaw: 0, roll: 0 };
+    case "color": return { x: 1, y: 1, z: 1, w: 1 };
+    case "asset": return null;
+    default: return "";
+  }
 }
 
 const TRACK_TARGETS = new Set(["transform", "visible", "variable", "component"]);
