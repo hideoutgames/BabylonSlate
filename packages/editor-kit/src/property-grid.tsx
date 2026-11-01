@@ -39,6 +39,8 @@ import { type TypeVisualQuery } from "./type-visuals";
 import { AssetPickerControl } from "./asset-picker-control";
 import { CurveField, type CurveKey } from "./curve-field";
 import { RangeField } from "./range-field";
+import { CurveValueField } from "./curve-value-field";
+import type { CurveEditorKind, CurveEditorValue } from "./curve-editor-model";
 import type { RangeFieldKind, RangeFieldValue } from "./range-values";
 import { GradientField, type GradientStop } from "./gradient-field";
 import { editVectorAxis } from "./linked-axes";
@@ -216,6 +218,14 @@ export type PropertyRow =
       onCommit?: (value: RangeFieldValue) => void;
     })
   | (PropertyRowBase & {
+      /** A built-in curve Structure value (`{ Keys, Before, After }`); expands to the curve editor. */
+      kind: "value-curve";
+      curveKind: CurveEditorKind;
+      value: CurveEditorValue;
+      defaultValue?: CurveEditorValue;
+      onChange: (value: CurveEditorValue) => void;
+    })
+  | (PropertyRowBase & {
       kind: "curve";
       value: CurveKey[];
       defaultValue?: CurveKey[];
@@ -325,6 +335,9 @@ function resetRow(row: PropertyRow): void {
       row.onChange(row.defaultValue!);
       row.onCommit?.(row.defaultValue!);
       break;
+    case "value-curve":
+      row.onChange(row.defaultValue!);
+      break;
     case "curve":
       row.onChange(row.defaultValue!);
       break;
@@ -345,6 +358,7 @@ function rowHasLabelTarget(row: PropertyRow): boolean {
     case "collision-responses":
     case "range":
     case "value-range":
+    case "value-curve":
     case "curve":
     case "gradient":
       return false;
@@ -727,6 +741,17 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
           disabled={row.disabled}
           onChange={row.onChange}
           onCommit={row.onCommit}
+          data-testid={`property-${row.id}`}
+        />
+      );
+    case "value-curve":
+      return (
+        <CurveValueField
+          kind={row.curveKind}
+          aria-label={humanizePropertyLabel(row.label)}
+          value={row.value}
+          disabled={row.disabled}
+          onChange={row.onChange}
           data-testid={`property-${row.id}`}
         />
       );

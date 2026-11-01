@@ -18,9 +18,9 @@ Double-tap a Data Definition to open it.
 | Setting | Description |
 | --- | --- |
 | Name | The field's name. |
-| Type | The kind of value the field holds, such as **Bool**, **Int**, **Float**, **String**, **Tag**, **Vector 3**, **Color**, **Class**, **Asset** or **Enum**. See [Pin Types](../scripting/pin-types.md). A field can also be another **Data Definition**, or a built-in range: **Int Range**, **Float Range**, **Vector 2 Range**, **Vector Range** or **Rotator Range**. |
+| Type | The kind of value the field holds, such as **Bool**, **Int**, **Float**, **String**, **Tag**, **Vector 3**, **Color**, **Class**, **Asset** or **Enum**. See [Pin Types](../scripting/pin-types.md). A field can also be another **Data Definition**, or a built-in range or curve: **Int Range**, **Float Range**, **Vector 2 Range**, **Vector Range**, **Rotator Range**, **Float Curve**, **Vector Curve** or **Color Curve**. |
 | Container | **Single**, **Array** or **Map**. A Map also asks for a **Key Type**. |
-| Class Type, Enum Type, Data Definition Type, Asset Type | Narrows a class, enum, record or asset field. **Data Definition Type** also lists the built-in ranges. **Asset Type** defaults to **Any Asset**. |
+| Class Type, Enum Type, Data Definition Type, Asset Type | Narrows a class, enum, record or asset field. **Data Definition Type** also lists the built-in ranges and curves. **Asset Type** defaults to **Any Asset**. |
 | Loading | For Asset and Class fields. **Soft (Load On Demand)** or **Hard (Load With Owner)**. |
 | Default Value | The value new entries start with. |
 | Category | A free-text category for the field. |

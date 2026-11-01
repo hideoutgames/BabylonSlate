@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@haptic/core";
-import { createDataEntryForDefinition, dataEntryNeedsDefinitionApply, dataEntryStructuralIssue, rangeKindForStruct, reconcileDataEntry, type StructField } from "@haptic/scripting";
+import { createDataEntryForDefinition, dataEntryNeedsDefinitionApply, dataEntryStructuralIssue, curveKindForStruct, rangeKindForStruct, reconcileDataEntry, type StructField } from "@haptic/scripting";
 import { normalizeTag, type TagContainer } from "@haptic/core";
-import { AssetPicker, ContextMenuOverlay, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TOUCH_ROW_HEIGHT, TREE_ROW_HEIGHT, TagPicker, TreeView, TypeVisualIcon, WindowedList, formatRangeSummary, humanizePropertyLabel, normalizeRangeFieldValue, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, useTouchUi, type NestedMenuItem, type RangeFieldValue, type TreeViewNode } from "@haptic/editor-kit";
+import { AssetPicker, ContextMenuOverlay, CurvePreview, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TOUCH_ROW_HEIGHT, TREE_ROW_HEIGHT, TagPicker, TreeView, TypeVisualIcon, WindowedList, formatRangeSummary, humanizePropertyLabel, normalizeRangeFieldValue, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, useTouchUi, type CurveEditorValue, type NestedMenuItem, type RangeFieldValue, type TreeViewNode } from "@haptic/editor-kit";
 import { ArrowUpIcon, BetweenHorizontalStartIcon, ChevronDownIcon, DatabaseIcon, ListPlusIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
 import { Input } from "@haptic/ui/components/input";
@@ -132,6 +132,12 @@ function DataEntryCell({ field, value, label, editable, enums, onChange, preview
     // Ranges edit in Values; the cell shows Min – Max, as collapsed Inspector rows do.
     const summary = formatRangeSummary(rangeKind, normalizeRangeFieldValue(rangeKind, value as RangeFieldValue), field.unit);
     return <span title={summary} className="block truncate px-1 tabular-nums" data-testid="data-range-cell">{summary}</span>;
+  }
+  const curveKind = !collection && field.typeId === "struct" ? curveKindForStruct(field.typeClassId) : undefined;
+  if (curveKind) {
+    // Curves edit in Values; the cell shows the same preview as a collapsed Inspector row.
+    const curve = value && typeof value === "object" && Array.isArray((value as CurveEditorValue).Keys) ? value as CurveEditorValue : { Keys: [] };
+    return <span title={`${curve.Keys.length} ${curve.Keys.length === 1 ? "Key" : "Keys"}`} className="flex h-full items-center px-1" data-testid="data-curve-cell"><CurvePreview kind={curveKind} value={curve} /></span>;
   }
   if (!editable || collection) return <span title={preview} className="block truncate px-1 text-muted-foreground">{preview}</span>;
   if (field.typeId === "float" || field.typeId === "int") return <NumberField aria-label={label} className={cn(GRID_CONTROL, "tabular-nums")} value={typeof value === "number" ? value : 0} onChange={(next) => onChange(field.typeId === "int" ? Math.trunc(next) : next)} />;
