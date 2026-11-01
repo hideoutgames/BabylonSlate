@@ -242,5 +242,30 @@ describe("Timeline window", () => {
     fireEvent.click(screen.getByTestId("timeline-row-menu-down"));
     expect(lastClip().objects.map((object) => object.id)).toEqual(["o-lamp", "o-door"]);
   });
+
+  it("keys an unkeyed change from the amber key button, and moving the playhead discards one", () => {
+    harness.scene = sceneWith(animated());
+    let tools: ReturnType<typeof useSceneTools> | null = null;
+    function Probe() {
+      tools = useSceneTools();
+      return null;
+    }
+    const view = render(<KeybindProvider><SceneToolsProvider><SelectClip id="intro" /><Probe /><TimelinePanel {...panel} /></SceneToolsProvider></KeybindProvider>);
+    act(() => tools!.setTimelineUnkeyed(new Map([["t-loc", { x: 9, y: 0, z: 0 }]])));
+    const button = screen.getByTestId("timeline-key-toggle-t-loc");
+    expect(button.getAttribute("data-unkeyed")).toBe("true");
+    expect(button.getAttribute("aria-label")).toBe("Key Change on Location");
+    fireEvent.click(button);
+    expect(lastClip().objects[0]!.tracks[0]!.keys.find((entry) => entry.Time === 0)!.Value).toEqual({ x: 9, y: 0, z: 0 });
+    expect(tools!.timelineUnkeyed.size).toBe(0);
+
+    act(() => tools!.setTimelineUnkeyed(new Map([["t-loc", { x: 7, y: 0, z: 0 }]])));
+    fireEvent.click(screen.getByTestId("timeline-next-key"));
+    expect(tools!.timelineUnkeyed.size).toBe(0);
+
+    fireEvent.click(screen.getByTestId("timeline-auto-key"));
+    expect(tools!.timelineAutoKey).toBe(true);
+    view.unmount();
+  });
 });
 

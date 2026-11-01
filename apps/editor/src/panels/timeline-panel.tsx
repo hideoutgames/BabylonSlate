@@ -44,6 +44,7 @@ import {
   ArrowUpIcon,
   BoxIcon,
   ChevronDownIcon,
+  CircleDotIcon,
   ClipboardPasteIcon,
   CopyIcon,
   CopyPlusIcon,
@@ -161,6 +162,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   const rawTime = useTimelinePlayheadTime(playhead);
   const time = Math.min(clip.length, Math.max(0, rawTime));
   const { timelineKeySelection: selection, setTimelineKeySelection: setSelection, timelineRowId: rowId, setTimelineRowId: setRowId } = tools;
+  const { timelineAutoKey: autoKey, setTimelineAutoKey: setAutoKey, timelineUnkeyed: unkeyed, setTimelineUnkeyed: setUnkeyed } = tools;
   const rootRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [filter, setFilter] = useState("");
@@ -264,6 +266,8 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
   };
 
   const keyValue = (trackId: string, at: number) => {
+    // An unkeyed change is what the viewport shows, so keying keeps it.
+    if (unkeyed.has(trackId)) return unkeyed.get(trackId);
     const found = findTimelineTrack(clip, trackId);
     if (!found) return undefined;
     const actor = scene.actors.find((entry) => entry.id === found.object.actorId);
@@ -277,13 +281,20 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
       return value === undefined ? [] : [{ trackId, time, value }];
     });
     if (keys.length) commitClip(setTimelineKeys(clip, keys, newId));
+    if (trackIds.some((trackId) => unkeyed.has(trackId))) {
+      setUnkeyed(new Map([...unkeyed].filter(([trackId]) => !trackIds.includes(trackId))));
+    }
   };
 
-  /** A track row's key button: removes the key on the playhead's frame, or sets one. */
+  /** A track row's key button: keys an unkeyed change, else removes the key on the playhead's frame, or sets one. */
   const toggleKey = (trackId: string) => {
     const track = findTimelineTrack(clip, trackId)?.track;
     if (!track) return;
     const existing = timelineKeyAt(track, time, clip.frameRate);
+    if (unkeyed.has(trackId)) {
+      setKeys([trackId]);
+      return;
+    }
     if (existing) commitClip(deleteTimelineKeys(clip, [{ trackId, keyId: existing.id }]));
     else setKeys([trackId]);
   };
@@ -492,6 +503,7 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
       };
     }
     const keyed = row.track ? Boolean(timelineKeyAt(row.track, time, clip.frameRate)) : false;
+    const pending = unkeyed.has(row.id);
     return {
       id: row.id,
       kind: "track",
@@ -503,9 +515,10 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
       ...(row.gradient ? { gradient: row.gradient } : {}),
       muted: row.muted,
       testId: `timeline-row-${row.id}`,
-      actions: <IconActionButton label={keyed ? `Remove Key on ${row.label}` : `Set Key on ${row.label}`} variant="ghost" size={touch ? "touch-icon" : "icon-xs"}
+      actions: <IconActionButton label={pending ? `Key Change on ${row.label}` : keyed ? `Remove Key on ${row.label}` : `Set Key on ${row.label}`}
+        variant="ghost" size={touch ? "touch-icon" : "icon-xs"} data-unkeyed={pending ? "true" : undefined}
         onClick={(event) => { event.stopPropagation(); toggleKey(row.id); }} data-testid={`timeline-key-toggle-${row.id}`}>
-        <DiamondIcon className={keyed ? "fill-current text-selection" : undefined} />
+        <DiamondIcon className={pending ? "fill-current text-brand-amber" : keyed ? "fill-current text-selection" : undefined} />
       </IconActionButton>,
     };
   });
@@ -579,6 +592,9 @@ function ClipTimeline({ scene, clip, commitClip, tools }: {
           <SelectContent>{frameRateItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
         </Select>
         <Toggle size="sm" aria-label="Snap to Frames" pressed={snap} onPressedChange={setSnap} data-testid="timeline-snap"><MagnetIcon /></Toggle>
+        <Toggle size="sm" aria-label="Auto Key" pressed={autoKey} onPressedChange={setAutoKey} data-testid="timeline-auto-key">
+          <CircleDotIcon className={autoKey ? "text-destructive" : undefined} />Auto Key
+        </Toggle>
         <TransportButton label="Zoom To Fit" onClick={() => setFitToken((token) => token + 1)} testId="timeline-zoom-fit"><UnfoldHorizontalIcon /></TransportButton>
         <span className="flex-1" />
         <NestedMenu items={trackMenu} trigger={<Button variant="ghost" size="sm" data-testid="timeline-add-menu">

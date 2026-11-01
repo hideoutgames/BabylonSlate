@@ -288,4 +288,56 @@ test.describe("Scene modes", () => {
     await page.getByTestId("timeline-row-menu-mute").click();
     await expect.poll(async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.muted).toBe(true);
   });
+  test("previews the clip in the viewport, keys a gizmo move with Auto Key, and keeps it unkeyed without", async ({ page }) => {
+    test.setTimeout(120_000);
+    type Host = { __hapticViewportTest: { commitGizmoNudge(): Promise<boolean>; sceneVisuals(): Array<{ actorId: string; position: [number, number, number] }> } };
+    const actorX = () => page.evaluate(() => (globalThis as unknown as Host).__hapticViewportTest.sceneVisuals().find((visual) => visual.actorId === "actor-1")?.position[0] ?? null);
+    const nudge = () => page.evaluate(() => (globalThis as unknown as Host).__hapticViewportTest.commitGizmoNudge());
+    await openMinimalTestProject(page, await minimalProjectFiles()); await openMainScene(page);
+    await page.keyboard.press("Shift+5");
+    await waitForSceneViewportReady(page);
+    await page.getByTestId("timeline-clips-new").click();
+    await page.getByTestId("timeline-clips-list").getByRole("textbox").press("Enter");
+    await page.getByTestId("tree-row-actor:actor-1").click();
+    await page.getByTestId("timeline-add-menu").click();
+    await page.getByTestId("timeline-track-menu-selected").click();
+    await expect.poll(async () => (await content(page)).timelineClips?.[0]?.objects.length).toBe(1);
+    const objectId = (await content(page)).timelineClips![0]!.objects[0]!.id;
+    await page.getByTestId(`timeline-add-track-${objectId}`).click();
+    const dialog = page.getByTestId("timeline-add-track-dialog");
+    await dialog.getByText("Location", { exact: true }).click();
+    await dialog.getByRole("button", { name: "Add Tracks" }).click();
+    await expect.poll(async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks.length).toBe(1);
+    const trackId = (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.id;
+    const keys = async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.keys.map((key) => [key.Time, (key.Value as { x: number }).x]);
+    const startX = (await content(page)).actors.find((actor) => actor.id === "actor-1")!.transform.position[0];
+
+    // Keys at both ends; with Auto Key, a gizmo move at the end keys it there and leaves the actor's own position alone.
+    await page.getByTestId(`timeline-key-toggle-${trackId}`).click();
+    await page.getByTestId("timeline-go-end").click();
+    await page.getByTestId(`timeline-key-toggle-${trackId}`).click();
+    await expect.poll(keys).toEqual([[0, startX], [5, startX]]);
+    await page.getByTestId("timeline-auto-key").click();
+    expect(await nudge()).toBe(true);
+    await expect.poll(keys).toEqual([[0, startX], [5, startX + 1.5]]);
+    expect((await content(page)).actors.find((actor) => actor.id === "actor-1")!.transform.position[0]).toBe(startX);
+    await expect(page.getByTestId("viewport-timeline-preview")).toContainText("at 5.00 s");
+
+    // The viewport follows the playhead.
+    await expect.poll(actorX).toBeCloseTo(startX + 1.5, 3);
+    await page.getByTestId("timeline-go-start").click();
+    await expect.poll(actorX).toBeCloseTo(startX, 3);
+
+    // Without Auto Key, a move is only previewed until it is keyed or the playhead moves.
+    await page.getByTestId("timeline-auto-key").click();
+    expect(await nudge()).toBe(true);
+    await expect(page.getByTestId(`timeline-key-toggle-${trackId}`)).toHaveAttribute("data-unkeyed", "true");
+    await expect.poll(actorX).toBeCloseTo(startX + 1.5, 3);
+    expect(await keys()).toEqual([[0, startX], [5, startX + 1.5]]);
+    await page.getByTestId("timeline-next-key").click();
+    await expect(page.getByTestId(`timeline-key-toggle-${trackId}`)).not.toHaveAttribute("data-unkeyed", "true");
+    await page.getByTestId("timeline-go-start").click();
+    await expect.poll(actorX).toBeCloseTo(startX, 3);
+  });
 });
+

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { LandscapeBrush } from "@haptic/core";
 import { TimelinePlayhead } from "../lib/timeline-playhead";
 
@@ -14,6 +14,7 @@ export interface TimelineDropTarget {
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set();
+const NO_UNKEYED: ReadonlyMap<string, unknown> = new Map();
 
 type FoliageBrush = { radius: number; density: number; spacing: number; maxSlope: number; alignToNormal: boolean; randomYaw: boolean };
 function useSceneToolsState() {
@@ -30,9 +31,16 @@ function useSceneToolsState() {
   const [timelineKeySelection, setTimelineKeySelection] = useState<ReadonlySet<string>>(NO_KEYS);
   const [timelineRowId, setTimelineRowId] = useState<string | null>(null);
   const [timelineDropTarget, setTimelineDropTarget] = useState<TimelineDropTarget | null>(null);
+  // Auto Key: a viewport edit of a tracked property keys it at the playhead.
+  const [timelineAutoKey, setTimelineAutoKey] = useState(false);
+  // Without Auto Key, such an edit is only previewed (track id to value) until it is keyed;
+  // moving the playhead discards it.
+  const [timelineUnkeyed, setTimelineUnkeyed] = useState<ReadonlyMap<string, unknown>>(NO_UNKEYED);
+  useEffect(() => timelinePlayhead.subscribe(() => setTimelineUnkeyed((current) => (current.size ? NO_UNKEYED : current))), [timelinePlayhead]);
   return { landscapeTool, setLandscapeTool, landscapeBrush, setLandscapeBrush, landscapeSelection, setLandscapeSelection,
     foliageTool, setFoliageTool, foliageBrush, setFoliageBrush, groupId, setGroupId, timelineClipId, setTimelineClipId,
-    timelinePlayhead, timelineKeySelection, setTimelineKeySelection, timelineRowId, setTimelineRowId, timelineDropTarget, setTimelineDropTarget };
+    timelinePlayhead, timelineKeySelection, setTimelineKeySelection, timelineRowId, setTimelineRowId, timelineDropTarget, setTimelineDropTarget,
+    timelineAutoKey, setTimelineAutoKey, timelineUnkeyed, setTimelineUnkeyed };
 }
 const SceneToolsContext = createContext<ReturnType<typeof useSceneToolsState> | null>(null);
 export function SceneToolsProvider({ children }: { children: ReactNode }) {

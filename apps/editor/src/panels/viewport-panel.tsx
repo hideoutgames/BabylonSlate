@@ -1,4 +1,6 @@
-import { parseSceneDocumentLayout } from "../shell/scene-document-layout";
+import { documentSceneMode, parseSceneDocumentLayout } from "../shell/scene-document-layout";
+import { useTimelinePlayheadTime, type TimelinePlayhead } from "../lib/timeline-playhead";
+import { timelineTransformEdit } from "../lib/timeline-transform-edit";
 import { SceneBrushToolbar } from "../components/scene-brush-toolbar";
 import { useSceneTools } from "../context/scene-tools-context";
 import { attachSceneBrushInput, type SceneBrushState } from "@haptic/render";
@@ -22,7 +24,7 @@ import {
   engineAdapterInfo,
   type EngineHandle,
 } from "@haptic/render";
-import { type SerializedScene, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus, sceneEnvironmentTextureGuid } from "@haptic/core";
+import { type SerializedScene, type SerializedTimelineClip, applyTimelineClipToScene, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus, sceneEnvironmentTextureGuid } from "@haptic/core";
 import {
   useActiveDocumentId,
   useDocumentActions,
@@ -189,6 +191,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  // Timeline mode: the selected clip, which the viewport shows at the playhead.
+  const timelineClip = documentSceneMode(doc?.ref.kind, doc?.layout) === "timeline"
+    ? scene?.timelineClips?.find((clip) => clip.id === sceneTools.timelineClipId) ?? null
+    : null;
+  const { timelinePlayhead, timelineUnkeyed, timelineAutoKey, setTimelineUnkeyed } = sceneTools;
   useEffect(() => {
     const host = panelRef.current;
     if (!host || doc?.ref.kind !== "scene" || !registerSimulationViewport) return;
@@ -218,6 +225,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const asset = assetRegistry?.getByGuid?.(guid);
     return asset?.header.type === "Scene" ? asset.header.name : undefined;
   }), [scene, assetRegistry, registryEpoch]);
+  // The previewed scene, at the playhead when the document or the unkeyed changes change; playback
+  // and scrubbing apply it directly below. The document is never written.
+  const shownScene = useMemo(() => editorScene && timelineClip
+    ? applyTimelineClipToScene(editorScene, timelineClip, Math.min(timelineClip.length, timelinePlayhead.get()), timelineUnkeyed)
+    : editorScene, [editorScene, timelineClip, timelinePlayhead, timelineUnkeyed]);
   const brushStateRef = useRef<SceneBrushState | null>(null);
   const group = scene?.settings.foliageGroups?.find((entry) => entry.id === sceneTools.groupId);
   brushStateRef.current = {
@@ -271,12 +283,35 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useViewportNavmesh({ engineRef, sceneRef, navDebugRef, navOverlayGeneration, doc, scene });
 
+  const timelineRef = useRef<{
+    clipId: string;
+    playhead: TimelinePlayhead;
+    autoKey: boolean;
+    unkeyed: ReadonlyMap<string, unknown>;
+    setUnkeyed: (unkeyed: ReadonlyMap<string, unknown>) => void;
+  } | null>(null);
+  timelineRef.current = timelineClip
+    ? { clipId: timelineClip.id, playhead: timelinePlayhead, autoKey: timelineAutoKey, unkeyed: timelineUnkeyed, setUnkeyed: setTimelineUnkeyed }
+    : null;
   /** Turn the mesh state a gizmo drag left behind into one scene command. */
   const commitGizmoTransform = useCallback(() => {
     const handle = engineRef.current;
     const current = takeGizmoDragScene(dragStartSceneRef);
     const lives = handle?.editor?.selectedActorTransforms() ?? [];
     if (!handle || !current || lives.length === 0) return;
+    const timeline = timelineRef.current;
+    const clip = timeline && current.timelineClips?.find((entry) => entry.id === timeline.clipId);
+    if (timeline && clip) {
+      // Tracked channels take keys (Auto Key) or unkeyed values; the rest edit the document.
+      const edit = timelineTransformEdit(current, clip, Math.min(clip.length, timeline.playhead.get()), lives, {
+        autoKey: timeline.autoKey,
+        unkeyed: timeline.unkeyed,
+        newId: () => crypto.randomUUID(),
+      });
+      if (edit.unkeyed.size) timeline.setUnkeyed(new Map([...timeline.unkeyed, ...edit.unkeyed]));
+      if (edit.scene !== current) void applySceneChange(documentId, edit.scene);
+      return;
+    }
     const byId = new Map(lives.map((live) => [live.actorId, live]));
     const next: SerializedScene = {
       ...current,
@@ -410,7 +445,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useViewportSceneLoad({
     scene,
-    editorScene,
+    editorScene: shownScene,
     scenePath: doc?.ref.path,
     requestedRenderSettingsKey,
     renderSettingsKey,
@@ -433,6 +468,25 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   });
 
   useViewportEditorSync({ engineRef, engineEpoch, scene, sceneMode, audioLibrary });
+
+  // Scrubbing and playback re-apply the preview without React state, so the pose path keeps up.
+  const previewRef = useRef({ editorScene, timelineClip, timelineUnkeyed, sceneReady });
+  previewRef.current = { editorScene, timelineClip, timelineUnkeyed, sceneReady };
+  const sceneAssetGuidRef = useRef<string | undefined>(undefined);
+  sceneAssetGuidRef.current = doc?.ref.path ? assetRegistry?.getByPath?.(doc.ref.path)?.header.guid : undefined;
+  const previewing = timelineClip !== null;
+  useEffect(() => {
+    if (!previewing) return;
+    return timelinePlayhead.subscribe(() => {
+      const { editorScene: base, timelineClip: clip, timelineUnkeyed: unkeyed, sceneReady: ready } = previewRef.current;
+      const handle = engineRef.current;
+      if (!handle || !base || !clip || !ready || dragStartSceneRef.current || simulationDetachedRef.current) return;
+      handle.loadScene(
+        applyTimelineClipToScene(base, clip, Math.min(clip.length, timelinePlayhead.get()), unkeyed),
+        { sceneAssetGuid: sceneAssetGuidRef.current },
+      );
+    });
+  }, [previewing, timelinePlayhead]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -521,6 +575,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         className="h-full min-h-0 min-w-0 w-full flex-1 touch-none"
         data-testid="viewport-canvas"
       />
+      {timelineClip ? <TimelinePreviewBadge clip={timelineClip} playhead={timelinePlayhead} /> : null}
       {sceneLoad.failed && !sceneLoad.open ? (
         // The failed load released the Engine; keep Retry reachable after Close.
         <Empty
@@ -606,6 +661,20 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         onDismiss={() => setSceneLoad((current) => ({ ...current, open: false }))}
         onCopyDetails={debugMode ? copyLoadDetails : undefined}
       />
+    </div>
+  );
+}
+
+/** Names the clip and time the viewport shows, and that the document is untouched. */
+function TimelinePreviewBadge({ clip, playhead }: { clip: SerializedTimelineClip; playhead: TimelinePlayhead }) {
+  const time = Math.min(clip.length, useTimelinePlayheadTime(playhead));
+  return (
+    <div
+      className="pointer-events-none absolute right-2 bottom-2 z-10 max-w-[calc(100%-1rem)] truncate rounded-md border bg-popover/90 px-2 py-1 text-xs text-muted-foreground shadow-sm"
+      data-testid="viewport-timeline-preview"
+    >
+      Previewing <span className="font-medium text-foreground">{clip.name}</span> at{" "}
+      <span className="font-mono tabular-nums">{time.toFixed(2)} s</span> · scene not modified
     </div>
   );
 }
