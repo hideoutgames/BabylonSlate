@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clampToRange,
+  curveKeyAxes,
   curveKeyTangent,
   curveTimeRange,
   evaluateCurve,
@@ -90,6 +91,52 @@ describe("curve interpolation", () => {
     expect(evaluateCurve("float", floatCurve([]), 3)).toBe(0);
     expect(evaluateCurve("vec3", floatCurve([]), 3)).toEqual({ x: 0, y: 0, z: 0 });
     expect(evaluateCurve("float", floatCurve([key(2, 7)], "linear", "linear"), -5)).toBe(7);
+  });
+});
+
+describe("Vector keys that set only some axes", () => {
+  const v = (x: number, y: number, z: number) => ({ x, y, z });
+  const axes = (Axes: number, Time: number, Value: unknown, Interpolation = "linear") => ({ ...key(Time, Value, Interpolation), Axes });
+
+  it("evaluates each axis from the keys that set it", () => {
+    const curve = floatCurve([key(0, v(0, 0, 0)), axes(1, 1, v(10, 99, 99)), key(2, v(0, 20, 4))]);
+    // X has a key at 1 s; Y and Z run straight from 0 s to 2 s past it.
+    expect(evaluateCurve("vec3", curve, 1)).toEqual({ x: 10, y: 10, z: 2 });
+    expect(evaluateCurve("vec3", curve, 0.5)).toEqual({ x: 5, y: 5, z: 1 });
+    // Keys that set every axis evaluate as before.
+    expect(curveKeyAxes("vec3", curve.Keys[0])).toBe(7);
+    expect(curveKeyAxes("vec3", curve.Keys[1])).toBe(1);
+    expect(curveKeyAxes("float", { Axes: 1 })).toBe(1);
+    expect(curveKeyAxes("color", { Axes: 1 })).toBe(15);
+  });
+
+  it("holds an axis outside its own keys and extrapolates over the whole curve's time range", () => {
+    const keys = [key(0, v(0, 0, 0)), key(1, v(5, 7, 1)), axes(1, 3, v(10, 0, 0))];
+    const held = floatCurve(keys);
+    // Only X reaches 3 s: Y and Z hold their last values.
+    expect(evaluateCurve("vec3", held, 2)).toEqual({ x: 7.5, y: 7, z: 1 });
+    // Cycle repeats the whole 3 s for every axis: 3.5 s plays as 0.5 s.
+    expect(evaluateCurve("vec3", floatCurve(keys, "constant", "cycle"), 3.5)).toEqual({ x: 2.5, y: 3.5, z: 0.5 });
+    // Linear continues X's end slope (2.5 per second); Y and Z ended earlier and stay flat.
+    expect(evaluateCurve("vec3", floatCurve(keys, "constant", "linear"), 4)).toEqual({ x: 12.5, y: 7, z: 1 });
+  });
+
+  it("finds each axis's tangent among the keys that set it", () => {
+    const curve = floatCurve([key(0, v(0, 0, 0), "auto"), axes(1, 1, v(4, 0, 0), "auto"), key(2, v(10, 10, 10), "auto")]);
+    // X's middle key sits between 0 and 10 over 2 s; it sets no Y.
+    expect(curveKeyTangent("vec3", curve, 1, 0, "leave")).toBe(5);
+    expect(curveKeyTangent("vec3", curve, 1, 1, "leave")).toBe(0);
+    // Y's first key has only its end key as a neighbour.
+    expect(curveKeyTangent("vec3", curve, 0, 1, "leave")).toBe(5);
+  });
+
+  it("keeps Axes when normalising, letting keys of other axes share a time", () => {
+    const shared = normalizeCurve("vec3", floatCurve([axes(1, 1, v(1, 0, 0)), axes(6, 1, v(0, 2, 3)), key(2, v(1, 1, 1))]));
+    expect(shared.Keys.map((entry) => [entry.Time, entry.Axes])).toEqual([[1, 1], [1, 6], [2, undefined]]);
+    // Keys that set a common axis are still pushed apart.
+    const overlapping = normalizeCurve("vec3", floatCurve([axes(1, 1, v(1, 0, 0)), axes(3, 1, v(0, 2, 3))]));
+    expect(overlapping.Keys.map((entry) => entry.Time)).toEqual([1, 1.001]);
+    expect(normalizeCurve("vec3", floatCurve([axes(7, 0, v(1, 1, 1))])).Keys[0]).not.toHaveProperty("Axes");
   });
 });
 

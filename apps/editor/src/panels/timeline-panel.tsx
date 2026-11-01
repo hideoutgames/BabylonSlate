@@ -881,6 +881,7 @@ function TimelineCurves({ clip, rows, rowId, setRowId, snap, commitClip, touch }
             ...(snap ? { timeSnap: 1 / clip.frameRate } : {}),
             keyGap: 0.5 / clip.frameRate,
             extrapolation: "constant",
+            sharedKeys: true,
           }}
           onChange={(curve) => commitClip({
             ...clip,
