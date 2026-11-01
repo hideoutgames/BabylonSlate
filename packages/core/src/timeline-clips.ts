@@ -8,7 +8,18 @@ import type { GraphClassMemberPin } from "./project";
  */
 export const TIMELINE_FRAME_RATES = [24, 25, 30, 48, 50, 60] as const;
 export type TimelineFrameRate = (typeof TIMELINE_FRAME_RATES)[number];
-export type TimelineLoopMode = "once" | "loop" | "pingPong";
+export const TIMELINE_LOOP_MODES = ["once", "loop", "pingPong"] as const;
+export type TimelineLoopMode = (typeof TIMELINE_LOOP_MODES)[number];
+export const TIMELINE_LOOP_MODE_LABELS: Record<TimelineLoopMode, string> = { once: "Once", loop: "Loop", pingPong: "Ping Pong" };
+/** Set Timeline Clip Loop Mode's enum; its members are the labels. */
+export const ENGINE_TIMELINE_LOOP_MODE_ENUM_ID = "engine:TimelineLoopMode";
+
+/** A loop mode from its id, its label (an enum value) or its member index; undefined otherwise. */
+export function parseTimelineLoopMode(value: unknown): TimelineLoopMode | undefined {
+  if (typeof value === "number") return TIMELINE_LOOP_MODES[value];
+  if (typeof value !== "string") return undefined;
+  return TIMELINE_LOOP_MODES.find((mode) => mode === value || TIMELINE_LOOP_MODE_LABELS[mode] === value);
+}
 export type TimelineWhenFinished = "keep" | "restore";
 
 export const DEFAULT_TIMELINE_CLIP_LENGTH = 5;

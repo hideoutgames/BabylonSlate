@@ -1,5 +1,4 @@
 import { createTimelineClip, type SerializedActor, type SerializedGraph, type SerializedTimelineClip } from "@haptic/core";
-import { engineScriptApiFor } from "@haptic/object-model";
 import {
   OWNED_ACTOR_GET_NODE_ID,
   OWNED_COMPONENT_GET_NODE_ID,
@@ -8,19 +7,6 @@ import {
 } from "@haptic/scripting-nodes";
 import type { FeatureTestContext } from "./context";
 import { classGraph, gChain, gNode, gWire, printString } from "./graph";
-
-/** Call node for a Timeline Clip function on the wired `get-clip` reference. */
-function timelineClipCall(id: string, x: number, name: string) {
-  const fn = engineScriptApiFor("TimelineClip")?.functions?.find((entry) => entry.name === name);
-  if (!fn) throw new Error(`TimelineClip has no "${name}" function.`);
-  return gNode(id, "functions.call", x, 0, {
-    functionName: fn.name,
-    classId: "TimelineClip",
-    implicitSelf: false,
-    pins: fn.pins.map((pin) => ({ ...pin })),
-    runtime: fn.runtime,
-  });
-}
 
 /**
  * A SceneScript / SceneLayerScript that, on Begin Play, gets one of its
@@ -36,17 +22,16 @@ export function ownedActorProbeScript(owner: string, actor: SerializedActor, cli
     ? [
         gNode("get-clip", OWNED_TIMELINE_CLIP_GET_NODE_ID, 780, 180, { sceneTimelineClipId: clip.id, sceneTimelineClipName: clip.name }),
         gNode("assert-clip", "debug.assertIsValid", 780, 0, { "default:message": `${owner} script could not get its ${clip.name} Timeline Clip` }),
-        timelineClipCall("play-clip", 1040, "Play"),
-        timelineClipCall("clip-playing", 1300, "Is Playing"),
-        gNode("assert-playing", "debug.assert", 1560, 0, { "default:message": `${owner} script's ${clip.name} Timeline Clip did not play` }),
+        gNode("play-clip", "timelineClip.play", 1040, 0),
+        gNode("clip-playing", "timelineClip.isPlaying", 1300, 180),
+        gNode("assert-playing", "debug.assert", 1300, 0, { "default:message": `${owner} script's ${clip.name} Timeline Clip did not play` }),
       ]
     : [];
   const clipEdges = clip
     ? [
         gWire("assert-component", "execOut", "assert-clip", "execIn"),
-        gWire("assert-clip", "execOut", "play-clip", "exec"),
-        gWire("play-clip", "then", "clip-playing", "execIn"),
-        gWire("clip-playing", "execOut", "assert-playing", "execIn"),
+        gWire("assert-clip", "execOut", "play-clip", "execIn"),
+        gWire("play-clip", "execOut", "assert-playing", "execIn"),
         gWire("assert-playing", "execOut", "report", "execIn"),
         gWire("get-clip", "clip", "assert-clip", "object"),
         gWire("get-clip", "clip", "play-clip", "target"),
@@ -64,7 +49,7 @@ export function ownedActorProbeScript(owner: string, actor: SerializedActor, cli
       gNode("assert-actor", "debug.assertIsValid", 260, 0, { "default:message": `${owner} script could not get ${actor.name}` }),
       gNode("assert-component", "debug.assertIsValid", 520, 0, { "default:message": `${owner} script could not get a component of ${actor.name}` }),
       ...clipNodes,
-      printString("report", clip ? 1820 : 780, 0, `${owner} script found ${actor.name}`),
+      printString("report", clip ? 1560 : 780, 0, `${owner} script found ${actor.name}`),
     ],
     edges: [
       ...gChain("begin", "assert-actor", "assert-component"),

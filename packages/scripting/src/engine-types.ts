@@ -14,6 +14,8 @@ import {
   CURVE_EXTRAPOLATIONS, CURVE_INTERPOLATIONS, ENGINE_CURVE_EXTRAPOLATION_ENUM_ID, ENGINE_CURVE_INTERPOLATION_ENUM_ID,
 } from "@haptic/core";
 export { ENGINE_CURVE_EXTRAPOLATION_ENUM_ID, ENGINE_CURVE_INTERPOLATION_ENUM_ID } from "@haptic/core";
+import { ENGINE_TIMELINE_LOOP_MODE_ENUM_ID, TIMELINE_LOOP_MODE_LABELS, TIMELINE_LOOP_MODES } from "@haptic/core";
+export { ENGINE_TIMELINE_LOOP_MODE_ENUM_ID } from "@haptic/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
@@ -178,6 +180,11 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
     id: ENGINE_CURVE_EXTRAPOLATION_ENUM_ID,
     name: "Curve Extrapolation",
     members: CURVE_EXTRAPOLATIONS.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_TIMELINE_LOOP_MODE_ENUM_ID,
+    name: "Timeline Loop Mode",
+    members: TIMELINE_LOOP_MODES.map((mode, value) => ({ name: TIMELINE_LOOP_MODE_LABELS[mode], value })),
   },
 
   {

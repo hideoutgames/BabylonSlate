@@ -12,7 +12,7 @@ export class TimelineClipObject extends EngineObject {
   readonly clip: SerializedTimelineClip;
   /** The Scene or Scene Layer that placed the animated actors. */
   readonly owner: EngineObject;
-  playback: TimelinePlaybackState = createTimelinePlayback();
+  playback: TimelinePlaybackState;
   /** Auto Play has run (or the clip was played) since the owner loaded. */
   started = false;
   /** Values the animated properties had before the clip first played, for When Finished: Restore. */
@@ -22,5 +22,6 @@ export class TimelineClipObject extends EngineObject {
     super({ classId: TIMELINE_CLIP_CLASS_ID, guid: `${owner.guid}:timeline-clip:${clip.id}` });
     this.clip = clip;
     this.owner = owner;
+    this.playback = createTimelinePlayback(clip);
   }
 }

@@ -33,7 +33,7 @@ const LOOP_MODES: ReadonlyArray<{ value: TimelineLoopMode; label: string }> = [
 ];
 const WHEN_FINISHED: ReadonlyArray<{ value: TimelineWhenFinished; label: string }> = [
   { value: "keep", label: "Keep State" },
-  { value: "restore", label: "Restore" },
+  { value: "restore", label: "Restore State" },
 ];
 
 const num = (value: unknown, fallback = 0) => (typeof value === "number" && Number.isFinite(value) ? value : fallback);

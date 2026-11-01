@@ -1,5 +1,5 @@
 import { DEFORMER_MAX_COORDINATE, isUIControl2DClass, parseDeformerProperties } from "@haptic/core";
-import { Actor, TimelineClipObject, type ActorComponent, type EngineObject } from "@haptic/object-model";
+import { Actor, type ActorComponent, type EngineObject } from "@haptic/object-model";
 import { asActor, asActorComponent, vec3Arg } from "./script-host-helpers";
 import type { ScriptHostServices } from "./script-host-services";
 import { splineComponentFunction } from "./spline-script";
@@ -27,12 +27,6 @@ export function callNativeComponentFunction(
   }
   if (target instanceof Actor && name === "getCurrentSceneLayerActor") {
     return { actor: host.services.getCurrentSceneLayerActor?.(target) ?? null };
-  }
-  if (target instanceof TimelineClipObject) {
-    if (target.destroyed || !name) return {};
-    // Reads always answer; playback changes wait like any owner action.
-    const reads = name === "timelineGetTime" || name === "timelineGetLength" || name === "timelineIsPlaying";
-    return reads || host.canInvokeOwner(target.owner) ? host.services.timelineClipCall?.(target, name, args) ?? {} : {};
   }
   const component = asActorComponent(target);
   if (!component || !name) return {};

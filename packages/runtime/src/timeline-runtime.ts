@@ -1,8 +1,10 @@
 import {
   advanceTimelinePlayback,
   evaluateTimelineTrack,
+  parseTimelineLoopMode,
   timelineStoredValue,
   type SerializedTimelineClip,
+  type TimelineLoopMode,
   type TimelinePropertyTrack,
 } from "@haptic/core";
 import { Actor, ActorComponent, TimelineClipObject, type EngineObject } from "@haptic/object-model";
@@ -85,7 +87,7 @@ export class TimelineRuntime {
       for (const clip of clips.values()) {
         if (!clip.started && clip.clip.autoPlay) this.play(clip);
         if (!clip.playback.playing) continue;
-        const result = advanceTimelinePlayback(clip.playback, clip.clip, dt);
+        const result = advanceTimelinePlayback(clip.playback, clip.clip.length, dt);
         clip.playback = result.state;
         this.apply(clip);
         if (result.finished && clip.clip.whenFinished === "restore") this.restoreValues(clip);
@@ -93,39 +95,53 @@ export class TimelineRuntime {
     }
   }
 
+  /** Plays forwards, or in reverse, from where the clip is; a Once clip at the end it plays towards starts over. */
   play(clip: TimelineClipObject, reverse = false): void {
     if (clip.destroyed) return;
     this.captureRestore(clip);
     clip.started = true;
     const playback = clip.playback;
     const direction = reverse ? -1 : 1;
-    // Playing Once again from its end starts over.
-    const atEnd = reverse ? playback.time <= 0 : playback.time >= clip.clip.length;
-    const time = clip.clip.loopMode === "once" && atEnd ? (reverse ? clip.clip.length : 0) : playback.time;
+    const length = clip.clip.length;
+    const atEnd = reverse ? playback.time <= 0 : playback.time >= length;
+    const time = playback.loopMode === "once" && atEnd ? (reverse ? length : 0) : playback.time;
     clip.playback = { ...playback, time, direction, playing: true };
     this.apply(clip);
+  }
+
+  playFromStart(clip: TimelineClipObject): void {
+    if (clip.destroyed) return;
+    clip.playback = { ...clip.playback, time: 0 };
+    this.play(clip);
   }
 
   pause(clip: TimelineClipObject): void {
     clip.playback = { ...clip.playback, playing: false };
   }
 
-  /** Stops and returns to the start. */
+  /** Stops and returns to the start, or to the end while playing in reverse. */
   stop(clip: TimelineClipObject): void {
+    if (clip.destroyed) return;
     clip.started = true;
-    clip.playback = { ...clip.playback, playing: false, time: 0, direction: 1 };
+    const time = clip.playback.direction < 0 ? clip.clip.length : 0;
+    clip.playback = { ...clip.playback, playing: false, time };
     this.apply(clip);
   }
 
-  setTime(clip: TimelineClipObject, time: number): void {
-    if (!Number.isFinite(time)) return;
+  setPosition(clip: TimelineClipObject, time: number): void {
+    if (clip.destroyed || !Number.isFinite(time)) return;
     this.captureRestore(clip);
     clip.playback = { ...clip.playback, time: Math.min(clip.clip.length, Math.max(0, time)) };
     this.apply(clip);
   }
 
+  /** Never below 0: Reverse plays backwards. */
   setPlayRate(clip: TimelineClipObject, rate: number): void {
     if (Number.isFinite(rate)) clip.playback = { ...clip.playback, rate: Math.max(0, rate) };
+  }
+
+  setLoopMode(clip: TimelineClipObject, loopMode: TimelineLoopMode): void {
+    clip.playback = { ...clip.playback, loopMode };
   }
 
   /** Writes every unmuted track's value at the clip's time to its actor. */
@@ -163,7 +179,7 @@ export class TimelineRuntime {
     this.host.refreshComponent(component, target.property);
   }
 
-  /** The animated properties' values before the clip first plays, for When Finished: Restore. */
+  /** The animated properties' values when Play starts, for When Finished: Restore State. */
   private captureRestore(clip: TimelineClipObject): void {
     if (clip.restore || clip.clip.whenFinished !== "restore") return;
     const restore = new Map<string, () => void>();
@@ -204,30 +220,44 @@ export class TimelineRuntime {
     clip.restore = restore;
   }
 
+  /** Puts the values from when Play started back; the next Play captures them again. */
   private restoreValues(clip: TimelineClipObject): void {
     for (const restore of clip.restore?.values() ?? []) restore();
+    clip.restore = null;
   }
 }
 
-/** Runs a Timeline Clip function by its script runtime name. */
-export function timelineClipCall(
+/** Runs a Timeline Clip control node (`timelineClip.*`). */
+export function timelineClipControl(
   timelines: TimelineRuntime,
   clip: TimelineClipObject,
-  name: string,
+  action: string,
   args: Record<string, unknown>,
-): Record<string, unknown> {
-  const number = (value: unknown, fallback: number) => (typeof value === "number" && Number.isFinite(value) ? value : fallback);
-  switch (name) {
-    case "timelinePlay": timelines.play(clip); return {};
-    case "timelinePlayReverse": timelines.play(clip, true); return {};
-    case "timelinePause": timelines.pause(clip); return {};
-    case "timelineStop": timelines.stop(clip); return {};
-    case "timelineSetTime": timelines.setTime(clip, number(args.time, clip.playback.time)); return {};
-    case "timelineSetPlayRate": timelines.setPlayRate(clip, number(args.rate, 1)); return {};
-    case "timelineGetTime": return { time: clip.playback.time };
-    case "timelineGetLength": return { length: clip.clip.length };
-    case "timelineIsPlaying": return { playing: clip.playback.playing };
-    default: return {};
+): void {
+  switch (action) {
+    case "play": timelines.play(clip); return;
+    case "playFromStart": timelines.playFromStart(clip); return;
+    case "reverse": timelines.play(clip, true); return;
+    case "pause": timelines.pause(clip); return;
+    case "stop": timelines.stop(clip); return;
+    case "setPosition": timelines.setPosition(clip, Number(args.time)); return;
+    case "setPlayRate": timelines.setPlayRate(clip, Number(args.playRate)); return;
+    case "setLoopMode": {
+      const loopMode = parseTimelineLoopMode(args.loopMode);
+      if (loopMode) timelines.setLoopMode(clip, loopMode);
+      return;
+    }
   }
 }
 
+/** A Timeline Clip read (`timelineClip.get*`, `timelineClip.is*`). */
+export function timelineClipState(clip: TimelineClipObject, field: string): number | boolean {
+  switch (field) {
+    case "position": return clip.playback.time;
+    case "length": return clip.clip.length;
+    case "playRate": return clip.playback.rate;
+    case "playing": return clip.playback.playing;
+    case "reversed": return clip.playback.direction < 0;
+    default: return 0;
+  }
+}

@@ -234,8 +234,8 @@ export interface ScriptHostServices {
   switchSceneLayerActor?(target: unknown, index: unknown): Actor | null;
   /** A Scene or Scene Layer copy's Timeline Clip (`Get <Name> Timeline Clip`). */
   timelineClip?(owner: EngineObject | null, clipId: string): TimelineClipObject | null;
-  /** A Timeline Clip function (`timelinePlay`, `timelineGetTime`, ...). */
-  timelineClipCall?(clip: TimelineClipObject, name: string, args: Record<string, unknown>): Record<string, unknown>;
+  /** A Timeline Clip control node (`timelineClip.play`, `timelineClip.setPosition`, ...). */
+  timelineClipControl?(clip: TimelineClipObject, action: string, args: Record<string, unknown>): void;
   getCurrentSceneLayerActor?(target: unknown): Actor | null;
   setFocusTarget?(target: unknown): boolean;
   clearFocusTarget?(target: unknown): void;

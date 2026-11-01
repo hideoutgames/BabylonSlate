@@ -1,16 +1,18 @@
-import type { SerializedTimelineClip } from "./timeline-clips";
+import type { SerializedTimelineClip, TimelineLoopMode } from "./timeline-clips";
 
 /**
  * Where a playing Timeline Clip is: shared by Play and tests, so loop modes
  * and finishing behave the same everywhere. Time is in seconds within 0 and
- * the clip's Length; `direction` is 1 forwards, -1 in reverse.
+ * the clip's Length; `direction` is 1 forwards, -1 in reverse. Play Rate and
+ * Loop Mode start as the clip's and scripts can change them.
  */
 export interface TimelinePlaybackState {
   time: number;
   playing: boolean;
   direction: 1 | -1;
-  /** Multiplies the clip's Play Rate; Set Play Rate changes it. */
+  /** Never negative; Reverse plays backwards. */
   rate: number;
+  loopMode: TimelineLoopMode;
 }
 
 export interface TimelineAdvanceResult {
@@ -21,30 +23,25 @@ export interface TimelineAdvanceResult {
   cycles: number;
 }
 
-export function createTimelinePlayback(): TimelinePlaybackState {
-  return { time: 0, playing: false, direction: 1, rate: 1 };
+export function createTimelinePlayback(clip: Pick<SerializedTimelineClip, "playRate" | "loopMode">): TimelinePlaybackState {
+  return { time: 0, playing: false, direction: 1, rate: Math.max(0, clip.playRate), loopMode: clip.loopMode };
 }
 
 /**
- * Moves the playback on by `dt` seconds at the clip's Play Rate. Once stops at
- * the end it plays towards (the start in reverse); Loop wraps; Ping Pong turns
- * at each end. A paused or zero-length clip does not move.
+ * Moves the playback on by `dt` seconds at its Play Rate. Once stops at the
+ * end it plays towards (the start in reverse); Loop wraps; Ping Pong turns at
+ * each end. A paused or zero-length clip does not move.
  */
-export function advanceTimelinePlayback(
-  state: TimelinePlaybackState,
-  clip: Pick<SerializedTimelineClip, "length" | "loopMode" | "playRate">,
-  dt: number,
-): TimelineAdvanceResult {
-  const length = clip.length;
-  const step = dt * clip.playRate * state.rate * state.direction;
+export function advanceTimelinePlayback(state: TimelinePlaybackState, length: number, dt: number): TimelineAdvanceResult {
+  const step = dt * state.rate * state.direction;
   if (!state.playing || !(length > 0) || !Number.isFinite(step) || step === 0) return { state, finished: false, cycles: 0 };
   let time = state.time + step;
-  if (clip.loopMode === "once") {
+  if (state.loopMode === "once") {
     if (time >= length && state.direction > 0) return { state: { ...state, time: length, playing: false }, finished: true, cycles: 0 };
     if (time <= 0 && state.direction < 0) return { state: { ...state, time: 0, playing: false }, finished: true, cycles: 0 };
     return { state: { ...state, time }, finished: false, cycles: 0 };
   }
-  if (clip.loopMode === "loop") {
+  if (state.loopMode === "loop") {
     const cycles = Math.floor(time / length);
     time -= cycles * length;
     return { state: { ...state, time }, finished: false, cycles: Math.abs(cycles) };

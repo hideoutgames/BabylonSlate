@@ -186,7 +186,7 @@ describe("Get <Name> Timeline Clip", () => {
         node("play", "debug.executeJavaScript", {
           inputs: [{ name: "clip", type: STRING }, { name: "missing", type: STRING }],
           outputs: [],
-          body: 'ctx.callComponentFunction(clip, "timelinePlay", {}); ctx.log("log", "Script", "clip:" + clip?.classId + ":" + ctx.callComponentFunction(clip, "timelineIsPlaying", {}).playing + ":" + missing);',
+          body: 'ctx.timelineClipControl(clip, "play", {}); ctx.log("log", "Script", "clip:" + clip?.classId + ":" + ctx.timelineClipState(clip, "playing") + ":" + missing);',
         }),
       ],
       edges: [
