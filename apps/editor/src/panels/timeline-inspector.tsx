@@ -35,6 +35,7 @@ import {
   setTimelineKeyTime,
   setTimelineKeyValue,
   setTimelineTrackMuted,
+  withTimelineClip,
   type TrackKeyRef,
 } from "../lib/timeline-track-edits";
 import {
@@ -44,6 +45,7 @@ import {
   setTimelineEventKeyTime,
   setTimelineEventKeyValue,
   setTimelineEventTrackInputs,
+  syncTimelineEventDispatcher,
   timelineEventKeyValue,
   type TimelineEventKey,
 } from "../lib/timeline-event-edits";
@@ -197,11 +199,16 @@ export function TimelineInspector() {
     const found = findTimelineTrack(clip, tools.timelineRowId);
     const eventTrack = findTimelineEventTrack(clip, tools.timelineRowId);
     if (eventTrack) {
+      // The scene's script follows: its Bind nodes on this dispatcher take the new name and inputs.
+      const commitTrack = (next: SerializedTimelineClip) => {
+        const track = findTimelineEventTrack(next, eventTrack.id);
+        if (track) commitScene(syncTimelineEventDispatcher(withTimelineClip(scene, next), clip.id, eventTrack.name, track));
+      };
       const commitInputs = (rows: PinListRow[]) =>
-        commitClip(setTimelineEventTrackInputs(clip, eventTrack.id, memberPinsFromRows(rows, [])));
+        commitTrack(setTimelineEventTrackInputs(clip, eventTrack.id, memberPinsFromRows(rows, [])));
       grids.push({ title: "Custom Event Track", testId: "timeline-inspector-event-track", rows: [
         { kind: "text", id: "timeline-event-track-name", label: "Event Name", value: eventTrack.name, onChange: () => {},
-          onCommit: (name) => commitClip(renameTimelineEventTrack(clip, eventTrack.id, name)),
+          onCommit: (name) => commitTrack(renameTimelineEventTrack(clip, eventTrack.id, name)),
           description: "Scripts bind this Event Dispatcher of the clip." },
         { kind: "number", id: "timeline-event-track-keys", label: "Keys", value: eventTrack.keys.length, disabled: true, onChange: () => {} },
       ], after: <div className="px-2">

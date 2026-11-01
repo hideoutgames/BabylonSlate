@@ -499,9 +499,10 @@ function isOwnDispatcherNode(
  * Carry a dispatcher's new name or inputs to everything this Class built from
  * it: its own Call / Bind / Unbind nodes, the custom events wired to a Bind or
  * Unbind (they take its signature, as in Unreal) and the Delegate types whose
- * signature was copied from it.
+ * signature was copied from it. Also used for a Timeline Clip's Custom Event
+ * Tracks, whose dispatchers live on the clip's class.
  */
-function syncDispatcher(
+export function syncDispatcher(
   graph: SerializedGraph,
   previousName: string,
   member: GraphClassMember,

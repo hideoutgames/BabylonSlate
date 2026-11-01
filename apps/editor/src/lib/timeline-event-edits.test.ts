@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTimelineClip, type SerializedTimelineClip } from "@haptic/core";
+import { createTimelineClip, type SerializedScene, type SerializedTimelineClip } from "@haptic/core";
 import {
   addTimelineEventTrack,
   deleteTimelineEventKeys,
@@ -11,6 +11,7 @@ import {
   setTimelineEventTrackInputs,
   shiftTimelineEventKeys,
   snapshotTimelineEventKeys,
+  syncTimelineEventDispatcher,
   timelineEventKeyValue,
   toggleTimelineEventKey,
 } from "./timeline-event-edits";
@@ -67,5 +68,25 @@ describe("Custom Event Track edits", () => {
     expect(shiftTimelineEventKeys(clip, snapshot, 1).eventTracks[0]!.keys.map((key) => key.id)).toEqual([a.added[0]!.keyId]);
     expect(setTimelineEventKeyTime(clip, b.added[0]!, 0.25).eventTracks[0]!.keys.map((key) => key.time)).toEqual([0.25, 0.5]);
     expect(deleteTimelineEventKeys(clip, b.added).eventTracks[0]!.keys.map((key) => key.time)).toEqual([0.5]);
+  });
+
+  it("carries a rename and new inputs to the script's Bind nodes and their bound events", () => {
+    const clipClass = "TimelineClip:level:intro";
+    const scene = {
+      actors: [], settings: {},
+      script: {
+        nodes: [
+          { id: "bind", type: "flow.dispatcher.bind", position: { x: 0, y: 0 }, data: { name: "On Line", classId: clipClass, implicitSelf: false, pins: [] } },
+          { id: "other", type: "flow.dispatcher.bind", position: { x: 0, y: 0 }, data: { name: "On Line", classId: "TimelineClip:level:outro", implicitSelf: false, pins: [] } },
+          { id: "handler", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { name: "Show Line", pins: [] } },
+        ],
+        edges: [{ id: "d", source: "handler", sourceHandle: "OutputDelegate", target: "bind", targetHandle: "event" }],
+      },
+    } as unknown as SerializedScene;
+    const track = { id: "e", name: "On Subtitle", inputs: [{ name: "Text", typeId: "string", direction: "in" as const }], keys: [] };
+    const next = syncTimelineEventDispatcher(scene, "intro", "On Line", track).script!;
+    expect(next.nodes[0]!.data).toMatchObject({ name: "On Subtitle", pins: track.inputs, title: "Bind Event to On Subtitle" });
+    expect(next.nodes[1]!.data.name).toBe("On Line");
+    expect(next.nodes[2]!.data.pins).toEqual([{ name: "Text", typeId: "string", direction: "out" }]);
   });
 });

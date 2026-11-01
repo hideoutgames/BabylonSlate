@@ -1,12 +1,14 @@
 import {
   uniqueTimelineClipName,
   type GraphClassMemberPin,
+  type SerializedScene,
   type SerializedTimelineClip,
   type TimelineEventTrack,
 } from "@haptic/core";
 import { frameAt } from "@haptic/editor-kit";
-import { TIMELINE_CLIP_BUILT_IN_DISPATCHERS } from "@haptic/object-model";
+import { TIMELINE_CLIP_BUILT_IN_DISPATCHERS, isTimelineClipClassId } from "@haptic/object-model";
 import { defaultValueForMember } from "@haptic/scripting";
+import { syncDispatcher } from "./class-members";
 import type { NewId, TrackKeyRef } from "./timeline-track-edits";
 
 /**
@@ -200,4 +202,29 @@ export function setTimelineEventKeyValue(clip: SerializedTimelineClip, ref: Trac
 /** A key's value for an input: what it stores, else the input type's default, as Play passes it. */
 export function timelineEventKeyValue(key: TimelineEventKey, input: GraphClassMemberPin): unknown {
   return Object.hasOwn(key.values, input.name) ? key.values[input.name] : defaultValueForMember(input.typeId, input.typeClassId);
+}
+
+/**
+ * The document's script after a Custom Event Track was renamed or its inputs
+ * changed: Bind and Unbind nodes on that clip's dispatcher, and the custom
+ * events wired to them, take the new name and inputs.
+ */
+export function syncTimelineEventDispatcher(
+  scene: SerializedScene,
+  clipId: string,
+  previousName: string,
+  track: TimelineEventTrack,
+): SerializedScene {
+  const script = scene.script;
+  if (!script) return scene;
+  const nodes = [...script.nodes, ...Object.values(script.functionGraphs ?? {}).flatMap((slice) => slice.nodes)];
+  const classIds = new Set(nodes.flatMap((node) => {
+    const classId = typeof node.data.classId === "string" ? node.data.classId : "";
+    return node.data.name === previousName && isTimelineClipClassId(classId) && classId.endsWith(`:${clipId}`) ? [classId] : [];
+  }));
+  let next = script;
+  for (const classId of classIds) {
+    next = syncDispatcher(next, previousName, { id: track.id, kind: "dispatcher", name: track.name, pins: track.inputs }, classId);
+  }
+  return next === script ? scene : { ...scene, script: next };
 }
