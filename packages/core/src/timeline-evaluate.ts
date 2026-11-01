@@ -62,14 +62,28 @@ export function evaluateTimelineTrack(track: TimelinePropertyTrack, time: number
   }
 }
 
-/** Component properties store vectors, rotators and colours as arrays. */
-function storedValue(track: TimelinePropertyTrack, value: unknown): unknown {
+const ARRAY_VALUE_TYPES = new Set<TimelinePropertyTrack["valueType"]>(["vec2", "vec3", "rotator", "color"]);
+
+/**
+ * The value in the shape `previous` is stored in. Class variables keep script
+ * values (`{ x, y, z }`, `{ pitch, yaw, roll }`); component properties store
+ * vectors, rotators and colours as arrays, and a colour keeps its 3 or 4
+ * channels (as tweens do). An unset property takes its owner's usual shape.
+ */
+function storedValue(track: TimelinePropertyTrack, value: unknown, previous: unknown, arrays: boolean): unknown {
+  if (!ARRAY_VALUE_TYPES.has(track.valueType)) return value;
+  const asArray = Array.isArray(previous) || (arrays && (previous === undefined || previous === null));
+  if (!asArray) return value;
   switch (track.valueType) {
     case "vec2": return [field(value, "x"), field(value, "y")];
     case "vec3": return [field(value, "x"), field(value, "y"), field(value, "z")];
     case "rotator": return [field(value, "pitch"), field(value, "yaw"), field(value, "roll")];
-    case "color": return [field(value, "x"), field(value, "y"), field(value, "z"), field(value, "w")];
-    default: return value;
+    default: {
+      const channels = [field(value, "x"), field(value, "y"), field(value, "z"), field(value, "w")];
+      const length = Array.isArray(previous) ? previous.length
+        : track.target.property === "color" || track.target.property === "outlineColor" ? 3 : 4;
+      return channels.slice(0, length === 3 ? 3 : 4);
+    }
   }
 }
 
@@ -86,10 +100,11 @@ function applyTrack(actor: SerializedActor, track: TimelinePropertyTrack, value:
   }
   if (target.kind === "visible") return { ...actor, visible: value === true };
   if (target.kind === "variable") {
-    return { ...actor, properties: { ...actor.properties, [target.property]: storedValue(track, value) } };
+    const stored = storedValue(track, value, actor.properties?.[target.property], false);
+    return { ...actor, properties: { ...actor.properties, [target.property]: stored } };
   }
   const components = actor.components.map((component): SerializedComponent => component.id === target.componentId
-    ? { ...component, properties: { ...component.properties, [target.property]: storedValue(track, value) } }
+    ? { ...component, properties: { ...component.properties, [target.property]: storedValue(track, value, component.properties[target.property], true) } }
     : component);
   return { ...actor, components };
 }

@@ -72,12 +72,39 @@ describe("applyTimelineClipToScene", () => {
     expect(shownDoor!.transform.rotation.map((value) => Number(value.toFixed(4)))).toEqual([0, 0.7071, 0, 0.7071]);
     expect(shownDoor!.visible).toBe(false);
     expect(shownDoor!.properties?.Speed).toBeUndefined();
-    expect(shownLamp!.components[0]!.properties).toEqual({ intensity: 5, color: [1, 0, 0, 1] });
+    // A three-channel colour stays three channels.
+    expect(shownLamp!.components[0]!.properties).toEqual({ intensity: 5, color: [1, 0, 0] });
     expect(shownStill).toBe(still);
     // The document is unchanged.
     expect(door.transform.position).toEqual([0, 0, 0]);
     expect(lamp.components[0]!.properties).toEqual({ intensity: 1, color: [1, 1, 1] });
     // A clip that animates nothing in this scene returns the scene itself.
     expect(applyTimelineClipToScene(scene, createTimelineClip("empty", "Empty"), 1)).toBe(scene);
+  });
+
+  it("keeps Class variables as script values and gives unset component properties arrays", () => {
+    const crate = {
+      ...createActor("crate", "Crate"),
+      properties: { Offset: { x: 0, y: 0, z: 0 } },
+      components: [{ id: "label", classId: "2DTextComponent", properties: {} }],
+    };
+    const scene = { ...createDefaultScene(), actors: [crate] } as ReturnType<typeof createDefaultScene>;
+    const red = { x: 1, y: 0, z: 0, w: 1 };
+    const clip = {
+      ...createTimelineClip("c", "C"),
+      objects: [{ id: "o", actorId: "crate", tracks: [
+        track("vec3", [key(0, { x: 1, y: 2, z: 3 })], { kind: "variable", property: "Offset" }),
+        track("rotator", [key(0, { pitch: 0, yaw: 30, roll: 0 })], { kind: "variable", property: "Turn" }),
+        track("color", [key(0, red)], { kind: "variable", property: "Glow" }),
+        track("color", [key(0, red)], { kind: "component", componentId: "label", property: "color" }),
+        track("color", [key(0, red)], { kind: "component", componentId: "label", property: "tint" }),
+        track("vec2", [key(0, { x: 4, y: 5 })], { kind: "component", componentId: "label", property: "wrap" }),
+      ] }],
+    };
+
+    const [shown] = applyTimelineClipToScene(scene, clip, 0).actors;
+
+    expect(shown!.properties).toEqual({ Offset: { x: 1, y: 2, z: 3 }, Turn: { pitch: 0, yaw: 30, roll: 0 }, Glow: red });
+    expect(shown!.components[0]!.properties).toEqual({ color: [1, 0, 0], tint: [1, 0, 0, 1], wrap: [4, 5] });
   });
 });
