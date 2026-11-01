@@ -92,11 +92,11 @@ import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isAtlasShadow } from "./shadow-atlas";
 import { findSceneShadowController } from "./shadow-controller";
 import { awaitsFirstDraw, setFirstDrawsUrgent } from "./shadow-first-draw";
-import { sceneInstancePool, setDeferredPipelineInstancing } from "./instance-pool";
+import { sceneInstancePool } from "./instance-pool";
 import { drawingMesh, isInstanceSource } from "./instance-source";
 import { POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
 import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
-import { isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
+import { hasDrawn, isRevealPending, noteDrawn, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME, firstDrawsPerFrame } from "./variant-pipeline-warmup";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
@@ -501,21 +501,9 @@ const classesLoad = (scripts: ScriptBundleEntry[], assets: SpawnableLightLoad["a
  */
 /**
  * Whether `playWorld` gives the Engine hardware instancing unless a case says otherwise, which turns Play's primitive
- * pooling on (`sceneInstancing`). Off while the pooled run of every case is brought up (`HAPTIC_GATE_INSTANCING=1`).
+ * pooling on (`sceneInstancing`). Off by default; CI runs the file again with it on (`HAPTIC_GATE_INSTANCING=1`).
  */
 const INSTANCING_BY_DEFAULT = process.env.HAPTIC_GATE_INSTANCING === "1";
-/**
- * WebGPU cases that still draw unpooled under `HAPTIC_GATE_INSTANCING` (by name without their driver model), until
- * each subsystem resolves a pool member to its group source; every other WebGPU case pools too
- * (`setDeferredPipelineInstancing`). `HAPTIC_GATE_WEBGPU_POOL=1` pools these as well.
- */
-const WEBGPU_UNPOOLED_CASES: ReadonlySet<string> = new Set<string>([
-  "a frame report's frame never leaves a geometry draw out",
-  "an Anti-Aliasing change mid-game compiles no Material and holds as a quality change does",
-  "a lookup whose preparation throws leaves no deferral scope open, and the mesh still appears",
-  "a mesh whose Effect drew only with another vertex layout waits hidden for its own pipeline, holding nothing",
-]);
-const WEBGPU_POOL_ALL = process.env.HAPTIC_GATE_WEBGPU_POOL === "1";
 
 /**
  * The meshes a `Mesh.render(subMesh, …, replacement)` call drew: the mesh, the member Babylon draws on its own through
@@ -528,6 +516,19 @@ function renderedNames(mesh: Mesh, subMesh: { _id: number }, replacement?: Abstr
   const storage = (mesh as unknown as { _getInstanceDataStorage(): { previousBatch?: { visibleInstances: Record<number, AbstractMesh[] | null> } } })
     ._getInstanceDataStorage();
   return (storage.previousBatch?.visibleInstances[subMesh._id] ?? []).map(actorName);
+}
+
+/**
+ * A plain box beside the world's crate, drawn with the crate's Material until it has shown: the plain variant, whose
+ * pipelines a crate of its own creates (a pooled crate draws the instanced one).
+ */
+async function plainCrate(world: PlayWorld): Promise<Mesh> {
+  const scene = world.handle.scene;
+  const box = MeshBuilder.CreateBox("plain crate", { size: 1 }, scene);
+  box.material = scene.getMeshByName("actor-2")!.material;
+  box.position.set(-1.5, 1, 0);
+  for (let index = 0; index < 12 && (isRevealPending(box) || !hasDrawn(box)); index++) await world.frame();
+  return box;
 }
 
 /** The mesh whose render observables fire for actor `name`'s drawn surface: its own, or a pooled leaf's source's batch. */
@@ -546,11 +547,6 @@ function playWorld(
   const engine = headlessEngine();
   // Play pools primitives where the Engine instances in hardware (`sceneInstancing`).
   if (instancing) engine.getCaps().instancedArrays = true;
-  const caseName = expect.getState().currentTestName?.split(" > ").at(-1)?.replace(/: webgpu$/, "");
-  if (instancing && model === "webgpu" && (WEBGPU_POOL_ALL || caseName === undefined || !WEBGPU_UNPOOLED_CASES.has(caseName))) {
-    setDeferredPipelineInstancing(true);
-    cleanups.push(() => setDeferredPipelineInstancing(false));
-  }
   const driver = driverModel(engine, model);
   const holds: boolean[] = [];
   const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -2069,8 +2065,8 @@ async function editorView() {
  * an actor the level holds, compile no shader, wait on no WebGPU pipeline and create none in a shadow pass. A merge gate:
  * CI's unit job runs it.
  */
-/** Where Play pools primitives: pipelines that are not deferred (`sceneInstancing`). */
-const POOLED_MODELS: readonly Model[] = ["sync", "parallel"];
+/** Where Play pools primitives: every driver model, given hardware instancing (`sceneInstancing`). */
+const POOLED_MODELS: readonly Model[] = MODELS;
 
 describe("pooled primitives", () => {
   const box = (slotId: number, position: Vec3): Actor =>
@@ -2417,12 +2413,16 @@ describe("the lighting CI gate", () => {
     withAntiAliasing(world, "off");
     const record = await measure(world, () => withAntiAliasing(world, "msaa4"));
     const materials = (effects: Iterable<Effect>) => [...effects].filter((effect) => (effect.name as { vertex?: string }).vertex !== "postprocess").length;
+    // One new pipeline per Effect the floor and the crate draw with (one when pooled into groups of one Effect).
+    const pass = world.engine.getRenderPassNames().lastIndexOf("Forward objects#0");
+    const surfaceEffects = new Set(["actor-1", "actor-2"].map((name) => surfaceDraws(world.handle.scene, name).subMeshes[0]?._getDrawWrapper(pass)?.effect));
     expect({
-      multisampled: sceneMultisampleCount(world.handle.scene), materialCompiles: materials(world.driver.created),
+      multisampled: sceneMultisampleCount(world.handle.scene), surfacesDrawn: [...surfaceEffects].every(Boolean), materialCompiles: materials(world.driver.created),
       materialSynchronous: materials(world.driver.synchronous), pipelines: record.pipelines, held: record.heldFrames > 0,
       holdReported: record.holdReported, recovered: record.recovered, paused: model === "webgpu" ? undefined : record.pausedFrames,
     }, JSON.stringify(record)).toEqual({
-      multisampled: 4, materialCompiles: 0, materialSynchronous: 0, pipelines: model === "webgpu" ? 2 : 0, held: true,
+      multisampled: 4, surfacesDrawn: true, materialCompiles: 0, materialSynchronous: 0, pipelines: model === "webgpu" ? surfaceEffects.size : 0,
+      held: true,
       holdReported: model === "webgpu", recovered: true, paused: model === "webgpu" ? undefined : 0,
     });
   });
@@ -2810,7 +2810,7 @@ describe("a visual re-sent every tick", () => {
     world.driver.keyLayouts();
     await settle(world);
     const scene = world.handle.scene;
-    const crate = scene.getMeshByName("actor-2") as Mesh;
+    const crate = await plainCrate(world);
     const drawn = spawnDraws();
     world.driver.arm();
     const padded = MeshBuilder.CreateBox("padded", { size: 1 }, scene);
@@ -2853,7 +2853,7 @@ describe("a visual re-sent every tick", () => {
     const world = playWorld("webgpu", []);
     await settle(world);
     const scene = world.handle.scene;
-    const crate = scene.getMeshByName("actor-2") as Mesh;
+    const crate = await plainCrate(world);
     const getDrawWrapper = SubMesh.prototype._getDrawWrapper;
     let thrown = 0;
     vi.spyOn(SubMesh.prototype, "_getDrawWrapper").mockImplementation(function (this: SubMesh, ...args) {

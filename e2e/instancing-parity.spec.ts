@@ -44,11 +44,6 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // Shading, shadows (casting and receiving) and occlusion culling are the same within one step of a channel.
     expect(report.visible).toEqual({ max: expect.any(Number), over: 0 });
     expect(report.occluded).toEqual({ max: expect.any(Number), over: 0 });
-    if (backend === "webgpu") {
-      // WebGPU does not pool yet (`sceneInstancing`): the same meshes draw.
-      expect(report.pool).toEqual({ groups: 0, pooled: 0 });
-      return;
-    }
     // Three shapes and two Materials: one batch per group, so far fewer draws, in the shadow maps too.
     expect(report.pool.pooled).toBe(36);
     expect(report.pool.groups).toBeLessThanOrEqual(6);
