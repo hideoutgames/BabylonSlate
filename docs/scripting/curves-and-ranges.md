@@ -29,6 +29,8 @@ A range variable, Structure field, Data Definition field or unwired node pin sho
 
 Data Tree grids and the Play **Inspector** show the same summary. In a Data Tree, edit a range in **Values**.
 
+Ranges and curves can also be [Save Game](save-games.md) fields: set the field's **Type** to **Structure** and pick the range or curve.
+
 ## Curves
 
 | Structure | Keys |
