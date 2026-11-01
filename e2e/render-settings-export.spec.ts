@@ -104,7 +104,8 @@ for (const variant of [{ backend: "webgl2" }] as const) {
         await expect(root).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
         await expect.poll(async () => (await read(page)).rendering?.scalingLevel).toBeCloseTo(scale, 5);
         await expect.poll(async () => (await read(page)).visuals.find((visual) => visual.position[0] === 4)?.position[2]).toBe(scene === "second" ? 3 : 0);
-        await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBeCloseTo(1 / scale, 5);
+        // Published on the first presented frame after the load, which on software GL waits for the GPU's first draw.
+        await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale, { timeout: 30_000 }).toBeCloseTo(1 / scale, 5);
         try {
           await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/i.test(name)), { message: "prepared FXAA graph after output resizing" }).toBe(true);
         } finally {

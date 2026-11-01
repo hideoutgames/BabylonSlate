@@ -43,6 +43,7 @@ export const DEBUG_COMMAND_NAMES = [
   "postprocessing",
   "rendertargets",
   "gpubusy",
+  "framesinflight",
   "preservebuffer",
   "pause",
   "resume",
@@ -214,6 +215,19 @@ export function builtinCommands(): RegisteredCommand[] {
       "Suspend or resume every-frame Render Target Captures, to measure their cost; manual captures still draw"),
     flagCommand("gpubusy", (host, enabled) => host.setGpuBusyProbe?.(enabled),
       "Start (on, restarting) or stop measuring GPU-busy time per frame with fences, independently of display pacing"),
+    {
+      name: "framesinflight",
+      tier: "debug",
+      category: "engine",
+      description: "How many rendered frames the Engine may queue on the GPU before it skips a render (2 by default; off lifts the limit)",
+      parameters: [{ name: "mode", type: "enum", enumValues: ["off", "2", "3"] }],
+      run(args, host) {
+        const mode = args.mode === "off" ? "off" : args.mode === "3" ? 3 : 2;
+        if (!host.setFramesInFlight) return fail("framesinflight is unavailable here");
+        host.setFramesInFlight(mode);
+        return ok(`framesinflight ${mode}`);
+      },
+    },
     flagCommand("preservebuffer", (host, enabled) => host.setPreserveDrawingBuffer?.(enabled),
       "Keep (on, the default) or drop the Engine's drawing buffer between presentations; applies after reloading the editor"),
     flagCommand(

@@ -53,6 +53,7 @@ import { warmSpawnables } from "./spawnable-warm";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
+import { engineFrameBackpressure } from "./frame-backpressure";
 import type { SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
@@ -60,7 +61,7 @@ import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from ".
 import { nativePreparationForEngine } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineOptions, EngineView, Material } from "@babylonjs/core";
-import { resolveRenderingQuality } from "@haptic/core";
+import { qualitySettingsFingerprint, resolveRenderingQuality } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
@@ -707,6 +708,7 @@ function initializeEngine(
   };
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
   // renderLoop passes the loading permit it already evaluated for this frame.
+  const frameBackpressure = engineFrameBackpressure(engine);
   const shouldRenderFrame = (now: number, loadingFrame?: boolean) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
     (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
@@ -735,7 +737,7 @@ function initializeEngine(
         engine.setSize(size.width, size.height);
       admittedSnapshot = prepareSnapshot();
       snapshotAdmitted = true;
-      const admitted = !noLayout && shouldRenderFrame(performance.now());
+      const admitted = !noLayout && shouldRenderFrame(performance.now()) && frameBackpressure.admit();
       if (performanceFeed.active) admissionPreparationMs = performance.now() - preparationStart;
       return admitted;
     }, {
@@ -1074,29 +1076,19 @@ function initializeEngine(
   /** `RenderDiagnostics.settings`: what the Feature Test Check's Breakdown steps change, as effective now. */
   const breakdownSettings = (): Record<string, string> => {
     const quality = resolveSceneRenderingQuality(scene);
-    const water = sceneWaterQualityDeviceClamp(scene).quality;
-    const { shadows, postprocessing: post } = quality;
     return {
-      shadows: shadows.enabled ? `${shadows.profile} ${shadows.mapSize}` : "off",
-      "water.refraction": String(water.refraction),
-      "water.reflections": water.reflections,
-      "water.shadingDetail": water.shadingDetail,
-      "post.scale": String(post.resolutionScale),
-      "post.ambientOcclusion": String(post.ambientOcclusion),
-      "post.reflections": String(post.reflections),
-      "post.volumetricLighting": String(post.volumetricLighting),
-      "post.antiAliasing": post.antiAliasing,
+      ...qualitySettingsFingerprint({ ...quality, water: sceneWaterQualityDeviceClamp(scene).quality }),
       "post.samples": String(sceneMultisampleCount(scene)),
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
-      "resolution.scale": String(quality.resolution.scale),
-      "geometry.occlusion": String(quality.geometry.occlusionCulling),
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
       "presentation.preserve": engine.isWebGPU ? "n/a"
         : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
     };
   };
   const setPostProcessingEnabled = (enabled: boolean) => {
+    // Unchanged: no stack rebuild (the Breakdown's add-one base turns it off again after every step).
+    if (postProcessingEnabled === enabled) return;
     postProcessingEnabled = enabled;
     setSceneEffectsEnabled(scene, enabled);
     rebuildPostProcessStack();
@@ -1786,7 +1778,7 @@ function initializeEngine(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
-      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
@@ -2029,7 +2021,8 @@ function initializeEngine(
     streamAdmission?.sync();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
-    if (!shouldRenderFrame(frameStart, loadingFrame)) {
+    // GPU backpressure last, so only a frame that would render can be skipped (`frame-backpressure.ts`).
+    if (!shouldRenderFrame(frameStart, loadingFrame) || !frameBackpressure.admit()) {
       return;
     }
     frameWasLoading = loadingFrame;
@@ -2913,6 +2906,7 @@ function initializeEngine(
       }
       if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
       if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
+      if (command.type === "setFramesInFlightDebug") engineFrameBackpressure(engine).setMode(command.mode);
       if (command.type === "setGpuBusyProbeDebug") {
         const probe = engineGpuBusyProbe(engine);
         if (command.enabled) probe?.start(); else probe?.stop();

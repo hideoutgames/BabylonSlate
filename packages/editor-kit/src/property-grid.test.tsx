@@ -9,7 +9,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { PropertyGrid, type PropertyRow } from "./property-grid";
+import { PropertyGrid, type PropertyRow, type Vector3Value } from "./property-grid";
 import { EditorReadOnlyContext } from "./editor-read-only";
 import { AssetOpenProvider } from "./asset-picker-control";
 import {
@@ -166,6 +166,95 @@ describe("PropertyGrid", () => {
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("property-position-reset"));
     expect(onChange).toHaveBeenCalledWith([0, 0, 0]);
+  });
+
+  describe("linked vector rows", () => {
+    function renderLinked(
+      value: Vector3Value,
+      extra: Partial<Extract<PropertyRow, { kind: "vector3" }>> = {},
+    ) {
+      const onChange = vi.fn();
+      const onCommit = vi.fn();
+      const grid = (next: Vector3Value) => (
+        <PropertyGrid
+          rows={[
+            { kind: "vector3", id: "scale", label: "Scale", value: next, linked: true, onLinkedChange: () => {}, onChange, onCommit, ...extra },
+          ]}
+        />
+      );
+      const view = render(grid(value));
+      return { onChange, onCommit, show: (next: Vector3Value) => view.rerender(grid(next)) };
+    }
+    const link = () => screen.getByRole("button", { name: "Link Scale Axes" });
+    const axis = (name: string) => screen.getByRole("textbox", { name: `Scale ${name}` });
+
+    it("shows the row's link state and reports presses", () => {
+      const onLinkedChange = vi.fn();
+      const onChange = vi.fn();
+      const view = render(
+        <PropertyGrid
+          rows={[{ kind: "vector3", id: "scale", label: "Scale", value: [2, 4, 1], linked: false, onLinkedChange, onChange }]}
+        />,
+      );
+      expect(link().getAttribute("aria-pressed")).toBe("false");
+      fireEvent.change(axis("X"), { target: { value: "1" } });
+      expect(onChange).toHaveBeenLastCalledWith([1, 4, 1]);
+      fireEvent.click(link());
+      expect(onLinkedChange).toHaveBeenCalledExactlyOnceWith(true);
+      view.rerender(
+        <PropertyGrid
+          rows={[{ kind: "vector3", id: "scale", label: "Scale", value: [2, 4, 1], linked: true, onLinkedChange, onChange }]}
+        />,
+      );
+      expect(link().getAttribute("aria-pressed")).toBe("true");
+      fireEvent.change(axis("Y"), { target: { value: "8" } });
+      expect(onChange).toHaveBeenLastCalledWith([4, 8, 2]);
+    });
+
+    it("scales from where the edit began, so a typed 0 prefix keeps the proportions", () => {
+      const { onChange, onCommit, show } = renderLinked([2, 4, 1]);
+      fireEvent.change(axis("X"), { target: { value: "0" } });
+      expect(onChange).toHaveBeenLastCalledWith([0, 0, 0]);
+      show([0, 0, 0]);
+      fireEvent.change(axis("X"), { target: { value: "0.5" } });
+      expect(onChange).toHaveBeenLastCalledWith([0.5, 1, 0.25]);
+      show([0.5, 1, 0.25]);
+      fireEvent.blur(axis("X"));
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith([0.5, 1, 0.25]);
+    });
+
+    it("starts the next linked edit from values changed elsewhere", () => {
+      const { onChange, show } = renderLinked([1, 2, 4]);
+      fireEvent.change(axis("X"), { target: { value: "3" } });
+      show([3, 6, 12]);
+      fireEvent.keyDown(axis("X"), { key: "Escape" });
+      expect(onChange).toHaveBeenLastCalledWith([1, 2, 4]);
+      show([1, 2, 4]);
+      // A gizmo or undo replaces the values before the next edit.
+      show([2, 2, 2]);
+      fireEvent.change(axis("Y"), { target: { value: "4" } });
+      expect(onChange).toHaveBeenLastCalledWith([4, 4, 4]);
+    });
+
+    it("gives every shown axis the value when the edited axis was zero, and leaves hidden axes alone", () => {
+      const { onChange } = renderLinked([0, 3, 7], { axes: ["X", "Y"] });
+      fireEvent.change(axis("X"), { target: { value: "2" } });
+      expect(onChange).toHaveBeenLastCalledWith([2, 2, 7]);
+    });
+
+    it("scales each linked item by its own factor and only sets the axis on unlinked items", () => {
+      const onItemValuesChange = vi.fn();
+      const { onChange } = renderLinked([1, 2, 4], {
+        linked: false,
+        itemValues: [[1, 2, 4], [4, 2, 1], [4, 2, 1]],
+        itemLinked: [true, true, false],
+        onItemValuesChange,
+      });
+      expect(link().getAttribute("aria-pressed")).toBe("false");
+      fireEvent.change(axis("X"), { target: { value: "2" } });
+      expect(onItemValuesChange).toHaveBeenLastCalledWith([[2, 4, 8], [2, 1, 0.5], [2, 2, 1]]);
+      expect(onChange).not.toHaveBeenCalled();
+    });
   });
 
   it("hides the Z axis when only two axes are supplied", () => {

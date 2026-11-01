@@ -37,8 +37,12 @@ export interface FenceContext {
   flush(): void;
 }
 
-/** A submitted frame marker: resolves when the GPU has finished the frame's work, or reports whether it has. */
-type Marker = { submitted: number; done: () => boolean | null; dispose: () => void; settledAt?: number };
+/**
+ * A submitted frame marker: reports, without blocking, whether the GPU has finished the work submitted before it (true),
+ * not yet (false), or cannot tell (null, a lost context). Shared with the frame loop's backpressure (`frame-backpressure.ts`).
+ */
+export type FrameMarker = { submitted: number; done: () => boolean | null; dispose: () => void; settledAt?: number };
+type Marker = FrameMarker;
 
 /** Markers in flight at once; a frame submitted with this many outstanding is skipped rather than queued. */
 const MAX_OUTSTANDING = 6;
@@ -151,23 +155,54 @@ export class GpuBusyProbe {
   }
 }
 
+/** A WebGL2 fence marker, submitted at once and polled without blocking (`clientWaitSync` with a zero timeout). */
+export function fenceFrameMarker(gl: FenceContext, submitted: number): FrameMarker | null {
+  const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  if (!sync) return null;
+  // Submit the fence now, so it can signal before the browser's end-of-task flush.
+  gl.flush();
+  return {
+    submitted,
+    done: () => {
+      const status = gl.clientWaitSync(sync, 0, 0);
+      if (status === gl.WAIT_FAILED) return null;
+      return status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED;
+    },
+    dispose: () => gl.deleteSync(sync),
+  };
+}
+
+/** A WebGPU marker: `queue.onSubmittedWorkDone`, stamped when it settles (`onSettled` then runs); never awaited. */
+export function queueFrameMarker(
+  queue: { onSubmittedWorkDone(): Promise<unknown> }, submitted: number, now: () => number, onSettled?: () => void,
+): FrameMarker {
+  const marker: FrameMarker = { submitted, done: () => (marker.settledAt === undefined ? false : true), dispose: () => {} };
+  void queue.onSubmittedWorkDone().then(() => {
+    marker.settledAt = now();
+    onSettled?.();
+  }, () => {
+    marker.settledAt = now();
+    marker.done = () => null;
+    onSettled?.();
+  });
+  return marker;
+}
+
+/** The Engine's marker source (WebGL2 fences or the WebGPU queue), or null where it has neither. */
+export function engineFrameMarkers(engine: AbstractEngine, now: () => number = () => performance.now(),
+  onSettled?: () => void): ((submitted: number) => FrameMarker | null) | null {
+  if (engine.isWebGPU) {
+    const queue = (engine as unknown as { _device?: { queue?: { onSubmittedWorkDone(): Promise<unknown> } } })._device?.queue;
+    return queue && typeof queue.onSubmittedWorkDone === "function" ? (submitted) => queueFrameMarker(queue, submitted, now, onSettled) : null;
+  }
+  const gl = (engine as unknown as { _gl?: WebGL2RenderingContext })._gl;
+  const version = (engine as unknown as { webGLVersion?: number }).webGLVersion;
+  return gl && version === 2 && typeof gl.fenceSync === "function" ? (submitted) => fenceFrameMarker(gl, submitted) : null;
+}
+
 /** A probe whose markers are WebGL2 fences, polled without blocking. */
 export function createFenceGpuBusyProbe(gl: FenceContext, now?: () => number, schedule?: (callback: () => void) => void): GpuBusyProbe {
-  return new GpuBusyProbe((submitted) => {
-    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-    if (!sync) return null;
-    // Submit the fence now, so it can signal before the browser's end-of-task flush.
-    gl.flush();
-    return {
-      submitted,
-      done: () => {
-        const status = gl.clientWaitSync(sync, 0, 0);
-        if (status === gl.WAIT_FAILED) return null;
-        return status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED;
-      },
-      dispose: () => gl.deleteSync(sync),
-    };
-  }, now, schedule);
+  return new GpuBusyProbe((submitted) => fenceFrameMarker(gl, submitted), now, schedule);
 }
 
 /** A probe whose markers are WebGPU `queue.onSubmittedWorkDone` promises, stamped when they settle. */
@@ -176,18 +211,7 @@ export function createQueueGpuBusyProbe(
   schedule?: (callback: () => void) => void,
 ): GpuBusyProbe {
   let probe: GpuBusyProbe | null = null;
-  probe = new GpuBusyProbe((submitted) => {
-    const marker: Marker = { submitted, done: () => (marker.settledAt === undefined ? false : true), dispose: () => {} };
-    void queue.onSubmittedWorkDone().then(() => {
-      marker.settledAt = now();
-      probe?.poll();
-    }, () => {
-      marker.settledAt = now();
-      marker.done = () => null;
-      probe?.poll();
-    });
-    return marker;
-  }, now, schedule ?? (() => {}));
+  probe = new GpuBusyProbe((submitted) => queueFrameMarker(queue, submitted, now, () => probe?.poll()), now, schedule ?? (() => {}));
   return probe;
 }
 
