@@ -9,7 +9,7 @@ export function saveFieldPinType(properties: Record<string, unknown>): PinType {
   if (typeof properties.typeId !== "string") return BOXED_WILDCARD;
   const type = String(properties.typeId ?? "string");
   const base = type === "actor" ? objectRef("Actor") : type === "asset" ? assetRef("")
-    : type === "struct" ? structRef(typeof properties.structId === "string" ? properties.structId : "")
+    : type === "struct" ? structRef(typeof properties.typeClassId === "string" ? properties.typeClassId : "")
     : pinTypeForMember(type === "vector3" ? "vec3" : type);
   return properties.array === true ? arrayOf(base) : base;
 }

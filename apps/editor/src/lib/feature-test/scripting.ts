@@ -135,6 +135,9 @@ const SPIN_CONFIG_FIELDS = [
 
 /** Save Game field node data (permanent field id, display name, type). */
 const VISITS_FIELD = { fieldId: "visits", fieldName: "Visits", typeId: "int", array: false };
+/** Structure Save Fields: a range and a curve, stored as plain records. */
+const SAVED_RANGE_FIELD = { fieldId: "saved-range", fieldName: "SavedRange", typeId: "struct", array: false, typeClassId: "engine:IntRange" };
+const SAVED_CURVE_FIELD = { fieldId: "saved-curve", fieldName: "SavedCurve", typeId: "struct", array: false, typeClassId: "engine:FloatCurve" };
 
 interface ScriptingTypes {
   speedMode: { guid: string; members: Array<{ name: string; value: number }> };
@@ -209,6 +212,8 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
         fields: [
           { id: VISITS_FIELD.fieldId, name: VISITS_FIELD.fieldName, type: "int", defaultValue: 0 },
           { id: "best-score", name: "BestScore", type: "float", defaultValue: 0 },
+          { id: SAVED_RANGE_FIELD.fieldId, name: SAVED_RANGE_FIELD.fieldName, type: "struct", structId: SAVED_RANGE_FIELD.typeClassId, defaultValue: { Min: 0, Max: 1 } },
+          { id: SAVED_CURVE_FIELD.fieldId, name: SAVED_CURVE_FIELD.fieldName, type: "struct", structId: SAVED_CURVE_FIELD.typeClassId, defaultValue: { Keys: [], Before: "constant", After: "constant" } },
         ],
       }),
     }),
@@ -1387,20 +1392,41 @@ async function saveDataProbe(
   return { ref, components };
 }
 
-/** Load Game, increment the Visits Save Field, Save Game; a Save Game Component keeps Visits. */
+/**
+ * Load Game, increment the Visits Save Field, store a range and a curve in Structure Save Fields, Save Game,
+ * then read both back and assert them; a Save Game Component keeps Visits.
+ */
 async function saveSaveProbe(ctx: FeatureTestContext, font: string, materialGuid: string | null): Promise<PlacedClass> {
   const visits = varMember("ft-data-var-visits", "Visits", "int", 0);
+  const savedRange = varMember("ft-data-var-saved-range", "SavedRange", "struct", { Min: 3, Max: 7 }, {
+    typeClassId: "engine:IntRange",
+  });
+  const curveKey = (Time: number, Value: number) =>
+    ({ Time, Value, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 });
+  const savedCurve = varMember("ft-data-var-saved-curve", "SavedCurve", "struct", {
+    Keys: [curveKey(0, 10), curveKey(2, 30)], Before: "constant", After: "constant",
+  }, { typeClassId: "engine:FloatCurve" });
   const components = [
     scaledMesh("prefab-mesh", "box", 0.6, materialGuid),
     textLabel("prefab-label", "Save Probe", font, [0, 1, 0]),
     comp("prefab-save", "SaveGameComponent", { actorVariables: [visits.name] }),
   ];
   const graph = classGraph({
-    members: [visits],
+    members: [visits, savedRange, savedCurve],
     components,
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
       gNode("load", "saveGame.loadGame", 220, 0),
+      getVar("get-saved-range", savedRange, 900, 760),
+      gNode("store-range", "saveGame.setField", 900, 900, SAVED_RANGE_FIELD),
+      getVar("get-saved-curve", savedCurve, 1140, 760),
+      gNode("store-curve", "saveGame.setField", 1140, 900, SAVED_CURVE_FIELD),
+      gNode("stored-range", "saveGame.getField", 1380, 760, SAVED_RANGE_FIELD),
+      gNode("clamp-stored", "range.clampInt", 1620, 760, { "default:value": 9 }),
+      gNode("assert-range", "debug.assertEqual", 1380, 900, { "default:expected": 7, "default:message": "The SavedRange Save Field lost its range" }),
+      gNode("stored-curve", "saveGame.getField", 1620, 1000, SAVED_CURVE_FIELD),
+      gNode("evaluate-stored", "curve.evaluateFloat", 1860, 1000, { "default:time": 1 }),
+      gNode("assert-curve", "debug.assertEqual", 1620, 900, { "default:expected": 20, "default:message": "The SavedCurve Save Field lost its curve" }),
       gNode("stored-visits", "saveGame.getField", 220, 220, VISITS_FIELD),
       gNode("next-visits", "math.add_int", 440, 220, { "default:b": 1 }),
       setVar("set-visits", visits, 660, 0),
@@ -1422,8 +1448,18 @@ async function saveSaveProbe(ctx: FeatureTestContext, font: string, materialGuid
       gWire("next-visits", "out", "set-visits", "value"),
       gExec("set-visits", "store-visits"),
       gWire("set-visits", "out", "store-visits", "value"),
-      gExec("store-visits", "save"),
-      gWire("save", "completed", "saved", "execIn"),
+      gExec("store-visits", "store-range"),
+      gWire("get-saved-range", "value", "store-range", "value"),
+      gExec("store-range", "store-curve"),
+      gWire("get-saved-curve", "value", "store-curve", "value"),
+      gExec("store-curve", "save"),
+      gWire("save", "completed", "assert-range", "execIn"),
+      gWire("stored-range", "value", "clamp-stored", "range"),
+      gWire("clamp-stored", "result", "assert-range", "actual"),
+      gExec("assert-range", "assert-curve"),
+      gWire("stored-curve", "value", "evaluate-stored", "curve"),
+      gWire("evaluate-stored", "value", "assert-curve", "actual"),
+      gExec("assert-curve", "saved"),
       gWire("save", "failed", "assert-saved", "execIn"),
       gExec("assert-saved", "save-failed"),
       gWire("set-visits", "out", "saved-text", fmtArg("visits")),
