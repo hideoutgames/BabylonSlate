@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clampToRange,
+  curveKeyTangent,
   curveTimeRange,
   evaluateCurve,
   evaluateCurveAnyOrder,
@@ -61,6 +62,20 @@ describe("curve interpolation", () => {
     // Monotonic keys: the middle tangent is (5 - 0) / 3.
     const rising = floatCurve([key(0, 0, "auto"), key(1, 1, "auto"), key(3, 5, "auto")]);
     expect(evaluateCurve("float", rising, 2)).toBeCloseTo(0.5 * 1 + 0.125 * (5 / 3) * 2 + 0.5 * 5 - 0.125 * 2 * 2, 6);
+  });
+
+  it("reports each key's tangent as evaluation uses it", () => {
+    const curve = floatCurve([key(0, 0, "auto"), key(1, 10, "linear"), key(2, 0, "custom", -3, 4), key(4, 6, "auto")]);
+    // Auto at the start: the slope of its only segment.
+    expect(curveKeyTangent("float", curve, 0, 0, "leave")).toBe(10);
+    // Linear keys still get the automatic tangent; a peak is flat.
+    expect(curveKeyTangent("float", curve, 1, 0, "arrive")).toBe(0);
+    // Custom keys keep their own arrive and leave tangents.
+    expect(curveKeyTangent("float", curve, 2, 0, "arrive")).toBe(-3);
+    expect(curveKeyTangent("float", curve, 2, 0, "leave")).toBe(4);
+    expect(curveKeyTangent("float", curve, 9, 0, "leave")).toBe(0);
+    const vector = floatCurve([key(0, { x: 0, y: 0, z: 0 }, "auto"), key(2, { x: 2, y: 4, z: -6 }, "auto")]);
+    expect([0, 1, 2].map((c) => curveKeyTangent("vec3", vector, 1, c, "arrive"))).toEqual([1, 2, -3]);
   });
 
   it("evaluates every channel of a Vector and a Color curve with the key's interpolation", () => {
