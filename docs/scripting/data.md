@@ -26,14 +26,25 @@ For each Data Definition, **Add Node** lists a typed **Read** *Name* **Data** no
 2. Use **Value**, the entry's fields as one record. Wire it into **Break** *Name* **Data** to get each field.
 3. Check **Found** with a [Branch](class/branch.md) first. It is false when the entry is missing or uses another Definition.
 
+### When the tree or path comes from a connection
+
+The type of **Value** is set when you build the graph, not while the game runs. When the Tree or Entry Path is connected, the editor cannot tell which entry it will be, so pick the Data Definition you expect yourself:
+
+1. Place **Read Unknown Data Entry**, connect **Tree** and **Entry Path**, and pick the Definition on its **Data Definition** pin. **Value** takes that Definition's type.
+2. Wire **Value** into **Break** *Name* **Data**, and check **Found** first: it is false when the entry uses another Definition.
+3. If a tree mixes Definitions, such as weapons and potions, use one node per Definition on the same path and check each **Found**.
+
+The **Data Definition** pin cannot be connected, because a connection could not set the type of **Value** before the game runs.
+
 | Node | What it does |
 | --- | --- |
 | [Read Data Entry](class/read-data-entry.md) | Reads one entry from a tree that is already loaded. |
-| [Read Data Entry Async](class/read-data-entry-async.md) | Loads a tree chosen while the game runs, then reads one entry. |
+| [Read Unknown Data Entry](class/read-unknown-data-entry.md) | Reads one entry from a loaded tree as the Data Definition picked on its pin. |
+| [Async Read Unknown Data Entry](class/async-read-unknown-data-entry.md) | Loads a tree chosen while the game runs, then reads one entry as the Data Definition picked on its pin. |
 | [Get Data Children](class/get-data-children.md), [Get Data Descendants](class/get-data-descendants.md) | Return the paths below an entry, for example to loop over every weapon. |
 | [Get Data Parent](class/get-data-parent.md) | Returns the path of an entry's parent. |
 
-A tree chosen on the node loads with its class. A tree passed in while the game runs must be loaded first, with **Read Data Entry Async** or [Async Load Asset](class/async-load-asset.md).
+A tree loads with its class when it is chosen on the node or comes from a variable of the same class. Any other tree, such as one returned by another object or an Asset Registry search, must be loaded first, with **Async Read Unknown Data Entry** or [Async Load Asset](class/async-load-asset.md).
 
 ## Records in variables
 

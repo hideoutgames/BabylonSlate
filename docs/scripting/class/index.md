@@ -437,11 +437,12 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Async Read Unknown Data Entry](async-read-unknown-data-entry.md) | Loads a Data Tree and the Data Definition picked on the node in the background, then reads one entry from it. |
 | [Get Data Children](get-data-children.md) | Returns the paths of an entry's immediate children, in sibling order. |
 | [Get Data Descendants](get-data-descendants.md) | Returns the paths of every entry below an entry, with parents listed before their children. |
 | [Get Data Parent](get-data-parent.md) | Returns the path of an entry's parent. |
 | [Read Data Entry](read-data-entry.md) | Reads an entry's values from a Data Tree that is already loaded and returns a copy. |
-| [Read Data Entry Async](read-data-entry-async.md) | Loads a Data Tree and its Data Definition in the background, then reads one entry from it. |
+| [Read Unknown Data Entry](read-unknown-data-entry.md) | Reads an entry's values from a loaded Data Tree as the Data Definition picked on the node, and returns a copy. |
 
 ## Actor
 
