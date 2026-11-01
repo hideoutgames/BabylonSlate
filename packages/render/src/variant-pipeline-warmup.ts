@@ -47,9 +47,12 @@ import { drawingMesh, isInstanceSource } from "./instance-source";
  * caster's depth variant, a geometry pass's variant, or one whose view stopped warming) becomes admissible as it is,
  * and waits as it did before.
  *
- * Admission happens only in tolerant rounds, so a strict round of a view's new run (after an invalidation, until it
- * draws steady frames again) probes a cold Effect as it is and settles it once ready: that run waits for every variant
- * anyway, and an Effect left cold by the previous run would otherwise hold its preparation for good.
+ * Admission happens in tolerant rounds and at the start of each steady frame of a view that has drawn one
+ * (`admitSteadyFirstDraws`, sharing the frame's budget): a cold variant that no probe counts as a swap (a re-planned
+ * graph's new pass, whose draw wrappers keep no previous Effect) starts no round of its own. A strict round of a view's
+ * new run (after an invalidation, until it draws steady frames again) probes a cold Effect as it is and settles it once
+ * ready: that run waits for every variant anyway, and an Effect left cold by the previous run would otherwise hold its
+ * preparation for good.
  */
 type ColdEntry = { usedAt: number; base: () => boolean; warmed: boolean };
 
@@ -216,32 +219,7 @@ export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boole
   let state = states.get(engine);
   if (!state) states.set(engine, (state = install(engine)));
   if (tolerated) {
-    const deferred = pipelinesDeferred(engine);
-    const now = performance.now();
-    // Per Engine frame: a tolerant preparation and a second view's rounds in the same frame share its admissions.
-    if (state.budgetFrame !== engine.frameId) {
-      state.budgetFrame = engine.frameId;
-      state.budget = firstDrawsPerFrame(engine);
-    }
-    let budget = state.budget;
-    // WebGPU: variants whose warm draws found their pipelines first (a mesh is swapping to each), then those no warm
-    // draw used, each queue oldest first.
-    for (const warmedOnly of deferred ? [true, false] : [false]) {
-      for (const [effect, entry] of state.cold) {
-        // A variant that failed to link, every fallback included, never turns ready (the mesh keeps its previous
-        // Effect for good): it leaves the queue without a first draw to spread.
-        if (effect.getCompilationError() && effect.allFallbacksProcessed()) {
-          warmUp(state, effect);
-          continue;
-        }
-        if (budget === 0) break;
-        const admissible = !deferred ? entry.base() : warmedOnly ? entry.warmed : now - entry.usedAt >= UNUSED_WARM_MS;
-        if (!admissible) continue;
-        warmUp(state, effect);
-        budget -= 1;
-      }
-    }
-    state.budget = budget;
+    admitColdEffects(engine, state);
     state.requests.clear();
   } else {
     // A steady view's strict question (a preparation after the view drew): it draws no frame, so no tolerant round
@@ -255,6 +233,51 @@ export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boole
   } finally {
     state.marking -= 1;
   }
+}
+
+/**
+ * Admits up to the Engine frame's remaining first-draw budget of admissible cold Effects, oldest first (WebGPU: warmed
+ * ones ahead of unused ones). The budget is per Engine frame: a frame's tolerant rounds, its views and the steady frame
+ * itself (`admitSteadyFirstDraws`) share it.
+ */
+function admitColdEffects(engine: AbstractEngine, state: WarmupState): void {
+  const deferred = pipelinesDeferred(engine);
+  const now = performance.now();
+  if (state.budgetFrame !== engine.frameId) {
+    state.budgetFrame = engine.frameId;
+    state.budget = firstDrawsPerFrame(engine);
+  }
+  let budget = state.budget;
+  // WebGPU: variants whose warm draws found their pipelines first (a mesh is swapping to each), then those no warm
+  // draw used, each queue oldest first.
+  for (const warmedOnly of deferred ? [true, false] : [false]) {
+    for (const [effect, entry] of state.cold) {
+      // A variant that failed to link, every fallback included, never turns ready (the mesh keeps its previous
+      // Effect for good): it leaves the queue without a first draw to spread.
+      if (effect.getCompilationError() && effect.allFallbacksProcessed()) {
+        warmUp(state, effect);
+        continue;
+      }
+      if (budget === 0) break;
+      const admissible = !deferred ? entry.base() : warmedOnly ? entry.warmed : now - entry.usedAt >= UNUSED_WARM_MS;
+      if (!admissible) continue;
+      warmUp(state, effect);
+      budget -= 1;
+    }
+  }
+  state.budget = budget;
+}
+
+/**
+ * A world view's steady frame admits cold Effects as its tolerant round does, whether or not a round runs in it: a
+ * round runs only after an invalidation or while a probe counts a swap, and a cold variant is not always a swap. A
+ * re-planned graph's new passes give a mesh draw wrappers with no previous Effect to keep, and a variant its real
+ * draws first ask for there (a Water quality change, which marks frozen water Materials dirty after the frame's probe)
+ * otherwise stayed cold, the mesh drawing nothing, until something else invalidated the view.
+ */
+export function admitSteadyFirstDraws(engine: AbstractEngine): void {
+  const state = states.get(engine);
+  if (state?.cold.size) admitColdEffects(engine, state);
 }
 
 /** Whether probes on `engine` ask for warm draws: inside a tolerant round where pipelines are deferred. */

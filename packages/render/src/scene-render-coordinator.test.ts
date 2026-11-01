@@ -27,6 +27,8 @@ import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS } from "./webgpu-pipeline-deferral";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
+import { registerPipelineWarmPasses, withPipelineWarmupRound } from "./variant-pipeline-warmup";
+import { setSceneBindsPreviousEffects } from "./variant-swaps";
 
 // NullEngine is not WebGPU, so the deferral itself never engages; its scopes are the seam here.
 vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
@@ -1293,4 +1295,30 @@ describe("editor selection guides", () => {
     overlay.dispose();
     renderer.dispose();
   });
+});
+
+it("admits a cold variant in each steady frame, also when no readiness round runs in it", async () => {
+  // A re-planned graph's new pass gives a mesh draw wrappers with no previous Effect, so a variant its real draws first
+  // ask for there is no swap: no probe marks the view's readiness and no round follows to admit it (water drew nothing
+  // after a Water quality change).
+  const { engine, scene, renderer } = host(true);
+  setSceneBindsPreviousEffects(scene);
+  await renderer.prepare();
+  expect(renderer.render(false).rendered).toBe(true);
+  const pass = engine.createRenderPassId("Forward objects");
+  registerPipelineWarmPasses(engine, [pass]);
+  const variant = withPipelineWarmupRound(engine, true, () => engine.createEffect(
+    { vertexSource: "void main() { gl_Position = vec4(0.0); }", fragmentSource: "void main() { gl_FragColor = vec4(1.0); }" },
+    ["position"], [], [], "#define WATER_DETAIL_1",
+  ));
+  const readyInPass = () => {
+    const current = engine.currentRenderPassId;
+    engine.currentRenderPassId = pass;
+    try { return variant.isReady(); } finally { engine.currentRenderPassId = current; }
+  };
+  expect(readyInPass()).toBe(false);
+  (engine as unknown as { _frameId: number })._frameId += 1;
+  expect(renderer.render(false).rendered).toBe(true);
+  expect(readyInPass()).toBe(true);
+  renderer.dispose();
 });
