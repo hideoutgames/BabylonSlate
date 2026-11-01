@@ -12,7 +12,7 @@ import {
   type Ref,
 } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, Maximize2Icon, PlusIcon, Trash2Icon } from "lucide-react";
-import { CURVE_EXTRAPOLATIONS, EASING_CURVE_LABELS, type CurveExtrapolation, type CurveInterpolation } from "@haptic/core";
+import { CURVE_EXTRAPOLATIONS, EASING_CURVE_LABELS, MIN_CURVE_KEY_GAP, type CurveExtrapolation, type CurveInterpolation } from "@haptic/core";
 import { Button } from "@haptic/ui/components/button";
 import {
   Select,
@@ -32,7 +32,6 @@ import {
   CURVE_CHANNELS,
   INTERPOLATION_OPTIONS,
   channelPoints,
-  clampKeyTimeTo,
   clampNumber,
   clampValue,
   curveValue,
@@ -94,7 +93,10 @@ export interface CurveEditorProps {
 }
 
 const LONG_PRESS_MS = 500;
+/** Finger movement that starts a drag (and cancels a hold). */
 const MOVE_TOLERANCE_PX = 6;
+/** Mouse movement that turns a press into a drag or a selection box. */
+const MOUSE_SLOP_PX = 3;
 /** Tangent handle reach when the plot has not been measured, as a share of the plot. */
 const TANGENT_LENGTH = 0.12;
 const VALUE_RULER_WIDTH = 40;
@@ -104,11 +106,32 @@ const WINDOW_TIME_PAD = 0.12;
 const ZONE_LABEL_MIN_PX = 88;
 const HATCH = "bg-[repeating-linear-gradient(135deg,var(--border)_0_1px,transparent_1px_6px)] opacity-70";
 
-type KeyDrag = { kind: "key"; pointerId: number; index: number; channel: number; timeOnly: boolean };
+/** One key's handle on one channel (Float: always channel 0). */
+type KeyHandle = { index: number; channel: number };
+type SelectMode = "replace" | "add" | "toggle";
+/** Moves every handle in `handles` by the pointer's change since it pressed `primary`. */
+type KeyDrag = {
+  kind: "key"; pointerId: number; handles: KeyHandle[]; primary: KeyHandle; timeOnly: boolean;
+  x: number; y: number; startTime: number; startValue: number; moved: boolean;
+  /** Pressed a key of a group without modifiers: a click without a drag selects it alone. */
+  collapse: boolean;
+};
 type TangentDrag = { kind: "tangent"; pointerId: number; index: number; channel: number; side: "arrive" | "leave" };
-type PanDrag = { kind: "pan"; pointerId: number; x: number; y: number; start: CurveView; moved: boolean };
+/** A finger or right-drag on empty space; `held` once a finger stayed still for a long press. */
+type PanDrag = {
+  kind: "pan"; pointerId: number; x: number; y: number; start: CurveView; moved: boolean;
+  held: boolean; menu: boolean; fx: number; fy: number;
+};
 type PinchDrag = { kind: "pinch"; start: CurveView; distance: number; fx: number; fy: number };
-type Gesture = KeyDrag | TangentDrag | PanDrag | PinchDrag;
+type MarqueeDrag = {
+  kind: "marquee"; pointerId: number; x: number; y: number; fx: number; fy: number;
+  mode: SelectMode; base: KeyHandle[]; active: boolean;
+};
+type Gesture = KeyDrag | TangentDrag | PanDrag | PinchDrag | MarqueeDrag;
+
+function selectModeOf(event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): SelectMode {
+  return event.shiftKey ? "add" : event.ctrlKey || event.metaKey ? "toggle" : "replace";
+}
 
 const EXTRAPOLATION_LABELS: Record<CurveExtrapolation, string> = {
   constant: "Constant", linear: "Linear", cycle: "Cycle", oscillate: "Oscillate",
@@ -176,17 +199,23 @@ export function CurveEditor({
   const multi = channelInfo.length > 1;
   const [channelState, setChannelState] = useState<boolean[]>(() => channelInfo.map(() => true));
   const visible = controlledChannels ?? channelState;
+  const visibleChannels = channelInfo.map((_, index) => index).filter((index) => visible[index] !== false);
   const committed = editorKeys(kind, value);
   const [draft, setDraftState] = useState<EditorKey[] | null>(null);
   // Pointer events can arrive before React re-renders, so handlers read the latest draft from a ref.
   const draftRef = useRef<EditorKey[] | null>(null);
   const setDraft = (next: EditorKey[] | null) => { draftRef.current = next; setDraftState(next); };
   const keys = draft ?? committed;
-  const [selected, setSelected] = useState<{ index: number; channel: number }>({ index: 0, channel: 0 });
+  // Selected key handles, the last one primary (its tangents show and the key bar reads it). Focus events
+  // arrive before React re-renders, so they read the latest selection from the ref.
+  const [selectionState, setSelectionState] = useState<KeyHandle[]>([{ index: 0, channel: 0 }]);
+  const selectionRef = useRef<KeyHandle[]>(selectionState);
+  const select = (next: KeyHandle[]) => { selectionRef.current = next; setSelectionState(next); };
   const [userView, setUserView] = useState<CurveView | null>(null);
   const [frozenView, setFrozenView] = useState<CurveView | null>(null);
   const [addHere, setAddHere] = useState<{ time: number; fx: number; fy: number } | null>(null);
   const [hover, setHover] = useState<{ fx: number; fy: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -195,18 +224,26 @@ export function CurveEditor({
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusKeyRef = useRef<string | null>(null);
+  // A key pressed with a pointer has its selection settled already; its focus event must not replace it.
+  const pointerSelectRef = useRef(false);
 
   const view = userView ?? frozenView ?? fitView(kind, keys, visible, constraints, isWindow ? WINDOW_TIME_PAD : undefined);
   const curve = curveValue(kind, keys, value.Before, value.After);
   const last = keys.length - 1;
-  const selectedIndex = clampNumber(selected.index, 0, Math.max(0, last));
-  const selectedKey = keys[selectedIndex];
-  const endpoint = !!constraints.lockEnds && (selectedIndex === 0 || selectedIndex === last);
+  const selection = selectionState.filter((handle) => handle.index >= 0 && handle.index <= last);
+  const primary = selection[selection.length - 1];
+  const selectedIndex = primary?.index ?? -1;
+  const selectedKey = primary ? keys[primary.index] : undefined;
+  const selectedIndices = [...new Set(selection.map((handle) => handle.index))].sort((a, b) => a - b);
+  const multiKeys = selectedIndices.length > 1;
+  const locked = (index: number) => !!constraints.lockEnds && (index === 0 || index === last);
   const minKeys = constraints.minKeys ?? 0;
   const maxKeys = constraints.maxKeys ?? Number.POSITIVE_INFINITY;
   const insertion = insertionTime(keys, constraints);
   const canAdd = !disabled && keys.length < maxKeys && insertion !== null;
-  const canRemove = !disabled && !!selectedKey && !endpoint && keys.length > minKeys;
+  const removable = selectedIndices.filter((index) => !locked(index));
+  const canRemove = !disabled && removable.length > 0 && keys.length > minKeys;
+  const timeLocked = selectedIndices.some(locked);
   const lockedInterpolation = constraints.interpolation;
   const spanT = view.t1 - view.t0;
   const spanV = view.v1 - view.v0;
@@ -273,14 +310,64 @@ export function CurveEditor({
   const toData = (fx: number, fy: number) => ({ time: view.t0 + fx * spanT, value: view.v1 - fy * spanV });
   const fxOf = (time: number) => (time - view.t0) / spanT;
   const fyOf = (channelValue: number) => (view.v1 - channelValue) / spanV;
+  /** Where a key's handle draws: a fixed time axis keeps it inside the plot. */
+  const handleFy = (key: EditorKey, channel: number) => {
+    const fy = fyOf(key.values[channel]!);
+    return constraints.fixedTime ? clampNumber(fy, 0, 1) : fy;
+  };
 
-  const moveKey = (source: readonly EditorKey[], index: number, channel: number, time: number, channelValue: number | null) => {
+  // Selection ---------------------------------------------------------------------------------------
+
+  const sameHandle = (a: KeyHandle, b: KeyHandle) => a.index === b.index && (!multi || a.channel === b.channel);
+  const isSelectedHandle = (index: number, channel: number) => selection.some((handle) => sameHandle(handle, { index, channel }));
+  /** `base` with `handles` in its place, added, or toggled; the last handle becomes primary. */
+  const combine = (base: readonly KeyHandle[], handles: readonly KeyHandle[], mode: SelectMode): KeyHandle[] => {
+    if (mode === "replace") return [...handles];
+    const kept = base.filter((handle) => !handles.some((other) => sameHandle(handle, other)));
+    if (mode === "add") return [...kept, ...handles];
+    return [...kept, ...handles.filter((handle) => !base.some((other) => sameHandle(handle, other)))];
+  };
+  const fallbackChannel = () => primary?.channel ?? visibleChannels[0] ?? 0;
+
+  /**
+   * `source` with the keys of `handles` moved `dt` seconds together, held between their unselected
+   * neighbours, inside the time range and off locked ends, and each handle's channel moved by `dv`.
+   */
+  const shiftKeys = (source: readonly EditorKey[], handles: readonly KeyHandle[], dt: number, dv: number | null) => {
     const next = cloneKeys(source);
-    const key = next[index]!;
-    key.time = clampKeyTimeTo(next, index, time, constraints);
-    if (channelValue !== null) key.values[channel] = clampValue(channelValue, constraints);
+    const indices = [...new Set(handles.map((handle) => handle.index))].filter((index) => index >= 0 && index < source.length);
+    const moving = new Set(indices);
+    const gap = constraints.keyGap ?? MIN_CURVE_KEY_GAP;
+    const range = constraints.fixedTime ? ([0, 1] as const) : constraints.timeRange;
+    const end = source.length - 1;
+    let low = 0;
+    let high = 0;
+    if (dt !== 0) {
+      low = Number.NEGATIVE_INFINITY;
+      high = Number.POSITIVE_INFINITY;
+      for (const index of indices) {
+        const time = source[index]!.time;
+        if (constraints.lockEnds && (index === 0 || index === end)) { low = 0; high = 0; }
+        if (index > 0 && !moving.has(index - 1)) low = Math.max(low, source[index - 1]!.time + gap - time);
+        if (index < end && !moving.has(index + 1)) high = Math.min(high, source[index + 1]!.time - gap - time);
+        if (range) { low = Math.max(low, range[0] - time); high = Math.min(high, range[1] - time); }
+      }
+      // Never forced to move: keys already closer than the gap may stay where they are.
+      low = Math.min(low, 0);
+      high = Math.max(high, 0);
+    }
+    const shift = clampNumber(dt, low, high);
+    for (const index of indices) next[index]!.time = roundTime(source[index]!.time + shift);
+    if (dv !== null) {
+      for (const handle of handles) {
+        const key = next[handle.index];
+        if (key) key.values[handle.channel] = clampValue(source[handle.index]!.values[handle.channel]! + dv, constraints);
+      }
+    }
     return next;
   };
+  /** The shift that lands key `index` on `time` after snapping it to the time step and range. */
+  const snappedShift = (source: readonly EditorKey[], index: number, time: number) => snapTime(time, constraints) - source[index]!.time;
 
   const insertKey = (time: number) => {
     if (disabled || keys.length >= maxKeys) return;
@@ -292,16 +379,22 @@ export function CurveEditor({
     const at = index < 0 ? keys.length : index;
     const next = cloneKeys(keys);
     next.splice(at, 0, keyAt(kind, keys, t, constraints));
-    setSelected({ index: at, channel: selected.channel });
+    select([{ index: at, channel: fallbackChannel() }]);
     emit(next);
   };
 
-  const removeKey = (index: number) => {
-    if (disabled || keys.length <= minKeys) return;
-    if (constraints.lockEnds && (index === 0 || index === last)) return;
-    setSelected({ index: Math.max(0, index - 1), channel: selected.channel });
-    emit(keys.filter((_, keyIndex) => keyIndex !== index));
+  /** Removes the keys at `indices` except locked ends, keeping at least `minKeys`; returns the first removed index. */
+  const removeKeys = (indices: readonly number[], channel: number): number | null => {
+    if (disabled) return null;
+    const allowed = [...new Set(indices)].filter((index) => index >= 0 && index <= last && !locked(index))
+      .sort((a, b) => a - b).slice(0, Math.max(0, keys.length - minKeys));
+    if (allowed.length === 0) return null;
+    const removing = new Set(allowed);
+    select([{ index: Math.max(0, allowed[0]! - 1), channel }]);
+    emit(keys.filter((_, index) => !removing.has(index)));
+    return allowed[0]!;
   };
+  const removeSelected = () => { removeKeys(removable, fallbackChannel()); };
 
   const endGesture = () => {
     gestureRef.current = null;
@@ -311,13 +404,26 @@ export function CurveEditor({
 
   // Keys -------------------------------------------------------------------------------------------
 
-  const startKeyDrag = (event: PointerEvent<HTMLButtonElement>, index: number, channel: number, timeOnly: boolean) => {
+  const onKeyPointerDown = (event: PointerEvent<HTMLButtonElement>, handle: KeyHandle, timeOnly: boolean) => {
     event.stopPropagation();
     setAddHere(null);
     setHover(null);
-    setSelected({ index, channel });
-    if (disabled) return;
-    gestureRef.current = { kind: "key", pointerId: event.pointerId, index, channel, timeOnly };
+    pointerSelectRef.current = true;
+    const mode = selectModeOf(event);
+    const current = selectionRef.current;
+    const already = current.some((other) => sameHandle(other, handle));
+    // Pressing a selected key keeps the group, so dragging it moves them all; a click without a drag then selects it alone.
+    const next = mode === "replace" && already ? combine(current, [handle], "add") : combine(current, [handle], mode);
+    select(next);
+    if (disabled || (mode === "toggle" && already)) return;
+    const point = fraction(event.clientX, event.clientY);
+    const key = keys[handle.index]!;
+    const start = point ? toData(point.fx, point.fy) : { time: key.time, value: key.values[handle.channel]! };
+    gestureRef.current = {
+      kind: "key", pointerId: event.pointerId, handles: next, primary: handle, timeOnly,
+      x: event.clientX, y: event.clientY, startTime: start.time, startValue: start.value,
+      moved: false, collapse: mode === "replace" && already && current.length > 1,
+    };
     setFrozenView(view);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
@@ -327,12 +433,17 @@ export function CurveEditor({
     if (!gesture || (gesture.kind !== "key" && gesture.kind !== "tangent") || gesture.pointerId !== event.pointerId) return;
     const point = fraction(event.clientX, event.clientY);
     if (!point) return;
-    const source = draftRef.current ?? committed;
     if (gesture.kind === "key") {
+      const slop = event.pointerType === "mouse" ? MOUSE_SLOP_PX : MOVE_TOLERANCE_PX;
+      if (!gesture.moved && Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) < slop) return;
+      gesture.moved = true;
       const data = toData(point.fx, point.fy);
-      setDraft(moveKey(source, gesture.index, gesture.channel, data.time, gesture.timeOnly ? null : data.value));
+      const primaryTime = committed[gesture.primary.index]!.time;
+      const dt = snappedShift(committed, gesture.primary.index, primaryTime + data.time - gesture.startTime);
+      setDraft(shiftKeys(committed, gesture.handles, dt, gesture.timeOnly ? null : data.value - gesture.startValue));
       return;
     }
+    const source = draftRef.current ?? committed;
     const key = source[gesture.index]!;
     const kx = fxOf(key.time);
     const ky = fyOf(key.values[gesture.channel]!);
@@ -349,74 +460,124 @@ export function CurveEditor({
   };
 
   const onHandlePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+    pointerSelectRef.current = false;
     const gesture = gestureRef.current;
     if (!gesture || (gesture.kind !== "key" && gesture.kind !== "tangent") || gesture.pointerId !== event.pointerId) return;
     endGesture();
     setFrozenView(null);
     const final = draftRef.current;
     setDraft(null);
+    if (gesture.kind === "key" && !gesture.moved && gesture.collapse) select([gesture.primary]);
     if (final && JSON.stringify(final) !== JSON.stringify(committed)) emit(final);
   };
 
   const onHandlePointerCancel = (event: PointerEvent<HTMLButtonElement>) => {
+    pointerSelectRef.current = false;
     if (gestureRef.current && "pointerId" in gestureRef.current && gestureRef.current.pointerId !== event.pointerId) return;
     endGesture();
     setFrozenView(null);
     setDraft(null);
   };
 
-  const onKeyKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number, channel: number) => {
+  /** Keyboard focus (Tab) selects a key that is not selected yet; a pointer press already chose the selection. */
+  const onKeyFocus = (handle: KeyHandle) => {
+    if (pointerSelectRef.current) {
+      pointerSelectRef.current = false;
+      return;
+    }
+    if (!selectionRef.current.some((other) => sameHandle(other, handle))) select([handle]);
+  };
+
+  const onKeyKeyDown = (event: KeyboardEvent<HTMLButtonElement>, handle: KeyHandle) => {
     if (disabled) return;
-    const key = keys[index]!;
+    const current = selectionRef.current;
+    const handles = current.some((other) => sameHandle(other, handle)) ? current : [handle];
+    const key = keys[handle.index]!;
     const large = event.shiftKey ? 10 : 1;
     const timeStep = (constraints.fixedTime ? 0.01 : spanT / 100) * large;
     const valueStep = (spanV / 100) * large;
     switch (event.key) {
       case "ArrowLeft":
       case "ArrowRight":
-        emit(moveKey(keys, index, channel, key.time + timeStep * (event.key === "ArrowLeft" ? -1 : 1), key.values[channel]!));
+        emit(shiftKeys(keys, handles, snappedShift(keys, handle.index, key.time + timeStep * (event.key === "ArrowLeft" ? -1 : 1)), null));
         break;
       case "ArrowUp":
       case "ArrowDown":
-        emit(moveKey(keys, index, channel, key.time, key.values[channel]! + valueStep * (event.key === "ArrowDown" ? -1 : 1)));
+        emit(shiftKeys(keys, handles, 0, valueStep * (event.key === "ArrowDown" ? -1 : 1)));
         break;
       case "Delete":
-      case "Backspace":
-        if (keys.length > minKeys && !(constraints.lockEnds && (index === 0 || index === last))) {
-          focusKeyRef.current = `${Math.max(0, index - 1)}:${channel}`;
-          removeKey(index);
-        }
+      case "Backspace": {
+        // The focused key alone, or the whole selection when it belongs to it.
+        const first = removeKeys(handles.map((entry) => entry.index), handle.channel);
+        if (first !== null) focusKeyRef.current = `${Math.max(0, first - 1)}:${handle.channel}`;
         break;
+      }
       default:
         return;
     }
     event.preventDefault();
   };
 
-  // Empty space: pan, pinch, long-press, hover ------------------------------------------------------
+  // Empty space: select, pan, pinch, hold, hover ----------------------------------------------------
+
+  /** Selects the key handles inside the box from where the gesture started to the pointer. */
+  const updateMarquee = (gesture: MarqueeDrag, clientX: number, clientY: number) => {
+    const point = fraction(clientX, clientY);
+    if (!point) return;
+    const box = { x0: gesture.fx, y0: gesture.fy, x1: point.fx, y1: point.fy };
+    setMarquee(box);
+    const [left, right] = [Math.min(box.x0, box.x1), Math.max(box.x0, box.x1)];
+    const [top, bottom] = [Math.min(box.y0, box.y1), Math.max(box.y0, box.y1)];
+    const inside: KeyHandle[] = [];
+    keys.forEach((key, index) => {
+      const fx = fxOf(key.time);
+      if (fx < left || fx > right) return;
+      for (const channel of visibleChannels) {
+        const fy = handleFy(key, channel);
+        if (fy >= top && fy <= bottom) inside.push({ index, channel });
+      }
+    });
+    select(combine(gesture.base, inside, gesture.mode));
+  };
 
   const onTrackPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if ((event.target as Element).closest("button")) return;
+    const mouse = event.pointerType === "mouse";
+    if (mouse && event.button !== 0 && event.button !== 2) return;
     setAddHere(null);
     setHover(null);
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const pointers = [...pointersRef.current.values()];
     if (pointers.length >= 2) {
+      // A second finger cancels a pending hold or selection box and pinches.
       endGesture();
+      setMarquee(null);
       const [a, b] = pointers as [{ x: number; y: number }, { x: number; y: number }];
       const mid = fraction((a.x + b.x) / 2, (a.y + b.y) / 2);
       gestureRef.current = { kind: "pinch", start: view, distance: Math.hypot(a.x - b.x, a.y - b.y) || 1, fx: mid?.fx ?? 0.5, fy: mid?.fy ?? 0.5 };
       return;
     }
-    gestureRef.current = { kind: "pan", pointerId: event.pointerId, x: event.clientX, y: event.clientY, start: view, moved: false };
-    if (event.pointerType !== "mouse" && !disabled && keys.length < maxKeys) {
-      const at = fraction(event.clientX, event.clientY);
+    const at = fraction(event.clientX, event.clientY);
+    if (mouse && event.button === 0) {
+      // A mouse drag draws a selection box: Shift adds to the selection, Ctrl/Cmd toggles.
+      gestureRef.current = {
+        kind: "marquee", pointerId: event.pointerId, x: event.clientX, y: event.clientY, fx: at?.fx ?? 0, fy: at?.fy ?? 0,
+        mode: selectModeOf(event), base: selectionRef.current, active: false,
+      };
+      return;
+    }
+    // A finger or a right-drag pans. A right-click, or a held finger released in place, offers Add Key Here;
+    // a held finger that then moves draws a selection box instead.
+    const pan: PanDrag = {
+      kind: "pan", pointerId: event.pointerId, x: event.clientX, y: event.clientY, start: view,
+      moved: false, held: false, menu: mouse, fx: at?.fx ?? 0, fy: at?.fy ?? 0,
+    };
+    gestureRef.current = pan;
+    if (!mouse) {
       longPressRef.current = setTimeout(() => {
         longPressRef.current = null;
-        const gesture = gestureRef.current;
-        if (!at || gesture?.kind !== "pan" || gesture.moved) return;
-        setAddHere({ time: toData(at.fx, at.fy).time, fx: at.fx, fy: at.fy });
+        if (gestureRef.current === pan && !pan.moved) pan.held = true;
       }, LONG_PRESS_MS);
     }
   };
@@ -441,17 +602,51 @@ export function CurveEditor({
       setUserView(zoomView(gesture.start, factor, gesture.fx, gesture.fy, !constraints.fixedTime));
       return;
     }
-    if (gesture.kind !== "pan" || gesture.pointerId !== event.pointerId) return;
+    if ((gesture.kind !== "pan" && gesture.kind !== "marquee") || gesture.pointerId !== event.pointerId) return;
     const dx = event.clientX - gesture.x;
     const dy = event.clientY - gesture.y;
+    if (gesture.kind === "marquee") {
+      if (!gesture.active && Math.hypot(dx, dy) < MOUSE_SLOP_PX) return;
+      gesture.active = true;
+      updateMarquee(gesture, event.clientX, event.clientY);
+      return;
+    }
     if (!gesture.moved && Math.hypot(dx, dy) < MOVE_TOLERANCE_PX) return;
+    if (gesture.held) {
+      // Hold, then move: a selection box from where the finger came down.
+      const box: MarqueeDrag = {
+        kind: "marquee", pointerId: event.pointerId, x: gesture.x, y: gesture.y, fx: gesture.fx, fy: gesture.fy,
+        mode: "replace", base: [], active: true,
+      };
+      gestureRef.current = box;
+      updateMarquee(box, event.clientX, event.clientY);
+      return;
+    }
     gesture.moved = true;
+    if (longPressRef.current) {
+      clearTimeout(longPressRef.current);
+      longPressRef.current = null;
+    }
     const dt = constraints.fixedTime ? 0 : (-dx / rect.width) * (gesture.start.t1 - gesture.start.t0);
     const dv = (dy / rect.height) * (gesture.start.v1 - gesture.start.v0);
     setUserView({ t0: gesture.start.t0 + dt, t1: gesture.start.t1 + dt, v0: gesture.start.v0 + dv, v1: gesture.start.v1 + dv });
   };
 
   const onTrackPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    if (event.type === "pointerup" && gesture && gesture.kind !== "pinch" && gesture.pointerId === event.pointerId) {
+      if (gesture.kind === "pan" && !gesture.moved) {
+        if (gesture.menu || gesture.held) {
+          if (!disabled && keys.length < maxKeys) setAddHere({ time: toData(gesture.fx, gesture.fy).time, fx: gesture.fx, fy: gesture.fy });
+        } else {
+          // A tap on empty space clears the selection.
+          select([]);
+        }
+      } else if (gesture.kind === "marquee" && !gesture.active && gesture.mode === "replace") {
+        select([]);
+      }
+    }
+    setMarquee(null);
     pointersRef.current.delete(event.pointerId);
     if (pointersRef.current.size === 0) endGesture();
   };
@@ -462,13 +657,9 @@ export function CurveEditor({
     if (point) insertKey(toData(point.fx, point.fy).time);
   };
 
-  // Selected key fields: live drafts, one change when the scrub or typed edit ends --------------------
+  // Selected key fields: every selected key takes the value; one change when the scrub or typed edit ends --
 
-  const editSelected = (change: (key: EditorKey, next: EditorKey[]) => void, commit: boolean) => {
-    const next = cloneKeys(draftRef.current ?? committed);
-    const key = next[selectedIndex];
-    if (!key) return;
-    change(key, next);
+  const applyEdit = (next: EditorKey[], commit: boolean) => {
     if (commit) {
       setDraft(null);
       emit(next);
@@ -476,18 +667,36 @@ export function CurveEditor({
       setDraft(next);
     }
   };
+  const editSelectedKeys = (change: (key: EditorKey) => void, commit: boolean) => {
+    const next = cloneKeys(committed);
+    for (const index of selectedIndices) {
+      const key = next[index];
+      if (key) change(key);
+    }
+    applyEdit(next, commit);
+  };
+  /** Time moves every selected key by the primary key's change, so they keep their spacing. */
+  const setSelectedTime = (time: number, commit: boolean) => {
+    if (!primary) return;
+    applyEdit(shiftKeys(committed, selection, snappedShift(committed, primary.index, time), null), commit);
+  };
+  const differs = (read: (key: EditorKey) => unknown) =>
+    !!selectedKey && selectedIndices.some((index) => keys[index] && read(keys[index]!) !== read(selectedKey));
 
   const setInterpolation = (interpolation: CurveInterpolation) => {
     if (!selectedKey) return;
-    // Custom starts from the tangents the key plays with now, so choosing it never moves the curve.
-    const next = interpolation === "custom" ? withCustomTangents(kind, keys, selectedIndex) : cloneKeys(keys);
-    next[selectedIndex]!.interpolation = interpolation;
+    let next = cloneKeys(keys);
+    for (const index of selectedIndices) {
+      // Custom starts from the tangents the key plays with now, so choosing it never moves the curve.
+      if (interpolation === "custom") next = withCustomTangents(kind, next, index);
+      next[index]!.interpolation = interpolation;
+    }
     emit(next);
   };
 
   const setSelectedColor = (rgb: readonly [number, number, number]) => {
     if (!selectedKey) return;
-    editSelected((key) => { key.values = [rgb[0], rgb[1], rgb[2], key.values[3] ?? 1]; }, true);
+    editSelectedKeys((key) => { key.values = [rgb[0], rgb[1], rgb[2], key.values[3] ?? 1]; }, true);
   };
 
   const keyId = (index: number, channel: number) =>
@@ -497,8 +706,7 @@ export function CurveEditor({
     const right = index < last ? (keys[index + 1]!.time - keys[index]!.time) / spanT : 1;
     return Math.max(0, Math.min(left, right, 1));
   };
-  const visibleChannels = channelInfo.map((_, index) => index).filter((index) => visible[index] !== false);
-  const activeChannel = visible[selected.channel] !== false ? selected.channel : visibleChannels[0] ?? 0;
+  const activeChannel = primary && visible[primary.channel] !== false ? primary.channel : visibleChannels[0] ?? 0;
   // The selected channel draws last, on top of the others.
   const drawOrder = [...visibleChannels].sort((a, b) => Number(a === activeChannel) - Number(b === activeChannel));
   const showTangents = !lockedInterpolation && !disabled && !!selectedKey
@@ -567,9 +775,9 @@ export function CurveEditor({
         Add Key
       </Button>
       <Button type="button" variant="outline" size="xs" className={cn(!isWindow && "pointer-coarse:min-h-11")} disabled={!canRemove}
-        onClick={() => removeKey(selectedIndex)} data-testid={`${testId}-remove`}>
+        onClick={removeSelected} data-testid={`${testId}-remove`}>
         <Trash2Icon data-icon="inline-start" aria-hidden="true" />
-        Remove Key
+        {multiKeys ? "Remove Keys" : "Remove Key"}
       </Button>
       {fitButton}
     </div>
@@ -577,10 +785,9 @@ export function CurveEditor({
 
   const keyRow = (index: number, key: EditorKey, channel: number) => {
     const fx = fxOf(key.time);
-    const rawFy = fyOf(key.values[channel]!);
-    const fy = constraints.fixedTime ? clampNumber(rawFy, 0, 1) : rawFy;
+    const fy = handleFy(key, channel);
     if (fx < -0.02 - reachFx || fx > 1.02 + reachFx || fy < -0.04 || fy > 1.04) return null;
-    const isSelected = index === selectedIndex && (!multi || channel === activeChannel);
+    const isSelected = isSelectedHandle(index, channel);
     const id = keyId(index, channel);
     const stroke = channelInfo[channel]!.stroke;
     const label = !multi
@@ -600,12 +807,12 @@ export function CurveEditor({
         aria-label={label}
         aria-pressed={isSelected}
         disabled={disabled}
-        onPointerDown={(event) => startKeyDrag(event, index, channel, false)}
+        onPointerDown={(event) => onKeyPointerDown(event, { index, channel }, false)}
         onPointerMove={onHandlePointerMove}
         onPointerUp={onHandlePointerUp}
         onPointerCancel={onHandlePointerCancel}
-        onFocus={() => setSelected({ index, channel })}
-        onKeyDown={(event) => onKeyKeyDown(event, index, channel)}
+        onFocus={() => onKeyFocus({ index, channel })}
+        onKeyDown={(event) => onKeyKeyDown(event, { index, channel })}
         data-testid={id}
       >
         <span
@@ -613,7 +820,7 @@ export function CurveEditor({
           className={cn("size-2.5 rounded-full border-2", isSelected && "ring-4 ring-ring/25")}
           style={{
             borderColor: isSelected ? "var(--graph-state-selected)" : stroke,
-            background: isSelected ? "var(--graph-state-selected)" : index === selectedIndex ? stroke : "var(--background)",
+            background: isSelected ? "var(--graph-state-selected)" : selectedIndices.includes(index) ? stroke : "var(--background)",
           }}
         />
       </button>
@@ -664,9 +871,9 @@ export function CurveEditor({
                 ))}
               </>
             )}
-            {selectedKey ? (
-              <span aria-hidden="true" className="absolute bottom-0 size-0 -translate-x-1/2 border-x-[5px] border-t-[6px] border-x-transparent" style={{ left: `${fxOf(selectedKey.time) * 100}%`, borderTopColor: "var(--graph-state-selected)" }} />
-            ) : null}
+            {selectedIndices.map((index) => (
+              <span key={`s${index}`} aria-hidden="true" className="absolute bottom-0 size-0 -translate-x-1/2 border-x-[5px] border-t-[6px] border-x-transparent" style={{ left: `${fxOf(keys[index]!.time) * 100}%`, borderTopColor: "var(--graph-state-selected)" }} />
+            ))}
             {hover ? (
               <span className="absolute top-0 z-10 -translate-x-1/2 rounded-sm border border-input bg-popover px-1 text-[10px] leading-[14px] font-semibold text-popover-foreground tabular-nums" style={{ left: `${hover.fx * 100}%` }} data-testid={`${testId}-hover-time`}>
                 {`${hoverTime.toFixed(2)} s`}
@@ -688,7 +895,7 @@ export function CurveEditor({
               {keys.map((key, index) => {
                 const fx = fxOf(key.time);
                 if (fx < -reachFx - 0.02 || fx > 1 + reachFx + 0.02) return null;
-                const isSelected = index === selectedIndex;
+                const isSelected = selectedIndices.includes(index);
                 return (
                   // Raw handles: the 28px (touch 44px) hit area overhangs the 20px lane and caps at the gap to its neighbours.
                   <button
@@ -702,12 +909,12 @@ export function CurveEditor({
                     aria-label={`Stop ${index + 1}, Time ${key.time.toFixed(2)}`}
                     aria-pressed={isSelected}
                     disabled={disabled}
-                    onPointerDown={(event) => startKeyDrag(event, index, activeChannel, true)}
+                    onPointerDown={(event) => onKeyPointerDown(event, { index, channel: activeChannel }, true)}
                     onPointerMove={onHandlePointerMove}
                     onPointerUp={onHandlePointerUp}
                     onPointerCancel={onHandlePointerCancel}
-                    onFocus={() => setSelected({ index, channel: activeChannel })}
-                    onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Delete" || event.key === "Backspace") onKeyKeyDown(event, index, activeChannel); }}
+                    onFocus={() => onKeyFocus({ index, channel: activeChannel })}
+                    onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Delete" || event.key === "Backspace") onKeyKeyDown(event, { index, channel: activeChannel }); }}
                     data-testid={`${testId}-stop-${index}`}
                   >
                     <span aria-hidden="true" className={cn("h-[18px] rounded-[2px] border border-control", isSelected ? "w-1" : "w-[3px] bg-foreground")}
@@ -753,6 +960,7 @@ export function CurveEditor({
             onPointerCancel={onTrackPointerUp}
             onPointerLeave={() => setHover(null)}
             onDoubleClick={onTrackDoubleClick}
+            onContextMenu={(event) => event.preventDefault()}
             data-testid={`${testId}-track`}
           >
             {keys.length > 1 && !constraints.fixedTime ? (
@@ -855,6 +1063,21 @@ export function CurveEditor({
                 ))}
               </div>
             ) : null}
+            {marquee ? (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute z-30 border"
+                style={{
+                  left: `${Math.min(marquee.x0, marquee.x1) * 100}%`,
+                  top: `${Math.min(marquee.y0, marquee.y1) * 100}%`,
+                  width: `${Math.abs(marquee.x1 - marquee.x0) * 100}%`,
+                  height: `${Math.abs(marquee.y1 - marquee.y0) * 100}%`,
+                  background: "color-mix(in oklch, var(--selection) 12%, transparent)",
+                  borderColor: "color-mix(in oklch, var(--selection) 80%, transparent)",
+                }}
+                data-testid={`${testId}-marquee`}
+              />
+            ) : null}
             {addHere ? (
               <Button
                 type="button"
@@ -874,17 +1097,19 @@ export function CurveEditor({
     </div>
   );
 
+  const fieldLabel = multiKeys ? `${ariaLabel} Selected Keys` : `${ariaLabel} Key ${selectedIndex + 1}`;
   const timeField = selectedKey ? (
     <NumericDragField
-      aria-label={`${ariaLabel} Key ${selectedIndex + 1} Time`}
+      aria-label={`${fieldLabel} Time`}
       value={selectedKey.time}
+      mixed={multiKeys}
       unit={isWindow ? "s" : undefined}
       min={constraints.fixedTime ? 0 : constraints.timeRange?.[0]}
       max={constraints.fixedTime ? 1 : constraints.timeRange?.[1]}
       sensitivity={constraints.fixedTime ? 0.005 : spanT / 200}
-      disabled={disabled || endpoint}
-      onChange={(time) => editSelected((key, next) => { key.time = clampKeyTimeTo(next, selectedIndex, time, constraints); }, false)}
-      onDragEnd={(time) => editSelected((key, next) => { key.time = clampKeyTimeTo(next, selectedIndex, time, constraints); }, true)}
+      disabled={disabled || timeLocked}
+      onChange={(time) => setSelectedTime(time, false)}
+      onDragEnd={(time) => setSelectedTime(time, true)}
       data-testid={`${testId}-time`}
     />
   ) : null;
@@ -893,15 +1118,16 @@ export function CurveEditor({
     const channel = channelInfo[index]!;
     return (
       <NumericDragField
-        aria-label={`${ariaLabel} Key ${selectedIndex + 1} ${!multi ? "Value" : channel.label}`}
+        aria-label={`${fieldLabel} ${!multi ? "Value" : channel.label}`}
         value={selectedKey!.values[index]!}
+        mixed={differs((key) => key.values[index])}
         min={constraints.valueMin}
         max={constraints.valueMax}
         accent={channel.accent}
         sensitivity={spanV / 200}
         disabled={disabled}
-        onChange={(next) => editSelected((key) => { key.values[index] = clampValue(next, constraints); }, false)}
-        onDragEnd={(next) => editSelected((key) => { key.values[index] = clampValue(next, constraints); }, true)}
+        onChange={(next) => editSelectedKeys((key) => { key.values[index] = clampValue(next, constraints); }, false)}
+        onDragEnd={(next) => editSelectedKeys((key) => { key.values[index] = clampValue(next, constraints); }, true)}
         data-testid={!multi ? `${testId}-value` : `${testId}-value-${channel.label}`}
       />
     );
@@ -909,14 +1135,22 @@ export function CurveEditor({
 
   const interpolationSelect = selectedKey && !lockedInterpolation ? (
     <InterpolationSelect
-      aria-label={`${ariaLabel} Key ${selectedIndex + 1} Interpolation`}
+      aria-label={`${fieldLabel} Interpolation`}
       value={selectedKey.interpolation}
+      mixed={differs((key) => key.interpolation)}
       disabled={disabled}
       compact={isWindow}
       onChange={setInterpolation}
       data-testid={`${testId}-interpolation`}
     />
   ) : null;
+
+  /** Selects the key before or after the primary one (the last or first key when none is selected). */
+  const stepKey = (direction: -1 | 1) => {
+    if (keys.length === 0) return;
+    const index = primary ? clampNumber(primary.index + direction, 0, last) : direction > 0 ? 0 : last;
+    select([{ index, channel: fallbackChannel() }]);
+  };
 
   if (isWindow) {
     const color = (selectedKey?.values ?? [0, 0, 0, 1]) as unknown as Rgba;
@@ -926,15 +1160,18 @@ export function CurveEditor({
         {plot}
         <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t bg-panel-header px-1.5 py-1" data-testid={`${testId}-key-bar`}>
           <div className="flex items-center">
-            <Button type="button" variant="ghost" size="icon-xs" aria-label="Previous Key" disabled={!selectedKey || selectedIndex <= 0}
-              onClick={() => setSelected({ index: selectedIndex - 1, channel: selected.channel })} data-testid={`${testId}-previous-key`}>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label="Previous Key" disabled={keys.length === 0 || (!!primary && selectedIndex <= 0)}
+              onClick={() => stepKey(-1)} data-testid={`${testId}-previous-key`}>
               <ChevronLeftIcon aria-hidden="true" />
             </Button>
-            <span className="min-w-[4.75rem] text-center text-xs text-muted-foreground tabular-nums" data-testid={`${testId}-key-count`}>
-              {selectedKey ? <>Key <span className="font-semibold text-foreground">{selectedIndex + 1}</span> of {keys.length}</> : "No Keys"}
+            <span className="min-w-[6.5rem] text-center text-xs text-muted-foreground tabular-nums" data-testid={`${testId}-key-count`}>
+              {keys.length === 0 ? "No Keys"
+                : !selectedKey ? "No Key Selected"
+                  : multiKeys ? <><span className="font-semibold text-foreground">{selectedIndices.length}</span> Keys Selected</>
+                    : <>Key <span className="font-semibold text-foreground">{selectedIndex + 1}</span> of {keys.length}</>}
             </span>
-            <Button type="button" variant="ghost" size="icon-xs" aria-label="Next Key" disabled={!selectedKey || selectedIndex >= last}
-              onClick={() => setSelected({ index: selectedIndex + 1, channel: selected.channel })} data-testid={`${testId}-next-key`}>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label="Next Key" disabled={keys.length === 0 || (!!primary && selectedIndex >= last)}
+              onClick={() => stepKey(1)} data-testid={`${testId}-next-key`}>
               <ChevronRightIcon aria-hidden="true" />
             </Button>
           </div>
@@ -947,7 +1184,7 @@ export function CurveEditor({
                 {kind === "color" ? (
                   <div className="w-40">
                     <ColorField
-                      aria-label={`${ariaLabel} Key ${selectedIndex + 1} Color`}
+                      aria-label={`${fieldLabel} Color`}
                       value={[color[0], color[1], color[2]]}
                       disabled={disabled}
                       onChange={setSelectedColor}
@@ -970,7 +1207,7 @@ export function CurveEditor({
             </>
           ) : null}
           <span className="ml-auto min-w-0 truncate text-[11px] text-muted-foreground">
-            {touch ? "Long-press the plot to add a key" : "Double-click to add a key · Delete removes it"}
+            {touch ? "Hold and drag to select · Hold to add a key" : "Drag to select · Double-click or right-click to add a key"}
           </span>
         </div>
       </div>
@@ -1031,9 +1268,11 @@ function KeyBarField({ label, width, accent, children }: { label: string; width:
 }
 
 /** Interpolation picker: Constant, Linear, Auto and Custom, then the easing curves under **Ease**. */
-function InterpolationSelect({ "aria-label": ariaLabel, value, disabled, compact, onChange, "data-testid": testId }: {
+function InterpolationSelect({ "aria-label": ariaLabel, value, mixed, disabled, compact, onChange, "data-testid": testId }: {
   "aria-label": string;
   value: CurveInterpolation;
+  /** The selected keys differ; the trigger reads Mixed until one is chosen. */
+  mixed?: boolean;
   disabled?: boolean;
   /** Keeps the compact height in the touch layout (the Curve asset window's key bar). */
   compact?: boolean;
@@ -1043,7 +1282,7 @@ function InterpolationSelect({ "aria-label": ariaLabel, value, disabled, compact
   return (
     <Select value={value} disabled={disabled} onValueChange={(next) => { if (next != null) onChange(next as CurveInterpolation); }}>
       <SelectTrigger aria-label={ariaLabel} size="sm" className={cn("w-full min-w-0 flex-1", !compact && "pointer-coarse:min-h-11")} data-testid={testId}>
-        <SelectValue>{(current: unknown) => interpolationLabel((current ?? value) as CurveInterpolation)}</SelectValue>
+        <SelectValue>{(current: unknown) => (mixed ? "Mixed" : interpolationLabel((current ?? value) as CurveInterpolation))}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>

@@ -14,7 +14,7 @@ Double-tap a curve asset to open it.
 
 - **Curve Editor**: the curve plot fills the window, with the same keys, tangents, pan, zoom and hover readout as the [Inspector curve editor](../scripting/curves-and-ranges.md#edit-curves-in-the-inspector).
   - The toolbar has the channel toggles, **Add Key**, **Remove Key** and **Fit**. **Frame Selection** (<kbd>F</kbd>) also fits the keys.
-  - The bar under the plot edits the selected key: step between keys with the arrows, then set its **Time**, each channel's value and its **Interpolation**.
+  - The bar under the plot edits the selected key: step between keys with the arrows, then set its **Time**, each channel's value and its **Interpolation**. With several keys selected it shows how many, and a value you set applies to all of them.
   - A **Color Curve** shows its gradient in a strip above the plot, on the same time axis. Each stop in the strip is a key: tap one to select it, or drag it to change its time. The key bar adds a colour swatch and hex code.
 - **Details**:
   - **Curve**: the type, the number of keys, the time range and the value range.

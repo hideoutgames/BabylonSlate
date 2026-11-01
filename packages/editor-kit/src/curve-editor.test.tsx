@@ -92,18 +92,19 @@ describe("CurveEditor", () => {
     expect(screen.queryByTestId("curve-tangent-leave")).toBeNull();
   });
 
-  it("pans by dragging empty space, zooms with Ctrl-wheel, and Fit restores the framed view", () => {
+  it("pans with a right-drag, zooms with Ctrl-wheel, and Fit restores the framed view", () => {
     render(<Stateful initial={curve(key(0, 0), key(1, 1))} onChange={vi.fn()} />);
     // The framed view runs from -0.05 s to 1.05 s, so the key at 1 s sits 1.05 / 1.1 of the way across.
     const across = () => parseFloat(screen.getByTestId("curve-key-1").style.left);
     expect(across()).toBeCloseTo(95.45, 1);
     const track = screen.getByTestId("curve-track");
     act(() => {
-      dispatchPointerEvent(track, "pointerdown", { pointerType: "mouse", clientX: 50, clientY: 50 });
-      dispatchPointerEvent(track, "pointermove", { pointerType: "mouse", clientX: 25, clientY: 50 });
-      dispatchPointerEvent(track, "pointerup", { pointerType: "mouse", clientX: 25, clientY: 50 });
+      dispatchPointerEvent(track, "pointerdown", { pointerType: "mouse", button: 2, clientX: 50, clientY: 50 });
+      dispatchPointerEvent(track, "pointermove", { pointerType: "mouse", button: 2, clientX: 25, clientY: 50 });
+      dispatchPointerEvent(track, "pointerup", { pointerType: "mouse", button: 2, clientX: 25, clientY: 50 });
     });
-    // A quarter of the plot to the left.
+    // A quarter of the plot to the left, and no menu after a drag.
+    expect(screen.queryByTestId("curve-add-here")).toBeNull();
     expect(across()).toBeCloseTo(70.45, 1);
     // Zooming in around the middle (0.775 s), level with the key (value 1 of -0.1 to 1.1), pushes it away from the middle.
     act(() => { track.dispatchEvent(new WheelEvent("wheel", { ctrlKey: true, deltaY: -200, clientX: 50, clientY: 100 / 12, cancelable: true })); });
@@ -118,11 +119,11 @@ describe("CurveEditor", () => {
     const handle = screen.getByTestId("curve-key-1");
     act(() => {
       dispatchPointerEvent(handle, "pointerdown", { clientX: 95, clientY: 50 });
-      dispatchPointerEvent(handle, "pointermove", { clientX: 100, clientY: 50 });
-      dispatchPointerEvent(handle, "pointerup", { clientX: 100, clientY: 50 });
+      dispatchPointerEvent(handle, "pointermove", { clientX: 75, clientY: 50 });
+      dispatchPointerEvent(handle, "pointerup", { clientX: 75, clientY: 50 });
     });
-    // Dropped at the right edge (1.05 s) and still drawn there; a refit would have pulled it back in.
-    expect(across()).toBeCloseTo(100, 1);
+    // Moved 0.22 s earlier and drawn there; a refit would have framed it at the right end again.
+    expect(across()).toBeCloseTo(75.45, 1);
     fireEvent.click(screen.getByTestId("curve-fit"));
     expect(across()).toBeCloseTo(95.45, 1);
   });
@@ -146,14 +147,15 @@ describe("CurveEditor", () => {
     expect(screen.getByTestId("curve-key-2").style.getPropertyValue("--curve-key-hit")).toBe("90%");
   });
 
-  it("offers Add Key Here after a long press on empty space and adds the key there", () => {
+  it("offers Add Key Here when a held finger lifts in place, and adds the key there", () => {
     vi.useFakeTimers();
     const onChange = vi.fn();
     render(<Stateful initial={curve(key(0, 0), key(1, 10))} constraints={FIXED} onChange={onChange} />);
     const track = screen.getByTestId("curve-track");
     dispatchPointerEvent(track, "pointerdown", { pointerType: "touch", clientX: 50, clientY: 50 });
     act(() => { vi.advanceTimersByTime(500); });
-    dispatchPointerEvent(track, "pointerup", { pointerType: "touch", clientX: 50, clientY: 50 });
+    expect(screen.queryByTestId("curve-add-here")).toBeNull();
+    act(() => { dispatchPointerEvent(track, "pointerup", { pointerType: "touch", clientX: 50, clientY: 50 }); });
     fireEvent.click(screen.getByRole("button", { name: "Add Key Here" }));
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(keysOf(onChange.mock.lastCall![0]).map((entry) => [entry.Time, entry.Value])).toEqual([[0, 0], [0.5, 5], [1, 10]]);
@@ -192,6 +194,119 @@ describe("CurveEditor", () => {
   });
 });
 
+describe("CurveEditor multi-select", () => {
+  // Fixed 0–1 s and 0–10, so a key at (t, v) sits at (100t, 100 - 10v) px.
+  const three = () => curve(key(0.2, 2), key(0.4, 4), key(0.8, 8));
+  const pressed = () => [0, 1, 2].map((index) => screen.getByTestId(`curve-key-${index}`).getAttribute("aria-pressed"));
+  const press = (index: number, at: { x: number; y: number }, init: Partial<{ shiftKey: boolean; ctrlKey: boolean; pointerType: "mouse" | "touch" }> = {}) => act(() => {
+    const handle = screen.getByTestId(`curve-key-${index}`);
+    dispatchPointerEvent(handle, "pointerdown", { pointerType: "mouse", clientX: at.x, clientY: at.y, ...init });
+    dispatchPointerEvent(handle, "pointerup", { pointerType: "mouse", clientX: at.x, clientY: at.y, ...init });
+  });
+
+  it("adds keys with Shift and moves the group together as one change", () => {
+    const onChange = vi.fn();
+    render(<Stateful initial={three()} constraints={FIXED} onChange={onChange} />);
+    press(0, { x: 20, y: 80 });
+    act(() => {
+      const handle = screen.getByTestId("curve-key-1");
+      dispatchPointerEvent(handle, "pointerdown", { pointerType: "mouse", shiftKey: true, clientX: 40, clientY: 60 });
+      dispatchPointerEvent(handle, "pointermove", { pointerType: "mouse", clientX: 45, clientY: 55 });
+      dispatchPointerEvent(handle, "pointermove", { pointerType: "mouse", clientX: 50, clientY: 50 });
+      dispatchPointerEvent(handle, "pointerup", { pointerType: "mouse", clientX: 50, clientY: 50 });
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    // Both keys move 0.1 s later and 1 higher; the third stays.
+    expect(keysOf(onChange.mock.lastCall![0]).map((entry) => [entry.Time, entry.Value])).toEqual([[0.3, 3], [0.5, 5], [0.8, 8]]);
+    expect(pressed()).toEqual(["true", "true", "false"]);
+  });
+
+  it("selects one key of a group with a plain click, and toggles keys with Ctrl", () => {
+    render(<Stateful initial={three()} constraints={FIXED} onChange={vi.fn()} />);
+    press(0, { x: 20, y: 80 });
+    press(2, { x: 80, y: 20 }, { shiftKey: true });
+    expect(pressed()).toEqual(["true", "false", "true"]);
+    press(2, { x: 80, y: 20 });
+    expect(pressed()).toEqual(["false", "false", "true"]);
+    press(1, { x: 40, y: 60 }, { ctrlKey: true });
+    expect(pressed()).toEqual(["false", "true", "true"]);
+    press(2, { x: 80, y: 20 }, { ctrlKey: true });
+    expect(pressed()).toEqual(["false", "true", "false"]);
+  });
+
+  it("selects the keys inside a mouse drag box, and the fields set them all to one value", () => {
+    const onChange = vi.fn();
+    render(<Stateful initial={three()} constraints={FIXED} onChange={onChange} />);
+    const track = screen.getByTestId("curve-track");
+    act(() => {
+      dispatchPointerEvent(track, "pointerdown", { pointerType: "mouse", clientX: 10, clientY: 0 });
+      dispatchPointerEvent(track, "pointermove", { pointerType: "mouse", clientX: 30, clientY: 50 });
+      dispatchPointerEvent(track, "pointermove", { pointerType: "mouse", clientX: 50, clientY: 100 });
+    });
+    expect(screen.getByTestId("curve-marquee")).toBeTruthy();
+    act(() => { dispatchPointerEvent(track, "pointerup", { pointerType: "mouse", clientX: 50, clientY: 100 }); });
+    expect(screen.queryByTestId("curve-marquee")).toBeNull();
+    expect(pressed()).toEqual(["true", "true", "false"]);
+    expect(onChange).not.toHaveBeenCalled();
+    const valueField = screen.getByTestId("curve-value") as HTMLInputElement;
+    expect(valueField.placeholder).toBe("Mixed");
+    act(() => valueField.focus());
+    fireEvent.change(valueField, { target: { value: "6" } });
+    fireEvent.keyDown(valueField, { key: "Enter" });
+    act(() => valueField.blur());
+    expect(keysOf(onChange.mock.lastCall![0]).map((entry) => [entry.Time, entry.Value])).toEqual([[0.2, 6], [0.4, 6], [0.8, 8]]);
+  });
+
+  it("clears the selection on a click in empty space, and removes every selected key with Delete", () => {
+    const onChange = vi.fn();
+    render(<Stateful initial={three()} constraints={FIXED} onChange={onChange} />);
+    press(0, { x: 20, y: 80 });
+    press(1, { x: 40, y: 60 }, { shiftKey: true });
+    expect(screen.getByTestId("curve-remove").textContent).toBe("Remove Keys");
+    fireEvent.keyDown(screen.getByTestId("curve-key-1"), { key: "Delete" });
+    expect(keysOf(onChange.mock.lastCall![0]).map((entry) => entry.Time)).toEqual([0.8]);
+    const track = screen.getByTestId("curve-track");
+    act(() => {
+      dispatchPointerEvent(track, "pointerdown", { pointerType: "mouse", clientX: 50, clientY: 90 });
+      dispatchPointerEvent(track, "pointerup", { pointerType: "mouse", clientX: 50, clientY: 90 });
+    });
+    expect(screen.getByTestId("curve-key-0").getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByTestId("curve-time")).toBeNull();
+  });
+
+  it("offers Add Key Here on a right-click in place", () => {
+    render(<Stateful initial={three()} constraints={FIXED} onChange={vi.fn()} />);
+    const track = screen.getByTestId("curve-track");
+    act(() => {
+      dispatchPointerEvent(track, "pointerdown", { pointerType: "mouse", button: 2, clientX: 60, clientY: 40 });
+      dispatchPointerEvent(track, "pointerup", { pointerType: "mouse", button: 2, clientX: 60, clientY: 40 });
+    });
+    expect(screen.getByRole("button", { name: "Add Key Here" })).toBeTruthy();
+  });
+
+  it("pans with a finger drag, and selects with a box when the finger holds first", () => {
+    vi.useFakeTimers();
+    render(<Stateful initial={curve(key(0, 0), key(0.5, 5), key(1, 10))} onChange={vi.fn()} />);
+    const across = () => parseFloat(screen.getByTestId("curve-key-1").style.left);
+    const framed = across();
+    const track = screen.getByTestId("curve-track");
+    act(() => {
+      dispatchPointerEvent(track, "pointerdown", { pointerType: "touch", clientX: 50, clientY: 90 });
+      dispatchPointerEvent(track, "pointermove", { pointerType: "touch", clientX: 30, clientY: 90 });
+      dispatchPointerEvent(track, "pointerup", { pointerType: "touch", clientX: 30, clientY: 90 });
+    });
+    expect(across()).toBeCloseTo(framed - 20, 1);
+    expect(screen.queryByTestId("curve-marquee")).toBeNull();
+    // Hold on empty space, then drag a box over the whole plot: the pan left the first key off its left edge.
+    act(() => { dispatchPointerEvent(track, "pointerdown", { pointerType: "touch", clientX: 0, clientY: 0 }); });
+    act(() => { vi.advanceTimersByTime(500); });
+    act(() => { dispatchPointerEvent(track, "pointermove", { pointerType: "touch", clientX: 100, clientY: 100 }); });
+    act(() => { dispatchPointerEvent(track, "pointerup", { pointerType: "touch", clientX: 100, clientY: 100 }); });
+    expect([0, 1, 2].map((index) => screen.getByTestId(`curve-key-${index}`).getAttribute("aria-pressed"))).toEqual(["false", "true", "true"]);
+    expect(screen.queryByTestId("curve-add-here")).toBeNull();
+  });
+});
+
 describe("CurveEditor window layout", () => {
   function Window({ kind = "float", initial, onChange }: { kind?: CurveEditorKind; initial: CurveEditorValue; onChange: (value: CurveEditorValue) => void }) {
     const [value, setValue] = useState(initial);
@@ -211,6 +326,12 @@ describe("CurveEditor window layout", () => {
     expect((screen.getByRole("button", { name: "Next Key" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Previous Key" }));
     expect(screen.getByTestId("curve-key-count").textContent).toBe("Key 2 of 3");
+    act(() => {
+      const handle = screen.getByTestId("curve-key-0");
+      dispatchPointerEvent(handle, "pointerdown", { pointerType: "mouse", shiftKey: true });
+      dispatchPointerEvent(handle, "pointerup", { pointerType: "mouse", shiftKey: true });
+    });
+    expect(screen.getByTestId("curve-key-count").textContent).toBe("2 Keys Selected");
   });
 
   it("drags a Color Curve's gradient stop in time only, and selects its key", () => {
@@ -219,14 +340,15 @@ describe("CurveEditor window layout", () => {
     const blue = { x: 0, y: 0, z: 1, w: 0.5 };
     render(<Window kind="color" initial={curve(key(0, red, "linear", red), key(1, blue, "linear", blue))} onChange={onChange} />);
     const stop = screen.getByTestId("curve-stop-1");
-    act(() => { dispatchPointerEvent(stop, "pointerdown", { clientX: 90, clientY: 50 }); });
+    // The window frames 0.12 s past each end, so the stop at 1 s sits at 1.12 / 1.24 of the plot.
+    act(() => { dispatchPointerEvent(stop, "pointerdown", { clientX: (100 * 1.12) / 1.24, clientY: 50 }); });
     expect(screen.getByTestId("curve-key-count").textContent).toBe("Key 2 of 2");
     act(() => {
       dispatchPointerEvent(stop, "pointermove", { clientX: 50, clientY: 0 });
       dispatchPointerEvent(stop, "pointerup", { clientX: 50, clientY: 0 });
     });
     expect(onChange).toHaveBeenCalledTimes(1);
-    // The window frames 0.12 s past each end: the middle of the plot is 0.5 s, and the colour stays.
+    // The middle of the plot is 0.5 s, and the colour stays.
     expect(keysOf(onChange.mock.lastCall![0])[1]).toMatchObject({ Time: 0.5, Value: blue });
   });
 });
