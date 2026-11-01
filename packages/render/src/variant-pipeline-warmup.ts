@@ -243,10 +243,10 @@ export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boole
     }
     state.budget = budget;
     state.requests.clear();
-  } else if (!pipelinesDeferred(engine)) {
+  } else {
     // A steady view's strict question (a preparation after the view drew): it draws no frame, so no tolerant round
     // follows to admit a cold Effect, and one that is linked would hold it until its stall. It answers as it is; the
-    // first draws it spreads are the frames' own.
+    // first draws it spreads are the frames' own (WebGPU: a hidden mesh still waits for its warm draws to reveal it).
     for (const [effect, entry] of state.cold) if (entry.base()) warmUp(state, effect);
   }
   state.marking += 1;
