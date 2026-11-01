@@ -25,6 +25,8 @@ With a Scene or Scene Layer open, pick **Timeline** in the **Scene Mode** picker
 
 Clip names are unique within the document: a name that is taken, a duplicate or a pasted clip gets a number, such as **Intro 2**. A copied clip can be pasted into another Scene or Scene Layer. Every change is one step of the document's undo history.
 
+The same menu binds a clip to a [Timeline](../assets/timeline.md) asset, which groups clips from any number of Scenes and Scene Layers: **Bind to Timeline Asset…**, **New Timeline Asset and Bind…**, **Unbind Timeline Asset** and **Show Timeline Asset in Content Browser**. A bound clip shows a link icon.
+
 ## Add actors and tracks
 
 A clip animates actors through tracks. Each actor in the clip has a row in the **Timeline**, with a row for each of its tracks below it.

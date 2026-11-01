@@ -31,6 +31,8 @@ const registry = vi.hoisted(() => ({
   getByGuid: (guid: string) => guid === "hollow" || guid === "solid"
     ? { path: `assets/${guid}.model.hasset`, header: { type: "Model", payload: { simpleColliders: guid === "solid" ? [{ id: "box" }] : [] } } }
     : undefined,
+  // Timeline Asset clip names are checked across the project's Scenes.
+  list: () => [],
 }));
 diagnostics.current = [pairingWarning];
 
