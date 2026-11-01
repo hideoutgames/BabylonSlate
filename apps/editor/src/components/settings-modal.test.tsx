@@ -201,6 +201,17 @@ it("hides unrelated settings when search has no matching section", () => {
   expect(screen.getByTestId("settings-autosave-interval")).toBeTruthy();
 });
 
+it("finds the Garbage Collection Interval and saves a whole number of ticks", () => {
+  render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+  fireEvent.change(screen.getByTestId("settings-modal-search"), { target: { value: "garbage" } });
+  fireEvent.click(screen.getByRole("button", { name: /Garbage Collection Interval/ }));
+  const field = screen.getByTestId("settings-garbage-collection-interval") as HTMLInputElement;
+  expect(field.value).toBe("60");
+  fireEvent.change(field, { target: { value: "120" } });
+  fireEvent.blur(field);
+  expect(updateProjectSettings).toHaveBeenLastCalledWith({ garbageCollectionIntervalTicks: 120 });
+});
+
 it("finds the trace budget and persists MiB edits as bytes", async () => {
   const store = createAppSettingsStore();
   const previous = await store.load();

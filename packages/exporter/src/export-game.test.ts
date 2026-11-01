@@ -121,6 +121,19 @@ describe("exportGame", () => {
       expect(parseGameManifest(JSON.stringify(malformed)).playFrameCap).toBe(value === 24 ? 24 : 60);
     }
   });
+  it("writes the Garbage Collection Interval as a whole number of ticks", async () => {
+    const result = await exportGame({
+      bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      garbageCollectionIntervalTicks: 30, scripts: [], assets: [], playerFiles: stubPlayer(),
+    });
+    if (!result.ok) throw new Error(result.error);
+    const json = JSON.parse(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE)));
+    expect(json.garbageCollectionIntervalTicks).toBe(30);
+    expect(parseGameManifest(JSON.stringify(json)).garbageCollectionIntervalTicks).toBe(30);
+    json.garbageCollectionIntervalTicks = 0;
+    expect(parseGameManifest(JSON.stringify(json)).garbageCollectionIntervalTicks).toBe(60);
+  });
+
   it("retains project identity in release builds", async () => {
     const result = await exportGame({
       project: { name: "Orbit Workshop", version: "2.4.0-beta.3" },

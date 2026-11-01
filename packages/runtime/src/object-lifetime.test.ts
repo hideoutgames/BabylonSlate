@@ -83,3 +83,59 @@ describe("object lifetime in Play", () => {
     expect(keeperActor.getVariable("Seed")).toBeNull();
   });
 });
+
+describe("object lifetime controls", () => {
+  /** A Keeper session with one registered object nothing references; returns the ticks each pass ran at. */
+  async function passTicks(interval: number, ticks: number): Promise<number[]> {
+    const run = await startGraphScenario({
+      scripts: [keeper],
+      actors: [createActor("keeper-1", "Keeper", { classId: "Keeper" })],
+      runtime: { garbageCollectionIntervalTicks: interval },
+    });
+    try {
+      const lifetime = (run.runtime as unknown as { objectLifetime: RuntimeObjectLifetime }).objectLifetime;
+      const seen: number[] = [];
+      for (let index = 0; index < ticks; index++) {
+        // A fresh orphan each tick, so every due pass has work.
+        lifetime.collector.register(new EngineObject({ classId: "Object", guid: `orphan-${index}` }));
+        await run.tick();
+        const tick = lifetime.lastPass?.tickIndex;
+        if (tick !== undefined && seen.at(-1) !== tick) seen.push(tick);
+      }
+      return seen;
+    } finally {
+      run.stop();
+    }
+  }
+
+  it("runs a pass every Garbage Collection Interval ticks, on the same ticks in every run", async () => {
+    const first = await passTicks(4, 12);
+    // The Scene's first tick also runs one (a Scene change); then every fourth tick index.
+    expect(first.filter((tick) => tick > 0)).toEqual([4, 8, 12]);
+    expect(await passTicks(4, 12)).toEqual(first);
+  });
+
+  it("gc requests a pass at the end of the tick and gc stats reports it", async () => {
+    const run = await startGraphScenario({
+      scripts: [keeper],
+      actors: [createActor("keeper-1", "Keeper", { classId: "Keeper" })],
+      runtime: { garbageCollectionIntervalTicks: 10_000, includeDebugCommands: true },
+    });
+    try {
+      await run.tick();
+      const lifetime = (run.runtime as unknown as { objectLifetime: RuntimeObjectLifetime }).objectLifetime;
+      const orphan = new EngineObject({ classId: "Object", guid: "orphan" });
+      lifetime.collector.register(orphan);
+      expect(run.runtime.executeConsoleCommand("gc stats").output).toMatch(/^1 collectable objects; /);
+      expect(run.runtime.executeConsoleCommand("gc")).toEqual({ success: true, output: "gc requested for the end of this tick" });
+      expect(orphan.destroyed).toBe(false);
+      await run.tick();
+      expect(orphan.destroyed).toBe(true);
+      expect(run.runtime.executeConsoleCommand("gc stats").output).toMatch(
+        /^0 collectable objects; last pass at tick \d+: \d+ reached, 1 collected, 0 references cleared, \d+\.\d\d ms$/);
+    } finally {
+      run.stop();
+    }
+  });
+});
+

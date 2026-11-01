@@ -262,6 +262,7 @@ export function createConsole(rt: RuntimeComposition, options: RuntimeDriverOpti
     userPaused: () => rt.pauseReasons.has("user"),
     timeDilation: () => rt.timeDilation,
     setTimeDilation: (rate) => rt.setTimeDilation(rate),
+    objectLifetime: () => rt.objectLifetime,
     emit: (command) => rt.emit(command),
   });
 }
@@ -323,6 +324,7 @@ export function createTickPipeline(rt: RuntimeComposition, options: RuntimeDrive
     settlePauseChanges: () => rt.settlePauseChanges(),
     frameId: () => rt.frameId,
     liveActors: () => rt.renderSlots.size,
+    objectLifetime: () => ({ collectable: rt.objectLifetime.collector.size, lastPassMs: rt.objectLifetime.lastPass?.ms ?? null }),
     traceState: () => ({
       bt: rt.behaviourTrees.traceStates(),
       audio: rt.voices.traceState(),

@@ -42,6 +42,8 @@ export type PlayerHudStats = {
   bridgeMessagesPerSec?: number;
   liveActors?: number;
   snapshotCapacity?: number;
+  collectableObjects?: number;
+  garbageCollectionMs?: number;
   /** Real JS heap (Chromium/Electron); absent on WKWebView. */
   jsHeapBytes?: number;
   /** Host app-process footprint on iOS; excludes the WebContent process. */
@@ -51,6 +53,13 @@ export type PlayerHudStats = {
   /** Device-wide free + inactive + purgeable memory (iOS). */
   systemAvailableBytes?: number;
 };
+
+function lifetimeStats(collectableObjects: number | undefined, garbageCollectionMs: number | undefined) {
+  return {
+    ...(collectableObjects === undefined ? {} : { collectableObjects }),
+    ...(garbageCollectionMs === undefined ? {} : { garbageCollectionMs }),
+  };
+}
 
 /** Worker `stats` commands are the source of truth for script/physics/publish ms. */
 export function applyWorkerPlayerStats(
@@ -64,6 +73,8 @@ export function applyWorkerPlayerStats(
     phaseMs?: readonly number[];
     liveActors?: number;
     snapshotCapacity?: number;
+    collectableObjects?: number;
+    garbageCollectionMs?: number;
   },
 ): PlayerHudStats {
   return {
@@ -78,6 +89,7 @@ export function applyWorkerPlayerStats(
     liveActors: command.liveActors ?? previous?.liveActors ?? 0,
     snapshotCapacity:
       command.snapshotCapacity ?? previous?.snapshotCapacity ?? 0,
+    ...lifetimeStats(command.collectableObjects ?? previous?.collectableObjects, command.garbageCollectionMs ?? previous?.garbageCollectionMs),
     jsHeapBytes: previous?.jsHeapBytes,
     appFootprintBytes: previous?.appFootprintBytes,
     appAvailableBytes: previous?.appAvailableBytes,
@@ -101,6 +113,7 @@ export function applyPlayerFpsSample(
     geometryBytes: previous?.geometryBytes,
     liveActors: previous?.liveActors ?? 0,
     snapshotCapacity: previous?.snapshotCapacity ?? 0,
+    ...lifetimeStats(previous?.collectableObjects, previous?.garbageCollectionMs),
     jsHeapBytes: previous?.jsHeapBytes,
     appFootprintBytes: previous?.appFootprintBytes,
     appAvailableBytes: previous?.appAvailableBytes,

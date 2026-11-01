@@ -141,6 +141,8 @@ export interface PlayOverlayProps {
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   /** Project `playFrameCap` applied once when the session starts. */
   frameCap?: number;
+  /** Project Garbage Collection Interval, applied when the session starts. */
+  garbageCollectionIntervalTicks?: number;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
@@ -285,6 +287,7 @@ function PlayOverlayView({
   releaseInitialSources,
   sceneLayers,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
+  garbageCollectionIntervalTicks,
   infiniteLoopDetection,
   loopCount,
   inputAssets,
@@ -375,7 +378,8 @@ function PlayOverlayView({
   const [draws, setDraws] = useState(0);
   const [rendering, setRendering] = useState<RenderDiagnostics>();
   const [bridgeRate, setBridgeRate] = useState(0);
-  const [threadStats, setThreadStats] = useState<Pick<PlayHudStats, "ticks" | "liveActors" | "snapshotCapacity" | "phaseMs">>({});
+  const [threadStats, setThreadStats] = useState<Pick<PlayHudStats,
+    "ticks" | "liveActors" | "snapshotCapacity" | "phaseMs" | "collectableObjects" | "garbageCollectionMs">>({});
   const { logs, pushLog } = useDebugConsoleLogs();
   const [treeOpen, setTreeOpen] = useState(false);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
@@ -737,6 +741,7 @@ function PlayOverlayView({
     sceneLayers,
   };
   const initialFrameCapRef = useRef(frameCap);
+  const initialGarbageCollectionIntervalRef = useRef(garbageCollectionIntervalTicks);
   const initialPauseOnPlayRef = useRef(pauseOnPlay);
   const initialPauseOnErrorsRef = useRef(pauseOnErrors);
   const onPausedAtRef = useRef(onPausedAt);
@@ -862,6 +867,7 @@ function PlayOverlayView({
           releaseInitialSources: sceneRef.current.releaseInitialSources,
           sceneLayers: sceneRef.current.sceneLayers,
           frameCap: initialFrameCapRef.current,
+          garbageCollectionIntervalTicks: initialGarbageCollectionIntervalRef.current,
           traceByteBudget: initialTraceByteBudgetRef.current,
           infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
           loopCount: initialLoopCountRef.current,
@@ -958,7 +964,8 @@ function PlayOverlayView({
               setScriptMs(stats.scriptMs);
               setPhysicsMs(stats.physicsMs);
               setPublishMs(stats.publishMs);
-              setThreadStats({ ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity, phaseMs: stats.phaseMs });
+              setThreadStats({ ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity, phaseMs: stats.phaseMs,
+                collectableObjects: stats.collectableObjects, garbageCollectionMs: stats.garbageCollectionMs });
             }
             if (testMode) setMoveX(sessionRef.current?.lastMoveX() ?? null);
           },

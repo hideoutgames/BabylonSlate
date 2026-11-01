@@ -449,6 +449,25 @@ export function SettingsModal({
               />
             </Field>
               <Field className="settings-field">
+                <FieldLabel htmlFor="settings-garbage-collection-interval">
+                  Garbage Collection Interval (Ticks)
+                </FieldLabel>
+              <NumberField
+                id="settings-garbage-collection-interval"
+                min={1}
+                step={1}
+                rejectOutOfRange
+                aria-describedby="settings-garbage-collection-description"
+                className="min-h-[var(--chrome-row,28px)]"
+                value={projectDocument.settings.garbageCollectionIntervalTicks}
+                onChange={(ticks) => updateProjectSettings({ garbageCollectionIntervalTicks: Math.max(1, Math.round(ticks)) })}
+                data-testid="settings-garbage-collection-interval"
+              />
+              <FieldDescription id="settings-garbage-collection-description">
+                How often unreferenced Create Object objects are collected. 60 ticks is about one second.
+              </FieldDescription>
+            </Field>
+              <Field className="settings-field">
               <FieldLabel htmlFor="settings-autosave-interval">
                   Auto-Save Interval (Seconds)
               </FieldLabel>

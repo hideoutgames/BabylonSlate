@@ -211,6 +211,8 @@ export type ControlMessage =
       assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
+      /** Project Garbage Collection Interval, in ticks. */
+      garbageCollectionIntervalTicks?: number;
       /** Serialized trace retention budget in bytes for this session. */
       traceByteBudget?: number;
   renderSettings?: Partial<RenderProjectSettings>;
@@ -879,6 +881,10 @@ export type CommandMessage =
       fps?: number;
       liveActors?: number;
       snapshotCapacity?: number;
+      /** Create Object objects alive now. */
+      collectableObjects?: number;
+      /** The last object collection pass, in milliseconds; absent before the first. */
+      garbageCollectionMs?: number;
     }
   | {
       type: "print";

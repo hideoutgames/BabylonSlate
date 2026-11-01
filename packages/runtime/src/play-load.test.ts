@@ -217,6 +217,13 @@ describe("runtimeOptionsFromLoadControl", () => {
   });
 });
 
+describe("runtimeOptionsFromLoadControl", () => {
+  it("passes the Garbage Collection Interval to the session only when the host sends one", () => {
+    expect(runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "empty", garbageCollectionIntervalTicks: 15 }).garbageCollectionIntervalTicks).toBe(15);
+    expect(runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "empty" })).not.toHaveProperty("garbageCollectionIntervalTicks");
+  });
+});
+
 describe("createRuntimeFromLoad", () => {
   it("queries the configured frame cap, overrides it for the session, and restores it on reload", () => {
     const message = { type: "load" as const, sceneAssetGuid: "empty", frameCap: 30 };

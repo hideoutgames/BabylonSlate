@@ -69,6 +69,10 @@ export type ConsoleCommandHost = {
   step?(): void;
   setTimeDilation?(rate: number): void;
   getTimeDilation?(): number;
+  /** `gc`: request an object collection pass at the end of the current tick. */
+  collectGarbage?(): void;
+  /** `gc stats`: the collectable object count and the last pass. */
+  garbageStats?(): string;
   dumpLog?(): string;
   startSnapshot?(): void | CommandResult;
   stopSnapshot?(): void;
