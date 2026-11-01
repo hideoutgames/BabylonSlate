@@ -32,6 +32,7 @@ export * from "./math-rng";
 export * from "./affine-transform";
 export * from "./euler";
 export * from "./easing";
+export * from "./curves";
 export * from "./tween";
 export * from "./cursor-ray";
 export * from "./format-value";
