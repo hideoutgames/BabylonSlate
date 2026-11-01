@@ -139,8 +139,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "vector-curve": "curve-asset-editor",
   "color-curve": "curve-asset-editor",
   timeline: "timeline-asset-clips",
-  "timeline-clip-2d": "timeline-clip-proxies",
-  "timeline-clip-3d": "timeline-clip-proxies",
+  "timeline-clip-2d": "timeline-clip-viewport",
+  "timeline-clip-3d": "timeline-clip-viewport",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
   "sprite-animation": "sprite-animation-preview",
@@ -1169,9 +1169,10 @@ export function listDockWindows(
     { id: "data-definition-details", component: "data-definition-details", title: "Inspector", defaultPosition: { referencePanelId: "data-definition-fields", direction: "right", initialWidth: 320 } },
   ], options);
   if (kind === "timeline-clip-2d" || kind === "timeline-clip-3d") return withOptionalLocks(kind, [
-    { id: "timeline-clip-proxies", component: "timeline-clip-proxies", title: "Proxies" },
-    { id: "timeline-clip-inspector", component: "timeline-clip-inspector", title: "Inspector", defaultPosition: { referencePanelId: "timeline-clip-proxies", direction: "right", initialWidth: 320 } },
-    { id: "timeline-clip-timeline", component: "timeline-clip-timeline", title: "Timeline", defaultPosition: { referencePanelId: "timeline-clip-proxies", direction: "below", initialHeight: 320 } },
+    { id: "timeline-clip-viewport", component: "timeline-clip-viewport", title: "Viewport" },
+    { id: "timeline-clip-proxies", component: "timeline-clip-proxies", title: "Proxies", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "left", initialWidth: 260 } },
+    { id: "timeline-clip-inspector", component: "timeline-clip-inspector", title: "Inspector", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "right", initialWidth: 320 } },
+    { id: "timeline-clip-timeline", component: "timeline-clip-timeline", title: "Timeline", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "below", initialHeight: 320 } },
   ], options);
   if (kind === "timeline") return withOptionalLocks(kind, [
     { id: "timeline-asset-clips", component: "timeline-asset-clips", title: "Timeline Clips" },

@@ -168,11 +168,12 @@ describe("material dock catalog", () => {
     for (const kind of ["timeline-clip-2d", "timeline-clip-3d"] as const) {
       expect(isDockviewDocumentKind(kind)).toBe(true);
       expect(listDockWindows(kind).map((entry) => [entry.id, entry.title])).toEqual([
+        ["timeline-clip-viewport", "Viewport"],
         ["timeline-clip-proxies", "Proxies"],
         ["timeline-clip-inspector", "Inspector"],
         ["timeline-clip-timeline", "Timeline"],
       ]);
-      expect(primaryDockPanel(kind)).toBe("timeline-clip-proxies");
+      expect(primaryDockPanel(kind)).toBe("timeline-clip-viewport");
     }
   });
 

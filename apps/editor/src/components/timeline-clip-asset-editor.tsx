@@ -57,7 +57,7 @@ export function selectProxy(document: string, proxyId: string | null): void {
   else selectedProxies.delete(document);
   for (const listener of selectionListeners) listener();
 }
-function useSelectedProxy(document: string): string | undefined {
+export function useSelectedProxy(document: string): string | undefined {
   return useSyncExternalStore(
     (listener) => {
       selectionListeners.add(listener);
