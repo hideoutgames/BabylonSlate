@@ -143,6 +143,8 @@ export interface FeatureTestAssets {
     attenuation: string | null;
   };
   materials: Partial<Record<FeatureTestMaterialKey, string>>;
+  /** `FT_Timeline` Timeline Asset guid; scenes bind their clips to it. */
+  timeline: string;
   /** Every FeatureTest Class keyed by class id. */
   classes: Record<string, FeatureTestClassRef>;
 }
@@ -323,6 +325,7 @@ function emptyAssets(): FeatureTestAssets {
     fonts: { facetype: "", onest: "" },
     audio: { loop: null, oneShot: null, mixer: null, channel: null, attenuation: null },
     materials: {},
+    timeline: "",
     classes: {},
   };
 }
