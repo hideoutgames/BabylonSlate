@@ -2,7 +2,7 @@ import type { GraphNode } from "./ir";
 import type { CodegenContext, NodeDefinition } from "./node-registry";
 import { defaultValueLiteral } from "./types";
 import { jsIdent } from "./compile-events";
-import { subjectPinsOf } from "./compile-pin-values";
+import { deadReference, reportDeadReference, subjectPinsOf } from "./compile-pin-values";
 import { emitBody, traceProbe, type CodegenState } from "./compile-codegen-state";
 import { inputExpression, makeCtx, tracedRead } from "./compile-expressions";
 
@@ -40,7 +40,7 @@ export function emitStatementNode(
     emitBody(s, `  ${slot} = ${tracedRead(s, node, subject.pin, inputExpression(s, node, subject.pin))};`, anchor);
   }
   for (const subject of subjects) {
-    emitBody(s, `  if (${bound.get(subject.pin.id)} == null) ctx.nullAccess(${JSON.stringify(subject.message)});`, anchor);
+    emitBody(s, `  ${reportDeadReference(subject, bound.get(subject.pin.id)!)}`, anchor);
   }
   const ctx = makeCtx(s, node, flow?.continuation, flow?.branch, bound);
   if (def.latent) s.isAsync = true;
@@ -50,7 +50,7 @@ export function emitStatementNode(
     emitOutputProbe(s, node, ctx);
     return { ctx };
   }
-  const condition = subjects.map((subject) => `${bound.get(subject.pin.id)} != null`).join(" && ");
+  const condition = subjects.map((subject) => `!${deadReference(bound.get(subject.pin.id)!)}`).join(" && ");
   emitBody(s, `  if (${condition}) {`, anchor);
   const start = s.body.length;
   def.codegen(ctx);

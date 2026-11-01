@@ -12,6 +12,7 @@ import {
   objectRef,
   type PinType,
 } from "@haptic/scripting";
+import { liveReferenceCall } from "./live-reference";
 
 const RESERVED = new Set([
   "break",
@@ -168,7 +169,7 @@ export const debugNodes: NodeDefinition[] = [
       pin("message", "Message", "in", STRING, "data", true, ""),
     ],
     codegen: (ctx) => {
-      ctx.emit(`if ((${ctx.input("object")}) == null) ctx.assertFailed(${ctx.input("message")}, "the object is not valid");`);
+      ctx.emit(`if (!${liveReferenceCall(ctx, ctx.input("object"))}) ctx.assertFailed(${ctx.input("message")}, "the object is not valid");`);
     },
   },
   {

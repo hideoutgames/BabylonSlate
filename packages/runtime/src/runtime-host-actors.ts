@@ -85,9 +85,15 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
         deferred.delete(actor);
         deps.world().destroyActorInstance(actor);
       } else {
+        const world = deps.world();
+        // By identity: a stale reference never reaches a successor that reuses
+        // the guid. One spawned earlier in this phase commits first, then goes.
+        const queued = world.isSpawnQueued(actor);
+        if (actor.destroyed || (actor.world !== world && !queued)) return;
         deps.audioParticles.stopAudio(actor);
         deps.audioParticles.stopParticles(actor);
-        deps.world().destroyActor(actor.guid);
+        if (queued) world.destroyActor(actor.guid);
+        else world.destroyActorInstance(actor);
       }
       deps.tweens.cancelInvalid();
     },

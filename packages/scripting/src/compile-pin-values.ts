@@ -43,11 +43,12 @@ function catalogFlag(
   return (catalog ?? pin)[flag] === true;
 }
 
-export type SubjectPin = { pin: GraphPin; message: string };
+export type SubjectPin = { pin: GraphPin; message: string; destroyedMessage: string };
 
 /**
  * A node's subject inputs: the objects it reads, writes, calls or moves. The
- * message is logged each time one is null as the node runs.
+ * message is logged each time one is null as the node runs, and the destroyed
+ * message each time one holds an object that has been destroyed.
  */
 export function subjectPinsOf(
   node: GraphNode,
@@ -62,16 +63,33 @@ export function subjectPinsOf(
   const where = `${className ? `${className}: ` : ""}${authored || def.title}`;
   return references
     .filter((pin) => (catalog.find((entry) => entry.id === pin.id) ?? pin).subject === true)
-    .map((pin) => ({
-      pin,
-      message: `${where} (${humanizePropertyLabel(pin.name)}) tried to access null.`,
-    }));
+    .map((pin) => {
+      const subject = `${where} (${humanizePropertyLabel(pin.name)})`;
+      return {
+        pin,
+        message: `${subject} tried to access null.`,
+        destroyedMessage: `${subject} tried to access a destroyed object.`,
+      };
+    });
 }
 
 /**
- * A pure node's output expression behind its subject guard: a null subject logs
- * and the output reads `fallback`. The inputs are bound to `__s<n>` so each is
- * evaluated once.
+ * Whether the reference held by `name` (a plain identifier, read once by the
+ * caller) is unusable: empty, or an object that has been destroyed.
+ */
+export function deadReference(name: string): string {
+  return `(${name} == null || ${name}.destroyed === true)`;
+}
+
+/** The statement that logs why the reference in `name` is unusable, when it is. */
+export function reportDeadReference(subject: SubjectPin, name: string): string {
+  return `if (${name} == null) ctx.nullAccess(${JSON.stringify(subject.message)}); else if (${name}.destroyed === true) ctx.nullAccess(${JSON.stringify(subject.destroyedMessage)});`;
+}
+
+/**
+ * A pure node's output expression behind its subject guard: a null or destroyed
+ * subject logs and the output reads `fallback`. The inputs are bound to
+ * `__s<n>` so each is evaluated once.
  */
 export function guardPureExpression(
   subjects: readonly SubjectPin[],
@@ -82,12 +100,14 @@ export function guardPureExpression(
   const names = subjects.map((_, index) => `__s${index}`);
   const report = subjects
     .map((subject, index) => {
-      const log = `ctx.nullAccess(${JSON.stringify(subject.message)})`;
-      return subjects.length === 1 ? log : `${names[index]} == null && ${log}`;
+      const name = names[index];
+      const nullLog = `ctx.nullAccess(${JSON.stringify(subject.message)})`;
+      const destroyedLog = `ctx.nullAccess(${JSON.stringify(subject.destroyedMessage)})`;
+      return `(${name} == null ? ${nullLog} : ${name}.destroyed === true && ${destroyedLog})`;
     })
     .join(", ");
-  const anyNull = names.map((name) => `${name} == null`).join(" || ");
-  return `((${names.join(", ")}) => ${anyNull} ? (${report}, ${fallback}) : (${expression}))(${args.join(", ")})`;
+  const anyDead = names.map((name) => deadReference(name)).join(" || ");
+  return `((${names.join(", ")}) => ${anyDead} ? (${report}, ${fallback}) : (${expression}))(${args.join(", ")})`;
 }
 
 export function disconnectedPinLiteral(

@@ -330,6 +330,8 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getGameInstance: () => services.getGameInstance?.() ?? null,
     isA: (instance, classId) => {
       if (instance == null || typeof instance !== "object") return false;
+      // A destroyed object is no longer any class: Cast fails and returns None.
+      if ((instance as { destroyed?: unknown }).destroyed === true) return false;
       const id = (instance as { classId?: unknown }).classId;
       if (typeof id !== "string" || !id) return false;
       const target = String(classId ?? "");
