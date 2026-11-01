@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EXEC, arrayOf, assetRef, compileGraph, objectRef, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { EXEC, arrayOf, assetRef, compileGraph, objectRef, validateGraphs, type GraphNode, type LogicGraph } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 import {
   TIMELINE_CREATE_CLIP_NODE_ID,
@@ -90,6 +90,17 @@ describe("Timeline Asset nodes", () => {
     ]);
     expect(timelineCreateClipNodeTitle(swing)).toBe("Create Door Swing Timeline Clip");
     expect(timelineCreateClipNodeTitle({})).toBe("Create Timeline Clip");
+  });
+
+  it("leave Create's proxy inputs optional: an unconnected proxy stays unbound", () => {
+    const graph: LogicGraph = {
+      id: "event-graph", kind: "event",
+      nodes: [node("begin", "flow.event.beginPlay"), node("create", TIMELINE_CREATE_CLIP_NODE_ID, swing)],
+      edges: [{ id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "create", targetPinId: "execIn" }],
+    };
+    // Only the Target is required.
+    expect(validateGraphs([graph], { assetGuid: "a" }, { registry }).filter((entry) => entry.code === "pin.missing_input").map((entry) => entry.pinId))
+      .toEqual(["target"]);
   });
 
   it("compile Create to the host member, with unconnected proxies left unbound", () => {

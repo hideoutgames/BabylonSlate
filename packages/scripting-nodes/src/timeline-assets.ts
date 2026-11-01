@@ -139,7 +139,8 @@ export const timelineAssetNodes: NodeDefinition[] = [
         pin("execIn", "exec", "in", EXEC),
         pin("execOut", "then", "out", EXEC),
         subject(pin("target", "Target", "in", objectRef(timelineClass(assetGuid)))),
-        ...timelineCreateClipProxies(properties).map((proxy) => pin(timelineProxyPinId(proxy.id), proxy.name, "in", objectRef(proxy.classId))),
+        // Optional: an unconnected proxy stays unbound.
+        ...timelineCreateClipProxies(properties).map((proxy) => pin(timelineProxyPinId(proxy.id), proxy.name, "in", objectRef(proxy.classId), "data", true)),
         pin("clip", "Timeline Clip", "out", objectRef(clipClassId || "TimelineClip")),
       ];
     },
