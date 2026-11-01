@@ -114,8 +114,15 @@ function applyTrack(actor: SerializedActor, track: TimelinePropertyTrack, value:
  * actors are copied with their tracks' values, and every other actor is the same
  * object, so a transform-only change can take the renderer's pose path. Muted
  * tracks and tracks of actors the scene does not have are left out.
+ * `overrides` (track id to key value) replace tracks' values, as the editor's
+ * unkeyed changes do until they are keyed or discarded.
  */
-export function applyTimelineClipToScene(scene: SerializedScene, clip: SerializedTimelineClip, time: number): SerializedScene {
+export function applyTimelineClipToScene(
+  scene: SerializedScene,
+  clip: SerializedTimelineClip,
+  time: number,
+  overrides?: ReadonlyMap<string, unknown>,
+): SerializedScene {
   const animated = new Map(clip.objects.map((object) => [object.actorId, object]));
   let changed = false;
   const actors = scene.actors.map((actor) => {
@@ -124,7 +131,7 @@ export function applyTimelineClipToScene(scene: SerializedScene, clip: Serialize
     let next = actor;
     for (const track of object.tracks) {
       if (track.muted) continue;
-      const value = evaluateTimelineTrack(track, time);
+      const value = overrides?.has(track.id) ? overrides.get(track.id) : evaluateTimelineTrack(track, time);
       if (value !== undefined) next = applyTrack(next, track, value);
     }
     if (next !== actor) changed = true;

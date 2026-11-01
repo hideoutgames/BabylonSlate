@@ -107,4 +107,18 @@ describe("applyTimelineClipToScene", () => {
     expect(shown!.properties).toEqual({ Offset: { x: 1, y: 2, z: 3 }, Turn: { pitch: 0, yaw: 30, roll: 0 }, Glow: red });
     expect(shown!.components[0]!.properties).toEqual({ color: [1, 0, 0], tint: [1, 0, 0, 1], wrap: [4, 5] });
   });
+
+  it("takes override values in place of tracks' values", () => {
+    const door = createActor("door", "Door");
+    const scene = { ...createDefaultScene(), actors: [door] } as ReturnType<typeof createDefaultScene>;
+    const clip = {
+      ...createTimelineClip("c", "C"),
+      objects: [{ id: "o", actorId: "door", tracks: [
+        { ...track("vec3", [key(0, { x: 1, y: 0, z: 0 })], { kind: "transform", property: "location" }), id: "loc" },
+      ] }],
+    };
+    const shown = applyTimelineClipToScene(scene, clip, 0, new Map([["loc", { x: 5, y: 6, z: 7 }]]));
+    expect(shown.actors[0]!.transform.position).toEqual([5, 6, 7]);
+  });
 });
+
