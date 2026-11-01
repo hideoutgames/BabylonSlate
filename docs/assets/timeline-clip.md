@@ -52,3 +52,30 @@ A clip asset never plays by itself: a script creates an instance of it, and each
 - A proxy with nothing connected is unbound: its tracks are skipped, and the **Output Log** warns once, such as **Door Swing: the Handle Glow proxy is not bound.** A bound object that is destroyed unbinds itself.
 - An instance lives while a variable, array, map or structure holds it, or while it plays, and is then collected. Every placed actor that creates one gets its own; there is no limit.
 - The clip asset ships with the game when a script creates it. Play and exports carry its keys, events and proxies, never its Editor Preview.
+
+### Rebind proxies
+
+Drag from an instance's **Timeline Clip** pin for each proxy's nodes, titled with its name:
+
+| Node | Does |
+| --- | --- |
+| [Bind Actor to Timeline Proxy](../scripting/class/bind-actor-to-timeline-proxy.md), such as **Bind Door Proxy** | Binds an Actor proxy to an actor. |
+| [Bind Component to Timeline Proxy](../scripting/class/bind-component-to-timeline-proxy.md), such as **Bind Handle Glow Proxy** | Binds a Component proxy to a component. |
+| [Unbind Timeline Proxy](../scripting/class/unbind-timeline-proxy.md) | Clears the proxy: its tracks stop applying. |
+| [Get Timeline Proxy](../scripting/class/get-timeline-proxy.md) | Returns the object bound to the proxy, or None. |
+| [Unbind All Timeline Proxies](../scripting/class/unbind-all-timeline-proxies.md) | Clears every proxy of the instance. |
+
+- **Proxy** in the **Inspector** picks which proxy a node acts on.
+- A Bind node's **Absolute Transform** decides how transform keys apply. Off (Relative): they offset the object from where it stands when it is bound. On: they set an actor's world transform, or a component's transform relative to its parent.
+- A new binding applies from the next frame, while the instance plays.
+- When Finished: Restore State puts back the values of the objects bound when the instance started playing.
+
+## Checks
+
+**Compiler Results**, from the **Windows** menu, lists what stops the clip from working:
+
+- **Error**: the clip has no Timeline Asset, or it was deleted.
+- **Error**: two proxies share a name, or a proxy's Class was deleted.
+- **Warning**: a Component proxy's Class does not suit the clip, such as a 2D component in a 3D clip.
+
+In scripts, a Bind, Unbind or Get node whose proxy was removed, or that picks none, shows an error, as does a Bind Actor node on a Component proxy or the other way round.

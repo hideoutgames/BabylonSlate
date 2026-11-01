@@ -1,4 +1,4 @@
-import { timelineClipControl } from "./timeline-runtime";
+import { timelineClipControl, timelineProxyControl } from "./timeline-runtime";
 import type { CommandMessage } from "@haptic/bridge";
 import type { Actor, ClassRegistry, EngineObject } from "@haptic/object-model";
 import { RuntimeAssetCatalog } from "./asset-catalog";
@@ -152,6 +152,8 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     timeline: (asset) => rt.timelines.timeline(asset),
     timelineClips: (timeline, only) => rt.timelines.timelineClips(timeline, timelineOwners(rt), only),
     createTimelineClip: (timeline, assetGuid, inputs) => rt.timelines.createInstance(timeline, assetGuid, inputs),
+    timelineProxy: (instance, action, proxyId, args) => timelineProxyControl(rt.timelines, instance, action, proxyId, args),
+    timelineProxyGet: (instance, proxyId) => rt.timelines.bound(instance, proxyId),
     ...createAudioHostBindings({ frameId, scriptVoiceId: () => rt.voices.scriptVoiceId(), emit }),
     ...createNavigationHostBindings({ navigation: () => rt.navigation }),
     ...createSceneStreamHostBindings({ streams: rt.streams, world: () => rt.world }),

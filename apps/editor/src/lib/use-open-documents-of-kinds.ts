@@ -8,6 +8,8 @@ import type { OpenDocument } from "../services/document-service";
 
 /** Material and Material Instance tabs, whose unsaved domains win over headers. */
 export const MATERIAL_DOCUMENT_KINDS = ["material", "material-instance"] as const;
+/** 2D and 3D Timeline Clip assets, whose open tabs' proxies win over their headers. */
+export const TIMELINE_CLIP_DOCUMENT_KINDS = ["timeline-clip-2d", "timeline-clip-3d"] as const;
 
 /**
  * The open documents of `kinds`, in tab order, including their unsaved

@@ -25,7 +25,10 @@ import {
   TIMELINE_CREATE_CLIP_NODE_ID,
   TIMELINE_FROM_ASSET_NODE_ID,
   TIMELINE_LOADED_CLIPS_NODE_ID,
+  TIMELINE_PROXY_BIND_COMPONENT_NODE_ID,
+  TIMELINE_PROXY_GET_NODE_ID,
   timelineCreateClipNodeTitle,
+  timelineProxyNodeTitle,
   timelineProxyPinId,
 } from "@haptic/scripting-nodes";
 import { actor, comp, instanceComponents, meshComp, requireRef, tf, type FeatureTestContext, type Vec3 } from "./context";
@@ -239,10 +242,10 @@ export async function placeTimelineListener(ctx: FeatureTestContext, scene: Seri
 /**
  * `FT_SwingDoor`: a door panel hinged at the actor with a light at its
  * handle. Begin Play: Create FT_DoorSwing Timeline Clip on FT_Timeline's
- * Timeline with Door bound to Self and Handle Glow to its light (both
- * Relative, so each door swings from where it stands), keep the instance in
- * `Swing`, Bind Event to its On Swing Open and play it. Two are placed,
- * turned differently, beside the pavilion.
+ * Timeline with Door bound to Self, keep the instance in `Swing`, Bind Handle
+ * Glow Proxy to its light (both Relative, so each door swings from where it
+ * stands), Bind Event to its On Swing Open, play it and assert Get Door Proxy
+ * is valid. Two are placed, turned differently, beside the pavilion.
  */
 export async function placeTimelineSwingDoors(ctx: FeatureTestContext, scene: SerializedScene, positions: ReadonlyArray<{ position: Vec3; yaw: number }>): Promise<void> {
   const timelineGuid = requireRef(ctx.assets.timeline, "FT_Timeline");
@@ -270,16 +273,22 @@ export async function placeTimelineSwingDoors(ctx: FeatureTestContext, scene: Se
       gNode("bind", "flow.dispatcher.bind", 820, 0, {
         title: `Bind Event to ${SWING_OPEN_EVENT}`, name: SWING_OPEN_EVENT, classId: clipClassId, implicitSelf: false, pins: [],
       }),
+      gNode("bind-glow", TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, 700, 200, proxyNodeData(TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, create, DOOR_SWING_PROXIES[1]!)),
       gNode("play", "timelineClip.play", 1080, 0),
-      printString("ready", 1320, 0, `${FEATURE_TEST_SWING_DOOR} plays its own ${DOOR_SWING}`),
+      gNode("get-door", TIMELINE_PROXY_GET_NODE_ID, 1080, 200, proxyNodeData(TIMELINE_PROXY_GET_NODE_ID, create, DOOR_SWING_PROXIES[0]!)),
+      gNode("assert-door", "debug.assertIsValid", 1320, 0, { "default:message": `${FEATURE_TEST_SWING_DOOR} found nothing bound to its Door proxy` }),
+      printString("ready", 1560, 0, `${FEATURE_TEST_SWING_DOOR} plays its own ${DOOR_SWING}`),
       gNode(opened.id, "flow.event.custom", 0, 600, { title: `Event ${opened.name}`, name: opened.name, pins: [] }),
       printString("heard", 280, 600, `${FEATURE_TEST_SWING_DOOR} heard ${SWING_OPEN_EVENT} (${DOOR_SWING})`),
     ],
     edges: [
-      ...gChain("begin", "create", "keep", "bind", "play", "ready"),
+      ...gChain("begin", "create", "keep", "bind-glow", "bind", "play", "assert-door", "ready"),
       gWire("timeline", "timeline", "create", "target"),
       gWire("self", "out", "create", timelineProxyPinId(DOOR_SWING_PROXIES[0]!.id)),
-      gWire("glow", "out", "create", timelineProxyPinId(DOOR_SWING_PROXIES[1]!.id)),
+      gWire("glow", "out", "bind-glow", "component"),
+      gWire("create", "clip", "bind-glow", "target"),
+      gWire("create", "clip", "get-door", "target"),
+      gWire("get-door", "object", "assert-door", "object"),
       gWire("create", "clip", "keep", "value"),
       gWire("create", "clip", "bind", "target"),
       gWire("create", "clip", "play", "target"),
@@ -293,6 +302,20 @@ export async function placeTimelineSwingDoors(ctx: FeatureTestContext, scene: Se
     ctx.addActor(actor(id, `Swing Door ${index + 1}`, tf(position, { rotationDeg: [0, yaw, 0] }),
       instanceComponents(id, graph.components ?? []), { classId: ref.classId }), { scene });
   });
+}
+
+/** A Bind, Unbind or Get Timeline Proxy node's properties for `proxy` of a Create node's clip asset. */
+function proxyNodeData(nodeType: string, create: ReturnType<typeof createClipNodeData>, proxy: (typeof DOOR_SWING_PROXIES)[number]) {
+  const data = {
+    timelineClipDocument: create.timelineClipDocument,
+    timelineClipName: create.timelineClipName,
+    timelineClipClassId: create.timelineClipClassId,
+    timelineProxyId: proxy.id,
+    timelineProxyName: proxy.name,
+    timelineProxyClassId: proxy.classId,
+    timelineProxyRepresents: proxy.represents,
+  };
+  return { ...data, title: timelineProxyNodeTitle(nodeType, data) };
 }
 
 /** Create <Name> Timeline Clip's node properties for one of FT_Timeline's clip assets. */

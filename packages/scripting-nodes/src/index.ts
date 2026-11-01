@@ -27,6 +27,7 @@ import { subsystemNodes } from "./subsystem";
 import { sceneOwnedNodes } from "./scene-owned";
 import { timelineClipNodes } from "./timeline-clips";
 import { timelineAssetNodes } from "./timeline-assets";
+import { timelineProxyNodes } from "./timeline-proxies";
 import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
 import { scalabilityNodes } from "./scalability";
 import { renderTargetNodes } from "./render-target";
@@ -81,6 +82,7 @@ export * from "./subsystem";
 export * from "./scene-owned";
 export * from "./timeline-clips";
 export * from "./timeline-assets";
+export * from "./timeline-proxies";
 export * from "./scene-layer";
 export * from "./render-target";
 export * from "./scalability";
@@ -140,6 +142,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...sceneOwnedNodes,
     ...timelineClipNodes,
     ...timelineAssetNodes,
+    ...timelineProxyNodes,
     ...sceneLayerNodes,
     ...renderTargetNodes,
     ...scalabilityNodes,

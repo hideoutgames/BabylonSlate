@@ -146,6 +146,12 @@ describe("Timeline Asset scripting", () => {
       ["exec", { kind: "exec" }], ["then", { kind: "exec" }], ["Target", objectRef("Timeline:story")], ["Door", objectRef("Door")], ["Timeline Clip", objectRef("TimelineClip:swing:clip")],
     ]);
     expect(nodes.some((node) => node.id === "timeline.createClip")).toBe(false);
+    // Each proxy has Bind (of its kind), Unbind and Get rows; Unbind All is the plain row.
+    expect(nodes.filter((node) => node.id.startsWith("timelineProxy.") && node.id.endsWith(":swing:door")).map((node) => node.title))
+      .toEqual(["Bind Door Proxy", "Unbind Door Proxy", "Get Door Proxy"]);
+    expect(nodes.find((node) => node.id === "timelineProxy.get:swing:door")?.pins?.map((pin) => pin.type)).toEqual([objectRef("TimelineClip:swing:clip"), objectRef("Door")]);
+    expect(nodes.some((node) => node.id === "timelineProxy.bindActor")).toBe(false);
+    expect(nodes.some((node) => node.id === "timelineProxy.unbindAll")).toBe(true);
     // Without Timeline Assets a Class reaches no Timeline Clip.
     expect(scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Door", parentOf })
       .some((node) => node.title === "Bind Event to On Finished")).toBe(false);

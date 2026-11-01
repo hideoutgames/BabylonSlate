@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useMemo, type Dispatch, type SetStateAction } from "react";
 import type { SerializedGraph } from "@haptic/core";
 import {
   AssetPicker,
@@ -15,7 +15,7 @@ import {
   type DelegateSignatureEntry,
   type PinListRow,
 } from "@haptic/editor-kit";
-import { OUTPUT_DELEGATE_PIN_ID, isDispatcherNodeType } from "@haptic/scripting-nodes";
+import { OUTPUT_DELEGATE_PIN_ID, isDispatcherNodeType, isTimelineProxyPickerNode } from "@haptic/scripting-nodes";
 import {
   Field,
   FieldError,
@@ -62,8 +62,11 @@ import { dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, 
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
   MATERIAL_DOCUMENT_KINDS,
+  TIMELINE_CLIP_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
 } from "../lib/use-open-documents-of-kinds";
+import { projectTimelineClips } from "../lib/timeline-asset-index";
+import { timelineProxyNodeTarget, timelineProxyPickerRows, timelineScriptAssets } from "../lib/timeline-script-catalog";
 import {
   committedPinRowIds,
   memberPinsFromRows,
@@ -149,8 +152,17 @@ export function GraphNodeDetails({
     typeCatalog,
     typeSchemas,
   } = catalogs;
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const { entries: tags } = useTags();
+  // A Timeline Proxy node's clip asset, from its header or its open tab.
+  const clipDocuments = useOpenDocumentsOfKinds(TIMELINE_CLIP_DOCUMENT_KINDS);
+  const proxyPicker = isTimelineProxyPickerNode(selectedNode.type);
+  const proxyClip = useMemo(() => {
+    void registryEpoch;
+    if (!proxyPicker) return undefined;
+    const assets = assetRegistry?.list() ?? [];
+    return timelineProxyNodeTarget(timelineScriptAssets(assets, projectTimelineClips(assets, clipDocuments)), selectedNode.data).clip;
+  }, [assetRegistry, clipDocuments, proxyPicker, registryEpoch, selectedNode.data]);
   // Open Material tabs' unsaved domains filter the post-process picker.
   const pickerMaterialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
 
@@ -222,6 +234,8 @@ export function GraphNodeDetails({
       ? patchDataGraphNode(graph, selectedNode, patch, activeFunctionId)
       : patchInspectedGraphNode(graph, selectedNode.id, patch, activeFunctionId));
   };
+
+  const proxyRows = timelineProxyPickerRows(selectedNode.type, selectedNode.data, proxyClip, updateNodeData);
 
   const dataPinWired = (pinId: string) => (inspectGraph?.edges ?? graph.edges)
     .some((edge) => edge.target === selectedNode.id && edge.targetHandle === pinId);
@@ -331,6 +345,9 @@ export function GraphNodeDetails({
         <div className="text-sm font-medium">{title}</div>
         {inputEventRows.length > 0 ? (
           <PropertyGrid rows={inputEventRows} data-testid="inspector-input-event" />
+        ) : null}
+        {proxyRows.length > 0 ? (
+          <PropertyGrid rows={proxyRows} data-testid="inspector-timeline-proxy" />
         ) : null}
         {logRows.length > 0 ? (
           <PropertyGrid rows={logRows} data-testid="inspector-log-properties" />

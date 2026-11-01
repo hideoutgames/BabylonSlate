@@ -26,6 +26,7 @@ import type {
   PostProcessMaterialObject,
   Scene,
   SceneLayer,
+  TimelineClipInstance,
   TimelineClipObject,
   TimelineObject,
 } from "@haptic/object-model";
@@ -243,6 +244,10 @@ export interface ScriptHostServices {
   timelineClips?(timeline: TimelineObject, only?: { documentGuid: string; clipId: string }): TimelineClipObject[];
   /** A new instance of a clip asset on its Timeline (`Create <Name> Timeline Clip`). */
   createTimelineClip?(timeline: TimelineObject, assetGuid: string, inputs: Record<string, unknown>): TimelineClipObject | null;
+  /** A Timeline Proxy node on a clip asset instance (Bind Actor or Component to Timeline Proxy, Unbind, Unbind All). */
+  timelineProxy?(instance: TimelineClipInstance, action: string, proxyId: string, args: Record<string, unknown>): void;
+  /** Get Timeline Proxy: the object bound to the proxy. */
+  timelineProxyGet?(instance: TimelineClipInstance, proxyId: string): EngineObject | null;
   getCurrentSceneLayerActor?(target: unknown): Actor | null;
   setFocusTarget?(target: unknown): boolean;
   clearFocusTarget?(target: unknown): void;

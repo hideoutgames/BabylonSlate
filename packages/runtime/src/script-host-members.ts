@@ -37,7 +37,7 @@ import {
   type SaveGameValue,
   type SceneLayerCamera,
 } from "@haptic/core";
-import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipObject, TimelineObject } from "@haptic/object-model";
+import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
 import { timelineClipState } from "./timeline-runtime";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { EMPTY_ASSET_CATALOG } from "./asset-catalog";
@@ -291,6 +291,12 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getLoadedTimelineClips: (target) => target instanceof TimelineObject && !target.destroyed ? services.timelineClips?.(target) ?? [] : [],
     createTimelineClip: (target, assetGuid, inputs) => target instanceof TimelineObject && !target.destroyed
       ? services.createTimelineClip?.(target, String(assetGuid), inputs ?? {}) ?? null
+      : null,
+    timelineProxy: (target, action, proxyId, args) => {
+      if (target instanceof TimelineClipInstance && !target.destroyed) services.timelineProxy?.(target, String(action), String(proxyId), args ?? {});
+    },
+    timelineProxyGet: (target, proxyId) => target instanceof TimelineClipInstance && !target.destroyed
+      ? services.timelineProxyGet?.(target, String(proxyId)) ?? null
       : null,
     curveObjectCurve: (kind, target) => {
       const object = curveObjectOf(target);

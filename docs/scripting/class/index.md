@@ -754,6 +754,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Bind Actor to Timeline Proxy](bind-actor-to-timeline-proxy.md) | Binds an Actor proxy of a Timeline Clip asset instance to an actor, so the proxy's tracks animate it. |
+| [Bind Component to Timeline Proxy](bind-component-to-timeline-proxy.md) | Binds a Component proxy of a Timeline Clip asset instance to a component, so the proxy's tracks animate it. |
 | [Create Timeline Clip](create-timeline-clip.md) | Creates an instance of a 2D or 3D Timeline Clip asset, with its own playhead and proxy bindings, and binds the objects connected to its proxy inputs. |
 | [Get Loaded Timeline Clips](get-loaded-timeline-clips.md) | Returns every loaded clip of a Timeline asset. |
 | [Get Timeline Asset Clip](get-timeline-asset-clip.md) | Returns one of a Timeline asset's clips through its Timeline, to play and control from any script. |
@@ -761,6 +763,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Timeline Clip Play Rate](get-timeline-clip-play-rate.md) | Returns a Timeline Clip's current Play Rate. |
 | [Get Timeline Clip Position](get-timeline-clip-position.md) | Returns where a Timeline Clip is, in seconds. |
 | [Get Timeline Object Reference From Timeline Asset](get-timeline-object-reference-from-timeline-asset.md) | Returns the Timeline object of a Timeline asset, to reach its clips and listen to their events from any script. |
+| [Get Timeline Proxy](get-timeline-proxy.md) | Returns the object a proxy of a Timeline Clip asset instance is bound to. |
 | [Is Timeline Clip Playing](is-timeline-clip-playing.md) | Returns true while a Timeline Clip plays, forwards or in reverse. |
 | [Is Timeline Clip Reversed](is-timeline-clip-reversed.md) | Returns true when a Timeline Clip plays, or last played, in reverse. |
 | [Pause Timeline Clip](pause-timeline-clip.md) | Stops a Timeline Clip where it is. |
@@ -771,6 +774,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Timeline Clip Play Rate](set-timeline-clip-play-rate.md) | Sets how fast a Timeline Clip plays. |
 | [Set Timeline Clip Position](set-timeline-clip-position.md) | Moves a Timeline Clip to a time and applies its values there. |
 | [Stop Timeline Clip](stop-timeline-clip.md) | Stops a Timeline Clip and returns it to its start, or to its end while it plays in reverse. |
+| [Unbind All Timeline Proxies](unbind-all-timeline-proxies.md) | Clears every proxy of a Timeline Clip asset instance, so none of its tracks apply. |
+| [Unbind Timeline Proxy](unbind-timeline-proxy.md) | Clears one proxy of a Timeline Clip asset instance, so its tracks stop applying. |
 
 ## Timers
 

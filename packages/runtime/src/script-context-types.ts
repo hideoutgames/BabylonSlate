@@ -258,6 +258,10 @@ export interface ScriptContext {
   getLoadedTimelineClips(target: unknown): EngineObject[];
   /** A new instance of one of the Timeline's clip assets, its connected proxies bound Relative; null when the asset is not in the game. */
   createTimelineClip(target: unknown, assetGuid: string, inputs: Record<string, unknown>): EngineObject | null;
+  /** Bind (`args.object`, `args.absolute`), Unbind or Unbind All on a clip asset instance's proxies. */
+  timelineProxy(target: unknown, action: string, proxyId: string, args: Record<string, unknown>): void;
+  /** The object bound to a clip asset instance's proxy, or null. */
+  timelineProxyGet(target: unknown, proxyId: string): EngineObject | null;
   /** A copy of the asset's curve as a curve Structure value. */
   curveObjectCurve(kind: CurveKind, target: unknown): unknown;
   getAllActorsOfClass(classId: string): Actor[];
@@ -633,7 +637,7 @@ export type HostContextKey =
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
   | "normalizeQuat" | "randomFloat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
-  | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "createTimelineClip" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
+  | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "createTimelineClip" | "timelineProxy" | "timelineProxyGet" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"

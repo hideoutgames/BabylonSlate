@@ -3,6 +3,7 @@ import type { SerializedGraph } from "@haptic/core";
 import type { ProjectTimelineClip } from "./timeline-asset-index";
 import {
   refreshTimelineClipNodes,
+  timelineProxyPickerRows,
   timelineGraphDiagnostics,
   timelineRefiredDispatchers,
   timelineScriptAssets,
@@ -107,6 +108,38 @@ describe("Timeline graph nodes", () => {
     expect(timelineGraphDiagnostics(create({ ...stale, timelineClipDocument: "gone" }), assets, anchor)).toEqual([expect.objectContaining({
       code: "timeline.clip_not_in_asset", nodeId: "create", message: "Create Swing Timeline Clip: the Timeline Clip is no longer in Story.",
     })]);
+  });
+
+  it("keeps proxy nodes on their proxy, and reports a removed proxy or a Bind of the wrong kind", () => {
+    const proxyNode = (type: string, data: Record<string, unknown>): SerializedGraph => ({ nodes: [{ id: "proxy", type, position: { x: 0, y: 0 }, data }], edges: [] });
+    const stale = { timelineClipDocument: "swing", timelineClipName: "Swing", timelineProxyId: "door", timelineProxyName: "Panel", timelineProxyRepresents: "actor" };
+    expect(refreshTimelineClipNodes(proxyNode("timelineProxy.bindActor", stale), assets).nodes[0]!.data).toMatchObject({
+      title: "Bind Door Proxy", timelineProxyName: "Door", timelineProxyClassId: "Door", timelineClipName: "Door Swing", timelineClipClassId: "TimelineClip:swing:clip",
+    });
+    expect(timelineGraphDiagnostics(proxyNode("timelineProxy.bindActor", stale), assets, anchor)).toEqual([]);
+    const codes = (type: string, data: Record<string, unknown>) =>
+      timelineGraphDiagnostics(proxyNode(type, data), assets, anchor).map((entry) => [entry.code, entry.message]);
+    expect(codes("timelineProxy.get", { ...stale, timelineProxyId: "lantern", timelineProxyName: "Lantern" })).toEqual([
+      ["timeline.proxy_member_missing", "Get Lantern Proxy: Door Swing has no Lantern proxy any more."],
+    ]);
+    expect(codes("timelineProxy.unbind", { timelineClipDocument: "swing" })).toEqual([
+      ["timeline.proxy_member_missing", "Unbind Timeline Proxy: pick a proxy in the Inspector."],
+    ]);
+    expect(codes("timelineProxy.bindActor", { ...stale, timelineProxyId: "glow", timelineProxyName: "Glow" })).toEqual([
+      ["timeline.proxy_kind_mismatch", "Bind Glow Proxy: Glow stands in for a component. Use Bind Component to Timeline Proxy."],
+    ]);
+  });
+
+  it("offers a Bind node the clip asset's proxies of its kind in the Inspector, and picking one retypes the node", () => {
+    const patches: Array<Record<string, unknown>> = [];
+    const clipAsset = assets[0]!.clipAssets[0]!;
+    const [row] = timelineProxyPickerRows("timelineProxy.bindComponent", { timelineClipDocument: "swing" }, clipAsset, (patch) => patches.push(patch));
+    expect(row).toMatchObject({ kind: "enum", label: "Proxy", options: [{ value: "glow", label: "Glow" }] });
+    (row as { onChange: (value: string) => void }).onChange("glow");
+    expect(patches).toEqual([expect.objectContaining({ timelineProxyId: "glow", timelineProxyClassId: "LightComponent", title: "Bind Glow Proxy" })]);
+    // Unbind and Get list every proxy; other nodes have no row.
+    expect((timelineProxyPickerRows("timelineProxy.get", {}, clipAsset, () => {})[0] as { options: unknown[] }).options).toHaveLength(2);
+    expect(timelineProxyPickerRows("timeline.createClip", {}, clipAsset, () => {})).toEqual([]);
   });
 
   it("warns where a node or a variable's default names a Timeline Asset with no clips", () => {
