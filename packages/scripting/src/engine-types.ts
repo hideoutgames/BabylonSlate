@@ -10,6 +10,10 @@ import {
 import { ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID,
   TEXT2D_APPEAR_MODES, TEXT2D_APPEAR_TRANSITIONS, TEXT2D_APPEAR_STARTS } from "@haptic/core";
 export { ENGINE_RENDER_TARGET_MODE_ENUM_ID } from "@haptic/core";
+import {
+  CURVE_EXTRAPOLATIONS, CURVE_INTERPOLATIONS, ENGINE_CURVE_EXTRAPOLATION_ENUM_ID, ENGINE_CURVE_INTERPOLATION_ENUM_ID,
+} from "@haptic/core";
+export { ENGINE_CURVE_EXTRAPOLATION_ENUM_ID, ENGINE_CURVE_INTERPOLATION_ENUM_ID } from "@haptic/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
@@ -33,6 +37,34 @@ export const ENGINE_ASSET_LOAD_PRIORITY_ENUM_ID = "engine:AssetLoadPriority";
 export const ENGINE_COLLISION_CHANNEL_ENUM_ID = "engine:CollisionChannel";
 export const ENGINE_NAV_OBSTACLE_KIND_ENUM_ID = "engine:NavObstacleKind";
 export const ENGINE_HIT_RESULT_STRUCT_ID = "engine:HitResult";
+
+export const ENGINE_INT_RANGE_STRUCT_ID = "engine:IntRange";
+export const ENGINE_FLOAT_RANGE_STRUCT_ID = "engine:FloatRange";
+export const ENGINE_VECTOR2_RANGE_STRUCT_ID = "engine:Vector2Range";
+export const ENGINE_VECTOR_RANGE_STRUCT_ID = "engine:VectorRange";
+export const ENGINE_ROTATOR_RANGE_STRUCT_ID = "engine:RotatorRange";
+export const ENGINE_FLOAT_CURVE_STRUCT_ID = "engine:FloatCurve";
+export const ENGINE_VECTOR_CURVE_STRUCT_ID = "engine:VectorCurve";
+export const ENGINE_COLOR_CURVE_STRUCT_ID = "engine:ColorCurve";
+export const ENGINE_FLOAT_CURVE_KEY_STRUCT_ID = "engine:FloatCurveKey";
+export const ENGINE_VECTOR_CURVE_KEY_STRUCT_ID = "engine:VectorCurveKey";
+export const ENGINE_COLOR_CURVE_KEY_STRUCT_ID = "engine:ColorCurveKey";
+
+/** Range Structures by the value kind their Min and Max hold (`RangeKind` in core). */
+export const ENGINE_RANGE_STRUCT_IDS = {
+  int: ENGINE_INT_RANGE_STRUCT_ID,
+  float: ENGINE_FLOAT_RANGE_STRUCT_ID,
+  vec2: ENGINE_VECTOR2_RANGE_STRUCT_ID,
+  vec3: ENGINE_VECTOR_RANGE_STRUCT_ID,
+  rotator: ENGINE_ROTATOR_RANGE_STRUCT_ID,
+} as const;
+
+/** Curve Structures by the value kind their keys hold (`CurveKind` in core). */
+export const ENGINE_CURVE_STRUCT_IDS = {
+  float: ENGINE_FLOAT_CURVE_STRUCT_ID,
+  vec3: ENGINE_VECTOR_CURVE_STRUCT_ID,
+  color: ENGINE_COLOR_CURVE_STRUCT_ID,
+} as const;
 
 /**
  * Query categories, stored by member name in graphs. `PhysicsQueryChannels.options` in the runtime is the only
@@ -120,6 +152,17 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
   },
 
   {
+    id: ENGINE_CURVE_INTERPOLATION_ENUM_ID,
+    name: "Curve Interpolation",
+    members: CURVE_INTERPOLATIONS.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_CURVE_EXTRAPOLATION_ENUM_ID,
+    name: "Curve Extrapolation",
+    members: CURVE_EXTRAPOLATIONS.map((name, value) => ({ name, value })),
+  },
+
+  {
     id: ENGINE_KEY_ENUM_ID,
     name: "Key",
     members: INPUT_KEYS.map(({ key }, value) => ({ name: key, value })),
@@ -139,6 +182,59 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
     name: "Touch Type",
     members: TOUCH_TYPES.map((name, value) => ({ name, value })),
   },
+];
+
+const ZERO_VECTOR2 = { x: 0, y: 0 };
+const ZERO_VECTOR = { x: 0, y: 0, z: 0 };
+const ZERO_ROTATOR = { pitch: 0, yaw: 0, roll: 0 };
+const ZERO_COLOR = { x: 0, y: 0, z: 0, w: 0 };
+
+function rangeStruct(id: string, name: string, typeId: string, min: unknown, max: unknown): EngineStruct {
+  return {
+    id, name,
+    fields: [{ name: "Min", typeId, defaultValue: min }, { name: "Max", typeId, defaultValue: max }],
+  };
+}
+
+/** Min is at most Max on every axis; the editors and loaders keep it so (`normalizeRange` in core). */
+const RANGE_STRUCTS: readonly EngineStruct[] = [
+  rangeStruct(ENGINE_INT_RANGE_STRUCT_ID, "Int Range", "int", 0, 1),
+  rangeStruct(ENGINE_FLOAT_RANGE_STRUCT_ID, "Float Range", "float", 0, 1),
+  rangeStruct(ENGINE_VECTOR2_RANGE_STRUCT_ID, "Vector 2 Range", "vec2", ZERO_VECTOR2, ZERO_VECTOR2),
+  rangeStruct(ENGINE_VECTOR_RANGE_STRUCT_ID, "Vector Range", "vec3", ZERO_VECTOR, ZERO_VECTOR),
+  rangeStruct(ENGINE_ROTATOR_RANGE_STRUCT_ID, "Rotator Range", "rotator", ZERO_ROTATOR, ZERO_ROTATOR),
+];
+
+function curveStructs(curveId: string, keyId: string, name: string, typeId: string, zero: unknown): EngineStruct[] {
+  return [
+    {
+      id: keyId,
+      name: `${name} Curve Key`,
+      fields: [
+        { name: "Time", typeId: "float", defaultValue: 0 },
+        { name: "Value", typeId, defaultValue: zero },
+        { name: "Interpolation", typeId: "enum", typeClassId: ENGINE_CURVE_INTERPOLATION_ENUM_ID, defaultValue: "auto" },
+        { name: "ArriveTangent", typeId, defaultValue: zero },
+        { name: "LeaveTangent", typeId, defaultValue: zero },
+      ],
+    },
+    {
+      id: curveId,
+      name: `${name} Curve`,
+      fields: [
+        { name: "Keys", typeId: "struct", typeClassId: keyId, container: "array", defaultValue: [] },
+        { name: "Before", typeId: "enum", typeClassId: ENGINE_CURVE_EXTRAPOLATION_ENUM_ID, defaultValue: "constant" },
+        { name: "After", typeId: "enum", typeClassId: ENGINE_CURVE_EXTRAPOLATION_ENUM_ID, defaultValue: "constant" },
+      ],
+    },
+  ];
+}
+
+/** Keys are sorted by time (`normalizeCurve` in core); one key holds the whole value, with tangents per channel. */
+const CURVE_STRUCTS: readonly EngineStruct[] = [
+  ...curveStructs(ENGINE_FLOAT_CURVE_STRUCT_ID, ENGINE_FLOAT_CURVE_KEY_STRUCT_ID, "Float", "float", 0),
+  ...curveStructs(ENGINE_VECTOR_CURVE_STRUCT_ID, ENGINE_VECTOR_CURVE_KEY_STRUCT_ID, "Vector", "vec3", ZERO_VECTOR),
+  ...curveStructs(ENGINE_COLOR_CURVE_STRUCT_ID, ENGINE_COLOR_CURVE_KEY_STRUCT_ID, "Color", "color", ZERO_COLOR),
 ];
 
 /** Engine user-style structs. Pin-kind math types stay first-class. */
@@ -171,6 +267,9 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
       { name: "Distance", typeId: "float" },
     ],
   },
+
+  ...RANGE_STRUCTS,
+  ...CURVE_STRUCTS,
 
   {
     // `TouchInput` in core; the input resolver produces this shape directly.
