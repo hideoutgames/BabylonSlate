@@ -4,6 +4,7 @@ import type {
   ParameterRow,
   PinListRow,
   ParameterValueType,
+  CurveEditorValue,
   PropertyRow,
   RangeFieldValue,
 } from "@haptic/editor-kit";
@@ -25,6 +26,7 @@ import {
   STRING,
   colorRgbToPinDefault,
   defaultJsValue,
+  curveKindForStruct,
   hydrateStructInstance,
   isDevelopmentOnlyNode,
   rangeKindForStruct,
@@ -162,6 +164,25 @@ function rangeStructRow(id: string, label: string, structId: string, value: unkn
   };
 }
 
+/** A built-in curve Structure as one expanding curve row (`CurveValueField`). */
+function curveStructRow(id: string, label: string, structId: string, value: unknown, onChange: (value: CurveEditorValue) => void): PropertyRow | undefined {
+  const curveKind = curveKindForStruct(structId);
+  if (!curveKind) return undefined;
+  const curve = value && typeof value === "object" && Array.isArray((value as CurveEditorValue).Keys)
+    ? value as CurveEditorValue
+    : { Keys: [], Before: "constant", After: "constant" };
+  return {
+    kind: "value-curve", id, label, curveKind, value: curve,
+    defaultValue: { Keys: [], Before: "constant", After: "constant" },
+    onChange,
+  };
+}
+
+/** The dedicated row of a built-in range or curve Structure, if `structId` is one. */
+function builtInStructRow(id: string, label: string, structId: string, value: unknown, onChange: (value: unknown) => void, unit?: string): PropertyRow | undefined {
+  return rangeStructRow(id, label, structId, value, onChange, unit) ?? curveStructRow(id, label, structId, value, onChange);
+}
+
 function flattenStructFieldRows(
   fields: readonly StructField[],
   value: unknown,
@@ -186,7 +207,7 @@ function flattenStructFieldRows(
       continue;
     }
     const range = type.kind === "structRef"
-      ? rangeStructRow(`${labelPrefix}:${field.name}`, label, type.guid, fieldValue, (next) => onChange({ ...instance, [field.name]: next }), field.unit)
+      ? builtInStructRow(`${labelPrefix}:${field.name}`, label, type.guid, fieldValue, (next) => onChange({ ...instance, [field.name]: next }), field.unit)
       : undefined;
     if (range) {
       rows.push(range);
@@ -497,7 +518,7 @@ function pushPinDefaultRows(
           });
           break;
         }
-        const range = rangeStructRow(entry.pinId, entry.name, entry.type.guid, entry.value, (next) => onPatch({ [key]: next }), entry.unit);
+        const range = builtInStructRow(entry.pinId, entry.name, entry.type.guid, entry.value, (next) => onPatch({ [key]: next }), entry.unit);
         if (range) {
           rows.push(range);
           break;
@@ -567,9 +588,9 @@ export function variableDefaultPropertyRows(
     onPickClass: options?.onPickClass,
   };
   if (type.kind === "structRef" && type.guid === "engine:InputType") return [inputTypeRow(value, onChange, options?.assetEntries, label)];
-  if (type.kind === "structRef" && rangeKindForStruct(type.guid)) {
-    const range = rangeStructRow(pinId, label, type.guid, value, onChange, options?.unit);
-    return range ? [range] : [];
+  if (type.kind === "structRef" && (rangeKindForStruct(type.guid) || curveKindForStruct(type.guid))) {
+    const row = builtInStructRow(pinId, label, type.guid, value, onChange, options?.unit);
+    return row ? [row] : [];
   }
   if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
     const schema = type.guid ? options?.schemas?.structs[type.guid] : undefined;
