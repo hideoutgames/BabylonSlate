@@ -5,6 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { AtlasTileGridTool } from "@haptic/editor-kit";
 
 export interface TilesetEditingContextValue {
   setSelectedTileId: (id: number) => void;
@@ -12,6 +13,12 @@ export interface TilesetEditingContextValue {
   setSelectedTileIds: (ids: number[]) => void;
   paintCollision: boolean;
   setPaintCollision: (value: boolean) => void;
+  /** The autotile the Inspector shows and the Preview's Autotile tool edits. */
+  selectedAutotileId: string | null;
+  setSelectedAutotileId: (id: string | null) => void;
+  /** The Preview's tool, shared so the Inspector can switch to the Autotile tool. */
+  previewTool: AtlasTileGridTool;
+  setPreviewTool: (tool: AtlasTileGridTool) => void;
 }
 
 const TilesetEditingContext = createContext<TilesetEditingContextValue | null>(
@@ -21,6 +28,8 @@ const TilesetEditingContext = createContext<TilesetEditingContextValue | null>(
 export function TilesetEditingProvider({ children }: { children: ReactNode }) {
   const [selectedTileIds, setSelectedTileIds] = useState([1]);
   const [paintCollision, setPaintCollision] = useState(false);
+  const [selectedAutotileId, setSelectedAutotileId] = useState<string | null>(null);
+  const [previewTool, setPreviewTool] = useState<AtlasTileGridTool>("move");
   const value = useMemo(
     () => ({
       setSelectedTileId: (id: number) => setSelectedTileIds([id]),
@@ -28,8 +37,12 @@ export function TilesetEditingProvider({ children }: { children: ReactNode }) {
       setSelectedTileIds,
       paintCollision,
       setPaintCollision,
+      selectedAutotileId,
+      setSelectedAutotileId,
+      previewTool,
+      setPreviewTool,
     }),
-    [paintCollision, selectedTileIds],
+    [paintCollision, previewTool, selectedAutotileId, selectedTileIds],
   );
   return (
     <TilesetEditingContext.Provider value={value}>
