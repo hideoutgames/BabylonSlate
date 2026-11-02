@@ -24,7 +24,7 @@ import {
   resolveAssetCatalogDependencies,
   skeletonAssetGuids,
   skyboxCreatorAssetDependencies,
-  spriteAnimationTextureGuids,
+  spriteAnimationDependencyGuids,
   type AssetDependencyMetadata,
   type IndexedAsset,
 } from "@haptic/assets";
@@ -95,7 +95,7 @@ function legacyAssetHeaderDependencies(
     ...(assetType === "RenderTargetTexture" && normalizeRenderTargetTexturePayload(payload).renderTargetGuid ? [normalizeRenderTargetTexturePayload(payload).renderTargetGuid!] : []),
     ...skyboxCreatorAssetDependencies(assetType, payload),
     ...(assetType === "SpriteAnimation"
-      ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
+      ? spriteAnimationDependencyGuids(parseSpriteAnimationPayload(payload))
       : []),
     ...(assetType === "Model" ? modelAssetGuids(payload) : []),
     ...(assetType === "Skeleton" ? skeletonAssetGuids(payload) : []),

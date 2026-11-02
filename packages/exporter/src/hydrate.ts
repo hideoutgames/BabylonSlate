@@ -10,9 +10,8 @@ import {
 } from "@haptic/anim-graph";
 import {
   materialParameterTextureAssetGuids,
-  applyTexturePixelSizesToSpriteAnimation,
   applyTexturePixelSizeToSprite,
-  hydrateSpriteAnimationPixelSizes,
+  hydrateSpriteAnimations,
   hydrateSpritePixelSizes,
   parseSpritePayload,
   modelClipAnimationGuidsFromAnimations,
@@ -317,16 +316,17 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   // Authored Texture sizes from the catalog first; packed PNG headers fill the rest
   // (a KTX2 chunk has no PNG header).
   const texturePixelSizes = texturePixelSizesFromManifest(game.manifest.assets);
-  const sizedSpriteAnimations = hydrateSpriteAnimationPixelSizes(
-    new Map([...spriteAnimationPayloads].map(([guid, payload]) => [guid,
-      applyTexturePixelSizesToSpriteAnimation(payload, (textureGuid) => texturePixelSizes.get(textureGuid))])),
-    game.textureBytes,
-  );
   const sizedSprites = hydrateSpritePixelSizes(
     new Map([...spritePayloads].map(([guid, payload]) => [guid,
       applyTexturePixelSizeToSprite(payload, (textureGuid) => texturePixelSizes.get(textureGuid))])),
     game.textureBytes,
   );
+  // Sprite frames take their Sprite's Texture, size, pivot and collision; sheet cells their UVs.
+  const sizedSpriteAnimations = hydrateSpriteAnimations(spriteAnimationPayloads, {
+    sprites: sizedSprites,
+    textureSizes: texturePixelSizes,
+    textureBytes: game.textureBytes,
+  });
 
   const animations = [...animationPayloads].map(([guid, payload]) => ({ guid, payload }));
   const retargetAnimationLoads = retargetAnimationLoadsFromAnimations(animations);

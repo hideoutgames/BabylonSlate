@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyTexturePixelSizesToSpriteAnimation,
   createDefaultSpriteAnimationPayload,
-  hydrateSpriteAnimationPixelSizes,
+  hydrateSpriteAnimations,
   parseSpriteAnimationPayload,
+  resolveSpriteAnimation,
+  spriteAnimationDependencyGuids,
   spriteAnimationDurationMs,
   spriteAnimationFrameAt,
   spriteAnimationFrameDurationMs,
   spriteAnimationFrameStartMs,
   spriteAnimationPlayhead,
+  spriteAnimationSheetCellCount,
+  spriteAnimationSheetCellRect,
   spriteAnimationTextureGuids,
 } from "./sprite-animation-payload";
+import { parseSpritePayload } from "./sprite-payload";
 
 /** PNG signature + IHDR width/height only — CRC omitted on purpose. */
 function pngIhdr(width: number, height: number): Uint8Array {
@@ -28,6 +32,8 @@ describe("SpriteAnimation payload", () => {
   it("defaults to one empty frame with a centered pivot and full-image collision", () => {
     const payload = createDefaultSpriteAnimationPayload();
     expect(payload.frameDurationMs).toBe(100);
+    expect(payload.source).toBe("frames");
+    expect(payload.sheet).toEqual({ textureGuid: "", cellWidth: 32, cellHeight: 32, margin: 0, spacing: 0 });
     expect(payload.frames).toHaveLength(1);
     expect(payload.frames[0]).toEqual({
       textureGuid: "",
@@ -145,52 +151,117 @@ describe("SpriteAnimation payload", () => {
     });
   });
 
-  it("collects unique texture guids from frames", () => {
-    const payload = parseSpriteAnimationPayload({
+  it("parses the source, the sheet grid and each frame's Sprite or cell", () => {
+    const parsed = parseSpriteAnimationPayload({
+      source: "sheet",
+      sheet: { textureGuid: "sheet", cellWidth: 24.7, cellHeight: 0, margin: 2, spacing: -1 },
+      frames: [{ cell: 3 }, { spriteGuid: "hero", cell: 0 }],
+    });
+    expect(parsed.source).toBe("sheet");
+    expect(parsed.sheet).toEqual({ textureGuid: "sheet", cellWidth: 24, cellHeight: 32, margin: 2, spacing: 0 });
+    expect(parsed.frames[0]?.cell).toBe(3);
+    expect(parsed.frames[1]).toMatchObject({ spriteGuid: "hero" });
+    expect(parsed.frames[1]?.cell).toBeUndefined();
+    expect(parseSpriteAnimationPayload({ source: "other" }).source).toBe("frames");
+    expect(parseSpriteAnimationPayload({ source: "sheet" }).frames).toEqual([
+      expect.objectContaining({ cell: 1 }),
+    ]);
+  });
+
+  it("collects frame Textures and Sprites, or only the sheet's Texture", () => {
+    const frames = parseSpriteAnimationPayload({
       frames: [
         { textureGuid: "tex-a" },
         { textureGuid: "tex-a" },
         { textureGuid: "tex-b" },
         { textureGuid: "" },
+        { spriteGuid: "hero", textureGuid: "hero-tex" },
+        { spriteGuid: "hero" },
       ],
     });
-    expect(spriteAnimationTextureGuids(payload)).toEqual(["tex-a", "tex-b"]);
+    expect(spriteAnimationTextureGuids(frames)).toEqual(["tex-a", "tex-b"]);
+    expect(spriteAnimationDependencyGuids(frames)).toEqual(["tex-a", "tex-b", "hero"]);
+    const sheet = parseSpriteAnimationPayload({
+      source: "sheet",
+      sheet: { textureGuid: "sheet" },
+      frames: [{ textureGuid: "stale", spriteGuid: "stale-sprite", cell: 1 }],
+    });
+    expect(spriteAnimationDependencyGuids(sheet)).toEqual(["sheet"]);
   });
 
-  it("fills missing frame pixel sizes from a texture guid lookup", () => {
+  it("counts and places sheet cells row by row from the top-left", () => {
+    const sheet = { textureGuid: "sheet", cellWidth: 16, cellHeight: 8, margin: 1, spacing: 2 };
+    const atlas = { width: 54, height: 30 };
+    expect(spriteAnimationSheetCellCount(sheet, atlas)).toBe(9);
+    expect(spriteAnimationSheetCellRect(sheet, atlas, 5)).toEqual({ x: 19, y: 11, width: 16, height: 8 });
+    expect(spriteAnimationSheetCellRect(sheet, atlas, 10)).toBeNull();
+    expect(spriteAnimationSheetCellCount(sheet, { width: 0, height: 0 })).toBe(0);
+  });
+
+  it("resolves a sheet cell to the sheet Texture, the cell size and its UVs", () => {
+    const payload = parseSpriteAnimationPayload({
+      source: "sheet",
+      sheet: { textureGuid: "sheet", cellWidth: 16, cellHeight: 16 },
+      frames: [{ cell: 2, pivot: { x: 0.5, y: 1 } }, { cell: 9 }],
+    });
+    const resolved = resolveSpriteAnimation(payload, {
+      sprite: () => null,
+      textureSize: (guid) => (guid === "sheet" ? { width: 32, height: 32 } : null),
+    });
+    const [first, outside] = resolved.frames;
+    expect(first).toMatchObject({ textureGuid: "sheet", width: 16, height: 16, pivot: { x: 0.5, y: 1 } });
+    // Cell 2 is the top-right quarter: GL v is up, inset half a texel.
+    expect(first?.uv).toEqual({ u0: 0.5 + 0.5 / 32, v0: 0.5 + 0.5 / 32, u1: 1 - 0.5 / 32, v1: 1 - 0.5 / 32 });
+    expect(outside?.textureGuid).toBe("sheet");
+    expect(outside?.uv).toBeUndefined();
+  });
+
+  it("resolves a Sprite frame to the Sprite's Texture, size, pivot and collision", () => {
+    const sprite = parseSpritePayload({
+      textureGuid: "hero-tex",
+      pivot: { x: 0.5, y: 1 },
+      collision: { x: 0.25, y: 0.5, width: 0.5, height: 0.5 },
+      width: 10,
+      height: 10,
+    });
     const payload = parseSpriteAnimationPayload({
       frames: [
-        { textureGuid: "wide", durationMs: 40 },
-        { textureGuid: "wide", width: 8, height: 8 },
-        { textureGuid: "missing" },
+        { spriteGuid: "hero", textureGuid: "old", pivot: { x: 0, y: 0 } },
+        { spriteGuid: "gone", textureGuid: "kept" },
+        { textureGuid: "wide" },
       ],
     });
-    const sized = applyTexturePixelSizesToSpriteAnimation(payload, (guid) =>
-      guid === "wide" ? { width: 200, height: 100 } : null,
-    );
-    expect(sized.frames[0]).toMatchObject({
-      textureGuid: "wide",
-      width: 200,
-      height: 100,
+    const resolved = resolveSpriteAnimation(payload, {
+      sprite: (guid) => (guid === "hero" ? sprite : null),
+      textureSize: (guid) => (guid === "hero-tex" ? { width: 48, height: 64 } : guid === "wide" ? { width: 200, height: 100 } : null),
     });
-    expect(sized.frames[1]).toMatchObject({ width: 8, height: 8 });
-    expect(sized.frames[2]?.width).toBeUndefined();
-    expect(sized.frames[2]?.height).toBeUndefined();
+    expect(resolved.frames[0]).toMatchObject({
+      spriteGuid: "hero",
+      textureGuid: "hero-tex",
+      width: 48,
+      height: 64,
+      pivot: { x: 0.5, y: 1 },
+      collision: { x: 0.25, y: 0.5, width: 0.5, height: 0.5 },
+    });
+    expect(resolved.frames[1]).toMatchObject({ spriteGuid: "gone", textureGuid: "kept" });
+    expect(resolved.frames[2]).toMatchObject({ textureGuid: "wide", width: 200, height: 100 });
   });
 
-  it("hydrates missing sizes from texture source bytes keyed by guid, not only PNG", () => {
+  it("hydrates sizes from catalog sizes first, then texture source bytes, not only PNG", () => {
     const payload = parseSpriteAnimationPayload({
-      frames: [{ textureGuid: "hero-tex" }, { textureGuid: "gif-tex" }],
+      frames: [{ textureGuid: "hero-tex" }, { textureGuid: "gif-tex" }, { spriteGuid: "hero" }],
     });
     // GIF89a with a 48 x 24 logical screen.
     const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 48, 0, 24, 0]);
-    const hydrated = hydrateSpriteAnimationPixelSizes(
-      new Map([["walk", payload]]),
-      new Map([["hero-tex", pngIhdr(200, 100)], ["gif-tex", gif]]),
-    );
+    const hydrated = hydrateSpriteAnimations(new Map([["walk", payload]]), {
+      sprites: new Map([["hero", parseSpritePayload({ textureGuid: "hero-tex" })]]),
+      textureSizes: new Map([["hero-tex", { width: 64, height: 32 }]]),
+      textureBytes: new Map([["hero-tex", pngIhdr(200, 100)], ["gif-tex", gif]]),
+    });
     expect(hydrated.get("walk")?.frames).toMatchObject([
-      { textureGuid: "hero-tex", width: 200, height: 100 },
+      { textureGuid: "hero-tex", width: 64, height: 32 },
       { textureGuid: "gif-tex", width: 48, height: 24 },
+      { spriteGuid: "hero", textureGuid: "hero-tex", width: 64, height: 32 },
     ]);
   });
 });

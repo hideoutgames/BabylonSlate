@@ -15,7 +15,7 @@ import {
   disposeSnapshotBinding,
 } from "./snapshot-apply";
 import { createSpriteQuad } from "./sprite-quad";
-import type { SpriteAnimationPayload, SpritePayload } from "@haptic/assets";
+import { createDefaultSpriteAnimationSheet, type SpriteAnimationPayload, type SpritePayload } from "@haptic/assets";
 
 describe("seekGameplayAnimation", () => {
   it("pauses the group and seeks a normalised frame instead of auto-advancing", () => {
@@ -125,6 +125,8 @@ describe("seekGameplayAnimation", () => {
     };
     const animation: SpriteAnimationPayload = {
       frameDurationMs: 100,
+      source: "frames",
+      sheet: createDefaultSpriteAnimationSheet(),
       frames: [
         {
           textureGuid: "frame-a",
@@ -205,6 +207,8 @@ describe("seekGameplayAnimation", () => {
     };
     const animation: SpriteAnimationPayload = {
       frameDurationMs: 100,
+      source: "frames",
+      sheet: createDefaultSpriteAnimationSheet(),
       frames: [
         { ...frame, pivot: { x: 0.5, y: 0.5 } },
         { ...frame, pivot: { x: 0, y: 1 } },
@@ -229,9 +233,39 @@ describe("seekGameplayAnimation", () => {
     engine.dispose();
   });
 
+  it("shows a sheet cell's UVs, then the whole texture again for a plain frame", () => {
+    const cell = {
+      textureGuid: "sheet",
+      durationMs: 100,
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 16,
+      height: 16,
+    };
+    const sheet: SpriteAnimationPayload = {
+      frameDurationMs: 100,
+      source: "sheet",
+      sheet: { ...createDefaultSpriteAnimationSheet(), textureGuid: "sheet" },
+      frames: [{ ...cell, cell: 2, uv: { u0: 0.5, v0: 0.5, u1: 1, v1: 1 } }],
+    };
+    const plain: SpriteAnimationPayload = { ...sheet, source: "frames", frames: [{ ...cell, textureGuid: "plain" }] };
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = createSpriteQuad(scene, "hero", { pivot: { x: 0.5, y: 0.5 }, width: 16, height: 16 });
+    applySpriteAnimationAssetFrame(mesh, sheet, 0);
+    // Bottom-left, bottom-right, top-right, top-left.
+    expect([...(mesh.getVerticesData(VertexBuffer.UVKind) ?? [])]).toEqual([0.5, 0.5, 1, 0.5, 1, 1, 0.5, 1]);
+    applySpriteAnimationAssetFrame(mesh, plain, 0);
+    expect([...(mesh.getVerticesData(VertexBuffer.UVKind) ?? [])]).toEqual([0, 0, 1, 0, 1, 1, 0, 1]);
+    scene.dispose();
+    engine.dispose();
+  });
+
   it("sizes the sprite quad from Sprite Animation texture pixels", () => {
     const animation: SpriteAnimationPayload = {
       frameDurationMs: 100,
+      source: "frames",
+      sheet: createDefaultSpriteAnimationSheet(),
       frames: [
         {
           textureGuid: "frame-a",
@@ -583,8 +617,8 @@ describe("seekGameplayAnimation", () => {
       height: 16,
     };
     const animations = new Map<string, SpriteAnimationPayload>([
-      ["idle-anim", { frameDurationMs: 100, frames: [frame("idle-tex")] }],
-      ["walk-anim", { frameDurationMs: 100, frames: [frame("walk-tex")] }],
+      ["idle-anim", { frameDurationMs: 100, source: "frames", sheet: createDefaultSpriteAnimationSheet(), frames: [frame("idle-tex")] }],
+      ["walk-anim", { frameDurationMs: 100, source: "frames", sheet: createDefaultSpriteAnimationSheet(), frames: [frame("walk-tex")] }],
     ]);
     const engine = new NullEngine({
       renderWidth: 64,
