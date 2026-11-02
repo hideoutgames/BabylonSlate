@@ -2,12 +2,11 @@ import { expect, test } from "@playwright/test";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { createDefaultCurveAssetPayload } from "../packages/core/src/curve-assets";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, waitForEditorInteractive } from "./open-test-project";
 
 // The key fields are taller than the step controls: selecting a key used to grow the bar and nudge the plot above.
-test("a curve window's key bar keeps its height when a key is selected", { tag: IPAD_TEST_TAG }, async ({ page }) => {
+test("a curve window's key bar keeps its height when a key is selected", async ({ page }) => {
   test.setTimeout(120_000);
   const files = await minimalProjectFiles();
   files.set("assets/Falloff.floatcurve.hasset", await encodeAssetDocument({
