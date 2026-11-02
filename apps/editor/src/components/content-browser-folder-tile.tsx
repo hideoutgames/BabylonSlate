@@ -1,5 +1,6 @@
 import { FolderIcon, type LucideIcon } from "lucide-react";
 import {
+  InlineRenameInput,
   SelectableText,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TYPE_VISUAL_ICON_TILE_STROKE_WIDTH,
@@ -26,6 +27,10 @@ export interface ContentBrowserFolderTileProps {
   }) => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
   consumeSelectClick?: () => boolean;
+  /** Shows the name as a focused inline rename (a folder New Folder just made). */
+  renaming?: boolean;
+  /** The trimmed new name, or null when cancelled or unchanged. */
+  onRenameDone?: (name: string | null) => void;
 }
 
 export function ContentBrowserFolderTile({
@@ -37,7 +42,12 @@ export function ContentBrowserFolderTile({
   onSelect,
   onLongPressMenu,
   consumeSelectClick,
+  renaming = false,
+  onRenameDone,
 }: ContentBrowserFolderTileProps) {
+  const editing = renaming && Boolean(onRenameDone);
+  // A text field cannot sit inside a button, so a renaming tile is a plain box.
+  const Root = editing ? "div" : "button";
   const bind = useLongPressMenu({
     onMenu: (clientX, clientY) => {
       onLongPressMenu(clientX, clientY);
@@ -52,8 +62,8 @@ export function ContentBrowserFolderTile({
         selected ? "border-primary ring-1 ring-primary" : "",
       )}
     >
-      <button
-        type="button"
+      <Root
+        {...(editing ? {} : { type: "button" as const })}
         data-testid={`content-folder-${path}`}
         data-folder-path={path}
         data-selected={selected ? "true" : "false"}
@@ -80,14 +90,24 @@ export function ContentBrowserFolderTile({
           />
         </div>
         <CardHeader className="min-h-0 w-full flex-1 content-center gap-0.5 p-1.5">
-          <CardTitle className="truncate text-xs font-medium">
-            <SelectableText>{name}</SelectableText>
-          </CardTitle>
+          {editing ? (
+            <InlineRenameInput
+              value={name}
+              aria-label="Folder Name"
+              data-testid={`content-folder-rename-${path}`}
+              className="h-5 min-h-5 w-full flex-none text-xs md:text-xs"
+              onDone={(next) => onRenameDone?.(next)}
+            />
+          ) : (
+            <CardTitle className="truncate text-xs font-medium">
+              <SelectableText>{name}</SelectableText>
+            </CardTitle>
+          )}
           <CardDescription className="truncate text-[10px]">
             Folder
           </CardDescription>
         </CardHeader>
-      </button>
+      </Root>
     </Card>
   );
 }

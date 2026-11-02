@@ -50,8 +50,9 @@ export interface ContentBrowserModelDeps {
 }
 
 /**
- * Content roots, folder trees and assets, and the grid items the open folder
- * shows under the search, type filters and sort.
+ * Content roots, folder trees and assets, the assets the tree lists under the
+ * type filters, and the grid items the open folder shows under the search,
+ * type filters and sort.
  */
 export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
   const {
@@ -213,6 +214,12 @@ export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
     [gridSearch, folderGuids, sortedAssets, typeFilters],
   );
 
+  // The tree follows the Filter menu's types but not the search; folders always show.
+  const treeAssets = useMemo(
+    () => (typeFilters.length > 0 ? filterAssets(allAssets, { folderGuids: null, typeFilters, search: "" }) : allAssets),
+    [allAssets, typeFilters],
+  );
+
   const sortedChildFolders = useMemo(() => {
     if (folderTrees.length === 0) return [];
     return sortChildFolders(
@@ -278,6 +285,7 @@ export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
     isReadOnlyFolder,
     folderTrees,
     allAssets,
+    treeAssets,
     referenceAssets,
     assetsByGuid,
     classParentOf,

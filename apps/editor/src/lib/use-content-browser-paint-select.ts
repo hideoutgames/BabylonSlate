@@ -83,6 +83,8 @@ export function useContentBrowserPaintSelect(options: {
     // session behind; the next press starts over instead of staying suppressed.
     if (sessionRef.current && !sessionRef.current.menuOpened) return;
     suppressClickRef.current = false;
+    // Dragging inside a tile's inline rename selects text, not tiles.
+    if ((event.target as Element | null)?.closest?.("input")) return;
     const hit = resolveContentBrowserPaintHit(event.target as Element | null);
     if (!hit) return;
     sessionRef.current = {

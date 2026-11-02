@@ -2,24 +2,29 @@ import { useMemo } from "react";
 import { FolderIcon, FolderPlusIcon, type LucideIcon } from "lucide-react";
 import { stripAssetFileSuffix, type IndexedAsset } from "@haptic/assets";
 import {
-  ShortcutKeys,
+  ContextMenuOverlay,
   TreeView,
   TypeVisualIcon,
-  ariaKeyShortcuts,
+  useContextMenu,
   type TreeViewProps,
   type TypeVisual,
 } from "@haptic/editor-kit";
-import { Button } from "@haptic/ui/components/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import type { useKeybindings } from "../context/keybind-context";
 import { isFolderTreeRoot, type ContentBrowserTreeRow } from "../lib/content-browser-helpers";
 import { contentBrowserFolderOps, type ContentBrowserRoot } from "../lib/plugin-ui";
+import { useLongPressMenu } from "../lib/use-long-press-menu";
+
+/** True for a press on empty tree space: below the rows or beside them, not on a row. */
+function isEmptyTreeTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && !target.closest('[role="treeitem"]');
+}
 
 interface ContentBrowserFolderNavigationProps {
   touchSizing: boolean;
   keybinds: ReturnType<typeof useKeybindings>;
   busy: boolean;
   selectedRootWritable: boolean;
+  /** Creates a folder in the open folder and renames it inline in the tree. */
   onNewFolder: () => void;
   browserRows: ContentBrowserTreeRow[];
   assetsByGuid: ReadonlyMap<string, IndexedAsset>;
@@ -39,8 +44,8 @@ interface ContentBrowserFolderNavigationProps {
 }
 
 /**
- * New Folder and the folder tree, for the desktop sidebar or the phone
- * Folders sheet. A fragment, so it adds no element to either.
+ * The folder tree, for the desktop sidebar or the phone Folders sheet, with a
+ * New Folder menu on its empty space (right-click or long press).
  */
 export function ContentBrowserFolderNavigation({
   touchSizing,
@@ -90,31 +95,38 @@ export function ContentBrowserFolderNavigation({
     [assetsByGuid, browserRoots, browserRows, pluginRootIcons, rootPrefixes, typeVisualFor],
   );
 
+  const emptyMenuItems = useMemo(
+    () => [
+      {
+        id: "new-folder",
+        label: "New Folder",
+        shortcut: keybinds.get("edit.newFolder")?.[0],
+        icon: <FolderPlusIcon />,
+        // Like the grid menu: a read-only root offers no action that would do nothing.
+        disabled: busy || !selectedRootWritable,
+        onSelect: onNewFolder,
+      },
+    ],
+    [busy, keybinds, onNewFolder, selectedRootWritable],
+  );
+  const { menu, closeMenu, openMenuAt } = useContextMenu({ items: emptyMenuItems });
+  const emptyBind = useLongPressMenu({ onMenu: (clientX, clientY) => openMenuAt(clientX, clientY) });
+
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="outline"
-              size={touchSizing ? "touch" : "sm"}
-              className="w-full justify-start"
-              data-testid="content-browser-new-folder"
-              aria-keyshortcuts={ariaKeyShortcuts(keybinds.get("edit.newFolder")?.[0] ?? "")}
-              disabled={busy || !selectedRootWritable}
-              onClick={onNewFolder}
-            >
-              <FolderPlusIcon data-icon="inline-start" />
-              New Folder
-            </Button>
-          }
-        />
-        <TooltipContent>
-          New Folder <ShortcutKeys chord={keybinds.get("edit.newFolder")?.[0]} decorative />
-        </TooltipContent>
-      </Tooltip>
-      <div className="min-h-0 flex-1">
+      <div
+        className="min-h-0 flex-1"
+        data-testid="content-browser-tree-area"
+        onContextMenu={(event) => {
+          if (isEmptyTreeTarget(event.target)) emptyBind.onContextMenu(event);
+        }}
+        onPointerDown={(event) => {
+          if (isEmptyTreeTarget(event.target)) emptyBind.onPointerDown(event);
+        }}
+        onPointerMove={emptyBind.onPointerMove}
+        onPointerUp={emptyBind.onPointerUp}
+        onPointerCancel={emptyBind.onPointerCancel}
+      >
         <TreeView
           nodes={treeNodes}
           selectedId={treeSelectedId}
@@ -130,6 +142,7 @@ export function ContentBrowserFolderNavigation({
           data-testid="content-browser-folder-tree"
         />
       </div>
+      <ContextMenuOverlay menu={menu} onClose={closeMenu} />
     </>
   );
 }

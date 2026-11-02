@@ -64,6 +64,12 @@ import {
 import { revealAssetFromTarget } from "../lib/search-navigation";
 import { writeRetargetedAnimations } from "../lib/animation-retarget";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
+import {
+  CONTENT_BROWSER_GRID_GAP_PX,
+  CONTENT_BROWSER_GRID_PAD_PX,
+  CONTENT_BROWSER_TILE_HEIGHT_PX,
+  contentBrowserColumnCount,
+} from "../lib/content-browser-grid";
 import type { ContentBrowserGridActions } from "./content-browser-grid-tiles";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 import { ContentBrowserCopyProgressDialog } from "./content-browser-copy-progress-dialog";
@@ -222,6 +228,7 @@ function ContentBrowserWorkspaceBody({
     isReadOnlyFolder,
     folderTrees,
     allAssets,
+    treeAssets,
     referenceAssets,
     assetsByGuid,
     classParentOf,
@@ -347,9 +354,10 @@ function ContentBrowserWorkspaceBody({
     treeSelectedIds,
     handleTreeSelect,
     toggleFolderExpanded,
+    revealFolder,
   } = useContentBrowserTreeState({
     folderTrees,
-    allAssets,
+    treeAssets,
     assetsByGuid,
     selectedFolderPath,
     setSelectedFolderPath,
@@ -519,9 +527,12 @@ function ContentBrowserWorkspaceBody({
   });
 
   const {
+    createFolder,
     treeRenamingId,
     setTreeRenamingId,
     finishTreeRename,
+    gridRenamingPath,
+    finishGridRename,
     dialogProps: nameDialogProps,
   } = useContentBrowserNameFlow({
     nameDialog,
@@ -535,8 +546,10 @@ function ContentBrowserWorkspaceBody({
     browserRoots,
     selectedFolderPath,
     setSelectedFolderPath,
+    setSelectedGuids,
     setSelectedFolderPaths,
     selectedRoot,
+    revealFolder,
     busy,
     setBusy,
     operationError,
@@ -584,6 +597,29 @@ function ContentBrowserWorkspaceBody({
     openOrFocusDocument,
   });
 
+  /** New Folder from the grid, the New Asset menu or the shortcut: the new tile renames inline. */
+  const newFolderInGrid = useCallback(() => {
+    setFoldersOpen(false);
+    // The search could hide the new tile; type filters never hide folders.
+    setSearch("");
+    void createFolder("grid");
+  }, [createFolder]);
+
+  // Scroll the windowed grid to the renaming tile so it mounts and shows its field.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!gridRenamingPath || !scroller) return;
+    const index = gridItems.findIndex((item) => item.kind === "folder" && item.path === gridRenamingPath);
+    if (index < 0) return;
+    const row = Math.floor(index / contentBrowserColumnCount(scroller.clientWidth));
+    const top = CONTENT_BROWSER_GRID_PAD_PX + row * (CONTENT_BROWSER_TILE_HEIGHT_PX + CONTENT_BROWSER_GRID_GAP_PX);
+    const bottom = top + CONTENT_BROWSER_TILE_HEIGHT_PX;
+    if (top < scroller.scrollTop) scroller.scrollTop = top - CONTENT_BROWSER_GRID_PAD_PX;
+    else if (bottom > scroller.scrollTop + scroller.clientHeight) {
+      scroller.scrollTop = bottom + CONTENT_BROWSER_GRID_PAD_PX - scroller.clientHeight;
+    }
+  }, [gridItems, gridRenamingPath, scrollerRef]);
+
   const keybinds = useKeybindings();
   const {
     menu,
@@ -629,6 +665,7 @@ function ContentBrowserWorkspaceBody({
     setSelectedGuids,
     setSelectedFolderPaths,
     openNewAssetMenu,
+    onNewFolder: newFolderInGrid,
     handleImport,
   });
 
@@ -670,6 +707,7 @@ function ContentBrowserWorkspaceBody({
         openTileMenu(guid, clientX, clientY);
       },
       consumeSelectClick,
+      finishFolderRename: finishGridRename,
     };
   });
   const gridActions = useMemo<ContentBrowserGridActions>(
@@ -683,6 +721,8 @@ function ContentBrowserWorkspaceBody({
         gridHandlersRef.current?.openAssetMenu(guid, clientX, clientY),
       consumeSelectClick: () =>
         gridHandlersRef.current?.consumeSelectClick() ?? false,
+      finishFolderRename: (path, name) =>
+        gridHandlersRef.current?.finishFolderRename(path, name),
     }),
     [],
   );
@@ -701,10 +741,7 @@ function ContentBrowserWorkspaceBody({
   const creationKeys = { ...selectionKeys, enabled: !busy && selectedRootWritable };
   useKeybindCommand("browser.newAsset", () => openNewAssetMenu(), creationKeys);
   useKeybindCommand("browser.import", () => void handleImport(), creationKeys);
-  useKeybindCommand("edit.newFolder", () => {
-    setFoldersOpen(false);
-    setNameDialog({ kind: "folder", value: "NewFolder" });
-  }, creationKeys);
+  useKeybindCommand("edit.newFolder", newFolderInGrid, creationKeys);
 
   if (!projectDocument) {
     return (
@@ -750,10 +787,7 @@ function ContentBrowserWorkspaceBody({
       keybinds={keybinds}
       busy={busy}
       selectedRootWritable={selectedRootWritable}
-      onNewFolder={() => {
-        setFoldersOpen(false);
-        setNameDialog({ kind: "folder", value: "NewFolder" });
-      }}
+      onNewFolder={() => void createFolder("tree")}
       browserRows={browserRows}
       assetsByGuid={assetsByGuid}
       browserRoots={browserRoots}
@@ -801,7 +835,7 @@ function ContentBrowserWorkspaceBody({
         selectedRootWritable={selectedRootWritable}
         keybinds={keybinds}
         onImport={handleImport}
-        newAssetMenu={newAssetMenuProps}
+        newAssetMenu={{ ...newAssetMenuProps, onNewFolder: newFolderInGrid }}
         search={search}
         setSearch={setSearch}
         searchRef={searchRef}
@@ -898,6 +932,7 @@ function ContentBrowserWorkspaceBody({
             pluginRootIcons={pluginRootIcons}
             sourceControlEnabled={sourceControl.enabled}
             tileLocks={tileLocks}
+            renamingFolderPath={gridRenamingPath}
             gridActions={gridActions}
           />
         </ResizablePanel>

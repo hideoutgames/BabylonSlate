@@ -56,7 +56,7 @@ Double-tapping does not zoom. Shaking a node back and forth while dragging break
 | Double-tap a folder | Go into the folder. |
 | Double-tap empty space | Open the **New Asset** menu. |
 | Hold a tile | Open its menu. |
-| Hold empty space | **New Folder**, **New Asset** and **Import**. |
+| Hold empty space | **New Folder**, **New Asset** and **Import**; in the folder tree, **New Folder**. |
 | Hold a row in the folder tree, then drag | Move it to another folder. |
 | Swipe a tree row sideways | Add it to the selection. |
 | Two-finger tap a tree row | Select the range up to that row. |

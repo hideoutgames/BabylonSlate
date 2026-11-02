@@ -15,25 +15,22 @@ import {
 
 export type NameEntry =
   | { kind: "rename"; guid: string; value: string }
-  | { kind: "folder"; value: string }
   | { kind: "rename-folder"; path: string; value: string };
 
 interface ContentBrowserNameDialogProps {
   nameDialog: NameEntry | null;
   setNameDialog: Dispatch<SetStateAction<NameEntry | null>>;
   nameDialogError: string | null;
-  selectedFolderPath: string;
   operationError: string | null;
   busy: boolean;
   confirmNameDialog: () => void;
 }
 
-/** New Folder, Rename Folder and Rename Asset. */
+/** Rename Folder and Rename Asset, and an inline rename whose name was refused. */
 export function ContentBrowserNameDialog({
   nameDialog,
   setNameDialog,
   nameDialogError,
-  selectedFolderPath,
   operationError,
   busy,
   confirmNameDialog,
@@ -48,18 +45,12 @@ export function ContentBrowserNameDialog({
       <AlertDialogContent data-testid="content-browser-name-dialog">
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {nameDialog?.kind === "folder"
-              ? "New Folder"
-              : nameDialog?.kind === "rename-folder"
-                ? "Rename Folder"
-                : "Rename Asset"}
+            {nameDialog?.kind === "rename-folder" ? "Rename Folder" : "Rename Asset"}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {nameDialog?.kind === "folder"
-              ? `Create a folder in ${selectedFolderPath}.`
-              : nameDialog?.kind === "rename-folder"
-                ? "Rename the folder. References to its assets stay connected."
-                : "Rename the asset file. References to it stay connected."}
+            {nameDialog?.kind === "rename-folder"
+              ? "Rename the folder. References to its assets stay connected."
+              : "Rename the asset file. References to it stay connected."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <Field data-invalid={Boolean(nameDialogError) || undefined}>
@@ -111,7 +102,7 @@ export function ContentBrowserNameDialog({
               void confirmNameDialog();
             }}
           >
-            {busy ? "Saving…" : nameDialog?.kind === "folder" ? "Create Folder" : "Rename"}
+            {busy ? "Saving…" : "Rename"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

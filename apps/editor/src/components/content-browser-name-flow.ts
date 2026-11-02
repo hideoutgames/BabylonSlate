@@ -26,6 +26,12 @@ import { contentBrowserFolderOps, type ContentBrowserRoot } from "../lib/plugin-
 import type { ContentBrowserNameDialog, NameEntry } from "./content-browser-name-dialog";
 import { remapFolderSelection } from "./content-browser-move-flow";
 
+/** Starting name of a folder New Folder creates before it is renamed inline. */
+export const NEW_FOLDER_NAME = "NewFolder";
+
+/** Where a new folder's inline rename opens: its grid tile or its tree row. */
+export type NewFolderPlace = "grid" | "tree";
+
 /** What New Folder and Rename read from the Content Browser and act through. */
 export interface ContentBrowserNameFlowDeps extends Pick<
   ReturnType<typeof useDocumentActions>,
@@ -43,9 +49,12 @@ export interface ContentBrowserNameFlowDeps extends Pick<
   browserRoots: ContentBrowserRoot[];
   selectedFolderPath: string;
   setSelectedFolderPath: Dispatch<SetStateAction<string>>;
+  setSelectedGuids: Dispatch<SetStateAction<Set<string>>>;
   setSelectedFolderPaths: Dispatch<SetStateAction<Set<string>>>;
   /** The open folder's content root and path, where New Folder writes. */
   selectedRoot: ReturnType<typeof contentBrowserFolderOps>;
+  /** Expands the tree down to a folder so its row shows. */
+  revealFolder: (path: string) => void;
   busy: boolean;
   setBusy: (busy: boolean) => void;
   operationError: string | null;
@@ -56,7 +65,10 @@ export interface ContentBrowserNameFlowDeps extends Pick<
   sourceControl: ReturnType<typeof useSourceControl>["sourceControl"];
 }
 
-/** New Folder, Rename and Rename Folder, from the name dialog or an inline tree rename. */
+/**
+ * New Folder (created as `NewFolder`, then renamed inline in its grid tile or
+ * tree row), and Rename and Rename Folder from the name dialog or inline.
+ */
 export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
   const {
     nameDialog,
@@ -70,8 +82,10 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     browserRoots,
     selectedFolderPath,
     setSelectedFolderPath,
+    setSelectedGuids,
     setSelectedFolderPaths,
     selectedRoot,
+    revealFolder,
     busy,
     setBusy,
     operationError,
@@ -86,6 +100,10 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     sourceControl,
   } = deps;
   const [treeRenamingId, setTreeRenamingId] = useState<string | null>(null);
+  /** A folder New Folder just made in `parent`, renamed inline in its grid tile. */
+  const [gridRenaming, setGridRenaming] = useState<{ path: string; parent: string } | null>(null);
+  // Leaving the folder ends the rename; the folder keeps its generated name.
+  const gridRenamingPath = gridRenaming?.parent === selectedFolderPath ? gridRenaming.path : null;
 
   const nameEntryError = (entry: NameEntry): string | null => {
     const invalid = contentEntryNameError(entry.value);
@@ -101,16 +119,11 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
         ? classIdConflict(referenceAssets, next, asset.path)
         : null;
     }
-    const taken =
-      entry.kind === "folder"
-        ? isFolderNameTaken(existingFolderPaths, selectedFolderPath, entry.value)
-        : (() => {
-            const parent = parentFolderPath(entry.path);
-            const next = joinAssetFolderPath(parent, entry.value.trim());
-            if (next === entry.path) return false;
-            return isFolderNameTaken(existingFolderPaths, parent, entry.value);
-          })();
-    return taken ? "That name is already used in this folder." : null;
+    const parent = parentFolderPath(entry.path);
+    const next = joinAssetFolderPath(parent, entry.value.trim());
+    return next !== entry.path && isFolderNameTaken(existingFolderPaths, parent, entry.value)
+      ? "That name is already used in this folder."
+      : null;
   };
   const nameDialogError = nameDialog ? nameEntryError(nameDialog) : null;
 
@@ -119,17 +132,7 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     setOperationError(null);
     setBusy(true);
     try {
-      if (nameDialog.kind === "folder") {
-        if (selectedRoot.readOnly) return;
-        const relative = selectedRoot.relative
-          ? `${selectedRoot.relative}/${nameDialog.value.trim()}`
-          : nameDialog.value.trim();
-        if (!relative) return;
-        await assetRegistry.createFolder(selectedRoot.rootId, relative);
-        // The mounted registry recorded the folder on write: no rescan.
-        noteAssetsCreated();
-        setSelectedFolderPath(`${selectedRoot.pathPrefix}/${relative}`);
-      } else if (nameDialog.kind === "rename-folder") {
+      if (nameDialog.kind === "rename-folder") {
         const fromPath = nameDialog.path;
         const from = contentBrowserFolderOps(fromPath, browserRoots);
         if (from.readOnly) return;
@@ -194,13 +197,10 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     busy,
     renameAsset,
     allAssets,
-    noteAssetsCreated,
     refreshAssetRegistry,
     refuseTheirsAssetPaths,
     repairDocumentPath,
     repathProjectFolder,
-    selectedFolderPath,
-    selectedRoot,
     browserRoots,
     sourceControl,
     transferFolderLocks,
@@ -216,32 +216,89 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     return submitNameEntry(nameDialog);
   };
 
-  /** Inline tree renames commit directly; an invalid name reopens in the dialog with its error. */
+  /**
+   * Creates a free `NewFolder` (`NewFolder_1`, …) in the open folder, selects
+   * it and opens its inline rename, like a new Class function.
+   */
+  const createFolder = useCallback(async (place: NewFolderPlace) => {
+    if (!assetRegistry || busy || selectedRoot.readOnly) return;
+    let name = NEW_FOLDER_NAME;
+    for (let index = 1; isFolderNameTaken(existingFolderPaths, selectedFolderPath, name); index += 1) {
+      name = `${NEW_FOLDER_NAME}_${index}`;
+    }
+    const relative = selectedRoot.relative ? `${selectedRoot.relative}/${name}` : name;
+    const path = `${selectedRoot.pathPrefix}/${relative}`;
+    setOperationError(null);
+    setBusy(true);
+    try {
+      await assetRegistry.createFolder(selectedRoot.rootId, relative);
+      // The mounted registry recorded the folder on write: no rescan.
+      noteAssetsCreated();
+      setSelectedGuids(new Set());
+      setSelectedFolderPaths(new Set([path]));
+      if (place === "tree") {
+        revealFolder(path);
+        setTreeRenamingId(path);
+      } else {
+        setGridRenaming({ path, parent: selectedFolderPath });
+      }
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    assetRegistry,
+    busy,
+    existingFolderPaths,
+    noteAssetsCreated,
+    revealFolder,
+    selectedFolderPath,
+    selectedRoot,
+    setBusy,
+    setOperationError,
+    setSelectedFolderPaths,
+    setSelectedGuids,
+  ]);
+
+  /** Inline renames commit directly; an invalid name reopens in the dialog with its error. */
+  const commitInlineRename = (entry: NameEntry) => {
+    if (nameEntryError(entry)) setNameDialog(entry);
+    else void submitNameEntry(entry);
+  };
+
   const finishTreeRename = (id: string, name: string | null) => {
     setTreeRenamingId(null);
     if (name === null || !assetRegistry) return;
     const row = browserRows.find((item) => item.id === id);
     if (!row) return;
-    const entry: NameEntry | null =
-      row.kind === "folder"
-        ? { kind: "rename-folder", path: row.path, value: name }
-        : row.guid
-          ? { kind: "rename", guid: row.guid, value: name }
-          : null;
-    if (!entry) return;
-    if (nameEntryError(entry)) setNameDialog(entry);
-    else void submitNameEntry(entry);
+    if (row.kind === "folder") commitInlineRename({ kind: "rename-folder", path: row.path, value: name });
+    else if (row.guid) commitInlineRename({ kind: "rename", guid: row.guid, value: name });
+  };
+
+  /** Cancelling or keeping the text leaves the folder its generated name. */
+  const finishGridRename = (path: string, name: string | null) => {
+    setGridRenaming(null);
+    if (name === null || !assetRegistry) return;
+    commitInlineRename({ kind: "rename-folder", path, value: name });
   };
 
   const dialogProps: ComponentProps<typeof ContentBrowserNameDialog> = {
     nameDialog,
     setNameDialog,
     nameDialogError,
-    selectedFolderPath,
     operationError,
     busy,
     confirmNameDialog,
   };
 
-  return { treeRenamingId, setTreeRenamingId, finishTreeRename, dialogProps };
+  return {
+    createFolder,
+    treeRenamingId,
+    setTreeRenamingId,
+    finishTreeRename,
+    gridRenamingPath,
+    finishGridRename,
+    dialogProps,
+  };
 }
