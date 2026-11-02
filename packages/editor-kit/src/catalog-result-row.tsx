@@ -9,6 +9,11 @@ export interface CatalogResultRowProps
   leading?: ReactNode;
   active?: boolean;
   striped?: boolean;
+  /**
+   * `default`: 44px with the description on a second line. `compact`: one
+   * chrome row (44px in the touch layout) with the description trailing.
+   */
+  size?: "default" | "compact";
   onSelect: () => void;
 }
 
@@ -19,6 +24,7 @@ export function CatalogResultRow({
   leading,
   active = false,
   striped = false,
+  size = "default",
   onSelect,
   className,
   onKeyDown,
@@ -34,7 +40,10 @@ export function CatalogResultRow({
       tabIndex={tabIndex}
       className={cn(
         buttonVariants({ variant: "ghost", size: "touch" }),
-        "h-[var(--touch-target,44px)] w-full min-h-0 justify-start gap-2 overflow-hidden touch-pan-y",
+        "w-full min-h-0 justify-start gap-2 overflow-hidden touch-pan-y",
+        size === "compact"
+          ? "h-7 pointer-coarse:h-[var(--touch-target,44px)]"
+          : "h-[var(--touch-target,44px)]",
         active ? "bg-accent text-accent-foreground" : striped && "bg-list-stripe",
         className,
       )}
@@ -52,14 +61,25 @@ export function CatalogResultRow({
       }}
     >
       {leading}
-      <span className="flex min-w-0 flex-col items-start leading-tight">
-        <span className="truncate">{title}</span>
-        {description ? (
-          <span className="truncate text-xs text-muted-foreground">
-            {description}
-          </span>
-        ) : null}
-      </span>
+      {size === "compact" ? (
+        <>
+          <span className="min-w-0 flex-1 truncate">{title}</span>
+          {description ? (
+            <span className="min-w-0 max-w-[60%] truncate text-xs text-muted-foreground">
+              {description}
+            </span>
+          ) : null}
+        </>
+      ) : (
+        <span className="flex min-w-0 flex-col items-start leading-tight">
+          <span className="truncate">{title}</span>
+          {description ? (
+            <span className="truncate text-xs text-muted-foreground">
+              {description}
+            </span>
+          ) : null}
+        </span>
+      )}
     </div>
   );
 }

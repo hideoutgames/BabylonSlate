@@ -68,7 +68,7 @@ describe("ScriptContext members used apart from their context", () => {
     const key = (Time: number, Value: number) => ({ Time, Value, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 });
     const entry = (keys: unknown[]) => ({
       guid: "falloff", type: "FloatCurve" as const, name: "Falloff",
-      payload: { curve: { Keys: keys, Before: "constant" as const, After: "constant" as const }, description: "" },
+      payload: { curve: { Keys: keys, Before: "constant" as const, After: "constant" as const } },
     });
     const curves = new Map([["falloff", entry([key(0, 100), key(2, 50)])]]) as Map<string, ReturnType<typeof entry>>;
     const ctx = new ScriptHost(services({ curves } as Partial<ScriptHostServices>)).createContext(null, 0, 0);

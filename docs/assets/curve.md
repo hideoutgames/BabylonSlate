@@ -20,7 +20,6 @@ Double-tap a curve asset to open it.
 - **Details**:
   - **Curve**: the type, the number of keys, the time range and the value range.
   - **Extrapolation**: **Before** and **After** set what the curve does outside its keys: **Constant** holds the end value, **Linear** continues the end slope, **Cycle** repeats the keys and **Oscillate** repeats them back and forth. The plot hatches these ranges and draws them dashed.
-  - **Description**: a note for your team. It can span several lines.
 
 Reopen a closed window from the **Windows** menu.
 

@@ -97,7 +97,9 @@ for (const mode of ["Play"] as const) {
       await trackLoading(host);
       await page.getByTestId("debug-console-input").fill(`changescene ${SCENE_GUID}`);
       await page.getByTestId("debug-console-submit").click();
-      await expect.poll(() => observedPhases(host)).toContain("Preparing Scene");
+      // The change runs on the game's next tick and shows over the host's next frames: on a slow software GPU the
+      // dialog can take several seconds to appear, as long as the load's later phases may take.
+      await expect.poll(() => observedPhases(host), { timeout: 30_000 }).toContain("Preparing Scene");
       await expect(dialog).toBeHidden({ timeout: 30_000 });
       await expect.poll(() => observedPhases(host), { timeout: 30_000 }).toContain("Presenting First Frame");
       await expect.poll(() => boxes(host)).toBe(48);

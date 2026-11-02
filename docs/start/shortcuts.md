@@ -17,6 +17,7 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | Toggle Focus | <kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> |
 | Project Settings | <kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>,</kbd> |
 | Engine Settings | <kbd>Mod</kbd>+<kbd>,</kbd> |
+| Packaging | <kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> |
 | Project Browser | <kbd>Mod</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> |
 | Content Browser | <kbd>Alt</kbd>+<kbd>B</kbd> |
 

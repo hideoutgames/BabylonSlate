@@ -35,7 +35,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 
 - **Undo**: history limits. See [Undo and Saving](undo-and-saving.md).
 - **Debugger**: Play debugging defaults and **Debug Mode**. See [Debugging](../debugging/index.md).
-- **Viewport**: **Viewport Frame Cap (FPS)** (default 30), **Camera Preview Frame Rate (FPS)** for the preview of a selected Camera or Render Target Capture (default 30), **Camera Speed**, **Drop Distance**, and **Override Project Rendering**, which lets the editor preview use its own resolution and post-processing.
+- **Viewport**: **Viewport Frame Cap (FPS)** (default 60), **Camera Preview Frame Rate (FPS)** for the preview of a selected Camera or Render Target Capture (default 30), **Camera Speed**, **Drop Distance**, and **Override Project Rendering**, which lets the editor preview use its own resolution and post-processing.
 - **Graph**: default zoom, connection helpers and **Add Node History** for node graphs. See [Scripting](../scripting/index.md#add-a-node).
 - **Assets**: model import scale, editor texture quality, and texture and audio memory budgets.
 - **Thumbnails**: turn Content Browser thumbnails on or off.
@@ -95,6 +95,6 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 
 Each topic's guide covers its settings: for example [Graphics](../graphics/index.md), [Collision](../physics/collision.md), [Save Games](../scripting/save-games.md), [Publishing](../publishing/index.md) and [Source Control](../projects/source-control.md).
 
-To build a playable copy of your game, choose **Settings > Packaging** in the toolbar. See [Publishing](../publishing/index.md).
+To build a playable copy of your game, choose **Settings > Packaging** in the toolbar (<kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>). See [Publishing](../publishing/index.md).
 
 To close the project and return to the Homepage, choose **Settings > Project Browser** in the toolbar.

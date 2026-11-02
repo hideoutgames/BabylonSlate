@@ -7,6 +7,17 @@ const tick = (page: Page) => page.evaluate(() => (globalThis as unknown as PlayH
 
 test("Profiler records a session and captures a frame without losing the recording", async ({ page }) => {
   test.setTimeout(150_000);
+  // Record Performance stops itself after Engine Settings' Profile Duration (10 s by default), and Play catches up at
+  // most four ticks at a time, so on a slow software GPU the 30 ticks below can outlast it and Stop Recording leaves
+  // mid-click. The longest duration keeps the recording running until the toolbar stops it.
+  await page.addInitScript((key) => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(key) ?? "{}") as { debuggerDefaults?: Record<string, unknown> };
+      localStorage.setItem(key, JSON.stringify({ ...stored, debuggerDefaults: { ...stored.debuggerDefaults, profileDurationSeconds: 60 } }));
+    } catch {
+      // Frames without storage (about:blank) keep their defaults.
+    }
+  }, "haptic:engine-settings");
   await openTestProject(page);
   await showOverlayButtons(page, ["profiler", "console"]);
   await openMainScene(page);

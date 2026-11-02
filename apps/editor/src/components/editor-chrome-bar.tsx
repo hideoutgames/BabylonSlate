@@ -429,6 +429,7 @@ export function EditorChromeBar({
   const compileChord = useKeybindChord("graph.compile");
   const projectSettingsChord = useKeybindChord("editor.projectSettings");
   const engineSettingsChord = useKeybindChord("editor.engineSettings");
+  const packagingChord = useKeybindChord("editor.packaging");
   const projectBrowserChord = useKeybindChord("editor.projectBrowser");
   // The Play Mode is a saved preference: Simulate wins over Preview Build.
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
@@ -462,6 +463,9 @@ export function EditorChromeBar({
     enabled: Boolean(projectName),
   });
   useKeybindCommand("editor.engineSettings", () => setSettingsScope("engine"), {
+    enabled: Boolean(projectName),
+  });
+  useKeybindCommand("editor.packaging", () => setPackagingOpen(true), {
     enabled: Boolean(projectName),
   });
   useKeybindCommand("editor.projectBrowser", () => onCloseProject?.(), {
@@ -690,6 +694,7 @@ export function EditorChromeBar({
             id: "packaging",
             label: "Packaging",
             icon: <PackageIcon />,
+            shortcut: packagingChord,
             onSelect: openPackaging,
           },
           ...(onCloseProject ? [
@@ -751,6 +756,11 @@ export function EditorChromeBar({
             <DropdownMenuItem data-testid="packaging" onClick={openPackaging}>
               <PackageIcon />
               Packaging
+              {packagingChord ? (
+                <DropdownMenuShortcut className="pl-4 tracking-normal">
+                  <ShortcutKeys chord={packagingChord} decorative />
+                </DropdownMenuShortcut>
+              ) : null}
             </DropdownMenuItem>
           </DropdownMenuGroup>
           {onCloseProject ? (

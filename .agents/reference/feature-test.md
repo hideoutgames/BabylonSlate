@@ -165,7 +165,7 @@ It creates FeatureTest through the real Create dialog, waits for background text
 | `HAPTIC_PERF_SAMPLE_MS` / `HAPTIC_PERF_SAMPLES` | 15000 / 2 | Measurement windows per host |
 | `HAPTIC_PERF_WARMUP_MS` / `HAPTIC_PERF_SETTLE_MS` | 10000 / 5000 | Play warm-up and editor settle |
 | `HAPTIC_PERF_QUALITY` / `HAPTIC_PERF_FRAMECAP` | project defaults | Play console `quality` (then `quality resolution reset`, so resolution stays fixed) and `framecap` |
-| `HAPTIC_PERF_VIEWPORT_CAP` | Engine Settings (30) | Editor viewport frame cap |
+| `HAPTIC_PERF_VIEWPORT_CAP` | Engine Settings (60) | Editor viewport frame cap |
 | `HAPTIC_PERF_REOPEN` | 1 | `0` skips the reload-and-reopen timing |
 | `HAPTIC_PERF_LABEL` / `HAPTIC_PERF_OUT` | none | Free-text label; extra report path that survives the next run |
 

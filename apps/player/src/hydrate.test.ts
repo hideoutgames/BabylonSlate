@@ -90,7 +90,7 @@ describe("packedContentFromGame", () => {
     const payload = { curve: { Keys: [
       { Time: 2, Value: 50, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
       { Time: 0, Value: 100, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
-    ], Before: "constant", After: "constant" }, description: "Falloff" };
+    ], Before: "constant", After: "constant" } };
     const exported = await exportGame({
       bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: [{ guid: "falloff", type: "FloatCurve", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(payload)) }],
@@ -99,7 +99,7 @@ describe("packedContentFromGame", () => {
     const game = await loadGameFromFiles(exported.value.files);
     const content = packedContentFromGame(game);
     expect(content.curveAssets).toHaveLength(1);
-    expect(content.curveAssets[0]).toMatchObject({ guid: "falloff", type: "FloatCurve", payload: { description: "Falloff" } });
+    expect(content.curveAssets[0]).toMatchObject({ guid: "falloff", type: "FloatCurve" });
     expect(content.curveAssets[0]!.payload.curve.Keys.map((key) => key.Time)).toEqual([0, 2]);
     const load = packedSourceControls(game, content).find((control) => control.type === "loadSceneContent");
     expect(load && "curveAssets" in load ? load.curveAssets : undefined).toEqual(content.curveAssets);

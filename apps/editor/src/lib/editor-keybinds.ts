@@ -26,6 +26,7 @@ const COMMAND_LIST = [
   { id: "editor.focusLayout", label: "Toggle Focus", category: "General", defaultChords: ["Mod+Shift+F"] },
   { id: "editor.projectSettings", label: "Project Settings", category: "General", defaultChords: ["Mod+Shift+,"] },
   { id: "editor.engineSettings", label: "Engine Settings", category: "General", defaultChords: ["Mod+,"], allowInTextInput: true },
+  { id: "editor.packaging", label: "Packaging", category: "General", defaultChords: ["Mod+Shift+B"] },
   // Three modifiers, so closing the project never happens from a stray chord.
   { id: "editor.projectBrowser", label: "Project Browser", category: "General", defaultChords: ["Mod+Alt+Shift+B"] },
   { id: "editor.contentBrowser", label: "Content Browser", category: "General", defaultChords: ["Alt+B"] },

@@ -188,7 +188,7 @@ export const engineSettingsSchema = z.object({
   viewportFrameCap: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(MAX_VIEWPORT_FRAME_CAP, Math.max(MIN_VIEWPORT_FRAME_CAP, value));
-  }, z.number().min(MIN_VIEWPORT_FRAME_CAP).max(MAX_VIEWPORT_FRAME_CAP).default(30)),
+  }, z.number().min(MIN_VIEWPORT_FRAME_CAP).max(MAX_VIEWPORT_FRAME_CAP).default(60)),
   cameraPreviewFrameRate: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(MAX_CAMERA_PREVIEW_FRAME_RATE, Math.max(MIN_CAMERA_PREVIEW_FRAME_RATE, value));

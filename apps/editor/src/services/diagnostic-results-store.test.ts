@@ -5,8 +5,8 @@ import { DiagnosticResultsStore, PROFILE_HISTORY_BYTES, PROFILE_HISTORY_COUNT, t
 
 const options = { durationMs: 10_000, byteBudget: 16 * 1024 * 1024 };
 /** A recording with what the history reads: its length, frame count and retained bytes. */
-const recording = (durationMs = 1000, retainedBytes = 1024) =>
-  ({ kind: "haptic-performance", durationMs, retainedBytes, frames: { count: 60 } }) as unknown as PerformanceProfile;
+const recording = (durationMs = 1000, retainedBytes = 1024, stopReason: PerformanceProfile["stopReason"] = "requested") =>
+  ({ kind: "haptic-performance", durationMs, retainedBytes, stopReason, frames: { count: 60 } }) as unknown as PerformanceProfile;
 const capture = (renderFrameId = 1) => ({ version: 1, frame: { renderFrameId } }) as unknown as RenderFrameReport;
 function ports(overrides: Partial<DiagnosticSessionPorts> = {}): DiagnosticSessionPorts {
   return { mode: "play", startProfile: vi.fn(async () => {}), stopProfile: vi.fn(async () => null),
@@ -98,4 +98,21 @@ it("keeps a recording once when Stop also returns the one it published, and adds
   store.importResult({ kind: "profile", profile: recording(2500) }, "baseline.babprofile.json");
   expect(store.getSnapshot().profiles[0]?.label).toBe("baseline.babprofile.json · 2.50 s · 60 Frames");
   expect(store.getSnapshot().profiles).toHaveLength(2);
+});
+
+it.each([
+  ["duration", true],
+  ["budget", true],
+  ["requested", false],
+  ["session-ended", false],
+  ["error", false],
+] as const)("a recording that stopped for %s opens its Summary: %s", async (stopReason, opens) => {
+  const store = new DiagnosticResultsStore();
+  const lease = store.bindSession(ports());
+  store.open("timeline");
+  store.close();
+  await store.startProfile(options);
+  lease.publishProfile(recording(10_000, 1024, stopReason));
+  expect(store.getSnapshot()).toMatchObject({ active: null, busy: false, open: opens, view: opens ? "summary" : "timeline" });
+  expect(store.getSnapshot().profiles).toHaveLength(1);
 });

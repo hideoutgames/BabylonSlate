@@ -6,8 +6,7 @@ import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, waitForEditorInteractive } from "./open-test-project";
 
-// The key fields are taller than the step controls, and on a narrower window the hint used to wrap under them:
-// selecting a key nudged the plot above by a pixel or more.
+// The key fields are taller than the step controls: selecting a key used to grow the bar and nudge the plot above.
 test("a curve window's key bar keeps its height when a key is selected", { tag: IPAD_TEST_TAG }, async ({ page }) => {
   test.setTimeout(120_000);
   const files = await minimalProjectFiles();
