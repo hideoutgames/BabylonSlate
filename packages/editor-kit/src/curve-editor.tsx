@@ -1360,8 +1360,9 @@ export function CurveEditor({
       <div className="flex h-full min-h-0 min-w-0 flex-col" data-testid={testId}>
         {toolbar}
         {plot}
+        {/* The step controls are as tall as the key fields, so selecting a key never changes the bar's height. */}
         <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t bg-panel-header px-1.5 py-1" data-testid={`${testId}-key-bar`}>
-          <div className="flex items-center">
+          <div className="flex min-h-7 items-center">
             <Button type="button" variant="ghost" size="icon-xs" aria-label="Previous Key" disabled={keys.length === 0 || (!!primary && selectedIndex <= 0)}
               onClick={() => stepKey(-1)} data-testid={`${testId}-previous-key`}>
               <ChevronLeftIcon aria-hidden="true" />

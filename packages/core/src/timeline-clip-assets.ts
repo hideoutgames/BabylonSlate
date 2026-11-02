@@ -35,7 +35,7 @@ export interface TimelineProxy {
   tracks: TimelinePropertyTrack[];
 }
 
-export const TIMELINE_PROXY_REPRESENTATIONS = ["outline", "model", "material", "texture", "class"] as const;
+export const TIMELINE_PROXY_REPRESENTATIONS = ["shape", "model", "material", "texture", "class"] as const;
 export type TimelineProxyRepresentation = (typeof TIMELINE_PROXY_REPRESENTATIONS)[number];
 export type TimelineProxyPreviewAs = "relative" | "absolute";
 /** The representations that draw a picked asset. */
@@ -51,7 +51,7 @@ export interface TimelineProxyPreview {
   location: [number, number, number];
   /** Degrees: pitch, yaw, roll. */
   rotation: [number, number, number];
-  /** The proxy's size: an Outline is one metre (3D) or unit (2D) at 1, a Model, Material or Texture its own size. Relative Scale keys multiply it. */
+  /** The proxy's size: a Shape is one metre (3D) or unit (2D) at 1, a Model, Material or Texture its own size. Relative Scale keys multiply it. */
   scale: [number, number, number];
   previewAs: TimelineProxyPreviewAs;
   /**
@@ -104,7 +104,7 @@ const triple = (value: unknown, fallback: [number, number, number]): [number, nu
 export function defaultTimelineProxyPreview(index: number): TimelineProxyPreview {
   return {
     color: TIMELINE_PROXY_COLORS[index % TIMELINE_PROXY_COLORS.length]!,
-    representation: "outline",
+    representation: "shape",
     location: [index * 2, 0, 0],
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
@@ -118,7 +118,7 @@ function normalizePreview(value: unknown, index: number): TimelineProxyPreview {
   const color = text(source.color);
   const representation = (TIMELINE_PROXY_REPRESENTATIONS as readonly string[]).includes(source.representation as string)
     ? (source.representation as TimelineProxyRepresentation)
-    : "outline";
+    : "shape";
   const authoredAssets = record(source.assets);
   const assets: Partial<Record<TimelineProxyAssetRepresentation, string>> = {};
   for (const kind of ASSET_REPRESENTATIONS) {

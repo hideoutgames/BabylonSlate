@@ -54,8 +54,8 @@ async function clipProjectFiles() {
       { id: "lamp", name: "Lamp", represents: "actor", classId: "Actor", tracks: [] },
     ],
     editorPreview: { proxies: {
-      door: { color: "#f97316", representation: "outline", location: [3, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" },
-      lamp: { color: "#22d3ee", representation: "outline", location: [-3, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" },
+      door: { color: "#f97316", representation: "shape", location: [3, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" },
+      lamp: { color: "#22d3ee", representation: "shape", location: [-3, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" },
     } },
   };
   files.set("assets/Swing.timelineclip3d.hasset", await encodeAssetDocument(
@@ -78,8 +78,14 @@ async function clip2DProjectFiles() {
   const payload = {
     ...createDefaultTimelineClipAsset("story-guid"),
     length: 2,
-    proxies: [{ id: "badge", name: "Badge", represents: "actor", classId: "Actor", tracks: [] }],
-    editorPreview: { proxies: { badge: { color: "#f97316", representation: "outline", location: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" } } },
+    proxies: [
+      { id: "badge", name: "Badge", represents: "actor", classId: "Actor", tracks: [] },
+      { id: "chip", name: "Chip With A Name Long Enough To Fill The Proxies Window", represents: "actor", classId: "Actor", tracks: [] },
+    ],
+    editorPreview: { proxies: {
+      badge: { color: "#f97316", representation: "shape", location: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" },
+      chip: { color: "#22d3ee", representation: "shape", location: [-2, -1, 0], rotation: [0, 0, 0], scale: [1, 1, 1], previewAs: "relative" },
+    } },
   };
   files.set("assets/Pulse.timelineclip2d.hasset", await encodeAssetDocument(
     { guid: "pulse-guid", type: "TimelineClip2D", name: "Pulse", version: 1, payload: payload as unknown as Record<string, unknown> },
@@ -95,13 +101,15 @@ test.describe("Timeline Clip asset proxies", () => {
     await waitForEditorInteractive(page);
     await openAssetFromBrowser(page, "assets/Swing.timelineclip3d.hasset");
     await expect(page.getByTestId("timeline-clip-preview-canvas")).toBeVisible();
+    // A 3D clip has Drag Select in the toolbar for marquee selection.
+    await expect(page.getByTestId("timeline-clip-viewport-drag-select")).toBeVisible();
     await expectAt(page, "door", [3, 0, 0]);
     await setPlayhead(page, 1);
     await expectAt(page, "door", [3, 1, 0]);
 
     // Another representation draws the proxy where the clip puts it.
     await page.getByTestId("timeline-proxies-list").getByText("Door").click();
-    for (const label of ["Class", "Model", "Outline"]) {
+    for (const label of ["Class", "Model", "Shape"]) {
       await chooseRepresentation(page, label);
       await expectAt(page, "door", [3, 1, 0]);
       await setPlayhead(page, 1.5);
@@ -154,11 +162,40 @@ test.describe("Timeline Clip asset proxies", () => {
     const textured = { box: { center: [2, 1], size: [1.28, 0.64] }, bounds: { center: [2, 1], size: [1.28, 0.64] } };
     await expect.poll(() => framing(page, "badge"), { timeout: 20_000 }).toEqual(textured);
 
-    await chooseRepresentation(page, "Outline");
+    await chooseRepresentation(page, "Shape");
     await expect.poll(() => framing(page, "badge"), { timeout: 10_000 }).toEqual(doubled);
     // Back to Texture: the one picked before draws again.
     await chooseRepresentation(page, "Texture");
     await expect(page.getByTestId("timeline-clip-inspector-preview").getByTestId("property-timeline-proxy-asset")).toContainText("Sprite");
     await expect.poll(() => framing(page, "badge"), { timeout: 20_000 }).toEqual(textured);
+  });
+
+  test("select several in a 2D clip by holding, then dragging a marquee over them", async ({ page }) => {
+    test.setTimeout(180_000);
+    await openMinimalTestProject(page, await clip2DProjectFiles());
+    await waitForEditorInteractive(page);
+    await openAssetFromBrowser(page, "assets/Pulse.timelineclip2d.hasset");
+    const canvas = page.getByTestId("timeline-clip-preview-canvas");
+    await expect(canvas).toBeVisible();
+    await expectAt(page, "badge", [0, 0, 0]);
+    await expectAt(page, "chip", [-2, -1, 0]);
+    // A long name shortens; its delete button stays in the Proxies window.
+    const panel = (await page.getByTestId("timeline-clip-proxies-panel").boundingBox())!;
+    const remove = (await page.getByTestId("timeline-proxy-delete-chip").boundingBox())!;
+    expect(remove.x + remove.width).toBeLessThanOrEqual(panel.x + panel.width);
+    const box = (await canvas.boundingBox())!;
+    // From the empty corner below the toolbar: a hold arms the marquee, which the drag draws over both proxies.
+    await page.mouse.move(box.x + 12, box.y + 60);
+    await page.mouse.down();
+    await page.waitForTimeout(500);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 6 });
+    await expect(page.getByTestId("timeline-clip-viewport-marquee")).toBeVisible();
+    await page.mouse.move(box.x + box.width - 12, box.y + box.height - 12, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.getByTestId("timeline-clip-viewport-marquee")).toHaveCount(0);
+    const list = page.getByTestId("timeline-proxies-list");
+    await expect(list.getByTestId("tree-row-badge")).toHaveAttribute("aria-selected", "true");
+    await expect(list.getByTestId("tree-row-chip")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("timeline-clip-inspector-no-proxy")).toContainText("2 Proxies Selected");
   });
 });

@@ -59,7 +59,7 @@ describe("Timeline Clip assets", () => {
     expect(timelineProxyPreviewAsset(payload.editorPreview!.proxies.door!)).toBe("door-model");
     expect(timelineProxyPreviewAsset({ ...payload.editorPreview!.proxies.door!, representation: "material" })).toBeUndefined();
     // The others take the palette in order and the defaults.
-    expect(payload.editorPreview?.proxies.glow).toMatchObject({ color: TIMELINE_PROXY_COLORS[1], representation: "outline", scale: [1, 1, 1], previewAs: "relative" });
+    expect(payload.editorPreview?.proxies.glow).toMatchObject({ color: TIMELINE_PROXY_COLORS[1], representation: "shape", scale: [1, 1, 1], previewAs: "relative" });
     expect(normalizeTimelineClipAsset(JSON.parse(JSON.stringify(payload)))).toEqual(payload);
   });
 

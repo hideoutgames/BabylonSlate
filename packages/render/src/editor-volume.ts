@@ -3,6 +3,8 @@ import {
   Mesh,
   MeshBuilder,
   Scene,
+  Vector3,
+  VertexBuffer,
   type AbstractMesh,
 } from "@babylonjs/core";
 import {
@@ -59,51 +61,47 @@ export function createEditorVolumeMesh(
   return fill;
 }
 
-/** The editor-only stand-in that draws a Timeline Clip proxy's Outline representation. */
-export const TIMELINE_PROXY_OUTLINE_CLASS_ID = "TimelineProxyOutlineComponent";
+/** The editor-only stand-in that draws a Timeline Clip proxy's Shape representation. */
+export const TIMELINE_PROXY_SHAPE_CLASS_ID = "TimelineProxyShapeComponent";
 
-export type TimelineProxyOutlineSize = [number, number, number];
-
-/** An Outline component's size (edge lengths along X, Y and Z; one number for all three), `#rrggbb` colour and 2D flag. */
-export function timelineProxyOutlineOptions(properties: Record<string, unknown>): { size: TimelineProxyOutlineSize; color: string; twoD: boolean } {
-  const edge = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 1);
-  const { size } = properties;
-  return {
-    size: Array.isArray(size) && size.length === 3 ? [edge(size[0]), edge(size[1]), edge(size[2])] : [edge(size), edge(size), edge(size)],
-    color: typeof properties.color === "string" ? properties.color : "",
-    twoD: properties.twoD === true,
-  };
+/** A Shape component's `#rrggbb` colour and 2D flag. */
+export function timelineProxyShapeOptions(properties: Record<string, unknown>): { color: string; twoD: boolean } {
+  return { color: typeof properties.color === "string" ? properties.color : "", twoD: properties.twoD === true };
 }
 
+/** Where the Shape's baked light comes from: above, a little to the right and towards a default camera. */
+const SHAPE_LIGHT = new Vector3(0.35, 0.85, -0.4).normalize();
+
 /**
- * A Timeline Clip proxy's Outline: a pickable invisible fill of `size` with a
- * dashed edge in the proxy's colour, a box in 3D or a rectangle in 2D. The
- * size is baked into the geometry so the dashes keep their thickness.
+ * A Timeline Clip proxy's Shape: a solid, opaque, pickable unit box in 3D or
+ * square in 2D, in the proxy's colour; the proxy's Scale sizes it. The box's
+ * faces are shaded by a fixed light baked into its vertex colours, so its
+ * form reads under any viewport lighting, the unlit shading included.
  */
-export function createTimelineProxyOutlineMesh(
-  scene: Scene,
-  name: string,
-  options: { size: number | TimelineProxyOutlineSize; color: string; twoD: boolean },
-): Mesh {
-  const edges = typeof options.size === "number" ? [options.size, options.size, options.size] : options.size;
-  const [width, height, depth] = edges.map((edge) => Math.max(0.01, Math.abs(edge))) as TimelineProxyOutlineSize;
-  const fill = options.twoD
-    ? MeshBuilder.CreatePlane(name, { width, height }, scene)
-    : MeshBuilder.CreateBox(name, { width, height, depth }, scene);
-  fill.metadata = { ...(fill.metadata ?? {}), editorVolume: true };
-  fill.isPickable = true;
-  fill.renderingGroupId = RENDERING_GROUP.world;
-  applyVolumeFillMaterial(fill);
-  const half = { x: width / 2, y: height / 2, z: depth / 2 };
+export function createTimelineProxyShapeMesh(scene: Scene, name: string, options: { color: string; twoD: boolean }): Mesh {
+  const shape = options.twoD
+    ? MeshBuilder.CreatePlane(name, { size: 1 }, scene)
+    : MeshBuilder.CreateBox(name, { size: 1 }, scene);
+  shape.metadata = { ...(shape.metadata ?? {}), editorVolume: true };
+  shape.isPickable = true;
+  shape.renderingGroupId = RENDERING_GROUP.world;
+  if (!options.twoD) {
+    const normals = shape.getVerticesData(VertexBuffer.NormalKind) ?? [];
+    const colors: number[] = [];
+    for (let index = 0; index < normals.length; index += 3) {
+      const facing = normals[index]! * SHAPE_LIGHT.x + normals[index + 1]! * SHAPE_LIGHT.y + normals[index + 2]! * SHAPE_LIGHT.z;
+      const shade = 0.55 + 0.45 * Math.max(0, facing);
+      colors.push(shade, shade, shade, 1);
+    }
+    shape.setVerticesData(VertexBuffer.ColorKind, colors);
+    shape.useVertexColors = true;
+    shape.hasVertexAlpha = false;
+  }
   const color = /^#[0-9a-f]{6}$/i.test(options.color) ? Color3.FromHexString(options.color) : COLLIDER_COLOR;
-  const outline = createColliderVisualMesh(
-    scene,
-    `${name}:outline`,
-    options.twoD ? { kind: "box2d", halfExtents: { x: half.x, y: half.y } } : { kind: "box", halfExtents: half },
-    color,
-  );
-  outline.parent = fill;
-  return fill;
+  setUnlitMaterial(shape, { textured: false, backFaceCulling: !options.twoD, fog: false, role: "helper" }, {
+    texture: null, color: [color.r, color.g, color.b], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: options.twoD,
+  });
+  return shape;
 }
 
 export function createNavDebugBlockerMesh(

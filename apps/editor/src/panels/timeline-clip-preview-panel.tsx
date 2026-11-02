@@ -6,7 +6,7 @@ import { applyTimelineClipToScene, type SerializedScene } from "@haptic/core";
 import { createEngine, EDITOR_CANVAS_COLOR_SCHEME, syncEditorPlayState, type EngineHandle } from "@haptic/render";
 import { isTestModeEnabled } from "@haptic/vfs";
 import { ViewportToolbar } from "../components/viewport-toolbar";
-import { selectProxy, TimelineClipAssetSource, useSelectedProxy, useTimelineClipAsset } from "../components/timeline-clip-asset-editor";
+import { selectProxies, selectProxy, TimelineClipAssetSource, useSelectedProxies, useTimelineClipAsset } from "../components/timeline-clip-asset-editor";
 import { usePlay } from "../context/play-context";
 import { useDocumentActions, useProjectState } from "../context/document-context";
 import { SceneEditingProvider, useSceneEditing } from "../context/scene-editing-context";
@@ -24,7 +24,8 @@ import { composeTimelineProxyPreview, timelineProxyGizmoEdit, timelineProxyPrevi
  * of its proxies, each drawn by its Editor Preview representation and
  * animated by the clip at the Timeline playhead. It renders to a texture on
  * the shared Engine like the Prefab viewport. Tapping a proxy selects it in
- * Proxies and the Inspector; its gizmo keys the proxy's transform tracks
+ * Proxies and the Inspector (Shift or Ctrl adds it); a 2D hold-and-drag or
+ * Drag Select marquees several. The gizmo keys the proxies' transform tracks
  * (Auto Key) or sets unkeyed values, and moves its preview placement where it
  * has no track (`timelineProxyGizmoEdit`).
  */
@@ -52,11 +53,17 @@ function ClipPreview(_props: IDockviewPanelProps) {
   const viewportId = useId();
   const { id: documentId, payload, twoD, commit } = useTimelineClipAsset();
   const { scene, clip, tools } = useTimelineClip();
-  const selectedProxy = useSelectedProxy(documentId);
+  const selectedProxies = useSelectedProxies(documentId);
   const {
     viewportMode, gridVisible, saveEditorCameraPose, loadEditorCameraPose, viewportShadingMode, pivotAroundCenter,
-    gizmoTool, gizmoSpace, snapEnabled,
+    gizmoTool, gizmoSpace, snapEnabled, dragSelectActive, setDragSelectActive,
   } = useSceneEditing();
+  const dragSelectActiveRef = useRef(dragSelectActive);
+  dragSelectActiveRef.current = dragSelectActive;
+  const setDragSelectActiveRef = useRef(setDragSelectActive);
+  setDragSelectActiveRef.current = setDragSelectActive;
+  // The marquee a 2D hold-and-drag or Drag Select draws, in canvas CSS pixels.
+  const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const { flySpeed, gridSize, snapTranslate, snapRotateDeg, snapScale } = useEditorViewportPrefs();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
@@ -129,7 +136,14 @@ function ClipPreview(_props: IDockviewPanelProps) {
       ktx2BasePath: editorKtx2PublicBase(),
       dracoBasePath: editorDracoPublicBase(),
       meshoptBasePath: editorMeshoptPublicBase(),
-      onPickActor: (actorId) => selectProxy(documentId, actorId),
+      onPickActor: (actorId, pick) => selectProxy(documentId, actorId, { additive: pick?.additive === true }),
+      onMarqueeSelect: (actorIds) => selectProxies(documentId, actorIds),
+      onMarqueeMove: (rect) => setMarqueeRect(rect),
+      dragSelectActive: () => dragSelectActiveRef.current,
+      onDragSelectEnd: () => {
+        setDragSelectActiveRef.current(false);
+        setMarqueeRect(null);
+      },
       onGizmoDragEnd: () => commitGizmoRef.current(),
       editorFlySpeed: () => flySpeedRef.current,
     });
@@ -228,8 +242,8 @@ function ClipPreview(_props: IDockviewPanelProps) {
   }, [loadKey, engineEpoch, projectDocument?.settings.twoD.pixelsPerUnit, projectDocument?.settings.twoD.sortingLayers]);
 
   useEffect(() => {
-    engineRef.current?.editor?.setSelectedActors(selectedProxy ? [selectedProxy] : []);
-  }, [selectedProxy, engineEpoch, loadKey]);
+    engineRef.current?.editor?.setSelectedActors([...selectedProxies]);
+  }, [selectedProxies, engineEpoch, loadKey]);
 
   // Test builds: where each proxy is drawn, and the playhead, for browser specs.
   useEffect(() => {
@@ -331,9 +345,14 @@ function ClipPreview(_props: IDockviewPanelProps) {
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
         <div className="pointer-events-auto toolbar-island">
           {/* The proxies move with the clip; the gizmo keys them or moves their preview placement. */}
-          <ViewportToolbar testIdPrefix="timeline-clip-" showDragSelect={false} showViewportModeToggle={false} showGameCamera={false} />
+          <ViewportToolbar testIdPrefix="timeline-clip-" showViewportModeToggle={false} showGameCamera={false} />
         </div>
       </div>
+      {marqueeRect ? <div
+        data-testid="timeline-clip-viewport-marquee"
+        className="pointer-events-none absolute z-10 border border-dashed border-primary bg-primary/15"
+        style={{ left: marqueeRect.x, top: marqueeRect.y, width: marqueeRect.width, height: marqueeRect.height }}
+      /> : null}
       <canvas ref={canvasRef} className="h-full min-h-0 min-w-0 w-full flex-1 touch-none" data-testid="timeline-clip-preview-canvas" />
     </div>
   );

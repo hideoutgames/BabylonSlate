@@ -3,9 +3,9 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultTimelineClipAsset, defaultTimelineProxyPreview, type SerializedScene, type SerializedTimelineClipAsset } from "@haptic/core";
-import { TIMELINE_PROXY_OUTLINE_CLASS_ID } from "@haptic/render";
+import { TIMELINE_PROXY_SHAPE_CLASS_ID } from "@haptic/render";
 import { SceneToolsProvider, useSceneTools } from "../context/scene-tools-context";
-import { useSelectedProxy } from "../components/timeline-clip-asset-editor";
+import { selectProxies, useSelectedProxies } from "../components/timeline-clip-asset-editor";
 import { TimelineClipPreviewPanel } from "./timeline-clip-preview-panel";
 
 const DOC = "timeline-clip-3d:assets/Swing.timelineclip3d.hasset";
@@ -75,10 +75,10 @@ vi.mock("../lib/viewport-render-gate", () => ({ attachViewportRenderGate: () => 
 const key = (id: string, Time: number, Value: unknown) => ({ id, Time, Value, Interpolation: "linear" as const, ArriveTangent: 0, LeaveTangent: 0 });
 const panel = {} as IDockviewPanelProps;
 let tools: ReturnType<typeof useSceneTools> | null = null;
-let selected: string | undefined;
+let selected: readonly string[] = [];
 function Probe() {
   tools = useSceneTools();
-  selected = useSelectedProxy(DOC);
+  selected = useSelectedProxies(DOC);
   useEffect(() => {});
   return null;
 }
@@ -102,6 +102,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   tools = null;
+  selectProxies(DOC, []);
 });
 
 describe("TimelineClipPreviewPanel", () => {
@@ -110,9 +111,8 @@ describe("TimelineClipPreviewPanel", () => {
     await waitFor(() => expect(harness.handle.loadScene).toHaveBeenCalled());
     expect(harness.createEngineMock.mock.calls[0]![1]).toMatchObject({ editor: true, present: "rtt", viewportMode: "3d", previewLighting: true, sharedEngine: { id: "shared" } });
     const door = lastScene().actors.find((actor) => actor.id === "door")!;
-    // The Outline is built at the Scale the proxy stands at, and undoes it.
-    expect(door.components).toEqual([expect.objectContaining({ classId: TIMELINE_PROXY_OUTLINE_CLASS_ID, properties: expect.objectContaining({ size: [2, 2, 2] }),
-      transform: expect.objectContaining({ scale: [0.5, 0.5, 0.5] }) })]);
+    // A Shape in the proxy's colour, sized by the proxy's Scale.
+    expect(door.components).toEqual([expect.objectContaining({ classId: TIMELINE_PROXY_SHAPE_CLASS_ID, properties: { color: "#f97316", twoD: false } })]);
     expect(door.transform.scale).toEqual([2, 2, 2]);
     // Relative: the keyed offset at 0 s is the preview placement itself.
     expect(door.transform.position).toEqual([5, 0, 0]);
@@ -125,7 +125,7 @@ describe("TimelineClipPreviewPanel", () => {
     expect(lastScene().actors.find((actor) => actor.id === "door")!.transform.position).toEqual([6, 0, 0]);
     const { onPickActor } = harness.createEngineMock.mock.calls[0]![1] as { onPickActor: (id: string) => void };
     act(() => onPickActor("door"));
-    expect(selected).toBe("door");
+    expect(selected).toEqual(["door"]);
     await waitFor(() => expect(harness.handle.editor.setSelectedActors).toHaveBeenLastCalledWith(["door"]));
   });
 
@@ -146,6 +146,35 @@ describe("TimelineClipPreviewPanel", () => {
     act(() => onGizmoDragEnd());
     expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
     expect([...tools!.timelineUnkeyed.keys()]).toEqual(["t"]);
+  });
+
+  it("selects the proxies a marquee frames, and adds or takes out a proxy on a Shift or Ctrl tap", async () => {
+    harness.content = { ...harness.content, proxies: [...harness.content.proxies, { id: "lamp", name: "Lamp", represents: "actor", classId: "Actor", tracks: [] }] };
+    render(<SceneToolsProvider><Probe /><TimelineClipPreviewPanel {...panel} /></SceneToolsProvider>);
+    await waitFor(() => expect(harness.handle.loadScene).toHaveBeenCalled());
+    const options = harness.createEngineMock.mock.calls[0]![1] as {
+      onPickActor: (id: string | null, pick?: { additive: boolean }) => void;
+      onMarqueeSelect: (ids: string[]) => void;
+      onMarqueeMove: (rect: { x: number; y: number; width: number; height: number } | null) => void;
+    };
+    // The live marquee draws over the canvas while the finger drags.
+    act(() => options.onMarqueeMove({ x: 4, y: 6, width: 40, height: 30 }));
+    expect(document.querySelector('[data-testid="timeline-clip-viewport-marquee"]')).not.toBeNull();
+    act(() => options.onMarqueeMove(null));
+    expect(document.querySelector('[data-testid="timeline-clip-viewport-marquee"]')).toBeNull();
+    act(() => options.onMarqueeSelect(["door", "lamp"]));
+    expect(selected).toEqual(["door", "lamp"]);
+    await waitFor(() => expect(harness.handle.editor.setSelectedActors).toHaveBeenLastCalledWith(["door", "lamp"]));
+    act(() => options.onPickActor("door", { additive: true }));
+    expect(selected).toEqual(["lamp"]);
+    act(() => options.onPickActor("door", { additive: true }));
+    expect(selected).toEqual(["lamp", "door"]);
+    // A plain tap selects one; a tap on empty space clears.
+    act(() => options.onPickActor("lamp", { additive: false }));
+    expect(selected).toEqual(["lamp"]);
+    act(() => options.onPickActor(null));
+    expect(selected).toEqual([]);
+    await waitFor(() => expect(harness.handle.editor.setSelectedActors).toHaveBeenLastCalledWith([]));
   });
 
   it("previews a 2D clip in a locked 2D overlay viewport", async () => {

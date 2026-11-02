@@ -9,6 +9,7 @@ import {
   addTimelineProxy,
   removeTimelineProxy,
   renameTimelineProxy,
+  selectProxies,
   selectProxy,
   timelineProxyClassEntries,
 } from "./timeline-clip-asset-editor";
@@ -53,9 +54,45 @@ beforeEach(() => {
   harness.content = createDefaultTimelineClipAsset("story");
   harness.applyAssetDocumentChange.mockClear();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  selectProxies(DOC, []);
+});
+
+/** jsdom has no PointerEvent; a MouseEvent with pointer fields drives TreeView. */
+function clickRow(id: string, init: { ctrlKey?: boolean; shiftKey?: boolean } = {}): void {
+  const row = screen.getByTestId(`tree-row-${id}`);
+  for (const type of ["pointerdown", "pointerup"]) {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10, ctrlKey: init.ctrlKey ?? false, shiftKey: init.shiftKey ?? false });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    Object.defineProperty(event, "pointerType", { value: "mouse" });
+    Object.defineProperty(event, "isPrimary", { value: true });
+    act(() => { row.dispatchEvent(event); });
+  }
+}
 
 describe("Timeline Clip asset proxies", () => {
+  it("multi-selects proxies in the list: Ctrl toggles one, Shift selects a range; the Inspector edits only one", () => {
+    let payload = createDefaultTimelineClipAsset("story");
+    for (const id of ["a", "b", "c"]) payload = addTimelineProxy(payload, "actor", "Door", id);
+    harness.content = payload;
+    renderBoth();
+    const rowSelected = (id: string) => screen.getByTestId(`tree-row-${id}`).getAttribute("aria-selected");
+    clickRow("a");
+    expect(screen.getByTestId("timeline-clip-inspector-proxy")).toBeTruthy();
+    clickRow("c", { ctrlKey: true });
+    expect(["a", "b", "c"].map(rowSelected)).toEqual(["true", "false", "true"]);
+    expect(screen.queryByTestId("timeline-clip-inspector-proxy")).toBeNull();
+    expect(screen.getByTestId("timeline-clip-inspector-no-proxy").textContent).toContain("2 Proxies Selected");
+    clickRow("a", { ctrlKey: true });
+    expect(["a", "b", "c"].map(rowSelected)).toEqual(["false", "false", "true"]);
+    clickRow("a", { shiftKey: true });
+    expect(["a", "b", "c"].map(rowSelected)).toEqual(["true", "true", "true"]);
+    clickRow("b");
+    expect(["a", "b", "c"].map(rowSelected)).toEqual(["false", "true", "false"]);
+    expect(within(screen.getByTestId("timeline-clip-inspector-proxy")).getByLabelText("Name")).toHaveProperty("value", "Door 2");
+  });
+
   it("names a new proxy after its Class, numbered when taken, with the next preview colour", () => {
     let payload = addTimelineProxy(createDefaultTimelineClipAsset("story"), "actor", "Door", "a");
     payload = addTimelineProxy(payload, "actor", "Door", "b");
@@ -97,7 +134,7 @@ describe("Timeline Clip asset proxies", () => {
     fireEvent.blur(name);
     expect(last().proxies[0]!.name).toBe("Front Door");
 
-    // A 3D clip draws a proxy as an Outline, a Model or its Class.
+    // A 3D clip draws a proxy as a Shape, a Model or its Class.
     const preview = screen.getByTestId("timeline-clip-inspector-preview");
     fireEvent.click(within(preview).getByRole("combobox", { name: "Representation" }));
     expect(screen.queryByRole("option", { name: "Texture" })).toBeNull();
@@ -123,8 +160,8 @@ describe("Timeline Clip asset proxies", () => {
       fireEvent.click(option);
       view.refresh();
     };
-    choose("Outline");
-    expect(last().editorPreview!.proxies[proxyId]).toMatchObject({ representation: "outline", assets: { model: "door-model" } });
+    choose("Shape");
+    expect(last().editorPreview!.proxies[proxyId]).toMatchObject({ representation: "shape", assets: { model: "door-model" } });
     choose("Model");
     expect(last().editorPreview!.proxies[proxyId]).toMatchObject({ representation: "model", assets: { model: "door-model" } });
     expect(within(screen.getByTestId("timeline-clip-inspector-preview")).getByTestId("property-timeline-proxy-asset").textContent).toContain("Door Model");

@@ -50,14 +50,14 @@ export const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "NavMeshBlockerComponent",
   "BlockingVolumeComponent",
   // Editor-only: a Timeline Clip proxy's Outline in the clip asset preview.
-  "TimelineProxyOutlineComponent",
+  "TimelineProxyShapeComponent",
   "WaterRemovalVolumeComponent",
   "FogVolumeComponent",
   "ReflectionProbeComponent",
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
-  "TimelineProxyOutlineComponent",
+  "TimelineProxyShapeComponent",
   "2DPainterComponent",
   "DynamicRuntimeMeshComponent",
   "CableComponent",
@@ -298,7 +298,7 @@ export function needsOriginRoot(
       (component) =>
         component.classId === "NavMeshBlockerComponent" ||
         component.classId === "BlockingVolumeComponent" ||
-        component.classId === "TimelineProxyOutlineComponent",
+        component.classId === "TimelineProxyShapeComponent",
     )
   );
 }

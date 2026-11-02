@@ -1170,8 +1170,9 @@ export function listDockWindows(
   ], options);
   if (kind === "timeline-clip-2d" || kind === "timeline-clip-3d") return withOptionalLocks(kind, [
     { id: "timeline-clip-viewport", component: "timeline-clip-viewport", title: "Viewport" },
-    { id: "timeline-clip-proxies", component: "timeline-clip-proxies", title: "Proxies", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "left", initialWidth: 260 } },
+    // Proxies sit above the Inspector, as a short list rarely needs a column of its own.
     { id: "timeline-clip-inspector", component: "timeline-clip-inspector", title: "Inspector", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "right", initialWidth: 320 } },
+    { id: "timeline-clip-proxies", component: "timeline-clip-proxies", title: "Proxies", defaultPosition: { referencePanelId: "timeline-clip-inspector", direction: "above", initialHeight: 220 } },
     { id: "timeline-clip-timeline", component: "timeline-clip-timeline", title: "Timeline", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "below", initialHeight: 320 } },
     // The clip asset's own checks (Timeline Asset, proxy names, Classes and placement).
     { id: "compiler-results", component: "compiler-results", title: "Compiler Results", openByDefault: false, defaultPosition: { referencePanelId: "timeline-clip-timeline", direction: "within" } },
