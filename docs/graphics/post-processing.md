@@ -24,8 +24,8 @@ For **Color Grading**, use a horizontal strip of square slices, such as 256×16 
 
 | Setting | Description |
 | --- | --- |
-| **Color Pipeline** | **Legacy Display** (default) or **Scene Linear**. Scene Linear renders PBR in high dynamic range, then applies the settings below. CEL stays in display space. |
-| **Tone Mapping** | **None**, **Standard**, **ACES** or **Neutral**. Scene Linear only. |
+| **Color Pipeline** | **Legacy Display** or **Scene Linear**. Scene Linear renders PBR in high dynamic range, then applies the settings below. CEL stays in display space. New 3D projects start in Scene Linear; 2D and Pixel Art Optimized projects start in Legacy Display, which keeps sprite colours exactly as drawn. |
+| **Tone Mapping** | **None**, **Standard**, **ACES** or **Neutral** (default). Scene Linear only. **Neutral** keeps colours and their saturation and only softens the brightest highlights; **ACES** is darker and shifts hues; **Standard** looks flatter. Switching to Scene Linear picks **Neutral** if Tone Mapping was **None**. |
 | **Exposure** | Brightness multiplier before tone mapping. Default 1. |
 | **Contrast** | Contrast curve strength. Default 1. |
 | **White Balance** | Corrects the colour of the scene lighting, with **Temperature (K)** (6500 is neutral) and **Tint**. |

@@ -80,9 +80,10 @@ describe("render effects settings", () => {
         normalizeRenderEffectsSettings({ toneMapping }).toneMapping,
       ).toBe(toneMapping);
     }
+    // An unknown value falls back to the default, Neutral.
     expect(
       normalizeRenderEffectsSettings({ toneMapping: "agx" }).toneMapping,
-    ).toBe("none");
+    ).toBe("neutral");
   });
 
   it("loads legacy projects without the effects block unchanged", () => {

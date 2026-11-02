@@ -5,7 +5,7 @@ import { lookAtRotation } from "./euler";
 import { normalizeCelShadingSettings, type CelShadingSettings, type RenderMode } from "./cel-shading";
 import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
 import { normalizeEnvironmentLightingSettings, type EnvironmentLightingSettings } from "./environment-lighting";
-import { normalizeRenderEffectsSettings, type RenderEffectsSettings } from "./render-effects";
+import { DEFAULT_RENDER_EFFECTS, normalizeRenderEffectsSettings, type RenderEffectsSettings } from "./render-effects";
 import { normalizeWaterProjectSettings, type WaterProjectSettings } from "./water-settings";
 import type { ProjectAppearance } from "./project-appearance";
 import { normalizeTagRegistry, type TagRegistry } from "./tags";
@@ -172,6 +172,16 @@ export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
   ...applyProjectQualityPatch(DEFAULT_RENDER_PROJECT_SETTINGS, qualityPresetPatch("high")),
   customResolution: true,
 };
+
+/**
+ * A new 3D project's colour: Scene Linear with Neutral tone mapping, so lighting keeps its range and colours their
+ * saturation. 2D and Pixel Art Optimized projects stay on Legacy Display, which leaves sprite colours exactly as drawn.
+ */
+const NEW_3D_PROJECT_EFFECTS = {
+  ...DEFAULT_RENDER_EFFECTS,
+  colorPipeline: { version: 1, mode: "sceneLinear" },
+  toneMapping: "neutral",
+} as const satisfies RenderEffectsSettings;
 
 export interface ProjectSettings {
   /** Player saves live outside project assets; Play uses an isolated namespace. */
@@ -882,6 +892,7 @@ export function createEmptyProject(
     ...(twoD ? { twoD } : {}),
     render: {
       ...NEW_PROJECT_RENDER_SETTINGS,
+      ...(options?.kind !== "2d" && !options?.pixelArt ? { effects: NEW_3D_PROJECT_EFFECTS } : {}),
       ...options?.render,
       customResolution: options?.render?.customResolution ?? true,
     },

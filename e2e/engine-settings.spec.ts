@@ -64,6 +64,9 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
   await createContentBrowserAsset(page, "SceneLayer", "Foreground_Layer_With_A_Long_Name");
   await openMainScene(page);
   await expect(page.getByTestId("scene-post-process-stack")).toBeVisible();
+  // The project's own passes (a Scene Linear project's Display Color) come before the scene's stack.
+  await expect.poll(async () => viewportPostProcessPassCount(page), { timeout: 30_000 }).not.toBeNull();
+  const projectPasses = (await viewportPostProcessPassCount(page))!;
   await page.getByTestId("scene-post-process-stack-add").click();
   await expect(page.getByTestId("scene-post-process-picker")).toBeVisible();
   const bloomGuid = await page.evaluate(() => {
@@ -81,7 +84,7 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
   // Adding a pass asynchronously recollects viewport assets before attaching it.
   await expect
     .poll(async () => viewportPostProcessPassCount(page), { timeout: 30_000 })
-    .toBe(1);
+    .toBe(projectPasses + 1);
 
   await page.getByRole("textbox", { name: "Filter Properties" }).fill("Enabled");
   await page.getByTestId("scene-layers-stack-add").click();
@@ -149,9 +152,9 @@ test("editor viewport applies hardware scaling and the post-processing gate", as
   await page.getByTestId("scene-layer-0-enabled").click();
   await expect(page.getByTestId("scene-layer-0-enabled")).toHaveAttribute("aria-checked", "false");
   await page.getByTestId("scene-post-process-0-enabled").click();
-  await expect.poll(async () => viewportPostProcessPassCount(page)).toBe(0);
+  await expect.poll(async () => viewportPostProcessPassCount(page)).toBe(projectPasses);
   await page.getByTestId("scene-post-process-0-enabled").click();
-  await expect.poll(async () => viewportPostProcessPassCount(page)).toBe(1);
+  await expect.poll(async () => viewportPostProcessPassCount(page)).toBe(projectPasses + 1);
 
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("engine-settings").click();

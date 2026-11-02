@@ -156,7 +156,9 @@ export async function runColorGradingProof(backend: "webgl2" | "webgpu") {
       const identity = await draw();
       effects.colorGrading = { enabled: true, lutTextureGuid: "invert" };
       const inverted = await draw();
+      // Without a tone curve, so the grading alone tells the stages apart.
       effects.colorPipeline.mode = "sceneLinear";
+      effects.toneMapping = "none";
       const linearInverted = await draw();
       effects.colorPipeline.mode = "legacyDisplay";
       effects.colorGrading = { enabled: true, lutTextureGuid: "missing" };

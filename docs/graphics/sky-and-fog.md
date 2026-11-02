@@ -57,7 +57,7 @@ Volumetric fog is lit by directional, point and spot lights, so light shafts sho
 | Setting | Default | Description |
 | --- | --- | --- |
 | **Scene-Wide Fog** | Off | Fills the whole scene with lit fog. |
-| **Scene-Wide Fog Density** | 0.02 | Fog thickness per scene unit. |
+| **Scene-Wide Fog Density** | 0.003 | Fog thickness per scene unit. The default adds a light haze that builds with distance; values around 0.01 and above veil nearby objects too. |
 | **Volumetric Intensity** | 1 | Brightness of scattered light. 0 removes beams but keeps the darkening. |
 | **Volumetric Distance** | 50 | How far from the camera fog is sampled, in scene units. |
 | **Scattering Anisotropy** | 0.2 | Positive values strengthen beams when looking toward a light. |

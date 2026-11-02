@@ -161,6 +161,14 @@ describe("project schema", () => {
     expect(plain.render.quality?.postprocessing.antiAliasing).not.toBe("off");
   });
 
+  it("starts 3D projects in Scene Linear with Neutral tone mapping, and 2D and pixel-art projects in Legacy Display", () => {
+    const look = (settings: ProjectSettings) => [settings.render.effects?.colorPipeline.mode, settings.render.effects?.toneMapping];
+    expect(look(createEmptyProject("Three").settings)).toEqual(["sceneLinear", "neutral"]);
+    expect(look(createEmptyProject("Two", { kind: "2d" }).settings)).toEqual(["legacyDisplay", "neutral"]);
+    expect(look(createEmptyProject("Pixels", { pixelArt: true }).settings)).toEqual(["legacyDisplay", "neutral"]);
+    expect(createEmptyProject("Three").settings.render.effects?.volumetricLighting.density).toBe(0.003);
+  });
+
   it("filters textures nearest only when Nearest Texture Filtering and Pixel-Perfect Mode are both on", () => {
     // Saved settings are untrusted: only a literal true counts.
     const filtering = (pixelPerfect: unknown, nearestTextures: unknown) => nearestTextureFiltering(

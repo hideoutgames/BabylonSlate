@@ -82,7 +82,7 @@ for (const backend of ["webgl2"] as const)
           ) / capture.on.length;
         expect(
           linearDifference,
-          "default linear display preserves spatial color",
+          "linear display without tone mapping preserves spatial color",
         ).toBeLessThan(3);
         const occluded = capture.changed.filter(
           (value, i) => i % 4 === 0 && value > capture.on[i]! + 3,
