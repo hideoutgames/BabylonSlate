@@ -486,7 +486,9 @@ export async function runSpatialEffectsProof(
         effects.vignette.weight = 0;
         const identityDisplay = await draw();
         effects.vignette.enabled = false;
+        // Scene Linear without a tone curve: the pipeline alone keeps the spatial colour.
         effects.colorPipeline.mode = "sceneLinear";
+        effects.toneMapping = "none";
         const linear = await draw();
         effects.colorPipeline.mode = "legacyDisplay";
         if (!light) throw new Error("The combined capture has no spot light");
