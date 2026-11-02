@@ -39,12 +39,15 @@ import { selectedShapeComponent } from "./shape-edit-target";
 import type { ShapeHandlesHost } from "./shape-handles";
 import {
   applyGizmoMultiSelectDrag,
+  applyGizmoMultiSelectDragTo,
+  axisScaledPivotWorld,
   beginGizmoMultiSelectDrag,
   pickGizmoAttachActorId,
   readMeshLocalTransform,
   selectionGizmoRoots,
   type GizmoMultiSelectDrag,
 } from "./gizmo-multi-select";
+import { linkedAxisScale, linkedScaleFromChange, type ScaleVector } from "./linked-axis-scale";
 import { attachViewportGestures } from "./viewport-gestures";
 import { attachViewportFlyKeys, DEFAULT_FLY_SPEED } from "./viewport-fly-keys";
 import { createGameCameraPilot, type GameCameraPilotFraming } from "./game-camera-pilot";
@@ -138,6 +141,19 @@ export function createEditorViewportTools({
   onRollback(() => selection.dispose());
   let multiSelectDrag: GizmoMultiSelectDrag | null = null;
   let pointDrag: ShapeHandlesHost<never> | null = null;
+  /** Actors whose Inspector Scale is linked; the gizmo links the group only when every selected root is. */
+  let linkedScaleActorIds: ReadonlySet<string> = new Set();
+  /**
+   * A drag of a selection that is only partly linked, as the Inspector edits
+   * one: the group follows the unlinked drag, then each linked root rescales
+   * its other axes by its own factor on the dragged axis.
+   */
+  let mixedScale: {
+    /** X, Y or Z scale handle; null for the 2D box. */
+    axis: 0 | 1 | 2 | null;
+    pivotStart: ReturnType<typeof readMeshLocalTransform>;
+    linked: Array<{ mesh: AbstractMesh; start: ScaleVector }>;
+  } | null = null;
   const parentIdOf = (id: string): string | null =>
     editorSync.lastSceneActor(id)?.parentId ?? null;
   const selectedActorTransforms = () => {
@@ -171,6 +187,56 @@ export function createEditorViewportTools({
     return live;
   };
   const gizmosRef: { host: GizmoHost | null } = { host: null };
+  const beginMixedScale = (attached: AbstractMesh | null, roots: readonly string[]): typeof mixedScale => {
+    const host = gizmosRef.host;
+    if (!attached || !host) return null;
+    const linkedRoots = roots.filter((id) => linkedScaleActorIds.has(id));
+    if (linkedRoots.length === 0 || linkedRoots.length === roots.length) return null;
+    const axis = host.scaleDragAxis();
+    // Translate, rotate and the uniform handle treat every actor alike.
+    if (axis === null && !options.overlayTransformBox) return null;
+    return {
+      axis,
+      pivotStart: readMeshLocalTransform(attached),
+      // 2D Text resizes its text box, not its scale.
+      linked: linkedRoots.flatMap((id) => {
+        const mesh = editorSync.meshForActor(id);
+        return mesh && !isText2DOverlayMesh(mesh)
+          ? [{ mesh, start: [mesh.scaling.x, mesh.scaling.y, mesh.scaling.z] as ScaleVector }]
+          : [];
+      }),
+    };
+  };
+  const followSelection = (attached: AbstractMesh | null) => {
+    if (!multiSelectDrag || !attached) return;
+    const axis = mixedScale?.axis ?? null;
+    if (!mixedScale || axis === null) {
+      applyGizmoMultiSelectDrag(multiSelectDrag, attached);
+      return;
+    }
+    // The pivot as Babylon scales it, without its relinked axes.
+    const value = axis === 0 ? attached.scaling.x : axis === 1 ? attached.scaling.y : attached.scaling.z;
+    applyGizmoMultiSelectDragTo(multiSelectDrag, axisScaledPivotWorld(attached, mixedScale.pivotStart, axis, value));
+  };
+  const relinkMixedScale = (attached: AbstractMesh | null) => {
+    if (!mixedScale) return;
+    const mode = gizmosRef.host?.mode ?? "3d";
+    const { axis } = mixedScale;
+    for (const { mesh, start } of mixedScale.linked) {
+      const current: ScaleVector = [mesh.scaling.x, mesh.scaling.y, mesh.scaling.z];
+      // Babylon keeps compounding the attached mesh's dragged axis, so that axis
+      // is its factor; a follower's scale is rebuilt from its start every step.
+      const next = mesh === attached && axis !== null
+        ? linkedAxisScale(start, axis, current[axis], mode)
+        : linkedScaleFromChange(start, current, mode);
+      mesh.scaling.set(next[0], next[1], next[2]);
+      mesh.computeWorldMatrix(true);
+    }
+  };
+  const syncLinkedScale = () => {
+    const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
+    gizmosRef.host?.setLinkedScale(roots.length > 0 && roots.every((id) => linkedScaleActorIds.has(id)));
+  };
   const debugOverlayInstance = new EditorDebugOverlay(scene, {
     renderTargets: () => binding.renderTargets,
     previewFrameRate: options.cameraPreviewFrameRate,
@@ -184,6 +250,7 @@ export function createEditorViewportTools({
     manipulator: options.overlayTransformBox ? "overlay-box" : "trs",
     canvasCssHeight: () => pointerCanvas().height,
     onDragStart: () => {
+      mixedScale = null;
       const attached = gizmosRef.host?.attachedMesh() ?? null;
       pointDrag = (attached && pointHandles().find((handles) => attached === handles.selectedNode() && handles.beginSelectionDrag())) || null;
       if (pointDrag) return;
@@ -200,14 +267,14 @@ export function createEditorViewportTools({
       }
       if (attached instanceof Mesh) unfreezeActorWorldMatrix(attached);
       multiSelectDrag = beginGizmoMultiSelectDrag(attached, followers);
+      mixedScale = beginMixedScale(attached, roots);
       options.onGizmoDragStart?.();
     },
     onDrag: () => {
       if (pointDrag) { pointDrag.dragSelection(); return; }
       const attached = gizmosRef.host?.attachedMesh() ?? null;
-      if (multiSelectDrag && attached) {
-        applyGizmoMultiSelectDrag(multiSelectDrag, attached);
-      }
+      followSelection(attached);
+      relinkMixedScale(attached);
       const sceneData = editorSync.serializedScene();
       syncAuthoredAreaLightsFromMeshes(scene, (id) => editorSync.meshForActor(id));
       if (sceneData) {
@@ -220,10 +287,13 @@ export function createEditorViewportTools({
     onDragEnd: () => {
       if (pointDrag) { pointDrag.endSelectionDrag(); pointDrag = null; return; }
       const attached = gizmosRef.host?.attachedMesh() ?? null;
-      if (multiSelectDrag && attached) {
+      // A mixed drag's last step already placed and relinked the group; the
+      // attached mesh may carry its relinked axes now.
+      if (multiSelectDrag && attached && !mixedScale) {
         applyGizmoMultiSelectDrag(multiSelectDrag, attached);
       }
       multiSelectDrag = null;
+      mixedScale = null;
       const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
       for (const root of roots) {
         const mesh = editorSync.meshForActor(root);
@@ -496,11 +566,16 @@ export function createEditorViewportTools({
       scheduler.invalidate("asset");
     },
     refreshSelectionGizmo,
+    setLinkedScaleActors: (actorIds) => {
+      linkedScaleActorIds = new Set(actorIds);
+      syncLinkedScale();
+    },
     setSelectedActors: (actorIds: string[]) => {
       if (actorIds.length !== lastSelectedActorIds.length || actorIds.some((id, index) => id !== lastSelectedActorIds[index])) lastSelectedComponentIds = [];
       lastSelectedActorIds = [...actorIds];
       outlineHost.setSelection(actorIds);
       syncShapeHandles(actorIds);
+      syncLinkedScale();
       attachSelectionGizmo();
       scheduler.invalidate("selection");
     },

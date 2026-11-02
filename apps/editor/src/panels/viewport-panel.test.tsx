@@ -43,7 +43,8 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
         normal: null as [number, number, number] | null,
       })),
       restActorsOnSurface: vi.fn((): Array<{ actorId: string; position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] }> => []),
-      gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn(), setLinkedScale: vi.fn() },
+      setLinkedScaleActors: vi.fn(),
+      gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn() },
       grid: { setVisible: vi.fn() },
     },
     scheduler: {
@@ -276,7 +277,7 @@ describe("ViewportPanel engine", () => {
     createEngineMock.mockClear();
     handle.editor.setGridSettings.mockClear();
     handle.editor.gizmos.setSnap.mockClear();
-    handle.editor.gizmos.setLinkedScale.mockClear();
+    handle.editor.setLinkedScaleActors.mockClear();
     play.registerSharedEngine.mockClear();
     play.reportSceneViewportLoading.mockClear();
     play.playing = false;
@@ -336,7 +337,7 @@ describe("ViewportPanel engine", () => {
     expect(loadSourceBytes).not.toHaveBeenCalled();
   });
 
-  it("links the scale gizmo only while every selected actor's Scale is linked", async () => {
+  it("passes the selected actors whose Scale is linked to the viewport", async () => {
     documents.openDocuments = [{
       id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
       content: { ...createDefaultScene(), actors: [createActor("a", "A"), createActor("b", "B")] },
@@ -344,11 +345,11 @@ describe("ViewportPanel engine", () => {
     selection.actorIds = ["a", "b"];
     act(() => receiveActiveAppSettingsUpdate({ linkedScaleKeys: ["actor:a"] }));
     renderViewport();
-    await waitFor(() => expect(handle.editor.gizmos.setLinkedScale).toHaveBeenCalled());
-    expect(handle.editor.gizmos.setLinkedScale).toHaveBeenLastCalledWith(false);
+    await waitFor(() => expect(handle.editor.setLinkedScaleActors).toHaveBeenCalled());
+    expect(handle.editor.setLinkedScaleActors).toHaveBeenLastCalledWith(["a"]);
 
     act(() => receiveActiveAppSettingsUpdate({ linkedScaleKeys: ["actor:a", "actor:b"] }));
-    await waitFor(() => expect(handle.editor.gizmos.setLinkedScale).toHaveBeenLastCalledWith(true));
+    await waitFor(() => expect(handle.editor.setLinkedScaleActors).toHaveBeenLastCalledWith(["a", "b"]));
   });
 
   it("places with the Place On Surfaces settings and rests a placed actor in its placement's Undo step", async () => {

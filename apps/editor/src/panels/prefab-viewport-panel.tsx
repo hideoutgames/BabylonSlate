@@ -48,7 +48,6 @@ import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 import { useEditorAudioDebug } from "../lib/use-editor-audio-debug";
 import {
   documentComponentClassId,
-  scaleGizmoLinked,
   scaleLinkKey,
   useLinkedScale,
 } from "../lib/linked-scale";
@@ -149,13 +148,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const openDocument = useOpenDocument(documentId);
   const documentPath = openDocument?.ref.path;
   const linkedScale = useLinkedScale();
-  // The gizmo scales the selected component, linked as its Inspector Scale row.
-  const scaleLinked = scaleGizmoLinked(
-    linkedScale,
-    selectedId && selectedId !== PREFAB_ROOT_ID
-      ? [scaleLinkKey.classComponent(documentComponentClassId(openDocument?.ref), selectedId)]
-      : [],
-  );
+  // The gizmo scales the selected component (its preview actor), linked as its Inspector Scale row.
+  const scaleLinkedId =
+    selectedId &&
+    selectedId !== PREFAB_ROOT_ID &&
+    linkedScale.isLinked(scaleLinkKey.classComponent(documentComponentClassId(openDocument?.ref), selectedId))
+      ? selectedId
+      : null;
   const classGraph = openDocument?.ref.kind === "graph" ? (openDocument.content as SerializedGraph | null) : null;
   const overlayPrefab = useMemo(() => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
@@ -587,8 +586,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [gizmoSpace, engineEpoch]);
 
   useEffect(() => {
-    engineRef.current?.editor?.gizmos.setLinkedScale(scaleLinked);
-  }, [scaleLinked, engineEpoch]);
+    engineRef.current?.editor?.setLinkedScaleActors(scaleLinkedId ? [scaleLinkedId] : []);
+  }, [scaleLinkedId, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setSnap({
