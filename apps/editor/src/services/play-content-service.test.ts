@@ -3,6 +3,7 @@ import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import { createActor, createDefaultScene, type DocumentRef, type SerializedGraph } from "@haptic/core";
 import { DocumentService } from "./document-service";
 import { createPlayContentService } from "./play-content-service";
+import { GraphScriptCompileCache } from "./script-compiler";
 import type { ProjectService } from "./project-service";
 
 /** A loaded document, as read back from its JSON file. */
@@ -35,6 +36,7 @@ function createPlayContent(assets: readonly Asset[], readAssetChunk: (path: stri
     plugins: [],
     registry: { generation: 0, list: () => indexed, getRoot: () => undefined },
     loadDocument: vi.fn(async (_kind: string, path: string) => fromDisk(files.get(path))),
+    documentContentFromStored: (_kind: string, _path: string, stored: { payload: unknown }) => fromDisk(stored.payload),
     guidForPath: (path: string) => assets.find((asset) => asset.path === path)?.guid ?? null,
   } as unknown as ProjectService;
   const compiled: string[] = [];
@@ -123,6 +125,33 @@ describe("createPlayContentService", () => {
     await expect(playContent.collectPlayPreviewScripts()).resolves.toMatchObject({ bundles: [] });
     expect(logged).toHaveBeenCalledOnce();
     logged.mockRestore();
+  });
+
+  it("reuses the graphs Compile on Save compiled for a Play closure compile, and compiles nothing for the next Play", async () => {
+    const { playContent, open } = createPlayContent([
+      { guid: "hero", type: "Class", name: "Hero", path: "Hero.hasset", content: logGraph("saved") },
+    ]);
+    await open({ kind: "graph", path: "Hero.hasset", label: "Hero" });
+    const generated = vi.spyOn(GraphScriptCompileCache.prototype, "retainGraph");
+    try {
+      playContent.compileOpenGraphs(undefined);
+      expect(generated).toHaveBeenCalledOnce();
+      const first = await playContent.collectPlayPreviewScripts(new Set(["hero"]), undefined, undefined, { traceExecution: true });
+      const second = await playContent.collectPlayPreviewScripts(new Set(["hero"]), undefined, undefined, { traceExecution: true });
+      expect(generated).toHaveBeenCalledOnce();
+      expect(second.bundles.find((bundle) => bundle.classId === "Hero")).toBe(first.bundles.find((bundle) => bundle.classId === "Hero"));
+    } finally { generated.mockRestore(); }
+  });
+
+  it("compiles a closed Class from the stored document Play preparation handed it, without reading it again", async () => {
+    const { project, playContent } = createPlayContent([
+      { guid: "hero", type: "Class", name: "Hero", path: "Hero.hasset", content: logGraph("on disk") },
+    ]);
+    vi.mocked(project.loadDocument).mockClear();
+    const stored = new Map([["hero", { type: "Class", version: 1, payload: logGraph("prepared") as unknown as Record<string, unknown> }]]);
+    const { bundles } = await playContent.collectPlayPreviewScripts(new Set(["hero"]), undefined, undefined, { storedDocuments: stored });
+    expect(bundles.find((bundle) => bundle.classId === "Hero")?.source).toContain("prepared");
+    expect(project.loadDocument).not.toHaveBeenCalled();
   });
 
   it("collects only requested Play assets and prefers an unsaved open tab over the saved file", async () => {

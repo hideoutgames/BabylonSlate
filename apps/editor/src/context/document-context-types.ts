@@ -446,7 +446,7 @@ export interface DocumentContextValue {
     extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, import("@haptic/assets").ModelPayload>>;
   /** Mixer/channel/attenuation/Audio metadata for Play; source bytes load on first playSound. */
-  collectPlayInputAssets: (requiredGuids?: ReadonlySet<string>) => Promise<InputAssetDefinition[]>;
+  collectPlayInputAssets: (requiredGuids?: ReadonlySet<string>, payloads?: ReadonlyMap<string, unknown>) => Promise<InputAssetDefinition[]>;
   collectPlayAudio: (requiredGuids?: ReadonlySet<string>) => Promise<{
     library: import("../lib/play-audio").PlayAudioLibrary;
     loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;

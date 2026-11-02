@@ -1265,6 +1265,18 @@ export class ProjectService {
   }
 
   /**
+   * What `loadDocument` returns for a stored document the caller has already
+   * read (Play preparation's closure), without reading it again.
+   */
+  documentContentFromStored(
+    kind: Exclude<DocumentKind, "content-browser" | "trace">,
+    path: string,
+    stored: { type: string; version: number; payload: Record<string, unknown> },
+  ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
+    return this.documentContent(kind, path, stored);
+  }
+
+  /**
    * The stored payload `loadDocument` starts from. It records no migration
    * bookkeeping, so a caller may read several documents ahead and apply
    * `documentContent` to each in its own order.

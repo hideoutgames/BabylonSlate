@@ -56,7 +56,7 @@ export async function runProjectScene(options: {
     project: document,
     createScope: (owner) => project.createAssetLoadScope(owner),
     traceExecution: true,
-    compile: (required) => playContent.collectPlayPreviewScripts(required, undefined, document, { traceExecution: true }),
+    compile: (required, storedDocuments) => playContent.collectPlayPreviewScripts(required, undefined, document, { traceExecution: true, storedDocuments }),
   };
   const sceneGuid = registry.list().find((asset) => asset.path === options.scenePath)?.header.guid;
   if (!sceneGuid) throw new Error(`No scene at ${options.scenePath}`);
@@ -88,7 +88,7 @@ export async function runProjectScene(options: {
         loadDefinition: (guid) => project.loadDocument("save-game", registry.getByGuid(guid)!.path),
         storage: createSessionSaveStorage(emptySaveStorage),
       }),
-      inputAssets: await playContent.collectPlayInputAssets(prepared.required),
+      inputAssets: await playContent.collectPlayInputAssets(prepared.required, prepared.game.decodedPayloads),
       dataAssets: content.dataAssets,
       curveAssets: content.curveAssets,
       timelineClipAssets: content.timelineClipAssets,

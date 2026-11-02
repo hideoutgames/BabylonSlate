@@ -833,7 +833,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           // Editor Play and Simulation compile with the breakpoint check and the graph debugger's probes,
           // each a null check per node while nothing is set or followed. Preview Build and exports compile neither.
           traceExecution: true,
-          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: true }),
+          compile: (required, storedDocuments) => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: true, storedDocuments }),
         };
         playSourceHostRef.current = sourceHost;
         const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);
@@ -875,7 +875,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           settings: projectDocument.settings,
           sceneGuid: effectiveGuid,
         }));
-        setPlayInputAssets(await current(collectPlayInputAssets(prepared.required)));
+        setPlayInputAssets(await current(collectPlayInputAssets(prepared.required, prepared.game.decodedPayloads)));
         playContentActions.setAudioAndNavigation(playAudioAndNavigation(prepared, effectiveGuid));
         setPlayAudioSourceLoader(() => async ({ assetGuid, chunkId }: Parameters<PlayAudioSourceLoader>[0]) => {
           for (const entry of playSourceSetsRef.current) {

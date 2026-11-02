@@ -83,6 +83,7 @@ import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes
 import { classAssetPaths, mergePluginEditorUtilityObjects } from "../lib/plugin-ui";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import type { DocumentService, OpenDocument } from "./document-service";
+import type { StoredPlayDocument } from "./play-asset-sources";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -106,7 +107,19 @@ export const GRAPH_SIGNATURE_KINDS = ["graph", "anim-graph", "input-action", "in
 export type PlayScriptCompileOptions = {
   /** A Simulation compiles Class graphs and Animation Object graphs with the probes its graph debugger reads. */
   traceExecution?: boolean;
+  /**
+   * Stored documents the caller already read, by asset guid (Play preparation's closure). A closed Class,
+   * Scene, Scene Layer or Animation Graph among them compiles from it instead of being read again.
+   */
+  storedDocuments?: ReadonlyMap<string, StoredPlayDocument>;
 };
+
+
+/**
+ * The compile options editor Play and Simulation use. Compile on Save warms the codegen cache with
+ * them, so a Play that follows reuses what it compiled.
+ */
+const EDITOR_PLAY_COMPILE = { instrumentExecutionTrace: true } as const;
 
 export interface PlayContentServiceOptions {
   documents: DocumentService;
@@ -223,8 +236,9 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
 
   /**
    * Compile on Save: warm the codegen cache for open Class and Animation
-   * Graphs only and return their signature, which the caller records as
-   * compiled. Play still runs `collectPlayPreviewScripts` for the full set.
+   * Graphs only, with editor Play's options, and return their signature, which
+   * the caller records as compiled. Play still runs `collectPlayPreviewScripts`
+   * for its closure and reuses each graph whose compile key matches.
    */
   const compileOpenGraphs = (tags: ProjectDocument["settings"]["tags"] | undefined): string => {
     const assets = projectService.registry?.list() ?? [];
@@ -250,6 +264,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const inputAssets = inputAssetCatalog(assets, [...documentService.getState().openDocuments.values()]);
     const dataAssets = collectDataGraphAssets(assets, [...documentService.getState().openDocuments.values()]);
     compileGraphDocuments(graphs, {
+      ...EDITOR_PLAY_COMPILE,
       inputAssets,
       dataAssets,
       cache: compileCache,
@@ -258,7 +273,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       dataDefinitions: typeSchemas.dataDefinitions,
       tagRegistry: tags,
     });
-    compileAnimGraphScripts(animGraphs, { cache: compileCache, inputAssets, dataAssets, ...typeSchemas, tagRegistry: tags });
+    compileAnimGraphScripts(animGraphs, { ...EDITOR_PLAY_COMPILE, cache: compileCache, inputAssets, dataAssets, ...typeSchemas, tagRegistry: tags });
     return graphCompileSignature(
       [...graphs, ...openAnimGraphSignatureSlices(openDocuments)],
       inputAssets,
@@ -268,11 +283,25 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     );
   };
 
+  /** A closed document's content: from `stored` when the caller read it already, else read now. */
+  const closedDocumentContent = async (
+    kind: "graph" | "scene" | "scene-layer" | "anim-graph",
+    path: string,
+    guid: string | undefined,
+    stored: ReadonlyMap<string, StoredPlayDocument> | undefined,
+  ) => {
+    const document = guid ? stored?.get(guid) : undefined;
+    return document ? projectService.documentContentFromStored(kind, path, document) : projectService.loadDocument(kind, path);
+  };
+
   /** `strict` fails on an unreadable Class instead of compiling without it. */
-  const loadClassGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false): Promise<
+  const loadClassGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false,
+    stored?: ReadonlyMap<string, StoredPlayDocument>): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
-    const paths = classAssetPaths((projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid)));
+    const assets = (projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid));
+    const guidByPath = new Map(assets.map((asset) => [asset.path, asset.header.guid]));
+    const paths = classAssetPaths(assets);
     const open = sourceDocuments ? new Map(sourceDocuments.map(document => [document.id, document])) : documentService.getState().openDocuments;
     const documents: Array<{ path: string; content: SerializedGraph }> = [];
     for (const path of paths) {
@@ -282,10 +311,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         continue;
       }
       try {
-        const content = (await projectService.loadDocument(
-          "graph",
-          path,
-        )) as SerializedGraph;
+        const content = (await closedDocumentContent("graph", path, guidByPath.get(path), stored)) as SerializedGraph;
         documents.push({ path, content });
       } catch (error) {
         reportLoadFailure("Class", path, error, strict);
@@ -294,7 +320,8 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     return documents;
   };
 
-  const loadProjectGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false): Promise<
+  const loadProjectGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false,
+    stored?: ReadonlyMap<string, StoredPlayDocument>): Promise<
     Array<{
       path: string;
       content: SerializedGraph;
@@ -302,7 +329,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       parentClassId?: string | null;
     }>
   > => {
-    const documents = await loadClassGraphDocuments(requiredGuids, sourceDocuments, strict);
+    const documents = await loadClassGraphDocuments(requiredGuids, sourceDocuments, strict, stored);
     const assets = projectService.registry?.list() ?? [];
     const headers = Object.fromEntries(
       assets.map((asset) => [
@@ -323,7 +350,8 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
    * closure (all of them without one), as Class documents of their
    * `Scene:<guid>` / `SceneLayer:<guid>` classes. Open tabs win over saved files.
    */
-  const loadEmbeddedScriptDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false): Promise<
+  const loadEmbeddedScriptDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false,
+    stored?: ReadonlyMap<string, StoredPlayDocument>): Promise<
     EmbeddedScriptDocument[]
   > => {
     const assets = (projectService.registry?.list() ?? []).filter((asset) =>
@@ -338,7 +366,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       let content = open.get(documentId({ kind, path: asset.path }))?.content as EmbeddedScriptOwner | null | undefined;
       if (!content) {
         try {
-          content = await projectService.loadDocument(kind, asset.path) as EmbeddedScriptOwner;
+          content = await closedDocumentContent(kind, asset.path, asset.header.guid, stored) as EmbeddedScriptOwner;
         } catch (error) {
           reportLoadFailure(kind === "scene" ? "Scene" : "Scene Layer", asset.path, error, strict);
           continue;
@@ -356,7 +384,8 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     return documents;
   };
 
-  const loadProjectAnimGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false) => {
+  const loadProjectAnimGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false,
+    stored?: ReadonlyMap<string, StoredPlayDocument>) => {
     const assets = (projectService.registry?.list() ?? []).filter(
       (asset) => asset.header.type === "AnimationGraph" && (!requiredGuids || requiredGuids.has(asset.header.guid)),
     );
@@ -373,7 +402,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       try {
         entries.push({
           guid: asset.header.guid,
-          document: await projectService.loadDocument("anim-graph", asset.path),
+          document: await closedDocumentContent("anim-graph", asset.path, asset.header.guid, stored),
         });
       } catch (error) {
         reportLoadFailure("Animation Graph", asset.path, error, strict);
@@ -438,12 +467,18 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     // left out of the recorded signature, so it reads as needing a compile, as
     // it does when it loads after any recorded compile.
     const openDocuments = sourceDocuments ?? [...documentService.getState().openDocuments.values()].map((document) => ({ ...document }));
-    const classDocuments = await loadProjectGraphDocuments(requiredGuids, openDocuments, strict);
-    const embeddedDocuments = await loadEmbeddedScriptDocuments(requiredGuids, openDocuments, strict);
+    const stored = compileOptions?.storedDocuments;
+    const classDocuments = await loadProjectGraphDocuments(requiredGuids, openDocuments, strict, stored);
+    const embeddedDocuments = await loadEmbeddedScriptDocuments(requiredGuids, openDocuments, strict, stored);
     const documents = [...classDocuments, ...embeddedDocuments];
-    const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, openDocuments, strict);
+    const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, openDocuments, strict, stored);
     const parentOf = registryClassParentLookup(projectService.registry);
     const assets = projectService.registry?.list() ?? [];
+    // Every document validates and compiles against the same catalogs: build each once.
+    const inputAssets = inputAssetCatalog(assets, openDocuments);
+    const dataAssets = collectDataGraphAssets(assets, openDocuments);
+    const materialDomains = materialDomainsFromAssets(assets, openDocuments);
+    const hierarchy = classHierarchyFromParentOf(parentOf);
     const classGraphs = collectClassGraphsForPalette({
       assets,
       openDocuments,
@@ -484,18 +519,15 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         assetGuid: doc.path,
         graphId: documentId({ kind: "documentKind" in doc ? (doc as EmbeddedScriptDocument).documentKind : "graph", path: doc.path }),
         classId: doc.classId ?? classIdForGraphPath(doc.path),
-        hierarchy: classHierarchyFromParentOf(parentOf),
+        hierarchy,
         members: memberSymbols,
         knownClassIds,
-        inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], openDocuments),
-        dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], openDocuments),
+        inputAssets,
+        dataAssets,
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
         dataDefinitions: typeSchemas.dataDefinitions,
-        materialDomains: materialDomainsFromAssets(
-          projectService.registry?.list() ?? [],
-          openDocuments,
-        ),
+        materialDomains,
         parentOf,
         otherClassGraphs: classGraphs,
         subsystemClasses,
@@ -512,22 +544,24 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         { assetGuid: doc.path, graphId: documentId({ kind: doc.documentKind, path: doc.path }) },
         doc.documentKind === "scene" ? "Scene" : "Scene Layer", doc.ownedTimelineClips));
     }
+    // Play's closure compiles through the same codegen cache: a graph whose key matches an earlier
+    // compile (a previous Play, the whole project, Compile on Save) is not generated again.
     const bundles = [
       ...compileGraphDocuments(documents, {
-        inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], openDocuments),
-        dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], openDocuments),
+        inputAssets,
+        dataAssets,
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
         dataDefinitions: typeSchemas.dataDefinitions,
         tagRegistry: (sourceProject ?? options.projectDocument())?.settings.tags,
         instrumentExecutionTrace: compileOptions?.traceExecution,
-        cache: requiredGuids ? undefined : compileCache,
+        cache: compileCache,
       }),
       ...compileAnimGraphScripts(animDocuments, {
-        cache: requiredGuids ? undefined : compileCache,
+        cache: compileCache,
         instrumentExecutionTrace: compileOptions?.traceExecution,
-        inputAssets: inputAssetCatalog(assets, openDocuments),
-        dataAssets: collectDataGraphAssets(assets, openDocuments),
+        inputAssets,
+        dataAssets,
         ...typeSchemas,
         tagRegistry: (sourceProject ?? options.projectDocument())?.settings.tags,
       }),
@@ -851,11 +885,13 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     return payloads;
   };
 
-  const collectPlayInputAssets = async (requiredGuids?: ReadonlySet<string>): Promise<InputAssetDefinition[]> => {
+  /** `payloads`: documents the caller prepared already, by guid (Play's closure); the others are read. */
+  const collectPlayInputAssets = async (requiredGuids?: ReadonlySet<string>, payloads?: ReadonlyMap<string, unknown>): Promise<InputAssetDefinition[]> => {
     const inputs: InputAssetDefinition[] = [];
     for (const asset of projectService.registry?.list() ?? []) {
       if (!isInputAssetType(asset.header.type) || (requiredGuids && !requiredGuids.has(asset.header.guid))) continue;
-      const content = await loadPlayAssetContent(asset.header.type === "InputAction" ? "input-action" : "input-axis", asset.path);
+      const content = payloads?.get(asset.header.guid) ??
+        await loadPlayAssetContent(asset.header.type === "InputAction" ? "input-action" : "input-axis", asset.path);
       if (!content) throw new Error(`Unable to load input asset ${asset.header.name}`);
       inputs.push({ ...normalizeInputAssetPayload(asset.header.type, content), guid: asset.header.guid, name: asset.header.name, type: asset.header.type });
     }
