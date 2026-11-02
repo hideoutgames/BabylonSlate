@@ -97,6 +97,25 @@ describe("resolveGpuTexture", () => {
     expect(lut?.bytes).toBe(png);
   });
 
+  it("reads only the KTX2 it binds when the header records the Texture's size, and the source once it is the result", async () => {
+    const pixels = new Uint8Array([1, 2, 3, 4]);
+    const byId: Record<string, Uint8Array> = { pixels, "ktx2:retained": ktx2Header(64, 64) };
+    const asset = header([chunk("pixels", "pixels"), chunk("ktx2:retained", "ktx2")], {
+      usage: "albedo", ktx2ChunkId: "ktx2:retained", width: 64, height: 64,
+    });
+    const reads: string[] = [];
+    const readChunk = async (id: string) => { reads.push(id); return byId[id] ?? null; };
+    const resolved = await resolveGpuTexture({ header: asset, readChunk, editorLod: { enabled: false, quality: 1 } });
+    expect(resolved).toMatchObject({ kind: "ktx2", chunkId: "ktx2:retained", sourceEdge: 64 });
+    expect(reads).toEqual(["ktx2:retained"]);
+
+    reads.length = 0;
+    asset.payload.usage = "pixelArt";
+    const exact = await resolveGpuTexture({ header: asset, readChunk, editorLod: { enabled: false, quality: 1 } });
+    expect(exact).toMatchObject({ kind: "source", chunkId: "pixels", bytes: pixels });
+    expect(reads).toEqual(["pixels"]);
+  });
+
   it("never binds a block-misaligned KTX2 for a Particle Texture", async () => {
     const pixels = new Uint8Array([1, 2, 3, 4]);
     const byId: Record<string, Uint8Array> = {
