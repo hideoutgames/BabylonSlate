@@ -17,7 +17,6 @@ import {
   PARTICLE_BILLBOARD_MODE_IDS,
   PARTICLE_BLEND_MODE_IDS,
   PARTICLE_CAPACITY_DEFAULT,
-  PARTICLE_CPU_CAPACITY_BUDGET,
   PARTICLE_CURVE_MAX_KEYS,
   PARTICLE_CURVE_MIN_KEYS,
 } from "@haptic/core";
@@ -538,7 +537,6 @@ function ParticleGraphSettingsDetails({
       id: "capacity",
       kind: "number",
       label: "Capacity",
-      description: `Particle Graphs simulate on the CPU; above ${PARTICLE_CPU_CAPACITY_BUDGET} particles costs more on iPad.`,
       value: settings.capacity,
       defaultValue: PARTICLE_CAPACITY_DEFAULT,
       min: PARTICLE_GRAPH_LIMITS.capacity.min,
