@@ -14,7 +14,7 @@ import {
   SCENE_SCHEMA_VERSION,
   type SerializedGraph,
 } from "@haptic/core";
-import { migrateLegacyShaderPayload } from "@haptic/shader-graph";
+import { createImportedMaterialDocument } from "@haptic/shader-graph";
 import { AUDIO_REVERB_CHUNK_ID, collectAssetDependencyMetadata, createDefaultPluginSettings, type IndexedAsset } from "@haptic/assets";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "@haptic/exporter";
 import type { ScriptBundleEntry } from "@haptic/bridge";
@@ -487,10 +487,7 @@ describe("collectAndExportGame", () => {
       ...createDefaultScene(),
       actors: [createActor("hero", "Hero", { components: [mesh] })],
     };
-    const material = migrateLegacyShaderPayload(
-      {},
-      { textureGuids: ["tex-missing"] },
-    );
+    const material = createImportedMaterialDocument({ textureGuid: "tex-missing" });
     const result = await collectAndExportGame({
       startupSceneGuid: "scene-1",
       assets: [
@@ -553,7 +550,7 @@ describe("collectAndExportGame", () => {
     const mesh = createMeshComponent("mesh", "box");
     mesh.properties.materialGuid = "material";
     const scene = { ...createDefaultScene(), actors: [createActor("screen", "Screen", { components: [mesh] })] };
-    const material = migrateLegacyShaderPayload({}, { textureGuids: ["live-texture"] });
+    const material = createImportedMaterialDocument({ textureGuid: "live-texture" });
     const payloads: Record<string, unknown> = { scene, material, "live-texture": { renderTargetGuid: "target" }, target: { mode: "DepthPass", width: 128, height: 128 } };
     const result = await collectAndExportGame({
       startupSceneGuid: "scene",

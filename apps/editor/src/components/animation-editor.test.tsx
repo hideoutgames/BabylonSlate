@@ -43,17 +43,6 @@ describe("AnimationEditor", () => {
     );
   });
 
-  it("records the clip's length on the first edit of an asset saved before Duration was editable", () => {
-    const onChange = vi.fn();
-    render(<AnimationEditor payload={{ clipName: "Walk", modelGuid: "hero", durationMs: 800 }} onChange={onChange} />);
-    expect((screen.getByRole("button", { name: "Reset Duration" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(durationInput(), { target: { value: "400" } });
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ durationMs: 400, clipDurationMs: 800 }),
-      expect.any(String),
-    );
-  });
-
   it("shows Duration read-only without an owner to write it", () => {
     render(<AnimationEditor payload={{ clipName: "Walk", modelGuid: "hero", durationMs: 1000 }} />);
     expect(durationInput().disabled).toBe(true);
