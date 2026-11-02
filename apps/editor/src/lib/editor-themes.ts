@@ -93,6 +93,9 @@ const DEFAULT_COLORS = {
   "asset-script-type": "#00b789",
   "asset-component": "#b07be6",
   "asset-folder": "#ea9602",
+  "platform-web": "#e34f26",
+  "platform-windows": "#3a96dd",
+  "platform-android": "#3ddc84",
 } as const;
 
 export type ThemeColorKey = keyof typeof DEFAULT_COLORS;
@@ -232,6 +235,15 @@ export const THEME_COLOR_GROUPS: ThemeColorGroup[] = [
       color("asset-folder", "Folder"),
     ],
   },
+  {
+    id: "platforms",
+    label: "Platforms",
+    colors: [
+      color("platform-web", "Web (HTML5)"),
+      color("platform-windows", "Windows"),
+      color("platform-android", "Android"),
+    ],
+  },
 ];
 
 export interface EditorTheme {
@@ -266,6 +278,8 @@ function luminance(hex: string): number {
 /** Haptic White: light chrome, light graph canvas, dark node titles kept. */
 const HAPTIC_WHITE_COLORS: ThemeColors = {
   ...DEFAULT_COLORS,
+  "platform-windows": "#0078d4",
+  "platform-android": "#1d9e5a",
   background: "#c2c2c2",
   sidebar: "#ebebeb",
   card: "#f4f4f4",
@@ -418,6 +432,8 @@ function paletteColors(palette: ThemePalette): ThemeColors {
     "asset-script-type": pin(mix(green, cyan, 0.5)),
     "asset-component": pin(purple),
     "asset-folder": pin(mix(orange, yellow, 0.5)),
+    "platform-windows": light ? "#0078d4" : DEFAULT_COLORS["platform-windows"],
+    "platform-android": light ? "#1d9e5a" : DEFAULT_COLORS["platform-android"],
   };
 }
 

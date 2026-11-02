@@ -3,7 +3,7 @@ export interface PackagingTarget {
   id: "web" | "windows" | "linux" | "macos" | "android" | "ios";
   label: string;
   description: string;
-  /** False lists the platform greyed out; only available targets can be packaged. */
+  /** False lists the platform under Unavailable; only available targets can be packaged. */
   available: boolean;
 }
 

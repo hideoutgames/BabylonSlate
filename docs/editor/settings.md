@@ -51,7 +51,7 @@ Choose the editor's colors in **Manage Account > Application** on the Homepage, 
 
 - The preview at the top shows how the editor looks with the selected theme. It is a picture only; you can't click it.
 - Pick a theme from the list below the preview. **Haptic Dark** is the default. The other built-in themes are **Haptic White** and ports of popular color schemes: **Dracula**, **Nord**, **One Dark**, **Monokai**, **Solarized Light** and **Catppuccin Mocha**.
-- Open **Style** to see the color of every part of the editor, grouped into surfaces, text, accents, status, graph, pin and asset type colors.
+- Open **Style** to see the color of every part of the editor, grouped into surfaces, text, accents, status, graph, pin, asset type and platform colors.
 - Built-in themes can't be changed. Changing a color while a built-in theme is selected creates a custom theme from it, such as **Haptic Dark Copy**, and selects it. Later changes edit that custom theme.
 - Custom themes have **Rename** and **Delete**. Deleting the selected theme switches the editor back to **Haptic Dark**.
 - **Export Theme** saves the selected theme as a `.haptic-theme.json` file. **Import Theme** adds a theme file as a new custom theme and selects it. Colors the file leaves out use **Haptic Dark**'s colors.

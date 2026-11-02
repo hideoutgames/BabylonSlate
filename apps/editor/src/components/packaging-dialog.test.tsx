@@ -1,34 +1,45 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ok } from "@haptic/core";
 import { PackagingDialog } from "./packaging-dialog";
 
-const { exportGameArtifact, zipExportedGame } = vi.hoisted(() => ({
+const { exportGameArtifact, zipExportedGame, project } = vi.hoisted(() => ({
   exportGameArtifact: vi.fn(),
   zipExportedGame: vi.fn(),
+  project: { startupSceneGuid: "scene-main" as string | null },
 }));
 
 vi.mock("../context/document-context", async () => {
   const { createEmptyProject } = await import("@haptic/core");
-  const projectDocument = createEmptyProject("Harbour Run");
-  return (await import("../testing/document-context-mock")).documentContextMock(() => ({
-    projectDocument,
-    exportGameArtifact,
-    zipExportedGame,
-  }));
+  const scene = { header: { guid: "scene-main", name: "MainMenu", type: "Scene" }, path: "assets/MainMenu.scene.hasset" };
+  return (await import("../testing/document-context-mock")).documentContextMock(() => {
+    const projectDocument = createEmptyProject("Harbour Run");
+    projectDocument.settings.startupSceneGuid = project.startupSceneGuid;
+    projectDocument.settings.alwaysPackageFolders = ["assets/Audio", "assets/Localization"];
+    return {
+      projectDocument,
+      assetRegistry: { list: () => [scene], getByGuid: (guid: string) => (guid === scene.header.guid ? scene : undefined) },
+      exportGameArtifact,
+      zipExportedGame,
+    };
+  });
 });
 
 afterEach(() => {
   cleanup();
   exportGameArtifact.mockReset();
   zipExportedGame.mockReset();
+  project.startupSceneGuid = "scene-main";
   vi.restoreAllMocks();
 });
 
-function renderDialog(onOpenExportSettings = vi.fn()) {
-  render(<PackagingDialog open onOpenChange={() => {}} onOpenExportSettings={onOpenExportSettings} />);
-  return { onOpenExportSettings };
+function renderDialog() {
+  const onOpenProjectSettings = vi.fn();
+  render(<PackagingDialog open onOpenChange={() => {}} onOpenProjectSettings={onOpenProjectSettings} />);
+  return { onOpenProjectSettings };
 }
+
+const summary = () => within(screen.getByTestId("packaging-summary"));
 
 it("packages the project for the web and downloads the archive named after it", async () => {
   const artifact = { files: [] };
@@ -42,7 +53,9 @@ it("packages the project for the web and downloads the archive named after it", 
   });
   renderDialog();
   expect(screen.getByTestId("packaging-target-web").getAttribute("aria-pressed")).toBe("true");
-  expect(screen.getByText(/Downloads Harbour_Run\.zip\./)).toBeTruthy();
+  expect(summary().getByText("Harbour_Run.zip")).toBeTruthy();
+  expect(summary().getByText("MainMenu")).toBeTruthy();
+  expect(summary().getByText("2 Folders")).toBeTruthy();
 
   await act(async () => {
     fireEvent.click(screen.getByTestId("packaging-package"));
@@ -52,24 +65,39 @@ it("packages the project for the web and downloads the archive named after it", 
   expect(exportGameArtifact.mock.calls[0]![0].projectSnapshot.metadata.name).toBe("Harbour Run");
   expect(zipExportedGame).toHaveBeenCalledWith(artifact);
   expect(downloads).toEqual(["Harbour_Run.zip"]);
-  expect(screen.getByRole("status").textContent).toBe("Game package prepared. Check your downloads.");
+  expect(screen.getByText("Game package prepared. Check your downloads.")).toBeTruthy();
 });
 
-it("lists the native platforms greyed out and keeps Web selected", () => {
+it("groups platforms into Available and Unavailable and explains an unavailable one", () => {
   renderDialog();
-  const web = screen.getByTestId("packaging-target-web");
-  expect(web.getAttribute("aria-pressed")).toBe("true");
-  expect(web.hasAttribute("disabled")).toBe(false);
-  const note = screen.getByText("Windows, Linux, macOS, Android and iOS are not available yet.");
-  for (const id of ["windows", "linux", "macos", "android", "ios"]) {
-    const tile = screen.getByTestId(`packaging-target-${id}`);
-    expect(tile.hasAttribute("disabled"), id).toBe(true);
-    expect(tile.getAttribute("aria-describedby")).toBe(note.id);
-    expect(tile.querySelector("svg"), id).not.toBeNull();
-    fireEvent.click(tile);
-  }
-  expect(web.getAttribute("aria-pressed")).toBe("true");
-  expect(screen.getByText(/ZIP for itch\.io or any static web host\./)).toBeTruthy();
+  const available = within(screen.getByRole("group", { name: "Available" }));
+  const unavailable = within(screen.getByRole("group", { name: "Unavailable" }));
+  expect(available.getAllByRole("button").map((button) => button.textContent)).toEqual(["Web"]);
+  expect(unavailable.getAllByRole("button").map((button) => button.textContent)).toEqual(["Windows", "Linux", "macOS", "Android", "iOS"]);
+
+  fireEvent.click(screen.getByTestId("packaging-target-android"));
+  const detail = within(screen.getByTestId("packaging-detail"));
+  expect(detail.getByText("Not Available On This Device")).toBeTruthy();
+  expect(detail.getByText("Android packaging is not available on this device.")).toBeTruthy();
+  expect(screen.queryByTestId("packaging-summary")).toBeNull();
+  expect(screen.getByTestId("packaging-package").hasAttribute("disabled")).toBe(true);
+  expect(screen.getByTestId("packaging-target-web").getAttribute("aria-pressed")).toBe("false");
+
+  fireEvent.click(screen.getByTestId("packaging-target-web"));
+  expect(screen.getByTestId("packaging-package").hasAttribute("disabled")).toBe(false);
+});
+
+it.each([
+  [null, "Not Set"],
+  ["scene-deleted", "Missing"],
+])("keeps Package unavailable while the Startup Scene is %s and links to Game settings", (guid, shown) => {
+  project.startupSceneGuid = guid;
+  const { onOpenProjectSettings } = renderDialog();
+  expect(summary().getByText(shown)).toBeTruthy();
+  expect(screen.getByTestId("packaging-package").hasAttribute("disabled")).toBe(true);
+  fireEvent.click(within(screen.getByTestId("packaging-startup-scene")).getByRole("button", { name: "Game Settings" }));
+  expect(onOpenProjectSettings).toHaveBeenCalledWith("game");
+  expect(exportGameArtifact).not.toHaveBeenCalled();
 });
 
 it("explains a failed package and lets you try again", async () => {
@@ -80,17 +108,18 @@ it("explains a failed package and lets you try again", async () => {
   fireEvent.click(screen.getByTestId("packaging-package"));
   expect(screen.getByTestId("packaging-package").textContent).toBe("Packaging…");
   expect(screen.getByTestId("packaging-package").hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("progressbar")).toBeTruthy();
 
   await act(async () => { reject(new Error("zip failed")); });
 
   expect(screen.getByTestId("packaging-error").textContent).toBe("Could not build the zip. Try again.");
   expect(screen.getByTestId("packaging-package").hasAttribute("disabled")).toBe(false);
-  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByRole("progressbar")).toBeNull();
 });
 
 it("opens the export settings that decide what a package includes", () => {
-  const { onOpenExportSettings } = renderDialog();
+  const { onOpenProjectSettings } = renderDialog();
   fireEvent.click(screen.getByRole("button", { name: "Export Settings" }));
-  expect(onOpenExportSettings).toHaveBeenCalledTimes(1);
+  expect(onOpenProjectSettings).toHaveBeenCalledWith("export");
   expect(exportGameArtifact).not.toHaveBeenCalled();
 });
