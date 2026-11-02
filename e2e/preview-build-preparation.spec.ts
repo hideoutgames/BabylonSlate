@@ -84,8 +84,8 @@ test("Play, Preview Build and Export refuse an older-format startup Scene", asyn
   await previewFailure.getByRole("button", { name: "Close", exact: true }).click();
 
   await page.getByTestId("settings-menu").click();
-  await page.getByTestId("project-settings").click();
-  await page.getByTestId("settings-modal-category-export").click();
-  await page.getByTestId("export-game").click();
-  await expect(page.getByTestId("export-game-error")).toContainText(reason);
+  await page.getByTestId("packaging").click();
+  await expect(page.getByTestId("packaging-dialog")).toBeVisible();
+  await page.getByTestId("packaging-package").click();
+  await expect(page.getByTestId("packaging-error")).toContainText(reason);
 });

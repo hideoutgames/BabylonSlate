@@ -18,7 +18,7 @@ export function PlayPreviewSettingsFields({
   const aspectDisabled = settings.followSystem;
   return (
     <>
-      <Field orientation="horizontal">
+      <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="setting-play-follow-system">
             Follow System
@@ -37,7 +37,7 @@ export function PlayPreviewSettingsFields({
           data-testid="setting-play-follow-system"
         />
       </Field>
-      <Field>
+      <Field className="settings-field settings-field-dependent" data-disabled={aspectDisabled}>
         <FieldLabel htmlFor="setting-play-aspect-width">
           Aspect Ratio
         </FieldLabel>

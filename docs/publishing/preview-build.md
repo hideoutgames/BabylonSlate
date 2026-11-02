@@ -1,6 +1,6 @@
 # Preview Build
 
-Preview Build packages your game the way Export Game does and runs it inside the editor, so you can test the real build before you publish.
+Preview Build packages your game the way **Packaging** does and runs it inside the editor, so you can test the real build before you publish.
 
 ## Turn it on
 
@@ -35,16 +35,16 @@ There are no Pause, Step or Inspector buttons. Use the `pause`, `resume` and `st
 
 When you stop a preview that reported errors or warnings, the **Preview Session Report** lists them and opens the asset behind each one. See [After Play](../debugging/index.md).
 
-## How it differs from Play and Export Game
+## How it differs from Play and Packaging
 
-| | Play | Preview Build | Export Game |
+| | Play | Preview Build | Packaging |
 | --- | --- | --- | --- |
 | Uses unsaved edits | Optional | No | No |
 | Starts from | Open scene or Startup Scene | Open scene or Startup Scene | Startup Scene |
 | Development Only nodes | Kept | Kept | Only with **Bundle Debugger** |
 | Debug-only console commands | Yes | Yes | Only with **Bundle Debugger** |
 
-Preview Build packs textures uncompressed, while Export Game uses compressed textures where they exist. Texture memory and loading times can therefore differ from the exported game.
+Preview Build packs textures uncompressed, while Packaging uses compressed textures where they exist. Texture memory and loading times can therefore differ from the exported game.
 
 ## Related
 

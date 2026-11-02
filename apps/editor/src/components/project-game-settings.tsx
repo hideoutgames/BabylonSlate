@@ -13,13 +13,12 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import { Switch } from "@haptic/ui/components/switch";
 import type { DocumentActions, RegistryState } from "../context/document-context-types";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
+import { SettingsSection } from "./settings-section";
 
 interface ProjectGameSettingsProps {
   projectDocument: ProjectDocument;
@@ -39,10 +38,9 @@ export function ProjectGameSettings({
 }: ProjectGameSettingsProps) {
   const twoD = projectDocument.settings.twoD;
   return (
-    <FieldGroup className="gap-4">
-      <FieldSet>
-        <FieldLegend>Game</FieldLegend>
-        <Field>
+    <FieldGroup>
+      <SettingsSection id="startup" title="Startup">
+        <Field className="settings-field">
           <FieldLabel>Startup Scene</FieldLabel>
           <AssetPickerControl
             value={projectDocument.settings.startupSceneGuid}
@@ -81,7 +79,7 @@ export function ProjectGameSettings({
             From Scene is off.
           </FieldDescription>
         </Field>
-        <Field>
+        <Field className="settings-field">
           <FieldLabel>Game Instance</FieldLabel>
           <AssetPickerControl
             value={
@@ -122,9 +120,8 @@ export function ProjectGameSettings({
             games.
           </FieldDescription>
         </Field>
-      </FieldSet>
-      <FieldSet>
-        <FieldLegend>2D</FieldLegend>
+      </SettingsSection>
+      <SettingsSection id="twoD" title="2D">
           <Field className="settings-field">
             <FieldLabel htmlFor="pixels-per-unit">
               Pixels Per Unit
@@ -171,7 +168,7 @@ export function ProjectGameSettings({
             game camera to the pixel grid.
           </FieldDescription>
         </Field>
-          <Field orientation="horizontal" className="settings-field" data-disabled={!twoD.pixelPerfect}>
+          <Field orientation="horizontal" className="settings-field settings-field-dependent" data-disabled={!twoD.pixelPerfect}>
           <FieldLabel htmlFor="settings-nearest-textures">
               Nearest Texture Filtering
           </FieldLabel>
@@ -192,8 +189,10 @@ export function ProjectGameSettings({
             in 3D too. Needs Pixel-Perfect Mode.
           </FieldDescription>
         </Field>
-        <Field>
-          <FieldLabel>Sorting Layers</FieldLabel>
+      </SettingsSection>
+      <SettingsSection id="sortingLayers" title="Sorting Layers">
+        <Field className="settings-row">
+          <FieldLabel className="sr-only">Sorting Layers</FieldLabel>
           <NamedListEditor
             values={twoD.sortingLayers}
             onChange={(sortingLayers) =>
@@ -206,9 +205,9 @@ export function ProjectGameSettings({
             addLabel="Add Layer"
             data-testid="settings-sorting-layers"
           />
-            <FieldDescription>Ordered back to front.</FieldDescription>
+          <FieldDescription>Ordered back to front.</FieldDescription>
         </Field>
-      </FieldSet>
+      </SettingsSection>
     </FieldGroup>
   );
 }

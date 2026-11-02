@@ -250,10 +250,11 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
   await page.getByTestId("settings-modal-category-rendering").click();
-  await page
+  const scalability = page
     .getByTestId("settings-modal")
-    .getByRole("button", { name: "Scalability", exact: true })
-    .click();
+    .getByRole("button", { name: "Scalability", exact: true });
+  // Sub-categories start open; a collapse remembered on this device is reopened.
+  if ((await scalability.getAttribute("aria-expanded")) !== "true") await scalability.click();
   // The label also targets the hidden native checkbox; address the switch role.
   const dynamicResolution = page.getByRole("switch", {
     name: "Dynamic Resolution",

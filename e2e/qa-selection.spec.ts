@@ -11,6 +11,9 @@ import { saveAllIfEnabled } from "./save-all";
 test("H8: repeated viewport marquee selects the actor without placing duplicates", async ({
   page,
 }) => {
+  // Three marquees and a layout round trip each wait for viewport frames, which a new 3D project renders through
+  // its half-float Scene Linear target: on the CI's software GL that alone takes close to the default 60 s.
+  test.setTimeout(120_000);
   await openTestProject(page);
   await openMainScene(page);
   await saveAllIfEnabled(page);
