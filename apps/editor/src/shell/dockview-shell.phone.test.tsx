@@ -29,6 +29,7 @@ vi.mock("./panel-registry", () => {
     panelComponents: {
       viewport: panel,
       "scene-outliner": panel,
+      "scene-assets": panel,
       "scene-details": panel,
       "output-log": panel,
       "compiler-results": panel,
@@ -183,7 +184,7 @@ describe("phone window navigation", () => {
     expect(screen.queryByRole("combobox", { name: "Window" })).toBeNull();
     expect(dock).toBe(originalApi);
     expect(dock!.hasMaximizedGroup()).toBe(false);
-    expect(dock!.panels).toHaveLength(5);
+    expect(dock!.panels).toHaveLength(6);
   });
 
   it("closes Locks when source control turns off after the dock is ready", () => {

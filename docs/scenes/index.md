@@ -5,7 +5,7 @@ A scene is a world: the actors you place in 3D or 2D space, plus settings for th
 ## Open a scene
 
 1. In the **Content Browser**, choose **New Asset > World > Scene**, or use an existing Scene.
-2. Double-tap the Scene to open it. The **Viewport**, **Outliner** and **Inspector** open with it.
+2. Double-tap the Scene to open it. The **Viewport**, **Outliner**, **Assets** and **Inspector** open with it.
 
 Only one scene is open at a time. Opening another scene closes the current one; if it has unsaved changes, the editor asks you to save or discard them first.
 

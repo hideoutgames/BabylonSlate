@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowUpDownIcon, FolderIcon, ListFilterIcon } from "lucide-react";
-import { thumbnailMime } from "@haptic/assets";
 import {
   CatalogCard,
   CatalogCardGrid,
@@ -34,13 +33,12 @@ import {
   type PlaceActorsView,
 } from "../lib/place-actors";
 import { CatalogNoMatches } from "./catalog-no-matches";
+import { useThumbnailUrls, type LoadThumbnail } from "../lib/use-thumbnail-urls";
 
 const FEATURED = "featured";
 const MODELS = "Models";
 const PROJECT = "Project";
 const ALL_FOLDERS = "";
-
-type LoadThumbnail = (guid: string) => Promise<Uint8Array | null>;
 
 const INITIAL_VIEW: PlaceActorsView = {
   search: "",
@@ -85,42 +83,6 @@ function sortAssets(items: readonly PlaceActorItem[], sort: AssetSort): PlaceAct
     a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
   const key = sort === "type" ? assetType : sort === "folder" ? assetFolder : null;
   return [...items].sort((a, b) => (key ? key(a).localeCompare(key(b)) : 0) || byName(a, b));
-}
-
-/** Object URLs for model thumbnails while `enabled`; released when hidden or changed. */
-function useThumbnailUrls(
-  guids: readonly string[],
-  load: LoadThumbnail | undefined,
-  versions: Readonly<Record<string, number>> | undefined,
-  enabled: boolean,
-): Record<string, string> {
-  const [urls, setUrls] = useState<Record<string, string>>({});
-  const key = enabled
-    ? guids.map((guid) => `${guid}:${versions?.[guid] ?? 0}`).join("|")
-    : "";
-  useEffect(() => {
-    if (!key || !load) return;
-    let cancelled = false;
-    const created: string[] = [];
-    void (async () => {
-      const next: Record<string, string> = {};
-      for (const guid of key.split("|").map((entry) => entry.split(":")[0]!)) {
-        const bytes = await load(guid).catch(() => null);
-        if (cancelled) return;
-        if (!bytes) continue;
-        const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: thumbnailMime(bytes) }));
-        created.push(url);
-        next[guid] = url;
-      }
-      if (!cancelled) setUrls(next);
-    })();
-    return () => {
-      cancelled = true;
-      for (const url of created) URL.revokeObjectURL(url);
-      setUrls({});
-    };
-  }, [key, load]);
-  return urls;
 }
 
 function AssetToolbar({
