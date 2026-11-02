@@ -611,6 +611,8 @@ export function AtlasTileGrid({
                       className={cn(
                         "rounded-[calc(1px/var(--atlas-zoom,1))]",
                         corner && zoneOverlay.style === "sides" && "invisible",
+                        // A member's zones that are off stay faintly visible as tap targets.
+                        member && !on && "bg-foreground/15",
                         on && bit === 0 && "bg-ring",
                         on && bit !== 0 && "bg-ring/45 shadow-[inset_0_0_0_calc(1px/var(--atlas-zoom,1))_var(--ring)]",
                       )}
