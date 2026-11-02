@@ -87,6 +87,32 @@ describe("CurveEditor", () => {
     expect(keysOf(onChange.mock.lastCall![0])[1]).toMatchObject({ Interpolation: "auto" });
   });
 
+  it("sets one slope on every selected Auto or Custom key when a tangent handle is dragged", () => {
+    const onChange = vi.fn();
+    render(<Stateful initial={curve(key(0, 0, "auto"), key(0.5, 5, "auto"), key(1, 10, "linear"))} constraints={FIXED} onChange={onChange} />);
+    const press = (index: number, x: number, y: number, shiftKey = false) => act(() => {
+      const handle = screen.getByTestId(`curve-key-${index}`);
+      dispatchPointerEvent(handle, "pointerdown", { pointerType: "mouse", shiftKey, clientX: x, clientY: y });
+      dispatchPointerEvent(handle, "pointerup", { pointerType: "mouse", shiftKey, clientX: x, clientY: y });
+    });
+    // All three keys, the middle one last so its handles show.
+    press(2, 100, 0);
+    press(0, 0, 100, true);
+    press(1, 50, 50, true);
+    act(() => {
+      const leave = screen.getByTestId("curve-tangent-leave");
+      dispatchPointerEvent(leave, "pointerdown", { pointerType: "mouse", clientX: 55, clientY: 45 });
+      dispatchPointerEvent(leave, "pointermove", { pointerType: "mouse", clientX: 60, clientY: 30 });
+      dispatchPointerEvent(leave, "pointerup", { pointerType: "mouse", clientX: 60, clientY: 30 });
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    // 2 up over 0.1 s on a 0–10 plot: a slope of 20. The Linear key keeps its interpolation and tangents.
+    const round = (slope: unknown) => Math.round(Number(slope) * 1000) / 1000;
+    expect(keysOf(onChange.mock.lastCall![0]).map((entry) => [entry.Interpolation, round(entry.ArriveTangent), round(entry.LeaveTangent)])).toEqual([
+      ["custom", 20, 20], ["custom", 20, 20], ["linear", 0, 0],
+    ]);
+  });
+
   it("hides tangent handles for Linear keys", () => {
     render(<Stateful initial={curve(key(0, 0, "linear"), key(1, 10))} constraints={FIXED} onChange={vi.fn()} />);
     expect(screen.queryByTestId("curve-tangent-leave")).toBeNull();

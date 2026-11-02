@@ -12,7 +12,6 @@ import {
   type CurveKind,
 } from "@haptic/core";
 import { CurveEditor, PanelFrame, PropertyGrid, type CurveEditorHandle, type PropertyRow } from "@haptic/editor-kit";
-import { FieldDescription } from "@haptic/ui/components/field";
 import { useDocumentActions, useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
@@ -25,19 +24,15 @@ const KIND_BY_DOCUMENT: Record<string, CurveKind> = {
 
 const EXTRAPOLATION_OPTIONS = CURVE_EXTRAPOLATIONS.map((value) => ({ value, label: value[0]!.toUpperCase() + value.slice(1) }));
 
-/** The open Curve asset: its kind, normalized payload and a commit that merges by `field` (one undo entry per gesture). */
+/** The open Curve asset: its kind, normalized payload and a commit (one undo entry each). */
 function useCurveAsset() {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
   const kind = KIND_BY_DOCUMENT[doc?.ref.kind ?? ""] ?? curveKindForAssetType(String(doc?.ref.kind)) ?? "float";
   const asset = normalizeCurveAssetPayload(kind, doc?.content);
-  const commit = (next: CurveAssetPayload, field?: string) => {
-    void applyAssetDocumentChange(
-      documentId,
-      normalizeCurveAssetPayload(kind, next) as unknown as Record<string, unknown>,
-      field ? `curve-asset:${field}` : undefined,
-    );
+  const commit = (next: CurveAssetPayload) => {
+    void applyAssetDocumentChange(documentId, normalizeCurveAssetPayload(kind, next) as unknown as Record<string, unknown>);
   };
   return { kind, asset, commit, label: doc && isAssetDocumentKind(doc.ref.kind) ? documentKindLabel(doc.ref.kind) : "Curve" };
 }
@@ -81,7 +76,7 @@ export function CurveAssetEditorPanel(_props: IDockviewPanelProps) {
   );
 }
 
-/** Details window: what scripts read (key count, time and value range), Before and After, and the Description. */
+/** Details window: what scripts read (key count, time and value range), and Before and After. */
 export function CurveAssetDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { kind, asset, commit, label } = useCurveAsset();
@@ -104,20 +99,11 @@ export function CurveAssetDetailsPanel(_props: IDockviewPanelProps) {
       if (next !== asset.curve[end]) commit({ ...asset, curve: { ...asset.curve, [end]: next as CurveExtrapolation } });
     },
   }));
-  const description: PropertyRow[] = [{
-    id: "curve-asset-description", kind: "text", multiline: true, label: "Description", value: asset.description,
-    onChange: () => {},
-    onCommit: (next) => { if (next !== asset.description) commit({ ...asset, description: next }, "description"); },
-  }];
   return (
     <PanelFrame data-testid="curve-asset-details-panel">
       <div className="flex flex-col pb-2">
         <PropertyGrid title="Curve" rows={facts} />
         <PropertyGrid title="Extrapolation" rows={extrapolation} />
-        <PropertyGrid title="Description" rows={description} hideLabels />
-        <FieldDescription className="px-2 text-xs">
-          Scripts read this asset through its Get Curve Object node; the object is read-only.
-        </FieldDescription>
       </div>
     </PanelFrame>
   );
