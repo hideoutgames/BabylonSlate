@@ -4,9 +4,12 @@
  */
 
 import {
+  tilesetAtlasColumns,
+  tilesetAtlasRows,
   tilesetTerrainById,
   type TilesetPayload,
   type TilesetTerrainStyle,
+  type TilesetTile,
 } from "./tileset-payload";
 
 export const TERRAIN_N = 1;
@@ -144,4 +147,137 @@ function compareScores(a: readonly number[], b: readonly number[]): number {
     if (delta !== 0) return delta;
   }
   return 0;
+}
+
+/** The 4 Sides island: a 3×3 block, a vertical strip, a horizontal strip and a lone tile. */
+const SIDES_ISLAND: readonly number[] = [
+  TERRAIN_E | TERRAIN_S, TERRAIN_E | TERRAIN_S | TERRAIN_W, TERRAIN_S | TERRAIN_W, TERRAIN_S,
+  TERRAIN_N | TERRAIN_E | TERRAIN_S, TERRAIN_SIDES, TERRAIN_N | TERRAIN_S | TERRAIN_W, TERRAIN_N | TERRAIN_S,
+  TERRAIN_N | TERRAIN_E, TERRAIN_N | TERRAIN_E | TERRAIN_W, TERRAIN_N | TERRAIN_W, TERRAIN_N,
+  TERRAIN_E, TERRAIN_E | TERRAIN_W, TERRAIN_W, 0,
+];
+
+/** Every corner whose two sides `mask` joins: the island with solid inner corners. */
+function withFilledCorners(mask: number): number {
+  let filled = mask;
+  for (const corner of CORNERS) if ((mask & corner.sides) === corner.sides) filled |= corner.bit;
+  return filled;
+}
+
+/** A standard autotile sheet layout: one canonical mask per cell, row-major from the top-left; `null` cells are unused. */
+export interface AutotileLayout {
+  columns: number;
+  rows: number;
+  masks: ReadonlyArray<number | null>;
+}
+
+function blobLayout(): AutotileLayout {
+  const island = SIDES_ISLAND.map(withFilledCorners);
+  const notched = terrainVariantMasks("blob").filter((mask) => !island.includes(mask));
+  // Columns 1–4 hold the island with solid corners; columns 5–12 the 31 inner-corner variants in ascending order.
+  const masks: Array<number | null> = [];
+  for (let row = 0; row < 4; row++) {
+    masks.push(...island.slice(row * 4, row * 4 + 4));
+    for (let column = 0; column < 8; column++) masks.push(notched[column * 4 + row] ?? null);
+  }
+  return { columns: 12, rows: 4, masks };
+}
+
+/** Standard layouts `Fill From Layout` writes: 4 Sides as a 4×4 block, Blob as a 12×4 block. */
+export const AUTOTILE_LAYOUTS: Readonly<Record<TilesetTerrainStyle, AutotileLayout>> = {
+  sides: { columns: 4, rows: 4, masks: SIDES_ISLAND },
+  blob: blobLayout(),
+};
+
+/**
+ * The atlas tile under each layout cell when the layout's top-left sits on
+ * `startTileId`, or `null` when the block runs past the atlas.
+ */
+export function autotileLayoutPlacement(
+  tileset: TilesetPayload,
+  style: TilesetTerrainStyle,
+  startTileId: number,
+): Array<{ tileId: number; mask: number | null }> | null {
+  const layout = AUTOTILE_LAYOUTS[style];
+  const columns = tilesetAtlasColumns(tileset);
+  const rows = tilesetAtlasRows(tileset);
+  if (columns <= 0 || startTileId < 1) return null;
+  const startColumn = (startTileId - 1) % columns;
+  const startRow = Math.floor((startTileId - 1) / columns);
+  if (startColumn + layout.columns > columns || startRow + layout.rows > rows) return null;
+  return layout.masks.map((mask, at) => ({
+    tileId: (startRow + Math.floor(at / layout.columns)) * columns + startColumn + (at % layout.columns) + 1,
+    mask,
+  }));
+}
+
+/** Give the layout's tiles their terrain and neighbours; unused cells and tiles outside the block are left as they are. */
+export function applyAutotileLayout(
+  tileset: TilesetPayload,
+  terrainId: string,
+  startTileId: number,
+): TilesetPayload {
+  const terrain = tilesetTerrainById(tileset, terrainId);
+  const placement = terrain ? autotileLayoutPlacement(tileset, terrain.style, startTileId) : null;
+  if (!placement) return tileset;
+  const masks = new Map(placement.flatMap((cell) => (cell.mask === null ? [] : [[cell.tileId, cell.mask] as const])));
+  return {
+    ...tileset,
+    tiles: tileset.tiles.map((tile) => {
+      const mask = masks.get(tile.id);
+      return mask === undefined ? tile : { ...tile, terrain: { id: terrainId, mask } };
+    }),
+  };
+}
+
+/** A zone of a tile in the atlas Autotile tool: `0` is the centre (membership), any other value one neighbour bit. */
+export type AutotileZone = number;
+
+/** Corners that stop counting once their side opens. */
+const SIDE_CORNERS = new Map(SIDE_BITS.map((side) => [side, CORNERS.filter((corner) => corner.sides & side).reduce((bits, corner) => bits | corner.bit, 0)]));
+const CORNER_SIDES = new Map(CORNERS.map((corner) => [corner.bit, corner.sides]));
+
+/** Whether a tile's zone is on for a terrain: the centre when the tile belongs to it, a side or corner when its mask joins there. */
+export function autotileZoneOn(tile: Pick<TilesetTile, "terrain"> | undefined, terrainId: string, zone: AutotileZone): boolean {
+  if (tile?.terrain?.id !== terrainId) return false;
+  return zone === 0 || (tile.terrain.mask & zone) !== 0;
+}
+
+/**
+ * Turn one zone of a tile on or off for a terrain. Turning on any zone makes
+ * the tile a member (a tile of another terrain moves over with no
+ * neighbours); a corner turns its two sides on with it, and a side turned
+ * off takes its corners along. Turning the centre off removes the tile from
+ * the terrain.
+ */
+export function setAutotileZone(tile: TilesetTile, terrainId: string, zone: AutotileZone, on: boolean): TilesetTile {
+  const member = tile.terrain?.id === terrainId;
+  if (!on) {
+    if (!member) return tile;
+    if (zone === 0) {
+      const next = { ...tile };
+      delete next.terrain;
+      return next;
+    }
+    const mask = tile.terrain!.mask & ~zone & ~(SIDE_CORNERS.get(zone) ?? 0);
+    return mask === tile.terrain!.mask ? tile : { ...tile, terrain: { id: terrainId, mask } };
+  }
+  const base = member ? tile.terrain!.mask : 0;
+  const mask = zone === 0 ? base : base | zone | (CORNER_SIDES.get(zone) ?? 0);
+  return member && mask === base ? tile : { ...tile, terrain: { id: terrainId, mask } };
+}
+
+/** Canonical masks of a terrain's style that no member tile draws exactly, ascending. */
+export function missingTerrainVariants(tileset: TilesetPayload, terrainId: string): number[] {
+  const terrain = tilesetTerrainById(tileset, terrainId);
+  if (!terrain) return [];
+  const drawn = new Set(
+    tileset.tiles.flatMap((tile) => (tile.terrain?.id === terrainId ? [canonicalTerrainMask(terrain.style, tile.terrain.mask)] : [])),
+  );
+  return terrainVariantMasks(terrain.style).filter((mask) => !drawn.has(mask));
+}
+
+/** The variant a terrain paints with every neighbour joined: its fill tile, shown as its swatch. */
+export function terrainFillMask(style: TilesetTerrainStyle): number {
+  return style === "sides" ? TERRAIN_SIDES : TERRAIN_ALL;
 }

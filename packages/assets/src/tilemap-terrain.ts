@@ -165,3 +165,40 @@ export function paintTilemapTerrain(
   }
   return setTiles(map, options.layerId, writes, options.index);
 }
+
+/**
+ * Pick the variant of every terrain tile on every layer again from its 8
+ * neighbours, as painting would: after a Tileset's terrains change. Tiles of
+ * terrains that no longer exist, or have no tiles, stay as they are. Returns
+ * `map` itself when no tile changes.
+ */
+export function refreshTilemapTerrains(
+  map: TilemapPayload,
+  tilesets: ReadonlyMap<string, TilesetPayload>,
+): TilemapPayload {
+  const members = terrainMembers(map, tilesets);
+  const size = Math.max(1, map.chunkSize);
+  let next = map;
+  for (const layer of map.layers) {
+    const gidAt = layerReader(map, layer);
+    const writes: TileWrite[] = [];
+    for (const chunk of layer.chunks) {
+      chunk.tiles.forEach((gid, at) => {
+        const member = gid ? members.ofGid(gid) : null;
+        if (!member) return;
+        const x = chunk.cx * size + (at % size);
+        const y = chunk.cy * size + Math.floor(at / size);
+        let mask = 0;
+        for (const { bit, dx, dy } of TERRAIN_NEIGHBOURS) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (!tileInBounds(map, nx, ny) || members.ofGid(gidAt(nx, ny)) === member) mask |= bit;
+        }
+        const id = encodeTileGid(member.firstGid, member.resolve(mask));
+        if (id !== gid) writes.push({ x, y, id });
+      });
+    }
+    if (writes.length > 0) next = setTiles(next, layer.id, writes);
+  }
+  return next;
+}

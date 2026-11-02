@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
@@ -16,6 +16,7 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@haptic/assets";
+import { AssetOpenProvider } from "@haptic/editor-kit";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import {
@@ -468,6 +469,55 @@ describe("TilemapPaint", () => {
     fireEvent.click(screen.getByTestId("tilemap-palette-tile-1"));
     expect(canvas.hasAttribute("data-terrain")).toBe(false);
     expect(canvas.getAttribute("data-gid")).toBe("1");
+  });
+
+  it("lists autotiles first with their coverage, paints one from Move, picks one with the Picker and refreshes stale cells", async () => {
+    // Ledge pieces by local id: 1 single, 2 left end, 3 middle, 4 right end; 5 is a plain tile; Water has no tiles.
+    loadAssetDocument.mockImplementation(async (_kind: string, path: string) =>
+      path === GROUND_PATH
+        ? ensureTilesetTiles(normalizeTilesetPayload({
+            textureGuid: "tex-1",
+            atlasWidth: 80,
+            atlasHeight: 16,
+            tileWidth: 16,
+            tileHeight: 16,
+            terrains: [{ id: "ledge", name: "Ledge", style: "sides" }, { id: "water", name: "Water", style: "blob" }],
+            tiles: [0, TERRAIN_E, TERRAIN_E | TERRAIN_W, TERRAIN_W].map((mask, at) => ({ id: at + 1, terrain: { id: "ledge", mask } })),
+          }))
+        : null,
+    );
+    const onChange = vi.fn();
+    const openAsset = vi.fn();
+    // A ledge whose right end was painted as a single piece before the Tileset gained its end tile.
+    let initial: TilemapPayload = { ...createDefaultTilemapPayload(), tilesets: [{ guid: "ts-ground", firstGid: 1, tileCount: 5 }] };
+    initial = setTile(setTile(setTile(initial, "layer-1", 1, 1, 2), "layer-1", 2, 1, 3), "layer-1", 3, 1, 1);
+    render(
+      <AssetOpenProvider value={{ canOpen: () => true, openAsset }}>
+        <TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={onChange} />
+      </AssetOpenProvider>,
+    );
+    const autotiles = within(await screen.findByTestId("tilemap-palette-autotiles"));
+    expect(autotiles.getByTestId("tilemap-palette-terrain-ts-ground-ledge").textContent).toContain("4 of 16");
+    fireEvent.click(autotiles.getByTestId("tilemap-palette-autotile-setup-ts-ground-water"));
+    expect(openAsset).toHaveBeenCalledWith("ts-ground");
+
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    expect(canvas.getAttribute("data-tool")).toBe("move");
+    fireEvent.click(autotiles.getByTestId("tilemap-palette-terrain-ts-ground-ledge"));
+    expect(canvas.getAttribute("data-tool")).toBe("brush");
+
+    fireEvent.click(screen.getByTestId("tilemap-refresh-autotiles"));
+    const refreshed = normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    expect(onChange.mock.lastCall![1]).toBeUndefined();
+    expect([1, 2, 3].map((x) => getTile(refreshed, "layer-1", x, 1))).toEqual([2, 3, 4]);
+
+    // The Picker on an autotile cell takes its autotile, not the single tile.
+    fireEvent.click(screen.getByTestId("tilemap-palette-tile-5"));
+    expect(canvas.hasAttribute("data-terrain")).toBe(false);
+    fireEvent.click(screen.getByTestId("tilemap-tool-picker"));
+    dispatchPointerEvent(canvas, "pointerdown", { pointerId: 1, clientX: 2 * 32 + 16, clientY: 208 });
+    dispatchPointerEvent(canvas, "pointerup", { pointerId: 1, clientX: 2 * 32 + 16, clientY: 208 });
+    await waitFor(() => expect(canvas.getAttribute("data-terrain")).toBe("ledge"));
   });
 
   it("re-derives a rectangle from where it started on every move", async () => {

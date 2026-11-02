@@ -209,7 +209,8 @@ export function pickTileId(
 /**
  * Apply one stroke to `map`. The moves of a pointer gesture can share a
  * `TilemapChunkIndex` so each call looks up only the chunks it touches.
- * A terrain stroke needs the map's loaded Tilesets and changes nothing without them.
+ * A terrain stroke needs the map's loaded Tilesets and changes nothing without
+ * them; with them, the Eraser also re-picks the autotile tiles around what it clears.
  */
 export function applyTilemapPaint(
   map: TilemapPayload,
@@ -217,6 +218,11 @@ export function applyTilemapPaint(
   index?: TilemapChunkIndex,
   tilesets?: ReadonlyMap<string, TilesetPayload>,
 ): TilemapPayload {
+  if (stroke.tool === "eraser" && tilesets) {
+    // Erasing always fixes the autotile tiles around what it clears.
+    const cells = stroke.cells ?? cellsAlongSegment(stroke.start, stroke.end);
+    return paintTilemapTerrain(map, { layerId: stroke.layerId, cells, terrain: null, tilesets, index });
+  }
   if (stroke.terrain) {
     return tilesets ? applyTerrainStroke(map, stroke, stroke.terrain, tilesets, index) : map;
   }
@@ -265,6 +271,7 @@ function applyTerrainStroke(
     case "brush":
       return paint(stroke.cells ?? cellsAlongSegment(stroke.start, stroke.end));
     case "eraser":
+      // Routed through `applyTilemapPaint`'s eraser branch; kept so the switch stays exhaustive.
       return paint(stroke.cells ?? cellsAlongSegment(stroke.start, stroke.end), null);
     case "rect":
       return paint(rectCells(stroke.start, stroke.end));
