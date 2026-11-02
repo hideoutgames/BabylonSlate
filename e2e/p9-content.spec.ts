@@ -20,6 +20,7 @@ import { saveAllIfEnabled } from "./save-all";
 import { previewPlacementScene } from "./preview-scene-fixture";
 import { createMeshComponent } from "../packages/core/src/index.ts";
 import { openMinimalTestProject } from "./minimal-project";
+import { viewportPostProcessPassCount } from "./post-process-passes";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
@@ -606,6 +607,9 @@ test.describe("P9 content systems", () => {
     await saveAllIfEnabled(page);
     await openMainScene(page);
     await expect(page.getByTestId("scene-post-process-stack")).toBeVisible();
+    // The project's own passes (a Scene Linear project's Display Color) run beside the scene's stack.
+    await expect.poll(async () => viewportPostProcessPassCount(page), { timeout: 30_000 }).not.toBeNull();
+    const projectPasses = (await viewportPostProcessPassCount(page))!;
     await page.getByTestId("scene-post-process-stack-add").click();
     await expect(page.getByTestId("scene-post-process-picker")).toBeVisible();
     const bloomGuid = await guidForPath(page, "assets/Bloom.material.hasset");
@@ -616,11 +620,12 @@ test.describe("P9 content systems", () => {
     ).toContainText("Bloom");
     await clickPlayAndWaitForOverlay(page);
     const overlay = page.getByTestId("play-overlay");
+    // Play's passes come up over its first frames; the count settles at the project's passes plus Bloom.
     await expect
       .poll(async () => overlay.getAttribute("data-post-process-passes"), {
         timeout: 15_000,
       })
-      .toBe("1");
+      .toBe(String(projectPasses + 1));
     await page.getByTestId("play-overlay-close").click();
     await expect(overlay).toHaveCount(0);
     // Stop opens the session report only for runtime errors; this Play has none.
