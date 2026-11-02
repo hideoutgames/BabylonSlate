@@ -11,6 +11,7 @@ import {
   Scene,
   Texture,
   Vector3,
+  VertexBuffer,
 } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeWaterBody, type AntiAliasingMode,
@@ -34,7 +35,8 @@ export type AntiAliasingCapture = { label: string; samples: number; tasks: strin
 
 /**
  * A static camera over white unlit panels with long diagonal edges on black, drawn as a world view at each
- * Anti-Aliasing mode, directly (no post effects) and through a settings chain (a vignette): two consecutive frames each.
+ * Anti-Aliasing mode, directly (no post effects) and through a settings chain (a vignette): two consecutive frames each;
+ * and a sprite's quad whose UVs map a frame of a nearest-sampled atlas, at Off and 4x.
  */
 export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
@@ -78,10 +80,25 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
     setUnlitMaterial(quad, { textured: true, backFaceCulling: false, fog: false, role: "world" }, {
       texture: cutout, color: [1, 1, 1], alpha: 1, cutoff: 0.5, blend: false, textureAlpha: true, twoSided: false,
     });
-    const show = (cutoutOnly: boolean) => {
-      panel.setEnabled(!cutoutOnly);
-      triangle.setEnabled(!cutoutOnly);
-      quad.setEnabled(cutoutOnly);
+    // A sprite's quad: a nearest-sampled 8 × 8 atlas whose white 4 × 4 frame its UVs map, ringed by magenta texels its
+    // frame never shows, turned so its edges cross pixels partly.
+    const atlasTexels = new Uint8Array(8 * 8 * 4);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      const frame = x >= 2 && x < 6 && y >= 2 && y < 6;
+      atlasTexels.set(frame ? [255, 255, 255, 255] : [255, 0, 255, 255], (y * 8 + x) * 4);
+    }
+    const atlas = RawTexture.CreateRGBATexture(atlasTexels, 8, 8, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+    const sprite = MeshBuilder.CreatePlane("Anti-Aliasing Sprite", { size: 3, updatable: true }, scene);
+    sprite.updateVerticesData(VertexBuffer.UVKind, new Float32Array([0.25, 0.25, 0.75, 0.25, 0.75, 0.75, 0.25, 0.75]));
+    sprite.rotation.z = 0.35;
+    setUnlitMaterial(sprite, { textured: true, backFaceCulling: false, fog: false, role: "world" }, {
+      texture: atlas, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
+    });
+    const show = (subject: "panels" | "cutout" | "sprite") => {
+      panel.setEnabled(subject === "panels");
+      triangle.setEnabled(subject === "panels");
+      quad.setEnabled(subject === "cutout");
+      sprite.setEnabled(subject === "sprite");
     };
     const graph = new ForwardSceneFrameGraph(scene);
     const apply = async (antiAliasing: AntiAliasingMode, chain: boolean) => {
@@ -114,12 +131,13 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
       return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), readbackChannelOrder(engine.isWebGPU));
     };
     try {
-      for (const [label, mode, chain, cutoutOnly] of [
-        ["off", "off", false, false], ["msaa4", "msaa4", false, false], ["msaa2", "msaa2", false, false],
-        ["chain off", "off", true, false], ["chain msaa4", "msaa4", true, false],
-        ["cutout off", "off", false, true], ["cutout msaa4", "msaa4", false, true], ["off again", "off", false, false], ["msaa4 last", "msaa4", false, false],
+      for (const [label, mode, chain, subject] of [
+        ["off", "off", false, "panels"], ["msaa4", "msaa4", false, "panels"], ["msaa2", "msaa2", false, "panels"],
+        ["chain off", "off", true, "panels"], ["chain msaa4", "msaa4", true, "panels"],
+        ["cutout off", "off", false, "cutout"], ["cutout msaa4", "msaa4", false, "cutout"], ["off again", "off", false, "panels"],
+        ["msaa4 last", "msaa4", false, "panels"], ["sprite off", "off", false, "sprite"], ["sprite msaa4", "msaa4", false, "sprite"],
       ] as const) {
-        show(cutoutOnly);
+        show(subject);
         await apply(mode, chain);
         await frame();
         const first = await frame();

@@ -1,7 +1,7 @@
 import {
   FragmentOutputBlock, NodeMaterialBlock, NodeMaterialBlockTargets as Targets,
   NodeMaterialBlockConnectionPointTypes as Types, RawTexture, Texture,
-  type AbstractMesh, type BaseTexture, type Effect, type Mesh, type NodeMaterial,
+  type AbstractMesh, type BaseTexture, type Effect, type Mesh, type NodeMaterial, type NodeMaterialConnectionPoint,
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
@@ -126,6 +126,23 @@ export class UnlitUvBlock extends NodeMaterialBlock {
 RegisterClass("BABYLON.UnlitUvBlock", UnlitUvBlock);
 
 /**
+ * Interpolates the varying `input` reads at the centroid of a pixel's covered samples instead of the pixel's centre.
+ * Under MSAA a pixel on a triangle's edge is shaded once, at its centre, which can lie outside the triangle: its UV is
+ * then extrapolated past the triangle's, and a sprite, tile or grid quad samples the texel beyond its frame (an atlas
+ * neighbour, or a transparent texel's colour), a faint line along its bounding box.
+ */
+function interpolateAtCentroid(state: NodeMaterialBuildState, input: NodeMaterialConnectionPoint): void {
+  const name = input.associatedVariableName.replace(/^fragmentInputs\./, "");
+  if (!/^v_\w+$/.test(name)) return;
+  // GLSL `varying vec2 v_uv;` and WGSL `varying v_uv: vec2f;`, which Babylon's processors turn into `centroid in/out` and
+  // `@interpolate(perspective, centroid)`.
+  const declaration = new RegExp(`(^|\\n)varying (\\w+ ${name};|${name}:)`, "g");
+  const shared = state.sharedData;
+  shared.varyingDeclaration = shared.varyingDeclaration.replace(declaration, "$1centroid varying $2");
+  shared.varyingDeclarationFragment = shared.varyingDeclarationFragment.replace(declaration, "$1centroid varying $2");
+}
+
+/**
  * Fragment: Standard's unlit colour and alpha. rgb = colour · [texture rgb] · [vertex rgb], alpha = alpha · [texture a] ·
  * [vertex a], discarded below the cutoff, and 1 where an alpha-tested surface does not blend; also the geometry pass's
  * face normal, from derivatives taken before any discard. Binds every per-mesh uniform of the unlit graph.
@@ -188,6 +205,7 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
     const position = this.worldPosition.associatedVariableName;
     // Standard's normal without a normal attribute (`default.fragment`); outside any branch, as derivatives need.
     state.compilationString += `${state._declareOutput(this.faceNormal)} = normalize(cross(${wgsl ? "dpdx" : "dFdx"}(${position}.xyz), ${wgsl ? "dpdy" : "dFdy"}(${position}.xyz)));\n`;
+    if (this.textured && this.uv.isConnected) interpolateAtCentroid(state, this.uv);
     const uv = this.uv.isConnected ? this.uv.associatedVariableName : `${wgsl ? "vec2f" : "vec2"}(0.0)`;
     state.compilationString += `${state._declareLocalVar(sample, Types.Vector4)} = ${this.textured
       ? (wgsl ? `textureSample(${U.sampler}, ${U.sampler}Sampler, ${uv})` : `texture2D(${U.sampler}, ${uv})`)
