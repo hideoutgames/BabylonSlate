@@ -19,6 +19,7 @@ import {
   UniversalCamera,
   Vector3,
   Viewport,
+  type AbstractMesh,
   type Effect,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
@@ -31,6 +32,7 @@ import {
   onSceneReadinessDirty,
   prewarmSceneMaterials,
   SCENE_DRIVER_COMPILE_TIMEOUT_MS,
+  SCENE_SHADER_WARM_CONCURRENCY,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
 import { probeVariantSwaps } from "./variant-swaps";
@@ -377,9 +379,10 @@ describe("prewarmSceneMaterials", () => {
     vi.spyOn(scene.defaultMaterial, "forceCompilationAsync").mockReturnValue(
       new Promise((resolve) => { finishCompile = resolve; }),
     );
+    // Queued behind the stuck unit: the same Material compiles one unit at a time.
     const next = MeshBuilder.CreateBox("next-mesh", {}, scene);
-    next.material = new PBRMaterial("next-material", scene);
-    const nextCompile = vi.spyOn(next.material, "forceCompilationAsync");
+    next.material = scene.defaultMaterial;
+    const compile = vi.mocked(scene.defaultMaterial.forceCompilationAsync);
     const done = prewarmSceneMaterials(scene);
     const rejected = expect(done).rejects.toThrow(
       'Scene shaders did not become ready before the loading deadline. Stalled compiling "default material" for "warm-mesh" after 0 compiled variants.',
@@ -387,8 +390,8 @@ describe("prewarmSceneMaterials", () => {
     await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS);
     await rejected;
     finishCompile();
-    await Promise.resolve();
-    expect(nextCompile).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(compile.mock.calls.map(([mesh]) => mesh.name)).toEqual(["warm-mesh"]);
     scene.dispose();
     engine.dispose();
     vi.useRealTimers();
@@ -400,12 +403,14 @@ describe("prewarmSceneMaterials", () => {
     const scene = new Scene(engine);
     const perVariant = SCENE_SHADER_WARM_TIMEOUT_MS / 2;
     const compiles: string[] = [];
+    // One Material: its units compile one after another, each within budget, the whole run beyond it.
+    const material = new PBRMaterial("slow-material", scene);
+    vi.spyOn(material, "forceCompilationAsync").mockImplementation(
+      (mesh) => new Promise((resolve) => setTimeout(() => { compiles.push(mesh.name); resolve(); }, perVariant)),
+    );
     for (let index = 0; index < 4; index++) {
       const mesh = MeshBuilder.CreateBox(`slow-mesh-${index}`, {}, scene);
-      mesh.material = new PBRMaterial(`slow-material-${index}`, scene);
-      vi.spyOn(mesh.material, "forceCompilationAsync").mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => { compiles.push(mesh.name); resolve(); }, perVariant)),
-      );
+      mesh.material = material;
     }
     let settled: "ready" | "failed" | null = null;
     const done = prewarmSceneMaterials(scene).then(() => { settled = "ready"; }, () => { settled = "failed"; });
@@ -492,6 +497,44 @@ describe("prewarmSceneMaterials", () => {
       engine.dispose();
       vi.useRealTimers();
       vi.restoreAllMocks();
+    }
+  });
+
+  it("compiles different Materials at once, bounded, and one Material's units in order", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      const started: string[] = [];
+      const finish = new Map<string, () => void>();
+      const unit = (mesh: AbstractMesh) => new Promise<void>((resolve) => {
+        started.push(mesh.name);
+        finish.set(mesh.name, resolve);
+      });
+      const shared = new PBRMaterial("shared", scene);
+      vi.spyOn(shared, "forceCompilationAsync").mockImplementation(unit);
+      for (const name of ["shared-a", "shared-b"]) MeshBuilder.CreateBox(name, {}, scene).material = shared;
+      for (let index = 0; index < SCENE_SHADER_WARM_CONCURRENCY + 1; index++) {
+        const mesh = MeshBuilder.CreateBox(`own-${index}`, {}, scene);
+        mesh.material = new PBRMaterial(`own-material-${index}`, scene);
+        vi.spyOn(mesh.material, "forceCompilationAsync").mockImplementation(unit);
+      }
+      const done = prewarmSceneMaterials(scene);
+      await vi.waitFor(() => expect(started).toHaveLength(SCENE_SHADER_WARM_CONCURRENCY - 1));
+      // "shared-b" waits for "shared-a"; the bound holds back the last Material until a slot frees.
+      expect(started).toEqual(["shared-a", ...Array.from({ length: SCENE_SHADER_WARM_CONCURRENCY - 2 }, (_, index) => `own-${index}`)]);
+      finish.get("shared-a")!();
+      await vi.waitFor(() => expect(started).toContain("shared-b"));
+      for (;;) {
+        const pending = [...finish].filter(([name]) => started.includes(name));
+        if (pending.length === 0) break;
+        for (const [name, resolve] of pending) { finish.delete(name); resolve(); }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      await done;
+      expect(new Set(started)).toEqual(new Set(["shared-a", "shared-b", ...Array.from({ length: SCENE_SHADER_WARM_CONCURRENCY + 1 }, (_, index) => `own-${index}`)]));
+    } finally {
+      scene.dispose();
+      engine.dispose();
     }
   });
 
