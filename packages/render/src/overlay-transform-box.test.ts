@@ -162,6 +162,54 @@ describe("applyOverlayBoxDrag resize", () => {
   });
 });
 
+describe("applyOverlayBoxDrag linked resize", () => {
+  const linked = (
+    gesture: OverlayBoxDragStart["gesture"],
+    pointer: { x: number; y: number },
+    scale: [number, number, number],
+  ): OverlayBoxDragStart => ({ ...start(gesture, pointer, { scale }), linked: true });
+
+  it("scales Y with an east drag about the box's vertical centre and keeps Z", () => {
+    const next = applyOverlayBoxDrag(linked("e", { x: 0.5, y: 0 }, [1, 2, 3]), { x: 1.5, y: 0.4 });
+    expect(next.scale[0]).toBeCloseTo(2);
+    expect(next.scale[1]).toBeCloseTo(4);
+    expect(next.scale[2]).toBe(3);
+    expect(next.position[0]).toBeCloseTo(0.5);
+    expect(next.position[1]).toBeCloseTo(0);
+  });
+
+  it("scales X with a north drag about the box's horizontal centre", () => {
+    const next = applyOverlayBoxDrag(linked("n", { x: 0, y: 0.5 }, [2, 1, 1]), { x: 0, y: 1.5 });
+    expect(next.scale[0]).toBeCloseTo(4);
+    expect(next.scale[1]).toBeCloseTo(2);
+    expect(next.position[0]).toBeCloseTo(0);
+    expect(next.position[1]).toBeCloseTo(0.5);
+  });
+
+  it("keeps the aspect ratio from a corner and the opposite corner fixed", () => {
+    // Box x [-0.5, 0.5], y [-1, 1]; the pointer is off the diagonal.
+    const next = applyOverlayBoxDrag(linked("se", { x: 0.5, y: -1 }, [1, 2, 1]), { x: 1.5, y: -1.2 });
+    expect(next.scale[0]).toBeCloseTo(1.28);
+    expect(next.scale[1]).toBeCloseTo(2.56);
+    const northWest = [
+      next.position[0] + next.scale[0] * UNIT.minX,
+      next.position[1] + next.scale[1] * UNIT.maxY,
+    ];
+    expect(northWest[0]).toBeCloseTo(-0.5);
+    expect(northWest[1]).toBeCloseTo(1);
+  });
+
+  it("snaps the dragged axis and scales the other from it", () => {
+    const next = applyOverlayBoxDrag(
+      linked("e", { x: 0.5, y: 0 }, [1, 2, 1]),
+      { x: 0.9, y: 0 },
+      { enabled: true, translate: 1, rotateDeg: 15, scale: 0.5 },
+    );
+    expect(next.scale[0]).toBeCloseTo(1.5);
+    expect(next.scale[1]).toBeCloseTo(3);
+  });
+});
+
 describe("applyOverlayBoxDrag rotate", () => {
   it("applies Z rotation about the visual center from the pointer atan2 delta", () => {
     const next = applyOverlayBoxDrag(start("rotate", { x: 1, y: 0 }), {
@@ -586,6 +634,24 @@ describe("gizmo host overlay-box manipulator", () => {
     rotate.onDragStartObservable.notifyObservers(dragAt(3.5, 0));
     rotate.onDragObservable.notifyObservers(dragAt(2.5, 1));
     expect(mesh.rotationQuaternion!.toEulerAngles().z).not.toBe(0);
+    overlay.dispose();
+  });
+
+  it("keeps the box's proportions while the host's Scale is linked", () => {
+    const { scene } = createHandle();
+    const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+    mesh.scaling.set(1, 2, 1);
+    const overlay = createGizmoHost(scene, { manipulator: "overlay-box" });
+    overlay.setLinkedScale(true);
+    overlay.attachTo(mesh);
+    const util = overlay.positionGizmo.gizmoLayer.utilityLayerScene;
+    const resize = dragOf(util.getMeshByName("overlay-box-handle-e"));
+    resize.onDragStartObservable.notifyObservers(dragAt(0.5, 0));
+    resize.onDragObservable.notifyObservers(dragAt(1.5, 0));
+    resize.onDragEndObservable.notifyObservers(dragAt(1.5, 0));
+    expect(mesh.scaling.x).toBeCloseTo(2);
+    expect(mesh.scaling.y).toBeCloseTo(4);
+    expect(mesh.scaling.z).toBeCloseTo(1);
     overlay.dispose();
   });
 });
