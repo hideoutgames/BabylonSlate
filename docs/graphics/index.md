@@ -68,7 +68,7 @@ With **Occlusion Culling** on (the **Geometry** group of Scalability), Play and 
 | **Custom Resolution** | Sets a design size for Play and exported games. On for new projects. |
 | **Render Size** | The design width and height. Default 1920 × 1080. |
 | **Black Bars** | Adds bars to keep the design size. Off fills the window without stretching. |
-| **Upscaling** | Shown with Custom Resolution and Black Bars. **Smooth** fits the design size to the window. **Pixelated** shows it at the largest whole multiple that fits, so every game pixel is the same sharp square: for example a 320 × 180 game at × 4 in a 1366 × 768 window, with wider bars. Menus and text from Scene Layers enlarge with the game. For even pixels, keep **Resolution Scale** at 100% and turn off **Dynamic Resolution**. |
+| **Upscaling** | Shown with Custom Resolution. **Smooth** fits the design size to the window. **Pixelated** enlarges it by the largest whole multiple that fits, so every game pixel is the same sharp square: a 320 × 180 game shows at × 4 in a 1366 × 768 window. With **Black Bars**, bars fill the rest. Without them, the view extends past the design size to fill the window, and cameras show more of the scene there instead of stretching it. Pixelated always draws at full resolution: **Resolution Scale** and **Dynamic Resolution** do not apply. Menus and text from Scene Layers enlarge with the game. |
 | **Play Frame Cap** | Frames per second for Play and Preview. Default 60. |
 | **Follow System**, **Aspect Ratio** | Play Preview aspect. Turn off Follow System to use a fixed ratio. |
 

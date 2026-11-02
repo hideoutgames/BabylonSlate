@@ -6,7 +6,7 @@ import {
   LoaderCircleIcon,
   XIcon,
 } from "lucide-react";
-import { type ProjectAppearance } from "@haptic/core";
+import { PIXEL_ART_DESIGN_SIZES, type ProjectAppearance } from "@haptic/core";
 import { NumberField } from "@haptic/editor-kit";
 import type { HostPlatform } from "@haptic/vfs";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
@@ -22,6 +22,7 @@ import {
 } from "@haptic/ui/components/dialog";
 import {
   Field,
+  FieldContent,
   FieldDescription,
   FieldError,
   FieldGroup,
@@ -82,6 +83,8 @@ export function HomepageCreateDialog({
   onHeightChange,
   blackBars,
   onBlackBarsChange,
+  pixelArt,
+  onPixelArtChange,
   onSubmit,
 }: {
   open: boolean;
@@ -110,6 +113,9 @@ export function HomepageCreateDialog({
   onHeightChange: (value: number) => void;
   blackBars: boolean;
   onBlackBarsChange: (value: boolean) => void;
+  /** Pixel Art Optimized: project settings for pixel art (`pixelArtProjectSettings`). */
+  pixelArt: boolean;
+  onPixelArtChange: (value: boolean) => void;
   onSubmit: () => void;
 }) {
   const editing = mode === "edit";
@@ -581,6 +587,52 @@ export function HomepageCreateDialog({
                             Black Bars
                           </FieldLabel>
                         </Field>
+                        <Field orientation="horizontal">
+                          <Checkbox
+                            disabled={busy}
+                            id="create-project-pixel-art"
+                            checked={pixelArt}
+                            onCheckedChange={(checked) =>
+                              onPixelArtChange(checked === true)
+                            }
+                            data-testid="create-project-pixel-art"
+                            aria-describedby="create-project-pixel-art-description"
+                          />
+                          <FieldContent>
+                            <FieldLabel htmlFor="create-project-pixel-art">
+                              Pixel Art Optimized
+                            </FieldLabel>
+                            <FieldDescription id="create-project-pixel-art-description">
+                              Sharp textures and whole-multiple pixel upscaling
+                              at full resolution, without anti-aliasing.
+                              Without Black Bars the view extends to fill the
+                              screen.
+                            </FieldDescription>
+                          </FieldContent>
+                        </Field>
+                        {pixelArt ? (
+                          <Field>
+                            <FieldLabel>Pixel Art Size</FieldLabel>
+                            <ToggleGroup
+                              value={PIXEL_ART_DESIGN_SIZES.some((size) => size.width === width && size.height === height)
+                                ? [`${width}x${height}`] : []}
+                              disabled={busy}
+                              onValueChange={(values) => {
+                                const size = PIXEL_ART_DESIGN_SIZES.find((entry) => `${entry.width}x${entry.height}` === values[0]);
+                                if (!size) return;
+                                onWidthChange(size.width);
+                                onHeightChange(size.height);
+                              }}
+                              data-testid="create-project-pixel-art-size"
+                            >
+                              {PIXEL_ART_DESIGN_SIZES.map((size) => (
+                                <ToggleGroupItem key={`${size.width}x${size.height}`} value={`${size.width}x${size.height}`}>
+                                  {size.width} &times; {size.height}
+                                </ToggleGroupItem>
+                              ))}
+                            </ToggleGroup>
+                          </Field>
+                        ) : null}
                       </FieldGroup>
                     </details>
                   )}

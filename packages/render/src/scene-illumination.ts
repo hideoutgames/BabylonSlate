@@ -346,33 +346,61 @@ export function cameraRenderAspect(width: number, height: number): number {
 }
 
 function lensPropertiesFromCamera(camera: Camera): AuthoredCameraProperties {
+  // The authored lens, never one a lens extent already widened, unless something changed the camera's lens since.
+  const applied = authoredLenses.get(camera);
+  const orthoTop = Math.abs(camera.orthoTop ?? DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE);
   return {
     projectionMode:
       camera.mode === Camera.ORTHOGRAPHIC_CAMERA ? "orthographic" : "perspective",
-    fieldOfView: (camera.fov * 180) / Math.PI,
-    orthographicSize: Math.abs(camera.orthoTop ?? DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE),
+    fieldOfView: applied && camera.fov === applied.fov ? applied.fieldOfView : (camera.fov * 180) / Math.PI,
+    orthographicSize: applied && orthoTop === applied.ortho ? applied.orthographicSize : orthoTop,
     nearClip: camera.minZ,
     farClip: camera.maxZ,
   };
 }
 
+/**
+ * Each camera's authored field of view (degrees) and orthographic size, before any lens extent widened them, and the
+ * values it applied: a camera whose lens something else changed since reads back as that change.
+ */
+const authoredLenses = new WeakMap<Camera, { fieldOfView: number; orthographicSize: number; fov: number; ortho: number }>();
+/** Per Scene: how much more world its view shows vertically than the design size (`pixelatedLensExtent`). */
+const lensExtents = new WeakMap<Scene, number>();
+
+/**
+ * Sets how much more world a Scene's cameras show vertically than the authored lens frames: a pixelated framebuffer
+ * extended past the design size keeps the design size's scale and shows more of the scene in the extra rows.
+ */
+export function setSceneCameraLensExtent(scene: Scene, extent: number): void {
+  const value = Number.isFinite(extent) && extent > 1 ? extent : 1;
+  if ((lensExtents.get(scene) ?? 1) === value) return;
+  if (value === 1) lensExtents.delete(scene);
+  else lensExtents.set(scene, value);
+  refreshAuthoredCameraLenses(scene);
+}
+
+/** `extent` widens the authored lens vertically (`setSceneCameraLensExtent`): orthographic size and the field of view's tangent. */
 export function applyAuthoredCameraLens(
   camera: Camera,
   properties: AuthoredCameraProperties,
   aspect: number,
+  extent = 1,
 ): void {
   camera.unfreezeProjectionMatrix();
   camera.minZ = asNumber(properties.nearClip, 0.1);
   camera.maxZ = Math.max(camera.minZ + 0.01, asNumber(properties.farClip, 1000));
   const fovDeg = asNumber(properties.fieldOfView, DEFAULT_CAMERA_FIELD_OF_VIEW);
-  camera.fov = (fovDeg * Math.PI) / 180;
-  const safeAspect =
-    Number.isFinite(aspect) && aspect > 0 ? aspect : CAMERA_LENS_FALLBACK_ASPECT;
-  const ortho = Math.max(
+  const authoredOrtho = Math.max(
     asNumber(properties.orthographicSize, DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE) ||
       DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
     0.01,
   );
+  const widen = Number.isFinite(extent) && extent > 1 ? extent : 1;
+  camera.fov = 2 * Math.atan(Math.tan((fovDeg * Math.PI) / 360) * widen);
+  const safeAspect =
+    Number.isFinite(aspect) && aspect > 0 ? aspect : CAMERA_LENS_FALLBACK_ASPECT;
+  const ortho = authoredOrtho * widen;
+  authoredLenses.set(camera, { fieldOfView: fovDeg, orthographicSize: authoredOrtho, fov: camera.fov, ortho });
   if (properties.projectionMode === "orthographic") {
     camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
     camera.orthoTop = ortho;
@@ -394,25 +422,27 @@ export function applyAuthoredCameraProperties(
     camera,
     properties,
     cameraRenderAspect(engine.getRenderWidth(), engine.getRenderHeight()),
+    lensExtents.get(camera.getScene()) ?? 1,
   );
 }
 
 export function refreshAuthoredCameraLenses(scene: Scene): void {
   const engine = scene.getEngine();
   const aspect = cameraRenderAspect(engine.getRenderWidth(), engine.getRenderHeight());
+  const extent = lensExtents.get(scene) ?? 1;
   const seen = new Set<Camera>();
   const state = stateByScene.get(scene);
   if (state) {
     for (const camera of state.cameras.values()) {
       seen.add(camera);
-      applyAuthoredCameraLens(camera, lensPropertiesFromCamera(camera), aspect);
+      applyAuthoredCameraLens(camera, lensPropertiesFromCamera(camera), aspect, extent);
     }
   }
   for (const camera of scene.cameras) {
     if (seen.has(camera) || !camera.name.startsWith(AUTHORED_CAMERA_PREFIX)) {
       continue;
     }
-    applyAuthoredCameraLens(camera, lensPropertiesFromCamera(camera), aspect);
+    applyAuthoredCameraLens(camera, lensPropertiesFromCamera(camera), aspect, extent);
   }
 }
 

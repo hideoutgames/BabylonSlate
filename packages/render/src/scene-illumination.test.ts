@@ -34,6 +34,7 @@ import {
   applyAuthoredCameraProperties,
   cameraRenderAspect,
   refreshAuthoredCameraLenses,
+  setSceneCameraLensExtent,
   syncAuthoredCamerasFromMeshes,
   syncAuthoredIllumination,
 } from "./scene-illumination";
@@ -380,6 +381,30 @@ describe("syncAuthoredIllumination", () => {
     const matrix = camera.getProjectionMatrix(true).m;
     expect(matrix.every((value) => Number.isFinite(value))).toBe(true);
     expect(scene.activeCamera).toBe(camera);
+  });
+
+  it("widens a Scene's authored lenses by its lens extent without compounding, and returns to them", () => {
+    const { scene, engine } = createHandle();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(342);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(192);
+    const ortho = new UniversalCamera(`${AUTHORED_CAMERA_PREFIX}ortho`, Vector3.Zero(), scene);
+    applyAuthoredCameraProperties(ortho, { projectionMode: "orthographic", orthographicSize: 5 });
+    const perspective = new UniversalCamera(`${AUTHORED_CAMERA_PREFIX}perspective`, Vector3.Zero(), scene);
+    applyAuthoredCameraProperties(perspective, { projectionMode: "perspective", fieldOfView: 60 });
+    const extent = 192 / 180;
+    setSceneCameraLensExtent(scene, extent);
+    // The design height keeps its scale; the extra rows show more of the scene.
+    expect(ortho.orthoTop).toBeCloseTo(5 * extent);
+    expect(ortho.orthoRight).toBeCloseTo(5 * extent * (342 / 192));
+    expect(Math.tan(perspective.fov / 2)).toBeCloseTo(Math.tan(Math.PI / 6) * extent);
+    refreshAuthoredCameraLenses(scene);
+    refreshAuthoredCameraLenses(scene);
+    expect(ortho.orthoTop).toBeCloseTo(5 * extent);
+    // A lens set elsewhere since is the one a refresh keeps.
+    perspective.fov = Math.PI / 4;
+    setSceneCameraLensExtent(scene, 1);
+    expect(ortho.orthoTop).toBeCloseTo(5);
+    expect(perspective.fov).toBeCloseTo(Math.PI / 4);
   });
 
   it("refreshes Play-style authoredCamera cameras that are not in the illumination map", () => {

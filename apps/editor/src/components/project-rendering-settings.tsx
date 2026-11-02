@@ -210,7 +210,7 @@ export function ProjectRenderingSettings({
             without stretching.
           </FieldDescription>
         </Field>
-        {projectDocument.settings.render.customResolution && projectDocument.settings.render.blackBars ? (
+        {projectDocument.settings.render.customResolution ? (
           <Field className="settings-field settings-field-dependent">
             <FieldLabel htmlFor="setting-render-upscaling">Upscaling</FieldLabel>
             <Select value={projectDocument.settings.render.upscaling}
@@ -228,8 +228,9 @@ export function ProjectRenderingSettings({
               </SelectGroup></SelectContent>
             </Select>
             <FieldDescription id="setting-render-upscaling-description">
-              Pixelated shows the design size at the largest whole multiple
-              that fits, with sharp square pixels.
+              Pixelated enlarges the design size by the largest whole multiple
+              that fits, with sharp square pixels, at full resolution. Without
+              Black Bars the view extends to fill the window.
             </FieldDescription>
           </Field>
         ) : null}

@@ -1,5 +1,6 @@
 import {
   QUALITY_GROUPS,
+  pixelatedUpscaling,
   QUALITY_LEVELS,
   qualityGroupLabel,
   qualityPresetPatch,
@@ -172,6 +173,12 @@ export function RenderQualityFields({
             onChange={(scale) => edit("resolution", { scale })}
           />
           <FieldDescription>Fraction of the target width and height.</FieldDescription>
+          {pixelatedUpscaling(settings) ? (
+            <FieldDescription data-testid="quality-resolution-pixelated">
+              Upscaling is Pixelated: Play and exported games draw at full
+              resolution, so Resolution Scale and Dynamic Resolution do not apply.
+            </FieldDescription>
+          ) : null}
         </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-resolution-dynamic">
