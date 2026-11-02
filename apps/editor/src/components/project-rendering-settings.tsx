@@ -223,6 +223,29 @@ export function ProjectRenderingSettings({
             </FieldDescription>
           </FieldContent>
         </Field>
+        {projectDocument.settings.render.customResolution && projectDocument.settings.render.blackBars ? (
+          <Field className="settings-field">
+            <FieldLabel htmlFor="setting-render-upscaling">Upscaling</FieldLabel>
+            <Select value={projectDocument.settings.render.upscaling}
+              onValueChange={(upscaling) => {
+                if (upscaling === "smooth" || upscaling === "pixelated")
+                  updateProjectSettings({ render: { ...projectDocument.settings.render, upscaling } });
+              }}>
+              <SelectTrigger id="setting-render-upscaling" data-testid="setting-render-upscaling"
+                aria-describedby="setting-render-upscaling-description">
+                <SelectValue>{projectDocument.settings.render.upscaling === "pixelated" ? "Pixelated" : "Smooth"}</SelectValue>
+              </SelectTrigger>
+              <SelectContent><SelectGroup>
+                <SelectItem value="smooth">Smooth</SelectItem>
+                <SelectItem value="pixelated">Pixelated</SelectItem>
+              </SelectGroup></SelectContent>
+            </Select>
+            <FieldDescription id="setting-render-upscaling-description">
+              Pixelated shows the design size at the largest whole multiple
+              that fits, with sharp square pixels.
+            </FieldDescription>
+          </Field>
+        ) : null}
         </FieldGroup>
         </DisclosureSection>
         <DisclosureSection title="Water" {...renderingSection("water")}>

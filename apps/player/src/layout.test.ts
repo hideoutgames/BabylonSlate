@@ -37,6 +37,24 @@ describe("applyPlayerLayout", () => {
     expect(root.style.background).toBe("#000");
   });
 
+  it("shows a pixelated design size at the largest whole multiple of its device pixels", () => {
+    const root: LayoutRoot = { clientWidth: 1366, clientHeight: 768, style: { background: "" } };
+    const canvas = { style: { width: "", height: "", imageRendering: "" } } as HTMLCanvasElement;
+    const render = {
+      ...DEFAULT_RENDER_PROJECT_SETTINGS,
+      customResolution: true,
+      width: 320,
+      height: 180,
+      blackBars: true,
+      upscaling: "pixelated" as const,
+    };
+    expect(applyPlayerLayout({ root: asRoot(root), canvas, render })).toEqual({ width: 320, height: 180 });
+    expect([canvas.style.width, canvas.style.height, canvas.style.imageRendering]).toEqual(["1280px", "720px", "pixelated"]);
+    // Smooth again: fitted to the window, filtered.
+    applyPlayerLayout({ root: asRoot(root), canvas, render: { ...render, upscaling: "smooth" } });
+    expect([canvas.style.width, canvas.style.height, canvas.style.imageRendering]).toEqual(["1365px", "768px", ""]);
+  });
+
   it("fills the host without stretching when black bars are off", () => {
     const root: LayoutRoot = {
       clientWidth: 1600,

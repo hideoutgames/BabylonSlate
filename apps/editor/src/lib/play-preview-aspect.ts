@@ -1,4 +1,4 @@
-import { fitContainedRect, playFramebufferSize } from "@haptic/core";
+import { fitContainedRect, playFramebufferSize, presentedFramebufferStyle } from "@haptic/core";
 
 export {
   clampRenderResolution,
@@ -17,6 +17,7 @@ export function applyPlayPreviewCanvasLayout(options: {
     width: number;
     height: number;
     blackBars: boolean;
+    upscaling?: "smooth" | "pixelated";
   } | null;
   liveSize?: { width: number; height: number } | null;
 }): void {
@@ -29,17 +30,15 @@ export function applyPlayPreviewCanvasLayout(options: {
     overlay.classList.toggle("justify-center", true);
     canvas.classList.toggle("h-full", false);
     canvas.classList.toggle("w-full", false);
-    const fitted = fitContainedRect(
-      overlay.clientWidth,
-      overlay.clientHeight,
-      framebuffer.width,
-      framebuffer.height,
-    );
-    canvas.style.width = `${fitted.width}px`;
-    canvas.style.height = `${fitted.height}px`;
+    const presented = presentedFramebufferStyle(options.render, framebuffer,
+      { width: overlay.clientWidth, height: overlay.clientHeight }, window.devicePixelRatio);
+    canvas.style.width = `${presented.width}px`;
+    canvas.style.height = `${presented.height}px`;
+    canvas.style.imageRendering = presented.imageRendering;
     canvas.style.objectFit = "";
     return;
   }
+  canvas.style.imageRendering = "";
   const fillHost = followSystem || options.render?.customResolution === true;
   overlay.classList.toggle("bg-black", !fillHost);
   overlay.classList.toggle("bg-background", fillHost);

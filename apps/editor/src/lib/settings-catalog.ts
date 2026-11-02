@@ -38,7 +38,7 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
     id: "rendering",
     label: "Rendering",
     keywords:
-      "frame cap fps play preview aspect ratio letterbox follow system custom resolution width height black bars PBR CEL shader shadow bands specular light mixing strongest additive blend outlines outline color width",
+      "frame cap fps play preview aspect ratio letterbox follow system custom resolution width height black bars upscaling pixelated PBR CEL shader shadow bands specular light mixing strongest additive blend outlines outline color width",
   },
   {
     id: "textures",
