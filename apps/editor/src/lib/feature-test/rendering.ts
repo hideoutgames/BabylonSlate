@@ -16,6 +16,7 @@ import {
   parseReflectionProbeProperties,
   parseOutlineProperties,
   parseSpringArmProperties,
+  RENDER_TARGET_CAPTURE_QUALITY_LABELS,
   RENDER_TARGET_MODE_LABELS,
   sampleSplineArcPath,
   sampleSplinePath,
@@ -23,6 +24,7 @@ import {
   SPLINE_DISTANCE_SUBDIVISIONS,
   splineArcPath,
   type ProjectSettings,
+  type RenderTargetCaptureQuality,
   type RenderTargetMode,
   type SerializedActor,
   type SerializedComponent,
@@ -67,12 +69,20 @@ const RENDER_FOLDER = "Rendering";
 const SKY_FOLDER = "Sky";
 const SCENES_FOLDER = "Scenes";
 
-/** One capture per Render Target mode; WorldNormal captures on request only. */
-const CAPTURES: ReadonlyArray<{ mode: RenderTargetMode; size: number; everyFrame: boolean; x: number; y: number }> = [
-  { mode: "SceneColor", size: 512, everyFrame: true, x: -7, y: 3 },
-  { mode: "DepthPass", size: 256, everyFrame: true, x: 0, y: 4 },
-  { mode: "WorldNormal", size: 256, everyFrame: false, x: 7, y: 3 },
-];
+/**
+ * One capture per Render Target mode, plus a High Quality Scene Color capture beside the Fast one (FT_World's lake
+ * capture is Full Quality); WorldNormal captures on request only. The High Quality view is a second camera over the
+ * subjects at 256². Perf knob.
+ */
+const CAPTURES = [
+  { key: "SceneColor", mode: "SceneColor", quality: "fast", size: 512, everyFrame: true, x: -9, y: 3 },
+  { key: "SceneColorHighQuality", mode: "SceneColor", quality: "highQuality", size: 256, everyFrame: true, x: -3, y: 3.5 },
+  { key: "DepthPass", mode: "DepthPass", quality: "fast", size: 256, everyFrame: true, x: 3, y: 4 },
+  { key: "WorldNormal", mode: "WorldNormal", quality: "fast", size: 256, everyFrame: false, x: 9, y: 3 },
+] as const satisfies ReadonlyArray<{
+  key: string; mode: RenderTargetMode; quality: RenderTargetCaptureQuality; size: number; everyFrame: boolean; x: number; y: number;
+}>;
+type CaptureKey = (typeof CAPTURES)[number]["key"];
 
 /** Horizontal distances (m) from the LOD Lane Camera to each menorah instance. */
 const LOD_DISTANCES = [4, 8, 16, 32, 48] as const;
@@ -88,7 +98,7 @@ const LIGHT_GRID_CAMERA = { position: [0, 16, -18] as Vec3, target: [0, 0, 6] as
 const POST_PROCESS_ENTRY_ID = "ft-render-post-process";
 
 interface RenderingRefs {
-  targets: Record<RenderTargetMode, { renderTarget: string; monitorMaterial: string }>;
+  targets: Record<CaptureKey, { renderTarget: string; monitorMaterial: string }>;
   springArm: PlacedClass;
   tourPath: PlacedClass;
   cameraTour: PlacedClass;
@@ -166,18 +176,18 @@ async function createSkyboxCreator(ctx: FeatureTestContext): Promise<void> {
 
 async function createRenderTargets(ctx: FeatureTestContext): Promise<RenderingRefs["targets"]> {
   const targets = {} as RenderingRefs["targets"];
-  for (const { mode, size } of CAPTURES) {
-    const renderTarget = await ctx.createAsset("RenderTarget", RENDER_FOLDER, `FT_RenderTarget${mode}`, {
+  for (const { key, mode, size } of CAPTURES) {
+    const renderTarget = await ctx.createAsset("RenderTarget", RENDER_FOLDER, `FT_RenderTarget${key}`, {
       payload: { mode, width: size, height: size },
     });
-    const texture = await ctx.createAsset("RenderTargetTexture", RENDER_FOLDER, `FT_RenderTexture${mode}`, {
+    const texture = await ctx.createAsset("RenderTargetTexture", RENDER_FOLDER, `FT_RenderTexture${key}`, {
       payload: { renderTargetGuid: renderTarget.guid },
     });
-    const name = `FT_RenderMonitor${mode}`;
+    const name = `FT_RenderMonitor${key}`;
     const monitor = await ctx.createAsset("Material", RENDER_FOLDER, name, {
       payload: monitorMaterial(name, texture.guid),
     });
-    targets[mode] = { renderTarget: renderTarget.guid, monitorMaterial: monitor.guid };
+    targets[key] = { renderTarget: renderTarget.guid, monitorMaterial: monitor.guid };
   }
   return targets;
 }
@@ -880,8 +890,8 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
 }
 
 /**
- * Three captures (one per mode) aimed at a subject group, each shown on its own monitor, and two Mirrors flanking
- * the group: the built-in surface and a rippling Material override.
+ * Four captures (one per mode, and Scene Color at Fast and High Quality) aimed at a subject group, each shown on its
+ * own monitor, and two Mirrors flanking the group: the built-in surface and a rippling Material override.
  */
 function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void {
   const zone = ctx.zone("renderTargets");
@@ -908,9 +918,10 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
   add(primitive(CAPTURE_SUBJECT_IDS[3], "Capture Backdrop", "box", zone.at(0, 1.5, -9), { scale: [4, 2, 0.2] }));
 
   const aim = zone.at(0, 0.75, -5);
-  for (const { mode, everyFrame, x, y } of CAPTURES) {
-    const slug = mode.replace(/[A-Z]/g, (letter, index: number) => `${index ? "-" : ""}${letter.toLowerCase()}`);
-    const label = RENDER_TARGET_MODE_LABELS[mode];
+  for (const { key, mode, quality, everyFrame, x, y } of CAPTURES) {
+    const slug = key.replace(/[A-Z]/g, (letter, index: number) => `${index ? "-" : ""}${letter.toLowerCase()}`);
+    const qualityLabel = RENDER_TARGET_CAPTURE_QUALITY_LABELS[quality];
+    const label = quality === "fast" ? RENDER_TARGET_MODE_LABELS[mode] : `${RENDER_TARGET_MODE_LABELS[mode]} ${qualityLabel}`;
     const id = `ft-render-capture-${slug}`;
     const position = zone.at(x, y, 0);
     const transform = tf(position, { rotation: lookAtRotation(position, aim) });
@@ -918,15 +929,15 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
       add(actor(id, `${label} Capture`, transform, [
         comp(`${id}-capture`, "RenderTargetCaptureComponent", {
           ...createDefaultRenderTargetCaptureProperties(),
-          renderTargetGuid: refs.targets[mode].renderTarget,
+          renderTargetGuid: refs.targets[key].renderTarget,
           captureEveryFrame: true,
           captureOnlyActors: true,
           actorIds: [...CAPTURE_SUBJECT_IDS],
           fieldOfView: 50,
           nearClip: 0.5,
           farClip: mode === "DepthPass" ? 20 : 30,
-          // The Fast side of the Quality comparison; FT_World's lake capture is Full Quality.
-          quality: "fast",
+          // Fast and High Quality side by side; FT_World's lake capture is Full Quality.
+          quality,
         }),
       ], { classId: "RenderTargetCapture" }));
     } else {
@@ -937,9 +948,10 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
     // Monitors sit behind the captures, outside every capture frustum.
     const monitor = `ft-render-monitor-${slug}`;
     add(primitive(monitor, `${label} Monitor`, "plane", zone.at(x, 3, 7), {
-      materialGuid: refs.targets[mode].monitorMaterial, scale: [3, 3, 1], castShadows: false,
+      materialGuid: refs.targets[key].monitorMaterial, scale: [3, 3, 1], castShadows: false,
     }));
-    const caption = !everyFrame ? `${label} (Manual)` : mode === "SceneColor" ? `${label} (Fast)` : label;
+    const modeLabel = RENDER_TARGET_MODE_LABELS[mode];
+    const caption = !everyFrame ? `${modeLabel} (Manual)` : mode === "SceneColor" ? `${modeLabel} (${qualityLabel})` : modeLabel;
     add(text3d(`${monitor}-caption`, `${label} Caption`, zone.at(x, 0.3, 6.2), caption, {
       size: 0.4, color: [0.9, 0.9, 0.9], fontAssetGuid: null,
     }));

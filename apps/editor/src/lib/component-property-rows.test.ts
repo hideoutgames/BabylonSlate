@@ -100,7 +100,7 @@ it("edits capture settings through typed controls and keeps actor filtering opt-
   const quality = rows.find((row) => row.label === "Quality");
   if (quality?.kind !== "enum") throw new Error("Missing capture quality");
   expect(quality.value).toBe("fast");
-  expect(quality.options.map((option) => option.label)).toEqual(["Fast", "Full Quality"]);
+  expect(quality.options.map((option) => option.label)).toEqual(["Fast", "High Quality", "Full Quality"]);
   quality.onChange("fullQuality");
   expect(update).toHaveBeenCalledWith("quality", "fullQuality");
 });

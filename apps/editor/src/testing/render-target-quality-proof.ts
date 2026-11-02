@@ -1,6 +1,6 @@
 import {
   Color3, Color4, DirectionalLight, Engine, FreeCamera, HemisphericLight, Mesh, MeshBuilder, Quaternion, Scene,
-  Vector3, type AbstractEngine, type BaseTexture, type Material,
+  Vector3, type AbstractEngine, type BaseTexture, type Material, type Texture,
 } from "@babylonjs/core";
 import {
   createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality,
@@ -13,9 +13,12 @@ import {
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { updateSceneRenderingSettings } from "@haptic/render/render-settings";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
-import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
+import {
+  createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialDocument,
+} from "@haptic/shader-graph";
+import { monitorMaterial } from "../lib/feature-test/rendering";
 
-const QUALITIES: readonly RenderTargetCaptureQuality[] = ["fast", "fullQuality"];
+const QUALITIES: readonly RenderTargetCaptureQuality[] = ["fast", "highQuality", "fullQuality"];
 type Backend = "webgl2" | "webgpu";
 
 /** A rough graph Material of one colour, drawn with the light block. */
@@ -31,9 +34,21 @@ async function matte(scene: Scene, name: string, color: Color3): Promise<Materia
   return compiled.material;
 }
 
+/** A graph Material from `doc`, sampling `textures` by guid. */
+async function compileDocument(scene: Scene, doc: MaterialDocument, textures: Record<string, BaseTexture> = {}): Promise<Material> {
+  const lowered = lowerMaterialDocument(doc);
+  if (!lowered.ok) throw new Error(`${doc.name} did not lower`);
+  const compiled = compileMaterialPlan(lowered.plan, {
+    scene, name: doc.name, resolveTexture: (guid) => (textures[guid] as Texture | undefined) ?? null,
+  });
+  if (!compiled.ok) throw new Error(`${doc.name} did not compile`);
+  await compiled.ready;
+  return compiled.material;
+}
+
 /**
- * A scene view over a flat, still lake on a red bed, plus a Fast and a Full
- * Quality capture with the view's exact lens, all rendered by the production
+ * A scene view over a flat, still lake on a red bed, plus a capture of each
+ * Quality with the view's exact lens, all rendered by the production
  * scene view (captures run inside its frame). Numeric primitives only.
  */
 async function lakeHost(backend: Backend, size: number, boxes = 0) {
@@ -86,10 +101,8 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
     ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: quality, quality, enabled,
     fieldOfView: 50, nearClip: 0.1, farClip: 100,
   }, () => lens);
-  const outputs: Record<RenderTargetCaptureQuality, BaseTexture> = {
-    fast: captures.acquireTexture("fastTexture")!.resource,
-    fullQuality: captures.acquireTexture("fullQualityTexture")!.resource,
-  };
+  const outputs = {} as Record<RenderTargetCaptureQuality, BaseTexture>;
+  for (const quality of QUALITIES) outputs[quality] = captures.acquireTexture(`${quality}Texture`)!.resource;
   const frame = () => {
     engine.beginFrame();
     try { return view.render(); } finally { engine.endFrame(); }
@@ -188,6 +201,131 @@ export async function runRenderTargetQualityProof(backend: Backend) {
     };
   } catch (error) {
     await host.dispose().catch(() => {});
+    throw error;
+  }
+}
+
+/** The subject's linear colour: bright enough that Exposure carries its red past Neutral's highlight shoulder. */
+const MONITOR_SUBJECT = new Color3(0.9, 0.35, 0.05);
+
+/**
+ * In Scene Linear with Neutral tone mapping and a raised Exposure, how far a monitor in the scene view (the Feature
+ * Test's monitor Material, sampling one capture of an unlit subject) is from the same subject seen directly beside
+ * it: High Quality and Fast leave the screen effects to the scene view, which applies them once to both; Full
+ * Quality's image carries them already, so the scene view applies them a second time. Mean RGB error (0–255) over a
+ * patch of each.
+ */
+export async function runRenderTargetMonitorProof(backend: Backend) {
+  const size = 96;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  document.getElementById("root")!.append(canvas);
+  const engine = backend === "webgpu"
+    ? await createAppWebGpuEngine(canvas)
+    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  engine.setSize(size, size);
+  const scene = new Scene(engine);
+  scene.clearColor = new Color4(0.1, 0.1, 0.12, 1);
+  configureEditorRenderingGroups(scene);
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping: "neutral", exposure: 1.5 },
+  });
+  const camera = new FreeCamera("Main Camera", new Vector3(0, 0, -5), scene);
+  camera.rotationQuaternion = Quaternion.Identity();
+  camera.fov = 50 * Math.PI / 180;
+  camera.minZ = 0.1;
+  camera.maxZ = 100;
+  scene.activeCamera = camera;
+  const subjectDoc = createDefaultMaterialDocument("Unlit Subject");
+  subjectDoc.shadingModel = "unlit";
+  subjectDoc.nodes.find((node) => node.id === "baseColor")!.properties.value = [MONITOR_SUBJECT.r, MONITOR_SUBJECT.g, MONITOR_SUBJECT.b];
+  // A thin slab on the left; its front face fills each capture's frame.
+  const subject = MeshBuilder.CreateBox("Subject", { width: 2, height: 2, depth: 0.2 }, scene);
+  subject.material = await compileDocument(scene, subjectDoc);
+  subject.position.set(-1.2, 0, 0);
+  const view = new SceneRenderCoordinator(scene);
+  const captures = new RenderTargetCaptures(scene);
+  captures.setAssets(
+    new Map(QUALITIES.map((quality) => [quality, { mode: "SceneColor" as const, width: 32, height: 32 }])),
+    new Map(QUALITIES.map((quality) => [`${quality}Texture`, { renderTargetGuid: quality }])),
+  );
+  const lens = new Mesh("Lens", scene);
+  lens.position.set(-1.2, 0, -1.1);
+  lens.rotationQuaternion = Quaternion.Identity();
+  const configure = (quality: RenderTargetCaptureQuality, enabled: boolean) => captures.configure(quality, {
+    ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: quality, quality, enabled,
+    fieldOfView: 40, nearClip: 0.1, farClip: 20,
+  }, () => lens);
+  const monitors: Partial<Record<RenderTargetCaptureQuality, Material>> = {};
+  for (const quality of QUALITIES) {
+    const texture = captures.acquireTexture(`${quality}Texture`)!.resource;
+    const doc = monitorMaterial(`${quality} Monitor`, `${quality}Texture`) as unknown as MaterialDocument;
+    monitors[quality] = await compileDocument(scene, doc, { [`${quality}Texture`]: texture });
+  }
+  // The plane's front faces -Z, toward the scene camera.
+  const monitor = MeshBuilder.CreatePlane("Monitor", { size: 2 }, scene);
+  monitor.position.set(1.2, 0, 0);
+  const frame = () => {
+    engine.beginFrame();
+    try { return view.render(); } finally { engine.endFrame(); }
+  };
+  const settle = async (ready: () => boolean, label: string) => {
+    const deadline = performance.now() + 60_000;
+    for (;;) {
+      const result = frame();
+      if (result.rendered && result.readyForPresentation && ready()) return;
+      if (performance.now() > deadline) throw new Error(`${label} did not settle: ${JSON.stringify(captures.diagnostics())}`);
+      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    }
+  };
+  /** An 8 × 8 patch centred on column `x` of the middle rows. */
+  const patch = (pixels: readonly number[], x: number) => {
+    const values: number[] = [];
+    for (let row = size / 2 - 4; row < size / 2 + 4; row++)
+      values.push(...pixels.slice((row * size + x - 4) * 4, (row * size + x + 4) * 4));
+    return values;
+  };
+  // Projected centres of the subject and the monitor (x = ∓1.2 at 5 m, 50° lens).
+  const offset = Math.round(1.2 / (5 * Math.tan(25 * Math.PI / 180)) * size / 2);
+  const dispose = async () => {
+    captures.dispose();
+    view.dispose();
+    let settled = false;
+    const released = Promise.all([view.whenReleased(), captures.whenReleased()]).finally(() => { settled = true; });
+    while (!settled) {
+      engine.beginFrame();
+      engine.endFrame();
+      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    }
+    await released;
+    scene.dispose();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    engine.beginFrame();
+    engine.endFrame();
+    const retainedBytes = managedRenderReservations(engine).reservedBytes;
+    engine.dispose();
+    canvas.remove();
+    return retainedBytes;
+  };
+  try {
+    const cases = {} as Record<RenderTargetCaptureQuality, { monitorError: number; subject: number[]; monitor: number[] }>;
+    for (const quality of QUALITIES) {
+      for (const other of QUALITIES) configure(other, other === quality);
+      monitor.material = monitors[quality]!;
+      await settle(() => captures.diagnostics().some((entry) => entry.quality === quality && entry.published), quality);
+      frame(); frame();
+      const pixels = await readView(engine, backend, size);
+      const subjectPatch = patch(pixels, size / 2 - offset), monitorPatch = patch(pixels, size / 2 + offset);
+      cases[quality] = { monitorError: meanError(subjectPatch, monitorPatch), subject: subjectPatch.slice(0, 3), monitor: monitorPatch.slice(0, 3) };
+    }
+    return {
+      effectiveBackend: engine.isWebGPU ? "webgpu" : "webgl2",
+      cases,
+      retainedBytes: await dispose(),
+    };
+  } catch (error) {
+    await dispose().catch(() => {});
     throw error;
   }
 }
@@ -339,8 +477,8 @@ export async function runRenderTargetShadowProof(backend: Backend) {
 }
 
 /**
- * Scene view frame time with no capture, a Fast capture and a Full Quality
- * capture of the same lens, each frame waited to GPU completion. The
+ * Scene view frame time with no capture and with a capture of each Quality of
+ * the same lens, each frame waited to GPU completion. The
  * difference from the baseline is the capture's cost on this device.
  */
 export async function runRenderTargetQualityCost(backend: Backend, options: { size?: number; frames?: number; boxes?: number } = {}) {

@@ -62,12 +62,12 @@ export type SceneRenderCoordinatorOptions = {
   /** Views may draw planar water reflections; previews, thumbnails and auxiliary views pass false. */
   waterPlanarReflections?: boolean;
   /**
-   * An auxiliary view (a Full Quality Render Target Capture): renders `camera`
+   * An auxiliary view (a High or Full Quality Render Target Capture): renders `camera`
    * into its output target from inside the scene view's frame, drawing only
    * `objects` (see ForwardSceneFrameGraphOptions). Its camera is never the
    * scene's active camera.
    */
-  auxiliary?: { camera: Camera; objects: FrameGraphObjectList };
+  auxiliary?: { camera: Camera; objects: FrameGraphObjectList; screenEffects?: boolean };
   /**
    * WebGPU: a draw in one of the graph's object passes whose render pipeline is
    * not cached creates it asynchronously and is skipped (`beginPipelineDeferral`),
@@ -75,7 +75,7 @@ export type SceneRenderCoordinatorOptions = {
    * until the pipelines exist. After `PIPELINE_DEFERRAL_HOLD_CAP_MS` of such
    * frames in a row, new misses compile synchronously again. Only for a view
    * that draws every frame and presents only rendered frames: the world view
-   * and its Full Quality captures, never previews or thumbnails. An auxiliary
+   * and its High and Full Quality captures, never previews or thumbnails. An auxiliary
    * view defers only while its owner's frame does. A steady frame (one that
    * tolerates variant swaps) instead leaves such a draw out of a geometry pass
    * that has drawn a complete frame, and still draws: its pipeline arrives
@@ -130,7 +130,7 @@ export class SceneRenderCoordinator {
     this.auxiliaryCamera = options.auxiliary?.camera;
     this.deferPipelines = options.deferPipelines === true;
     this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary
-      ? { auxiliary: { objects: options.auxiliary.objects } }
+      ? { auxiliary: { objects: options.auxiliary.objects, screenEffects: options.auxiliary.screenEffects } }
       : { occlusion: options.occlusion === true });
     this.detachReadinessDirty = onSceneReadinessDirty(scene, () =>
       this.graph.markReadinessDirty(),
@@ -564,7 +564,7 @@ export class SceneRenderCoordinator {
       const message = String(error);
       if (this.auxiliaryCamera && message !== this.warnedFailure) {
         this.warnedFailure = message;
-        console.warn(`[render] Full Quality capture is not drawn while its preparation fails: ${message}`);
+        console.warn(`[render] A Render Target Capture's own view is not drawn while its preparation fails: ${message}`);
       }
     });
   }

@@ -352,7 +352,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     scene.activeCamera = main;
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     createAtlasCascadedShadowGenerator(sun, EDGE / 4, 2, EDGE)!;
-    // A Full Quality capture's own cascades, keyed to its camera.
+    // A High or Full Quality capture's own cascades, keyed to its camera.
     const own = createAtlasCascadedShadowGenerator(sun, EDGE / 4, 2, EDGE, capture)!;
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene);
     const lamp = createAtlasShadowGenerator(spot, EDGE / 4, EDGE)!;

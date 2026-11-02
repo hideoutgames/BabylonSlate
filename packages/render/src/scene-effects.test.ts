@@ -7,7 +7,9 @@ import {
 } from "@haptic/core";
 import { expect, it } from "vitest";
 import {
+  displayEncodingEffects,
   planSceneEffects,
+  planWithoutScreenEffects,
   sceneEffectsImageProcessingConfiguration,
   sceneEffectsKey,
   upscaledRenderSize,
@@ -110,6 +112,33 @@ it("grades through the display stage only once the LUT is ready, in either mode"
   const config = sceneEffectsImageProcessingConfiguration(graded, { sceneLinear: false, vignette: null, colorGrading: lut });
   expect(config.colorGradingEnabled).toBe(true);
   expect(config.colorGradingTexture).toBe(lut);
+});
+
+it("leaves screen effects out of a High Quality capture's plan and keeps what only its own view can draw", () => {
+  const lut = { uniqueId: 7 } as unknown as BaseTexture;
+  const bloom = { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 };
+  const vignette = { enabled: true, weight: 2, color: [0, 0, 0] as [number, number, number] };
+  const linear = effects({
+    colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping: "aces", exposure: 2, contrast: 1.4,
+    whiteBalance: { enabled: true, temperature: 4000, tint: 0.2 }, bloom, vignette,
+    colorGrading: { enabled: true, lutTextureGuid: "lut" },
+  });
+  const plan = planSceneEffects(linear, "pbr", true, { colorGradingTexture: lut, fxaa: true, screenShadows: "high" })!;
+  expect(plan).toMatchObject({ bloom: { enabled: true }, imageProcessing: { vignette, colorGrading: lut } });
+  // Scene Linear keeps a display stage that only encodes; FXAA and Screen-Space Shadows stay.
+  const high = planWithoutScreenEffects(plan)!;
+  expect(high).toEqual({ ...plan, bloom: null, imageProcessing: { sceneLinear: true, vignette: null, colorGrading: null } });
+  const encode = sceneEffectsImageProcessingConfiguration(displayEncodingEffects(linear), high.imageProcessing!);
+  expect(encode).toMatchObject({
+    toneMappingEnabled: false, exposure: 1, contrast: 1, whiteBalanceEnabled: false, vignetteEnabled: false, colorGradingEnabled: false,
+  });
+  // Legacy Display has no display stage left; a plan of screen effects alone becomes none.
+  const legacy = planSceneEffects(effects({ bloom, vignette }), "pbr")!;
+  expect(legacy).toMatchObject({ sceneLinear: false, bloom: { enabled: true }, imageProcessing: { vignette } });
+  expect(planWithoutScreenEffects(legacy)).toBeNull();
+  const fxaa = planSceneEffects(effects({ bloom }), "pbr", true, { fxaa: true })!;
+  expect(planWithoutScreenEffects(fxaa)).toEqual({ ...fxaa, bloom: null, imageProcessing: null });
+  expect(planWithoutScreenEffects(null)).toBeNull();
 });
 
 it("plans bloom and FXAA independently in Legacy Display", () => {

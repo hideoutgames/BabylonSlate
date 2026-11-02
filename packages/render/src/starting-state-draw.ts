@@ -88,7 +88,7 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
  * starting view included, has its program's first use (WebGL2) or its render pipelines (WebGPU) here rather than when
  * gameplay first shows it. Frames draw while the meshes hold an Effect no frame of this draw drew (a draw's post-draw
  * probe can ask for more, which the next ready frame draws); after the first, they wait for `settled` (the views it
- * created, such as a Full Quality capture's, have prepared). Its Effects stay compiled until `release`.
+ * created, such as a High or Full Quality capture's, have prepared). Its Effects stay compiled until `release`.
  *
  * `draws` says whether there is a reason to draw: the caller passes true when the Scene holds a light or Play may spawn
  * one, when a particle component is to play (its unstarted systems draw their programs in these frames), or when the

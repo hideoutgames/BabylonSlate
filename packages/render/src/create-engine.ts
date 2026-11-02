@@ -865,7 +865,7 @@ function initializeEngine(
   binding.renderTargetTextures = options.renderTargetTextures;
   const renderTargetCaptures = sceneRenderTargetCaptures(scene);
   renderTargetCaptures.setAssets(binding.renderTargets, binding.renderTargetTextures);
-  // Full Quality captures draw the scene's gameplay outlines, never the editor selection.
+  // High and Full Quality captures draw the scene's gameplay outlines, never the editor selection.
   renderTargetCaptures.setOutlines((renderer, includes) => outlineHost.attachCaptureView(renderer, includes));
   const captureActorSlots = new Map<number, string>();
   const runtimeActorIdentities = new Map<number, import("@haptic/bridge").RuntimeObjectIdentity>();
@@ -2462,7 +2462,7 @@ function initializeEngine(
       track(bounded, () => nativeRetirement.whenDisposed());
       track(bounded, () => worldRenderer.retire());
       track(bounded, () => sceneLayerCompositor?.dispose());
-      // Full Quality captures own forward views and borrowed outputs.
+      // High and Full Quality captures own forward views and borrowed outputs.
       track(bounded, () => renderTargetCaptures.clear());
       track(actual, () => nativeRetirement.whenReleased());
       track(actual, () => worldRenderer.whenReleased());
@@ -3365,7 +3365,7 @@ function initializeEngine(
         const draws = releaseStagedSpawnables !== null || spawnableLights.size > 0 ||
           scene.lights.some((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX)) ||
           (particleService?.holdsPlayingComponents() ?? false);
-        // Full Quality captures prepare their views in the starting state, so their variants share its Effects; manual
+        // High and Full Quality captures prepare their views in the starting state, so their variants share its Effects; manual
         // captures not yet requested are rehearsed in its frames, which draw again until they have drawn (a rehearsal
         // only draws inside the view's frame, so waiting for it without drawing would never end), as they do for a
         // spawnable system that became ready after the first.
