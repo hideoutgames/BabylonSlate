@@ -93,19 +93,29 @@ export function CatalogCard({
   );
 }
 
-/** Responsive card grid; columns stay near the Content Browser tile width. */
+/**
+ * Responsive card grid; columns stay near the Content Browser tile width, or
+ * narrower for `compact` popups.
+ */
 export function CatalogCardGrid({
   label,
+  size = "default",
   children,
 }: {
   label: string;
+  size?: "default" | "compact";
   children: ReactNode;
 }) {
   return (
     <div
       role="group"
       aria-label={label}
-      className="grid grid-cols-[repeat(auto-fill,minmax(min(7.5rem,100%),1fr))] gap-2"
+      className={cn(
+        "grid gap-2",
+        size === "compact"
+          ? "grid-cols-[repeat(auto-fill,minmax(min(6rem,100%),1fr))]"
+          : "grid-cols-[repeat(auto-fill,minmax(min(7.5rem,100%),1fr))]",
+      )}
     >
       {children}
     </div>

@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { PlaceActorsDialog } from "./place-actors-dialog";
 
 /**
- * The Outliner closes this dialog itself after spawning, so the close never
- * goes through the dialog's own `onOpenChange`. Reopening must still start
- * from an empty catalog.
+ * The Outliner closes this dialog itself after spawning, so that close never
+ * goes through the dialog's own `onOpenChange`.
  */
 function Harness({ onSelect }: { onSelect?: () => void }) {
   const [open, setOpen] = useState(true);
@@ -49,33 +49,69 @@ describe("PlaceActorsDialog", () => {
     expect(onSelect).not.toHaveBeenCalled();
     fireEvent.keyDown(row, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByTestId("reopen"));
-    expect(searchValue()).toBe("");
   });
 
-  it("clears the search after the Outliner closes it on select", () => {
+  it("reopens on the category and search it was left with, after a pick or a dismissal", () => {
     render(<Harness />);
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Lights"));
+    fireEvent.click(screen.getByTestId("place-actors-item-light-point"));
+
+    fireEvent.click(screen.getByTestId("reopen"));
+    expect(screen.getByTestId("place-actors-item-light-spot")).toBeTruthy();
+    expect(screen.queryByTestId("place-actors-item-shape-box")).toBeNull();
+
     fireEvent.change(screen.getByTestId("place-actors-catalog-search"), {
       target: { value: "sphere" },
     });
-    expect(screen.queryByTestId("place-actors-item-shape-box")).toBeNull();
-
-    fireEvent.click(screen.getByTestId("place-actors-item-shape-sphere"));
+    fireEvent.keyDown(document.body, { key: "Escape" });
     fireEvent.click(screen.getByTestId("reopen"));
-
-    expect(searchValue()).toBe("");
-    expect(screen.getByTestId("place-actors-item-shape-box")).toBeTruthy();
+    expect(searchValue()).toBe("sphere");
+    expect(screen.getByTestId("place-actors-item-shape-sphere")).toBeTruthy();
   });
 
-  it("clears the active category after the Outliner closes it on select", () => {
-    render(<Harness />);
-    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Lights"));
-    expect(screen.queryByTestId("place-actors-item-shape-box")).toBeNull();
+  it("keeps filters and scroll for the project session, apart from Scene Layers", async () => {
+    const asset = (id: string, assetType: string, path: string) => ({
+      id: `asset-${id}`,
+      title: id,
+      category: "Project",
+      kind: { type: "asset" as const, name: id, guid: id, assetType, path },
+    });
+    const projectItems = [
+      asset("Hero", "Class", "assets/actors/Hero.class.hasset"),
+      asset("Door", "Prefab", "assets/props/Door.prefab.hasset"),
+    ];
+    // Each Outliner (one per open Scene) mounts its own dialog; the provider
+    // is the project session they share.
+    const session = (instance: string, overlay = false) => (
+      <EditorSessionStateProvider>
+        <PlaceActorsDialog
+          key={instance}
+          open
+          onOpenChange={() => {}}
+          onSelect={() => {}}
+          projectItems={projectItems}
+          overlay={overlay}
+        />
+      </EditorSessionStateProvider>
+    );
+    const { rerender } = render(session("first"));
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
+    fireEvent.click(screen.getByTestId("place-actors-project-filter"));
+    fireEvent.click(await screen.findByTestId("place-actors-project-filter-Prefab"));
+    await waitFor(() => expect(screen.queryByTestId("place-actors-item-asset-Hero")).toBeNull());
+    const body = screen.getByTestId("place-actors-catalog-body");
+    body.scrollTop = 80;
+    fireEvent.scroll(body);
 
-    fireEvent.click(screen.getByTestId("place-actors-item-light-point"));
-    fireEvent.click(screen.getByTestId("reopen"));
+    rerender(session("second"));
+    expect(screen.getByTestId("place-actors-catalog-body")).not.toBe(body);
+    expect(screen.getByTestId("place-actors-catalog-body").scrollTop).toBe(80);
+    expect(screen.getByTestId("place-actors-project-count").textContent).toBe("1 of 2 Assets");
+    expect(screen.getByTestId("place-actors-project-filter").textContent).toBe("Filter (1)");
 
-    expect(screen.getByTestId("place-actors-item-shape-box")).toBeTruthy();
+    rerender(session("layer", true));
+    expect(screen.getByRole("group", { name: "Featured" })).toBeTruthy();
+    expect(screen.getByTestId("place-actors-catalog-body").scrollTop).toBe(0);
   });
 
   it("opens on Featured cards and shows project Models as thumbnail cards apart from other assets", async () => {
@@ -158,16 +194,5 @@ describe("PlaceActorsDialog", () => {
     expect(screen.getByTestId("place-actors-item-asset-Door")).toBeTruthy();
     expect(screen.getByTestId("place-actors-project-count").textContent).toBe("1 of 2 Assets");
     expect(screen.getByTestId("place-actors-project-filter").textContent).toBe("Filter (1)");
-  });
-
-  it("still clears the search when dismissed without selecting", () => {
-    render(<Harness />);
-    fireEvent.change(screen.getByTestId("place-actors-catalog-search"), {
-      target: { value: "sphere" },
-    });
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    fireEvent.click(screen.getByTestId("reopen"));
-
-    expect(searchValue()).toBe("");
   });
 });

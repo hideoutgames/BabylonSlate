@@ -50,6 +50,66 @@ describe("CatalogDialog", () => {
     ).toBeNull();
   });
 
+  it("scrolls the body to the top when a category is picked", () => {
+    function Catalog() {
+      const [active, setActive] = useState("general");
+      return (
+        <CatalogDialog
+          open
+          onOpenChange={() => {}}
+          title="Settings"
+          categories={[
+            { id: "general", label: "General" },
+            { id: "input", label: "Input" },
+          ]}
+          activeCategoryId={active}
+          onCategoryChange={setActive}
+          search=""
+          onSearchChange={() => {}}
+          initialScrollTop={120}
+          data-testid="catalog"
+        >
+          <p>{active}</p>
+        </CatalogDialog>
+      );
+    }
+    const { getByTestId } = render(<Catalog />);
+    const body = getByTestId("catalog-body");
+    expect(body.scrollTop).toBe(120);
+    fireEvent.click(getByTestId("catalog-category-input"));
+    expect(body.scrollTop).toBe(0);
+  });
+
+  it("closes a popup on an outside press, not on presses in it or its menus", () => {
+    const onOpenChange = vi.fn();
+    const { getByTestId } = render(
+      <>
+        <div data-testid="outside" />
+        <div data-popup-picker="" data-testid="nested-menu" />
+        <CatalogDialog
+          open
+          onOpenChange={onOpenChange}
+          presentation="popup"
+          anchor={{ x: 40, y: 40 }}
+          title="Place Actors"
+          categories={[{ id: "general", label: "General" }]}
+          activeCategoryId="general"
+          onCategoryChange={() => {}}
+          search=""
+          onSearchChange={() => {}}
+          data-testid="catalog"
+        >
+          <p>Body</p>
+        </CatalogDialog>
+      </>,
+    );
+    fireEvent.pointerDown(getByTestId("catalog-body"));
+    fireEvent.pointerDown(getByTestId("nested-menu"));
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.pointerDown(getByTestId("outside"));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("renders categories and search", () => {
     const onSearchChange = vi.fn();
     const onCategoryChange = vi.fn();

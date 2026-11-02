@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
@@ -7,7 +7,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@haptic/ui/components/dialog";
+import { popupMenuFrame } from "./catalog-menu";
 import { SearchInput } from "./search-input";
+import {
+  POPUP_PICKER_ATTRIBUTE,
+  usePopupOutsideDismiss,
+} from "./use-popup-outside-dismiss";
 import { Separator } from "@haptic/ui/components/separator";
 import {
   Select,
@@ -48,9 +53,23 @@ export interface CatalogDialogProps {
   footer?: ReactNode;
   /** `medium` suits pick lists and leaves the editor visible; `large` suits settings. */
   size?: "large" | "medium";
+  /**
+   * `dialog` (default) is a centered modal sized by `size`. `popup` is a
+   * compact context popup (760x560, clamped to the safe viewport) placed at
+   * `anchor`, centered without one: no backdrop dimming or Close button, a
+   * smaller header, and it closes instantly on Escape or any outside press.
+   */
+  presentation?: "dialog" | "popup";
+  /** Viewport point a `popup` opens from. */
+  anchor?: { x: number; y: number } | null;
+  /** Body scroll offset applied each time the body mounts (every open). */
+  initialScrollTop?: number;
+  onBodyScroll?: (scrollTop: number) => void;
   "data-testid"?: string;
   className?: string;
 }
+
+const POPUP_SIZE = { width: 760, height: 560 };
 
 function categorySections(
   categories: CatalogCategory[],
@@ -95,6 +114,10 @@ export function CatalogDialog({
   children,
   footer,
   size = "large",
+  presentation = "dialog",
+  anchor,
+  initialScrollTop,
+  onBodyScroll,
   "data-testid": testId,
   className,
 }: CatalogDialogProps) {
@@ -102,30 +125,66 @@ export function CatalogDialog({
     () => categorySections(categories, groups),
     [categories, groups],
   );
+  const popup = presentation === "popup";
   const searchRef = useRef<HTMLInputElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  // The body mounts on every open; restore the host's offset as it attaches.
+  const attachBody = useCallback(
+    (node: HTMLDivElement | null) => {
+      bodyRef.current = node;
+      if (node && initialScrollTop) node.scrollTop = initialScrollTop;
+    },
+    [initialScrollTop],
+  );
+  const pickCategory = (id: string) => {
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+    onCategoryChange(id);
+  };
+  usePopupOutsideDismiss(open && popup, () => onOpenChange(false));
+  const frame = popup ? popupMenuFrame(anchor, POPUP_SIZE) : null;
+  const pickerProps = { [POPUP_PICKER_ATTRIBUTE]: "" };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid={testId}
+        data-presentation={presentation}
+        {...(popup ? pickerProps : {})}
+        showCloseButton={!popup}
+        overlayClassName={
+          popup ? "bg-transparent data-closed:animate-none" : undefined
+        }
         initialFocus={(interaction) =>
           interaction === "keyboard" ? searchRef.current : bodyRef.current
         }
         className={cn(
-          "catalog-dialog editor-dialog-large max-w-none sm:max-w-none",
-          size === "medium" && "catalog-dialog-medium",
+          "catalog-dialog max-w-none sm:max-w-none",
+          popup
+            ? "translate-x-0 translate-y-0 rounded-lg data-closed:animate-none"
+            : "editor-dialog-large",
+          !popup && size === "medium" && "catalog-dialog-medium",
           className,
         )}
         bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
+        style={frame ?? undefined}
       >
-        <DialogHeader className="min-h-14 shrink-0 border-b px-4 py-3 pr-14">
-          <DialogTitle>{title}</DialogTitle>
+        <DialogHeader
+          className={cn(
+            "shrink-0",
+            popup ? "min-h-0 px-3 pt-2 pb-1.5" : "min-h-14 border-b px-4 py-3 pr-14",
+          )}
+        >
+          <DialogTitle className={popup ? "text-sm" : undefined}>{title}</DialogTitle>
           {description ? (
             <DialogDescription>{description}</DialogDescription>
           ) : null}
         </DialogHeader>
-        <div className="catalog-category-picker shrink-0 border-b px-4 py-2">
+        <div
+          className={cn(
+            "catalog-category-picker shrink-0 border-b py-2",
+            popup ? "px-3" : "px-4",
+          )}
+        >
           <Select
             items={categories.map((category) => ({
               value: category.id,
@@ -133,7 +192,7 @@ export function CatalogDialog({
             }))}
             value={activeCategoryId}
             onValueChange={(id) => {
-              if (id !== null) onCategoryChange(id);
+              if (id !== null) pickCategory(id);
             }}
           >
             <SelectTrigger
@@ -143,7 +202,7 @@ export function CatalogDialog({
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent align="start">
+            <SelectContent align="start" {...pickerProps}>
               {sections.map((section, index) => (
                 <SelectGroup key={section.label ?? `ungrouped-${index}`}>
                   {section.label ? (
@@ -167,7 +226,7 @@ export function CatalogDialog({
           </Select>
         </div>
         <div
-          className="shrink-0 border-b px-4 py-2"
+          className={cn("shrink-0 border-b", popup ? "px-3 pb-2" : "px-4 py-2")}
           onKeyDown={(event) => {
             // Keep Escape free so the CatalogDialog can dismiss; block other
             // keystrokes from leaking into the graph behind the modal.
@@ -185,14 +244,17 @@ export function CatalogDialog({
             value={search}
             onChange={onSearchChange}
             placeholder={searchPlaceholder}
-            className="min-h-[var(--chrome-row,28px)]"
+            className={cn("min-h-[var(--chrome-row,28px)]", popup && "h-7")}
             data-testid={testId ? `${testId}-search` : undefined}
           />
         </div>
         <div className="flex min-h-0 flex-1">
           <nav
             aria-label="Categories"
-            className="catalog-sidebar flex w-44 shrink-0 flex-col gap-2 overflow-y-auto overscroll-y-contain border-r bg-sidebar p-2"
+            className={cn(
+              "catalog-sidebar flex shrink-0 flex-col overflow-y-auto overscroll-y-contain border-r bg-sidebar",
+              popup ? "w-40 gap-1 p-1.5" : "w-44 gap-2 p-2",
+            )}
             data-testid={testId ? `${testId}-categories` : undefined}
           >
             {sections.map((section, index) => (
@@ -220,7 +282,7 @@ export function CatalogDialog({
                         "justify-between rounded-md",
                         category.count === 0 && !active && "text-muted-foreground/60",
                       )}
-                      onClick={() => onCategoryChange(category.id)}
+                      onClick={() => pickCategory(category.id)}
                       aria-current={active ? "true" : undefined}
                       data-testid={
                         testId ? `${testId}-category-${category.id}` : undefined
@@ -239,13 +301,18 @@ export function CatalogDialog({
             ))}
           </nav>
           <div
-            ref={bodyRef}
+            ref={attachBody}
             tabIndex={-1}
             className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain outline-none"
             style={{ overflowY: "auto" }}
+            onScroll={
+              onBodyScroll
+                ? (event) => onBodyScroll(event.currentTarget.scrollTop)
+                : undefined
+            }
             data-testid={testId ? `${testId}-body` : undefined}
           >
-            <div className="p-4">{children}</div>
+            <div className={popup ? "p-3" : "p-4"}>{children}</div>
           </div>
         </div>
         {footer ? (
