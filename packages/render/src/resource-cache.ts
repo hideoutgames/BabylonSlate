@@ -1046,7 +1046,8 @@ export function acquireMaterialTexture(
     { ...MATERIAL_TEXTURE_SAMPLING, ...options },
   );
   if (lease.resource.isCube) { lease.release(); return null; }
-  trackMaterialTexture(engine, lease.resource as Texture, lease.ready);
+  // The cache's own uploads are Textures; an injected cache (a preview's or a test's) may hand back anything.
+  if (lease.resource instanceof Texture) trackMaterialTexture(engine, lease.resource, lease.ready);
   return lease as ResourceLease<Texture>;
 }
 
