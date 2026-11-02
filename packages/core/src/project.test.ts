@@ -161,6 +161,11 @@ describe("project schema", () => {
     expect(plain.render.quality?.postprocessing.antiAliasing).not.toBe("off");
   });
 
+  it("fades distance fog in new 3D scenes into the default sky's horizon", () => {
+    expect(createDefaultScene("3d").settings.fogColor).toEqual([0.44, 0.61, 0.76]);
+    expect(createDefaultScene("2d").settings.fogColor).toEqual([0.5, 0.5, 0.5]);
+  });
+
   it("starts 3D projects in Scene Linear with Neutral tone mapping, and 2D and pixel-art projects in Legacy Display", () => {
     const look = (settings: ProjectSettings) => [settings.render.effects?.colorPipeline.mode, settings.render.effects?.toneMapping];
     expect(look(createEmptyProject("Three").settings)).toEqual(["sceneLinear", "neutral"]);

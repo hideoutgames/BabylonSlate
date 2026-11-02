@@ -218,7 +218,25 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             RENDER_EFFECTS_LIMITS.volumetricDensity,
             (density) => patchVolume({ density }),
             0.001,
-            "Uniform fog thickness per scene unit. Zero removes scene-wide haze while Fog Volumes still contribute.",
+            "Fog thickness per scene unit at and below Fog Height. Zero removes scene-wide haze while Fog Volumes still contribute.",
+          ) : null}
+          {volume.enabled ? number(
+            "Fog Height",
+            "volumetric-height",
+            volume.height,
+            RENDER_EFFECTS_LIMITS.volumetricHeight,
+            (height) => patchVolume({ height }),
+            0.5,
+            "World height below which scene-wide fog is at full density.",
+          ) : null}
+          {volume.enabled ? number(
+            "Fog Height Falloff",
+            "volumetric-height-falloff",
+            volume.heightFalloff,
+            RENDER_EFFECTS_LIMITS.volumetricHeightFalloff,
+            (heightFalloff) => patchVolume({ heightFalloff }),
+            0.01,
+            "How fast fog thins above Fog Height, per scene unit. Zero keeps it the same at every height.",
           ) : null}
           {number(
             "Volumetric Intensity",

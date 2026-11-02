@@ -408,6 +408,7 @@ export function createSpatialStages(
         "volumeView",
         "volumeSettings",
         "volumeCamera",
+        "volumeHeight",
         "volumeShadowOffset",
         "volumeLightCount",
         ...(localVolumes ? ["fogVolumeCount", "fogVolumeInverse", "fogVolumeParameters"] : []),
@@ -473,6 +474,7 @@ export function createSpatialStages(
             volume.maxDistance,
             volume.anisotropy,
           );
+          effect.setFloat2("volumeHeight", volume.height, volume.heightFalloff);
           effect.setFloat4(
             "volumeCamera",
             camera.minZ,

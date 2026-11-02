@@ -291,9 +291,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(errors).toEqual([]);
     expect(result.reservations.reservedBytes).toBe(0);
     expect(result.volumetricShadowCaptures).toHaveLength(1);
-    const { off, shadowed, open, beam } = result.volumetricShadowCaptures[0]!;
+    const { off, shadowed, open, beam, aboveFog } = result.volumetricShadowCaptures[0]!;
     const brighter = (a: number[], b: number[], by: number) => a.filter((value, i) => i % 4 === 0 && value > b[i]! + by).length;
     expect(brighter(shadowed, off, 8), "the beam fogs the view").toBeGreaterThan(20);
+    // Scene-wide fog thins with height above Fog Height: high above it, the beam is all but gone.
+    expect(brighter(aboveFog, off, 8), "fog thins above Fog Height").toBeLessThan(brighter(open, off, 8) / 10);
     /**
      * Pixels whose view ray, and each neighbour's, passes `test`: given how far it runs through the beam's shadow up to
      * the surface and in the march step past it (the march may sample there). Neighbours too, as the march's coarser
