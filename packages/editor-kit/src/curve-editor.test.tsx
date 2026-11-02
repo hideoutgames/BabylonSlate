@@ -312,7 +312,7 @@ describe("CurveEditor Vector axes", () => {
   const zero = v(0, 0, 0);
   // Fixed 0–1 s and 0–10: a key at (t, value) sits at (100t, 100 - 10 value) px.
   const vector = () => curve(key(0, zero, "linear", zero), key(0.5, v(5, 5, 5), "linear", zero), key(1, v(10, 10, 10), "linear", zero));
-  const shape = (value: CurveEditorValue) => keysOf(value).map((entry) => [entry.Time, entry.Axes ?? 7]);
+  const shape = (value: CurveEditorValue) => keysOf(value).map((entry) => [entry.Time, entry.Axes]);
   const drag = (testId: string, from: number, to: number) => act(() => {
     const handle = screen.getByTestId(testId);
     dispatchPointerEvent(handle, "pointerdown", { pointerType: "mouse", clientX: from, clientY: 50 });
@@ -375,7 +375,7 @@ describe("CurveEditor Vector axes", () => {
     fireEvent.pointerDown(constant);
     fireEvent.click(constant);
     const keys = keysOf(onChange.mock.lastCall![0]);
-    expect(keys.map((entry) => [entry.Time, entry.Axes ?? 7, entry.Interpolation])).toEqual([
+    expect(keys.map((entry) => [entry.Time, entry.Axes, entry.Interpolation])).toEqual([
       [0, 7, "linear"], [0.5, 6, "linear"], [0.5, 1, "constant"], [1, 7, "linear"],
     ]);
   });

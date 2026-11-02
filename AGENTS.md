@@ -5,6 +5,7 @@ This is the entry point for every agent working in this repository. The engine i
 ## Working agreements
 
 - If the user's instructions are ambiguous, ask before proceeding.
+- Haptic is not released yet, so keep no backwards compatibility. Change formats, APIs and behaviour in place; never add migrations, version bumps, compatibility shims, legacy fallbacks or deprecated aliases for old data or old callers.
 - Explanations, investigations, reviews and plans are read-only unless the user explicitly asks for changes. Confirm behaviour in the code, not only in docs.
 - Keep the editor's compact desktop density (small controls, including Primary buttons, and tight margins); never enlarge it to follow imported design guidance. Touch gets hit areas or a touch layout instead ([gesture rules](.agents/reference/architecture.md#gesture-rules)).
 - Use standard GitHub-hosted runners only, never larger ones; `scripts/workflow-runner-policy.test.mjs` enforces it. Shrink or split a slow job instead.
