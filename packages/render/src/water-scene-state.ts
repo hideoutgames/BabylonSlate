@@ -95,7 +95,7 @@ export type WaterLighting = {
   haze: Float64Array;
 };
 
-export const linearScratch = new Color3(), gammaScratch = new Color3(), absorbScratch = new Float64Array(4);
+export const linearScratch = new Color3(), gammaScratch = new Color3();
 /**
  * A Shallow Color channel's relative absorption through clear water (`waterAbsorption`): the optical
  * depth that leaves the channel at its share of the brightest, over a small common floor. A cyan Shallow Color thus

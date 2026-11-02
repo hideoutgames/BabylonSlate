@@ -113,7 +113,6 @@ export {
 export {
   materialHeaderMeta,
   isMaterialSamplerTextureAsset,
-  MATERIAL_ASSET_TYPES,
   isMaterialAssetType,
   isPostProcessMaterialAsset,
   isParticleMaterialAsset,

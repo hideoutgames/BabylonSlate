@@ -109,9 +109,6 @@ const CURVES: readonly CurveSpec[] = [
   { id: "Color", title: "Color", kind: "color", curve: COLOR_CURVE, value: COLOR, asset: assetRef("ColorCurve"), object: objectRef("ColorCurveObject") },
 ];
 
-/** Get <Type> Curve Object node ids; their Curve Asset input loads with the owner (`asset-dependencies.ts`). */
-export const CURVE_OBJECT_NODE_IDS: readonly string[] = CURVES.map((spec) => `curveObject.get${spec.id}`);
-
 function curveObjectNodes(spec: CurveSpec): NodeDefinition[] {
   const kind = JSON.stringify(spec.kind);
   const target = () => pin("target", "Target", "in", spec.object);

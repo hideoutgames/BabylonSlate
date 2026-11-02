@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createTimelineClip, type SerializedScene } from "@haptic/core";
-import { createClip, deleteClip, duplicateClip, missingTrackActorIds, pasteClips, renameClip } from "./timeline-clip-edits";
+import { createDefaultScene, createTimelineClip, type SerializedScene } from "@haptic/core";
+import { createClip, deleteClip, duplicateClip, pasteClips, renameClip } from "./timeline-clip-edits";
 
 const names = (scene: SerializedScene | null) => scene?.timelineClips?.map((clip) => clip.name);
 
@@ -33,13 +33,5 @@ describe("Timeline Clip edits", () => {
     const pasted = pasteClips(scene, [bound, bound], ["d", "e"]);
     expect(pasted.timelineClips!.map((clip) => [clip.id, clip.name])).toEqual([["a", "Intro"], ["b", "Outro"], ["d", "Intro 2"], ["e", "Intro 3"]]);
     expect(pasted.timelineClips!.slice(2).some((clip) => "timelineAsset" in clip)).toBe(false);
-  });
-
-  it("names the actors a pasted clip animates that this document does not have", () => {
-    const clip = { ...createTimelineClip("a", "Intro"), objects: [
-      { id: "o1", actorId: "door", tracks: [] }, { id: "o2", actorId: "lamp", tracks: [] },
-    ] };
-    const scene = { ...createDefaultScene(), actors: [createActor("door", "Door")] };
-    expect(missingTrackActorIds(scene, clip)).toEqual(["lamp"]);
   });
 });

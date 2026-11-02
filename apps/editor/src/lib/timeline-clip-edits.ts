@@ -64,9 +64,3 @@ export function deleteClip(scene: SerializedScene, id: string): SerializedScene 
   if (!clips.some((clip) => clip.id === id)) return null;
   return withClips(scene, clips.filter((clip) => clip.id !== id));
 }
-
-/** Object tracks whose actor the document does not have, as after pasting into another document. */
-export function missingTrackActorIds(scene: SerializedScene, clip: SerializedTimelineClip): string[] {
-  const actors = new Set(scene.actors.map((actor) => actor.id));
-  return clip.objects.filter((object) => !actors.has(object.actorId)).map((object) => object.actorId);
-}

@@ -34,10 +34,6 @@ export function curveKindForAssetType(type: string | null | undefined): CurveKin
   return undefined;
 }
 
-export function isCurveAssetType(type: string | null | undefined): type is CurveAssetType {
-  return curveKindForAssetType(type) !== undefined;
-}
-
 /** A payload with sorted keys and known names; a missing curve reads as empty. */
 export function normalizeCurveAssetPayload<K extends CurveKind>(kind: K, content: unknown): CurveAssetPayload<CurveValueOf<K>> {
   const source = content && typeof content === "object" ? content as Record<string, unknown> : {};
