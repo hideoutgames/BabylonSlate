@@ -51,6 +51,12 @@ export function filterPlayScriptDocuments<
   });
 }
 
+/**
+ * Asset reads one content collector keeps in flight (Scene Viewport asset collection, Play's catalogs).
+ * Results keep the collector's order and its first failure is the one a serial pass reports.
+ */
+export const COLLECTOR_READS = 6;
+
 export function collectPlayScriptDocuments(
   classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
   headers: Record<string, { type: string; parentClass?: string | null }>,

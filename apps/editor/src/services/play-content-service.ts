@@ -16,6 +16,7 @@ import {
 } from "@haptic/core";
 import {
   decodeSourceToRgba,
+  mapBounded,
   normalizeModelPayload,
   type IndexedAsset,
   type ModelPayload,
@@ -66,6 +67,7 @@ import { createPlayAudioSourceLoader, playAudioLibraryFromAssets } from "../lib/
 import {
   collectAnimGraphCompileDocuments,
   collectPlayScriptDocuments,
+  COLLECTOR_READS,
   materialClosureFromGuids,
   modelAssetGuidsFromScene,
   modelGuidsForPlayRetarget,
@@ -619,6 +621,20 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
   };
 
   /**
+   * Each asset's content, read a bounded number at a time, keyed by guid in the
+   * order given; assets without content are left out.
+   */
+  const loadedInOrder = async <A,>(
+    entries: ReadonlyArray<{ guid: string; asset: A }>,
+    load: (asset: A) => Promise<unknown | null>,
+  ): Promise<Map<string, unknown>> => {
+    const contents = await mapBounded(entries, COLLECTOR_READS, ({ asset }) => load(asset));
+    const loaded = new Map<string, unknown>();
+    for (const [index, { guid }] of entries.entries()) if (contents[index]) loaded.set(guid, contents[index]);
+    return loaded;
+  };
+
+  /**
    * Asset rows whose payload is an open tab's unsaved document instead of the
    * saved header, as Play preparation substitutes open documents.
    */
@@ -644,17 +660,11 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         .filter((asset) => asset.header.type === "Sprite")
         .map((asset) => [asset.header.guid, asset]),
     );
-    const loaded = new Map<string, unknown>();
-    const needed = new Set([
+    const needed = [...new Set([
       ...spriteAssetGuidsFromScene(scene),
       ...extraScenes.flatMap((entry) => spriteAssetGuidsFromScene(entry)),
-    ]);
-    for (const guid of needed) {
-      const asset = byGuid.get(guid);
-      if (!asset) continue;
-      const content = await loadPlayAssetContent("sprite", asset.path);
-      if (content) loaded.set(guid, content);
-    }
+    ])].flatMap((guid) => { const asset = byGuid.get(guid); return asset ? [{ guid, asset }] : []; });
+    const loaded = await loadedInOrder(needed, (asset) => loadPlayAssetContent("sprite", asset.path));
     return playSpritePayloadsFromGuids(
       [...loaded.keys()],
       (guid) => loaded.get(guid) ?? null,
@@ -663,10 +673,11 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
 
   const collectPlayWaterContent = async (requiredGuids?: ReadonlySet<string>): Promise<Map<string, WaterDefinition>> => {
     const waters = new Map<string, WaterDefinition>();
-    for (const asset of projectService.registry?.list() ?? []) {
-      if (asset.header.type !== "Water" || (requiredGuids && !requiredGuids.has(asset.header.guid))) continue;
-      const content = await loadPlayAssetContent("water", asset.path);
-      if (content) waters.set(asset.header.guid, normalizeWaterDefinition(content));
+    const assets = (projectService.registry?.list() ?? [])
+      .filter((asset) => asset.header.type === "Water" && (!requiredGuids || requiredGuids.has(asset.header.guid)));
+    for (const [guid, content] of await loadedInOrder(assets.map((asset) => ({ guid: asset.header.guid, asset })),
+      (asset) => loadPlayAssetContent("water", asset.path))) {
+      waters.set(guid, normalizeWaterDefinition(content));
     }
     return waters;
   };
@@ -674,15 +685,13 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
   const collectPlayRenderTargets = async (requiredGuids?: ReadonlySet<string>) => {
     const renderTargets = new Map<string, RenderTargetPayload>();
     const renderTargetTextures = new Map<string, RenderTargetTexturePayload>();
-    for (const asset of projectService.registry?.list() ?? []) {
-      if (requiredGuids && !requiredGuids.has(asset.header.guid)) continue;
-      if (asset.header.type === "RenderTarget") {
-        const content = await loadPlayAssetContent("render-target", asset.path);
-        if (content) renderTargets.set(asset.header.guid, normalizeRenderTargetPayload(content));
-      } else if (asset.header.type === "RenderTargetTexture") {
-        const content = await loadPlayAssetContent("render-target-texture", asset.path);
-        if (content) renderTargetTextures.set(asset.header.guid, normalizeRenderTargetTexturePayload(content));
-      }
+    const assets = (projectService.registry?.list() ?? []).filter((asset) =>
+      (asset.header.type === "RenderTarget" || asset.header.type === "RenderTargetTexture") &&
+      (!requiredGuids || requiredGuids.has(asset.header.guid)));
+    for (const [guid, content] of await loadedInOrder(assets.map((asset) => ({ guid: asset.header.guid, asset })),
+      (asset) => loadPlayAssetContent(asset.header.type === "RenderTarget" ? "render-target" : "render-target-texture", asset.path))) {
+      if (projectService.registry?.getByGuid(guid)?.header.type === "RenderTarget") renderTargets.set(guid, normalizeRenderTargetPayload(content));
+      else renderTargetTextures.set(guid, normalizeRenderTargetTexturePayload(content));
     }
     return { renderTargets, renderTargetTextures };
   };
@@ -705,27 +714,18 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         .filter((asset) => asset.header.type === "Tileset")
         .map((asset) => [asset.header.guid, asset]),
     );
-    const loadedMaps = new Map<string, unknown>();
-    for (const guid of [
+    const loadedMaps = await loadedInOrder([...new Set([
       ...tilemapAssetGuidsFromScene(scene),
       ...extraScenes.flatMap((entry) => tilemapAssetGuidsFromScene(entry)),
-    ]) {
-      const asset = tilemapsByGuid.get(guid);
-      if (!asset) continue;
-      const content = await loadPlayAssetContent("tilemap", asset.path);
-      if (content) loadedMaps.set(guid, content);
-    }
+    ])].flatMap((guid) => { const asset = tilemapsByGuid.get(guid); return asset ? [{ guid, asset }] : []; }),
+    (asset) => loadPlayAssetContent("tilemap", asset.path));
     const tilemaps = playTilemapPayloadsFromGuids(
       [...loadedMaps.keys()],
       (guid) => loadedMaps.get(guid) ?? null,
     );
-    const loadedSets = new Map<string, unknown>();
-    for (const guid of tilesetGuidsFromTilemaps(tilemaps)) {
-      const asset = tilesetsByGuid.get(guid);
-      if (!asset) continue;
-      const content = await loadPlayAssetContent("tileset", asset.path);
-      if (content) loadedSets.set(guid, content);
-    }
+    const loadedSets = await loadedInOrder([...new Set(tilesetGuidsFromTilemaps(tilemaps))]
+      .flatMap((guid) => { const asset = tilesetsByGuid.get(guid); return asset ? [{ guid, asset }] : []; }),
+    (asset) => loadPlayAssetContent("tileset", asset.path));
     return {
       tilemaps,
       tilesets: playTilesetPayloadsFromGuids(
@@ -845,16 +845,16 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const bytes = new Map<string, Uint8Array>();
     const animationRows = workingAssetSources(assets.filter((asset) =>
       asset.header.type === "Animation" && (!requiredGuids || requiredGuids.has(asset.header.guid))));
-    for (const guid of modelGuidsForPlayRetarget(
+    const models = [...new Set(modelGuidsForPlayRetarget(
       [
         ...modelAssetGuidsFromScene(scene),
         ...extraScenes.flatMap((entry) => modelAssetGuidsFromScene(entry)),
       ],
       animationRows,
-    )) {
-      const asset = byGuid.get(guid);
-      if (!asset) continue;
-      const source = await readAssetChunk(asset.path, "source");
+    ))].flatMap((guid) => { const asset = byGuid.get(guid); return asset ? [{ guid, asset }] : []; });
+    const sources = await mapBounded(models, COLLECTOR_READS, ({ asset }) => readAssetChunk(asset.path, "source"));
+    for (const [index, { guid }] of models.entries()) {
+      const source = sources[index];
       if (source && source.byteLength > 0) bytes.set(guid, source);
     }
     return bytes;
@@ -871,31 +871,28 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         .map((asset) => [asset.header.guid, asset] as const),
     );
     const payloads = new Map<string, ModelPayload>();
-    for (const guid of [
+    const models = [...new Set([
       ...modelAssetGuidsFromScene(scene),
       ...extraScenes.flatMap((entry) => modelAssetGuidsFromScene(entry)),
-    ]) {
-      const asset = byGuid.get(guid);
-      if (!asset) continue;
-      const content =
-        (await loadPlayAssetContent("model", asset.path)) ??
-        asset.header.payload;
-      payloads.set(guid, normalizeModelPayload(content ?? {}));
+    ])].flatMap((guid) => { const asset = byGuid.get(guid); return asset ? [{ guid, asset }] : []; });
+    const contents = await mapBounded(models, COLLECTOR_READS, ({ asset }) => loadPlayAssetContent("model", asset.path));
+    for (const [index, { guid, asset }] of models.entries()) {
+      payloads.set(guid, normalizeModelPayload(contents[index] ?? asset.header.payload ?? {}));
     }
     return payloads;
   };
 
   /** `payloads`: documents the caller prepared already, by guid (Play's closure); the others are read. */
   const collectPlayInputAssets = async (requiredGuids?: ReadonlySet<string>, payloads?: ReadonlyMap<string, unknown>): Promise<InputAssetDefinition[]> => {
-    const inputs: InputAssetDefinition[] = [];
-    for (const asset of projectService.registry?.list() ?? []) {
-      if (!isInputAssetType(asset.header.type) || (requiredGuids && !requiredGuids.has(asset.header.guid))) continue;
+    const assets = (projectService.registry?.list() ?? []).filter((asset) =>
+      isInputAssetType(asset.header.type) && (!requiredGuids || requiredGuids.has(asset.header.guid)));
+    return mapBounded(assets, COLLECTOR_READS, async (asset) => {
+      const type = asset.header.type as InputAssetDefinition["type"];
       const content = payloads?.get(asset.header.guid) ??
-        await loadPlayAssetContent(asset.header.type === "InputAction" ? "input-action" : "input-axis", asset.path);
+        await loadPlayAssetContent(type === "InputAction" ? "input-action" : "input-axis", asset.path);
       if (!content) throw new Error(`Unable to load input asset ${asset.header.name}`);
-      inputs.push({ ...normalizeInputAssetPayload(asset.header.type, content), guid: asset.header.guid, name: asset.header.name, type: asset.header.type });
-    }
-    return inputs;
+      return { ...normalizeInputAssetPayload(type, content), guid: asset.header.guid, name: asset.header.name, type };
+    });
   };
 
   const collectPlayAudio = async (requiredGuids?: ReadonlySet<string>) => {
@@ -905,8 +902,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         asset.header.type,
       ),
     );
-    const payloads: Array<{ guid: string; type: string; payload: unknown }> = [];
-    for (const asset of audioAssets) {
+    const payloads: Array<{ guid: string; type: string; payload: unknown }> = await mapBounded(audioAssets, COLLECTOR_READS, async (asset) => {
       const kind =
         asset.header.type === "AudioMixer"
           ? "audio-mixer"
@@ -917,12 +913,12 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
               : "audio";
       const content =
         (await loadPlayAssetContent(kind, asset.path)) ?? asset.header.payload;
-      payloads.push({
+      return {
         guid: asset.header.guid,
         type: asset.header.type,
         payload: content,
-      });
-    }
+      };
+    });
     return {
       library: playAudioLibraryFromAssets({
         mixerGuid: options.projectDocument()?.settings.audio.audioMixerGuid ?? null,
@@ -980,7 +976,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     let grew = true;
     while (grew) {
       grew = false;
-      for (const guid of [...needed]) await loadGuid(guid);
+      await mapBounded([...needed], COLLECTOR_READS, loadGuid);
       const closure = materialClosureFromGuids([...needed], (guid) =>
         loaded.get(guid) ?? null,
       );
