@@ -13,6 +13,19 @@ Actors are the objects in a scene. Each actor has a position, rotation and scale
 
 Search matches names, categories, asset types and folders. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport.
 
+## Place from the Assets window
+
+In **Design** mode, the **Assets** window below the **Outliner** lists the Models, Actor Classes and Prefabs in your project and its plugins, as cards with thumbnails or as a list. In a [Scene Layer](scene-layers.md) it lists the built-in 2D elements first, then Classes whose parent is **Scene Layer Actor**, then Models.
+
+- Search by name, type, folder or plugin. **Filter** narrows by **Asset Types** and **Folder**; turn off **Show Plugin Content** to hide plugin assets, which carry a puzzle-piece mark. Tap a filter tag under the search field to remove it.
+- **Sort** orders entries by **Name**, **Type** or **Folder**. The two buttons beside it switch between **Cards** and **List**.
+- Select as in the **Outliner**: tap to select, hold <kbd>Mod</kbd> to add or remove an entry, or hold <kbd>Shift</kbd> to select a range. On touch, hold an entry and choose **Select** to add it to the selection.
+- Drag an entry onto the viewport to place it where you let go. Dragging a selected entry places the whole selection, spread in a grid around that point. On touch, hold the entry briefly, then drag.
+- Double-tap an entry, or tap **Place** under the list, to place at the centre of the viewport.
+- Hold or right-click an entry for **Place**, **Open** and **Show in Content Browser**.
+
+Placing several entries is one step to undo, and the new actors become the selection. If you close the window, reopen it from **Windows > Assets**.
+
 ## Select actors
 
 - Tap an actor in the viewport or the **Outliner**. Hold <kbd>Mod</kbd> or <kbd>Shift</kbd> while tapping to add to the selection.

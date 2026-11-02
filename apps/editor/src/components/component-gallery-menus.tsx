@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PuzzleIcon } from "lucide-react";
 import {
   CatalogCard,
   CatalogCardGrid,
@@ -143,6 +144,26 @@ export function GalleryCatalogRows() {
               title={item.title}
               subtitle={item.subtitle}
               visual={item.visual}
+              onSelect={() => setSelected(item.title)}
+            />
+          ))}
+        </CatalogCardGrid>
+      </div>
+      <h3 className="text-sm font-medium">Compact Cards (Assets Panel)</h3>
+      <div className="max-w-xs" data-testid="gallery-catalog-cards-compact">
+        <CatalogCardGrid label="Compact Catalog Cards" density="compact">
+          {[
+            { title: "Crate", visual: resolveTypeVisual({ assetType: "Model" }), plugin: false },
+            { title: "Door", visual: resolveTypeVisual({ assetType: "Class" }), plugin: false },
+            { title: "Traffic Cone", visual: resolveTypeVisual({ assetType: "Model" }), plugin: true },
+          ].map((item) => (
+            <CatalogCard
+              key={item.title}
+              title={item.title}
+              visual={item.visual}
+              density="compact"
+              selected={selected === item.title}
+              titleAdornment={item.plugin ? <PuzzleIcon aria-label="Plugin" className="size-2.5 shrink-0 text-muted-foreground" /> : null}
               onSelect={() => setSelected(item.title)}
             />
           ))}
