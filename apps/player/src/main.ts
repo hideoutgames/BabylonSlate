@@ -320,7 +320,7 @@ async function launchLoaded(
       if (previewDiagnostics) { previewDiagnostics.receive(event); return; }
       if (event.data?.action !== "open" || preparingDiagnostics) return;
       // This independently built entry is absent from ordinary exported games.
-      // A runtime URL keeps the normal single-file player bundle unchanged.
+      // A runtime URL keeps it out of the player bundle.
       const url = new URL(import.meta.env.DEV ? "./src/preview-diagnostics.ts" : "./player-preview-diagnostics.js", document.baseURI).href;
       preparingDiagnostics = (async () => {
         const module = await import(/* @vite-ignore */ url) as typeof import("./preview-diagnostics");
