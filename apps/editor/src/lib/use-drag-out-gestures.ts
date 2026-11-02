@@ -34,16 +34,17 @@ type Session = {
   detach: () => void;
 };
 
-const CLICK_SUPPRESS_MS = 400;
-
-/** Swallow the click a finished drag or hold would otherwise deliver to whatever lies under it. */
-function suppressNextClick(): void {
+/**
+ * Swallow the click that the release ending a drag dispatches right after
+ * it; the listener goes away with the current task, so a later click counts.
+ */
+function suppressReleaseClick(): void {
   const swallow = (event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
   };
   window.addEventListener("click", swallow, { capture: true, once: true });
-  setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), CLICK_SUPPRESS_MS);
+  setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
 }
 
 /**
@@ -108,8 +109,8 @@ export function useDragOutGestures(
         }
         session.timers.push(setTimeout(() => {
           if (session.moved || session.armed) return;
+          // The menu overlay swallows the click the lifting finger delivers.
           finish(session);
-          suppressNextClick();
           handlersRef.current.onLongPress(id, session.startX, session.startY);
         }, CONTEXT_MENU_LONG_PRESS_MS));
       }
@@ -132,7 +133,7 @@ export function useDragOutGestures(
         if (up.pointerId !== session.pointerId) return;
         if (session.armed) {
           handlersRef.current.onDrop(session.id, up.clientX, up.clientY);
-          suppressNextClick();
+          suppressReleaseClick();
         }
         finish(session);
       };
