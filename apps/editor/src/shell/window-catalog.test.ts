@@ -169,8 +169,8 @@ describe("material dock catalog", () => {
       expect(isDockviewDocumentKind(kind)).toBe(true);
       expect(listDockWindows(kind).map((entry) => [entry.id, entry.title])).toEqual([
         ["timeline-clip-viewport", "Viewport"],
-        ["timeline-clip-proxies", "Proxies"],
         ["timeline-clip-inspector", "Inspector"],
+        ["timeline-clip-proxies", "Proxies"],
         ["timeline-clip-timeline", "Timeline"],
         ["compiler-results", "Compiler Results"],
       ]);

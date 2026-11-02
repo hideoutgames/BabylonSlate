@@ -92,7 +92,7 @@ const WHEN_FINISHED: ReadonlyArray<{ value: TimelineWhenFinished; label: string 
   { value: "restore", label: "Restore State" },
 ];
 const REPRESENTATION_LABELS: Record<TimelineProxyRepresentation, string> = {
-  outline: "Outline", model: "Model", material: "Material", texture: "Texture", class: "Class",
+  shape: "Shape", model: "Model", material: "Material", texture: "Texture", class: "Class",
 };
 
 const toColor = (hex: string): ColorValue => [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255) as ColorValue;
@@ -228,15 +228,14 @@ export function TimelineClipProxiesPanel(_props: IDockviewPanelProps) {
       expanded: false,
       renamable: true,
       draggable: false,
+      // The icon tells an Actor proxy (box) from a Component proxy (boxes).
       icon: <span className="flex shrink-0 items-center [&_svg]:size-3.5" style={color ? { color } : undefined}>{proxy.represents === "actor" ? <BoxIcon /> : <BoxesIcon />}</span>,
-      trailing: <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-        <span>{proxy.represents === "actor" ? "Actor" : "Component"}</span>
-        <span className="max-w-28 truncate">{proxy.classId}</span>
-        <Button size={touch ? "touch-icon" : "icon-xs"} variant="ghost" aria-label={`Delete ${proxy.name}`} data-testid={`timeline-proxy-delete-${proxy.id}`}
-          onClick={(event) => { event.stopPropagation(); commit(removeTimelineProxy(payload, proxy.id), `timeline-clip-asset:remove-proxy:${proxy.id}`); }}>
-          <Trash2Icon />
-        </Button>
-      </span>,
+      // The name and Class shorten as the window narrows; the delete button always stays in view.
+      preview: <span className="block truncate text-xs text-muted-foreground" title={proxy.classId}>{proxy.classId}</span>,
+      trailing: <Button size={touch ? "touch-icon" : "icon-xs"} variant="ghost" aria-label={`Delete ${proxy.name}`} data-testid={`timeline-proxy-delete-${proxy.id}`}
+        onClick={(event) => { event.stopPropagation(); commit(removeTimelineProxy(payload, proxy.id), `timeline-clip-asset:remove-proxy:${proxy.id}`); }}>
+        <Trash2Icon />
+      </Button>,
     };
   });
 
@@ -322,7 +321,7 @@ export function TimelineClipInspectorPanel(_props: IDockviewPanelProps) {
     commit({ ...payload, editorPreview: { proxies: { ...payload.editorPreview?.proxies, [proxy.id]: { ...preview, ...patch } } } }, `timeline-clip-asset:preview:${proxy.id}:${key}`);
   };
   // A Model draws only in 3D; a Material or Texture only in 2D.
-  const representations = (["outline", twoD ? "material" : "model", ...(twoD ? ["texture" as const] : []), "class"] as TimelineProxyRepresentation[]);
+  const representations = (["shape", twoD ? "material" : "model", ...(twoD ? ["texture" as const] : []), "class"] as TimelineProxyRepresentation[]);
   const representationType = preview?.representation === "model" ? "Model" : preview?.representation === "material" ? "Material" : preview?.representation === "texture" ? "Texture" : undefined;
   const representationAsset = preview ? timelineProxyPreviewAsset(preview) : undefined;
   // Each of Model, Material and Texture keeps its own pick, so switching back shows it again.

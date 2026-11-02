@@ -20,10 +20,10 @@ import { createEditorCameraModel } from "./editor-camera-model";
 import {
   BLOCKING_VOLUME_COLOR,
   createEditorVolumeMesh,
-  createTimelineProxyOutlineMesh,
+  createTimelineProxyShapeMesh,
   NAV_BLOCKER_VOLUME_COLOR,
-  TIMELINE_PROXY_OUTLINE_CLASS_ID,
-  timelineProxyOutlineOptions,
+  TIMELINE_PROXY_SHAPE_CLASS_ID,
+  timelineProxyShapeOptions,
   type EditorVolumeKind,
 } from "./editor-volume";
 import { createFogVolumeGuide, createReflectionProbeGuide } from "./fog-volume-guide";
@@ -367,8 +367,8 @@ function createComponentMesh(
   if (component.classId === "BlockingVolumeComponent") {
     return createEditorVolumeMesh(scene, name, "box", BLOCKING_VOLUME_COLOR);
   }
-  if (component.classId === TIMELINE_PROXY_OUTLINE_CLASS_ID) {
-    return createTimelineProxyOutlineMesh(scene, name, timelineProxyOutlineOptions(component.properties));
+  if (component.classId === TIMELINE_PROXY_SHAPE_CLASS_ID) {
+    return createTimelineProxyShapeMesh(scene, name, timelineProxyShapeOptions(component.properties));
   }
   if (component.classId === "ColliderComponent") {
     const world =

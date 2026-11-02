@@ -10,16 +10,16 @@ In the **Content Browser**, choose **New Asset > Animation > 2D Timeline Clip** 
 
 ## Proxies
 
-Double-tap the asset to open it. The **Proxies** window, beside the **Viewport**, lists the clip's stand-ins.
+Double-tap the asset to open it. The **Proxies** window, above the **Inspector**, lists the clip's stand-ins.
 
 - Tap **Proxy**, then **Actor Proxy…** or **Component Proxy…**, give it a **Name**, pick the Class the proxy stands in for and tap **Add Proxy**. A 3D clip offers world components; a 2D clip offers overlay components. Without a name, the proxy takes the Class's name; rename it later in the list or in the **Inspector**. Proxy names are unique within the clip, so a name that is taken gets a number.
-- Each row shows what the proxy represents and its Class. The trash button removes the proxy and its tracks.
+- Each row shows the proxy's Class; its icon tells an Actor proxy (one box) from a Component proxy (three boxes). The trash button removes the proxy and its tracks.
 
 ## Viewport
 
 The **Viewport** window previews the clip: each proxy is drawn the way its **Editor Preview** says and moves with the clip as you scrub or play the Timeline. A 3D clip previews in 3D, and a 2D clip in a 2D overlay frame.
 
-- An **Outline** is a box in a 3D clip and a rectangle in a 2D clip, in the proxy's **Color**, one unit wide at a **Scale** of 1. A **Model**, **Material** or **Texture** draws that asset at its own size times the **Scale**; with none picked, the proxy is an Outline. **Class** draws the Class's own components, and a Component proxy also draws its component. The **Scale** sizes all of them, a Component proxy's component included.
+- A **Shape**, the default, is a solid box in a 3D clip and a solid square in a 2D clip, in the proxy's **Color**, one unit wide at a **Scale** of 1. A **Model**, **Material** or **Texture** draws that asset at its own size times the **Scale**; with none picked, the proxy is a Shape. **Class** draws the Class's own components, and a Component proxy also draws its component; a solid Shape covers it, so choose **Class** to see a Component proxy's own look alone. The **Scale** sizes all of them, a Component proxy's component included.
 - A **Relative** proxy stands at its preview **Location**, **Rotation** and **Scale**, and its transform keys move it from there: **Scale** keys multiply its preview **Scale**. An **Absolute** proxy stands exactly where its keys put it.
 - Tap a proxy to select it in **Proxies** and the **Inspector**; Shift or Ctrl and tap adds a proxy to the selection or takes it out. To select several at once, hold then drag a box over them in a 2D clip, or turn on **Drag Select** in the toolbar and drag. In **Proxies**, Ctrl and tap toggles a proxy and Shift and tap selects a range. The **Inspector** edits one proxy at a time.
 - Drag the gizmo to move, turn or scale the selected proxies together, as in a Scene's Timeline mode:
@@ -38,7 +38,7 @@ The **Timeline** window below the Viewport is the [Timeline](../scenes/timeline.
 ## Inspector
 
 - **Proxy**: the selected proxy's **Name**, what it represents and its Class.
-- **Editor Preview**: how the editor draws the proxy. **Color**; **Representation**: an **Outline**, a **Model** (3D), a **Material** or **Texture** (2D), or its **Class**'s own look, and the asset each of Model, Material and Texture draws (each keeps its own pick while another representation shows); the preview **Location**, **Rotation** and **Scale**; and **Preview As**, which records and shows transform keys as offsets from the preview placement (**Relative**) or as exact values (**Absolute**). In Play, each binding chooses ([Play a clip asset](#play-a-clip-asset)). The Editor Preview never leaves the editor: Play and exports leave it out, and the Models, Materials and Textures picked here never ship with the game.
+- **Editor Preview**: how the editor draws the proxy. **Color**; **Representation**: a **Shape**, a **Model** (3D), a **Material** or **Texture** (2D), or its **Class**'s own look, and the asset each of Model, Material and Texture draws (each keeps its own pick while another representation shows); the preview **Location**, **Rotation** and **Scale**; and **Preview As**, which records and shows transform keys as offsets from the preview placement (**Relative**) or as exact values (**Absolute**). In Play, each binding chooses ([Play a clip asset](#play-a-clip-asset)). The Editor Preview never leaves the editor: Play and exports leave it out, and the Models, Materials and Textures picked here never ship with the game.
 - **2D Timeline Clip** or **3D Timeline Clip**: the **Timeline Asset** (required: you can change it, not clear it), **Length**, **Frame Rate**, **Play Rate**, **Loop Mode** and **When Finished**.
 
 The Timeline asset lists the clip with its scene clips; **Open** there opens the clip asset.

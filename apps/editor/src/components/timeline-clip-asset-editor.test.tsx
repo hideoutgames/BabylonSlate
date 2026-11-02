@@ -134,7 +134,7 @@ describe("Timeline Clip asset proxies", () => {
     fireEvent.blur(name);
     expect(last().proxies[0]!.name).toBe("Front Door");
 
-    // A 3D clip draws a proxy as an Outline, a Model or its Class.
+    // A 3D clip draws a proxy as a Shape, a Model or its Class.
     const preview = screen.getByTestId("timeline-clip-inspector-preview");
     fireEvent.click(within(preview).getByRole("combobox", { name: "Representation" }));
     expect(screen.queryByRole("option", { name: "Texture" })).toBeNull();
@@ -160,8 +160,8 @@ describe("Timeline Clip asset proxies", () => {
       fireEvent.click(option);
       view.refresh();
     };
-    choose("Outline");
-    expect(last().editorPreview!.proxies[proxyId]).toMatchObject({ representation: "outline", assets: { model: "door-model" } });
+    choose("Shape");
+    expect(last().editorPreview!.proxies[proxyId]).toMatchObject({ representation: "shape", assets: { model: "door-model" } });
     choose("Model");
     expect(last().editorPreview!.proxies[proxyId]).toMatchObject({ representation: "model", assets: { model: "door-model" } });
     expect(within(screen.getByTestId("timeline-clip-inspector-preview")).getByTestId("property-timeline-proxy-asset").textContent).toContain("Door Model");

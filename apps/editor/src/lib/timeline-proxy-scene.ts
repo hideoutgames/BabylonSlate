@@ -22,7 +22,7 @@ import {
   type TimelineProxy,
   type TimelineProxyPreview,
 } from "@haptic/core";
-import { TIMELINE_PROXY_OUTLINE_CLASS_ID } from "@haptic/render";
+import { TIMELINE_PROXY_SHAPE_CLASS_ID } from "@haptic/render";
 import { defaultComponentAuthoringProperties } from "@haptic/runtime";
 import type { LiveGizmoTransform } from "./gizmo-drag-commit";
 import { timelineTransformEdit } from "./timeline-transform-edit";
@@ -93,7 +93,7 @@ function placementTransform(place: TimelineProxyPreview) {
 
 /**
  * How the clip asset viewport draws each proxy: its Editor Preview
- * representation (an Outline, a Model in 3D, a Material or Texture in 2D) in
+ * representation (a Shape, a Model in 3D, a Material or Texture in 2D) in
  * place of an Actor proxy's Class components, or with Class those
  * components. The proxy's Scale sizes it. A Component proxy keeps its
  * component beside it, so its property tracks still apply.
@@ -129,13 +129,7 @@ function representationComponent(proxyId: string, preview: TimelineProxyPreview,
   if (asset && preview.representation === "material" && twoD) {
     return { id, classId: "2DMaterialComponent", parentId: null, transform, properties: { materialGuid: asset, hitTest: "ignore" } };
   }
-  // The Outline is built at the placement's Scale and undoes it, so its dashes keep their thickness at any size.
-  const size = preview.scale.map((axis) => Math.max(0.01, Math.abs(axis))) as [number, number, number];
-  return {
-    id, classId: TIMELINE_PROXY_OUTLINE_CLASS_ID, parentId: null,
-    transform: { ...transform, scale: size.map((axis) => 1 / axis) as [number, number, number] },
-    properties: { size, color: preview.color, twoD },
-  };
+  return { id, classId: TIMELINE_PROXY_SHAPE_CLASS_ID, parentId: null, transform, properties: { color: preview.color, twoD } };
 }
 
 /**

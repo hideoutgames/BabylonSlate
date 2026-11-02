@@ -3,7 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultTimelineClipAsset, defaultTimelineProxyPreview, type SerializedScene, type SerializedTimelineClipAsset } from "@haptic/core";
-import { TIMELINE_PROXY_OUTLINE_CLASS_ID } from "@haptic/render";
+import { TIMELINE_PROXY_SHAPE_CLASS_ID } from "@haptic/render";
 import { SceneToolsProvider, useSceneTools } from "../context/scene-tools-context";
 import { selectProxies, useSelectedProxies } from "../components/timeline-clip-asset-editor";
 import { TimelineClipPreviewPanel } from "./timeline-clip-preview-panel";
@@ -111,9 +111,8 @@ describe("TimelineClipPreviewPanel", () => {
     await waitFor(() => expect(harness.handle.loadScene).toHaveBeenCalled());
     expect(harness.createEngineMock.mock.calls[0]![1]).toMatchObject({ editor: true, present: "rtt", viewportMode: "3d", previewLighting: true, sharedEngine: { id: "shared" } });
     const door = lastScene().actors.find((actor) => actor.id === "door")!;
-    // The Outline is built at the Scale the proxy stands at, and undoes it.
-    expect(door.components).toEqual([expect.objectContaining({ classId: TIMELINE_PROXY_OUTLINE_CLASS_ID, properties: expect.objectContaining({ size: [2, 2, 2] }),
-      transform: expect.objectContaining({ scale: [0.5, 0.5, 0.5] }) })]);
+    // A Shape in the proxy's colour, sized by the proxy's Scale.
+    expect(door.components).toEqual([expect.objectContaining({ classId: TIMELINE_PROXY_SHAPE_CLASS_ID, properties: { color: "#f97316", twoD: false } })]);
     expect(door.transform.scale).toEqual([2, 2, 2]);
     // Relative: the keyed offset at 0 s is the preview placement itself.
     expect(door.transform.position).toEqual([5, 0, 0]);

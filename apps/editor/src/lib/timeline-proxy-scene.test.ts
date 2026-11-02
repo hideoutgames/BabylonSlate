@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { applyTimelineClipToScene, createDefaultTimelineClipAsset, defaultTimelineProxyPreview, eulerDegreesToQuaternion, type SerializedTimelineClipAsset } from "@haptic/core";
-import { TIMELINE_PROXY_OUTLINE_CLASS_ID } from "@haptic/render";
+import { TIMELINE_PROXY_SHAPE_CLASS_ID } from "@haptic/render";
 import { composeTimelineProxyPreview, timelineProxyGizmoEdit, timelineProxyPreviewScene, timelineProxyScene } from "./timeline-proxy-scene";
 
 const key = (id: string, Time: number, Value: unknown) => ({ id, Time, Value, Interpolation: "linear" as const, ArriveTangent: 0, LeaveTangent: 0 });
 
-function clipAsset(previewAs: "relative" | "absolute", representation: "outline" | "model" | "class" = "outline"): SerializedTimelineClipAsset {
+function clipAsset(previewAs: "relative" | "absolute", representation: "shape" | "model" | "class" = "shape"): SerializedTimelineClipAsset {
   return {
     ...createDefaultTimelineClipAsset("story"),
     length: 2,
@@ -34,11 +34,11 @@ describe("Timeline proxy preview", () => {
   });
 
   it("draws each proxy by its representation, keeping a Component proxy's component", () => {
-    const outline = timelineProxyPreviewScene(timelineProxyScene(clipAsset("relative"), "Swing", graphs, false), clipAsset("relative"), false);
-    expect(outline.actors[0]!.components.map((component) => [component.id, component.classId])).toEqual([["door:preview", TIMELINE_PROXY_OUTLINE_CLASS_ID]]);
-    expect(outline.actors[1]!.components.map((component) => component.id)).toEqual(["glow", "glow:preview"]);
-    // The Outline is built at the proxy's Scale and undoes it, so its dashes keep their thickness.
-    expect(outline.actors[1]!.components[1]).toMatchObject({ properties: { size: [0.5, 2, 1], twoD: false }, transform: { scale: [2, 0.5, 1] } });
+    const shape = timelineProxyPreviewScene(timelineProxyScene(clipAsset("relative"), "Swing", graphs, false), clipAsset("relative"), false);
+    expect(shape.actors[0]!.components.map((component) => [component.id, component.classId])).toEqual([["door:preview", TIMELINE_PROXY_SHAPE_CLASS_ID]]);
+    expect(shape.actors[1]!.components.map((component) => component.id)).toEqual(["glow", "glow:preview"]);
+    // In the proxy's colour; the proxy actor's Scale sizes it.
+    expect(shape.actors[1]!.components[1]).toMatchObject({ properties: { color: defaultTimelineProxyPreview(1).color, twoD: false }, transform: { scale: [1, 1, 1] } });
     const model = timelineProxyPreviewScene(timelineProxyScene(clipAsset("relative", "model"), "Swing", graphs, false), clipAsset("relative", "model"), false);
     // A Model, Material or Texture draws its own asset at the proxy's Scale.
     expect(model.actors[0]!.components[0]).toMatchObject({ classId: "MeshComponent", properties: { assetGuid: "door-model" }, transform: { scale: [1, 1, 1] } });
