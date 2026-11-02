@@ -53,7 +53,9 @@ export type CanvasResizeGuard = ((canvas: CanvasSize) => void) & {
 
 /**
  * Call `resize` when the canvas integer CSS size actually changes, then hold
- * rendering until the size has been stable for `CANVAS_RESIZE_HOLD_MS`.
+ * rendering until the size has been stable for `CANVAS_RESIZE_HOLD_MS`. The
+ * canvas's first size is no drag: it applies without a hold, so a loading view
+ * presents its first frames at once.
  */
 export function createCanvasResizeGuard(
   resize: () => void,
@@ -92,10 +94,11 @@ export function createCanvasResizeGuard(
     const height = Math.floor(canvas.clientHeight);
     if (width <= 0 || height <= 0) return;
     if (width === lastWidth && height === lastHeight) return;
+    const first = Number.isNaN(lastWidth);
     lastWidth = width;
     lastHeight = height;
     resize();
-    beginOrExtendHold();
+    if (!first) beginOrExtendHold();
   }) as CanvasResizeGuard;
 
   apply.dispose = () => {

@@ -76,7 +76,7 @@ import {
 import type {
   SerializedScene,
 } from "@haptic/core";
-import { createDefaultScene, engineCommandBus } from "@haptic/core";
+import { engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
@@ -1627,11 +1627,8 @@ function initializeEngine(
     editorToolsRef.current = editor;
   }
 
-  // Play renders snapshot proxy meshes only. Seeding the default scene here
-  // stacks editor helpers under those proxies at the origin (z-fighting / additive look).
-  if (!options.playMode) {
-    loadScene(createDefaultScene());
-  }
+  // No scene is seeded: every view loads its own (the editor its document, Play its snapshot proxies), and a seeded
+  // default scene would only fetch and upload its sky and build its sun's shadow map before being replaced.
 
   const resize = () => {
     if (registeredView && !registeredViewIsEnabled(registeredView)) {

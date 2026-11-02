@@ -2022,8 +2022,11 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName(editorMeshName("actor-1"))).toBeNull();
   });
 
-  it("still seeds the default scene into a non-Play view", () => {
+  it("seeds no default scene into an editor view: it shows only the scene it loads", () => {
     const { handle } = editorHandle(sharedEngine());
+    expect(handle.scene.getMeshByName(editorMeshName("actor-1"))).toBeNull();
+    expect(handle.scene.getMeshByName(editorMeshName("actor-skybox"))).toBeNull();
+    handle.loadScene(createDefaultScene());
     expect(handle.scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
   });
 
@@ -2194,6 +2197,7 @@ describe("Play createEngine view", () => {
       editor: true,
     });
     handles.push(handle);
+    handle.loadScene(createDefaultScene());
     const editor = handle.editor;
     expect(editor).not.toBeNull();
     editor!.gizmos.setTool("translate");
@@ -4671,6 +4675,7 @@ describe("Play createEngine view", () => {
       { sharedEngine: engine, editor: true },
     );
     handles.push(editor);
+    editor.loadScene(createDefaultScene());
     editor.setMeshAssets({
       resourceCache: editor.resourceCache,
       textureBytes: new Map([["tex-albedo", new Uint8Array([1, 2, 3, 4])]]),
