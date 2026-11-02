@@ -4632,6 +4632,15 @@ describe("Play createEngine view", () => {
     expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(ktx2Workers);
   });
 
+  it("keeps glTF and KTX2 decoding on workers for a Play view in a page whose workers load the decoders", () => {
+    const engine = sharedEngine();
+    const ktx2Workers = KhronosTextureContainer2.DefaultNumWorkers;
+    const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, workerDecoders: true });
+    handles.push(play);
+    expect(DracoDecoder.DefaultConfiguration.numWorkers).toBeUndefined();
+    expect(KhronosTextureContainer2.DefaultNumWorkers).toBe(ktx2Workers);
+  });
+
   it("returns decoding to workers when Play construction rolls back", () => {
     const failure = new Error("Play view canvas is unavailable.");
     // Fail before the view reaches its Engine, right after the Play decoder setup.
