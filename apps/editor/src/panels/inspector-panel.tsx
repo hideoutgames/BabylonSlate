@@ -67,6 +67,7 @@ import {
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 import { isDataGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { documentComponentClassId } from "../lib/linked-scale";
 import { delegateSignatureEntries } from "../lib/delegate-signatures";
 import { logicGraphHostClass } from "../lib/embedded-script";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
@@ -345,7 +346,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     return (
       <PanelFrame data-testid="inspector-panel">
         <PrefabComponentDetails
-          actorClassId={doc?.ref.kind === "graph" && doc.ref.path ? classIdForGraphPath(doc.ref.path) : "Actor"}
+          actorClassId={documentComponentClassId(doc?.ref)}
           component={selectedPrefabComponent}
           components={prefabComponents}
           sceneLayerClasses={objectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}

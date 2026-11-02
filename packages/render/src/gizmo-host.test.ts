@@ -16,6 +16,7 @@ import {
   GIZMO_MIN_CAMERA_DISTANCE,
   GIZMO_PLANAR_HOVER_ALPHA,
   GIZMO_PLANAR_IDLE_ALPHA,
+  linkedAxisScale,
 } from "./gizmo-host";
 import { isUnlitMaterial } from "./unlit-material";
 import { unlitBinding } from "./unlit-material-blocks";
@@ -112,6 +113,92 @@ describe("gizmo move snap", () => {
     expect(mesh.position.x).toBeCloseTo(1);
     expect(mesh.position.y).toBe(0.25);
     host.dispose();
+  });
+});
+
+describe("linked scale gizmo", () => {
+  const dragX = (
+    host: ReturnType<typeof createGizmoHost>,
+    distances: readonly number[],
+  ) => {
+    const drag = host.scaleGizmo.xGizmo.dragBehavior;
+    drag.onDragStartObservable.notifyObservers({
+      dragPlanePoint: Vector3.Zero(),
+      pointerId: 1,
+      pointerInfo: null,
+    });
+    for (const distance of distances) {
+      drag.onDragObservable.notifyObservers({
+        delta: new Vector3(distance, 0, 0),
+        dragPlanePoint: Vector3.Zero(),
+        dragPlaneNormal: Vector3.Forward(),
+        dragDistance: distance,
+        pointerId: 1,
+        pointerInfo: null,
+      });
+    }
+    drag.onDragEndObservable.notifyObservers({
+      dragPlanePoint: Vector3.Zero(),
+      pointerId: 1,
+      pointerInfo: null,
+    });
+  };
+  const scaledBox = (scene: Scene, mode: "2d" | "3d", linked: boolean) => {
+    scene.activeCamera = new FreeCamera("cam", new Vector3(0, 0, -10), scene);
+    const mesh = MeshBuilder.CreateBox("box", { size: 1 }, scene);
+    mesh.rotation.y = 0.4;
+    mesh.scaling.set(1, 2, 4);
+    mesh.computeWorldMatrix(true);
+    const host = createGizmoHost(scene, { tool: "scale", mode });
+    host.setLinkedScale(linked);
+    host.attachTo(mesh);
+    return { mesh, host };
+  };
+
+  it("scales the other axes by the dragged axis's factor while linked", () => {
+    const { scene } = createHandle();
+    const { mesh, host } = scaledBox(scene, "3d", true);
+    dragX(host, [0.2, 0.3]);
+    const factor = mesh.scaling.x;
+    expect(factor).toBeGreaterThan(1.05);
+    expect(mesh.scaling.y).toBeCloseTo(2 * factor, 5);
+    expect(mesh.scaling.z).toBeCloseTo(4 * factor, 5);
+    host.dispose();
+  });
+
+  it("keeps Z in 2D and follows snapped steps of the dragged axis", () => {
+    const { scene } = createHandle();
+    const { mesh, host } = scaledBox(scene, "2d", true);
+    host.setSnap({ enabled: true, translate: 1, rotateDeg: 15, scale: 0.5 });
+    dragX(host, [4]);
+    const steps = (mesh.scaling.x - 1) / 0.5;
+    expect(steps).toBeGreaterThanOrEqual(1);
+    expect(steps).toBeCloseTo(Math.round(steps), 5);
+    expect(mesh.scaling.y).toBeCloseTo(2 * mesh.scaling.x, 5);
+    expect(mesh.scaling.z).toBeCloseTo(4, 5);
+    host.dispose();
+  });
+
+  it("scales only the dragged axis when not linked", () => {
+    const { scene } = createHandle();
+    const { mesh, host } = scaledBox(scene, "3d", false);
+    dragX(host, [0.2, 0.3]);
+    expect(mesh.scaling.x).toBeGreaterThan(1.05);
+    expect(mesh.scaling.y).toBeCloseTo(2, 5);
+    expect(mesh.scaling.z).toBeCloseTo(4, 5);
+    host.dispose();
+  });
+});
+
+describe("linkedAxisScale", () => {
+  it.each([
+    { start: [1, 2, 4], axis: 0, value: 3, mode: "3d", expected: [3, 6, 12] },
+    { start: [2, 4, 8], axis: 1, value: 2, mode: "3d", expected: [1, 2, 4] },
+    { start: [1, 2, 4], axis: 0, value: 3, mode: "2d", expected: [3, 6, 4] },
+    { start: [0, 2, 4], axis: 0, value: 1.5, mode: "3d", expected: [1.5, 1.5, 1.5] },
+    { start: [-1, 2, 4], axis: 0, value: -2, mode: "3d", expected: [-2, 4, 8] },
+  ] as const)("$start, axis $axis to $value in $mode → $expected", ({ start, axis, value, mode, expected }) => {
+    expect(linkedAxisScale(start, axis, value, mode)).toEqual(expected);
   });
 });
 

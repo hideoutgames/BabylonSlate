@@ -72,6 +72,12 @@ export interface GizmoHost {
   setMode: (mode: ViewportMode) => void;
   setSpace: (space: GizmoSpace) => void;
   setSnap: (snap: GizmoSnapSettings) => void;
+  /**
+   * While linked, an X, Y or Z scale handle scales the other shown axes by
+   * the same factor (`linkedAxisScale`), as the Inspector's linked Scale
+   * field does. Off by default; read when a drag starts.
+   */
+  setLinkedScale: (linked: boolean) => void;
   /** `tool` overrides the active tool for this attachment (a spline point always translates). */
   attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[], attach?: { tool?: GizmoTool }) => void;
   attachedMesh: () => AbstractMesh | null;
@@ -212,6 +218,31 @@ export function clampGizmoScreenScale(
     return (Math.sign(currentScale) || 1) * minAbs;
   }
   return currentScale;
+}
+
+export type ScaleVector = [number, number, number];
+
+/**
+ * Scale after an axis handle drag while Scale is linked: the dragged axis
+ * takes `value` and the other shown axes (X and Y in 2D, all three in 3D)
+ * scale from `start` by the same factor, matching the Inspector's linked
+ * Scale field. A zero start axis has no factor, so every shown axis takes
+ * `value`; hidden axes keep their start.
+ */
+export function linkedAxisScale(
+  start: Readonly<ScaleVector>,
+  axis: 0 | 1 | 2,
+  value: number,
+  mode: ViewportMode,
+): ScaleVector {
+  const shown = mode === "2d" ? 2 : 3;
+  const from = start[axis];
+  const next: ScaleVector = [...start];
+  for (let index = 0; index < shown; index++) {
+    if (index === axis || from === 0) next[index] = value;
+    else next[index] = start[index] * (value / from);
+  }
+  return next;
 }
 
 /** World axes a translate handle moves: an axis arrow one, a plane square two. */
@@ -492,6 +523,24 @@ export function createGizmoHost(
   // snapped position written back (Babylon adds each delta to the mesh).
   let snapDrag: { start: Vector3; free: Vector3; last: Vector3; axes: TranslateDragAxes } | null = null;
   const dragTranslation = new Vector3();
+  let linkedScale = false;
+  const scaleAxes = new Map<object, 0 | 1 | 2>([
+    [scale.xGizmo, 0],
+    [scale.yGizmo, 1],
+    [scale.zGizmo, 2],
+  ]);
+  // Babylon scales only the dragged local axis; a linked drag then rescales
+  // the other axes from their drag-start values after each of its steps.
+  let linkedScaleDrag: { axis: 0 | 1 | 2; start: ScaleVector } | null = null;
+
+  const linkScaleDrag = () => {
+    const mesh = scale.attachedMesh;
+    if (!linkedScaleDrag || !mesh) return;
+    const { axis, start } = linkedScaleDrag;
+    const value = axis === 0 ? mesh.scaling.x : axis === 1 ? mesh.scaling.y : mesh.scaling.z;
+    mesh.scaling.set(...linkedAxisScale(start, axis, value, mode));
+    mesh.computeWorldMatrix(true);
+  };
 
   const snapTranslateDrag = () => {
     const mesh = position.attachedMesh;
@@ -515,6 +564,12 @@ export function createGizmoHost(
             return { start, free: start.clone(), last: start.clone(), axes };
           })()
         : null;
+    const scaleAxis = handle ? scaleAxes.get(handle) : undefined;
+    const scaled = scale.attachedMesh;
+    linkedScaleDrag =
+      linkedScale && scaled && scaleAxis !== undefined
+        ? { axis: scaleAxis, start: [scaled.scaling.x, scaled.scaling.y, scaled.scaling.z] }
+        : null;
     releaseLease ??= options.scheduler?.acquireContinuous("gizmo") ?? null;
     options.onDragStart?.();
   };
@@ -522,6 +577,7 @@ export function createGizmoHost(
   const endDrag = () => {
     dragging = false;
     snapDrag = null;
+    linkedScaleDrag = null;
     releaseLease?.();
     releaseLease = null;
     options.scheduler?.invalidate("gizmo");
@@ -530,6 +586,7 @@ export function createGizmoHost(
 
   const drag = () => {
     snapTranslateDrag();
+    linkScaleDrag();
     options.scheduler?.invalidate("gizmo");
     options.onDrag?.();
   };
@@ -721,6 +778,9 @@ export function createGizmoHost(
       snapSettings = { ...snap };
       applySnap();
       overlayBox?.setSnap(snap);
+    },
+    setLinkedScale: (linked: boolean) => {
+      linkedScale = linked;
     },
     attachTo: (mesh, visuals, attach) => {
       attached = mesh;

@@ -11,6 +11,7 @@ import {
   usePublishSimulationControls,
 } from "../context/simulation-controls-context";
 import { useAppSettings } from "../context/app-settings-context";
+import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import { captureShadowDiagnostics, drawOcclusionOverlay, lightsDebugText } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -362,6 +363,14 @@ function PlayOverlayView({
   const transformDetachRef = useRef<(() => void) | null>(null);
   const transformEditableRef = useRef(false);
   const syncTransformVisibilityRef = useRef<() => void>(() => {});
+  // The scale gizmo follows the selection's Simulation Inspector Scale link.
+  const linkedScale = useLinkedScale();
+  const linkedScaleRef = useRef(linkedScale);
+  const syncLinkedScaleRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    linkedScaleRef.current = linkedScale;
+    syncLinkedScaleRef.current();
+  }, [linkedScale]);
   const [transformTool, setTransformTool] = useState<GizmoTool>("translate");
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1047,11 +1056,17 @@ function PlayOverlayView({
           onError: reason => setControlError(reason),
         });
         transformToolsRef.current = tools;
+        const syncLinkedScale = () => {
+          const selected = inspectionStore.getSnapshot().selected;
+          tools.setLinkedScale(scaleGizmoLinked(linkedScaleRef.current, selected ? [scaleLinkKey.runtime(selected)] : []));
+        };
+        syncLinkedScaleRef.current = syncLinkedScale;
         const syncSelection = () => {
           const state = inspectionStore.getSnapshot();
           const detail = state.selection;
           tools.setSelection(state.selected, { slotId: detail?.renderSlotId,
             worldTransform: detail?.worldTransform, writable: detail?.transformCapability === "live" });
+          syncLinkedScale();
         };
         const unsubscribe = inspectionStore.subscribe(syncSelection);
         syncSelection();
@@ -1068,6 +1083,7 @@ function PlayOverlayView({
         transformDetachRef.current = () => {
           visibility?.disconnect();
           syncTransformVisibilityRef.current = () => {};
+          syncLinkedScaleRef.current = () => {};
           unsubscribe();
           transformConsumerRef.current?.();
           transformConsumerRef.current = null;

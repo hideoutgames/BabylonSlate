@@ -52,9 +52,7 @@ function RuntimeTransformFields({ store, target, transform, mode, disabled, reas
   const update = (next: SerializedTransform, final: boolean) => field.write(next, () => store.request(
     { kind: "setTransform", target, transform: next }, final ? { final: true } : { continuous: true }));
   const linkedScale = useLinkedScale();
-  const scaleKey = target.componentGuid
-    ? scaleLinkKey.actorComponent(target.actorGuid, target.componentGuid)
-    : scaleLinkKey.actor(target.actorGuid);
+  const scaleKey = scaleLinkKey.runtime(target);
   const rows = spatialTransformPropertyRows("simulation-transform", mode, field.draft, next => update(next, false),
     { scaleLink: linkedScale.link(scaleKey) });
   const commits = spatialTransformPropertyRows("simulation-transform", mode, field.draft, next => update(next, true));

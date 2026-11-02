@@ -24,7 +24,7 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 
 | Control | What it does |
 | --- | --- |
-| **Move**, **Rotate**, **Scale** | Gizmo for the selection. Keys <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd>. In 2D the gizmo moves on X and Y, rotates around Z and scales X and Y. |
+| **Move**, **Rotate**, **Scale** | Gizmo for the selection. Keys <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd>. In 2D the gizmo moves on X and Y, rotates around Z and scales X and Y. While the selection's **Scale** is linked in the **Inspector**, each Scale handle keeps its proportions. |
 | **World Space** / **Local Space** | Aligns the gizmo with the world axes or the actor's own axes. |
 | **Snap Grid** | Snaps gizmo moves to the increment shown on the button (<kbd>G</kbd>). Hold or right-click it for **Grid Settings**. |
 | **Drag Select** | The next drag draws a selection box (<kbd>Q</kbd>). |
