@@ -63,20 +63,6 @@ describe("Timeline Clip assets", () => {
     expect(normalizeTimelineClipAsset(JSON.parse(JSON.stringify(payload)))).toEqual(payload);
   });
 
-  it("reads an earlier preview's Size as its Scale and its one asset as its representation's", () => {
-    const earlier = (representation: string, size: number, id = "door") => normalizeTimelineClipAsset({ ...authored, editorPreview: { proxies: {
-      [id]: { color: "#ff0000", representation, size, location: [0, 0, 0], rotation: [0, 0, 0], previewAs: "relative", assetGuid: "door-asset" },
-    } } }).editorPreview!.proxies[id]!;
-    expect(earlier("texture", 2)).toMatchObject({ scale: [2, 2, 2], assets: { texture: "door-asset" } });
-    expect(earlier("texture", 2)).not.toHaveProperty("size");
-    expect(earlier("texture", 2)).not.toHaveProperty("assetGuid");
-    expect(earlier("outline", 0.5).scale).toEqual([0.5, 0.5, 0.5]);
-    // Size never sized the Class's own look, or a Component proxy's component.
-    expect(earlier("class", 3)).toMatchObject({ scale: [1, 1, 1] });
-    expect(earlier("outline", 3, "glow")).toMatchObject({ scale: [1, 1, 1] });
-    expect(earlier("class", 3)).not.toHaveProperty("assets");
-  });
-
   it("strips the editor-only preview for Play and export", () => {
     const stripped = stripTimelineClipAssetEditorData(normalizeTimelineClipAsset(authored));
     expect(stripped).not.toHaveProperty("editorPreview");

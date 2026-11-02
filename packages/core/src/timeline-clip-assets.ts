@@ -95,7 +95,6 @@ export function createDefaultTimelineClipAsset(timelineAsset = ""): SerializedTi
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
-const finite = (value: unknown, fallback: number) => (typeof value === "number" && Number.isFinite(value) ? value : fallback);
 const triple = (value: unknown, fallback: [number, number, number]): [number, number, number] =>
   Array.isArray(value) && value.length === 3 && value.every((entry) => typeof entry === "number" && Number.isFinite(entry))
     ? [value[0], value[1], value[2]]
@@ -113,32 +112,25 @@ export function defaultTimelineProxyPreview(index: number): TimelineProxyPreview
   };
 }
 
-function normalizePreview(value: unknown, index: number, represents: TimelineProxy["represents"]): TimelineProxyPreview {
+function normalizePreview(value: unknown, index: number): TimelineProxyPreview {
   const source = record(value);
   const fallback = defaultTimelineProxyPreview(index);
   const color = text(source.color);
   const representation = (TIMELINE_PROXY_REPRESENTATIONS as readonly string[]).includes(source.representation as string)
     ? (source.representation as TimelineProxyRepresentation)
     : "outline";
-  // An earlier preview sized the representation alone by a uniform Size. An Actor proxy's Scale takes it (it draws
-  // nothing else); a Component proxy's would also scale its component, so there it goes.
-  const size = representation === "class" || represents === "component" ? 1 : Math.max(0.01, finite(source.size, 1));
   const authoredAssets = record(source.assets);
   const assets: Partial<Record<TimelineProxyAssetRepresentation, string>> = {};
   for (const kind of ASSET_REPRESENTATIONS) {
     const guid = text(authoredAssets[kind]);
     if (guid) assets[kind] = guid;
   }
-  // An earlier preview kept one asset, for its representation.
-  const legacyAsset = text(source.assetGuid);
-  const legacyKind = representation as TimelineProxyAssetRepresentation;
-  if (legacyAsset && ASSET_REPRESENTATIONS.includes(legacyKind) && !assets[legacyKind]) assets[legacyKind] = legacyAsset;
   return {
     color: /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : fallback.color,
     representation,
     location: triple(source.location, fallback.location),
     rotation: triple(source.rotation, fallback.rotation),
-    scale: triple(source.scale, [size, size, size]),
+    scale: triple(source.scale, [1, 1, 1]),
     previewAs: source.previewAs === "absolute" ? "absolute" : "relative",
     ...(Object.keys(assets).length ? { assets } : {}),
   };
@@ -181,7 +173,7 @@ export function normalizeTimelineClipAsset(value: unknown): SerializedTimelineCl
     whenFinished: clip.whenFinished,
     proxies,
     eventTracks: clip.eventTracks,
-    editorPreview: { proxies: Object.fromEntries(proxies.map((proxy, index) => [proxy.id, normalizePreview(previews[proxy.id], index, proxy.represents)])) },
+    editorPreview: { proxies: Object.fromEntries(proxies.map((proxy, index) => [proxy.id, normalizePreview(previews[proxy.id], index)])) },
   };
 }
 
