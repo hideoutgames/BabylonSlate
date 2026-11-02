@@ -1061,10 +1061,23 @@ export function compileMaterialPlan(
   configureSurface();
 
   const loadObservers: Array<() => void> = [];
+  let rebuildQueued = false;
   const rebuildWhenReady = (): void => {
     // Particle effects bind every sampler on each draw. A new build id instead makes
     // Babylon swap in a new effect mid-draw and draw the old one without its textures.
     if (disposed || material.mode === NodeMaterialModes.Particle) return;
+    // Babylon drops a build() while an earlier one still waits for its blocks' shader code (it only warns): rebuild
+    // once that build settles, which clears the flag before notifying.
+    if (nodeMaterialBuildInProgress(material)) {
+      if (rebuildQueued) return;
+      rebuildQueued = true;
+      const observer = material.onBuildObservable.addOnce(() => {
+        rebuildQueued = false;
+        rebuildWhenReady();
+      });
+      loadObservers.push(() => material.onBuildObservable.remove(observer));
+      return;
+    }
     const wasFrozen = material.isFrozen;
     if (wasFrozen) material.unfreeze();
     ownRebuilds++;
@@ -1328,6 +1341,11 @@ function textureErrorMessage(payload: unknown): string {
     }
   }
   return "Texture failed to load";
+}
+
+/** Whether a NodeMaterial's build still waits for its blocks' shader code; Babylon ignores another build() until then. */
+function nodeMaterialBuildInProgress(material: NodeMaterial): boolean {
+  return (material as unknown as { _buildIsInProgress?: boolean })._buildIsInProgress === true;
 }
 
 /** Map authored blend / two-sided onto Babylon after `material.build()`. */

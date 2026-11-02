@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, FragmentOutputBlock, type ClampBlock, type Effect, type InputBlock, type NodeMaterialConnectionPoint, type MorphTargetsBlock, type Rotate2dBlock } from "@babylonjs/core";
+import { Bone, Logger, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, FragmentOutputBlock, type ClampBlock, type Effect, type InputBlock, type NodeMaterialConnectionPoint, type MorphTargetsBlock, type Rotate2dBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -1626,7 +1626,7 @@ describe("material compiler", () => {
     expect(sample?.texture).toBe(resolved);
   });
 
-  it("rebuilds the NodeMaterial when a packed Texture Parameter becomes ready", () => {
+  it("rebuilds the NodeMaterial when a packed Texture Parameter becomes ready", async () => {
     const scene = host();
     const resolved = new Texture(null, scene, true, false);
     disposers.push(() => resolved.dispose());
@@ -1644,12 +1644,18 @@ describe("material compiler", () => {
     }
     disposers.push(() => result.material.dispose());
     const rebuild = vi.spyOn(result.material, "build");
+    const warn = vi.spyOn(Logger, "Warn");
+    const builds = vi.fn();
+    result.material.onBuildObservable.add(builds);
     ready = true;
+    // The first build still waits for its blocks' shader code: Babylon would drop a build() now.
     resolved.onLoadObservable.notifyObservers(resolved);
-    expect(rebuild).toHaveBeenCalled();
+    await vi.waitFor(() => expect(builds).toHaveBeenCalledTimes(2));
+    expect(rebuild).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls.flat().join(" ")).not.toMatch(/Build is already in progress/);
   });
 
-  it("unfreezes a frozen NodeMaterial before rebuilding when a packed texture becomes ready", () => {
+  it("unfreezes a frozen NodeMaterial before rebuilding when a packed texture becomes ready", async () => {
     const scene = host();
     const resolved = new Texture(null, scene, true, false);
     disposers.push(() => resolved.dispose());
@@ -1672,8 +1678,8 @@ describe("material compiler", () => {
     const rebuild = vi.spyOn(result.material, "build");
     ready = true;
     resolved.onLoadObservable.notifyObservers(resolved);
+    await vi.waitFor(() => expect(rebuild).toHaveBeenCalled());
     expect(unfreeze).toHaveBeenCalled();
-    expect(rebuild).toHaveBeenCalled();
     expect(unfreeze.mock.invocationCallOrder[0]!).toBeLessThan(
       rebuild.mock.invocationCallOrder[0]!,
     );
@@ -1745,7 +1751,7 @@ describe("material compiler", () => {
     expect(unfreeze).not.toHaveBeenCalled();
   });
 
-  it("rebuilds and reports once for a pending texture shared by two samples", () => {
+  it("rebuilds and reports once for a pending texture shared by two samples", async () => {
     const scene = host();
     const resolved = new Texture(null, scene, true, false);
     disposers.push(() => resolved.dispose());
@@ -1788,10 +1794,12 @@ describe("material compiler", () => {
     const rebuild = vi.spyOn(result.material, "build");
     ready = true;
     resolved.onLoadObservable.notifyObservers(resolved);
+    await vi.waitFor(() => expect(rebuild).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(rebuild).toHaveBeenCalledTimes(1);
   });
 
-  it("rebuilds when isReady is true only because loading failed onto the error sampler", () => {
+  it("rebuilds when isReady is true only because loading failed onto the error sampler", async () => {
     const scene = host();
     const resolved = new Texture(null, scene, true, false);
     disposers.push(() => resolved.dispose());
@@ -1812,10 +1820,10 @@ describe("material compiler", () => {
     const rebuild = vi.spyOn(result.material, "build");
     (resolved as unknown as { _loadingError: boolean })._loadingError = false;
     resolved.onLoadObservable.notifyObservers(resolved);
-    expect(rebuild).toHaveBeenCalled();
+    await vi.waitFor(() => expect(rebuild).toHaveBeenCalled());
   });
 
-  it("marks the NodeMaterial dirty after a packed-texture rebuild even when dirty is blocked", () => {
+  it("marks the NodeMaterial dirty after a packed-texture rebuild even when dirty is blocked", async () => {
     const scene = host();
     const resolved = new Texture(null, scene, true, false);
     disposers.push(() => resolved.dispose());
@@ -1842,7 +1850,7 @@ describe("material compiler", () => {
     });
     ready = true;
     resolved.onLoadObservable.notifyObservers(resolved);
-    expect(dirtyWhileBlocked).toContain(false);
+    await vi.waitFor(() => expect(dirtyWhileBlocked).toContain(false));
     expect(scene.blockMaterialDirtyMechanism).toBe(true);
   });
 
