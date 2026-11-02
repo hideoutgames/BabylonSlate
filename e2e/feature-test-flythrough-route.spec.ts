@@ -41,7 +41,7 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  *      HAPTIC_FLY_PROFILE=1 (CDP CPU profile of the passes; spike frames list their hottest functions),
  *      HAPTIC_FLY_PLAY (comma list of the selected scenes to fly again in overlay Play with the free camera,
  *        `freecam`; main-scene Play does not finish loading on software GL),
- *      HAPTIC_PERF_VIEWPORT_CAP (Engine Settings viewport frame cap; default 30),
+ *      HAPTIC_PERF_VIEWPORT_CAP (Engine Settings viewport frame cap; default 60),
  *      HAPTIC_PERF_SCALING (Engine Settings hardware scaling level, e.g. 2 to cut software fill cost),
  *      HAPTIC_PERF_LABEL, HAPTIC_PERF_OUT (absolute path that also receives the JSON report).
  */
@@ -427,7 +427,7 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await seedEngineSettings(page, (settings) => {
-    if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 30, 10);
+    if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 60, 10);
     if (process.env.HAPTIC_PERF_SCALING) settings.hardwareScalingLevel = number("HAPTIC_PERF_SCALING", 1, 0.25);
     if (PLAY_SCENES.length) settings.debuggerDefaults.overlayConsole = true;
   });

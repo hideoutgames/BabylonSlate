@@ -228,7 +228,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await recordLongTasks(page);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
-    if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 30, 10);
+    if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 60, 10);
   });
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");

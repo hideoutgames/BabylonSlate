@@ -240,8 +240,10 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws only w
   // Byte-identical frames; the whole mirrored view draws the side box too.
   expect(whole.hash).toBe(cropped.hash);
   expect(whole.meshesPerDraw).toBeGreaterThan(cropped.meshesPerDraw);
+  // Counted before the toggle, as `start` is: at a high viewport frame rate its redraw can land before a read after it.
+  const beforeCropping = await mirrors();
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setMirrorFootprintCulling(true));
-  expect((await settled(await mirrors())).hash).toBe(cropped.hash);
+  expect((await settled(beforeCropping)).hash).toBe(cropped.hash);
 });
 
 for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror keeps its reflection while a caster whose shadow it cannot show moves, and redraws for one it can, on ${backend}`, async ({ page }) => {
