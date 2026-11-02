@@ -16,7 +16,7 @@ The **Profiler and Frame Debugger** window opens over the game. Opening it does 
 2. Play the part of the game you want to measure.
 3. Tap **Stop Recording**, or wait: recording stops on its own after the **Recording Duration**, when its data budget is full, or when the session ends.
 
-A recording keeps running when you close the window. While it runs, the toolbar over the game shows **Recording**; its **Stop Recording** button stops it and opens the window at its **Summary**.
+A recording keeps running when you close the window. While it runs, the toolbar over the game shows **Recording**; its **Stop Recording** button stops it and opens the window at its **Summary**. A recording that reaches its **Recording Duration** or fills its data budget opens the window at its **Summary** too.
 
 You can also record by typing `profile start` and `profile stop` in the [console](console.md) window; `capture frame` captures a frame. **Execute Console Command** cannot run these.
 
