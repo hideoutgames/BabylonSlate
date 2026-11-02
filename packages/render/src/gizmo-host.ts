@@ -87,6 +87,8 @@ export interface GizmoHost {
   attachedMesh: () => AbstractMesh | null;
   /** True while a gizmo handle drag is in progress. */
   isDragging: () => boolean;
+  /** Local axis an X, Y or Z scale handle is dragging (set before `onDragStart`); null otherwise. */
+  scaleDragAxis: () => 0 | 1 | 2 | null;
   /** True when a gizmo handle sits under the canvas point. */
   hitTest: (
     canvasX: number,
@@ -511,6 +513,8 @@ export function createGizmoHost(
   // Babylon scales only the dragged local axis; a linked drag then rescales
   // the other axes from their drag-start values after each of its steps.
   let linkedScaleDrag: { axis: 0 | 1 | 2; start: ScaleVector } | null = null;
+  /** Local axis of the X, Y or Z scale handle being dragged. */
+  let activeScaleAxis: 0 | 1 | 2 | null = null;
 
   const linkScaleDrag = () => {
     const mesh = scale.attachedMesh;
@@ -544,6 +548,7 @@ export function createGizmoHost(
           })()
         : null;
     const scaleAxis = handle ? scaleAxes.get(handle) : undefined;
+    activeScaleAxis = scaleAxis ?? null;
     const scaled = scale.attachedMesh;
     linkedScaleDrag =
       linkedScale && scaled && scaleAxis !== undefined
@@ -557,6 +562,7 @@ export function createGizmoHost(
     dragging = false;
     snapDrag = null;
     linkedScaleDrag = null;
+    activeScaleAxis = null;
     releaseLease?.();
     releaseLease = null;
     options.scheduler?.invalidate("gizmo");
@@ -770,6 +776,7 @@ export function createGizmoHost(
     },
     attachedMesh: () => attached,
     isDragging: () => dragging || overlayBox?.isDragging() === true,
+    scaleDragAxis: () => activeScaleAxis,
     hitTest: (canvasX, canvasY, canvasSize) => {
       const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
       const pick = layer.utilityLayerScene.pick(mapped.x, mapped.y);
