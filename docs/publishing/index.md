@@ -1,25 +1,28 @@
 # Publishing
 
-Export Game packages your project as a web game in a ZIP file, ready for itch.io or any static web host.
+**Packaging** builds your project as a web game in a ZIP file, ready for itch.io or any static web host.
 
-## Before you export
+## Before you package
 
 1. Set **Project Settings > Game > Startup Scene**. The exported game always starts there, whatever **Start In Open Scene** says.
-2. **Save All** (<kbd>Mod</kbd>+<kbd>S</kbd>). Export Game packages the saved project, not unsaved edits in open tabs.
-3. Bake each NavMesh your scenes use. Export does not bake navigation.
+2. **Save All** (<kbd>Mod</kbd>+<kbd>S</kbd>). Packaging uses the saved project, not unsaved edits in open tabs.
+3. Bake each NavMesh your scenes use. Packaging does not bake navigation.
 4. Try a [Preview Build](preview-build.md) to check the packaged game.
 
-## Export the game
+## Package the game
 
-1. Open **Project Settings > Export**.
-2. Tap **Export Game**.
-3. When **Game export prepared. Check your downloads.** appears, find the ZIP, named after the project.
+1. In the toolbar, choose **Settings > Packaging**.
+2. Under **Platform**, select **Web**.
+3. Choose **Package**.
+4. When **Game package prepared. Check your downloads.** appears, find the ZIP. It is named after the project, with underscores for spaces.
 
 The ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host.
 
-If the export fails, the reason appears above the **Export Game** button.
+If packaging fails, the reason appears in the **Packaging** window.
 
-## Export settings
+## Packaging settings
+
+These settings are in **Project Settings > Export**, under **Game Packaging** and **Always Package Folders**. **Export Settings** in the **Packaging** window opens them.
 
 | Setting | Description |
 | --- | --- |
@@ -28,7 +31,7 @@ If the export fails, the reason appears above the **Export Game** button.
 | File Count Fail | File count above which the export fails. Default 1000. |
 | Always Package Folders | Folders whose assets always ship, even when nothing references them. Subfolders are included. |
 
-**Export Project** in the same section makes an editable backup of the project instead. See [Projects](../projects/index.md).
+**Export Project**, under **Project Backup** on the same page, makes an editable backup of the project instead. See [Projects](../projects/index.md).
 
 ## What the game contains
 

@@ -17,11 +17,10 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import { Input } from "@haptic/ui/components/input";
 import { Switch } from "@haptic/ui/components/switch";
+import { SettingsSection } from "./settings-section";
 import type {
   DocumentActions,
   RegistryState,
@@ -72,8 +71,7 @@ export function ProjectSourceControlSettings({
 }: ProjectSourceControlSettingsProps) {
   return (
     <FieldGroup>
-      <FieldSet>
-        <FieldLegend>Source Control</FieldLegend>
+      <SettingsSection id="repository" title="Repository">
           <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="settings-source-control-enabled">
             Enable
@@ -170,6 +168,79 @@ export function ProjectSourceControlSettings({
             data-testid="settings-source-control-branch"
           />
         </Field>
+          <Field className="settings-field">
+          <FieldLabel htmlFor="settings-source-control-token">
+            Token
+          </FieldLabel>
+          <div className="flex min-w-0 flex-col gap-1.5">
+          <Input
+            id="settings-source-control-token"
+            type="password"
+            autoComplete="off"
+            value={tokenDraft}
+            aria-invalid={tokenError ? true : undefined}
+            aria-describedby={tokenError ? "settings-source-control-token-error" : undefined}
+            onChange={(event) => {
+              setTokenError(null);
+              setTokenDraft(event.target.value);
+            }}
+            data-testid="settings-source-control-token"
+          />
+          {tokenError ? (
+            <FieldError id="settings-source-control-token-error" data-testid="settings-source-control-token-error">
+              {tokenError}
+            </FieldError>
+          ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+              className="min-h-[var(--chrome-row,28px)]"
+            data-testid="settings-source-control-save-token"
+            disabled={!tokenDraft}
+            onClick={() => {
+              setTokenError(null);
+              void sourceControl.saveToken(tokenDraft).then(() => {
+                setTokenDraft("");
+              }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
+            }}
+          >
+            Save Token
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+              className="min-h-[var(--chrome-row,28px)]"
+            data-testid="settings-source-control-clear-token"
+            onClick={() => {
+              setTokenError(null);
+              void sourceControl.clearToken().then(() => {
+                setTokenDraft("");
+              }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
+            }}
+          >
+            Clear Token
+          </Button>
+        </div>
+          </div>
+          <FieldDescription data-testid="settings-source-control-token-help">
+            Create one in{" "}
+            <a
+              href="https://github.com/settings/tokens"
+              target="_blank"
+              rel="noreferrer"
+            >
+              GitHub Token Settings
+            </a>{" "}
+            with repo scope, or Contents: Read and Write for a fine-grained
+            token. GitLab and Gitea tokens with push access also work.
+          </FieldDescription>
+          <FieldDescription data-testid="settings-source-control-token-copy">
+            {sourceControl.hasToken ? "Token Saved. " : ""}
+              Stored on this device for this project. Never included in project files or Git.
+          </FieldDescription>
+        </Field>
+      </SettingsSection>
+      <SettingsSection id="locking" title="Locking">
           <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="settings-source-control-auto-lock">
             Auto-Lock On First Edit
@@ -213,76 +284,7 @@ export function ProjectSourceControlSettings({
             data-testid="settings-source-control-poll"
           />
         </Field>
-          <Field className="settings-field">
-          <FieldLabel htmlFor="settings-source-control-token">
-            Token
-          </FieldLabel>
-          <Input
-            id="settings-source-control-token"
-            type="password"
-            autoComplete="off"
-            value={tokenDraft}
-            aria-invalid={tokenError ? true : undefined}
-            aria-describedby={tokenError ? "settings-source-control-token-error" : undefined}
-            onChange={(event) => {
-              setTokenError(null);
-              setTokenDraft(event.target.value);
-            }}
-            data-testid="settings-source-control-token"
-          />
-          {tokenError ? (
-            <FieldError id="settings-source-control-token-error" data-testid="settings-source-control-token-error">
-              {tokenError}
-            </FieldError>
-          ) : null}
-          <FieldDescription data-testid="settings-source-control-token-help">
-            Create one in{" "}
-            <a
-              href="https://github.com/settings/tokens"
-              target="_blank"
-              rel="noreferrer"
-            >
-              GitHub Token Settings
-            </a>{" "}
-            with repo scope, or Contents: Read and Write for a fine-grained
-            token. GitLab and Gitea tokens with push access also work.
-          </FieldDescription>
-          <FieldDescription data-testid="settings-source-control-token-copy">
-            {sourceControl.hasToken ? "Token Saved. " : ""}
-              Stored on this device for this project. Never included in project files or Git.
-          </FieldDescription>
-        </Field>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-              className="min-h-[var(--chrome-row,28px)]"
-            data-testid="settings-source-control-save-token"
-            disabled={!tokenDraft}
-            onClick={() => {
-              setTokenError(null);
-              void sourceControl.saveToken(tokenDraft).then(() => {
-                setTokenDraft("");
-              }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
-            }}
-          >
-            Save Token
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-              className="min-h-[var(--chrome-row,28px)]"
-            data-testid="settings-source-control-clear-token"
-            onClick={() => {
-              setTokenError(null);
-              void sourceControl.clearToken().then(() => {
-                setTokenDraft("");
-              }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
-            }}
-          >
-            Clear Token
-          </Button>
-        </div>
-      </FieldSet>
+      </SettingsSection>
     </FieldGroup>
   );
 }

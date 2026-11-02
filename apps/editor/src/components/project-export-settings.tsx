@@ -7,12 +7,11 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import { Switch } from "@haptic/ui/components/switch";
 import type { DocumentActions } from "../context/document-context-types";
 import { AlwaysPackageFoldersField } from "./always-package-folders-field";
+import { SettingsSection } from "./settings-section";
 import type { ProjectExport } from "./use-project-export";
 
 type ProjectExportSettingsProps = ProjectExport & {
@@ -20,17 +19,18 @@ type ProjectExportSettingsProps = ProjectExport & {
   updateProjectSettings: DocumentActions["updateProjectSettings"];
 };
 
-/** Project Settings → Export. The run state comes from the host's `useProjectExport`. */
+/**
+ * Project Settings → Export: what packaging includes, and Export Project.
+ * Packaging itself runs from Settings → Packaging. The run state comes from
+ * the host's `useProjectExport`.
+ */
 export function ProjectExportSettings({
   projectDocument,
   updateProjectSettings,
-  exportGameError,
-  exportGameBusy,
   exportProjectBusy,
   exportProjectError,
   exportNotice,
   handleExport,
-  handleExportGame,
 }: ProjectExportSettingsProps) {
   const exportPreset =
     projectDocument?.settings.exportPresets[0] ?? defaultExportPreset();
@@ -43,10 +43,9 @@ export function ProjectExportSettings({
   };
 
   return (
-    <FieldGroup className="gap-4">
-      <FieldSet>
-        <FieldLegend>Export</FieldLegend>
-          <Field className="settings-field">
+    <FieldGroup>
+      <SettingsSection id="gamePackaging" title="Game Packaging">
+        <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="setting-export-debugger">
             Bundle Debugger
           </FieldLabel>
@@ -59,11 +58,11 @@ export function ProjectExportSettings({
             data-testid="setting-export-debugger"
           />
           <FieldDescription>
-              Includes debugging tools and Development Only nodes in the
-              export.
+            Includes debugging tools and Development Only nodes in the
+            export.
           </FieldDescription>
         </Field>
-          <Field className="settings-field">
+        <Field className="settings-field">
           <FieldLabel htmlFor="setting-export-file-warn">
             File Count Warn
           </FieldLabel>
@@ -75,7 +74,7 @@ export function ProjectExportSettings({
             data-testid="setting-export-file-warn"
           />
         </Field>
-          <Field className="settings-field">
+        <Field className="settings-field">
           <FieldLabel htmlFor="setting-export-file-fail">
             File Count Fail
           </FieldLabel>
@@ -87,8 +86,10 @@ export function ProjectExportSettings({
             data-testid="setting-export-file-fail"
           />
         </Field>
-        <Field>
-          <FieldLabel>Always Package Folders</FieldLabel>
+      </SettingsSection>
+      <SettingsSection id="alwaysPackageFolders" title="Always Package Folders">
+        <Field className="settings-row">
+          <FieldLabel className="sr-only">Always Package Folders</FieldLabel>
           <AlwaysPackageFoldersField
             folders={projectDocument.settings.alwaysPackageFolders}
             onChange={(alwaysPackageFolders) =>
@@ -101,50 +102,35 @@ export function ProjectExportSettings({
             Editor-only assets and disabled plugin content stay out.
           </FieldDescription>
         </Field>
-        {exportGameError ? (
-            <p
-              className="text-sm text-destructive"
-              data-testid="export-game-error"
-            >
-            {exportGameError}
-          </p>
-        ) : null}
-        <Field>
-          <div className="flex">
-            <Button
-              className="min-h-[var(--chrome-row,28px)] w-fit"
-              data-testid="export-game"
-              id="export-game"
-              disabled={exportGameBusy}
-              onClick={() => void handleExportGame()}
-            >
-              {exportGameBusy ? "Exporting Game…" : "Export Game"}
-            </Button>
-          </div>
-          <FieldDescription>Playable ZIP for web hosting.</FieldDescription>
-        </Field>
-        <Field>
-          <div className="flex">
-            <Button
-              className="min-h-[var(--chrome-row,28px)] w-fit"
-              data-testid="export-project"
-              id="export-project"
-              disabled={exportProjectBusy}
-              onClick={() => void handleExport()}
-            >
-              {exportProjectBusy ? "Exporting Project…" : "Export Project"}
-            </Button>
-          </div>
+      </SettingsSection>
+      <SettingsSection id="projectBackup" title="Project Backup">
+        <Field orientation="horizontal" className="settings-field">
+          <FieldLabel htmlFor="export-project">Export Project</FieldLabel>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-fit justify-self-end"
+            data-testid="export-project"
+            id="export-project"
+            disabled={exportProjectBusy}
+            onClick={() => void handleExport()}
+          >
+            {exportProjectBusy ? "Exporting Project…" : "Export Project"}
+          </Button>
           <FieldDescription>Editable project backup.</FieldDescription>
         </Field>
-        {exportProjectError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Project Export Failed</AlertTitle>
-            <AlertDescription>{exportProjectError}</AlertDescription>
-          </Alert>
+        {exportProjectError || exportNotice ? (
+          <div className="settings-row">
+            {exportProjectError ? (
+              <Alert variant="destructive">
+                <AlertTitle>Project Export Failed</AlertTitle>
+                <AlertDescription>{exportProjectError}</AlertDescription>
+              </Alert>
+            ) : null}
+            {exportNotice ? <p role="status" className="text-sm text-muted-foreground">{exportNotice}</p> : null}
+          </div>
         ) : null}
-        {exportNotice ? <p role="status" className="text-sm text-muted-foreground">{exportNotice}</p> : null}
-      </FieldSet>
+      </SettingsSection>
     </FieldGroup>
   );
 }

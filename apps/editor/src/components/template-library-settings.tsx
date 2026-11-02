@@ -5,12 +5,11 @@ import { Button } from "@haptic/ui/components/button";
 import {
   FieldDescription,
   FieldError,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import { useDocumentActions, useEditorShellState } from "../context/document-context";
 import { importTemplateArchive } from "../services/template-service";
 import { homepageTemplates } from "./homepage-template-browser";
+import { SettingsSection } from "./settings-section";
 
 /** Built-in starters, in project creator order. */
 const BUILT_IN_TEMPLATE_NAMES = homepageTemplates([], { debugMode: true }).map((template) => template.name);
@@ -40,8 +39,8 @@ export function TemplateLibrarySettings() {
     }
   };
   return (
-    <FieldSet>
-      <FieldLegend>Templates</FieldLegend>
+    <SettingsSection id="library" title="Template Library">
+      <div className="settings-row flex flex-col gap-2">
       <FieldDescription>
         Shown in the project creator. Add an exported Slate project to create one.
       </FieldDescription>
@@ -71,6 +70,7 @@ export function TemplateLibrarySettings() {
         Add Template
       </Button>
       {error && <FieldError>{error}</FieldError>}
-    </FieldSet>
+      </div>
+    </SettingsSection>
   );
 }

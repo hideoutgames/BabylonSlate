@@ -7,7 +7,7 @@ import { Badge } from "@haptic/ui/components/badge";
 import { Switch } from "@haptic/ui/components/switch";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
-import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@haptic/ui/components/field";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
 import {
   useDocumentActions,
@@ -17,6 +17,7 @@ import {
 import type { EditorExtensionCommandDescriptor } from "../lib/editor-extension-host";
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import { ExtensionCommandDialog, ExtensionEditorDialog, ExtensionExportDialog } from "./project-extension-dialogs";
+import { SettingsSection } from "./settings-section";
 
 export function ProjectExtensionsSettings() {
   const { updateProjectSettings } = useDocumentActions();
@@ -59,8 +60,8 @@ export function ProjectExtensionsSettings() {
   const maturity = enableTarget ? [enableTarget.settings.experimental ? "Experimental" : "", enableTarget.settings.beta ? "Beta" : ""].filter(Boolean).join(" / ") : "";
 
   return <FieldGroup data-testid="settings-extensions-panel">
-    <FieldSet>
-      <FieldLegend>Project Extensions</FieldLegend>
+    <SettingsSection id="installed" title="Installed Extensions">
+      <div className="settings-row flex flex-col gap-2">
       <FieldDescription>Editor tools for project assets and TypeScript or JavaScript code. Extensions do not run in the game.</FieldDescription>
       {pending ? <p role="status">{pending}…</p> : null}
       {error ? <Alert variant="destructive"><AlertTitle>Extension Action Failed</AlertTitle><AlertDescription>{error.message}<Button variant="outline" size="sm" disabled={Boolean(pending)} onClick={error.retry}>Retry</Button></AlertDescription></Alert> : null}
@@ -102,7 +103,8 @@ export function ProjectExtensionsSettings() {
         <Button id="settings-extension-new" variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => setNewOpen(true)}>New Extension</Button>
         <Button id="settings-extension-import" variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => void run("Importing Extension", async () => { const [file] = await pickImportFiles({ multiple: false, accept: ".hextension" }); if (file) await importArchive(file.bytes); })}>Import Extension</Button>
       </div>
-    </FieldSet>
+      </div>
+    </SettingsSection>
     <NamePromptDialog open={newOpen} onOpenChange={setNewOpen} title="New Extension" label="Display Name" confirmLabel="Create" onSubmit={(name) => void run("Creating Extension", async () => { await edit(await service.create(name)); })} />
     {editor ? <ExtensionEditorDialog entry={editor.entry} entries={snapshot.entries} initialSource={editor.source} service={service} onClose={() => setEditor(null)} /> : null}
     {command ? <ExtensionCommandDialog command={command} service={service} onClose={() => setCommand(null)} /> : null}

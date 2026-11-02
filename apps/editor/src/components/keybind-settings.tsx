@@ -12,9 +12,9 @@ import {
   Field,
   FieldDescription,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
+import { keybindSectionId } from "../lib/settings-search";
+import { SettingsSection } from "./settings-section";
 import {
   Tooltip,
   TooltipContent,
@@ -132,8 +132,7 @@ export function KeybindSettings({
         </Button>
       </Field>
       {EDITOR_COMMAND_CATEGORIES.map((category) => (
-        <FieldSet key={category} data-testid={`keybinds-${category.toLowerCase()}`}>
-          <FieldLegend>{category}</FieldLegend>
+        <SettingsSection key={category} id={keybindSectionId(category)} title={category}>
           {EDITOR_COMMANDS.filter((command) => command.category === category).map(
             (command) => {
               const chords = bindings.get(command.id) ?? [];
@@ -234,7 +233,7 @@ export function KeybindSettings({
               );
             },
           )}
-        </FieldSet>
+        </SettingsSection>
       ))}
     </>
   );

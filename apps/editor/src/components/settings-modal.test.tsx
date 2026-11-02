@@ -4,6 +4,9 @@ import { SettingsModal } from "./settings-modal";
 import { createDefaultPluginSettings, type PluginDescriptor } from "@haptic/assets";
 import { createEmptyProject, defaultExportPreset } from "@haptic/core";
 import { createAppSettingsStore } from "@haptic/vfs";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
+import { ENGINE_CATEGORIES, PROJECT_CATEGORIES } from "../lib/settings-catalog";
+import { ENGINE_SETTING_FIELDS, PROJECT_SETTING_FIELDS } from "../lib/settings-search";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -168,8 +171,20 @@ vi.mock("../context/document-context", async () => {
   });
 });
 
-afterEach(() => {
+const RENDERING_SECTIONS = ["pipeline", "scalability", "shadows", "environment", "postProcessing", "cel", "resolution", "water", "playPreview"];
+
+/** Collapses every Rendering sub-category except `open`, so jsdom renders only what a test uses. */
+function showRenderingSections(...open: string[]) {
+  receiveActiveAppSettingsUpdate({
+    collapsedSettingsSections: RENDERING_SECTIONS.filter((id) => !open.includes(id)).map((id) => `project:rendering:${id}`),
+  });
+}
+
+afterEach(async () => {
   cleanup();
+  // Collapsed sub-categories are remembered on this device; start each test with all open.
+  await createAppSettingsStore().update((settings) => { settings.collapsedSettingsSections = []; });
+  receiveActiveAppSettingsUpdate({ collapsedSettingsSections: [] });
   lastProjectRender.current = null;
   projectTwoD.current = null;
   updateProjectSettings.mockClear();
@@ -288,6 +303,58 @@ it("reveals the advanced profile budget through search without changing Trace", 
   }
 });
 
+describe("SettingsModal sub-categories", () => {
+  it("remembers a collapsed sub-category on this device and expands all on request", async () => {
+    const first = render(<SettingsModal open onOpenChange={() => {}} scope="project" initialCategoryId="rendering" />);
+    fireEvent.click(screen.getByRole("button", { name: "Pipeline" }));
+    expect(screen.queryByTestId("setting-render-mode")).toBeNull();
+    await waitFor(async () =>
+      expect((await createAppSettingsStore().load()).collapsedSettingsSections).toEqual(["project:rendering:pipeline"]),
+    );
+    first.unmount();
+
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" initialCategoryId="rendering" />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Pipeline" }).getAttribute("aria-expanded")).toBe("false"),
+    );
+    // The same id in another category or the other dialog stays open.
+    expect(screen.getByRole("button", { name: "Scalability" }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Expand All" }));
+    expect(screen.getByTestId("setting-render-mode")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Collapse All" })).toBeTruthy();
+    await waitFor(async () =>
+      expect((await createAppSettingsStore().load()).collapsedSettingsSections).toEqual([]),
+    );
+  }, 30_000);
+
+  it("names the sub-category beside each search result", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: "shadow distance" } });
+    const result = screen.getByRole("button", { name: /Shadow Distance/ });
+    expect(result.textContent).toContain("Rendering › Shadows");
+  });
+
+  it.each([
+    ["project", PROJECT_CATEGORIES.map((category) => category.id), PROJECT_SETTING_FIELDS],
+    ["engine", ENGINE_CATEGORIES.map((category) => category.id), ENGINE_SETTING_FIELDS],
+  ] as const)("keeps every %s search result's control inside the sub-category it opens", (scope, categoryIds, fields) => {
+    // CEL Shading renders only in CEL mode.
+    lastProjectRender.current = { ...createEmptyProject("Demo").settings.render, mode: "cel" };
+    for (const categoryId of categoryIds) {
+      const view = render(<SettingsModal open onOpenChange={() => {}} scope={scope} initialCategoryId={categoryId} />);
+      for (const field of fields.filter((entry) => entry.categoryId === categoryId && entry.sectionId)) {
+        const section = screen.queryByTestId(`settings-section-${field.sectionId}`);
+        expect(section, `${categoryId} › ${field.sectionId} for ${field.label}`).not.toBeNull();
+        expect(section?.querySelector("legend")?.textContent).toBe(field.sectionTitle);
+        const control = field.targetId ? document.getElementById(field.targetId) : null;
+        // Controls that show only in some states (Bloom Weight needs Bloom) are absent here.
+        if (control) expect(section?.contains(control), `${field.targetId} in ${field.sectionId}`).toBe(true);
+      }
+      view.unmount();
+    }
+  }, 60_000);
+});
+
 describe("SettingsModal project authoring", () => {
   it("explains a failed plugin import and re-enables importing", async () => {
     let reject!: (error: Error) => void;
@@ -330,10 +397,13 @@ describe("SettingsModal project authoring", () => {
     const field = await screen.findByTestId("settings-audio-reverb-decay-scale");
     await waitFor(() => expect(document.activeElement).toBe(field));
   });
-  it("starts environment lighting closed and reveals the matching control from search", async () => {
+  it("reopens a collapsed sub-category when search reveals its control", async () => {
+    showRenderingSections("environment");
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
-    expect(screen.getByRole("button", { name: "Environment Lighting" }).getAttribute("aria-expanded")).toBe("false");
+    const section = screen.getByRole("button", { name: "Environment Lighting" });
+    expect(section.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(section);
     expect(screen.queryByLabelText("Environment Rotation")).toBeNull();
     fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: "environment rotation" } });
     fireEvent.click(screen.getByRole("button", { name: /Environment Rotation/ }));
@@ -356,8 +426,11 @@ describe("SettingsModal project authoring", () => {
     ["upscaling", /FSR Upscaling/, "Post Processing", "project-effects-upscaling"],
     ["volumetric lighting", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
     ["fog density", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
-  ])("opens the Rendering section holding %s from search", async (query, result, section, targetId) => {
+  ])("opens the Rendering sub-category holding %s from search", async (query, result, section, targetId) => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    showRenderingSections();
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    expect(screen.getByRole("button", { name: section }).getAttribute("aria-expanded")).toBe("false");
     fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: query } });
     fireEvent.click(screen.getByRole("button", { name: result }));
     // Base UI redirects focus from the checkbox id to the visible switch.
@@ -367,9 +440,9 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByRole("button", { name: section }).getAttribute("aria-expanded")).toBe("true");
   });
   it("stages the Water Blend Distance with the project's render settings, clamped, with 0 for off", () => {
+    showRenderingSections("water");
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
-    fireEvent.click(screen.getByRole("button", { name: "Water" }));
     const field = screen.getByLabelText("Water Blend Distance") as HTMLInputElement;
     expect(field.value).toBe("8");
     fireEvent.change(field, { target: { value: "500" } });
@@ -381,12 +454,10 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(lastProjectRender.current?.water).toEqual({ blendDistance: 0 });
   });
-  it("starts post processing closed and stages its settings until Done", () => {
+  it("stages post processing settings until Done", () => {
+    showRenderingSections("postProcessing");
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
-    expect(screen.getByRole("button", { name: "Post Processing" }).getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByTestId("project-render-effects")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Post Processing" }));
     expect(screen.getByTestId("project-render-effects")).toBeTruthy();
     expect(screen.queryByLabelText("Scene-Wide Fog Density")).toBeNull();
     fireEvent.change(screen.getByLabelText("Volumetric Steps"), { target: { value: "32" } });
@@ -534,12 +605,11 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
-  it("authors Export Game preset fields separately from Export Project", () => {
+  it("authors packaging preset fields beside Export Project", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-export"));
-    expect(screen.getByTestId("export-game")).toBeTruthy();
     expect(screen.getByTestId("export-project")).toBeTruthy();
     expect(screen.getByTestId("setting-export-debugger")).toBeTruthy();
     fireEvent.click(screen.getByTestId("setting-export-debugger"));
@@ -611,14 +681,11 @@ describe("SettingsModal project authoring", () => {
   });
 
   it("authors custom render resolution on the Rendering category", () => {
+    showRenderingSections("resolution");
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
-    const resolution = screen.getByRole("button", { name: "Resolution" });
-    expect(resolution.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByTestId("setting-render-custom")).toBeNull();
-    fireEvent.click(resolution);
     expect(screen.getByTestId("setting-render-custom")).toBeTruthy();
     expect(screen.getByTestId("setting-render-width")).toBeTruthy();
     expect(screen.getByTestId("setting-render-height")).toBeTruthy();
@@ -626,9 +693,9 @@ describe("SettingsModal project authoring", () => {
   });
 
   it("offers Upscaling only with Custom Resolution, and stages Pixelated until Done", async () => {
+    showRenderingSections("resolution");
     const openResolution = () => {
       fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
-      fireEvent.click(screen.getByRole("button", { name: "Resolution" }));
     };
     lastProjectRender.current = { ...createEmptyProject("Demo").settings.render, customResolution: false };
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
@@ -649,6 +716,7 @@ describe("SettingsModal project authoring", () => {
   });
 
   it("stages independent pipeline preferences until Done", async () => {
+    showRenderingSections("pipeline");
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
     const select = async (id: string, name: string) => {
@@ -669,6 +737,7 @@ describe("SettingsModal project authoring", () => {
   });
 
   it("shows CEL controls only in CEL and retains their values when returning from PBR", async () => {
+    showRenderingSections("pipeline", "cel");
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     const selectMode = async (name: "CEL" | "PBR") => {
       fireEvent.click(screen.getByTestId("setting-render-mode"));
@@ -682,7 +751,6 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
     expect(screen.queryByTestId("project-cel-settings")).toBeNull();
     await selectMode("CEL");
-    fireEvent.click(screen.getByRole("button", { name: "CEL Shading" }));
     fireEvent.change(screen.getByLabelText("Shadow Bands"), { target: { value: "6" } });
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     await selectMode("PBR");
@@ -696,17 +764,17 @@ describe("SettingsModal project authoring", () => {
   });
 
   it.each([
-    ["general", "settings-infinite-loop-detection", /Stops runaway scripts/, null],
-    ["game", "settings-pixel-perfect", /Frames the 2D editor view 1:1/, null],
-    ["game", "settings-nearest-textures", /Needs Pixel-Perfect Mode/, null],
-    ["audio", "settings-audio-occlusion", /Wall muffling/, null],
-    ["rendering", "setting-render-custom", /Sets the design size/, "Resolution"],
-    ["rendering", "setting-render-black-bars", /Adds bars to preserve/, "Resolution"],
-    ["rendering", "setting-play-follow-system", /Off uses a fixed aspect ratio/, "Play Preview"],
-  ])("keeps the %s %s description inside its setting before the separator", (category, controlId, descriptionText, section) => {
+    ["general", "settings-infinite-loop-detection", /Stops runaway scripts/],
+    ["game", "settings-pixel-perfect", /Frames the 2D editor view 1:1/],
+    ["game", "settings-nearest-textures", /Needs Pixel-Perfect Mode/],
+    ["audio", "settings-audio-occlusion", /Wall muffling/],
+    ["rendering", "setting-render-custom", /Sets the design size/],
+    ["rendering", "setting-render-black-bars", /Adds bars to preserve/],
+    ["rendering", "setting-play-follow-system", /Off uses a fixed aspect ratio/],
+  ])("keeps the %s %s description inside its setting before the separator", (category, controlId, descriptionText) => {
+    showRenderingSections("resolution", "playPreview");
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId(`settings-modal-category-${category}`));
-    if (section) fireEvent.click(screen.getByRole("button", { name: section }));
     const control = screen.getByTestId(controlId);
     const description = screen.getByText(descriptionText);
     expect(control.closest('[data-slot="field"]')?.contains(description)).toBe(true);
@@ -909,24 +977,5 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
     expect(updateProjectSettings).not.toHaveBeenCalled();
     expect(screen.getByTestId("settings-source-control-disable-confirm")).toBeTruthy();
-  });
-
-  it("surfaces a thrown Export Game failure", async () => {
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      exportGameArtifact.mockRejectedValueOnce(new Error("zip failed"));
-      render(
-        <SettingsModal open onOpenChange={() => {}} scope="project" />,
-      );
-      fireEvent.click(screen.getByTestId("settings-modal-category-export"));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId("export-game"));
-      });
-      expect(screen.getByTestId("export-game-error").textContent).toBe(
-        "Could not build the zip. Try again.",
-      );
-    } finally {
-      errorLog.mockRestore();
-    }
   });
 });

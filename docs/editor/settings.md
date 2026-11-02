@@ -15,7 +15,16 @@ Haptic has two kinds of settings: **Engine Settings** belong to the app on this 
 - In the editor, choose **Settings > Project Settings** (<kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>,</kbd>) or **Settings > Engine Settings** (<kbd>Mod</kbd>+<kbd>,</kbd>).
 - On the Homepage, open the account menu at the bottom of the sidebar and choose **Engine Settings**.
 
-Use **Search settings** in either window to find a setting by name. Choosing a result opens its page at that setting.
+Use **Search settings** in either window to find a setting by name. Each result shows its page and sub-category, such as **Rendering › Shadows**. Choosing a result opens that page and sub-category at the setting.
+
+## Sub-categories
+
+Every page groups its settings into sub-categories, such as **Shadows** and **Post Processing** on **Rendering**.
+
+- Sub-categories start open. Select a sub-category's header to collapse or expand it.
+- Haptic remembers the sub-categories you collapse, separately for each page, on this device.
+- **Collapse All** and **Expand All**, beside the page title, fold or unfold every sub-category on the page.
+- A setting that depends on the one above it is indented under it and is unavailable while that setting is off.
 
 ## Engine Settings pages
 
@@ -68,22 +77,24 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 
 ## Project Settings pages
 
-| Page | Covers |
-| --- | --- |
-| General | Project version, Compile On Save, infinite loop detection, Garbage Collection Interval, Auto-Save Interval, Editor Utility Objects |
-| Game | Startup Scene, Game Instance, 2D pixels per unit and sorting layers |
-| Save Games | Default save definition, slot and profile; preview saves |
-| Physics | Collision layers |
-| Focus Navigation | Keyboard and gamepad focus for Scene Layers |
-| Fonts | Default font and fallbacks |
-| Audio | Audio Mixer, occlusion and reverb |
-| Rendering | Render mode, quality, shadows, environment, post-processing, resolution, water and Play preview |
-| Textures | Retry failed texture compression |
-| Plugins | Enable, create and import plugins |
-| Project Extensions | Editor tools in this project |
-| Export | Export Game, Export Project and export options |
-| Source Control | Git LFS file locking. Desktop and mobile apps only. |
+| Group | Page | Covers |
+| --- | --- | --- |
+| Project | General | Project version, Auto-Save Interval, Compile On Save, infinite loop detection, Garbage Collection Interval, Editor Utility Objects |
+| Project | Source Control | Git LFS file locking. Desktop and mobile apps only. |
+| Project | Export | What a game package includes, and Export Project |
+| Gameplay | Game | Startup Scene, Game Instance, 2D pixels per unit and sorting layers |
+| Gameplay | Save Games | Default save definition, slot and profile; preview saves |
+| Gameplay | Physics | Collision layers and presets |
+| Gameplay | Focus Navigation | Keyboard and gamepad focus for Scene Layers |
+| Graphics & Audio | Rendering | GPU backend and render mode, scalability, shadows, environment, post-processing, resolution, water and Play preview |
+| Graphics & Audio | Textures | Retry failed texture compression |
+| Graphics & Audio | Fonts | Default font and fallbacks |
+| Graphics & Audio | Audio | Audio Mixer, occlusion and reverb |
+| Plugins & Extensions | Plugins | Enable, create and import plugins |
+| Plugins & Extensions | Project Extensions | Editor tools in this project |
 
 Each topic's guide covers its settings: for example [Graphics](../graphics/index.md), [Collision](../physics/collision.md), [Save Games](../scripting/save-games.md), [Publishing](../publishing/index.md) and [Source Control](../projects/source-control.md).
+
+To build a playable copy of your game, choose **Settings > Packaging** in the toolbar. See [Publishing](../publishing/index.md).
 
 To close the project and return to the Homepage, choose **Settings > Project Browser** in the toolbar.

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "@haptic/core";
 import { AssetPicker, PropertyGrid, type PropertyRow } from "@haptic/editor-kit";
-import { FieldGroup, FieldSet, FieldLegend } from "@haptic/ui/components/field";
+import { FieldGroup } from "@haptic/ui/components/field";
+import { SettingsSection } from "./settings-section";
 
 export function FocusNavigationFields({ value, onChange, assets }: {
   value: FocusNavigationSettings | undefined;
@@ -11,7 +12,7 @@ export function FocusNavigationFields({ value, onChange, assets }: {
   const settings = normalizeFocusNavigationSettings(value);
   const [picker, setPicker] = useState<"navigationInputGuid" | "activateInputGuid" | null>(null);
   const patch = (next: Partial<FocusNavigationSettings>) => onChange({ ...settings, ...next });
-  const rows: PropertyRow[] = [
+  const inputRows: PropertyRow[] = [
     { kind: "boolean", id: "settings-focus-enabled", label: "Focus Navigation", value: settings.enabled,
       onChange: (enabled) => patch({ enabled }), description: "Keyboard and gamepad focus for SceneLayer elements." },
     ...([ ["navigationInputGuid", "Navigation Input", "InputAxis"], ["activateInputGuid", "Activate Input", "InputAction"] ] as const).map(([key, label, type]): PropertyRow => ({
@@ -21,6 +22,8 @@ export function FocusNavigationFields({ value, onChange, assets }: {
       description: key === "navigationInputGuid" ? "2D Input Axis; None uses arrows, WASD, D-Pad and left stick. Positive Y moves up."
         : "Input Action; None uses Enter, Space and the bottom gamepad face button. Bindings can be rebound in game.",
     })),
+  ];
+  const repeatRows: PropertyRow[] = [
     { kind: "number", id: "settings-focus-repeat-delay", label: "Repeat Delay", value: settings.repeatDelay, min: 0, max: 10, sensitivity: 0.05, unit: "s", disabled: !settings.enabled,
       onChange: (repeatDelay) => patch({ repeatDelay }) },
     { kind: "number", id: "settings-focus-repeat-interval", label: "Repeat Interval", value: settings.repeatInterval, min: 0.02, max: 10, sensitivity: 0.01, unit: "s", disabled: !settings.enabled,
@@ -29,7 +32,14 @@ export function FocusNavigationFields({ value, onChange, assets }: {
       onChange: (wrap) => patch({ wrap }) },
   ];
   return <>
-    <FieldGroup><FieldSet><FieldLegend>Focus Navigation</FieldLegend><PropertyGrid rows={rows} /></FieldSet></FieldGroup>
+    <FieldGroup>
+      <SettingsSection id="input" title="Input">
+        <div className="settings-row"><PropertyGrid rows={inputRows} /></div>
+      </SettingsSection>
+      <SettingsSection id="repeat" title="Repeat And Wrap">
+        <div className="settings-row"><PropertyGrid rows={repeatRows} /></div>
+      </SettingsSection>
+    </FieldGroup>
     <AssetPicker open={picker !== null} onOpenChange={(open) => { if (!open) setPicker(null); }}
       title={picker === "navigationInputGuid" ? "Pick Navigation Input" : "Pick Activate Input"}
       allowedTypes={picker === "navigationInputGuid" ? ["InputAxis"] : ["InputAction"]} allowNone
