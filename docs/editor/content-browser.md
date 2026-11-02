@@ -6,7 +6,7 @@ It is always the first document tab and cannot be closed. Press <kbd>Alt</kbd>+<
 
 ## Layout
 
-- **Folders** on the left shows the folder tree. Drag the divider (**Resize Folders**) to change its width.
+- **Folders** on the left shows the folder tree. Drag the divider (**Resize Folders**) to change its width. With **Filter** set, the tree lists only assets of the ticked types; every folder still shows.
 - The asset grid on the right shows the selected folder. Double-tap an asset to open it, or a folder to go into it.
 - On a phone, choose the folder button above the grid to open **Folders**.
 
@@ -15,9 +15,9 @@ The toolbar above the grid has:
 | Control | Use |
 | --- | --- |
 | Import | Import files into the current folder. See [Importing Assets](importing.md). |
-| New Asset | Open a menu of asset types, grouped by category, with a search field at the top. Pick a type, then name the asset to create it in the current folder. Click **Location** to pick a different folder before you create it. See [Assets](../assets/index.md) for every type. |
+| New Asset | Open a menu with **Folder** first, then the asset types grouped by category, with a search field at the top. **Folder** creates a folder at once (see [New folders](#new-folders)). Pick a type, then name the asset to create it in the current folder. Click **Location** to pick a different folder before you create it. See [Assets](../assets/index.md) for every type. |
 | Search assets… | Filter the grid by name. |
-| Filter | Show only the asset types you tick under **Asset Types**. |
+| Filter | Show only the asset types you tick under **Asset Types**, in the grid and the folder tree. Folders always show. |
 | Sort | **Name A–Z**, **Name Z–A**, **Type A–Z**, **Type Z–A**, **Date Modified (Newest)** or **Date Modified (Oldest)**. |
 
 ## Select assets
@@ -44,7 +44,13 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Show References | Open the references graph (below). |
 | Delete | Delete the selection. |
 
-Double-tap empty space in the grid to open the **New Asset** menu there. Hold empty space for **New Folder**, **New Asset** and **Import**.
+Double-tap empty space in the grid to open the **New Asset** menu there. Hold or right-click empty space in the grid for **New Folder**, **New Asset** and **Import**, or empty space in the folder tree for **New Folder**.
+
+## New folders
+
+**New Folder** creates a folder named `NewFolder` (`NewFolder_1`, `_2`, … when that name is taken) in the current folder, selects it and opens its name for editing, with no dialog. Type a name and press <kbd>Enter</kbd>, or tap elsewhere. <kbd>Esc</kbd> keeps `NewFolder`. A name that is invalid or already used opens **Rename Folder** with the reason.
+
+Create a folder with **Folder** in the **New Asset** menu, **New Folder** in the empty-space menu of the grid or the folder tree, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>. From the folder tree, the name opens in the tree; otherwise it opens on the folder's tile in the grid.
 
 While **Duplicate** or **Copy to Folder…** runs, a progress window shows the item being copied and how many files are done. Choose **Cancel** to stop; the copies made so far are removed, so the content is left as it was.
 
