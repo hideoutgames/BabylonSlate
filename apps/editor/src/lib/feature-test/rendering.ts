@@ -1045,7 +1045,7 @@ function applyRenderSettings(settings: ProjectSettings, lut: string | null): Pro
       effects: {
         ...effects,
         colorPipeline: { version: 1, mode: "sceneLinear" },
-        toneMapping: "aces",
+        toneMapping: "neutral",
         exposure: 1,
         contrast: 1.05,
         whiteBalance: { ...effects.whiteBalance, enabled: true, temperature: 6800, tint: 0 },
@@ -1059,7 +1059,7 @@ function applyRenderSettings(settings: ProjectSettings, lut: string | null): Pro
         },
         volumetricLighting: {
           ...effects.volumetricLighting, enabled: true, resolutionScale: 0.5, steps: 16, maxLights: 2,
-          density: 0.01, maxDistance: 60,
+          density: 0.003, maxDistance: 60,
         },
       },
     },

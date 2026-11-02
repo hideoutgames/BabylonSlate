@@ -66,8 +66,12 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
           <Select
             value={project.colorPipeline.mode}
             onValueChange={(mode) => {
-              if (mode === "legacyDisplay" || mode === "sceneLinear")
-                patch({ colorPipeline: { version: 1, mode } });
+              if (mode !== "legacyDisplay" && mode !== "sceneLinear") return;
+              // Scene Linear without tone mapping clips its highlights: switching to it picks Neutral.
+              patch({
+                colorPipeline: { version: 1, mode },
+                ...(mode === "sceneLinear" && project.toneMapping === "none" ? { toneMapping: "neutral" as const } : {}),
+              });
             }}
           >
             <SelectTrigger id="project-effects-pipeline" aria-describedby="project-effects-pipeline-description" data-testid="project-effects-pipeline">

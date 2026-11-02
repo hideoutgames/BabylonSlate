@@ -135,7 +135,8 @@ export const RENDER_EFFECTS_LIMITS = {
 
 export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   colorPipeline: { version: 1, mode: "legacyDisplay" },
-  toneMapping: "none",
+  // Applies in Scene Linear only: Neutral keeps hues and saturation and rolls highlights off.
+  toneMapping: "neutral",
   exposure: 1,
   contrast: 1,
   whiteBalance: { enabled: false, temperature: 6500, tint: 0 },
@@ -153,7 +154,8 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   },
   volumetricLighting: {
     enabled: false, resolutionScale: 0.5, steps: 24, maxLights: 4,
-    density: 0.02, intensity: 1, maxDistance: 50, anisotropy: 0.2,
+    // A light haze that builds with distance: denser scene-wide fog veils everything nearby.
+    density: 0.003, intensity: 1, maxDistance: 50, anisotropy: 0.2,
   },
 };
 
