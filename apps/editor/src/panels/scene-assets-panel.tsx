@@ -549,7 +549,7 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
           <div className="flex items-center gap-1">
             <SearchInput
               className={touchSizing ? "h-11" : "h-7"}
-              placeholder={overlay ? "Search 2D elements and assets" : "Search models and actors"}
+              placeholder="Search"
               aria-label="Search assets"
               value={search}
               onChange={setSearch}
@@ -708,7 +708,8 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
           className={cardsShown ? "min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-2 touch-pan-y" : "min-h-0 flex-1"}
           onScroll={gestures.cancelPending}
           onClick={(event) => {
-            if (cardsShown && event.target === event.currentTarget) setSelection(NO_SELECTION);
+            // Empty space between and around the cards clears the selection.
+            if (cardsShown && !(event.target as Element).closest('[role="option"]')) setSelection(NO_SELECTION);
           }}
           data-testid="scene-assets-body"
         >

@@ -40,6 +40,10 @@ export interface CatalogCardProps
 /** Type icon size in a compact card's well. */
 export const CATALOG_CARD_COMPACT_ICON_SIZE = 28;
 
+// `Card size="sm"` sets its title to text-sm through a group variant; override at that variant.
+const CARD_TITLE = "text-xs group-data-[size=sm]/card:text-xs";
+const CARD_TITLE_COMPACT = "text-[11px] group-data-[size=sm]/card:text-[11px]";
+
 /**
  * Pickable card styled like the Content Browser asset tile: `--card` well
  * framed in the type color, then title and type line. A non-button host
@@ -112,13 +116,13 @@ export function CatalogCard({
       <CardHeader className={cn("min-h-0 w-full gap-0.5", compact ? "px-1 py-1" : "p-1.5")}>
         {titleAdornment ? (
           <span className="flex min-w-0 items-center gap-1">
-            <CardTitle className={cn("min-w-0 flex-1 truncate font-medium", compact ? "text-[11px]" : "text-xs")}>
+            <CardTitle className={cn("min-w-0 flex-1 truncate font-medium", compact ? CARD_TITLE_COMPACT : CARD_TITLE)}>
               {title}
             </CardTitle>
             {titleAdornment}
           </span>
         ) : (
-          <CardTitle className={cn("truncate font-medium", compact ? "text-[11px]" : "text-xs")}>{title}</CardTitle>
+          <CardTitle className={cn("truncate font-medium", compact ? CARD_TITLE_COMPACT : CARD_TITLE)}>{title}</CardTitle>
         )}
         {subtitle ? (
           <CardDescription className="truncate text-[10px]">{subtitle}</CardDescription>
@@ -130,7 +134,7 @@ export function CatalogCard({
 
 /**
  * Responsive card grid; columns stay near the Content Browser tile width, or
- * near 5rem for `compact` cards.
+ * near 4.5rem for `compact` cards (three across a 260px docked panel).
  */
 export function CatalogCardGrid({
   label,
@@ -151,7 +155,7 @@ export function CatalogCardGrid({
       className={cn(
         "grid",
         density === "compact"
-          ? "grid-cols-[repeat(auto-fill,minmax(min(5rem,100%),1fr))] gap-1.5"
+          ? "grid-cols-[repeat(auto-fill,minmax(min(4.5rem,100%),1fr))] gap-1.5"
           : "grid-cols-[repeat(auto-fill,minmax(min(7.5rem,100%),1fr))] gap-2",
         className,
       )}
