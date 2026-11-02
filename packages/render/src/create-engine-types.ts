@@ -561,6 +561,13 @@ export interface EditorTools {
   }) => void;
   /** Select actors by id; passing an empty list clears the selection. */
   setSelectedActors: (actorIds: string[]) => void;
+  /**
+   * Actors whose Inspector Scale is linked. The scale gizmo and the 2D box
+   * keep the selection's proportions when every selected root is linked; in a
+   * partly linked selection each linked root keeps its own while the others
+   * change only the dragged axis.
+   */
+  setLinkedScaleActors: (actorIds: readonly string[]) => void;
   /** Reattaches the selection gizmo when a selected actor's root or visual meshes were replaced (a loaded texture or model). */
   refreshSelectionGizmo: () => void;
   /** Pure collision query; the caller commits the resulting authored transforms. */

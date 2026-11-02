@@ -13,7 +13,7 @@ Or select one or more Tilesets, right-click one and choose **Create Tilemap**: t
 Double-tap a Tilemap to open it.
 
 - **Paint**: the map. Pick a tool in the toolbar and choose the layer in the **Paint Layer** picker.
-- **Palette**: the terrains and tiles of the map's Tilesets. Tap a tile to paint with it, or a terrain to paint with that terrain; **Search Tiles** filters long lists.
+- **Palette**: the autotiles of the map's Tilesets, then their tiles. Tap a tile to paint with it, or an autotile to paint with that autotile; **Search Tiles** filters long lists.
 - **Inspector**: **Tilesets**, **Map**, **Layers** and the selected layer.
 
 | Tool | Effect |
@@ -25,7 +25,7 @@ Double-tap a Tilemap to open it.
 | Stamp | Places a 2 × 2 block of the selected tile. |
 | Picker | Picks the tile you tap as the brush. |
 
-With a terrain selected, every tool paints the terrain and the cells around your stroke update to match; the **Eraser** also updates the terrain tiles around the cells it clears. See [Paint with terrains](../2d/tilemaps.md#paint-with-terrains).
+With an autotile selected, every tool paints the autotile and the cells around your stroke update to match. The **Eraser** always updates the autotile tiles around the cells it clears, and **Refresh Autotiles** repaints autotile cells after their Tileset changes. See [Paint with autotiles](../2d/tilemaps.md#paint-with-autotiles).
 
 Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any tool.
 

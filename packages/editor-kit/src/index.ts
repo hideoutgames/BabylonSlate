@@ -342,6 +342,8 @@ export {
 } from "./array-property";
 export {
   AtlasTileGrid,
+  type AtlasAutotileOverlay,
+  type AtlasAutotileZoneEdit,
   type AtlasTileGridProps,
   type AtlasTileGridTool,
 } from "./atlas-tile-grid";

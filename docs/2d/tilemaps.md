@@ -9,7 +9,7 @@ Paint 2D levels from a grid of tiles. A **Tileset** slices an image into tiles a
 3. Tap **Pick Texture** in the **Preview**, or set **Texture** in the **Inspector**. **Atlas Width** and **Atlas Height** fill in from the image.
 4. Set **Tile Width** and **Tile Height** in pixels (default 16), then tap **Confirm Tile Size**. Set **Margin** (border around the sheet) and **Spacing** (gap between tiles) if your sheet has them.
 
-Tiles are numbered from 1, starting at the top-left of the image. In the **Preview**, **Move** pans with one finger and **Select** drags a box to select several tiles. Pinch or scroll to zoom in either tool.
+Tiles are numbered from 1, starting at the top-left of the image. In the **Preview**, **Move** pans with one finger, **Select** drags a box to select several tiles, and **Autotile** marks autotile tiles (see [Autotiles](#autotiles)). Pinch or scroll to zoom in any tool.
 
 ## Tile settings
 
@@ -22,19 +22,18 @@ Select one or more tiles, then edit them in the **Inspector**. Edits apply to ev
 | Tile Flags | Eight on/off flags stored with the tile. |
 | Animation Frames | Tile numbers to cycle through, separated by commas. Leave empty for a still tile. |
 | Frame Duration | Length of each animation frame. Default 100. |
-| Terrain, Terrain Neighbours | Put the tile in a terrain and mark where its artwork continues. See [Terrains](#terrains). |
 
 Turn on **Paint Collision** in the **Preview** toolbar to copy the current tile's collision onto each tile you tap or select.
 
-## Terrains
+## Autotiles
 
-A terrain paints edges and corners for you. Instead of placing each left end, top and corner piece by hand, you paint with the terrain and every cell takes the tile that matches its neighbours.
+An autotile paints edges and corners for you. Instead of placing each left end, top and corner piece by hand, you paint with the autotile and every cell takes the tile that matches its neighbours.
 
-1. In the Tileset's **Inspector**, under **Terrains**, tap **Add Terrain** and choose its **Style**: **4 Sides (16)** matches the four side neighbours; **Blob (47)** also matches corners and gives inner corners.
-2. Select the terrain's tiles and set **Terrain** on them.
-3. For each tile, press the **Terrain Neighbours** its artwork continues into.
+1. In the Tileset's **Inspector**, under **Autotiles**, tap **New Autotile** and choose its **Layout**: **4 Sides (16)** matches the four side neighbours; **Blob (47)** also matches corners and gives inner corners.
+2. If your sheet follows the standard layout, tap **Fill From Layout…** and pick the tile where the block starts. Otherwise use the **Autotile** tool in the **Preview**: tap or drag over each tile's 3 × 3 grid to mark it as part of the autotile and where its artwork continues.
+3. **Coverage** shows how many variants have a tile and which are missing.
 
-Your sheet does not need every piece. Where one is missing, the terrain paints the closest tile it has, preferring a tile that draws no edge inside the terrain. The [Tileset](../assets/tileset.md#terrains) page has the details.
+Your sheet does not need every piece. Where one is missing, the autotile paints the closest tile it has, preferring a tile that draws no edge inside it. The [Tileset](../assets/tileset.md#autotiles) page has the details.
 
 ## Paint a Tilemap
 
@@ -54,18 +53,20 @@ Your sheet does not need every piece. Where one is missing, the terrain paints t
 
 One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the scroll wheel zooms. Each stroke is one undo step.
 
-## Paint with terrains
+## Paint with autotiles
 
-1. In the **Palette**, tap a terrain. Terrains sit above their Tileset's tiles, and the **Paint** toolbar shows the terrain's name.
-2. Paint with **Brush**, **Rect**, **Bucket** or **Stamp**. The cells you paint, and the terrain tiles around them, switch to the pieces that fit. The whole stroke is still one undo step.
-3. Use the **Eraser** to clear cells; the terrain tiles around them update too.
-4. Tap a single tile, or tap the terrain again, to go back to painting single tiles.
+1. In the **Palette**, tap an autotile. **Autotiles** are listed first, each with its fill tile and its coverage. If the **Move** or **Picker** tool is active, the **Paint** toolbar switches to **Brush**.
+2. Paint with **Brush**, **Rect**, **Bucket** or **Stamp**. The cells you paint, and the autotile tiles around them, switch to the pieces that fit. The whole stroke is still one undo step.
+3. Use the **Eraser** to clear cells. The autotile tiles around them update, whatever the brush.
+4. Tap a single tile, or tap the autotile again, to go back to painting single tiles.
 
-- Only tiles of the same terrain join. Single tiles and other terrains count as empty.
-- Beyond the edge of the map counts as the same terrain, so ground painted up to the edge carries on past it.
-- **Bucket** with a terrain fills the connected tiles of the terrain you tap, whatever their pieces.
+- An autotile with no tiles yet shows **Set Up in Tileset**, which opens its Tileset.
+- The **Picker** on an autotile cell picks the autotile, not the single tile.
+- Only tiles of the same autotile join. Single tiles and other autotiles count as empty.
+- Beyond the edge of the map counts as the same autotile, so ground painted up to the edge carries on past it.
+- **Bucket** with an autotile fills the connected tiles of the autotile you tap, whatever their pieces.
 - Painting single tiles never changes the tiles around them, so you can place a special piece by hand.
-- Changing a terrain in its Tileset does not repaint existing maps. Paint over the cells to update them.
+- Changing an autotile in its Tileset does not repaint existing maps by itself. Tap **Refresh Autotiles** in the **Paint** toolbar to repick every autotile cell on every layer; it is one undo step.
 
 ## Map and layer settings
 

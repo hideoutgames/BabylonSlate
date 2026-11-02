@@ -3,7 +3,7 @@ import { isSceneLayerAnchorActor, type SerializedScene } from "@haptic/core";
 import type { EngineHandle } from "@haptic/render";
 import { useProjectState, useRegistryState } from "../context/document-context";
 import { useSceneEditing } from "../context/scene-editing-context";
-import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
+import { scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import type { PlayAudioLibrary } from "../lib/play-audio";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -53,14 +53,19 @@ export function useViewportEditorSync({
     occlusionCulling,
   } = useSceneEditing();
   const linkedScale = useLinkedScale();
-  // Scene Layer anchors take no Scale row, so they never unlink the gizmo.
+  // The gizmo keeps each linked actor's proportions, and the whole selection's
+  // when every actor is linked. Scene Layer anchors take no Scale row, so they
+  // count as linked only then and never unlink the group.
   const selected = new Set(selectedActorIds);
-  const scaleLinked = scaleGizmoLinked(
-    linkedScale,
-    (scene?.actors ?? [])
-      .filter((actor) => selected.has(actor.id) && !isSceneLayerAnchorActor(actor))
-      .map((actor) => scaleLinkKey.actor(actor.id)),
-  );
+  const selectedActors = (scene?.actors ?? []).filter((actor) => selected.has(actor.id));
+  const spatial = selectedActors.filter((actor) => !isSceneLayerAnchorActor(actor));
+  const linkedIds = spatial
+    .filter((actor) => linkedScale.isLinked(scaleLinkKey.actor(actor.id)))
+    .map((actor) => actor.id);
+  const scaleLinkedKey = (spatial.length > 0 && linkedIds.length === spatial.length
+    ? selectedActors.map((actor) => actor.id)
+    : linkedIds
+  ).join("\n");
 
   useEffect(() => {
     const handle = engineRef.current;
@@ -129,8 +134,8 @@ export function useViewportEditorSync({
   }, [gizmoSpace, engineEpoch, engineRef]);
 
   useEffect(() => {
-    engineRef.current?.editor?.gizmos.setLinkedScale(scaleLinked);
-  }, [scaleLinked, engineEpoch, engineRef]);
+    engineRef.current?.editor?.setLinkedScaleActors(scaleLinkedKey ? scaleLinkedKey.split("\n") : []);
+  }, [scaleLinkedKey, engineEpoch, engineRef]);
 
   useEffect(() => {
     const grid = scene?.settings.grid;

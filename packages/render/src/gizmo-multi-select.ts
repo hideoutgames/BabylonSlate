@@ -114,10 +114,48 @@ export function applyGizmoMultiSelectDrag(
   attached: AbstractMesh,
 ): void {
   attached.computeWorldMatrix(true);
-  const delta = worldDelta(drag.pivotStartWorld, attached.getWorldMatrix(), scratchDelta);
+  applyGizmoMultiSelectDragTo(drag, attached.getWorldMatrix());
+}
+
+/** Followers take the delta that brings the pivot from its start to `pivotWorld`. */
+export function applyGizmoMultiSelectDragTo(
+  drag: GizmoMultiSelectDrag,
+  pivotWorld: DeepImmutable<Matrix>,
+): void {
+  const delta = worldDelta(drag.pivotStartWorld, pivotWorld, scratchDelta);
   for (const follower of drag.followers) {
     applyWorldDeltaToMesh(follower.mesh, follower.startWorld, delta);
   }
+}
+
+const scratchComposed = Matrix.Identity();
+const scratchPivotWorld = Matrix.Identity();
+const scratchStartScale = new Vector3();
+const scratchStartRotation = new Quaternion();
+const scratchStartPosition = new Vector3();
+
+/**
+ * World pose `mesh` would have at its drag-start local TRS with only its
+ * `axis` scale set to `value`: the pivot of an axis scale drag, before a
+ * linked owner's other axes are rescaled.
+ */
+export function axisScaledPivotWorld(
+  mesh: AbstractMesh,
+  start: ReturnType<typeof readMeshLocalTransform>,
+  axis: 0 | 1 | 2,
+  value: number,
+): Matrix {
+  scratchStartScale.fromArray(start.scale);
+  if (axis === 0) scratchStartScale.x = value;
+  else if (axis === 1) scratchStartScale.y = value;
+  else scratchStartScale.z = value;
+  scratchStartRotation.set(...start.rotation);
+  scratchStartPosition.fromArray(start.position);
+  Matrix.ComposeToRef(scratchStartScale, scratchStartRotation, scratchStartPosition, scratchComposed);
+  const parent = mesh.parent;
+  if (!parent) return scratchPivotWorld.copyFrom(scratchComposed);
+  parent.computeWorldMatrix(true);
+  return scratchComposed.multiplyToRef(parent.getWorldMatrix(), scratchPivotWorld);
 }
 
 export function readMeshLocalTransform(mesh: AbstractMesh): {
