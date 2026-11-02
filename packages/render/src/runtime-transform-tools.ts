@@ -26,6 +26,8 @@ export interface RuntimeTransformTools {
   setEnabled: (enabled: boolean) => void;
   setTool: (tool: GizmoTool) => void;
   setSnap: (settings: GizmoSnapSettings) => void;
+  /** Linked Scale for the selection: axis handles scale every axis (`GizmoHost.setLinkedScale`). */
+  setLinkedScale: (linked: boolean) => void;
   dispose: () => void;
 }
 export interface RuntimeTransformToolsOwner extends RuntimeTransformTools {
@@ -278,6 +280,7 @@ export function createRuntimeTransformTools(
     setEnabled: (value) => { if (disposed || enabled === value) return; cancelGesture(); enabled = value; attach(); },
     setTool: (value) => { if (disposed) return; cancelGesture(); tool = value; attach(); },
     setSnap: (value) => { if (!disposed) gizmos.setSnap(value); },
+    setLinkedScale: (value) => { if (!disposed) gizmos.setLinkedScale(value); },
     blocksCameraPointer,
     actorRemoved: (actorGuid, slotId) => { if (selected?.actorGuid === actorGuid && binding?.slotId === slotId) loseSelection("The selected runtime actor was destroyed."); },
     clear: () => { if (selected) loseSelection("The runtime scene was replaced."); },

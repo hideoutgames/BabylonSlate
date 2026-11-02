@@ -1,8 +1,9 @@
 import { useEffect, type RefObject } from "react";
-import type { SerializedScene } from "@haptic/core";
+import { isSceneLayerAnchorActor, type SerializedScene } from "@haptic/core";
 import type { EngineHandle } from "@haptic/render";
 import { useProjectState, useRegistryState } from "../context/document-context";
 import { useSceneEditing } from "../context/scene-editing-context";
+import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import type { PlayAudioLibrary } from "../lib/play-audio";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -51,6 +52,15 @@ export function useViewportEditorSync({
     collisionsVisible,
     occlusionCulling,
   } = useSceneEditing();
+  const linkedScale = useLinkedScale();
+  // Scene Layer anchors take no Scale row, so they never unlink the gizmo.
+  const selected = new Set(selectedActorIds);
+  const scaleLinked = scaleGizmoLinked(
+    linkedScale,
+    (scene?.actors ?? [])
+      .filter((actor) => selected.has(actor.id) && !isSceneLayerAnchorActor(actor))
+      .map((actor) => scaleLinkKey.actor(actor.id)),
+  );
 
   useEffect(() => {
     const handle = engineRef.current;
@@ -117,6 +127,10 @@ export function useViewportEditorSync({
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setSpace(gizmoSpace);
   }, [gizmoSpace, engineEpoch, engineRef]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.gizmos.setLinkedScale(scaleLinked);
+  }, [scaleLinked, engineEpoch, engineRef]);
 
   useEffect(() => {
     const grid = scene?.settings.grid;

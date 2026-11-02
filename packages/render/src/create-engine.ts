@@ -3101,6 +3101,7 @@ function initializeEngine(
       runtimeTransformToolsEnabled = false;
       return {
         setSelection: owner.setSelection, setTool: owner.setTool, setSnap: owner.setSnap,
+        setLinkedScale: owner.setLinkedScale,
         setEnabled: (enabled) => {
           if (runtimeTransformTools !== owner) return;
           runtimeTransformToolsEnabled = enabled;

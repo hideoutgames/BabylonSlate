@@ -40,6 +40,7 @@ import { useProjectState } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { useModelColliderSession } from "../context/model-collider-session";
 import { useModelSlotMaterials } from "../lib/use-model-slot-materials";
+import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
 const MODEL_PREVIEW_SHADING: { value: ViewportShadingMode; label: string }[] = [
@@ -77,6 +78,11 @@ export function ModelPreviewCanvas({
     setGizmoTool,
   } = useModelColliderSession();
   const { projectDocument } = useProjectState();
+  const linkedScale = useLinkedScale();
+  const scaleLinked = scaleGizmoLinked(
+    linkedScale,
+    selectedColliderId ? [scaleLinkKey.collider(selectedColliderId)] : [],
+  );
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -326,6 +332,11 @@ export function ModelPreviewCanvas({
       visuals.clear();
     };
   }, [colliderKey, previewGeneration, showCollision]);
+
+  // A new preview (previewGeneration) creates a new gizmo host.
+  useEffect(() => {
+    gizmoHostRef.current?.setLinkedScale(scaleLinked);
+  }, [scaleLinked, previewGeneration]);
 
   // Selection and the gizmo tool only move the gizmo; the collider visuals
   // above are rebuilt only when the colliders or their visibility change.
