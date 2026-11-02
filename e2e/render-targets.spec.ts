@@ -18,6 +18,13 @@ for (const backend of ["webgl2"] as const) {
     expect(errors).toEqual([]);
     expect(result.mainCameraPreserved).toBe(true);
     expect(result.retainedBytes).toBe(0);
+    // A target with a depth texture (previews, views presented through a target, SceneLayers) depth-tests through it:
+    // of two crossing planes, the facing one shows left of the crossing and the turned one right of it; and no unused
+    // depth renderbuffer of its size sits beside the texture.
+    const { left, right, depthRenderbuffer } = result.depthTexture;
+    const red = (rgb: number[]) => rgb[0]! > 200 && rgb[1]! < 60, green = (rgb: number[]) => rgb[1]! > 200 && rgb[0]! < 60;
+    expect({ facingLeft: red(left), turnedRight: green(right), depthRenderbuffer }, JSON.stringify(result.depthTexture))
+      .toEqual({ facingLeft: true, turnedRight: true, depthRenderbuffer: false });
     const pixel = (mode: string) => result.results.find((entry) => entry.mode === mode)!.pixel;
     // Native StandardMaterial colors are already display values; authored
     // graph colors are linear. Midtones expose missing/double conversions.

@@ -2,10 +2,9 @@ import "./gltf-loader";
 import {
   ArcRotateCamera,
   Color4,
-  Constants,
   MeshBuilder,
   NullEngine,
-  RenderTargetTexture,
+  type RenderTargetTexture,
   Scene,
   Vector3,
   type AssetContainer,
@@ -33,6 +32,7 @@ import { previewMeshesReady, waitUntilReady } from "./preview-readiness";
 import { createText2DMesh } from "./text2d-mesh";
 import { resolveSceneRenderingQuality } from "./render-settings";
 import { DriverCompileWatch } from "./driver-compile";
+import { createDepthTextureTarget } from "./depth-texture-target";
 import type { HeldThreadBudget } from "./stall-deadline";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
@@ -337,9 +337,7 @@ export async function renderPreviewFrame(
 
 /** A preview output target the FrameGraph can draw into: color plus depth. */
 export function createPreviewRenderTarget(name: string, size: { width: number; height: number }, scene: Scene): RenderTargetTexture {
-  const target = new RenderTargetTexture(name, size, scene, false);
-  target.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
-  return target;
+  return createDepthTextureTarget(name, size, scene);
 }
 
 const TAP_TOLERANCE_PX = 8;
