@@ -8,6 +8,7 @@ import { FrameGraphBloomTask } from "@babylonjs/core/FrameGraph/Tasks/PostProces
 import { FrameGraphFXAATask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/fxaaTask";
 import { FrameGraphFsr1SharpenTask, FrameGraphFsr1UpscaleTask } from "./fsr1-tasks";
 import { FrameGraphImageProcessingTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/imageProcessingTask";
+import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { ThinImageProcessingPostProcess } from "@babylonjs/core/PostProcesses/thinImageProcessingPostProcess";
 import type { RenderEffectsSettings } from "@haptic/core";
 import {
@@ -41,13 +42,17 @@ export interface SceneEffectsGraphOptions {
   outputHeight?: number;
   /** Samples per pixel of the own scene colour and depth (MSAA); 1 when omitted. */
   samples?: number;
+  /** The view's output colour. When the chain ends in one of its own post processes at the output size, that stage
+   * renders straight into it (`rendersToOutput`), so the caller needs no output copy. */
+  outputTarget?: FrameGraphTextureHandle;
 }
 
 /**
  * Settings-driven Display Color stage and display-space effects as FrameGraph
  * tasks: [authored stack output | own scene color] → bloom → image
- * processing → FXAA → FSR 1 upscale and sharpen → the caller's single output
- * copy. Every stage before the upscale runs at the internal render size. Babylon tasks own
+ * processing → FXAA → FSR 1 upscale and sharpen → the view's output, written by
+ * the last stage itself when it can, else by the caller's single output copy.
+ * Every stage before the upscale runs at the internal render size. Babylon tasks own
  * their internal targets through graph disposal; this object owns the
  * optional scene-color declaration and any image-processing compile
  * generation orphaned by the display-space recompile.
@@ -58,8 +63,10 @@ export class SceneEffectsGraph {
   /** Declared together with the scene color; an offscreen scene color cannot
    * borrow the backbuffer depth. */
   readonly depthTexture: FrameGraphTextureHandle | null = null;
-  /** The last chain output; the caller's output copy is its only consumer. */
+  /** The last chain output: the view's output when `rendersToOutput`, else the caller's output copy reads it. */
   readonly outputTexture: FrameGraphTextureHandle;
+  /** The last stage renders into `outputTarget`: a full-screen copy fewer per frame. */
+  readonly rendersToOutput: boolean = false;
   readonly tasks: FrameGraphTask[] = [];
   readonly spatial?: SpatialEffectsGraph;
   private readonly retirements: OwnedEffectRetirement[] = [];
@@ -198,6 +205,7 @@ export class SceneEffectsGraph {
       }
       const outputWidth = options.outputWidth ?? options.width;
       const outputHeight = options.outputHeight ?? options.height;
+      let fsrTail = false;
       if (plan.upscale && (outputWidth !== options.width || outputHeight !== options.height)) {
         // EASU expects display-referred input, so it follows the Display Color
         // stage and antialiasing; RCAS then sharpens at the output size.
@@ -221,6 +229,21 @@ export class SceneEffectsGraph {
         sharpen.sourceTexture = upscale.outputTexture;
         this.tasks.push(sharpen);
         source = sharpen.outputTexture;
+        fsrTail = true;
+      }
+      // The last stage writes the output itself when it is this chain's own post process drawing the output's size:
+      // its output handle then resolves to the target. Bloom, the spatial effects and a caller's composition keep the
+      // copy, as does a chain drawn at a scale of the output without FSR.
+      const last = this.tasks.at(-1);
+      const outputSized = fsrTail || (options.width === outputWidth && options.height === outputHeight);
+      if (options.outputTarget !== undefined && last instanceof FrameGraphPostProcessTask && !this.externalTasks.has(last) &&
+        outputSized && last.outputTexture === source) {
+        last.targetTexture = options.outputTarget;
+        // Babylon's post processes depth-test by default, which an intermediate target without depth never notices.
+        // The backbuffer has depth, and another pass (a view drawn without a chain) may have left it there: the
+        // stage must cover every pixel.
+        last.depthTest = false;
+        this.rendersToOutput = true;
       }
       this.outputTexture = source;
     } catch (error) {

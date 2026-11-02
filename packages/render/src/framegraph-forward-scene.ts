@@ -1114,6 +1114,7 @@ export class ForwardSceneFrameGraph {
             outputHeight: output.height,
             samples,
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
+            outputTarget: color,
           });
         } else if (this.preparedOutlineView) {
           composeOutline(this.postProcessGraph?.outputTexture ?? this.ownScene?.color ?? color);
@@ -1236,7 +1237,8 @@ export class ForwardSceneFrameGraph {
           present.sourceTexture = own.color;
           this.outputCopy = present;
           this.graph.addTask(present);
-        } else if (chainOutput) {
+        } else if (chainOutput && !this.effectsGraph?.rendersToOutput) {
+          // A chain whose last stage drew the output needs no copy.
           if (output.color) {
             const copy = new FrameGraphCopyToTextureTask(this.ownScene ? this.ownScene.samples > 1 ? "Multisample output" : "Capture output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
