@@ -23,7 +23,7 @@ export type CurveExtrapolation = (typeof CURVE_EXTRAPOLATIONS)[number];
 /** Keys closer than this in time are pushed apart, so every segment has a positive duration. */
 export const MIN_CURVE_KEY_GAP = 0.001;
 
-/** A Vector Curve key's `Axes` when it sets every axis: X 1, Y 2 and Z 4. */
+/** A Vector Curve key's `Axes` when it sets every axis: X 1, Y 2 and Z 4 (the Structure's default). */
 export const CURVE_ALL_AXES = 7;
 
 export interface Vec2Value { x: number; y: number }
@@ -42,8 +42,9 @@ export interface CurveKey<V> {
   /** Slope per second out of this key, per channel; used when the key is Custom. */
   LeaveTangent: V;
   /**
-   * Vector Curves only: the axes this key sets (X 1, Y 2, Z 4). Missing, zero or 7 means every axis; a key
-   * that sets fewer leaves the other axes to the keys that set them, so each axis has its own keys.
+   * Vector Curves only, on every key: the axes this key sets (X 1, Y 2, Z 4; 7 every axis). A key that sets
+   * fewer leaves the other axes to the keys that set them, so each axis has its own keys. Float and Color
+   * keys set every channel and have no `Axes`.
    */
   Axes?: number;
 }
@@ -198,17 +199,16 @@ function keyInterpolation(key: CurveKey<unknown>): CurveInterpolation {
 }
 
 /**
- * The channels a key sets, as bits (X 1, Y 2, Z 4, W 8). Only Vector Curve keys set fewer than all, through
- * `Axes`; a missing, zero or non-numeric `Axes` sets every axis.
+ * The channels a key sets, as bits (X 1, Y 2, Z 4, W 8). Float and Color keys set every channel; a Vector key
+ * sets its `Axes`, which reads like any missing Structure field when absent: its default, every axis.
  */
 export function curveKeyAxes(kind: CurveKind, key: unknown): number {
   const all = (1 << channelCount(kind)) - 1;
   if (kind !== "vec3" || !key || typeof key !== "object") return all;
-  const bits = Math.trunc(finite((key as { Axes?: unknown }).Axes, all)) & all;
-  return bits === 0 ? all : bits;
+  return Math.trunc(finite((key as { Axes?: unknown }).Axes, all)) & all;
 }
 
-/** A key's `Axes` bits for order checks that do not know the curve's kind: every bit unless it names some. */
+/** A key's `Axes` bits for order checks that do not know the curve's kind: Float and Color keys (no `Axes`) set every bit. */
 function axesBits(key: unknown): number {
   const axes = key && typeof key === "object" ? (key as { Axes?: unknown }).Axes : undefined;
   const bits = typeof axes === "number" && Number.isFinite(axes) ? Math.trunc(axes) & CURVE_ALL_AXES : 0;
@@ -244,13 +244,13 @@ function axisKeys(kind: CurveKind, keys: readonly CurveKey<unknown>[]): readonly
 /**
  * A copy with keys sorted by time, keys that set a common axis at least `MIN_CURVE_KEY_GAP` apart (a later
  * key is pushed forward), interpolation and extrapolation names resolved, and missing values and tangents
- * filled with zero. A Vector key keeps `Axes` only when it sets fewer than every axis.
+ * filled with zero. Every Vector key carries `Axes`; one that sets no axis is dropped.
  */
 export function normalizeCurve<K extends CurveKind>(kind: K, curve: unknown): Curve<CurveValueOf<K>> {
   const source = curve && typeof curve === "object" ? curve as Record<string, unknown> : {};
   const zero = (value: unknown) => compose(kind, (index) => channel(value, kind, index)) as CurveValueOf<K>;
   const keys = keysOf(curve)
-    .filter((key) => key && typeof key === "object")
+    .filter((key) => key && typeof key === "object" && curveKeyAxes(kind, key) !== 0)
     .map((key, order) => ({ key, order, time: keyTime(key) }))
     .sort((a, b) => a.time - b.time || a.order - b.order)
     .map(({ key }): CurveKey<CurveValueOf<K>> => {
@@ -261,7 +261,7 @@ export function normalizeCurve<K extends CurveKind>(kind: K, curve: unknown): Cu
         Interpolation: keyInterpolation(key),
         ArriveTangent: zero(key.ArriveTangent),
         LeaveTangent: zero(key.LeaveTangent),
-        ...(kind === "vec3" && axes !== CURVE_ALL_AXES ? { Axes: axes } : {}),
+        ...(kind === "vec3" ? { Axes: axes } : {}),
       };
     });
   let pushed = false;

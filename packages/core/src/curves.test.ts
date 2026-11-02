@@ -130,13 +130,15 @@ describe("Vector keys that set only some axes", () => {
     expect(curveKeyTangent("vec3", curve, 0, 1, "leave")).toBe(5);
   });
 
-  it("keeps Axes when normalising, letting keys of other axes share a time", () => {
+  it("writes Axes on every Vector key when normalising, letting keys of other axes share a time", () => {
     const shared = normalizeCurve("vec3", floatCurve([axes(1, 1, v(1, 0, 0)), axes(6, 1, v(0, 2, 3)), key(2, v(1, 1, 1))]));
-    expect(shared.Keys.map((entry) => [entry.Time, entry.Axes])).toEqual([[1, 1], [1, 6], [2, undefined]]);
+    expect(shared.Keys.map((entry) => [entry.Time, entry.Axes])).toEqual([[1, 1], [1, 6], [2, 7]]);
     // Keys that set a common axis are still pushed apart.
     const overlapping = normalizeCurve("vec3", floatCurve([axes(1, 1, v(1, 0, 0)), axes(3, 1, v(0, 2, 3))]));
     expect(overlapping.Keys.map((entry) => entry.Time)).toEqual([1, 1.001]);
-    expect(normalizeCurve("vec3", floatCurve([axes(7, 0, v(1, 1, 1))])).Keys[0]).not.toHaveProperty("Axes");
+    // A key that sets no axis is dropped; Float and Color keys carry no Axes.
+    expect(normalizeCurve("vec3", floatCurve([axes(0, 0, v(1, 1, 1)), axes(2, 1, v(1, 1, 1))])).Keys.map((entry) => entry.Axes)).toEqual([2]);
+    expect(normalizeCurve("float", floatCurve([key(0, 1)])).Keys[0]).not.toHaveProperty("Axes");
   });
 });
 

@@ -83,7 +83,7 @@ App-private storage keyed by project guid (`derived/{projectGuid}/…`): compile
 
 ## Schema versions
 
-- Each registered type declares `currentVersion` and may own ordered `N → N+1` steps (`MigrationRegistry`, `loadPayloadWithMigration`). `createDefaultMigrationRegistry()` registers **no steps**: older versions are refused as an unsupported old format. Add a step (with a committed golden) only when a released format must be read again.
+- Each registered type declares `currentVersion` and may own ordered `N → N+1` steps (`MigrationRegistry`, `loadPayloadWithMigration`). `createDefaultMigrationRegistry()` registers **no steps**: older versions are refused as an unsupported old format. Before the first release formats change in place without raising versions; add a step (with a committed golden) only when a released format must be read again.
 - Unregistered types pass through (so Font / Sprite / AnimationGraph version 1 is not "newer than 0"); registered future versions are refused. `project.json` migrates as type `Project`.
 - Migration is opt-in per session: opening a project that needs it prompts once; `saveDocument`, `saveProject`, NavMesh bakes and Audio clip writes refuse pending paths until `approveMigrateOnSave()`. Untouched files are never silently rewritten; autosave never prompts.
 - Play, Simulate, Preview Build and Export Game never migrate: `MigrationRegistry.requireCurrent` refuses any reached asset whose stored version is not current (open working documents are exempt). The packaged player trusts its export.

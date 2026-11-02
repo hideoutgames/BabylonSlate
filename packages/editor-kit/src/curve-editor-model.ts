@@ -123,7 +123,7 @@ export function curveValue(
       Interpolation: key.interpolation,
       ArriveTangent: writeChannels(kind, key.arrive),
       LeaveTangent: writeChannels(kind, key.leave),
-      ...(kind === "vec3" && key.axes !== allAxes(kind) ? { Axes: key.axes } : {}),
+      ...(kind === "vec3" ? { Axes: key.axes } : {}),
     })),
     Before: parseCurveExtrapolation(before),
     After: parseCurveExtrapolation(after),

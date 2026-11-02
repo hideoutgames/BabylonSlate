@@ -109,13 +109,15 @@ export class MigrationRegistry {
 export const MATERIAL_PAYLOAD_VERSION = 2;
 
 /**
- * Schema version each versioned asset type was released at. Released files
- * stay readable: a format change raises the type's version in
- * `CURRENT_VERSIONS` and adds a step from the previous version to
- * `MIGRATIONS`, each tested with a committed golden of the version it reads
- * (`__fixtures__/migrations/<Type>-v<N>.hasset`). Never lower an entry; a
- * type added later joins at its first version. Versions older than these
- * predate the release and are refused.
+ * Schema version of each versioned asset type at the first release. Haptic is
+ * not released yet: formats change in place without raising versions, and
+ * these equal `CURRENT_VERSIONS`. At the first release they are set to the
+ * versions that ship; from then on released files stay readable: a format
+ * change raises the type's version in `CURRENT_VERSIONS` and adds a step from
+ * the previous version to `MIGRATIONS`, each tested with a committed golden
+ * of the version it reads (`__fixtures__/migrations/<Type>-v<N>.hasset`).
+ * Never lower an entry after the release; a type added later joins at its
+ * first version. Versions older than these are refused.
  */
 export const RELEASED_VERSIONS: Readonly<Record<string, number>> = {
   Class: 1,
