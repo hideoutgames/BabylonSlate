@@ -118,6 +118,28 @@ export function planSceneEffects(
   return { sceneLinear, bloom, imageProcessing, fxaa, ambientOcclusion, reflections, volumetricLighting, upscale, screenShadows };
 }
 
+/**
+ * The plan for a view whose image another view shows and post-processes (a High Quality Render Target Capture on a
+ * monitor): it keeps what that view cannot add (ambient occlusion, reflections, volumetrics, Screen-Space Shadows,
+ * upscaling and FXAA) and leaves out bloom, the vignette and the LUT, which the showing view applies once. In Scene
+ * Linear its display stage only encodes linear colour (`displayEncodingEffects`). Null when nothing is left.
+ */
+export function planWithoutScreenEffects(plan: SceneEffectsPlan | null): SceneEffectsPlan | null {
+  if (!plan) return null;
+  const next: SceneEffectsPlan = {
+    ...plan,
+    bloom: null,
+    imageProcessing: plan.sceneLinear ? { sceneLinear: true, vignette: null, colorGrading: null } : null,
+  };
+  return next.imageProcessing || next.fxaa || next.ambientOcclusion || next.reflections || next.volumetricLighting ||
+    next.upscale || next.screenShadows ? next : null;
+}
+
+/** Display Color without the tone curve, exposure, contrast or white balance: linear colour encoded for display. */
+export function displayEncodingEffects(effects: RenderEffectsSettings): RenderEffectsSettings {
+  return { ...effects, toneMapping: "none", exposure: 1, contrast: 1, whiteBalance: { ...effects.whiteBalance, enabled: false } };
+}
+
 const TONE_MAPPING_TYPES: Record<RenderEffectsToneMapping, number> = {
   none: ImageProcessingConfiguration.TONEMAPPING_STANDARD,
   standard: ImageProcessingConfiguration.TONEMAPPING_STANDARD,

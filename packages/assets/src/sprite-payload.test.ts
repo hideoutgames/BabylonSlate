@@ -1,45 +1,50 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyTexturePixelSizeToSprite,
   createDefaultSpritePayload,
   parseSpriteCollision,
-  spriteClipFrameAt,
+  parseSpritePayload,
   spriteCollisionToBox2d,
+  spriteWorldSize,
   resizeSpriteCollision,
 } from "./sprite-payload";
 
-describe("spriteClipFrameAt", () => {
-  it("picks frames by normalised clip time", () => {
-    const payload = createDefaultSpritePayload();
-    payload.frames = [
-      {
-        name: "a",
-        u: 0,
-        v: 0,
-        uSize: 0.5,
-        vSize: 1,
-        durationMs: 100,
-        pivot: { x: 0.5, y: 0.5 },
-      },
-      {
-        name: "b",
-        u: 0.5,
-        v: 0,
-        uSize: 0.5,
-        vSize: 1,
-        durationMs: 100,
-        pivot: { x: 0.5, y: 0.5 },
-      },
-    ];
-    payload.clips = [{ name: "Idle", frames: ["a", "b"] }];
-    expect(spriteClipFrameAt(payload, "Idle", 0)?.name).toBe("a");
-    expect(spriteClipFrameAt(payload, "Idle", 0.75)?.name).toBe("b");
-    expect(spriteClipFrameAt(payload, "Idle", 1)?.name).toBe("b");
+describe("parseSpritePayload", () => {
+  it("reads a stored Sprite and defaults missing or invalid fields", () => {
+    expect(parseSpritePayload({
+      textureGuid: "hero",
+      pixelsPerUnit: 32,
+      pivot: { x: 0.25, y: 1 },
+      collision: { x: 0.1, y: 0.2, width: 0.5, height: 0.6 },
+    })).toEqual({
+      textureGuid: "hero",
+      pixelsPerUnit: 32,
+      pivot: { x: 0.25, y: 1 },
+      collision: { x: 0.1, y: 0.2, width: 0.5, height: 0.6 },
+    });
+    expect(parseSpritePayload({ textureGuid: "", pixelsPerUnit: -4, pivot: "centre" })).toEqual(createDefaultSpritePayload());
+    expect(parseSpritePayload(null)).toEqual(createDefaultSpritePayload());
+  });
+});
+
+describe("Sprite size from its Texture", () => {
+  it("takes the Texture's pixel size, replacing a stale one, and keeps the Sprite when the size is unknown", () => {
+    const sprite = { ...createDefaultSpritePayload(), textureGuid: "hero", width: 10, height: 10 };
+    const sized = applyTexturePixelSizeToSprite(sprite, (guid) => (guid === "hero" ? { width: 64, height: 32 } : null));
+    expect([sized.width, sized.height]).toEqual([64, 32]);
+    expect(applyTexturePixelSizeToSprite(sprite, () => null)).toBe(sprite);
+    expect(applyTexturePixelSizeToSprite(createDefaultSpritePayload(), () => ({ width: 8, height: 8 })).width).toBeUndefined();
+  });
+
+  it("sizes the quad from pixels over Pixels Per Unit, with 100 px for an unknown size", () => {
+    expect(spriteWorldSize({ pixelsPerUnit: 32, width: 64, height: 16 })).toEqual({ width: 2, height: 0.5 });
+    expect(spriteWorldSize({ pixelsPerUnit: 50 })).toEqual({ width: 2, height: 2 });
   });
 });
 
 describe("sprite collision", () => {
   it("defaults a missing collision to the full image", () => {
-    expect(createDefaultSpritePayload().frames[0]?.collision).toEqual({
+    expect(createDefaultSpritePayload().collision).toEqual({
       x: 0,
       y: 0,
       width: 1,

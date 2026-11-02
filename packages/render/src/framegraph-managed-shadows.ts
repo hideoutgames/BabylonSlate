@@ -310,7 +310,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
   /** Further main-view passes (a split object pass) that receive the same maps. */
   private readonly receivers: ManagedShadowObjectRendererTask[] = [];
   /**
-   * An auxiliary view's camera (a Full Quality capture's). The view draws its
+   * An auxiliary view's camera (a High or Full Quality capture's). The view draws its
    * own sun maps, fitted to this camera (SceneShadowController.attachView),
    * and receives the scene view's point and spot maps as that view drew them:
    * it never walks casters, refits or refreshes them, so their render-once

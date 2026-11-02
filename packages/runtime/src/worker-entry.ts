@@ -14,6 +14,7 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
+  parseSpritePayload,
   type ModelPayload,
   type SpritePayload,
 } from "@haptic/assets";
@@ -382,11 +383,7 @@ function handleControl(msg: ControlMessage): void {
       for (const entry of msg.sprites) {
         const document = entry.document;
         if (!document || typeof document !== "object") continue;
-        const record = document as { frames?: unknown; clips?: unknown };
-        if (!Array.isArray(record.frames) || !Array.isArray(record.clips)) {
-          continue;
-        }
-        sprites[entry.guid] = document as SpritePayload;
+        sprites[entry.guid] = parseSpritePayload(document);
       }
       for (const entry of msg.spriteAnimations) {
         spriteAnimations[entry.guid] = parseSpriteAnimationPayload(

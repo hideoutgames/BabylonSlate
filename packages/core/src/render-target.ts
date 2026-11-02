@@ -22,14 +22,20 @@ export type RenderTargetTexturePayload = { renderTargetGuid: string | null };
 
 /**
  * How a capture renders a Scene Color target: `fast` is the lightweight capture
- * pass; `fullQuality` renders like the scene's own camera (water refraction and
- * screen-space reflections, post-processing, camera-fitted shadows). Depth Pass
- * and World Normal targets always record data with the fast pass.
+ * pass; `highQuality` and `fullQuality` render like a camera at the capture with
+ * its own view (water refraction and screen-space reflections, camera-fitted
+ * shadows, ambient occlusion, volumetrics, outlines). `fullQuality` also applies
+ * the scene's screen effects (tone mapping, exposure, contrast, white balance,
+ * vignette, colour grading, bloom and the authored post-process stack), as a
+ * camera's own image does; `highQuality` leaves them to the view that shows the
+ * image, so a monitor in the world matches the scene around it. Depth Pass and
+ * World Normal targets always record data with the fast pass.
  */
-export const RENDER_TARGET_CAPTURE_QUALITIES = ["fast", "fullQuality"] as const;
+export const RENDER_TARGET_CAPTURE_QUALITIES = ["fast", "highQuality", "fullQuality"] as const;
 export type RenderTargetCaptureQuality = (typeof RENDER_TARGET_CAPTURE_QUALITIES)[number];
 export const RENDER_TARGET_CAPTURE_QUALITY_LABELS: Record<RenderTargetCaptureQuality, string> = {
   fast: "Fast",
+  highQuality: "High Quality",
   fullQuality: "Full Quality",
 };
 

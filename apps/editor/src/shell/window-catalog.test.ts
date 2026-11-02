@@ -76,6 +76,23 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("prefab")).toBe("prefab-viewport");
   });
 
+  it("docks Assets below the Outliner in Scene and Scene Layer Design mode only", () => {
+    for (const kind of ["scene", "scene-layer"] as const) {
+      const assets = listDockWindows(kind, { sceneMode: "design" }).find((entry) => entry.id === "scene-assets");
+      expect(assets).toMatchObject({
+        component: "scene-assets",
+        title: "Assets",
+        defaultPosition: { referencePanelId: "scene-outliner", direction: "below" },
+      });
+      for (const sceneMode of ["script", "timeline"] as const) {
+        expect(listDockWindows(kind, { sceneMode }).map((entry) => entry.id)).not.toContain("scene-assets");
+      }
+    }
+    for (const sceneMode of ["landscape", "foliage"] as const) {
+      expect(listDockWindows("scene", { sceneMode }).map((entry) => entry.id)).not.toContain("scene-assets");
+    }
+  });
+
   it("omits the Locks window when source control is off", () => {
     for (const kind of [
       "scene",

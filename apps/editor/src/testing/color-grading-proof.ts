@@ -298,7 +298,7 @@ export async function runDisplayColorProof(backend: "webgl2" | "webgpu") {
     point("tilemap", ...slot(0));
 
     const sprite = createSpriteQuad(scene, "Display Sprite", {
-      name: "gray", u: 0, v: 0, uSize: 1, vSize: 1, durationMs: 100, pivot: { x: 0.5, y: 0.5 }, width: 16, height: 16,
+      pivot: { x: 0.5, y: 0.5 }, width: 16, height: 16,
     }, DISPLAY_PIXELS_PER_UNIT);
     applyAlbedoTexture(sprite, scene, "gray", assets);
     centerVisual(sprite, ...slot(1));

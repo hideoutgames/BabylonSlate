@@ -177,7 +177,7 @@ describe("applyAlbedoTexture", () => {
     const cache = new ResourceCache();
     const sprite = createDefaultSpritePayload();
     sprite.textureGuid = "atlas";
-    const mesh = createSpriteQuad(scene, "actor-1", sprite.frames[0]!);
+    const mesh = createSpriteQuad(scene, "actor-1", sprite);
     const assets = { resourceCache: cache, textureBytes: installTextureBytes(new Map([
       ["atlas", new Uint8Array([1, 2, 3])], ["next", new Uint8Array([1, 2, 4])],
     ]))! };
@@ -283,18 +283,21 @@ describe("applyAlbedoTexture", () => {
     let invalidations = 0;
     const detach = onSceneReadinessDirty(f.scene, () => invalidations++);
     try {
-      const overlay = createSpriteQuad(f.scene, "overlay", f.sprite.frames[0]!);
+      const overlay = createSpriteQuad(f.scene, "overlay", f.sprite);
       applyAlbedoTexture(overlay, f.scene, "atlas", f.assets);
       const secondary = overlay.material as NodeMaterial;
       const materials = f.scene.materials.length;
       const acquisitions = f.acquire.mock.calls.length;
+      const still = createDefaultSpriteAnimationPayload();
+      still.frames[0]!.textureGuid = "atlas";
       const fade = (weight: number) => applyAnimStateToScene({
-        getAnimationGroups: () => [], getSpriteSlot: () => ({ mesh: f.mesh, overlayMesh: overlay, payload: f.sprite }),
+        getAnimationGroups: () => [],
+        getSpriteSlot: () => ({ mesh: f.mesh, overlayMesh: overlay, payload: f.sprite, spriteAnimations: new Map([["still", still]]) }),
       }, {
         type: "animState", slotId: 1, stateId: "idle", normalisedTime: 0, blendWeights: {},
         layers: [
-          { stateId: "idle", clipAssetGuid: "sprite", clipName: "Idle", clipKind: "sprite", normalisedTime: 0, weight },
-          { stateId: "next", clipAssetGuid: "sprite", clipName: "Idle", clipKind: "sprite", normalisedTime: 0, weight: 1 - weight },
+          { stateId: "idle", clipAssetGuid: "still", clipName: "", clipKind: "sprite", normalisedTime: 0, weight },
+          { stateId: "next", clipAssetGuid: "still", clipName: "", clipKind: "sprite", normalisedTime: 0, weight: 1 - weight },
         ],
       });
       expect(f.auto.needAlphaBlendingForMesh(f.mesh)).toBe(false);
