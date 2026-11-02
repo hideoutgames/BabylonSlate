@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FreeCamera,
+  ImageProcessingConfiguration,
   MeshBuilder,
   NullEngine,
   PointLight,
@@ -24,12 +25,15 @@ import {
   createActor,
   createDefaultRenderTargetCaptureProperties,
   createDefaultScene,
+  DEFAULT_RENDER_EFFECTS,
   eulerDegreesToQuaternion,
   identitySerializedTransform,
   type RenderTargetPayload,
   type SerializedScene,
 } from "@haptic/core";
+import type { ImageProcessingPostProcess } from "@babylonjs/core/PostProcesses/imageProcessingPostProcess";
 import { createTestEngine } from "./create-null-engine";
+import { updateSceneRenderingSettings } from "./render-settings";
 import {
   CAMERA_PREVIEW_HEIGHT,
   CAMERA_PREVIEW_WIDTH,
@@ -322,6 +326,45 @@ describe("EditorDebugOverlay", () => {
       5,
     );
     overlay.dispose();
+  });
+
+  it("gives the camera preview the view's Display Color stage, rebuilt when the tone curve changes", () => {
+    const { scene } = createHandle();
+    const linear = (toneMapping: "neutral" | "aces") => updateSceneRenderingSettings(scene, {
+      mode: "pbr",
+      effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping },
+    });
+    linear("neutral");
+    MeshBuilder.CreateBox("world", {}, scene).material = new StandardMaterial("surface", scene);
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
+    overlay.sync({ sceneData: sceneWith([cameraActor()]), selectedActorIds: ["cam"] });
+    const rtt = overlay.previewTexture!;
+    const stages = () => ((rtt as unknown as { _postProcesses?: ImageProcessingPostProcess[] })._postProcesses ?? []);
+    overlay.tick(1000);
+    // Linear HDR scene colour, converted once with the project's tone curve, as the view's own stage does.
+    expect(stages()).toHaveLength(1);
+    const neutral = stages()[0]!;
+    expect(neutral.fromLinearSpace).toBe(true);
+    expect(neutral.imageProcessingConfiguration.toneMappingEnabled).toBe(true);
+    expect(neutral.imageProcessingConfiguration.toneMappingType).toBe(ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL);
+    // Its own configuration: the Scene's materials still leave their colour to a display stage.
+    expect(neutral.imageProcessingConfiguration).not.toBe(scene.imageProcessingConfiguration);
+    expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(true);
+    linear("aces");
+    overlay.tick(2000);
+    expect(stages()).toHaveLength(1);
+    expect(stages()[0]).not.toBe(neutral);
+    expect(stages()[0]!.imageProcessingConfiguration.toneMappingType).toBe(ImageProcessingConfiguration.TONEMAPPING_ACES);
+    // Legacy Display has no display stage: materials encode display colour themselves.
+    updateSceneRenderingSettings(scene, { mode: "pbr", effects: DEFAULT_RENDER_EFFECTS });
+    overlay.tick(3000);
+    expect(stages()).toHaveLength(0);
+    linear("neutral");
+    overlay.tick(4000);
+    const last = stages()[0]!;
+    const dispose = vi.spyOn(last, "dispose");
+    overlay.dispose();
+    expect(dispose).toHaveBeenCalled();
   });
 
   it("restores the editor and shared render state when a camera preview draw throws", () => {
