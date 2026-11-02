@@ -95,6 +95,7 @@ import { IconActionButton } from "../components/icon-action-button";
 import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
+import { anchorBelow } from "../lib/menu-anchor";
 import {
   duplicateSceneActor,
   duplicateSceneActors,
@@ -580,6 +581,14 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
+  const [placeAnchor, setPlaceAnchor] = useState<{ x: number; y: number } | null>(null);
+  const addActorButtonRef = useRef<HTMLButtonElement>(null);
+  /** Place Actors pops up under the Add Actor button, from a click or its shortcut. */
+  const openPlaceActors = useCallback(() => {
+    const button = addActorButtonRef.current;
+    setPlaceAnchor(button && button.getClientRects().length > 0 ? anchorBelow(button) : null);
+    setPlaceOpen(true);
+  }, []);
   const outlinerRef = useRef<HTMLDivElement>(null);
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
   const [renamingRowId, setRenamingRowId] = useState<string | null>(null);
@@ -1212,7 +1221,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   useKeybindCommand("edit.newFolder", addFolder, outlinerKeys);
   useKeybindCommand("edit.copy", () => copyActors(selectedActorIds), outlinerKeys);
   useKeybindCommand("edit.paste", () => { void pasteActors(); }, outlinerKeys);
-  useKeybindCommand("scene.placeActor", () => setPlaceOpen(true), outlinerKeys);
+  useKeybindCommand("scene.placeActor", openPlaceActors, outlinerKeys);
   useKeybindCommand(
     "edit.delete",
     () => {
@@ -1423,7 +1432,8 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
             label="Add actor"
             shortcut={keybinds.get("scene.placeActor")?.[0]}
             size={actionSize}
-            onClick={() => setPlaceOpen(true)}
+            ref={addActorButtonRef}
+            onClick={openPlaceActors}
             disabled={!scene}
             data-testid="outliner-add-actor"
           >
@@ -1437,6 +1447,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       <PlaceActorsDialogHost
         open={placeOpen}
         onOpenChange={setPlaceOpen}
+        anchor={placeAnchor}
         onSelect={addActor}
         projectItems={projectItems}
         overlay={overlay}

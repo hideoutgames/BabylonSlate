@@ -24,11 +24,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@haptic/ui/components/dropdown-menu";
+import { useEditorSessionState } from "../context/editor-session-state-context";
 import {
   featuredPlaceActors,
   visualForPlaceActor,
   placeActorsForHost,
   type PlaceActorItem,
+  type PlaceActorsAssetSort as AssetSort,
+  type PlaceActorsView,
 } from "../lib/place-actors";
 import { CatalogNoMatches } from "./catalog-no-matches";
 
@@ -38,7 +41,17 @@ const PROJECT = "Project";
 const ALL_FOLDERS = "";
 
 type LoadThumbnail = (guid: string) => Promise<Uint8Array | null>;
-type AssetSort = "name" | "type" | "folder";
+
+const INITIAL_VIEW: PlaceActorsView = {
+  search: "",
+  category: FEATURED,
+  typeFilters: [],
+  projectFolder: ALL_FOLDERS,
+  modelFolder: ALL_FOLDERS,
+  projectSort: "name",
+  modelSort: "name",
+  scrollTop: 0,
+};
 
 const SORT_OPTIONS: ReadonlyArray<{ id: AssetSort; label: string }> = [
   { id: "name", label: "Name" },
@@ -147,7 +160,7 @@ function AssetToolbar({
 
   return (
     <div
-      className="sticky -top-4 z-10 -mx-4 -mt-4 mb-2 flex items-center gap-2 border-b bg-popover px-4 py-2"
+      className="sticky -top-3 z-10 -mx-3 -mt-3 mb-2 flex items-center gap-2 border-b bg-popover px-3 py-1.5"
       data-testid={`${prefix}-toolbar`}
     >
       <span className="mr-auto text-xs text-muted-foreground tabular-nums" data-testid={`${prefix}-count`}>
@@ -171,7 +184,12 @@ function AssetToolbar({
             <ListFilterIcon data-icon="inline-start" />
             {`Filter${activeFilters > 0 ? ` (${activeFilters})` : ""}`}
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44" data-testid={`${prefix}-filter-menu`}>
+          <DropdownMenuContent
+            align="end"
+            className="min-w-44"
+            data-popup-picker=""
+            data-testid={`${prefix}-filter-menu`}
+          >
             {filterTypes ? (
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Asset Types</DropdownMenuLabel>
@@ -219,7 +237,7 @@ function AssetToolbar({
           <ArrowUpDownIcon data-icon="inline-start" />
           Sort
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-44">
+        <DropdownMenuContent align="end" className="min-w-44" data-popup-picker="">
           <DropdownMenuGroup>
             <DropdownMenuLabel>Sort By</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as AssetSort)}>
@@ -253,6 +271,7 @@ export function PlaceActorsDialog({
   onSelect,
   projectItems,
   overlay = false,
+  anchor,
   loadThumbnail,
   thumbnailVersions,
 }: {
@@ -261,28 +280,33 @@ export function PlaceActorsDialog({
   onSelect: (item: PlaceActorItem) => void;
   projectItems: PlaceActorItem[];
   overlay?: boolean;
+  /** Viewport point the popup opens from; centered without one. */
+  anchor?: { x: number; y: number } | null;
   loadThumbnail?: LoadThumbnail;
   thumbnailVersions?: Readonly<Record<string, number>>;
 }) {
-  const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState(FEATURED);
-  const [typeFilters, setTypeFilters] = useState<string[]>([]);
-  const [projectFolder, setProjectFolder] = useState(ALL_FOLDERS);
-  const [modelFolder, setModelFolder] = useState(ALL_FOLDERS);
-  const [projectSort, setProjectSort] = useState<AssetSort>("name");
-  const [modelSort, setModelSort] = useState<AssetSort>("name");
-
-  // The Outliner closes this dialog itself once an actor spawns, so resetting
-  // from `onOpenChange` alone would leave the previous filter in place. Sort
-  // order is a preference and survives reopening.
-  useEffect(() => {
-    if (open) return;
-    setSearch("");
-    setActiveCategory(FEATURED);
-    setTypeFilters([]);
-    setProjectFolder(ALL_FOLDERS);
-    setModelFolder(ALL_FOLDERS);
-  }, [open]);
+  // Search, category, filters, sort and scroll reopen as the user left them
+  // for the rest of the project session (memory only), however the popup
+  // closed, and separately for Scene Layers. `view.scrollTop` is the offset
+  // restored on open; scrolling writes the store only, never re-renders.
+  const session = useEditorSessionState();
+  const [view, setView] = useState(
+    () => session.loadPlaceActorsView(overlay) ?? INITIAL_VIEW,
+  );
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setView(session.loadPlaceActorsView(overlay) ?? INITIAL_VIEW);
+  }
+  const change = (patch: Partial<Omit<PlaceActorsView, "scrollTop">>) => {
+    const next = { ...view, ...patch };
+    setView(next);
+    session.savePlaceActorsView(overlay, {
+      ...next,
+      scrollTop: session.loadPlaceActorsView(overlay)?.scrollTop ?? next.scrollTop,
+    });
+  };
+  const { search, typeFilters, projectFolder, modelFolder, projectSort, modelSort } = view;
 
   const items = useMemo(
     () => [...placeActorsForHost({ overlay }), ...projectItems],
@@ -317,6 +341,10 @@ export function PlaceActorsDialog({
     ];
     return { categories: list, groups: grouped };
   }, [bySearch, items, searching]);
+  // A remembered category can disappear with its last asset.
+  const activeCategory = categories.some((category) => category.id === view.category)
+    ? view.category
+    : FEATURED;
 
   const visibleModels = useMemo(
     () =>
@@ -349,6 +377,7 @@ export function PlaceActorsDialog({
   const row = (item: PlaceActorItem, index: number, description?: string) => (
     <CatalogResultRow
       key={item.id}
+      size="compact"
       data-testid={`place-actors-item-${item.id}`}
       title={item.title}
       description={description}
@@ -357,7 +386,7 @@ export function PlaceActorsDialog({
       onSelect={() => onSelect(item)}
     />
   );
-  const card = (item: PlaceActorItem, subtitle: string, imageUrl?: string) => (
+  const card = (item: PlaceActorItem, subtitle?: string, imageUrl?: string) => (
     <CatalogCard
       key={item.id}
       data-testid={`place-actors-item-${item.id}`}
@@ -379,14 +408,14 @@ export function PlaceActorsDialog({
       ) : (
         <div role="group" aria-label="Search Results" className="flex flex-col">
           {bySearch.map((item, index) =>
-            row(item, index, item.kind.type === "asset" ? `${item.category} · ${assetLine(item)}` : item.category),
+            row(item, index, item.kind.type === "asset" ? assetLine(item) : item.category),
           )}
         </div>
       );
   } else if (activeCategory === FEATURED) {
     body = (
-      <CatalogCardGrid label="Featured">
-        {featured.map((item) => card(item, item.category))}
+      <CatalogCardGrid label="Featured" size="compact">
+        {featured.map((item) => card(item))}
       </CatalogCardGrid>
     );
   } else if (activeCategory === MODELS) {
@@ -396,14 +425,14 @@ export function PlaceActorsDialog({
           scope="models"
           items={models}
           folder={modelFolder}
-          onFolderChange={setModelFolder}
+          onFolderChange={(folder) => change({ modelFolder: folder })}
           sort={modelSort}
-          onSortChange={setModelSort}
+          onSortChange={(sort) => change({ modelSort: sort })}
           shown={visibleModels.length}
         />
-        <CatalogCardGrid label={MODELS}>
+        <CatalogCardGrid label={MODELS} size="compact">
           {visibleModels.map((item) =>
-            card(item, assetFolder(item) || "Model", thumbnails[assetGuid(item) ?? ""]),
+            card(item, assetFolder(item) || undefined, thumbnails[assetGuid(item) ?? ""]),
           )}
         </CatalogCardGrid>
       </>
@@ -415,19 +444,16 @@ export function PlaceActorsDialog({
           scope="project"
           items={project}
           typeFilters={typeFilters}
-          onTypeFiltersChange={setTypeFilters}
+          onTypeFiltersChange={(types) => change({ typeFilters: types })}
           folder={projectFolder}
-          onFolderChange={setProjectFolder}
+          onFolderChange={(folder) => change({ projectFolder: folder })}
           sort={projectSort}
-          onSortChange={setProjectSort}
+          onSortChange={(sort) => change({ projectSort: sort })}
           shown={visibleProject.length}
         />
         {visibleProject.length === 0 ? (
           <FilteredEmpty
-            onClear={() => {
-              setTypeFilters([]);
-              setProjectFolder(ALL_FOLDERS);
-            }}
+            onClear={() => change({ typeFilters: [], projectFolder: ALL_FOLDERS })}
           />
         ) : (
           <div role="group" aria-label={PROJECT} className="flex flex-col">
@@ -450,20 +476,20 @@ export function PlaceActorsDialog({
     <CatalogDialog
       open={open}
       onOpenChange={onOpenChange}
+      presentation="popup"
+      anchor={anchor}
       title="Place Actors"
-      description={overlay
-        ? "Spawn a 2D element or project asset into the Scene Layer."
-        : "Spawn a shape, light, camera, volume, or project asset into the scene."}
       categories={categories}
       groups={groups}
       activeCategoryId={activeCategory}
-      onCategoryChange={(id) => {
-        setActiveCategory(id);
-        setSearch("");
-      }}
+      onCategoryChange={(id) => change({ category: id, search: "" })}
       search={search}
-      onSearchChange={setSearch}
+      onSearchChange={(value) => change({ search: value })}
       searchPlaceholder="Search actors and assets"
+      initialScrollTop={view.scrollTop}
+      onBodyScroll={(scrollTop) =>
+        session.savePlaceActorsView(overlay, { ...view, scrollTop })
+      }
       data-testid="place-actors-catalog"
     >
       {body}

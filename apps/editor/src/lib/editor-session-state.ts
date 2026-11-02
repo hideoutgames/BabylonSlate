@@ -4,6 +4,7 @@ import type { ClassMemberClipboard } from "./class-member-clipboard";
 import type { CopiedTimelineKeys, CopiedTimelineTrack } from "./timeline-track-edits";
 import { moveKeyedEntry } from "./move-keyed-entry";
 import type { ParticleModuleId } from "./particle-value-modes";
+import type { PlaceActorsView } from "./place-actors";
 
 export type GraphSessionViewport = { x: number; y: number; zoom: number };
 
@@ -11,7 +12,11 @@ export type GraphSessionViewport = { x: number; y: number; zoom: number };
  * Editor state for one project session, keyed by document id: editor
  * camera poses, graph pan/zoom per surface and particle module cards the
  * user closed, plus the clipboards of the Outliner (actors), the Class tree
- * (members), the Clips window (Timeline Clips) and the Timeline window (keys and tracks), which outlive the document they were copied from. It is deliberately non-reactive: callers read it when they
+ * (members), the Clips window (Timeline Clips) and the Timeline window (keys
+ * and tracks), which outlive the document they were copied from, and the
+ * Place Actors view (search, category, filters, sort and scroll) for Scenes
+ * and for Scene Layers. Nothing here is persisted: it lives in memory only.
+ * It is deliberately non-reactive: callers read it when they
  * mount or render and write it without notifying anyone, so saving a camera
  * pose or a pan never re-renders the editor. Closing a tab keeps its entries
  * (reopening a Scene restores its view); a new project session starts empty.
@@ -76,6 +81,17 @@ export class EditorSessionState {
 
   readCopiedClassMembers(): ClassMemberClipboard | null {
     return this.classMemberClipboard ? structuredClone(this.classMemberClipboard) : null;
+  }
+
+  /** Keyed by host kind: Scene Layers list other categories than Scenes. */
+  private readonly placeActorsViews = new Map<"scene" | "overlay", PlaceActorsView>();
+
+  loadPlaceActorsView(overlay: boolean): PlaceActorsView | null {
+    return this.placeActorsViews.get(overlay ? "overlay" : "scene") ?? null;
+  }
+
+  savePlaceActorsView(overlay: boolean, view: PlaceActorsView): void {
+    this.placeActorsViews.set(overlay ? "overlay" : "scene", view);
   }
 
   private readonly cameraPoses = new Map<string, EditorCameraSessionState>();

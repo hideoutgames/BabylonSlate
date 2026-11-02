@@ -93,6 +93,23 @@ export type PlaceActorItem = {
   kind: PlaceActorKind;
 };
 
+export type PlaceActorsAssetSort = "name" | "type" | "folder";
+
+/** What Place Actors shows when it reopens within a project session. */
+export interface PlaceActorsView {
+  search: string;
+  category: string;
+  /** Project asset types; empty shows every type. */
+  typeFilters: string[];
+  /** Containing folders; `""` shows every folder. */
+  projectFolder: string;
+  modelFolder: string;
+  projectSort: PlaceActorsAssetSort;
+  modelSort: PlaceActorsAssetSort;
+  /** Body scroll offset in CSS pixels. */
+  scrollTop: number;
+}
+
 const SHAPES = ["box", "sphere", "cylinder", "plane", "ground"] as const;
 const LIGHTS = ["point", "directional", "spot"] as const;
 
