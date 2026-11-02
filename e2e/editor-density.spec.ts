@@ -1,7 +1,7 @@
 import { openMinimalTestProject as openTestProject } from "./minimal-project";
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
-import { createContentBrowserAsset } from "./open-test-project";
+import { createContentBrowserAsset, createContentBrowserFolder } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
 async function paintSelectContentTiles(
@@ -269,13 +269,7 @@ test.describe("Editor density and IA", () => {
     "Delete confirm lists selected folder path and asset name",
     async ({ page }) => {
       await openTestProject(page);
-      await page.getByTestId("content-browser-new-folder").click();
-      await expect(
-        page.getByTestId("content-browser-name-dialog"),
-      ).toBeVisible();
-      await page.getByTestId("content-browser-name-input").fill("qa-folder");
-      await page.getByTestId("content-browser-name-confirm").click();
-      await page.getByTestId("tree-row-assets").click();
+      await createContentBrowserFolder(page, "qa-folder");
       const folderTile = page.getByTestId("content-folder-assets/qa-folder");
       const sceneTile = page.locator(
         '[data-asset-path="assets/main.scene.hasset"]',
@@ -376,14 +370,7 @@ test.describe("Editor density and IA", () => {
       page.locator('[data-asset-path="assets/Beta_1.hasset"]'),
     ).toBeVisible();
 
-    await page.getByTestId("content-browser-new-folder").click();
-    await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
-    await page.getByTestId("content-browser-name-input").fill("fx");
-    await page.getByTestId("content-browser-name-confirm").click();
-    await page.getByTestId("tree-row-assets").click();
-    await expect(page.getByTestId("content-folder-assets/fx")).toBeVisible({
-      timeout: 15_000,
-    });
+    await createContentBrowserFolder(page, "fx");
     await paintSelectContentTiles(
       page,
       page.getByTestId("content-folder-assets/fx"),

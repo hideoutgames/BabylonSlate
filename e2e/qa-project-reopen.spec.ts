@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createActor, createDefaultScene, type SerializedScene } from "../packages/core/src/index.ts";
 import {
   createContentBrowserAsset,
+  createContentBrowserFolder,
   openAssetFromBrowser,
   openContentBrowser,
   openListedTestProject,
@@ -39,10 +40,7 @@ for (const operation of ["rename", "move"] as const) {
     await createContentBrowserAsset(page, "Class", "ReopenHero");
     await createContentBrowserAsset(page, "Scene", "ReopenProbe");
     if (operation === "move") {
-      await page.getByTestId("content-browser-new-folder").click();
-      await page.getByTestId("content-browser-name-input").fill("Relocated");
-      await page.getByTestId("content-browser-name-confirm").click();
-      await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
+      await createContentBrowserFolder(page, "Relocated");
     }
     await openAssetFromBrowser(page, "assets/ReopenProbe.scene.hasset");
     const scene: SerializedScene = {

@@ -157,6 +157,29 @@ export async function createContentBrowserAsset(
 }
 
 /**
+ * New Asset → Folder in the Content folder, then the new tile's inline name
+ * field (New Folder has no dialog). Leaves the Content folder open.
+ */
+export async function createContentBrowserFolder(
+  page: Page,
+  name: string,
+): Promise<void> {
+  await openContentBrowser(page);
+  await selectContentBrowserAssetsFolder(page);
+  await page.getByTestId("content-browser-new-asset").click();
+  await expect(page.getByTestId("new-asset-type-menu")).toBeVisible();
+  await page.getByTestId("search-item-folder").click();
+  const field = page.locator('[data-testid^="content-folder-rename-"]');
+  await expect(field).toBeFocused();
+  await field.fill(name);
+  await field.press("Enter");
+  await expect(field).toHaveCount(0);
+  await expect(page.getByTestId(`content-folder-assets/${name}`)).toBeVisible({
+    timeout: 15_000,
+  });
+}
+
+/**
  * Grid search is the current folder only, and the windowed grid omits
  * off-screen tiles. Fill search until the tile is actually mounted (registry
  * refresh / virtualization races). Do not change the selected folder — nested
