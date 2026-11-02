@@ -202,6 +202,11 @@ export type ControlMessage =
   | ({ type: "sessionBoundary" } & SessionBoundaryRequest)
   | ({ type: "loadSceneContent" } & RuntimeSceneContent)
   | { type: "saveStorageResponse"; response: import("@haptic/core").SaveStorageResponse }
+  /**
+   * Before `load`: start loading the physics engine a `physicsWorld` Scene runs on, so a worker
+   * started during Play preparation compiles it meanwhile. The session's `load` reuses it.
+   */
+  | { type: "preloadPhysics"; physicsWorld: "3d" | "2d"; havokWasmUrl?: string }
   | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@haptic/core").RagdollBonePose[]; error?: string }
   | {
       type: "load";

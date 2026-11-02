@@ -59,8 +59,10 @@ import { SimulationSession } from "../services/simulation-session";
 import { simulationSceneDocument, type SimulationViewport } from "../services/simulation-viewport";
 import { GameSessionOwner, transitionClosesSessionSource, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
 import { automatedSessionReportingHeld, publishPlaySessionClosed } from "../services/runtime-probes";
+import { preloadPrewarmedGameWorkerPhysics, prewarmGameWorker } from "../services/game-worker-host";
 import {
   canonicalPlaySceneGuid,
+  editorHavokWasmUrl,
   playPhysicsFromOpenDocuments,
   playPhysicsFromSceneSettings,
   playSceneFromOpenDocuments,
@@ -760,6 +762,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       const ticket = sessionOwner.begin(simulating ? "simulate" : "play");
       if (!ticket) return;
       sessionTicketRef.current = ticket;
+      // The session's game worker loads while its content is prepared; the ticket ending first discards it.
+      prewarmGameWorker(ticket.signal);
       sessionSourceDocumentRef.current = simulating ? simulationTarget?.id ?? null : playFromScene ? openPlaySceneDocumentId : null;
       pendingScriptsRef.current = null;
       let presentationRequested = false;
@@ -815,6 +819,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         const sourceDocuments = playRequestInputsRef.current.documents.getOpenDocuments().map(document => ({
           ...(simulationRef.current?.baseline.id === document.id ? simulationRef.current.baseline : document),
         }));
+        // An open Scene names its physics world now; a closed one once it is prepared below.
+        const effectivePath = assetRegistry.getByGuid(effectiveGuid)?.path;
+        const openScene = sourceDocuments.find((document) => document.ref.kind === "scene" && document.ref.path === effectivePath);
+        if (openScene?.content) {
+          preloadPrewarmedGameWorkerPhysics(playPhysicsFromOpenDocuments([openScene], openScene.id).physicsWorld, editorHavokWasmUrl());
+        }
         const sourceHost: PlayAssetSourceHost = {
           registry: assetRegistry,
           documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
@@ -853,6 +863,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
         const scene = game.scenes.get(effectiveGuid);
         if (!scene) throw new Error(`Scene ${effectiveGuid} did not produce a document.`);
+        preloadPrewarmedGameWorkerPhysics(playPhysicsFromSceneSettings(scene.settings).physicsWorld, editorHavokWasmUrl());
         const resolvedScene = { sceneAssetGuid: effectiveGuid, scene, path: assetRegistry.getByGuid(effectiveGuid)?.path };
         setSessionPlayScene(resolvedScene);
         const nextScripts = game.scripts;
