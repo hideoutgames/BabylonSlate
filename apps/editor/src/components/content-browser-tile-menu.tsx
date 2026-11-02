@@ -12,12 +12,11 @@ import {
   Trash2Icon,
   WaypointsIcon,
 } from "lucide-react";
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { RefObject } from "react";
 import {
   groupMsdfImportBatch,
   msdfAtlasPickError,
   newAssetGuid,
-  stripAssetFileSuffix,
   type AssetCopyOptions,
   type AssetRegistry,
   type IndexedAsset,
@@ -41,7 +40,7 @@ import { contentBrowserFolderOps } from "../lib/plugin-ui";
 import { copyText } from "../lib/diagnostic-info";
 import type { ContentBrowserCopyProgress } from "./content-browser-copy-progress-dialog";
 import type { ImportProgress } from "./import-progress-dialog";
-import type { NameEntry } from "./content-browser-name-dialog";
+import type { ContentBrowserTileHit } from "./content-browser-grid-tiles";
 
 /** One item of a Copy to Folder or Duplicate; `run` returns how to remove its copy. */
 export type CopyStep = {
@@ -77,7 +76,8 @@ export interface ContentBrowserTileMenuDeps {
   setOperationError: (error: string | null) => void;
   folderAssetCount: (path: string) => number;
   runCopySteps: (operation: ContentBrowserCopyProgress["operation"], steps: readonly CopyStep[]) => Promise<boolean>;
-  setNameDialog: Dispatch<SetStateAction<NameEntry | null>>;
+  /** Renames a folder or asset inline in its tile, or in the name dialog. */
+  startRename: (target: ContentBrowserTileHit) => void;
   setRetargetPickerOpen: (open: boolean) => void;
   openMoveForSnapshot: (operation: "move" | "copy") => void;
   setReferenceGuid: (guid: string | null) => void;
@@ -110,7 +110,7 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
     setOperationError,
     folderAssetCount,
     runCopySteps,
-    setNameDialog,
+    startRename,
     setRetargetPickerOpen,
     openMoveForSnapshot,
     setReferenceGuid,
@@ -335,23 +335,11 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
         );
         const guids = menuTargetGuidsRef.current;
         if (folders.length === 1 && guids.length === 0) {
-          const path = folders[0]!;
-          setNameDialog({
-            kind: "rename-folder",
-            path,
-            value: path.slice(path.lastIndexOf("/") + 1),
-          });
+          startRename({ kind: "folder", path: folders[0]! });
           return;
         }
         const guid = guids[0];
-        if (!guid || !assetRegistry) return;
-        const asset = assetRegistry.getByGuid(guid);
-        if (!asset) return;
-        setNameDialog({
-          kind: "rename",
-          guid,
-          value: stripAssetFileSuffix(asset.path.split("/").at(-1) ?? asset.header.name),
-        });
+        if (guid) startRename({ kind: "asset", guid });
       },
     },
     {

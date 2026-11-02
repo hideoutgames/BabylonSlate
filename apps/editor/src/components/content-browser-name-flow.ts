@@ -8,6 +8,7 @@ import {
 import {
   contentEntryNameError,
   renamedAssetPath,
+  stripAssetFileSuffix,
   type AssetRegistry,
   type IndexedAsset,
 } from "@haptic/assets";
@@ -22,7 +23,9 @@ import {
   remapPathAfterFolderMove,
   type ContentBrowserTreeRow,
 } from "../lib/content-browser-helpers";
+import { primeSoftKeyboard } from "@haptic/editor-kit";
 import { contentBrowserFolderOps, type ContentBrowserRoot } from "../lib/plugin-ui";
+import type { ContentBrowserGridItem, ContentBrowserTileHit } from "./content-browser-grid-tiles";
 import type { ContentBrowserNameDialog, NameEntry } from "./content-browser-name-dialog";
 import { remapFolderSelection } from "./content-browser-move-flow";
 
@@ -47,6 +50,8 @@ export interface ContentBrowserNameFlowDeps extends Pick<
   existingFolderPaths: string[];
   browserRows: ContentBrowserTreeRow[];
   browserRoots: ContentBrowserRoot[];
+  /** The open folder's tiles; Rename edits a listed tile in place. */
+  gridItems: readonly ContentBrowserGridItem[];
   selectedFolderPath: string;
   setSelectedFolderPath: Dispatch<SetStateAction<string>>;
   setSelectedGuids: Dispatch<SetStateAction<Set<string>>>;
@@ -65,9 +70,18 @@ export interface ContentBrowserNameFlowDeps extends Pick<
   sourceControl: ReturnType<typeof useSourceControl>["sourceControl"];
 }
 
+function isGridItem(items: readonly ContentBrowserGridItem[], target: ContentBrowserTileHit): boolean {
+  return items.some((item) =>
+    target.kind === "folder"
+      ? item.kind === "folder" && item.path === target.path
+      : item.kind === "asset" && item.asset.header.guid === target.guid,
+  );
+}
+
 /**
  * New Folder (created as `NewFolder`, then renamed inline in its grid tile or
- * tree row), and Rename and Rename Folder from the name dialog or inline.
+ * tree row), and Rename inline in a grid tile or tree row. The name dialog
+ * takes a refused name, or a Rename whose tile the open folder does not list.
  */
 export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
   const {
@@ -80,6 +94,7 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     existingFolderPaths,
     browserRows,
     browserRoots,
+    gridItems,
     selectedFolderPath,
     setSelectedFolderPath,
     setSelectedGuids,
@@ -100,10 +115,10 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     sourceControl,
   } = deps;
   const [treeRenamingId, setTreeRenamingId] = useState<string | null>(null);
-  /** A folder New Folder just made in `parent`, renamed inline in its grid tile. */
-  const [gridRenaming, setGridRenaming] = useState<{ path: string; parent: string } | null>(null);
-  // Leaving the folder ends the rename; the folder keeps its generated name.
-  const gridRenamingPath = gridRenaming?.parent === selectedFolderPath ? gridRenaming.path : null;
+  /** A folder or asset in the open folder `parent`, renamed inline in its grid tile. */
+  const [gridRenaming, setGridRenaming] = useState<{ target: ContentBrowserTileHit; parent: string } | null>(null);
+  // Leaving the folder ends the rename; the item keeps its name.
+  const gridRenamingTarget = gridRenaming?.parent === selectedFolderPath ? gridRenaming.target : null;
 
   const nameEntryError = (entry: NameEntry): string | null => {
     const invalid = contentEntryNameError(entry.value);
@@ -222,6 +237,9 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
    */
   const createFolder = useCallback(async (place: NewFolderPlace) => {
     if (!assetRegistry || busy || selectedRoot.readOnly) return;
+    // The name field focuses after the write, outside this tap: hold the
+    // on-screen keyboard open until it does.
+    primeSoftKeyboard();
     let name = NEW_FOLDER_NAME;
     for (let index = 1; isFolderNameTaken(existingFolderPaths, selectedFolderPath, name); index += 1) {
       name = `${NEW_FOLDER_NAME}_${index}`;
@@ -240,7 +258,7 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
         revealFolder(path);
         setTreeRenamingId(path);
       } else {
-        setGridRenaming({ path, parent: selectedFolderPath });
+        setGridRenaming({ target: { kind: "folder", path }, parent: selectedFolderPath });
       }
     } catch (error) {
       setOperationError(error instanceof Error ? error.message : String(error));
@@ -276,11 +294,37 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     else if (row.guid) commitInlineRename({ kind: "rename", guid: row.guid, value: name });
   };
 
-  /** Cancelling or keeping the text leaves the folder its generated name. */
-  const finishGridRename = (path: string, name: string | null) => {
+  /**
+   * Rename from a menu or the shortcut: inline in the item's grid tile, like a
+   * new folder, or in the name dialog when the open folder does not list it.
+   */
+  const startRename = useCallback((target: ContentBrowserTileHit) => {
+    if (isGridItem(gridItems, target)) {
+      setGridRenaming({ target, parent: selectedFolderPath });
+      return;
+    }
+    if (target.kind === "folder") {
+      setNameDialog({ kind: "rename-folder", path: target.path, value: target.path.slice(target.path.lastIndexOf("/") + 1) });
+      return;
+    }
+    const asset = assetRegistry?.getByGuid(target.guid);
+    if (!asset) return;
+    setNameDialog({
+      kind: "rename",
+      guid: target.guid,
+      value: stripAssetFileSuffix(asset.path.split("/").at(-1) ?? asset.header.name),
+    });
+  }, [assetRegistry, gridItems, selectedFolderPath, setNameDialog]);
+
+  /** Cancelling or keeping the text leaves the name as it was. */
+  const finishGridRename = (target: ContentBrowserTileHit, name: string | null) => {
     setGridRenaming(null);
     if (name === null || !assetRegistry) return;
-    commitInlineRename({ kind: "rename-folder", path, value: name });
+    commitInlineRename(
+      target.kind === "folder"
+        ? { kind: "rename-folder", path: target.path, value: name }
+        : { kind: "rename", guid: target.guid, value: name },
+    );
   };
 
   const dialogProps: ComponentProps<typeof ContentBrowserNameDialog> = {
@@ -297,7 +341,8 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     treeRenamingId,
     setTreeRenamingId,
     finishTreeRename,
-    gridRenamingPath,
+    startRename,
+    gridRenamingTarget,
     finishGridRename,
     dialogProps,
   };

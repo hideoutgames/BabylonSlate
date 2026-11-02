@@ -646,8 +646,9 @@ describe("ContentBrowserWorkspace grid window", () => {
     render(<ContentBrowserWorkspace />);
     fireEvent.contextMenu(screen.getByTestId(`content-item-${asset.path}`));
     fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
-    fireEvent.change(screen.getByTestId("content-browser-name-input"), { target: { value: "Renamed" } });
-    fireEvent.click(screen.getByTestId("content-browser-name-confirm"));
+    const field = screen.getByTestId(`content-item-rename-${asset.path}`);
+    fireEvent.change(field, { target: { value: "Renamed" } });
+    fireEvent.keyDown(field, { key: "Enter" });
     expect(await screen.findByText("Lock service unavailable")).toBeTruthy();
     expect(docs.sourceControl.transferLock).toHaveBeenCalledWith(asset.path, renamed.path);
     expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
@@ -666,7 +667,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(list.textContent).not.toContain("Characters");
   });
 
-  it("offers folder Rename after an unrelated asset selection and submits it with Enter", async () => {
+  it("renames a folder inline on its tile after an unrelated asset selection, with no dialog", async () => {
     installRegistry([texture(0)], ["Characters"]);
     const moveFolder = vi.fn().mockResolvedValue(undefined);
     docs.assetRegistry = { ...(docs.assetRegistry as object), moveFolder };
@@ -674,11 +675,13 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.click(screen.getByTestId("content-item-assets/tex-0.hasset"));
     fireEvent.contextMenu(screen.getByTestId("content-folder-assets/Characters"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
-    const input = screen.getByTestId("content-browser-name-input");
+    const input = screen.getByTestId("content-folder-rename-assets/Characters") as HTMLInputElement;
+    expect(input.value).toBe("Characters");
+    expect(document.activeElement).toBe(input);
     fireEvent.change(input, { target: { value: "Heroes" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull());
-    expect(moveFolder).toHaveBeenCalledWith("project", "Characters", "", "Heroes");
+    await waitFor(() => expect(moveFolder).toHaveBeenCalledWith("project", "Characters", "", "Heroes"));
+    expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
     expect(docs.repathProjectFolder).toHaveBeenCalledWith("assets/Characters", "assets/Heroes");
   });
 
@@ -727,15 +730,38 @@ describe("ContentBrowserWorkspace grid window", () => {
     await waitFor(() => expect(renameAsset).toHaveBeenCalledWith(asset.header.guid, "Renamed"));
   });
 
-  it("renames the selected asset with F2 once its clicked tile has focus", async () => {
+  it("renames the selected asset inline with F2 once its clicked tile has focus; Escape keeps the name", async () => {
     const asset = texture(0);
     installRegistry([asset]);
+    const renameAsset = vi.fn();
+    docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset };
     render(<KeybindProvider><ContentBrowserWorkspace /></KeybindProvider>);
     const tile = screen.getByTestId(`content-item-${asset.path}`);
     fireEvent.click(tile);
     // A browser click focuses the tile: still inside the workspace's focus gate.
     tile.focus();
     fireEvent.keyDown(tile, { key: "F2", code: "F2" });
+    const field = await screen.findByTestId(`content-item-rename-${asset.path}`) as HTMLInputElement;
+    expect(field.value).toBe("tex-0");
+    expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
+    // The type line stays under the field.
+    expect(screen.getByTestId(`content-item-${asset.path}`).textContent).toContain(asset.header.type);
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(screen.queryByTestId(`content-item-rename-${asset.path}`)).toBeNull();
+    expect(renameAsset).not.toHaveBeenCalled();
+  });
+
+  it("renames in the dialog when a search hides the selected tile", async () => {
+    const asset = texture(0);
+    installRegistry([asset, texture(1)]);
+    render(<KeybindProvider><ContentBrowserWorkspace /></KeybindProvider>);
+    const tile = screen.getByTestId(`content-item-${asset.path}`);
+    fireEvent.click(tile);
+    fireEvent.change(screen.getByTestId("content-browser-search"), { target: { value: "tex-1" } });
+    await waitFor(() => expect(screen.queryByTestId(`content-item-${asset.path}`)).toBeNull());
+    const visible = screen.getByTestId("content-item-assets/tex-1.hasset");
+    visible.focus();
+    fireEvent.keyDown(visible, { key: "F2", code: "F2" });
     expect(await screen.findByTestId("content-browser-name-dialog")).toBeTruthy();
     expect((screen.getByTestId("content-browser-name-input") as HTMLInputElement).value).toBe("tex-0");
   });
@@ -763,9 +789,13 @@ describe("ContentBrowserWorkspace grid window", () => {
     render(<ContentBrowserWorkspace />);
     fireEvent.contextMenu(screen.getByTestId(`content-item-${assets[0]!.path}`));
     fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const field = screen.getByTestId(`content-item-rename-${assets[0]!.path}`) as HTMLInputElement;
+    expect(field.value).toBe("Hero");
+    fireEvent.change(field, { target: { value: "Villain" } });
+    // A refused inline name reopens in the dialog with the reason.
+    fireEvent.keyDown(field, { key: "Enter" });
     const input = screen.getByTestId("content-browser-name-input") as HTMLInputElement;
-    expect(input.value).toBe("Hero");
-    fireEvent.change(input, { target: { value: "Villain" } });
+    expect(input.value).toBe("Villain");
     expect(input.getAttribute("aria-invalid")).toBe("true");
     expect(screen.getByTestId("content-browser-name-confirm").hasAttribute("disabled")).toBe(true);
     fireEvent.keyDown(input, { key: "Enter" });
@@ -817,8 +847,10 @@ describe("ContentBrowserWorkspace grid window", () => {
 
     fireEvent.contextMenu(screen.getByTestId(`content-item-${hero.path}`));
     fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const field = screen.getByTestId(`content-item-rename-${hero.path}`);
+    fireEvent.change(field, { target: { value: "Rain Weather" } });
+    fireEvent.keyDown(field, { key: "Enter" });
     const input = screen.getByTestId("content-browser-name-input");
-    fireEvent.change(input, { target: { value: "Rain Weather" } });
     expect(screen.getByTestId("content-browser-name-taken").textContent).toBe(taken);
     fireEvent.keyDown(input, { key: "Enter" });
     expect(renameAsset).not.toHaveBeenCalled();

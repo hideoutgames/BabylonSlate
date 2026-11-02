@@ -122,9 +122,12 @@ test("Class rename recovery keeps unsaved instances bound to the renamed Class",
   await page.getByTestId("content-browser-search").fill("RecoverHero");
   await page.locator('[data-asset-path="assets/RecoverHero.class.hasset"]').click({ button: "right" });
   await page.getByTestId("context-menu-item-rename").click();
-  await page.getByTestId("content-browser-name-input").fill("RecoveredHero");
-  await page.getByTestId("content-browser-name-confirm").click();
-  await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
+  const field = page.getByTestId("content-item-rename-assets/RecoverHero.class.hasset");
+  await expect(field).toBeFocused();
+  await field.fill("RecoveredHero");
+  await field.press("Enter");
+  // The tile keeps its old path until the rename lands and the registry refreshes.
+  await expect(page.locator('[data-asset-path="assets/RecoverHero.class.hasset"]')).toHaveCount(0);
   await page.evaluate(() => (globalThis as unknown as TestHost).__hapticTest.cancelDebouncedSave());
   await recoverAfterReload(page);
   await openMainScene(page);

@@ -1,4 +1,4 @@
-import type { IndexedAsset } from "@haptic/assets";
+import { stripAssetFileSuffix, type IndexedAsset } from "@haptic/assets";
 import {
   SelectableText,
   TYPE_VISUAL_ICON_TILE_SIZE,
@@ -10,7 +10,6 @@ import {
   Card,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@haptic/ui/components/card";
 import { typeColorThumbAccent } from "@haptic/ui/lib/data-types";
 import { cn } from "@haptic/ui/lib/utils";
@@ -20,6 +19,7 @@ import {
 } from "../lib/content-browser-helpers";
 import { LockIcon } from "lucide-react";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
+import { ContentBrowserTileName } from "./content-browser-tile-name";
 
 export interface ContentBrowserAssetTileProps {
   asset: IndexedAsset;
@@ -40,6 +40,10 @@ export interface ContentBrowserAssetTileProps {
   lockOwnerName?: string;
   /** The Texture's encode is running, which its saved header does not say. */
   encoding?: boolean;
+  /** Shows the name as a focused inline rename of the file name. */
+  renaming?: boolean;
+  /** The trimmed new name, or null when cancelled or unchanged. */
+  onRenameDone?: (name: string | null) => void;
 }
 
 export function ContentBrowserAssetTile({
@@ -56,7 +60,12 @@ export function ContentBrowserAssetTile({
   lockState = null,
   lockOwnerName,
   encoding = false,
+  renaming = false,
+  onRenameDone,
 }: ContentBrowserAssetTileProps) {
+  const editing = renaming && Boolean(onRenameDone);
+  // A text field cannot sit inside a button, so a renaming tile is a plain box.
+  const Root = editing ? "div" : "button";
   const compression = textureCompressionState(asset, encoding);
   const thumbAccent = typeColorThumbAccent(typeVisual.colorVar);
   const lockLabel =
@@ -77,8 +86,8 @@ export function ContentBrowserAssetTile({
         selected ? "border-primary ring-1 ring-primary" : "",
       )}
     >
-      <button
-        type="button"
+      <Root
+        {...(editing ? {} : { type: "button" as const })}
         data-testid={`content-item-${asset.path}`}
         data-asset-path={asset.path}
         data-asset-guid={asset.header.guid}
@@ -168,16 +177,19 @@ export function ContentBrowserAssetTile({
           </div>
         </div>
         <CardHeader className="min-h-0 w-full flex-1 content-center gap-0.5 p-1.5">
-          <CardTitle className="truncate text-xs font-medium">
-            <SelectableText>
-              {asset.header.name}
-            </SelectableText>
-          </CardTitle>
+          <ContentBrowserTileName
+            name={asset.header.name}
+            renameValue={stripAssetFileSuffix(asset.path.split("/").at(-1) ?? asset.header.name)}
+            editing={editing}
+            onRenameDone={onRenameDone}
+            aria-label="Asset Name"
+            data-testid={`content-item-rename-${asset.path}`}
+          />
           <CardDescription className="truncate text-[10px]">
             {asset.header.type}
           </CardDescription>
         </CardHeader>
-      </button>
+      </Root>
     </Card>
   );
 }

@@ -138,6 +138,40 @@ describe("ContentBrowserAssetTile", () => {
     expect(tile.textContent).toContain("Player.Idle");
   });
 
+  it("renames the file name inline in the title row, keeping the type line and a non-button host", () => {
+    const item = asset();
+    item.path = "assets/Hero.hasset";
+    item.header.name = "Hero Texture";
+    const onRenameDone = vi.fn();
+    render(
+      <ContentBrowserAssetTile
+        asset={item}
+        selected
+        thumbnailUrl={null}
+        typeVisual={resolveTypeVisual({ assetType: item.header.type })}
+        onOpen={() => {}}
+        onSelect={() => {}}
+        onLongPressMenu={() => {}}
+        renaming
+        onRenameDone={onRenameDone}
+      />,
+    );
+    const tile = screen.getByTestId(`content-item-${item.path}`);
+    const field = screen.getByTestId(`content-item-rename-${item.path}`) as HTMLInputElement;
+    expect(tile.tagName).toBe("DIV");
+    expect(field.value).toBe("Hero");
+    expect(document.activeElement).toBe(field);
+    // Same 20px row as the title on every pointer, so the type line stays put.
+    expect(field.className).toContain("h-5");
+    expect(field.className).toContain("pointer-coarse:h-5");
+    expect(field.className).not.toContain("pointer-coarse:h-9");
+    expect(field.getAttribute("enterkeyhint")).toBe("done");
+    expect(tile.textContent).toContain("Texture");
+    fireEvent.change(field, { target: { value: "Champion" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onRenameDone).toHaveBeenCalledWith("Champion");
+  });
+
   it("selects on click", () => {
     const { tile, onSelect } = renderTile();
     fireEvent.click(tile);

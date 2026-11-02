@@ -133,6 +133,7 @@ export {
   type InlineRenameEnd,
   type InlineRenameInputProps,
 } from "./inline-rename";
+export { primeSoftKeyboard } from "./soft-keyboard";
 export {
   VariableTypeFields,
   type VariableContainer,
