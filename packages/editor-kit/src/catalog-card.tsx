@@ -1,4 +1,9 @@
-import type { ComponentProps, ReactNode } from "react";
+import type {
+  ComponentProps,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+} from "react";
 import {
   Card,
   CardDescription,
@@ -20,8 +25,20 @@ export interface CatalogCardProps
   visual: TypeVisual;
   /** Thumbnail shown in the preview well; the type icon stands in without one. */
   imageUrl?: string | null;
-  onSelect: () => void;
+  /** Click, tap, Enter or Space; the event carries the modifier keys. */
+  onSelect: (
+    event: ReactMouseEvent<HTMLDivElement> | ReactKeyboardEvent<HTMLDivElement>,
+  ) => void;
+  /** Selected cards keep the Content Browser tile's primary border and ring. */
+  selected?: boolean;
+  /** `compact`: smaller icon, title only, for narrow docked panels. */
+  density?: "default" | "compact";
+  /** Small mark after the title, such as a plugin glyph. */
+  titleAdornment?: ReactNode;
 }
+
+/** Type icon size in a compact card's well. */
+export const CATALOG_CARD_COMPACT_ICON_SIZE = 28;
 
 /**
  * Pickable card styled like the Content Browser asset tile: `--card` well
@@ -34,12 +51,16 @@ export function CatalogCard({
   visual,
   imageUrl,
   onSelect,
+  selected = false,
+  density = "default",
+  titleAdornment,
   className,
   onKeyDown,
   role = "button",
   tabIndex = 0,
   ...props
 }: CatalogCardProps) {
+  const compact = density === "compact";
   return (
     <Card
       size="sm"
@@ -50,8 +71,10 @@ export function CatalogCard({
       className={cn(
         "catalog-card w-full cursor-pointer select-none gap-0 py-0 text-left outline-none transition-colors touch-pan-y",
         "hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring",
+        selected && "border-primary ring-1 ring-primary",
         className,
       )}
+      data-selected={selected ? "true" : undefined}
       onClick={onSelect}
       onKeyDown={(event) => {
         onKeyDown?.(event);
@@ -62,7 +85,7 @@ export function CatalogCard({
         )
           return;
         event.preventDefault();
-        onSelect();
+        onSelect(event);
       }}
     >
       <span className="relative aspect-square w-full shrink-0">
@@ -79,12 +102,24 @@ export function CatalogCard({
               data-slot="catalog-card-image"
             />
           ) : (
-            <TypeVisualIcon visual={visual} size={TYPE_VISUAL_ICON_TILE_SIZE} />
+            <TypeVisualIcon
+              visual={visual}
+              size={compact ? CATALOG_CARD_COMPACT_ICON_SIZE : TYPE_VISUAL_ICON_TILE_SIZE}
+            />
           )}
         </span>
       </span>
-      <CardHeader className="min-h-0 w-full gap-0.5 p-1.5">
-        <CardTitle className="truncate text-xs font-medium">{title}</CardTitle>
+      <CardHeader className={cn("min-h-0 w-full gap-0.5", compact ? "px-1 py-1" : "p-1.5")}>
+        {titleAdornment ? (
+          <span className="flex min-w-0 items-center gap-1">
+            <CardTitle className={cn("min-w-0 flex-1 truncate font-medium", compact ? "text-[11px]" : "text-xs")}>
+              {title}
+            </CardTitle>
+            {titleAdornment}
+          </span>
+        ) : (
+          <CardTitle className={cn("truncate font-medium", compact ? "text-[11px]" : "text-xs")}>{title}</CardTitle>
+        )}
         {subtitle ? (
           <CardDescription className="truncate text-[10px]">{subtitle}</CardDescription>
         ) : null}
@@ -93,19 +128,33 @@ export function CatalogCard({
   );
 }
 
-/** Responsive card grid; columns stay near the Content Browser tile width. */
+/**
+ * Responsive card grid; columns stay near the Content Browser tile width, or
+ * near 5rem for `compact` cards.
+ */
 export function CatalogCardGrid({
   label,
   children,
-}: {
+  density = "default",
+  className,
+  ...props
+}: Omit<ComponentProps<"div">, "children"> & {
   label: string;
   children: ReactNode;
+  density?: "default" | "compact";
 }) {
   return (
     <div
       role="group"
       aria-label={label}
-      className="grid grid-cols-[repeat(auto-fill,minmax(min(7.5rem,100%),1fr))] gap-2"
+      {...props}
+      className={cn(
+        "grid",
+        density === "compact"
+          ? "grid-cols-[repeat(auto-fill,minmax(min(5rem,100%),1fr))] gap-1.5"
+          : "grid-cols-[repeat(auto-fill,minmax(min(7.5rem,100%),1fr))] gap-2",
+        className,
+      )}
     >
       {children}
     </div>
