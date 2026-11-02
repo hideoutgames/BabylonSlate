@@ -11,7 +11,7 @@ Actors are the objects in a scene. Each actor has a position, rotation and scale
    - **Engine** holds the built-in categories: Shapes, Lights, Camera, Environment, Water, Rendering, Navigation, Physics, Audio, Particles and Empty.
 3. The actor appears at the centre of the viewport.
 
-Search matches names, categories, asset types and folders. Tap outside **Place Actors** or press <kbd>Esc</kbd> to close it. It reopens with the search, category, filters, sort order and scroll position you left it with, until you close the project; Scenes and Scene Layers each keep their own. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport.
+Search matches names, categories, asset types and folders. In **Models** and **Project**, **Filter** (by asset type or folder) and **Sort** sit beside the search field. Tap outside **Place Actors** or press <kbd>Esc</kbd> to close it. It reopens with the search, category, filters, sort order and scroll position you left it with, until you close the project; Scenes and Scene Layers each keep their own. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport.
 
 ## Place from the Assets window
 
