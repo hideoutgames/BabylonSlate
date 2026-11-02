@@ -110,6 +110,7 @@ export function createSkyboxMesh(
     // Infinite-far sky depth is not comparable with ordinary camera depth.
     material.disableDepthWrite = true;
     cubeTexture.coordinatesMode = Texture.SKYBOX_MODE;
+    withoutLazyIrradiance(cubeTexture);
     material.reflectionTexture = cubeTexture;
     material.onDisposeObservable.add(() => {
       if (ownedMaterial.reflectionTexture === cubeTexture) {
@@ -143,6 +144,20 @@ export function createSkyboxMesh(
     try { mesh?.dispose(); } finally { release(); }
     throw error;
   }
+}
+
+/**
+ * The sky draws unlit, but Babylon's PBR material asks a reflection cube without an irradiance texture for its
+ * `sphericalPolynomial`, whose lazy getter reads every full-size face back and sums it on the CPU, on every load.
+ * The sky cube reports only coefficients its upload already carries; environment lighting computes its own from a
+ * bounded GPU sample (`environment-irradiance.ts`) and never reads this getter.
+ */
+function withoutLazyIrradiance(cube: CubeTexture): void {
+  if (Object.getOwnPropertyDescriptor(cube, "sphericalPolynomial")) return;
+  Object.defineProperty(cube, "sphericalPolynomial", {
+    configurable: true,
+    get: () => cube.getInternalTexture()?._sphericalPolynomial ?? null,
+  });
 }
 
 export function createSkyboxMeshForFaces(
