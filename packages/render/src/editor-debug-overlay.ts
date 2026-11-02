@@ -1,5 +1,6 @@
 import {
   Color3,
+  Constants,
   CreateDashedLinesVertexData,
   FreeCamera,
   Matrix,
@@ -39,6 +40,9 @@ import { actorIdFromMeshName, editorComponentMeshName, editorMeshName } from "./
 import { actorMeshName } from "./picking";
 import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
+import { ImageProcessingPostProcess } from "@babylonjs/core/PostProcesses/imageProcessingPostProcess";
+import { sceneRenderingSettings } from "./render-settings";
+import { sceneEffectsImageProcessingConfiguration } from "./scene-effects";
 import { isEditorHelperMesh, markEditorHelperMesh } from "./helper-mesh";
 import { withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture";
@@ -364,6 +368,8 @@ export class EditorDebugOverlay {
   private readonly lensGuide: DashedGuide;
   /** The retained PIP camera and RTT, created by the first lens selection. */
   private preview: { camera: FreeCamera; rtt: RenderTargetTexture } | null = null;
+  /** The view's Display Color stage on the preview RTT, keyed by the settings it was built with. */
+  private previewDisplay: { key: string; postProcess: ImageProcessingPostProcess } | null = null;
   private lensActive = false;
   private lensActorId: string | null = null;
   private lensOrigin: AbstractMesh | null = null;
@@ -534,6 +540,9 @@ export class EditorDebugOverlay {
     if (this.previewLens) {
       applyAuthoredCameraLens(preview.camera, this.previewLens, this.previewAspect);
     }
+    // A preview whose display stage is still compiling waits: drawn without it, a Scene Linear preview shows linear
+    // colour (dark and oversaturated).
+    if (!this.syncPreviewDisplay(preview.rtt)) return;
     const engine = this.scene.getEngine();
     const target = engine._currentRenderTarget;
     withSceneReadinessState(this.scene, () => {
@@ -590,9 +599,45 @@ export class EditorDebugOverlay {
     this.audioGuides.length = 0;
     this.lightGuide.dispose();
     this.lensGuide.dispose();
+    this.previewDisplay?.postProcess.dispose();
+    this.previewDisplay = null;
     this.preview?.rtt.dispose();
     this.preview?.camera.dispose();
     this.preview = null;
+  }
+
+  /**
+   * Gives the preview the view's Display Color stage (`sceneEffectsImageProcessingConfiguration`: tone mapping,
+   * exposure, contrast, white balance, vignette, LUT) as a post process on its RTT, from linear HDR in Scene Linear,
+   * so it shows what the camera's view shows; materials draw as they do in the view. Without a display stage, materials
+   * encode display colour themselves and the RTT has none. False while the stage's shader compiles.
+   */
+  private syncPreviewDisplay(rtt: RenderTargetTexture): boolean {
+    const state = sceneRenderingSettings(this.scene);
+    const plan = state.effectsPlan?.imageProcessing ?? null;
+    const { effects } = state;
+    const key = plan
+      ? JSON.stringify([plan.sceneLinear, plan.vignette, plan.colorGrading?.uniqueId ?? null, effects.toneMapping, effects.exposure,
+        effects.contrast, effects.whiteBalance])
+      : null;
+    const current = this.previewDisplay;
+    if (current && current.key !== key) {
+      rtt.removePostProcess(current.postProcess);
+      current.postProcess.dispose();
+      this.previewDisplay = null;
+    }
+    if (plan && key !== null && !this.previewDisplay) {
+      const engine = this.scene.getEngine();
+      // Linear HDR keeps a float target until the stage, as the view's scene colour does.
+      const type = plan.sceneLinear && engine.getCaps().textureHalfFloatRender ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+      // A dedicated configuration: the post process owns it and resets its applyByPostProcess on dispose.
+      const postProcess = new ImageProcessingPostProcess("debugCameraPreviewDisplay:", 1, null, Constants.TEXTURE_BILINEAR_SAMPLINGMODE, engine,
+        false, type, sceneEffectsImageProcessingConfiguration(effects, plan));
+      postProcess.fromLinearSpace = plan.sceneLinear;
+      rtt.addPostProcess(postProcess);
+      this.previewDisplay = { key, postProcess };
+    }
+    return this.previewDisplay?.postProcess.isReady() ?? true;
   }
 
   private previewIntervalMs(): number {
