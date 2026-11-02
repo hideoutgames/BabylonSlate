@@ -256,6 +256,8 @@ test.describe("P10 tilemaps", () => {
 
     await page.getByTestId("outliner-add-actor").click();
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+    // Place Actors reopens on the category it was left in (Rendering).
+    await page.getByTestId("place-actors-catalog-category-Empty").click();
     await page.getByTestId("place-actors-item-empty").click();
     await page.getByTestId("details-add-component").click();
     await pickCatalogItem(page, "add-component-catalog", "SpriteComponent", "2D sprite quad");

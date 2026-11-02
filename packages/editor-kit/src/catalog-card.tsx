@@ -133,19 +133,20 @@ export function CatalogCard({
 }
 
 /**
- * Responsive card grid; columns stay near the Content Browser tile width, or
- * near 4.5rem for `compact` cards (three across a 260px docked panel).
+ * Responsive card grid; columns stay near the Content Browser tile width,
+ * narrower for `compact` popups, or near 4.5rem for `dense` docked panels of
+ * compact-density cards (three across a 260px column).
  */
 export function CatalogCardGrid({
   label,
+  size = "default",
   children,
-  density = "default",
   className,
   ...props
 }: Omit<ComponentProps<"div">, "children"> & {
   label: string;
+  size?: "default" | "compact" | "dense";
   children: ReactNode;
-  density?: "default" | "compact";
 }) {
   return (
     <div
@@ -154,9 +155,11 @@ export function CatalogCardGrid({
       {...props}
       className={cn(
         "grid",
-        density === "compact"
+        size === "dense"
           ? "grid-cols-[repeat(auto-fill,minmax(min(4.5rem,100%),1fr))] gap-1.5"
-          : "grid-cols-[repeat(auto-fill,minmax(min(7.5rem,100%),1fr))] gap-2",
+          : size === "compact"
+            ? "grid-cols-[repeat(auto-fill,minmax(min(6rem,100%),1fr))] gap-2"
+            : "grid-cols-[repeat(auto-fill,minmax(min(7.5rem,100%),1fr))] gap-2",
         className,
       )}
     >

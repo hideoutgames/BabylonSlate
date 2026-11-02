@@ -4,14 +4,14 @@ Actors are the objects in a scene. Each actor has a position, rotation and scale
 
 ## Place an actor
 
-1. Tap **Add actor** (**+**) in the **Outliner** toolbar, or press <kbd>Alt</kbd>+<kbd>A</kbd>. **Place Actors** opens on **Featured**.
+1. Tap **Add actor** (**+**) in the **Outliner** toolbar, or press <kbd>Alt</kbd>+<kbd>A</kbd>. **Place Actors** pops up under the button, on **Featured** the first time.
 2. Pick an entry:
    - **Content > Models** lists your project's Model assets.
    - **Content > Project** lists Classes, Prefabs, sounds, particle systems, water, sprites and tilemaps from your project.
    - **Engine** holds the built-in categories: Shapes, Lights, Camera, Environment, Water, Rendering, Navigation, Physics, Audio, Particles and Empty.
 3. The actor appears at the centre of the viewport.
 
-Search matches names, categories, asset types and folders. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport.
+Search matches names, categories, asset types and folders. Tap outside **Place Actors** or press <kbd>Esc</kbd> to close it. It reopens with the search, category, filters, sort order and scroll position you left it with, until you close the project; Scenes and Scene Layers each keep their own. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport.
 
 ## Place from the Assets window
 

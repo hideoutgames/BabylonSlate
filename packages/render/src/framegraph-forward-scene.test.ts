@@ -721,7 +721,7 @@ it("keeps the default graph free of effect tasks, copies and owned passes", asyn
   graph.dispose();
 });
 
-it("composes the settings effect chain before the single output copy in Scene Linear", async () => {
+it("composes the settings effect chain in Scene Linear, its last stage drawing the output", async () => {
   const { scene, camera } = host();
   setTierFxaa(scene, true);
   updateSceneRenderingSettings(scene, {
@@ -739,11 +739,12 @@ it("composes the settings effect chain before the single output copy in Scene Li
   const bloom = names.indexOf("Scene Effects Bloom");
   const display = names.indexOf("Scene Effects Display Color");
   const fxaa = names.indexOf("Scene Effects FXAA");
-  const output = names.indexOf("Scene post-process output");
   expect(bloom).toBeGreaterThanOrEqual(0);
   expect(display).toBeGreaterThan(bloom);
   expect(fxaa).toBeGreaterThan(display);
-  expect(output).toBeGreaterThan(fxaa);
+  // FXAA renders into the backbuffer itself: no output copy follows it.
+  expect(names.at(-1)).toBe("Scene Effects FXAA");
+  expect(names).not.toContain("Scene post-process output");
   // Per-material image processing moved into the display stage.
   expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(true);
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
@@ -767,11 +768,48 @@ it("keeps Legacy Display effects display-space without a display stage", async (
   expect(names).not.toContain("Scene Effects Display Color");
   const bloom = names.indexOf("Scene Effects Bloom");
   const fxaa = names.indexOf("Scene Effects FXAA");
-  const output = names.indexOf("Scene post-process output");
   expect(bloom).toBeGreaterThanOrEqual(0);
   expect(fxaa).toBeGreaterThan(bloom);
-  expect(output).toBeGreaterThan(fxaa);
+  expect(names.at(-1)).toBe("Scene Effects FXAA");
+  expect(names).not.toContain("Scene post-process output");
   expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(false);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  graph.dispose();
+});
+
+it("draws a new 3D project's output in its Display Color stage", async () => {
+  const { scene, camera } = host();
+  setTierFxaa(scene, false);
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping: "neutral" },
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const names = graph.taskNames();
+  expect(names.at(-1)).toBe("Scene Effects Display Color");
+  expect(names).not.toContain("Scene post-process output");
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.postProcessPassCount()).toBe(1);
+  graph.dispose();
+});
+
+it("keeps the output copy after a chain that ends in Bloom", async () => {
+  const { scene, camera } = host();
+  setTierFxaa(scene, false);
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: {
+      ...DEFAULT_RENDER_EFFECTS,
+      bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
+    },
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const names = graph.taskNames();
+  // Bloom is a composite task, not a single post process that can take the output as its target.
+  expect(names.indexOf("Scene post-process output")).toBeGreaterThan(names.indexOf("Scene Effects Bloom"));
+  expect(names.at(-1)).toBe("Scene post-process output");
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();
 });

@@ -151,7 +151,7 @@ export function GalleryCatalogRows() {
       </div>
       <h3 className="text-sm font-medium">Compact Cards (Assets Panel)</h3>
       <div className="max-w-xs" data-testid="gallery-catalog-cards-compact">
-        <CatalogCardGrid label="Compact Catalog Cards" density="compact">
+        <CatalogCardGrid label="Compact Catalog Cards" size="dense">
           {[
             { title: "Crate", visual: resolveTypeVisual({ assetType: "Model" }), plugin: false },
             { title: "Door", visual: resolveTypeVisual({ assetType: "Class" }), plugin: false },

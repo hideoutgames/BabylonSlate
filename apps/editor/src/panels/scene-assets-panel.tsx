@@ -521,7 +521,7 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
     body = (
         <CatalogCardGrid
           label="Assets"
-          density="compact"
+          size="dense"
           role="listbox"
           aria-multiselectable
           data-testid="scene-assets-grid"
