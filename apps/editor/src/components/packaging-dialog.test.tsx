@@ -77,7 +77,6 @@ it("groups platforms into Available and Unavailable and explains an unavailable 
 
   fireEvent.click(screen.getByTestId("packaging-target-android"));
   const detail = within(screen.getByTestId("packaging-detail"));
-  expect(detail.getByText("Not Available On This Device")).toBeTruthy();
   expect(detail.getByText("Android packaging is not available on this device.")).toBeTruthy();
   expect(screen.queryByTestId("packaging-summary")).toBeNull();
   expect(screen.getByTestId("packaging-package").hasAttribute("disabled")).toBe(true);

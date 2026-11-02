@@ -7,7 +7,6 @@ import Tux from "react-bootstrap-icons/dist/icons/tux";
 import Windows from "react-bootstrap-icons/dist/icons/windows";
 import { defaultExportPreset } from "@haptic/core";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
-import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
@@ -130,12 +129,7 @@ export function PackagingDialog({
                 <PlatformMark target={target} className="size-7" />
               </span>
               <div className="flex min-w-0 flex-col gap-0.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-semibold">{target.label}</h3>
-                  <Badge variant="outline" className={cn(target.available && "text-(--success)")}>
-                    {target.available ? "Ready" : "Not Available On This Device"}
-                  </Badge>
-                </div>
+                <h3 className="text-sm font-semibold">{target.label}</h3>
                 <p className="text-xs text-muted-foreground">{target.description}</p>
               </div>
             </div>
