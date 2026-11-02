@@ -674,7 +674,7 @@ describe("SettingsModal project authoring", () => {
 
   it.each([
     ["general", "settings-infinite-loop-detection", /Stops runaway scripts/, null],
-    ["game", "settings-pixel-perfect", /nearest sampling/, null],
+    ["game", "settings-pixel-perfect", /Frames the 2D editor view 1:1/, null],
     ["game", "settings-nearest-textures", /Needs Pixel-Perfect Mode/, null],
     ["audio", "settings-audio-occlusion", /Wall muffling/, null],
     ["rendering", "setting-render-custom", /Sets the design size/, "Resolution"],

@@ -51,8 +51,8 @@ export interface TwoDProjectSettings {
   /** Texture pixels per world unit; the 2D authoring scale. */
   pixelsPerUnit: number;
   /**
-   * Derive orthographic bounds from the canvas pixel size, sample textures
-   * nearest with mipmaps off and snap the camera to the pixel grid.
+   * Derive the 2D editor view's orthographic bounds from the canvas pixel size
+   * and snap the game camera to the pixel grid.
    */
   pixelPerfect: boolean;
   /**

@@ -24,7 +24,7 @@ See [Your First Project](../start/first-project.md) and [Scenes](../scenes/index
 | Setting | Description |
 | --- | --- |
 | Pixels Per Unit | Texture pixels per world unit. Default 100, so a 100-pixel tile is one unit wide. Sizes tilemaps and 2D text; each Sprite has its own value. |
-| Pixel-Perfect Mode | Frames the 2D editor view 1:1 with nearest sampling. Play and exported games snap the game camera to the pixel grid. |
+| Pixel-Perfect Mode | Frames the 2D editor view 1:1. Play and exported games snap the game camera to the pixel grid. |
 | Nearest Texture Filtering | Samples every Material texture with nearest-neighbour filtering, in 3D too. Only available while **Pixel-Perfect Mode** is on. |
 | Sorting Layers | Named draw layers, ordered back to front. Default **Background**, **Default**, **Foreground** and **UI**. |
 

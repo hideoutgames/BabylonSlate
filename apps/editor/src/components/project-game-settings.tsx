@@ -167,8 +167,8 @@ export function ProjectGameSettings({
             data-testid="settings-pixel-perfect"
           />
           <FieldDescription id="settings-pixel-perfect-description">
-            Frames the 2D editor view 1:1 with nearest sampling. Play and
-            exported games snap the game camera to the pixel grid.
+            Frames the 2D editor view 1:1. Play and exported games snap the
+            game camera to the pixel grid.
           </FieldDescription>
         </Field>
           <Field orientation="horizontal" className="settings-field" data-disabled={!twoD.pixelPerfect}>
