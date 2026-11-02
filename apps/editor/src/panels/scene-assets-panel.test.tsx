@@ -13,10 +13,11 @@ function dispatchPointer(
   type: "pointerdown" | "pointermove" | "pointerup",
   clientX: number,
   clientY: number,
+  pointerType: "mouse" | "touch" = "mouse",
 ): void {
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY });
   Object.defineProperty(event, "pointerId", { value: 1 });
-  Object.defineProperty(event, "pointerType", { value: "mouse" });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
   target.dispatchEvent(event);
   if (type === "pointerup") document.body.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
 }
@@ -187,6 +188,36 @@ describe("SceneAssetsPanel", () => {
       dispatchPointer(window, "pointermove", 260, 80);
       dispatchPointer(window, "pointerup", 260, 80);
     });
+    expect(placedActors(scene)).toEqual([["Crate", [4, 5, 6]]]);
+  });
+
+  it("drags a card at once when touch leaves the grid sideways, while a vertical move only scrolls", () => {
+    const scene = renderPanel();
+    const touchMove = (clientX: number, clientY: number) => {
+      const event = new TouchEvent("touchmove", {
+        bubbles: true,
+        cancelable: true,
+        touches: [{ identifier: 0, clientX, clientY } as Touch],
+      });
+      act(() => card("crate").dispatchEvent(event));
+      return event.defaultPrevented;
+    };
+
+    // Vertical: native scrolling keeps the gesture and nothing is placed.
+    act(() => dispatchPointer(card("crate"), "pointerdown", 10, 20, "touch"));
+    expect(touchMove(12, 60)).toBe(false);
+    act(() => {
+      dispatchPointer(window, "pointermove", 12, 90, "touch");
+      dispatchPointer(window, "pointerup", 260, 80, "touch");
+    });
+    expect(applySceneChange).not.toHaveBeenCalled();
+
+    // Sideways: no hold, the first move already drags and stops native panning.
+    act(() => dispatchPointer(card("crate"), "pointerdown", 10, 20, "touch"));
+    expect(touchMove(40, 24)).toBe(true);
+    act(() => dispatchPointer(window, "pointermove", 260, 80, "touch"));
+    expect(screen.getByTestId("scene-assets-drop-hint").dataset.allowed).toBe("true");
+    act(() => dispatchPointer(window, "pointerup", 260, 80, "touch"));
     expect(placedActors(scene)).toEqual([["Crate", [4, 5, 6]]]);
   });
 

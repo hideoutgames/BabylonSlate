@@ -907,6 +907,51 @@ describe("TreeView", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("drags a row out at once when touch leaves the list sideways, and only with dragOutSideways", () => {
+    const onExternalDrop = vi.fn();
+    const onExternalDragMove = vi.fn();
+    const renderTree = (dragOutSideways: boolean) => {
+      cleanup();
+      render(
+        <TreeView
+          nodes={nodes}
+          onExternalDrop={onExternalDrop}
+          onExternalDragMove={onExternalDragMove}
+          dragOutSideways={dragOutSideways}
+          data-testid="tree"
+        />,
+      );
+      const tree = screen.getByTestId("tree");
+      tree.getBoundingClientRect = () =>
+        ({ top: 0, left: 0, right: 200, bottom: 84, width: 200, height: 84 }) as DOMRect;
+      return { tree, row: screen.getByTestId("tree-row-child") };
+    };
+
+    let { tree, row } = renderTree(true);
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    expect(dispatchTouchMove(tree, 40, 44).defaultPrevented).toBe(true);
+    dispatchPointerEvent(row, "pointermove", { clientX: 260, clientY: 50 });
+    expect(onExternalDragMove).toHaveBeenCalledWith("child", 260, 50);
+    dispatchPointerEvent(row, "pointerup", { clientX: 260, clientY: 50 });
+    expect(onExternalDrop).toHaveBeenCalledWith("child", 260, 50);
+
+    // A vertical move scrolls: native panning stays and nothing drags.
+    onExternalDrop.mockClear();
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    expect(dispatchTouchMove(tree, 12, 70).defaultPrevented).toBe(false);
+    dispatchPointerEvent(row, "pointermove", { clientX: 12, clientY: 120 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 12, clientY: 120 });
+    expect(onExternalDrop).not.toHaveBeenCalled();
+
+    // Without the option, touch still needs the hold.
+    ({ tree, row } = renderTree(false));
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    expect(dispatchTouchMove(tree, 40, 44).defaultPrevented).toBe(false);
+    dispatchPointerEvent(row, "pointermove", { clientX: 260, clientY: 50 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 260, clientY: 50 });
+    expect(onExternalDrop).not.toHaveBeenCalled();
+  });
+
   it("does not drag a row marked draggable false", () => {
     const onExternalDrop = vi.fn();
     const onExternalDragMove = vi.fn();

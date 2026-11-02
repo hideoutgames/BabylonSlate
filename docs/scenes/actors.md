@@ -20,7 +20,7 @@ In **Design** mode, the **Assets** window below the **Outliner** lists the Model
 - Search by name, type, folder or plugin. **Filter** narrows by **Asset Types** and **Folder**; turn off **Show Plugin Content** to hide plugin assets, which carry a puzzle-piece mark. Tap a filter tag under the search field to remove it.
 - **Sort** orders entries by **Name**, **Type** or **Folder**. The two buttons beside it switch between **Cards** and **List**.
 - Select as in the **Outliner**: tap to select, hold <kbd>Mod</kbd> to add or remove an entry, or hold <kbd>Shift</kbd> to select a range. On touch, hold an entry and choose **Select** to add it to the selection.
-- Drag an entry onto the viewport to place it where you let go. Dragging a selected entry places the whole selection, spread in a grid around that point. On touch, hold the entry briefly, then drag.
+- Drag an entry onto the viewport to place it where you let go. Dragging a selected entry places the whole selection, spread in a grid around that point. On touch, drag sideways toward the viewport to start at once; moving up or down scrolls the list, unless you hold the entry briefly first.
 - Double-tap an entry, or tap **Place** under the list, to place at the centre of the viewport.
 - Hold or right-click an entry for **Place**, **Open** and **Show in Content Browser**.
 

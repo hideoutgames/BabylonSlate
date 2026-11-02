@@ -510,6 +510,7 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
         onActivate={(id) => placeAtViewCenter([id])}
         onContextMenu={openEntryMenu}
         onExternalDrop={canPlace ? onDrop : undefined}
+        dragOutSideways
         onExternalDragMove={onDragMove}
         onExternalDragEnd={onDragEnd}
         rowHeight={touchSizing ? 44 : undefined}

@@ -9,6 +9,7 @@ import {
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   DRAG_ARM_MS,
+  isSidewaysDragOut,
 } from "@haptic/editor-kit";
 
 export type DragOutGestureHandlers = {
@@ -49,12 +50,14 @@ function suppressReleaseClick(): void {
 
 /**
  * Drag-out gestures for items that are picked with ordinary clicks, such as
- * Assets panel cards; the List view gets the same rules from `TreeView`.
- * A mouse drags after 8px; touch and pen hold for 250ms first so early
- * movement scrolls, and a 500ms hold in place opens the menu. A second
- * pointer, a scroll of the container, focus loss or a hidden page cancels.
- * `containerRef` is the scroll container: after the hold it stops native
- * panning so the finger drags instead.
+ * Assets panel cards; the List view gets the same rules from `TreeView`
+ * (`dragOutSideways`). A mouse drags after 8px. Touch and pen drag at once
+ * when the move leaves the vertically scrolling container sideways
+ * (`isSidewaysDragOut`); a vertical move scrolls unless the finger held for
+ * 250ms first, and a 500ms hold in place opens the menu. A second pointer, a
+ * scroll of the container, focus loss or a hidden page cancels.
+ * `containerRef` is the `touch-pan-y` scroll container: once a drag may start
+ * it stops native panning so the finger drags instead.
  */
 export function useDragOutGestures(
   containerRef: RefObject<HTMLElement | null>,
@@ -117,9 +120,13 @@ export function useDragOutGestures(
       const onMove = (move: PointerEvent) => {
         if (move.pointerId !== session.pointerId) return;
         if (!session.armed) {
-          const distance = Math.hypot(move.clientX - session.startX, move.clientY - session.startY);
-          if (distance <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
+          const dx = move.clientX - session.startX;
+          const dy = move.clientY - session.startY;
+          if (Math.hypot(dx, dy) <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
           session.moved = true;
+          if (!session.canDrag && !mouse && handlersRef.current.dragEnabled && isSidewaysDragOut(dx, dy)) {
+            session.canDrag = true;
+          }
           if (!session.canDrag) {
             // Moved before the hold: a scroll or a stray press, not a drag.
             finish(session);
@@ -181,9 +188,17 @@ export function useDragOutGestures(
         finish(session);
         return;
       }
-      if (!session.canDrag) return;
+      if (!session.canDrag) {
+        const touch = event.touches[0]!;
+        const dx = touch.clientX - session.startX;
+        const dy = touch.clientY - session.startY;
+        if (Math.hypot(dx, dy) <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
+        if (!handlersRef.current.dragEnabled || !isSidewaysDragOut(dx, dy)) return;
+        // Leaving the container sideways drags at once.
+        session.canDrag = true;
+      }
       // Pointer capture cannot stop native iOS panning: cancel the first
-      // touchmove after the hold, as the Outliner tree does.
+      // touchmove once a drag may start, as the Outliner tree does.
       if (event.cancelable) event.preventDefault();
       else finish(session);
     };
