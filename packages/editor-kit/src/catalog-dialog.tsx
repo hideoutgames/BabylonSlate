@@ -55,7 +55,7 @@ export interface CatalogDialogProps {
   size?: "large" | "medium";
   /**
    * `dialog` (default) is a centered modal sized by `size`. `popup` is a
-   * compact context popup (760x560, clamped to the safe viewport) placed at
+   * compact context popup (680x500, clamped to the safe viewport) placed at
    * `anchor`, centered without one: no backdrop dimming or Close button, a
    * smaller header, and it closes instantly on Escape or any outside press.
    */
@@ -69,7 +69,7 @@ export interface CatalogDialogProps {
   className?: string;
 }
 
-const POPUP_SIZE = { width: 760, height: 560 };
+const POPUP_SIZE = { width: 680, height: 500 };
 
 function categorySections(
   categories: CatalogCategory[],
@@ -253,7 +253,7 @@ export function CatalogDialog({
             aria-label="Categories"
             className={cn(
               "catalog-sidebar flex shrink-0 flex-col overflow-y-auto overscroll-y-contain border-r bg-sidebar",
-              popup ? "w-40 gap-1 p-1.5" : "w-44 gap-2 p-2",
+              popup ? "w-36 gap-1 p-1.5" : "w-44 gap-2 p-2",
             )}
             data-testid={testId ? `${testId}-categories` : undefined}
           >
