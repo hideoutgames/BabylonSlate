@@ -839,11 +839,35 @@ function normalizeSourceControl(
   };
 }
 
+/** The design sizes Create Project offers a Pixel Art Optimized project. */
+export const PIXEL_ART_DESIGN_SIZES = [
+  { width: 640, height: 360 },
+  { width: 320, height: 180 },
+] as const;
+
+/**
+ * Create Project's Pixel Art Optimized: Pixel-Perfect Mode with Nearest Texture Filtering, Custom Resolution with
+ * Upscaling Pixelated (Black Bars as chosen: off extends the view to fill the window), the world at full resolution
+ * without Dynamic Resolution, and no Anti-Aliasing, so edges stay on the pixel grid. All stay ordinary settings.
+ */
+export function pixelArtProjectSettings(settings: ProjectSettings): ProjectSettings {
+  const render = applyProjectQualityPatch(
+    { ...settings.render, customResolution: true, upscaling: "pixelated" },
+    {
+      resolution: { scale: 1, minScale: 1, dynamic: false, preset: "custom" },
+      postprocessing: { antiAliasing: "off", preset: "custom" },
+    },
+  );
+  return { ...settings, render, twoD: { ...settings.twoD, pixelPerfect: true, nearestTextures: true } };
+}
+
 export function createEmptyProject(
   name: string,
   options?: {
     kind?: "empty" | "2d";
     render?: Partial<RenderProjectSettings>;
+    /** Create Project's Pixel Art Optimized (`pixelArtProjectSettings`). */
+    pixelArt?: boolean;
   },
 ): ProjectDocument {
   const now = new Date().toISOString();
@@ -854,6 +878,14 @@ export function createEmptyProject(
           pixelPerfect: true,
         }
       : undefined;
+  const settings = normalizeProjectSettings({
+    ...(twoD ? { twoD } : {}),
+    render: {
+      ...NEW_PROJECT_RENDER_SETTINGS,
+      ...options?.render,
+      customResolution: options?.render?.customResolution ?? true,
+    },
+  });
   return {
     metadata: {
       name,
@@ -861,14 +893,7 @@ export function createEmptyProject(
       createdAt: now,
       updatedAt: now,
     },
-    settings: normalizeProjectSettings({
-      ...(twoD ? { twoD } : {}),
-      render: {
-        ...NEW_PROJECT_RENDER_SETTINGS,
-        ...options?.render,
-        customResolution: options?.render?.customResolution ?? true,
-      },
-    }),
+    settings: options?.pixelArt ? pixelArtProjectSettings(settings) : settings,
     scenes: [MAIN_SCENE_FILE],
     graphs: [MAIN_CLASS_FILE],
   };

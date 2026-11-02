@@ -75,7 +75,9 @@ import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause }
 import {
   applyPlayPreviewCanvasLayout,
   clampRenderResolution,
+  pixelatedExtend,
   playFramebufferSize,
+  playOverlayContainer,
 } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type {
@@ -810,6 +812,7 @@ function PlayOverlayView({
         const framebuffer = playFramebufferSize(
           runtimeRenderRef.current,
           liveSizeRef.current,
+          playOverlayContainer(overlay),
         );
         if (framebuffer) {
           sessionHandle.setSize(framebuffer.width, framebuffer.height);
@@ -989,6 +992,9 @@ function PlayOverlayView({
             runtimeRenderRef.current = settings;
             liveSizeRef.current = null;
             layoutPlay();
+            // The view sizes a framebuffer that extends to fill the window; the Engine cannot measure the overlay.
+            const current = sessionRef.current;
+            if (current && pixelatedExtend(settings)) syncFramebuffer(current.handle);
           },
           onSetRenderResolution: (width, height) => {
             liveSizeRef.current = {
@@ -1093,11 +1099,9 @@ function PlayOverlayView({
       const resizeObserver = new ResizeObserver(() => {
         layoutPlay();
         syncTransformVisibilityRef.current();
-        const framebuffer = playFramebufferSize(
-          runtimeRenderRef.current,
-          liveSizeRef.current,
-        );
-        if (!framebuffer) {
+        // A locked design size keeps its framebuffer; one extended to fill the window follows it.
+        if (!playFramebufferSize(runtimeRenderRef.current, liveSizeRef.current) ||
+          (!liveSizeRef.current && pixelatedExtend(runtimeRenderRef.current))) {
           syncFramebuffer(session.handle);
         }
       });

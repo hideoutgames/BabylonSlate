@@ -33,7 +33,7 @@ import {
   type SceneLoadProgress,
 } from "@haptic/render";
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
-import { playFramebufferSize, type SerializedScene } from "@haptic/core";
+import { pixelatedExtend, playFramebufferSize, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { playerDecoderPaths } from "./decoder-paths";
@@ -66,6 +66,7 @@ import { createPlayerConsoleHost } from "./console-host";
 import { createPlayerPauseState } from "./console-pause";
 import type { DebugInspectSnapshot } from "@haptic/object-model";
 import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
+import { playerContainer } from "./layout";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
@@ -237,6 +238,8 @@ function initializePlayer(
     else runtime?.applyScalabilityStatus(acknowledgement);
   };
   let runtimeOutput = manifest.render;
+  /** Set once the view exists: a runtime output change that extends the framebuffer resizes it. */
+  let outputChanged: (output: RenderProjectSettings) => void = () => {};
   /** Set once the runtime's pause paths exist (below). */
   let pipelineHoldChanged: (held: boolean) => void = () => {};
   /** The game asked for device motion, perhaps before input capture was attached. */
@@ -416,7 +419,7 @@ function initializePlayer(
       if (worker) worker.postControl(result);
       else runtime?.applyRagdollPoseCaptured(result);
     },
-    onRuntimeOutputChanged: (settings) => { runtimeOutput = settings; options.onRenderOutputChanged?.(settings); },
+    onRuntimeOutputChanged: (settings) => { runtimeOutput = settings; outputChanged(settings); options.onRenderOutputChanged?.(settings); },
   });
   own(() => { try { handle.dispose(); } finally { onViewReleased(handle.whenReleased()); } });
   handle.applySceneEnvironment(scene);
@@ -453,12 +456,17 @@ function initializePlayer(
   handle.scheduler.invalidate("play");
   const printHud = mountPlayerPrintOverlay(canvas.parentElement ?? canvas);
   own(() => printHud.dispose());
-  const framebuffer = playFramebufferSize(manifest.render);
-  if (framebuffer) {
-    handle.setSize(framebuffer.width, framebuffer.height);
-  } else {
-    handle.resize();
-  }
+  /**
+   * Locks the framebuffer the output settings ask for (a pixelated one extended past the design size follows the root),
+   * or sizes the backing store to the CSS-sized canvas.
+   */
+  const syncFramebuffer = (output: RenderProjectSettings) => {
+    const framebuffer = playFramebufferSize(output, null, playerContainer(canvas.parentElement ?? canvas));
+    if (framebuffer) handle.setSize(framebuffer.width, framebuffer.height);
+    else if (canvas.clientWidth > 0 && canvas.clientHeight > 0) handle.resize();
+  };
+  syncFramebuffer(manifest.render);
+  outputChanged = (output) => { if (pixelatedExtend(output)) syncFramebuffer(output); };
 
   // Without a locked framebuffer the canvas is CSS-sized, so the backing store
   // has to follow the element or the first frames draw at the wrong size.
@@ -466,12 +474,10 @@ function initializePlayer(
     typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => {
-          if (!playFramebufferSize(runtimeOutput) && canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-            handle.resize();
-          }
+          if (!playFramebufferSize(runtimeOutput) || pixelatedExtend(runtimeOutput)) syncFramebuffer(runtimeOutput);
         });
   own(() => resizeObserver?.disconnect());
-  resizeObserver?.observe(canvas);
+  resizeObserver?.observe(canvas.parentElement ?? canvas);
 
   const scenes = [...game.scenes.entries()].map(([guid, authored]) => ({
     guid,

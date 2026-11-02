@@ -19,9 +19,12 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        overflow: hidden;
       }
       canvas {
         display: block;
+        /* A pixelated framebuffer extended past the design size covers the root by under one game pixel. */
+        flex-shrink: 0;
       }
       canvas:focus,
       canvas:focus-visible {

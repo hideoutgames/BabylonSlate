@@ -625,11 +625,12 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
   });
 
-  it("offers Upscaling only with Custom Resolution and Black Bars, and stages Pixelated until Done", async () => {
+  it("offers Upscaling only with Custom Resolution, and stages Pixelated until Done", async () => {
     const openResolution = () => {
       fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
       fireEvent.click(screen.getByRole("button", { name: "Resolution" }));
     };
+    lastProjectRender.current = { ...createEmptyProject("Demo").settings.render, customResolution: false };
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     openResolution();
     expect(screen.queryByTestId("setting-render-upscaling")).toBeNull();

@@ -32,7 +32,7 @@ import { isBuiltInWaterMesh, setSceneWaterTime, settleSceneWater } from "./water
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, reflectionProbeStaticActors, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@haptic/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, pixelatedExtend, pixelatedLensExtent, pixelatedUpscaling, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, reflectionProbeStaticActors, type RenderProjectSettings, type ResolutionQuality, type ScalabilityAcknowledgement } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
@@ -122,6 +122,7 @@ import {
   AUTHORED_LIGHT_PREFIX,
   applySceneEnvironment as applySerializedSceneEnvironment,
   refreshAuthoredCameraLenses,
+  setSceneCameraLensExtent,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
@@ -640,6 +641,11 @@ function initializeEngine(
   const deformerHost = new SceneDeformerHost(scene);
   onRollback(() => deformerHost.dispose());
   let lockedViewSize: { width: number; height: number } | null = null;
+  /** Play's output settings (resolution, Black Bars, Upscaling) as the runtime last applied them. */
+  let playOutput: RenderProjectSettings | null = options.playMode ? normalizeRenderProjectSettings(options.renderSettings) : null;
+  /** Upscaling Pixelated draws the world at the full design size: Resolution Scale and Dynamic Resolution do not apply. */
+  const effectiveResolution = (resolution: ResolutionQuality): ResolutionQuality =>
+    pixelatedUpscaling(playOutput) ? { ...resolution, scale: 1, minScale: 1, dynamic: false } : resolution;
   const scaledLockedViewSize = () => lockedViewSize ? {
     width: Math.max(1, Math.floor(lockedViewSize.width / engine.getHardwareScalingLevel())),
     height: Math.max(1, Math.floor(lockedViewSize.height / engine.getHardwareScalingLevel())),
@@ -1123,7 +1129,7 @@ function initializeEngine(
     const previous = appliedQuality;
     appliedQuality = quality;
     if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution)) {
-      scaling.configureQuality(quality.resolution);
+      scaling.configureQuality(effectiveResolution(quality.resolution));
       syncLockedViewSize();
     }
     if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
@@ -1662,6 +1668,7 @@ function initializeEngine(
       editor?.camera.updateOrthoBounds(width / height);
     }
     sceneLayerCompositor?.resize();
+    setSceneCameraLensExtent(scene, 1);
     refreshAuthoredCameraLenses(scene);
     notifyOverlayResize();
   };
@@ -1698,6 +1705,8 @@ function initializeEngine(
       }
       engine.setSize(nextWidth, nextHeight);
       sceneLayerCompositor?.resize();
+      // A pixelated framebuffer extended past the design size shows more world in its extra rows, not a larger one.
+      setSceneCameraLensExtent(scene, playOutput ? pixelatedLensExtent(playOutput, lockedViewSize) : 1);
       refreshAuthoredCameraLenses(scene);
       notifyOverlayResize();
     };
@@ -1966,11 +1975,15 @@ function initializeEngine(
         applyRenderingQuality();
         scheduler.setFrameCap(transaction.settings.frameCap);
         const output = transaction.settings.render;
-        if (["width", "height", "customResolution", "blackBars"].some((key) => output[key as keyof RenderProjectSettings] !== appliedOutput[key as keyof RenderProjectSettings])) {
+        if (["width", "height", "customResolution", "blackBars", "upscaling"].some((key) => output[key as keyof RenderProjectSettings] !== appliedOutput[key as keyof RenderProjectSettings])) {
+          const wasPixelated = pixelatedUpscaling(playOutput);
+          playOutput = output;
+          if (appliedQuality && wasPixelated !== pixelatedUpscaling(output)) scaling.configureQuality(effectiveResolution(appliedQuality.resolution));
           options.onRuntimeOutputChanged?.(output);
           const framebuffer = playFramebufferSize(output);
           if (framebuffer) setSize(framebuffer.width, framebuffer.height);
-          else resize();
+          // The host sizes a framebuffer extended to fill its box (it alone measures the box).
+          else if (!pixelatedExtend(output)) resize();
           appliedOutput = output;
         }
         scheduler.invalidate("asset");
@@ -1987,10 +2000,15 @@ function initializeEngine(
         const state = sceneRenderingSettings(scene);
         const { shadows, ...quality } = resolveSceneRenderingQuality(scene);
         quality.textures = { ...quality.textures, anisotropy: state.textureAnisotropy };
+        const requestedResolution = quality.resolution;
+        quality.resolution = effectiveResolution(requestedResolution);
+        const pixelatedFullResolution = quality.resolution !== requestedResolution &&
+          JSON.stringify(quality.resolution) !== JSON.stringify(requestedResolution);
         const water = sceneWaterQualityDeviceClamp(scene);
         quality.water = { ...quality.water, ...water.quality };
         const pipeline = sceneRenderingPipeline(scene);
-        const limits = [...pipeline.limits, ...water.limits];
+        const limits = [...pipeline.limits, ...water.limits,
+          ...(pixelatedFullResolution ? ["Upscaling Pixelated draws at full resolution: Resolution Scale and Dynamic Resolution do not apply."] : [])];
         return { revision: transaction.revision, status: transaction.clamped || limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
           message: limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."), pipeline,
           effective: { frameCap: transaction.settings.frameCap, render: { ...transaction.settings.render,

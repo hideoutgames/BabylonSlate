@@ -1163,6 +1163,7 @@ export class ProjectService {
       renderWidth?: number;
       renderHeight?: number;
       blackBars?: boolean;
+      pixelArt?: boolean;
       appearance?: ProjectAppearance;
     },
   ): Promise<ProjectLoadResult> {
@@ -1178,6 +1179,7 @@ export class ProjectService {
     const document = createEmptyProject(name, {
       kind: kind === "2d" ? "2d" : "empty",
       render,
+      pixelArt: renderOptions?.pixelArt === true,
     });
     const appearance = normalizeProjectAppearance(renderOptions?.appearance);
     if (appearance) document.metadata.appearance = appearance;

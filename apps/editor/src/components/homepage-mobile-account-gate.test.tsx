@@ -566,6 +566,8 @@ describe("native mobile account requirement", () => {
             onHeightChange={vi.fn()}
             blackBars={false}
             onBlackBarsChange={vi.fn()}
+            pixelArt={false}
+            onPixelArtChange={vi.fn()}
             onSubmit={vi.fn()}
           />
         </HomepageMobileAccountGate>

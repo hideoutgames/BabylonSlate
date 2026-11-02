@@ -3,6 +3,8 @@ import {
   clampRenderResolution,
   fitContainedRect,
   fitWholeMultipleRect,
+  pixelatedExtend,
+  pixelatedLensExtent,
   pixelatedUpscaling,
   playFramebufferSize,
   presentedFramebufferStyle,
@@ -91,6 +93,9 @@ describe("clampRenderResolution", () => {
 });
 
 describe("pixelated upscaling", () => {
+  const bars = { customResolution: true, width: 320, height: 180, blackBars: true, upscaling: "pixelated" as const };
+  const extend = { ...bars, blackBars: false };
+
   it("fits the largest whole multiple of the frame in device pixels", () => {
     // 1366 x 768 CSS pixels at 1x: x4 of 320 x 180.
     expect(fitWholeMultipleRect(1366, 768, 320, 180)).toEqual({ width: 1280, height: 720 });
@@ -101,17 +106,40 @@ describe("pixelated upscaling", () => {
     expect(fitWholeMultipleRect(0, 768, 320, 180)).toEqual({ width: 0, height: 0 });
   });
 
-  it("applies only with Custom Resolution, Black Bars and Pixelated", () => {
-    const render = { customResolution: true, blackBars: true, upscaling: "pixelated" as const };
+  it("applies with Custom Resolution and Pixelated, with Black Bars or extended", () => {
     expect([
-      pixelatedUpscaling(render),
-      pixelatedUpscaling({ ...render, blackBars: false }),
-      pixelatedUpscaling({ ...render, customResolution: false }),
-      pixelatedUpscaling({ ...render, upscaling: "smooth" }),
-    ]).toEqual([true, false, false, false]);
-    expect(presentedFramebufferStyle(render, { width: 320, height: 180 }, { width: 1366, height: 768 }))
-      .toEqual({ width: 1280, height: 720, imageRendering: "pixelated" });
-    expect(presentedFramebufferStyle({ ...render, upscaling: "smooth" }, { width: 320, height: 180 }, { width: 1366, height: 768 }))
+      pixelatedUpscaling(bars),
+      pixelatedUpscaling(extend),
+      pixelatedUpscaling({ ...bars, customResolution: false }),
+      pixelatedUpscaling({ ...bars, upscaling: "smooth" }),
+    ]).toEqual([true, true, false, false]);
+    expect([pixelatedExtend(bars), pixelatedExtend(extend)]).toEqual([false, true]);
+  });
+
+  it("locks the design size with Black Bars at a whole multiple", () => {
+    const container = { width: 1366, height: 768 };
+    const framebuffer = playFramebufferSize(bars, null, container)!;
+    expect(framebuffer).toEqual({ width: 320, height: 180 });
+    expect(presentedFramebufferStyle(bars, framebuffer, container)).toEqual({ width: 1280, height: 720, imageRendering: "pixelated" });
+    expect(presentedFramebufferStyle({ ...bars, upscaling: "smooth" }, framebuffer, container))
       .toEqual({ width: 1365, height: 768, imageRendering: "" });
+    expect(pixelatedLensExtent(bars, framebuffer)).toBe(1);
+  });
+
+  it("extends the framebuffer past the design size to fill the window without Black Bars", () => {
+    // x4 of 320 x 180 fits 1366 x 768; the framebuffer covers the window at x4: 342 x 192, shown at 1368 x 768.
+    const container = { width: 1366, height: 768 };
+    expect(playFramebufferSize(extend, null, null)).toBeNull();
+    const framebuffer = playFramebufferSize(extend, null, container)!;
+    expect(framebuffer).toEqual({ width: 342, height: 192 });
+    expect(presentedFramebufferStyle(extend, framebuffer, container)).toEqual({ width: 1368, height: 768, imageRendering: "pixelated" });
+    // Cameras show 192 / 180 of the design height, so the design size keeps its scale.
+    expect(pixelatedLensExtent(extend, framebuffer)).toBeCloseTo(192 / 180);
+    // A 2x display counts device pixels: 1180 x 820 is 2360 x 1640, where x7 fits (the width limits it).
+    expect(playFramebufferSize(extend, null, { width: 1180, height: 820, devicePixelRatio: 2 })).toEqual({ width: 338, height: 235 });
+    // A window smaller than the design size shows it fitted, as Black Bars would.
+    expect(playFramebufferSize(extend, null, { width: 200, height: 100 })).toEqual({ width: 320, height: 180 });
+    // A live Set Render Resolution still locks.
+    expect(playFramebufferSize(extend, { width: 400, height: 300 }, container)).toEqual({ width: 400, height: 300 });
   });
 });

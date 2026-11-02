@@ -83,4 +83,6 @@ export type CreateProjectOptions = {
   renderWidth?: number;
   renderHeight?: number;
   blackBars?: boolean;
+  /** Pixel Art Optimized (`pixelArtProjectSettings`). */
+  pixelArt?: boolean;
 };
