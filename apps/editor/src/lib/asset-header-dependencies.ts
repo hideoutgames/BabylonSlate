@@ -174,7 +174,7 @@ export function assetHeaderDependencyMetadata(
         ? asset.header.payload.variables.map(variable => ({ ...variable, kind: "variable" })) : [])) as import("@haptic/core").GraphClassMember[],
     }] : []),
     definitionFields: guid => definitions.get(guid),
-    graphPins: (type, properties) => defaultNodeRegistry.get(typeof properties.__nodeType === "string" ? properties.__nodeType : type)?.pins(properties),
+    graphPins: (type, properties) => defaultNodeRegistry().get(typeof properties.__nodeType === "string" ? properties.__nodeType : type)?.pins(properties),
   });
 }
 

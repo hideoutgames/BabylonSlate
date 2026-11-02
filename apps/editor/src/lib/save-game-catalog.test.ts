@@ -9,7 +9,7 @@ describe("default Save Game field catalog", () => {
     const definition = { id: "progress", schemaVersion: 1, fields: [{ id: "coins-id", name: "Coins", type: "int", defaultValue: 5 }] };
     const selected = defaultSaveGameDefinition("asset-id", [{ path: "/Content/Progress.hasset", header: { type: "SaveGame", guid: "asset-id", payload: {} } }],
       [{ ref: { kind: "save-game", path: "/Content/Progress.hasset" }, content: { ...definition, fields: [{ ...definition.fields[0], name: "Gold" }] } }]);
-    const rows = scriptPaletteNodes(defaultNodeRegistry, { parentClass: "Actor", saveGameDefinition: selected });
+    const rows = scriptPaletteNodes(defaultNodeRegistry(), { parentClass: "Actor", saveGameDefinition: selected });
     const get = rows.find((row) => row.id === "saveGame.getField:coins-id");
     const set = rows.find((row) => row.id === "saveGame.setField:coins-id");
     expect(get?.title).toBe("Get Save Gold");
@@ -26,7 +26,7 @@ describe("default Save Game field catalog", () => {
       if (kind !== "save-game" || path !== "/Content/Progress.hasset") throw new Error("Wrong asset request");
       return (await decodeAssetDocument(bytes)).payload;
     });
-    const rows = scriptPaletteNodes(defaultNodeRegistry, { parentClass: "Actor", saveGameDefinition: selected });
+    const rows = scriptPaletteNodes(defaultNodeRegistry(), { parentClass: "Actor", saveGameDefinition: selected });
     expect(rows.find((row) => row.id === "saveGame.setField:health-id")?.defaultData).toMatchObject({ "default:value": 100 });
     expect(rows.find((row) => row.id === "saveGame.getField:health-id")?.pins?.find((pin) => pin.id === "value")?.type).toEqual({ kind: "float" });
   });

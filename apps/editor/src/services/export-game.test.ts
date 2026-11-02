@@ -633,8 +633,8 @@ describe("collectAndExportGame", () => {
   });
 
   it("fails the export when a reached Class does not compile", async () => {
-    if (!defaultNodeRegistry.get("test.exportCodegenFailure")) {
-      defaultNodeRegistry.register({
+    if (!defaultNodeRegistry().get("test.exportCodegenFailure")) {
+      defaultNodeRegistry().register({
         id: "test.exportCodegenFailure",
         title: "Codegen Failure",
         category: "debug",

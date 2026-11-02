@@ -164,7 +164,7 @@ export function buildNewAssetResult(options: {
     if (walkAncestry(parentClass ?? "Object", options.parentOf ?? engineParentOf).includes("SceneLayer")) {
       throw new Error("SceneLayer classes must be created as Scene Layer assets.");
     }
-    const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry, {
+    const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry(), {
       parentClass,
       parentOf: options.parentOf,
       parentGraphs: options.parentGraphs,

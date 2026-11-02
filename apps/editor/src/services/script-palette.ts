@@ -11,7 +11,7 @@ import type { PaletteNode } from "@haptic/graph-ui";
 import { isScriptCatalogNodeAllowed, nativeEventStubs } from "../lib/class-members";
 import { DATA_GRAPH_NODES, dataGraphMetadata, dataGraphNodeTitle } from "../lib/data-graph";
 import { customEventRows, knownClassIdSet } from "./graph-class-symbols";
-import { defaultNodeRegistry as registry } from "./graph-hydration";
+import { defaultNodeRegistry } from "./graph-hydration";
 import { isInputEvent } from "./graph-node-refresh";
 import {
   callCustomEventPaletteNodes,
@@ -460,7 +460,7 @@ function scriptPaletteInjectorNodes(
 
 /** Palette rows for Class graphs (pins from the registry). */
 export function scriptPaletteNodes(
-  nodeRegistry: NodeRegistry = registry,
+  nodeRegistry: NodeRegistry = defaultNodeRegistry(),
   options?: ScriptPaletteOptions,
   build: ScriptPaletteBuildOptions = {},
 ): PaletteNode[] {

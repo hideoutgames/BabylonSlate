@@ -21,7 +21,7 @@ import {
   type ClassEventOptions,
 } from "../lib/class-members";
 import {
-  defaultNodeRegistry as registry,
+  defaultNodeRegistry,
   hydrateSerializedGraphForEditor,
 } from "./graph-hydration";
 
@@ -49,7 +49,7 @@ function pinTypeIdFromPinType(type: PinType | undefined): string {
 
 /** New graphs seed native (+ inherited custom) events wired to Call Parent. */
 export function createDefaultLogicGraphSerialized(
-  nodeRegistry: NodeRegistry = registry,
+  nodeRegistry: NodeRegistry = defaultNodeRegistry(),
   options?: ClassEventOptions,
 ): SerializedGraph {
   const seedNatives = new Set<string>(seededNativeEventTypes(options));
