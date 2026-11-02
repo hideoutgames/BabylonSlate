@@ -1,15 +1,18 @@
-/** A platform the Packaging dialog can build for. */
+/** A platform listed in the Packaging dialog. */
 export interface PackagingTarget {
-  id: "web";
+  id: "web" | "windows" | "linux" | "macos" | "android" | "ios";
   label: string;
   description: string;
+  /** False lists the platform greyed out; only available targets can be packaged. */
+  available: boolean;
 }
 
-/**
- * Packaging targets in dialog order. Web builds on every host; native targets
- * (Windows, Linux, macOS, Android, iOS) join this list with the hosts that can
- * build them, so each device offers only what it supports.
- */
+/** Packaging targets in dialog order. Only Web can be packaged today. */
 export const PACKAGING_TARGETS: readonly PackagingTarget[] = [
-  { id: "web", label: "Web", description: "ZIP for itch.io or any static web host." },
+  { id: "web", label: "Web", description: "ZIP for itch.io or any static web host.", available: true },
+  { id: "windows", label: "Windows", description: "Desktop game for Windows.", available: false },
+  { id: "linux", label: "Linux", description: "Desktop game for Linux.", available: false },
+  { id: "macos", label: "macOS", description: "Desktop game for macOS.", available: false },
+  { id: "android", label: "Android", description: "App for Android phones and tablets.", available: false },
+  { id: "ios", label: "iOS", description: "App for iPhone and iPad.", available: false },
 ];

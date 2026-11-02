@@ -55,6 +55,23 @@ it("packages the project for the web and downloads the archive named after it", 
   expect(screen.getByRole("status").textContent).toBe("Game package prepared. Check your downloads.");
 });
 
+it("lists the native platforms greyed out and keeps Web selected", () => {
+  renderDialog();
+  const web = screen.getByTestId("packaging-target-web");
+  expect(web.getAttribute("aria-pressed")).toBe("true");
+  expect(web.hasAttribute("disabled")).toBe(false);
+  const note = screen.getByText("Windows, Linux, macOS, Android and iOS are not available yet.");
+  for (const id of ["windows", "linux", "macos", "android", "ios"]) {
+    const tile = screen.getByTestId(`packaging-target-${id}`);
+    expect(tile.hasAttribute("disabled"), id).toBe(true);
+    expect(tile.getAttribute("aria-describedby")).toBe(note.id);
+    expect(tile.querySelector("svg"), id).not.toBeNull();
+    fireEvent.click(tile);
+  }
+  expect(web.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByText(/ZIP for itch\.io or any static web host\./)).toBeTruthy();
+});
+
 it("explains a failed package and lets you try again", async () => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   let reject!: (error: Error) => void;

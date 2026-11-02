@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { GlobeIcon, type LucideIcon } from "lucide-react";
+import type { Icon } from "@phosphor-icons/react/dist/lib/types";
+import { AndroidLogo } from "@phosphor-icons/react/AndroidLogo";
+import { AppleLogo } from "@phosphor-icons/react/AppleLogo";
+import { Globe } from "@phosphor-icons/react/Globe";
+import { LinuxLogo } from "@phosphor-icons/react/LinuxLogo";
+import { WindowsLogo } from "@phosphor-icons/react/WindowsLogo";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -16,7 +21,17 @@ import { useProjectState } from "../context/document-context";
 import { PACKAGING_TARGETS, type PackagingTarget } from "../lib/packaging-targets";
 import { gameArchiveName, useGameExport } from "./use-game-export";
 
-const TARGET_ICONS: Record<PackagingTarget["id"], LucideIcon> = { web: GlobeIcon };
+/** Platform marks from Phosphor; macOS and iOS share the Apple mark. Imported one by one so only these ship. */
+const TARGET_ICONS: Record<PackagingTarget["id"], Icon> = {
+  web: Globe,
+  windows: WindowsLogo,
+  linux: LinuxLogo,
+  macos: AppleLogo,
+  android: AndroidLogo,
+  ios: AppleLogo,
+};
+
+const UNAVAILABLE = PACKAGING_TARGETS.filter((entry) => !entry.available);
 
 /**
  * Settings → Packaging: pick a target platform and build a playable copy of
@@ -39,7 +54,7 @@ export function PackagingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" data-testid="packaging-dialog">
+      <DialogContent className="sm:max-w-lg" data-testid="packaging-dialog">
         <DialogHeader>
           <DialogTitle>Packaging</DialogTitle>
           <DialogDescription>Build a playable copy of {projectName}.</DialogDescription>
@@ -48,25 +63,26 @@ export function PackagingDialog({
           <FieldLabel id="packaging-platform-label">Platform</FieldLabel>
           <ToggleGroup
             variant="outline"
-            className="flex-wrap"
+            className="grid w-full grid-cols-3 sm:grid-cols-6"
             aria-labelledby="packaging-platform-label"
             value={[target.id]}
             onValueChange={(value) => {
               const next = PACKAGING_TARGETS.find((entry) => entry.id === value[0]);
-              if (next) setTargetId(next.id);
+              if (next?.available) setTargetId(next.id);
             }}
           >
             {PACKAGING_TARGETS.map((entry) => {
-              const Icon = TARGET_ICONS[entry.id];
+              const Mark = TARGET_ICONS[entry.id];
               return (
                 <ToggleGroupItem
                   key={entry.id}
                   value={entry.id}
-                  disabled={busy}
-                  className="h-auto min-w-20 flex-col gap-1 py-2"
+                  disabled={busy || !entry.available}
+                  aria-describedby={entry.available ? undefined : "packaging-unavailable"}
+                  className="h-auto min-w-0 flex-col gap-1 px-1 py-2"
                   data-testid={`packaging-target-${entry.id}`}
                 >
-                  <Icon aria-hidden="true" />
+                  <Mark aria-hidden="true" />
                   {entry.label}
                 </ToggleGroupItem>
               );
@@ -75,6 +91,9 @@ export function PackagingDialog({
           <FieldDescription>
             {target.description}
             {projectName ? ` Downloads ${gameArchiveName(projectName)}.` : ""}
+          </FieldDescription>
+          <FieldDescription id="packaging-unavailable">
+            {UNAVAILABLE.map((entry) => entry.label).join(", ").replace(/, ([^,]*)$/, " and $1")} are not available yet.
           </FieldDescription>
         </Field>
         {error ? (

@@ -13,6 +13,7 @@ GenerateImage({ description: "Haptic app icon, flat vector" })
 ## Allowed
 
 - Existing Lucide icons.
+- Existing Phosphor icons (`@phosphor-icons/react`) for platform marks Lucide lacks, such as the Windows, Linux, Apple and Android logos on Packaging targets. Import each icon by its own path; never redraw or recolour a mark.
 - Existing files in `engine-logos/`, `apps/editor/public/branding/` and `apps/docs/public/`: copy them, or scale and centre them on the brand background for platform icon and splash sizes. Never redraw, recolour or invent replacements.
 - Engine code that builds runtime primitives (`CreateBox`, debug lines, nav overlays) as product features, not as art.
 - Solid-colour or numeric test fixtures with no pictorial content.
