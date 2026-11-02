@@ -39,21 +39,33 @@ function liveTexture(
   return resource;
 }
 
+/** Render targets (the shadow atlas's) whose allocation passed validation; a map that only draws into one allocates nothing. */
+const validatedTargets = new WeakSet<object>();
+
 /**
  * Babylon 9.29 marks render-target InternalTextures ready without checking GL
  * allocation errors or framebuffer completeness. Run this only around a new
  * generator allocation, never during normal frame readiness checks.
+ *
+ * `reusable` is the render target the new map is expected to share (the shadow atlas's). When that target already
+ * passed and the map draws into it, the map allocated nothing of its own: the check makes no GL call at all, since
+ * every one (`getError`, `checkFramebufferStatus`, `getParameter`) waits for the GPU to finish all queued work.
  */
 export function beginShadowAllocationValidation(
   engine: AbstractEngine,
+  reusable: object | null = null,
 ): (generator: ShadowGenerator) => void {
   // Pinned WebGL adapter: AbstractEngine also supports NullEngine and WebGPU,
   // neither of which owns a WebGL context or WebGL attachment handles.
   const gl = (engine as AbstractEngine & { _gl?: ShadowGl })._gl;
   if (!gl) return () => {};
-  const before = readErrors(gl);
+  const reusing = reusable !== null && validatedTargets.has(reusable);
+  // A reused target is not drained first: should the map allocate after all (the atlas grew), its errors are not
+  // attributable and only the structural checks decide.
+  const before = reusing ? { errors: [], cleared: false } : readErrors(gl);
 
   return (generator) => {
+    if (reusing && generator.getShadowMap()?.renderTarget === reusable) return;
     const allocation = readErrors(gl);
     try {
       if (gl.isContextLost())
@@ -200,6 +212,7 @@ export function beginShadowAllocationValidation(
           { cause: failures[0] },
         );
       }
+      validatedTargets.add(target);
     } catch (error) {
       if (before.errors.length === 0) throw error;
       const detail = error instanceof Error ? error.message : String(error);
