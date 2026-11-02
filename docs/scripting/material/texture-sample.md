@@ -36,5 +36,6 @@ Samples a texture at UV and returns its colour, its separate channels and the te
 ## Notes
 
 - Colour textures are read as sRGB and converted to linear by default. Set Color Space to Data (Linear) for normal maps and masks.
-- Filter applies to the texture picked here. A texture from a connected **Texture Parameter** is always sampled Linear.
+- Filter applies to the texture picked here. A texture from a connected **Texture Parameter** is sampled Linear.
+- With **Nearest Texture Filtering** on (**Project Settings > Game > 2D**, with **Pixel-Perfect Mode**), every texture is sampled Nearest, whatever its Filter.
 - An imported model whose file asks for nearest filtering gets Nearest samples, and its images import with the **Pixel Art** [Texture](../../assets/texture.md) usage.

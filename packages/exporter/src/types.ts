@@ -143,6 +143,8 @@ export type GameManifest = {
   /** Ordered 2D sorting layers. */
   sortingLayers: readonly string[];
   pixelPerfect: boolean;
+  /** Nearest Texture Filtering as the game draws it (`nearestTextureFiltering`: only with Pixel-Perfect Mode). */
+  nearestTextures: boolean;
   physicsWorld: "2d" | "3d";
   /** Project Collision Presets. */
   collisionPresets: import("@haptic/core").CollisionPreset[];
@@ -177,6 +179,8 @@ export type ExportGameOptions = {
   pixelsPerUnit?: number;
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
+  /** Nearest Texture Filtering as the game draws it (`nearestTextureFiltering`). */
+  nearestTextures?: boolean;
   physicsWorld?: "2d" | "3d";
   /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
   collisionPresets?: readonly import("@haptic/core").CollisionPreset[];

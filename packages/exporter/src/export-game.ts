@@ -346,6 +346,7 @@ export async function exportGame(
         ? options.pixelsPerUnit
         : 100,
     pixelPerfect: options.pixelPerfect === true,
+    nearestTextures: options.nearestTextures === true,
     sortingLayers: normalizeSortingLayers(options.sortingLayers),
     physicsWorld: options.physicsWorld ?? "3d",
     collisionPresets: normalizeCollisionPresets(options.collisionPresets),
@@ -404,7 +405,7 @@ const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";
 const REQUIRED_MANIFEST_FIELDS = [
   "project", "focusNavigation", "startupSceneGuid", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
   "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "garbageCollectionIntervalTicks", "touchMinTargetPx", "pixelsPerUnit",
-  "pixelPerfect", "sortingLayers", "physicsWorld", "collisionPresets", "assets",
+  "pixelPerfect", "nearestTextures", "sortingLayers", "physicsWorld", "collisionPresets", "assets",
 ] as const satisfies readonly (keyof GameManifest)[];
 const DEBUGGER_MANIFEST_FIELDS = ["infiniteLoopDetection", "loopCount"] as const satisfies readonly (keyof GameManifest)[];
 
@@ -457,6 +458,7 @@ export function parseGameManifest(source: string): GameManifest {
         ? parsed.touchMinTargetPx
         : 44,
     pixelPerfect: parsed.pixelPerfect === true,
+    nearestTextures: parsed.nearestTextures === true,
     sortingLayers: [...sortingLayers],
     collisionPresets,
     ...(bundleDebugger

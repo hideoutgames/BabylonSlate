@@ -15,13 +15,14 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { webGpuMaterialCompatibilityReason } from "@haptic/render";
+import { setNearestTextures, webGpuMaterialCompatibilityReason } from "@haptic/render";
 import {
   DEFAULT_INFINITE_LOOP_DETECTION,
   DEFAULT_LOOP_COUNT,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   engineCommandBus,
+  nearestTextureFiltering,
   normalizeRenderingPipeline,
 } from "@haptic/core";
 import type { SessionReportEntry } from "@haptic/runtime";
@@ -539,6 +540,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     appendLog,
     simulationRef,
   });
+
+  // Nearest Texture Filtering is the shared Engine's: every editor view and overlay Play draws with it.
+  const nearestTextures = projectDocument ? nearestTextureFiltering(projectDocument.settings.twoD) : false;
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (engine) setNearestTextures(engine, nearestTextures);
+  }, [engineRef, nearestTextures, sharedEngineGeneration]);
 
   useEffect(() => {
     const mount = ++providerMountRef.current;

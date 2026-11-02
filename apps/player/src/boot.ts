@@ -255,6 +255,7 @@ function initializePlayer(
     pixelsPerUnit: content.pixelsPerUnit,
     sortingLayers: content.sortingLayers,
     pixelPerfect: content.pixelPerfect,
+    nearestTextures: content.nearestTextures,
     touchMinTargetPx: manifest.touchMinTargetPx ?? 44,
     prepareAudioAsset: game.acquireAssets ? async (guid, request) => {
       const source = await game.acquireAssets!([guid], request);

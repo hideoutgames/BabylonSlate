@@ -7,6 +7,7 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { InternalTextureSource, type InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { trackMaterialTexture } from "./nearest-textures";
 import {
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
@@ -1045,6 +1046,7 @@ export function acquireMaterialTexture(
     { ...MATERIAL_TEXTURE_SAMPLING, ...options },
   );
   if (lease.resource.isCube) { lease.release(); return null; }
+  trackMaterialTexture(engine, lease.resource as Texture, lease.ready);
   return lease as ResourceLease<Texture>;
 }
 

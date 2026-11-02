@@ -290,6 +290,7 @@ describe("packedContentFromGame", () => {
     expect(content.pixelsPerUnit).toBe(50);
     expect(content.sortingLayers).toEqual(["Default", "Props", "Characters"]);
     expect(content.pixelPerfect).toBe(false);
+    expect(content.nearestTextures).toBe(false);
     expect(content).not.toHaveProperty("userInterfaces");
     expect(content.waterPayloads.get("water-1")).toMatchObject({ waveHeight: 1.2 });
     const controls = packedPlayControls(content);

@@ -15,7 +15,7 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
     id: "game",
     label: "Game",
     keywords:
-      "startup scene game instance class 2d pixels per unit pixel perfect sorting layers",
+      "startup scene game instance class 2d pixels per unit pixel perfect nearest texture filtering sorting layers",
   },
   { id: "saveGames", label: "Save Games", keywords: "save game data definition default slot profile wipe reset import export persistence" },
   {

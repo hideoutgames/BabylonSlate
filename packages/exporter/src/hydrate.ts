@@ -102,6 +102,7 @@ export type PackedGameContent = {
   pixelsPerUnit: number;
   sortingLayers: readonly string[];
   pixelPerfect: boolean;
+  nearestTextures: boolean;
   audioLibrary: PackedAudioLibrary;
   particleLibrary: ParticleLibrary;
   modelClipAnimationGuids: Map<string, Map<string, string>>;
@@ -380,6 +381,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     pixelsPerUnit,
     sortingLayers: game.manifest.sortingLayers,
     pixelPerfect: game.manifest.pixelPerfect === true,
+    nearestTextures: game.manifest.nearestTextures === true,
     audioLibrary: {
       sourceRevisions: new Map((game.manifest.assets ?? []).filter(entry => entry.type === "Audio" && audio.has(entry.guid) && entry.revision).map(entry => [entry.guid, entry.revision!])),
       mixerGuid: game.manifest.audioMixerGuid?.trim() || null,

@@ -1,4 +1,4 @@
-import type { ProjectDocument } from "@haptic/core";
+import { nearestTextureFiltering, type ProjectDocument } from "@haptic/core";
 import {
   AssetPickerControl,
   NamedListEditor,
@@ -169,6 +169,27 @@ export function ProjectGameSettings({
           <FieldDescription id="settings-pixel-perfect-description">
             Frames the 2D editor view 1:1 with nearest sampling. Play and
             exported games snap the game camera to the pixel grid.
+          </FieldDescription>
+        </Field>
+          <Field orientation="horizontal" className="settings-field" data-disabled={!twoD.pixelPerfect}>
+          <FieldLabel htmlFor="settings-nearest-textures">
+              Nearest Texture Filtering
+          </FieldLabel>
+          <Switch
+            id="settings-nearest-textures"
+            aria-describedby="settings-nearest-textures-description"
+            disabled={!twoD.pixelPerfect}
+            checked={nearestTextureFiltering(twoD)}
+            onCheckedChange={(checked) =>
+              updateProjectSettings({
+                twoD: { ...twoD, nearestTextures: checked === true },
+              })
+            }
+            data-testid="settings-nearest-textures"
+          />
+          <FieldDescription id="settings-nearest-textures-description">
+            Samples every Material texture with nearest-neighbour filtering,
+            in 3D too. Needs Pixel-Perfect Mode.
           </FieldDescription>
         </Field>
         <Field>

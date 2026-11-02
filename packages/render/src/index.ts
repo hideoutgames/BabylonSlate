@@ -47,6 +47,7 @@ export * from "./viewport-fly-keys";
 export * from "./two-d";
 export * from "./sorting";
 export * from "./pixel-perfect";
+export { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } from "./nearest-textures";
 export * from "./flip-read-pixels";
 export * from "./font-registry";
 export * from "./sprite-quad";
