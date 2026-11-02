@@ -65,7 +65,6 @@ import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { pickActorMeshName } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
 import { meshNamesInCanvasRect } from "./two-d";
-import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 
 import type { CreateEngineOptions, EditorTools } from "./create-engine-types";
@@ -477,9 +476,6 @@ export function createEditorViewportTools({
     setPixelPerfect: (settings) => {
       cameraController.setCanvasHeight(engine.getRenderHeight());
       cameraController.setPixelPerfect(settings);
-      if (settings) {
-        applyPixelArtSamplingToScene(scene);
-      }
     },
     setSortingLayers: (layers) => {
       editorSync.setSortingLayers(layers);

@@ -7,6 +7,7 @@ import {
   NullEngine,
   ScenePerformancePriority,
   ShaderMaterial,
+  Texture,
   VertexBuffer,
 } from "@babylonjs/core";
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
@@ -113,6 +114,16 @@ describe("p20-editor-scene-freeze", () => {
     handles.push(handle);
     return handle;
   }
+
+  it("leaves the scene's own textures sampled as they were when Pixel-Perfect frames the 2D view", () => {
+    const editor = editorHandle();
+    // Engine data such as the BRDF lookup and render targets: nearest or clamped sampling would break them.
+    const texture = new Texture(null, editor.scene, false, false, Texture.TRILINEAR_SAMPLINGMODE);
+    editor.editor!.setViewportMode("2d");
+    editor.editor!.setPixelPerfect({ pixelsPerUnit: 100 });
+    expect([texture.samplingMode, texture.wrapU, texture.wrapV])
+      .toEqual([Texture.TRILINEAR_SAMPLINGMODE, Texture.WRAP_ADDRESSMODE, Texture.WRAP_ADDRESSMODE]);
+  });
 
   it("constructs editor and Play scenes with unique-id lookup maps", () => {
     const editor = editorHandle();

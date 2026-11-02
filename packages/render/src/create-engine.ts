@@ -183,6 +183,7 @@ import {
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
+import { observeNearestTextures, setNearestTextures } from "./nearest-textures";
 import { FontRegistry } from "./font-registry";
 import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
@@ -847,6 +848,10 @@ function initializeEngine(
   binding.pixelsPerUnit = options.pixelsPerUnit;
   binding.sortingLayers = options.sortingLayers;
   binding.pixelPerfect = options.pixelPerfect === true;
+  if (options.nearestTextures !== undefined) setNearestTextures(engine, options.nearestTextures);
+  // The Engine's other views (the editor's settings) switch it too: this view redraws with the new sampling.
+  const releaseNearestTextures = observeNearestTextures(engine, () => scheduler.invalidate("asset"));
+  onRollback(releaseNearestTextures);
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = installTextureBytes(options.textureBytes);
@@ -2410,6 +2415,7 @@ function initializeEngine(
       engine.onContextLostObservable.remove(contextLostObserver);
       engine.onContextRestoredObservable.remove(contextRestoredObserver);
       engine.onEndFrameObservable.remove(presentationObserver);
+      releaseNearestTextures();
       releaseViewAdmission?.();
       releaseOffscreenDispatch?.();
       releaseViewless?.();

@@ -51,10 +51,16 @@ export interface TwoDProjectSettings {
   /** Texture pixels per world unit; the 2D authoring scale. */
   pixelsPerUnit: number;
   /**
-   * Derive orthographic bounds from the canvas pixel size, sample textures
-   * nearest with mipmaps off and snap the camera to the pixel grid.
+   * Derive the 2D editor view's orthographic bounds from the canvas pixel size
+   * and snap the game camera to the pixel grid.
    */
   pixelPerfect: boolean;
+  /**
+   * With `pixelPerfect`, every texture a Material samples draws with nearest
+   * filtering, in 3D too (sprites, tiles and 2D images always do). Inert
+   * without `pixelPerfect`.
+   */
+  nearestTextures: boolean;
   /**
    * Ordered sorting layers, back to front. The index in this list is the
    * coarse half of the 2D sort key.
@@ -517,8 +523,14 @@ export interface PhysicsProjectSettings {
 export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
   pixelsPerUnit: 100,
   pixelPerfect: false,
+  nearestTextures: false,
   sortingLayers: [...DEFAULT_SORTING_LAYERS],
 };
+
+/** Whether Materials sample nearest: Nearest Texture Filtering holds only with Pixel-Perfect Mode. */
+export function nearestTextureFiltering(twoD: Pick<TwoDProjectSettings, "pixelPerfect" | "nearestTextures">): boolean {
+  return twoD.pixelPerfect && twoD.nearestTextures;
+}
 
 function normalizeSortingLayers(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_SORTING_LAYERS];
@@ -732,6 +744,7 @@ export function normalizeProjectSettings(
           ? twoD.pixelsPerUnit
           : DEFAULT_TWO_D_PROJECT_SETTINGS.pixelsPerUnit,
       pixelPerfect: twoD?.pixelPerfect === true,
+      nearestTextures: twoD?.nearestTextures === true,
       sortingLayers: normalizeSortingLayers(twoD?.sortingLayers),
     },
     physics: physicsSettings(settings?.physics),

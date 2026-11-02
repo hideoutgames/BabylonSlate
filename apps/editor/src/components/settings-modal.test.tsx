@@ -29,6 +29,7 @@ const {
   lastProjectRender,
   pluginDescriptors,
   applyPluginOverrides,
+  projectTwoD,
 } = vi.hoisted(() => {
   const lastProjectRender = { current: null as import("@haptic/core").RenderProjectSettings | null };
   return {
@@ -53,6 +54,7 @@ const {
     lastProjectRender,
     pluginDescriptors: [] as PluginDescriptor[],
     applyPluginOverrides: vi.fn(async () => undefined),
+    projectTwoD: { current: null as Partial<import("@haptic/core").TwoDProjectSettings> | null },
   };
 });
 
@@ -85,6 +87,7 @@ vi.mock("../context/document-context", async () => {
     if (projectExportPresets.current) {
       projectDocument.settings.exportPresets = projectExportPresets.current;
     }
+    if (projectTwoD.current) projectDocument.settings.twoD = { ...projectDocument.settings.twoD, ...projectTwoD.current };
     return {
     projectDocument,
     projectGuid: "test-project",
@@ -168,6 +171,7 @@ vi.mock("../context/document-context", async () => {
 afterEach(() => {
   cleanup();
   lastProjectRender.current = null;
+  projectTwoD.current = null;
   updateProjectSettings.mockClear();
   updateProjectVersion.mockClear();
   setShowPluginContent.mockClear();
@@ -459,6 +463,27 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
+  it("offers Nearest Texture Filtering only with Pixel-Perfect Mode on", () => {
+    const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
+    const control = () => screen.getByTestId("settings-nearest-textures");
+    expect(control().hasAttribute("data-disabled")).toBe(true);
+    expect(control().closest('[data-slot="field"]')?.getAttribute("data-disabled")).toBe("true");
+    // Stored on, but inert without Pixel-Perfect Mode: it reads off.
+    projectTwoD.current = { pixelPerfect: false, nearestTextures: true };
+    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" key="inert" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
+    expect(control().getAttribute("aria-checked")).toBe("false");
+    projectTwoD.current = { pixelPerfect: true, nearestTextures: false };
+    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" key="pixel-perfect" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
+    expect(control().hasAttribute("data-disabled")).toBe(false);
+    fireEvent.click(control());
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      twoD: expect.objectContaining({ pixelPerfect: true, nearestTextures: true }),
+    });
+  });
+
   it("edits a Collision Preset's responses and adds one with a fresh id", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-physics"));
@@ -649,7 +674,8 @@ describe("SettingsModal project authoring", () => {
 
   it.each([
     ["general", "settings-infinite-loop-detection", /Stops runaway scripts/, null],
-    ["game", "settings-pixel-perfect", /nearest sampling/, null],
+    ["game", "settings-pixel-perfect", /Frames the 2D editor view 1:1/, null],
+    ["game", "settings-nearest-textures", /Needs Pixel-Perfect Mode/, null],
     ["audio", "settings-audio-occlusion", /Wall muffling/, null],
     ["rendering", "setting-render-custom", /Sets the design size/, "Resolution"],
     ["rendering", "setting-render-black-bars", /Adds bars to preserve/, "Resolution"],

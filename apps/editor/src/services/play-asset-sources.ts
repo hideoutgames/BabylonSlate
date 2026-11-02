@@ -1,4 +1,4 @@
-import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@haptic/core";
+import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, nearestTextureFiltering, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@haptic/core";
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
   compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, mapBounded,
@@ -248,7 +248,7 @@ async function acquirePlayAssetSourcesAttempt(
       bundleDebugger: true, render: project.settings.render, playFrameCap: project.settings.playFrameCap,
       garbageCollectionIntervalTicks: project.settings.garbageCollectionIntervalTicks,
       pixelsPerUnit: project.settings.twoD.pixelsPerUnit, sortingLayers: project.settings.twoD.sortingLayers,
-      pixelPerfect: project.settings.twoD.pixelPerfect, physicsWorld: "3d", collisionPresets: project.settings.physics.collisionPresets,
+      pixelPerfect: project.settings.twoD.pixelPerfect, nearestTextures: nearestTextureFiltering(project.settings.twoD), physicsWorld: "3d", collisionPresets: project.settings.physics.collisionPresets,
       audioMixerGuid: project.settings.audio.audioMixerGuid ?? undefined,
       assets: [],
     },

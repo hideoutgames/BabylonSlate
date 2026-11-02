@@ -139,6 +139,8 @@ export type CollectExportGameParams = {
   pixelsPerUnit?: number;
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
+  /** Nearest Texture Filtering as the game draws it (`nearestTextureFiltering`). */
+  nearestTextures?: boolean;
   physicsWorld: "2d" | "3d";
   /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
   collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
@@ -626,6 +628,7 @@ export async function collectAndExportGame(
     pixelsPerUnit: params.pixelsPerUnit,
     sortingLayers: params.sortingLayers,
     pixelPerfect: params.pixelPerfect,
+    nearestTextures: params.nearestTextures,
     physicsWorld: params.physicsWorld,
     collisionPresets: params.collisionPresets,
     infiniteLoopDetection: params.infiniteLoopDetection,

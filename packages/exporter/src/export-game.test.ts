@@ -775,6 +775,7 @@ describe("exportGame", () => {
       pixelsPerUnit: 64,
       sortingLayers: ["Default", "Custom", "Props"],
       pixelPerfect: true,
+      nearestTextures: true,
       touchMinTargetPx: 48,
       scripts: [],
       assets: [
@@ -799,6 +800,7 @@ describe("exportGame", () => {
     expect(result.value.manifest.pixelsPerUnit).toBe(64);
     expect(parseGameManifest(new TextDecoder().decode(result.value.files.get("game.json")!)).sortingLayers).toEqual(["Default", "Custom", "Props"]);
     expect(result.value.manifest.pixelPerfect).toBe(true);
+    expect(parseGameManifest(new TextDecoder().decode(result.value.files.get("game.json")!)).nearestTextures).toBe(true);
     expect(result.value.manifest.touchMinTargetPx).toBe(48);
     expect(
       result.value.manifest.assets.find((entry) => entry.guid === "font-1")?.name,

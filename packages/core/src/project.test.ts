@@ -8,6 +8,7 @@ import {
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
+  nearestTextureFiltering,
   normalizeProjectSettings,
   normalizeRenderProjectSettings,
   type ProjectSettings,
@@ -139,12 +140,21 @@ describe("project schema", () => {
         pixelsPerUnit: 0,
         pixelPerfect: true,
         sortingLayers: ["Default", " Default ", "", "UI", "Default"],
-      },
+      } as Partial<ProjectSettings["twoD"]> as ProjectSettings["twoD"],
     });
     expect(settings.touchMinTargetPx).toBe(48);
     expect(settings.twoD.pixelsPerUnit).toBe(100);
     expect(settings.twoD.pixelPerfect).toBe(true);
+    expect(settings.twoD.nearestTextures).toBe(false);
     expect(settings.twoD.sortingLayers).toEqual(["Default", "UI"]);
+  });
+
+  it("filters textures nearest only when Nearest Texture Filtering and Pixel-Perfect Mode are both on", () => {
+    // Saved settings are untrusted: only a literal true counts.
+    const filtering = (pixelPerfect: unknown, nearestTextures: unknown) => nearestTextureFiltering(
+      normalizeProjectSettings({ twoD: { pixelPerfect, nearestTextures } as unknown as ProjectSettings["twoD"] }).twoD);
+    expect([filtering(true, true), filtering(false, true), filtering(true, false), filtering(true, "yes")])
+      .toEqual([true, false, false, false]);
   });
 
   it("defaults physics collision layers to Default and caps at 32 unique names", () => {

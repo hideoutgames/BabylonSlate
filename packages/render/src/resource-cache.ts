@@ -7,6 +7,7 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { InternalTextureSource, type InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { trackMaterialTexture } from "./nearest-textures";
 import {
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
@@ -1045,6 +1046,8 @@ export function acquireMaterialTexture(
     { ...MATERIAL_TEXTURE_SAMPLING, ...options },
   );
   if (lease.resource.isCube) { lease.release(); return null; }
+  // The cache's own uploads are Textures; an injected cache (a preview's or a test's) may hand back anything.
+  if (lease.resource instanceof Texture) trackMaterialTexture(engine, lease.resource, lease.ready);
   return lease as ResourceLease<Texture>;
 }
 

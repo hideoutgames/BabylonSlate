@@ -72,6 +72,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["game", "Game Instance", "settings-game-instance"],
   ["game", "Pixels Per Unit", "pixels-per-unit"],
   ["game", "Pixel Perfect", "settings-pixel-perfect"],
+  ["game", "Nearest Texture Filtering", "settings-nearest-textures"],
   ["game", "Sorting Layers"],
   ["physics", "Collision Layers"],
   ["physics", "Collision Presets", "settings-collision-presets"],

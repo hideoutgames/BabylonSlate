@@ -2,6 +2,7 @@ import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   defaultExportPreset,
+  nearestTextureFiltering,
   type ProjectDocument,
   type Result,
 } from "@haptic/core";
@@ -135,6 +136,7 @@ export async function exportProjectGameArtifact(
     pixelsPerUnit: exportDocument?.settings.twoD.pixelsPerUnit ?? 100,
     sortingLayers: exportDocument?.settings.twoD.sortingLayers,
     pixelPerfect: exportDocument?.settings.twoD.pixelPerfect === true,
+    nearestTextures: exportDocument ? nearestTextureFiltering(exportDocument.settings.twoD) : false,
     physicsWorld:
       loaded.sceneByGuid(startupSceneGuid ?? "")?.settings.physicsWorld ===
       "2d"

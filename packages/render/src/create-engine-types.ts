@@ -373,6 +373,11 @@ export interface CreateEngineOptions {
   touchMinTargetPx?: number;
   /** Project `twoD.pixelPerfect` — snap the Play camera, not the editor camera. */
   pixelPerfect?: boolean;
+  /**
+   * Nearest Texture Filtering (`nearestTextureFiltering`) for the whole Engine, set when given (the player's view);
+   * the editor switches it on its shared Engine with `setNearestTextures`.
+   */
+  nearestTextures?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   renderTargets?: MeshAssetContext["renderTargets"];
