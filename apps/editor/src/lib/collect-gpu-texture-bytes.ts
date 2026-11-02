@@ -64,6 +64,16 @@ export async function collectGpuTextureBytes(options: {
   return bytes;
 }
 
+/** One Texture's authored payload size, or null when the asset is not a sized Texture. */
+export function texturePixelSizeFromHeader(
+  asset: GpuTextureAsset | undefined,
+): { width: number; height: number } | null {
+  if (!asset || asset.header.type !== "Texture") return null;
+  const width = Number(asset.header.payload.width);
+  const height = Number(asset.header.payload.height);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
 /** Authored Texture payload size. Independent of editor LOD / packed GPU bytes. */
 export function texturePixelSizesFromHeaders(
   assets: readonly GpuTextureAsset[],
@@ -77,12 +87,8 @@ export function texturePixelSizesFromHeaders(
   for (const guid of guids) {
     if (!guid || seen.has(guid)) continue;
     seen.add(guid);
-    const asset = byGuid.get(guid);
-    if (!asset || asset.header.type !== "Texture") continue;
-    const width = Number(asset.header.payload.width);
-    const height = Number(asset.header.payload.height);
-    if (!(width > 0) || !(height > 0)) continue;
-    sizes.set(guid, { width, height });
+    const size = texturePixelSizeFromHeader(byGuid.get(guid));
+    if (size) sizes.set(guid, size);
   }
   return sizes;
 }

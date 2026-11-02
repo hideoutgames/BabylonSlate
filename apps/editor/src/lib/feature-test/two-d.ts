@@ -70,8 +70,6 @@ export const FEATURE_TEST_TWO_D_NAMES = {
   robotJumpSprite: "FT_2DRobotJumpSprite",
   robotFallSprite: "FT_2DRobotFallSprite",
   robotWalkSprite: "FT_2DRobotWalkSprite",
-  /** Full-height colormap strips (one frame per strip) and a `Cycle` clip; authored data, not placed. */
-  colorBars: "FT_2DColorBars",
   idleAnimation: "FT_2DRobotIdleAnim",
   walkAnimation: "FT_2DRobotWalkAnim",
   jumpAnimation: "FT_2DRobotJumpAnim",
@@ -161,11 +159,11 @@ type Shape2D = Record<string, unknown> & { kind: "box2d" | "circle" | "capsule2d
 
 /** Robot pose Sprites (one whole frame Texture each). */
 const ROBOT_SPRITES = {
-  robotIdle: { name: NAMES.robotIdleSprite, frame: "idle", clip: "Idle" },
-  robotJump: { name: NAMES.robotJumpSprite, frame: "jump", clip: "Jump" },
-  robotFall: { name: NAMES.robotFallSprite, frame: "fall", clip: "Fall" },
-  robotWalk: { name: NAMES.robotWalkSprite, frame: "walk0", clip: "Walk" },
-} as const satisfies Record<string, { name: string; frame: RobotFrame; clip: string }>;
+  robotIdle: { name: NAMES.robotIdleSprite, frame: "idle" },
+  robotJump: { name: NAMES.robotJumpSprite, frame: "jump" },
+  robotFall: { name: NAMES.robotFallSprite, frame: "fall" },
+  robotWalk: { name: NAMES.robotWalkSprite, frame: "walk0" },
+} as const satisfies Record<string, { name: string; frame: RobotFrame }>;
 type RobotSpriteKey = keyof typeof ROBOT_SPRITES;
 
 /**
@@ -223,12 +221,12 @@ export async function buildFeatureTestTwoD(ctx: FeatureTestContext): Promise<voi
 // ---------------------------------------------------------------------------
 // Sprites and Sprite Animations
 
-type SpriteGuids = Record<RobotSpriteKey | "colorBars", string>;
+type SpriteGuids = Record<RobotSpriteKey, string>;
 
 async function buildSprites(ctx: FeatureTestContext): Promise<SpriteGuids> {
   const robot = async (key: RobotSpriteKey) => {
     const spec = ROBOT_SPRITES[key];
-    return (await ctx.createAsset("Sprite", FOLDER, spec.name, { payload: payload(robotSprite(ctx, spec.frame, spec.clip)) }))
+    return (await ctx.createAsset("Sprite", FOLDER, spec.name, { payload: payload(robotSprite(ctx, spec.frame)) }))
       .guid;
   };
   return {
@@ -236,70 +234,16 @@ async function buildSprites(ctx: FeatureTestContext): Promise<SpriteGuids> {
     robotJump: await robot("robotJump"),
     robotFall: await robot("robotFall"),
     robotWalk: await robot("robotWalk"),
-    colorBars: (await ctx.createAsset("Sprite", FOLDER, NAMES.colorBars, { payload: payload(colorBarsSprite(ctx)) }))
-      .guid,
   };
 }
 
-/** Single full frame of a robot Texture; quad = texture px / PPU, collision = opaque bounds. */
-function robotSprite(ctx: FeatureTestContext, frame: RobotFrame, clip: string): SpritePayload {
-  const textureGuid = robotTexture(ctx, frame);
-  const size = robotFrameSize(ctx, frame);
+/** One robot Texture as a Sprite; the quad is texture px / PPU, collision the opaque bounds. */
+function robotSprite(ctx: FeatureTestContext, frame: RobotFrame): SpritePayload {
   return {
-    textureGuid,
+    textureGuid: robotTexture(ctx, frame),
     pixelsPerUnit: PPU,
-    frames: [
-      {
-        name: frame,
-        u: 0,
-        v: 0,
-        uSize: 1,
-        vSize: 1,
-        durationMs: 100,
-        pivot: { ...CENTER_PIVOT },
-        collision: robotCollision(frame),
-        x: 0,
-        y: 0,
-        width: size.width,
-        height: size.height,
-      },
-    ],
-    clips: [{ name: clip, frames: [frame] }],
-  };
-}
-
-/** Colormap strips the color-bar Sprite frames crop (full height, see `colorBarsSprite`). */
-const COLOR_BAR_STRIPS = 8;
-
-/**
- * Atlas Sprite on the pixel-art colormap: one full-height strip per frame
- * (`v: 0, vSize: 1`, the only sub-rects whose V orientation the editor
- * preview and the runtime agree on) and a `Cycle` clip over all strips.
- * Authored data for multi-frame atlas Sprites; FT_2D does not place it.
- */
-function colorBarsSprite(ctx: FeatureTestContext): SpritePayload {
-  const textureGuid = requireRef(ctx.assets.textures.colormapPixelArt, "the pixel-art colormap Texture");
-  const size = textureSize(ctx, textureGuid, "pixel-art colormap Texture");
-  const stripWidth = size.width / COLOR_BAR_STRIPS;
-  const frames = Array.from({ length: COLOR_BAR_STRIPS }, (_, index) => ({
-    name: `bar-${index + 1}`,
-    u: index / COLOR_BAR_STRIPS,
-    v: 0,
-    uSize: 1 / COLOR_BAR_STRIPS,
-    vSize: 1,
-    durationMs: 150,
     pivot: { ...CENTER_PIVOT },
-    collision: { x: 0, y: 0, width: 1, height: 1 },
-    x: index * stripWidth,
-    y: 0,
-    width: stripWidth,
-    height: size.height,
-  }));
-  return {
-    textureGuid,
-    pixelsPerUnit: PPU,
-    frames,
-    clips: [{ name: "Cycle", frames: frames.map((frame) => frame.name) }],
+    collision: robotCollision(frame),
   };
 }
 

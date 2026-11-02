@@ -7,7 +7,7 @@ import { createMirrorSurfaceMesh, mirrorDiagnostics } from "./mirrors";
 import { setPlanarFootprintCulling } from "./planar-mirror";
 import { mirrorReflectionBinding } from "./mirror-surface-state";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
-import { applySpriteFrameUvs, createSpriteQuad } from "./sprite-quad";
+import { createSpriteQuad, setSpriteQuadSize } from "./sprite-quad";
 import { createText3DMesh } from "./text3d-mesh";
 import { setUnlitMaterial, type UnlitBinding } from "./unlit-material";
 
@@ -143,8 +143,7 @@ it("keeps the reflection of unlit Text 3D and sprites, and redraws it once when 
   box.dispose();
   const text = createText3DMesh(scene, "text", { text: "Hi", size: 0.5 });
   text.position.set(-0.5, 1, 1.5);
-  const frame = { name: "a", u: 0, v: 0, uSize: 0.5, vSize: 0.5, durationMs: 100, pivot: { x: 0.5, y: 0.5 } };
-  const sprite = createSpriteQuad(scene, "sprite", frame);
+  const sprite = createSpriteQuad(scene, "sprite", { pivot: { x: 0.5, y: 0.5 } });
   sprite.position.set(0.5, 1, 1.5);
   const atlas = new Texture(null, scene);
   const binding: UnlitBinding = { texture: atlas, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: true, twoSided: false };
@@ -157,7 +156,8 @@ it("keeps the reflection of unlit Text 3D and sprites, and redraws it once when 
   expect(drawsOver(10)).toBe(1);
   applyOverlayVisualStyle(text, { opacity: 0.5 });
   expect(drawsOver(10)).toBe(1);
-  applySpriteFrameUvs(sprite, { ...frame, u: 0.5 });
+  // A Sprite Animation frame resizes the quad in place.
+  setSpriteQuadSize(sprite, 0.5, 1, { x: 0.5, y: 0.5 });
   expect(drawsOver(10)).toBe(1);
   atlas.uOffset = 0.25;
   expect(drawsOver(10)).toBe(1);

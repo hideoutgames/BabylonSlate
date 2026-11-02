@@ -11,7 +11,10 @@ import {
 import {
   materialParameterTextureAssetGuids,
   applyTexturePixelSizesToSpriteAnimation,
+  applyTexturePixelSizeToSprite,
   hydrateSpriteAnimationPixelSizes,
+  hydrateSpritePixelSizes,
+  parseSpritePayload,
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   retargetAnimationLoadsFromAnimations,
@@ -136,13 +139,6 @@ function texturePixelSizesFromManifest(
   return sizes;
 }
 
-function asSpritePayload(value: unknown): SpritePayload | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as { frames?: unknown; clips?: unknown };
-  if (!Array.isArray(record.frames) || !Array.isArray(record.clips)) return null;
-  return value as SpritePayload;
-}
-
 function asSpriteAnimationPayload(
   value: unknown,
 ): SpriteAnimationPayload | null {
@@ -223,8 +219,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       continue;
     }
     if (entry.type === "Sprite") {
-      const sprite = asSpritePayload(parsed);
-      if (sprite) spritePayloads.set(entry.guid, sprite);
+      if (parsed && typeof parsed === "object") spritePayloads.set(entry.guid, parseSpritePayload(parsed));
       continue;
     }
     if (entry.type === "SpriteAnimation" && parsed) {
@@ -327,6 +322,11 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       applyTexturePixelSizesToSpriteAnimation(payload, (textureGuid) => texturePixelSizes.get(textureGuid))])),
     game.textureBytes,
   );
+  const sizedSprites = hydrateSpritePixelSizes(
+    new Map([...spritePayloads].map(([guid, payload]) => [guid,
+      applyTexturePixelSizeToSprite(payload, (textureGuid) => texturePixelSizes.get(textureGuid))])),
+    game.textureBytes,
+  );
 
   const animations = [...animationPayloads].map(([guid, payload]) => ({ guid, payload }));
   const retargetAnimationLoads = retargetAnimationLoadsFromAnimations(animations);
@@ -360,7 +360,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     dataAssets,
     curveAssets,
     timelineClipAssets,
-    spritePayloads,
+    spritePayloads: sizedSprites,
     spriteAnimationPayloads: sizedSpriteAnimations,
     waterPayloads,
     tilemapPayloads,
