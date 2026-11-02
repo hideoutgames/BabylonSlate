@@ -36,6 +36,7 @@ import {
   type ColorValue,
   type PropertyRow,
   type TreeViewNode,
+  rangeSelectTreeIds,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Field, FieldLabel } from "@haptic/ui/components/field";
@@ -52,23 +53,32 @@ import { timelineProxyScene } from "../lib/timeline-proxy-scene";
 import { TimelinePanel } from "../panels/timeline-panel";
 import { TimelineInspectorContent } from "../panels/timeline-inspector";
 
-/** The proxy the Inspector shows, per clip asset document. */
-const selectedProxies = new Map<string, string>();
+/** The selected proxies, per clip asset document, the latest last. */
+const selectedProxies = new Map<string, readonly string[]>();
 const selectionListeners = new Set<() => void>();
-/** Selects a proxy of a clip asset document: the Inspector shows it. */
-export function selectProxy(document: string, proxyId: string | null): void {
-  if (proxyId) selectedProxies.set(document, proxyId);
+const NO_PROXIES: readonly string[] = [];
+/** Selects these proxies of a clip asset document (none clears). */
+export function selectProxies(document: string, proxyIds: readonly string[]): void {
+  const next = [...new Set(proxyIds)];
+  if (next.length) selectedProxies.set(document, next);
   else selectedProxies.delete(document);
   for (const listener of selectionListeners) listener();
 }
-export function useSelectedProxy(document: string): string | undefined {
+/** Selects one proxy, or with `additive` adds it to the selection or takes it out; null clears. */
+export function selectProxy(document: string, proxyId: string | null, options?: { additive?: boolean }): void {
+  const current = selectedProxies.get(document) ?? NO_PROXIES;
+  if (!proxyId) selectProxies(document, []);
+  else if (!options?.additive) selectProxies(document, [proxyId]);
+  else selectProxies(document, current.includes(proxyId) ? current.filter((id) => id !== proxyId) : [...current, proxyId]);
+}
+export function useSelectedProxies(document: string): readonly string[] {
   return useSyncExternalStore(
     (listener) => {
       selectionListeners.add(listener);
       return () => selectionListeners.delete(listener);
     },
-    () => selectedProxies.get(document),
-    () => undefined,
+    () => selectedProxies.get(document) ?? NO_PROXIES,
+    () => NO_PROXIES,
   );
 }
 
@@ -185,7 +195,7 @@ export function TimelineClipProxiesPanel(_props: IDockviewPanelProps) {
   const { id, payload, twoD, commit } = useTimelineClipAsset();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const touch = useTouchUi();
-  const selected = useSelectedProxy(id);
+  const selected = useSelectedProxies(id);
   const [adding, setAdding] = useState<TimelineProxyRepresents | null>(null);
   // The new proxy's Name; empty names it after its Class.
   const [proxyName, setProxyName] = useState("");
@@ -246,8 +256,13 @@ export function TimelineClipProxiesPanel(_props: IDockviewPanelProps) {
       {payload.proxies.length ? <TreeView
         aria-label="Proxies"
         nodes={nodes}
-        selectedId={selected ?? null}
-        onSelect={(proxyId) => selectProxy(id, proxyId)}
+        selectedId={selected.at(-1) ?? null}
+        selectedIds={selected}
+        onSelect={(proxyId, options) => selectProxies(id, options?.range
+          ? rangeSelectTreeIds(payload.proxies.map((proxy) => proxy.id), selected.at(-1), proxyId)
+          : options?.additive
+            ? (selected.includes(proxyId) ? selected.filter((entry) => entry !== proxyId) : [...selected, proxyId])
+            : [proxyId])}
         renamingId={renamingId}
         onRenameRequest={setRenamingId}
         onRenameDone={(proxyId, name) => {
@@ -292,8 +307,10 @@ export function TimelineClipInspectorPanel(_props: IDockviewPanelProps) {
   const { id, payload, twoD, commit } = useTimelineClipAsset();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const [picker, setPicker] = useState<"timeline" | "representation" | null>(null);
-  const selectedId = useSelectedProxy(id);
-  const proxy = payload.proxies.find((entry) => entry.id === selectedId);
+  // A removed proxy can still be in the selection until the next one.
+  const selected = useSelectedProxies(id).filter((proxyId) => payload.proxies.some((entry) => entry.id === proxyId));
+  const selectedCount = selected.length;
+  const proxy = selectedCount === 1 ? payload.proxies.find((entry) => entry.id === selected[0]) : undefined;
   const preview = proxy ? payload.editorPreview?.proxies[proxy.id] ?? defaultTimelineProxyPreview(0) : undefined;
   const assets = useMemo(() => {
     void registryEpoch;
@@ -365,7 +382,9 @@ export function TimelineClipInspectorPanel(_props: IDockviewPanelProps) {
         <PropertyGrid title="Proxy" rows={proxyRows} data-testid="timeline-clip-inspector-proxy" />
         <PropertyGrid title="Editor Preview" rows={previewRows} data-testid="timeline-clip-inspector-preview" />
         <p className="px-2 text-xs text-muted-foreground">Editor Preview never leaves the editor: Play and exports leave it out.</p>
-      </> : <p className="px-2 pt-2 text-xs text-muted-foreground">Select a proxy to edit it here.</p>}
+      </> : <p className="px-2 pt-2 text-xs text-muted-foreground" data-testid="timeline-clip-inspector-no-proxy">
+        {selectedCount > 1 ? `${selectedCount} Proxies Selected. Select one proxy to edit it here.` : "Select a proxy to edit it here."}
+      </p>}
       <PropertyGrid title={twoD ? "2D Timeline Clip" : "3D Timeline Clip"} rows={clipRows} data-testid="timeline-clip-inspector-clip" />
     </div>
     <AssetPicker
