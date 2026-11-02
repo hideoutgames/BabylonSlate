@@ -76,8 +76,8 @@ import {
   SettingsCategoryHeader,
   SettingsSection,
   SettingsSectionsProvider,
-  useSettingsSectionsHost,
 } from "./settings-section";
+import { useSettingsSectionsHost } from "./use-settings-sections";
 import {
   ENGINE_CATEGORIES,
   ENGINE_GROUPS,

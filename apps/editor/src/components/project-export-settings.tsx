@@ -104,7 +104,7 @@ export function ProjectExportSettings({
         </Field>
       </SettingsSection>
       <SettingsSection id="projectBackup" title="Project Backup">
-        <Field className="settings-field">
+        <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="export-project">Export Project</FieldLabel>
           <Button
             variant="outline"
