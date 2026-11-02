@@ -123,7 +123,8 @@ function useThumbnailUrls(
   return urls;
 }
 
-function AssetToolbar({
+/** Filter and Sort for Models and Project, in the search row; inactive while a search lists results. */
+function AssetControls({
   scope,
   items,
   typeFilters,
@@ -132,7 +133,7 @@ function AssetToolbar({
   onFolderChange,
   sort,
   onSortChange,
-  shown,
+  disabled,
 }: {
   scope: string;
   items: readonly PlaceActorItem[];
@@ -142,7 +143,7 @@ function AssetToolbar({
   onFolderChange: (folder: string) => void;
   sort: AssetSort;
   onSortChange: (sort: AssetSort) => void;
-  shown: number;
+  disabled: boolean;
 }) {
   const types = useMemo(
     () => [...new Set(items.map(assetType))].filter(Boolean).sort((a, b) => a.localeCompare(b)),
@@ -159,18 +160,11 @@ function AssetToolbar({
   const sortOptions = typeFilters ? SORT_OPTIONS : SORT_OPTIONS.filter((option) => option.id !== "type");
 
   return (
-    <div
-      className="sticky -top-3 z-10 -mx-3 -mt-3 mb-2 flex items-center gap-2 border-b bg-popover px-3 py-1.5"
-      data-testid={`${prefix}-toolbar`}
-    >
-      <span className="mr-auto text-xs text-muted-foreground tabular-nums" data-testid={`${prefix}-count`}>
-        {shown === items.length
-          ? `${shown} ${shown === 1 ? "Asset" : "Assets"}`
-          : `${shown} of ${items.length} Assets`}
-      </span>
+    <div className="flex shrink-0 items-center gap-2" data-testid={`${prefix}-toolbar`}>
       {filterTypes || filterFolders ? (
         <DropdownMenu>
           <DropdownMenuTrigger
+            disabled={disabled}
             render={
               <Button
                 type="button"
@@ -232,6 +226,7 @@ function AssetToolbar({
       ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger
+          disabled={disabled}
           render={<Button type="button" variant="outline" size="sm" data-testid={`${prefix}-sort`} aria-label="Sort" />}
         >
           <ArrowUpDownIcon data-icon="inline-start" />
@@ -420,48 +415,23 @@ export function PlaceActorsDialog({
     );
   } else if (activeCategory === MODELS) {
     body = (
-      <>
-        <AssetToolbar
-          scope="models"
-          items={models}
-          folder={modelFolder}
-          onFolderChange={(folder) => change({ modelFolder: folder })}
-          sort={modelSort}
-          onSortChange={(sort) => change({ modelSort: sort })}
-          shown={visibleModels.length}
-        />
-        <CatalogCardGrid label={MODELS} size="compact">
-          {visibleModels.map((item) =>
-            card(item, assetFolder(item) || undefined, thumbnails[assetGuid(item) ?? ""]),
-          )}
-        </CatalogCardGrid>
-      </>
+      <CatalogCardGrid label={MODELS} size="compact">
+        {visibleModels.map((item) =>
+          card(item, assetFolder(item) || undefined, thumbnails[assetGuid(item) ?? ""]),
+        )}
+      </CatalogCardGrid>
     );
   } else if (activeCategory === PROJECT) {
-    body = (
-      <>
-        <AssetToolbar
-          scope="project"
-          items={project}
-          typeFilters={typeFilters}
-          onTypeFiltersChange={(types) => change({ typeFilters: types })}
-          folder={projectFolder}
-          onFolderChange={(folder) => change({ projectFolder: folder })}
-          sort={projectSort}
-          onSortChange={(sort) => change({ projectSort: sort })}
-          shown={visibleProject.length}
+    body =
+      visibleProject.length === 0 ? (
+        <FilteredEmpty
+          onClear={() => change({ typeFilters: [], projectFolder: ALL_FOLDERS })}
         />
-        {visibleProject.length === 0 ? (
-          <FilteredEmpty
-            onClear={() => change({ typeFilters: [], projectFolder: ALL_FOLDERS })}
-          />
-        ) : (
-          <div role="group" aria-label={PROJECT} className="flex flex-col">
-            {visibleProject.map((item, index) => row(item, index, assetLine(item)))}
-          </div>
-        )}
-      </>
-    );
+      ) : (
+        <div role="group" aria-label={PROJECT} className="flex flex-col">
+          {visibleProject.map((item, index) => row(item, index, assetLine(item)))}
+        </div>
+      );
   } else {
     body = (
       <div role="group" aria-label={activeCategory} className="flex flex-col">
@@ -471,6 +441,32 @@ export function PlaceActorsDialog({
       </div>
     );
   }
+
+  // Filter and Sort share the fixed search row, so they never scroll away.
+  const controls =
+    activeCategory === MODELS ? (
+      <AssetControls
+        scope="models"
+        items={models}
+        folder={modelFolder}
+        onFolderChange={(folder) => change({ modelFolder: folder })}
+        sort={modelSort}
+        onSortChange={(sort) => change({ modelSort: sort })}
+        disabled={searching}
+      />
+    ) : activeCategory === PROJECT ? (
+      <AssetControls
+        scope="project"
+        items={project}
+        typeFilters={typeFilters}
+        onTypeFiltersChange={(types) => change({ typeFilters: types })}
+        folder={projectFolder}
+        onFolderChange={(folder) => change({ projectFolder: folder })}
+        sort={projectSort}
+        onSortChange={(sort) => change({ projectSort: sort })}
+        disabled={searching}
+      />
+    ) : null;
 
   return (
     <CatalogDialog
@@ -486,6 +482,7 @@ export function PlaceActorsDialog({
       search={search}
       onSearchChange={(value) => change({ search: value })}
       searchPlaceholder="Search actors and assets"
+      searchAccessory={controls}
       initialScrollTop={view.scrollTop}
       onBodyScroll={(scrollTop) =>
         session.savePlaceActorsView(overlay, { ...view, scrollTop })
