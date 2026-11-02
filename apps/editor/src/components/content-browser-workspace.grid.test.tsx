@@ -201,7 +201,7 @@ afterEach(async () => {
   docs.openDocument.mockClear();
   docs.repathDocument.mockClear();
   docs.repathProjectFolder.mockClear();
-  docs.refreshAssetRegistry.mockClear();
+  docs.refreshAssetRegistry.mockReset();
   docs.noteAssetsCreated.mockReset();
   docs.registryEpoch = 1;
   docs.sourceControl.enabled = false;
@@ -772,25 +772,27 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(renameAsset).not.toHaveBeenCalled();
   });
 
-  it("validates a single folder name and creates in the viewed folder with Enter", async () => {
-    installRegistry([], ["Characters"]);
+  it("creates a free NewFolder in the viewed folder from the New Asset menu and the tree, with no name dialog", async () => {
+    installRegistry([], ["NewFolder", "Characters"]);
     const createFolder = vi.fn().mockResolvedValue(undefined);
     docs.assetRegistry = { ...(docs.assetRegistry as object), createFolder };
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-folder-assets/Characters"));
-    fireEvent.click(screen.getByTestId("content-browser-new-folder"));
-    const input = screen.getByTestId("content-browser-name-input");
-    for (const name of ["..", "a/b", "a\\b", ""]) {
-      fireEvent.change(input, { target: { value: name } });
-      fireEvent.keyDown(input, { key: "Enter" });
-      expect(input.getAttribute("aria-invalid")).toBe("true");
-      expect(screen.getByTestId("content-browser-name-confirm").hasAttribute("disabled")).toBe(true);
-    }
-    expect(createFolder).not.toHaveBeenCalled();
-    fireEvent.change(input, { target: { value: "Hero 🤖 Ünïcødé" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull());
-    expect(createFolder).toHaveBeenCalledWith("project", "Hero 🤖 Ünïcødé");
+    expect(screen.queryByTestId("content-browser-new-folder")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("content-browser-new-asset"));
+    fireEvent.click(screen.getByTestId("search-item-folder"));
+    await waitFor(() => expect(createFolder).toHaveBeenCalledWith("project", "NewFolder_1"));
+    expect(screen.queryByTestId("content-browser-new-asset-dialog")).toBeNull();
+    expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
+
+    fireEvent.doubleClick(screen.getByTestId("content-folder-assets/Characters"));
+    // Empty tree space below the rows; a row's own press opens no menu.
+    fireEvent.contextMenu(screen.getByTestId("tree-row-assets/Characters"));
+    expect(screen.queryByTestId("context-menu-item-new-folder")).toBeNull();
+    fireEvent.contextMenu(screen.getByTestId("content-browser-folder-tree"));
+    fireEvent.click(screen.getByTestId("context-menu-item-new-folder"));
+    await waitFor(() => expect(createFolder).toHaveBeenLastCalledWith("project", "Characters/NewFolder"));
+    expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
   });
 
   it("refuses a Class name whose class id another Class uses, in New Asset and Rename", () => {
@@ -941,22 +943,46 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Open Asset" }));
     await waitFor(() => expect(docs.openDocument).toHaveBeenCalledWith({ kind: "texture", path: "assets/tex-1.hasset", label: "Tex 1" }));
   });
-  it("preserves a folder name and explains a failed create so it can be retried", async () => {
+  it("explains a failed New Folder and creates the folder on the next try", async () => {
     installRegistry([]);
     const createFolder = vi.fn().mockRejectedValueOnce(new Error("Storage is read-only")).mockResolvedValue(undefined);
     docs.assetRegistry = { ...(docs.assetRegistry as object), createFolder };
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(await screen.findByTestId("content-browser-new-folder"));
-    const input = screen.getByTestId("content-browser-name-input") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Characters" } });
-    fireEvent.click(screen.getByTestId("content-browser-name-confirm"));
+    fireEvent.contextMenu(await screen.findByTestId("content-browser-asset-grid"));
+    fireEvent.click(screen.getByTestId("context-menu-item-new-folder"));
     expect(await screen.findByText("Storage is read-only")).toBeTruthy();
-    expect(input.value).toBe("Characters");
-    expect(screen.getByTestId("content-browser-name-confirm").hasAttribute("disabled")).toBe(false);
-    fireEvent.click(screen.getByTestId("content-browser-name-confirm"));
-    await waitFor(() => expect(screen.queryByTestId("content-browser-name-input")).toBeNull());
-    expect(createFolder).toHaveBeenLastCalledWith("project", "Characters");
+    expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
+
+    fireEvent.contextMenu(screen.getByTestId("content-browser-asset-grid"));
+    fireEvent.click(screen.getByTestId("context-menu-item-new-folder"));
+    await waitFor(() => expect(createFolder).toHaveBeenCalledTimes(2));
+    expect(createFolder).toHaveBeenLastCalledWith("project", "NewFolder");
+    await waitFor(() => expect(screen.queryByText("Storage is read-only")).toBeNull());
   });
+
+  it("lists only the filtered asset types in the tree and keeps every folder", async () => {
+    const rock = texture(2);
+    rock.path = "assets/Characters/Rock.mat.hasset";
+    rock.header = { ...rock.header, type: "Material", name: "Rock", guid: "rock" };
+    const skin = texture(3);
+    skin.path = "assets/Props/skin.hasset";
+    skin.header = { ...skin.header, guid: "skin" };
+    installRegistry([texture(1), rock, skin], ["Characters", "Props"]);
+    render(<ContentBrowserWorkspace />);
+    expect(screen.getByTestId("tree-row-assets/tex-1.hasset")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("content-browser-filter"));
+    fireEvent.click(await screen.findByTestId("content-browser-filter-Material"));
+
+    await waitFor(() => expect(screen.queryByTestId("tree-row-assets/tex-1.hasset")).toBeNull());
+    expect(screen.getByTestId("tree-row-assets/Characters")).toBeTruthy();
+    expect(screen.getByTestId("tree-row-assets/Props")).toBeTruthy();
+    // A folder whose assets are all filtered out has nothing to expand.
+    expect(screen.getByTestId("tree-row-assets/Props").hasAttribute("aria-expanded")).toBe(false);
+    fireEvent.click(screen.getByTestId("tree-row-assets/Characters").querySelector("button")!);
+    expect(await screen.findByTestId("tree-row-assets/Characters/Rock.mat.hasset")).toBeTruthy();
+  });
+
   it("navigates back to Content with the location bar after opening a folder", async () => {
     installRegistry([], ["Characters"]);
     render(<ContentBrowserWorkspace />);
@@ -978,7 +1004,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Characters");
   });
 
-  it("disables the empty-grid New Folder, New Asset and Import in a read-only root", () => {
+  it("disables New Folder, New Asset and Import in the empty-space menus of a read-only root", () => {
     docs.thumbnailsEnabled = false;
     docs.showPluginContent = true;
     const plugin = {
@@ -1000,6 +1026,9 @@ describe("ContentBrowserWorkspace grid window", () => {
     for (const id of ["new-folder", "new-asset", "import"]) {
       expect((screen.getByTestId(`context-menu-item-${id}`) as HTMLButtonElement).disabled).toBe(true);
     }
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    fireEvent.contextMenu(screen.getByTestId("content-browser-folder-tree"));
+    expect((screen.getAllByTestId("context-menu-item-new-folder").at(-1) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("clears an unsuccessful search without leaving the current folder", async () => {
@@ -1550,10 +1579,13 @@ describe("ContentBrowserWorkspace creating assets", () => {
     docs.assetRegistry = registry;
     docs.thumbnailsEnabled = false;
     const view = render(<ContentBrowserWorkspace />);
-    docs.noteAssetsCreated.mockImplementation(() => {
+    const indexChanged = () => {
       docs.registryEpoch += 1;
       act(() => view.rerender(<ContentBrowserWorkspace />));
-    });
+    };
+    docs.noteAssetsCreated.mockImplementation(indexChanged);
+    // A folder rename rescans; the registry already moved it in place.
+    docs.refreshAssetRegistry.mockImplementation(async () => indexChanged());
     return registry;
   }
 
@@ -1603,14 +1635,21 @@ describe("ContentBrowserWorkspace creating assets", () => {
     expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();
   });
 
-  it("enters a new folder and lists a Material Instance beside its parent without remounting the registry", async () => {
+  it("renames a new folder inline in its tile, then lists a Material Instance beside its parent without remounting the registry", async () => {
     const registry = await mountProject();
-    fireEvent.click(screen.getByTestId("content-browser-new-folder"));
-    fireEvent.change(screen.getByTestId("content-browser-name-input"), { target: { value: "Looks" } });
-    fireEvent.click(screen.getByTestId("content-browser-name-confirm"));
+    fireEvent.click(screen.getByTestId("content-browser-new-asset"));
+    fireEvent.click(screen.getByTestId("search-item-folder"));
+    const field = await screen.findByTestId("content-folder-rename-assets/NewFolder") as HTMLInputElement;
+    expect(document.activeElement).toBe(field);
+    expect(screen.getByTestId("content-folder-assets/NewFolder").getAttribute("data-selected")).toBe("true");
+    fireEvent.change(field, { target: { value: "Looks" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(registry.folderTree("project").children.map((folder) => folder.path)).toEqual(["assets/Looks"]));
+    fireEvent.doubleClick(await screen.findByTestId("content-folder-assets/Looks"));
     const location = await screen.findByRole("navigation", { name: "Folder Location" });
     await waitFor(() => expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Looks"));
-    expect(screen.getByTestId("tree-row-assets/Looks")).toBeTruthy();
+    docs.refreshAssetRegistry.mockClear();
+    docs.noteAssetsCreated.mockClear();
 
     await createAsset("Material", "Rock");
     const rock = registry.list().find((asset) => asset.header.name === "Rock")!;
@@ -1622,7 +1661,24 @@ describe("ContentBrowserWorkspace creating assets", () => {
     expect(instance.header.name).toBe("Rock_Instance");
     expect(instance.path).toBe("assets/Looks/Rock_Instance.matinst.hasset");
     expect(await screen.findByTestId(`content-item-${instance.path}`)).toBeTruthy();
-    expect(docs.noteAssetsCreated).toHaveBeenCalledTimes(3);
+    expect(docs.noteAssetsCreated).toHaveBeenCalledTimes(2);
     expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();
+  });
+
+  it("names a folder from the tree's empty space inline and keeps the generated name on Escape", async () => {
+    const registry = await mountProject();
+    fireEvent.contextMenu(screen.getByTestId("content-browser-folder-tree"));
+    fireEvent.click(screen.getByTestId("context-menu-item-new-folder"));
+    const field = await screen.findByTestId("tree-rename-assets/NewFolder");
+    expect(document.activeElement).toBe(field);
+    fireEvent.keyDown(field, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("tree-rename-assets/NewFolder")).toBeNull());
+    expect(screen.getByTestId("tree-row-assets/NewFolder")).toBeTruthy();
+
+    fireEvent.contextMenu(screen.getByTestId("content-browser-folder-tree"));
+    fireEvent.click(screen.getByTestId("context-menu-item-new-folder"));
+    expect(await screen.findByTestId("tree-rename-assets/NewFolder_1")).toBeTruthy();
+    expect(registry.folderTree("project").children.map((folder) => folder.path).sort()).toEqual(["assets/NewFolder", "assets/NewFolder_1"]);
+    expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
   });
 });

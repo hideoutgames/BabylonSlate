@@ -49,6 +49,7 @@ interface ContentBrowserAssetPaneProps {
   pluginRootIcons: ContentBrowserGridTilesProps["folderIcons"];
   sourceControlEnabled: boolean;
   tileLocks: ContentBrowserGridTilesProps["locks"];
+  renamingFolderPath: ContentBrowserGridTilesProps["renamingFolderPath"];
   gridActions: ContentBrowserGridActions;
 }
 
@@ -88,6 +89,7 @@ export function ContentBrowserAssetPane({
   pluginRootIcons,
   sourceControlEnabled,
   tileLocks,
+  renamingFolderPath,
   gridActions,
 }: ContentBrowserAssetPaneProps) {
   return (
@@ -176,6 +178,7 @@ export function ContentBrowserAssetPane({
             folderIcons={pluginRootIcons}
             sourceControlEnabled={sourceControlEnabled}
             locks={tileLocks}
+            renamingFolderPath={renamingFolderPath}
             actions={gridActions}
           />
         )}

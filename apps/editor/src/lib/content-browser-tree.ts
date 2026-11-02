@@ -225,7 +225,8 @@ export function flattenContentBrowserTree(
 ): ContentBrowserTreeRow[] {
   const map =
     byGuid ?? new Map(assets.map((asset) => [asset.header.guid, asset]));
-  const hasChildren = node.children.length > 0 || node.assets.length > 0;
+  // Only the assets passed in count, so a folder whose assets are all filtered out shows no expander.
+  const hasChildren = node.children.length > 0 || node.assets.some((guid) => map.has(guid));
   const expanded = !collapsed.has(node.path);
   const rows: ContentBrowserTreeRow[] = [
     {

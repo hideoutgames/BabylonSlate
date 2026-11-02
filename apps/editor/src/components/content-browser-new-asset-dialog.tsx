@@ -151,22 +151,38 @@ function NewAssetLocation({
   );
 }
 
-const NEW_ASSET_TYPE_ITEMS: SearchDialogItem[] = CREATABLE_ASSET_TYPE_GROUPS.flatMap((group) =>
-  group.types.map((type) => ({
-    id: type,
-    label: creatableAssetTypeLabel(type),
-    group: group.label,
-    keywords: type,
-    leading: <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} />,
-  })),
-);
+/** New Asset menu id of the Folder entry, which is no asset type. */
+export const NEW_ASSET_FOLDER_ID = "folder";
 
-/** Compact searchable menu of creatable types, grouped by category; a pick opens the New Asset dialog. */
+const NEW_ASSET_TYPE_ITEMS: SearchDialogItem[] = [
+  // First and ungrouped: a folder is made at once and renamed inline, with no dialog.
+  {
+    id: NEW_ASSET_FOLDER_ID,
+    label: "Folder",
+    keywords: "New Folder Directory",
+    leading: <TypeVisualIcon visual={{ ...resolveTypeVisual({ family: "folder" }), icon: FolderIcon, iconKey: "Folder" }} />,
+  },
+  ...CREATABLE_ASSET_TYPE_GROUPS.flatMap((group) =>
+    group.types.map((type) => ({
+      id: type,
+      label: creatableAssetTypeLabel(type),
+      group: group.label,
+      keywords: type,
+      leading: <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} />,
+    })),
+  ),
+];
+
+/**
+ * Compact searchable menu: Folder, then the creatable types grouped by
+ * category. Folder creates a folder; a type opens the New Asset dialog.
+ */
 export function ContentBrowserNewAssetMenu({
   open,
   onOpenChange,
   anchor,
   onSelect,
+  onNewFolder,
   children,
 }: {
   open: boolean;
@@ -174,6 +190,8 @@ export function ContentBrowserNewAssetMenu({
   /** Viewport point for a menu opened from empty grid space; `null` opens under the trigger. */
   anchor: { x: number; y: number } | null;
   onSelect: (type: CreatableAssetType) => void;
+  /** The Folder entry: creates a folder in the open folder and renames it inline. */
+  onNewFolder: () => void;
   children: ReactElement;
 }) {
   return (
@@ -185,7 +203,10 @@ export function ContentBrowserNewAssetMenu({
       placeholder="Search Asset Types"
       emptyLabel="No asset types match the search."
       items={NEW_ASSET_TYPE_ITEMS}
-      onSelect={(id) => onSelect(id as CreatableAssetType)}
+      onSelect={(id) => {
+        if (id === NEW_ASSET_FOLDER_ID) onNewFolder();
+        else onSelect(id as CreatableAssetType);
+      }}
       data-testid="new-asset-type-menu"
     >
       {children}

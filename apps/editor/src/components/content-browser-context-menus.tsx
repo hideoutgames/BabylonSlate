@@ -19,6 +19,8 @@ export interface ContentBrowserContextMenusDeps extends ContentBrowserTileMenuDe
   setSelectedGuids: Dispatch<SetStateAction<Set<string>>>;
   setSelectedFolderPaths: Dispatch<SetStateAction<Set<string>>>;
   openNewAssetMenu: (anchor?: { x: number; y: number } | null) => void;
+  /** Creates a folder in the open folder and renames it inline in the grid. */
+  onNewFolder: () => void;
   handleImport: () => Promise<void>;
 }
 
@@ -62,6 +64,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
     setSelectedGuids,
     setSelectedFolderPaths,
     openNewAssetMenu,
+    onNewFolder,
     handleImport,
   } = deps;
   const tileContextItems = useMemo(
@@ -142,7 +145,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
         shortcut: keybinds.get("edit.newFolder")?.[0],
         icon: <FolderPlusIcon />,
         disabled: creationDisabled,
-        onSelect: () => setNameDialog({ kind: "folder", value: "NewFolder" }),
+        onSelect: onNewFolder,
       },
       {
         id: "new-asset",
@@ -163,7 +166,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
         },
       },
     ],
-    [creationDisabled, handleImport, openNewAssetMenu, keybinds, setNameDialog],
+    [creationDisabled, handleImport, openNewAssetMenu, onNewFolder, keybinds],
   );
   const {
     menu: emptyGridMenu,

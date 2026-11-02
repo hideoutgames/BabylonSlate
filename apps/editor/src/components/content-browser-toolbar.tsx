@@ -28,7 +28,7 @@ interface ContentBrowserToolbarProps {
   setFoldersOpen: (open: boolean) => void;
   browserRows: ContentBrowserTreeRow[];
   selectedFolderPath: string;
-  /** New Folder and the folder tree, shown in the phone Folders sheet. */
+  /** The folder tree, shown in the phone Folders sheet. */
   folderNavigation: ReactNode;
   busy: boolean;
   selectedRootWritable: boolean;

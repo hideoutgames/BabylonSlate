@@ -17,7 +17,8 @@ import {
 /** What the Content Browser folder tree reads and selects through. */
 export interface ContentBrowserTreeStateDeps {
   folderTrees: FolderNode[];
-  allAssets: IndexedAsset[];
+  /** Assets the tree lists: every asset, or those of the Filter menu's types. Folders always show. */
+  treeAssets: IndexedAsset[];
   assetsByGuid: ReadonlyMap<string, IndexedAsset>;
   selectedFolderPath: string;
   setSelectedFolderPath: Dispatch<SetStateAction<string>>;
@@ -31,7 +32,7 @@ export interface ContentBrowserTreeStateDeps {
 export function useContentBrowserTreeState(deps: ContentBrowserTreeStateDeps) {
   const {
     folderTrees,
-    allAssets,
+    treeAssets,
     assetsByGuid,
     selectedFolderPath,
     setSelectedFolderPath,
@@ -70,8 +71,8 @@ export function useContentBrowserTreeState(deps: ContentBrowserTreeStateDeps) {
 
   const browserRows = useMemo(() => {
     if (folderTrees.length === 0) return [];
-    return flattenContentBrowserForest(folderTrees, allAssets, collapsedFolders);
-  }, [allAssets, collapsedFolders, folderTrees]);
+    return flattenContentBrowserForest(folderTrees, treeAssets, collapsedFolders);
+  }, [treeAssets, collapsedFolders, folderTrees]);
 
   /** Primary tree row and Shift range anchor: the last clicked row while it stays selected. */
   const treeSelectedId = useMemo(() => {
@@ -135,5 +136,20 @@ export function useContentBrowserTreeState(deps: ContentBrowserTreeStateDeps) {
     });
   };
 
-  return { browserRows, treeSelectedId, treeSelectedIds, handleTreeSelect, toggleFolderExpanded };
+  /** Expands every folder above `path`, so its row shows; auto-collapse then keeps them open. */
+  const revealFolder = useCallback((path: string) => {
+    const ancestors: string[] = [];
+    for (let end = path.lastIndexOf("/"); end > 0; end = path.lastIndexOf("/", end - 1)) {
+      ancestors.push(path.slice(0, end));
+    }
+    for (const ancestor of ancestors) userToggledFoldersRef.current.add(ancestor);
+    setCollapsedFolders((current) => {
+      if (!ancestors.some((ancestor) => current.has(ancestor))) return current;
+      const next = new Set(current);
+      for (const ancestor of ancestors) next.delete(ancestor);
+      return next;
+    });
+  }, []);
+
+  return { browserRows, treeSelectedId, treeSelectedIds, handleTreeSelect, toggleFolderExpanded, revealFolder };
 }

@@ -27,6 +27,8 @@ export type ContentBrowserGridActions = {
   openFolderMenu: (path: string, clientX: number, clientY: number) => void;
   openAssetMenu: (guid: string, clientX: number, clientY: number) => void;
   consumeSelectClick: () => boolean;
+  /** Ends a folder tile's inline rename with the new name, or null to keep it. */
+  finishFolderRename: (path: string, name: string | null) => void;
 };
 
 export type ContentBrowserTileLock = {
@@ -52,6 +54,8 @@ export type ContentBrowserGridTilesProps = {
   sourceControlEnabled: boolean;
   /** Locks of mounted assets, keyed by asset path. */
   locks: Readonly<Record<string, ContentBrowserTileLock>>;
+  /** Folder tile showing an inline rename. */
+  renamingFolderPath: string | null;
   actions: ContentBrowserGridActions;
 };
 
@@ -75,6 +79,7 @@ export const ContentBrowserGridTiles = memo(function ContentBrowserGridTiles({
   folderIcons,
   sourceControlEnabled,
   locks,
+  renamingFolderPath,
   actions,
 }: ContentBrowserGridTilesProps) {
   const cells = [];
@@ -91,6 +96,7 @@ export const ContentBrowserGridTiles = memo(function ContentBrowserGridTiles({
           name={item.name}
           icon={folderIcons.get(item.path)}
           selected={selectedFolderPaths.has(item.path)}
+          renaming={renamingFolderPath === item.path}
           actions={actions}
         />,
       );
@@ -131,6 +137,7 @@ const FolderGridCell = memo(function FolderGridCell({
   name,
   icon,
   selected,
+  renaming,
   actions,
 }: {
   index: number;
@@ -139,6 +146,7 @@ const FolderGridCell = memo(function FolderGridCell({
   name: string;
   icon: LucideIcon | undefined;
   selected: boolean;
+  renaming: boolean;
   actions: ContentBrowserGridActions;
 }) {
   const onSelect = useCallback(
@@ -149,6 +157,10 @@ const FolderGridCell = memo(function FolderGridCell({
   const onLongPressMenu = useCallback(
     (clientX: number, clientY: number) =>
       actions.openFolderMenu(path, clientX, clientY),
+    [actions, path],
+  );
+  const onRenameDone = useCallback(
+    (next: string | null) => actions.finishFolderRename(path, next),
     [actions, path],
   );
   return (
@@ -162,6 +174,8 @@ const FolderGridCell = memo(function FolderGridCell({
         onSelect={onSelect}
         onOpen={onOpen}
         onLongPressMenu={onLongPressMenu}
+        renaming={renaming}
+        onRenameDone={onRenameDone}
       />
     </div>
   );

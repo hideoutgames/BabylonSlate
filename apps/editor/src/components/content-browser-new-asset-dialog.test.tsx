@@ -272,7 +272,7 @@ describe("ContentBrowserNewAssetMenu", () => {
     const onSelect = vi.fn();
     const onOpenChange = vi.fn();
     render(
-      <ContentBrowserNewAssetMenu open onOpenChange={onOpenChange} anchor={{ x: 40, y: 60 }} onSelect={onSelect}>
+      <ContentBrowserNewAssetMenu open onOpenChange={onOpenChange} anchor={{ x: 40, y: 60 }} onSelect={onSelect} onNewFolder={vi.fn()}>
         <button type="button">New Asset</button>
       </ContentBrowserNewAssetMenu>,
     );
@@ -289,5 +289,21 @@ describe("ContentBrowserNewAssetMenu", () => {
     fireEvent.click(screen.getByTestId("search-item-ParticleEmitter"));
     expect(onSelect).toHaveBeenCalledWith("ParticleEmitter");
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("lists Folder first and makes a folder from it instead of opening the New Asset dialog", () => {
+    const onSelect = vi.fn();
+    const onNewFolder = vi.fn();
+    render(
+      <ContentBrowserNewAssetMenu open onOpenChange={vi.fn()} anchor={{ x: 40, y: 60 }} onSelect={onSelect} onNewFolder={onNewFolder}>
+        <button type="button">New Asset</button>
+      </ContentBrowserNewAssetMenu>,
+    );
+    const items = [...screen.getByTestId("new-asset-type-menu").querySelectorAll("[data-testid^='search-item-']")];
+    expect(items[0]?.textContent).toBe("Folder");
+
+    fireEvent.click(screen.getByTestId("search-item-folder"));
+    expect(onNewFolder).toHaveBeenCalledTimes(1);
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

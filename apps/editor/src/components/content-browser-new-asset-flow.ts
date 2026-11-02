@@ -223,7 +223,8 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     setSelectedGuids,
   ]);
 
-  const menuProps: Omit<ComponentProps<typeof ContentBrowserNewAssetMenu>, "children"> = {
+  // The workspace adds the Folder entry's action, which the name flow owns.
+  const menuProps: Omit<ComponentProps<typeof ContentBrowserNewAssetMenu>, "children" | "onNewFolder"> = {
     open: newAssetMenuOpen,
     onOpenChange: (open) => {
       if (open) setNewAssetMenuAnchor(null);
