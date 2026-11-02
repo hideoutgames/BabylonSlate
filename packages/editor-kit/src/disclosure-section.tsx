@@ -2,6 +2,7 @@ import { useId, type ReactNode } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
 import { FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { cn } from "@haptic/ui/lib/utils";
 
 export interface DisclosureSectionProps {
   title: string;
@@ -31,13 +32,24 @@ export function DisclosureSection({
       className="gap-0 overflow-hidden rounded-md border bg-card"
       data-testid={testId}
     >
-      {/* Floated so the legend sits inside the frame instead of on its border. */}
-      <FieldLegend variant="label" className="float-left mb-0 w-full bg-panel-header">
+      {/*
+        Floated so the legend sits inside the frame instead of on its border.
+        Its own rounding matches the frame's inner corners (top, and bottom
+        while collapsed), so the shaded bar never pokes past the outline where
+        a browser does not clip the legend.
+      */}
+      <FieldLegend
+        variant="label"
+        className={cn(
+          "float-left mb-0 w-full rounded-t-[calc(var(--radius-md)-1px)] bg-panel-header",
+          !open && "rounded-b-[calc(var(--radius-md)-1px)]",
+        )}
+      >
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="w-full justify-start rounded-none font-semibold aria-expanded:bg-transparent aria-expanded:hover:bg-accent pointer-coarse:min-h-11"
+          className="w-full justify-start rounded-[inherit] font-semibold aria-expanded:bg-transparent aria-expanded:hover:bg-accent pointer-coarse:min-h-11"
           aria-expanded={open}
           aria-controls={contentId}
           onClick={() => onOpenChange(!open)}

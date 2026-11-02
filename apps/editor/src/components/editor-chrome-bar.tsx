@@ -1224,9 +1224,9 @@ export function EditorChromeBar({
         <PackagingDialog
           open={packagingOpen}
           onOpenChange={setPackagingOpen}
-          onOpenExportSettings={() => {
+          onOpenProjectSettings={(categoryId) => {
             setPackagingOpen(false);
-            openSettings("project", "export");
+            openSettings("project", categoryId);
           }}
         />
       ) : null}

@@ -13,6 +13,7 @@ GenerateImage({ description: "Haptic app icon, flat vector" })
 ## Allowed
 
 - Existing Lucide icons.
+- Platform marks Lucide lacks, from existing icon sets: Bootstrap Icons (`react-bootstrap-icons`: Windows, Tux, Apple, Android) and the Simple Icons HTML5 shield (`@icons-pack/react-simple-icons`), as on Packaging targets. Import each icon from its own module; colour a mark only with its `--platform-*` token or the text colour, and never redraw one.
 - Existing files in `engine-logos/`, `apps/editor/public/branding/` and `apps/docs/public/`: copy them, or scale and centre them on the brand background for platform icon and splash sizes. Never redraw, recolour or invent replacements.
 - Engine code that builds runtime primitives (`CreateBox`, debug lines, nav overlays) as product features, not as art.
 - Solid-colour or numeric test fixtures with no pictorial content.

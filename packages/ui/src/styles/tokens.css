@@ -73,6 +73,9 @@
     --color-background: var(--background);
     --color-control: var(--control);
     --color-panel-header: var(--panel-header);
+    --color-platform-web: var(--platform-web);
+    --color-platform-windows: var(--platform-windows);
+    --color-platform-android: var(--platform-android);
     --color-graph-node: var(--graph-node);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
@@ -130,6 +133,10 @@
     --ring: oklch(0.62 0.2 38);
     --control: oklch(0.995 0.001 85);
     --panel-header: oklch(0.962 0.003 80);
+    /* Platform marks in Packaging (HTML5, Windows, Android); Apple and Linux use the text colour. */
+    --platform-web: oklch(0.625 0.191 35.71);
+    --platform-windows: oklch(0.568 0.167 251.31);
+    --platform-android: oklch(0.6170 0.1475 153.846);
     --graph-canvas: oklch(0.16 0.004 75);
     --graph-node: oklch(0.972 0.003 85);
     --graph-state-selected: oklch(0.64 0.14 80);
@@ -253,6 +260,9 @@
     --ring: oklch(0.81 0.17 76);
     --control: oklch(0.14 0.004 75);
     --panel-header: oklch(0.175 0.004 75);
+    --platform-web: oklch(0.625 0.191 35.71);
+    --platform-windows: oklch(0.6512 0.1366 245.633);
+    --platform-android: oklch(0.793 0.180 154.00);
     --graph-canvas: oklch(0.145 0.004 75);
     --graph-node: oklch(0.22 0.004 75);
     --graph-state-selected: oklch(0.83 0.14 80);
