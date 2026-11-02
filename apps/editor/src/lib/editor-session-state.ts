@@ -8,6 +8,13 @@ import type { PlaceActorsView } from "./place-actors";
 
 export type GraphSessionViewport = { x: number; y: number; zoom: number };
 
+/** Assets panel view choices, shared by every Scene and Scene Layer tab of the session. */
+export type AssetsPanelPreferences = {
+  view: "cards" | "list";
+  sort: "name" | "type" | "folder";
+  showPluginContent: boolean;
+};
+
 /**
  * Editor state for one project session, keyed by document id: editor
  * camera poses, graph pan/zoom per surface and particle module cards the
@@ -15,7 +22,8 @@ export type GraphSessionViewport = { x: number; y: number; zoom: number };
  * (members), the Clips window (Timeline Clips) and the Timeline window (keys
  * and tracks), which outlive the document they were copied from, and the
  * Place Actors view (search, category, filters, sort and scroll) for Scenes
- * and for Scene Layers. Nothing here is persisted: it lives in memory only.
+ * and for Scene Layers, and the Assets panel's view choices. Nothing here is
+ * persisted: it lives in memory only.
  * It is deliberately non-reactive: callers read it when they
  * mount or render and write it without notifying anyone, so saving a camera
  * pose or a pan never re-renders the editor. Closing a tab keeps its entries
@@ -27,6 +35,15 @@ export class EditorSessionState {
   private timelineClipClipboard: SerializedTimelineClip[] | null = null;
   private timelineKeyClipboard: CopiedTimelineKeys | null = null;
   private timelineTrackClipboard: CopiedTimelineTrack | null = null;
+  private assetsPanel: AssetsPanelPreferences = { view: "cards", sort: "name", showPluginContent: true };
+
+  readAssetsPanelPreferences(): AssetsPanelPreferences {
+    return { ...this.assetsPanel };
+  }
+
+  writeAssetsPanelPreferences(next: Partial<AssetsPanelPreferences>): void {
+    this.assetsPanel = { ...this.assetsPanel, ...next };
+  }
 
   copyActors(actors: SerializedActor[], overlay: boolean): void {
     this.actorClipboard = { actors: structuredClone(actors), overlay };

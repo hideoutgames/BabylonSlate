@@ -56,7 +56,7 @@ export interface SceneOutlineSelection {
 
 /** One view's authored gameplay contributions and optional editor selection.
  * Actor keys group model parts and keep shared assets independently styled. */
-/** One Full Quality capture's outline view: its graph detach and the meshes it may outline. */
+/** One High or Full Quality capture's outline view: its graph detach and the meshes it may outline. */
 type CaptureView = { detach: () => void; includes: (mesh: AbstractMesh) => boolean };
 
 export class SceneOutlineHost {
@@ -71,7 +71,7 @@ export class SceneOutlineHost {
   private readonly detach: () => void;
   private readonly scene: Scene;
   private readonly invalidate: () => void;
-  /** Full Quality capture views: the gameplay contributions, never the selection. */
+  /** High and Full Quality capture views: the gameplay contributions, never the selection. */
   private readonly captureViews = new Map<SharedOutlineView, CaptureView>();
   private captureViewCount = 0;
   private gameplay: ReadonlyMap<string, SharedOutlineContribution> = new Map();
@@ -202,7 +202,7 @@ export class SceneOutlineHost {
   }
 
   /**
-   * A Full Quality capture's view of the scene's gameplay outlines (Outline
+   * A High or Full Quality capture's view of the scene's gameplay outlines (Outline
    * components and CEL outlines); the editor selection never reaches it. Only
    * meshes `includes` accepts are outlined or occlude outlines: a capture of
    * chosen actors draws no other. `refresh` republishes after `includes`

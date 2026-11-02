@@ -19,7 +19,7 @@ import {
 } from "./shadow-map-factory";
 
 /**
- * A view's own sun map (a Full Quality Render Target Capture's): the scene
+ * A view's own sun map (a High or Full Quality Render Target Capture's): the scene
  * map's size, cascades and settings, keyed to the view's camera and fitted to
  * it as a scene view there would fit it. `mirrors` is the scene map it was
  * built from; a replaced scene map replaces it. It is cascade tiles of the same
@@ -201,7 +201,7 @@ export class ShadowViewMaps {
     const previous = view.refused.get(entry.light);
     view.refused.set(entry.light, { mirrors: source, retryAt: performance.now() + VIEW_REFUSAL_RETRY_MS });
     if (previous?.mirrors !== source)
-      console.warn(`[render] A Full Quality capture samples "${entry.light.name}" shadows from the main camera's map: its own map does not fit the shadow atlas.`);
+      console.warn(`[render] A Render Target Capture samples "${entry.light.name}" shadows from the main camera's map: its own map does not fit the shadow atlas.`);
   }
   /**
    * When a scene view's map finds no room in the shadow atlas, the views' maps give way: it is built again with their

@@ -55,7 +55,7 @@ export interface ShadowMapContext {
  * culls them per face and spends the depth precision where the light reaches.
  * A range at or beyond the camera's far plane uses the camera's values, written
  * explicitly: Babylon reads unset values from whichever camera renders, so a
- * second view (a Full Quality capture) would otherwise bind another depth range
+ * second view (a High or Full Quality capture) would otherwise bind another depth range
  * than the one the map was drawn with. Only the scene view's camera fits.
  */
 export function fitLocalShadowDepth(light: Light, camera: Camera | null): void {

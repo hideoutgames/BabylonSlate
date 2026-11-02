@@ -18,7 +18,7 @@ Shadows have a budget separate from the [light budget](lighting.md#light-budget)
 - When too many lights ask for shadows, lights with a higher **Shadow Priority** win, then the lights nearest the camera. Local lights farther than Shadow Distance plus their Range get no shadow.
 - The device can lower these requests to fit its memory. A light whose shadows are unavailable shows a yellow icon in the viewport.
 - Phones and tablets get the same shadow limits as desktops: the quality level alone sets map sizes, and at **High** and **Ultra** all shadows share one 8192 × 8192 shadow map (256 MiB), as on a desktop. A device whose graphics can't hold a texture that large uses the largest it can.
-- A Full Quality [Render Target Capture](render-targets.md#quality) draws its own directional shadows, fitted to its view, each captured frame. Point and spot lights share their shadow maps with the camera.
+- A High or Full Quality [Render Target Capture](render-targets.md#quality) draws its own directional shadows, fitted to its view, each captured frame. Point and spot lights share their shadow maps with the camera.
 
 ## Shadow settings
 
@@ -80,7 +80,7 @@ The sun's shadow map has a limited number of texels, so small objects resting on
 | **High** | up to 0.8 m, 64 pixels | 30 to 50 m |
 
 - They apply to the one directional light that casts shadows, in PBR only. CEL has none.
-- They work in the Scene Viewport, Play, Preview Build, exported games and Full Quality [Render Target Captures](render-targets.md#quality). Fast captures, reflection probes, mirrors, previews, thumbnails and Scene Layers do not draw them.
+- They work in the Scene Viewport, Play, Preview Build, exported games and High and Full Quality [Render Target Captures](render-targets.md#quality). Fast captures, reflection probes, mirrors, previews, thumbnails and Scene Layers do not draw them.
 - They need the scene's depth. When no post-processing effect already draws it, turning them on adds a depth pass, which costs a little GPU time and one more draw per visible object. Turning **Post-Processing** off in the viewport turns them off too.
 - They see only what is on screen: an object leaving the edge of the view stops darkening the ground near it.
 - They follow each mesh's **Cast Shadows** and **Receive Shadows**, as the shadow map does: only meshes that cast shadows block the sun, and only meshes that receive shadows darken.

@@ -1,7 +1,7 @@
 import type { Scene } from "@babylonjs/core";
 
 /**
- * Auxiliary views (Full Quality Render Target Captures) draw inside the scene
+ * Auxiliary views (High and Full Quality Render Target Captures) draw inside the scene
  * view's FrameGraph, after Babylon's per-frame evaluation (world matrices,
  * skeletons, particle steps) and the view's shadow maps, and before its own
  * objects.

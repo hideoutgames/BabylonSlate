@@ -308,6 +308,16 @@ const SCENE_WINDOWS: DockWindowDefinition[] = [
     },
   },
   {
+    id: "scene-assets",
+    component: "scene-assets",
+    title: "Assets",
+    defaultPosition: {
+      referencePanelId: "scene-outliner",
+      direction: "below",
+      initialHeight: 320,
+    },
+  },
+  {
     id: "scene-details",
     component: "scene-details",
     title: "Inspector",

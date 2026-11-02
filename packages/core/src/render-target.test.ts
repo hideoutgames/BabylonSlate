@@ -30,9 +30,10 @@ describe("render target asset contracts", () => {
     });
   });
 
-  it("loads captures saved without a quality as Fast and keeps an authored Full Quality", () => {
+  it("loads captures saved without a quality as Fast and keeps an authored High or Full Quality", () => {
     // Projects saved before the setting existed carry no quality field.
     expect(normalizeRenderTargetCaptureProperties({ renderTargetGuid: "target" }).quality).toBe("fast");
+    expect(normalizeRenderTargetCaptureProperties({ quality: "highQuality" }).quality).toBe("highQuality");
     expect(normalizeRenderTargetCaptureProperties({ quality: "fullQuality" }).quality).toBe("fullQuality");
     expect(normalizeRenderTargetCaptureProperties({ quality: "Full Quality" }).quality).toBe("fast");
     expect(normalizeRenderTargetCaptureProperties({ quality: 1 }).quality).toBe("fast");
