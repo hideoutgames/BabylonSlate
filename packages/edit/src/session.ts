@@ -14,10 +14,13 @@ export const DEFAULT_EDIT_BYTE_BUDGET = 16 * 1024 * 1024;
 export class CommandBatch<TDoc> implements EditCommand<TDoc> {
   readonly type = "edit.batch";
   readonly commands: readonly EditCommand<TDoc>[];
+  /** A keyed batch folds the next batch of its gesture into one Undo step. */
+  readonly mergeKey?: string;
   #byteSize?: number;
 
-  constructor(commands: readonly EditCommand<TDoc>[]) {
+  constructor(commands: readonly EditCommand<TDoc>[], mergeKey?: string) {
     this.commands = [...commands];
+    this.mergeKey = mergeKey;
   }
 
   /** Sum of the parts' sizes, measured on first read and memoised. */
@@ -39,6 +42,14 @@ export class CommandBatch<TDoc> implements EditCommand<TDoc> {
     return new CommandBatch(
       [...this.commands].reverse().map((command) => command.invert()),
     );
+  }
+
+  /** One batch running both, so Undo reverts and Redo replays the whole gesture. */
+  coalesce(next: EditCommand<TDoc>): EditCommand<TDoc> | undefined {
+    if (this.mergeKey === undefined || !(next instanceof CommandBatch) || next.mergeKey !== this.mergeKey) {
+      return undefined;
+    }
+    return new CommandBatch([...this.commands, ...next.commands], this.mergeKey);
   }
 }
 
@@ -102,8 +113,9 @@ export class EditSession {
     documentId: string,
     doc: TDoc,
     command: EditCommand<TDoc>,
+    options?: { amend?: boolean },
   ): EditApplyResult<TDoc> {
-    const result = this.getStack<TDoc>(documentId).apply(doc, command);
+    const result = this.getStack<TDoc>(documentId).apply(doc, command, options);
     this.evictClosedOverBudget();
     return result;
   }
@@ -122,17 +134,27 @@ export class EditSession {
     return this.getStack<TDoc>(documentId).undo(doc);
   }
 
-  /** Keep a complete document change together; callers journal its raw deltas. */
+  /**
+   * Keep a complete document change together; callers journal its raw deltas.
+   * Changes sharing a `mergeKey` while their gesture is open form one Undo
+   * step; with `amend` a keyed change also joins the latest step of its key
+   * after that gesture ended.
+   */
   applyBatch<TDoc>(
     documentId: string,
     doc: TDoc,
     commands: readonly EditCommand<TDoc>[],
+    options?: { mergeKey?: string; amend?: boolean },
   ): EditApplyResult<TDoc> | null {
     if (commands.length === 0) return null;
+    const mergeKey = options?.mergeKey;
     return this.apply(
       documentId,
       doc,
-      commands.length === 1 ? commands[0]! : new CommandBatch(commands),
+      mergeKey !== undefined
+        ? new CommandBatch(commands, mergeKey)
+        : commands.length === 1 ? commands[0]! : new CommandBatch(commands),
+      { amend: options?.amend },
     );
   }
 

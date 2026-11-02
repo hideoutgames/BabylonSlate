@@ -37,6 +37,12 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       setGridSettings: vi.fn(),
       setSortingLayers: vi.fn(),
       setPixelPerfect: vi.fn(),
+      worldPositionAtViewCenter: vi.fn((): [number, number, number] => [0, 0, -4]),
+      surfacePlacementAtViewCenter: vi.fn((maxDistance: number) => ({
+        position: [0, 0, -maxDistance] as [number, number, number],
+        normal: null as [number, number, number] | null,
+      })),
+      restActorsOnSurface: vi.fn((): Array<{ actorId: string; position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] }> => []),
       gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn(), setLinkedScale: vi.fn() },
       grid: { setVisible: vi.fn() },
     },
@@ -78,12 +84,17 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
   return {
     createEngineMock,
     handle,
-    selection: { actorIds: [] as string[], mode: "3d" as "2d" | "3d", shapeEditTarget: null as SceneShapeEditTarget | null },
+    selection: {
+      actorIds: [] as string[],
+      mode: "3d" as "2d" | "3d",
+      shapeEditTarget: null as SceneShapeEditTarget | null,
+      setViewportDropApi: vi.fn<(api: import("../context/scene-editing-context").ViewportDropApi | null) => void>(),
+    },
     documents: {
       projectDocument: null as ReturnType<typeof createEmptyProject> | null,
       registryEpoch: 0,
       assetRegistry: null as Pick<AssetRegistry, "list" | "getByGuid"> | null,
-      applySceneChange: vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
+      applySceneChange: vi.fn<(id: string, scene: SerializedScene, options?: { mergeKey?: string }) => Promise<boolean>>(async () => true),
       openDocuments: [] as Array<{
         id: string;
         ref: { kind: string; path: string; label: string };
@@ -191,7 +202,7 @@ vi.mock("../context/scene-editing-context", () => ({
     dragSelectActive: false,
     setDragSelectActive: vi.fn(),
     setFrameActorHandler: vi.fn(),
-    setViewportDropApi: vi.fn(),
+    setViewportDropApi: selection.setViewportDropApi,
     previewGameCamera: false,
     saveEditorCameraPose: vi.fn(),
     loadEditorCameraPose: vi.fn(() => null),
@@ -338,6 +349,40 @@ describe("ViewportPanel engine", () => {
 
     act(() => receiveActiveAppSettingsUpdate({ linkedScaleKeys: ["actor:a", "actor:b"] }));
     await waitFor(() => expect(handle.editor.gizmos.setLinkedScale).toHaveBeenLastCalledWith(true));
+  });
+
+  it("places with the Place On Surfaces settings and rests a placed actor in its placement's Undo step", async () => {
+    const box = createActor("box", "Box");
+    box.transform.position = [1, 0, 2];
+    const moved = createActor("moved", "Moved");
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
+      content: { ...createDefaultScene(), actors: [box, moved] },
+    }];
+    handle.editor.restActorsOnSurface.mockReturnValue([
+      { actorId: "box", position: [1, 0.5, 2], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+    ]);
+    renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    const api = selection.setViewportDropApi.mock.calls.at(-1)![0]!;
+
+    act(() => receiveActiveAppSettingsUpdate({ viewportPlacementDistance: 12 }));
+    expect(api.placementAtViewCenter()).toEqual({ position: [0, 0, -12], normal: null });
+    act(() => receiveActiveAppSettingsUpdate({ viewportPlaceOnSurfaces: false }));
+    expect(api.placementAtViewCenter()).toEqual({ position: [0, 0, -4], normal: null });
+
+    // "moved" is no longer where its placement put it, so it keeps its position.
+    act(() => api.restOnSurface([
+      { actorId: "box", point: [1, 0, 2], normal: [0, 1, 0] },
+      { actorId: "moved", point: [9, 9, 9], normal: [0, 1, 0] },
+    ], "place:box"));
+    await waitFor(() => expect(documents.applySceneChange).toHaveBeenCalledTimes(1));
+    expect(handle.editor.restActorsOnSurface).toHaveBeenCalledWith([{ actorId: "box", point: [1, 0, 2], normal: [0, 1, 0] }]);
+    const [, next, options] = documents.applySceneChange.mock.calls[0]!;
+    expect(next.actors.find((actor) => actor.id === "box")?.transform.position).toEqual([1, 0.5, 2]);
+    expect(options).toEqual({ mergeKey: "place:box" });
+    handle.editor.restActorsOnSurface.mockReset().mockReturnValue([]);
+    receiveActiveAppSettingsUpdate({ viewportPlaceOnSurfaces: true, viewportPlacementDistance: 25 });
   });
 
   it("prepares only the active scene's required water and resource catalog", async () => {

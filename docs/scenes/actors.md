@@ -9,9 +9,9 @@ Actors are the objects in a scene. Each actor has a position, rotation and scale
    - **Content > Models** lists your project's Model assets.
    - **Content > Project** lists Classes, Prefabs, sounds, particle systems, water, sprites and tilemaps from your project.
    - **Engine** holds the built-in categories: Shapes, Lights, Camera, Environment, Water, Rendering, Navigation, Physics, Audio, Particles and Empty.
-3. The actor appears at the centre of the viewport.
+3. The actor appears in the middle of the viewport. In a 3D scene it lands on the first surface straight ahead (ground, a wall or another mesh) and rests against it rather than sinking in. With nothing within **Placement Trace Distance** it is placed that far in front of the camera.
 
-Search matches names, categories, asset types and folders. Tap outside **Place Actors** or press <kbd>Esc</kbd> to close it. It reopens with the search, category, filters, sort order and scroll position you left it with, until you close the project; Scenes and Scene Layers each keep their own. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport.
+Search matches names, categories, asset types and folders. Tap outside **Place Actors** or press <kbd>Esc</kbd> to close it. It reopens with the search, category, filters, sort order and scroll position you left it with, until you close the project; Scenes and Scene Layers each keep their own. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport: in 3D it lands on the surface under the pointer the same way. **Duplicate** and **Paste** keep copies where the originals are. Placing and resting is one Undo step. Turn this off, or change how far it looks (default 25 units), with **Place On Surfaces** and **Placement Trace Distance** in **Engine Settings > Viewport**.
 
 ## Select actors
 

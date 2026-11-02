@@ -100,6 +100,7 @@ import {
   duplicateSceneActor,
   duplicateSceneActors,
   nextActorId,
+  placementMergeKey,
   prefabComponentsForGuid,
   prefabComponentsResolver,
   projectPlaceActors,
@@ -788,20 +789,19 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       if (!scene || placingClassRef.current) return;
       const finish = (resolved: PlaceActorItem, base: SerializedScene) => {
         const id = nextActorId(base);
-        mutate({
+        const placement = viewportDropApi?.placementAtViewCenter() ??
+          { position: FALLBACK_PLACE_POSITION, normal: null };
+        const mergeKey = placementMergeKey(id);
+        void applySceneChange(documentId, {
           ...base,
           actors: [
             ...base.actors,
-            spawnPlacedActor(
-              base,
-              resolved,
-              id,
-              viewportDropApi?.worldPositionAtViewCenter() ??
-                FALLBACK_PLACE_POSITION,
-              { overlay },
-            ),
+            spawnPlacedActor(base, resolved, id, placement.position, { overlay }),
           ],
-        });
+        }, { mergeKey });
+        if (placement.normal) {
+          viewportDropApi?.restOnSurface([{ actorId: id, point: placement.position, normal: placement.normal }], mergeKey);
+        }
         selectActor(id);
         setPlaceOpen(false);
         // The dialog keeps focus until its exit animation ends, outside the
@@ -853,12 +853,12 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       finish(item, scene);
     },
     [
+      applySceneChange,
       assetRegistry,
       diskGraphs,
       documentId,
       getOpenDocuments,
       loadGraphDocument,
-      mutate,
       overlay,
       scene,
       selectActor,
@@ -1044,19 +1044,23 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       if (!viewportDropApi?.containsClientPoint(clientX, clientY)) return;
       const source = scene.actors.find((actor) => actor.id === target.id);
       if (!source || isSceneLayerAnchorActor(source)) return;
-      const position = viewportDropApi.worldPositionAtClient(clientX, clientY);
-      if (!position) return;
+      const placement = viewportDropApi.placementAtClient(clientX, clientY);
+      if (!placement) return;
       const copy = duplicateSceneActor(scene, source, {
-        position,
+        position: placement.position,
         parentId: null,
       });
-      mutate({
+      const mergeKey = placementMergeKey(copy.id);
+      void applySceneChange(documentId, {
         ...scene,
         actors: [...scene.actors, copy],
-      });
+      }, { mergeKey });
+      if (placement.normal) {
+        viewportDropApi.restOnSurface([{ actorId: copy.id, point: placement.position, normal: placement.normal }], mergeKey);
+      }
       selectActor(copy.id);
     },
-    [mutate, scene, timelineTarget, selectActor, selectedActorIdSet, selectedActorIds, viewportDropApi],
+    [applySceneChange, documentId, scene, timelineTarget, selectActor, selectedActorIdSet, selectedActorIds, viewportDropApi],
   );
 
   const moveActorDropHint = useCallback(

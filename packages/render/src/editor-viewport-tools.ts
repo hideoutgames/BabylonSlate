@@ -22,6 +22,11 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { allowSceneOcclusionCulling } from "./view-occlusion";
 import { calculateEditorDropTransforms } from "./editor-drop";
 import {
+  calculateSurfaceRestTransforms,
+  surfacePlacementAtViewCenter,
+  surfacePlacementFromCanvas,
+} from "./editor-surface-placement";
+import {
   ViewportShadingOverlay,
   type ViewportShadingMode,
 } from "./viewport-shading-mode";
@@ -584,6 +589,27 @@ export function createEditorViewportTools({
     },
     worldPositionAtViewCenter: () =>
       viewCenterWorldPosition(cameraController.camera, cameraController.mode),
+    surfacePlacementAtClient: (clientX, clientY, maxDistance) => {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      return surfacePlacementFromCanvas(
+        scene,
+        cameraController.camera,
+        clientX - rect.left,
+        clientY - rect.top,
+        { width: rect.width, height: rect.height },
+        cameraController.mode,
+        maxDistance,
+      );
+    },
+    surfacePlacementAtViewCenter: (maxDistance) =>
+      surfacePlacementAtViewCenter(scene, cameraController.camera, cameraController.mode, maxDistance),
+    restActorsOnSurface: (rests) => {
+      const sceneData = editorSync.serializedScene();
+      return sceneData
+        ? calculateSurfaceRestTransforms({ sceneData, rests, meshForActor: (id) => editorSync.meshForActor(id) })
+        : [];
+    },
   };
   return {
     editor,

@@ -24,17 +24,20 @@ function dispatchPointerEvent(
 }
 
 const applySceneChange = vi.hoisted(() =>
-  vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
+  vi.fn<(id: string, scene: SerializedScene, options?: { mergeKey?: string }) => Promise<boolean>>(async () => true),
 );
 const selectActor = vi.hoisted(() => vi.fn());
 const viewportDropApi = vi.hoisted(() => ({
   containsClientPoint: vi.fn((clientX: number) => clientX >= 200),
-  worldPositionAtClient: vi.fn(
-    (): [number, number, number] => [4, 5, 6],
+  placementAtClient: vi.fn(
+    (): { position: [number, number, number]; normal: [number, number, number] | null } =>
+      ({ position: [4, 5, 6], normal: [0, 1, 0] }),
   ),
-  worldPositionAtViewCenter: vi.fn(
-    (): [number, number, number] => [1, 2, 3],
+  placementAtViewCenter: vi.fn(
+    (): { position: [number, number, number]; normal: [number, number, number] | null } =>
+      ({ position: [1, 2, 3], normal: null }),
   ),
+  restOnSurface: vi.fn(),
 }));
 const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
@@ -82,7 +85,8 @@ afterEach(() => {
   applySceneChange.mockClear();
   selectActor.mockClear();
   viewportDropApi.containsClientPoint.mockClear();
-  viewportDropApi.worldPositionAtClient.mockClear();
+  viewportDropApi.placementAtClient.mockClear();
+  viewportDropApi.restOnSurface.mockClear();
 });
 
 function renderOutliner(scene: SerializedScene) {
@@ -103,7 +107,7 @@ function dragRowOutside(row: Element) {
 }
 
 describe("SceneOutlinerPanel viewport drop", () => {
-  it("duplicates an actor at the viewport world position", () => {
+  it("duplicates an actor where the placement lands and rests it on the surface in the same Undo step", () => {
     const scene = createDefaultScene();
     renderOutliner(scene);
     dragRowOutside(screen.getByTestId(`tree-row-${actorRowId("actor-1")}`));
@@ -116,7 +120,21 @@ describe("SceneOutlinerPanel viewport drop", () => {
       transform: { position: [4, 5, 6] },
     });
     expect(next.actors.some((actor) => actor.id === "actor-1")).toBe(true);
+    expect(applySceneChange.mock.calls[0]?.[2]).toEqual({ mergeKey: "place:actor-2" });
+    expect(viewportDropApi.restOnSurface).toHaveBeenCalledWith(
+      [{ actorId: "actor-2", point: [4, 5, 6], normal: [0, 1, 0] }],
+      "place:actor-2",
+    );
     expect(selectActor).toHaveBeenCalledWith("actor-2");
+  });
+
+  it("leaves a copy at the end of the trace when it hit nothing", () => {
+    viewportDropApi.placementAtClient.mockReturnValueOnce({ position: [0, 0, -25], normal: null });
+    renderOutliner(createDefaultScene());
+    dragRowOutside(screen.getByTestId(`tree-row-${actorRowId("actor-1")}`));
+    const next = applySceneChange.mock.calls[0]?.[1] as SerializedScene;
+    expect(next.actors.find((actor) => actor.id === "actor-2")?.transform.position).toEqual([0, 0, -25]);
+    expect(viewportDropApi.restOnSurface).not.toHaveBeenCalled();
   });
 
   it("shows a +Name hint while dragging over the viewport", () => {
