@@ -42,7 +42,7 @@ Distance fog is set per scene in **Scene Settings**.
 | --- | --- | --- |
 | **Fog** | Off | Turns distance fog on. |
 | **Fog Mode** | Linear | **Linear** fades between Start and End. **Exponential** and **Exponential Squared** use Density; Exponential Squared builds more gradually nearby. |
-| **Fog Color** | Grey | The colour far objects fade to. |
+| **Fog Color** | Sky blue | The colour far objects fade to. New 3D scenes use the default sky's horizon colour, so far objects fade into the sky; other scenes start grey. |
 | **Fog Start**, **Fog End** | 0, 100 | Linear only. Distances from the camera, in scene units. |
 | **Fog Density** | 0.01 | Exponential modes only. Higher values hide nearby objects. 0 shows no fog. |
 
@@ -57,7 +57,9 @@ Volumetric fog is lit by directional, point and spot lights, so light shafts sho
 | Setting | Default | Description |
 | --- | --- | --- |
 | **Scene-Wide Fog** | Off | Fills the whole scene with lit fog. |
-| **Scene-Wide Fog Density** | 0.003 | Fog thickness per scene unit. The default adds a light haze that builds with distance; values around 0.01 and above veil nearby objects too. |
+| **Scene-Wide Fog Density** | 0.003 | Fog thickness per scene unit at and below **Fog Height**. The default adds a light haze that builds with distance; values around 0.01 and above veil nearby objects too. |
+| **Fog Height** | 0 | World height below which scene-wide fog is at full density. |
+| **Fog Height Falloff** | 0.1 | How fast scene-wide fog thins above **Fog Height**, per scene unit: at 0.1 it halves about every 7 units. 0 keeps it the same at every height. Higher values keep fog low, in valleys and over water. |
 | **Volumetric Intensity** | 1 | Brightness of scattered light. 0 removes beams but keeps the darkening. |
 | **Volumetric Distance** | 50 | How far from the camera fog is sampled, in scene units. |
 | **Scattering Anisotropy** | 0.2 | Positive values strengthen beams when looking toward a light. |

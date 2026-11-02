@@ -71,7 +71,12 @@ export interface VolumetricLightingSettings {
   steps: number;
   /** Maximum admitted directional, point and spot contributors per view. */
   maxLights: number;
+  /** Scene-wide fog thickness per scene unit at and below `height`. */
   density: number;
+  /** World height, in scene units, below which scene-wide fog is at full `density`. */
+  height: number;
+  /** How fast scene-wide fog thins above `height`, per scene unit (0: the same at every height). */
+  heightFalloff: number;
   intensity: number;
   maxDistance: number;
   anisotropy: number;
@@ -128,6 +133,8 @@ export const RENDER_EFFECTS_LIMITS = {
   volumetricSteps: [8, 64],
   volumetricLights: [1, 4],
   volumetricDensity: [0, 1],
+  volumetricHeight: [-100000, 100000],
+  volumetricHeightFalloff: [0, 2],
   volumetricIntensity: [0, 10],
   volumetricDistance: [0.1, 1000],
   volumetricAnisotropy: [-0.9, 0.9],
@@ -155,7 +162,7 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   volumetricLighting: {
     enabled: false, resolutionScale: 0.5, steps: 24, maxLights: 4,
     // A light haze that builds with distance: denser scene-wide fog veils everything nearby.
-    density: 0.003, intensity: 1, maxDistance: 50, anisotropy: 0.2,
+    density: 0.003, height: 0, heightFalloff: 0.1, intensity: 1, maxDistance: 50, anisotropy: 0.2,
   },
 };
 
@@ -304,6 +311,8 @@ export function normalizeRenderEffectsSettings(
       steps: Math.round(volumetricNumber("steps", RENDER_EFFECTS_LIMITS.volumetricSteps)),
       maxLights: Math.round(volumetricNumber("maxLights", RENDER_EFFECTS_LIMITS.volumetricLights)),
       density: volumetricNumber("density", RENDER_EFFECTS_LIMITS.volumetricDensity),
+      height: volumetricNumber("height", RENDER_EFFECTS_LIMITS.volumetricHeight),
+      heightFalloff: volumetricNumber("heightFalloff", RENDER_EFFECTS_LIMITS.volumetricHeightFalloff),
       intensity: volumetricNumber("intensity", RENDER_EFFECTS_LIMITS.volumetricIntensity),
       maxDistance: volumetricNumber("maxDistance", RENDER_EFFECTS_LIMITS.volumetricDistance),
       anisotropy: volumetricNumber("anisotropy", RENDER_EFFECTS_LIMITS.volumetricAnisotropy),

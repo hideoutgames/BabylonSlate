@@ -51,7 +51,7 @@ export function volumetricShader(
   let header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
 ${texture("depthSampler")}
 ${field(m4, "inverseProjection")}${field(m4, "inverseView")}${field(m4, "volumeView")}
-${field(v4, "volumeSettings")}${field(v4, "volumeCamera")}
+${field(v4, "volumeSettings")}${field(v4, "volumeCamera")}${field(v2, "volumeHeight")}
 ${field(v3, "volumeShadowOffset")}${field(f, "volumeLightCount")}
 `;
   let functions = "",
@@ -213,16 +213,17 @@ ${decl(f, "distanceLimit", `min(${u("volumeSettings")}.z, max(0.0, depth - abs(v
 ${decl(f, "distanceSpan", "distanceLimit")}
 ${localSetup}
 ${decl(f, "segment", `distanceSpan / ${f}(${steps})`)}
-${localVolumes ? "" : decl(f, "extinction", `exp(-${u("volumeSettings")}.x * segment)`)}
 ${decl(f, "transmittance", "1.0")}
 ${decl(v3, "scattering", `${v3}(0.0)`)}
 for (${wgsl ? "var step: i32 = 0" : "int step = 0"}; step < ${steps}; step++) {
   if (distanceSpan <= 0.0 || transmittance < 0.001) { break; }
   ${decl(f, "rayDistance", `(${f}(step) + 0.5) * segment`)}
-  ${decl(f, "density", `${u("volumeSettings")}.x`)}
+  // Scene-wide fog is full at and below its height and thins above it (volumeHeight: height, falloff per unit).
+  ${decl(f, "aboveFogHeight", `max(0.0, origin.y + worldDirection.y * rayDistance - ${u("volumeHeight")}.x)`)}
+  ${decl(f, "density", `${u("volumeSettings")}.x * exp(-aboveFogHeight * ${u("volumeHeight")}.y)`)}
   ${localSample}
   if (density <= 0.0) { continue; }
-  ${localVolumes ? decl(f, "extinction", "exp(-density * segment)") : ""}
+  ${decl(f, "extinction", "exp(-density * segment)")}
   ${decl(v3, "p", "origin + worldDirection * rayDistance")}
   ${decl(v3, "illumination", `${v3}(0.0)`)}
   ${lighting}

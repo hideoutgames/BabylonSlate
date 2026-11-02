@@ -390,6 +390,8 @@ export async function runSpatialEffectsProof(
           enabled: false,
           steps: 32,
           density: 0.12,
+          // The same density at every height: the beam's reference (`beamLengths`) is uniform fog.
+          heightFalloff: 0,
           maxDistance: 12,
           intensity: 2,
           anisotropy: 0,
@@ -476,7 +478,10 @@ export async function runSpatialEffectsProof(
           const open = await draw();
           const { maxDistance, steps } = effects.volumetricLighting;
           const beam = beamLengths(scene, camera, engine, maxDistance, maxDistance / steps);
-          return { volumetricShadowCaptures: [{ off, shadowed, open, beam }] };
+          // Fog Height far below the scene with a steep falloff: the scene-wide fog all but vanishes over it.
+          Object.assign(effects.volumetricLighting, { height: -5, heightFalloff: 2 });
+          const aboveFog = await draw();
+          return { volumetricShadowCaptures: [{ off, shadowed, open, beam, aboveFog }] };
         }
         const off = await draw();
         effects.reflections.enabled = true;

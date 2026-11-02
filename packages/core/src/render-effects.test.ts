@@ -68,6 +68,12 @@ describe("render effects settings", () => {
     expect(clamped.upscaling).toEqual({ enabled: true, renderScale: 0.5, sharpness: 2 });
   });
 
+  it("thins scene-wide fog above its height by default, clamped to its limits", () => {
+    expect(normalizeRenderEffectsSettings(undefined).volumetricLighting).toMatchObject({ density: 0.003, height: 0, heightFalloff: 0.1 });
+    expect(normalizeRenderEffectsSettings({ volumetricLighting: { height: -12.5, heightFalloff: 9 } }).volumetricLighting)
+      .toMatchObject({ height: -12.5, heightFalloff: 2 });
+  });
+
   it("accepts only declared enum values", () => {
     for (const mode of ["sceneLinear", "legacyDisplay"] as const) {
       expect(
