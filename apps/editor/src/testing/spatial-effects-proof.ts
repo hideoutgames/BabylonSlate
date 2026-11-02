@@ -101,8 +101,8 @@ async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => P
 
 /** Occlusion darkens the contact crease, keeps open floor and the sky, and
  * follows an orthographic projection without stale shader state; a floor seen
- * almost edge-on stays unoccluded, as does a wall behind a plate standing more
- * than twice the radius in front of it. */
+ * almost edge-on stays unoccluded, as do a wall behind a plate standing more
+ * than twice the radius in front of it and a coarse smooth-shaded ball. */
 async function captureAmbientOcclusion(
   camera: FreeCamera,
   effects: ReturnType<typeof normalizeRenderEffectsSettings>,
@@ -150,7 +150,16 @@ async function captureAmbientOcclusion(
   const halo = await draw();
   effects.ambientOcclusion.enabled = false;
   const haloOff = await draw();
-  return { off, on, linear, orthographic, orthographicOff, disabled, grazingOff, grazing, haloOff, halo };
+  // A coarse smooth-shaded ball alone: its shaded normals tilt across each face, yet nothing occludes it.
+  wall.setEnabled(false);
+  plate.setEnabled(false);
+  const ball = MeshBuilder.CreateSphere("Facet Ball", { segments: 2, diameter: 2.5 }, scene);
+  ball.position.set(0, 1, 0);
+  ball.material = crate.material;
+  const facetsOff = await draw();
+  effects.ambientOcclusion.enabled = true;
+  const facets = await draw();
+  return { off, on, linear, orthographic, orthographicOff, disabled, grazingOff, grazing, haloOff, halo, facetsOff, facets };
 }
 
 /** The render mode the proof's next draw applies. */
