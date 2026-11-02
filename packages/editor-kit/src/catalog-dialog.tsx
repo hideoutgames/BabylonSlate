@@ -49,6 +49,8 @@ export interface CatalogDialogProps {
   search: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder?: string;
+  /** Controls after the search field in its fixed row (a category's Filter and Sort); the field fills the rest. */
+  searchAccessory?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   /** `medium` suits pick lists and leaves the editor visible; `large` suits settings. */
@@ -111,6 +113,7 @@ export function CatalogDialog({
   search,
   onSearchChange,
   searchPlaceholder = "Search",
+  searchAccessory,
   children,
   footer,
   size = "large",
@@ -226,7 +229,10 @@ export function CatalogDialog({
           </Select>
         </div>
         <div
-          className={cn("shrink-0 border-b", popup ? "px-3 pb-2" : "px-4 py-2")}
+          className={cn(
+            "flex shrink-0 items-center gap-2 border-b",
+            popup ? "px-3 pb-2" : "px-4 py-2",
+          )}
           onKeyDown={(event) => {
             // Keep Escape free so the CatalogDialog can dismiss; block other
             // keystrokes from leaking into the graph behind the modal.
@@ -247,6 +253,7 @@ export function CatalogDialog({
             className={cn("min-h-[var(--chrome-row,28px)]", popup && "h-7")}
             data-testid={testId ? `${testId}-search` : undefined}
           />
+          {searchAccessory}
         </div>
         <div className="flex min-h-0 flex-1">
           <nav

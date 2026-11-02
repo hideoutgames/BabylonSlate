@@ -11,7 +11,7 @@ Actors are the objects in a scene. Each actor has a position, rotation and scale
    - **Engine** holds the built-in categories: Shapes, Lights, Camera, Environment, Water, Rendering, Navigation, Physics, Audio, Particles and Empty.
 3. The actor appears at the centre of the viewport.
 
-Search matches names, categories, asset types and folders. Tap outside **Place Actors** or press <kbd>Esc</kbd> to close it. It reopens with the search, category, filters, sort order and scroll position you left it with, until you close the project; Scenes and Scene Layers each keep their own. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport.
+Search matches names, categories, asset types and folders. In **Models** and **Project**, **Filter** (by asset type or folder) and **Sort** sit beside the search field. Tap outside **Place Actors** or press <kbd>Esc</kbd> to close it. It reopens with the search, category, filters, sort order and scroll position you left it with, until you close the project; Scenes and Scene Layers each keep their own. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport.
 
 ## Place from the Assets window
 
@@ -60,7 +60,7 @@ Selecting an actor shows its **Name**, **Position**, **Rotation** (in degrees), 
 
 The link button beside **Scale** keeps the actor's proportions: while it is on, changing one axis scales the others by the same amount. If the axis you change is 0, the other axes take the same value. The **Scale** gizmo follows the link too: dragging its X, Y or Z handle scales the other axes by the same amount. In a [Scene Layer](scene-layers.md), the box around the actor keeps its proportions the same way. The link starts off. Each actor, component and collider remembers its own link on this device; it is not saved in the project.
 
-With several actors selected, the heading reads **N Actors** and edits apply to all of them; values that differ show as mixed. The Scale link shows as on only when every selected actor is linked, and pressing it links or unlinks them all. Linked actors keep their own proportions; the others change only the axis you edit. The Scale gizmo keeps proportions only while every selected actor is linked. The **Primary Actor** section holds the name and lock of the actor whose components are shown.
+With several actors selected, the heading reads **N Actors** and edits apply to all of them; values that differ show as mixed. The Scale link shows as on only when every selected actor is linked, and pressing it links or unlinks them all. Linked actors keep their own proportions; the others change only the axis you edit. The Scale gizmo and the Scene Layer box work the same way: dragging scales every selected actor on that axis, and linked actors also keep their own proportions. When every selected actor is linked, the whole selection scales together. The **Primary Actor** section holds the name and lock of the actor whose components are shown.
 
 Use **Filter Properties** at the top to find a field by name.
 

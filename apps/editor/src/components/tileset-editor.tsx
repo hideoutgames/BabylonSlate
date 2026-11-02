@@ -1,21 +1,14 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
-  ArrowDownIcon,
-  ArrowDownLeftIcon,
-  ArrowDownRightIcon,
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ArrowUpIcon,
-  ArrowUpLeftIcon,
-  ArrowUpRightIcon,
   BrushIcon,
+  Grid3x3Icon,
   HandIcon,
+  LayoutGridIcon,
   MousePointerIcon,
   SplineIcon,
   SquareDashedIcon,
   SquareIcon,
-  type LucideIcon,
 } from "lucide-react";
 import {
   AssetPicker,
@@ -26,13 +19,21 @@ import {
   PropertySectionTitle,
   ToolbarStrip,
   assetRowIdentity,
+  type AtlasAutotileZoneEdit,
   type AtlasTileGridTool,
   type PropertyRow,
 } from "@haptic/editor-kit";
 import { Toggle } from "@haptic/ui/components/toggle";
 import { Button } from "@haptic/ui/components/button";
 import { Badge } from "@haptic/ui/components/badge";
-import { Field, FieldDescription, FieldTitle } from "@haptic/ui/components/field";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@haptic/ui/components/dialog";
 import { Separator } from "@haptic/ui/components/separator";
 import { cn } from "@haptic/ui/lib/utils";
 import {
@@ -40,21 +41,18 @@ import {
   ToggleGroupItem,
 } from "@haptic/ui/components/toggle-group";
 import {
-  canonicalTerrainMask,
+  applyAutotileLayout,
+  AUTOTILE_LAYOUTS,
+  autotileLayoutPlacement,
+  autotileZoneOn,
   ensureTilesetTiles,
+  missingTerrainVariants,
+  setAutotileZone,
   tilesetTerrainById,
   tilesetTileRect,
   terrainVariantMasks,
   DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS,
   normalizeTilesetPayload,
-  TERRAIN_E,
-  TERRAIN_N,
-  TERRAIN_NE,
-  TERRAIN_NW,
-  TERRAIN_S,
-  TERRAIN_SE,
-  TERRAIN_SW,
-  TERRAIN_W,
   TILESET_TERRAIN_STYLES,
   type TilesetCollision,
   type TilesetPayload,
@@ -130,7 +128,11 @@ export function TilesetPreview({
     editing?.selectedTileIds ?? localSelectedIds,
   );
   const selectedId = selectedIds[0] ?? 1;
-  const [previewTool, setPreviewTool] = useState<AtlasTileGridTool>("move");
+  const [localTool, setLocalTool] = useState<AtlasTileGridTool>("move");
+  const previewTool = editing?.previewTool ?? localTool;
+  const setPreviewTool = editing?.setPreviewTool ?? setLocalTool;
+  const terrains = tileset.terrains ?? [];
+  const autotile = terrains.find((terrain) => terrain.id === editing?.selectedAutotileId) ?? terrains[0] ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
   const assets = useAssetOptions();
   const preview = useTexturePreview(tileset.textureGuid);
@@ -160,6 +162,31 @@ export function TilesetPreview({
 
   const collisionValue = collisionEnum(selected?.collision);
 
+  // One Autotile drag is one undo step: every edit of the stroke re-applies to the Tileset it started from.
+  const zoneStrokeRef = useRef<{ stroke: number; base: TilesetPayload; edits: AtlasAutotileZoneEdit[] } | null>(null);
+  const paintZone = (edit: AtlasAutotileZoneEdit) => {
+    if (!autotile) return;
+    if (zoneStrokeRef.current?.stroke !== edit.stroke) zoneStrokeRef.current = { stroke: edit.stroke, base: tileset, edits: [] };
+    const stroke = zoneStrokeRef.current;
+    stroke.edits.push(edit);
+    commit({
+      ...stroke.base,
+      tiles: stroke.base.tiles.map((tile) =>
+        stroke.edits.reduce(
+          (next, entry) => (entry.tileId === tile.id ? setAutotileZone(next, autotile.id, entry.zone, entry.on) : next),
+          tile,
+        ),
+      ),
+    }, `tileset:autotile:${edit.stroke}`);
+  };
+  const tilesById = useMemo(() => new Map(tileset.tiles.map((tile) => [tile.id, tile])), [tileset]);
+  const autotileOverlay = useMemo(
+    () => (autotile
+      ? { style: autotile.style, zoneOn: (tileId: number, zone: number) => autotileZoneOn(tilesById.get(tileId), autotile.id, zone) }
+      : undefined),
+    [autotile, tilesById],
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden" onErrorCapture={preview.fail}>
       <ToolbarStrip className="shrink-0 gap-2 py-1" data-testid="tileset-preview-toolbar">
@@ -182,6 +209,16 @@ export function TilesetPreview({
           <ToggleGroupItem value="select" className={TOOL_ITEM} data-testid="tileset-tool-select">
             <MousePointerIcon />
             Select
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="autotile"
+            className={TOOL_ITEM}
+            disabled={!autotile}
+            title={autotile ? undefined : "Add an autotile in the Inspector first."}
+            data-testid="tileset-tool-autotile"
+          >
+            <Grid3x3Icon />
+            Autotile
           </ToggleGroupItem>
         </ToggleGroup>
         <Separator orientation="vertical" className="my-1" />
@@ -235,7 +272,9 @@ export function TilesetPreview({
         selectedId={selectedId}
         selectedIds={selectedIds}
         panZoom
-        tool={previewTool}
+        tool={previewTool === "autotile" && !autotile ? "move" : previewTool}
+        autotile={autotileOverlay}
+        onAutotileZone={paintZone}
         emptyLabel={preview.status === "failed" ? "" : preview.status === "missing" ? "Missing Texture" : preview.status === "empty" ? "No Texture" : "Loading Texture…"}
         emptyDescription={preview.status === "empty"
           ? "Pick a Texture to slice it into tiles."
@@ -354,18 +393,21 @@ export function TilesetEditor({
   };
 
   const terrains = tileset.terrains ?? [];
-  const [selectedTerrainId, setSelectedTerrainId] = useState<string | null>(null);
+  const [localAutotileId, setLocalAutotileId] = useState<string | null>(null);
+  const selectedTerrainId = editing ? editing.selectedAutotileId : localAutotileId;
+  const setSelectedTerrainId = editing?.setSelectedAutotileId ?? setLocalAutotileId;
   const selectedTerrain =
     terrains.find((terrain) => terrain.id === selectedTerrainId) ?? terrains[0] ?? null;
+  const [layoutOpen, setLayoutOpen] = useState(false);
 
-  /** Replace the terrain list; tiles of a removed terrain leave it in the same edit. */
+  /** Replace the autotile list; tiles of a removed autotile leave it in the same edit. */
   const commitTerrains = (next: TilesetTerrain[], field?: string) => {
     const kept = new Set(next.map((terrain) => terrain.id));
     const tiles = tileset.tiles.map((tile) =>
       tile.terrain && !kept.has(tile.terrain.id) ? withoutTerrain(tile) : tile,
     );
     const payload: TilesetPayload = { ...tileset, tiles, terrains: next };
-    // A Tileset without terrains saves without the key, as before terrains existed.
+    // A Tileset without autotiles saves without the key.
     if (next.length === 0) delete payload.terrains;
     commit(payload, field);
   };
@@ -375,9 +417,11 @@ export function TilesetEditor({
     let index = terrains.length + 1;
     while (ids.has(`terrain-${index}`)) index += 1;
     const id = `terrain-${index}`;
-    const name = terrains.some((terrain) => terrain.name === "Terrain") ? `Terrain ${index}` : "Terrain";
+    const name = terrains.some((terrain) => terrain.name === "Autotile") ? `Autotile ${index}` : "Autotile";
     commitTerrains([...terrains, { id, name, style: "sides" }]);
     setSelectedTerrainId(id);
+    // Marking its tiles is the next step, on the atlas.
+    editing?.setPreviewTool("autotile");
   };
 
   const patchTerrain = (patch: Partial<TilesetTerrain>, field?: string) => {
@@ -388,36 +432,7 @@ export function TilesetEditor({
     );
   };
 
-  const selectedSet = new Set(selectedIds);
   const tileTerrain = selected?.terrain ? tilesetTerrainById(tileset, selected.terrain.id) : null;
-  /** Selected tiles in the primary tile's terrain; neighbour toggles edit them together. */
-  const terrainMembers = tileTerrain
-    ? tileset.tiles.filter((tile) => selectedSet.has(tile.id) && tile.terrain?.id === tileTerrain.id)
-    : [];
-
-  const setTileTerrain = (terrainId: string | null) => {
-    commit({
-      ...tileset,
-      tiles: tileset.tiles.map((tile) => {
-        if (!selectedSet.has(tile.id)) return tile;
-        if (!terrainId) return withoutTerrain(tile);
-        return { ...tile, terrain: { id: terrainId, mask: tile.terrain?.mask ?? 0 } };
-      }),
-    });
-  };
-
-  const toggleTerrainNeighbour = (bit: number, on: boolean) => {
-    const members = new Set(terrainMembers.map((tile) => tile.id));
-    commit({
-      ...tileset,
-      tiles: tileset.tiles.map((tile) => {
-        if (!members.has(tile.id) || !tile.terrain) return tile;
-        // Opening a side also opens the corners that need it.
-        const mask = on ? tile.terrain.mask | bit : tile.terrain.mask & ~bit & ~(SIDE_CORNERS.get(bit) ?? 0);
-        return { ...tile, terrain: { ...tile.terrain, mask } };
-      }),
-    });
-  };
 
   const preview = useTexturePreview(tileset.textureGuid);
   const tileSizeDirty =
@@ -536,25 +551,12 @@ export function TilesetEditor({
         ),
     },
   ];
-  const tileTerrainRows: PropertyRow[] = terrains.length > 0
-    ? [{
-        id: "tile-terrain",
-        kind: "enum",
-        label: "Terrain",
-        value: selected?.terrain?.id ?? "none",
-        options: [
-          { value: "none", label: "None" },
-          ...terrains.map((terrain) => ({ value: terrain.id, label: terrain.name })),
-        ],
-        onChange: (value) => setTileTerrain(value === "none" ? null : value),
-      }]
-    : [];
   const terrainRows: PropertyRow[] = selectedTerrain
     ? [
         {
           id: "terrain-name",
           kind: "text",
-          label: "Terrain Name",
+          label: "Name",
           value: selectedTerrain.name,
           onChange: (name) => {
             if (name.trim()) patchTerrain({ name });
@@ -563,7 +565,7 @@ export function TilesetEditor({
         {
           id: "terrain-style",
           kind: "enum",
-          label: "Style",
+          label: "Layout",
           value: selectedTerrain.style,
           options: TILESET_TERRAIN_STYLES.map((style) => ({ value: style, label: TERRAIN_STYLE_LABELS[style] })),
           onChange: (style) => patchTerrain({ style: style as TilesetTerrainStyle }),
@@ -615,17 +617,17 @@ export function TilesetEditor({
         </Button>
       </div>
       <PropertyGrid rows={layoutRows} />
-      <PropertySectionTitle>Terrains</PropertySectionTitle>
+      <PropertySectionTitle>Autotiles</PropertySectionTitle>
       {terrains.length === 0 ? (
         <p className="px-2 pt-2 text-xs text-muted-foreground">
-          Add a terrain, then set it on its tiles to paint them as autotiles.
+          An autotile paints the right edge and corner tiles by itself in a Tilemap. Add one, then mark its tiles on the atlas with the Autotile tool or Fill From Layout.
         </p>
       ) : null}
       <div className="py-1">
         <NamedListEditor
           data-testid="tileset-terrains"
           values={terrains.map((terrain) => terrain.id)}
-          addLabel="Add Terrain"
+          addLabel="New Autotile"
           onAdd={addTerrain}
           onChange={(ids) => {
             const byId = new Map(terrains.map((terrain) => [terrain.id, terrain]));
@@ -659,10 +661,43 @@ export function TilesetEditor({
       </div>
       {selectedTerrain ? (
         <>
-          <PropertyGrid title="Selected Terrain" rows={terrainRows} />
-          <p className="px-2 pb-1.5 text-xs text-muted-foreground" data-testid="tileset-terrain-coverage">
-            {terrainCoverage(tileset, selectedTerrain)}
-          </p>
+          <PropertyGrid title={selectedTerrain.name} rows={terrainRows} />
+          <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!preview.url}
+              onClick={() => setLayoutOpen(true)}
+              data-testid="tileset-fill-from-layout"
+            >
+              <LayoutGridIcon />
+              Fill From Layout…
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editing?.setPreviewTool("autotile")}
+              disabled={!editing || editing.previewTool === "autotile"}
+              data-testid="tileset-edit-on-atlas"
+            >
+              <Grid3x3Icon />
+              Edit On Atlas
+            </Button>
+          </div>
+          <AutotileCoverage tileset={tileset} terrain={selectedTerrain} />
+          {layoutOpen ? (
+            <AutotileLayoutDialog
+              tileset={tileset}
+              terrain={selectedTerrain}
+              imageUrl={preview.url}
+              initialStart={selectedId}
+              onOpenChange={setLayoutOpen}
+              onFill={(start) => {
+                commit(applyAutotileLayout(tileset, selectedTerrain.id, start));
+                setLayoutOpen(false);
+              }}
+            />
+          ) : null}
         </>
       ) : null}
       <PropertySectionTitle>
@@ -692,15 +727,6 @@ export function TilesetEditor({
         ) : null}
       </div>
       <PropertyGrid rows={tileRows} />
-      {tileTerrainRows.length > 0 ? <PropertyGrid rows={tileTerrainRows} /> : null}
-      {tileTerrain ? (
-        <TerrainNeighboursField
-          style={tileTerrain.style}
-          masks={terrainMembers.map((tile) => tile.terrain?.mask ?? 0)}
-          onToggle={toggleTerrainNeighbour}
-          center={<TileSwatch tileset={tileset} tileId={selected?.id ?? 1} imageUrl={preview.url} className="size-full" testId="tileset-terrain-swatch" />}
-        />
-      ) : null}
       <AssetPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -821,104 +847,146 @@ const TERRAIN_STYLE_SHORT_LABELS: Record<TilesetTerrainStyle, string> = {
   blob: "Blob",
 };
 
-/** Corners that stop counting once their side opens. */
-const SIDE_CORNERS = new Map([
-  [TERRAIN_N, TERRAIN_NE | TERRAIN_NW],
-  [TERRAIN_E, TERRAIN_NE | TERRAIN_SE],
-  [TERRAIN_S, TERRAIN_SE | TERRAIN_SW],
-  [TERRAIN_W, TERRAIN_SW | TERRAIN_NW],
-]);
-
-/** Sides each corner needs. */
-const CORNER_SIDES = new Map([
-  [TERRAIN_NE, TERRAIN_N | TERRAIN_E],
-  [TERRAIN_SE, TERRAIN_S | TERRAIN_E],
-  [TERRAIN_SW, TERRAIN_S | TERRAIN_W],
-  [TERRAIN_NW, TERRAIN_N | TERRAIN_W],
-]);
-
-/** The neighbour toggles in reading order around the tile (`null`). */
-const NEIGHBOUR_GRID: ReadonlyArray<{ bit: number; label: string; icon: LucideIcon } | null> = [
-  { bit: TERRAIN_NW, label: "North West", icon: ArrowUpLeftIcon },
-  { bit: TERRAIN_N, label: "North", icon: ArrowUpIcon },
-  { bit: TERRAIN_NE, label: "North East", icon: ArrowUpRightIcon },
-  { bit: TERRAIN_W, label: "West", icon: ArrowLeftIcon },
-  null,
-  { bit: TERRAIN_E, label: "East", icon: ArrowRightIcon },
-  { bit: TERRAIN_SW, label: "South West", icon: ArrowDownLeftIcon },
-  { bit: TERRAIN_S, label: "South", icon: ArrowDownIcon },
-  { bit: TERRAIN_SE, label: "South East", icon: ArrowDownRightIcon },
-];
-
-const NEIGHBOUR_CELL = "size-7 pointer-coarse:size-11";
-
-/**
- * The neighbours a terrain tile joins, around the tile itself. A toggle is
- * pressed when every edited tile joins that neighbour; corners show only for
- * blob terrains and need both of their sides.
- */
-function TerrainNeighboursField({
+/** A layout cell or missing variant: the tile in the middle and the neighbours it joins around it. */
+function AutotileMaskGlyph({
+  mask,
   style,
-  masks,
-  center,
-  onToggle,
+  className,
+  testId,
 }: {
+  mask: number | null;
   style: TilesetTerrainStyle;
-  masks: readonly number[];
-  center: ReactNode;
-  onToggle: (bit: number, on: boolean) => void;
+  className?: string;
+  testId?: string;
 }) {
-  const joins = (bits: number) =>
-    masks.length > 0 && masks.every((mask) => (canonicalTerrainMask(style, mask) & bits) === bits);
   return (
-    <Field className="gap-1.5 border-b border-border/30 px-2 py-1.5" data-testid="tileset-terrain-neighbours">
-      <FieldTitle id="tileset-terrain-neighbours-title" className="text-xs">
-        Terrain Neighbours
-      </FieldTitle>
-      <div role="group" aria-labelledby="tileset-terrain-neighbours-title" className="grid w-fit grid-cols-3 gap-1">
-        {NEIGHBOUR_GRID.map((cell) => {
-          if (!cell) return <div key="tile" className={NEIGHBOUR_CELL}>{center}</div>;
-          const corner = CORNER_SIDES.get(cell.bit);
-          if (corner !== undefined && style === "sides") {
-            return <span key={cell.bit} aria-hidden className={NEIGHBOUR_CELL} />;
-          }
-          const Icon = cell.icon;
-          return (
-            <Toggle
-              key={cell.bit}
-              variant="outline"
-              size="sm"
-              aria-label={cell.label}
-              title={cell.label}
-              pressed={joins(cell.bit)}
-              disabled={corner !== undefined && !joins(corner)}
-              className={cn(NEIGHBOUR_CELL, "min-w-0 p-0")}
-              onPressedChange={(next) => onToggle(cell.bit, next)}
-              data-testid={`tileset-terrain-neighbour-${cell.label.toLowerCase().replace(" ", "-")}`}
-            >
-              <Icon />
-            </Toggle>
-          );
-        })}
-      </div>
-      <FieldDescription className="text-xs">
-        {style === "blob"
-          ? "Pressed sides and corners continue the same terrain. A corner needs both of its sides."
-          : "Pressed sides continue the same terrain."}
-      </FieldDescription>
-    </Field>
+    <span
+      aria-hidden
+      data-testid={testId}
+      data-mask={mask ?? undefined}
+      className={cn("grid shrink-0 grid-cols-3 grid-rows-3 gap-px rounded-sm bg-background p-px ring-1 ring-border", mask === null && "opacity-40", className)}
+    >
+      {[128, 1, 2, 64, 0, 4, 32, 16, 8].map((bit) => {
+        const corner = bit === 2 || bit === 8 || bit === 32 || bit === 128;
+        const on = mask !== null && (bit === 0 || (mask & bit) !== 0);
+        return (
+          <span
+            key={bit}
+            className={cn(
+              "rounded-[1px] bg-muted",
+              on && (bit === 0 ? "bg-ring" : "bg-ring/55"),
+              corner && style === "sides" && "invisible",
+            )}
+          />
+        );
+      })}
+    </span>
   );
 }
 
-function terrainCoverage(tileset: TilesetPayload, terrain: TilesetTerrain): string {
-  const members = tileset.tiles.filter((tile) => tile.terrain?.id === terrain.id);
-  const variants = new Set(members.map((tile) => canonicalTerrainMask(terrain.style, tile.terrain?.mask ?? 0)));
+/** How many of the autotile's variants have a tile, and which are missing. */
+function AutotileCoverage({ tileset, terrain }: { tileset: TilesetPayload; terrain: TilesetTerrain }) {
   const total = terrainVariantMasks(terrain.style).length;
-  if (members.length === 0) return `No tiles yet. Set this terrain on tiles to cover its ${total} variants.`;
-  const tiles = members.length === 1 ? "1 tile covers" : `${members.length} tiles cover`;
-  return variants.size < total
-    ? `${tiles} ${variants.size} of ${total} variants; the rest paint the closest tile.`
-    : `${tiles} all ${total} variants.`;
+  const missing = missingTerrainVariants(tileset, terrain.id);
+  const members = tileset.tiles.some((tile) => tile.terrain?.id === terrain.id);
+  return (
+    <div className="flex flex-col gap-1.5 border-b border-border/30 px-2 pb-2" data-testid="tileset-terrain-coverage">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="font-medium">Coverage</span>
+        <span className="tabular-nums text-muted-foreground" data-testid="tileset-terrain-coverage-count">
+          {total - missing.length} of {total}
+        </span>
+      </div>
+      {!members ? (
+        <p className="text-xs text-muted-foreground">
+          No tiles yet. Mark them with the Autotile tool, or use Fill From Layout.
+        </p>
+      ) : missing.length > 0 ? (
+        <>
+          <p className="text-xs text-muted-foreground">Missing; painting uses the closest tile:</p>
+          <div className="flex flex-wrap gap-1" data-testid="tileset-terrain-missing">
+            {missing.map((mask) => (
+              <AutotileMaskGlyph key={mask} mask={mask} style={terrain.style} className="size-5" />
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="text-xs text-muted-foreground">Every variant has a tile.</p>
+      )}
+    </div>
+  );
+}
+
+/** Fill From Layout: pick where the style's standard block starts on the atlas, then fill its tiles. */
+function AutotileLayoutDialog({
+  tileset,
+  terrain,
+  imageUrl,
+  initialStart,
+  onOpenChange,
+  onFill,
+}: {
+  tileset: TilesetPayload;
+  terrain: TilesetTerrain;
+  imageUrl: string | null;
+  initialStart: number;
+  onOpenChange: (open: boolean) => void;
+  onFill: (startTileId: number) => void;
+}) {
+  const [start, setStart] = useState(initialStart);
+  const layout = AUTOTILE_LAYOUTS[terrain.style];
+  const placement = autotileLayoutPlacement(tileset, terrain.style, start);
+  const blockIds = placement ? placement.map((cell) => cell.tileId) : [start];
+  const filled = placement ? placement.filter((cell) => cell.mask !== null).length : 0;
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-3xl" data-testid="tileset-layout-dialog">
+        <DialogHeader>
+          <DialogTitle>Fill From Layout</DialogTitle>
+          <DialogDescription>
+            Tap the tile where the {TERRAIN_STYLE_LABELS[terrain.style]} block starts. Every tile in the block gets the neighbours its place in the layout shows.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid min-h-0 gap-4 md:grid-cols-[auto_minmax(0,1fr)]">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium">Layout</span>
+            <div
+              className="grid w-fit gap-0.5"
+              style={{ gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))` }}
+              data-testid="tileset-layout-preview"
+            >
+              {layout.masks.map((mask, at) => (
+                <AutotileMaskGlyph key={at} mask={mask} style={terrain.style} className={layout.columns > 4 ? "size-5" : "size-8"} />
+              ))}
+            </div>
+          </div>
+          <div className="flex h-72 min-h-0 min-w-0 flex-col">
+            <AtlasTileGrid
+              tileset={tileset}
+              imageUrl={imageUrl}
+              selectedId={start}
+              selectedIds={blockIds}
+              panZoom
+              tool="move"
+              onSelect={setStart}
+              data-testid="tileset-layout-atlas"
+            />
+          </div>
+        </div>
+        {!placement ? (
+          <p className="text-xs text-destructive" role="alert" data-testid="tileset-layout-error">
+            The block is {layout.columns} × {layout.rows} tiles and runs past the atlas from Tile {start}. Pick a tile further up or left.
+          </p>
+        ) : null}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button disabled={!placement} onClick={() => onFill(start)} data-testid="tileset-layout-fill">
+            Fill {filled} Tiles
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function withoutTerrain(tile: TilesetTile): TilesetTile {

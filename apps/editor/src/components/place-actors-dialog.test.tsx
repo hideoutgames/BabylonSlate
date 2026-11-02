@@ -106,7 +106,8 @@ describe("PlaceActorsDialog", () => {
     rerender(session("second"));
     expect(screen.getByTestId("place-actors-catalog-body")).not.toBe(body);
     expect(screen.getByTestId("place-actors-catalog-body").scrollTop).toBe(80);
-    expect(screen.getByTestId("place-actors-project-count").textContent).toBe("1 of 2 Assets");
+    expect(screen.queryByTestId("place-actors-item-asset-Hero")).toBeNull();
+    expect(screen.getByTestId("place-actors-item-asset-Door")).toBeTruthy();
     expect(screen.getByTestId("place-actors-project-filter").textContent).toBe("Filter (1)");
 
     rerender(session("layer", true));
@@ -192,7 +193,36 @@ describe("PlaceActorsDialog", () => {
     fireEvent.click(await screen.findByTestId("place-actors-project-filter-Prefab"));
     await waitFor(() => expect(screen.queryByTestId("place-actors-item-asset-Hero")).toBeNull());
     expect(screen.getByTestId("place-actors-item-asset-Door")).toBeTruthy();
-    expect(screen.getByTestId("place-actors-project-count").textContent).toBe("1 of 2 Assets");
     expect(screen.getByTestId("place-actors-project-filter").textContent).toBe("Filter (1)");
+  });
+
+  it("keeps Filter and Sort out of the scrolling list and inactive while searching", () => {
+    const asset = (id: string, assetType: string, path: string) => ({
+      id: `asset-${id}`,
+      title: id,
+      category: "Project",
+      kind: { type: "asset" as const, name: id, guid: id, assetType, path },
+    });
+    render(
+      <PlaceActorsDialog
+        open
+        onOpenChange={() => {}}
+        onSelect={() => {}}
+        projectItems={[
+          asset("Hero", "Class", "assets/actors/Hero.class.hasset"),
+          asset("Door", "Prefab", "assets/props/Door.prefab.hasset"),
+        ]}
+      />,
+    );
+    expect(screen.queryByTestId("place-actors-project-toolbar")).toBeNull();
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
+    const toolbar = screen.getByTestId("place-actors-project-toolbar");
+    expect(screen.getByTestId("place-actors-catalog-body").contains(toolbar)).toBe(false);
+    const sort = screen.getByTestId("place-actors-project-sort") as HTMLButtonElement;
+    expect(sort.disabled).toBe(false);
+
+    fireEvent.change(screen.getByTestId("place-actors-catalog-search"), { target: { value: "door" } });
+    expect(sort.disabled).toBe(true);
+    expect((screen.getByTestId("place-actors-project-filter") as HTMLButtonElement).disabled).toBe(true);
   });
 });
