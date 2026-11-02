@@ -22,7 +22,7 @@ function stubClientSize(
 }
 
 describe("pixelated upscaling in Play", () => {
-  it("shows the locked design size at a whole multiple, nearest-neighbour, and clears it when filling", () => {
+  it("shows the design size at a whole multiple, nearest-neighbour, with Black Bars or extended, and clears it when filling", () => {
     const overlay = document.createElement("div");
     const canvas = document.createElement("canvas");
     overlay.append(canvas);
@@ -31,9 +31,16 @@ describe("pixelated upscaling in Play", () => {
     const render = { customResolution: true, width: 320, height: 180, blackBars: true, upscaling: "pixelated" as const };
     applyPlayPreviewCanvasLayout({ overlay, canvas, followSystem: true, aspectWidth: 16, aspectHeight: 9, render });
     expect([canvas.style.width, canvas.style.height, canvas.style.imageRendering]).toEqual(["1280px", "720px", "pixelated"]);
+    // Without Black Bars: the framebuffer extends past the design size and still enlarges by whole multiples.
     applyPlayPreviewCanvasLayout({ overlay, canvas, followSystem: true, aspectWidth: 16, aspectHeight: 9,
       render: { ...render, blackBars: false } });
+    expect([canvas.style.width, canvas.style.height, canvas.style.imageRendering]).toEqual(["1368px", "768px", "pixelated"]);
+    expect(overlay.classList.contains("overflow-hidden")).toBe(true);
+    // Smooth without Black Bars fills the host, filtered.
+    applyPlayPreviewCanvasLayout({ overlay, canvas, followSystem: true, aspectWidth: 16, aspectHeight: 9,
+      render: { ...render, blackBars: false, upscaling: "smooth" } });
     expect(canvas.style.imageRendering).toBe("");
+    expect(overlay.classList.contains("overflow-hidden")).toBe(false);
   });
 });
 

@@ -21,6 +21,7 @@ import {
 import {
   DEFAULT_RENDER_HEIGHT,
   DEFAULT_RENDER_WIDTH,
+  PIXEL_ART_DESIGN_SIZES,
   type ProjectAppearance,
   type ProjectFolderHandle,
 } from "@haptic/core";
@@ -238,6 +239,7 @@ export function Homepage({
   const [width, setWidth] = useState(DEFAULT_RENDER_WIDTH);
   const [height, setHeight] = useState(DEFAULT_RENDER_HEIGHT);
   const [blackBars, setBlackBars] = useState(false);
+  const [pixelArt, setPixelArt] = useState(false);
   const [pickFolder, setPickFolder] = useState(false);
   const hostPlatform = getHostPlatform();
   const createName = name.trim() || suggestedName;
@@ -299,6 +301,7 @@ export function Homepage({
     setWidth(DEFAULT_RENDER_WIDTH);
     setHeight(DEFAULT_RENDER_HEIGHT);
     setBlackBars(false);
+    setPixelArt(false);
     setPickFolder(false);
     setError(null);
     setCreateOpen(true);
@@ -685,6 +688,14 @@ export function Homepage({
         onHeightChange={setHeight}
         blackBars={blackBars}
         onBlackBarsChange={setBlackBars}
+        pixelArt={pixelArt}
+        onPixelArtChange={(enabled) => {
+          setPixelArt(enabled);
+          // A pixel-art design size: the larger of the two offered; the fields stay editable.
+          const size = enabled ? PIXEL_ART_DESIGN_SIZES[0] : { width: DEFAULT_RENDER_WIDTH, height: DEFAULT_RENDER_HEIGHT };
+          setWidth(size.width);
+          setHeight(size.height);
+        }}
         onSubmit={() => {
           if (busy || nameIssue) return;
           void run(
@@ -701,6 +712,7 @@ export function Homepage({
                     renderWidth: width,
                     renderHeight: height,
                     blackBars,
+                    pixelArt,
                     ...(hostPlatform === "web" ? {} : { pickFolder }),
                   };
                   const folderName = normalizeProjectFolderName(createName);

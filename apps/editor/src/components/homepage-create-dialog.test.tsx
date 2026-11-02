@@ -12,6 +12,15 @@ import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { ContextMenuOverlay } from "@haptic/editor-kit";
 import * as appearanceHelpers from "./homepage-project-appearance";
 
+if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -34,6 +43,8 @@ function Composer({
   const [name, setName] = useState(mode === "edit" ? "Moon Garden" : "");
   const [appearance, setAppearance] = useState({ icon: "box", color: "coral" });
   const [templateId, setTemplateId] = useState("empty");
+  const [size, setSize] = useState({ width: 1920, height: 1080 });
+  const [pixelArt, setPixelArt] = useState(false);
   const props = {
     mode,
     open,
@@ -50,12 +61,17 @@ function Composer({
     hostPlatform: "web",
     pickFolder: false,
     onPickFolderChange: vi.fn(),
-    width: 1920,
-    height: 1080,
-    onWidthChange: vi.fn(),
-    onHeightChange: vi.fn(),
+    width: size.width,
+    height: size.height,
+    onWidthChange: (width: number) => setSize((current) => ({ ...current, width })),
+    onHeightChange: (height: number) => setSize((current) => ({ ...current, height })),
     blackBars: false,
     onBlackBarsChange: vi.fn(),
+    pixelArt,
+    onPixelArtChange: (enabled: boolean) => {
+      setPixelArt(enabled);
+      setSize(enabled ? { width: 640, height: 360 } : { width: 1920, height: 1080 });
+    },
     onSubmit,
   } satisfies ComponentProps<typeof HomepageCreateDialog>;
   return <HomepageCreateDialog {...props} />;
@@ -119,6 +135,20 @@ describe("Project Composer", () => {
       );
     },
   );
+
+  it("offers Pixel Art Optimized, off by default, with its two design sizes once on", () => {
+    render(<Composer />);
+    fireEvent.click(screen.getByText("Options"));
+    const option = screen.getByTestId("create-project-pixel-art");
+    expect(option.getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByTestId("create-project-pixel-art-size")).toBeNull();
+    fireEvent.click(option);
+    expect(screen.getByTestId("create-project-pixel-art-size")).toBeTruthy();
+    expect((screen.getByTestId("create-project-width") as HTMLInputElement).value).toBe("640");
+    fireEvent.click(screen.getByRole("button", { name: "320 × 180" }));
+    expect((screen.getByTestId("create-project-width") as HTMLInputElement).value).toBe("320");
+    expect((screen.getByTestId("create-project-height") as HTMLInputElement).value).toBe("180");
+  });
 
   it("restores focus to project actions after editing from its context menu", async () => {
     function ContextEdit() {

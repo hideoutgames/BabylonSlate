@@ -149,6 +149,18 @@ describe("project schema", () => {
     expect(settings.twoD.sortingLayers).toEqual(["Default", "UI"]);
   });
 
+  it("sets up a Pixel Art Optimized project and leaves other projects as they were", () => {
+    const pixelArt = createEmptyProject("Pixels", { render: { width: 640, height: 360, blackBars: false }, pixelArt: true }).settings;
+    expect(pixelArt.twoD).toMatchObject({ pixelPerfect: true, nearestTextures: true });
+    expect(pixelArt.render).toMatchObject({ customResolution: true, width: 640, height: 360, blackBars: false, upscaling: "pixelated" });
+    expect(pixelArt.render.quality?.resolution).toMatchObject({ scale: 1, minScale: 1, dynamic: false, preset: "custom" });
+    expect(pixelArt.render.quality?.postprocessing).toMatchObject({ antiAliasing: "off", preset: "custom" });
+    const plain = createEmptyProject("Plain").settings;
+    expect(plain.twoD).toMatchObject({ pixelPerfect: false, nearestTextures: false });
+    expect(plain.render.upscaling).toBe("smooth");
+    expect(plain.render.quality?.postprocessing.antiAliasing).not.toBe("off");
+  });
+
   it("filters textures nearest only when Nearest Texture Filtering and Pixel-Perfect Mode are both on", () => {
     // Saved settings are untrusted: only a literal true counts.
     const filtering = (pixelPerfect: unknown, nearestTextures: unknown) => nearestTextureFiltering(
