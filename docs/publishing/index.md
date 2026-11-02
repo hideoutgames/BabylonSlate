@@ -11,7 +11,7 @@
 
 ## Package the game
 
-1. In the toolbar, choose **Settings > Packaging**.
+1. In the toolbar, choose **Settings > Packaging** (<kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).
 2. In the platform list, select **Web** under **Available**. Platforms under **Unavailable** can't be packaged on this device.
 3. Check the summary: the output file, **Startup Scene**, **Bundle Debugger** and **Always Package Folders**. If no Startup Scene is set, choose **Game Settings** to set one; **Package** stays unavailable until you do.
 4. Choose **Package**.

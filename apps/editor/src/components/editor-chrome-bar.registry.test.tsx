@@ -18,6 +18,7 @@ import {
 import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
+import { KeybindProvider } from "../context/keybind-context";
 import { MaterialRenderControlProvider } from "../context/material-render-control-context";
 import type { OpenDocument } from "../services/document-service";
 import type { GraphDebugStore } from "../services/graph-debug-store";
@@ -135,6 +136,25 @@ describe("chrome Play", () => {
     state.sceneViewportLoading = false;
     rerender(<Chrome />);
     expect(screen.getByTestId("play-preview").hasAttribute("disabled")).toBe(false);
+  });
+});
+
+describe("chrome Packaging", () => {
+  it("opens Packaging from its shortcut and shows the shortcut in the Settings menu", async () => {
+    render(
+      <KeybindProvider>
+        <Chrome />
+      </KeybindProvider>,
+    );
+    fireEvent.click(screen.getByTestId("settings-menu"));
+    expect(within(await screen.findByTestId("packaging")).getByText("B")).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("packaging")).toBeNull());
+    expect(screen.queryByTestId("packaging-dialog")).toBeNull();
+
+    fireEvent.keyDown(document.body, { key: "B", code: "KeyB", ctrlKey: true, shiftKey: true });
+
+    expect(await screen.findByTestId("packaging-dialog")).toBeTruthy();
   });
 });
 

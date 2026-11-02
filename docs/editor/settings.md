@@ -95,6 +95,6 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 
 Each topic's guide covers its settings: for example [Graphics](../graphics/index.md), [Collision](../physics/collision.md), [Save Games](../scripting/save-games.md), [Publishing](../publishing/index.md) and [Source Control](../projects/source-control.md).
 
-To build a playable copy of your game, choose **Settings > Packaging** in the toolbar. See [Publishing](../publishing/index.md).
+To build a playable copy of your game, choose **Settings > Packaging** in the toolbar (<kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>). See [Publishing](../publishing/index.md).
 
 To close the project and return to the Homepage, choose **Settings > Project Browser** in the toolbar.
