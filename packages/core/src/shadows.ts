@@ -187,8 +187,7 @@ export const SHADOW_CAPACITY_PROFILES = {
 } as const;
 export function normalizeShadowSettings(value: unknown): ShadowSettings {
   const clean = normalizeShadowOverrides(value);
-  // Full legacy project settings wrote four even when no capacity was authored.
-  // Keep that ambiguous value as a manual limit instead of inventing intent.
+  // A capacity given without a mode is a manual limit.
   if (clean.maxLocalLights !== undefined && clean.localLightMode === undefined)
     clean.localLightMode = "manual";
   const settings: ShadowSettings = {

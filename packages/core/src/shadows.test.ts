@@ -100,7 +100,7 @@ describe("shadow settings", () => {
       expect(requested.maxLocalLights).toBe(16);
     }
   });
-  it("migrates legacy full settings but keeps sparse capacity and mode overrides independent", () => {
+  it("reads a capacity without a mode as manual but keeps sparse capacity and mode overrides independent", () => {
     expect(normalizeShadowSettings({ maxLocalLights: 4 }).localLightMode).toBe(
       "manual",
     );

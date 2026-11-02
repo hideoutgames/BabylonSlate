@@ -65,7 +65,7 @@ export function createProjectNameIssue(
   return taken ? "Name already exists." : null;
 }
 
-/** Built-in starters: Blank, Basic 3D (legacy `empty`), Basic 2D, and Feature Test. */
+/** Built-in starters: Blank, Basic 3D (id `empty`), Basic 2D, and Feature Test. */
 export const BUILT_IN_STARTER_KINDS = ["blank", "empty", "2d", "feature-test"] as const;
 
 export type BuiltInStarterKind = (typeof BUILT_IN_STARTER_KINDS)[number];
