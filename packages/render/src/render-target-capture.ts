@@ -9,7 +9,7 @@ import {
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
-  normalizeRenderTargetCaptureProperties, normalizeRenderTargetPayload,
+  normalizeRenderTargetCaptureProperties, normalizeRenderTargetPayload, RENDER_TARGET_CAPTURE_QUALITY_LABELS,
   type RenderTargetCaptureProperties, type RenderTargetCaptureQuality, type RenderTargetPayload,
   type RenderTargetTexturePayload, type SerializedScene, type SerializedTransform,
 } from "@haptic/core";
@@ -36,10 +36,10 @@ export { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 
 /**
  * Attaches the scene's authored post-process stack to a Full Quality capture's
- * view, or null when the scene's own view runs none.
+ * view, or null when the scene's own view runs none. High Quality views run none.
  */
 export type RenderTargetCapturePostProcess = (renderer: SceneRenderCoordinator, camera: Camera) => AttachedPostProcessStack | null;
-/** A Full Quality capture's attachment to the scene's gameplay outlines. */
+/** A High or Full Quality capture's attachment to the scene's gameplay outlines. */
 export type RenderTargetCaptureOutlineView = {
   /** Republishes the outlines through the capture's current `includes`. */
   refresh(): void;
@@ -47,7 +47,7 @@ export type RenderTargetCaptureOutlineView = {
 };
 /**
  * Attaches the scene's gameplay outlines (Outline components and CEL outlines,
- * never the editor selection) to a Full Quality capture's view, keeping only
+ * never the editor selection) to a High or Full Quality capture's view, keeping only
  * meshes `includes` accepts (the actors a Capture Only Actors capture draws).
  */
 export type RenderTargetCaptureOutlines = (
@@ -62,17 +62,17 @@ export type RenderTargetCaptureDiagnostics = {
   /** Effective quality: Depth Pass and World Normal targets always record with the fast pass. */
   quality: RenderTargetCaptureQuality;
   published: boolean;
-  /** A Full Quality view's prepared graph tasks; [] for Fast or before preparation. */
+  /** A High or Full Quality view's prepared graph tasks; [] for Fast or before preparation. */
   taskNames: string[];
-  /** Render pass id of a Full Quality view's water scene copy, or null when it plans none. */
+  /** Render pass id of a High or Full Quality view's water scene copy, or null when it plans none. */
   waterSceneCopyPass: number | null;
-  /** A Full Quality view's strict readiness probes so far; steady frames add none. */
+  /** A High or Full Quality view's strict readiness probes so far; steady frames add none. */
   strictReadinessChecks: number;
 };
 
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
-/** Above 512 × 512 a Full Quality capture warns once: it costs about a second camera at its size. */
-const FULL_QUALITY_GUIDANCE_PIXELS = 512 * 512;
+/** Above 512 × 512 a High or Full Quality capture warns once: it costs about a second camera at its size. */
+const VIEW_GUIDANCE_PIXELS = 512 * 512;
 const drawing = renderTargetCaptureDrawing;
 
 class CaptureTexture extends Texture {
@@ -121,10 +121,12 @@ type Capture = {
 };
 type CaptureBuffer = { texture: CaptureRenderTarget; lease: ManagedRenderLease };
 /**
- * A Full Quality capture's own forward view: the scene's FrameGraph pipeline
- * for the capture camera, drawing the target's candidate lists into `texture`.
+ * A High or Full Quality capture's own forward view: the scene's FrameGraph
+ * pipeline for the capture camera, drawing the target's candidate lists into
+ * `texture`. A High Quality view's graph leaves out the screen effects and
+ * attaches no authored post-process stack.
  */
-type FullQualityView = {
+type CaptureView = {
   renderer: SceneRenderCoordinator;
   camera: UniversalCamera;
   postProcess: AttachedPostProcessStack | null;
@@ -145,7 +147,7 @@ type Target = CaptureBuffer & {
   quality: RenderTargetCaptureQuality;
   /** Allocated only after a capture needs to sample its published attachment. */
   spare?: CaptureBuffer;
-  fullQuality?: FullQualityView;
+  view?: CaptureView;
   owner: string;
   depth?: NodeMaterial;
   normals?: NodeMaterial;
@@ -183,15 +185,15 @@ export class RenderTargetCaptures {
   private postProcessRevision = 0;
   private outlines: RenderTargetCaptureOutlines | null = null;
   private outlineRevision = 0;
-  /** Render Targets already warned about as too large for Full Quality. */
+  /** Render Targets already warned about as too large for a capture view. */
   private readonly warnedLargeTargets = new Set<string>();
   /** Emitter meshes of the particle systems the capture being collected draws. */
   private readonly emitters = new Set<AbstractMesh>();
-  /** This frame's Full Quality captures, queued in `render()`. */
-  private readonly pendingFullQuality: { actorId: string; guid: string; capture: Capture; target: Target }[] = [];
-  /** Full Quality views awaiting confirmed native release before their output and lease go. */
+  /** This frame's High and Full Quality captures, queued in `render()`. */
+  private readonly pendingViews: { actorId: string; guid: string; capture: Capture; target: Target }[] = [];
+  /** Capture views awaiting confirmed native release before their output and lease go. */
   private readonly releases = new Set<Promise<void>>();
-  /** Render Targets whose Full Quality draw failed and warned, until retired. */
+  /** Render Targets whose capture view draw failed and warned, until retired. */
   private readonly failedDraws = new Set<string>();
   private releaseFailure: unknown;
   private readonly beforeRender: Observer<Scene>;
@@ -212,7 +214,7 @@ export class RenderTargetCaptures {
   constructor(scene: Scene) {
     this.scene = scene;
     this.beforeRender = scene.onBeforeRenderObservable.add(() => this.render())!;
-    this.releaseAuxiliaryViews = registerSceneAuxiliaryViews(scene, this.drawPendingFullQuality);
+    this.releaseAuxiliaryViews = registerSceneAuxiliaryViews(scene, this.drawPendingViews);
     this.addedMesh = scene.onNewMeshAddedObservable.add(() => { this.rootsDirty = true; })!;
     this.removedMesh = scene.onMeshRemovedObservable.add(() => { this.rootsDirty = true; })!;
     scene.onDisposeObservable.addOnce(() => this.dispose());
@@ -237,14 +239,14 @@ export class RenderTargetCaptures {
     this.postProcess = source;
     this.postProcessRevision += 1;
   }
-  /** The scene's gameplay outlines for Full Quality captures; each live view re-attaches on its next capture. */
+  /** The scene's gameplay outlines for High and Full Quality captures; each live view re-attaches on its next capture. */
   setOutlines(source: RenderTargetCaptureOutlines | null): void {
     this.outlines = source;
     this.outlineRevision += 1;
   }
   /** Runtime parameter writes reach every Full Quality view's live stack, as they reach the scene view's. */
   setPostProcessParameter(...args: Parameters<AttachedPostProcessStack["setParameter"]>): void {
-    for (const target of this.targets.values()) target.fullQuality?.postProcess?.setParameter(...args);
+    for (const target of this.targets.values()) target.view?.postProcess?.setParameter(...args);
   }
   registerActor(actorId: string, root: () => AbstractMesh | null): void { this.actorRoots.set(actorId, root); this.rootsDirty = true; }
   removeActor(actorId: string): void {
@@ -278,7 +280,7 @@ export class RenderTargetCaptures {
     } else if (previous && (previous.settings.captureOnlyActors !== settings.captureOnlyActors ||
       previous.settings.actorIds.join("\n") !== settings.actorIds.join("\n"))) {
       // The outlines a capture of chosen actors draws follow its actor list.
-      for (const target of this.targets.values()) if (target.owner === actorId) target.fullQuality?.outlines?.refresh();
+      for (const target of this.targets.values()) if (target.owner === actorId) target.view?.outlines?.refresh();
     }
   }
   syncAuthored(data: SerializedScene): void {
@@ -328,11 +330,11 @@ export class RenderTargetCaptures {
   }
   /**
    * Runs from the scene view's `onBeforeRender`: draws Fast captures now and
-   * queues this frame's Full Quality captures, which the view's graph draws
+   * queues this frame's High and Full Quality captures, which the view's graph draws
    * after Babylon's evaluation (`drawSceneAuxiliaryViews`).
    */
   render(): void {
-    this.pendingFullQuality.length = 0;
+    this.pendingViews.length = 0;
     // A nested call (inside a capture's own draw) keeps its frame's state.
     if (!drawing.has(this.scene)) setFirstDrawsUrgent(this.scene, false);
     if (this.disposed || drawing.has(this.scene) || isSceneGameTimePaused(this.scene)) return;
@@ -358,20 +360,20 @@ export class RenderTargetCaptures {
       if (!this.world.decompose(this.scale, this.rotation, this.position)) continue;
       capture.camera.position.copyFrom(this.position);
       capture.camera.rotationQuaternion!.copyFrom(this.rotation);
-      // Full Quality renders the lit scene; data passes always record with the fast pass.
+      // High and Full Quality render the lit scene; data passes always record with the fast pass.
       const quality = normalizeRenderTargetPayload(definition).mode === "SceneColor" ? settings.quality : "fast";
       const target = this.ensureTarget(guid, definition, actorId, capture.camera, quality);
       if (!target) continue;
-      // A published output keeps what its last capture showed; Full Quality views prepare in the starting state.
-      if (rehearsal && (target.published || target.fullQuality)) continue;
+      // A published output keeps what its last capture showed; capture views prepare in the starting state.
+      if (rehearsal && (target.published || target.view)) continue;
       if (rehearsal) this.pendingRehearsals.add(guid);
-      if (target.fullQuality) {
+      if (target.view) {
         // Here, before the scene view's graph runs: a new map dirties lighting
         // state the graph's own frame must not see change.
-        target.fullQuality.shadows ??= findSceneShadowController(this.scene)?.attachView(capture.camera) ?? null;
+        target.view.shadows ??= findSceneShadowController(this.scene)?.attachView(capture.camera) ?? null;
         // A capture of chosen actors outlines only them; actor roots can change with any mesh.
         if (settings.captureOnlyActors && this.refreshRoots()) this.refreshOutlineFilters();
-        this.pendingFullQuality.push({ actorId, guid, capture, target });
+        this.pendingViews.push({ actorId, guid, capture, target });
         // It draws after the frame's shadow maps and publishes what they show: a new map draws for it now, rather
         // than wait, neutral, for its casters' pipelines, and a drawn map draws again with every caster it left out
         // for theirs (`firstDrawsUrgent`).
@@ -462,23 +464,23 @@ export class RenderTargetCaptures {
     return this.pendingRehearsals.size > 0;
   }
   /**
-   * Whether a Full Quality capture's own view is preparing its graph and variants. A view whose preparation failed (a
+   * Whether a High or Full Quality capture's own view is preparing its graph and variants. A view whose preparation failed (a
    * refused budget) is not: it retries only from its own draw, inside the scene view's.
    */
   preparing(): boolean {
-    for (const target of this.targets.values()) if (target.fullQuality?.renderer.preparing) return true;
+    for (const target of this.targets.values()) if (target.view?.renderer.preparing) return true;
     return false;
   }
   /** Rendering state of every capture output, in insertion order. */
   diagnostics(): RenderTargetCaptureDiagnostics[] {
     return [...this.targets].map(([renderTargetGuid, target]) => ({
       actorId: target.owner, renderTargetGuid, quality: target.quality, published: target.published,
-      taskNames: target.fullQuality?.renderer.taskNames() ?? [],
-      waterSceneCopyPass: target.fullQuality?.renderer.waterSceneCopyDiagnostics()?.renderPassId ?? null,
-      strictReadinessChecks: target.fullQuality?.renderer.strictReadinessChecks ?? 0,
+      taskNames: target.view?.renderer.taskNames() ?? [],
+      waterSceneCopyPass: target.view?.renderer.waterSceneCopyDiagnostics()?.renderPassId ?? null,
+      strictReadinessChecks: target.view?.renderer.strictReadinessChecks ?? 0,
     }));
   }
-  /** Settles once every retired Full Quality view's native release confirmed and its output and lease are freed. */
+  /** Settles once every retired capture view's native release confirmed and its output and lease are freed. */
   async whenReleased(): Promise<void> {
     while (this.releases.size) await Promise.allSettled([...this.releases]);
     if (this.releaseFailure !== undefined) throw this.releaseFailure;
@@ -488,24 +490,24 @@ export class RenderTargetCaptures {
     if (!frameCapture) return draw();
     const { width, height } = target.texture.getSize();
     return frameCapture.stage(this.scene, { name: `Render Target Capture: ${guid}`, kind: "auxiliary",
-      actorGuid: actorId, detail: `${width} × ${height}; ${target.fullQuality ? "Full Quality; " : ""}output asset ${guid}` }, draw);
+      actorGuid: actorId, detail: `${width} × ${height}; ${target.view ? `${RENDER_TARGET_CAPTURE_QUALITY_LABELS[target.quality]}; ` : ""}output asset ${guid}` }, draw);
   }
   /**
-   * The queued Full Quality captures, drawn inside the scene view's graph after
+   * The queued High and Full Quality captures, drawn inside the scene view's graph after
    * Babylon's evaluation: skinning, LOD, particles and the view's shadow maps
    * are this frame's, and the view's own materials sample this frame's image.
    */
-  private readonly drawPendingFullQuality = (): void => {
+  private readonly drawPendingViews = (): void => {
     if (this.disposed || drawing.has(this.scene)) return;
-    for (const { actorId, guid, capture, target } of this.pendingFullQuality) {
-      const view = target.fullQuality;
+    for (const { actorId, guid, capture, target } of this.pendingViews) {
+      const view = target.view;
       // A command between the queue and the draw may have retired the target.
       if (!view || this.targets.get(guid) !== target || this.captures.get(actorId) !== capture) continue;
       // A failing capture keeps its last image; the scene view's frame and the
       // other captures go on, and it tries again next frame.
       try {
         this.collectCandidates(capture, target);
-        if (this.stageDraw(target, guid, actorId, () => this.drawFullQuality(view, actorId))) {
+        if (this.stageDraw(target, guid, actorId, () => this.drawView(view, target.quality, actorId))) {
           this.published(capture, target);
           // A capture that recovers warns again if it fails later.
           this.failedDraws.delete(guid);
@@ -513,10 +515,10 @@ export class RenderTargetCaptures {
       } catch (error) {
         if (this.failedDraws.has(guid)) continue;
         this.failedDraws.add(guid);
-        console.warn(`[render] Full Quality capture into Render Target ${guid} keeps its last image: ${String(error)}`);
+        console.warn(`[render] ${RENDER_TARGET_CAPTURE_QUALITY_LABELS[target.quality]} capture into Render Target ${guid} keeps its last image: ${String(error)}`);
       }
     }
-    this.pendingFullQuality.length = 0;
+    this.pendingViews.length = 0;
   };
   /** The capture's eligible meshes and (for color passes) particle systems, into the target's reused lists. */
   private collectCandidates(capture: Capture, target: Target): AbstractMesh[] {
@@ -549,11 +551,11 @@ export class RenderTargetCaptures {
     this.rootsDirty = false;
     return true;
   }
-  /** Full Quality captures of chosen actors republish their outlines through the current roots. */
+  /** High and Full Quality captures of chosen actors republish their outlines through the current roots. */
   private refreshOutlineFilters(): void {
     for (const target of this.targets.values()) {
-      if (!target.fullQuality?.outlines) continue;
-      if (this.captures.get(target.owner)?.settings.captureOnlyActors) target.fullQuality.outlines.refresh();
+      if (!target.view?.outlines) continue;
+      if (this.captures.get(target.owner)?.settings.captureOnlyActors) target.view.outlines.refresh();
     }
   }
   /** Whether `mesh` belongs to the actors a capture draws. */
@@ -587,9 +589,12 @@ export class RenderTargetCaptures {
     target.published = true;
     if (!wasPublished || target.spare) this.publishTextures(wasPublished);
   }
-  /** Re-attach the scene's authored stack and outlines when they changed, then draw the view if it is ready. */
-  private drawFullQuality(view: FullQualityView, actorId: string): boolean {
-    if (view.postProcessRevision !== this.postProcessRevision) {
+  /**
+   * Re-attach the scene's outlines, and for Full Quality its authored stack, when they changed, then draw the view if
+   * it is ready.
+   */
+  private drawView(view: CaptureView, quality: RenderTargetCaptureQuality, actorId: string): boolean {
+    if (quality === "fullQuality" && view.postProcessRevision !== this.postProcessRevision) {
       view.postProcess?.dispose();
       view.postProcess = null;
       view.postProcessRevision = this.postProcessRevision;
@@ -624,7 +629,7 @@ export class RenderTargetCaptures {
     const key = this.targetKey(definition, owner, quality);
     if (previous?.key === key) { previous.definition = definition; return previous; }
     if (previous) this.retire(guid);
-    if (quality === "fullQuality") return this.createFullQualityTarget(guid, definition, owner, camera, key);
+    if (quality !== "fast") return this.createViewTarget(guid, definition, owner, camera, key, quality);
     const buffer = this.createBuffer(guid, definition, camera);
     if (!buffer) return undefined;
     let normals: NodeMaterial | undefined;
@@ -650,17 +655,20 @@ export class RenderTargetCaptures {
   /**
    * The output (display-encoded colour only: the view draws into its own scene
    * targets and copies colour) and the capture camera's own forward view, with
-   * its own sun maps. Over budget or beyond the device's texture size, the
-   * target keeps the transparent fallback.
+   * its own sun maps. A High Quality view's graph leaves out the screen
+   * effects, so in Scene Linear its Display Color stage only encodes. Over
+   * budget or beyond the device's texture size, the target keeps the
+   * transparent fallback.
    */
-  private createFullQualityTarget(guid: string, definition: RenderTargetPayload, owner: string, camera: UniversalCamera, key: string): Target | undefined {
+  private createViewTarget(guid: string, definition: RenderTargetPayload, owner: string, camera: UniversalCamera, key: string,
+    quality: Exclude<RenderTargetCaptureQuality, "fast">): Target | undefined {
     const { width, height } = normalizeRenderTargetPayload(definition);
     const engine = this.scene.getEngine();
     const caps = engine.getCaps();
     if (width > caps.maxTextureSize || height > caps.maxTextureSize || !caps.depthTextureExtension) return undefined;
-    if (width * height > FULL_QUALITY_GUIDANCE_PIXELS && !this.warnedLargeTargets.has(guid)) {
+    if (width * height > VIEW_GUIDANCE_PIXELS && !this.warnedLargeTargets.has(guid)) {
       this.warnedLargeTargets.add(guid);
-      console.warn(`[render] Full Quality capture into a ${width} × ${height} Render Target costs about a second camera at that size; keep it at 512 × 512 or smaller, or turn off Capture Every Frame.`);
+      console.warn(`[render] ${RENDER_TARGET_CAPTURE_QUALITY_LABELS[quality]} capture into a ${width} × ${height} Render Target costs about a second camera at that size; keep it at 512 × 512 or smaller, or turn off Capture Every Frame.`);
     }
     const lease = beginManagedRenderAllocation(engine,
       renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type: Constants.TEXTURETYPE_UNSIGNED_BYTE }));
@@ -684,11 +692,11 @@ export class RenderTargetCaptures {
       // Planar water mirrors are per scene view; capture water keeps its other reflections.
       // Drawn inside the scene view's frame; it defers only while that frame
       // does, which then holds, so a partly drawn capture is never presented.
-      renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects }, deferPipelines: true });
+      renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects, screenEffects: quality === "fullQuality" }, deferPipelines: true });
       shadows = findSceneShadowController(this.scene)?.attachView(camera) ?? null;
       const target: Target = {
-        key, definition, quality: "fullQuality", texture, lease, owner,
-        fullQuality: { renderer, camera, postProcess: null, postProcessRevision: -1, outlines: null, outlineRevision: -1, shadows },
+        key, definition, quality, texture, lease, owner,
+        view: { renderer, camera, postProcess: null, postProcessRevision: -1, outlines: null, outlineRevision: -1, shadows },
         normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
         overrides: new Set(), pendingOverrides: new Set(), meshes, particles, published: false,
       };
@@ -938,7 +946,7 @@ export class RenderTargetCaptures {
     this.targets.delete(guid);
     this.failedDraws.delete(guid);
     this.publishTextures();
-    if (target.fullQuality) { this.retireFullQuality(target, target.fullQuality); return; }
+    if (target.view) { this.retireView(target, target.view); return; }
     for (const mesh of target.overrides) if (!mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
     target.depth?.dispose();
     for (const material of target.normalSlots.values()) material.dispose(false, false);
@@ -954,7 +962,7 @@ export class RenderTargetCaptures {
    * after the graph confirms native release (WebGPU destroys at frame end).
    * An uncertain release keeps both, quarantined.
    */
-  private retireFullQuality(target: Target, view: FullQualityView): void {
+  private retireView(target: Target, view: CaptureView): void {
     if (view.camera.outputRenderTarget === target.texture) view.camera.outputRenderTarget = null;
     const engine = this.scene.getEngine();
     let released: Promise<void>;
@@ -977,7 +985,7 @@ export class RenderTargetCaptures {
     void released.then(() => { this.releases.delete(released); }, (error: unknown) => {
       this.releases.delete(released);
       this.releaseFailure ??= error;
-      console.warn(`[render] Full Quality capture resources are retained until native release: ${String(error)}`);
+      console.warn(`[render] ${RENDER_TARGET_CAPTURE_QUALITY_LABELS[target.quality]} capture resources are retained until native release: ${String(error)}`);
     });
   }
   clear(): void {
@@ -993,7 +1001,7 @@ export class RenderTargetCaptures {
     this.disposed = true;
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.releaseAuxiliaryViews();
-    this.pendingFullQuality.length = 0;
+    this.pendingViews.length = 0;
     setFirstDrawsUrgent(this.scene, false);
     this.scene.onNewMeshAddedObservable.remove(this.addedMesh);
     this.scene.onMeshRemovedObservable.remove(this.removedMesh);
@@ -1038,7 +1046,7 @@ export function drawOutsideSceneView(scene: Scene, run: () => boolean, materialI
     // Match authored unlit surfaces: Scene Color is display/gamma encoded.
     // Like Babylon's ObjectRenderer, avoid the setter's scene-wide shader
     // invalidation; the capture has its own material render-pass defines.
-    // A Full Quality view keeps the scene's pipeline and its Display Color stage.
+    // A High or Full Quality view keeps the scene's pipeline and its Display Color stage.
     if (materialImageProcessing) imageProcessing._applyByPostProcess = false;
     return run();
   } finally {

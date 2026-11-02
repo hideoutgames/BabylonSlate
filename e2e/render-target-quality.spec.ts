@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type {
-  runRenderTargetQualityCost, runRenderTargetQualityProof, runRenderTargetShadowProof,
+  runRenderTargetMonitorProof, runRenderTargetQualityCost, runRenderTargetQualityProof, runRenderTargetShadowProof,
 } from "../apps/editor/src/testing/render-target-quality-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
@@ -11,10 +11,11 @@ type ProofWindow = {
   __renderTargetQualityProof: typeof runRenderTargetQualityProof;
   __renderTargetQualityCost: typeof runRenderTargetQualityCost;
   __renderTargetShadowProof: typeof runRenderTargetShadowProof;
+  __renderTargetMonitorProof: typeof runRenderTargetMonitorProof;
 };
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`a Full Quality capture of water matches the scene view and a Fast one does not on ${backend}`, async ({ page }, testInfo) => {
+  test(`High and Full Quality captures of water match the scene view and a Fast one does not on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -31,9 +32,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(report.mainCameraPreserved).toBe(true);
     expect(report.retainedBytes).toBe(0);
     for (const [label, result] of Object.entries(report.cases)) {
-      // Full Quality draws the water through its own scene copy, like the view.
+      // High and Full Quality draw the water through their own scene copy, like the view. These cases have no screen
+      // effects but an identity vignette, so both match the view's own image.
       expect(result.waterCopy, label).toBe(true);
       expect(result.fullQuality, label).toBeLessThan(1.5);
+      expect(result.highQuality, label).toBeLessThan(1.5);
       // Fast draws blended water without refraction: visibly different.
       expect(result.fast, label).toBeGreaterThan(Math.max(4, result.fullQuality * 4));
     }
@@ -66,8 +69,33 @@ for (const backend of ["webgl2", "webgpu"] as const) {
   });
 }
 
+for (const backend of ["webgl2", "webgpu"] as const) {
+  test(`a High Quality capture on a monitor matches the scene around it in Scene Linear and a Full Quality one does not on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error" || (message.type() === "warning" &&
+        /shader|GPUValidation|validation error|INVALID_|feedback loop|conflicting usages/i.test(message.text()))) errors.push(message.text());
+    });
+    await page.goto("/?test=1&renderTargetQualityProof=1");
+    await page.waitForFunction(() => "__renderTargetMonitorProof" in window);
+    const report = await page.evaluate((backend) => (window as unknown as ProofWindow).__renderTargetMonitorProof(backend), backend);
+    await testInfo.attach("render-target-monitor", { body: JSON.stringify(report), contentType: "application/json" });
+    expect(errors).toEqual([]);
+    expect(report.effectiveBackend).toBe(backend);
+    expect(report.retainedBytes).toBe(0);
+    const { fast, highQuality, fullQuality } = report.cases;
+    // The scene view applies Exposure and the tone curve once, to the subject and to the monitor alike.
+    expect(highQuality.monitorError).toBeLessThan(2.5);
+    expect(fast.monitorError).toBeLessThan(2.5);
+    // Full Quality's image is tone-mapped already: on a monitor it is processed twice.
+    expect(fullQuality.monitorError).toBeGreaterThan(Math.max(5, highQuality.monitorError * 4));
+  });
+}
+
 // Opt-in measurement (HAPTIC_RENDER_TARGET_COST=1): capture cost per frame on this device.
-test("capture cost per frame for Fast and Full Quality", async ({ page }, testInfo) => {
+test("capture cost per frame for each Quality", async ({ page }, testInfo) => {
   test.skip(process.env.HAPTIC_RENDER_TARGET_COST !== "1", "Opt-in measurement.");
   test.setTimeout(600_000);
   await page.goto("/?test=1&renderTargetQualityProof=1");

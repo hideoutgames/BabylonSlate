@@ -4,7 +4,7 @@ import {
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, normalizeShadowSettings, normalizeWaterBody,
+  createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeShadowSettings, normalizeWaterBody,
   outlineBindings, type RenderTargetCaptureQuality,
 } from "@haptic/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -153,6 +153,37 @@ it("renders Full Quality through the forward pipeline with its own scene copy, w
   view.dispose();
 });
 
+it.each([
+  ["highQuality", false],
+  ["fullQuality", true],
+] as const)("draws %s through its own view, with the screen effects and authored stack only at Full Quality", async (quality, screenEffects) => {
+  const { scene, view, captures } = host(quality);
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: {
+      ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping: "aces",
+      bloom: { enabled: true, threshold: 0.9, weight: 0.5, kernel: 32, scale: 0.5 },
+    },
+  });
+  const attach = vi.fn(() => null);
+  captures.setPostProcess(attach);
+  await untilPublished(scene, view, captures);
+  expect(view.taskNames()).toEqual(expect.arrayContaining(["Scene Effects Bloom", "Scene Effects Display Color"]));
+  const [capture] = captures.diagnostics();
+  expect(capture).toMatchObject({ quality, published: true });
+  // Both keep the view's own water scene copy and their Scene Linear display stage, which draws the output; High
+  // Quality's only encodes.
+  expect(capture!.taskNames).toEqual(expect.arrayContaining(["Water scene copy", "Scene Effects Display Color"]));
+  expect(capture!.taskNames.at(-1)).toBe("Scene Effects Display Color");
+  expect(capture!.taskNames.includes("Scene Effects Bloom")).toBe(screenEffects);
+  expect(attach).toHaveBeenCalledTimes(screenEffects ? 1 : 0);
+  // A new authored stack reaches only a Full Quality view.
+  captures.setPostProcess(attach);
+  view.render();
+  expect(attach).toHaveBeenCalledTimes(screenEffects ? 2 : 0);
+  view.dispose();
+});
+
 it("draws a Full Quality capture after the frame's evaluation, so it shows this frame's particle step", async () => {
   const { scene, view, captures } = host("fullQuality");
   const emitter = new Mesh("particleEmitter:test", scene);
@@ -258,7 +289,7 @@ it("retries a failed Full Quality preparation at most once a second and warns on
   await new Promise((resolve) => setTimeout(resolve, 1_050));
   await frames(3);
   expect(refuse).toHaveBeenCalledTimes(2);
-  expect(warn.mock.calls.filter(([message]) => String(message).includes("Full Quality capture"))).toHaveLength(1);
+  expect(warn.mock.calls.filter(([message]) => String(message).includes("Render Target Capture's own view"))).toHaveLength(1);
   expect(captures.diagnostics()[0]!.published).toBe(false);
   // Once the budget admits it, the next retry draws the capture.
   refuse.mockRestore();

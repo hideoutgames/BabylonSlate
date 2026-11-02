@@ -348,7 +348,7 @@ export class SceneShadowController {
   }
 
   /**
-   * Gives `camera` (a Full Quality capture's) its own sun maps: each admitted
+   * Gives `camera` (a High or Full Quality capture's) its own sun maps: each admitted
    * sun map is mirrored with the same kind, size, cascades and settings, keyed
    * to the camera, so materials drawn for it bind a map fitted to it as a scene
    * view there would fit one. Point and spot maps do not depend on the view and

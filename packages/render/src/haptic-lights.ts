@@ -148,7 +148,7 @@ function sceneLights(scene: Scene): SceneLights {
       writeShadowViews(scene, state);
       state.buffer.update();
     });
-    // A view with its own sun map (a Full Quality capture's) draws with it, and the scene view with its own after.
+    // A view with its own sun map (a High or Full Quality capture's) draws with it, and the scene view with its own after.
     const cameraChanged = scene.onActiveCameraChanged.add(() => {
       if (!state.sun || sunShadowMap(scene, state.sun) === state.sunWritten) return;
       writeShadowViews(scene, state);
@@ -285,7 +285,7 @@ function shadowedLight(scene: Scene, light: SpotLight | PointLight, views: numbe
 }
 
 /**
- * The sun's cascades the rendering camera samples: its own map when it has one in the atlas (a Full Quality capture's,
+ * The sun's cascades the rendering camera samples: its own map when it has one in the atlas (a High or Full Quality capture's,
  * `SceneShadowController.attachView`), else the scene view's, or null when neither is in the atlas.
  */
 function sunShadowMap(scene: Scene, light: DirectionalLight): AtlasCascadedShadowGenerator | null {

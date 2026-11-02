@@ -8,7 +8,7 @@ import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Te
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
-import { upscaledRenderSize } from "./scene-effects";
+import { displayEncodingEffects, planWithoutScreenEffects, upscaledRenderSize, type SceneEffectsPlan } from "./scene-effects";
 import { scaledOutputSize, sceneOutputScale } from "./scene-output-scale";
 import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
@@ -64,7 +64,7 @@ const NO_MESHES: ReadonlySet<AbstractMesh> = new Set();
 export type ForwardSceneGraphResult = { path: "frameGraph" };
 export type ForwardSceneFrameGraphOptions = {
   /**
-   * An auxiliary view (a Full Quality Render Target Capture) drawn inside the
+   * An auxiliary view (a High or Full Quality Render Target Capture) drawn inside the
    * scene's own view frame. It executes its graph without Scene.render, so no
    * animation, particle step or render observer runs twice; it never admits
    * lights or shadows (the scene's view does, for its camera), but draws its
@@ -72,8 +72,11 @@ export type ForwardSceneFrameGraphOptions = {
    * draws only `objects`, the owner's candidate list; and it draws the scene
    * into its own targets, writing the camera's output (colour only) in a final
    * copy, so a material in view may sample that output without a feedback loop.
+   * `screenEffects: false` (a High Quality capture) leaves bloom, the vignette, the
+   * LUT and the tone curve, exposure, contrast and white balance to the view that
+   * shows the image (`planWithoutScreenEffects`); the owner attaches no authored stack.
    */
-  auxiliary?: { objects: FrameGraphObjectList };
+  auxiliary?: { objects: FrameGraphObjectList; screenEffects?: boolean };
   /**
    * A world view (the editor's, Play's, the player's): its camera's list leaves out meshes hidden behind occluders
    * while the scene culls by occlusion (`view-occlusion.ts`). Never with `auxiliary`.
@@ -1014,7 +1017,7 @@ export class ForwardSceneFrameGraph {
       // internal size: the output's at the Scene's output scale, then the FSR
       // render scale. The chain's single output pass fills the whole output.
       const viewSize = scaledOutputSize(output.width, output.height, output.scale);
-      const renderSize = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, viewSize.width, viewSize.height);
+      const renderSize = upscaledRenderSize(this.viewEffectsPlan(), viewSize.width, viewSize.height);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth || this.preparedScale !== output.scale ||
@@ -1062,7 +1065,7 @@ export class ForwardSceneFrameGraph {
           };
         }
         const effectsState = sceneRenderingSettings(scene);
-        const effectsPlan = effectsState.effectsPlan;
+        const effectsPlan = this.viewEffectsPlan();
         // MSAA: the objects draw into multisampled scene colour and depth, which resolve when their passes end (colour
         // averaged, depth by sample, never blended), so every later reader samples resolved, single-sample textures.
         // Auxiliary views (captures, previews) stay single-sample.
@@ -1105,7 +1108,7 @@ export class ForwardSceneFrameGraph {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
             plan: effectsPlan,
-            effects: effectsState.effects,
+            effects: this.auxiliary?.screenEffects === false ? displayEncodingEffects(effectsState.effects) : effectsState.effects,
             camera,
             authoredOutputTexture: this.postProcessGraph?.outputTexture,
             width: renderSize.width,
@@ -1384,6 +1387,12 @@ export class ForwardSceneFrameGraph {
     };
     own.lease.commit([resource(own.color, "sceneColor"), resource(own.depth, "depth")]);
     own.committed = true;
+  }
+
+  /** The Scene's effects plan as this view draws it: without screen effects for an auxiliary view that leaves them out. */
+  private viewEffectsPlan(): SceneEffectsPlan | null {
+    const plan = sceneRenderingSettings(this.scene).effectsPlan;
+    return this.auxiliary?.screenEffects === false ? planWithoutScreenEffects(plan) : plan;
   }
 
   /** The live settings key baked into the prepared graph's effect tasks. The
