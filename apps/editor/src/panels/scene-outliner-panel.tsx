@@ -7,7 +7,6 @@ import {
   memo,
   type ComponentProps,
   useCallback,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -35,7 +34,6 @@ import {
   folderSubtree,
   nextFolderId,
   type SerializedActor,
-  type SerializedGraph,
   type SerializedOutlinerFolder,
   type SerializedScene,
 } from "@haptic/core";
@@ -99,18 +97,12 @@ import { anchorBelow } from "../lib/menu-anchor";
 import {
   duplicateSceneActor,
   duplicateSceneActors,
-  nextActorId,
-  prefabComponentsForGuid,
-  prefabComponentsResolver,
-  projectPlaceActors,
-  spawnPlacedActor,
   type PlaceActorItem,
 } from "../lib/place-actors";
 import {
   classIdFromClassAsset,
   classParentLookup,
 } from "../lib/content-browser-helpers";
-import { authoredPrefabComponents } from "../lib/prefab-preview";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 import {
   actorRowId,
@@ -120,12 +112,9 @@ import {
   outlinerRowTarget,
   outlinerTreeDropMoves,
 } from "../lib/outliner-drop";
-import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { usePlaceActorItems } from "../lib/use-place-actor-items";
+import { useProjectPlaceActors } from "../lib/use-project-place-actors";
 import { useRetainedValue } from "../lib/use-retained-value";
-import { prefabAssetTemplateKey, prefabAssetTemplates } from "../lib/prefab-instance-sync";
-
-const CLASS_KINDS = ["graph"] as const;
-const PREFAB_KINDS = ["prefab"] as const;
 
 const NO_MENU_ITEMS: NestedMenuItem[] = [];
 const NO_PLACE_ACTOR_ITEMS: PlaceActorItem[] = [];
@@ -559,15 +548,11 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   const actionSize = touchSizing ? "touch-icon" : "icon-sm";
   const { documentId } = useDocumentWorkspace();
   const {
-    getOpenDocuments,
     applySceneChange,
-    loadGraphDocument,
     openDocument,
     loadAssetThumbnail,
   } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
-  const prefabDocuments = useOpenDocumentsOfKinds(PREFAB_KINDS);
   const {
     selectedActorIds,
     selectActor,
@@ -599,9 +584,6 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   } | null>(null);
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
-  const [diskGraphs, setDiskGraphs] = useState<Map<string, SerializedGraph>>(
-    () => new Map(),
-  );
 
   const doc = useOpenDocument(documentId);
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
@@ -734,136 +716,22 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   // The Place Actors list covers every placeable asset and Class graph, so it
   // is built only while the dialog is open; closed, it keeps the last list so
   // the dialog fades out intact, and the next open rebuilds it.
-  const openProjectItems = useMemo(() => {
-    if (!placeOpen) return null;
-    void registryEpoch; // Registry headers mutate without replacing the registry.
-    const assets = assetRegistry?.list() ?? [];
-    // Prefab assets carry their components in the header; open tabs win.
-    const prefabAssets = prefabAssetTemplates({ assets, openDocuments: prefabDocuments });
-    const openClassDocuments = new Map<string, (typeof classDocuments)[number]>();
-    for (const entry of classDocuments) {
-      if (!openClassDocuments.has(entry.ref.path)) openClassDocuments.set(entry.ref.path, entry);
-    }
-    const classPrefab = prefabComponentsResolver({
-      assets,
-      graphForPath: (path) => {
-        const open = openClassDocuments.get(path);
-        if (open?.content) return open.content as SerializedGraph;
-        return diskGraphs.get(path);
-      },
-    });
-    return projectPlaceActors(
-      assets,
-      (guid) => prefabAssets[prefabAssetTemplateKey(guid)] ?? classPrefab(guid),
-      { overlay },
-    );
-  }, [assetRegistry, classDocuments, diskGraphs, overlay, placeOpen, prefabDocuments, registryEpoch]);
+  const { items: openProjectItems, graphForPath } = useProjectPlaceActors({
+    enabled: placeOpen,
+    overlay,
+  });
   const projectItems = useRetainedValue(openProjectItems, NO_PLACE_ACTOR_ITEMS);
-
-  useEffect(() => {
-    if (!placeOpen) return;
-    let cancelled = false;
-    const assets = assetRegistry?.list() ?? [];
-    void (async () => {
-      // Load the Classes together, so the slowest one sets the wait, not the sum.
-      const loaded = await Promise.all(
-        assets
-          .filter((asset) => asset.header.type === "Class" && asset.path)
-          .map(async (asset) => [asset.path, await loadGraphDocument(asset.path)] as const),
-      );
-      if (cancelled) return;
-      const next = new Map<string, SerializedGraph>();
-      for (const [path, graph] of loaded) if (graph) next.set(path, graph);
-      setDiskGraphs(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [assetRegistry, loadGraphDocument, placeOpen]);
-
-  /** A Class placement waiting for its graph; a second pick meanwhile would reuse its actor id. */
-  const placingClassRef = useRef(false);
+  const placeItems = usePlaceActorItems({ documentId, scene, overlay, graphForPath });
   const addActor = useCallback(
     (item: PlaceActorItem) => {
-      if (!scene || placingClassRef.current) return;
-      const finish = (resolved: PlaceActorItem, base: SerializedScene) => {
-        const id = nextActorId(base);
-        mutate({
-          ...base,
-          actors: [
-            ...base.actors,
-            spawnPlacedActor(
-              base,
-              resolved,
-              id,
-              viewportDropApi?.worldPositionAtViewCenter() ??
-                FALLBACK_PLACE_POSITION,
-              { overlay },
-            ),
-          ],
-        });
-        selectActor(id);
+      placeItems([item], [viewportDropApi?.worldPositionAtViewCenter() ?? FALLBACK_PLACE_POSITION], () => {
         setPlaceOpen(false);
         // The dialog keeps focus until its exit animation ends, outside the
         // outliner's focus gate, so an immediate Delete would be ignored.
         outlinerRef.current?.querySelector<HTMLElement>('[role="tree"]')?.focus({ preventScroll: true });
-      };
-      if (
-        item.kind.type === "asset" &&
-        item.kind.assetType === "Class" &&
-        !item.kind.components
-      ) {
-        const kind = item.kind;
-        const asset = (assetRegistry?.list() ?? []).find(
-          (entry) => entry.header.guid === kind.guid,
-        );
-        if (asset?.path) {
-          placingClassRef.current = true;
-          void loadGraphDocument(asset.path).then((graph) => {
-            // Place into the Scene as it is when the load finishes, keeping edits made meanwhile.
-            const live = getOpenDocuments().find((entry) => entry.id === documentId);
-            if (!live || !isSceneWorkspaceKind(live.ref.kind)) return;
-            finish({
-              ...item,
-              kind: {
-                ...kind,
-                components:
-                  prefabComponentsForGuid(kind.guid, {
-                    assets: assetRegistry?.list() ?? [],
-                    graphForPath: (path) => {
-                      if (path === asset.path && graph) return graph;
-                      // Read when the load finishes, not at the click.
-                      const open = getOpenDocuments().find(
-                        (entry) =>
-                          entry.ref.kind === "graph" && entry.ref.path === path,
-                      );
-                      if (open?.content) return open.content as SerializedGraph;
-                      return diskGraphs.get(path);
-                    },
-                  }) ??
-                  (graph ? authoredPrefabComponents(graph) : kind.components),
-              },
-            }, live.content as SerializedScene);
-          }).finally(() => {
-            placingClassRef.current = false;
-          });
-          return;
-        }
-      }
-      finish(item, scene);
+      });
     },
-    [
-      assetRegistry,
-      diskGraphs,
-      documentId,
-      getOpenDocuments,
-      loadGraphDocument,
-      mutate,
-      overlay,
-      scene,
-      selectActor,
-      viewportDropApi,
-    ],
+    [placeItems, viewportDropApi],
   );
 
   const removeActors = useCallback(
