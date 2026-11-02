@@ -537,9 +537,9 @@ describe("SettingsModal project authoring", () => {
   it("picks Neutral tone mapping when a project without tone mapping switches to Scene Linear", async () => {
     const render0 = createEmptyProject("Demo", { kind: "2d" }).settings.render;
     lastProjectRender.current = { ...render0, effects: { ...render0.effects!, toneMapping: "none" } };
+    showRenderingSections("postProcessing");
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
-    fireEvent.click(screen.getByRole("button", { name: "Post Processing" }));
     fireEvent.click(screen.getByTestId("project-effects-pipeline"));
     const option = await screen.findByRole("option", { name: "Scene Linear" });
     fireEvent.pointerDown(option);
