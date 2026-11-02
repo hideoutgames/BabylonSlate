@@ -16,6 +16,8 @@ export function syntax(wgsl: boolean) {
       wgsl
         ? `var ${name}: texture_2d<f32>; var ${name}Sampler: sampler;`
         : `uniform sampler2D ${name};`,
+    /** One texel of the texture `name` in uv. */
+    texelUv: (name: string) => (wgsl ? `(1.0 / vec2f(textureDimensions(${name}, 0)))` : `(1.0 / vec2(textureSize(${name}, 0)))`),
     sample: (name: string, at: string) =>
       wgsl
         ? `textureSampleLevel(${name}, ${name}Sampler, ${at}, 0.0)`
@@ -35,13 +37,17 @@ export function syntax(wgsl: boolean) {
  * Normal-oriented hemisphere occlusion from the shared view-depth and encoded
  * world-normal geometry buffers. A golden-angle kernel rotated by interleaved
  * gradient noise avoids a random texture; the blur pass removes the pattern.
+ * A sample is occluded when the surface its pixel shows lies in front of it,
+ * rises above the centre's tangent plane (so a face seen edge-on never
+ * occludes itself) and lies within twice the radius of the centre (so an
+ * object far in front leaves no halo on the surface behind it).
  *
  * Uniforms: `aoProjection`, `aoInverseProjection`, `aoView`,
  * `aoSettings` (radius, strength, max distance, depth bias),
  * `aoCamera` (handedness sign, orthographic flag) and `aoTexelSize`.
  */
 export function ambientOcclusionShader(wgsl: boolean, samples: number): string {
-  const { v2, v3, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax(wgsl);
+  const { v2, v3, v4, f, uv, u, decl, field, texture, texelUv, sample, loop, output, main } = syntax(wgsl);
   const header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
 ${texture("depthSampler")}${texture("normalSampler")}
 ${field(wgsl ? "mat4x4f" : "mat4", "aoProjection")}${field(wgsl ? "mat4x4f" : "mat4", "aoInverseProjection")}
@@ -49,10 +55,14 @@ ${field(wgsl ? "mat4x4f" : "mat4", "aoView")}
 ${field(v4, "aoSettings")}${field(v2, "aoCamera")}${field(v2, "aoTexelSize")}
 `;
   const body = `
-${decl(f, "depth", `abs(${sample("depthSampler", uv)}.r)`)}
+// The depth is read nearest: each point lies on the ray through the centre of the depth texel it reads, as its depth
+// does (seen edge-on, a surface's depth changes greatly within one texel).
+${decl(v2, "depthTexel", texelUv("depthSampler"))}
+${decl(v2, "centreUv", `(floor(${uv} / depthTexel) + ${v2}(0.5)) * depthTexel`)}
+${decl(f, "depth", `abs(${sample("depthSampler", "centreUv")}.r)`)}
 if (depth < 0.000001 || depth >= ${u("aoSettings")}.z) { ${output(`${v4}(1.0)`)} }
 ${decl(f, "radius", `${u("aoSettings")}.x`)}
-${decl(v2, "ndc", `${uv} * 2.0 - ${v2}(1.0)`)}
+${decl(v2, "ndc", "centreUv * 2.0 - " + v2 + "(1.0)")}
 ${decl(v4, "unprojected", `${u("aoInverseProjection")} * ${v4}(ndc, 0.5, 1.0)`)}
 ${decl(v3, "viewPoint", "unprojected.xyz / unprojected.w")}
 ${decl(v3, "viewPosition", `viewPoint * (depth / max(abs(viewPoint.z), 0.000001))`)}
@@ -84,10 +94,22 @@ ${loop("i", 0, samples)} {
   if (clip.w <= 0.000001) { continue; }
   ${decl(v2, "sampleUv", `clip.xy / clip.w * 0.5 + ${v2}(0.5)`)}
   if (sampleUv.x < 0.0 || sampleUv.y < 0.0 || sampleUv.x > 1.0 || sampleUv.y > 1.0) { continue; }
-  ${decl(f, "sceneDepth", `abs(${sample("depthSampler", "sampleUv")}.r)`)}
+  ${decl(v2, "sceneUv", `(floor(sampleUv / depthTexel) + ${v2}(0.5)) * depthTexel`)}
+  ${decl(f, "sceneDepth", `abs(${sample("depthSampler", "sceneUv")}.r)`)}
   if (sceneDepth < 0.000001) { continue; }
-  ${decl(f, "rangeWeight", "smoothstep(0.0, 1.0, radius / max(abs(depth - sceneDepth), 0.0001))")}
-  occlusion += step(sceneDepth + ${u("aoSettings")}.w, abs(samplePosition.z)) * rangeWeight;
+  // The surface point the sample's depth texel shows, in the same view space as the centre's.
+  ${decl(v4, "sceneUnprojected", `${u("aoInverseProjection")} * ${v4}(sceneUv * 2.0 - ${v2}(1.0), 0.5, 1.0)`)}
+  ${decl(v3, "sceneRay", "sceneUnprojected.xyz / sceneUnprojected.w")}
+  ${decl(v3, "scenePoint", `sceneRay * (sceneDepth / max(abs(sceneRay.z), 0.000001))`)}
+  if (${u("aoCamera")}.y > 0.5) { scenePoint = ${v3}(sceneRay.xy, sceneDepth * ${u("aoCamera")}.x); }
+  ${decl(v3, "toScene", "scenePoint - viewPosition")}
+  ${decl(f, "sceneDistance", "length(toScene)")}
+  // It occludes only where it rises above the surface's tangent plane: the same surface seen edge-on, whose depth
+  // changes by more than the bias between texels, lies in that plane (and a smooth normal tilts the plane a little).
+  ${decl(f, "rise", "smoothstep(0.15, 0.35, dot(toScene, surfaceNormal) / max(sceneDistance, 0.0001))")}
+  // Within the radius in 3D, fading out by twice it: a surface far in front (another object) occludes nothing.
+  ${decl(f, "rangeWeight", "1.0 - smoothstep(radius, 2.0 * radius, sceneDistance)")}
+  occlusion += step(sceneDepth + ${u("aoSettings")}.w, abs(samplePosition.z)) * rise * rangeWeight;
 }
 ${decl(f, "visibility", `clamp(1.0 - ${u("aoSettings")}.y * occlusion / ${f}(${samples}), 0.0, 1.0)`)}
 visibility = mix(visibility, 1.0, smoothstep(${u("aoSettings")}.z * 0.75, ${u("aoSettings")}.z, depth));

@@ -100,7 +100,9 @@ async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => P
 }
 
 /** Occlusion darkens the contact crease, keeps open floor and the sky, and
- * follows an orthographic projection without stale shader state. */
+ * follows an orthographic projection without stale shader state; a floor seen
+ * almost edge-on stays unoccluded, as does a wall behind a plate standing more
+ * than twice the radius in front of it. */
 async function captureAmbientOcclusion(
   camera: FreeCamera,
   effects: ReturnType<typeof normalizeRenderEffectsSettings>,
@@ -122,7 +124,33 @@ async function captureAmbientOcclusion(
   const orthographicOff = await draw();
   camera.mode = Camera.PERSPECTIVE_CAMERA;
   const disabled = await draw();
-  return { off, on, linear, orthographic, orthographicOff, disabled };
+  // The open floor seen almost edge-on, the crate hidden: a surface never occludes itself.
+  const scene = camera.getScene();
+  const crate = scene.getMeshByName("Occluding Crate")!;
+  const floor = scene.getMeshByName("Floor")!;
+  crate.setEnabled(false);
+  camera.position.set(0, 0.3, -6);
+  camera.setTarget(new Vector3(0, 0.15, 4));
+  const grazingOff = await draw();
+  effects.ambientOcclusion.enabled = true;
+  const grazing = await draw();
+  // A darker plate a little over twice the radius (0.6) in front of a wall: the wall around it stays unoccluded.
+  floor.setEnabled(false);
+  const wall = MeshBuilder.CreatePlane("Halo Wall", { size: 12 }, scene);
+  wall.position.set(0, 1, 2);
+  wall.material = crate.material;
+  const plateMaterial = new PBRMaterial("Halo Plate", scene);
+  plateMaterial.unlit = true;
+  plateMaterial.albedoColor = new Color3(0.2, 0.2, 0.2);
+  const plate = MeshBuilder.CreateBox("Halo Plate", { width: 1, height: 1, depth: 0.1 }, scene);
+  plate.position.set(0, 1, 0.65);
+  plate.material = plateMaterial;
+  camera.position.set(0, 1, -6);
+  camera.setTarget(new Vector3(0, 1, 1));
+  const halo = await draw();
+  effects.ambientOcclusion.enabled = false;
+  const haloOff = await draw();
+  return { off, on, linear, orthographic, orthographicOff, disabled, grazingOff, grazing, haloOff, halo };
 }
 
 /** The render mode the proof's next draw applies. */

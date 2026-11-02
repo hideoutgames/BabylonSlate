@@ -214,6 +214,10 @@ for (const backend of ["webgl2"] as const) {
       expect(darkened(off, capture.linear, 8), "Scene Linear keeps occlusion").toBeGreaterThan(20);
       expect(darkened(capture.orthographicOff, capture.orthographic, 8), "orthographic occlusion").toBeGreaterThan(20);
       expect(pixelDifference(off, capture.disabled), "disabling restores scene color").toBeLessThan(1);
+      // A face seen almost edge-on does not occlude itself, and an object more than twice the radius in front of a
+      // wall leaves no halo on it (the wall's pixels, not the darker plate's).
+      const wallDarkened = capture.haloOff.filter((value, i) => i % 4 === 0 && value > 120 && value - capture.halo[i]! >= 8).length;
+      expect({ grazing: darkened(capture.grazingOff, capture.grazing, 8), halo: wallDarkened }).toEqual({ grazing: 0, halo: 0 });
     }
   });
 }
