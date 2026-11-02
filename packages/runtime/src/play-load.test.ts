@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import type { ControlMessage } from "@haptic/bridge";
 import { createDefaultSceneLayer, type InputAssetDefinition } from "@haptic/core";
@@ -380,6 +380,32 @@ describe("createRuntimeFromLoad", () => {
       runtime.stop();
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("preloadPhysics starts the Havok download that loadPhysics then installs, without a second request", async () => {
+    resetHavokModuleCache();
+    const requested: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requested.push(String(input));
+      const bytes = readFileSync(new URL("../../../apps/editor/public/havok/HavokPhysics.wasm", import.meta.url));
+      return new Response(Uint8Array.from(bytes).buffer);
+    }) as typeof fetch;
+    try {
+      const runtime = createRuntimeFromLoad({
+        type: "load", sceneAssetGuid: "play-scene", physicsWorld: "3d",
+        havokWasmUrl: "https://editor.test/havok/HavokPhysics.wasm",
+      }, () => {});
+      runtime.preloadPhysics();
+      await vi.waitFor(() => expect(requested).toEqual(["https://editor.test/havok/HavokPhysics.wasm"]));
+      await runtime.loadPhysics();
+      expect(requested).toHaveLength(1);
+      expect(runtime.getPhysicsSync()!.getBackend().constructor.name).toBe("HavokPhysicsBackend");
+      runtime.stop();
+    } finally {
+      globalThis.fetch = originalFetch;
+      resetHavokModuleCache();
     }
   });
 });

@@ -16,6 +16,7 @@ import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
   loadRapier2DBackendFactory,
+  preloadPhysicsEngine,
   SoftwarePhysicsBackend,
   type PhysicsBackend,
   type PhysicsWorldKind,
@@ -93,6 +94,8 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   private readonly layerWorlds = new Map<string, LayerPhysicsWorld>();
   /** Native 2D worlds for layers, once `load` initialized Rapier. */
   private nativeLayerBackend: ((gravity: Vec3) => PhysicsBackend) | null = null;
+  /** Native engines `preload` started loading, by world kind. */
+  private readonly enginePreloads = new Map<PhysicsWorldKind, Promise<void>>();
   /** Layer assets already warned for physics components without Enable Physics. */
   private readonly warnedLayerAssets = new Set<string>();
   private worldKind: PhysicsWorldKind;
@@ -250,6 +253,24 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     this.emptyDebugLayers.clear();
   }
 
+  /**
+   * Start loading the native engines `load` will need (the main world's, and
+   * Rapier when a Scene Layer may enable physics), so their download and compile
+   * overlap Play boot's script, navigation and Scene work. `load` awaits them.
+   */
+  preload(): void {
+    if (this.preferSoftwarePhysics || !(this.mainSync.getBackend() instanceof SoftwarePhysicsBackend)) return;
+    const kinds: PhysicsWorldKind[] = [this.worldKind];
+    if (this.worldKind === "3d" && this.host.hasPhysicsSceneLayers()) kinds.push("2d");
+    for (const kind of kinds) {
+      if (this.enginePreloads.has(kind)) continue;
+      const preload = preloadPhysicsEngine(kind, { havokWasmUrl: this.havokWasmUrl });
+      // `load` reports the failure when it needs this engine.
+      preload.catch(() => undefined);
+      this.enginePreloads.set(kind, preload);
+    }
+  }
+
   /** Upgrade both software worlds to Havok/Rapier and re-sync spawned bodies. */
   async load(): Promise<void> {
     if (this.host.stopped()) throw sceneRealizationCancelled();
@@ -259,6 +280,12 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     if (this.preferSoftwarePhysics) return;
     if (!(this.mainSync.getBackend() instanceof SoftwarePhysicsBackend)) {
       return;
+    }
+    // A preload in flight is the same download: wait for it rather than starting another.
+    const preload = this.enginePreloads.get(this.worldKind);
+    if (preload) {
+      await preload;
+      if (!current()) throw sceneRealizationCancelled();
     }
     const backend = await createPhysicsBackend({
       kind: this.worldKind,
@@ -273,7 +300,11 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     let layerBackend: ((gravity: Vec3) => PhysicsBackend) | null = null;
     try {
       // Only physics-enabled layers need Rapier; other sessions never load it for layers.
-      if (this.layerWorlds.size > 0 || this.host.hasPhysicsSceneLayers()) layerBackend = await loadRapier2DBackendFactory();
+      if (this.layerWorlds.size > 0 || this.host.hasPhysicsSceneLayers()) {
+        const layerPreload = this.enginePreloads.get("2d");
+        if (layerPreload) await layerPreload;
+        layerBackend = await loadRapier2DBackendFactory();
+      }
     } catch (error) {
       backend.dispose();
       throw error;

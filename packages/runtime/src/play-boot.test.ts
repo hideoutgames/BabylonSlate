@@ -197,11 +197,13 @@ describe("createPlayBootCoordinator", () => {
       expect(runtime.getWorld().getActors()).toHaveLength(0);
       chunk.resolve();
       await vi.waitFor(() => expect(runtime.getWorld().getActors()).toHaveLength(65));
+      // The realized Scene is announced while physics still loads, so host readiness overlaps it.
+      await vi.waitFor(() => expect(commands.filter((command) => command.type === "sceneRealized")).toHaveLength(1));
       const actorTick = vi.spyOn(runtime.getWorld().getActors()[0]!, "callOnTick");
       runtime.tick();
       expect(runtime.getWorld().gameInstance!.getVariable("ticks")).toBe(2);
+      // It completes only once boot loading has installed physics.
       expect(actorTick).not.toHaveBeenCalled();
-      expect(commands.some((command) => command.type === "sceneRealized")).toBe(false);
       gate.setPaused(true);
       physics.resolve();
       await playing;
@@ -236,13 +238,14 @@ describe("createPlayBootCoordinator", () => {
     if (phase === "scripts") expect(runtime.spawned).toEqual([]);
   });
 
-  it("announces only the replacement when Game Instance changes scenes during native boot", async () => {
+  it("completes only the replacement when Game Instance changes scenes during native boot", async () => {
     const physics = deferred<void>();
     const enteredPhysics = deferred<void>();
     const commands: CommandMessage[] = [];
     const scene = { ...createDefaultScene(), actors: [createActor("a", "Actor")] };
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, cooperativeSceneLoading: true,
-      preferSoftwarePhysics: true, playScene: scene, playSceneGuid: "first", sceneLibrary: { next: scene },
+      preferSoftwarePhysics: true, playScene: { ...scene, name: "First" }, playSceneGuid: "first",
+      sceneLibrary: { next: { ...scene, name: "Next" } },
       onCommand: (command) => commands.push(command),
     });
     vi.spyOn(runtime, "loadPhysics").mockImplementation(() => { enteredPhysics.resolve(); return physics.promise; });
@@ -251,19 +254,68 @@ describe("createPlayBootCoordinator", () => {
     try {
       await enteredPhysics.promise;
       let changed = false;
+      const finished: string[] = [];
       const world = runtime.getWorld();
-      world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: { onTick: () => {
-        if (!changed) { changed = true; runtime.executeConsoleCommand("changescene next"); }
-      } } }));
+      world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: {
+        onTick: () => { if (!changed) { changed = true; runtime.executeConsoleCommand("changescene next"); } },
+        onSceneFinishLoading: (_self, name) => { finished.push(name); },
+      } }));
       runtime.tick();
       await runtime.realizePlayWorld();
-      expect(commands.some((command) => command.type === "sceneRealized")).toBe(false);
-      physics.resolve();
-      await playing;
+      // Both realizations were announced as they ended; neither completes during native boot.
       expect(commands.filter((command) => command.type === "sceneRealized")).toEqual([
+        { type: "sceneRealized", sceneAssetGuid: "first", sceneLoadId: 1 },
         { type: "sceneRealized", sceneAssetGuid: "next", sceneLoadId: 2 },
       ]);
+      expect(finished).toEqual([]);
+      physics.resolve();
+      await playing;
+      expect(finished).toEqual(["Next"]);
     } finally { boot.reset(); physics.resolve(); runtime.stop(); }
+  });
+
+  it("overlaps host Scene readiness with the native physics load and completes the Scene after both", async () => {
+    const physics = deferred<void>();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      cooperativeSceneLoading: true, deferSceneModelsReady: true, playSceneGuid: "world",
+      playScene: { ...createDefaultScene(), name: "World", actors: [createActor("a", "Actor")] },
+      onCommand: (command) => commands.push(command),
+    });
+    vi.spyOn(runtime, "loadPhysics").mockReturnValue(physics.promise);
+    const finished: string[] = [];
+    const world = runtime.getWorld();
+    world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: {
+      onSceneFinishLoading: (_self, name) => { finished.push(name); },
+    } }));
+    const playing = createPlayBootCoordinator().play(runtime);
+    try {
+      await vi.waitFor(() => expect(commands).toContainEqual({ type: "sceneRealized", sceneAssetGuid: "world", sceneLoadId: 1 }));
+      // The host presented the Scene before physics finished loading.
+      runtime.notifySceneModelsReady("world", 1);
+      expect(finished).toEqual([]);
+      physics.resolve();
+      await playing;
+      expect(finished).toEqual(["World"]);
+    } finally { physics.resolve(); runtime.stop(); }
+  });
+
+  it("starts loading the native physics engines before scripts, navigation and realization finish", async () => {
+    const scripts = deferred<void>();
+    const order: string[] = [];
+    const runtime = fakeRuntime({
+      loadScripts: () => scripts.promise,
+      preloadPhysics: () => { order.push("preload"); },
+      realizePlayWorld() { order.push("realize"); },
+      loadPhysics: async () => { order.push("install"); },
+    });
+    const boot = createPlayBootCoordinator();
+    boot.queueScripts(runtime, [], []);
+    const playing = boot.play(runtime);
+    expect(order).toEqual(["preload"]);
+    scripts.resolve();
+    await playing;
+    expect(order).toEqual(["preload", "realize", "install"]);
   });
 
 });
