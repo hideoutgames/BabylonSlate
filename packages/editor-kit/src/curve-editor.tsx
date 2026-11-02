@@ -1398,9 +1398,6 @@ export function CurveEditor({
               ) : null}
             </>
           ) : null}
-          <span className="ml-auto min-w-0 truncate text-[11px] text-muted-foreground">
-            {touch ? "Hold and drag to select · Hold to add a key" : "Drag to select · Double-click or right-click to add a key"}
-          </span>
         </div>
       </div>
     );
