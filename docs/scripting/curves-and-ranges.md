@@ -86,7 +86,7 @@ In the curve plot:
 - Drag any selected key to move them all together. Arrow keys nudge the selected keys; hold Shift to move ten times as far. **Delete** removes them.
 - Double-click empty space to add a key there, or right-click it and choose **Add Key Here**. On touch, hold empty space, lift your finger without moving it, and choose **Add Key Here**.
 - Right-drag (or drag with one finger on touch) to pan, and pinch or Ctrl/Cmd-scroll to zoom. Editing keys leaves the view where it is; choose **Fit** to frame every key again.
-- **Auto** and **Custom** keys show tangent handles. Drag a handle to set the key's slope; an **Auto** key becomes **Custom** and keeps its shape until you move the handle.
+- **Auto** and **Custom** keys show tangent handles. Drag a handle to set the key's slope; an **Auto** key becomes **Custom** and keeps its shape until you move the handle. With several keys selected, every selected **Auto** or **Custom** key on that channel takes the same slope.
 - With a mouse, hover over the plot to read each channel's value at that time.
 - Below the plot, edit the selected key's **Time**, **Value** and **Interpolation** (the easing curves are grouped under **Ease**), and the curve's **Before** and **After**. With several keys selected, a field shows **Mixed** where they differ; a value or interpolation you set applies to all of them, and **Time** moves them together.
 

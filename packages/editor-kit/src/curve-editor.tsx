@@ -118,7 +118,8 @@ type KeyDrag = {
   /** Pressed a key of a group without modifiers: a click without a drag selects it alone. */
   collapse: boolean;
 };
-type TangentDrag = { kind: "tangent"; pointerId: number; index: number; channel: number; side: "arrive" | "leave" };
+/** Sets one slope on the primary key and every other selected Auto or Custom key on the same channel. */
+type TangentDrag = { kind: "tangent"; pointerId: number; index: number; channel: number; side: "arrive" | "leave"; handles: KeyHandle[] };
 /** A finger or right-drag on empty space; `held` once a finger stayed still for a long press. */
 type PanDrag = {
   kind: "pan"; pointerId: number; x: number; y: number; start: CurveView; moved: boolean;
@@ -575,19 +576,28 @@ export function CurveEditor({
       select(gesture.handles.map(shifted.remap));
       return;
     }
-    const source = draftRef.current ?? committed;
-    const key = source[gesture.index]!;
+    const key = committed[gesture.index]!;
     const kx = fxOf(key.time);
     const ky = fyOf(key.values[gesture.channel]!);
     let dx = point.fx - kx;
     const dy = point.fy - ky;
     dx = gesture.side === "leave" ? Math.max(dx, 1e-3) : Math.min(dx, -1e-3);
     const slope = (-dy * spanV) / (dx * spanT);
-    // An Auto key becomes Custom with the tangents it already plays with, then follows the handle.
-    const next = withCustomTangents(kind, source, gesture.index);
-    // One slope through the key keeps it smooth: both tangents follow the handle.
-    next[gesture.index]!.arrive[gesture.channel] = slope;
-    next[gesture.index]!.leave[gesture.channel] = slope;
+    // The dragged key and every other selected Auto or Custom key on this channel take the slope.
+    const targets = new Set([gesture.index]);
+    for (const handle of gesture.handles) {
+      const other = committed[handle.index];
+      if (other && (!multi || handle.channel === gesture.channel) && holdsAxis(other, gesture.channel)
+        && (other.interpolation === "auto" || other.interpolation === "custom")) targets.add(handle.index);
+    }
+    let next = cloneKeys(committed);
+    for (const index of targets) {
+      // An Auto key becomes Custom with the tangents it already plays with, then follows the handle.
+      next = withCustomTangents(kind, next, index);
+      // One slope through the key keeps it smooth: both tangents follow the handle.
+      next[index]!.arrive[gesture.channel] = slope;
+      next[index]!.leave[gesture.channel] = slope;
+    }
     setDraft(next);
   };
 
@@ -1225,7 +1235,7 @@ export function CurveEditor({
                 onPointerDown={(event) => {
                   event.stopPropagation();
                   setHover(null);
-                  gestureRef.current = { kind: "tangent", pointerId: event.pointerId, index: selectedIndex, channel, side };
+                  gestureRef.current = { kind: "tangent", pointerId: event.pointerId, index: selectedIndex, channel, side, handles: selectionRef.current };
                   setFrozenView(view);
                   event.currentTarget.setPointerCapture?.(event.pointerId);
                 }}
@@ -1398,9 +1408,6 @@ export function CurveEditor({
               ) : null}
             </>
           ) : null}
-          <span className="ml-auto min-w-0 truncate text-[11px] text-muted-foreground">
-            {touch ? "Hold and drag to select · Hold to add a key" : "Drag to select · Double-click or right-click to add a key"}
-          </span>
         </div>
       </div>
     );

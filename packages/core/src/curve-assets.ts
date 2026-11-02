@@ -16,10 +16,9 @@ export const CURVE_OBJECT_CLASS_IDS = {
   color: "ColorCurveObject",
 } as const satisfies Record<CurveKind, string>;
 
-/** A Float, Vector or Color Curve asset's payload: the curve value, as the curve Structures store it, and a note. */
+/** A Float, Vector or Color Curve asset's payload: the curve value, as the curve Structures store it. */
 export interface CurveAssetPayload<V = unknown> {
   curve: Curve<V>;
-  description: string;
 }
 
 /** A packaged curve asset as Play and exported games carry it to the runtime. */
@@ -39,13 +38,10 @@ export function isCurveAssetType(type: string | null | undefined): type is Curve
   return curveKindForAssetType(type) !== undefined;
 }
 
-/** A payload with sorted keys, known names and a string description; anything missing reads as empty. */
+/** A payload with sorted keys and known names; a missing curve reads as empty. */
 export function normalizeCurveAssetPayload<K extends CurveKind>(kind: K, content: unknown): CurveAssetPayload<CurveValueOf<K>> {
   const source = content && typeof content === "object" ? content as Record<string, unknown> : {};
-  return {
-    curve: normalizeCurve(kind, source.curve),
-    description: typeof source.description === "string" ? source.description : "",
-  };
+  return { curve: normalizeCurve(kind, source.curve) };
 }
 
 function key<V>(Time: number, Value: V, zero: V) {

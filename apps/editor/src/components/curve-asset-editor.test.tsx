@@ -12,7 +12,6 @@ const harness = vi.hoisted(() => ({
 const key = (Time: number, Value: number) => ({ Time, Value, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 });
 const content = {
   curve: { Keys: [key(0, 1), key(0.5, 0.25), key(2, -0.5)], Before: "constant", After: "constant" },
-  description: "Damage over distance",
 };
 
 vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: () => ({ documentId: "float-curve:assets/Falloff.floatcurve.hasset" }) }));
@@ -41,8 +40,8 @@ describe("Curve asset Details", () => {
     expect(screen.getByTestId("property-curve-asset-keys").textContent).toBe("3");
     expect(screen.getByTestId("property-curve-asset-time-range").textContent).toBe("0.00 – 2.00 s");
     expect(screen.getByTestId("property-curve-asset-value-range").textContent).toBe("-0.50 – 1.00");
-    // The only thing to type into is the Description.
-    expect(screen.getAllByRole("textbox").map((box) => box.tagName)).toEqual(["TEXTAREA"]);
+    // Nothing here is typed into.
+    expect(screen.queryAllByRole("textbox")).toEqual([]);
   });
 
   it("changes After as its own undo entry", () => {
@@ -53,24 +52,7 @@ describe("Curve asset Details", () => {
     fireEvent.click(cycle);
     expect(harness.applyAssetDocumentChange).toHaveBeenCalledExactlyOnceWith(
       DOC,
-      expect.objectContaining({ curve: expect.objectContaining({ Before: "constant", After: "cycle", Keys: expect.any(Array) }) }),
-      undefined,
-    );
-  });
-
-  it("keeps a multi-line Description and commits it when the field is left", () => {
-    render(<CurveAssetDetailsPanel {...panel} />);
-    const description = screen.getByRole("textbox", { name: "Description" }) as HTMLTextAreaElement;
-    expect(description.value).toBe("Damage over distance");
-    act(() => description.focus());
-    fireEvent.change(description, { target: { value: "Damage over distance\nZero past 2 m" } });
-    // Enter starts a new line instead of leaving the field.
-    fireEvent.keyDown(description, { key: "Enter" });
-    expect(document.activeElement).toBe(description);
-    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
-    act(() => description.blur());
-    expect(harness.applyAssetDocumentChange).toHaveBeenCalledExactlyOnceWith(
-      DOC, expect.objectContaining({ description: "Damage over distance\nZero past 2 m" }), "curve-asset:description",
+      { curve: expect.objectContaining({ Before: "constant", After: "cycle", Keys: expect.any(Array) }) },
     );
   });
 });
