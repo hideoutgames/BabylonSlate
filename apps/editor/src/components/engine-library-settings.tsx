@@ -13,8 +13,6 @@ import {
   FieldContent,
   FieldDescription,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import {
   AlertDialog,
@@ -28,6 +26,7 @@ import {
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
 import { resolvePluginIcon } from "../lib/plugin-icons";
+import { SettingsSection } from "./settings-section";
 
 export interface EngineLibrarySettingsEntry {
   bundled: boolean;
@@ -110,8 +109,9 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
   };
 
   return (
-    <FieldSet data-testid={`engine-${id}s-settings`}>
-      <FieldLegend>Engine {kind}s</FieldLegend>
+    <>
+    <SettingsSection id="library" title="Library">
+    <div className="settings-row flex flex-col gap-2" data-testid={`engine-${id}s-settings`}>
       <FieldDescription>
         Copied into new projects. Existing projects keep their own copies.
       </FieldDescription>
@@ -221,6 +221,8 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
           one.
         </FieldDescription>
       ) : null}
+    </div>
+    </SettingsSection>
       <AlertDialog
         open={Boolean(confirmDelete)}
         onOpenChange={(open) => {
@@ -255,6 +257,6 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </FieldSet>
+    </>
   );
 }

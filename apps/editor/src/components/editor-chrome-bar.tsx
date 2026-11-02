@@ -21,6 +21,7 @@ import {
   HammerIcon,
   LayoutGridIcon,
   LibraryBigIcon,
+  PackageIcon,
   PlayIcon,
   Redo2Icon,
   RefreshCwIcon,
@@ -99,6 +100,7 @@ import type { OpenDocument } from "../services/document-service";
 import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
+import { PackagingDialog } from "./packaging-dialog";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { FeatureTestCheckDialog } from "./feature-test-check-dialog";
 import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
@@ -348,6 +350,12 @@ export function EditorChromeBar({
   if (settingsScope && !openedSettings[settingsScope]) {
     setOpenedSettings({ ...openedSettings, [settingsScope]: true });
   }
+  /** Category the next Settings open starts on; unset starts on the scope's first. */
+  const [settingsCategory, setSettingsCategory] = useState<string | undefined>();
+  const [packagingOpen, setPackagingOpen] = useState(false);
+  // Mounted on first open and kept, so a running package survives closing.
+  const [packagingOpened, setPackagingOpened] = useState(false);
+  if (packagingOpen && !packagingOpened) setPackagingOpened(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [featureTestCheckOpen, setFeatureTestCheckOpen] = useState(false);
@@ -465,9 +473,14 @@ export function EditorChromeBar({
     setToolsOpen(false);
     setSearchOpen(true);
   };
-  const openSettings = (scope: "project" | "engine") => {
+  const openSettings = (scope: "project" | "engine", categoryId?: string) => {
     setToolsOpen(false);
+    setSettingsCategory(categoryId);
     setSettingsScope(scope);
+  };
+  const openPackaging = () => {
+    setToolsOpen(false);
+    setPackagingOpen(true);
   };
   const openProjectBrowser = () => {
     setToolsOpen(false);
@@ -672,6 +685,13 @@ export function EditorChromeBar({
             shortcut: engineSettingsChord,
             onSelect: () => openSettings("engine"),
           },
+          { type: "separator", id: "packaging-separator" },
+          {
+            id: "packaging",
+            label: "Packaging",
+            icon: <PackageIcon />,
+            onSelect: openPackaging,
+          },
           ...(onCloseProject ? [
             { type: "separator", id: "project-browser-separator" },
             {
@@ -724,6 +744,13 @@ export function EditorChromeBar({
                   <ShortcutKeys chord={engineSettingsChord} decorative />
                 </DropdownMenuShortcut>
               ) : null}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem data-testid="packaging" onClick={openPackaging}>
+              <PackageIcon />
+              Packaging
             </DropdownMenuItem>
           </DropdownMenuGroup>
           {onCloseProject ? (
@@ -1176,9 +1203,12 @@ export function EditorChromeBar({
         <SettingsModal
           open={settingsScope === "project"}
           onOpenChange={(open) => {
-            if (!open) setSettingsScope(null);
+            if (open) return;
+            setSettingsScope(null);
+            setSettingsCategory(undefined);
           }}
           scope="project"
+          initialCategoryId={settingsCategory}
         />
       ) : null}
       {openedSettings.engine ? (
@@ -1188,6 +1218,16 @@ export function EditorChromeBar({
             if (!open) setSettingsScope(null);
           }}
           scope="engine"
+        />
+      ) : null}
+      {packagingOpened ? (
+        <PackagingDialog
+          open={packagingOpen}
+          onOpenChange={setPackagingOpen}
+          onOpenExportSettings={() => {
+            setPackagingOpen(false);
+            openSettings("project", "export");
+          }}
         />
       ) : null}
     </div>

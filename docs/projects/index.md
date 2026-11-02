@@ -24,7 +24,7 @@ Thumbnails, compiled scripts and other caches are kept by the app outside the pr
 The backup includes every plugin and extension in the project, even disabled ones. It does not include game saves made in the editor.
 
 ::: tip
-**Export Project** makes an editable copy of the project. To make a playable game, use **Export Game** instead. See [Publishing](../publishing/index.md).
+**Export Project** makes an editable copy of the project. To make a playable game, use **Settings > Packaging** instead. See [Publishing](../publishing/index.md).
 :::
 
 ## Import a project

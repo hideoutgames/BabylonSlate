@@ -182,7 +182,7 @@ export function ShadowSettingsFields({
               ? SHADOW_LIMITS[key as keyof typeof SHADOW_LIMITS]
               : [0, 2048];
           return (
-            <Field key={key} className="settings-field">
+            <Field key={key} className={key === "maxLocalLights" ? "settings-field settings-field-dependent" : "settings-field"}>
               <div className="flex items-center justify-between gap-2">
                 <FieldLabel htmlFor={id}>{label}</FieldLabel>
                 {scene ? (

@@ -160,7 +160,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
         </Field>
         {project.whiteBalance.enabled ? (
           <>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-white-balance-temperature">Temperature (K)</FieldLabel>
               <NumberField
                 id="project-effects-white-balance-temperature"
@@ -177,7 +177,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 Illuminant to neutralize. Low values cool warm light; 6500 is neutral.
               </FieldDescription>
             </Field>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-white-balance-tint">Tint</FieldLabel>
               <NumberField
                 id="project-effects-white-balance-tint"
@@ -211,7 +211,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
         </Field>
         {project.bloom.enabled ? (
           <>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-bloom-threshold">Bloom Threshold</FieldLabel>
               <NumberField
                 id="project-effects-bloom-threshold"
@@ -223,7 +223,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 onChange={(threshold) => patchBloom({ threshold })}
               />
             </Field>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-bloom-weight">Bloom Weight</FieldLabel>
               <NumberField
                 id="project-effects-bloom-weight"
@@ -235,7 +235,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 onChange={(weight) => patchBloom({ weight })}
               />
             </Field>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-bloom-kernel">Bloom Kernel</FieldLabel>
               <NumberField
                 id="project-effects-bloom-kernel"
@@ -247,7 +247,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 onChange={(kernel) => patchBloom({ kernel })}
               />
             </Field>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-bloom-scale">Bloom Scale</FieldLabel>
               <NumberField
                 id="project-effects-bloom-scale"
@@ -280,7 +280,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
         </Field>
         {project.vignette.enabled ? (
           <>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-vignette-weight">Vignette Weight</FieldLabel>
               <NumberField
                 id="project-effects-vignette-weight"
@@ -292,7 +292,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 onChange={(weight) => patchVignette({ weight })}
               />
             </Field>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-vignette-color">Vignette Color</FieldLabel>
               <ColorField
                 id="project-effects-vignette-color"
@@ -317,7 +317,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
           </FieldDescription>
         </Field>
         {project.colorGrading.enabled ? (
-          <Field className="settings-field">
+          <Field className="settings-field settings-field-dependent">
             <FieldLabel htmlFor="project-effects-lut">LUT Texture</FieldLabel>
             {lutControl}
             <FieldDescription>
@@ -341,7 +341,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
         </Field>
         {project.upscaling.enabled ? (
           <>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-upscaling-scale">Render Scale</FieldLabel>
               <NumberField
                 id="project-effects-upscaling-scale"
@@ -357,7 +357,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 Fraction of the output width and height rendered. 1 disables upscaling.
               </FieldDescription>
             </Field>
-            <Field className="settings-field">
+            <Field className="settings-field settings-field-dependent">
               <FieldLabel htmlFor="project-effects-upscaling-sharpness">Sharpness</FieldLabel>
               <NumberField
                 id="project-effects-upscaling-sharpness"

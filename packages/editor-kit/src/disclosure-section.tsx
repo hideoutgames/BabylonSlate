@@ -11,7 +11,10 @@ export interface DisclosureSectionProps {
   "data-testid"?: string;
 }
 
-/** Controlled compact category; callers keep disclosure state apart from data. */
+/**
+ * Controlled framed sub-category: a shaded header bar that toggles and a body
+ * inside the same border. Callers keep disclosure state apart from data.
+ */
 export function DisclosureSection({
   title,
   open,
@@ -22,13 +25,19 @@ export function DisclosureSection({
   const contentId = useId();
   const Icon = open ? ChevronDownIcon : ChevronRightIcon;
   return (
-    <FieldSet className="gap-2" data-testid={testId}>
-      <FieldLegend variant="label" className="mb-0 w-full">
+    <FieldSet
+      data-slot="disclosure-section"
+      data-open={open ? "true" : "false"}
+      className="gap-0 overflow-hidden rounded-md border bg-card"
+      data-testid={testId}
+    >
+      {/* Floated so the legend sits inside the frame instead of on its border. */}
+      <FieldLegend variant="label" className="float-left mb-0 w-full bg-panel-header">
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="w-full justify-start pointer-coarse:min-h-11"
+          className="w-full justify-start rounded-none font-semibold aria-expanded:bg-transparent aria-expanded:hover:bg-accent pointer-coarse:min-h-11"
           aria-expanded={open}
           aria-controls={contentId}
           onClick={() => onOpenChange(!open)}
@@ -37,7 +46,12 @@ export function DisclosureSection({
           {title}
         </Button>
       </FieldLegend>
-      <div id={contentId} hidden={!open}>
+      <div
+        id={contentId}
+        data-slot="disclosure-section-content"
+        hidden={!open}
+        className="clear-both border-t px-2.5 py-2"
+      >
         {open ? children : null}
       </div>
     </FieldSet>

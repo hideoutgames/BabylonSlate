@@ -56,6 +56,14 @@ describe("app settings", () => {
     expect(engineSettingsSchema.parse({ linkedScaleKeys: [1, 2] }).linkedScaleKeys).toEqual([]);
   });
 
+  it("starts every Settings sub-category open and drops unreadable collapsed lists", () => {
+    expect(engineSettingsSchema.parse({}).collapsedSettingsSections).toEqual([]);
+    expect(
+      engineSettingsSchema.parse({ collapsedSettingsSections: ["project:rendering:shadows"] }).collapsedSettingsSections,
+    ).toEqual(["project:rendering:shadows"]);
+    expect(engineSettingsSchema.parse({ collapsedSettingsSections: "shadows" }).collapsedSettingsSections).toEqual([]);
+  });
+
   it("keeps ten traces by default and between one and fifty", () => {
     expect(engineSettingsSchema.parse({}).tracesKept).toBe(10);
     expect(engineSettingsSchema.parse({ tracesKept: 0 }).tracesKept).toBe(1);

@@ -5,6 +5,7 @@ import { KeybindSettings } from "./keybind-settings";
 import { DebuggerSettingsFields } from "./debugger-settings-fields";
 import { CompactModeField } from "./compact-mode-field";
 import { AddNodeHistoryFields } from "./add-node-history-fields";
+import { SettingsSection } from "./settings-section";
 import { NumberField, SelectableText } from "@haptic/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
@@ -30,8 +31,6 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import {
   Select,
@@ -183,6 +182,31 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   { kind: "texture", keepKey: "texture", label: "Texture" },
 ];
 
+/** Engine Settings → Focus sub-categories, by the Focus rows they hold. */
+const FOCUS_KEEP_SECTIONS: Array<{ id: string; title: string; keys: FocusKeepSettingKey[] }> = [
+  { id: "scenes", title: "Scenes", keys: ["scene", "sceneLandscape", "sceneFoliage", "sceneScript", "sceneTimeline", "scene-layer", "sceneLayerScript", "sceneLayerTimeline"] },
+  { id: "scriptingData", title: "Scripting And Data", keys: ["graph", "prefab", "enum", "structure", "data-definition", "data-tree", "script-interface", "save-game", "input-action", "input-axis", "plugin-settings"] },
+  { id: "curvesTimelines", title: "Curves And Timelines", keys: ["float-curve", "vector-curve", "color-curve", "timeline", "timeline-clip-2d", "timeline-clip-3d"] },
+  { id: "twoD", title: "2D", keys: ["sprite", "sprite-animation", "tileset", "tilemap"] },
+  { id: "materialsRendering", title: "Materials And Rendering", keys: ["material", "material-function", "material-instance", "water", "render-target", "render-target-texture", "skybox-creator", "texture"] },
+  { id: "animationAi", title: "Animation And AI", keys: ["anim-graph", "animGraphObject", "behaviour-tree", "model", "skeleton", "animation"] },
+  { id: "audio", title: "Audio", keys: ["audio", "audio-mixer", "audio-channel", "sound-attenuation"] },
+  { id: "particles", title: "Particles", keys: ["particle-emitter", "particle-graph", "particle-system"] },
+  { id: "diagnostics", title: "Diagnostics", keys: ["trace"] },
+];
+
+/** The Focus sub-categories with their rows; a row no section names falls into Other. */
+function focusKeepSections() {
+  const rows = new Map(FOCUS_KEEP_SETTING_ROWS.map((row) => [row.keepKey, row]));
+  const sections = FOCUS_KEEP_SECTIONS.map((section) => ({
+    ...section,
+    rows: section.keys.flatMap((key) => rows.get(key) ?? []),
+  }));
+  const listed = new Set(FOCUS_KEEP_SECTIONS.flatMap((section) => section.keys));
+  const other = FOCUS_KEEP_SETTING_ROWS.filter((row) => !listed.has(row.keepKey));
+  return other.length ? [...sections, { id: "other", title: "Other", keys: [], rows: other }] : sections;
+}
+
 export type EngineSettingsCategoryId =
   | "about"
   | "interface"
@@ -202,19 +226,18 @@ export function EngineSettingsForm({
   settings,
   onChange,
   categoryId,
-  focusTargetId,
 }: {
   settings: EngineSettings;
   onChange: (patch: Partial<EngineSettings>) => void | Promise<void>;
   categoryId: EngineSettingsCategoryId;
-  focusTargetId?: string;
 }) {
   const identity = getBuildIdentity();
   return (
     <FieldGroup data-testid="engine-settings-sheet">
       {categoryId === "about" ? (
-        <FieldSet data-testid="build-identity">
-          <FieldLegend>Haptic</FieldLegend>
+        <>
+        <SettingsSection id="build" title="Build">
+          <div className="settings-row flex flex-col gap-1" data-testid="build-identity">
           {identity ? (
             <>
               <FieldDescription>
@@ -241,7 +264,10 @@ export function EngineSettingsForm({
           ) : (
             <FieldDescription>Development Build</FieldDescription>
           )}
+          </div>
+        </SettingsSection>
           {getHostPlatform() === "electron" && (
+            <SettingsSection id="updates" title="Updates">
             <Field orientation="horizontal" className="settings-field">
               <FieldContent>
                 <FieldLabel htmlFor="setting-automatic-updates">Automatic Updates</FieldLabel>
@@ -251,24 +277,23 @@ export function EngineSettingsForm({
               </FieldContent>
               <Switch id="setting-automatic-updates" checked={settings.automaticUpdatesEnabled} onCheckedChange={automaticUpdatesEnabled => void onChange({ automaticUpdatesEnabled })} />
             </Field>
+            </SettingsSection>
           )}
-        </FieldSet>
+        </>
       ) : null}
 
       {categoryId === "interface" ? (
-        <FieldSet>
-          <FieldLegend>Interface</FieldLegend>
+        <SettingsSection id="density" title="Density">
           <CompactModeField
             id="setting-compact-mode"
             checked={resolveCompactMode(settings)}
             onCheckedChange={compactMode => void onChange({ compactMode })}
           />
-        </FieldSet>
+        </SettingsSection>
       ) : null}
 
       {categoryId === "undo" ? (
-        <FieldSet>
-          <FieldLegend>Undo</FieldLegend>
+        <SettingsSection id="history" title="History">
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-undo-length">
               Undo History Length
@@ -309,16 +334,16 @@ export function EngineSettingsForm({
               Memory each document's Undo history may use. An edit larger than this still applies but can't be undone.
             </FieldDescription>
           </Field>
-        </FieldSet>
+        </SettingsSection>
       ) : null}
 
       {categoryId === "debugger" ? (
-        <DebuggerSettingsFields settings={settings} onChange={onChange} focusTargetId={focusTargetId} />
+        <DebuggerSettingsFields settings={settings} onChange={onChange} />
       ) : null}
 
       {categoryId === "viewport" ? (
-        <FieldSet>
-          <FieldLegend>Viewport</FieldLegend>
+        <>
+        <SettingsSection id="renderingOverrides" title="Rendering Overrides">
           <Field orientation="horizontal" className="settings-field">
             <FieldContent><FieldLabel htmlFor="setting-rendering-overrides">Override Project Rendering</FieldLabel>
               <FieldDescription>Use local resolution, texture budget and post-processing in editor previews.</FieldDescription>
@@ -326,6 +351,48 @@ export function EngineSettingsForm({
             <Switch id="setting-rendering-overrides" checked={settings.renderingOverridesEnabled}
               onCheckedChange={(renderingOverridesEnabled) => void onChange({ renderingOverridesEnabled })} />
           </Field>
+          <Field className="settings-field settings-field-dependent">
+            <FieldLabel htmlFor="setting-hardware-scale">
+              Hardware Scaling Level
+            </FieldLabel>
+            <NumberField
+              id="setting-hardware-scale"
+              min={MIN_HARDWARE_SCALING_LEVEL}
+              max={MAX_HARDWARE_SCALING_LEVEL}
+              step={0.25}
+              className="min-h-[var(--chrome-row,28px)]"
+              data-testid="setting-hardware-scale"
+              disabled={!settings.renderingOverridesEnabled}
+              value={settings.hardwareScalingLevel}
+              onChange={(hardwareScalingLevel) =>
+                void onChange({ hardwareScalingLevel })
+              }
+            />
+            <FieldDescription>
+              1 is native resolution. Higher values reduce resolution.
+            </FieldDescription>
+          </Field>
+          <Field orientation="horizontal" className="settings-field settings-field-dependent">
+            <FieldContent>
+              <FieldLabel htmlFor="setting-post-processing">
+                Post-Processing
+              </FieldLabel>
+              <FieldDescription>
+                Editor and Play preview only. Exported games are unchanged.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="setting-post-processing"
+              data-testid="setting-post-processing"
+              disabled={!settings.renderingOverridesEnabled}
+              checked={settings.postProcessingEnabled}
+              onCheckedChange={(checked) =>
+                void onChange({ postProcessingEnabled: checked === true })
+              }
+            />
+          </Field>
+        </SettingsSection>
+        <SettingsSection id="frameRate" title="Frame Rate">
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-frame-cap">
               Viewport Frame Cap (FPS)
@@ -362,21 +429,8 @@ export function EngineSettingsForm({
               How often the preview of a selected Camera or Render Target Capture redraws.
             </FieldDescription>
           </Field>
-          <Field className="settings-field">
-            <FieldLabel htmlFor="setting-drop-distance">Drop Distance</FieldLabel>
-            <NumberField
-              id="setting-drop-distance"
-              min={0.0001}
-              step={1}
-              className="min-h-[var(--chrome-row,28px)]"
-              data-testid="setting-drop-distance"
-              value={settings.viewportDropDistance}
-              onChange={(viewportDropDistance) => void onChange({ viewportDropDistance })}
-            />
-            <FieldDescription>
-              Placed objects drop onto surfaces within this many world units.
-            </FieldDescription>
-          </Field>
+        </SettingsSection>
+        <SettingsSection id="cameraPlacement" title="Camera And Placement">
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-fly-speed">Camera Speed</FieldLabel>
             <NumberField
@@ -393,51 +447,27 @@ export function EngineSettingsForm({
             <FieldDescription>World units per second.</FieldDescription>
           </Field>
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-hardware-scale">
-              Hardware Scaling Level
-            </FieldLabel>
+            <FieldLabel htmlFor="setting-drop-distance">Drop Distance</FieldLabel>
             <NumberField
-              id="setting-hardware-scale"
-              min={MIN_HARDWARE_SCALING_LEVEL}
-              max={MAX_HARDWARE_SCALING_LEVEL}
-              step={0.25}
+              id="setting-drop-distance"
+              min={0.0001}
+              step={1}
               className="min-h-[var(--chrome-row,28px)]"
-              data-testid="setting-hardware-scale"
-              disabled={!settings.renderingOverridesEnabled}
-              value={settings.hardwareScalingLevel}
-              onChange={(hardwareScalingLevel) =>
-                void onChange({ hardwareScalingLevel })
-              }
+              data-testid="setting-drop-distance"
+              value={settings.viewportDropDistance}
+              onChange={(viewportDropDistance) => void onChange({ viewportDropDistance })}
             />
             <FieldDescription>
-              1 is native resolution. Higher values reduce resolution.
+              Placed objects drop onto surfaces within this many world units.
             </FieldDescription>
           </Field>
-          <Field orientation="horizontal" className="settings-field">
-            <FieldContent>
-              <FieldLabel htmlFor="setting-post-processing">
-                Post-Processing
-              </FieldLabel>
-              <FieldDescription>
-                Editor and Play preview only. Exported games are unchanged.
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="setting-post-processing"
-              data-testid="setting-post-processing"
-              disabled={!settings.renderingOverridesEnabled}
-              checked={settings.postProcessingEnabled}
-              onCheckedChange={(checked) =>
-                void onChange({ postProcessingEnabled: checked === true })
-              }
-            />
-          </Field>
-        </FieldSet>
+        </SettingsSection>
+        </>
       ) : null}
 
       {categoryId === "assets" ? (
-        <FieldSet>
-          <FieldLegend>Assets</FieldLegend>
+        <>
+        <SettingsSection id="import" title="Import">
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-model-import-scale">
               Model Import Default Scale
@@ -488,6 +518,8 @@ export function EngineSettingsForm({
               Largest cube face for new .hdr imports. Change an imported Texture in its Inspector.
             </FieldDescription>
           </Field>
+        </SettingsSection>
+        <SettingsSection id="editorTextures" title="Editor Textures">
           <Field orientation="horizontal" className="settings-field">
             <FieldContent>
               <FieldLabel htmlFor="setting-editor-texture-lod">
@@ -507,7 +539,7 @@ export function EngineSettingsForm({
               }
             />
           </Field>
-          <Field>
+          <Field className="settings-field settings-field-dependent">
             <FieldLabel id="setting-editor-texture-lod-quality-label" htmlFor="setting-editor-texture-lod-quality">
               Editor Texture Quality
             </FieldLabel>
@@ -560,7 +592,7 @@ export function EngineSettingsForm({
               }
             />
           </Field>
-          <Field className="settings-field">
+          <Field className="settings-field settings-field-dependent">
             <FieldLabel htmlFor="setting-texture-budget-mb">
               Texture Budget (MB)
             </FieldLabel>
@@ -580,6 +612,8 @@ export function EngineSettingsForm({
               }
             />
           </Field>
+        </SettingsSection>
+        <SettingsSection id="audio" title="Audio">
           <Field orientation="horizontal" className="settings-field">
             <FieldContent>
               <FieldLabel htmlFor="setting-audio-budget">
@@ -598,7 +632,7 @@ export function EngineSettingsForm({
               }
             />
           </Field>
-          <Field className="settings-field">
+          <Field className="settings-field settings-field-dependent">
             <FieldLabel htmlFor="setting-audio-budget-mb">
               Audio Budget (MB)
             </FieldLabel>
@@ -636,12 +670,12 @@ export function EngineSettingsForm({
               Stops the oldest voice when the limit is reached.
             </FieldDescription>
           </Field>
-        </FieldSet>
+        </SettingsSection>
+        </>
       ) : null}
 
       {categoryId === "thumbnails" ? (
-        <FieldSet>
-          <FieldLegend>Thumbnails</FieldLegend>
+        <SettingsSection id="generation" title="Generation">
           <Field orientation="horizontal" className="settings-field">
             <FieldLabel htmlFor="setting-thumbnails">
               Generate Thumbnails
@@ -655,17 +689,17 @@ export function EngineSettingsForm({
               }
             />
           </Field>
-        </FieldSet>
+        </SettingsSection>
       ) : null}
 
       {categoryId === "graph" ? (
-        <FieldSet>
-          <FieldLegend>Graph</FieldLegend>
+        <>
+        <SettingsSection id="connections" title="Connections">
           <Field orientation="horizontal" className="settings-field">
             <FieldLabel htmlFor="setting-graph-assistant">Node Connection Assistant</FieldLabel>
             <Switch id="setting-graph-assistant" checked={settings.graphAssistantEnabled} onCheckedChange={(checked) => void onChange({ graphAssistantEnabled: checked === true })} />
           </Field>
-          <Field className="settings-field">
+          <Field className="settings-field settings-field-dependent">
             <FieldLabel htmlFor="setting-graph-distance">Connection Distance (Pixels)</FieldLabel>
             <NumberField id="setting-graph-distance" min={8} max={200} step={1} value={settings.graphAssistantDistance} onChange={(graphAssistantDistance) => void onChange({ graphAssistantDistance })} />
           </Field>
@@ -673,23 +707,14 @@ export function EngineSettingsForm({
             <FieldLabel htmlFor="setting-graph-shake">Shake Nodes To Disconnect</FieldLabel>
             <Switch id="setting-graph-shake" checked={settings.graphShakeEnabled} onCheckedChange={(checked) => void onChange({ graphShakeEnabled: checked === true })} />
           </Field>
+        </SettingsSection>
+        <SettingsSection id="addNode" title="Add Node">
           <AddNodeHistoryFields
             enabled={settings.graphAddNodeHistoryEnabled}
             onEnabledChange={(graphAddNodeHistoryEnabled) => void onChange({ graphAddNodeHistoryEnabled })}
           />
-          <Field orientation="horizontal" className="settings-field">
-            <FieldContent>
-              <FieldLabel htmlFor="setting-read-only-pin-defaults">Read-Only Pin Defaults</FieldLabel>
-              <FieldDescription>
-                Locks inline node values on this device. Defaults remain editable in the Inspector.
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="setting-read-only-pin-defaults"
-              checked={settings.readOnlyPinDefaults}
-              onCheckedChange={(checked) => void onChange({ readOnlyPinDefaults: checked === true })}
-            />
-          </Field>
+        </SettingsSection>
+        <SettingsSection id="canvas" title="Canvas">
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-graph-default-zoom">
               Graph Default Zoom
@@ -710,34 +735,49 @@ export function EngineSettingsForm({
               Initial zoom and maximum zoom when fitting a graph.
             </FieldDescription>
           </Field>
-        </FieldSet>
+          <Field orientation="horizontal" className="settings-field">
+            <FieldContent>
+              <FieldLabel htmlFor="setting-read-only-pin-defaults">Read-Only Pin Defaults</FieldLabel>
+              <FieldDescription>
+                Locks inline node values on this device. Defaults remain editable in the Inspector.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="setting-read-only-pin-defaults"
+              checked={settings.readOnlyPinDefaults}
+              onCheckedChange={(checked) => void onChange({ readOnlyPinDefaults: checked === true })}
+            />
+          </Field>
+        </SettingsSection>
+        </>
       ) : null}
 
       {categoryId === "focus" ? (
-        <FieldSet>
-          <FieldLegend>Focus</FieldLegend>
+        <>
           <FieldDescription>Windows that stay visible in Focus.</FieldDescription>
-          <div className="flex flex-col">
-            {FOCUS_KEEP_SETTING_ROWS.map((row) => (
-              <FocusKeepPanelList
-                key={row.keepKey}
-                kind={row.kind}
-                keepKey={row.keepKey}
-                label={row.label}
-                options={row.options}
-                ids={settings.focusKeepPanels[row.keepKey]}
-                onChange={(ids) =>
-                  void onChange({
-                    focusKeepPanels: {
-                      ...settings.focusKeepPanels,
-                      [row.keepKey]: ids,
-                    },
-                  })
-                }
-              />
-            ))}
-          </div>
-        </FieldSet>
+          {focusKeepSections().map((section) => (
+            <SettingsSection key={section.id} id={section.id} title={section.title}>
+              {section.rows.map((row) => (
+                <FocusKeepPanelList
+                  key={row.keepKey}
+                  kind={row.kind}
+                  keepKey={row.keepKey}
+                  label={row.label}
+                  options={row.options}
+                  ids={settings.focusKeepPanels[row.keepKey]}
+                  onChange={(ids) =>
+                    void onChange({
+                      focusKeepPanels: {
+                        ...settings.focusKeepPanels,
+                        [row.keepKey]: ids,
+                      },
+                    })
+                  }
+                />
+              ))}
+            </SettingsSection>
+          ))}
+        </>
       ) : null}
 
       {categoryId === "keybinds" ? (

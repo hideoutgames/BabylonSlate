@@ -12,6 +12,17 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
       "project version build compile autosave editor utility objects infinite loop detection loop count garbage collection interval",
   },
   {
+    id: "sourceControl",
+    label: "Source Control",
+    keywords: "git lfs lock token repository branch poll auto lock",
+  },
+  {
+    id: "export",
+    label: "Export",
+    keywords:
+      "export project backup zip download packaging debugger file count always package folders folder include unreferenced",
+  },
+  {
     id: "game",
     label: "Game",
     keywords:
@@ -25,16 +36,6 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
   },
   { id: "focusNavigation", label: "Focus Navigation", keywords: "focus keyboard gamepad navigation repeat wrap input activate" },
   {
-    id: "fonts",
-    label: "Fonts",
-    keywords: "default font fallback family stack",
-  },
-  {
-    id: "audio",
-    label: "Audio",
-    keywords: "mixer channel volume attenuation",
-  },
-  {
     id: "rendering",
     label: "Rendering",
     keywords:
@@ -46,6 +47,16 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
     keywords: "max dimension encoding retry compression",
   },
   {
+    id: "fonts",
+    label: "Fonts",
+    keywords: "default font fallback family stack",
+  },
+  {
+    id: "audio",
+    label: "Audio",
+    keywords: "mixer channel volume attenuation",
+  },
+  {
     id: "plugins",
     label: "Plugins",
     keywords: "plugins enable engine project starter content hplugin",
@@ -55,38 +66,13 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
     label: "Project Extensions",
     keywords: "extensions editor code typescript javascript GLSL material converter hextension",
   },
-  {
-    id: "export",
-    label: "Export",
-    keywords:
-      "export project zip download packaged player export game debugger file count always package folders folder include unreferenced",
-  },
-  {
-    id: "sourceControl",
-    label: "Source Control",
-    keywords: "git lfs lock token repository branch poll auto lock",
-  },
 ];
 
 export const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  {
-    label: "Project",
-    ids: [
-      "general",
-      "game",
-      "saveGames",
-      "physics",
-      "focusNavigation",
-      "fonts",
-      "audio",
-      "rendering",
-      "textures",
-      "plugins",
-      "extensions",
-      "export",
-      "sourceControl",
-    ],
-  },
+  { label: "Project", ids: ["general", "sourceControl", "export"] },
+  { label: "Gameplay", ids: ["game", "saveGames", "physics", "focusNavigation"] },
+  { label: "Graphics & Audio", ids: ["rendering", "textures", "fonts", "audio"] },
+  { label: "Plugins & Extensions", ids: ["plugins", "extensions"] },
 ];
 
 export const ENGINE_CATEGORIES: Array<
