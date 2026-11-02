@@ -398,6 +398,7 @@ describe("SettingsModal project authoring", () => {
     await waitFor(() => expect(document.activeElement).toBe(field));
   });
   it("reopens a collapsed sub-category when search reveals its control", async () => {
+    showRenderingSections("environment");
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
     const section = screen.getByRole("button", { name: "Environment Lighting" });
