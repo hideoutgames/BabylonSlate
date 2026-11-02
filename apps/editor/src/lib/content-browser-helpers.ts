@@ -2,6 +2,7 @@ import type { IndexedAsset } from "@haptic/assets";
 import {
   normalizeAnimationPayload,
   contentEntryNameError,
+  PARTICLE_SYSTEM_MAX_EMITTERS,
   renamedAssetPath,
 } from "@haptic/assets";
 import {
@@ -452,8 +453,18 @@ export type ContentBrowserContextAction =
   | "generate-thumbnail"
   | "import-msdf-atlas"
   | "create-material-instance"
+  | "create-sprite"
   | "create-sprite-animation"
   | "create-tileset"
+  | "create-material"
+  | "create-tilemap"
+  | "create-prefab"
+  | "create-actor"
+  | "create-particle-system"
+  | "create-child-class"
+  | "create-data-definition"
+  | "create-data-tree"
+  | "create-render-target-texture"
   | "duplicate"
   | "rename"
   | "retarget"
@@ -473,6 +484,31 @@ export function canRetargetSelectedAssets(
   });
 }
 
+const EMITTER_TYPES = new Set(["ParticleEmitter", "ParticleGraph"]);
+const ACTOR_TYPES = new Set(["Model", "Sprite", "ParticleSystem"]);
+
+/** The Create actions a selection of assets (no folders) offers, in menu order. */
+function createActionsForTypes(types: readonly string[], canCreateChildClass: boolean): ContentBrowserContextAction[] {
+  if (types.length === 0) return [];
+  const all = (accepted: (type: string) => boolean) => types.every(accepted);
+  const single = types.length === 1 ? types[0] : undefined;
+  const actions: ContentBrowserContextAction[] = [];
+  if (all((type) => type === "Texture")) actions.push("create-sprite");
+  // Any mix of Textures and Sprites becomes one Sprite Animation; one Texture can also become a Tileset.
+  if (all((type) => type === "Texture" || type === "Sprite")) actions.push("create-sprite-animation");
+  if (single === "Texture") actions.push("create-tileset");
+  if (all((type) => type === "Texture")) actions.push("create-material");
+  if (all((type) => type === "Tileset")) actions.push("create-tilemap");
+  if (all((type) => type === "Model")) actions.push("create-prefab");
+  if (all((type) => ACTOR_TYPES.has(type))) actions.push("create-actor");
+  if (all((type) => EMITTER_TYPES.has(type)) && types.length <= PARTICLE_SYSTEM_MAX_EMITTERS) actions.push("create-particle-system");
+  if (single === "Class" && canCreateChildClass) actions.push("create-child-class");
+  if (single === "Structure") actions.push("create-data-definition");
+  if (single === "DataDefinition") actions.push("create-data-tree");
+  if (single === "RenderTarget") actions.push("create-render-target-texture");
+  return actions;
+}
+
 export function contentBrowserContextActions(options: {
   assetCount: number;
   folderCount: number;
@@ -481,6 +517,8 @@ export function contentBrowserContextActions(options: {
   singleAssetType?: string;
   /** Every selected asset's type, when the caller knows them. */
   assetTypes?: readonly string[];
+  /** The one selected Class may parent a new Class (not SceneLayer lineage, under the depth limit). */
+  canCreateChildClass?: boolean;
 }): ContentBrowserContextAction[] {
   const total = options.assetCount + options.folderCount;
   if (total === 0) return [];
@@ -497,13 +535,10 @@ export function contentBrowserContextActions(options: {
       actions.push("create-material-instance");
     }
   }
-  // Any mix of Textures and Sprites becomes one Sprite Animation; one Texture can also become a Tileset.
-  const types = options.assetTypes ?? [];
-  if (options.folderCount === 0 && types.length > 0 && types.length === options.assetCount &&
-    types.every((type) => type === "Texture" || type === "Sprite")) {
-    actions.push("create-sprite-animation");
-    if (types.length === 1 && types[0] === "Texture") actions.push("create-tileset");
-  }
+  actions.push(...createActionsForTypes(
+    options.folderCount === 0 && options.assetTypes?.length === options.assetCount ? options.assetTypes : [],
+    options.canCreateChildClass === true,
+  ));
   actions.push("duplicate");
   if (total === 1) actions.push("rename");
   if (options.canRetarget && options.assetCount > 0 && options.folderCount === 0) {

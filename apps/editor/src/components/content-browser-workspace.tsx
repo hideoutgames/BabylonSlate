@@ -660,6 +660,7 @@ function ContentBrowserWorkspaceBody({
     requestDeleteSnapshot,
     selectedRootWritable,
     classParentOf,
+    getOpenDocuments,
     selectedGuids,
     selectedFolderPaths,
     setSelectedGuids,
