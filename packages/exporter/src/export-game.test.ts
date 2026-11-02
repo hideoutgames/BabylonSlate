@@ -384,10 +384,13 @@ describe("exportGame", () => {
 
   it("records each asset's own content hash and size, in asset order, whatever the asset sizes", async () => {
     const sizes = [200_000, 1, 0, 70_000, 3, 150_000, 2, 9, 40_000, 5, 1_000];
-    const assets = sizes.map((size, index) => ({
-      guid: `asset-${index}`, type: "Texture", sceneGuid: "scene-1",
-      bytes: Uint8Array.from({ length: size }, (_, at) => (at * 7 + index) % 256),
-    }));
+    // Filled with a plain loop: a per-byte callback over ~460 KB outlasts the
+    // default timeout under coverage instrumentation on a busy runner.
+    const assets = sizes.map((size, index) => {
+      const bytes = new Uint8Array(size);
+      for (let at = 0; at < size; at += 1) bytes[at] = (at * 7 + index) % 256;
+      return { guid: `asset-${index}`, type: "Texture", sceneGuid: "scene-1", bytes };
+    });
     const result = await exportGame({
       bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [], playerFiles: stubPlayer(), assets,
@@ -397,7 +400,9 @@ describe("exportGame", () => {
     for (const [index, entry] of result.value.manifest.assets.entries()) {
       expect(entry.byteLength).toBe(sizes[index]);
       expect(entry.revision).toBe(createHash("sha256").update(assets[index]!.bytes).digest("hex"));
-      expect(result.value.files.get(entry.path!)).toEqual(assets[index]!.bytes);
+      // Byte-exact, without an element-by-element deep equality over each large array.
+      const file = result.value.files.get(entry.path!);
+      expect(file && Buffer.compare(file, assets[index]!.bytes)).toBe(0);
     }
   });
 
