@@ -64,9 +64,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(medium.width).toBeGreaterThan(3 * medium.pixelsPerTexel);
     expect(high.width).toBeGreaterThan(3.5 * high.pixelsPerTexel);
     expect(high.width).toBeGreaterThan(medium.width);
-    // The measures see stairs where they are: Low's single bilinear tap steps with the texels.
-    expect(low.rise).toBeGreaterThan(0.15);
-    expect(low.stairs).toBeGreaterThan(0.3 * low.pixelsPerTexel);
+    // Low (3 × 3 texels) is the narrowest exact kernel, still monotonic with its contour bent well under a fifth of a
+    // texel; the single bilinear tap it replaced rose by more than 0.15 per pixel and stepped by over 0.3 of a texel.
+    expect(low.fall).toBeLessThan(0.01);
+    expect(low.rise).toBeLessThan(0.12);
+    expect(low.stairs).toBeLessThan(0.15 * low.pixelsPerTexel);
+    expect(low.width).toBeGreaterThan(1.5 * low.pixelsPerTexel);
+    expect(medium.width).toBeGreaterThan(low.width);
     // Drawn into its depth texture alone: the atlas keeps no unused depth renderbuffer of its size.
     expect(result.atlasDepthRenderbuffer).toBe(false);
   });

@@ -39,18 +39,17 @@ export function shadowViewTexelRatios(shadow: AtlasShadowGenerator | AtlasCascad
  * The kernel a view of texel `ratio` filters with at `quality`, as the light block chooses it: the quality's width
  * (7 × 7 texels at high, 5 × 5 at medium) times the ratio, to the nearest kernel no wider. Holding the width in the
  * world this way keeps each kernel's exact weights, which a kernel stretched to a fractional width loses (it dips and
- * steps). Null at low quality, one bilinear tap.
+ * steps). Low quality always takes 3 × 3: a single bilinear tap steps with the texels once a texel spans several pixels.
  */
-export function shadowKernelTexels(quality: "low" | "medium" | "high", ratio: number): ShadowKernelTexels | null {
-  if (quality === "low") return null;
+export function shadowKernelTexels(quality: "low" | "medium" | "high", ratio: number): ShadowKernelTexels {
+  if (quality === "low") return 3;
   const wide = (quality === "medium" ? 5 : 7) * ratio;
   return wide >= 6 ? 7 : wide >= 4 ? 5 : 3;
 }
 
-/** Texture fetches per shaded pixel and view: the kernel's taps; low quality's one, or four with receiver-plane bias. */
-export function shadowFilterFetches(quality: "low" | "medium" | "high", ratio: number, receiverPlane: boolean): number {
+/** Texture fetches per shaded pixel and view: the kernel's taps, with or without receiver-plane bias. */
+export function shadowFilterFetches(quality: "low" | "medium" | "high", ratio: number): number {
   const kernel = shadowKernelTexels(quality, ratio);
-  if (kernel === null) return receiverPlane ? 4 : 1;
   return kernel === 7 ? 16 : kernel === 5 ? 9 : 4;
 }
 

@@ -9,7 +9,8 @@ describe("shadow filter kernel", () => {
       ["medium", 1, 5], ["medium", 0.8, 5], ["medium", 0.79, 3], ["medium", 0.25, 3],
     ];
     expect(cases.map(([quality, ratio]) => shadowKernelTexels(quality, ratio))).toEqual(cases.map(([, , texels]) => texels));
-    expect(shadowKernelTexels("low", 1)).toBeNull();
+    // Low takes the smallest exact kernel whatever the ratio.
+    expect([shadowKernelTexels("low", 1), shadowKernelTexels("low", 0.2)]).toEqual([3, 3]);
   });
 
   it("reads the ratio on the coarser axis, never above 1, and 1 for an unknown extent", () => {
@@ -20,8 +21,8 @@ describe("shadow filter kernel", () => {
 
   it("counts the taps the light block reads per view", () => {
     expect([
-      shadowFilterFetches("low", 1, false), shadowFilterFetches("low", 1, true), shadowFilterFetches("medium", 1, true),
-      shadowFilterFetches("high", 1, false), shadowFilterFetches("high", 0.7, false), shadowFilterFetches("high", 0.3, false),
-    ]).toEqual([1, 4, 9, 16, 9, 4]);
+      shadowFilterFetches("low", 1), shadowFilterFetches("medium", 1),
+      shadowFilterFetches("high", 1), shadowFilterFetches("high", 0.7), shadowFilterFetches("high", 0.3),
+    ]).toEqual([4, 9, 16, 9, 4]);
   });
 });

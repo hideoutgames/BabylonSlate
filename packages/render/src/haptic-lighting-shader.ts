@@ -73,13 +73,12 @@ function poissonWgsl(name: string, disc: readonly number[]): string {
 export function hapticShadowGlsl(surface: boolean): string {
   return `// A light's shadow from its view of the atlas (\`hapticShadowViews\`): 1 where lit, the view's darkness where shadowed; 1
 // without a view (index < 0), outside its frustum and on a mesh that does not receive shadows. Filtered at the view's
-// quality (0 low: one bilinear compare tap; 1 medium: Castaño's nine weighted bilinear compare taps over 5 × 5 texels;
-// 2 high: his sixteen over 7 × 7; a view with coarser texels than its reference takes his smaller kernel nearest that
-// width in the world, so the softness holds across cascades and tiles),
+// quality (0 low: Castaño's four weighted bilinear compare taps over 3 × 3 texels; 1 medium: his nine over 5 × 5; 2 high:
+// his sixteen over 7 × 7; a view with coarser texels than its reference takes his smaller kernel nearest that width in
+// the world, so the softness holds across cascades and tiles),
 // each tap kept a texel inside the view's tile so a neighbouring tile never bleeds in. A sun cascade
 // with automatic bias compares each tap against the receiver's plane, from the position's change across the pixel
-// (\`dPdx\`, \`dPdy\`, taken where control flow is uniform); low quality then compares four texel centres, as one
-// bilinear comparison takes one depth.
+// (\`dPdx\`, \`dPdy\`, taken where control flow is uniform).
 float hapticShadowTap(vec4 tile, vec2 texel, float depth) {
   return textureLod(hapticShadowAtlas, vec3(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), depth), 0.0);
 }
@@ -189,22 +188,12 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
   // CEL draws Contact Hardening as PCF.
   float quality = shading.y > 2.5 ? shading.y - 3.0 : shading.y;
   float lit;
-  if (quality < 0.5) {
-    if (gradient == vec2(0.0)) return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));
-    vec2 st = fract(texels - 0.5);
-    vec2 a = clamp(floor(texels - 0.5), vec2(0.0), vec2(size - 1.0)) + 0.5;
-    vec2 b = clamp(floor(texels - 0.5) + 1.0, vec2(0.0), vec2(size - 1.0)) + 0.5;
-    lit = (1.0 - st.x) * (1.0 - st.y) * hapticShadowTap(tile, a, clamp(depth + dot(gradient, a - texels), 0.0, maximum))
-      + st.x * (1.0 - st.y) * hapticShadowTap(tile, vec2(b.x, a.y), clamp(depth + dot(gradient, vec2(b.x, a.y) - texels), 0.0, maximum))
-      + (1.0 - st.x) * st.y * hapticShadowTap(tile, vec2(a.x, b.y), clamp(depth + dot(gradient, vec2(a.x, b.y) - texels), 0.0, maximum))
-      + st.x * st.y * hapticShadowTap(tile, b, clamp(depth + dot(gradient, b - texels), 0.0, maximum));
-    return mix(shading.x, 1.0, lit);
-  }
   // Castaño's exact kernels: 3 × 3 texels (four bilinear compare taps), 5 × 5 (nine) or 7 × 7 (sixteen), their positions
   // and weights from the position within its texel. High quality aims at 7 × 7 texels of the reference view (the first
   // cascade, a local light's requested size), medium at 5 × 5, and a view with coarser texels (its record's eighth vector:
-  // the reference texel over its own, \`shadowKernelRatio\`) takes the kernel nearest that width in the world.
-  float texelsWide = (quality < 1.5 ? 5.0 : 7.0) * hapticShadowViews[base + 7].x;
+  // the reference texel over its own, \`shadowKernelRatio\`) takes the kernel nearest that width in the world. Low
+  // quality always takes 3 × 3: one bilinear tap steps with the texels wherever a texel spans several pixels.
+  float texelsWide = quality < 0.5 ? 3.0 : (quality < 1.5 ? 5.0 : 7.0) * hapticShadowViews[base + 7].x;
   vec2 st = fract(texels + 0.5);
   vec2 corner = floor(texels + 0.5) - 0.5;
   if (texelsWide < 4.0) {
@@ -390,18 +379,7 @@ ${surface ? `  var gradient = vec2f(0.0);
   // CEL draws Contact Hardening as PCF.
   let quality = select(shading.y, shading.y - 3.0, shading.y > 2.5);
   var lit: f32;
-  if (quality < 0.5) {
-    if (all(gradient == vec2f(0.0))) { return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth)); }
-    let st = fract(texels - 0.5);
-    let a = clamp(floor(texels - 0.5), vec2f(0.0), vec2f(size - 1.0)) + 0.5;
-    let b = clamp(floor(texels - 0.5) + 1.0, vec2f(0.0), vec2f(size - 1.0)) + 0.5;
-    lit = (1.0 - st.x) * (1.0 - st.y) * hapticShadowTap(tile, a, clamp(depth + dot(gradient, a - texels), 0.0, maximum))
-      + st.x * (1.0 - st.y) * hapticShadowTap(tile, vec2f(b.x, a.y), clamp(depth + dot(gradient, vec2f(b.x, a.y) - texels), 0.0, maximum))
-      + (1.0 - st.x) * st.y * hapticShadowTap(tile, vec2f(a.x, b.y), clamp(depth + dot(gradient, vec2f(a.x, b.y) - texels), 0.0, maximum))
-      + st.x * st.y * hapticShadowTap(tile, b, clamp(depth + dot(gradient, b - texels), 0.0, maximum));
-    return mix(shading.x, 1.0, lit);
-  }
-  let texelsWide = select(7.0, 5.0, quality < 1.5) * HapticLights.hapticShadowViews[base + 7].x;
+  let texelsWide = select(select(7.0, 5.0, quality < 1.5) * HapticLights.hapticShadowViews[base + 7].x, 3.0, quality < 0.5);
   let st = fract(texels + 0.5);
   let corner = floor(texels + 0.5) - 0.5;
   if (texelsWide < 4.0) {

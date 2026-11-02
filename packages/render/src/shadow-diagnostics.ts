@@ -240,7 +240,7 @@ export function captureShadowDiagnostics(
               receiverCorrection: receiverPlane ? { method: "pcf-receiver-plane" } : null,
               // Per shaded pixel, per view (cascade or tile) as last drawn: the kernel each view filters with.
               textureFetches: generator.usePercentageCloserFiltering && (generator instanceof AtlasShadowGenerator || generator instanceof AtlasCascadedShadowGenerator)
-                ? shadowViewTexelRatios(generator).map((ratio) => shadowFilterFetches(quality, ratio, receiverPlane))
+                ? shadowViewTexelRatios(generator).map((ratio) => shadowFilterFetches(quality, ratio))
                 : null,
               // For CSM these scalars may be restored after drawing; never label
               // them as the value that was used by every cascade.
