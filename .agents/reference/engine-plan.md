@@ -138,7 +138,7 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 - Active camera: script **Possess Camera** > valid scene **Default Camera** (stored as actor + component ids) > a camera's `attemptPossessViewTarget` > the default Play camera. Never silently pick the first CameraComponent ([runtime-camera.ts](../../packages/runtime/src/runtime-camera.ts)).
 - Lens aspect is the buffer drawn (`applyAuthoredCameraLens`); a 0×0 buffer falls back to 16:9; orthographic half-width = half-height × live aspect. Never stretch with `object-fit: fill`; shared-Engine Play sizes with `setSize`, not `engine.resize()`.
 - 2D game cameras are orthographic looking +Z; pixel-perfect snapping applies to the game camera only.
-- New scene/component keys are additive and normalize to defaults; bump a schema version only if old documents would mis-parse.
+- New scene/component keys normalize to defaults. Before the first release the format changes in place, with no version bump ([schema versioning](#schema-versioning)).
 - Out of scope: shadowed area lights, follow/virtual camera rigs, extra viewports, camera stacking.
 
 ### Audio
@@ -158,7 +158,7 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 - Basic Particle Emitter (module stack): `GPUParticleSystem` where supported, else CPU `ParticleSystem` capped at 512. Particle Graph: own IR, CPU-only in Babylon 9.29, Compiler Results warning above 512; documents never store a backend. Particle System: up to 8 slots of either kind.
 - The look is a particle-domain Material; emitters have no Texture field. A missing Material skips the emitter with `particle.missing_material`; no default Material ships.
 - Units are seconds (`updateSpeed = 1/60`). Blend and billboard modes map to Babylon constants by name.
-- Header versions follow [schema versioning](#schema-versioning): a normalizer may fill the default of a new optional field; any other payload change raises the version and adds a migration step.
+- Header versions follow [schema versioning](#schema-versioning): before the first release payloads change in place; after it, a normalizer may fill the default of a new optional field and any other payload change raises the version and adds a migration step.
 
 ## Asset system
 
@@ -184,10 +184,11 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 
 ### Schema versioning
 
-- Every header carries `version`; each type owns ordered N → N+1 migration steps applied on load.
-- Migrations are on from the first release. `RELEASED_VERSIONS` in `packages/assets/src/migration.ts` records the version each type was released at, and every released version stays readable: a format change raises the type's current version and adds a step from the previous one to `MIGRATIONS`. A type added later joins `RELEASED_VERSIONS` at its first version.
+- Every header carries `version`; each type can own ordered N → N+1 migration steps applied on load. None exist yet.
+- Haptic is not released yet: formats change in place. Do not raise versions, add migration steps or keep readers for old data; projects made with an earlier build are not expected to open.
+- From the first release, `RELEASED_VERSIONS` in `packages/assets/src/migration.ts` is set to each type's version at that release, and every released version stays readable: a format change raises the type's current version and adds a step from the previous one to `MIGRATIONS`, and a normalizer may fill the default of a new optional field without one. Until then its values equal the current versions. A type added later joins `RELEASED_VERSIONS` at its first version.
 - Each step is tested with a committed golden of the version it reads (`packages/assets/src/__fixtures__/migrations/<Type>-v<N>.hasset`, written before the format changes); `migration.test.ts` fails without it.
-- Versions older than the release are refused as "unsupported old format"; newer versions are refused as "made with a newer engine version". Never silently accept, upgrade or drop fields.
+- Versions older than the oldest readable one are refused as "unsupported old format"; newer versions are refused as "made with a newer engine version". Never silently accept, upgrade or drop fields.
 - Migration prompts once and never rewrites untouched files without saying so.
 
 ### Texture compression decision
