@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   clampRenderResolution,
   fitContainedRect,
+  fitWholeMultipleRect,
+  pixelatedUpscaling,
   playFramebufferSize,
+  presentedFramebufferStyle,
 } from "./play-preview-aspect";
 
 describe("fitContainedRect", () => {
@@ -84,5 +87,31 @@ describe("clampRenderResolution", () => {
     expect(clampRenderResolution(0)).toBe(1);
     expect(clampRenderResolution(1920.4)).toBe(1920);
     expect(clampRenderResolution(20_000)).toBe(8192);
+  });
+});
+
+describe("pixelated upscaling", () => {
+  it("fits the largest whole multiple of the frame in device pixels", () => {
+    // 1366 x 768 CSS pixels at 1x: x4 of 320 x 180.
+    expect(fitWholeMultipleRect(1366, 768, 320, 180)).toEqual({ width: 1280, height: 720 });
+    // An iPad's 1180 x 820 CSS pixels at 2x are 2360 x 1640 device pixels: x7 is 2240 x 1260, 1120 x 630 CSS pixels.
+    expect(fitWholeMultipleRect(1180, 820, 320, 180, 2)).toEqual({ width: 1120, height: 630 });
+    // Smaller than the frame: fitted instead.
+    expect(fitWholeMultipleRect(200, 200, 320, 180)).toEqual(fitContainedRect(200, 200, 320, 180));
+    expect(fitWholeMultipleRect(0, 768, 320, 180)).toEqual({ width: 0, height: 0 });
+  });
+
+  it("applies only with Custom Resolution, Black Bars and Pixelated", () => {
+    const render = { customResolution: true, blackBars: true, upscaling: "pixelated" as const };
+    expect([
+      pixelatedUpscaling(render),
+      pixelatedUpscaling({ ...render, blackBars: false }),
+      pixelatedUpscaling({ ...render, customResolution: false }),
+      pixelatedUpscaling({ ...render, upscaling: "smooth" }),
+    ]).toEqual([true, false, false, false]);
+    expect(presentedFramebufferStyle(render, { width: 320, height: 180 }, { width: 1366, height: 768 }))
+      .toEqual({ width: 1280, height: 720, imageRendering: "pixelated" });
+    expect(presentedFramebufferStyle({ ...render, upscaling: "smooth" }, { width: 320, height: 180 }, { width: 1366, height: 768 }))
+      .toEqual({ width: 1365, height: 768, imageRendering: "" });
   });
 });

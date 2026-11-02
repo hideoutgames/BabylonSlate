@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
 import { createDefaultPluginSettings, type PluginDescriptor } from "@haptic/assets";
-import { defaultExportPreset } from "@haptic/core";
+import { createEmptyProject, defaultExportPreset } from "@haptic/core";
 import { createAppSettingsStore } from "@haptic/vfs";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -623,6 +623,28 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-width")).toBeTruthy();
     expect(screen.getByTestId("setting-render-height")).toBeTruthy();
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
+  });
+
+  it("offers Upscaling only with Custom Resolution and Black Bars, and stages Pixelated until Done", async () => {
+    const openResolution = () => {
+      fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+      fireEvent.click(screen.getByRole("button", { name: "Resolution" }));
+    };
+    const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    openResolution();
+    expect(screen.queryByTestId("setting-render-upscaling")).toBeNull();
+    lastProjectRender.current = { ...createEmptyProject("Demo").settings.render, customResolution: true, blackBars: true };
+    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" key="bars" />);
+    openResolution();
+    expect(screen.getByTestId("setting-render-upscaling").textContent).toContain("Smooth");
+    fireEvent.click(screen.getByTestId("setting-render-upscaling"));
+    const option = await screen.findByRole("option", { name: "Pixelated" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    await waitFor(() => expect(screen.getByTestId("setting-render-upscaling").textContent).toContain("Pixelated"));
+    expect(updateProjectSettings).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(lastProjectRender.current).toMatchObject({ customResolution: true, blackBars: true, upscaling: "pixelated" });
   });
 
   it("stages independent pipeline preferences until Done", async () => {

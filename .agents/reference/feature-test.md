@@ -211,6 +211,7 @@ It then plays each `FEATURE_TEST_CHECK_SCENES` scene for 180 ticks (three second
 A feature that cannot be showcased is recorded here with its reason; never skip it silently or weaken the gate.
 
 - Console `quit`: it ends the Play session, so the starter's console workload never runs it.
+- Upscaling Pixelated: it needs Black Bars, and Feature Test fills the window (Black Bars off) so its views stay comparable; the layout tests cover it.
 - Pixel-Perfect Mode and Nearest Texture Filtering: project-wide switches that would snap the game camera and resample every Feature Test texture, 3D zones included, so the starter leaves both off; `e2e/nearest-textures.spec.ts` and the settings tests cover them.
 - Skinned Skeletons and retargeted Animations: the repository has no skinned model (the Mannequin is a hierarchy rig, the door a node animation).
 - MSDF font atlases: none exists; text uses the facetype and Onest source Fonts.

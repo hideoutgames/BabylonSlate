@@ -21,6 +21,22 @@ function stubClientSize(
   });
 }
 
+describe("pixelated upscaling in Play", () => {
+  it("shows the locked design size at a whole multiple, nearest-neighbour, and clears it when filling", () => {
+    const overlay = document.createElement("div");
+    const canvas = document.createElement("canvas");
+    overlay.append(canvas);
+    document.body.append(overlay);
+    stubClientSize(overlay, 1366, 768);
+    const render = { customResolution: true, width: 320, height: 180, blackBars: true, upscaling: "pixelated" as const };
+    applyPlayPreviewCanvasLayout({ overlay, canvas, followSystem: true, aspectWidth: 16, aspectHeight: 9, render });
+    expect([canvas.style.width, canvas.style.height, canvas.style.imageRendering]).toEqual(["1280px", "720px", "pixelated"]);
+    applyPlayPreviewCanvasLayout({ overlay, canvas, followSystem: true, aspectWidth: 16, aspectHeight: 9,
+      render: { ...render, blackBars: false } });
+    expect(canvas.style.imageRendering).toBe("");
+  });
+});
+
 describe("fitContainedRect", () => {
   it("fills a matching 16:9 container", () => {
     expect(fitContainedRect(1920, 1080, 16, 9)).toEqual({

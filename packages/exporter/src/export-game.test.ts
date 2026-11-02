@@ -168,6 +168,7 @@ describe("exportGame", () => {
         width: 1280,
         height: 720,
         blackBars: true,
+        upscaling: "pixelated",
         water: { blendDistance: 24 },
       },
       scripts: [],
@@ -196,6 +197,7 @@ describe("exportGame", () => {
       width: 1280,
       height: 720,
       blackBars: true,
+      upscaling: "pixelated",
       effects: DEFAULT_RENDER_EFFECTS,
       water: { blendDistance: 24 },
     });

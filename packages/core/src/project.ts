@@ -134,7 +134,15 @@ export interface RenderProjectSettings {
    * (never CSS stretch).
    */
   blackBars: boolean;
+  /**
+   * How a locked design size reaches the screen: `smooth` fits it to the window with filtering; `pixelated` shows it at
+   * the largest whole multiple that fits, nearest-neighbour (`fitWholeMultipleRect`). Only with `customResolution` and
+   * `blackBars` (`pixelatedUpscaling`).
+   */
+  upscaling: RenderUpscaling;
 }
+
+export type RenderUpscaling = "smooth" | "pixelated";
 
 export const DEFAULT_RENDER_WIDTH = 1920;
 export const DEFAULT_RENDER_HEIGHT = 1080;
@@ -153,6 +161,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
   width: DEFAULT_RENDER_WIDTH,
   height: DEFAULT_RENDER_HEIGHT,
   blackBars: false,
+  upscaling: "smooth",
 };
 
 /**
@@ -627,6 +636,7 @@ export function normalizeRenderProjectSettings(input: unknown): RenderProjectSet
     width: normalizePositiveInt(value?.width, DEFAULT_RENDER_WIDTH),
     height: normalizePositiveInt(value?.height, DEFAULT_RENDER_HEIGHT),
     blackBars: value?.blackBars === true,
+    upscaling: value?.upscaling === "pixelated" ? "pixelated" : "smooth",
   };
 }
 

@@ -27,6 +27,7 @@ const RENDERING_SECTION_PREFIXES: readonly (readonly [string, RenderingSectionId
   ["setting-render-width", "resolution"],
   ["setting-render-height", "resolution"],
   ["setting-render-black-bars", "resolution"],
+  ["setting-render-upscaling", "resolution"],
   ["setting-play-", "playPreview"],
   ["setting-water-", "water"],
 ];
@@ -163,6 +164,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Render Width", "setting-render-width"],
   ["rendering", "Render Height", "setting-render-height"],
   ["rendering", "Black Bars", "setting-render-black-bars"],
+  ["rendering", "Upscaling", "setting-render-upscaling"],
   ["textures", "Texture Policy"],
   ["textures", "Retry Texture Encoding", "retry-texture-encoding"],
   ["plugins", "Show Plugin Content", "settings-show-plugin-content"],

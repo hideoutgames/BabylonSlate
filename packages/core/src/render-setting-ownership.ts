@@ -75,6 +75,7 @@ export const PROJECT_RENDER_SETTING_OWNERS = {
   width: "independent",
   height: "independent",
   blackBars: "independent",
+  upscaling: "independent",
 } as const satisfies Record<
   keyof RenderProjectSettings,
   QualityGroup | "scalability" | "independent"
