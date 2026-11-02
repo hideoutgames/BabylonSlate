@@ -2,21 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
 import { guidForPath } from "./material-graph";
 import { saveAllIfEnabled } from "./save-all";
-
-async function viewportPostProcessPassCount(
-  page: Page,
-): Promise<number | null> {
-  return page.evaluate(
-    () =>
-      (
-        globalThis as {
-          __hapticViewportTest?: {
-            postProcessPassCount: () => number | null;
-          };
-        }
-      ).__hapticViewportTest?.postProcessPassCount() ?? null,
-  );
-}
+import { viewportPostProcessPassCount } from "./post-process-passes";
 
 async function viewportHardwareScalingLevel(
   page: Page,
