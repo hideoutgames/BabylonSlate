@@ -1,7 +1,7 @@
 import { normalizeWaterDefinition, type CollisionTriangleMesh } from "@haptic/core";
 import { parseAnimGraphDocument } from "@haptic/anim-graph";
 import { parseBehaviourTreeDocument, parseBlackboardDocument } from "@haptic/behaviour-tree";
-import { normalizeModelPayload, normalizeTilemapPayload, normalizeTilesetPayload, parseSpriteAnimationPayload, type SpritePayload } from "@haptic/assets";
+import { normalizeModelPayload, normalizeTilemapPayload, normalizeTilesetPayload, parseSpriteAnimationPayload, parseSpritePayload } from "@haptic/assets";
 import type { ControlMessage, CookedCollisionMeshEntry } from "@haptic/bridge";
 import type { RuntimeDriver } from "./driver";
 
@@ -26,10 +26,8 @@ export async function applyRuntimeSourceControl(runtime: RuntimeDriver, control:
       runtime.registerTileContent({ tilemaps: new Map(control.tilemaps.map(entry => [entry.guid, normalizeTilemapPayload(entry.document)])), tilesets: new Map(control.tilesets.map(entry => [entry.guid, normalizeTilesetPayload(entry.document)])), pixelsPerUnit: control.pixelsPerUnit });
       return true;
     case "loadSprites":
-      runtime.registerSpriteContent({ sprites: new Map(control.sprites.flatMap(entry => {
-        const document = entry.document as Partial<SpritePayload> | null;
-        return document && Array.isArray(document.frames) && Array.isArray(document.clips) ? [[entry.guid, document as SpritePayload] as const] : [];
-      })), spriteAnimations: new Map(control.spriteAnimations.map(entry => [entry.guid, parseSpriteAnimationPayload(entry.document)])), pixelsPerUnit: control.pixelsPerUnit });
+      runtime.registerSpriteContent({ sprites: new Map(control.sprites.flatMap(entry =>
+        entry.document && typeof entry.document === "object" ? [[entry.guid, parseSpritePayload(entry.document)] as const] : [])), spriteAnimations: new Map(control.spriteAnimations.map(entry => [entry.guid, parseSpriteAnimationPayload(entry.document)])), pixelsPerUnit: control.pixelsPerUnit });
       return true;
     case "loadModels":
       runtime.registerModelContent({ models: new Map(control.models.map(entry => [entry.guid, normalizeModelPayload(entry.document)])), complexMeshes: cookedCollisionMeshMap(control.complexMeshes) });

@@ -107,9 +107,9 @@ describe("physics identities in previously duplicated scenes", () => {
       const backend = createSoftwarePhysicsBackend(kind, { x: 0, y: 0, z: 0 });
       const sync = new PhysicsWorldSync(backend);
       const sprite = createDefaultSpritePayload();
-      sprite.frames[0]!.width = 100;
-      sprite.frames[0]!.height = 100;
-      sprite.frames[0]!.collision = { x: 0, y: 0, width: 1, height: 1 };
+      sprite.width = 100;
+      sprite.height = 100;
+      sprite.collision = { x: 0, y: 0, width: 1, height: 1 };
       sync.setSpriteContent({
         sprites: { sprite },
         spriteAnimations: {},

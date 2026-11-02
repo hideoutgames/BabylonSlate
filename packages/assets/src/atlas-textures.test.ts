@@ -5,11 +5,7 @@ describe("atlasTextureGuids", () => {
   it("names the textures Tilesets, Sprites and Sprite Animations sample as atlases", () => {
     expect(atlasTextureGuids("Tileset", { textureGuid: "tiles", tileWidth: 16 })).toEqual(["tiles"]);
     expect(atlasTextureGuids("Tileset", { textureGuid: null })).toEqual([]);
-    // Every Sprite counts, including a single whole-texture frame.
-    expect(atlasTextureGuids("Sprite", {
-      textureGuid: "hero",
-      frames: [{ name: "idle", u: 0, v: 0, uSize: 1, vSize: 1, durationMs: 100, pivot: { x: 0.5, y: 0.5 } }],
-    })).toEqual(["hero"]);
+    expect(atlasTextureGuids("Sprite", { textureGuid: "hero", pixelsPerUnit: 100, pivot: { x: 0.5, y: 0.5 } })).toEqual(["hero"]);
     expect(atlasTextureGuids("Sprite", { textureGuid: "" })).toEqual([]);
     expect(atlasTextureGuids("SpriteAnimation", {
       frameDurationMs: 100,

@@ -18,7 +18,7 @@ Only existing repository files and runtime primitives are used (no generated art
 | --- | --- | --- |
 | Kenney Mannequin | `engine-content/kenney-assets/Mannequin` (Basic 3D) | Hierarchy Skeleton, 27 clips, animation, ragdoll, crowds |
 | Holiday Pack subset | `engine-content/kenney-assets/Holiday Pack` (CC0, `License.txt`, `Source.txt`) | Models, foliage, buoyancy, Automatic LOD (menorah), rigid node animation (door) |
-| Holiday colormap | `Holiday Pack/Textures/colormap.png` | Albedo Texture (KTX2 encode path), Pixel Art copy for HUD panels and an authored multi-frame Sprite |
+| Holiday colormap | `Holiday Pack/Textures/colormap.png` | Albedo Texture (KTX2 encode path) and a Pixel Art copy for HUD panels |
 | Kenney platformer art | `engine-content/kenney-assets/Platformer` (CC0, Platformer Pack Redux tilesheet and toon robot frames; `License.txt`, `Source.txt`) | `FT_2D` Tilesets, robot Sprites and Sprite Animations |
 | Skybox faces and net | `engine-content/skybox` | Skybox Texture faces, Skybox Creator source |
 | Billboards | `engine-content/billboards` | UI Textures |
@@ -215,7 +215,6 @@ A feature that cannot be showcased is recorded here with its reason; never skip 
 - Pixel-Perfect Mode and Nearest Texture Filtering: project-wide switches that would snap the game camera and resample every Feature Test texture, 3D zones included, so the starter leaves both off; `e2e/nearest-textures.spec.ts` and the settings tests cover them.
 - Skinned Skeletons and retargeted Animations: the repository has no skinned model (the Mannequin is a hierarchy rig, the door a node animation).
 - MSDF font atlases: none exists; text uses the facetype and Onest source Fonts.
-- Sprites cut from atlas sub-rects: the Sprite editor preview reads V top-down and the runtime bottom-up, so `FT_2D` Sprites use whole-frame Textures and crates stay Tilemap tiles.
 - Color grading waits for a human-supplied CC0 LUT in its slot (Kenney publishes no LUTs).
 - Project plugins (PluginSettings): the scaffold host has no plugin API, so no project plugin is authored.
 - Environment Source Texture: no `.env` or prefiltered cube exists in `engine-content`; the hub lights from its Skybox instead.

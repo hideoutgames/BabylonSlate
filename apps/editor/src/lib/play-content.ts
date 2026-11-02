@@ -11,8 +11,10 @@ import {
   type TilesetPayload,
 } from "@haptic/assets";
 import {
+  applyTexturePixelSizeToSprite,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  parseSpritePayload,
   tilemapTilesetGuids,
 } from "@haptic/assets";
 import {
@@ -162,21 +164,17 @@ export function collectAnimGraphCompileDocuments(
   }));
 }
 
-function asSpritePayload(value: unknown): SpritePayload | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as { frames?: unknown; clips?: unknown };
-  if (!Array.isArray(record.frames) || !Array.isArray(record.clips)) return null;
-  return value as SpritePayload;
-}
-
+/** Parsed Sprites for Play and the viewports, each sized from its Texture. */
 export function playSpritePayloadsFromGuids(
   guids: readonly string[],
   payloadForGuid: (guid: string) => unknown | null,
+  textureSizeForGuid: (guid: string) => { width: number; height: number } | null | undefined,
 ): Map<string, SpritePayload> {
   const map = new Map<string, SpritePayload>();
   for (const guid of guids) {
-    const payload = asSpritePayload(payloadForGuid(guid));
-    if (payload) map.set(guid, payload);
+    const document = payloadForGuid(guid);
+    if (!document || typeof document !== "object") continue;
+    map.set(guid, applyTexturePixelSizeToSprite(parseSpritePayload(document), textureSizeForGuid));
   }
   return map;
 }

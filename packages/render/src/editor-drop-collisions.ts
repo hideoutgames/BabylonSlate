@@ -3,9 +3,8 @@ import {
   convexHullMesh,
   extractGltfCollisionMesh,
   resolveMeshCollisions,
-  spriteClipFrameAt,
   spriteCollisionToBox2d,
-  DEFAULT_SPRITE_COLLISION,
+  DEFAULT_SPRITE_PIXEL_SIZE,
   tilemapCollisionChains,
 } from "@haptic/assets";
 import {
@@ -141,22 +140,13 @@ export function collisionSurfaces(
       typeof spriteGuid === "string"
         ? assets?.spritePayloads?.get(spriteGuid)
         : undefined;
-    const spriteFrame = sprite
-      ? spriteClipFrameAt(
-          sprite,
-          typeof spriteComponent?.properties.clipName === "string"
-            ? spriteComponent.properties.clipName
-            : "",
-          0,
-        )
-      : null;
     const spriteCollision =
-      worldKind === "2d" && sprite && spriteFrame
+      worldKind === "2d" && sprite
         ? spriteCollisionToBox2d({
-            collision: spriteFrame.collision ?? DEFAULT_SPRITE_COLLISION,
-            pivot: spriteFrame.pivot,
-            pixelWidth: spriteFrame.width ?? 100,
-            pixelHeight: spriteFrame.height ?? 100,
+            collision: sprite.collision,
+            pivot: sprite.pivot,
+            pixelWidth: sprite.width ?? DEFAULT_SPRITE_PIXEL_SIZE,
+            pixelHeight: sprite.height ?? DEFAULT_SPRITE_PIXEL_SIZE,
             pixelsPerUnit: sprite.pixelsPerUnit || assets?.pixelsPerUnit || 100,
           })
         : null;

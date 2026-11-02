@@ -123,12 +123,26 @@ describe("scene-referenced Play content", () => {
     expect(tilemapAssetGuidsFromScene(scene)).toEqual(["overworld"]);
   });
 
-  it("maps sprite guids to payloads for Play UV seeks", () => {
-    const payload = createDefaultSpritePayload();
-    const map = playSpritePayloadsFromGuids(["hero-sprite"], (guid) =>
-      guid === "hero-sprite" ? payload : null,
+  it("parses each Sprite and sizes it from its Texture, skipping missing documents", () => {
+    const documents: Record<string, unknown> = {
+      hero: { textureGuid: "hero-tex", pixelsPerUnit: 32, pivot: { x: 0.5, y: 1 } },
+      ghost: { textureGuid: "unsized-tex" },
+    };
+    const map = playSpritePayloadsFromGuids(
+      ["hero", "ghost", "missing"],
+      (guid) => documents[guid] ?? null,
+      (textureGuid) => (textureGuid === "hero-tex" ? { width: 64, height: 48 } : null),
     );
-    expect(map.get("hero-sprite")).toEqual(payload);
+    expect([...map.keys()]).toEqual(["hero", "ghost"]);
+    expect(map.get("hero")).toEqual({
+      textureGuid: "hero-tex",
+      pixelsPerUnit: 32,
+      pivot: { x: 0.5, y: 1 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 64,
+      height: 48,
+    });
+    expect(map.get("ghost")?.width).toBeUndefined();
   });
 
   it("builds a worker loadSprites control from sprite and Sprite Animation payloads", () => {

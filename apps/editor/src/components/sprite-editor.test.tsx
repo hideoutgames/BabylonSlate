@@ -75,6 +75,29 @@ describe("SpriteEditor", () => {
     );
   });
 
+  it("edits the Sprite's own pivot and collision box and has no frame settings", () => {
+    const onChange = vi.fn();
+    render(
+      <SpriteEditor
+        payload={{ ...createDefaultSpritePayload(), textureGuid: "tex-1" } as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.queryByTestId("property-row-frame-duration")).toBeNull();
+    expect(screen.queryByText("Frame Duration")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("property-pivot-y"), { target: { value: "1" } });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pivot: { x: 0.5, y: 1 } }),
+      "sprite:pivot",
+    );
+    fireEvent.change(screen.getByTestId("property-collision-w"), { target: { value: "0.5" } });
+    const [next] = onChange.mock.lastCall!;
+    expect(next).toMatchObject({ collision: { x: 0, y: 0, width: 0.5, height: 1 } });
+    expect(next).not.toHaveProperty("frames");
+    expect(next).not.toHaveProperty("clips");
+  });
+
   it("shows the Texture asset display name instead of the guid", () => {
     const payload = {
       ...createDefaultSpritePayload(),
