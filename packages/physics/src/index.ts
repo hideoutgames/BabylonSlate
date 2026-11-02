@@ -41,6 +41,7 @@ export {
   createSoftwarePhysicsBackend,
   loadedBackendModules,
   loadRapier2DBackendFactory,
+  preloadPhysicsEngine,
   type CreatePhysicsBackendOptions,
 } from "./create-backend";
 // Types only, so the engines stay in the chunks `createPhysicsBackend` loads lazily; tests that need the classes

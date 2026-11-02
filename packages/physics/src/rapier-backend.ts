@@ -136,6 +136,22 @@ type RapierApi = {
   Polyline: new (vertices: Float32Array, indices?: Uint32Array) => unknown;
 };
 
+let rapierInitialization: Promise<RapierApi> | null = null;
+
+/** Rapier initializes once per realm; concurrent callers share the one in flight, and a failure is retried by the next. */
+function initializedRapier(): Promise<RapierApi> {
+  rapierInitialization ??= (async () => {
+    const mod = await import("@dimforge/rapier2d-deterministic-compat");
+    const RAPIER = (mod.default ?? mod) as unknown as RapierApi;
+    await RAPIER.init();
+    return RAPIER;
+  })().catch((error: unknown) => {
+    rapierInitialization = null;
+    throw error;
+  });
+  return rapierInitialization;
+}
+
 type RapierBodyDesc = {
   setTranslation(x: number, y: number): RapierBodyDesc;
   setRotation(angle: number): RapierBodyDesc;
@@ -282,11 +298,14 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     return (await Rapier2DPhysicsBackend.createFactory())(options.gravity);
   }
 
+  /** Load and initialize Rapier, which `createFactory` reuses once initialized. */
+  static async preload(): Promise<void> {
+    await initializedRapier();
+  }
+
   /** Initialize Rapier once; the factory then creates independent worlds synchronously. */
   static async createFactory(): Promise<(gravity: Vec3) => Rapier2DPhysicsBackend> {
-    const mod = await import("@dimforge/rapier2d-deterministic-compat");
-    const RAPIER = (mod.default ?? mod) as unknown as RapierApi;
-    await RAPIER.init();
+    const RAPIER = await initializedRapier();
     return (gravity) => new Rapier2DPhysicsBackend(RAPIER, gravity);
   }
 

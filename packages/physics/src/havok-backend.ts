@@ -148,6 +148,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     });
   }
 
+  /** Load and compile the Havok module `create` uses, without creating a world. */
+  static async preload(havokWasmUrl?: string): Promise<void> {
+    await loadHavokModule(havokWasmUrl);
+  }
+
   static async create(
     options: PhysicsBackendOptions,
   ): Promise<HavokPhysicsBackend> {
