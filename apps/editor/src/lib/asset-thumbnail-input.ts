@@ -21,7 +21,7 @@ import {
   type MaterialInstanceDocument,
 } from "@haptic/shader-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
-import { texturePixelSizesFromHeaders } from "./collect-gpu-texture-bytes";
+import { texturePixelSizeFromHeader, texturePixelSizesFromHeaders } from "./collect-gpu-texture-bytes";
 import {
   materialAssetGuidsFromScene,
   modelAssetGuidsFromScene,
@@ -238,6 +238,7 @@ export async function prepareAssetThumbnailInput(
   const spritePayloads = playSpritePayloadsFromGuids(
     [...spriteDocuments.keys()],
     (guid) => spriteDocuments.get(guid) ?? null,
+    (textureGuid) => texturePixelSizeFromHeader(registry.getByGuid(textureGuid)),
   );
   for (const sprite of spritePayloads.values()) {
     if (sprite.textureGuid) textureGuids.add(sprite.textureGuid);

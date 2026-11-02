@@ -20,6 +20,7 @@ import type { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLaye
 import { SELECTION_COLOR } from "./selection-style";
 import type { RenderScheduler } from "./render-scheduler";
 import { overlayMinTargetWorldSize } from "./overlay-touch-target";
+import { linkedAxisScale } from "./linked-axis-scale";
 
 export const OVERLAY_BOX_HANDLES = [
   "n",
@@ -64,6 +65,11 @@ export interface OverlayBoxDragStart {
   transform: OverlayBoxTransform;
   /** Pointer in parent XY (world XY when unparented). */
   pointer: { x: number; y: number };
+  /**
+   * Scale is linked: an edge scales the other axis by the same factor about
+   * the box's centre on that axis, and a corner keeps the aspect ratio.
+   */
+  linked?: boolean;
 }
 
 /** Floor for overlay resize so scale cannot pass through zero. */
@@ -127,10 +133,14 @@ function applyOverlayBoxResize(
   const minW = OVERLAY_BOX_MIN_SCALE * Math.max(localW, OVERLAY_BOX_MIN_SCALE);
   const minH = OVERLAY_BOX_MIN_SCALE * Math.max(localH, OVERLAY_BOX_MIN_SCALE);
 
-  let west = sx * bounds.minX;
-  let east = sx * bounds.maxX;
-  let south = sy * bounds.minY;
-  let north = sy * bounds.maxY;
+  const west0 = sx * bounds.minX;
+  const east0 = sx * bounds.maxX;
+  const south0 = sy * bounds.minY;
+  const north0 = sy * bounds.maxY;
+  let west = west0;
+  let east = east0;
+  let south = south0;
+  let north = north0;
   const [bx, by] = toBoxSpace(pointer.x, pointer.y, transform.position, theta);
 
   const moveE = handle.includes("e");
@@ -146,15 +156,42 @@ function applyOverlayBoxResize(
   let nextSy = localH > 0 ? (north - south) / localH : sy;
   nextSx = Math.max(OVERLAY_BOX_MIN_SCALE, nextSx);
   nextSy = Math.max(OVERLAY_BOX_MIN_SCALE, nextSy);
-  if (snap?.enabled) {
+  const linked = start.linked === true;
+  if (linked) {
+    const horizontal = moveE || moveW;
+    const vertical = moveN || moveS;
+    // A corner keeps the aspect ratio: the pointer is projected onto the
+    // diagonal from the fixed corner, and X carries the factor.
+    if (horizontal && vertical && sx !== 0) {
+      const anchorX = moveE ? west0 : east0;
+      const anchorY = moveN ? south0 : north0;
+      const diagX = (moveE ? east0 : west0) - anchorX;
+      const diagY = (moveN ? north0 : south0) - anchorY;
+      const length2 = diagX * diagX + diagY * diagY;
+      if (length2 > 0) {
+        const factor = ((bx - anchorX) * diagX + (by - anchorY) * diagY) / length2;
+        nextSx = Math.max(OVERLAY_BOX_MIN_SCALE, sx * factor);
+      }
+    }
+    // The dragged axis (X for a corner) snaps; the other follows it.
+    const axis = horizontal ? 0 : 1;
+    let value = axis === 0 ? nextSx : nextSy;
+    if (snap?.enabled) value = Math.max(OVERLAY_BOX_MIN_SCALE, snapValue(value, snap.scale));
+    [nextSx, nextSy] = linkedAxisScale([sx, sy, sz], axis, value, "2d");
+    nextSx = Math.max(OVERLAY_BOX_MIN_SCALE, nextSx);
+    nextSy = Math.max(OVERLAY_BOX_MIN_SCALE, nextSy);
+  } else if (snap?.enabled) {
     nextSx = Math.max(OVERLAY_BOX_MIN_SCALE, snapValue(nextSx, snap.scale));
     nextSy = Math.max(OVERLAY_BOX_MIN_SCALE, snapValue(nextSy, snap.scale));
   }
 
   // Only the west/south edges feed the new position; the east/north edges
-  // follow from the snapped scale.
-  if (moveW && !moveE) west = east - nextSx * localW;
-  if (moveS && !moveN) south = north - nextSy * localH;
+  // follow from the snapped scale. An axis no handle moves grows about its
+  // centre while linked.
+  if (moveW && !moveE) west = east0 - nextSx * localW;
+  else if (linked && !moveE) west = (west0 + east0) / 2 - (nextSx * localW) / 2;
+  if (moveS && !moveN) south = north0 - nextSy * localH;
+  else if (linked && !moveN) south = (south0 + north0) / 2 - (nextSy * localH) / 2;
 
   const dx = west - nextSx * bounds.minX;
   const dy = south - nextSy * bounds.minY;
@@ -558,6 +595,8 @@ export interface OverlayTransformBox {
   attachedMesh: () => AbstractMesh | null;
   isDragging: () => boolean;
   setSnap: (snap: OverlayBoxSnap) => void;
+  /** Linked Scale keeps the box's proportions (`OverlayBoxDragStart.linked`); read when a drag starts. */
+  setLinkedScale: (linked: boolean) => void;
   dispose: () => void;
 }
 
@@ -640,6 +679,7 @@ export function createOverlayTransformBox(
   let attached: AbstractMesh | null = null;
   let visuals: AbstractMesh[] = [];
   let snap: OverlayBoxSnap | undefined;
+  let linkedScale = false;
   let session: OverlayBoxDragStart | null = null;
   let dragging = false;
 
@@ -742,6 +782,7 @@ export function createOverlayTransformBox(
       bounds: overlayBoxLocalBounds(attached, visuals),
       transform: readOverlayBoxTransform(attached),
       pointer: pointerFrom(world),
+      linked: linkedScale,
     };
     dragging = true;
     options.onDragStart?.();
@@ -807,6 +848,9 @@ export function createOverlayTransformBox(
     isDragging: () => dragging,
     setSnap: (next) => {
       snap = next.enabled ? next : undefined;
+    },
+    setLinkedScale: (next) => {
+      linkedScale = next;
     },
     dispose: () => {
       if (observer) util.onBeforeRenderObservable.remove(observer);

@@ -29,17 +29,7 @@ describe("sprite quad", () => {
   });
 
   it("places a sprite at world +X to the right of the origin", () => {
-    const origin = createSpriteQuad(scene, "origin", {
-      name: "idle",
-      u: 0,
-      v: 0,
-      uSize: 1,
-      vSize: 1,
-      durationMs: 100,
-      pivot: { x: 0.5, y: 0.5 },
-      width: 100,
-      height: 100,
-    });
+    const origin = createSpriteQuad(scene, "origin", { pivot: { x: 0.5, y: 0.5 }, width: 100, height: 100 });
     const right = origin.clone("right")!;
     right.position = new Vector3(1, 0, 0);
     scene.updateTransformMatrix();
@@ -52,7 +42,6 @@ describe("sprite quad", () => {
 
   it("places the frame pivot on the mesh origin, matching the sprite collider", () => {
     const frame = {
-      name: "idle", u: 0, v: 0, uSize: 1, vSize: 1, durationMs: 100,
       // Bottom-center: texture v grows downward, so the quad sits above the origin.
       pivot: { x: 0.5, y: 1 }, width: 100, height: 200,
     };

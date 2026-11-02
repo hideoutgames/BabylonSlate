@@ -8,13 +8,13 @@ Sprite and Sprite Animation assets and `SpriteComponent`, rendered as UV-baked q
 - Thin instances and merged static batching are out of scope until measured.
 - Sprites default to alpha **test** (opaque pass). `alphaIndex` from [`sorting.ts`](../../../packages/render/src/sorting.ts) orders draws and does not opt into blending. A fractional `visibility` switches the owned material to test + blend; only an `alwaysBlend` binding uses plain blend. Changing the default to blend needs an on-device fill-rate measurement first.
 - Sampling is pixel-art: NEAREST, no mips, anisotropy 1, through a dedicated `ResourceCache` sampling wrapper (`PIXEL_ART_TEXTURE_SAMPLING`) so a mipped 3D load of the same texture cannot bleed. Sprite textures stay uncompressed.
-- Sprites are made with New Asset and reference an imported Texture atlas; there is no atlas-JSON or loose-frame importer.
+- A Sprite is one whole Texture: no frames, clips or atlas sub-rects. Moving images are Sprite Animation assets (one Texture per frame). Sprites are made with New Asset; there is no atlas-JSON or loose-frame importer.
 
 ## Ownership
 
 | Area | Source |
 | --- | --- |
-| Sprite payload, `spriteClipFrameAt`, `spriteCollisionToBox2d` | [`packages/assets/src/sprite-payload.ts`](../../../packages/assets/src/sprite-payload.ts) |
+| Sprite payload (`parseSpritePayload`, `applyTexturePixelSizeToSprite`, `spriteWorldSize`), `spriteCollisionToBox2d` | [`packages/assets/src/sprite-payload.ts`](../../../packages/assets/src/sprite-payload.ts) |
 | Sprite Animation payload, `hydrateSpriteAnimationPixelSizes` | [`packages/assets/src/sprite-animation-payload.ts`](../../../packages/assets/src/sprite-animation-payload.ts) |
 | Quad builder (`createSpriteQuad`) | [`packages/render/src/sprite-quad.ts`](../../../packages/render/src/sprite-quad.ts) |
 | Animation frame apply (`applySpriteAnimFrame`, `applySpriteAnimationAssetFrame`) | [`packages/render/src/anim-apply.ts`](../../../packages/render/src/anim-apply.ts) |
@@ -26,12 +26,13 @@ Sprite and Sprite Animation assets and `SpriteComponent`, rendered as UV-baked q
 
 | Field | Role |
 | --- | --- |
-| `textureGuid` | Atlas texture |
-| `frames` | `{ name, u, v, uSize, vSize, durationMs, pivot, collision? }`; `collision` is a normalized AABB, default `{0,0,1,1}` |
-| `clips` | Named frame-index sequences (legacy playback; not edited in the Sprite editor) |
+| `textureGuid` | The Texture, shown whole (full UVs) |
 | `pixelsPerUnit` | Default 100 |
+| `pivot` | Normalized point on the actor origin, v down |
+| `collision` | Normalized AABB, default `{0,0,1,1}` |
+| `width` / `height` | Never authored: loaders set them from the Texture's size (`applyTexturePixelSizeToSprite`), so a re-imported Texture resizes the Sprite. Play, the viewports and thumbnails read Texture headers (`playSpritePayloadsFromGuids`); the player reads catalog sizes, then source bytes (`hydrateSpritePixelSizes`). Unknown sizes fall back to 100 px (`DEFAULT_SPRITE_PIXEL_SIZE`) |
 
-Pivot is normalized with v down; the quad is offset so the pivot sits on the actor origin, which is where `spriteCollisionToBox2d` centers the box collider.
+The quad is `width` / `height` over `pixelsPerUnit` (`spriteWorldSize`), offset so the pivot sits on the actor origin, which is where `spriteCollisionToBox2d` centers the box collider.
 
 ## Sprite Animation asset
 
@@ -39,7 +40,7 @@ Pivot is normalized with v down; the quad is offset so the pivot sits on the act
 - Effective duration = sum of per-frame durations (`durationMs` when `durationMsOverride` is true, else `frameDurationMs`).
 - Missing `width` / `height` are stamped from the Texture image (PNG, JPEG, WebP, GIF) in the editor; Play and the player fill them from catalog Texture sizes, else source bytes (`hydrateSpriteAnimationPixelSizes`).
 - Header `dependencies[]` lists frame Textures for Show References and export closure.
-- Animation Graph and Behaviour Tree **Sprite** clips pick Sprite Animation assets, not Sprite assets. Legacy Sprite guid + clip name still resolves through `spriteClipFrameAt`.
+- Animation Graph and Behaviour Tree **Sprite** clips pick Sprite Animation assets. A Sprite clip whose guid names no loaded Sprite Animation is reported once as a missing clip (`onceMissingClip`); the quad keeps what it showed and a blend overlay hides.
 
 ## Runtime and render
 
@@ -52,4 +53,4 @@ Pivot is normalized with v down; the quad is offset so the pivot sits on the act
 ## Editor
 
 - Sprite and Sprite Animation documents are DockView shells (Preview + Inspector), composed from catalog components. The Texture picker shows the asset identity (icon, name, type), never a raw guid.
-- Preview crops the frame on a checkerboard with pivot crosshair and a draggable collision AABB overlay.
+- The Sprite Preview shows the whole Texture on a checkerboard with the pivot crosshair and a draggable collision AABB overlay. The Inspector has Texture, Pixels Per Unit, Pivot and Collision.

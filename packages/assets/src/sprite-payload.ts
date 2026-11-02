@@ -1,3 +1,5 @@
+import { sniffSourceImageSize } from "./image-size";
+
 /** Normalized AABB in texture/frame space. Default is the full image. */
 export interface SpriteCollision {
   x: number;
@@ -15,94 +17,89 @@ export const DEFAULT_SPRITE_COLLISION: SpriteCollision = {
 
 export const DEFAULT_SPRITE_PIVOT = { x: 0.5, y: 0.5 } as const;
 
-export interface SpriteFrame {
-  name: string;
-  u: number;
-  v: number;
-  uSize: number;
-  vSize: number;
-  durationMs: number;
+/**
+ * One image: a Texture shown whole, its pivot and its collision box. Moving
+ * images are Sprite Animation assets.
+ */
+export interface SpritePayload {
+  textureGuid: string | null;
+  pixelsPerUnit: number;
+  /** Normalized point of the image on the actor origin; v grows downward. */
   pivot: { x: number; y: number };
-  /** Normalized AABB; omitted documents parse as the full image. */
-  collision?: SpriteCollision;
-  /** Optional pixel rect of the frame in its atlas. */
-  x?: number;
-  y?: number;
+  /** Normalized AABB; the default covers the whole image. */
+  collision: SpriteCollision;
+  /**
+   * Pixel size of the Texture. Never authored: loaders fill it from the
+   * Texture (`applyTexturePixelSizeToSprite`), and it sizes the quad.
+   */
   width?: number;
   height?: number;
 }
 
-export interface SpriteClip {
-  name: string;
-  frames: string[];
-}
-
-export interface SpritePayload {
-  textureGuid: string | null;
-  pixelsPerUnit: number;
-  frames: SpriteFrame[];
-  clips: SpriteClip[];
-}
+/** Quad size, in pixels, for a Sprite whose Texture size is not known yet. */
+export const DEFAULT_SPRITE_PIXEL_SIZE = 100;
 
 export function createDefaultSpritePayload(): SpritePayload {
   return {
     textureGuid: null,
     pixelsPerUnit: 100,
-    frames: [
-      {
-        name: "idle",
-        u: 0,
-        v: 0,
-        uSize: 1,
-        vSize: 1,
-        durationMs: 100,
-        pivot: { x: 0.5, y: 0.5 },
-        collision: { ...DEFAULT_SPRITE_COLLISION },
-      },
-    ],
-    clips: [{ name: "Idle", frames: ["idle"] }],
+    pivot: { x: DEFAULT_SPRITE_PIVOT.x, y: DEFAULT_SPRITE_PIVOT.y },
+    collision: { ...DEFAULT_SPRITE_COLLISION },
   };
 }
 
-/** Pick the clip frame at normalised time in `[0, 1]` (inclusive of the last frame). */
-export function spriteClipFrameAt(
-  payload: SpritePayload,
-  clipName: string,
-  normalisedTime: number,
-): SpriteFrame | null {
-  const named = new Map(payload.frames.map((frame) => [frame.name, frame]));
-  const clip =
-    payload.clips.find((entry) => entry.name === clipName) ?? payload.clips[0];
-  const frames = (clip?.frames ?? [])
-    .map((name) => named.get(name))
-    .filter((frame): frame is SpriteFrame => frame !== undefined);
-  const sequence = frames.length > 0 ? frames : payload.frames;
-  if (sequence.length === 0) return null;
-  const t = Number.isFinite(normalisedTime)
-    ? Math.min(1, Math.max(0, normalisedTime))
-    : 0;
-  if (t >= 1) return sequence[sequence.length - 1]!;
-  const total = sequence.reduce(
-    (sum, frame) => sum + Math.max(1, frame.durationMs),
-    0,
-  );
-  let cursor = t * total;
-  for (const frame of sequence) {
-    cursor -= Math.max(1, frame.durationMs);
-    if (cursor < 0) return frame;
-  }
-  return sequence[sequence.length - 1]!;
+function positiveFinite(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-export function spriteFrameUvs(
-  frame: SpriteFrame,
-): { u0: number; v0: number; u1: number; v1: number } {
+/** Parse a stored Sprite; missing or invalid fields take their defaults. */
+export function parseSpritePayload(value: unknown): SpritePayload {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const sprite: SpritePayload = {
+    textureGuid: typeof source.textureGuid === "string" && source.textureGuid.length > 0 ? source.textureGuid : null,
+    pixelsPerUnit: positiveFinite(source.pixelsPerUnit) ?? 100,
+    pivot: parseSpritePivot(source.pivot),
+    collision: parseSpriteCollision(source.collision),
+  };
+  const width = positiveFinite(source.width);
+  const height = positiveFinite(source.height);
+  if (width !== undefined) sprite.width = width;
+  if (height !== undefined) sprite.height = height;
+  return sprite;
+}
+
+/** World size of a Sprite's quad: its Texture's pixels over Pixels Per Unit. */
+export function spriteWorldSize(sprite: Pick<SpritePayload, "pixelsPerUnit" | "width" | "height">): { width: number; height: number } {
+  const ppu = sprite.pixelsPerUnit > 0 ? sprite.pixelsPerUnit : 100;
   return {
-    u0: frame.u,
-    v0: frame.v,
-    u1: frame.u + frame.uSize,
-    v1: frame.v + frame.vSize,
+    width: (sprite.width ?? DEFAULT_SPRITE_PIXEL_SIZE) / ppu,
+    height: (sprite.height ?? DEFAULT_SPRITE_PIXEL_SIZE) / ppu,
   };
+}
+
+/** Size a Sprite from its Texture; an unknown Texture size leaves it as it is. */
+export function applyTexturePixelSizeToSprite(
+  sprite: SpritePayload,
+  sizeForGuid: (guid: string) => { width: number; height: number } | null | undefined,
+): SpritePayload {
+  const size = sprite.textureGuid ? sizeForGuid(sprite.textureGuid) : null;
+  if (!size || (sprite.width === size.width && sprite.height === size.height)) return sprite;
+  return { ...sprite, width: size.width, height: size.height };
+}
+
+/** Fill missing Sprite pixel sizes from Texture source bytes (PNG, JPEG, WebP, GIF). */
+export function hydrateSpritePixelSizes(
+  sprites: ReadonlyMap<string, SpritePayload>,
+  textureBytes: ReadonlyMap<string, Uint8Array>,
+): Map<string, SpritePayload> {
+  const next = new Map<string, SpritePayload>();
+  for (const [guid, sprite] of sprites) {
+    next.set(guid, applyTexturePixelSizeToSprite(sprite, (textureGuid) => {
+      const bytes = textureBytes.get(textureGuid);
+      return bytes ? sniffSourceImageSize(bytes) : null;
+    }));
+  }
+  return next;
 }
 
 function clampUnit(value: number, fallback: number): number {

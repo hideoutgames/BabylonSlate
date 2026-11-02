@@ -32,6 +32,22 @@ describe("packedContentFromGame", () => {
     expect(packedContentFromGame(game).spriteAnimationPayloads.get("walk-anim")?.frames[0]).toMatchObject({ width: 64, height: 32 });
   });
 
+  it("sizes each Sprite from its Texture's catalog size, which the packed player quad and collider use", () => {
+    const game = sources([
+      { guid: "hero-tex", type: "Texture", encoding: "bytes", width: 48, height: 96 },
+      { guid: "hero", type: "Sprite", encoding: "json" },
+    ], { hero: { textureGuid: "hero-tex", pixelsPerUnit: 32, pivot: { x: 0.5, y: 1 } } });
+    game.textureBytes.set("hero-tex", new Uint8Array([0xab, 0x4b, 0x54, 0x58]));
+    expect(packedContentFromGame(game).spritePayloads.get("hero")).toEqual({
+      textureGuid: "hero-tex",
+      pixelsPerUnit: 32,
+      pivot: { x: 0.5, y: 1 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 48,
+      height: 96,
+    });
+  });
+
   it("names data type schemas after their catalog entries", () => {
     const game = sources([{ guid: "stats", type: "Structure", name: "Weapon Stats", encoding: "json" }],
       { stats: { fields: [{ name: "Power", typeId: "int" }] } });

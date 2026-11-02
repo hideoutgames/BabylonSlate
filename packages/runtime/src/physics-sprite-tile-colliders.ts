@@ -1,7 +1,6 @@
 import {
   decodeTileGid,
   spriteAnimationFrameAt,
-  spriteClipFrameAt,
   spriteCollisionToBox2d,
   tilemapLayerChains,
   tilemapTilesetGuids,
@@ -362,28 +361,11 @@ function resolveSpriteCollisionFrame(options: {
     }
   }
   if (!options.sprite) return null;
-  if (options.playback?.clipName) {
-    const clipFrame = spriteClipFrameAt(
-      options.sprite,
-      options.playback.clipName,
-      options.playback.normalisedTime,
-    );
-    if (clipFrame) {
-      return {
-        collision: clipFrame.collision ?? { x: 0, y: 0, width: 1, height: 1 },
-        pivot: clipFrame.pivot,
-        width: clipFrame.width,
-        height: clipFrame.height,
-      };
-    }
-  }
-  const fallback = options.sprite.frames[0];
-  if (!fallback) return null;
   return {
-    collision: fallback.collision ?? { x: 0, y: 0, width: 1, height: 1 },
-    pivot: fallback.pivot,
-    width: fallback.width,
-    height: fallback.height,
+    collision: options.sprite.collision,
+    pivot: options.sprite.pivot,
+    width: options.sprite.width,
+    height: options.sprite.height,
   };
 }
 
