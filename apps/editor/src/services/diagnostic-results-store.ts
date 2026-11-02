@@ -95,7 +95,10 @@ export class DiagnosticResultsStore {
     return {
       publishProfile: (profile: PerformanceProfile) => {
         if (this.session !== session) return;
-        this.update({ ...this.keepProfile(profile), active: null, busy: false, error: null });
+        // A recording that reached its duration or data budget stopped by itself: show it as Stop Recording does.
+        const endedItself = profile.stopReason === "duration" || profile.stopReason === "budget";
+        this.update({ ...this.keepProfile(profile), active: null, busy: false, error: null,
+          ...(endedItself ? { open: true, view: "summary" as const } : {}) });
       },
       publishFrame: (report: RenderFrameReport) => {
         if (this.session !== session) return;
