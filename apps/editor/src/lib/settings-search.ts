@@ -1,238 +1,328 @@
-import { EDITOR_COMMANDS } from "./editor-keybinds";
+import { EDITOR_COMMANDS, EDITOR_COMMAND_CATEGORIES } from "./editor-keybinds";
 
 export type SettingSearchField = {
   categoryId: string;
+  /** The sub-category that holds the control; choosing the result opens it. */
+  sectionId?: string;
+  sectionTitle?: string;
   label: string;
   targetId?: string;
 };
 
-/** Collapsible groups on Project Settings > Rendering. */
-export type RenderingSectionId =
-  | "scalability"
-  | "shadows"
-  | "environment"
-  | "postProcessing"
-  | "cel"
-  | "resolution"
-  | "water"
-  | "playPreview";
+type SearchRow = readonly [label: string, targetId?: string];
+type SearchSection = readonly [sectionId: string, sectionTitle: string, rows: readonly SearchRow[]];
 
-const RENDERING_SECTION_PREFIXES: readonly (readonly [string, RenderingSectionId])[] = [
-  ["quality-", "scalability"],
-  ["project-shadow-", "shadows"],
-  ["project-environment-", "environment"],
-  ["project-effects-", "postProcessing"],
-  ["project-cel-", "cel"],
-  ["setting-render-custom", "resolution"],
-  ["setting-render-width", "resolution"],
-  ["setting-render-height", "resolution"],
-  ["setting-render-black-bars", "resolution"],
-  ["setting-render-upscaling", "resolution"],
-  ["setting-play-", "playPreview"],
-  ["setting-water-", "water"],
-];
-
-/** The Rendering section that must be open for a search result's control to exist. */
-export function renderingSectionForTarget(
-  targetId: string | undefined,
-): RenderingSectionId | null {
-  if (!targetId) return null;
-  return (
-    RENDERING_SECTION_PREFIXES.find(([prefix]) => targetId.startsWith(prefix))?.[1] ?? null
-  );
+/** Keybinds sub-category id for an editor command category ("Content Browser" → "contentBrowser"). */
+export function keybindSectionId(category: string): string {
+  const [first = "", ...rest] = category.split(/\s+/);
+  return first.toLowerCase() + rest.map((word) => word[0]!.toUpperCase() + word.slice(1).toLowerCase()).join("");
 }
 
-function fields(
-  rows: readonly (readonly [string, string, string?])[],
-): SettingSearchField[] {
-  return rows.map(([categoryId, label, targetId]) => ({
-    categoryId,
-    label,
-    targetId,
-  }));
+function category(categoryId: string, sections: readonly SearchSection[]): SettingSearchField[] {
+  return sections.flatMap(([sectionId, sectionTitle, rows]) =>
+    rows.map(([label, targetId]) => ({ categoryId, sectionId, sectionTitle, label, targetId })),
+  );
 }
 
 // Search names describe the visible controls. Targets are their accessible HTML
 // IDs, so choosing a result reveals the control without changing its value.
-export const PROJECT_SETTING_FIELDS = fields([
-  ["general", "Project Name"],
-  ["general", "Version"],
-  ["general", "Touch Target Minimum"],
-  ["general", "Compile On Save", "settings-compile-on-save"],
-  ["general", "Infinite Loop Detection", "settings-infinite-loop-detection"],
-  ["general", "Loop Count", "settings-loop-count"],
-  ["general", "Garbage Collection Interval", "settings-garbage-collection-interval"],
-  ["general", "Autosave Interval", "settings-autosave-interval"],
-  ["general", "Editor Utility Objects"],
-  ["saveGames", "Default Definition", "settings-save-definition"],
-  ["saveGames", "Default Slot", "settings-save-slot"],
-  ["saveGames", "Default Profile", "settings-save-profile"],
-  ["saveGames", "Wipe Preview Saves On Play", "settings-save-wipe-on-play"],
-  ["saveGames", "Preview Saves Import Export Reset"],
-  ["game", "Startup Scene", "settings-startup-scene"],
-  ["game", "Game Instance", "settings-game-instance"],
-  ["game", "Pixels Per Unit", "pixels-per-unit"],
-  ["game", "Pixel Perfect", "settings-pixel-perfect"],
-  ["game", "Nearest Texture Filtering", "settings-nearest-textures"],
-  ["game", "Sorting Layers"],
-  ["physics", "Collision Layers"],
-  ["physics", "Collision Presets", "settings-collision-presets"],
-  ["focusNavigation", "Focus Navigation", "property-settings-focus-enabled"],
-  ["focusNavigation", "Navigation Input", "property-settings-focus-navigationInputGuid"],
-  ["focusNavigation", "Activate Input", "property-settings-focus-activateInputGuid"],
-  ["focusNavigation", "Repeat Delay", "property-settings-focus-repeat-delay"],
-  ["focusNavigation", "Repeat Interval", "property-settings-focus-repeat-interval"],
-  ["focusNavigation", "Wrap Navigation", "property-settings-focus-wrap"],
-  ["fonts", "Default Font", "settings-default-font"],
-  ["fonts", "Global Fallback", "settings-global-fallback"],
-  ["audio", "Audio Mixer", "settings-audio-mixer"],
-  ["audio", "Audio Occlusion", "settings-audio-occlusion"],
-  ["audio", "Reverb Wet Scale", "settings-audio-reverb-wet-scale"],
-  ["audio", "Reverb Decay Scale", "settings-audio-reverb-decay-scale"],
-  ["audio", "Reverb Damping Scale", "settings-audio-reverb-damping-scale"],
-  ["rendering", "Render Mode PBR CEL", "setting-render-mode"],
-  ["rendering", "CEL Outlines", "project-cel-outlinesEnabled"],
-  ["rendering", "CEL Outline Color", "project-cel-outlineColor"],
-  ["rendering", "CEL Outline Width", "project-cel-outlineWidth"],
-  ["rendering", "CEL Outline Distance Fade", "project-cel-outlineDistanceFadeEnabled"],
-  ["rendering", "CEL Outline Fade Start Distance", "project-cel-outlineFadeStart"],
-  ["rendering", "CEL Outline Fade End Distance", "project-cel-outlineFadeEnd"],
-  ["rendering", "GPU Backend Auto WebGL2 WebGPU", "project-gpu-backend"],
-  ["rendering", "Overall Quality", "quality-all"],
-  ["rendering", "Shadows Quality", "quality-shadows"],
-  ["rendering", "Resolution Quality", "quality-resolution"],
-  ["rendering", "Textures Quality", "quality-textures"],
-  ["rendering", "Geometry Quality", "quality-geometry"],
-  ["rendering", "Water Quality", "quality-water"],
-  ["rendering", "Water Blend Distance River Lake Ocean Merge", "setting-water-blend-distance"],
-  ["rendering", "Post Processing Quality", "quality-postprocessing"],
-  ["rendering", "Lighting Quality", "quality-lighting"],
-  ["rendering", "Resolution Scale", "quality-resolution-scale"],
-  ["rendering", "Dynamic Resolution", "quality-resolution-dynamic"],
-  ["rendering", "Minimum Resolution Scale", "quality-resolution-minimum"],
-  ["rendering", "Dynamic Resolution Target FPS", "quality-resolution-target"],
-  ["rendering", "Texture LOD Bias", "quality-textures-lod"],
-  ["rendering", "Texture Anisotropy", "quality-textures-anisotropy"],
-  ["rendering", "Texture Budget MiB", "quality-textures-budget"],
-  ["rendering", "Auto LOD Level Of Detail", "quality-geometry-lod"],
-  ["rendering", "LOD Distance Scale", "quality-geometry-distance"],
-  ["rendering", "Water Shading Detail", "quality-water-shading"],
-  ["rendering", "Water Mesh Density Surface Resolution", "quality-water-mesh"],
-  ["rendering", "Water Contact Resolution Foam", "quality-water-contact"],
-  ["rendering", "Water Refraction", "quality-water-refraction"],
-  ["rendering", "Water Refraction Resolution Scene Copy", "quality-water-refraction-scale"],
-  ["rendering", "Water Reflections Sky Only Screen Space Planar", "quality-water-reflections"],
-  ["rendering", "Water Reflection Steps", "quality-water-reflection-steps"],
-  ["rendering", "Water Planar Resolution Reflection", "quality-water-planar-scale"],
-  ["rendering", "Water FFT Size", "quality-water-fft-size"],
-  ["rendering", "Water FFT Cascades", "quality-water-fft-cascades"],
-  ["rendering", "Post Processing Resolution Scale", "quality-postprocessing-scale"],
-  ["rendering", "Allow Ambient Occlusion Quality", "quality-postprocessing-ambientOcclusion"],
-  ["rendering", "Allow Reflections Quality", "quality-postprocessing-reflections"],
-  ["rendering", "Anti-Aliasing MSAA FXAA", "quality-postprocessing-antialiasing"],
-  ["rendering", "Allow Volumetric Lighting Quality", "quality-postprocessing-volumetricLighting"],
-  ["rendering", "Color Pipeline Legacy Scene Linear", "project-effects-pipeline"],
-  ["rendering", "Tone Mapping", "project-effects-tone-mapping"],
-  ["rendering", "Exposure", "project-effects-exposure"],
-  ["rendering", "Contrast", "project-effects-contrast"],
-  ["rendering", "White Balance Temperature Tint Kelvin", "project-effects-white-balance"],
-  ["rendering", "Bloom", "project-effects-bloom"],
-  ["rendering", "Ambient Occlusion SSAO AO", "project-effects-ambient-occlusion"],
-  ["rendering", "Real-Time Reflections Screen Space SSR", "project-effects-reflections"],
-  ["rendering", "Volumetric Fog Lighting Light Beams Density", "project-effects-volumetric"],
-  ["rendering", "Bloom Threshold", "project-effects-bloom-threshold"],
-  ["rendering", "Bloom Weight", "project-effects-bloom-weight"],
-  ["rendering", "Bloom Kernel", "project-effects-bloom-kernel"],
-  ["rendering", "Bloom Scale", "project-effects-bloom-scale"],
-  ["rendering", "Vignette", "project-effects-vignette"],
-  ["rendering", "Vignette Weight", "project-effects-vignette-weight"],
-  ["rendering", "Vignette Color", "project-effects-vignette-color"],
-  ["rendering", "Color Grading LUT Lookup Table", "project-effects-color-grading"],
-  ["rendering", "FSR Upscaling Render Scale Sharpness Resolution", "project-effects-upscaling"],
-  ["rendering", "Local Light Budget Auto Manual", "quality-lighting-mode"],
-  ["rendering", "Shadow Distance", "project-shadow-distance"],
-  ["rendering", "Image-Based Lighting IBL Environment", "project-environment-enabled"],
-  ["rendering", "Environment Intensity", "project-environment-intensity"],
-  ["rendering", "Environment Rotation", "project-environment-rotationYDegrees"],
-  ["rendering", "CEL Environment Strength", "project-environment-celStrength"],
-  ["rendering", "Local Shadow Light Budget", "project-shadow-maxLocalLights"],
-  ["rendering", "Play Frame Cap", "setting-play-frame-cap"],
-  ["rendering", "Follow System Aspect Ratio", "setting-play-follow-system"],
-  ["rendering", "Play Aspect Width", "setting-play-aspect-width"],
-  ["rendering", "Play Aspect Height", "setting-play-aspect-height"],
-  ["rendering", "Custom Render Resolution", "setting-render-custom"],
-  ["rendering", "Render Width", "setting-render-width"],
-  ["rendering", "Render Height", "setting-render-height"],
-  ["rendering", "Black Bars", "setting-render-black-bars"],
-  ["rendering", "Upscaling", "setting-render-upscaling"],
-  ["textures", "Texture Policy"],
-  ["textures", "Retry Texture Encoding", "retry-texture-encoding"],
-  ["plugins", "Show Plugin Content", "settings-show-plugin-content"],
-  ["plugins", "New Plugin", "settings-plugin-new"],
-  ["plugins", "Import Plugin", "settings-plugin-import"],
-  ["extensions", "New Extension", "settings-extension-new"],
-  ["extensions", "Import Extension", "settings-extension-import"],
-  ["extensions", "GLSL to Material"],
-  ["export", "Bundle Debugger", "setting-export-debugger"],
-  ["export", "File Count Warn", "setting-export-file-warn"],
-  ["export", "File Count Fail", "setting-export-file-fail"],
-  ["export", "Always Package Folders"],
-  ["export", "Export Game", "export-game"],
-  ["export", "Export Project Backup", "export-project"],
-  ["sourceControl", "Enable Source Control", "settings-source-control-enabled"],
-  ["sourceControl", "Repository URL", "settings-source-control-url"],
-  ["sourceControl", "Branch", "settings-source-control-branch"],
-  [
-    "sourceControl",
-    "Auto-Lock On First Edit",
-    "settings-source-control-auto-lock",
-  ],
-  ["sourceControl", "Poll Interval", "settings-source-control-poll"],
-  ["sourceControl", "Token", "settings-source-control-token"],
-]);
+// Section ids and titles match the `SettingsSection`s that render the controls.
+export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
+  ...category("general", [
+    ["project", "Project", [
+      ["Project Version", "settings-project-version"],
+      ["Autosave Interval", "settings-autosave-interval"],
+    ]],
+    ["scripting", "Scripting", [
+      ["Compile On Save", "settings-compile-on-save"],
+      ["Infinite Loop Detection", "settings-infinite-loop-detection"],
+      ["Loop Count", "settings-loop-count"],
+      ["Garbage Collection Interval", "settings-garbage-collection-interval"],
+    ]],
+    ["editorUtilityObjects", "Editor Utility Objects", [["Editor Utility Objects"]]],
+  ]),
+  ...category("sourceControl", [
+    ["repository", "Repository", [
+      ["Enable Source Control", "settings-source-control-enabled"],
+      ["Repository URL", "settings-source-control-url"],
+      ["Branch", "settings-source-control-branch"],
+      ["Token", "settings-source-control-token"],
+    ]],
+    ["locking", "Locking", [
+      ["Auto-Lock On First Edit", "settings-source-control-auto-lock"],
+      ["Poll Interval", "settings-source-control-poll"],
+    ]],
+  ]),
+  ...category("export", [
+    ["gamePackaging", "Game Packaging", [
+      ["Bundle Debugger", "setting-export-debugger"],
+      ["File Count Warn", "setting-export-file-warn"],
+      ["File Count Fail", "setting-export-file-fail"],
+    ]],
+    ["alwaysPackageFolders", "Always Package Folders", [["Always Package Folders"]]],
+    ["projectBackup", "Project Backup", [["Export Project Backup", "export-project"]]],
+  ]),
+  ...category("game", [
+    ["startup", "Startup", [
+      ["Startup Scene", "settings-startup-scene"],
+      ["Game Instance", "settings-game-instance"],
+    ]],
+    ["twoD", "2D", [
+      ["Pixels Per Unit", "pixels-per-unit"],
+      ["Pixel Perfect", "settings-pixel-perfect"],
+      ["Nearest Texture Filtering", "settings-nearest-textures"],
+    ]],
+    ["sortingLayers", "Sorting Layers", [["Sorting Layers"]]],
+  ]),
+  ...category("saveGames", [
+    ["defaults", "Defaults", [
+      ["Default Definition", "settings-save-definition"],
+      ["Default Slot", "settings-save-slot"],
+      ["Default Profile", "settings-save-profile"],
+    ]],
+    ["previewSaves", "Preview Saves", [
+      ["Wipe Preview Saves On Play", "settings-save-wipe-on-play"],
+      ["Preview Saves Import Export Reset"],
+    ]],
+  ]),
+  ...category("physics", [
+    ["collisionLayers", "Collision Layers", [["Collision Layers"]]],
+    ["collisionPresets", "Collision Presets", [["Collision Presets", "settings-collision-presets"]]],
+  ]),
+  ...category("focusNavigation", [
+    ["input", "Input", [
+      ["Focus Navigation", "property-settings-focus-enabled"],
+      ["Navigation Input", "property-settings-focus-navigationInputGuid"],
+      ["Activate Input", "property-settings-focus-activateInputGuid"],
+    ]],
+    ["repeat", "Repeat And Wrap", [
+      ["Repeat Delay", "property-settings-focus-repeat-delay"],
+      ["Repeat Interval", "property-settings-focus-repeat-interval"],
+      ["Wrap Navigation", "property-settings-focus-wrap"],
+    ]],
+  ]),
+  ...category("rendering", [
+    ["pipeline", "Pipeline", [
+      ["Render Mode PBR CEL", "setting-render-mode"],
+      ["GPU Backend Auto WebGL2 WebGPU", "project-gpu-backend"],
+    ]],
+    ["scalability", "Scalability", [
+      ["Overall Quality", "quality-all"],
+      ["Shadows Quality", "quality-shadows"],
+      ["Resolution Quality", "quality-resolution"],
+      ["Textures Quality", "quality-textures"],
+      ["Geometry Quality", "quality-geometry"],
+      ["Water Quality", "quality-water"],
+      ["Post Processing Quality", "quality-postprocessing"],
+      ["Lighting Quality", "quality-lighting"],
+      ["Resolution Scale", "quality-resolution-scale"],
+      ["Dynamic Resolution", "quality-resolution-dynamic"],
+      ["Minimum Resolution Scale", "quality-resolution-minimum"],
+      ["Dynamic Resolution Target FPS", "quality-resolution-target"],
+      ["Texture LOD Bias", "quality-textures-lod"],
+      ["Texture Anisotropy", "quality-textures-anisotropy"],
+      ["Texture Budget MiB", "quality-textures-budget"],
+      ["Auto LOD Level Of Detail", "quality-geometry-lod"],
+      ["LOD Distance Scale", "quality-geometry-distance"],
+      ["Water Shading Detail", "quality-water-shading"],
+      ["Water Mesh Density Surface Resolution", "quality-water-mesh"],
+      ["Water Contact Resolution Foam", "quality-water-contact"],
+      ["Water Refraction", "quality-water-refraction"],
+      ["Water Refraction Resolution Scene Copy", "quality-water-refraction-scale"],
+      ["Water Reflections Sky Only Screen Space Planar", "quality-water-reflections"],
+      ["Water Reflection Steps", "quality-water-reflection-steps"],
+      ["Water Planar Resolution Reflection", "quality-water-planar-scale"],
+      ["Water FFT Size", "quality-water-fft-size"],
+      ["Water FFT Cascades", "quality-water-fft-cascades"],
+      ["Post Processing Resolution Scale", "quality-postprocessing-scale"],
+      ["Allow Ambient Occlusion Quality", "quality-postprocessing-ambientOcclusion"],
+      ["Allow Reflections Quality", "quality-postprocessing-reflections"],
+      ["Anti-Aliasing MSAA FXAA", "quality-postprocessing-antialiasing"],
+      ["Allow Volumetric Lighting Quality", "quality-postprocessing-volumetricLighting"],
+      ["Local Light Budget Auto Manual", "quality-lighting-mode"],
+    ]],
+    ["shadows", "Shadows", [
+      ["Shadow Distance", "project-shadow-distance"],
+      ["Local Shadow Light Budget", "project-shadow-maxLocalLights"],
+    ]],
+    ["environment", "Environment Lighting", [
+      ["Image-Based Lighting IBL Environment", "project-environment-enabled"],
+      ["Environment Intensity", "project-environment-intensity"],
+      ["Environment Rotation", "project-environment-rotationYDegrees"],
+      ["CEL Environment Strength", "project-environment-celStrength"],
+    ]],
+    ["postProcessing", "Post Processing", [
+      ["Color Pipeline Legacy Scene Linear", "project-effects-pipeline"],
+      ["Tone Mapping", "project-effects-tone-mapping"],
+      ["Exposure", "project-effects-exposure"],
+      ["Contrast", "project-effects-contrast"],
+      ["White Balance Temperature Tint Kelvin", "project-effects-white-balance"],
+      ["Bloom", "project-effects-bloom"],
+      ["Ambient Occlusion SSAO AO", "project-effects-ambient-occlusion"],
+      ["Real-Time Reflections Screen Space SSR", "project-effects-reflections"],
+      ["Volumetric Fog Lighting Light Beams Density", "project-effects-volumetric"],
+      ["Bloom Threshold", "project-effects-bloom-threshold"],
+      ["Bloom Weight", "project-effects-bloom-weight"],
+      ["Bloom Kernel", "project-effects-bloom-kernel"],
+      ["Bloom Scale", "project-effects-bloom-scale"],
+      ["Vignette", "project-effects-vignette"],
+      ["Vignette Weight", "project-effects-vignette-weight"],
+      ["Vignette Color", "project-effects-vignette-color"],
+      ["Color Grading LUT Lookup Table", "project-effects-color-grading"],
+      ["FSR Upscaling Render Scale Sharpness Resolution", "project-effects-upscaling"],
+    ]],
+    ["cel", "CEL Shading", [
+      ["CEL Outlines", "project-cel-outlinesEnabled"],
+      ["CEL Outline Color", "project-cel-outlineColor"],
+      ["CEL Outline Width", "project-cel-outlineWidth"],
+      ["CEL Outline Distance Fade", "project-cel-outlineDistanceFadeEnabled"],
+      ["CEL Outline Fade Start Distance", "project-cel-outlineFadeStart"],
+      ["CEL Outline Fade End Distance", "project-cel-outlineFadeEnd"],
+    ]],
+    ["resolution", "Resolution", [
+      ["Custom Render Resolution", "setting-render-custom"],
+      ["Render Width", "setting-render-width"],
+      ["Render Height", "setting-render-height"],
+      ["Black Bars", "setting-render-black-bars"],
+      ["Upscaling", "setting-render-upscaling"],
+    ]],
+    ["water", "Water", [
+      ["Water Blend Distance River Lake Ocean Merge", "setting-water-blend-distance"],
+    ]],
+    ["playPreview", "Play Preview", [
+      ["Play Frame Cap", "setting-play-frame-cap"],
+      ["Follow System Aspect Ratio", "setting-play-follow-system"],
+      ["Play Aspect Width", "setting-play-aspect-width"],
+      ["Play Aspect Height", "setting-play-aspect-height"],
+    ]],
+  ]),
+  ...category("textures", [
+    ["encoding", "Encoding", [["Retry Texture Encoding", "retry-texture-encoding"]]],
+  ]),
+  ...category("fonts", [
+    ["defaults", "Defaults", [
+      ["Default Font", "settings-default-font"],
+      ["Global Fallback", "settings-global-fallback"],
+    ]],
+  ]),
+  ...category("audio", [
+    ["mixer", "Mixer", [["Audio Mixer", "settings-audio-mixer"]]],
+    ["occlusion", "Occlusion", [["Audio Occlusion", "settings-audio-occlusion"]]],
+    ["reverb", "Reverb", [
+      ["Reverb Wet Scale", "settings-audio-reverb-wet-scale"],
+      ["Reverb Decay Scale", "settings-audio-reverb-decay-scale"],
+      ["Reverb Damping Scale", "settings-audio-reverb-damping-scale"],
+    ]],
+  ]),
+  ...category("plugins", [
+    ["contentBrowser", "Content Browser", [["Show Plugin Content", "settings-show-plugin-content"]]],
+    ["installed", "Installed Plugins", [
+      ["New Plugin", "settings-plugin-new"],
+      ["Import Plugin", "settings-plugin-import"],
+    ]],
+  ]),
+  ...category("extensions", [
+    ["installed", "Installed Extensions", [
+      ["New Extension", "settings-extension-new"],
+      ["Import Extension", "settings-extension-import"],
+      ["GLSL to Material"],
+    ]],
+  ]),
+];
 
-export const ENGINE_SETTING_FIELDS = fields([
-  ["about", "Version And Build"],
-  ["about", "Automatic Updates", "setting-automatic-updates"],
-  ["interface", "Compact Mode", "setting-compact-mode"],
-  ["undo", "Undo History Length", "setting-undo-length"],
-  ["debugger", "Trace Memory Budget (MiB)", "setting-trace-budget-mib"],
-  ["debugger", "Traces Kept", "setting-traces-kept"],
-  ["debugger", "Keep Simulation Changes", "setting-keep-simulation-changes"],
-  ["debugger", "Pause On Errors", "setting-pause-simulation-on-errors"],
-  ["debugger", "Pause On Play", "setting-pause-on-play"],
-  ["debugger", "Recording Duration (Seconds)", "setting-profile-duration"],
-  ["debugger", "Profile Retained Data Budget (MiB)", "setting-profile-budget-mib"],
-  ["debugger", "GPU Timing", "setting-profile-gpu"],
-  ["viewport", "Viewport Frame Cap", "setting-frame-cap"],
-  ["viewport", "Camera Preview Frame Rate", "setting-camera-preview-frame-rate"],
-  ["viewport", "Camera Speed", "setting-fly-speed"],
-  ["viewport", "Override Project Rendering", "setting-rendering-overrides"],
-  ["viewport", "Hardware Scaling Level", "setting-hardware-scale"],
-  ["viewport", "Post-Processing", "setting-post-processing"],
-  ["assets", "Model Import Default Scale", "setting-model-import-scale"],
-  ["assets", "HDR Import Face Size", "setting-hdr-import-face-size"],
-  ["assets", "Editor Texture LOD", "setting-editor-texture-lod"],
-  [
-    "assets",
-    "Editor Texture LOD Quality",
-    "setting-editor-texture-lod-quality",
-  ],
-  ["assets", "Texture Budget", "setting-texture-budget"],
-  ["assets", "Texture Budget MB", "setting-texture-budget-mb"],
-  ["assets", "Audio Budget", "setting-audio-budget"],
-  ["assets", "Audio Budget MB", "setting-audio-budget-mb"],
-  ["assets", "Audio Max Voices", "setting-audio-max-voices"],
-  ["graph", "Graph Default Zoom", "setting-graph-default-zoom"],
-  ["graph", "Node Connection Assistant", "setting-graph-assistant"],
-  ["graph", "Connection Distance (Pixels)", "setting-graph-distance"],
-  ["graph", "Shake Nodes To Disconnect", "setting-graph-shake"],
-  ["graph", "Add Node History", "setting-graph-add-node-history"],
-  ["graph", "Clear Add Node History", "setting-graph-add-node-history-clear"],
-  ["thumbnails", "Generate Thumbnails", "setting-thumbnails"],
-  ["extensions", "Engine Extensions"],
-  ["focus", "Keep Panels In Focus Mode"],
-  ...EDITOR_COMMANDS.map(
-    (command) => ["keybinds", command.label, `keybind-${command.id}-record`] as const,
-  ),
-]);
+export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
+  ...category("about", [
+    ["build", "Build", [["Version And Build"]]],
+    ["updates", "Updates", [["Automatic Updates", "setting-automatic-updates"]]],
+  ]),
+  ...category("interface", [
+    ["density", "Density", [["Compact Mode", "setting-compact-mode"]]],
+  ]),
+  ...category("undo", [
+    ["history", "History", [
+      ["Undo History Length", "setting-undo-length"],
+      ["Undo Memory Limit (MB)", "setting-undo-memory-mb"],
+    ]],
+  ]),
+  ...category("debugger", [
+    ["diagnostics", "Diagnostics", [
+      ["Debug Mode", "setting-debug-mode"],
+      ["Trace Graphics Errors", "setting-trace-graphics-errors"],
+    ]],
+    ["simulation", "Simulation", [["Keep Simulation Changes", "setting-keep-simulation-changes"]]],
+    ["session", "Session", [
+      ["Pause On Errors", "setting-pause-simulation-on-errors"],
+      ["Pause On Play", "setting-pause-on-play"],
+    ]],
+    ["profiler", "Profiler", [
+      ["Recording Duration (Seconds)", "setting-profile-duration"],
+      ["GPU Timing", "setting-profile-gpu"],
+      ["Profile Retained Data Budget (MiB)", "setting-profile-budget-mib"],
+    ]],
+    ["trace", "Trace", [
+      ["Trace Memory Budget (MiB)", "setting-trace-budget-mib"],
+      ["Traces Kept", "setting-traces-kept"],
+    ]],
+  ]),
+  ...category("viewport", [
+    ["renderingOverrides", "Rendering Overrides", [
+      ["Override Project Rendering", "setting-rendering-overrides"],
+      ["Hardware Scaling Level", "setting-hardware-scale"],
+      ["Post-Processing", "setting-post-processing"],
+    ]],
+    ["frameRate", "Frame Rate", [
+      ["Viewport Frame Cap", "setting-frame-cap"],
+      ["Camera Preview Frame Rate", "setting-camera-preview-frame-rate"],
+    ]],
+    ["cameraPlacement", "Camera And Placement", [
+      ["Camera Speed", "setting-fly-speed"],
+      ["Drop Distance", "setting-drop-distance"],
+    ]],
+  ]),
+  ...category("graph", [
+    ["connections", "Connections", [
+      ["Node Connection Assistant", "setting-graph-assistant"],
+      ["Connection Distance (Pixels)", "setting-graph-distance"],
+      ["Shake Nodes To Disconnect", "setting-graph-shake"],
+    ]],
+    ["addNode", "Add Node", [
+      ["Add Node History", "setting-graph-add-node-history"],
+      ["Clear Add Node History", "setting-graph-add-node-history-clear"],
+    ]],
+    ["canvas", "Canvas", [
+      ["Graph Default Zoom", "setting-graph-default-zoom"],
+      ["Read-Only Pin Defaults", "setting-read-only-pin-defaults"],
+    ]],
+  ]),
+  ...category("assets", [
+    ["import", "Import", [
+      ["Model Import Default Scale", "setting-model-import-scale"],
+      ["HDR Import Face Size", "setting-hdr-import-face-size"],
+    ]],
+    ["editorTextures", "Editor Textures", [
+      ["Editor Texture LOD", "setting-editor-texture-lod"],
+      ["Editor Texture LOD Quality", "setting-editor-texture-lod-quality"],
+      ["Texture Budget", "setting-texture-budget"],
+      ["Texture Budget MB", "setting-texture-budget-mb"],
+    ]],
+    ["audio", "Audio", [
+      ["Audio Budget", "setting-audio-budget"],
+      ["Audio Budget MB", "setting-audio-budget-mb"],
+      ["Audio Max Voices", "setting-audio-max-voices"],
+    ]],
+  ]),
+  ...category("thumbnails", [
+    ["generation", "Generation", [["Generate Thumbnails", "setting-thumbnails"]]],
+  ]),
+  ...category("extensions", [
+    ["library", "Library", [["Engine Extensions"]]],
+  ]),
+  { categoryId: "focus", label: "Keep Panels In Focus Mode" },
+  ...category("keybinds", EDITOR_COMMAND_CATEGORIES.map((group) => [
+    keybindSectionId(group),
+    group,
+    EDITOR_COMMANDS
+      .filter((command) => command.category === group)
+      .map((command) => [command.label, `keybind-${command.id}-record`] as const),
+  ] as const)),
+];

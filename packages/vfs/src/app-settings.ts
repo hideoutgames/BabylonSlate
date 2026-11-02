@@ -226,6 +226,8 @@ export const engineSettingsSchema = z.object({
     .catch([])
     .default([])
     .transform((keys) => keys.slice(-MAX_LINKED_SCALE_KEYS)),
+  /** Project and Engine Settings sub-categories collapsed on this device, as `scope:category:section`; the rest start open. */
+  collapsedSettingsSections: z.array(z.string()).catch([]).default([]),
   postProcessingEnabled: z.boolean().default(true),
   editorTextureLodEnabled: z.boolean().default(false),
   editorTextureLodQuality: z.preprocess((value) => {

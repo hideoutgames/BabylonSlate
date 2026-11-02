@@ -1,24 +1,18 @@
-import { useEffect, useState } from "react";
-import { DisclosureSection, NumberField } from "@haptic/editor-kit";
+import { NumberField } from "@haptic/editor-kit";
 import type { EngineSettings } from "@haptic/vfs";
 import { MAX_TRACES_KEPT } from "@haptic/core";
 import { Switch } from "@haptic/ui/components/switch";
-import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@haptic/ui/components/field";
+import { SettingsSection } from "./settings-section";
 
-export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
+export function DebuggerSettingsFields({ settings, onChange }: {
   settings: EngineSettings;
   onChange: (patch: Partial<EngineSettings>) => void | Promise<void>;
-  focusTargetId?: string;
 }) {
-  const [advanced, setAdvanced] = useState(false);
-  useEffect(() => {
-    if (focusTargetId === "setting-profile-budget-mib") setAdvanced(true);
-  }, [focusTargetId]);
   const defaults = settings.debuggerDefaults;
   const update = (patch: Partial<typeof defaults>) => void onChange({ debuggerDefaults: { ...defaults, ...patch } });
   return <>
-    <FieldSet>
-      <FieldLegend>Diagnostics</FieldLegend>
+    <SettingsSection id="diagnostics" title="Diagnostics">
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="setting-debug-mode">Debug Mode</FieldLabel>
@@ -27,7 +21,7 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
         <Switch id="setting-debug-mode" data-testid="setting-debug-mode" checked={settings.debugMode}
           onCheckedChange={(debugMode) => void onChange({ debugMode })} />
       </Field>
-      <Field orientation="horizontal" className="settings-field" data-disabled={!settings.debugMode || undefined}>
+      <Field orientation="horizontal" className="settings-field settings-field-dependent" data-disabled={!settings.debugMode || undefined}>
         <FieldContent>
           <FieldLabel htmlFor="setting-trace-graphics-errors">Trace Graphics Errors</FieldLabel>
           <FieldDescription>Checks every WebGL call so Copy Error names the call that failed. Rendering becomes much slower while this is on; turn it off after collecting a report. Requires Debug Mode.</FieldDescription>
@@ -36,9 +30,8 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
           checked={settings.debugMode && settings.traceGraphicsErrors}
           onCheckedChange={(traceGraphicsErrors) => void onChange({ traceGraphicsErrors })} />
       </Field>
-    </FieldSet>
-    <FieldSet>
-      <FieldLegend>Simulation</FieldLegend>
+    </SettingsSection>
+    <SettingsSection id="simulation" title="Simulation">
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="setting-keep-simulation-changes">Keep Simulation Changes</FieldLabel>
@@ -47,9 +40,8 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
         <Switch id="setting-keep-simulation-changes" checked={defaults.keepSimulationChanges}
           onCheckedChange={(keepSimulationChanges) => update({ keepSimulationChanges })} />
       </Field>
-    </FieldSet>
-    <FieldSet>
-      <FieldLegend>Session</FieldLegend>
+    </SettingsSection>
+    <SettingsSection id="session" title="Session">
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="setting-pause-simulation-on-errors">Pause On Errors</FieldLabel>
@@ -65,9 +57,8 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
         </FieldContent>
         <Switch id="setting-pause-on-play" checked={defaults.pauseOnPlay} onCheckedChange={(pauseOnPlay) => update({ pauseOnPlay })} />
       </Field>
-    </FieldSet>
-    <FieldSet>
-      <FieldLegend>Profiler</FieldLegend>
+    </SettingsSection>
+    <SettingsSection id="profiler" title="Profiler">
       <Field className="settings-field">
         <FieldLabel htmlFor="setting-profile-duration">Recording Duration (Seconds)</FieldLabel>
         <NumberField id="setting-profile-duration" min={1} max={60} step={1} value={defaults.profileDurationSeconds}
@@ -81,17 +72,14 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
         </FieldContent>
         <Switch id="setting-profile-gpu" checked={defaults.profileGpuTiming} onCheckedChange={(profileGpuTiming) => update({ profileGpuTiming })} />
       </Field>
-      <DisclosureSection title="Advanced" open={advanced} onOpenChange={setAdvanced}>
-        <Field className="settings-field">
-          <FieldLabel htmlFor="setting-profile-budget-mib">Profile Retained Data Budget (MiB)</FieldLabel>
-          <NumberField id="setting-profile-budget-mib" min={4} max={64} step={1} value={Math.round(defaults.profileByteBudget / (1024 * 1024))}
-            onChange={(value) => update({ profileByteBudget: Math.round(value) * 1024 * 1024 })} />
-          <FieldDescription>Bounds retained timing buffers. This is separate from Trace and is not a browser heap limit. No memory is reserved until recording starts.</FieldDescription>
-        </Field>
-      </DisclosureSection>
-    </FieldSet>
-    <FieldSet>
-      <FieldLegend>Trace</FieldLegend>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="setting-profile-budget-mib">Profile Retained Data Budget (MiB)</FieldLabel>
+        <NumberField id="setting-profile-budget-mib" min={4} max={64} step={1} value={Math.round(defaults.profileByteBudget / (1024 * 1024))}
+          onChange={(value) => update({ profileByteBudget: Math.round(value) * 1024 * 1024 })} />
+        <FieldDescription>Bounds retained timing buffers. This is separate from Trace and is not a browser heap limit. No memory is reserved until recording starts.</FieldDescription>
+      </Field>
+    </SettingsSection>
+    <SettingsSection id="trace" title="Trace">
       <Field className="settings-field">
         <FieldLabel htmlFor="setting-trace-budget-mib">Trace Memory Budget (MiB)</FieldLabel>
         <NumberField id="setting-trace-budget-mib" min={1} max={256} step={1}
@@ -108,6 +96,6 @@ export function DebuggerSettingsFields({ settings, onChange, focusTargetId }: {
           onChange={(tracesKept) => void onChange({ tracesKept: Math.round(tracesKept) })} />
         <FieldDescription>Recorded traces kept for each project on this device; Debug &gt; Recent Traces lists them. Recording another deletes the oldest beyond this number, except traces open in a tab.</FieldDescription>
       </Field>
-    </FieldSet>
+    </SettingsSection>
   </>;
 }

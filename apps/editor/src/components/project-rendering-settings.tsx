@@ -9,21 +9,16 @@ import {
 } from "@haptic/core";
 import {
   AssetPickerControl,
-  DisclosureSection,
   NumberField,
   assetRowIdentity,
   selectedPickerIdentity,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
-import { Checkbox } from "@haptic/ui/components/checkbox";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import {
   Select,
@@ -35,7 +30,6 @@ import {
 } from "@haptic/ui/components/select";
 import { Switch } from "@haptic/ui/components/switch";
 import type { DocumentActions, RegistryState } from "../context/document-context-types";
-import type { RenderingSectionId } from "../lib/settings-search";
 import { CelShadingFields } from "./cel-shading-fields";
 import { EnvironmentLightingFields } from "./environment-lighting-fields";
 import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
@@ -43,17 +37,13 @@ import { RenderEffectsFields } from "./render-effects-fields";
 import { RenderPipelineFields } from "./render-pipeline-fields";
 import { RenderQualityFields } from "./render-quality-fields";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
+import { SettingsSection } from "./settings-section";
 
 interface ProjectRenderingSettingsProps {
   projectDocument: ProjectDocument;
   /** The host's wrapper: render, Play Frame Cap and Play Preview edits wait for Done. */
   updateProjectSettings: DocumentActions["updateProjectSettings"];
   assetRegistry: RegistryState["assetRegistry"];
-  /** Disclosure state stays in the host so a search result can open a section. */
-  renderingSection: (id: RenderingSectionId) => {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-  };
   setLutPickerOpen: (open: boolean) => void;
 }
 
@@ -62,13 +52,11 @@ export function ProjectRenderingSettings({
   projectDocument,
   updateProjectSettings,
   assetRegistry,
-  renderingSection,
   setLutPickerOpen,
 }: ProjectRenderingSettingsProps) {
   return (
-    <FieldGroup className="gap-4">
-      <FieldSet>
-        <FieldLegend>Rendering</FieldLegend>
+    <FieldGroup>
+        <SettingsSection id="pipeline" title="Pipeline">
         <RenderPipelineFields hideTitle scope="project" project={projectDocument.settings.render}
           onChange={(pipeline) => updateProjectSettings({ render: { ...projectDocument.settings.render, ...pipeline } })} />
         <Field className="settings-field">
@@ -87,16 +75,17 @@ export function ProjectRenderingSettings({
           </Select>
           <FieldDescription>CEL uses banded lighting. Scenes can override its style.</FieldDescription>
         </Field>
-        <DisclosureSection title="Scalability" {...renderingSection("scalability")}>
+        </SettingsSection>
+        <SettingsSection id="scalability" title="Scalability">
           <RenderQualityFields hideTitle settings={projectDocument.settings.render} onChange={(render) => updateProjectSettings({ render })} />
-        </DisclosureSection>
-        <DisclosureSection title="Shadows" {...renderingSection("shadows")}>
+        </SettingsSection>
+        <SettingsSection id="shadows" title="Shadows">
           <ShadowSettingsFields hideTitle project={projectDocument.settings.render.shadows} onChange={(shadows) => updateProjectSettings({ render: { ...projectDocument.settings.render, shadows: normalizeShadowSettings(shadows) } })} />
-        </DisclosureSection>
-        <DisclosureSection title="Environment Lighting" {...renderingSection("environment")}>
+        </SettingsSection>
+        <SettingsSection id="environment" title="Environment Lighting">
           <EnvironmentLightingFields hideTitle cel={projectDocument.settings.render.mode === "cel"} project={projectDocument.settings.render.environmentLighting} onChange={(environmentLighting) => updateProjectSettings({ render: { ...projectDocument.settings.render, environmentLighting: normalizeEnvironmentLightingSettings(environmentLighting) } })} />
-        </DisclosureSection>
-        <DisclosureSection title="Post Processing" {...renderingSection("postProcessing")}>
+        </SettingsSection>
+        <SettingsSection id="postProcessing" title="Post Processing">
           <RenderEffectsFields
             hideTitle
             project={normalizeRenderEffectsSettings(projectDocument.settings.render.effects)}
@@ -124,17 +113,17 @@ export function ProjectRenderingSettings({
               </AssetPickerControl>
             }
           />
-        </DisclosureSection>
+        </SettingsSection>
         {projectDocument.settings.render.mode === "cel" ? (
-          <DisclosureSection title="CEL Shading" {...renderingSection("cel")}>
+          <SettingsSection id="cel" title="CEL Shading">
             <CelShadingFields
               hideTitle
               project={normalizeCelShadingSettings(projectDocument.settings.render.cel)}
               onChange={(cel) => updateProjectSettings({ render: { ...projectDocument.settings.render, cel: normalizeCelShadingSettings(cel) } })}
             />
-          </DisclosureSection>
+          </SettingsSection>
         ) : null}
-        <DisclosureSection title="Resolution" {...renderingSection("resolution")}>
+        <SettingsSection id="resolution" title="Resolution">
         <FieldGroup className="gap-2">
           <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="setting-render-custom">
@@ -159,7 +148,7 @@ export function ProjectRenderingSettings({
             Follow System.
           </FieldDescription>
         </Field>
-          <Field className="settings-field">
+          <Field className="settings-field settings-field-dependent">
           <FieldLabel htmlFor="setting-render-width">
             Render Size
           </FieldLabel>
@@ -197,8 +186,11 @@ export function ProjectRenderingSettings({
             />
           </div>
         </Field>
-        <Field orientation="horizontal">
-          <Checkbox
+        <Field orientation="horizontal" className="settings-field settings-field-dependent" data-disabled={!projectDocument.settings.render.customResolution}>
+          <FieldLabel htmlFor="setting-render-black-bars">
+            Black Bars
+          </FieldLabel>
+          <Switch
             id="setting-render-black-bars"
             aria-describedby="setting-render-black-bars-description"
             checked={projectDocument.settings.render.blackBars}
@@ -213,18 +205,13 @@ export function ProjectRenderingSettings({
             }
             data-testid="setting-render-black-bars"
           />
-          <FieldContent>
-            <FieldLabel htmlFor="setting-render-black-bars">
-              Black Bars
-            </FieldLabel>
-            <FieldDescription id="setting-render-black-bars-description">
-              Adds bars to preserve the design size. Off fills the window
-              without stretching.
-            </FieldDescription>
-          </FieldContent>
+          <FieldDescription id="setting-render-black-bars-description">
+            Adds bars to preserve the design size. Off fills the window
+            without stretching.
+          </FieldDescription>
         </Field>
         {projectDocument.settings.render.customResolution && projectDocument.settings.render.blackBars ? (
-          <Field className="settings-field">
+          <Field className="settings-field settings-field-dependent">
             <FieldLabel htmlFor="setting-render-upscaling">Upscaling</FieldLabel>
             <Select value={projectDocument.settings.render.upscaling}
               onValueChange={(upscaling) => {
@@ -247,8 +234,8 @@ export function ProjectRenderingSettings({
           </Field>
         ) : null}
         </FieldGroup>
-        </DisclosureSection>
-        <DisclosureSection title="Water" {...renderingSection("water")}>
+        </SettingsSection>
+        <SettingsSection id="water" title="Water">
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-water-blend-distance">Water Blend Distance</FieldLabel>
             <NumberField
@@ -269,8 +256,8 @@ export function ProjectRenderingSettings({
               Metres within which water bodies merge into one surface, in rendering and water queries. 0 turns it off.
             </FieldDescription>
           </Field>
-        </DisclosureSection>
-        <DisclosureSection title="Play Preview" {...renderingSection("playPreview")}>
+        </SettingsSection>
+        <SettingsSection id="playPreview" title="Play Preview">
         <FieldGroup className="gap-2">
           <Field className="settings-field">
           <FieldLabel htmlFor="setting-play-frame-cap">
@@ -297,8 +284,7 @@ export function ProjectRenderingSettings({
           }
         />
         </FieldGroup>
-        </DisclosureSection>
-      </FieldSet>
+        </SettingsSection>
     </FieldGroup>
   );
 }

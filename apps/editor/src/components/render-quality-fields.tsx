@@ -115,6 +115,7 @@ export function RenderQualityFields({
     <FieldSet>
       <FieldLegend className={hideTitle ? "sr-only" : undefined}>Scalability</FieldLegend>
       <FieldGroup className="gap-2">
+        <h4 className="settings-group-heading">Presets</h4>
         {([undefined, ...QUALITY_GROUPS] as (QualityGroup | undefined)[]).map(
           (group) => (
             <Field key={group ?? "all"} className="settings-field">
@@ -157,6 +158,7 @@ export function RenderQualityFields({
             </Field>
           ),
         )}
+        <h4 className="settings-group-heading">Resolution</h4>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-resolution-scale">
             Resolution Scale
@@ -181,7 +183,7 @@ export function RenderQualityFields({
             onCheckedChange={(dynamic) => edit("resolution", { dynamic })}
           />
         </Field>
-        <Field className="settings-field">
+        <Field className="settings-field settings-field-dependent">
           <FieldLabel htmlFor="quality-resolution-minimum">
             Minimum Resolution Scale
           </FieldLabel>
@@ -195,7 +197,7 @@ export function RenderQualityFields({
             onChange={(minScale) => edit("resolution", { minScale })}
           />
         </Field>
-        <Field className="settings-field">
+        <Field className="settings-field settings-field-dependent">
           <FieldLabel htmlFor="quality-resolution-target">
             Dynamic Resolution Target FPS
           </FieldLabel>
@@ -208,6 +210,7 @@ export function RenderQualityFields({
             onChange={(targetFps) => edit("resolution", { targetFps })}
           />
         </Field>
+        <h4 className="settings-group-heading">Textures</h4>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-textures-lod">
             Texture LOD Bias
@@ -246,6 +249,7 @@ export function RenderQualityFields({
           />
           <FieldDescription>Unused textures are released above this budget.</FieldDescription>
         </Field>
+        <h4 className="settings-group-heading">Geometry</h4>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-geometry-lod">Auto LOD</FieldLabel>
           <Switch
@@ -255,7 +259,7 @@ export function RenderQualityFields({
           />
           <FieldDescription>Distant models draw simplified meshes. Each Model&apos;s Auto LOD controls whether levels are generated.</FieldDescription>
         </Field>
-        <Field className="settings-field">
+        <Field className="settings-field settings-field-dependent">
           <FieldLabel htmlFor="quality-geometry-distance">
             LOD Distance Scale
           </FieldLabel>
@@ -279,6 +283,7 @@ export function RenderQualityFields({
           />
           <FieldDescription>In Play, objects wholly hidden behind boxes, spheres, cylinders and two-sided planes are not drawn.</FieldDescription>
         </Field>
+        <h4 className="settings-group-heading">Water</h4>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-water-shading">Water Shading Detail</FieldLabel>
           <Select
@@ -373,7 +378,7 @@ export function RenderQualityFields({
           </Select>
           <FieldDescription>Planar mirrors flat water and uses Screen Space elsewhere.</FieldDescription>
         </Field>
-        <Field className="settings-field">
+        <Field className="settings-field settings-field-dependent">
           <FieldLabel htmlFor="quality-water-reflection-steps">Reflection Steps</FieldLabel>
           <NumberField
             id="quality-water-reflection-steps"
@@ -385,7 +390,7 @@ export function RenderQualityFields({
             onChange={(reflectionSteps) => edit("water", { reflectionSteps })}
           />
         </Field>
-        <Field className="settings-field">
+        <Field className="settings-field settings-field-dependent">
           <FieldLabel htmlFor="quality-water-planar-scale">Planar Resolution</FieldLabel>
           <NumberField
             id="quality-water-planar-scale"
@@ -431,6 +436,7 @@ export function RenderQualityFields({
           />
           <FieldDescription>Short-wave detail the GPU ocean draws; floating objects follow the same waves on every tier.</FieldDescription>
         </Field>
+        <h4 className="settings-group-heading">Post Processing</h4>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-postprocessing-scale">
             Post Processing Resolution Scale
@@ -482,6 +488,7 @@ export function RenderQualityFields({
             <FieldDescription>{description}</FieldDescription>
           </Field>
         ))}
+        <h4 className="settings-group-heading">Lighting</h4>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-lighting-mode">
             Local Light Budget Mode
@@ -516,7 +523,7 @@ export function RenderQualityFields({
           </FieldDescription>
         </Field>
         {effective.lighting.localLightMode === "manual" ? (
-          <Field className="settings-field">
+          <Field className="settings-field settings-field-dependent">
             <FieldLabel htmlFor="quality-lighting-budget">
               Local Light Budget
             </FieldLabel>

@@ -32,8 +32,6 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import {
   Select,
@@ -75,6 +73,12 @@ import {
 } from "./project-source-control-settings";
 import { useProjectExport } from "./use-project-export";
 import {
+  SettingsCategoryHeader,
+  SettingsSection,
+  SettingsSectionsProvider,
+  useSettingsSectionsHost,
+} from "./settings-section";
+import {
   ENGINE_CATEGORIES,
   ENGINE_GROUPS,
   PROJECT_CATEGORIES,
@@ -84,8 +88,7 @@ import {
 import {
   ENGINE_SETTING_FIELDS,
   PROJECT_SETTING_FIELDS,
-  renderingSectionForTarget,
-  type RenderingSectionId,
+  type SettingSearchField,
 } from "../lib/settings-search";
 
 export type SettingsScope = "project" | "engine";
@@ -94,6 +97,8 @@ interface SettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   scope: SettingsScope;
+  /** Category shown when the dialog opens; defaults to the scope's first. */
+  initialCategoryId?: string;
   onEngineSaved?: () => void | Promise<void>;
   "data-testid"?: string;
 }
@@ -115,6 +120,7 @@ export function SettingsModal({
   open,
   onOpenChange,
   scope,
+  initialCategoryId,
   onEngineSaved,
   "data-testid": testId,
 }: SettingsModalProps) {
@@ -171,19 +177,6 @@ export function SettingsModal({
     }
   }, [open, scope, projectGuid, commitRendering]);
   const [search, setSearch] = useState("");
-  const [openRenderingSections, setOpenRenderingSections] = useState<
-    ReadonlySet<RenderingSectionId>
-  >(() => new Set());
-  const renderingSection = (id: RenderingSectionId) => ({
-    open: openRenderingSections.has(id),
-    onOpenChange: (open: boolean) =>
-      setOpenRenderingSections((current) => {
-        const next = new Set(current);
-        if (open) next.add(id);
-        else next.delete(id);
-        return next;
-      }),
-  });
   const settingsBodyRef = useRef<HTMLDivElement>(null);
   const [pendingFocus, setPendingFocus] = useState<{ targetId?: string } | null>(null);
   const [tokenDraft, setTokenDraft] = useState("");
@@ -201,6 +194,7 @@ export function SettingsModal({
   const [activeCategoryId, setActiveCategoryId] = useState(
     scope === "engine" ? "undo" : "general",
   );
+  const sections = useSettingsSectionsHost(scope, activeCategoryId);
   const store = useMemo(() => createAppSettingsStore(), []);
   const [engineSettings, setEngineSettings] = useState<EngineSettings>(
     defaultEngineSettings(),
@@ -210,11 +204,11 @@ export function SettingsModal({
     setPendingFocus(null);
     if (!open) return;
     setSearch("");
-    setActiveCategoryId(scope === "engine" ? "undo" : "general");
+    setActiveCategoryId(initialCategoryId ?? (scope === "engine" ? "undo" : "general"));
     if (scope === "engine") {
       void store.load().then(setEngineSettings);
     }
-  }, [open, scope, store]);
+  }, [open, scope, store, initialCategoryId]);
 
   const saveEngine = useCallback(
     async (patch: Partial<EngineSettings>) => {
@@ -242,18 +236,18 @@ export function SettingsModal({
   }, [scope, showSourceControl]);
 
   const searching = search.trim().length > 0;
-  const searchResults = useMemo(() => {
+  const searchResults = useMemo((): SettingSearchField[] => {
     const words = search.trim().toLowerCase().split(/\s+/);
     const available = source.filter((category) => category.id !== "sourceControl" || showSourceControl);
     const settingFields = scope === "engine" ? ENGINE_SETTING_FIELDS : PROJECT_SETTING_FIELDS;
     return available.flatMap((category) => {
       const matches = settingFields.filter((field) =>
         field.categoryId === category.id &&
-        words.every((word) => `${category.label} ${field.label}`.toLowerCase().includes(word)),
+        words.every((word) => `${category.label} ${field.sectionTitle ?? ""} ${field.label}`.toLowerCase().includes(word)),
       );
       if (matches.length) return matches;
       return words.every((word) => matchesSearch(category.label, category.keywords, word))
-        ? [{ categoryId: category.id, label: category.label, targetId: undefined }]
+        ? [{ categoryId: category.id, label: category.label }]
         : [];
     });
   }, [scope, search, source, showSourceControl]);
@@ -358,33 +352,43 @@ export function SettingsModal({
           </Empty>
         ) : (
           <div className="flex flex-col gap-1" aria-label="Matching Settings">
-            {searchResults.map((result) => (
-              <Button
-                key={`${result.categoryId}:${result.label}`}
-                variant="ghost"
-                size="sm"
-                className="h-auto min-h-[var(--chrome-row,28px)] justify-between gap-3 py-1 text-left"
-                onClick={() => {
-                  setActiveCategoryId(result.categoryId);
-                  setSearch("");
-                  const section = renderingSectionForTarget(result.targetId);
-                  if (section) renderingSection(section).onOpenChange(true);
-                  setPendingFocus({ targetId: result.targetId });
-                }}
-              >
-                <span className="min-w-0 truncate" title={result.label}>{result.label}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">{source.find((category) => category.id === result.categoryId)?.label}</span>
-              </Button>
-            ))}
+            {searchResults.map((result) => {
+              const categoryLabel = source.find((category) => category.id === result.categoryId)?.label;
+              return (
+                <Button
+                  key={`${result.categoryId}:${result.sectionId ?? ""}:${result.label}`}
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto min-h-[var(--chrome-row,28px)] justify-between gap-3 py-1 text-left"
+                  onClick={() => {
+                    setActiveCategoryId(result.categoryId);
+                    setSearch("");
+                    if (result.sectionId) sections.openSection(result.categoryId, result.sectionId);
+                    setPendingFocus({ targetId: result.targetId });
+                  }}
+                >
+                  <span className="min-w-0 truncate" title={result.label}>{result.label}</span>
+                  <span className="min-w-0 shrink truncate text-xs text-muted-foreground">
+                    {result.sectionTitle ? `${categoryLabel} › ${result.sectionTitle}` : categoryLabel}
+                  </span>
+                </Button>
+              );
+            })}
           </div>
         )
-      ) : <div ref={settingsBodyRef} tabIndex={-1} className="outline-none">
+      ) : <div ref={settingsBodyRef} tabIndex={-1} className="flex flex-col gap-2 outline-none">
+      {scope === "engine" || showProjectBody ? (
+        <SettingsCategoryHeader
+          title={source.find((category) => category.id === activeCategoryId)?.label ?? ""}
+          host={sections}
+        />
+      ) : null}
+      <SettingsSectionsProvider value={sections.value}>
       {scope === "engine" ? (
         <EngineSettingsForm
           settings={engineSettings}
           onChange={saveEngine}
           categoryId={activeCategoryId as EngineSettingsCategoryId}
-          focusTargetId={pendingFocus?.targetId}
         />
       ) : null}
 
@@ -393,14 +397,39 @@ export function SettingsModal({
         twoD &&
         activeCategoryId === "general" ? (
         <FieldGroup>
-          <FieldSet>
-            <FieldLegend>General</FieldLegend>
+          <SettingsSection id="project" title="Project">
             <Field className="settings-field">
               <FieldLabel htmlFor="settings-project-version">Project Version</FieldLabel>
               <Input id="settings-project-version" data-testid="settings-project-version"
                 value={projectDocument.metadata.version}
                 onChange={event => updateProjectVersion(event.target.value)} />
             </Field>
+              <Field className="settings-field">
+              <FieldLabel htmlFor="settings-autosave-interval">
+                  Auto-Save Interval (Seconds)
+              </FieldLabel>
+              <NumberField
+                id="settings-autosave-interval"
+                min={1}
+                rejectOutOfRange
+                aria-describedby="settings-autosave-description"
+                className="min-h-[var(--chrome-row,28px)]"
+                value={Math.round(
+                  projectDocument.settings.autoSaveIntervalMs / 1000,
+                )}
+                onChange={(seconds) => {
+                  updateProjectSettings({
+                    autoSaveIntervalMs: Math.round(seconds * 1000),
+                  });
+                }}
+                data-testid="settings-autosave-interval"
+              />
+              <FieldDescription id="settings-autosave-description">
+                Enter at least 1 second. Auto-save writes pending project changes at this interval.
+              </FieldDescription>
+            </Field>
+          </SettingsSection>
+          <SettingsSection id="scripting" title="Scripting">
               <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="settings-compile-on-save">
                   Compile On Save
@@ -433,7 +462,7 @@ export function SettingsModal({
                 Stops runaway scripts in Play and Preview. Off in release exports.
               </FieldDescription>
             </Field>
-              <Field className="settings-field">
+              <Field className="settings-field settings-field-dependent" data-disabled={!projectDocument.settings.infiniteLoopDetection}>
                 <FieldLabel htmlFor="settings-loop-count">
                   Loop Count
                 </FieldLabel>
@@ -467,32 +496,10 @@ export function SettingsModal({
                 How often unreferenced Create Object objects are collected. 60 ticks is about one second.
               </FieldDescription>
             </Field>
-              <Field className="settings-field">
-              <FieldLabel htmlFor="settings-autosave-interval">
-                  Auto-Save Interval (Seconds)
-              </FieldLabel>
-              <NumberField
-                id="settings-autosave-interval"
-                min={1}
-                rejectOutOfRange
-                aria-describedby="settings-autosave-description"
-                className="min-h-[var(--chrome-row,28px)]"
-                value={Math.round(
-                  projectDocument.settings.autoSaveIntervalMs / 1000,
-                )}
-                onChange={(seconds) => {
-                  updateProjectSettings({
-                    autoSaveIntervalMs: Math.round(seconds * 1000),
-                  });
-                }}
-                data-testid="settings-autosave-interval"
-              />
-              <FieldDescription id="settings-autosave-description">
-                Enter at least 1 second. Auto-save writes pending project changes at this interval.
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel>Editor Utility Objects</FieldLabel>
+          </SettingsSection>
+          <SettingsSection id="editorUtilityObjects" title="Editor Utility Objects">
+            <Field className="settings-row">
+              <FieldLabel className="sr-only">Editor Utility Objects</FieldLabel>
               <NamedListEditor
                 values={projectDocument.settings.editorUtilityObjects}
                 onChange={(editorUtilityObjects) =>
@@ -519,7 +526,7 @@ export function SettingsModal({
                   Classes that run only in the editor.
               </FieldDescription>
             </Field>
-          </FieldSet>
+          </SettingsSection>
         </FieldGroup>
       ) : null}
 
@@ -540,10 +547,9 @@ export function SettingsModal({
         projectDocument &&
         activeCategoryId === "physics" ? (
         <FieldGroup>
-          <FieldSet>
-            <FieldLegend>Physics</FieldLegend>
-            <Field>
-              <FieldLabel>Collision Layers</FieldLabel>
+          <SettingsSection id="collisionLayers" title="Collision Layers">
+            <Field className="settings-row">
+              <FieldLabel className="sr-only">Collision Layers</FieldLabel>
               <NamedListEditor
                 values={projectDocument.settings.physics.collisionLayers}
                 onChange={(collisionLayers) =>
@@ -566,8 +572,10 @@ export function SettingsModal({
                   Up to {MAX_COLLISION_LAYERS} layers.
               </FieldDescription>
             </Field>
-            <Field>
-              <FieldLabel>Collision Presets</FieldLabel>
+          </SettingsSection>
+          <SettingsSection id="collisionPresets" title="Collision Presets">
+            <Field className="settings-row">
+              <FieldLabel className="sr-only">Collision Presets</FieldLabel>
               <CollisionPresetsField
                 layers={projectDocument.settings.physics.collisionLayers}
                 value={projectDocument.settings.physics.collisionPresets}
@@ -582,16 +590,15 @@ export function SettingsModal({
                 Each preset sets a Layer and an Ignore, Overlap or Block response to every layer. Colliders pick a preset or Custom.
               </FieldDescription>
             </Field>
-          </FieldSet>
+          </SettingsSection>
         </FieldGroup>
       ) : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "saveGames" ? <ProjectSaveGamesSettings /> : null}
       {showProjectBody && projectDocument && activeCategoryId === "fonts" ? (
         <FieldGroup>
-          <FieldSet>
-            <FieldLegend>Fonts</FieldLegend>
-            <Field>
+          <SettingsSection id="defaults" title="Defaults">
+            <Field className="settings-field">
               <FieldLabel>Default Font</FieldLabel>
               <AssetPickerControl
                 value={projectDocument.settings.fonts.defaultFontGuid}
@@ -667,7 +674,7 @@ export function SettingsModal({
                 </SelectContent>
               </Select>
             </Field>
-          </FieldSet>
+          </SettingsSection>
         </FieldGroup>
       ) : null}
 
@@ -693,7 +700,6 @@ export function SettingsModal({
           projectDocument={projectDocument}
           updateProjectSettings={updateProjectSettings}
           assetRegistry={assetRegistry}
-          renderingSection={renderingSection}
           setLutPickerOpen={setLutPickerOpen}
         />
       ) : null}
@@ -701,9 +707,8 @@ export function SettingsModal({
         {showProjectBody &&
         projectDocument &&
         activeCategoryId === "textures" ? (
-        <FieldGroup className="gap-4">
-          <FieldSet>
-            <FieldLegend>Textures</FieldLegend>
+        <FieldGroup>
+          <SettingsSection id="encoding" title="Encoding">
             <Field orientation="horizontal" className="settings-field">
               <FieldLabel htmlFor="retry-texture-encoding">Failed Encodes</FieldLabel>
               <Button
@@ -718,7 +723,7 @@ export function SettingsModal({
               </Button>
               <FieldDescription>Queues textures whose compression failed.</FieldDescription>
             </Field>
-          </FieldSet>
+          </SettingsSection>
         </FieldGroup>
       ) : null}
 
@@ -758,7 +763,7 @@ export function SettingsModal({
           setDisableSourceControlOpen={setDisableSourceControlOpen}
         />
       ) : null}
-
+      </SettingsSectionsProvider>
       </div>}
     </CatalogDialog>
       {scope === "project" ? (

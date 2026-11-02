@@ -12,8 +12,6 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import { Switch } from "@haptic/ui/components/switch";
 import {
@@ -43,6 +41,7 @@ import {
 import { resolvePluginEnabled } from "@haptic/assets";
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import { PluginExportDialog } from "./plugin-export-dialog";
+import { SettingsSection } from "./settings-section";
 
 function maturityLabels(plugin: PluginDescriptor) {
   return [
@@ -188,19 +187,8 @@ export function ProjectPluginsSettings() {
 
   return (
     <FieldGroup data-testid="settings-plugins-panel">
-      <FieldSet>
-        <FieldLegend>Plugins</FieldLegend>
-        {pending ? <p role="status" className="text-sm text-muted-foreground">{pending}…</p> : null}
-        {operationError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Plugin Action Failed</AlertTitle>
-            <AlertDescription>
-              {operationError.message}
-              <Button variant="outline" size="sm" className="mt-2 w-fit" disabled={Boolean(pending)} onClick={operationError.retry}>Retry</Button>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <Field orientation="horizontal">
+      <SettingsSection id="contentBrowser" title="Content Browser">
+        <Field orientation="horizontal" className="settings-field">
           <FieldContent>
             <FieldLabel htmlFor="settings-show-plugin-content">
               Show Plugin Content
@@ -221,6 +209,19 @@ export function ProjectPluginsSettings() {
             aria-label="Show Plugin Content"
           />
         </Field>
+      </SettingsSection>
+      <SettingsSection id="installed" title="Installed Plugins">
+        <div className="settings-row flex flex-col gap-2">
+        {pending ? <p role="status" className="text-sm text-muted-foreground">{pending}…</p> : null}
+        {operationError ? (
+          <Alert variant="destructive">
+            <AlertTitle>Plugin Action Failed</AlertTitle>
+            <AlertDescription>
+              {operationError.message}
+              <Button variant="outline" size="sm" className="mt-2 w-fit" disabled={Boolean(pending)} onClick={operationError.retry}>Retry</Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {rows.map(({ plugin, enabled }) => {
           const maturity = maturityLabels(plugin);
           const Icon = resolvePluginIcon(plugin.settings.iconKey) ?? PuzzleIcon;
@@ -362,7 +363,8 @@ export function ProjectPluginsSettings() {
             void run("Importing Plugin", async () => runImport(new Uint8Array(await file.arrayBuffer())));
           }}
         />
-      </FieldSet>
+        </div>
+      </SettingsSection>
       {exportTarget ? (
         <PluginExportDialog
           plugin={exportTarget}

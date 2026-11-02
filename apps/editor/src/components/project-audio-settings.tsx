@@ -11,12 +11,11 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@haptic/ui/components/field";
 import { Slider } from "@haptic/ui/components/slider";
 import { Switch } from "@haptic/ui/components/switch";
 import type { DocumentActions, RegistryState } from "../context/document-context-types";
+import { SettingsSection } from "./settings-section";
 
 interface ProjectAudioSettingsProps {
   projectDocument: ProjectDocument;
@@ -34,9 +33,8 @@ export function ProjectAudioSettings({
 }: ProjectAudioSettingsProps) {
   return (
     <FieldGroup>
-      <FieldSet>
-        <FieldLegend>Audio</FieldLegend>
-        <Field>
+      <SettingsSection id="mixer" title="Mixer">
+        <Field className="settings-field">
           <FieldLabel>Audio Mixer</FieldLabel>
           <AssetPickerControl
             value={projectDocument.settings.audio.audioMixerGuid}
@@ -74,6 +72,8 @@ export function ProjectAudioSettings({
               None bypasses channel and master volume controls.
           </FieldDescription>
         </Field>
+      </SettingsSection>
+      <SettingsSection id="occlusion" title="Occlusion">
           <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="settings-audio-occlusion">
             Occlusion
@@ -96,6 +96,13 @@ export function ProjectAudioSettings({
             Wall muffling for channels with Muffle Through Walls enabled.
           </FieldDescription>
         </Field>
+      </SettingsSection>
+      <SettingsSection id="reverb" title="Reverb">
+        <div className="settings-row">
+          <FieldDescription>
+            Scales baked environment reverb. Sounds without a channel stay dry.
+          </FieldDescription>
+        </div>
         {(
           [
               [
@@ -115,7 +122,7 @@ export function ProjectAudioSettings({
             ],
           ] as const
         ).map(([id, label, key]) => (
-          <Field key={id}>
+          <Field key={id} className="settings-field">
             <FieldLabel id={`${id}-label`} htmlFor={id}>{label}</FieldLabel>
             <div className="flex min-w-0 items-center gap-2">
               <Slider
@@ -159,10 +166,7 @@ export function ProjectAudioSettings({
             </div>
           </Field>
         ))}
-        <FieldDescription>
-          Scales baked environment reverb. Sounds without a channel stay dry.
-        </FieldDescription>
-      </FieldSet>
+      </SettingsSection>
     </FieldGroup>
   );
 }
