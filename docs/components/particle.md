@@ -12,6 +12,7 @@ Select an actor, then choose **Add Component > Particles > Particle**. You can a
 | --- | --- |
 | Particle System | The [Particle System](../assets/particle-system.md) to play. |
 | Play On Start | Starts the effect when Play begins. Default on. |
+| Retrigger | What **Play** does while the effect is still on screen. **Overlap** (default) lets the earlier run finish while a new run starts, keeping up to three earlier runs; a looping system that is playing keeps playing. **Restart** cuts the effect and starts again. |
 | Sorting Layer | The layer the particles draw on. Default **Default**. |
 | Order In Layer | Order within the layer. Default 0. |
 
@@ -20,7 +21,7 @@ Select an actor, then choose **Add Component > Particles > Particle**. You can a
 - Works in world scenes and in Scene Layers.
 - The actor's transform is where the particles are emitted from.
 - Sorting Layers are listed back to front in **Project Settings > Game > Sorting Layers**. Particles still draw after opaque meshes and before blended ones, whatever their layer.
-- [Play Particles](../scripting/class/play-particles.md) and [Stop Particles](../scripting/class/stop-particles.md) start and stop every particle component on an actor, and [Is Particles Playing](../scripting/class/is-particles-playing.md) checks whether any of them plays. The component also has **Play**, **Stop** and **Is Playing** functions.
+- [Play Particles](../scripting/class/play-particles.md) and [Stop Particles](../scripting/class/stop-particles.md) start and stop every particle component on an actor, and [Is Particles Playing](../scripting/class/is-particles-playing.md) checks whether any of them plays. The component also has **Play**, **Restart**, **Stop** and **Is Playing** functions. [Restart Particles](../scripting/class/restart-particles.md) always cuts and starts again, whatever **Retrigger** says.
 - [Event On Particles Finished](../scripting/class/event-on-particles-finished.md) runs when the component stops playing: a Particle System that does not loop ran out, or **Stop** was called, and the last particles are gone.
 
 - For one-off effects that need no actor of their own, use [Spawn Particles At Location](../scripting/class/spawn-particles-at-location.md) or [Spawn Particles Attached](../scripting/class/spawn-particles-attached.md).

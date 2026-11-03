@@ -11,6 +11,7 @@ import {
   type ParticleGraphDocument,
 } from "@haptic/particle-graph";
 import { newAssetFileName, type CreatableAssetType } from "../content-browser-helpers";
+import { instanceOverrideKeys } from "../prefab-instance-sync";
 import {
   actor,
   comp,
@@ -148,8 +149,10 @@ async function saveSpawner(ctx: FeatureTestContext, flash: string): Promise<Feat
 const flashRelays = new WeakMap<FeatureTestContext, { ref: FeatureTestClassRef; components: ReturnType<typeof comp>[] }>();
 
 /**
- * A Once flash that replays itself: Event On Particles Finished asserts that Is Particles
- * Playing already reads false, waits, and plays the component again.
+ * A Once flash that replays itself. Begin Play plays it again while the first run still emits,
+ * so its Retrigger applies (Overlap keeps the first run as a ghost, Restart cuts it). Event On
+ * Particles Finished asserts that Is Particles Playing already reads false, waits, and calls
+ * Restart Particles.
  */
 async function saveFlashRelay(ctx: FeatureTestContext, flash: string) {
   const components = [comp("prefab-flash", "ParticleComponent", { particleSystemGuid: flash, playOnStart: true }, undefined, { name: "Flash" })];
@@ -166,7 +169,10 @@ async function saveFlashRelay(ctx: FeatureTestContext, flash: string) {
       gNode("stopped", "boolean.not", 240, 200),
       gNode("check", "debug.assert", 260, 0, { "default:message": "Is Particles Playing read true in Event On Particles Finished" }),
       gNode("wait", "timers.delay", 520, 0, { "default:duration": 0.75 }),
-      gNode("replay", "particles.play", 780, 0),
+      gNode("replay", "particles.restart", 780, 0),
+      gNode("begin", "flow.event.beginPlay", 0, 400),
+      gNode("early", "timers.delay", 260, 400, { "default:duration": 0.15 }),
+      gNode("retrigger", "particles.play", 520, 400),
     ],
     edges: [
       gExec("finished", "check"),
@@ -174,6 +180,8 @@ async function saveFlashRelay(ctx: FeatureTestContext, flash: string) {
       gWire("stopped", "out", "check", "condition"),
       gExec("check", "wait"),
       gExec("wait", "replay"),
+      gExec("begin", "early"),
+      gExec("early", "retrigger"),
     ],
   });
   const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.flashRelay, parentClass: "Actor", graph });
@@ -220,6 +228,15 @@ export async function placeFeatureTestParticles(ctx: FeatureTestContext): Promis
   const relay = flashRelays.get(ctx);
   if (!relay) throw new Error("FeatureTest could not find the Flash Relay Class");
   ctx.addActor(actor("ft-fx-flash-relay", "Flash Relay", tf(zone.at(0, 1.5, 4)), instanceComponents("ft-fx-flash-relay", relay.components), {
+    classId: relay.ref.classId,
+  }), { zone: "particles" });
+  // The same Class with Retrigger Restart: its early Play cuts the first run instead of overlapping it.
+  const restartComponents = instanceComponents("ft-fx-flash-restart", relay.components).map((component, index) => ({
+    ...component,
+    properties: { ...component.properties, retrigger: "restart" },
+    overrideKeys: instanceOverrideKeys(relay.components[index]!, ["retrigger"]),
+  }));
+  ctx.addActor(actor("ft-fx-flash-restart", "Flash Relay (Restart)", tf(zone.at(3, 1.5, 4)), restartComponents, {
     classId: relay.ref.classId,
   }), { zone: "particles" });
 

@@ -146,7 +146,8 @@ describe("particle incarnation and playback ownership", () => {
     f.service.setPaused(true);
     f.play(false);
     f.play(true);
-    const restarted = f.scene.particleSystems[0] as ParticleSystem;
+    // The drained-out first run overlaps as a ghost; the new run is the last system.
+    const restarted = f.scene.particleSystems.at(-1) as ParticleSystem;
     expect(restarted).not.toBe(first);
     await vi.waitFor(() => expect(f.state()).toBe("playing"));
     advance(restarted);
@@ -613,3 +614,130 @@ describe("simulation time scale", () => {
       expect(system.particles[0]!.size).toBeCloseTo(expected, 3);
     });
 });
+
+describe("retrigger", () => {
+  const assign = (retrigger?: "overlap" | "restart") => ({ type: "assignParticle" as const, actorGuid: "actor", componentId: "particle",
+    slotId: 1, particleSystemGuid: "system", play: true, generation: 1, ...(retrigger ? { retrigger } : {}) });
+  let generation = 1;
+  const play = (restart = false) => ({ type: "setParticlePlaying" as const, actorGuid: "actor", componentId: "particle", playing: true,
+    generation: ++generation, ...(restart ? { restart: true } : {}) });
+  /** A one-shot that emits for 2 s; its particles live 2 s. */
+  const oneShot = () => libraryOf({ flash: { emitter: { loop: "once", duration: 2 }, spawn: { rate: { mode: "constant", value: 30 } },
+    initialize: { lifetime: { mode: "constant", value: 2 } } } });
+  const startedSystem = async (f: ReturnType<typeof fixture>) => {
+    const system = f.scene.particleSystems.at(-1) as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    simulate([system], 10);
+    return system;
+  };
+
+  it("runs a ghost at the session time scale and holds it at scale 0", async () => {
+    const f = fixture();
+    f.service.setLibrary(oneShot());
+    f.service.handleCommand(assign());
+    const first = await startedSystem(f);
+    const authored = first.updateSpeed;
+    f.service.handleCommand(play());
+    const second = await startedSystem(f);
+    expect(f.scene.particleSystems).toEqual([first, second]);
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale: 0.5 });
+    for (const system of [first, second]) expect(system.updateSpeed).toBeCloseTo(authored * 0.5, 12);
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale: 0 });
+    expect(first.updateSpeed).toBe(0);
+    expect(first.paused).toBe(true);
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale: 1 });
+    expect(first.updateSpeed).toBeCloseTo(authored, 12);
+    expect(first.paused).toBe(false);
+  });
+
+  it("keeps earlier one-shot runs on screen as ghosts on rapid Play, up to three, and cuts the oldest", async () => {
+    const f = fixture();
+    f.service.setLibrary(oneShot());
+    f.service.handleCommand(assign());
+    const runs = [await startedSystem(f)];
+    for (let i = 0; i < 5; i += 1) {
+      f.service.handleCommand(play());
+      runs.push(await startedSystem(f));
+    }
+    // The current run plus the three newest ghosts; each ghost stopped emitting but keeps its particles.
+    const kept = runs.slice(-4);
+    expect(f.scene.particleSystems).toEqual(kept);
+    for (const ghost of kept.slice(0, 3)) {
+      expect((ghost as unknown as { _stopped: boolean })._stopped).toBe(true);
+      expect(ghost.getActiveCount()).toBeGreaterThan(0);
+    }
+    expect((kept[3] as unknown as { _stopped: boolean })._stopped).toBe(false);
+    expect(runs.slice(0, 2).every((cut) => !f.scene.particleSystems.includes(cut))).toBe(true);
+    expect(f.service.stats()).toMatchObject({ systems: 4, playing: 1 });
+    expect(f.state()).toBe("playing");
+    // A ghost drains on its own and never reports; only the current run's end does.
+    simulate(kept.slice(0, 3), 150);
+    f.frame();
+    expect(f.scene.particleSystems).toEqual([kept[3]]);
+    expect(f.service.stats().systems).toBe(1);
+    expect(f.ended).toEqual([]);
+    // Pause holds ghosts too, and retire takes them with the bundle.
+    f.service.handleCommand(play());
+    const ghost = runs.at(-1)!;
+    await startedSystem(f);
+    f.service.setPaused(true);
+    expect([ghost.updateSpeed, ghost.paused]).toEqual([0, true]);
+    f.service.handleCommand({ type: "assignParticle", actorGuid: "actor", componentId: "particle", slotId: 1, particleSystemGuid: null });
+    expect(f.scene.particleSystems).toEqual([]);
+    expect(f.service.stats().systems).toBe(0);
+  });
+
+  it("leaves a looping run playing on Play, and overlaps a run that is draining", async () => {
+    const f = fixture();
+    f.service.handleCommand(assign());
+    const looping = await startedSystem(f);
+    f.service.handleCommand(play());
+    expect(f.scene.particleSystems).toEqual([looping]);
+    expect(looping.isStarted()).toBe(true);
+    f.service.handleCommand({ type: "setParticlePlaying", actorGuid: "actor", componentId: "particle", playing: false });
+    expect(f.state()).toBe("draining");
+    f.service.handleCommand(play());
+    const next = await startedSystem(f);
+    expect(f.scene.particleSystems).toEqual([looping, next]);
+    expect(f.service.stats().systems).toBe(2);
+  });
+
+  it("cuts what is on screen and starts again in Restart mode", async () => {
+    const f = fixture();
+    f.service.setLibrary(oneShot());
+    f.service.handleCommand(assign("restart"));
+    const first = await startedSystem(f);
+    f.service.handleCommand(play());
+    const second = await startedSystem(f);
+    expect(f.scene.particleSystems).toEqual([second]);
+    expect(first.getActiveCount()).toBe(0);
+    // While it drains, Play cuts it too.
+    f.service.handleCommand({ type: "setParticlePlaying", actorGuid: "actor", componentId: "particle", playing: false });
+    f.service.handleCommand(play());
+    const third = await startedSystem(f);
+    expect(f.scene.particleSystems).toEqual([third]);
+    expect(f.service.stats().systems).toBe(1);
+  });
+
+  it("restarts a looping run that is already playing, and cuts its ghosts, for Restart Particles", async () => {
+    const f = fixture();
+    f.service.setLibrary(libraryOf({ flash: { emitter: { loop: "once", duration: 2 } }, smoke: {} }));
+    f.service.handleCommand(assign());
+    const [flash, smoke] = f.scene.particleSystems as ParticleSystem[];
+    await vi.waitFor(() => expect(smoke!.isStarted()).toBe(true));
+    // A mixed bundle loops: Play keeps it.
+    f.service.handleCommand(play());
+    expect(f.scene.particleSystems).toEqual([flash, smoke]);
+    f.service.handleCommand({ type: "setParticlePlaying", actorGuid: "actor", componentId: "particle", playing: false });
+    f.service.handleCommand(play());
+    await vi.waitFor(() => expect(f.state()).toBe("playing"));
+    expect(f.scene.particleSystems).toHaveLength(4);
+    f.service.handleCommand(play(true));
+    await vi.waitFor(() => expect(f.state()).toBe("playing"));
+    const restarted = [...f.scene.particleSystems] as ParticleSystem[];
+    expect(restarted).toHaveLength(2);
+    expect(restarted.some((system) => system === flash || system === smoke)).toBe(false);
+    await vi.waitFor(() => expect(restarted.every((system) => system.isStarted())).toBe(true));
+  });
+});
+

@@ -317,6 +317,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
       playOnStart: true,
       sortingLayer: "Default",
       orderInLayer: 0,
+      retrigger: "overlap",
     });
   });
 });
@@ -773,6 +774,7 @@ describe("projectPlaceActors", () => {
       playOnStart: true,
       sortingLayer: "Default",
       orderInLayer: 0,
+      retrigger: "overlap",
     });
   });
 

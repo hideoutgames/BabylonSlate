@@ -24,7 +24,7 @@ import {
   type ParticleSystemPayload,
 } from "@haptic/assets";
 import type { CommandMessage } from "@haptic/bridge";
-import { DEFAULT_SORTING_LAYERS, type ParticlePlaybackEndReason, type ParticleSpace } from "@haptic/core";
+import { DEFAULT_SORTING_LAYERS, PARTICLE_GHOSTS_PER_COMPONENT, type ParticlePlaybackEndReason, type ParticleSpace } from "@haptic/core";
 import {
   lowerParticleGraphDocumentCached,
   particleGraphCompileKey,
@@ -104,6 +104,8 @@ type SlotBase = {
   started: boolean;
   /** Native stop (a finished Once emitter) or drain; the emission driver is halted. */
   stopped: boolean;
+  /** The emitter runs Once (a one-shot run that Overlap retriggers while it plays). */
+  once: boolean;
   cancel: Array<() => void>;
 };
 /** One native system per prepared slot. */
@@ -145,6 +147,11 @@ type SlotContext = {
   space: ParticleSpace;
   generation: number;
 };
+/**
+ * An overlapped run (Retrigger Overlap): a bundle whose emitters were stopped when a new Play
+ * started, left to drain on its own emitter node and then disposed. It never reports.
+ */
+type Ghost = { records: SlotRecord[]; node: Mesh | null; cancel: Array<() => void> };
 /** The library entries a bundle was prepared from, including skipped slots. */
 type BundleSource = {
   system: ParticleSystemPayload | null;
@@ -164,6 +171,8 @@ type LiveComponent = {
   scene: Scene | null;
   node: Mesh | null;
   systems: SlotRecord[];
+  /** Overlapped runs still draining, oldest first (at most `PARTICLE_GHOSTS_PER_COMPONENT`). */
+  ghosts: Ghost[];
   source: BundleSource | null;
   cancel: Array<() => void>;
   building: boolean;
@@ -179,6 +188,17 @@ type LiveComponent = {
 type LibraryChange = { tier: ParticleEmitterChangeTier; bundle: boolean };
 let nextServiceId = 0;
 const emptyLibrary = (): ParticleLibrary => ({ emitters: new Map(), systems: new Map() });
+/** Every record of an entry: its bundle's, then its ghosts'. */
+const allRecords = (entry: LiveComponent): SlotRecord[] => [...entry.systems, ...entry.ghosts.flatMap((ghost) => ghost.records)];
+/**
+ * Whether stopped slots have no particles left. A claimed GPU ring always reports its capacity,
+ * so GPU slots wait the lifetime bound; CPU slots (the Basic fallback and every Particle Graph)
+ * count live particles. A system stopped before it started (paused) never emitted.
+ */
+const slotsDrained = (records: readonly SlotRecord[]): boolean => records.every((record) => !record.started ||
+  (record.kind === "basic" && record.gpu
+    ? record.system.getActiveCount() === 0 || record.drainedTime > record.lifetime
+    : record.system.getActiveCount() === 0));
 const liveKey = (actorGuid: string, componentId: string): string => `${actorGuid}:${componentId}`;
 const TIER_ORDER: readonly ParticleEmitterChangeTier[] = ["none", "live", "respawn", "rebuild"];
 const maxTier = (a: ParticleEmitterChangeTier, b: ParticleEmitterChangeTier): ParticleEmitterChangeTier =>
@@ -353,6 +373,7 @@ export class ParticleService {
       if (entry.command.slotId !== slotId) continue;
       this.refreshOwner(entry);
       if (entry.node) entry.node.parent = mesh?.getScene() === entry.scene ? mesh : null;
+      for (const ghost of entry.ghosts) if (ghost.node) ghost.node.parent = mesh?.getScene() === ghost.node.getScene() ? mesh : null;
     }
   }
 
@@ -386,7 +407,7 @@ export class ParticleService {
   private updateHalt(change: () => void): void {
     const wasHalted = this.halted;
     change();
-    for (const entry of this.live.values()) for (const record of entry.systems) this.applySpeed(record);
+    for (const entry of this.live.values()) for (const record of allRecords(entry)) this.applySpeed(record);
     if (this.halted || !wasHalted) return;
     // Speeds and the graph flag are restored first: CPU prewarm runs inside `start()`
     // (and skips a paused system), GPU prewarm on the first render.
@@ -419,13 +440,8 @@ export class ParticleService {
         if (this.live.get(entry.key) !== entry) continue;
         // A Play on a playing entry is idempotent but still names the generation its end reports.
         if (command.playing && command.generation !== undefined) entry.playGeneration = command.generation;
-        if (command.playing) {
-          if (entry.desiredPlaying) continue;
-          entry.desiredPlaying = true;
-          if (entry.state === "draining") this.releaseBundle(entry);
-          if (!entry.node) this.prepare(entry);
-          else this.startIfReady(entry);
-        } else this.stop(entry);
+        if (command.playing) this.play(entry, command.restart === true ? "restart" : entry.command.retrigger ?? "overlap", command.restart === true);
+        else this.stop(entry);
       }
       this.publishStats();
     }
@@ -438,8 +454,9 @@ export class ParticleService {
     let graphSystems = 0;
     for (const entry of this.live.values()) {
       if (entry.warm) continue;
-      systems += entry.systems.length;
-      for (const record of entry.systems) {
+      const records = allRecords(entry);
+      systems += records.length;
+      for (const record of records) {
         if (record.gpu) gpuSystems += 1;
         if (record.kind === "graph") graphSystems += 1;
       }
@@ -455,7 +472,7 @@ export class ParticleService {
     let capacity = 0;
     let gpu = 0;
     let cpu = 0;
-    for (const entry of this.live.values()) for (const record of entry.systems) {
+    for (const entry of this.live.values()) for (const record of allRecords(entry)) {
       active += record.system.getActiveCount();
       capacity += record.system.getCapacity();
       if (record.gpu) gpu += 1;
@@ -475,7 +492,7 @@ export class ParticleService {
   needsFrames(): boolean {
     if (this.halted || this.disposed) return false;
     for (const entry of this.live.values()) {
-      if (entry.state === "preparing" || entry.state === "playing" || entry.state === "draining") return true;
+      if (entry.state === "preparing" || entry.state === "playing" || entry.state === "draining" || entry.ghosts.length) return true;
     }
     return false;
   }
@@ -502,7 +519,7 @@ export class ParticleService {
       if (played.has(guid)) continue;
       const command: Assignment = { type: "assignParticle", slotId: slotId--, actorGuid: WARM_ACTOR, componentId: guid, particleSystemGuid: guid, play: true };
       const entry: LiveComponent = { key: liveKey(WARM_ACTOR, guid), command, desiredPlaying: true, playGeneration: 0, state: "preparing", generation: 0,
-        scene: null, node: null, systems: [], source: null, cancel: [], building: false, warm: true };
+        scene: null, node: null, systems: [], ghosts: [], source: null, cancel: [], building: false, warm: true };
       this.live.set(entry.key, entry);
       this.prepare(entry);
     }
@@ -617,7 +634,8 @@ export class ParticleService {
     }
     // Desired state is published before any native or material callback can run.
     const entry: LiveComponent = { key, command: { ...command, particleSystemGuid: guid }, desiredPlaying: command.play !== false,
-      playGeneration: command.generation ?? 0, state: "preparing", generation: 0, scene: null, node: null, systems: [], source: null, cancel: [], building: false };
+      playGeneration: command.generation ?? 0, state: "preparing", generation: 0, scene: null, node: null, systems: [], ghosts: [],
+      source: null, cancel: [], building: false };
     this.live.set(key, entry);
     this.prepare(entry);
     this.publishStats();
@@ -641,6 +659,7 @@ export class ParticleService {
   private refreshOwner(entry: LiveComponent): void {
     const host = this.hostFor(entry);
     if (host === entry.scene && entry.node) return;
+    if (host !== entry.scene) this.disposeGhosts(entry);
     this.releaseBundle(entry);
     this.prepare(entry);
   }
@@ -842,7 +861,7 @@ export class ParticleService {
       applyBasicEmitterPlan(system, plan, "create");
       return { record: { kind: "basic", index: slot.index, emitterGuid: slot.guid, system, lease, gpu, backend: context.backend,
         payload, driver: createBasicEmissionDriver(system, plan.schedule), prewarmPending: gpu && plan.preWarmCycles > 0,
-        pending: 0, updateSpeed: plan.updateSpeed, started: false, stopped: false,
+        pending: 0, updateSpeed: plan.updateSpeed, started: false, stopped: false, once: payload.emitter.loop === "once",
         lifetime: plan.lifetimeBound, drainedTime: 0, lastFrame: -1, cancel: [] } };
     } catch (error) {
       system.dispose();
@@ -862,7 +881,7 @@ export class ParticleService {
     return {
       record: { kind: "graph", gpu: false, index: slot.index, emitterGuid: slot.guid, system: realized.system, lease,
         set: realized.set, compileKey: plan.hash, materialGuid, pending: 0, updateSpeed: realized.system.updateSpeed,
-        started: false, stopped: false, cancel: [] },
+        started: false, stopped: false, once: plan.settings.loop === "once", cancel: [] },
       buildReady: realized.buildReady,
     };
   }
@@ -936,6 +955,76 @@ export class ParticleService {
     }
   }
 
+  /**
+   * Play. Overlap leaves a draining run, or a playing one whose emitters are all Once, to drain
+   * as a ghost while a new run starts; a looping run keeps playing. Restart (the Retrigger, or
+   * `force` for Restart Particles) cuts what is on screen, ghosts included, and starts again.
+   */
+  private play(entry: LiveComponent, retrigger: "overlap" | "restart", force: boolean): void {
+    const onScreen = entry.state === "playing" || entry.state === "draining";
+    if (force || (retrigger === "restart" && onScreen)) {
+      this.disposeGhosts(entry);
+      entry.desiredPlaying = true;
+      this.releaseBundle(entry);
+      this.prepare(entry);
+      return;
+    }
+    if (entry.desiredPlaying) {
+      if (entry.state !== "playing" || !entry.systems.length || !entry.systems.every((record) => record.once)) return;
+      this.beginDrain(entry, "stopped");
+    }
+    entry.desiredPlaying = true;
+    if (entry.state === "draining") this.ghost(entry);
+    if (!entry.node) this.prepare(entry);
+    else this.startIfReady(entry);
+  }
+
+  /** Detaches the draining bundle as a ghost; the oldest ghost beyond the cap is cut. */
+  private ghost(entry: LiveComponent): void {
+    const host = entry.scene;
+    const node = entry.node;
+    const records = entry.systems.splice(0);
+    entry.node = null;
+    // Cancels the entry's per-bundle observers; nothing native is left in it to dispose.
+    this.releaseBundle(entry);
+    if (!host || host.isDisposed || !records.length) {
+      this.disposeRecords(records, node);
+      return;
+    }
+    const ghost: Ghost = { records, node, cancel: [] };
+    for (const record of records) {
+      // Observers bound to the bundle's generation are inert now; a GPU slot needs its drain clock.
+      for (const cancel of record.cancel.splice(0)) cancel();
+      if (record.kind !== "basic" || !record.gpu) continue;
+      const basic = record;
+      const draw = basic.system.onBeforeDrawParticlesObservable.add(() => {
+        const frame = host.getFrameId();
+        if (basic.lastFrame === frame) return;
+        basic.lastFrame = frame;
+        basic.drainedTime += particleSimulationDelta(basic.system);
+      });
+      basic.cancel.push(() => basic.system.onBeforeDrawParticlesObservable.remove(draw));
+    }
+    const after = host.onAfterRenderObservable.add(() => { if (slotsDrained(records)) this.disposeGhost(entry, ghost); });
+    const disposing = host.onDisposeObservable.addOnce(() => this.disposeGhost(entry, ghost));
+    ghost.cancel.push(() => host.onAfterRenderObservable.remove(after), () => host.onDisposeObservable.remove(disposing));
+    entry.ghosts.push(ghost);
+    while (entry.ghosts.length > PARTICLE_GHOSTS_PER_COMPONENT) this.disposeGhost(entry, entry.ghosts[0]!);
+  }
+
+  private disposeGhost(entry: LiveComponent, ghost: Ghost): void {
+    const index = entry.ghosts.indexOf(ghost);
+    if (index < 0) return;
+    entry.ghosts.splice(index, 1);
+    for (const cancel of ghost.cancel.splice(0)) cancel();
+    this.disposeRecords(ghost.records, ghost.node);
+    this.publishStats();
+  }
+
+  private disposeGhosts(entry: LiveComponent): void {
+    for (const ghost of [...entry.ghosts]) this.disposeGhost(entry, ghost);
+  }
+
   private stop(entry: LiveComponent): void {
     const wasPlaying = entry.desiredPlaying;
     entry.desiredPlaying = false;
@@ -971,13 +1060,7 @@ export class ParticleService {
 
   private finishDrain(entry: LiveComponent, generation: number): void {
     if (!this.current(entry, generation) || entry.state !== "draining") return;
-    // A claimed GPU ring always reports its capacity, so GPU slots wait the lifetime bound;
-    // CPU slots (the Basic fallback and every Particle Graph) count live particles.
-    // A system stopped before it started (paused) never emitted.
-    const drained = entry.systems.every((record) => !record.started || (record.kind === "basic" && record.gpu
-      ? record.system.getActiveCount() === 0 || record.drainedTime > record.lifetime
-      : record.system.getActiveCount() === 0));
-    if (!drained) return;
+    if (!slotsDrained(entry.systems)) return;
     this.releaseBundle(entry);
     entry.state = "ready-stopped";
     this.publishStats();
@@ -1178,11 +1261,18 @@ export class ParticleService {
     entry.preparationCheck?.(); entry.preparationCheck = undefined;
     for (const cancel of entry.cancel.splice(0)) cancel();
     const records = entry.systems.splice(0);
-    this.disposeSlots(records);
-    entry.node?.dispose(); entry.node = null;
-    for (const record of records.reverse()) record.lease.release();
+    const node = entry.node;
+    entry.node = null;
+    this.disposeRecords(records, node);
     entry.scene = null;
     entry.building = false;
+  }
+
+  /** Disposes native systems, then their emitter node, then releases their Material leases (newest first). */
+  private disposeRecords(records: SlotRecord[], node: Mesh | null): void {
+    this.disposeSlots(records);
+    node?.dispose();
+    for (const record of [...records].reverse()) record.lease.release();
   }
 
   private retire(entry: LiveComponent): void {
@@ -1190,6 +1280,7 @@ export class ParticleService {
     this.live.delete(entry.key);
     entry.desiredPlaying = false;
     entry.state = "retired";
+    this.disposeGhosts(entry);
     this.releaseBundle(entry);
     this.publishStats();
   }

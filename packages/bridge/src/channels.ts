@@ -1085,6 +1085,8 @@ export type CommandMessage =
       play?: boolean;
       sortingLayer?: string;
       orderInLayer?: number;
+      /** What a Play does while a run is still on screen; omitted means overlap. */
+      retrigger?: import("@haptic/core").ParticleRetrigger;
       /** The worker's Play generation, echoed by `particlePlaybackEnded`; previews omit it (0). */
       generation?: number;
     }
@@ -1093,6 +1095,8 @@ export type CommandMessage =
       actorGuid: string;
       componentId?: string;
       playing: boolean;
+      /** Restart Particles: cut whatever is on screen and play from the start, whatever the component's Retrigger. */
+      restart?: boolean;
       /** The worker's Play generation, echoed by `particlePlaybackEnded`. */
       generation?: number;
     }

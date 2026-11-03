@@ -724,6 +724,11 @@ export function createScriptContext(
       if (!target) return;
       services.setParticlePlaying?.(target.guid, false);
     };
+    context.restartParticles = (actor) => {
+      const target = asActor(actor);
+      if (!target) return;
+      services.setParticlePlaying?.(target.guid, true, undefined, true);
+    };
     context.isParticlesPlaying = (actor) => {
       const target = asActor(actor);
       return target ? services.isParticlesPlaying?.(target.guid) === true : false;

@@ -1,4 +1,4 @@
-import type { SerializedComponent } from "@haptic/core";
+import { PARTICLE_RETRIGGER_LABELS, PARTICLE_RETRIGGER_MODES, parseParticleRetrigger, type SerializedComponent } from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
 import {
   asNumber,
@@ -198,12 +198,21 @@ export function particlePropertyRows(
       value: component.properties.playOnStart !== false,
       onChange: (next) => update("playOnStart", next),
     },
+    {
+      kind: "enum",
+      id: rowId(actorId, component.id, "retrigger"),
+      label: "Retrigger",
+      description: "What Play does while the effect is still on screen. Overlap lets it finish while a new run starts; Restart cuts it.",
+      value: parseParticleRetrigger(component.properties.retrigger),
+      options: PARTICLE_RETRIGGER_MODES.map((mode) => ({ value: mode, label: PARTICLE_RETRIGGER_LABELS[mode] })),
+      onChange: (next) => update("retrigger", next),
+    },
     sortingLayerRow(actorId, component, update, context.sortingLayers),
     ...genericRows(
       actorId,
       component,
       update,
-      new Set(["particleSystemGuid", "playOnStart", "sortingLayer"]),
+      new Set(["particleSystemGuid", "playOnStart", "retrigger", "sortingLayer"]),
     ),
   ];
 }

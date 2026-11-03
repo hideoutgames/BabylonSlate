@@ -153,6 +153,7 @@ export function defaultComponentAuthoringProperties(
       return {
         particleSystemGuid: null,
         playOnStart: true,
+        retrigger: "overlap",
         sortingLayer: "Default",
         orderInLayer: 0,
       };
