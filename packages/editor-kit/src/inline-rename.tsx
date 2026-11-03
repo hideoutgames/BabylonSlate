@@ -56,6 +56,8 @@ export function InlineRenameInput({ value, onDone, className, "aria-label": labe
     data-testid={testId}
     spellCheck={false}
     autoComplete="off"
+    autoCorrect="off"
+    enterKeyHint="done"
     className={cn("h-6 min-h-6 min-w-0 flex-1 rounded-sm px-1 py-0 text-[13px] md:text-[13px] pointer-coarse:h-9", className)}
     onPointerDown={stop}
     onClick={stop}

@@ -208,4 +208,30 @@ describe("particle graph lowering", () => {
     expect(particleGraphCompileKey(moved)).toBe(key);
     expect(particleGraphCompileKey({ ...broken, settings: { ...broken.settings, capacity: 64 } })).not.toBe(key);
   });
+
+  it("feeds a degree-unit angle through Degrees To Radians, wired or literal, and keys the unit", () => {
+    const literal = edited((doc) => {
+      Object.assign(nodeOf(doc, "create").properties, { angleUnit: "degrees", "default:angle": [90] });
+    });
+    const lowered = plan(literal);
+    expect(operation(lowered, "create").inputs.angle).toEqual({ kind: "operation", operationId: "create/angle", pinId: "out" });
+    expect(operation(lowered, "create/angle")).toEqual({ id: "create/angle", nodeType: "math.radians", resolvedType: "float",
+      inputs: { value: { kind: "constant", type: "float", value: [90] } }, properties: {} });
+    // The same literal in radians reaches Create Particle directly.
+    const radians = edited((doc) => Object.assign(nodeOf(doc, "create").properties, { "default:angle": [90] }));
+    expect(operation(plan(radians), "create").inputs.angle).toEqual({ kind: "constant", type: "float", value: [90] });
+    expect(particleGraphCompileKey(radians)).not.toBe(particleGraphCompileKey(literal));
+
+    // A wired value goes through the conversion too; the Cone's degree bounds clamp a literal.
+    const wired = edited((doc) => {
+      doc.nodes.push({ id: "half", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [45] } });
+      doc.edges.push({ id: "e-half", sourceNodeId: "half", sourcePinId: "out", targetNodeId: "create", targetPinId: "angle" });
+      Object.assign(nodeOf(doc, "create").properties, { angleUnit: "degrees" });
+      nodeOf(doc, "shape").type = "shape.cone";
+      Object.assign(nodeOf(doc, "shape").properties, { angleUnit: "degrees", "default:angle": [400] });
+    });
+    const wiredPlan = plan(wired);
+    expect(operation(wiredPlan, "create/angle").inputs.value).toEqual({ kind: "operation", operationId: "half", pinId: "out" });
+    expect(operation(wiredPlan, "shape/angle").inputs.value).toEqual({ kind: "constant", type: "float", value: [180] });
+  });
 });

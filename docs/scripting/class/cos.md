@@ -2,7 +2,7 @@
 node: math.cos
 ---
 
-# Cos
+# Cos (Radians)
 
 Returns the cosine of an angle in radians.
 
@@ -20,4 +20,4 @@ Returns the cosine of an angle in radians.
 
 ## Notes
 
-- Accepts a Float, Vector 2, Vector 3 or Color, and works on each component.
+- [**Cos (Degrees)**](cos-degrees.md) works in degrees.

@@ -54,6 +54,71 @@ function binary(
   };
 }
 
+/** One-input trig node: `expr` maps the input expression to the output expression. */
+function trigNode(
+  id: string,
+  title: string,
+  searchAliases: readonly string[],
+  expr: (value: string) => string,
+): NodeDefinition {
+  return {
+    id,
+    searchAliases: [...searchAliases],
+    title,
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("in", "In", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({ out: expr(ctx.input("in")) }),
+  };
+}
+
+const toRadians = (value: string) => `((${value}) * Math.PI / 180)`;
+const toDegrees = (value: string) => `((${value}) * 180 / Math.PI)`;
+
+/** Atan2 of Y over X, in radians or degrees. */
+function atan2Node(id: string, title: string, searchAliases: readonly string[], degrees: boolean): NodeDefinition {
+  return {
+    id,
+    searchAliases: [...searchAliases],
+    title,
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("y", "Y", "in", FLOAT),
+      pin("x", "X", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => {
+      const angle = `Math.atan2((${ctx.input("y")}), (${ctx.input("x")}))`;
+      return { out: degrees ? toDegrees(angle) : angle };
+    },
+  };
+}
+
+/**
+ * Trigonometry in radians and in degrees. The radian ids predate the degree
+ * variants, so their titles say "(Radians)" and the old titles stay searchable.
+ */
+const TRIG_NODES: NodeDefinition[] = [
+  trigNode("math.sin", "Sin (Radians)", ["sin", "sin(x)", "sine"], (value) => `Math.sin(${value})`),
+  trigNode("math.sinDegrees", "Sin (Degrees)", ["sin", "sind", "sine degrees"], (value) => `Math.sin(${toRadians(value)})`),
+  trigNode("math.cos", "Cos (Radians)", ["cos", "cos(x)", "cosine"], (value) => `Math.cos(${value})`),
+  trigNode("math.cosDegrees", "Cos (Degrees)", ["cos", "cosd", "cosine degrees"], (value) => `Math.cos(${toRadians(value)})`),
+  trigNode("math.tan", "Tan (Radians)", ["tan", "tan(x)", "tangent"], (value) => `Math.tan(${value})`),
+  trigNode("math.tanDegrees", "Tan (Degrees)", ["tan", "tand", "tangent degrees"], (value) => `Math.tan(${toRadians(value)})`),
+  trigNode("math.asin", "Asin (Radians)", ["asin", "asin(x)", "arcsine", "inverse sine"], (value) => `Math.asin(${value})`),
+  trigNode("math.asinDegrees", "Asin (Degrees)", ["asin", "asind", "arcsine degrees"], (value) => toDegrees(`Math.asin(${value})`)),
+  trigNode("math.acos", "Acos (Radians)", ["acos", "acos(x)", "arccosine", "inverse cosine"], (value) => `Math.acos(${value})`),
+  trigNode("math.acosDegrees", "Acos (Degrees)", ["acos", "acosd", "arccosine degrees"], (value) => toDegrees(`Math.acos(${value})`)),
+  trigNode("math.atan", "Atan (Radians)", ["atan", "atan(x)", "arctangent", "inverse tangent"], (value) => `Math.atan(${value})`),
+  trigNode("math.atanDegrees", "Atan (Degrees)", ["atan", "atand", "arctangent degrees"], (value) => toDegrees(`Math.atan(${value})`)),
+  atan2Node("math.atan2", "Atan2 (Radians)", ["atan2", "atan2(y,x)", "angle of vector"], false),
+  atan2Node("math.atan2Degrees", "Atan2 (Degrees)", ["atan2", "atan2d", "angle of vector degrees"], true),
+];
+
 export const mathNodes: NodeDefinition[] = [
   binary("math.add", "Add", "+"),
   binary("math.sub", "Subtract", "-"),
@@ -298,30 +363,7 @@ export const mathNodes: NodeDefinition[] = [
       out: `Math.max((${ctx.input("a")}), (${ctx.input("b")}))`,
     }),
   },
-  {
-    id: "math.sin",
-    searchAliases: ["sin","sin(x)"],
-    title: "Sin",
-    category: "math",
-    pure: true,
-    pins: () => [
-      pin("in", "In", "in", FLOAT),
-      pin("out", "Out", "out", FLOAT),
-    ],
-    codegen: (ctx) => ({ out: `Math.sin(${ctx.input("in")})` }),
-  },
-  {
-    id: "math.cos",
-    searchAliases: ["cos","cos(x)"],
-    title: "Cos",
-    category: "math",
-    pure: true,
-    pins: () => [
-      pin("in", "In", "in", FLOAT),
-      pin("out", "Out", "out", FLOAT),
-    ],
-    codegen: (ctx) => ({ out: `Math.cos(${ctx.input("in")})` }),
-  },
+  ...TRIG_NODES,
   {
     id: "math.degrees",
     searchAliases: ["degrees(x)","rad2deg","x * 180 / pi"],

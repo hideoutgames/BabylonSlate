@@ -2,7 +2,7 @@
 node: math.sin
 ---
 
-# Sine
+# Sine (Radians)
 
 Returns the sine of an angle in radians.
 

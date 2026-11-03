@@ -12,7 +12,12 @@ import {
 import {
   PARTICLE_CONDITION_TESTS,
   PARTICLE_OUTPUT_NODE_TYPE,
+  particleAngleUnitPin,
+  particleDegreesToRadians,
+  particleNodeAngleUnit,
   particleNodeValueType,
+  particleRadiansToDegrees,
+  type ParticleAngleUnit,
   type ParticleConditionTest,
 } from "./catalog";
 import {
@@ -158,8 +163,10 @@ export function newParticleNodeProperties(type: string): Record<string, unknown>
       return { value: [1, 1, 1, 1] };
     case "shape.sphere":
       return { hemisphere: false };
+    case "particle.create":
+      return { angleUnit: "radians" };
     case "shape.cone":
-      return { emitFromSpawnPointOnly: false };
+      return { emitFromSpawnPointOnly: false, angleUnit: "radians" };
     case "update.alignAngle":
       return { alignment: Math.PI / 2 };
     default:
@@ -199,6 +206,8 @@ export function normalizeParticleNodeProperties(
   }
   const valueType = particleNodeValueType(type, next);
   if (valueType) next.valueType = valueType;
+  const angleUnit = particleNodeAngleUnit(type, next);
+  if (angleUnit) next.angleUnit = angleUnit;
   switch (type) {
     case "random.range":
       next.lock = next.lock === "everyRead" ? "everyRead" : "perParticle";
@@ -380,6 +389,28 @@ export function setParticleNodeValueType(
     if (authored && target.type === "random.range") {
       properties[key] = resizeParticleValue(authored, valueType);
     }
+  }
+  return { ...target, properties };
+}
+
+/**
+ * Switch Create Particle's or Cone Shape's angle pin between radians and degrees,
+ * converting its authored default so the emitter keeps its look.
+ */
+export function setParticleNodeAngleUnit(
+  target: ParticleGraphNode,
+  angleUnit: ParticleAngleUnit,
+): ParticleGraphNode {
+  const pinId = particleAngleUnitPin(target.type);
+  const current = particleNodeAngleUnit(target.type, target.properties);
+  if (!pinId || !current || current === angleUnit) return target;
+  const properties: Record<string, unknown> = { ...target.properties, angleUnit };
+  const key = `default:${pinId}`;
+  const authored = numberArray(target.properties[key]);
+  if (authored) {
+    properties[key] = authored.map((value) =>
+      angleUnit === "degrees" ? particleRadiansToDegrees(value) : particleDegreesToRadians(value),
+    );
   }
   return { ...target, properties };
 }

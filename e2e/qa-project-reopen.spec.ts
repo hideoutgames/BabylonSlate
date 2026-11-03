@@ -18,9 +18,12 @@ async function renameAsset(page: Page, path: string, name: string) {
   await page.getByTestId("content-browser-search").fill(path.split("/").pop()!.split(".")[0]!);
   await page.locator(`[data-asset-path="${path}"]`).click({ button: "right" });
   await page.getByTestId("context-menu-item-rename").click();
-  await page.getByTestId("content-browser-name-input").fill(name);
-  await page.getByTestId("content-browser-name-confirm").click();
-  await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
+  const field = page.getByTestId(`content-item-rename-${path}`);
+  await expect(field).toBeFocused();
+  await field.fill(name);
+  await field.press("Enter");
+  // The tile keeps its old path until the rename lands and the registry refreshes.
+  await expect(page.locator(`[data-asset-path="${path}"]`)).toHaveCount(0);
 }
 
 async function moveAsset(page: Page, path: string) {

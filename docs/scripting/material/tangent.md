@@ -2,7 +2,7 @@
 node: math.tan
 ---
 
-# Tangent
+# Tangent (Radians)
 
 Returns the tangent of an angle in radians.
 

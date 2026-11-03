@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   Camera,
+  InstancedMesh,
   Mesh,
   MeshBuilder,
   ShaderMaterial,
@@ -31,7 +32,7 @@ import {
 import { worldPositionFromCanvas } from "./editor-place";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { glbContainerLoadCount, accountedGeometryBytesForScene } from "./glb-anim";
-import { encodeTriangleGlb, encodeUvHierarchyGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
+import { encodeSharedMeshGlb, encodeTriangleGlb, encodeUvHierarchyGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
 import { visualMeshes } from "./visual-meshes";
 import {
   CAMERA_BOUNDS_LINE_WIDTH,
@@ -1246,6 +1247,33 @@ describe("EditorSceneSync", () => {
       process.off("unhandledRejection", onUnhandled);
     }
     expect(unhandled).toEqual([]);
+  });
+
+  it("hides and locks every part of a loaded Model, including parts drawn as instances of a shared mesh", async () => {
+    const { scene } = createHandle();
+    const mesh = createMeshComponent("model-mesh", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({ modelBytes: new Map([["model-1", encodeSharedMeshGlb()]]) });
+    const actor = createActor("hero", "Hero", { components: [mesh] });
+    sync.apply(sceneWith([actor]));
+    await sync.whenEditorModelsReady();
+    // Babylon only selects a mesh that is isVisible, and picks only isPickable ones.
+    const parts = () =>
+      sync.meshForActor("hero")!.getChildMeshes(false).filter((part) => part.getTotalVertices() > 0);
+    const shown = () => parts().filter((part) => part.isVisible).map((part) => part.name);
+    const pickable = () => parts().filter((part) => part.isPickable).map((part) => part.name);
+    // The fixture's second node is the case at stake: an InstancedMesh part.
+    expect(parts().filter((part) => part instanceof InstancedMesh)).toHaveLength(1);
+    expect(shown()).toHaveLength(2);
+    expect(pickable()).toHaveLength(2);
+
+    sync.apply(sceneWith([{ ...actor, visible: false }]));
+    expect(shown()).toEqual([]);
+
+    sync.apply(sceneWith([{ ...actor, locked: true }]));
+    expect(shown()).toHaveLength(2);
+    expect(pickable()).toEqual([]);
   });
 
   it("loads the Model GLB under the MeshComponent child when a collider forces an origin", async () => {

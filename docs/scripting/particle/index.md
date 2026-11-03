@@ -26,7 +26,8 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | [Align Angle](align-angle.md) | Rotates each particle so its up direction follows its direction of travel on screen. |
 | [Apply Velocity](apply-velocity.md) | Moves every particle along its direction each frame. |
 | [Fade To Dead Color](fade-to-dead-color.md) | Blends each particle from its colour to its dead colour over its lifetime. |
-| [Update Angle](update-angle.md) | Sets the rotation of every particle each frame, in radians. |
+| [Update Angle (Degrees)](update-angle-degrees.md) | Sets the rotation of every particle each frame, in degrees. |
+| [Update Angle (Radians)](update-angle.md) | Sets the rotation of every particle each frame, in radians. |
 | [Update Color](update-color.md) | Sets the colour of every particle each frame. |
 | [Update Direction](update-direction.md) | Sets the velocity of every particle each frame. |
 | [Update Position](update-position.md) | Sets the position of every particle each frame. |
@@ -45,7 +46,8 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | Node | Description |
 | --- | --- |
 | [Age](age.md) | Returns the seconds since the particle was born. |
-| [Angle](angle.md) | Returns the current rotation of the particle in radians. |
+| [Angle (Degrees)](angle-degrees.md) | Returns the current rotation of the particle in degrees. |
+| [Angle (Radians)](angle.md) | Returns the current rotation of the particle in radians. |
 | [Dead Color](dead-color.md) | Returns the dead colour that the particle was created with. |
 | [Direction](direction.md) | Returns the current velocity of the particle in metres per second. |
 | [Initial Color](initial-color.md) | Returns the colour the particle was created with. |
@@ -88,13 +90,17 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | --- | --- |
 | [Absolute](absolute.md) | Returns the input with any negative sign removed. |
 | [Add](add.md) | Returns the sum of two values, component by component. |
-| [Arccosine](arccosine.md) | Returns the arccosine of the input as an angle in radians. |
-| [Arcsine](arcsine.md) | Returns the arcsine of the input as an angle in radians. |
-| [Arctangent](arctangent.md) | Returns the arctangent of the input as an angle in radians. |
+| [Arccosine (Degrees)](arccosine-degrees.md) | Returns the arccosine of the input as an angle in degrees. |
+| [Arccosine (Radians)](arccosine.md) | Returns the arccosine of the input as an angle in radians. |
+| [Arcsine (Degrees)](arcsine-degrees.md) | Returns the arcsine of the input as an angle in degrees. |
+| [Arcsine (Radians)](arcsine.md) | Returns the arcsine of the input as an angle in radians. |
+| [Arctangent (Degrees)](arctangent-degrees.md) | Returns the arctangent of the input as an angle in degrees. |
+| [Arctangent (Radians)](arctangent.md) | Returns the arctangent of the input as an angle in radians. |
 | [Ceiling](ceiling.md) | Rounds the input up to the nearest whole number. |
 | [Clamp](clamp.md) | Limits a value so that it stays between a minimum and a maximum. |
-| [Cosine](cosine.md) | Returns the cosine of an angle in radians. |
-| [Degrees](degrees.md) | Converts the input from radians to degrees. |
+| [Cosine (Degrees)](cosine-degrees.md) | Returns the cosine of an angle in degrees. |
+| [Cosine (Radians)](cosine.md) | Returns the cosine of an angle in radians. |
+| [Degrees To Radians](degrees-to-radians.md) | Converts the input from degrees to radians. |
 | [Divide](divide.md) | Divides one value by another, component by component. |
 | [Exponential](exponential.md) | Returns e raised to the power of the input. |
 | [Exponential 2](exponential-2.md) | Returns 2 raised to the power of the input. |
@@ -109,16 +115,18 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | [Negate](negate.md) | Flips the sign of the input. |
 | [One Minus](one-minus.md) | Returns the result of subtracting the input from 1. |
 | [Power](power.md) | Raises a base to the power of an exponent. |
-| [Radians](radians.md) | Converts the input from degrees to radians. |
+| [Radians To Degrees](radians-to-degrees.md) | Converts the input from radians to degrees. |
 | [Reciprocal](reciprocal.md) | Returns the result of dividing 1 by the input. |
 | [Round](round.md) | Rounds the input to the nearest whole number. |
 | [Sign](sign.md) | Returns -1, 0 or 1 depending on the sign of the input. |
-| [Sine](sine.md) | Returns the sine of an angle in radians. |
+| [Sine (Degrees)](sine-degrees.md) | Returns the sine of an angle in degrees. |
+| [Sine (Radians)](sine.md) | Returns the sine of an angle in radians. |
 | [Smooth Step](smooth-step.md) | Returns 0 below the first edge, 1 above the second, and a smooth curve in between. |
 | [Square Root](square-root.md) | Returns the square root of the input. |
 | [Step](step.md) | Returns 0 when a value is below an edge, and 1 otherwise. |
 | [Subtract](subtract.md) | Subtracts one value from another, component by component. |
-| [Tangent](tangent.md) | Returns the tangent of an angle in radians. |
+| [Tangent (Degrees)](tangent-degrees.md) | Returns the tangent of an angle in degrees. |
+| [Tangent (Radians)](tangent.md) | Returns the tangent of an angle in radians. |
 
 ## Vector
 

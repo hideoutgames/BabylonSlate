@@ -2,7 +2,7 @@
 node: math.cos
 ---
 
-# Cosine
+# Cosine (Radians)
 
 Returns the cosine of an angle in radians.
 

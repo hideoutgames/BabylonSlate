@@ -83,6 +83,43 @@ describe("math nodes", () => {
     },
   );
 
+  it.each([
+    ["math.sin", { "default:in": Math.PI / 2 }, 1],
+    ["math.sinDegrees", { "default:in": 90 }, 1],
+    ["math.cos", { "default:in": Math.PI }, -1],
+    ["math.cosDegrees", { "default:in": 180 }, -1],
+    ["math.tan", { "default:in": Math.PI / 4 }, 1],
+    ["math.tanDegrees", { "default:in": 45 }, 1],
+    ["math.asin", { "default:in": 1 }, Math.PI / 2],
+    ["math.asinDegrees", { "default:in": 1 }, 90],
+    ["math.acos", { "default:in": -1 }, Math.PI],
+    ["math.acosDegrees", { "default:in": -1 }, 180],
+    ["math.atan", { "default:in": 1 }, Math.PI / 4],
+    ["math.atanDegrees", { "default:in": 1 }, 45],
+    ["math.atan2", { "default:y": 1, "default:x": -1 }, (3 * Math.PI) / 4],
+    ["math.atan2Degrees", { "default:y": 1, "default:x": -1 }, 135],
+    ["math.atan2Degrees", { "default:y": -1, "default:x": 0 }, -90],
+  ] as const)("%s of %o is %s", (typeId, properties, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "trig", kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "trig", typeId, { ...properties }),
+        node(registry, "log", "debug.log")],
+      edges: [
+        { id: "exec", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "value", sourceNodeId: "trig", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const values: unknown[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "trig", registry }).source).onBeginPlay as (ctx: unknown) => void)({
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => values.push(value),
+    });
+    expect(values).toHaveLength(1);
+    expect(values[0] as number).toBeCloseTo(expected, 10);
+  });
+
   it("Lerp reads an impure A once", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

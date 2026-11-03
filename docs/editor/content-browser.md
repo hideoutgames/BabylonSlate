@@ -15,7 +15,7 @@ The toolbar above the grid has:
 | Control | Use |
 | --- | --- |
 | Import | Import files into the current folder. See [Importing Assets](importing.md). |
-| New Asset | Open a menu with **Folder** first, then the asset types grouped by category, with a search field at the top. **Folder** creates a folder at once (see [New folders](#new-folders)). Pick a type, then name the asset to create it in the current folder. Click **Location** to pick a different folder before you create it. See [Assets](../assets/index.md) for every type. |
+| New Asset | Open a menu with **Folder** first under **Structure**, then the asset types grouped by category, with a search field at the top. **Folder** creates a folder at once (see [New folders](#new-folders)). Pick a type, then name the asset to create it in the current folder. Click **Location** to pick a different folder before you create it. See [Assets](../assets/index.md) for every type. |
 | Search assets… | Filter the grid by name. |
 | Filter | Show only the asset types you tick under **Asset Types**, in the grid and the folder tree. Folders always show. |
 | Sort | **Name A–Z**, **Name Z–A**, **Type A–Z**, **Type Z–A**, **Date Modified (Newest)** or **Date Modified (Oldest)**. |
@@ -37,7 +37,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas: pick one JSON and the PNG it names. A JSON that names no atlas page pairs only with a PNG of the same name that contains `msdf`, such as `Ui-msdf.png` for `Ui-msdf.json`. A second JSON or any other PNG in the pick is refused. |
 | Create … | Make a new asset from the selection. See [Create from assets](#create-from-assets). |
 | Duplicate | Copy the selection in place. |
-| Rename | Rename one asset or folder. References to it stay connected. |
+| Rename | Rename one asset or folder on its tile (see [Rename](#rename)). References to it stay connected. |
 | Retarget… | Animations only. Retarget the selected Animations to another Skeleton. |
 | Move… / Copy to Folder… | Move or copy the selection to a folder you pick. |
 | Copy Asset Reference | Copy the asset's ID to the clipboard. If the clipboard refuses the copy, the Content Browser says so. |
@@ -85,6 +85,10 @@ A `-`, `.` or space works in place of `_`, and case does not matter, so `Rock_al
 **New Folder** creates a folder named `NewFolder` (`NewFolder_1`, `_2`, … when that name is taken) in the current folder, selects it and opens its name for editing, with no dialog. Type a name and press <kbd>Enter</kbd>, or tap elsewhere. <kbd>Esc</kbd> keeps `NewFolder`. A name that is invalid or already used opens **Rename Folder** with the reason.
 
 Create a folder with **Folder** in the **New Asset** menu, **New Folder** in the empty-space menu of the grid or the folder tree, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>. From the folder tree, the name opens in the tree; otherwise it opens on the folder's tile in the grid.
+
+## Rename
+
+**Rename** in the asset menu, or <kbd>F2</kbd> with one asset or folder selected, opens the name on its tile for editing, the same way as a new folder. Type a name and press <kbd>Enter</kbd>, or tap elsewhere; <kbd>Esc</kbd> keeps the old name. A name that is invalid or already used opens **Rename Asset** or **Rename Folder** with the reason. When the current folder does not show the tile (a search hides it), **Rename** opens that dialog instead. In the folder tree, double-tap a name or press <kbd>F2</kbd> to rename it in the tree.
 
 While **Duplicate** or **Copy to Folder…** runs, a progress window shows the item being copied and how many files are done. Choose **Cancel** to stop; the copies made so far are removed, so the content is left as it was.
 
