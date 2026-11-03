@@ -1,5 +1,5 @@
 import { DEFORMER_MAX_COORDINATE, isUIControl2DClass, parseDeformerProperties } from "@haptic/core";
-import { Actor, type ActorComponent, type EngineObject } from "@haptic/object-model";
+import { Actor, MaterialObject, type ActorComponent, type EngineObject } from "@haptic/object-model";
 import { particleParameterArg, particleParameterResult } from "./particle-parameter-bindings";
 import { asActor, asActorComponent, vec3Arg } from "./script-host-helpers";
 import type { ScriptHostServices } from "./script-host-services";
@@ -31,6 +31,11 @@ export function callNativeComponentFunction(
   }
   const component = asActorComponent(target);
   if (!component || !name) return {};
+  if (name === "getMaterialObject" &&
+    (component.classId === "MeshComponent" || component.classId === "DynamicRuntimeMeshComponent")) {
+    const material = component.getVariable("materialObject");
+    return { material: material instanceof MaterialObject ? material : null };
+  }
   if (component.classId === "2DRichTextComponent" &&
     (name === "triggerAppear" || name === "play" || name === "playReverse")) {
     if (host.canInvokeOwner(component)) host.services.text2DAppear?.(component, name);

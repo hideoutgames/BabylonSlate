@@ -1,4 +1,6 @@
 import {
+  copyMaterialParameterValue,
+  isFiniteMaterialParameterValue,
   normalizeMaterialParameterCatalog,
   normalizeMaterialParameterOverrides,
   type MaterialParameterCatalog,
@@ -19,10 +21,7 @@ type State = {
   defaults: ReadonlyMap<string, MaterialParameterValue>;
   values: Map<string, MaterialParameterValue>;
 };
-const copy = (value: MaterialParameterValue): MaterialParameterValue =>
-  value.kind === "color"
-    ? { kind: "color", value: [...value.value] }
-    : { ...value };
+const copy = copyMaterialParameterValue;
 
 const equal = (left: MaterialParameterValue, right: MaterialParameterValue | undefined): boolean =>
   right?.kind === left.kind && (left.kind === "float" ? left.value === (right as typeof left).value
@@ -154,9 +153,7 @@ export class RuntimeMaterialParameters {
         value.textureAssetGuid === null ||
         this.textures.has(value.textureAssetGuid)
       );
-    return value.kind === "float"
-      ? typeof value.value === "number" && Number.isFinite(value.value)
-      : value.kind === "color" && Array.isArray(value.value) && value.value.length === 4 && value.value.every(Number.isFinite);
+    return isFiniteMaterialParameterValue(value);
   }
 
   private state(material: MaterialInstanceObject): State | undefined {

@@ -87,6 +87,46 @@ describe("runtime material parameters", () => {
       expect(commands.some(command => command.type === "setMaterialParameter")).toBe(false);
     } finally { runtime.stop(); }
   });
+  it("sets, reads and resets Vector parameters at their declared width through Get Material", async () => {
+    const commands: CommandMessage[] = [];
+    const mesh = createMeshComponent("mesh-1", "box");
+    mesh.properties.materialGuid = "mat";
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: { name: "Materials", viewportMode: "3d", folders: [], settings: createDefaultSceneSettings(),
+        actors: [createActor("prop", "Prop", { classId: "Hero", components: [mesh] })] },
+      materialParameterCatalog: { mat: { domain: "surface", planHash: "mat", parameters: {
+        Tiling: { kind: "vec2", value: [1, 1] },
+        Glow: { kind: "vec3", value: [0, 0, 0] },
+      } } },
+      onCommand: command => commands.push(command) });
+    try {
+      await runtime.loadScripts([{ classId: "Hero", parentClassId: "Actor", assetGuid: "hero", anchors: [],
+        source: `export function onBeginPlay(ctx) {
+          const mesh = ctx.getComponentById(ctx.self, "mesh-1");
+          const material = ctx.callComponentFunction(mesh, "getMaterialObject", {}).material;
+          ctx.setMaterialVectorParameter(material, "Tiling", { x: 2, y: 3, z: 9 });
+          ctx.setMaterialVectorParameter(material, "Glow", { x: 1, y: 0.5, z: 0.25 });
+          ctx.setMaterialVectorParameter(material, "Glow", { x: 1, y: NaN, z: 0 });
+          ctx.log("log", "M", JSON.stringify([ctx.getMaterialVectorParameter(material, "Tiling"),
+            ctx.getMaterialVectorParameter(material, "Glow"), ctx.getMaterialVectorParameter(material, "Missing")]));
+          ctx.log("log", "M", JSON.stringify(ctx.resetMaterialVectorParameter(material, "Tiling")));
+        }`,
+        entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] }]);
+      runtime.realizePlayWorld(); runtime.start();
+      expect(commands.filter((command) => command.type === "setMaterialParameter").map((command) =>
+        command.type === "setMaterialParameter" && [command.parameterName, command.parameter])).toEqual([
+        ["Tiling", { kind: "vec2", value: [2, 3] }],
+        ["Glow", { kind: "vec3", value: [1, 0.5, 0.25] }],
+        ["Tiling", { kind: "vec2", value: [1, 1] }],
+      ]);
+      expect(commands.flatMap((command) => command.type === "log" && command.category === "M" ? [command.message] : [])).toEqual([
+        JSON.stringify([{ found: true, value: { x: 2, y: 3, z: 0 } }, { found: true, value: { x: 1, y: 0.5, z: 0.25 } },
+          { found: false, value: { x: 0, y: 0, z: 0 } }]),
+        "true",
+      ]);
+    } finally { runtime.stop(); }
+  });
+
   it("emits an authored model None assignment when starting Play before any override was bound", async () => {
     const commands = await execute("export function onBeginPlay() {}", false, {
       meshKind: "model", materialGuid: null, materialSource: "override",

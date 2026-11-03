@@ -59,6 +59,8 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Color Parameter](color-parameter.md) | Outputs a named colour that can be changed at runtime or overridden per Material Instance. |
 | [Float Parameter](float-parameter.md) | Outputs a named Float that can be changed at runtime or overridden per Material Instance. |
 | [Texture Parameter](texture-parameter.md) | Outputs a named texture that can be changed at runtime or overridden per Material Instance. |
+| [Vector 2 Parameter](vector-2-parameter.md) | Outputs a named Vector 2 that can be changed at runtime or overridden per Material Instance. |
+| [Vector 3 Parameter](vector-3-parameter.md) | Outputs a named Vector 3 that can be changed at runtime or overridden per Material Instance. |
 
 ## Math
 

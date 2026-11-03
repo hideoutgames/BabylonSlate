@@ -124,9 +124,14 @@ function normalizeNodeProperties(
   type: string,
   properties: Record<string, unknown>,
 ): Record<string, unknown> {
+  const value = Array.isArray(properties.value) ? properties.value : [];
   if (type === "param.color") {
-    const value = Array.isArray(properties.value) ? properties.value : [];
     return { ...properties, value: [asNumber(value[0], 1), asNumber(value[1], 1), asNumber(value[2], 1), asNumber(value[3], 1)] };
+  }
+  // Vector parameters keep exactly their width, so the plan hash and the uniform agree.
+  if (type === "param.vec2") return { ...properties, value: [asNumber(value[0], 0), asNumber(value[1], 0)] };
+  if (type === "param.vec3") {
+    return { ...properties, value: [asNumber(value[0], 0), asNumber(value[1], 0), asNumber(value[2], 0)] };
   }
   return properties;
 }

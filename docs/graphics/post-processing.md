@@ -78,7 +78,7 @@ Passes run from top to bottom. If a pass needs a buffer the device cannot provid
 
 - [Set Rendering Effects](../scripting/class/set-rendering-effects.md) changes the colour pipeline, tone mapping, exposure, bloom and vignette for the session. [Set Anti-Aliasing](../scripting/class/set-anti-aliasing.md) and [Set Vignette Color](../scripting/class/set-vignette-color.md) change one setting.
 - [Set Post Processing Quality](../scripting/class/set-post-processing-quality.md) changes the Post Processing quality group.
-- To animate a scene pass, copy its **Entry ID** (the **#** button beside the pass's Material), get its Material with [Get Post Process Entry](../scripting/class/get-post-process-entry.md), then use [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md) or [Set Material Color Parameter](../scripting/class/set-material-color-parameter.md).
+- To animate a scene pass, copy its **Entry ID** (the **#** button beside the pass's Material), get its Material with [Get Post Process Entry](../scripting/class/get-post-process-entry.md), then use [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md), [Set Material Vector Parameter](../scripting/class/set-material-vector-parameter.md) or [Set Material Color Parameter](../scripting/class/set-material-color-parameter.md).
 - [Register Scene Layer Post-Processing](../scripting/class/register-scene-layer-post-processing.md) adds a post-process Material to a Scene Layer.
 
 ## Editor preview

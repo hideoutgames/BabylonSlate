@@ -37,7 +37,7 @@ Each domain has its own output node: [Material Output](../scripting/material/mat
 
 ## Notes
 
-- Add a [Float Parameter](../scripting/material/float-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) or [Texture Parameter](../scripting/material/texture-parameter.md) to expose a value to Material Instances and scripts.
+- Add a [Float Parameter](../scripting/material/float-parameter.md), [Vector 2 Parameter](../scripting/material/vector-2-parameter.md), [Vector 3 Parameter](../scripting/material/vector-3-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) or [Texture Parameter](../scripting/material/texture-parameter.md) to expose a value to Material Instances and scripts.
 - Assign a Material to a [Mesh component's](../components/mesh.md) **Material** field.
 - In CEL projects, lit Surface Materials switch to CEL lighting automatically.
 

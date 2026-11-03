@@ -220,6 +220,22 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
     outputs: [{ id: "out", name: "Out", type: FLOAT }],
   },
   {
+    type: "param.vec2",
+    title: "Vector 2 Parameter",
+    category: "Parameters",
+    cost: 0,
+    inputs: [],
+    outputs: [{ id: "out", name: "Out", type: VEC2 }],
+  },
+  {
+    type: "param.vec3",
+    title: "Vector 3 Parameter",
+    category: "Parameters",
+    cost: 0,
+    inputs: [],
+    outputs: [{ id: "out", name: "Out", type: VEC3 }],
+  },
+  {
     type: "param.color",
     title: "Color Parameter",
     category: "Parameters",
