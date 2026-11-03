@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  applyTexturePixelSizesToSpriteAnimation,
   createDefaultSpriteAnimationPayload,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
+  resolveSpriteAnimation,
   setTile,
   type TilemapPayload,
 } from "@haptic/assets";
@@ -659,10 +659,10 @@ describe("PhysicsWorldSync sprite collision", () => {
       pivot: { x: 0.5, y: 0.5 },
       collision: { x: 0, y: 0, width: 1, height: 1 },
     };
-    const sized = applyTexturePixelSizesToSpriteAnimation(
-      animation,
-      (guid) => (guid === "tex-walk" ? { width: 200, height: 50 } : null),
-    );
+    const sized = resolveSpriteAnimation(animation, {
+      sprite: () => null,
+      textureSize: (guid) => (guid === "tex-walk" ? { width: 200, height: 50 } : null),
+    });
 
     const backend = createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
     const sync = new PhysicsWorldSync(backend);

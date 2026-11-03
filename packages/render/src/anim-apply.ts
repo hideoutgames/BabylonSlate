@@ -2,7 +2,7 @@ import type { Mesh } from "@babylonjs/core";
 import type { CommandMessage } from "@haptic/bridge";
 import type { SpriteAnimationPayload, SpritePayload } from "@haptic/assets";
 import { spriteAnimationFrameAt } from "@haptic/assets";
-import { setSpriteQuadSize } from "./sprite-quad";
+import { setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
 import { applySpriteVisibility } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 
@@ -43,7 +43,7 @@ export function seekGameplayAnimation(
   group.setWeightForAllAnimatables?.(weight);
 }
 
-/** Bind a Sprite Animation asset frame (texture, size, pivot) onto the sprite quad; every frame shows its whole texture. */
+/** Bind a Sprite Animation asset frame (texture, region, size, pivot) onto the sprite quad; a sheet cell shows its UVs, other frames the whole texture. */
 export function applySpriteAnimationAssetFrame(
   mesh: Mesh,
   payload: SpriteAnimationPayload,
@@ -56,6 +56,7 @@ export function applySpriteAnimationAssetFrame(
   const frame = spriteAnimationFrameAt(payload, normalisedTime);
   if (!frame) return;
   options?.applyTexture?.(mesh, frame.textureGuid || null);
+  setSpriteQuadUvs(mesh, frame.uv);
   const ppu =
     options?.pixelsPerUnit && options.pixelsPerUnit > 0
       ? options.pixelsPerUnit

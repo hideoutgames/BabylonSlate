@@ -102,7 +102,11 @@ export {
   defaultParentClassForType,
   buildNewAssetResult,
   buildMaterialInstanceAssetResult,
+  buildSpriteAnimationAssetResult,
+  buildTilesetAssetResult,
+  derivedAssetNameFor,
   materialInstanceNameFor,
+  spriteAnimationNameFor,
 } from "./new-asset-result";
 export {
   materialAssetDependencies,
@@ -448,6 +452,8 @@ export type ContentBrowserContextAction =
   | "generate-thumbnail"
   | "import-msdf-atlas"
   | "create-material-instance"
+  | "create-sprite-animation"
+  | "create-tileset"
   | "duplicate"
   | "rename"
   | "retarget"
@@ -473,6 +479,8 @@ export function contentBrowserContextActions(options: {
   canRetarget?: boolean;
   canGenerateThumbnails?: boolean;
   singleAssetType?: string;
+  /** Every selected asset's type, when the caller knows them. */
+  assetTypes?: readonly string[];
 }): ContentBrowserContextAction[] {
   const total = options.assetCount + options.folderCount;
   if (total === 0) return [];
@@ -488,6 +496,13 @@ export function contentBrowserContextActions(options: {
     if (isMaterialAssetType(options.singleAssetType ?? "")) {
       actions.push("create-material-instance");
     }
+  }
+  // Any mix of Textures and Sprites becomes one Sprite Animation; one Texture can also become a Tileset.
+  const types = options.assetTypes ?? [];
+  if (options.folderCount === 0 && types.length > 0 && types.length === options.assetCount &&
+    types.every((type) => type === "Texture" || type === "Sprite")) {
+    actions.push("create-sprite-animation");
+    if (types.length === 1 && types[0] === "Texture") actions.push("create-tileset");
   }
   actions.push("duplicate");
   if (total === 1) actions.push("rename");

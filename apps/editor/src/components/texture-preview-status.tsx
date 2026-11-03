@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@haptic/ui/components/button";
 import {
   Empty,
@@ -89,10 +89,114 @@ export function useTexturePreview(textureGuid: string | null | undefined) {
   };
 }
 
+export type TexturePreview = ReturnType<typeof useTexturePreview>;
+
+type LoadedTexture = { url?: string; error?: string; image?: HTMLImageElement };
+
+/**
+ * Loads and decodes every Texture in `guids` once and keeps them while they
+ * stay listed, so switching between them (Sprite Animation playback) shows
+ * the next image at once instead of reloading it. Returns each guid's preview.
+ */
+export function useTexturePreviews(guids: readonly string[]): (guid: string | null | undefined) => TexturePreview {
+  const { readAssetChunk } = useDocumentActions();
+  const { assetRegistry } = useRegistryState();
+  const sources = useMemo(() => {
+    const byGuid = new Map<string, { path?: string; sourceKey: string }>();
+    for (const guid of guids) {
+      if (!guid || byGuid.has(guid)) continue;
+      const asset = assetRegistry?.getByGuid(guid);
+      const revision = asset?.header.chunks?.find((chunk) => chunk.id === "pixels")?.sha256 ?? asset?.mtime ?? "";
+      byGuid.set(guid, { path: asset?.path, sourceKey: `${guid}:${asset?.path ?? ""}:${revision}` });
+    }
+    return byGuid;
+  }, [assetRegistry, guids]);
+  const cacheRef = useRef(new Map<string, LoadedTexture>());
+  const [revision, setRevision] = useState(0);
+  const bump = useCallback(() => setRevision((value) => value + 1), []);
+  const sourceKeys = [...sources.values()].filter((source) => source.path).map((source) => source.sourceKey).join("|");
+
+  useEffect(() => {
+    const cache = cacheRef.current;
+    const wanted = new Map([...sources.values()].filter((source) => source.path).map((source) => [source.sourceKey, source.path!]));
+    for (const [key, entry] of cache) {
+      if (wanted.has(key)) continue;
+      if (entry.url) URL.revokeObjectURL(entry.url);
+      cache.delete(key);
+    }
+    if (!readAssetChunk) return;
+    for (const [key, path] of wanted) {
+      if (cache.has(key)) continue;
+      const entry: LoadedTexture = {};
+      cache.set(key, entry);
+      void (async () => {
+        try {
+          const bytes = await readAssetChunk(path, "pixels");
+          if (!bytes?.byteLength)
+            throw new Error("Texture image data is missing. Reimport the texture or pick a replacement in the Inspector.");
+          const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }));
+          if (cache.get(key) !== entry) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          // Decode before showing it, and keep the image so it stays decoded.
+          const image = new Image();
+          image.src = url;
+          if (typeof image.decode === "function") await image.decode().catch(() => undefined);
+          if (cache.get(key) !== entry) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          entry.url = url;
+          entry.image = image;
+        } catch (error) {
+          entry.error = error instanceof Error ? error.message : "The texture could not be read.";
+        }
+        if (cache.get(key) === entry) bump();
+      })();
+    }
+    // A retry drops its entry and bumps `revision`, which loads it again.
+  }, [bump, readAssetChunk, revision, sourceKeys, sources]);
+
+  useEffect(() => {
+    const cache = cacheRef.current;
+    return () => {
+      for (const entry of cache.values()) if (entry.url) URL.revokeObjectURL(entry.url);
+      cache.clear();
+    };
+  }, []);
+
+  return (guid) => {
+    const source = guid ? sources.get(guid) : undefined;
+    const entry = source ? cacheRef.current.get(source.sourceKey) : undefined;
+    const retry = () => {
+      if (!source) return;
+      cacheRef.current.delete(source.sourceKey);
+      bump();
+    };
+    const fail = () => {
+      if (!entry) return;
+      entry.url = undefined;
+      entry.error = "The texture image could not be decoded. Reimport the texture or pick a replacement in the Inspector.";
+      bump();
+    };
+    const status = !guid
+      ? "empty"
+      : !source?.path
+        ? "missing"
+        : !readAssetChunk || entry?.error
+          ? "failed"
+          : entry?.url
+            ? "ready"
+            : "loading";
+    return { status, url: entry?.url ?? null, error: entry?.error, retry, fail, canRetry: Boolean(source?.path && readAssetChunk) };
+  };
+}
+
 export function TexturePreviewStatus({
   preview,
 }: {
-  preview: ReturnType<typeof useTexturePreview>;
+  preview: TexturePreview;
 }) {
   const { status, error, canRetry, retry } = preview;
   const title =
