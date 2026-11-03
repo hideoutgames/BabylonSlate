@@ -58,7 +58,6 @@ export function GlobalParameterNodePicker({
       label: "Parameter",
       value: !parameterId ? NONE : known ? parameterId : NOT_IN_COLLECTION,
       disabled: !collectionGuid,
-      description: "The node is named after it and its output takes its type.",
       options: [
         { value: NONE, label: "None" },
         ...parameters.map((parameter) => ({
