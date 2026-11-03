@@ -858,8 +858,9 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
       onChange: (next) => setProperties({ value: [...next] }),
     });
   }
-  if (node.type === "const.vec2" || node.type === "const.vec3" || node.type === "const.vec4") {
-    const width = node.type === "const.vec2" ? 2 : node.type === "const.vec3" ? 3 : 4;
+  if (node.type === "const.vec2" || node.type === "const.vec3" || node.type === "const.vec4" ||
+    node.type === "param.vec2" || node.type === "param.vec3") {
+    const width = node.type.endsWith("vec2") ? 2 : node.type.endsWith("vec3") ? 3 : 4;
     const value = Array.isArray(node.properties.value)
       ? (node.properties.value as number[])
       : [];

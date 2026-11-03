@@ -317,6 +317,15 @@ const GET_SCENE_REFERENCE: EngineScriptFunction = {
   ],
 };
 
+/** Mesh components' Get Material: the Material Object whose parameters a graph sets. */
+const GET_MATERIAL: EngineScriptFunction = {
+  name: "Get Material",
+  runtime: "getMaterialObject",
+  description: "The Material Object this mesh renders with, for the Set Material Parameter nodes. Empty while the mesh has no Material of its own; get it again after the mesh gets another Material.",
+  searchAliases: ["material object", "material instance", "material parameter"],
+  pins: [{ name: "material", typeId: "object", typeClassId: "MaterialObject", direction: "out" }],
+};
+
 /** ParticleComponent parameter functions: the component's own runtime values, as the particle parameter nodes set them. */
 const PARTICLE_PARAMETER_NAME: EngineScriptPin = { name: "name", typeId: "string", direction: "in", defaultValue: "" };
 const PARTICLE_PARAMETER_FUNCTIONS: EngineScriptFunction[] = [
@@ -407,6 +416,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Receive Shadows", typeId: "bool", propertyKey: "receiveShadows" },
     ],
     functions: [
+      GET_MATERIAL,
       {
         name: "Set Geometry", runtime: "setDynamicMeshGeometry",
         pins: [EXEC_IN, EXEC_OUT,
@@ -562,6 +572,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Mask", typeId: "int", propertyKey: "mask" },
       { name: "Overlap Mask", typeId: "int", propertyKey: "overlapMask" },
     ],
+    functions: [GET_MATERIAL],
   },
   {
     classId: "SpriteComponent",

@@ -51,6 +51,16 @@ export function materialParameterDefaults(plan: MaterialBuildPlan): Record<strin
     )
       parameters.push([name, { kind: "float", value: x }]);
     else if (
+      operation.nodeType === "param.vec2" &&
+      [x, y].every((v) => typeof v === "number" && Number.isFinite(v))
+    )
+      parameters.push([name, { kind: "vec2", value: [x, y] }]);
+    else if (
+      operation.nodeType === "param.vec3" &&
+      [x, y, z].every((v) => typeof v === "number" && Number.isFinite(v))
+    )
+      parameters.push([name, { kind: "vec3", value: [x, y, z] }]);
+    else if (
       operation.nodeType === "param.color" &&
       [x, y, z, w].every((v) => typeof v === "number" && Number.isFinite(v))
     )

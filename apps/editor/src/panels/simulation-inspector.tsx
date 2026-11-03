@@ -114,6 +114,14 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid, assets 
       onPick: () => setPicker(true), onChange: next => send(wrap(next)) };
   } else if (descriptor.typeId === "material:color" && Array.isArray(value) && value.length === 4 && value.every(item => typeof item === "number")) {
     row = { ...base, kind: "color4", value: value as [number, number, number, number], onChange: next => sendColor(wrap(next)) };
+  } else if ((descriptor.typeId === "material:vec2" || descriptor.typeId === "material:vec3") && Array.isArray(value) &&
+    value.every(item => typeof item === "number")) {
+    // Material vectors travel as arrays of their width.
+    const width = descriptor.typeId === "material:vec2" ? 2 : 3;
+    const [x = 0, y = 0, z = 0] = value as number[];
+    const encode = (next: readonly number[]) => wrap(next.slice(0, width) as RuntimeInspectorValue);
+    row = { ...base, kind: "vector3", value: [x, y, z], axes: ["X", "Y", "Z"].slice(0, width),
+      onChange: next => send(encode(next), false), onCommit: next => send(encode(next)) };
   } else if (descriptor.typeId === "particle:color" && value && typeof value === "object" && !Array.isArray(value)) {
     // Particle colors travel as X, Y, Z, W records.
     const color = value as Record<string, RuntimeInspectorValue>;

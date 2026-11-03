@@ -5,11 +5,12 @@ import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import type { MaterialParameterValue } from "@haptic/bridge";
-import { normalizeMaterialParameterOverrides } from "@haptic/core";
-import type {
-  MaterialBuildPlan,
-  MaterialDiagnostic,
-  MaterialDocument,
+import { copyMaterialParameterValue, normalizeMaterialParameterOverrides } from "@haptic/core";
+import {
+  isMaterialParameterNode,
+  type MaterialBuildPlan,
+  type MaterialDiagnostic,
+  type MaterialDocument,
 } from "@haptic/shader-graph";
 import { materialUnavailable, type MaterialLibrary } from "./material-library";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
@@ -144,7 +145,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       )
     )
       return false;
-    this.parameters.set(name, value.kind === "color" ? { kind: "color", value: [...value.value] } : { ...value });
+    this.parameters.set(name, copyMaterialParameterValue(value));
     return true;
   }
 
@@ -154,12 +155,12 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
       this._frameGraph.scene, this.options.materialGuid, name, this.acquireOptions,
     );
     const value = this.parameters.get(name);
-    return value ? value.kind === "color" ? { kind: "color", value: [...value.value] } : { ...value } : null;
+    return value ? copyMaterialParameterValue(value) : null;
   }
 
   resetParameter(name: string): boolean {
     if (this.disposed || !this.document?.nodes.some((node) =>
-      /^(param.float|param.color|param.texture)$/.test(node.type) &&
+      isMaterialParameterNode(node.type) &&
       typeof node.properties.name === "string" && node.properties.name.trim() === name)) return false;
     const authored = this.authoredParameters[name];
     if (authored && this.setParameter(name, authored)) return true;

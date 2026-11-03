@@ -40,7 +40,7 @@ In CEL projects, lit Surface Materials switch to CEL lighting automatically. Unl
 
 Parameters are the values you can change per instance or from scripts.
 
-1. Add a [Float Parameter](../scripting/material/float-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) or [Texture Parameter](../scripting/material/texture-parameter.md).
+1. Add a [Float Parameter](../scripting/material/float-parameter.md), [Vector 2 Parameter](../scripting/material/vector-2-parameter.md), [Vector 3 Parameter](../scripting/material/vector-3-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) or [Texture Parameter](../scripting/material/texture-parameter.md).
 2. Enter a name in **Name Material Parameter**. Names are case-sensitive and must be unique in the graph.
 3. Set the default value in the Inspector.
 
@@ -72,9 +72,9 @@ To turn existing fragment GLSL into an editable node graph, enable the Experimen
 
 ## Change Materials from scripts
 
-Read a Mesh component's **Material Object** variable, then use:
+Call a Mesh component's **Get Material** function, then use:
 
-- [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md), [Set Material Color Parameter](../scripting/class/set-material-color-parameter.md) and [Set Material Texture Parameter](../scripting/class/set-material-texture-parameter.md) to change a named parameter.
+- [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md), [Set Material Vector Parameter](../scripting/class/set-material-vector-parameter.md), [Set Material Color Parameter](../scripting/class/set-material-color-parameter.md) and [Set Material Texture Parameter](../scripting/class/set-material-texture-parameter.md) to change a named parameter.
 - The matching Get and Reset nodes, such as [Reset Material Float Parameter](../scripting/class/reset-material-float-parameter.md), to read a value or return to the default.
 - [Set Material Instance](../scripting/class/set-material-instance.md) to swap a mesh to another instance. The old Material stays until the new one is ready.
 

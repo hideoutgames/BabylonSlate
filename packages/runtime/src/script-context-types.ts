@@ -541,6 +541,8 @@ export interface ScriptContext {
     name: string,
     value: ScriptColor,
   ): void;
+  /** A Vector 2 parameter takes X and Y. */
+  setMaterialVectorParameter(material: unknown, name: string, value: Vec3): void;
   setMaterialTextureParameter(
     material: unknown,
     name: string,
@@ -550,9 +552,12 @@ export interface ScriptContext {
   getPostProcessEntry(owner: unknown, entryId: string): PostProcessMaterialObject | null;
   getMaterialFloatParameter(material: unknown, name: string): { found: boolean; value: number };
   getMaterialColorParameter(material: unknown, name: string): { found: boolean; value: ScriptColor };
+  /** A Vector 2 parameter reads with Z 0. */
+  getMaterialVectorParameter(material: unknown, name: string): { found: boolean; value: Vec3 };
   getMaterialTextureParameter(material: unknown, name: string): { found: boolean; value: string | null };
   resetMaterialFloatParameter(material: unknown, name: string): boolean;
   resetMaterialColorParameter(material: unknown, name: string): boolean;
+  resetMaterialVectorParameter(material: unknown, name: string): boolean;
   resetMaterialTextureParameter(material: unknown, name: string): boolean;
   setMeshMaterial(component: unknown, materialGuid: string | null): MaterialObject | null;
   setMeshMaterialAsync(component: unknown, materialGuid: string | null): Promise<MaterialObject | null>;
@@ -642,9 +647,10 @@ export type HostContextKey =
   | "deleteSave" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
   | "eventDelegate" | "bindDispatcher" | "unbindDispatcher" | "unbindAllDispatcher"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
-  | "getMaterialTextureParameter" | "resetMaterialFloatParameter" | "resetMaterialColorParameter"
-  | "resetMaterialTextureParameter" | "setMeshMaterial" | "getMaterialAsset" | "setMaterialFloatParameter"
-  | "setMaterialColorParameter" | "setMaterialTextureParameter" | "rotatorToQuat" | "quatToRotator"
+  | "getMaterialVectorParameter" | "getMaterialTextureParameter" | "resetMaterialFloatParameter"
+  | "resetMaterialColorParameter" | "resetMaterialVectorParameter" | "resetMaterialTextureParameter"
+  | "setMeshMaterial" | "getMaterialAsset" | "setMaterialFloatParameter"
+  | "setMaterialColorParameter" | "setMaterialVectorParameter" | "setMaterialTextureParameter" | "rotatorToQuat" | "quatToRotator"
   | "combineRotators" | "inverseRotator" | "deltaRotator" | "lerpRotator" | "rotatorForward" | "rotatorRight"
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
   | "normalizeQuat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"

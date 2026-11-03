@@ -65,6 +65,26 @@ export function materialInstanceParameterRows(
         onChange: (value) => set({ kind: "float", value }, `material-instance:${name}`),
       };
     }
+    if (inherited.kind === "vec2") {
+      const [x, y] = (current as typeof inherited).value;
+      return {
+        ...base,
+        kind: "vector3",
+        axes: ["X", "Y"],
+        value: [x, y, 0],
+        defaultValue: [inherited.value[0], inherited.value[1], 0],
+        onChange: (value) => set({ kind: "vec2", value: [value[0], value[1]] }, `material-instance:${name}`),
+      };
+    }
+    if (inherited.kind === "vec3") {
+      return {
+        ...base,
+        kind: "vector3",
+        value: [...(current as typeof inherited).value],
+        defaultValue: [...inherited.value],
+        onChange: (value) => set({ kind: "vec3", value: [value[0], value[1], value[2]] }, `material-instance:${name}`),
+      };
+    }
     if (inherited.kind === "color") {
       return {
         ...base,
