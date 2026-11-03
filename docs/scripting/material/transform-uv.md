@@ -24,5 +24,5 @@ Scales, rotates and offsets UV coordinates, for tiling, turning and scrolling te
 ## Notes
 
 - Multiplies UV by Tiling, rotates the result by Rotation around UV (0, 0), then adds Offset.
-- Rotation is in radians and turns UV counter-clockwise, which turns the texture clockwise. Use [**Radians**](radians.md) to enter degrees.
+- Rotation is in radians and turns UV counter-clockwise, which turns the texture clockwise. Use [**Degrees To Radians**](degrees-to-radians.md) to enter degrees.
 - Animate Offset with [**Time**](time.md) to scroll a texture.

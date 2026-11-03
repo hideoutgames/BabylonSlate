@@ -2,7 +2,7 @@
 node: math.atan2
 ---
 
-# Arctangent 2
+# Arctangent 2 (Radians)
 
 Returns the angle in radians of the point (X, Y), measured from the positive X axis.
 
@@ -21,4 +21,4 @@ Returns the angle in radians of the point (X, Y), measured from the positive X a
 
 ## Notes
 
-- Unlike [**Arctangent**](arctangent.md), it uses the signs of both inputs to find the quadrant. The result runs from -π to π.
+- Unlike [**Arctangent (Radians)**](arctangent.md), it uses the signs of both inputs to find the quadrant. The result runs from -π to π.

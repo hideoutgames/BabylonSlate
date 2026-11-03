@@ -164,14 +164,23 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Abs](abs.md) | Returns the input with any negative sign removed. |
+| [Acos (Degrees)](acos-degrees.md) | Returns the arccosine of the input as an angle in degrees. |
+| [Acos (Radians)](acos.md) | Returns the arccosine of the input as an angle in radians. |
 | [Add](add.md) | Returns the sum of two values, component by component. |
 | [Add Int](add-int.md) | Returns the sum of two whole numbers. |
+| [Asin (Degrees)](asin-degrees.md) | Returns the arcsine of the input as an angle in degrees. |
+| [Asin (Radians)](asin.md) | Returns the arcsine of the input as an angle in radians. |
+| [Atan (Degrees)](atan-degrees.md) | Returns the arctangent of the input as an angle in degrees. |
+| [Atan (Radians)](atan.md) | Returns the arctangent of the input as an angle in radians. |
+| [Atan2 (Degrees)](atan2-degrees.md) | Returns the angle in degrees of the point (X, Y), measured from the positive X axis. |
+| [Atan2 (Radians)](atan2.md) | Returns the angle in radians of the point (X, Y), measured from the positive X axis. |
 | [Boolean And](boolean-and.md) | Returns true only when both inputs are true. |
 | [Boolean Not](boolean-not.md) | Returns the opposite of the input: true becomes false and false becomes true. |
 | [Boolean Or](boolean-or.md) | Returns true when at least one input is true. |
 | [Ceil](ceil.md) | Rounds the input up to the nearest whole number. |
 | [Clamp](clamp.md) | Limits a value so that it stays between a minimum and a maximum. |
-| [Cos](cos.md) | Returns the cosine of an angle in radians. |
+| [Cos (Degrees)](cos-degrees.md) | Returns the cosine of an angle in degrees. |
+| [Cos (Radians)](cos.md) | Returns the cosine of an angle in radians. |
 | [Degrees To Radians](degrees-to-radians.md) | Converts the input from degrees to radians. |
 | [Divide](divide.md) | Returns the first number divided by the second. |
 | [Divide Int](divide-int.md) | Returns the first whole number divided by the second, rounded toward zero. |
@@ -198,10 +207,13 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Random Int](random-int.md) | Returns a random whole number between **Min** and **Max**. |
 | [Round](round.md) | Rounds the input to the nearest whole number. |
 | [Sign](sign.md) | Returns -1, 0 or 1 depending on the sign of the input. |
-| [Sin](sin.md) | Returns the sine of an angle in radians. |
+| [Sin (Degrees)](sin-degrees.md) | Returns the sine of an angle in degrees. |
+| [Sin (Radians)](sin.md) | Returns the sine of an angle in radians. |
 | [Sqrt](sqrt.md) | Returns the square root of the input. |
 | [Subtract](subtract.md) | Returns the first number minus the second. |
 | [Subtract Int](subtract-int.md) | Returns the first whole number minus the second. |
+| [Tan (Degrees)](tan-degrees.md) | Returns the tangent of an angle in degrees. |
+| [Tan (Radians)](tan.md) | Returns the tangent of an angle in radians. |
 
 ## Vector
 

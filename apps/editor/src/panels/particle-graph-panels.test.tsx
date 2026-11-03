@@ -245,6 +245,21 @@ describe("ParticleGraphDetails", () => {
     expect(screen.queryByTestId("property-color")).toBeNull();
   });
 
+  it("switches Create Particle's Angle to degrees, converting the authored value", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes = doc.nodes.map((entry) => entry.id === "create"
+      ? { ...entry, properties: { ...entry.properties, "default:angle": [Math.PI / 2] } } : entry);
+    const history = renderDetails(doc, "create");
+    await pickOption("property-angleUnit", "Degrees");
+    const create = nodeOf(history.read(), "create");
+    expect(create.properties.angleUnit).toBe("degrees");
+    expect(create.properties["default:angle"]).toEqual([90]);
+    // The field keeps its label and edits degrees.
+    expect(screen.getByRole("textbox", { name: "Angle" })).toBeTruthy();
+    type("property-angle", "45");
+    expect(nodeOf(history.read(), "create").properties["default:angle"]).toEqual([45]);
+  });
+
   it("edits Gradient stops for its value type", async () => {
     const history = renderDetails(createDefaultParticleGraphDocument("Embers"), "gradient");
     expect(screen.getByRole("button", { name: "Add Stop" })).toBeTruthy();

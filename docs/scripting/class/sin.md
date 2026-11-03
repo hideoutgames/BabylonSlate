@@ -2,7 +2,7 @@
 node: math.sin
 ---
 
-# Sin
+# Sin (Radians)
 
 Returns the sine of an angle in radians.
 
@@ -20,4 +20,4 @@ Returns the sine of an angle in radians.
 
 ## Notes
 
-- Accepts a Float, Vector 2, Vector 3 or Color, and works on each component.
+- [**Sin (Degrees)**](sin-degrees.md) works in degrees.

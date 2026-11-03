@@ -175,14 +175,16 @@ const PARTICLE_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "particle.create": ["spawn", "emit", "initialize"],
   "shape.sphere": ["hemisphere", "hemispheric"],
   "update.direction": ["velocity"],
-  "update.angle": ["rotation"],
+  "update.angle": ["rotation", "update angle", "radians"],
+  "update.angleDegrees": ["rotation", "update angle", "degrees"],
   "update.basicPosition": ["basic position update", "move", "velocity"],
   "update.basicColor": ["basic color update", "fade", "dead color"],
   "force.gravity": ["acceleration", "fall"],
   "force.attractor": ["attract", "magnet", "pull"],
   "input.contextual.direction": ["velocity"],
   "input.contextual.normalizedAge": ["age gradient", "life ratio"],
-  "input.contextual.angle": ["rotation"],
+  "input.contextual.angle": ["rotation", "angle", "radians"],
+  "input.contextual.angleDegrees": ["rotation", "angle", "degrees"],
   "input.system.deltaTime": ["delta", "dt"],
   "random.range": ["rand", "noise value"],
   "gradient.sample": ["ramp", "color over life", "curve"],
@@ -197,17 +199,25 @@ const PARTICLE_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "math.lerp": ["mix", "lerp(a,b,t)"],
   "math.smoothstep": ["smoothstep"],
   "math.clamp": ["clamp(x,min,max)", "saturate"],
-  "math.cos": ["cos"],
-  "math.sin": ["sin"],
-  "math.tan": ["tan"],
+  "math.cos": ["cos", "cosine"],
+  "math.sin": ["sin", "sine"],
+  "math.tan": ["tan", "tangent"],
+  "math.cosDegrees": ["cos", "cosd", "cosine degrees"],
+  "math.sinDegrees": ["sin", "sind", "sine degrees"],
+  "math.tanDegrees": ["tan", "tand", "tangent degrees"],
   "math.abs": ["abs", "|x|"],
   "math.sqrt": ["sqrt", "√"],
   "math.exp": ["exp", "e^x"],
   "math.exp2": ["exp2", "2^x"],
   "math.log": ["log", "ln"],
-  "math.acos": ["acos"],
-  "math.asin": ["asin"],
-  "math.atan": ["atan"],
+  "math.acos": ["acos", "arccosine"],
+  "math.asin": ["asin", "arcsine"],
+  "math.atan": ["atan", "arctangent"],
+  "math.acosDegrees": ["acos", "acosd", "arccosine degrees"],
+  "math.asinDegrees": ["asin", "asind", "arcsine degrees"],
+  "math.atanDegrees": ["atan", "atand", "arctangent degrees"],
+  "math.degrees": ["degrees", "rad2deg", "x * 180 / pi"],
+  "math.radians": ["radians", "deg2rad", "x * pi / 180"],
   "math.ceil": ["ceil"],
   "math.fract": ["fract", "frac"],
   "math.negate": ["-x", "negative"],
@@ -382,7 +392,7 @@ const EMITTER_NODES: ParticleNodeDefinition[] = [
       { id: "deadColor", name: "Dead Color", type: COLOR, defaultValue: [0, 0, 0, 0] },
       { id: "size", name: "Size", type: FLOAT, defaultValue: [1], min: 0 },
       { id: "scale", name: "Scale", type: VEC2, defaultValue: [1, 1] },
-      { id: "angle", name: "Angle", type: FLOAT, defaultValue: [0], unit: "rad", description: "Radians." },
+      { id: "angle", name: "Angle (Radians)", type: FLOAT, defaultValue: [0], unit: "rad", description: "Radians." },
     ],
     outputs: [PARTICLE_OUT],
   },
@@ -446,7 +456,7 @@ const SHAPE_NODES: ParticleNodeDefinition[] = [
       RADIUS,
       {
         id: "angle",
-        name: "Angle",
+        name: "Angle (Radians)",
         type: FLOAT,
         defaultValue: [Math.PI / 6],
         min: 0.01,
@@ -481,7 +491,8 @@ const UPDATE_NODES: ParticleNodeDefinition[] = [
   updateNode("update.color", "Update Color", "Update", [{ id: "color", name: "Color", type: COLOR, required: true }], "Sets the color every frame."),
   updateNode("update.size", "Update Size", "Update", [{ id: "size", name: "Size", type: FLOAT, required: true }], "Sets the size every frame."),
   updateNode("update.scale", "Update Scale", "Update", [{ id: "scale", name: "Scale", type: VEC2, required: true }], "Sets the X and Y scale every frame."),
-  updateNode("update.angle", "Update Angle", "Update", [{ id: "angle", name: "Angle", type: FLOAT, required: true, unit: "rad", description: "Radians." }], "Sets the rotation (radians) every frame."),
+  updateNode("update.angle", "Update Angle (Radians)", "Update", [{ id: "angle", name: "Angle", type: FLOAT, required: true, unit: "rad", description: "Radians." }], "Sets the rotation (radians) every frame."),
+  updateNode("update.angleDegrees", "Update Angle (Degrees)", "Update", [{ id: "angle", name: "Angle", type: FLOAT, required: true, unit: "°", description: "Degrees." }], "Sets the rotation (degrees) every frame."),
   updateNode("update.basicPosition", "Apply Velocity", "Update", [], "Moves each particle along its direction every frame."),
   updateNode("update.basicColor", "Fade To Dead Color", "Update", [], "Blends each particle from its Color to its Dead Color over its life."),
   updateNode("update.alignAngle", "Align Angle", "Update", [], "Rotates each particle to face its direction of travel, plus Alignment."),
@@ -516,7 +527,8 @@ const INPUT_NODES: ParticleNodeDefinition[] = [
   attributeNode("input.contextual.deadColor", "Dead Color", COLOR),
   attributeNode("input.contextual.size", "Size", FLOAT),
   attributeNode("input.contextual.scale", "Scale", VEC2),
-  attributeNode("input.contextual.angle", "Angle", FLOAT, "Radians."),
+  attributeNode("input.contextual.angle", "Angle (Radians)", FLOAT, "Radians."),
+  attributeNode("input.contextual.angleDegrees", "Angle (Degrees)", FLOAT, "Degrees."),
   systemValueNode("input.system.time", "Time", FLOAT, "Seconds since the emitter started, including Pre Warm."),
   systemValueNode("input.system.deltaTime", "Delta Time", FLOAT, "Seconds simulated this frame."),
   systemValueNode("input.system.emitterPosition", "Emitter Position", VEC3, "World-space position of the emitter."),
@@ -628,8 +640,10 @@ const MATH_NODES: ParticleNodeDefinition[] = [
     ],
     outputs: [{ id: "out", name: "Out", type: GENERIC_NO_COLOR }],
   },
-  unaryMath("math.cos", "Cosine"),
-  unaryMath("math.sin", "Sine"),
+  unaryMath("math.cos", "Cosine (Radians)"),
+  unaryMath("math.cosDegrees", "Cosine (Degrees)"),
+  unaryMath("math.sin", "Sine (Radians)"),
+  unaryMath("math.sinDegrees", "Sine (Degrees)"),
   unaryMath("math.abs", "Absolute"),
   unaryMath("math.exp", "Exponential"),
   unaryMath("math.exp2", "Exponential 2"),
@@ -638,16 +652,20 @@ const MATH_NODES: ParticleNodeDefinition[] = [
   unaryMath("math.ceil", "Ceiling"),
   unaryMath("math.sqrt", "Square Root"),
   unaryMath("math.log", "Logarithm", 1),
-  unaryMath("math.tan", "Tangent"),
-  unaryMath("math.atan", "Arctangent"),
-  unaryMath("math.acos", "Arccosine"),
-  unaryMath("math.asin", "Arcsine"),
+  unaryMath("math.tan", "Tangent (Radians)"),
+  unaryMath("math.tanDegrees", "Tangent (Degrees)"),
+  unaryMath("math.atan", "Arctangent (Radians)"),
+  unaryMath("math.atanDegrees", "Arctangent (Degrees)"),
+  unaryMath("math.acos", "Arccosine (Radians)"),
+  unaryMath("math.acosDegrees", "Arccosine (Degrees)"),
+  unaryMath("math.asin", "Arcsine (Radians)"),
+  unaryMath("math.asinDegrees", "Arcsine (Degrees)"),
   unaryMath("math.sign", "Sign"),
   unaryMath("math.negate", "Negate"),
   unaryMath("math.oneMinus", "One Minus"),
   unaryMath("math.reciprocal", "Reciprocal", 1),
-  unaryMath("math.degrees", "Degrees"),
-  unaryMath("math.radians", "Radians"),
+  unaryMath("math.degrees", "Radians To Degrees"),
+  unaryMath("math.radians", "Degrees To Radians"),
   unaryMath("math.fract", "Fraction"),
 ];
 
@@ -779,12 +797,79 @@ function typedPin(pin: ParticlePinDefinition, valueType: ParticleNumericType): P
   };
 }
 
-/** Definition for one node, with Random and Gradient pins typed by `valueType`. */
+export type ParticleAngleUnit = "radians" | "degrees";
+
+export const PARTICLE_ANGLE_UNIT_OPTIONS: readonly {
+  id: ParticleAngleUnit;
+  label: string;
+}[] = [
+  { id: "radians", label: "Radians" },
+  { id: "degrees", label: "Degrees" },
+];
+
+/**
+ * Node types whose angle pin follows `properties.angleUnit`: the pin id and its
+ * degrees description (catalog pins are radians).
+ */
+const ANGLE_UNIT_PINS: Readonly<Record<string, { pinId: string; description: string }>> = {
+  "particle.create": { pinId: "angle", description: "Degrees." },
+  "shape.cone": { pinId: "angle", description: "Full opening angle in degrees." },
+};
+
+/** The pin id an `angleUnit` property switches, if the node type has one. */
+export function particleAngleUnitPin(type: string): string | undefined {
+  return Object.hasOwn(ANGLE_UNIT_PINS, type) ? ANGLE_UNIT_PINS[type]!.pinId : undefined;
+}
+
+/** `properties.angleUnit` of a node with an angle pin, defaulting to radians; undefined for other nodes. */
+export function particleNodeAngleUnit(
+  type: string,
+  properties: Record<string, unknown>,
+): ParticleAngleUnit | undefined {
+  if (!particleAngleUnitPin(type)) return undefined;
+  return properties.angleUnit === "degrees" ? "degrees" : "radians";
+}
+
+/** Radians → degrees, rounded to micro-degrees so converted bounds read cleanly (π/6 is 30, not 30.000000000000004). */
+export function particleRadiansToDegrees(radians: number): number {
+  return Math.round((radians * 180) / Math.PI * 1e6) / 1e6;
+}
+
+export function particleDegreesToRadians(degrees: number): number {
+  return (degrees * Math.PI) / 180;
+}
+
+function degreesPin(pin: ParticlePinDefinition, description: string): ParticlePinDefinition {
+  const convert = (value: number | undefined) => (value === undefined ? undefined : particleRadiansToDegrees(value));
+  const min = convert(pin.min);
+  const max = convert(pin.max);
+  return {
+    ...pin,
+    name: pin.name.replace("(Radians)", "(Degrees)"),
+    unit: "°",
+    ...(pin.defaultValue ? { defaultValue: pin.defaultValue.map((value) => particleRadiansToDegrees(value)) } : {}),
+    ...(min !== undefined ? { min } : {}),
+    ...(max !== undefined ? { max } : {}),
+    description,
+  };
+}
+
+/**
+ * Definition for one node, with Random and Gradient pins typed by `valueType` and an
+ * `angleUnit` of degrees showing the angle pin, its default and its bounds in degrees.
+ */
 export function particleNodeDefinitionFor(
   node: Pick<ParticleGraphNode, "type" | "properties">,
 ): ParticleNodeDefinition | undefined {
   const definition = BY_TYPE.get(node.type);
   if (!definition) return undefined;
+  if (particleNodeAngleUnit(node.type, node.properties) === "degrees") {
+    const { pinId, description } = ANGLE_UNIT_PINS[node.type]!;
+    return {
+      ...definition,
+      inputs: definition.inputs.map((pin) => (pin.id === pinId ? degreesPin(pin, description) : pin)),
+    };
+  }
   const valueType = particleNodeValueType(node.type, node.properties);
   if (!valueType) return definition;
   return {

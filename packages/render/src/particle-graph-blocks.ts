@@ -220,6 +220,22 @@ function unary(operation: ParticleTrigonometryBlockOperations): ParticleBlockAda
   };
 }
 
+/**
+ * A chain of unary operations: `value` feeds the first, `out` is the last. The degree
+ * variants compose the radian blocks with Babylon's own To Radians / To Degrees.
+ */
+function unaryChain(...operations: ParticleTrigonometryBlockOperations[]): ParticleBlockAdapter {
+  return ({ name }) => {
+    const blocks = operations.map((operation, index) => {
+      const block = new ParticleTrigonometryBlock(index === operations.length - 1 ? name : `${name}/${index}`);
+      block.operation = operation;
+      return block;
+    });
+    for (let index = 1; index < blocks.length; index += 1) blocks[index - 1]!.output.connectTo(blocks[index]!.input, true);
+    return { blocks, inputs: { value: blocks[0]!.input }, outputs: { out: blocks.at(-1)!.output } };
+  };
+}
+
 /** Condition tests by name: Babylon orders Xor, Or, And differently from the IR list. */
 const CONDITION_TESTS: Readonly<Record<string, ParticleConditionBlockTests>> = {
   equal: ParticleConditionBlockTests.Equal,
@@ -354,6 +370,13 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   "update.size": spine((name) => new UpdateSizeBlock(name), (block) => ({ size: block.size })),
   "update.scale": spine((name) => new UpdateScaleBlock(name), (block) => ({ scale: block.scale })),
   "update.angle": spine((name) => new UpdateAngleBlock(name), (block) => ({ angle: block.angle })),
+  "update.angleDegrees": ({ name }) => {
+    const radians = new ParticleTrigonometryBlock(`${name}/radians`);
+    radians.operation = ParticleTrigonometryBlockOperations.ToRadians;
+    const update = new UpdateAngleBlock(name);
+    radians.output.connectTo(update.angle, true);
+    return { blocks: [update, radians], inputs: { particle: update.particle, angle: radians.input }, outputs: { out: update.output } };
+  },
   "update.basicPosition": applyVelocityAdapter,
   "update.basicColor": spine((name) => new BasicColorUpdateBlock(name)),
   "update.alignAngle": spine((name) => new AlignAngleBlock(name), undefined, (block, operation) => {
@@ -374,6 +397,13 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   "input.contextual.size": contextual(NodeParticleContextualSources.Size),
   "input.contextual.scale": contextual(NodeParticleContextualSources.Scale),
   "input.contextual.angle": contextual(NodeParticleContextualSources.Angle),
+  "input.contextual.angleDegrees": ({ name }) => {
+    const angle = contextualBlock(`${name}/radians`, NodeParticleContextualSources.Angle);
+    const degrees = new ParticleTrigonometryBlock(name);
+    degrees.operation = ParticleTrigonometryBlockOperations.ToDegrees;
+    angle.output.connectTo(degrees.input, true);
+    return { blocks: [degrees, angle], inputs: {}, outputs: { out: degrees.output } };
+  },
   "input.system.time": systemValue(NodeParticleSystemSources.Time),
   "input.system.deltaTime": systemValue(NodeParticleSystemSources.Delta),
   "input.system.emitterPosition": systemValue(NodeParticleSystemSources.Emitter),
@@ -413,7 +443,9 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
     return { blocks: [block], inputs: { value: block.value, min: block.min, max: block.max }, outputs: { out: block.output } };
   },
   "math.cos": unary(ParticleTrigonometryBlockOperations.Cos),
+  "math.cosDegrees": unaryChain(ParticleTrigonometryBlockOperations.ToRadians, ParticleTrigonometryBlockOperations.Cos),
   "math.sin": unary(ParticleTrigonometryBlockOperations.Sin),
+  "math.sinDegrees": unaryChain(ParticleTrigonometryBlockOperations.ToRadians, ParticleTrigonometryBlockOperations.Sin),
   "math.abs": unary(ParticleTrigonometryBlockOperations.Abs),
   "math.exp": unary(ParticleTrigonometryBlockOperations.Exp),
   "math.exp2": unary(ParticleTrigonometryBlockOperations.Exp2),
@@ -423,9 +455,13 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   "math.sqrt": unary(ParticleTrigonometryBlockOperations.Sqrt),
   "math.log": unary(ParticleTrigonometryBlockOperations.Log),
   "math.tan": unary(ParticleTrigonometryBlockOperations.Tan),
+  "math.tanDegrees": unaryChain(ParticleTrigonometryBlockOperations.ToRadians, ParticleTrigonometryBlockOperations.Tan),
   "math.atan": unary(ParticleTrigonometryBlockOperations.ArcTan),
+  "math.atanDegrees": unaryChain(ParticleTrigonometryBlockOperations.ArcTan, ParticleTrigonometryBlockOperations.ToDegrees),
   "math.acos": unary(ParticleTrigonometryBlockOperations.ArcCos),
+  "math.acosDegrees": unaryChain(ParticleTrigonometryBlockOperations.ArcCos, ParticleTrigonometryBlockOperations.ToDegrees),
   "math.asin": unary(ParticleTrigonometryBlockOperations.ArcSin),
+  "math.asinDegrees": unaryChain(ParticleTrigonometryBlockOperations.ArcSin, ParticleTrigonometryBlockOperations.ToDegrees),
   "math.sign": unary(ParticleTrigonometryBlockOperations.Sign),
   "math.negate": unary(ParticleTrigonometryBlockOperations.Negate),
   "math.oneMinus": unary(ParticleTrigonometryBlockOperations.OneMinus),

@@ -245,6 +245,19 @@ function trigonometry(operation: TrigonometryBlockOperations): BlockAdapter {
   };
 }
 
+/** Trigonometry blocks in sequence: `value` feeds the first, `out` is the last (the Degrees variants). */
+function trigonometryChain(...operations: TrigonometryBlockOperations[]): BlockAdapter {
+  return ({ name }) => {
+    const blocks = operations.map((operation, index) => {
+      const block = new TrigonometryBlock(index === operations.length - 1 ? name : `${name}_${index}`);
+      block.operation = operation;
+      return block;
+    });
+    for (let index = 1; index < blocks.length; index += 1) blocks[index - 1]!.output.connectTo(blocks[index]!.input);
+    return { blocks, inputs: { value: blocks[0]!.input }, outputs: { out: blocks.at(-1)!.output } };
+  };
+}
+
 /** Lift Babylon's scalar-only operations to the graph's resolved numeric width. */
 function componentwise(scalar: BlockAdapter): BlockAdapter {
   return (context) => {
@@ -445,6 +458,19 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     const block = new ArcTan2Block(name);
     // Babylon names its first atan(y, x) argument `x`.
     return single(block, { y: block.x, x: block.y }, { out: block.output });
+  }),
+  "math.sinDegrees": trigonometryChain(TrigonometryBlockOperations.Radians, TrigonometryBlockOperations.Sin),
+  "math.cosDegrees": trigonometryChain(TrigonometryBlockOperations.Radians, TrigonometryBlockOperations.Cos),
+  "math.tanDegrees": trigonometryChain(TrigonometryBlockOperations.Radians, TrigonometryBlockOperations.Tan),
+  "math.asinDegrees": trigonometryChain(TrigonometryBlockOperations.ArcSin, TrigonometryBlockOperations.Degrees),
+  "math.acosDegrees": trigonometryChain(TrigonometryBlockOperations.ArcCos, TrigonometryBlockOperations.Degrees),
+  "math.atanDegrees": trigonometryChain(TrigonometryBlockOperations.ArcTan, TrigonometryBlockOperations.Degrees),
+  "math.atan2Degrees": componentwise(({ name }) => {
+    const block = new ArcTan2Block(`${name}_radians`);
+    const degrees = new TrigonometryBlock(name);
+    degrees.operation = TrigonometryBlockOperations.Degrees;
+    block.output.connectTo(degrees.input);
+    return { blocks: [block, degrees], inputs: { y: block.x, x: block.y }, outputs: { out: degrees.output } };
   }),
   "math.pow": ({ name }) => {
     const block = new PowBlock(name);

@@ -1,10 +1,10 @@
 ---
-node: math.radians
+node: math.sinDegrees
 ---
 
-# Radians
+# Sine (Degrees)
 
-Converts the input from degrees to radians.
+Returns the sine of an angle in degrees.
 
 ## Inputs
 
@@ -21,3 +21,4 @@ Converts the input from degrees to radians.
 ## Notes
 
 - Accepts a Float, Vector 2, Vector 3 or Color, and works on each component.
+- [**Sine (Radians)**](sine.md) works in radians.
