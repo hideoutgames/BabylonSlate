@@ -308,6 +308,47 @@ describe("ParticleGraphDetails", () => {
     expect(nodeOf(history.read(), "create").properties["default:angle"]).toEqual([45]);
   });
 
+  it("adds, renames and retypes parameters, retyping the nodes that read them", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    const history = renderDetails(doc);
+    fireEvent.click(screen.getByTestId("particle-graph-parameters-add"));
+    fireEvent.click(screen.getByTestId("particle-graph-parameters-add"));
+    const [first, second] = history.read().parameters;
+    expect([first!.name, second!.name]).toEqual(["Parameter", "Parameter 2"]);
+    // A name another parameter holds is refused; a fresh one is trimmed and kept.
+    type(`property-parameter-${second!.id}-name`, "Parameter");
+    expect(history.read().parameters[1]!.name).toBe("Parameter 2");
+    type(`property-parameter-${second!.id}-name`, "  Intensity ");
+    expect(history.read().parameters[1]!.name).toBe("Intensity");
+    // A Parameter node follows its parameter's type.
+    const withNode = { ...history.read(), nodes: [...history.read().nodes,
+      { id: "reader", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: second!.id, valueType: "float" } }] };
+    cleanup();
+    const next = renderDetails(withNode);
+    await pickOption(`property-parameter-${second!.id}-type`, "Color");
+    expect(next.read().parameters[1]).toMatchObject({ type: "color", defaultValue: [1, 1, 1, 1] });
+    expect(nodeOf(next.read(), "reader").properties.valueType).toBe("color");
+  });
+
+  it("deletes an unused parameter at once and asks before deleting one that nodes read", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.parameters = [
+      { id: "unused", name: "Unused", type: "float", defaultValue: [1] },
+      { id: "used", name: "Heat", type: "float", defaultValue: [1] },
+    ];
+    doc.nodes.push({ id: "reader", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "used", valueType: "float" } });
+    const history = renderDetails(doc);
+    fireEvent.click(screen.getByTestId("particle-graph-parameters-0-remove"));
+    expect(history.read().parameters.map((parameter) => parameter.id)).toEqual(["used"]);
+    fireEvent.click(screen.getByTestId("particle-graph-parameters-0-remove"));
+    // Not yet: the dialog names the parameter.
+    expect(history.read().parameters).toHaveLength(1);
+    expect(await screen.findByText(/Heat is used by Parameter nodes/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("particle-graph-parameter-delete-confirm"));
+    expect(history.read().parameters).toEqual([]);
+    expect(nodeOf(history.read(), "reader")).toBeTruthy();
+  });
+
   it("edits Gradient stops for its value type", async () => {
     const history = renderDetails(createDefaultParticleGraphDocument("Embers"), "gradient");
     expect(screen.getByRole("button", { name: "Add Stop" })).toBeTruthy();
