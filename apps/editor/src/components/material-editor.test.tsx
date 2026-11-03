@@ -95,6 +95,13 @@ beforeEach(async () => {
     { guid: "rtt-1", name: "Capture Output", type: "RenderTargetTexture", payload: { renderTargetGuid: "target" } },
     { guid: "model-1", name: "Statue", type: "Model", payload: {} },
     { guid: "function-1", name: "Blend", type: "MaterialFunction", payload: {} },
+    {
+      guid: "globals-1", name: "World Globals", type: "GlobalParameterCollection",
+      payload: { parameters: [
+        { id: "tint", name: "Sky Tint", type: "color", defaultValue: [1, 1, 1, 1] },
+        { id: "wind", name: "Wind", type: "vec3", defaultValue: [1, 0, 0] },
+      ] },
+    },
   ]) {
     await assetRegistry.createAsset("project", `${asset.guid}.hasset`, {
       ...asset, version: 1, dependencies: [], chunks: [],
@@ -354,6 +361,27 @@ describe("Material details panel", () => {
     expect(screen.getByTestId("material-node-texture").textContent).toContain(
       "Bark",
     );
+  });
+
+  it("points a Global Parameter node at a collection, then at one of its parameters", async () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({ id: "global", type: "global.parameter", position: { x: 0, y: 0 }, properties: {} });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "global";
+    const view = render(<MaterialDetailsPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("property-material-global-parameter-collection"));
+    fireEvent.click(await screen.findByTestId("search-item-globals-1"));
+    expect(lastCommit().nodes.find((node) => node.id === "global")?.properties).toEqual({ collectionGuid: "globals-1" });
+    harness.content = lastCommit() as unknown as Record<string, unknown>;
+    view.rerender(<MaterialDetailsPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("property-material-global-parameter-parameter"));
+    const tint = await screen.findByRole("option", { name: "Sky Tint (Color)" });
+    expect(screen.getByRole("option", { name: "Wind (Vector 3)" })).toBeTruthy();
+    fireEvent.pointerDown(tint);
+    fireEvent.click(tint);
+    expect(lastCommit().nodes.find((node) => node.id === "global")?.properties).toEqual({
+      collectionGuid: "globals-1", parameterId: "tint", valueType: "color",
+    });
   });
 
   it("shows a 2D texture picker for a Texture Sample and excludes environment cubes", async () => {

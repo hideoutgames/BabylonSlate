@@ -125,6 +125,7 @@ export {
 export { customGlslInterface, customGlslInterfaceError, customGlslFunctionBodyError, newCustomGlslProperties, type CustomGlslPin } from "./custom-glsl";
 export { materialGradientStops, type MaterialGradientStop } from "./gradient";
 export * from "./vector-mask";
+export * from "./global-parameter";
 
 export { buildMaterialParameterCatalog, materialParameterDefaults } from "./material-parameter-catalog";
 export { convertGlslToMaterial, type GlslToMaterialOptions, type GlslToMaterialResult } from "./glsl-to-material";

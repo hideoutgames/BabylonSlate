@@ -3,6 +3,8 @@ import { MessageDetails } from "./message-details";
 import { DiagnosticResultRow } from "./diagnostic-result-row";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
 import { GlslCodePreview } from "./glsl-code-preview";
+import { GlobalParameterNodePicker } from "./global-parameter-node-picker";
+import { useGlobalParameterCatalog } from "../lib/global-parameter-catalog";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -49,6 +51,8 @@ import {
   materialNodeDefinition,
   customGlslInterface,
   hydrateMaterialGraphForEditor,
+  MATERIAL_GLOBAL_PARAMETER_NODE_TYPE,
+  selectMaterialGlobalParameter,
   listUnconnectedMaterialPinDefaults,
   materialGraphToSerialized,
   materialPaletteNodes,
@@ -306,6 +310,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   const { sessionViewport, onSessionViewportChange } =
     useGraphSessionViewport(documentId);
   const textureExists = useTextureExists();
+  const globalParameters = useGlobalParameterCatalog();
 
   const diagnostics = useMemo(
     () =>
@@ -314,21 +319,23 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           functions,
           textureExists,
           warnPostProcessCost: true,
+          globalParameters,
         }),
       ].map((row) => ({
         nodeId: row.nodeId,
         severity: row.severity,
         message: row.message,
       })),
-    [document, functions, textureExists],
+    [document, functions, textureExists, globalParameters],
   );
 
   const initialGraph = useMemo(
     () =>
       hydrateMaterialGraphForEditor(materialGraphToSerialized(document), {
         functions,
+        globalParameters,
       }),
-    [document, functions],
+    [document, functions, globalParameters],
   );
 
   return (
@@ -372,17 +379,19 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
   const conversionMenu = useMaterialConversionMenu(document, commit);
   const { sessionViewport, onSessionViewportChange } =
     useGraphSessionViewport(documentId);
+  const globalParameters = useGlobalParameterCatalog();
 
   const diagnostics = useMemo(
     () =>
       validateMaterialFunctionDocument(document, {
         functions: editing.functions,
+        globalParameters,
       }).map((row) => ({
         nodeId: row.nodeId,
         severity: row.severity,
         message: row.message,
       })),
-    [document, editing.functions],
+    [document, editing.functions, globalParameters],
   );
 
   const initialGraph = useMemo(
@@ -390,8 +399,9 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
       hydrateMaterialGraphForEditor(materialGraphToSerialized(document), {
         functions: editing.functions,
         functionInterface: document,
+        globalParameters,
       }),
-    [document, editing.functions],
+    [document, editing.functions, globalParameters],
   );
 
   return (
@@ -930,6 +940,14 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
       {node.type === "function.call" ? (
         <MaterialFunctionPicker node={node.id} document={document} commit={commit} />
       ) : null}
+      {node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE ? (
+        <GlobalParameterNodePicker
+          collectionGuid={typeof node.properties.collectionGuid === "string" ? node.properties.collectionGuid : ""}
+          parameterId={typeof node.properties.parameterId === "string" ? node.properties.parameterId : ""}
+          onChange={(collectionGuid, parameter) => commit(selectMaterialGlobalParameter(document, node.id, collectionGuid, parameter))}
+          testId="material-global-parameter"
+        />
+      ) : null}
     </div>
   );
 }
@@ -1142,21 +1160,23 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
   const textureExists = useTextureExists();
   const doc = useOpenDocument(documentId);
   const isFunction = doc?.ref.kind === "material-function";
+  const globalParameters = useGlobalParameterCatalog();
 
   const diagnostics = useMemo(() => {
     const payload = (doc?.content ?? {}) as Record<string, unknown>;
     if (isFunction) {
       return validateMaterialFunctionDocument(
         normalizeMaterialFunctionDocument(payload),
-        { functions: editing.functions, textureExists },
+        { functions: editing.functions, textureExists, globalParameters },
       );
     }
     return validateMaterialDocument(normalizeMaterialDocument(payload), {
       functions: editing.functions,
       textureExists,
       warnPostProcessCost: true,
+      globalParameters,
     });
-  }, [doc?.content, editing.functions, isFunction, textureExists]);
+  }, [doc?.content, editing.functions, isFunction, textureExists, globalParameters]);
 
   const rows = [...diagnostics, ...editing.compileDiagnostics];
   const [selectedDiagnostic, setSelectedDiagnostic] = useState<(typeof rows)[number] | null>(null);

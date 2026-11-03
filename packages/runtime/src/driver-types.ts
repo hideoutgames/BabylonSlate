@@ -293,6 +293,8 @@ export interface RuntimeDriver {
   applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void;
   /** Replaces the node breakpoints. */
   applyBreakpoints(breakpoints: readonly Breakpoint[]): void;
+  /** Global Parameter Collections edited during Play: each listed collection replaces its own. */
+  applyGlobalParameterCatalog(catalog: unknown): void;
   applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void;
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,

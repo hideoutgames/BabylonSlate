@@ -1,4 +1,4 @@
-import { findGraphCycle } from "@haptic/core";
+import { findGraphCycle, type GlobalParameterCatalog } from "@haptic/core";
 import {
   materialNodeDefinition,
   nodeIsLegalInDomain,
@@ -33,6 +33,7 @@ import type {
 import { callDefinition, createTypeResolver } from "./resolve";
 import { customGlslDefinition, customGlslFunctionBodyError, customGlslInterfaceError } from "./custom-glsl";
 import { vectorMaskDefinition, vectorMaskError } from "./vector-mask";
+import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, materialGlobalParameterDefinition, validateMaterialGlobalParameter } from "./global-parameter";
 import { validateMaterialParameterNames } from "./parameters";
 import {
   materialTypeLabel,
@@ -64,6 +65,8 @@ export interface MaterialValidationContext {
   capabilities?: MaterialCapabilities;
   /** Surface the iPad fill-rate warning (project baseline setting). */
   warnPostProcessCost?: boolean;
+  /** The project's Global Parameter Collections, so a Global Parameter node whose parameter is gone or retyped warns. */
+  globalParameters?: Readonly<GlobalParameterCatalog>;
 }
 
 const DEFAULT_CAPABILITIES: Required<MaterialCapabilities> = {
@@ -154,6 +157,7 @@ function definitionForNode(
   }
   const definition = materialNodeDefinition(node.type);
   if (definition && node.type === "vector.mask") return vectorMaskDefinition(node, definition);
+  if (definition && node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) return materialGlobalParameterDefinition(node, definition);
   return definition && node.type === "custom.glsl" ? customGlslDefinition(node, definition) : definition;
 }
 
@@ -254,6 +258,10 @@ function validateGraph(
       }
     }
 
+    if (node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) {
+      const diagnostic = validateMaterialGlobalParameter(node, options.globalParameters);
+      if (diagnostic) diagnostics.push(diagnostic);
+    }
     if (node.type === "vector.mask") {
       const message = vectorMaskError(node.properties);
       if (message) diagnostics.push({ code: "material.vectorMask", message, severity: "error", nodeId: node.id, pinId: "value" });

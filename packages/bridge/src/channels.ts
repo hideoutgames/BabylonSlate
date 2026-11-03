@@ -376,6 +376,11 @@ export type ControlMessage =
   | { type: "debugObserve"; target: DebugObserveTarget | null; instanceId: string | null }
   /** Replaces the session's node breakpoints. */
   | { type: "setBreakpoints"; breakpoints: Breakpoint[] }
+  /**
+   * The editor's Global Parameter Collections after an edit during Play: each listed collection
+   * replaces its own, so new defaults apply to every parameter the session has not set.
+   */
+  | { type: "setGlobalParameterCatalog"; catalog: import("@haptic/core").GlobalParameterCatalog }
   | { type: "console"; line: string }
   | { type: "inspect" }
   | { type: "sceneLayerFocusNavigate"; reverse: boolean }
@@ -1136,6 +1141,12 @@ export type CommandMessage =
       name: string;
       value: number[] | null;
     }
+  /**
+   * Set Global <Type> Parameter: the session's value of one Global Parameter Collection
+   * parameter, sized to its type. Every Material and Particle Graph that reads it follows;
+   * `value` null drops the session's value, so the collection's default applies.
+   */
+  | { type: "setGlobalParameter"; collectionGuid: string; parameterId: string; value: number[] | null }
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
   /**
    * The session's simulation time dilation (`slomo`): render-side simulation that runs on its own

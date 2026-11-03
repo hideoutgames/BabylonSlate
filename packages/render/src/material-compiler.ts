@@ -42,7 +42,9 @@ import type {
   MaterialTextureFilter,
   MaterialValueType,
 } from "@haptic/shader-graph";
-import { componentCount, isPerInstanceParameter, materialNodeDefinition } from "@haptic/shader-graph";
+import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, componentCount, isPerInstanceParameter, materialGlobalParameterSelection, materialNodeDefinition } from "@haptic/shader-graph";
+import { globalParameterDefaults, type GlobalParameterValueSource } from "./global-parameter-values";
+import { createGlobalParameterBlock } from "./material-global-parameter";
 import { attachInstanceParameters, createInstanceParameterBlock, instanceParameterAttribute, type InstanceParameter } from "./instance-parameters";
 import { materialGlslDiagnostic, shaderLinkLog } from "./material-glsl-diagnostics";
 import {
@@ -127,6 +129,8 @@ export interface CompileMaterialOptions {
    * generation so its meshes fall back. Without it the diagnostic goes to `onTextureError`.
    */
   onLinkError?: (diagnostic: MaterialDiagnostic) => void;
+  /** What Global Parameter nodes read: a Play session's values, else the editor's defaults. */
+  globalParameters?: GlobalParameterValueSource;
 }
 
 export interface CompiledMaterial {
@@ -517,6 +521,26 @@ export function compileMaterialPlan(
 
   const realizeOperation = (operation: MaterialOperation): boolean => {
     if (realized.has(operation.id)) return true;
+    if (operation.nodeType === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) {
+      // Without a parameter the node has no outputs, so nothing reads it.
+      const selection = materialGlobalParameterSelection(operation.properties);
+      const blocks: NodeMaterialBlock[] = [];
+      const outputs: Record<string, NodeMaterialConnectionPoint> = {};
+      if (selection) {
+        const block = createGlobalParameterBlock(operationBlockName(operation.id), selection, options.globalParameters ?? globalParameterDefaults);
+        blocks.push(block);
+        outputs.out = block.output;
+        if (selection.valueType === "color") {
+          const split = new VectorSplitterBlock(`${operation.id}_rgb`);
+          block.output.connectTo(split.xyzw);
+          blocks.push(split);
+          outputs.rgb = split.xyzOut;
+        }
+      }
+      created.push(...blocks);
+      realized.set(operation.id, { blocks, inputs: {}, outputs });
+      return true;
+    }
     const isConstant =
       operation.nodeType.startsWith("const.") ||
       operation.nodeType.startsWith("param.");

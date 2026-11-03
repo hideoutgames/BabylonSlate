@@ -1,5 +1,5 @@
 import { nameNewMaterialParameters } from "./parameter-authoring";
-import type { SerializedGraph } from "@haptic/core";
+import type { GlobalParameterCatalog, SerializedGraph } from "@haptic/core";
 import {
   materialNodeDefinition,
   materialPaletteEntries,
@@ -16,6 +16,7 @@ import { isMaterialParameterNode, materialParameterName } from "./parameters";
 import { customGlslDefinition, newCustomGlslProperties } from "./custom-glsl";
 import { callDefinition, createTypeResolver, plumbingDefinition } from "./resolve";
 import { vectorMaskDefinition } from "./vector-mask";
+import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, materialGlobalParameterDefinition, materialGlobalParameterTitle } from "./global-parameter";
 
 /** Pin shape the shared graph shell renders and connects. */
 export interface MaterialGraphPin {
@@ -37,6 +38,8 @@ export interface MaterialPinContext {
   functionInterface?: MaterialFunctionDocument;
   /** Selected function for a `function.call` node. */
   functionGuid?: string;
+  /** The project's Global Parameter Collections, which title Global Parameter nodes. */
+  globalParameters?: Readonly<GlobalParameterCatalog>;
 }
 
 function toPin(
@@ -71,6 +74,7 @@ export function pinsForMaterialNode(
     definition = plumbingDefinition(definition, type, fn);
   }
   if (definition && type === "vector.mask") definition = vectorMaskDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties ?? {} }, definition);
+  if (definition && type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) definition = materialGlobalParameterDefinition({ properties: context.properties ?? {} }, definition);
   if (definition && type === "custom.glsl" && context.properties) {
     definition = customGlslDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties }, definition);
   }
@@ -241,7 +245,9 @@ export function hydrateMaterialGraphForEditor(
           ...(definition ? { __category: definition.category } : {}),
           title: isMaterialParameterNode(node.type)
             ? materialParameterName({ ...node, properties: data }) || definition?.title || node.type
-            : calledFunction?.name ?? definition?.title ?? node.type,
+            : node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE
+              ? materialGlobalParameterTitle(data, context.globalParameters)
+              : calledFunction?.name ?? definition?.title ?? node.type,
         },
       };
     }),

@@ -66,6 +66,7 @@ export {
   type TraceParticleComponent,
   type TraceParticleParameters,
   type TraceParticleState,
+  type TraceGlobalParameterValue,
   type TraceSpriteClip,
   type TraceVoice,
   type TracePayload,

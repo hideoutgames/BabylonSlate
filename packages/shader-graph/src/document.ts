@@ -659,6 +659,8 @@ export interface MaterialDependencies {
   textures: string[];
   functions: string[];
   meshes: string[];
+  /** Global Parameter Collections its Global Parameter nodes read. */
+  globalParameterCollections: string[];
   /** Sorted union for `header.dependencies[]`. */
   all: string[];
 }
@@ -682,21 +684,25 @@ export function materialDependencies(
   const textures = new Set<string>();
   const functions = new Set<string>();
   const meshes = new Set<string>();
+  const collections = new Set<string>();
   for (const node of doc.nodes) {
     const texture = guidProperty(node, "textureGuid");
     if (texture) textures.add(texture);
     const fn = guidProperty(node, "functionGuid");
     if (fn) functions.add(fn);
+    const collection = node.type === "global.parameter" ? guidProperty(node, "collectionGuid") : null;
+    if (collection) collections.add(collection);
   }
   if ("preview" in doc && doc.preview.customMeshGuid) {
     meshes.add(doc.preview.customMeshGuid);
   }
   const sorted = (values: Set<string>) => [...values].sort();
-  const all = sorted(new Set([...textures, ...functions, ...meshes]));
+  const all = sorted(new Set([...textures, ...functions, ...meshes, ...collections]));
   return {
     textures: sorted(textures),
     functions: sorted(functions),
     meshes: sorted(meshes),
+    globalParameterCollections: sorted(collections),
     all,
   };
 }

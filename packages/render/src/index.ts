@@ -1,6 +1,12 @@
 export { authoredActorWorldTransform } from "./authored-transform-matrices";
 export * from "./editor-clear-color";
 export * from "./create-engine";
+export {
+  currentGlobalParameterCatalog,
+  globalParameterDefaults,
+  setGlobalParameterCatalog,
+  type GlobalParameterValueSource,
+} from "./global-parameter-values";
 export { installDirectViewReadSync, setDirectViewPresentationEnabled, syncDirectViewCanvas } from "./direct-view-presentation";
 export { whenSubmittedWorkDone } from "./presented-frame";
 export { sceneRenderTargetCaptures, RenderTargetCaptures } from "./render-target-capture";

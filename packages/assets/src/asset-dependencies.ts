@@ -415,7 +415,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   if (assetType === "Material" || assetType === "MaterialFunction") {
     const document = assetType === "MaterialFunction" ? normalizeMaterialFunctionDocument(payload) : normalizeMaterialDocument(payload);
     const refs = materialDependencies(document);
-    addMany(refs.textures); addMany(refs.functions); addMany(refs.meshes, false);
+    addMany(refs.textures); addMany(refs.functions); addMany(refs.meshes, false); addMany(refs.globalParameterCollections);
   } else if (assetType === "MaterialInstance") addMany(materialInstanceDependencies(normalizeMaterialInstanceDocument(payload)).all);
   else if (assetType === "Model") addMany(modelAssetGuids(payload));
   else if (assetType === "Skeleton") addMany(skeletonAssetGuids(payload));

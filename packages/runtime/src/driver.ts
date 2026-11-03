@@ -287,7 +287,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly voices = new RuntimeVoices(() => this.seed);
   readonly particles = new RuntimeParticles();
   /** Global Parameter Collection values for this Play session (Set/Get Global Parameter). */
-  readonly globalParameters = new RuntimeGlobalParameters((message) => this.reportLog(message, "warning", "Global Parameters"));
+  readonly globalParameters = new RuntimeGlobalParameters((message) => this.reportLog(message, "warning", "Global Parameters"), (command) => this.emit(command));
   readonly particleEffects: RuntimeParticleEffects;
   /** Sprite Animation clips actors show, for trace frames and restore. */
   readonly spriteClips = new SpriteClipTrace();
@@ -702,6 +702,10 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.scriptDebug.observe(target, instanceId);
   }
 
+  applyGlobalParameterCatalog(catalog: unknown): void {
+    this.globalParameters.mergeCatalog(catalog);
+  }
+
   applyBreakpoints(breakpoints: readonly Breakpoint[]): void {
     if (this.stopped) return;
     this.breakpoints.set(breakpoints);
@@ -942,6 +946,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       return component ? particleComponentOverrides(component) : {};
     };
     for (const command of this.particles.restoreParameterCommands(particles, overrides)) this.emit(command);
+    this.globalParameters.restoreFromTrace(frame.globalParameters ?? []);
   }
 
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
