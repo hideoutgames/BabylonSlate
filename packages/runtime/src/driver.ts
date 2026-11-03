@@ -873,11 +873,20 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   }
 
   setTimeDilation(rate: number): void {
-    if (Number.isFinite(rate)) this.timeDilation = Math.min(MAX_TIME_DILATION, Math.max(0, rate));
+    if (!Number.isFinite(rate)) return;
+    const next = Math.min(MAX_TIME_DILATION, Math.max(0, rate));
+    if (next === this.timeDilation) return;
+    this.timeDilation = next;
+    this.publishTimeDilation();
+  }
+
+  /** Render-side clocks (particles) follow the dilation the simulation steps with. */
+  private publishTimeDilation(): void {
+    this.emit({ type: "setSimulationTimeScale", scale: this.timeDilation });
   }
 
   /**
-   * Resume a trace frame's time dilation, behaviour trees, Animation Graphs,
+   * Resume a trace frame's time dilation (always published as `setSimulationTimeScale`), behaviour trees, Animation Graphs,
    * sprite clips and voices on the live World (actors match by guid, BT rows by
    * render slot). Order: dilation, BT evaluation and ownership, Animation Graph
    * evaluation, then each live actor's sprite clip in World order (`animState` for a recorded clip,
@@ -887,7 +896,10 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
    * (`setParticlePlaying`).
    */
   restoreFromTrace(frame: TraceFrame): void {
+    const dilation = this.timeDilation;
     this.setTimeDilation(frame.timeDilation);
+    // An unchanged dilation is published too, so the render host's clocks match the frame.
+    if (this.timeDilation === dilation) this.publishTimeDilation();
     this.behaviourTrees.restoreFromTrace(frame.bt ?? []);
     this.animGraphs.restoreFromTrace(frame.animGraphs ?? []);
     const recordedClips = new Map((frame.sprites ?? []).map((clip) => [clip.actorGuid, clip]));
@@ -1062,6 +1074,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     if (this.stopped) return;
     this.realizeDemoActors();
     this.running = true;
+    this.publishTimeDilation();
     this.breakpointReported = false;
     try {
       this.world.start();

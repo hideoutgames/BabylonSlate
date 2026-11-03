@@ -408,6 +408,35 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
+  it("sends the render host the time scale at start, on every change and on trace restore", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      onCommand: (command) => commands.push(command) });
+    const scales = () => commands.flatMap((command) => (command.type === "setSimulationTimeScale" ? [command.scale] : []));
+    try {
+      runtime.start();
+      expect(scales()).toEqual([1]);
+      runtime.executeConsoleCommand("slomo 0.5");
+      runtime.executeConsoleCommand("slomo 0.5");
+      runtime.executeConsoleCommand("slomo 99");
+      runtime.executeConsoleCommand("slomo 0");
+      expect(scales()).toEqual([1, 0.5, 0]);
+      runtime.executeConsoleCommand("slomo 0.25");
+      runtime.executeConsoleCommand("snapshot start");
+      runtime.tick();
+      runtime.executeConsoleCommand("snapshot stop");
+      const frame = runtime.stopTrace()!.frames[0]!;
+      commands.length = 0;
+      // A restore publishes the frame's dilation once, changed or not.
+      runtime.restoreFromTrace(frame);
+      runtime.executeConsoleCommand("slomo 2");
+      runtime.restoreFromTrace(frame);
+      expect(scales()).toEqual([0.25, 2, 0.25]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("counts Delays with the tick's step when slomo changes mid-tick", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, dt: 0.5, seedDemoActors: false, preferSoftwarePhysics: true,

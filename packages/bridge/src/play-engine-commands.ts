@@ -43,6 +43,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "setPreserveDrawingBufferDebug",
   "assignParticle",
   "setParticlePlaying",
+  "setSimulationTimeScale",
   "setFreeCam",
   "setWireframe",
   "setShowBounds",

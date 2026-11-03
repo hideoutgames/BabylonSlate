@@ -2,6 +2,7 @@ import { MeshBuilder, NodeMaterial, NodeMaterialModes, NullEngine, ParticleSyste
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload, type ParticleLibrary, type ParticleLibraryEmitter } from "@haptic/assets";
 import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@haptic/particle-graph";
+import { PARTICLE_UPDATE_SPEED } from "@haptic/core";
 import { createTestEngine } from "./create-null-engine";
 import { ParticleService, type ParticlePlaybackEndedReport } from "./particle-service";
 
@@ -508,4 +509,107 @@ describe("playback ended reports", () => {
     play.service.resetSession();
     expect(play.ended).toEqual([]);
   });
+});
+
+describe("simulation time scale", () => {
+  const once = (duration: number) => libraryOf({ flash: { emitter: { loop: "once", duration }, spawn: { rate: { mode: "constant", value: 30 } },
+    initialize: { lifetime: { mode: "constant", value: 0.1 } } } });
+
+  it.each([[1, 120], [0.5, 240]] as const)("at %s finishes a 2 s Once System after %i frames", async (scale, frames) => {
+    const f = fixture();
+    f.service.setLibrary(once(2));
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale });
+    f.assign();
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    simulate([system], frames - 2);
+    f.frame();
+    expect(f.state()).toBe("playing");
+    simulate([system], 4);
+    f.frame();
+    expect(f.state()).toBe("draining");
+  });
+
+  it("keeps a burst schedule's relative timing on the scaled clock", async () => {
+    const f = fixture();
+    f.service.setLibrary(libraryOf({ burst: { spawn: { rate: { mode: "constant", value: 0 },
+      bursts: { enabled: true, entries: [{ time: 0.5, count: 8, cycles: 1, interval: 1 }] } } } }));
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale: 0.5 });
+    f.assign();
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    // Each rendered frame advances the emission clock by half of 1/60 s: the 0.5 s burst waits 60 frames.
+    for (let frame = 0; frame < 59; frame += 1) f.frame();
+    expect(system.manualEmitCount).toBe(-1);
+    f.frame();
+    f.frame();
+    expect(system.manualEmitCount).toBe(8);
+  });
+
+  it("holds systems at scale 0 like pause, without pausing, and restores the authored speed", async () => {
+    const f = fixture();
+    f.assign();
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    const authored = system.updateSpeed;
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale: 0 });
+    expect(system.updateSpeed).toBe(0);
+    expect(system.paused).toBe(true);
+    expect(f.service.needsFrames()).toBe(false);
+    // Pause and unpause while at scale 0 keeps the systems held.
+    f.service.setPaused(true);
+    f.service.setPaused(false);
+    expect(system.paused).toBe(true);
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale: 2 });
+    expect(system.paused).toBe(false);
+    expect(system.updateSpeed).toBeCloseTo(authored * 2, 12);
+    // A scale set while paused applies on resume.
+    f.service.setPaused(true);
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale: 0.5 });
+    expect(system.updateSpeed).toBe(0);
+    f.service.setPaused(false);
+    expect(system.updateSpeed).toBeCloseTo(authored * 0.5, 12);
+  });
+
+  it("starts a run prepared at scale 0 when time resumes, with its full Pre Warm", async () => {
+    const f = fixture();
+    f.service.setLibrary(libraryOf({ warm: { emitter: { prewarm: 1 }, spawn: { rate: { mode: "constant", value: 60 } },
+      initialize: { lifetime: { mode: "constant", value: 2 } } } }));
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale: 0 });
+    f.assign();
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(f.state()).toBe("playing"));
+    expect(system.isStarted()).toBe(false);
+    f.service.handleCommand({ type: "setSimulationTimeScale", scale: 0.25 });
+    expect(system.isStarted()).toBe(true);
+    // One authored second at 60 /s, not a quarter of it.
+    expect(system.getActiveCount()).toBeGreaterThan(50);
+    expect(system.updateSpeed).toBeCloseTo(PARTICLE_UPDATE_SPEED * 0.25, 12);
+  });
+
+  it.each([["input.system.time", 0.5], ["input.system.deltaTime", 1 / 120]] as const)(
+    "slows a Particle Graph's %s with the scale", async (source, expected) => {
+      const f = fixture();
+      // Update Size reads the system value, spliced into the default graph's spine.
+      f.service.setLibrary(graphLibrary((document) => {
+        document.nodes.push(
+          { id: "clock", type: source, position: { x: 0, y: 0 }, properties: {} },
+          { id: "size", type: "update.size", position: { x: 0, y: 0 }, properties: {} },
+        );
+        document.edges = document.edges.filter((edge) => edge.id !== "e-velocity-color");
+        document.edges.push(
+          { id: "e-velocity-size", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "size", targetPinId: "particle" },
+          { id: "e-size-color", sourceNodeId: "size", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
+          { id: "e-clock-size", sourceNodeId: "clock", sourcePinId: "out", targetNodeId: "size", targetPinId: "size" },
+        );
+      }));
+      f.service.handleCommand({ type: "setSimulationTimeScale", scale: 0.5 });
+      f.assign();
+      const system = f.scene.particleSystems[0] as ParticleSystem;
+      await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+      simulate([system], 60);
+      // 60 frames at half speed: half a second of Time, 1/120 s of Delta Time per frame.
+      expect(system.particles.length).toBeGreaterThan(0);
+      expect(system.particles[0]!.size).toBeCloseTo(expected, 3);
+    });
 });

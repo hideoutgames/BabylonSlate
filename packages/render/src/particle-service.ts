@@ -98,6 +98,7 @@ type SlotBase = {
   system: IParticleSystem;
   lease: ResourceLease<NodeMaterial>;
   pending: number;
+  /** Authored simulation speed; the live `updateSpeed` is this × the time scale, or 0 while halted. */
   updateSpeed: number;
   /** Native `start()` ran. Systems readied while paused start on resume, so prewarm runs at speed. */
   started: boolean;
@@ -225,6 +226,8 @@ export class ParticleService {
   /** Distinguishes Material leases taken for one slot after its preparation (rebuild, rebind). */
   private leaseSerial = 0;
   private paused = false;
+  /** Simulation time scale (slomo, `setSimulationTimeScale`); 0 halts like pause without pausing. */
+  private timeScale = 1;
   private disposed = false;
   private readonly cancelSceneDispose: () => void;
   /** Whether a system's programs have drawn on the Engine (`effectDrawnOn`; true where draws are not tracked). */
@@ -361,25 +364,55 @@ export class ParticleService {
 
   setPaused(paused: boolean): void {
     if (this.paused === paused) return;
-    this.paused = paused;
-    for (const entry of this.live.values()) for (const record of entry.systems) {
-      if (paused) record.updateSpeed = record.system.updateSpeed;
-      record.system.updateSpeed = paused ? 0 : record.updateSpeed;
-      // Zero speed still consumes manual emissions and Node Update blocks.
-      // CPU and repository-patched GPU owners skip their simulation at this gate.
-      (record.system as ParticleSystem | GPUParticleSystem).paused = paused;
-    }
-    if (paused) return;
+    this.updateHalt(() => { this.paused = paused; });
+  }
+
+  /**
+   * Slomo: every system simulates at its authored speed × `scale`, so emission clocks, burst
+   * schedules, drain timers and graph Time / Delta Time follow. 0 holds the systems like pause,
+   * but a later scale resumes them whatever the pause state was.
+   */
+  setTimeScale(scale: number): void {
+    const next = Number.isFinite(scale) ? Math.max(0, scale) : 1;
+    if (next === this.timeScale) return;
+    this.updateHalt(() => { this.timeScale = next; });
+  }
+
+  /** Paused, or time scale 0: systems hold still and wait to start. */
+  private get halted(): boolean {
+    return this.paused || this.timeScale === 0;
+  }
+
+  private updateHalt(change: () => void): void {
+    const wasHalted = this.halted;
+    change();
+    for (const entry of this.live.values()) for (const record of entry.systems) this.applySpeed(record);
+    if (this.halted || !wasHalted) return;
     // Speeds and the graph flag are restored first: CPU prewarm runs inside `start()`
     // (and skips a paused system), GPU prewarm on the first render.
     for (const entry of [...this.live.values()]) if (entry.state === "playing") this.startSystems(entry);
     this.publishStats();
   }
 
+  /**
+   * Writes the live speed: 0 while halted, else the authored speed × the time scale. A GPU
+   * system keeps its authored speed until its prewarm render, so Pre Warm simulates its
+   * authored seconds. Zero speed still consumes manual emissions and Node Update blocks, so
+   * halted systems are also `paused` (CPU and repository-patched GPU owners skip their
+   * simulation at that gate).
+   */
+  private applySpeed(record: SlotRecord): void {
+    const halted = this.halted;
+    const scale = record.kind === "basic" && record.prewarmPending ? 1 : this.timeScale;
+    record.system.updateSpeed = halted ? 0 : record.updateSpeed * scale;
+    (record.system as ParticleSystem | GPUParticleSystem).paused = halted;
+  }
+
   handleCommand(command: CommandMessage): void {
     if (this.disposed) return;
     if (command.type === "despawn" || command.type === "spawn") this.retireSlots((slot) => slot === command.slotId);
     else if (command.type === "assignParticle") this.assign(command);
+    else if (command.type === "setSimulationTimeScale") this.setTimeScale(command.scale);
     else if (command.type === "setParticlePlaying") {
       for (const entry of [...this.live.values()]) {
         if (entry.command.actorGuid !== command.actorGuid || (command.componentId && entry.command.componentId !== command.componentId)) continue;
@@ -440,7 +473,7 @@ export class ParticleService {
    * decide this: a freshly started or slow emitter reports zero until its next render.
    */
   needsFrames(): boolean {
-    if (this.paused || this.disposed) return false;
+    if (this.halted || this.disposed) return false;
     for (const entry of this.live.values()) {
       if (entry.state === "preparing" || entry.state === "playing" || entry.state === "draining") return true;
     }
@@ -556,6 +589,7 @@ export class ParticleService {
 
   resetSession(): void {
     for (const entry of this.live.values()) this.retire(entry);
+    this.timeScale = 1;
     this.releaseRetainedPrograms();
     this.slotMeshes.clear();
     this.publishStats();
@@ -668,7 +702,7 @@ export class ParticleService {
       });
       const after = host.onAfterRenderObservable.add(() => {
         if (!this.current(entry, generation)) return;
-        if (entry.state === "playing" && !this.paused) {
+        if (entry.state === "playing" && !this.halted) {
           // The driver runs on the simulation clock, so pause (updateSpeed 0) holds it.
           const ratio = host.getAnimationRatio() || 1;
           for (const record of entry.systems) {
@@ -756,10 +790,7 @@ export class ParticleService {
       const system = record.system;
       registerSceneStreamParticle(system, entry.command.slotId);
       const ready = bindParticleMaterial(system, lease.resource);
-      if (this.paused) {
-        system.updateSpeed = 0;
-        (record.system as ParticleSystem | GPUParticleSystem).paused = true;
-      }
+      this.applySpeed(record);
       applySortingToParticleSystem(system, context.sorting);
       const owned = record;
       const stopped = system.onStoppedObservable.add(() => {
@@ -775,7 +806,10 @@ export class ParticleService {
         const draw = system.onBeforeDrawParticlesObservable.add(() => {
           if (!this.current(entry, generation)) return;
           // Babylon draws only after its prewarm, so bursts queued from now on are rendered.
-          basic.prewarmPending = false;
+          if (basic.prewarmPending) {
+            basic.prewarmPending = false;
+            this.applySpeed(basic);
+          }
           // The system steps once per scene frame, on its first draw (MULTIPLYADD
           // draws twice, and Render Target Captures draw in the same frame).
           const frame = host.getFrameId();
@@ -869,7 +903,7 @@ export class ParticleService {
    * prewarm at `updateSpeed` 0 would simulate nothing and never run again.
    */
   private startSystems(entry: LiveComponent): void {
-    if (entry.warm || this.paused || entry.scene && isSceneStreamSlotPending(entry.scene, entry.command.slotId)) return;
+    if (entry.warm || this.halted || entry.scene && isSceneStreamSlotPending(entry.scene, entry.command.slotId)) return;
     this.waitingToStart.delete(entry);
     for (const record of entry.systems) {
       // A start observer may Stop or replace the entry.
@@ -885,7 +919,10 @@ export class ParticleService {
         this.firstDrawBudget -= 1;
       }
       record.started = true;
+      // CPU Pre Warm runs inside `start()`: it simulates the authored seconds, not slowed ones.
+      if (this.timeScale !== 1) record.system.updateSpeed = record.updateSpeed;
       record.system.start(0);
+      this.applySpeed(record);
     }
   }
 
