@@ -85,7 +85,7 @@ describe("CableComponent runtime", () => {
       await runtime.loadScripts([{
         assetGuid: "rig", classId: "Rig", parentClassId: "Actor", anchors: [],
         entryPoints: ["Resize", "Disable", "Enable"].map((event) => ({ event, name: event, isAsync: false })),
-        source: 'export function Resize(ctx) { const c=ctx.getComponentById(ctx.self,"rope"); ctx.setVariableOn(c,"numSegments",4); ctx.setVariableOn(c,"endPosition",{x:2,y:1,z:0}); } export function Disable(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self,"rope"),"enabled",false); } export function Enable(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self,"rope"),"enabled",true); }',
+        source: 'export function Resize(ctx) { const c=ctx.getComponentById(ctx.self,"rope"); ctx.setVariableOn(c,"numSegments",4); ctx.setVariableOn(c,"endPosition",{x:2,y:1,z:0}); }\nexport function Disable(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self,"rope"),"enabled",false); }\nexport function Enable(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self,"rope"),"enabled",true); }',
       }]);
       runtime.realizePlayWorld(); runtime.start(); runtime.tick();
       const owner = runtime.getWorld().findActor("owner")!;

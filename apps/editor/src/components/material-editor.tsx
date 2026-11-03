@@ -8,7 +8,6 @@ import {
   AssetPicker,
   AssetPickerControl,
   EntryListEditor,
-  NamePromptDialog,
   PanelFrame,
   PinListEditor,
   PropertyGrid,
@@ -17,6 +16,7 @@ import {
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
   selectedPickerIdentity,
+  type NestedMenuItem,
   type PinListRow,
   type PropertyRow,
 } from "@haptic/editor-kit";
@@ -33,8 +33,16 @@ import { isMaterialSamplerTextureAsset } from "../lib/content-browser-helpers";
 import {
   MATERIAL_PREVIEW_MESHES,
   classifyMaterialCost,
+  canConvertMaterialConstantToParameter,
+  canConvertMaterialParameterToConstant,
+  convertMaterialConstantToParameter,
+  convertMaterialParameterToConstant,
   isMaterialParameterNode,
   materialParameterName,
+  materialParameterValueType,
+  renameMaterialParameter,
+  retypeMaterialParameter,
+  type MaterialParameterValueType,
   materialGradientStops,
   vectorMaskChannels,
   VECTOR_MASK_CHANNELS,
@@ -255,29 +263,46 @@ function useTextureExists(): (guid: string) => boolean {
   );
 }
 
-function useNewMaterialParameterNaming(document: MaterialGraphDocument) {
-  const [pendingIds, setPendingIds] = useState<string[]>([]);
-  const rememberAddedParameters = (next: MaterialGraphDocument) => {
-    const added = next.nodes.filter((node) =>
-      isMaterialParameterNode(node.type) &&
-      !document.nodes.some((previous) => previous.id === node.id),
-    ).map((node) => node.id);
-    if (added.length > 0) {
-      setPendingIds((current) => [...new Set([...current, ...added])]);
+const MATERIAL_PARAMETER_TYPE_OPTIONS: { value: MaterialParameterValueType; label: string }[] = [
+  { value: "float", label: "Float" },
+  { value: "vec2", label: "Vector 2" },
+  { value: "vec3", label: "Vector 3" },
+  { value: "color", label: "Color" },
+  { value: "texture", label: "Texture" },
+];
+
+/**
+ * The node menu's **Convert to Parameter** on a Float, Vector 2, Vector 3 or Color Constant and
+ * **Convert to Constant** on a parameter that is not a Texture. It reads the document as it is
+ * when picked.
+ */
+function useMaterialConversionMenu<T extends MaterialGraphDocument>(document: T, commit: (next: T) => void) {
+  const documentRef = useRef(document);
+  documentRef.current = document;
+  return useCallback((nodeId: string): NestedMenuItem[] => {
+    const node = documentRef.current.nodes.find((entry) => entry.id === nodeId);
+    if (node && canConvertMaterialConstantToParameter(node.type)) {
+      return [{ id: "convert-to-parameter", label: "Convert to Parameter", testId: "material-convert-to-parameter", onSelect: () => {
+        const next = convertMaterialConstantToParameter(documentRef.current, nodeId);
+        if (next) commit(next);
+      } }];
     }
-  };
-  const finishNaming = (nodeId: string) => {
-    setPendingIds((current) => current.filter((id) => id !== nodeId));
-  };
-  return { pendingIds, rememberAddedParameters, finishNaming };
+    if (node && canConvertMaterialParameterToConstant(node.type)) {
+      return [{ id: "convert-to-constant", label: "Convert to Constant", testId: "material-convert-to-constant", onSelect: () => {
+        const next = convertMaterialParameterToConstant(documentRef.current, nodeId);
+        if (next) commit(next);
+      } }];
+    }
+    return [];
+  }, [commit]);
 }
 
 export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, documentId, commit } = useMaterialDocument();
-  const naming = useNewMaterialParameterNaming(document);
   const editing = useMaterialEditing();
   const functions = editing.functions;
+  const conversionMenu = useMaterialConversionMenu(document, commit);
   const { sessionViewport, onSessionViewportChange } =
     useGraphSessionViewport(documentId);
   const textureExists = useTextureExists();
@@ -324,9 +349,9 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
           focusedNodeId={editing.focusedNodeId ?? undefined}
           commitPositionsOnDragEnd
+          contextMenuItemsForNode={conversionMenu}
           onChange={(next, meta) => {
             const nextDocument = serializedToMaterialGraph(next, document);
-            naming.rememberAddedParameters(nextDocument);
             commit(
               nextDocument,
               meta?.kind === "position" && meta.transactionId
@@ -336,7 +361,6 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           }}
         />
       </div>
-      <MaterialParameterNamePrompt document={document} commit={commit} pendingIds={naming.pendingIds} onFinished={naming.finishNaming} />
     </PanelFrame>
   );
 }
@@ -344,8 +368,8 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
 export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, documentId, commit } = useMaterialFunctionDocument();
-  const naming = useNewMaterialParameterNaming(document);
   const editing = useMaterialEditing();
+  const conversionMenu = useMaterialConversionMenu(document, commit);
   const { sessionViewport, onSessionViewportChange } =
     useGraphSessionViewport(documentId);
 
@@ -387,9 +411,9 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           onSessionViewportChange={onSessionViewportChange}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
           commitPositionsOnDragEnd
+          contextMenuItemsForNode={conversionMenu}
           onChange={(next, meta) => {
             const nextDocument = serializedToMaterialFunctionGraph(next, document);
-            naming.rememberAddedParameters(nextDocument);
             commit(
               nextDocument,
               meta?.kind === "position" && meta.transactionId
@@ -399,73 +423,7 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           }}
         />
       </div>
-      <MaterialParameterNamePrompt document={document} commit={commit} pendingIds={naming.pendingIds} onFinished={naming.finishNaming} />
     </PanelFrame>
-  );
-}
-
-/** New and pasted parameter nodes stay unnamed until the author chooses a key. */
-function MaterialParameterNamePrompt<T extends MaterialGraphDocument>({
-  document,
-  commit,
-  pendingIds,
-  onFinished,
-}: {
-  document: T;
-  commit: (next: T) => void;
-  pendingIds: readonly string[];
-  onFinished: (nodeId: string) => void;
-}) {
-  const node = document.nodes.find((entry) => pendingIds.includes(entry.id));
-  const submitted = useRef(false);
-  useEffect(() => {
-    submitted.current = false;
-  }, [node?.id]);
-  if (!node) return null;
-  return (
-    <NamePromptDialog
-      key={node.id}
-      open
-      title="Name Material Parameter"
-      label="Parameter Name"
-      description={"domain" in document
-        ? "Choose a unique name to set this parameter from a Node Graph."
-        : "Choose a unique name for this function's internal parameter. Expose function inputs to control its values."
-      }
-      confirmLabel="Set Name"
-      data-testid="material-parameter-name-prompt"
-      validate={(name) =>
-        document.nodes.some((entry) =>
-          entry.id !== node.id &&
-          isMaterialParameterNode(entry.type) &&
-          materialParameterName(entry) === name,
-        )
-          ? "Parameter name is already used; choose a unique name"
-          : null
-      }
-      onSubmit={(name) => {
-        submitted.current = true;
-        commit({
-          ...document,
-          nodes: document.nodes.map((entry) => entry.id === node.id
-            ? { ...entry, properties: { ...entry.properties, name } }
-            : entry,
-          ),
-        });
-        onFinished(node.id);
-      }}
-      onOpenChange={(open) => {
-        if (open || submitted.current) return;
-        commit({
-          ...document,
-          nodes: document.nodes.filter((entry) => entry.id !== node.id),
-          edges: document.edges.filter((edge) =>
-            edge.sourceNodeId !== node.id && edge.targetNodeId !== node.id,
-          ),
-        });
-        onFinished(node.id);
-      }}
-    />
   );
 }
 
@@ -809,10 +767,20 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
       kind: "text",
       label: "Parameter Name",
       value: materialParameterName(node),
-      onChange: (name) => setProperties({ name }),
+      description: "Unique in the graph; a taken name gets _1, _2 and so on.",
+      onChange: () => undefined,
+      onCommit: (name) => commit(renameMaterialParameter(document, node.id, name)),
+    }, {
+      id: "parameterType",
+      kind: "enum",
+      label: "Type",
+      value: materialParameterValueType(node.type) ?? "float",
+      options: MATERIAL_PARAMETER_TYPE_OPTIONS,
+      // The default is resized; wires from an output the new type lacks are dropped.
+      onChange: (type) => commit(retypeMaterialParameter(document, node.id, type as MaterialParameterValueType)),
     });
     // A Material's own Float or Color parameter can vary per actor and still draw in one batch.
-    if ((node.type === "param.float" || node.type === "param.color") && "domain" in document) rows.splice(1, 0, {
+    if ((node.type === "param.float" || node.type === "param.color") && "domain" in document) rows.splice(2, 0, {
       id: "perInstance",
       kind: "boolean",
       label: "Per Instance",
@@ -858,8 +826,9 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
       onChange: (next) => setProperties({ value: [...next] }),
     });
   }
-  if (node.type === "const.vec2" || node.type === "const.vec3" || node.type === "const.vec4") {
-    const width = node.type === "const.vec2" ? 2 : node.type === "const.vec3" ? 3 : 4;
+  if (node.type === "const.vec2" || node.type === "const.vec3" || node.type === "const.vec4" ||
+    node.type === "param.vec2" || node.type === "param.vec3") {
+    const width = node.type.endsWith("vec2") ? 2 : node.type.endsWith("vec3") ? 3 : 4;
     const value = Array.isArray(node.properties.value)
       ? (node.properties.value as number[])
       : [];

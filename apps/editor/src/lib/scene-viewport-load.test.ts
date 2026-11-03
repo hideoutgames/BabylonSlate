@@ -6,6 +6,7 @@ import {
   sceneViewportRenderSettingsKey,
   sceneViewportRenderSettings,
 } from "./scene-viewport-load";
+import { onEncodeQueuePause } from "../services/encode-queue-pause";
 
 it("retains the requested project backend through the loading key", () => {
   const original = sceneViewportRenderSettingsKey({});
@@ -59,12 +60,19 @@ describe("isSceneViewportRemountLoad", () => {
 
 describe("runSceneViewportBlockingLoad", () => {
   let frames: FrameRequestCallback[];
+  /** Whether the texture encode queue is paused, as the encode pipeline sees it. */
+  let encodesPaused: boolean;
+  let stopWatchingEncodes: () => void;
   beforeEach(() => {
     frames = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    stopWatchingEncodes = onEncodeQueuePause((paused) => { encodesPaused = paused; });
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    stopWatchingEncodes();
+    vi.unstubAllGlobals();
+  });
   const paint = () => {
     frames.shift()?.(0);
     frames.shift()?.(16);
@@ -89,14 +97,17 @@ describe("runSceneViewportBlockingLoad", () => {
     });
     expect(realize).not.toHaveBeenCalled();
     expect(collect).not.toHaveBeenCalled();
+    expect(encodesPaused).toBe(true);
     paint();
     await vi.waitFor(() => expect(progress.at(-1)?.value).toBe(90));
     expect(progress.at(-1)).toEqual({ value: 90, phase: "Presenting First Frame" });
     expect(presentFirstFrame).not.toHaveBeenCalled();
     paint();
     await vi.waitFor(() => expect(presentFirstFrame).toHaveBeenCalledOnce());
+    expect(encodesPaused).toBe(true);
     present();
     await task;
+    expect(encodesPaused).toBe(false);
     expect(progress).toEqual([
       { value: 0, phase: "Preparing Scene" },
       { value: 10, phase: "Collecting Assets" },
@@ -154,6 +165,7 @@ describe("runSceneViewportBlockingLoad", () => {
     "rejects %s failures without reporting ready", async (stage) => {
       const failure = new Error("Scene resource failed");
       const onProgress = vi.fn();
+      let pausedWhileFailing: boolean | undefined;
       const options = {
         signal: new AbortController().signal,
         realize: () => {},
@@ -162,7 +174,7 @@ describe("runSceneViewportBlockingLoad", () => {
         warmShaders: async () => {},
         presentFirstFrame: async () => {},
         onProgress,
-        [stage]: () => { throw failure; },
+        [stage]: () => { pausedWhileFailing = encodesPaused; throw failure; },
       };
       const task = runSceneViewportBlockingLoad(options);
       const result = expect(task).rejects.toBe(failure);
@@ -173,6 +185,9 @@ describe("runSceneViewportBlockingLoad", () => {
       }
       await result;
       expect(onProgress.mock.calls.some(([value]) => value === 100)).toBe(false);
+      // Encodes wait while the failing stage runs and resume once the load has failed.
+      expect(pausedWhileFailing).toBe(true);
+      expect(encodesPaused).toBe(false);
     },
   );
 
@@ -191,10 +206,14 @@ describe("runSceneViewportBlockingLoad", () => {
     const result = expect(task).rejects.toMatchObject({ name: "AbortError" });
     paint();
     await vi.waitFor(() => expect(collect).toHaveBeenCalledOnce());
+    expect(encodesPaused).toBe(true);
     controller.abort();
+    // Cancelling resumes encodes before the abandoned collection settles.
+    expect(encodesPaused).toBe(false);
     const progressCount = onProgress.mock.calls.length;
     finishCollection();
     await result;
+    expect(encodesPaused).toBe(false);
     expect(whenModelsReady).not.toHaveBeenCalled();
     expect(warmShaders).not.toHaveBeenCalled();
     expect(presentFirstFrame).not.toHaveBeenCalled();

@@ -765,9 +765,6 @@ importers:
       '@haptic/scripting':
         specifier: workspace:*
         version: link:../scripting
-      acorn:
-        specifier: 8.18.0
-        version: 8.18.0
     devDependencies:
       '@haptic/scripting-nodes':
         specifier: workspace:*

@@ -39,6 +39,7 @@ Advanced shape settings, which you can usually leave alone: **Max Edge Length** 
 - In 3D the bake uses the geometry of Mesh components and static unwalkable [NavMesh Blockers](nav-mesh-blocker.md). In 2D it uses 2D Colliders, Tilemaps with collision, and those blockers.
 - Dynamic and Cost blockers are not baked. They apply in Play.
 - Runtime obstacles from [Add Obstacle](../scripting/class/add-obstacle.md) need Support Dynamic Obstacles.
+- Scripts can read **Cell Size**, **Cell Height**, the four **Walkable** settings and **Support Dynamic Obstacles**. They cannot change them: the mesh is baked in the editor.
 
 ## Related
 

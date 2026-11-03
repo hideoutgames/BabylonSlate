@@ -24,6 +24,7 @@ import {
 } from "../lib/editor-utility-scripts";
 import type { DocumentEditingService } from "../services/document-editing-service";
 import type { DocumentService } from "../services/document-service";
+import { holdEncodeQueuePause } from "../services/encode-queue-pause";
 import type { DocumentTransitionGate } from "../services/document-transition-gate";
 import type { ProjectService } from "../services/project-service";
 import type { SourceControlService } from "../services/source-control-service";
@@ -200,10 +201,17 @@ export function useDocumentTabs({
       }
       const layouts = documentService.buildLayouts();
       const layout = layouts.documents[documentId(ref)] ?? null;
+      // Held while the Loading Document dialog blocks, so no texture encode
+      // starts meanwhile; cancelling the load releases it at once.
+      const encodes: { release: (() => void) | null } = { release: null };
       try {
         await documentService.openDocument(projectService, ref, layout, () => activationRequest.current === request, controller ? {
           signal: controller.signal,
           beforeLoad: async () => {
+            if (!encodes.release) {
+              encodes.release = holdEncodeQueuePause("scene-document-load");
+              controller.signal.addEventListener("abort", encodes.release, { once: true });
+            }
             setSceneDocumentLoad({ ref, failed: false });
             await waitForSceneLoadingPaint(controller.signal);
           },
@@ -222,6 +230,8 @@ export function useDocumentTabs({
         console.error("[editor] failed to open scene document", error);
         setSceneDocumentLoad({ ref, failed: true, error });
         return;
+      } finally {
+        encodes.release?.();
       }
       if (controller?.signal.aborted) return;
       if (controller && sceneDocumentLoadRef.current === controller) {

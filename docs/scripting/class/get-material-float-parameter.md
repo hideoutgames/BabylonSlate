@@ -11,7 +11,7 @@ Returns the current value of a named Float parameter on a Material Object.
 | Pin | Type | Description |
 | --- | --- | --- |
 | Material | MaterialObject Reference |  |
-| Name | String | The parameter name, as authored in the Material. |
+| Name | String | The parameter name, as authored in the Material. In a Class whose mesh components have Materials, pick it from their parameters of this type. |
 
 ## Outputs
 

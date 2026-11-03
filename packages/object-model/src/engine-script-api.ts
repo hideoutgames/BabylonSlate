@@ -317,6 +317,15 @@ const GET_SCENE_REFERENCE: EngineScriptFunction = {
   ],
 };
 
+/** Mesh components' Get Material: the Material Object whose parameters a graph sets. */
+const GET_MATERIAL: EngineScriptFunction = {
+  name: "Get Material",
+  runtime: "getMaterialObject",
+  description: "The Material Object this mesh renders with, for the Set Material Parameter nodes. Empty while the mesh has no Material of its own; get it again after the mesh gets another Material.",
+  searchAliases: ["material object", "material instance", "material parameter"],
+  pins: [{ name: "material", typeId: "object", typeClassId: "MaterialObject", direction: "out" }],
+};
+
 /** ParticleComponent parameter functions: the component's own runtime values, as the particle parameter nodes set them. */
 const PARTICLE_PARAMETER_NAME: EngineScriptPin = { name: "name", typeId: "string", direction: "in", defaultValue: "" };
 const PARTICLE_PARAMETER_FUNCTIONS: EngineScriptFunction[] = [
@@ -407,6 +416,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Receive Shadows", typeId: "bool", propertyKey: "receiveShadows" },
     ],
     functions: [
+      GET_MATERIAL,
       {
         name: "Set Geometry", runtime: "setDynamicMeshGeometry",
         pins: [EXEC_IN, EXEC_OUT,
@@ -454,6 +464,24 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   { classId: "WaterRemovalVolumeComponent", variables: [
     { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
     ...[["Width", "width"], ["Height", "height"], ["Length", "length"]].map(([name, propertyKey]) => ({ name: name!, propertyKey: propertyKey!, typeId: "float" })),
+  ] },
+  // Baked in the editor: readable in Play, never re-baked from a graph.
+  { classId: "NavMeshComponent", variables: [
+    ...[["Cell Size", "cellSize"], ["Cell Height", "cellHeight"], ["Walkable Slope Angle", "walkableSlopeAngle"],
+      ["Walkable Height", "walkableHeight"], ["Walkable Climb", "walkableClimb"], ["Walkable Radius", "walkableRadius"]]
+      .map(([name, propertyKey]) => ({ name: name!, propertyKey: propertyKey!, typeId: "float", getOnly: true })),
+    { name: "Support Dynamic Obstacles", typeId: "bool", propertyKey: "supportDynamicObstacles", getOnly: true },
+  ] },
+  // Kind, Area and Cost apply in Play to Dynamic blockers, which the runtime re-reads every tick.
+  { classId: "NavMeshBlockerComponent", variables: [
+    { name: "Dynamic", typeId: "bool", propertyKey: "dynamic", getOnly: true },
+    { name: "Kind", typeId: "string", propertyKey: "kind" },
+    { name: "Area", typeId: "string", propertyKey: "area" },
+    { name: "Cost", typeId: "float", propertyKey: "cost" },
+  ] },
+  // The Scene a Load Scene node streams next; a load already running keeps its Scene.
+  { classId: "SceneStreamingComponent", variables: [
+    { name: "Target Scene", typeId: "asset", typeClassId: "Scene", propertyKey: "sceneGuid" },
   ] },
   { classId: "WaterBuoyancyComponent", variables: [
     { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
@@ -562,6 +590,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Mask", typeId: "int", propertyKey: "mask" },
       { name: "Overlap Mask", typeId: "int", propertyKey: "overlapMask" },
     ],
+    functions: [GET_MATERIAL],
   },
   {
     classId: "SpriteComponent",

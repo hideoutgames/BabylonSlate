@@ -18,6 +18,8 @@ import { DataTreeEntryField } from "../components/data-tree-entry-picker";
 import { ParticleParameterNamePin } from "../components/particle-parameter-name-pin";
 import { GlobalParameterNamePin } from "../components/global-parameter-name-pin";
 import { globalParameterPinTypes } from "../lib/global-parameter-pin-types";
+import { MaterialParameterNamePin } from "../components/material-parameter-name-pin";
+import { materialParameterPinTypes } from "../lib/material-parameter-pin-types";
 import { particleParameterNameTypes } from "../lib/particle-parameter-name-types";
 import { collectDataGraphAssets, dataGraphAssetCreateOptions, type DataGraphAssetEntry } from "../lib/data-graph";
 
@@ -157,6 +159,9 @@ export function GraphPinDefaultsProvider({ children }: { children: ReactNode }) 
     const kind = request.pin.type.kind;
     if (globalParameterPinTypes(request)) {
       return <GlobalParameterNamePin key={`${request.nodeId}:${request.pin.id}`} request={request} />;
+    }
+    if (materialParameterPinTypes(request)) {
+      return <MaterialParameterNamePin key={`${request.nodeId}:${request.pin.id}`} request={request} />;
     }
     if (request.pin.id === "name" && particleParameterNameTypes(request.nodeType, request.nodeData) !== undefined) {
       return <ParticleParameterNamePin key={`${request.nodeId}:${request.pin.id}`} request={request} />;

@@ -765,14 +765,17 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Material Color Parameter](get-material-color-parameter.md) | Returns the current value of a named Color parameter on a Material Object. |
 | [Get Material Float Parameter](get-material-float-parameter.md) | Returns the current value of a named Float parameter on a Material Object. |
 | [Get Material Texture Parameter](get-material-texture-parameter.md) | Returns the Texture assigned to a named Texture parameter on a Material Object. |
+| [Get Material Vector Parameter](get-material-vector-parameter.md) | Returns the current value of a named Vector 2 or Vector 3 parameter on a Material Object. |
 | [Get Post Process Entry](get-post-process-entry.md) | Returns the Material Object of one post-process pass on a Scene or Scene Layer. |
 | [Reset Material Color Parameter](reset-material-color-parameter.md) | Restores a Color parameter on a Material Object to its original value. |
 | [Reset Material Float Parameter](reset-material-float-parameter.md) | Restores a Float parameter on a Material Object to its original value. |
 | [Reset Material Texture Parameter](reset-material-texture-parameter.md) | Restores a Texture parameter on a Material Object to its original Texture. |
+| [Reset Material Vector Parameter](reset-material-vector-parameter.md) | Restores a Vector 2 or Vector 3 parameter on a Material Object to its original value. |
 | [Set Material Color Parameter](set-material-color-parameter.md) | Sets a named Color parameter on a Material Object. |
 | [Set Material Float Parameter](set-material-float-parameter.md) | Sets a named Float parameter on a Material Object. |
 | [Set Material Instance](set-material-instance.md) | Assigns a Material Instance to a mesh component and returns its Material Object. |
 | [Set Material Texture Parameter](set-material-texture-parameter.md) | Sets a named Texture parameter on a Material Object, loading the Texture first. |
+| [Set Material Vector Parameter](set-material-vector-parameter.md) | Sets a named Vector 2 or Vector 3 parameter on a Material Object. |
 
 ## Timeline
 

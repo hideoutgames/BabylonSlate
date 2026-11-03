@@ -214,15 +214,31 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   {
     type: "param.float",
     title: "Float Parameter",
-    category: "Parameters",
+    category: "Parameter",
     cost: 0,
     inputs: [],
     outputs: [{ id: "out", name: "Out", type: FLOAT }],
   },
   {
+    type: "param.vec2",
+    title: "Vector 2 Parameter",
+    category: "Parameter",
+    cost: 0,
+    inputs: [],
+    outputs: [{ id: "out", name: "Out", type: VEC2 }],
+  },
+  {
+    type: "param.vec3",
+    title: "Vector 3 Parameter",
+    category: "Parameter",
+    cost: 0,
+    inputs: [],
+    outputs: [{ id: "out", name: "Out", type: VEC3 }],
+  },
+  {
     type: "param.color",
     title: "Color Parameter",
-    category: "Parameters",
+    category: "Parameter",
     cost: 0,
     inputs: [],
     outputs: [
@@ -233,7 +249,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   {
     type: "param.texture",
     title: "Texture Parameter",
-    category: "Parameters",
+    category: "Parameter",
     cost: 0,
     inputs: [],
     outputs: [{ id: "out", name: "Out", type: TEXTURE }],

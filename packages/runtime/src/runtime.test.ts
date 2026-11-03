@@ -64,11 +64,11 @@ describe("log ring", () => {
 
 describe("module loader", () => {
   it("evaluates a fixture module via Function fallback", async () => {
-    const source = `
-      export function run() { return 41 + 1; }
-      //# sourceURL=haptic:///fixture.js
-    `;
-    const mod = await loadCompiledModule(source, "fixture");
+    const source = [
+      "export function run() { return 41 + 1; }",
+      "//# sourceURL=haptic:///fixture.js",
+    ].join("\n");
+    const mod = await loadCompiledModule({ source, entryPoints: [{ name: "run" }] }, "fixture");
     expect(mod.run?.()).toBe(42);
   });
 });

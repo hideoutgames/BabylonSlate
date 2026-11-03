@@ -129,6 +129,7 @@ describe("scene owner readiness", () => {
         }`,
       entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false },
         { name: "touch", event: "probe", isAsync: false },
+        { name: "constant", isAsync: false },
         { name: "textChanged", event: "onTextChanged", componentId: "text", isAsync: false },
         { name: "end", event: "onDestroyed", isAsync: true }],
     });
@@ -160,7 +161,8 @@ describe("scene owner readiness", () => {
           ctx.self.setVariable("endResult", ctx.invokeFunction(ctx.self, "touch", {}));
           ctx.self.setVariable("endTarget", ctx.invokeFunction(ctx.self.getVariable("targets")[0], "touch", {}));
         }`,
-      entryPoints: [{ name: "probe", event: "onTick", isAsync: false },
+      entryPoints: [{ name: "touch", isAsync: false }, { name: "relay", isAsync: false },
+        { name: "probe", event: "onTick", isAsync: false },
         { name: "probe", event: "probe", isAsync: false }, { name: "exit", event: "onSceneExit", isAsync: false },
         { name: "end", event: "onEnd", isAsync: false }],
     };

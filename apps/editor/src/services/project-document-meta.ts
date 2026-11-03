@@ -39,7 +39,7 @@ import {
   type EncodableChunk,
   type HassetHeader,
 } from "@haptic/assets";
-import { materialHeaderMeta } from "../lib/content-browser-helpers";
+import { materialHeaderMeta } from "../lib/material-asset-filters";
 import { asEnumAsset, asStructureAsset } from "../lib/type-asset-payload";
 
 export function headerMetaForSave(

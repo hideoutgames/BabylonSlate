@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import {
   InputBlock,
   Mesh,
@@ -163,6 +164,40 @@ describe("material parameter bindings", () => {
     expect(
       compiled.setParameter("Roughness", { kind: "float", value: 0.1 }),
     ).toBe(false);
+  });
+
+  it("binds Vector 2 and Vector 3 parameters as linear vector uniforms", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "glow", type: "param.vec3", position: { x: 0, y: 0 }, properties: { name: "Glow", value: [0.1, 0.2, 0.3] } },
+      { id: "tiling", type: "param.vec2", position: { x: 0, y: 0 }, properties: { name: "Tiling", value: [2, 4] } },
+      { id: "length", type: "vector.length", position: { x: 0, y: 0 }, properties: {} },
+    );
+    doc.edges.push(
+      { id: "glow-out", sourceNodeId: "glow", sourcePinId: "out", targetNodeId: "output", targetPinId: "emissive" },
+      { id: "tiling-length", sourceNodeId: "tiling", sourcePinId: "out", targetNodeId: "length", targetPinId: "value" },
+      { id: "length-out", sourceNodeId: "length", sourcePinId: "out", targetNodeId: "output", targetPinId: "metallic" },
+    );
+    const lowered = lowerMaterialDocument(doc);
+    if (!lowered.ok) throw new Error("Invalid fixture");
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "vectors" });
+    if (!compiled.ok) throw new Error("Compile failed");
+    disposers.push(compiled.dispose);
+    expect(compiled.getParameter("Glow")).toEqual({ kind: "vec3", value: [0.1, 0.2, 0.3] });
+    expect(compiled.getParameter("Tiling")).toEqual({ kind: "vec2", value: [2, 4] });
+    expect(compiled.setParameter("Glow", { kind: "vec3", value: [1, 0.5, 0] })).toBe(true);
+    expect(compiled.setParameter("Tiling", { kind: "vec2", value: [8, 1] })).toBe(true);
+    const glow = compiled.material.getBlockByName("glow") as InputBlock;
+    const tiling = compiled.material.getBlockByName("tiling") as InputBlock;
+    expect(glow.value).toBeInstanceOf(Vector3);
+    expect((glow.value as Vector3).asArray()).toEqual([1, 0.5, 0]);
+    expect((tiling.value as Vector2).asArray()).toEqual([8, 1]);
+    // Widths never mix, and a value outside its width is refused.
+    expect(compiled.setParameter("Tiling", { kind: "vec3", value: [1, 1, 1] })).toBe(false);
+    expect(compiled.setParameter("Glow", { kind: "vec3", value: [1, NaN, 0] })).toBe(false);
+    expect(compiled.resetParameter("Glow")).toBe(true);
+    expect(compiled.getParameter("Glow")).toEqual({ kind: "vec3", value: [0.1, 0.2, 0.3] });
   });
 
   it("isolates parameter changes by material instance while preserving shared defaults", () => {

@@ -236,7 +236,7 @@ describe("FeatureTest starter", () => {
     // Play loads each generated module the same way; a codegen collision only surfaces here.
     const loadErrors: string[] = [];
     for (const bundle of bundles) {
-      await loadCompiledModule(bundle.source, bundle.classId).catch((error: unknown) => {
+      await loadCompiledModule(bundle, bundle.classId).catch((error: unknown) => {
         loadErrors.push(`${bundle.classId}: ${error instanceof Error ? error.message : String(error)}`);
       });
     }
@@ -257,7 +257,7 @@ describe("FeatureTest starter", () => {
     expect(bundles.some((bundle) => bundle.classId.startsWith("AnimGraph:") && bundle.source.includes('"animation-object")'))).toBe(true);
     const loadErrors: string[] = [];
     for (const bundle of bundles) {
-      await loadCompiledModule(bundle.source, bundle.classId).catch((error: unknown) => {
+      await loadCompiledModule(bundle, bundle.classId).catch((error: unknown) => {
         loadErrors.push(`${bundle.classId}: ${error instanceof Error ? error.message : String(error)}`);
       });
     }

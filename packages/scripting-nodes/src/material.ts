@@ -6,6 +6,7 @@ import {
   objectRef,
   pin,
   STRING,
+  VEC3,
   VEC4,
   type NodeDefinition,
   type PinType,
@@ -13,7 +14,7 @@ import {
 import { subject } from "./self-pin";
 
 function setter(
-  kind: "Float" | "Color" | "Texture",
+  kind: "Float" | "Vector" | "Color" | "Texture",
   valueType: PinType,
 ): NodeDefinition {
   return {
@@ -37,7 +38,7 @@ function setter(
 }
 
 function getter(
-  kind: "Float" | "Color" | "Texture",
+  kind: "Float" | "Vector" | "Color" | "Texture",
   valueType: PinType,
 ): NodeDefinition {
   return {
@@ -57,7 +58,7 @@ function getter(
     },
   };
 }
-function resetter(kind: "Float" | "Color" | "Texture"): NodeDefinition {
+function resetter(kind: "Float" | "Vector" | "Color" | "Texture"): NodeDefinition {
   return {
     id: `material.reset${kind}Parameter`,
     title: `Reset Material ${kind} Parameter`,
@@ -125,12 +126,15 @@ export const materialNodes: NodeDefinition[] = [
     }),
   },
   getter("Float", FLOAT),
+  getter("Vector", VEC3),
   getter("Color", VEC4),
   getter("Texture", assetRef("Texture")),
   resetter("Float"),
+  resetter("Vector"),
   resetter("Color"),
   resetter("Texture"),
   setter("Float", FLOAT),
+  setter("Vector", VEC3),
   setter("Color", VEC4),
   setter("Texture", assetRef("Texture")),
 ];

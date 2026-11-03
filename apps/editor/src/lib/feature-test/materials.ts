@@ -415,7 +415,11 @@ function surfaceMaterial(name: string, albedoGuid: string, tintGuid: string, pul
   return doc;
 }
 
-/** Dark lit base with color bands scrolling up the mesh (UV V + time) as emissive light. */
+/**
+ * Dark lit base with color bands scrolling up the mesh (UV V + time) as emissive light. Band
+ * Tiling (Vector 2) scales the UVs and Glow Tint (Vector 3) tints the light; their defaults
+ * leave the look unchanged.
+ */
 function emissiveMaterial(name: string): MaterialDocument {
   const doc = blankMaterial(name, "surface");
   node(doc, "time", "input.time", 0, 0);
@@ -424,6 +428,10 @@ function emissiveMaterial(name: string): MaterialDocument {
   node(doc, "base", "param.color", 0, 4, { name: "Base Color", value: [0.05, 0.05, 0.07, 1] });
   node(doc, "roughness", "param.float", 0, 5, { name: "Roughness", value: [0.4] });
   node(doc, "strength", "param.float", 0, 6, { name: "Emissive Strength", value: [2.5] });
+  node(doc, "tiling", "param.vec2", 0, 3, { name: "Band Tiling", value: [1, 1] });
+  node(doc, "glowTint", "param.vec3", 4, 4, { name: "Glow Tint", value: [1, 1, 1] });
+  node(doc, "tile", "math.multiply", 1, 3);
+  node(doc, "tinted", "math.multiply", 6, 4);
   node(doc, "scroll", "math.multiply", 1, 0);
   node(doc, "split", "vector.split", 1, 2);
   node(doc, "phase", "math.add", 2, 1);
@@ -441,7 +449,9 @@ function emissiveMaterial(name: string): MaterialDocument {
   node(doc, "output", "output.surface", 6, 3);
   wire(doc, "time", "time", "scroll", "a");
   wire(doc, "speed", "out", "scroll", "b");
-  wire(doc, "uv", "uv", "split", "value");
+  wire(doc, "uv", "uv", "tile", "a");
+  wire(doc, "tiling", "out", "tile", "b");
+  wire(doc, "tile", "out", "split", "value");
   wire(doc, "split", "y", "phase", "a");
   wire(doc, "scroll", "out", "phase", "b");
   wire(doc, "phase", "out", "band", "value");
@@ -450,7 +460,9 @@ function emissiveMaterial(name: string): MaterialDocument {
   wire(doc, "gain", gainPin, "glow", "b");
   wire(doc, "base", "rgb", "output", "baseColor");
   wire(doc, "roughness", "out", "output", "roughness");
-  wire(doc, "glow", "out", "output", "emissive");
+  wire(doc, "glow", "out", "tinted", "a");
+  wire(doc, "glowTint", "out", "tinted", "b");
+  wire(doc, "tinted", "out", "output", "emissive");
   return doc;
 }
 

@@ -58,7 +58,7 @@ export class RuntimeMaterialEditGate {
     const originalMaterial = material instanceof MaterialObject ? material : null;
     const materialGuid = action.kind === "setProperty" ? action.value : action.materialGuid;
     if (materialGuid !== null && (typeof materialGuid !== "string" || !materialGuid.trim())) return fail("A valid material asset identity is required.");
-    if (action.kind === "setMaterialParameter" && (!action.value || !["float", "color", "texture"].includes(action.value.kind))) return fail("A typed material value is required.");
+    if (action.kind === "setMaterialParameter" && (!action.value || !["float", "vec2", "vec3", "color", "texture"].includes(action.value.kind))) return fail("A typed material value is required.");
     if (action.kind === "setMaterialParameter" && (!originalMaterial || originalMaterial.materialAssetGuid !== action.materialGuid)) return fail("The material instance is unavailable.");
     for (const previous of this.pending.values()) if (previous.component === component) {
       // A single instance lease cannot promote competing candidates. Host scrubs coalesce before dispatch.
