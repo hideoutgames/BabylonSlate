@@ -254,6 +254,24 @@ describe("particle graph validation", () => {
     expect(codes(sphere({}))).not.toContain("particle.shapeDirectionPair");
   });
 
+  it("warns when a Mesh Shape reads a Model but none is picked", () => {
+    const mesh = (properties: Record<string, unknown>) =>
+      build(
+        [
+          ["create", "particle.create"],
+          ["shape", "shape.mesh", properties],
+          ["move", "update.basicPosition"],
+          ["output", "particle.output"],
+        ],
+        SPINE_EDGES,
+      );
+    expect(diagnostics(mesh({ source: "model", modelGuid: null }))).toContainEqual(
+      expect.objectContaining({ code: "particle.meshShapeModel", nodeId: "shape", severity: "warning" }),
+    );
+    expect(codes(mesh({ source: "model", modelGuid: "model-1" }))).not.toContain("particle.meshShapeModel");
+    expect(codes(mesh({ source: "ownerMesh", modelGuid: null }))).not.toContain("particle.meshShapeModel");
+  });
+
   it("lints the spine: overridden shapes, no motion and detached spine nodes", () => {
     const twoShapes = build(
       [

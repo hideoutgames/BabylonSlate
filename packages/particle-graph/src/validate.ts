@@ -489,6 +489,15 @@ function validateSpine(
       pinId: first ? "direction2" : "direction1",
     });
   }
+  for (const node of graph.nodes) {
+    if (node.type !== "shape.mesh" || node.properties.source !== "model" || node.properties.modelGuid) continue;
+    diagnostics.push({
+      code: "particle.meshShapeModel",
+      message: `"${definitions.get(node.id)?.title ?? node.type}" has no Model; particles spawn at the emitter until you pick one`,
+      severity: "warning",
+      nodeId: node.id,
+    });
+  }
   return diagnostics;
 }
 

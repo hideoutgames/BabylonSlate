@@ -71,6 +71,7 @@ vi.mock("../context/document-context", async () => {
         path: "assets/SparksMat.material.hasset",
       },
       { header: { guid: "tex-clouds", name: "Clouds", type: "Texture", payload: {} }, path: "assets/Clouds.png" },
+      { header: { guid: "model-statue", name: "Statue", type: "Model", payload: {} }, path: "assets/Statue.glb" },
     ],
   };
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
@@ -257,6 +258,30 @@ describe("ParticleGraphDetails", () => {
     fireEvent.click(screen.getByTestId("search-item-tex-clouds"));
     expect(nodeOf(history.read(), "noise").properties.textureGuid).toBe("tex-clouds");
     expect(screen.getByTestId("property-textureGuid").textContent).toContain("Clouds");
+  });
+
+  it("shows a Mesh Shape's Model row under Source only for the Model source and picks only Models", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes = doc.nodes.map((entry) => entry.id === "shape"
+      ? { ...entry, type: "shape.mesh", properties: { source: "ownerMesh", modelGuid: null, useMeshNormals: true, useMeshColor: false } }
+      : entry);
+    const history = renderDetails(doc, "shape");
+    expect(screen.getByTestId("module-stage-node").textContent).toContain("Mesh Shape");
+    expect(screen.queryByTestId("property-modelGuid")).toBeNull();
+    expect(screen.getByTestId("property-useMeshNormals")).toBeTruthy();
+    await pickOption("property-source", "Model");
+    expect(nodeOf(history.read(), "shape").properties.source).toBe("model");
+    const rows = ["property-source", "property-modelGuid", "property-useMeshNormals", "property-useMeshColor"];
+    const order = [...screen.getByTestId("module-stage-node").querySelectorAll("[data-testid^='property-']")]
+      .map((element) => element.getAttribute("data-testid")).filter((id) => rows.includes(id!));
+    expect(order).toEqual(rows);
+    expect(screen.getByTestId("property-modelGuid").textContent).toContain("No Model");
+    fireEvent.click(screen.getByTestId("property-modelGuid"));
+    await waitFor(() => expect(screen.getByTestId("search-item-model-statue")).toBeTruthy());
+    expect(screen.queryByTestId("search-item-tex-clouds")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-model-statue"));
+    expect(nodeOf(history.read(), "shape").properties.modelGuid).toBe("model-statue");
+    expect(screen.getByTestId("property-modelGuid").textContent).toContain("Statue");
   });
 
   it("sets a Local Variable's Scope and explains it", async () => {

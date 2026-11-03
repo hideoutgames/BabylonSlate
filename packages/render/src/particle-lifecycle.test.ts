@@ -784,3 +784,73 @@ describe("Noise Textures", () => {
     expect(diagnostics.filter((entry) => entry.code === "particle.noise_texture_unavailable")).toEqual([]);
   });
 });
+
+describe("Mesh Shapes", () => {
+  type Geometry = { positions: number[]; indices: number[] };
+  function meshService(properties: Record<string, unknown>, options: {
+    acquireModelGeometry?: (guid: string) => Promise<Geometry | null> | null;
+    owner?: boolean;
+  } = {}) {
+    const host = createTestEngine();
+    const diagnostics: Array<{ code: string; assetGuid?: string }> = [];
+    // The owning actor: a 20 m box, so particles born on it are far from the emitter.
+    const owner = options.owner ? MeshBuilder.CreateBox("owner", { size: 20 }, host.scene) : null;
+    const service = new ParticleService({ scene: host.scene, gpuSupported: false,
+      acquireMaterial: (_guid, lease) => {
+        const resource = new NodeMaterial("mesh shape test material", lease.scene);
+        resource.mode = NodeMaterialModes.Particle;
+        resource.createEffectForParticles = () => {};
+        return { key: "material:1", resource, release: () => resource.dispose() };
+      },
+      ...(options.acquireModelGeometry ? { acquireModelGeometry: options.acquireModelGeometry } : {}),
+      ...(owner ? { resolveEmitter: () => owner } : {}),
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic) });
+    cleanups.push(() => { service.dispose(); host.scene.dispose(); host.engine.dispose(); });
+    service.setLibrary(graphLibrary((document) => {
+      const shape = document.nodes.find((node) => node.id === "shape")!;
+      shape.type = "shape.mesh";
+      shape.properties = { source: "ownerMesh", modelGuid: null, useMeshNormals: true, useMeshColor: false, ...properties };
+    }));
+    service.handleCommand({ type: "assignParticle", actorGuid: "actor", componentId: "particle", slotId: 1, particleSystemGuid: "system", play: true });
+    return { diagnostics, scene: host.scene };
+  }
+  /** Simulates a second and returns how far from the emitter the youngest particles are. */
+  async function spawnDistances(scene: Scene): Promise<number[]> {
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    simulate([system], 60);
+    return system.particles.filter((particle) => particle.age < 0.1).map((particle) => particle.position.length());
+  }
+
+  it("reports a Model it cannot load, once, and spawns at the emitter", async () => {
+    const unavailable = meshService({ source: "model", modelGuid: "model-1" });
+    expect(unavailable.diagnostics).toContainEqual(expect.objectContaining({ code: "particle.mesh_missing", assetGuid: "model-1" }));
+    const empty = meshService({ source: "model", modelGuid: "model-2" }, { acquireModelGeometry: async () => null });
+    const distances = await spawnDistances(empty.scene);
+    expect(empty.diagnostics.filter((entry) => entry.code === "particle.mesh_missing")).toEqual([
+      expect.objectContaining({ assetGuid: "model-2" }),
+    ]);
+    expect(distances.length).toBeGreaterThan(0);
+    for (const distance of distances) expect(distance).toBeLessThan(2);
+  });
+
+  it("loads a Model's triangles once and spawns on them", async () => {
+    // One triangle 10 m above the emitter.
+    const acquire = vi.fn(async () => ({ positions: [0, 10, 0, 1, 10, 0, 0, 10, 1], indices: [0, 1, 2] }));
+    const { scene, diagnostics } = meshService({ source: "model", modelGuid: "model-1" }, { acquireModelGeometry: acquire });
+    const distances = await spawnDistances(scene);
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(acquire).toHaveBeenCalledWith("model-1");
+    expect(distances.length).toBeGreaterThan(0);
+    for (const distance of distances) expect(distance).toBeGreaterThan(8);
+    expect(diagnostics.filter((entry) => entry.code === "particle.mesh_missing")).toEqual([]);
+  });
+
+  it("spawns on the owning actor's mesh", async () => {
+    const { scene } = meshService({}, { owner: true });
+    const distances = await spawnDistances(scene);
+    expect(distances.length).toBeGreaterThan(0);
+    // On the box's faces, 10 m from its centre or more.
+    for (const distance of distances) expect(distance).toBeGreaterThan(8);
+  });
+});

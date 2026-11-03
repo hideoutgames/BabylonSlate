@@ -16,6 +16,7 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | [Box Shape](box-shape.md) | Spawns particles at random points inside a box and launches them between two directions. |
 | [Cone Shape](cone-shape.md) | Spawns particles inside a cone that opens along the emitter's Y axis and launches them outwards. |
 | [Cylinder Shape](cylinder-shape.md) | Spawns particles inside a cylinder along the emitter's Y axis and launches them outwards. |
+| [Mesh Shape](mesh-shape.md) | Spawns particles on the surface of a mesh and launches them along the surface or between two directions. |
 | [Point Shape](point-shape.md) | Spawns particles at the emitter and launches them in a direction picked between two vectors. |
 | [Sphere Shape](sphere-shape.md) | Spawns particles inside a sphere around the emitter and launches them outwards. |
 

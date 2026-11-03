@@ -24,6 +24,7 @@ import {
   type SlateSystemBlock,
 } from "./particle-graph-blocks";
 import { createParticleReadinessTexture } from "./particle-system-factory";
+import type { ParticleMeshShapeSource } from "./particle-mesh-shape";
 import type { ParticleNoiseSource } from "./particle-noise";
 
 /** Render-side Particle Graph build problems, anchored to the graph node (and pin) when known. */
@@ -53,6 +54,8 @@ export interface RealizeParticleGraphOptions {
   adapters?: Readonly<Record<string, ParticleBlockAdapter>>;
   /** Noise node pixels by Texture (null: the built-in noise); defaults to the built-in noise for every node. */
   noise?: (textureGuid: string | null) => ParticleNoiseSource;
+  /** Mesh Shape geometry by node properties; without it Mesh Shape spawns at the emitter. */
+  meshShape?: (properties: Readonly<Record<string, unknown>>) => ParticleMeshShapeSource;
 }
 
 export type RealizeParticleGraphResult =
@@ -116,7 +119,8 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
     }
     let realization: ParticleBlockRealization;
     try {
-      realization = adapter({ operation, name, space: options.space, ...(options.noise ? { noise: options.noise } : {}) });
+      realization = adapter({ operation, name, space: options.space, ...(options.noise ? { noise: options.noise } : {}),
+        ...(options.meshShape ? { meshShape: options.meshShape } : {}) });
     } catch (thrown) {
       diagnostics.push({ code: "particle.compile.buildFailed", nodeId: operation.id, message: describeParticleThrow(thrown) });
       continue;

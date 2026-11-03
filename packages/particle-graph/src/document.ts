@@ -173,6 +173,8 @@ export function newParticleNodeProperties(type: string): Record<string, unknown>
       return { scope: "particle" };
     case "update.noise":
       return { textureGuid: null };
+    case "shape.mesh":
+      return { source: "ownerMesh", modelGuid: null, useMeshNormals: true, useMeshColor: false };
     default:
       return {};
   }
@@ -237,6 +239,12 @@ export function normalizeParticleNodeProperties(
       break;
     case "update.noise":
       next.textureGuid = typeof next.textureGuid === "string" && next.textureGuid.trim() ? next.textureGuid : null;
+      break;
+    case "shape.mesh":
+      next.source = next.source === "model" ? "model" : "ownerMesh";
+      next.modelGuid = typeof next.modelGuid === "string" && next.modelGuid.trim() ? next.modelGuid : null;
+      next.useMeshNormals = next.useMeshNormals !== false;
+      next.useMeshColor = next.useMeshColor === true;
       break;
   }
   return next;
@@ -429,16 +437,29 @@ export interface ParticleGraphDependencies {
   materials: string[];
   /** Noise node Textures, sorted and unique. */
   textures: string[];
+  /** Mesh Shape Models (Source Model), sorted and unique. */
+  models: string[];
   all: string[];
 }
 
-/** Header dependencies: the Material and every Noise node's Texture. */
+/** Header dependencies: the Material, every Noise node's Texture and every Mesh Shape's Model. */
 export function particleGraphDependencies(
   doc: Pick<ParticleGraphDocument, "materialGuid"> & Partial<Pick<ParticleGraphDocument, "nodes">>,
 ): ParticleGraphDependencies {
   const materials = doc.materialGuid ? [doc.materialGuid] : [];
   const textures = particleGraphNoiseTextures(doc.nodes ?? []);
-  return { materials, textures, all: [...materials, ...textures] };
+  const models = particleGraphMeshModels(doc.nodes ?? []);
+  return { materials, textures, models, all: [...materials, ...textures, ...models] };
+}
+
+/** The Models the graph's Mesh Shapes read (Source Model), sorted and unique. */
+export function particleGraphMeshModels(nodes: readonly ParticleGraphNode[]): string[] {
+  const guids = new Set<string>();
+  for (const node of nodes) {
+    const guid = node.type === "shape.mesh" && node.properties.source === "model" ? node.properties.modelGuid : null;
+    if (typeof guid === "string" && guid) guids.add(guid);
+  }
+  return [...guids].sort();
 }
 
 /** The Textures the graph's Noise nodes read, sorted and unique. */
