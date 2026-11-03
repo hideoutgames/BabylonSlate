@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { particleLibraryEmitterKey } from "@haptic/assets";
+import { isParticleEmitterAssetType, particleLibraryEmitterKey } from "@haptic/assets";
 import {
   normalizeParticleGraphDocument,
   validateParticleGraphDocument,
@@ -121,7 +121,9 @@ export function ParticleGraphEditingProvider({
 }) {
   const { applyAssetDocumentChange } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const content = useOpenDocument(documentId)?.content;
+  const open = useOpenDocument(documentId);
+  const content = open?.content;
+  const documentPath = open?.ref.path;
   const document = useMemo(
     () => normalizeParticleGraphDocument(content ?? {}),
     [content],
@@ -150,11 +152,24 @@ export function ParticleGraphEditingProvider({
         .map((asset) => asset.header.guid),
     );
     const domains = materialDomainsFromAssets(assets, materialDocuments);
+    // A Particle Graph's header dependencies on emitter assets are its Spawn Emitters' emitters.
+    const emitters = new Map(
+      assets
+        .filter((asset) => isParticleEmitterAssetType(asset.header.type))
+        .map((asset) => [asset.header.guid, asset.header] as const),
+    );
     return {
       materialDomain: (guid) =>
         materials.has(guid) ? (domains[guid] ?? "surface") : null,
+      spawnEmitter: (guid) => {
+        const header = emitters.get(guid);
+        if (!header) return null;
+        if (header.type !== "ParticleGraph") return { kind: "basic" };
+        return { kind: "graph", spawns: (header.dependencies ?? []).filter((dependency) => emitters.has(dependency)) };
+      },
+      documentGuid: assets.find((asset) => asset.path === documentPath)?.header.guid,
     };
-  }, [assetRegistry, materialDocuments, registryEpoch]);
+  }, [assetRegistry, materialDocuments, registryEpoch, documentPath]);
 
   const diagnostics = useMemo(
     () => validateParticleGraphDocument(document, validationContext),

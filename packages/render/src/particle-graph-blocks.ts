@@ -70,6 +70,7 @@ import {
 } from "@haptic/particle-graph";
 import { SlateMeshShapeBlock, type ParticleMeshShapeSource } from "./particle-mesh-shape";
 import { SlateSpriteAnimateBlock, SlateSpriteCellBlock, SlateSpriteSheetBlock } from "./particle-sprite-sheet";
+import { SlateSpawnBlock, type ParticleSpawnSink } from "./particle-spawn";
 import { BUILTIN_PARTICLE_NOISE, type ParticleNoiseSource } from "./particle-noise";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 
@@ -233,6 +234,8 @@ export interface ParticleBlockAdapterContext {
   meshShape?: (properties: Readonly<Record<string, unknown>>) => ParticleMeshShapeSource;
   /** The plan's declared parameters by id. */
   parameters: ReadonlyMap<string, ParticleGraphParameter>;
+  /** Where a Spawn Emitter's requests go, for its properties; without one (or null) it spawns nothing. */
+  spawn?: (properties: Readonly<Record<string, unknown>>) => ParticleSpawnSink | null;
 }
 
 export type ParticleBlockAdapter = (context: ParticleBlockAdapterContext) => ParticleBlockRealization;
@@ -546,6 +549,11 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   },
   "update.basicSprite": spine((name) => new SlateSpriteAnimateBlock(name)),
   "update.spriteCell": spine((name) => new SlateSpriteCellBlock(name), (block) => ({ cell: block.cell })),
+  "trigger.spawn": ({ name, operation, spawn }) => {
+    const block = new SlateSpawnBlock(name);
+    block.sink = spawn?.(operation.properties) ?? null;
+    return { blocks: [block], inputs: { particle: block.particle, condition: block.condition }, outputs: { out: block.output } };
+  },
   "update.noise": ({ name, operation, noise }) => {
     const block = new SlateNoiseBlock(name);
     const textureGuid = typeof operation.properties.textureGuid === "string" && operation.properties.textureGuid ? operation.properties.textureGuid : null;

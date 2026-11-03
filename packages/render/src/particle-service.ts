@@ -1,6 +1,7 @@
 import { isSceneStreamSlotPending, registerSceneStreamParticle } from "./scene-stream-admission";
 import {
   Mesh,
+  Vector3,
   type ParticleInputBlock,
   type AbstractEngine,
   type AbstractMesh,
@@ -33,8 +34,11 @@ import {
 import type { CommandMessage } from "@haptic/bridge";
 import { DEFAULT_SORTING_LAYERS, PARTICLE_GHOSTS_PER_COMPONENT, type ParticlePlaybackEndReason, type ParticleSpace } from "@haptic/core";
 import {
+  PARTICLE_SPAWN_LIMITS,
   lowerParticleGraphDocumentCached,
   particleGraphCompileKey,
+  particleSpawnSettings,
+  type ParticleSpawnSettings,
   type ParticleBuildPlan,
   type ParticleGraphDocument,
   type ParticleGraphLowerResult,
@@ -45,6 +49,7 @@ import { PREVIEW_OWNER_MESH, meshGeometryRelativeTo, type ParticleMeshGeometry, 
 import { createBasicEmissionDriver, createManualEmission, type BasicEmissionDriver, type ManualEmission } from "./particle-emission-driver";
 import { describeParticleThrow, realizeParticleGraph, type ParticleGraphCompileCode } from "./particle-graph-realize";
 import { setParticleInputBlockValue } from "./particle-graph-blocks";
+import type { ParticleSpawnSink } from "./particle-spawn";
 import {
   applyBasicEmitterPlan,
   applyBasicParameterPlan,
@@ -73,7 +78,8 @@ export type ParticleDiagnosticCode =
   | "particle.burst_not_playing"
   | "particle.noise_texture_unavailable"
   | "particle.mesh_missing"
-  | "particle.parameter_type_conflict";
+  | "particle.parameter_type_conflict"
+  | "particle.spawn_depth";
 /**
  * Slot-level problems carry the emitter guid; bundle-level ones the Particle System guid.
  * Particle Graph problems also carry the graph node (and pin) they are anchored to.
@@ -179,6 +185,45 @@ type SlotContext = {
  * started, left to drain on its own emitter node and then disposed. It never reports.
  */
 type Ghost = { records: SlotRecord[]; node: Mesh | null; cancel: Array<() => void> };
+/** One Spawn Emitter node of a running graph slot; closed with its slot. */
+type SpawnTrigger = {
+  entry: LiveComponent;
+  /** The firing slot's preparation: its Scene, sorting and simulation backend. */
+  context: SlotContext;
+  settings: ParticleSpawnSettings;
+  emitterGuid: string;
+  emitter: ParticleLibraryEmitter;
+  /** Levels below the playing effect (0 for the component's own slots). */
+  depth: number;
+  /** The firing system's simulated seconds of the last accepted spawn. */
+  lastFire: number;
+  queued: Array<{ position: Vector3; velocity: Vector3 | null }>;
+  flushing: boolean;
+  /** Spawned emitters of this trigger still on screen. */
+  live: number;
+  closed: boolean;
+  /** Holds the spawned emitter's Material while the slot plays, so a spawn has it prepared. */
+  lease: ResourceLease<NodeMaterial> | null;
+};
+/**
+ * A spawned emitter: the asset a Spawn Emitter plays, on an emitter node of its own at the
+ * particle's world position. It runs one Duration, drains and is disposed; it outlives its
+ * parent's drain, never reports, and is cut with the component (retire, Restart).
+ */
+type Spawned = {
+  trigger: SpawnTrigger;
+  host: Scene;
+  records: SlotRecord[];
+  node: Mesh;
+  /** Inherit Velocity: the node keeps moving at the particle's velocity. */
+  velocity: Vector3 | null;
+  /** Simulated seconds since it started, and its run (the emitter's Duration). */
+  elapsed: number;
+  run: number;
+  stopped: boolean;
+  pending: number;
+  cancel: Array<() => void>;
+};
 /** The library entries a bundle was prepared from, including skipped slots. */
 type BundleSource = {
   system: ParticleSystemPayload | null;
@@ -204,6 +249,8 @@ type LiveComponent = {
   systems: SlotRecord[];
   /** Overlapped runs still draining, oldest first (at most `PARTICLE_GHOSTS_PER_COMPONENT`). */
   ghosts: Ghost[];
+  /** Emitters its Spawn Emitter nodes started, at any depth. */
+  spawned: Spawned[];
   source: BundleSource | null;
   cancel: Array<() => void>;
   building: boolean;
@@ -219,8 +266,9 @@ type LiveComponent = {
 type LibraryChange = { tier: ParticleEmitterChangeTier; bundle: boolean };
 let nextServiceId = 0;
 const emptyLibrary = (): ParticleLibrary => ({ emitters: new Map(), systems: new Map() });
-/** Every record of an entry: its bundle's, then its ghosts'. */
-const allRecords = (entry: LiveComponent): SlotRecord[] => [...entry.systems, ...entry.ghosts.flatMap((ghost) => ghost.records)];
+/** Every record of an entry: its bundle's, then its ghosts', then its spawned emitters'. */
+const allRecords = (entry: LiveComponent): SlotRecord[] => [...entry.systems, ...entry.ghosts.flatMap((ghost) => ghost.records),
+  ...entry.spawned.flatMap((spawned) => spawned.records)];
 /**
  * Whether stopped slots have no particles left. A claimed GPU ring always reports its capacity,
  * so GPU slots wait the lifetime bound; CPU slots (the Basic fallback and every Particle Graph)
@@ -573,7 +621,7 @@ export class ParticleService {
   needsFrames(): boolean {
     if (this.halted || this.disposed) return false;
     for (const entry of this.live.values()) {
-      if (entry.state === "preparing" || entry.state === "playing" || entry.state === "draining" || entry.ghosts.length) return true;
+      if (entry.state === "preparing" || entry.state === "playing" || entry.state === "draining" || entry.ghosts.length || entry.spawned.length) return true;
     }
     return false;
   }
@@ -601,7 +649,7 @@ export class ParticleService {
       const command: Assignment = { type: "assignParticle", slotId: slotId--, actorGuid: WARM_ACTOR, componentId: guid, particleSystemGuid: guid, play: true };
       const entry: LiveComponent = { key: liveKey(WARM_ACTOR, guid), command, desiredPlaying: true, playGeneration: 0,
         parameterValues: new Map(), parametersDirty: false, state: "preparing", generation: 0,
-        scene: null, node: null, systems: [], ghosts: [], source: null, cancel: [], building: false, warm: true };
+        scene: null, node: null, systems: [], ghosts: [], spawned: [], source: null, cancel: [], building: false, warm: true };
       this.live.set(entry.key, entry);
       this.prepare(entry);
     }
@@ -797,6 +845,180 @@ export class ParticleService {
     return { pixels: () => (record.fallback ? BUILTIN_PARTICLE_NOISE.pixels() : record.pixels) };
   }
 
+  /**
+   * A Spawn Emitter's sink, or null when it spawns nothing (no Emitter, one the library lacks, or
+   * a node more than `PARTICLE_SPAWN_LIMITS.depth` levels below the effect). The trigger joins
+   * `triggers`, which its slot closes on dispose, and holds the emitter's Material meanwhile.
+   */
+  private spawnSink(entry: LiveComponent, context: SlotContext, properties: Readonly<Record<string, unknown>>, depth: number,
+    triggers: SpawnTrigger[]): ParticleSpawnSink | null {
+    const settings = particleSpawnSettings(properties);
+    const emitterGuid = settings.emitterGuid;
+    if (!emitterGuid || entry.warm) return null;
+    if (depth >= PARTICLE_SPAWN_LIMITS.depth) {
+      this.diagnose(entry, { code: "particle.spawn_depth", assetGuid: emitterGuid,
+        message: `Spawn Emitter is more than ${PARTICLE_SPAWN_LIMITS.depth} levels below the effect; it spawns nothing.` });
+      return null;
+    }
+    const emitter = this.library.emitters.get(emitterGuid);
+    if (!emitter) {
+      this.diagnose(entry, { code: "particle.unknown_emitter", assetGuid: emitterGuid,
+        message: "Spawn Emitter's Emitter asset is missing; it spawns nothing." });
+      return null;
+    }
+    const materialGuid = particleEmitterMaterialGuid(emitter);
+    const trigger: SpawnTrigger = { entry, context, settings, emitterGuid, emitter, depth, lastFire: Number.NEGATIVE_INFINITY,
+      queued: [], flushing: false, live: 0, closed: false,
+      lease: materialGuid ? this.acquireMaterial?.(materialGuid, { scene: context.host, instanceKey: this.spawnInstanceKey(entry, emitterGuid) }) ?? null : null };
+    // A failed preparation surfaces on the spawn that uses it.
+    void trigger.lease?.ready?.catch(() => {});
+    triggers.push(trigger);
+    return { fire: (position, velocity, now) => this.requestSpawn(trigger, position, velocity, now) };
+  }
+
+  /** Every spawn of one emitter in a component shares one Material instance. */
+  private spawnInstanceKey(entry: LiveComponent, emitterGuid: string): string {
+    return `particle:${this.ownerId}:${entry.key}:spawn:${emitterGuid}`;
+  }
+
+  /** Accepts a spawn within Limit and Min Interval; it is created after the frame renders. */
+  private requestSpawn(trigger: SpawnTrigger, position: Vector3, velocity: Vector3, now: number): void {
+    if (trigger.closed || this.halted) return;
+    if (trigger.live + trigger.queued.length >= trigger.settings.limit) return;
+    if (now - trigger.lastFire < trigger.settings.minInterval) return;
+    trigger.lastFire = now;
+    trigger.queued.push({ position: position.clone(), velocity: trigger.settings.inheritVelocity ? velocity.clone() : null });
+    if (trigger.flushing) return;
+    trigger.flushing = true;
+    trigger.context.host.onAfterRenderObservable.addOnce(() => {
+      trigger.flushing = false;
+      for (const request of trigger.queued.splice(0)) this.spawn(trigger, request);
+    });
+  }
+
+  private spawn(trigger: SpawnTrigger, request: { position: Vector3; velocity: Vector3 | null }): void {
+    const { entry } = trigger;
+    const host = trigger.context.host;
+    if (trigger.closed || host.isDisposed || this.live.get(entry.key) !== entry) return;
+    const node = new Mesh(`particleSpawn:${entry.key}:${trigger.emitterGuid}`, host);
+    node.isPickable = false; drawWhateverTheView(node);
+    node.position.copyFrom(request.position);
+    const emitter = trigger.emitter;
+    const run = emitter.kind === "graph" ? emitter.document.settings.duration : emitter.payload.emitter.duration;
+    const spawned: Spawned = { trigger, host, records: [], node, velocity: request.velocity, elapsed: 0, run, stopped: false, pending: 0, cancel: [] };
+    // Spawned emitters simulate on the CPU in World space, at the node's position.
+    const context: SlotContext = { ...trigger.context, node, backend: "cpu", space: "world" };
+    const record = this.createSpawnedRecord(spawned, context);
+    if (!record) {
+      node.dispose();
+      return;
+    }
+    spawned.records.push(record);
+    trigger.live += 1;
+    entry.spawned.push(spawned);
+    const after = host.onAfterRenderObservable.add(() => this.advanceSpawned(entry, spawned));
+    const disposing = host.onDisposeObservable.addOnce(() => this.disposeSpawned(entry, spawned));
+    spawned.cancel.push(() => host.onAfterRenderObservable.remove(after), () => host.onDisposeObservable.remove(disposing));
+    this.publishStats();
+  }
+
+  /** The spawned emitter's native system, through the same Material and build path as a slot. */
+  private createSpawnedRecord(spawned: Spawned, context: SlotContext): SlotRecord | null {
+    const { trigger } = spawned;
+    const { entry, emitter, emitterGuid } = trigger;
+    const materialGuid = particleEmitterMaterialGuid(emitter);
+    let plan: ParticleBuildPlan | null = null;
+    if (emitter.kind === "graph") {
+      const lowered = this.planFor(emitter.document);
+      if (!lowered.ok) {
+        this.diagnose(entry, { code: "particle.graph_invalid", assetGuid: emitterGuid, message: "Spawn Emitter's Particle Graph has errors; it spawns nothing." });
+        return null;
+      }
+      plan = lowered.plan;
+    }
+    const lease = materialGuid ? this.acquireMaterial?.(materialGuid, { scene: context.host, instanceKey: this.spawnInstanceKey(entry, emitterGuid) }) ?? null : null;
+    if (!lease) {
+      this.diagnose(entry, { code: "particle.missing_material", assetGuid: emitterGuid,
+        message: "Spawn Emitter's Emitter has no usable Material; it spawns nothing." });
+      return null;
+    }
+    let record: SlotRecord | null = null;
+    try {
+      const slot = { index: 0, guid: emitterGuid };
+      const created = plan && emitter.kind === "graph"
+        ? this.createGraphSlot(entry, context, slot, plan, lease, materialGuid!, emitter.document, trigger.depth + 1)
+        : emitter.kind === "basic" ? this.createBasicSlot(entry, context, slot, emitter.payload, lease) : null;
+      if (!created) {
+        lease.release();
+        return null;
+      }
+      record = created.record;
+      const ready = bindParticleMaterial(record.system, lease.resource);
+      this.applySpeed(record);
+      applySortingToParticleSystem(record.system, context.sorting);
+      const wait = (promise: Promise<void>) => {
+        spawned.pending += 1;
+        void promise.then(() => { spawned.pending -= 1; }, (error: unknown) => {
+          this.diagnose(entry, { code: "particle.apply_failed", assetGuid: emitterGuid, message: describeParticleThrow(error) });
+          this.disposeSpawned(entry, spawned);
+        });
+      };
+      wait(ready);
+      if (lease.ready) wait(lease.ready);
+      if (created.buildReady) wait(created.buildReady);
+      return record;
+    } catch (error) {
+      if (record) this.disposeSlots([record]);
+      lease.release();
+      this.diagnose(entry, { code: "particle.apply_failed", assetGuid: emitterGuid, message: describeParticleThrow(error) });
+      return null;
+    }
+  }
+
+  /**
+   * Each frame: starts a ready spawned emitter (not while halted), moves it with its inherited
+   * velocity, advances Basic emission, stops emitting after its run and disposes it once drained.
+   * Times are simulated seconds, so pause and time dilation hold it like any slot.
+   */
+  private advanceSpawned(entry: LiveComponent, spawned: Spawned): void {
+    if (spawned.pending || this.halted || !entry.spawned.includes(spawned)) return;
+    for (const record of spawned.records) {
+      if (record.started) continue;
+      record.started = true;
+      record.system.start(0);
+      this.applySpeed(record);
+    }
+    const ratio = spawned.host.getAnimationRatio() || 1;
+    const dt = (spawned.records[0]?.system.updateSpeed ?? 0) * ratio;
+    spawned.elapsed += dt;
+    if (spawned.velocity) spawned.node.position.addInPlace(spawned.velocity.scale(dt));
+    for (const record of spawned.records) if (record.kind === "basic" && !record.stopped) record.driver.advance(dt);
+    if (!spawned.stopped && spawned.elapsed >= spawned.run) {
+      spawned.stopped = true;
+      for (const record of spawned.records) {
+        if (record.kind === "basic") record.driver.halt();
+        record.stopped = true;
+        record.system.manualEmitCount = 0;
+        record.system.stop();
+      }
+    }
+    if (spawned.stopped && slotsDrained(spawned.records)) this.disposeSpawned(entry, spawned);
+  }
+
+  private disposeSpawned(entry: LiveComponent, spawned: Spawned): void {
+    const index = entry.spawned.indexOf(spawned);
+    if (index < 0) return;
+    entry.spawned.splice(index, 1);
+    spawned.trigger.live -= 1;
+    for (const cancel of spawned.cancel.splice(0)) cancel();
+    this.disposeRecords(spawned.records, spawned.node);
+    this.publishStats();
+  }
+
+  private disposeAllSpawned(entry: LiveComponent): void {
+    for (const spawned of [...entry.spawned]) this.disposeSpawned(entry, spawned);
+  }
+
   private assign(command: Assignment): void {
     const key = liveKey(command.actorGuid, command.componentId);
     const previous = this.live.get(key);
@@ -813,7 +1035,7 @@ export class ParticleService {
     const entry: LiveComponent = { key, command: { ...command, particleSystemGuid: guid }, desiredPlaying: command.play !== false,
       playGeneration: command.generation ?? 0,
       parameterValues: new Map(Object.entries(command.parameters ?? {}).map(([name, value]) => [name.trim(), [...value]])),
-      parametersDirty: false, state: "preparing", generation: 0, scene: null, node: null, systems: [], ghosts: [],
+      parametersDirty: false, state: "preparing", generation: 0, scene: null, node: null, systems: [], ghosts: [], spawned: [],
       source: null, cancel: [], building: false };
     this.live.set(key, entry);
     this.prepare(entry);
@@ -838,7 +1060,7 @@ export class ParticleService {
   private refreshOwner(entry: LiveComponent): void {
     const host = this.hostFor(entry);
     if (host === entry.scene && entry.node) return;
-    if (host !== entry.scene) this.disposeGhosts(entry);
+    if (host !== entry.scene) { this.disposeGhosts(entry); this.disposeAllSpawned(entry); }
     this.releaseBundle(entry);
     this.prepare(entry);
   }
@@ -1071,11 +1293,22 @@ export class ParticleService {
 
   /** Builds synchronously; build problems are reported per graph node and skip only this slot. */
   private createGraphSlot(entry: LiveComponent, context: SlotContext, slot: { index: number; guid: string },
-    plan: ParticleBuildPlan, lease: ResourceLease<NodeMaterial>, materialGuid: string, document: ParticleGraphDocument): CreatedSlot | null {
+    plan: ParticleBuildPlan, lease: ResourceLease<NodeMaterial>, materialGuid: string, document: ParticleGraphDocument, depth = 0): CreatedSlot | null {
+    const triggers: SpawnTrigger[] = [];
     const realized = realizeParticleGraph(plan, { scene: context.host, name: `particle:${entry.key}:${slot.index}`,
       emitter: context.node, space: context.space, noise: (textureGuid) => this.noiseSource(entry, textureGuid),
-      meshShape: (properties) => this.meshShapeSource(entry, context, properties) });
+      meshShape: (properties) => this.meshShapeSource(entry, context, properties),
+      spawn: (properties) => this.spawnSink(entry, context, properties, depth, triggers) });
+    const closeTriggers = () => {
+      for (const trigger of triggers) {
+        trigger.closed = true;
+        trigger.queued.length = 0;
+        trigger.lease?.release();
+        trigger.lease = null;
+      }
+    };
     if (realized.ok === false) {
+      closeTriggers();
       for (const diagnostic of realized.diagnostics) this.diagnose(entry, { ...diagnostic, assetGuid: slot.guid });
       return null;
     }
@@ -1085,7 +1318,7 @@ export class ParticleService {
     return {
       record: { kind: "graph", gpu: false, index: slot.index, emitterGuid: slot.guid, system, lease,
         set: realized.set, compileKey: plan.hash, materialGuid, document, parameterBlocks: realized.parameterBlocks,
-        pending: 0, updateSpeed: system.updateSpeed, started: false, stopped: false, once: plan.settings.loop === "once", cancel: [],
+        pending: 0, updateSpeed: system.updateSpeed, started: false, stopped: false, once: plan.settings.loop === "once", cancel: [closeTriggers],
         manual: createManualEmission(system, () => rate ? rate.call(system) : system.emitRate), requestedBurst: 0 },
       buildReady: realized.buildReady,
     };
@@ -1169,6 +1402,7 @@ export class ParticleService {
     const onScreen = entry.state === "playing" || entry.state === "draining";
     if (force || (retrigger === "restart" && onScreen)) {
       this.disposeGhosts(entry);
+      this.disposeAllSpawned(entry);
       entry.desiredPlaying = true;
       this.releaseBundle(entry);
       this.prepare(entry);
@@ -1556,6 +1790,7 @@ export class ParticleService {
     entry.desiredPlaying = false;
     entry.state = "retired";
     this.disposeGhosts(entry);
+    this.disposeAllSpawned(entry);
     this.releaseBundle(entry);
     this.publishStats();
   }

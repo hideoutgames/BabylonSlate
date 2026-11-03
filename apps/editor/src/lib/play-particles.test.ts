@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  PREVIEW_EMITTER_GUID,
   PREVIEW_SYSTEM_GUID,
   emitterPreviewLibrary,
   loadEmittersForPreview,
@@ -55,6 +56,43 @@ describe("preview libraries", () => {
       ]),
     );
     expect([...library.emitters.keys()]).toEqual(["em-1"]);
+  });
+});
+
+describe("spawned emitters in previews", () => {
+  const spawning = (emitterGuid: string) => {
+    const document = createDefaultParticleGraphDocument();
+    document.nodes.push({ id: "spawn", type: "trigger.spawn", position: { x: 0, y: 0 }, properties: { emitterGuid } });
+    return document;
+  };
+
+  it("adds the emitters a previewed graph spawns, two levels deep", () => {
+    const available = new Map<string, ParticleLibraryEmitter>([
+      ["level-1", { kind: "graph", document: spawning("level-2") }],
+      ["level-2", { kind: "graph", document: spawning("level-3") }],
+      ["level-3", basic(createDefaultParticleEmitterPayload())],
+      ["unrelated", basic(createDefaultParticleEmitterPayload())],
+    ]);
+    const library = emitterPreviewLibrary({ kind: "graph", document: spawning("level-1") }, available);
+    expect([...library.emitters.keys()]).toEqual([PREVIEW_EMITTER_GUID, "level-1", "level-2"]);
+    const system = systemPreviewLibrary({ ...createDefaultParticleSystemPayload(), emitterGuids: ["level-2"] }, available);
+    expect([...system.emitters.keys()]).toEqual(["level-2", "level-3"]);
+  });
+
+  it("loads a System's spawned emitters with its slots", async () => {
+    const assets = [
+      { header: { guid: "pg-1", type: "ParticleGraph", payload: {} }, path: "assets/Embers.particlegraph.hasset" },
+      { header: { guid: "em-1", type: "ParticleEmitter", payload: {} }, path: "assets/Sparks.emitter.hasset" },
+    ];
+    const loadDocument = vi.fn(async (kind: string) => kind === "particle-graph" ? spawning("em-1") : { render: { materialGuid: "mat-1" } });
+    const emitters = await loadEmittersForPreview({
+      system: { ...createDefaultParticleSystemPayload(), emitterGuids: ["pg-1"] },
+      assets,
+      openPayloads: new Map(),
+      loadDocument,
+    });
+    expect([...emitters.keys()]).toEqual(["pg-1", "em-1"]);
+    expect(basicPayload(emitters.get("em-1")).render.materialGuid).toBe("mat-1");
   });
 });
 
