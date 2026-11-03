@@ -19,6 +19,7 @@ import { createWorldInputProvider } from "./runtime-host-input";
 import { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeNavigation } from "./runtime-navigation";
 import { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
+import { RuntimeParticleEffects } from "./runtime-particle-effects";
 import { RuntimePropertyWrites } from "./runtime-property-writes";
 import { requestDeviceMotion, runTick } from "./runtime-tick-phases";
 import { ScriptDebugObserver } from "./script-debug";
@@ -441,3 +442,33 @@ function nowMs(): number {
     ? performance.now()
     : Date.now();
 }
+
+/** Spawn Particles effects; a non-empty asset catalog rejects guids that are not Particle Systems. */
+export function createParticleEffects(rt: RuntimeComposition, options: RuntimeDriverOptions): RuntimeParticleEffects {
+  const catalog = options.assetCatalog ?? [];
+  const systems = new Set(catalog.filter((entry) => entry.type === "ParticleSystem").map((entry) => entry.guid));
+  return new RuntimeParticleEffects({
+    findActor: (guid) => rt.world.findActor(guid),
+    knowsParticleSystem: (guid) => catalog.length === 0 || systems.has(guid),
+    spawnEngineActor: (spawn) => rt.actors.spawnEngine(spawn),
+    destroyActor: (actor) => {
+      const world = rt.world;
+      const queued = world.isSpawnQueued(actor);
+      if (actor.destroyed || (actor.world !== world && !queued)) return;
+      rt.audioParticles.stopAudio(actor);
+      rt.audioParticles.stopParticles(actor);
+      if (queued) world.destroyActor(actor.guid);
+      else world.destroyActorInstance(actor);
+      rt.tweens.cancelInvalid();
+    },
+    attachToBone: (actor, target, bone) => {
+      const slotId = rt.renderSlots.actorSlot(actor);
+      const targetSlotId = target ? rt.renderSlots.actorSlot(target) : null;
+      if (slotId === undefined || targetSlotId === undefined) return;
+      rt.emit({ type: "attachToBone", slotId, targetSlotId, boneName: bone });
+    },
+    emit: (command) => rt.emit(command),
+    reportLog: (message, severity, category) => rt.reportLog(message, severity, category),
+  });
+}
+

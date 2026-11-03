@@ -156,6 +156,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     timelineProxyGet: (instance, proxyId) => rt.timelines.bound(instance, proxyId),
     ...createAudioHostBindings({ frameId, scriptVoiceId: () => rt.voices.scriptVoiceId(), emit }),
     isParticlesPlaying: (actorGuid, componentId) => rt.particles.isPlaying(actorGuid, componentId),
+    spawnParticleEffect: (request, owner) => rt.particleEffects.spawn(request, owner),
     ...createNavigationHostBindings({ navigation: () => rt.navigation }),
     ...createSceneStreamHostBindings({ streams: rt.streams, world: () => rt.world }),
     animGraphControl: (target) => rt.animGraphs.control(target),

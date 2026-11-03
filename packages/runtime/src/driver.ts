@@ -109,6 +109,7 @@ import type { RenderCommandEmitter } from "./render-command-emitter";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import { RuntimeVoices } from "./runtime-voices";
 import { RuntimeParticles } from "./runtime-particles";
+import type { RuntimeParticleEffects } from "./runtime-particle-effects";
 import { SpriteClipTrace, type SpriteClipState } from "./sprite-clip-trace";
 import { WaterClock } from "./water-world";
 import { indexSceneLibrary, registerSceneAssetClasses } from "./scene-library";
@@ -140,6 +141,7 @@ import {
 import {
   createAnimGraphs,
   createAudioParticles,
+  createParticleEffects,
   createBehaviourTrees,
   createCables,
   createCamera,
@@ -282,6 +284,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   /** Voices `emit` started and has not stopped, for trace frames and restore; draws their clip and pitch. */
   readonly voices = new RuntimeVoices(() => this.seed);
   readonly particles = new RuntimeParticles();
+  readonly particleEffects: RuntimeParticleEffects;
   /** Sprite Animation clips actors show, for trace frames and restore. */
   readonly spriteClips = new SpriteClipTrace();
   readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
@@ -433,6 +436,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.animGraphs = createAnimGraphs(this);
     this.behaviourTrees = createBehaviourTrees(this);
     this.actors = createActorRealization(this);
+    this.particleEffects = createParticleEffects(this, options);
     this.camera = createCamera(this, options);
     this.waits = createWaits(this);
 
@@ -742,6 +746,9 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     message: Extract<ControlMessage, { type: "particlePlaybackEnded" }>,
   ): void {
     if (!this.particles.ended(message)) return;
+    // A spawned effect with Auto Destroy goes once its playback ends, failures included.
+    this.particleEffects.ended(message.actorGuid, message.componentId);
+    if (message.reason === "failed") return;
     const actor = this.world.getActors().find((entry) => entry.guid === message.actorGuid && !entry.destroyed);
     const component = actor?.components.find(
       (entry) => !entry.destroyed && entry.classId === "ParticleComponent" && entry.guid === message.componentId,

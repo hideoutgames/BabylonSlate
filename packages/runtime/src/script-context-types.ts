@@ -491,6 +491,9 @@ export interface ScriptContext {
   playParticles(actor?: EngineObject | null): void;
   stopParticles(actor?: EngineObject | null): void;
   isParticlesPlaying(actor?: EngineObject | null): boolean;
+  spawnParticlesAtLocation(system: unknown, location: unknown, rotation: unknown, scale: unknown, autoDestroy?: unknown): Actor | null;
+  spawnParticlesAttached(system: unknown, attachTo: unknown, bone: unknown, locationOffset: unknown, rotationOffset: unknown,
+    autoDestroy?: unknown): Actor | null;
   setChannelVolume(channelGuid: string, volume: number): void;
   setGlobalVolume(volume: number): void;
   changeScene(scene: string): void;

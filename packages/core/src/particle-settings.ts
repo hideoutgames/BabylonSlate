@@ -59,3 +59,6 @@ export const ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID = "engine:ParticlesFinishe
 /** Finished: a Once system ran out. Stopped: Stop drained it. */
 export const PARTICLES_FINISHED_REASONS = ["Finished", "Stopped"] as const;
 export type ParticlesFinishedReason = (typeof PARTICLES_FINISHED_REASONS)[number];
+
+/** Spawn Particles effects alive at once; beyond it the oldest is stopped and destroyed after its drain. */
+export const PARTICLE_TRANSIENT_EFFECT_BUDGET = 256;

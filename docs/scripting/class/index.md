@@ -624,6 +624,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Is Particles Playing](is-particles-playing.md) | Returns whether any particle system on an actor is playing. |
 | [Play Particles](play-particles.md) | Starts the particle systems on an actor. |
+| [Spawn Particles At Location](spawn-particles-at-location.md) | Plays a Particle System once at a place in the world, without an actor class of its own. |
+| [Spawn Particles Attached](spawn-particles-attached.md) | Plays a Particle System attached to an actor, or one of its bones, without an actor class of its own. |
 | [Stop Particles](stop-particles.md) | Stops the particle systems on an actor from emitting. |
 
 ## Animation

@@ -52,14 +52,14 @@ export class RuntimeParticles {
   }
 
   /**
-   * The render host ended a component's playback. Returns whether the report is current and
-   * should run Event On Particles Finished (a finish or a Stop; a failure only ends playback).
+   * The render host ended a component's playback. Returns whether the report is current (not
+   * made stale by a later Play); a current finish or Stop runs Event On Particles Finished.
    */
   ended(message: PlaybackEnded): boolean {
     const state = this.component(message.actorGuid, message.componentId);
     if (!state || message.generation < state.generation) return false;
     state.playing = false;
-    return message.reason !== "failed";
+    return true;
   }
 
   /** True while the component (or, without `componentId`, any ParticleComponent of the actor) plays. */

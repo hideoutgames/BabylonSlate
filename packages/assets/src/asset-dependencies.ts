@@ -87,6 +87,8 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
   "curveObject.getColor": "curveAsset",
   "timeline.fromAsset": "timelineAsset",
   "audio.play": "asset",
+  "particles.spawnAtLocation": "system",
+  "particles.spawnAttached": "system",
   "audio.setChannelVolume": "channel",
   "scene.change": "scene",
   "scene-layer.create": "asset",
