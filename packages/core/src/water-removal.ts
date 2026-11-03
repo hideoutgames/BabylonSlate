@@ -61,18 +61,13 @@ function rotateByInverseInto(rotation: Partial<Quat>, x: number, y: number, z: n
   out.z = z + qw * tz + (qx * ty - qy * tx);
 }
 
-/** `worldToLocal` of (x, y, z) into `out`; false (leaving `out` unchanged) when a scale axis is degenerate. */
+/** (x, y, z) in `transform`'s local space, into `out`; false (leaving `out` unchanged) when a scale axis is degenerate. */
 function worldToLocalInto(transform: Transform, x: number, y: number, z: number, out: Vec3): boolean {
   const { x: sx, y: sy, z: sz } = transform.scale;
   if (Math.min(Math.abs(sx), Math.abs(sy), Math.abs(sz)) < 1e-9) return false;
   rotateByInverseInto(transform.rotation, x - transform.position.x, y - transform.position.y, z - transform.position.z, out);
   out.x /= sx; out.y /= sy; out.z /= sz;
   return true;
-}
-
-export function worldToLocal(transform: Transform, point: Vec3): Vec3 | null {
-  const local: Vec3 = { x: 0, y: 0, z: 0 };
-  return worldToLocalInto(transform, point.x, point.y, point.z, local) ? local : null;
 }
 
 /** Terrain height in landscape-local space, matching the rendered and collision triangles. Null outside. */

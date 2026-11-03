@@ -66,6 +66,24 @@ export async function createPhysicsBackend(
 }
 
 /**
+ * Start loading the native engine a `kind` world runs on (Havok for 3D, Rapier
+ * for 2D) without creating a world, so its download and compile overlap other
+ * work; `createPhysicsBackend` for that kind then reuses the loaded engine.
+ */
+export async function preloadPhysicsEngine(
+  kind: PhysicsWorldKind,
+  options: Pick<PhysicsBackendOptions, "havokWasmUrl"> = {},
+): Promise<void> {
+  if (kind === "3d") {
+    const { HavokPhysicsBackend } = await import("./havok-backend");
+    await HavokPhysicsBackend.preload(options.havokWasmUrl);
+    return;
+  }
+  const { Rapier2DPhysicsBackend } = await import("./rapier-backend");
+  await Rapier2DPhysicsBackend.preload();
+}
+
+/**
  * Loads Rapier 2D once and returns a synchronous factory of independent native
  * 2D worlds, for callers that create worlds after loading (one per Scene Layer).
  * Never falls back to software.

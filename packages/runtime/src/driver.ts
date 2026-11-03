@@ -612,6 +612,10 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     return this.streams.unload(target, blocking);
   }
 
+  preloadPhysics(): void {
+    this.physics.preload();
+  }
+
   loadPhysics(): Promise<void> {
     return this.physics.load();
   }
@@ -791,8 +795,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   finishPlayLoading(): void {
     if (this.stopped) throw sceneRealizationCancelled();
     this.bootLoading = false;
-    this.layers.readyPresented();
-    this.sceneRealizer.finishBootLoading();
+    this.sceneRealizer.finishBootLoading(() => this.layers.readyPresented());
   }
 
   realizePlayWorld(): void | Promise<void> {

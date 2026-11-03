@@ -1781,6 +1781,56 @@ describe("GraphScriptCompileCache", () => {
     expect(cache.compiles).toBeGreaterThan(2);
   });
 
+  it("reuses a graph across compiled sets that leave its calls' latency alone, and recompiles it when a reparent makes a call latent", () => {
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" as const },
+      { name: "then", typeId: "exec", direction: "out" as const },
+    ];
+    const withFunction = (name: string, latent: boolean): SerializedGraph => ({
+      nodes: [],
+      edges: [],
+      members: [{ id: `fn-${name}`, kind: "function", name, pins }],
+      functionGraphs: {
+        [`fn-${name}`]: {
+          nodes: [
+            { id: "in", type: "flow.function.input", position: { x: 0, y: 0 }, data: { __protected: true, pins } },
+            ...(latent ? [{ id: "delay", type: "timers.delay", position: { x: 100, y: 0 }, data: { duration: 0.25 } }] : []),
+            { id: "out", type: "flow.function.output", position: { x: 200, y: 0 }, data: { __protected: true, pins } },
+          ],
+          edges: latent
+            ? [
+                { id: "e1", source: "in", target: "delay", sourceHandle: "exec", targetHandle: "execIn" },
+                { id: "e2", source: "delay", target: "out", sourceHandle: "execOut", targetHandle: "then" },
+              ]
+            : [{ id: "e1", source: "in", target: "out", sourceHandle: "exec", targetHandle: "then" }],
+        },
+      },
+    });
+    const caller: SerializedGraph = {
+      nodes: [
+        { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+        { id: "call", type: "functions.call", position: { x: 200, y: 0 },
+          data: { functionName: "Wait", classId: "Guard", implicitSelf: false, pins } },
+      ],
+      edges: [{ id: "e1", source: "begin", target: "call", sourceHandle: "execOut", targetHandle: "exec" }],
+    };
+    const callerDocument = { path: "assets/Caller.class.hasset", content: caller, classId: "Caller" };
+    const guard = { path: "assets/Guard.class.hasset", content: withFunction("Wait", false), classId: "Guard" };
+    const cache = new GraphScriptCompileCache();
+    compileGraphDocuments([callerDocument, guard], { cache });
+    expect(cache.compiles).toBe(2);
+    // An unrelated latent Function joins the set (Play's closure versus the project): only it compiles.
+    compileGraphDocuments([callerDocument, guard, { path: "assets/Napper.class.hasset", content: withFunction("Nap", true), classId: "Napper" }], { cache });
+    expect(cache.compiles).toBe(3);
+    const waiter = { path: "assets/Waiter.class.hasset", content: withFunction("Wait", true), classId: "Waiter" };
+    const unrelated = compileGraphDocuments([callerDocument, guard, waiter], { cache });
+    expect(unrelated.find((script) => script.classId === "Caller")?.source).not.toMatch(/await\s+ctx\.invokeFunction/);
+    // Reparented under Waiter, Guard inherits its latent Wait with the same latent set: the unchanged Caller
+    // must now await it, so it cannot come from the cache.
+    const reparented = compileGraphDocuments([callerDocument, { ...guard, parentClassId: "Waiter" }, waiter], { cache });
+    expect(reparented.find((script) => script.classId === "Caller")?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
+  });
+
   it("fingerprints type schemas instead of embedding them in every cache key", () => {
     const cache = new GraphScriptCompileCache();
     const enums = {

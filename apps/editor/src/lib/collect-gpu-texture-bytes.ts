@@ -1,9 +1,12 @@
 import {
+  createLimiter,
+  mapBounded,
   resolveGpuTexture,
   type HassetHeader,
   type EditorTextureLod,
 } from "@haptic/assets";
 import { materialParameterTextureGuidsFromGraph, type SerializedGraph } from "@haptic/core";
+import { COLLECTOR_READS } from "./play-content";
 
 export type GpuTextureAsset = {
   path: string;
@@ -27,39 +30,40 @@ export async function collectGpuTextureBytes(options: {
     options.assets.map((asset) => [asset.header.guid, asset] as const),
   );
   const bytes = new Map<string, Uint8Array>();
-  const seen = new Set<string>();
-  const guids = [
+  const textures = [...new Set([
     ...options.guids,
     ...(options.graphs ?? []).flatMap(materialParameterTextureGuidsFromGraph),
-  ];
-  for (const guid of guids) {
-    if (!guid || seen.has(guid)) continue;
-    seen.add(guid);
-    const asset = byGuid.get(guid);
-    if (!asset || asset.header.type !== "Texture") continue;
-    const resolved = await resolveGpuTexture({
+  ])].flatMap((guid) => {
+    const asset = guid ? byGuid.get(guid) : undefined;
+    return asset && asset.header.type === "Texture" ? [{ guid, asset }] : [];
+  });
+  // Reads overlap; a source downsample decodes a whole image, so those run one at a time.
+  const downsample = createLimiter(1);
+  const resolved = await mapBounded(textures, COLLECTOR_READS, async ({ guid, asset }) => {
+    const texture = await resolveGpuTexture({
       header: asset.header,
       readChunk: (chunkId) => options.readChunk(asset.path, chunkId),
       editorLod: options.editorLod,
     });
-    if (!resolved) continue;
-    if (resolved.missingPreferred) options.onMissingKtx2?.(guid);
-    let payload = resolved.bytes;
+    if (!texture) return null;
+    if (texture.missingPreferred) options.onMissingKtx2?.(guid);
     if (
-      resolved.kind !== "ktx2" &&
-      resolved.targetEdge < resolved.sourceEdge &&
+      texture.kind !== "ktx2" &&
+      texture.targetEdge < texture.sourceEdge &&
       options.downsampleSource
     ) {
       try {
-        payload = await options.downsampleSource(
-          resolved.bytes,
-          resolved.targetEdge,
-        );
+        const resize = options.downsampleSource;
+        return await downsample(() => resize(texture.bytes, texture.targetEdge));
       } catch {
-        payload = resolved.bytes;
+        return texture.bytes;
       }
     }
-    bytes.set(guid, payload);
+    return texture.bytes;
+  });
+  for (const [index, { guid }] of textures.entries()) {
+    const payload = resolved[index];
+    if (payload) bytes.set(guid, payload);
   }
   return bytes;
 }

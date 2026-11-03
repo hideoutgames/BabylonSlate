@@ -1,10 +1,12 @@
 # Sprite
 
-A 2D image: one Texture with its pivot and collision box. To play several images in turn, use a [Sprite Animation](sprite-animation.md).
+A 2D image: one Texture with its pivot and collision box. To play several images in turn, use a [Sprite Animation](sprite-animation.md); its frames can be Sprites, which bring their pivot and collision box.
 
 ## Create
 
 In the **Content Browser**, choose **New Asset > 2D > Sprite**. Import your image first, so you can pick it as a Texture. See [Importing](../editor/importing.md).
+
+Or select one or more Textures, right-click one and choose **Create Sprite** (**Create Sprites** for several): each Texture gets a Sprite beside it. See [Create from assets](../editor/content-browser.md#create-from-assets).
 
 ## Editor
 

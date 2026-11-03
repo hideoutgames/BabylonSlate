@@ -27,7 +27,7 @@ import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { onSceneReadinessDirty } from "./scene-perf";
 import { unlitBinding } from "./unlit-material-blocks";
 
-it("installs uploadable legacy UASTC descriptors without mutating stored asset bytes", async () => {
+it("installs KTX2 bytes unchanged without mutating stored asset bytes", async () => {
   const source = new Uint8Array(140);
   source.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
   const view = new DataView(source.buffer);
@@ -44,8 +44,7 @@ it("installs uploadable legacy UASTC descriptors without mutating stored asset b
   const blob = installed.get("atlas")!;
   expect(blob.type).toBe("image/ktx2");
   const uploaded = new Uint8Array(await blob.arrayBuffer());
-  expect(uploaded[100]).toBe(16);
-  expect(uploaded.subarray(124)).toEqual(original.subarray(124));
+  expect(uploaded).toEqual(original);
   expect(source).toEqual(original);
   expect(installTextureBytes(installed)!.get("atlas")).toBe(blob);
 });

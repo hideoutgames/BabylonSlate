@@ -23,6 +23,7 @@ import {
   syncEditorPlayState,
   engineAdapterInfo,
   type EngineHandle,
+  type SurfaceRest,
 } from "@haptic/render";
 import { type SerializedScene, applyTimelineClipToScene, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus, sceneEnvironmentTextureGuid } from "@haptic/core";
 import {
@@ -95,8 +96,22 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     setFrameActorHandler,
     setViewportDropApi,
   } = useSceneEditing();
-  const { flySpeed, cameraPreviewFrameRate, dropDistance, editorTextureLodEnabled, editorTextureLodQuality } =
-    useEditorViewportPrefs();
+  const {
+    flySpeed,
+    cameraPreviewFrameRate,
+    dropDistance,
+    placeOnSurfaces,
+    placementDistance,
+    editorTextureLodEnabled,
+    editorTextureLodQuality,
+  } = useEditorViewportPrefs();
+  const placementPrefsRef = useRef({ placeOnSurfaces, placementDistance });
+  useEffect(() => {
+    placementPrefsRef.current = { placeOnSurfaces, placementDistance };
+  }, [placeOnSurfaces, placementDistance]);
+  /** Placements waiting for this viewport to build their actors before resting them on their surfaces. */
+  const pendingRestsRef = useRef<Array<{ rests: readonly SurfaceRest[]; mergeKey: string }>>([]);
+  const [restRequests, setRestRequests] = useState(0);
   const {
     registerSimulationViewport,
     playing,
@@ -422,15 +437,59 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           clientY <= rect.bottom
         );
       },
-      worldPositionAtClient: (clientX, clientY) =>
-        engineRef.current?.editor?.worldPositionAtClient(clientX, clientY) ??
-        null,
-      worldPositionAtViewCenter: () =>
-        engineRef.current?.editor?.worldPositionAtViewCenter() ??
-        FALLBACK_PLACE_POSITION,
+      placementAtClient: (clientX, clientY) => {
+        const editor = engineRef.current?.editor;
+        if (!editor) return null;
+        const { placeOnSurfaces, placementDistance } = placementPrefsRef.current;
+        if (placeOnSurfaces) return editor.surfacePlacementAtClient(clientX, clientY, placementDistance);
+        const position = editor.worldPositionAtClient(clientX, clientY);
+        return position ? { position, normal: null } : null;
+      },
+      placementAtViewCenter: () => {
+        const editor = engineRef.current?.editor;
+        if (!editor) return { position: FALLBACK_PLACE_POSITION, normal: null };
+        const { placeOnSurfaces, placementDistance } = placementPrefsRef.current;
+        return placeOnSurfaces
+          ? editor.surfacePlacementAtViewCenter(placementDistance)
+          : { position: editor.worldPositionAtViewCenter(), normal: null };
+      },
+      restOnSurface: (rests, mergeKey) => {
+        pendingRestsRef.current.push({ rests, mergeKey });
+        setRestRequests((count) => count + 1);
+      },
     });
     return () => setViewportDropApi(null);
   }, [setViewportDropApi]);
+
+  // Once the viewport has built a placement's actors (models included), rest
+  // their bounds on the surfaces they hit, in the placement's Undo step. An
+  // actor moved or removed since its placement keeps what the user did.
+  useEffect(() => {
+    const handle = engineRef.current;
+    const current = sceneRef.current;
+    if (pendingRestsRef.current.length === 0 || !handle?.editor || !current) return;
+    if (dropReady?.handle !== handle || dropReady.scene !== current) return;
+    const pending = pendingRestsRef.current;
+    pendingRestsRef.current = [];
+    let next = current;
+    for (const { rests, mergeKey } of pending) {
+      const placed = rests.filter((rest) => {
+        const actor = next.actors.find((entry) => entry.id === rest.actorId);
+        return actor?.transform.position.every((value, index) => value === rest.point[index]) === true;
+      });
+      const transforms = placed.length > 0 ? handle.editor.restActorsOnSurface(placed) : [];
+      if (transforms.length === 0) continue;
+      const byId = new Map(transforms.map((transform) => [transform.actorId, transform]));
+      next = {
+        ...next,
+        actors: next.actors.map((actor) => {
+          const transform = byId.get(actor.id);
+          return transform ? applyLiveGizmoToActor(actor, transform) : actor;
+        }),
+      };
+      void applySceneChange(documentId, next, { mergeKey });
+    }
+  }, [applySceneChange, documentId, dropReady, restRequests]);
 
   useEffect(() => {
     if (engineRef.current) {

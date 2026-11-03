@@ -185,7 +185,7 @@ describe("Data graph integration", () => {
     graph.nodes[0]!.data.definitionGuid = "";
     expect(dataErrors()).toEqual([]);
   });
-  it("types Unknown reads only from the picked Data Definition pin and moves a saved async Definition onto it", () => {
+  it("types Unknown reads only from the picked Data Definition pin and retakes a saved schema snapshot", () => {
     const palette = scriptPaletteNodes(createDefaultNodeRegistry(), { dataDefinitions: [{ guid: "weapon", ...structures.weapon! }], parentClass: "Actor" });
     expect(palette.map((entry) => entry.id).filter((id) => /^data\.(readUnknownEntry|readEntryAsync)/.test(id)).sort())
       .toEqual(["data.readEntryAsync", "data.readUnknownEntry"]);
@@ -194,7 +194,7 @@ describe("Data graph integration", () => {
         node("sheet", "variables.get", { name: "Sheet", typeId: "asset", typeClassId: "DataTree" }),
         node("read", "data.readUnknownEntry", { "default:definition": "weapon" }),
         node("weapon", "struct.break", { structGuid: "weapon" }),
-        node("saved", "data.readEntryAsync", { definitionGuid: "armor", dataSchema: [{ id: "damage", name: "Damage", typeId: "float" }] }),
+        node("saved", "data.readEntryAsync", { "default:definition": "armor", dataSchema: [{ id: "damage", name: "Damage", typeId: "float" }] }),
         node("literal", "data.readUnknownEntry", { "default:tree": "sword", "default:entryPath": "Weapons/Sword" }),
       ],
       edges: [
@@ -207,7 +207,6 @@ describe("Data graph integration", () => {
     expect(data("read")).toMatchObject({ "default:definition": "weapon", title: "Read Unknown Data Entry" });
     expect(hydrated.edges.map((edge) => edge.id)).toEqual(["sheet", "value"]);
     expect(data("saved")).toMatchObject({ "default:definition": "armor", dataSchema: [expect.objectContaining({ id: "defense" })] });
-    expect(data("saved")).not.toHaveProperty("definitionGuid");
     expect(data("literal")).not.toHaveProperty("default:definition");
     expect(data("literal")).not.toHaveProperty("definitionGuid");
     const valueType = (id: string) => materializeLogicGraph(graph, "graph", "event", options).nodes

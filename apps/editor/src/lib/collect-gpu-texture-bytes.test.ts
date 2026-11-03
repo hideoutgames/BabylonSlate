@@ -84,6 +84,38 @@ describe("collectGpuTextureBytes", () => {
     ]));
   });
 
+  it("reads several Textures at once within its bound and returns them in the order they were asked for", async () => {
+    const guids = Array.from({ length: 9 }, (_, index) => `tex-${index}`);
+    const reads: Array<{ index: number; done: boolean; resolve: (bytes: Uint8Array) => void }> = [];
+    let inFlight = 0;
+    let mostInFlight = 0;
+    const collecting = collectGpuTextureBytes({
+      assets: guids.map((guid) => ({
+        path: `assets/${guid}.texture.hasset`,
+        header: { ...textureHeader([{ id: "pixels", kind: "pixels", mime: "image/png", sha256: guid, byteLength: 1,
+          locator: { inline: { offset: 0, length: 1 } } }], { width: 1, height: 1 }), guid },
+      })),
+      guids,
+      readChunk: (path) => new Promise((resolve) => {
+        mostInFlight = Math.max(mostInFlight, ++inFlight);
+        reads.push({ index: Number(path.match(/tex-(\d+)/)![1]), done: false, resolve: (bytes) => { inFlight--; resolve(bytes); } });
+      }),
+    });
+    const open = () => reads.filter((read) => !read.done);
+    await vi.waitFor(() => expect(reads).toHaveLength(6));
+    // The newest read finishes first each time, so reads complete out of order.
+    for (let settled = 0; settled < guids.length; settled++) {
+      await vi.waitFor(() => expect(open().length).toBeGreaterThan(0));
+      const read = open().at(-1)!;
+      read.done = true;
+      read.resolve(new Uint8Array([read.index]));
+    }
+    expect(mostInFlight).toBe(6);
+    const bytes = await collecting;
+    expect([...bytes.keys()]).toEqual(guids);
+    expect([...bytes.values()].map((value) => value[0])).toEqual(guids.map((_, index) => index));
+  });
+
   it("downsamples source bytes when editor LOD wants a smaller edge", async () => {
     const png = new Uint8Array([1, 2, 3]);
     const downsampled = new Uint8Array([4, 5]);

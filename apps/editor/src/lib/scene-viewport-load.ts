@@ -77,6 +77,9 @@ export function isSceneViewportRemountLoad(
 export { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
 import { waitForSceneLoadingPaint, type SceneLoadCount } from "@haptic/render/scene-load-readiness";
 
+/** Two frame intervals at 60 Hz: a load that ran this long after its dialog painted has given the page paints. */
+const PAINTED_LOAD_MS = 34;
+
 export async function runSceneViewportBlockingLoad(options: {
   signal: AbortSignal;
   realize: () => void | Promise<void>;
@@ -91,6 +94,7 @@ export async function runSceneViewportBlockingLoad(options: {
   options.onProgress(0, "Preparing Scene");
   await waitForSceneLoadingPaint(options.signal);
   options.signal.throwIfAborted();
+  const painted = performance.now();
   options.onProgress(10, "Collecting Assets");
   await options.collect();
   options.signal.throwIfAborted();
@@ -105,9 +109,12 @@ export async function runSceneViewportBlockingLoad(options: {
   options.signal.throwIfAborted();
   options.onProgress(90, "Presenting First Frame");
   // Cached assets can finish all readiness work in one microtask batch. Give
-  // the blocking phase a paint before a permitted frame can close the dialog.
-  await waitForSceneLoadingPaint(options.signal);
-  options.signal.throwIfAborted();
+  // the blocking phase a paint before a permitted frame can close the dialog;
+  // a load that has run for frames since the dialog painted already had them.
+  if (performance.now() - painted < PAINTED_LOAD_MS) {
+    await waitForSceneLoadingPaint(options.signal);
+    options.signal.throwIfAborted();
+  }
   await options.presentFirstFrame();
   options.signal.throwIfAborted();
   options.onProgress(100, "Presenting First Frame");

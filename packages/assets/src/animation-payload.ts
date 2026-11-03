@@ -39,10 +39,8 @@ export function normalizeAnimationPayload(value: unknown): AnimationPayload {
     skeletonGuid: nullableGuid(record.skeletonGuid),
     sourceAnimationGuid: nullableGuid(record.sourceAnimationGuid),
   };
-  const authoredMs = optionalDurationMs(record.durationMs);
-  // Assets saved before Duration was editable store only the clip's length.
-  const clipDurationMs = optionalDurationMs(record.clipDurationMs) ?? authoredMs;
-  const durationMs = authoredMs ?? clipDurationMs;
+  const clipDurationMs = optionalDurationMs(record.clipDurationMs);
+  const durationMs = optionalDurationMs(record.durationMs) ?? clipDurationMs;
   if (durationMs !== undefined) payload.durationMs = durationMs;
   if (clipDurationMs !== undefined) payload.clipDurationMs = clipDurationMs;
   return payload;

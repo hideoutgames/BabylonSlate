@@ -1,7 +1,7 @@
 import path from "node:path";
 import { build, type Plugin } from "vite";
 
-/** Keep the existing ordinary player monolith unchanged. This independent
+/** Keeps Preview diagnostics out of the ordinary player bundle. This independent
  * Preview entry has only transport/collector code and uses injected game ports. */
 export function previewDiagnosticsEntry(rootDir: string): Plugin {
   return {

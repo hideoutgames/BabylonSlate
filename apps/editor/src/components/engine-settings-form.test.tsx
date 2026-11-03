@@ -138,6 +138,26 @@ describe("EngineSettingsForm viewport", () => {
     fireEvent.blur(field);
     expect(onChange).toHaveBeenCalledWith({ viewportDropDistance: 25000.5 });
   });
+  it("places on surfaces by default within a 25 unit trace, editable only while it is on", () => {
+    const onChange = vi.fn();
+    const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="viewport" />);
+    const distance = view.getByLabelText("Placement Trace Distance") as HTMLInputElement;
+    expect(view.getByTestId("setting-place-on-surfaces").getAttribute("aria-checked")).toBe("true");
+    expect(distance.value).toBe("25");
+    fireEvent.change(distance, { target: { value: "8" } });
+    fireEvent.blur(distance);
+    expect(onChange).toHaveBeenCalledWith({ viewportPlacementDistance: 8 });
+    fireEvent.click(view.getByTestId("setting-place-on-surfaces"));
+    expect(onChange).toHaveBeenCalledWith({ viewportPlaceOnSurfaces: false });
+    view.rerender(
+      <EngineSettingsForm
+        settings={{ ...defaultEngineSettings(), viewportPlaceOnSurfaces: false }}
+        onChange={onChange}
+        categoryId="viewport"
+      />,
+    );
+    expect((view.getByLabelText("Placement Trace Distance") as HTMLInputElement).disabled).toBe(true);
+  });
   it("reports a post-processing toggle when local overrides are enabled", () => {
     const onChange = vi.fn();
     const { getByTestId } = render(

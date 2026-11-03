@@ -277,6 +277,8 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
     ["cameraPlacement", "Camera And Placement", [
       ["Camera Speed", "setting-fly-speed"],
       ["Drop Distance", "setting-drop-distance"],
+      ["Place On Surfaces", "setting-place-on-surfaces"],
+      ["Placement Trace Distance", "setting-placement-distance"],
     ]],
   ]),
   ...category("graph", [

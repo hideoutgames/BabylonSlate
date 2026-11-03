@@ -7,7 +7,6 @@ import {
   FolderInputIcon,
   ImageIcon,
   LinkIcon,
-  PaintbrushIcon,
   PencilIcon,
   Trash2Icon,
   WaypointsIcon,
@@ -16,7 +15,6 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import {
   groupMsdfImportBatch,
   msdfAtlasPickError,
-  newAssetGuid,
   stripAssetFileSuffix,
   type AssetCopyOptions,
   type AssetRegistry,
@@ -28,12 +26,8 @@ import { enqueueModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-
 import { createAssetThumbnailRevisionIndex } from "../lib/asset-thumbnail-revision";
 import type { useKeybindings } from "../context/keybind-context";
 import {
-  buildMaterialInstanceAssetResult,
   guidsOutsideSelectedFolders,
   isFolderTreeRoot,
-  isNewAssetNameTaken,
-  materialInstanceNameFor,
-  newAssetFileName,
   parentFolderPath,
   rootSelectedFolderPaths,
 } from "../lib/content-browser-helpers";
@@ -42,6 +36,8 @@ import { copyText } from "../lib/diagnostic-info";
 import type { ContentBrowserCopyProgress } from "./content-browser-copy-progress-dialog";
 import type { ImportProgress } from "./import-progress-dialog";
 import type { NameEntry } from "./content-browser-name-dialog";
+import { contentBrowserCreateMenuItems } from "./content-browser-create-menu";
+import type { OpenDocument } from "../services/document-service";
 
 /** One item of a Copy to Folder or Duplicate; `run` returns how to remove its copy. */
 export type CopyStep = {
@@ -82,9 +78,11 @@ export interface ContentBrowserTileMenuDeps {
   openMoveForSnapshot: (operation: "move" | "copy") => void;
   setReferenceGuid: (guid: string | null) => void;
   requestDeleteSnapshot: (guids: string[], folderPaths: string[]) => void;
+  classParentOf: (id: string) => string | null;
+  getOpenDocuments: () => OpenDocument[];
 }
 
-/** The asset tile context menu: Open, thumbnails, Material Instance, Duplicate, Rename, Move, Copy, References and Delete. */
+/** The asset tile context menu: Open, thumbnails, the Create items, Duplicate, Rename, Move, Copy, References and Delete. */
 export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
   const {
 
@@ -115,6 +113,8 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
     openMoveForSnapshot,
     setReferenceGuid,
     requestDeleteSnapshot,
+    classParentOf,
+    getOpenDocuments,
   } = deps;
   return [
     {
@@ -222,44 +222,18 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
         })();
       },
     },
-    {
-      id: "create-material-instance" as const,
-      label: "Create Instance",
-      icon: <PaintbrushIcon />,
-      onSelect: () => {
-        if (busy) return;
-        void (async () => {
-          const guid = menuTargetGuidsRef.current[0];
-          const parent = guid ? assetRegistry?.getByGuid(guid) : undefined;
-          if (!assetRegistry || !parent) return;
-          // Beside its parent, so a Material and its instances stay together.
-          const folder = parentFolderPath(parent.path);
-          const browse = contentBrowserFolderOps(folder, browserRoots);
-          if (browse.readOnly) return;
-          const paths = assetRegistry.list().map((asset) => asset.path);
-          const name = materialInstanceNameFor(parent.header.name, (candidate) =>
-            isNewAssetNameTaken(paths, folder, "MaterialInstance", candidate));
-          const fileName = newAssetFileName("MaterialInstance", name);
-          if (!fileName) return;
-          setBusy(true);
-          setOperationError(null);
-          try {
-            const created = await assetRegistry.createAsset(
-              browse.rootId,
-              browse.relative ? `${browse.relative}/${fileName}` : fileName,
-              buildMaterialInstanceAssetResult(parent.header, newAssetGuid(), name),
-            );
-            // The mounted registry indexed the instance on write: no rescan.
-            noteAssetsCreated();
-            await openOrFocusDocument(created);
-          } catch (error) {
-            setOperationError(error instanceof Error ? error.message : String(error));
-          } finally {
-            setBusy(false);
-          }
-        })();
-      },
-    },
+    ...contentBrowserCreateMenuItems({
+      menuTargetGuidsRef,
+      assetRegistry,
+      browserRoots,
+      busy,
+      setBusy,
+      setOperationError,
+      noteAssetsCreated,
+      openOrFocusDocument,
+      classParentOf,
+      getOpenDocuments,
+    }),
     {
       id: "duplicate" as const,
       label: "Duplicate",

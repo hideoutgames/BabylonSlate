@@ -1,4 +1,4 @@
-import { installedAssetHeader, installedEnvironmentInfo, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@haptic/assets";
+import { installedAssetHeader, installedEnvironmentInfo, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@haptic/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import type { MaterialTextureFilter } from "@haptic/shader-graph";
 import { CubeTexture, type ICubeTextureCreationOptions } from "@babylonjs/core/Materials/Textures/cubeTexture";
@@ -620,7 +620,8 @@ export class ResourceCache {
           useSRGBBuffer: false,
           mimeType: ktx2.mimeType,
           forcedExtension: ktx2.forcedExtension,
-          buffer: raw ? copyTextureBytesForUpload(raw) : undefined,
+          // A copy: the decoder may take ownership of the buffer it is given.
+          buffer: raw ? raw.slice() : undefined,
           onLoad: preparation.onLoad, onError: preparation.onError,
         });
     } catch (error) {

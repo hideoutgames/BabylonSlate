@@ -59,11 +59,6 @@ export function indexParticleIncomingEdges(graph: GraphLike): ParticleIncomingEd
   return (nodeId, pinId) => byNode.get(nodeId)?.get(pinId);
 }
 
-/** Depth-first cycle search over all edges; returns the node ids on the first loop found. */
-export function findParticleGraphCycle(graph: GraphLike): string[] | null {
-  return findGraphCycle(graph);
-}
-
 /**
  * Node ids on the Particle spine, Create → … → Emitter Output (the update
  * queue order). Walks the first Emitter Output's Particle input back; a

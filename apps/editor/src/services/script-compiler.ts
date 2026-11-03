@@ -175,7 +175,7 @@ export function compileGraphDocument(
       serialized
         ? latentSourcesFromSerializedGraph(classId, serialized)
         : [],
-      defaultNodeRegistry,
+      defaultNodeRegistry(),
       parentOf,
     );
   const isLatentFunction = (targetClassId: string, functionName: string) =>
@@ -200,7 +200,7 @@ export function compileGraphDocument(
       compileGraph(logic, {
         assetGuid: options.path,
         className,
-        registry: defaultNodeRegistry,
+        registry: defaultNodeRegistry(),
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
@@ -229,7 +229,7 @@ export function compileGraphDocument(
         compileGraph(fnLogic, {
           assetGuid: options.path,
           className,
-          registry: defaultNodeRegistry,
+          registry: defaultNodeRegistry(),
           tagRegistry: options.tagRegistry,
           exportName,
           stripDevelopmentOnly: options.stripDevelopmentOnly,
@@ -247,7 +247,7 @@ export function compileGraphDocument(
       compileGraph(logic, {
         assetGuid: options.path,
         className,
-        registry: defaultNodeRegistry,
+        registry: defaultNodeRegistry(),
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
@@ -517,7 +517,7 @@ function graphDocumentCompileCacheKey(
     ClassPrefabContext & {
       typesFingerprint?: string;
       dataFingerprint?: string;
-      latentFingerprint?: string;
+      latentFunctions?: ReadonlySet<string>;
     },
 ): string {
   const content = isLogicGraphPayload(doc.content)
@@ -548,7 +548,7 @@ function graphDocumentCompileCacheKey(
     types:
       options.typesFingerprint ??
       typeSchemasFingerprint(options.enums, options.structs, options.dataDefinitions),
-    latent: options.latentFingerprint ?? "",
+    latent: latentCallFingerprint(doc.content, options.latentFunctions, options.parentOf),
     inputAssets: options.inputAssets ?? [],
     dataAssets: options.dataFingerprint ?? fnv1a(JSON.stringify(options.dataAssets ?? [])),
     tags: tagRegistryCompileFingerprint(options.tagRegistry),
@@ -647,7 +647,6 @@ function compileGraphDocumentCached(
     typesFingerprint?: string;
     dataFingerprint?: string;
     latentFunctions?: ReadonlySet<string>;
-    latentFingerprint?: string;
     parentOf?: (classId: string) => string | null | undefined;
     otherClassGraphs?: Record<string, SerializedGraph>;
     throwOnError?: boolean;
@@ -723,7 +722,6 @@ function projectLatentFunctions(
 ): {
   latentFunctions: Set<string>;
   parentOf: (classId: string) => string | null;
-  fingerprint: string;
 } {
   const parentByClass = new Map<string, string | null>();
   const sources: LatentFunctionSource[] = [];
@@ -737,14 +735,48 @@ function projectLatentFunctions(
   const parentOf = (classId: string) => parentByClass.get(classId) ?? null;
   const latentFunctions = collectLatentFunctions(
     sources,
-    defaultNodeRegistry,
+    defaultNodeRegistry(),
     parentOf,
   );
   return {
     latentFunctions,
     parentOf,
-    fingerprint: [...latentFunctions].sort().join("\n"),
   };
+}
+
+const CALL_FUNCTION_NODE = "functions.call";
+
+/**
+ * Every Call Function in the document with whether this compile awaits it. Latent analysis changes a
+ * document's code only through these answers, so the key holds them rather than the compiled set's whole
+ * latent set and lineage: the same document compiles to the same key in a closure, in the project and
+ * on Compile on Save, while a latent change anywhere it calls (a callee's Delay, a reparented class) still
+ * changes it.
+ */
+function latentCallFingerprint(
+  content: SerializedGraph | LogicGraph,
+  latentFunctions: ReadonlySet<string> | undefined,
+  parentOf: ((classId: string) => string | null | undefined) | undefined,
+): string {
+  const latent = latentFunctions ?? new Set<string>();
+  const nodes: Array<{ typeId: string; properties: Record<string, unknown> }> = isLogicGraphPayload(content)
+    ? content.nodes
+    : [content.nodes, ...Object.values(content.functionGraphs ?? {}).map((slice) => slice.nodes)].flatMap((list) =>
+        (list ?? []).map((node) => ({
+          typeId: typeof node.data?.__nodeType === "string" ? node.data.__nodeType : node.type,
+          properties: node.data ?? {},
+        })));
+  const calls = new Set<string>();
+  for (const node of nodes) {
+    if (node.typeId !== CALL_FUNCTION_NODE) continue;
+    const { classId, functionName, runtime } = node.properties;
+    // Component functions run through the runtime and are never awaited as latent calls.
+    if (typeof runtime === "string" && runtime.trim()) continue;
+    const target = typeof classId === "string" && classId.trim() ? classId.trim() : "Object";
+    const name = typeof functionName === "string" ? functionName : "fn";
+    calls.add(JSON.stringify([target, name, isLatentFunctionKey(target, name, latent, parentOf)]));
+  }
+  return [...calls].sort().join("\n");
 }
 
 /** `throwOnError`: a codegen failure throws instead of omitting that script, as export requires. */
@@ -778,7 +810,6 @@ export function compileGraphDocuments(
       typesFingerprint,
       dataFingerprint,
       latentFunctions: project.latentFunctions,
-      latentFingerprint: project.fingerprint,
       parentOf: project.parentOf,
       otherClassGraphs,
     });
@@ -834,6 +865,8 @@ function animGraphCompileCacheKey(
   return JSON.stringify({
     guid: entry.guid,
     path: entry.path,
+    // The compiled scripts carry it as their class name.
+    name: entry.name ?? null,
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
     // Only the Animation Object graph carries probes; as for Class graphs, a release compile ignores them.
     instrumentExecutionTrace: options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true,
@@ -885,7 +918,7 @@ function compileAnimGraphDocument(
     const compiled = compileTransitionRuleGraph(logic, {
       assetGuid: entry.path,
       className: entry.name?.trim() || classDisplayNameForGraphPath(entry.path),
-      registry: defaultNodeRegistry,
+      registry: defaultNodeRegistry(),
       stripDevelopmentOnly: options.stripDevelopmentOnly,
       tagRegistry: options.tagRegistry,
     });

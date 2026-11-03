@@ -156,7 +156,7 @@ describe("Class headers", () => {
 
 describe("Event Dispatcher Add Node rows", () => {
   const palette = (options: Parameters<typeof dispatcherPaletteNodes>[1]) =>
-    dispatcherPaletteNodes(defaultNodeRegistry, options);
+    dispatcherPaletteNodes(defaultNodeRegistry(), options);
 
   it("offer Call, Bind, Unbind, Unbind All and Assign on Self, and the same on a Target for other Classes", () => {
     const rows = palette({

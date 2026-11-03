@@ -26,7 +26,9 @@ import {
   type ViewportMode,
 } from "@haptic/core";
 import {
+  ATLAS_TEXTURES_META,
   DOCUMENT_CHUNK_ID,
+  atlasTextureGuids,
   createDefaultAudioChannelPayload,
   createDefaultAudioMixerPayload,
   createDefaultMigrationRegistry,
@@ -38,7 +40,12 @@ import {
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
+  ensureTilesetTiles,
+  spriteAnimationDependencyGuids,
+  spriteAnimationDurationMs,
   type ImportResult,
+  type SpriteAnimationFrame,
+  type SpriteAnimationPayload,
 } from "@haptic/assets";
 import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import {
@@ -88,6 +95,8 @@ export function buildNewAssetResult(options: {
   viewportMode?: ViewportMode;
   /** A new 2D or 3D Timeline Clip's required Timeline Asset. */
   timelineAsset?: string;
+  /** A new Class's starting components (Create Actor), in place of its parent's defaults. */
+  classComponents?: import("@haptic/core").SerializedComponent[];
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
   if (type === "DataDefinition" || type === "DataTree") {
@@ -164,7 +173,7 @@ export function buildNewAssetResult(options: {
     if (walkAncestry(parentClass ?? "Object", options.parentOf ?? engineParentOf).includes("SceneLayer")) {
       throw new Error("SceneLayer classes must be created as Scene Layer assets.");
     }
-    const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry, {
+    const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry(), {
       parentClass,
       parentOf: options.parentOf,
       parentGraphs: options.parentGraphs,
@@ -172,7 +181,9 @@ export function buildNewAssetResult(options: {
       string,
       unknown
     >;
-    if (parentClass === "SceneStreamingActor") {
+    if (options.classComponents) {
+      payload.components = structuredClone(options.classComponents);
+    } else if (parentClass === "SceneStreamingActor") {
       payload.components = createSceneStreamingActor("prefab").components;
     } else if (parentClass === "RenderTargetCapture") {
       payload.components = [{ id: "prefab-capture", classId: "RenderTargetCaptureComponent", properties: { ...createDefaultRenderTargetCaptureProperties() } }];
@@ -182,7 +193,8 @@ export function buildNewAssetResult(options: {
       name,
       guid,
       version: 1,
-      dependencies: [],
+      // Components name their assets, which the export closure needs before the first save.
+      dependencies: options.classComponents ? assetHeaderDependencies("Class", payload, [], parentClass) : [],
       parentClass: parentClass ?? defaultParentClassForType(type),
       payload,
       chunks: [
@@ -413,18 +425,77 @@ export function buildMaterialInstanceAssetResult(
   };
 }
 
-/** `<Parent>_Instance`, then `<Parent>_Instance_1`, … (the `_N` copy names) until `taken` rejects none. */
-export function materialInstanceNameFor(
-  parentName: string,
-  taken: (name: string) => boolean,
-): string {
-  const base = `${parentName}_Instance`;
+/** `base`, then `base_1`, … (the `_N` copy names) until `taken` rejects none. */
+export function derivedAssetNameFor(base: string, taken: (name: string) => boolean): string {
   let name = base;
   for (let index = 1; taken(name); index += 1) name = `${base}_${index}`;
   return name;
 }
 
-function documentAsset(
+/** A Sprite Animation's name from its first frame's: `Run_01` and `robot_walk0` name `Run` and `robot_walk`. */
+export function spriteAnimationNameFor(frameName: string): string {
+  return frameName.replace(/[\s_-]*\d+$/, "") || frameName;
+}
+
+/** `<Parent>_Instance`, then `<Parent>_Instance_1`, … until `taken` rejects none. */
+export function materialInstanceNameFor(
+  parentName: string,
+  taken: (name: string) => boolean,
+): string {
+  return derivedAssetNameFor(`${parentName}_Instance`, taken);
+}
+
+/**
+ * A Sprite Animation that plays `sources` in order, one frame each: a Sprite
+ * becomes a Sprite frame (its pivot and collision), a Texture a Texture frame.
+ */
+export function buildSpriteAnimationAssetResult(
+  sources: ReadonlyArray<{ guid: string; type: string }>,
+  guid: string,
+  name: string,
+): ImportResult {
+  const defaults = createDefaultSpriteAnimationPayload();
+  const frames = sources.map((source): SpriteAnimationFrame => ({
+    ...defaults.frames[0]!,
+    ...(source.type === "Sprite" ? { spriteGuid: source.guid } : { textureGuid: source.guid }),
+  }));
+  const document: SpriteAnimationPayload = { ...defaults, frames: frames.length > 0 ? frames : defaults.frames };
+  const result = documentAsset("SpriteAnimation", name, guid, document as unknown as Record<string, unknown>);
+  return {
+    ...result,
+    payload: {
+      ...result.payload,
+      durationMs: spriteAnimationDurationMs(document),
+      [ATLAS_TEXTURES_META]: atlasTextureGuids("SpriteAnimation", result.payload),
+    },
+    dependencies: spriteAnimationDependencyGuids(document),
+  };
+}
+
+/** A Tileset slicing `texture`, sized from the Texture's header so its tiles are ready to paint. */
+export function buildTilesetAssetResult(
+  texture: { guid: string; payload?: Record<string, unknown> },
+  guid: string,
+  name: string,
+): ImportResult {
+  const width = Number(texture.payload?.width);
+  const height = Number(texture.payload?.height);
+  const defaults = createDefaultTilesetPayload();
+  const document = ensureTilesetTiles({
+    ...defaults,
+    textureGuid: texture.guid,
+    atlasWidth: width > 0 ? width : defaults.atlasWidth,
+    atlasHeight: height > 0 ? height : defaults.atlasHeight,
+  });
+  const result = documentAsset("Tileset", name, guid, document as unknown as Record<string, unknown>);
+  return {
+    ...result,
+    payload: { ...result.payload, [ATLAS_TEXTURES_META]: [texture.guid] },
+    dependencies: [texture.guid],
+  };
+}
+
+export function documentAsset(
   type: string,
   name: string,
   guid: string,

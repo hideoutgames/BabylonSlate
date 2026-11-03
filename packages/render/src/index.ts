@@ -36,6 +36,7 @@ export * from "./pick-coords";
 export * from "./editor-camera";
 export * from "./actor-framing";
 export * from "./editor-place";
+export * from "./editor-surface-placement";
 export * from "./editor-grid";
 export * from "./editor-scene-sync";
 export * from "./viewport-shading-mode";

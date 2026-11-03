@@ -21,6 +21,7 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { createDefaultScene } from "@haptic/core";
 import { applySceneEnvironment } from "./scene-illumination";
 import { createSkyboxMesh } from "./skybox";
+import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
 import type { ResourceLease } from "./resource-cache";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { isSceneFrameReady, onSceneReadinessDirty } from "./scene-perf";
@@ -353,6 +354,22 @@ it("lights a Skybox-sourced scene from the visible sky's own cube where the sky 
   expect(cache.resourceStats()).toMatchObject({ leases: 0 });
 });
 
+it("never computes the unlit sky material's irradiance from its full-size cube on the CPU", () => {
+  const { engine, cache, a, bytes } = fixture(false);
+  const irradiance = vi.spyOn(CubeMapToSphericalPolynomialTools, "ConvertCubeMapTextureToSphericalPolynomial");
+  const sky = createSkyboxMesh(a, "Sky", cache.acquireTexture("sky", engine, bytes, { isCube: true }) as ResourceLease<CubeTexture>);
+  const material = sky.material as PBRMaterial;
+  const cube = material.reflectionTexture as CubeTexture;
+  cube.getInternalTexture()!.isReady = true;
+  material.isReadyForSubMesh(sky, sky.subMeshes[0]!);
+  expect(cube.sphericalPolynomial).toBeNull();
+  expect(irradiance).not.toHaveBeenCalled();
+  sky.dispose();
+  cache.flushUnreferenced();
+  expect(cube.getInternalTexture()).toBeNull();
+  expect(cache.resourceStats()).toMatchObject({ leases: 0 });
+});
+
 it("turns a Skybox's lighting each frame without invalidating materials or readiness, and frozen materials still rebind it", async () => {
   // Multiview makes NullEngine report uniform buffers, which a frozen material skips rebinding.
   const engineOptions = new NullEngineOptions();
@@ -548,6 +565,16 @@ it("shares bounded irradiance readback, survives one view closing, and retains a
   b.dispose();
   cache.flushUnreferenced();
   expect(source.getInternalTexture()).toBeNull();
+  // A later scene with the same content (Play, then the editor again) reuses the irradiance: no second readback.
+  const reloaded = new Scene(engine);
+  disposers.push(() => reloaded.dispose());
+  const reloadedSource = cache.acquireTexture("environment", engine, bytes, { isCube: true });
+  reloadedSource.resource.getInternalTexture()!.width = 64;
+  applyEnvironmentLighting(reloaded, "environment", assets);
+  reloadedSource.release();
+  expect(isEnvironmentLightingReady(reloaded)).toBe(true);
+  expect(read).toHaveBeenCalledTimes(6);
+  expect(reloaded.environmentTexture!.sphericalPolynomial!.yy.y).toBeCloseTo(2, 2);
 });
 
 it("keeps all pending face reads alive after rejection and ignores obsolete work after a scene swaps environments", async () => {

@@ -97,6 +97,7 @@ import { anchorBelow } from "../lib/menu-anchor";
 import {
   duplicateSceneActor,
   duplicateSceneActors,
+  placementMergeKey,
   type PlaceActorItem,
 } from "../lib/place-actors";
 import {
@@ -724,12 +725,14 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   const placeItems = usePlaceActorItems({ documentId, scene, overlay, graphForPath });
   const addActor = useCallback(
     (item: PlaceActorItem) => {
-      placeItems([item], [viewportDropApi?.worldPositionAtViewCenter() ?? FALLBACK_PLACE_POSITION], () => {
+      const placement = viewportDropApi?.placementAtViewCenter() ??
+        { position: FALLBACK_PLACE_POSITION, normal: null };
+      placeItems([item], [placement.position], () => {
         setPlaceOpen(false);
         // The dialog keeps focus until its exit animation ends, outside the
         // outliner's focus gate, so an immediate Delete would be ignored.
         outlinerRef.current?.querySelector<HTMLElement>('[role="tree"]')?.focus({ preventScroll: true });
-      });
+      }, placement.normal);
     },
     [placeItems, viewportDropApi],
   );
@@ -912,19 +915,23 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       if (!viewportDropApi?.containsClientPoint(clientX, clientY)) return;
       const source = scene.actors.find((actor) => actor.id === target.id);
       if (!source || isSceneLayerAnchorActor(source)) return;
-      const position = viewportDropApi.worldPositionAtClient(clientX, clientY);
-      if (!position) return;
+      const placement = viewportDropApi.placementAtClient(clientX, clientY);
+      if (!placement) return;
       const copy = duplicateSceneActor(scene, source, {
-        position,
+        position: placement.position,
         parentId: null,
       });
-      mutate({
+      const mergeKey = placementMergeKey(copy.id);
+      void applySceneChange(documentId, {
         ...scene,
         actors: [...scene.actors, copy],
-      });
+      }, { mergeKey });
+      if (placement.normal) {
+        viewportDropApi.restOnSurface([{ actorId: copy.id, point: placement.position, normal: placement.normal }], mergeKey);
+      }
       selectActor(copy.id);
     },
-    [mutate, scene, timelineTarget, selectActor, selectedActorIdSet, selectedActorIds, viewportDropApi],
+    [applySceneChange, documentId, scene, timelineTarget, selectActor, selectedActorIdSet, selectedActorIds, viewportDropApi],
   );
 
   const moveActorDropHint = useCallback(

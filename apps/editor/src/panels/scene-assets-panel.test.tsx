@@ -33,13 +33,20 @@ const ASSETS = [
 ];
 
 const applySceneChange = vi.hoisted(() =>
-  vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
+  vi.fn<(id: string, scene: SerializedScene, options?: { mergeKey?: string }) => Promise<boolean>>(async () => true),
 );
 const setSelectedActorIds = vi.hoisted(() => vi.fn());
 const viewportDropApi = vi.hoisted(() => ({
   containsClientPoint: vi.fn((clientX: number) => clientX >= 200),
-  worldPositionAtClient: vi.fn((): [number, number, number] => [4, 5, 6]),
-  worldPositionAtViewCenter: vi.fn((): [number, number, number] => [1, 2, 3]),
+  placementAtClient: vi.fn(
+    (): { position: [number, number, number]; normal: [number, number, number] | null } =>
+      ({ position: [4, 5, 6], normal: [0, 1, 0] }),
+  ),
+  placementAtViewCenter: vi.fn(
+    (): { position: [number, number, number]; normal: [number, number, number] | null } =>
+      ({ position: [1, 2, 3], normal: null }),
+  ),
+  restOnSurface: vi.fn(),
 }));
 const harness = vi.hoisted(() => ({
   scene: null as unknown,
@@ -77,6 +84,7 @@ afterEach(() => {
   cleanup();
   harness.kind = "scene";
   applySceneChange.mockClear();
+  viewportDropApi.restOnSurface.mockClear();
   setSelectedActorIds.mockClear();
 });
 
@@ -169,6 +177,17 @@ describe("SceneAssetsPanel", () => {
       ["Crate", [3, 5, 6]],
       ["Stack", [5, 5, 6]],
     ]);
+    // Each placed actor rests on the surface the drop hit, in the placement's Undo step.
+    const next = applySceneChange.mock.calls[0]![1];
+    const [crate, stack] = next.actors.slice(-2).map((actor) => actor.id);
+    expect(applySceneChange.mock.calls[0]![2]).toEqual({ mergeKey: `place:${crate}` });
+    expect(viewportDropApi.restOnSurface).toHaveBeenCalledWith(
+      [
+        { actorId: crate, point: [3, 5, 6], normal: [0, 1, 0] },
+        { actorId: stack, point: [5, 5, 6], normal: [0, 1, 0] },
+      ],
+      `place:${crate}`,
+    );
     expect(screen.queryByTestId("scene-assets-drop-hint")).toBeNull();
   });
 

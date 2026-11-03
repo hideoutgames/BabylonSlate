@@ -250,7 +250,7 @@ export interface DocumentContextValue {
     startupSceneGuid?: string | null;
     transcoderAvailable?: boolean;
   }) => Promise<Result<ExportArtifact, string>>;
-  zipExportedGame: (artifact: ExportArtifact) => Uint8Array;
+  zipExportedGame: (artifact: ExportArtifact) => Promise<Uint8Array>;
   dismissRecovery: () => Promise<void>;
   keepRecovery: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
@@ -295,11 +295,14 @@ export interface DocumentContextValue {
     id: string,
     newParentId: string,
   ) => Promise<string | null>;
-  /** Apply a scene edit through the command layer (marks dirty + undoable). */
+  /**
+   * Apply a scene edit through the command layer (marks dirty + undoable);
+   * an edit with `mergeKey` joins the latest Undo step of the same key.
+   */
   applySceneChange: (
     id: string,
     next: SerializedScene,
-    options?: { prefabSync?: boolean },
+    options?: { prefabSync?: boolean; mergeKey?: string },
   ) => Promise<boolean>;
   applyAssetDocumentChange: (
     id: string,
@@ -446,7 +449,7 @@ export interface DocumentContextValue {
     extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, import("@haptic/assets").ModelPayload>>;
   /** Mixer/channel/attenuation/Audio metadata for Play; source bytes load on first playSound. */
-  collectPlayInputAssets: (requiredGuids?: ReadonlySet<string>) => Promise<InputAssetDefinition[]>;
+  collectPlayInputAssets: (requiredGuids?: ReadonlySet<string>, payloads?: ReadonlyMap<string, unknown>) => Promise<InputAssetDefinition[]>;
   collectPlayAudio: (requiredGuids?: ReadonlySet<string>) => Promise<{
     library: import("../lib/play-audio").PlayAudioLibrary;
     loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;

@@ -41,7 +41,10 @@ import {
   isValidMoveDestination,
   contentBrowserContextActions,
   buildMaterialInstanceAssetResult,
+  buildSpriteAnimationAssetResult,
+  buildTilesetAssetResult,
   materialInstanceNameFor,
+  spriteAnimationNameFor,
   canRetargetSelectedAssets,
   guidsOutsideSelectedFolders,
   rootSelectedFolderPaths,
@@ -1752,6 +1755,76 @@ describe("content-browser-helpers", () => {
     });
   });
 
+  it("offers Create Sprite Animation for Textures and Sprites, and Create Tileset for one Texture", () => {
+    const actions = (assetTypes: string[], folderCount = 0) =>
+      contentBrowserContextActions({ assetCount: assetTypes.length, folderCount, assetTypes, singleAssetType: assetTypes.length === 1 ? assetTypes[0] : undefined });
+    expect(actions(["Texture"])).toEqual(expect.arrayContaining(["create-sprite-animation", "create-tileset"]));
+    expect(actions(["Sprite"])).toContain("create-sprite-animation");
+    expect(actions(["Sprite"])).not.toContain("create-tileset");
+    expect(actions(["Texture", "Sprite", "Texture"])).toContain("create-sprite-animation");
+    expect(actions(["Texture", "Texture"])).not.toContain("create-tileset");
+    expect(actions(["Texture", "Material"])).not.toContain("create-sprite-animation");
+    expect(actions(["Texture"], 1)).not.toContain("create-sprite-animation");
+    expect(contentBrowserContextActions({ assetCount: 1, folderCount: 0 })).not.toContain("create-sprite-animation");
+  });
+
+  it("offers each Create action only for the selections it builds from", () => {
+    const creates = (assetTypes: string[], extra: { canCreateChildClass?: boolean; folderCount?: number } = {}) =>
+      contentBrowserContextActions({
+        assetCount: assetTypes.length,
+        folderCount: extra.folderCount ?? 0,
+        assetTypes,
+        singleAssetType: assetTypes.length === 1 ? assetTypes[0] : undefined,
+        canCreateChildClass: extra.canCreateChildClass,
+      }).filter((action) => action.startsWith("create-"));
+    expect(creates(["Texture"])).toEqual(["create-sprite", "create-sprite-animation", "create-tileset", "create-material"]);
+    expect(creates(["Texture", "Texture"])).toEqual(["create-sprite", "create-sprite-animation", "create-material"]);
+    expect(creates(["Tileset", "Tileset"])).toEqual(["create-tilemap"]);
+    expect(creates(["Model", "Model"])).toEqual(["create-prefab", "create-actor"]);
+    expect(creates(["Model", "Sprite", "ParticleSystem"])).toEqual(["create-actor"]);
+    expect(creates(["Sprite"])).toEqual(["create-sprite-animation", "create-actor"]);
+    expect(creates(["ParticleEmitter", "ParticleGraph"])).toEqual(["create-particle-system"]);
+    expect(creates(Array.from({ length: 9 }, () => "ParticleEmitter"))).toEqual([]);
+    expect(creates(["Class"], { canCreateChildClass: true })).toEqual(["create-child-class"]);
+    expect(creates(["Class"])).toEqual([]);
+    expect(creates(["Structure"])).toEqual(["create-data-definition"]);
+    expect(creates(["DataDefinition"])).toEqual(["create-data-tree"]);
+    expect(creates(["RenderTarget"])).toEqual(["create-render-target-texture"]);
+    expect(creates(["Structure", "Structure"])).toEqual([]);
+    expect(creates(["Model"], { folderCount: 1 })).toEqual([]);
+  });
+
+  it("builds a Sprite Animation with a frame per Texture or Sprite, and a Tileset sized from its Texture", () => {
+    const animation = buildSpriteAnimationAssetResult(
+      [{ guid: "hero", type: "Sprite" }, { guid: "run-2", type: "Texture" }],
+      "anim",
+      "Hero_Animation",
+    );
+    expect(animation).toMatchObject({
+      type: "SpriteAnimation",
+      guid: "anim",
+      name: "Hero_Animation",
+      dependencies: ["run-2", "hero"],
+      payload: { source: "frames", durationMs: 200, atlasTextures: ["run-2"] },
+    });
+    const frames = (animation.payload as { frames: Array<Record<string, unknown>> }).frames;
+    expect(frames).toEqual([
+      expect.objectContaining({ spriteGuid: "hero", textureGuid: "" }),
+      expect.objectContaining({ textureGuid: "run-2" }),
+    ]);
+    expect(frames[1]?.spriteGuid).toBeUndefined();
+    expect(["robot_walk0", "Run_01", "Run-2", "Hero 3", "tiles", "42"].map(spriteAnimationNameFor))
+      .toEqual(["robot_walk", "Run", "Run", "Hero", "tiles", "42"]);
+    const tileset = buildTilesetAssetResult({ guid: "tiles", payload: { width: 64, height: 32 } }, "set", "Tiles");
+    expect(tileset).toMatchObject({
+      type: "Tileset",
+      dependencies: ["tiles"],
+      payload: { textureGuid: "tiles", atlasWidth: 64, atlasHeight: 32, atlasTextures: ["tiles"] },
+    });
+    // 16 x 16 tiles: four across, two down.
+    expect((tileset.payload as { tiles: unknown[] }).tiles).toHaveLength(8);
+  });
+
   it("intersects tile menu actions by selection counts", () => {
     expect(
       contentBrowserContextActions({ assetCount: 1, folderCount: 0 }),
@@ -2021,9 +2094,17 @@ describe("content-browser-helpers", () => {
           { textureGuid: "tex-a" },
           { textureGuid: "tex-a" },
           { textureGuid: "tex-b" },
+          { spriteGuid: "hero", textureGuid: "hero-tex" },
         ],
       }),
-    ).toEqual(["tex-a", "tex-b"]);
+    ).toEqual(["hero", "tex-a", "tex-b"]);
+    expect(
+      assetHeaderDependencies("SpriteAnimation", {
+        source: "sheet",
+        sheet: { textureGuid: "sheet-tex" },
+        frames: [{ cell: 1 }, { cell: 2 }],
+      }),
+    ).toEqual(["sheet-tex"]);
     expect(
       assetHeaderDependencies("ParticleEmitter", {
         textureGuid: "tex-p",

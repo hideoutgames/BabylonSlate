@@ -93,7 +93,6 @@ export {
   type ParticleValueType,
 } from "./types";
 export {
-  findParticleGraphCycle,
   validateParticleGraphDocument,
   type ParticleDiagnosticSeverity,
   type ParticleGraphDiagnostic,

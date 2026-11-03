@@ -9,9 +9,9 @@ Actors are the objects in a scene. Each actor has a position, rotation and scale
    - **Content > Models** lists your project's Model assets.
    - **Content > Project** lists Classes, Prefabs, sounds, particle systems, water, sprites and tilemaps from your project.
    - **Engine** holds the built-in categories: Shapes, Lights, Camera, Environment, Water, Rendering, Navigation, Physics, Audio, Particles and Empty.
-3. The actor appears at the centre of the viewport.
+3. The actor appears in the middle of the viewport. In a 3D scene it lands on the first surface straight ahead (ground, a wall or another mesh) and rests against it rather than sinking in. With nothing within **Placement Trace Distance** it is placed that far in front of the camera.
 
-Search matches names, categories, asset types and folders. In **Models** and **Project**, **Filter** (by asset type or folder) and **Sort** sit beside the search field. Tap outside **Place Actors** or press <kbd>Esc</kbd> to close it. It reopens with the search, category, filters, sort order and scroll position you left it with, until you close the project; Scenes and Scene Layers each keep their own. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport.
+Search matches names, categories, asset types and folders. In **Models** and **Project**, **Filter** (by asset type or folder) and **Sort** sit beside the search field. Tap outside **Place Actors** or press <kbd>Esc</kbd> to close it. It reopens with the search, category, filters, sort order and scroll position you left it with, until you close the project; Scenes and Scene Layers each keep their own. To place a copy of an existing actor at a spot, drag its row from the **Outliner** onto the viewport: in 3D it lands on the surface under the pointer the same way. **Duplicate** and **Paste** keep copies where the originals are. Placing and resting is one Undo step. Turn this off, or change how far it looks (default 25 units), with **Place On Surfaces** and **Placement Trace Distance** in **Engine Settings > Viewport**.
 
 ## Place from the Assets window
 
@@ -20,7 +20,7 @@ In **Design** mode, the **Assets** window below the **Outliner** lists the Model
 - Search by name, type, folder or plugin. **Filter** narrows by **Asset Types** and **Folder**; turn off **Show Plugin Content** to hide plugin assets, which carry a puzzle-piece mark. Tap a filter tag under the search field to remove it.
 - **Sort** orders entries by **Name**, **Type** or **Folder**. The two buttons beside it switch between **Cards** and **List**.
 - Select as in the **Outliner**: tap to select, hold <kbd>Mod</kbd> to add or remove an entry, or hold <kbd>Shift</kbd> to select a range. On touch, hold an entry and choose **Select** to add it to the selection.
-- Drag an entry onto the viewport to place it where you let go. Dragging a selected entry places the whole selection, spread in a grid around that point. On touch, drag sideways toward the viewport to start at once; moving up or down scrolls the list, unless you hold the entry briefly first.
+- Drag an entry onto the viewport to place it where you let go: in 3D it lands on the surface under the pointer, as in [Place an actor](#place-an-actor). Dragging a selected entry places the whole selection, spread in a grid around that point, each resting on that surface. On touch, drag sideways toward the viewport to start at once; moving up or down scrolls the list, unless you hold the entry briefly first.
 - Double-tap an entry, or tap **Place** under the list, to place at the centre of the viewport.
 - Hold or right-click an entry for **Place**, **Open** and **Show in Content Browser**.
 
@@ -62,7 +62,7 @@ The link button beside **Scale** keeps the actor's proportions: while it is on, 
 
 With several actors selected, the heading reads **N Actors** and edits apply to all of them; values that differ show as mixed. The Scale link shows as on only when every selected actor is linked, and pressing it links or unlinks them all. Linked actors keep their own proportions; the others change only the axis you edit. The Scale gizmo and the Scene Layer box work the same way: dragging scales every selected actor on that axis, and linked actors also keep their own proportions. When every selected actor is linked, the whole selection scales together. The **Primary Actor** section holds the name and lock of the actor whose components are shown.
 
-Use **Filter Properties** at the top to find a field by name.
+Use **Filter Properties** at the top to find a field by name. Right-click or hold a property for **Copy** and **Paste**, for example to give one actor another's **Position**; see [Editor tour](../start/editor-tour.md#scene-panels).
 
 ## Add components
 

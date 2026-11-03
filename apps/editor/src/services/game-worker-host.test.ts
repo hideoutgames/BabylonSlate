@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeHostMessage, BridgeWorkerMessage, CommandMessage } from "@haptic/bridge";
-import { createGameWorkerHost } from "./game-worker-host";
+import { createGameWorkerHost, preloadPrewarmedGameWorkerPhysics, prewarmGameWorker } from "./game-worker-host";
 
 class FakeWorker {
   static instance: FakeWorker;
@@ -118,6 +118,51 @@ it("leaves a started worker's uncaught errors to its own runtime diagnostics", (
   FakeWorker.instance.receive({ channel: "ready" });
   FakeWorker.instance.onerror?.({ message: "TypeError: x is undefined", preventDefault() {} } as unknown as ErrorEvent);
   expect(failures).toEqual([]);
+});
+
+describe("prewarmed session worker", () => {
+  afterEach(() => {
+    // Leave no prewarmed worker to the next test.
+    createGameWorkerHost();
+  });
+
+  it("is the next session's worker, having loaded the Scene's physics engine before the session's boot content", () => {
+    const ticket = new AbortController();
+    prewarmGameWorker(ticket.signal);
+    const prewarmed = FakeWorker.instance;
+    preloadPrewarmedGameWorkerPhysics("3d", "https://editor.test/havok/HavokPhysics.wasm");
+    preloadPrewarmedGameWorkerPhysics("3d", "https://editor.test/havok/HavokPhysics.wasm");
+    const host = createGameWorkerHost();
+    host.postControl({ type: "load", sceneAssetGuid: "level" });
+    expect(FakeWorker.instance).toBe(prewarmed);
+    expect(prewarmed.posted.map(({ message }) => message.channel === "control" ? message.payload.type : message.channel))
+      .toEqual(["preloadPhysics", "load"]);
+    // The session owns it now: its ticket ending later stops it through the session, not here.
+    ticket.abort();
+    expect(prewarmed.terminate).not.toHaveBeenCalled();
+  });
+
+  it("is terminated when its session ends before claiming it", () => {
+    const ticket = new AbortController();
+    prewarmGameWorker(ticket.signal);
+    const prewarmed = FakeWorker.instance;
+    ticket.abort();
+    expect(prewarmed.terminate).toHaveBeenCalledOnce();
+    createGameWorkerHost();
+    expect(FakeWorker.instance).not.toBe(prewarmed);
+  });
+
+  it("is replaced by a new worker when it failed to start", () => {
+    prewarmGameWorker(new AbortController().signal);
+    const failed = FakeWorker.instance;
+    failed.onerror?.({ message: "SyntaxError", preventDefault() {} } as unknown as ErrorEvent);
+    const host = createGameWorkerHost();
+    const failures: string[] = [];
+    host.onFailure((message) => failures.push(message));
+    expect(failed.terminate).toHaveBeenCalledOnce();
+    expect(FakeWorker.instance).not.toBe(failed);
+    expect(failures).toEqual([]);
+  });
 });
 
 it("names the failure when the worker's script could not be fetched, which reports a bare error event", () => {

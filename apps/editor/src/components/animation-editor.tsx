@@ -261,7 +261,6 @@ export function AnimationEditor({
       defaultValue: animation.clipDurationMs,
       min: 1,
       disabled: !onChange,
-      // The normalized fields keep the clip's length for assets saved before Duration was editable.
       onChange: (durationMs) =>
         onChange?.(
           { ...payload, ...animation, durationMs: Math.max(1, durationMs) },

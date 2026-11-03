@@ -461,6 +461,36 @@ export function EngineSettingsForm({
               Placed objects drop onto surfaces within this many world units.
             </FieldDescription>
           </Field>
+          <Field orientation="horizontal" className="settings-field">
+            <FieldContent>
+              <FieldLabel htmlFor="setting-place-on-surfaces">Place On Surfaces</FieldLabel>
+              <FieldDescription>
+                New actors placed or dragged into a 3D viewport land on the surface in front of the camera.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="setting-place-on-surfaces"
+              data-testid="setting-place-on-surfaces"
+              checked={settings.viewportPlaceOnSurfaces}
+              onCheckedChange={(viewportPlaceOnSurfaces) => void onChange({ viewportPlaceOnSurfaces })}
+            />
+          </Field>
+          <Field className="settings-field settings-field-dependent">
+            <FieldLabel htmlFor="setting-placement-distance">Placement Trace Distance</FieldLabel>
+            <NumberField
+              id="setting-placement-distance"
+              min={0.0001}
+              step={1}
+              className="min-h-[var(--chrome-row,28px)]"
+              data-testid="setting-placement-distance"
+              disabled={!settings.viewportPlaceOnSurfaces}
+              value={settings.viewportPlacementDistance}
+              onChange={(viewportPlacementDistance) => void onChange({ viewportPlacementDistance })}
+            />
+            <FieldDescription>
+              How far from the camera, in world units, to look for a surface. With nothing in reach the actor is placed at this distance.
+            </FieldDescription>
+          </Field>
         </SettingsSection>
         </>
       ) : null}

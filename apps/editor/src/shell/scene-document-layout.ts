@@ -42,8 +42,7 @@ export function parseSceneDocumentLayout(
 ): SceneDocumentLayout {
   return {
     sceneMode: normalizeSceneMode(layout?.sceneMode, kind),
-    // A Scene Layer tab saved before it had modes stored its DockView layout flat.
-    design: record(layout?.design) ?? (layout && !("sceneMode" in layout) && "grid" in layout ? layout : null),
+    design: record(layout?.design),
     landscape: record(layout?.landscape),
     foliage: record(layout?.foliage),
     script: record(layout?.script),

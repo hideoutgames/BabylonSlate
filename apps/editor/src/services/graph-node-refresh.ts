@@ -40,7 +40,6 @@ import {
   ownedTimelineClipGetTitle,
   subsystemGetClassId,
   subsystemGetTitle,
-  DATA_DEFINITION_PIN_ID,
 } from "@haptic/scripting-nodes";
 import {
   dataGraphDefinitionGuid,
@@ -106,7 +105,7 @@ export function shouldRegeneratePins(typeId: string): boolean {
   // Signature pins of Event Dispatcher nodes and Create Event follow their `pins` rows.
   if (isDispatcherNodeType(typeId) || typeId === CREATE_EVENT_NODE_TYPE_ID) return true;
   return (
-    // Custom events saved before the Output Delegate existed gain it.
+    // A custom event's parameter pins and Output Delegate type follow its signature.
     typeId === "flow.event.custom" ||
     typeId === "flow.event.call" ||
     typeId === "flow.event.callParent" ||
@@ -376,13 +375,8 @@ export function applyStructEnumSchema(
     const schema = options?.dataDefinitions?.[guid];
     properties.title = dataGraphNodeTitle(typeId, schema?.name);
     if (node.definitionPin) {
-      // Graphs saved before the Data Definition pin keep the Definition in `definitionGuid`;
-      // the pin owns it from the next save. A pin edit never clears the snapshot as the
-      // Inspector's Definition picker does, and these reads author no values, so the
-      // snapshot is retaken from the picked Definition.
-      const pinKey = `default:${DATA_DEFINITION_PIN_ID}`;
-      if (typeof properties[pinKey] !== "string" && guid) properties[pinKey] = guid;
-      delete properties.definitionGuid;
+      // A pin edit never clears the snapshot as the Inspector's Definition picker does,
+      // and these reads author no values, so the snapshot is retaken from the picked Definition.
       delete properties.dataSchema;
     }
     if (schema && !Array.isArray(properties.dataSchema)) {

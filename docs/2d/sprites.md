@@ -27,14 +27,15 @@ The [Sprite](../components/sprite.md) component has **Asset**, **Sorting Layer**
 
 ## Make a Sprite Animation
 
-1. Import each frame as its own Texture.
-2. Choose **New Asset > Animation > Sprite Animation**, then double-tap it.
-3. Under **Animation** in the **Inspector**, set **Frame Duration MS**, the length of every frame in milliseconds (default 100).
-4. Under **Frame 1**, set **Texture**. Tap **Add Frame** for each further frame, and **Remove Frame** to delete the selected one.
+1. Import each frame as its own Texture, or the whole sprite sheet as one Texture.
+2. In the **Content Browser**, select the frames' Textures or Sprites, right-click one and choose **Create Sprite Animation**. The animation opens with one frame per asset, in name order.
+3. For a sprite sheet, select its Texture and choose **Create Sprite Animation**, then set **Source** to **Sheet** and set **Cell Width** and **Cell Height**. Choose **Use All Cells**, or pick each frame's **Cell**.
 
-Each frame also has its own **Pivot** and **Collision**, and **Frame Duration MS Override** gives that frame its own duration.
+Under **Animation** in the **Inspector**, **Frame Duration** sets the length of every frame in milliseconds (default 100). **Add Frame** adds a frame and the remove button deletes the selected one. Each frame has its own **Pivot** and **Collision**, and **Frame Duration Override** gives that frame its own duration.
 
-The **Preview** has **Play** / **Pause**, **Loop**, a scrubber, and a strip of frames: tap a frame to select and edit it. The header shows the frame count and total length.
+Use Sprites as frames when you have already set their pivot and collision box: the animation uses the Sprite's, and **Open Sprite** takes you to it. See [Sprite Animation](../assets/sprite-animation.md).
+
+The **Preview** has **Play** / **Pause**, **Loop**, a scrubber with the current frame and time, and a strip of frames: tap a frame to select and edit it. In Sheet mode, **Sheet** shows the whole sheet; tap a cell to use it for the selected frame.
 
 ## Play it in the game
 

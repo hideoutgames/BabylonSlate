@@ -39,6 +39,7 @@ import type { EditorCameraController } from "./editor-camera";
 import type { EditorCameraBounds2D, EditorGrid } from "./editor-grid";
 import type { EditorSceneSync } from "./editor-scene-sync";
 import type { EditorDropTransform } from "./editor-drop";
+import type { SurfacePlacement, SurfaceRest } from "./editor-surface-placement";
 import type { ViewportShadingMode } from "./viewport-shading-mode";
 import type { GizmoHost } from "./gizmo-host";
 import type { ComponentShapeEdit } from "./shape-handles";
@@ -289,6 +290,12 @@ export interface CreateEngineOptions {
   present?: "registerView" | "rtt";
   /** When true, use Play scene performance settings. */
   playMode?: boolean;
+  /**
+   * A Play view decodes Draco meshes and transcodes KTX2 on the main thread by default: the packed player and the
+   * Preview Build iframe cannot load the decoders' wasm from a blob Worker. A Play view in a page whose workers load
+   * them (the editor's) passes true to keep decoding off the main thread.
+   */
+  workerDecoders?: boolean;
   /**
    * The world view started (true) or stopped (false) holding its last image
    * while WebGPU render pipelines, or on any backend effects the driver still
@@ -611,6 +618,16 @@ export interface EditorTools {
   ) => [number, number, number] | null;
   /** World point in the middle of this viewport, in front of the editor camera. */
   worldPositionAtViewCenter: () => [number, number, number];
+  /**
+   * Placement under a client coordinate: in 3D a trace from the camera through
+   * the point against visible world meshes, up to `maxDistance`; null when the
+   * canvas has no layout size. 2D keeps `worldPositionAtClient`.
+   */
+  surfacePlacementAtClient: (clientX: number, clientY: number, maxDistance: number) => SurfacePlacement | null;
+  /** Placement traced along the middle of the view, as `surfacePlacementAtClient`. */
+  surfacePlacementAtViewCenter: (maxDistance: number) => SurfacePlacement;
+  /** Transforms that rest placed actors' visual bounds on their surfaces (the caller commits them). */
+  restActorsOnSurface: (rests: readonly SurfaceRest[]) => EditorDropTransform[];
 }
 
 export type PlayActorPosition = {

@@ -106,12 +106,17 @@ export class DocumentEditStack<TDoc> {
     );
   }
 
-  apply(doc: TDoc, command: EditCommand<TDoc>): EditApplyResult<TDoc> {
+  /**
+   * `amend` joins a keyed command to the latest Undo step with the same key
+   * even after its gesture ended (a placement finished once its actor loaded).
+   */
+  apply(doc: TDoc, command: EditCommand<TDoc>, options?: { amend?: boolean }): EditApplyResult<TDoc> {
     const next = command.apply(doc);
     // A no-op (such as an Add whose id already exists) has an inverse that
     // would undo state this command never created, so it records nothing.
     if (next === doc) return { doc, command, history: "unchanged" };
-    const continuesGesture = this.mergeOpen && command.mergeKey !== undefined;
+    const continuesGesture =
+      (this.mergeOpen || options?.amend === true) && command.mergeKey !== undefined;
     if (continuesGesture && command.mergeKey === this.clearedMergeKey) {
       this.redoStack = [];
       return { doc: next, command, history: "cleared-gesture" };

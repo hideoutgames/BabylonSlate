@@ -6,6 +6,8 @@ A reusable set of components without logic. Lighter than an Actor [Class](class.
 
 In the **Content Browser**, choose **New Asset > World > Prefab**. A new Prefab holds one Box mesh, or nothing if the open Scene is 2D.
 
+Or select one or more Models, right-click one and choose **Create Prefab**: one Prefab holds a Mesh component for each Model. See [Create from assets](../editor/content-browser.md#create-from-assets).
+
 ## Editor
 
 Double-tap a Prefab to open it.

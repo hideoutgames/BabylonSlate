@@ -2,7 +2,6 @@ import { TIMELINE_CLIP_ASSET_CLIP_ID, type GraphClassMemberPin, type SerializedG
 import {
   TIMELINE_CLIP_BUILT_IN_DISPATCHERS,
   TIMELINE_REFIRED_CLIP_INPUT,
-  timelineAssetGuidOf,
   timelineClassId,
   timelineClipClassId,
   timelineRefiredDispatcherName,
@@ -285,10 +284,4 @@ export function timelineGraphDiagnostics(
     }
   }
   return diagnostics;
-}
-
-/** The Timeline Asset a `Timeline:<guid>` class names, for labels. */
-export function timelineScriptAssetOf(assets: readonly TimelineScriptAsset[], classId: string): TimelineScriptAsset | undefined {
-  const guid = timelineAssetGuidOf(classId);
-  return guid ? assets.find((asset) => asset.guid === guid) : undefined;
 }

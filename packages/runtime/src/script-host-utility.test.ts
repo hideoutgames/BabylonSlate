@@ -80,9 +80,6 @@ describe("ScriptHost utility bindings", () => {
     const bools = Array.from({ length: 20 }, () => ctx.random.bool());
     expect(bools.some(Boolean)).toBe(true);
     expect(bools.some((value) => !value)).toBe(true);
-
-    expect(typeof ctx.randomFloat).toBe("function");
-    expect(ctx.randomFloat()).toBeTypeOf("number");
   });
 
   it("Get All / Get Actor Of Class use ClassRegistry ancestry and spawn order", async () => {

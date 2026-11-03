@@ -88,6 +88,7 @@ export function assetRow(
     displayType: identity.displayType,
     visual: identity.visual,
     placeholder,
+    assetTypes: allowedTypes,
     onPick: () =>
       context.onPickAsset({
         componentId: component.id,

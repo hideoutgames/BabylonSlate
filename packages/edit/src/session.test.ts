@@ -128,6 +128,35 @@ describe("EditSession", () => {
     expect(session.undo("other", { value: 5 })?.doc).toEqual({ value: 0 });
   });
 
+  it("folds keyed scene changes into one Undo step that redoes all of them", () => {
+    const session = new EditSession();
+    const before = { ...createDefaultScene(), actors: [createActor("ground", "Ground")] };
+    const spawned = { ...before, actors: [...before.actors, createActor("box", "Box")] };
+    const placed = {
+      ...spawned,
+      actors: spawned.actors.map((actor) =>
+        actor.id === "box"
+          ? { ...actor, transform: { ...actor.transform, position: [0, 0.5, 0] as [number, number, number] } }
+          : actor,
+      ),
+    };
+    const spawn = session.applyBatch("scene", before, diffSceneCommands(before, spawned), { mergeKey: "place:box" })!;
+    // The rest arrives after the gesture ended (focus moved); amend still joins it.
+    session.getStack("scene").endGesture();
+    const rest = session.applyBatch("scene", spawn.doc, diffSceneCommands(spawned, placed), { mergeKey: "place:box", amend: true })!;
+    expect(rest.doc).toEqual(placed);
+    expect(session.getStack("scene").undoDepth).toBe(1);
+    const undone = session.undo("scene", rest.doc)!;
+    expect(undone.doc).toEqual(before);
+    expect(session.redo("scene", undone.doc)?.doc).toEqual(placed);
+    // A different key starts its own step, and so does a same-key change without amend once the gesture ended.
+    const other = session.applyBatch("scene", placed, diffSceneCommands(placed, before), { mergeKey: "place:other" })!;
+    expect(session.getStack("scene").undoDepth).toBe(2);
+    session.getStack("scene").endGesture();
+    session.applyBatch("scene", other.doc, diffSceneCommands(before, placed), { mergeKey: "place:other" });
+    expect(session.getStack("scene").undoDepth).toBe(3);
+  });
+
   it("budgets a multi-command deletion as one whole history entry", () => {
     const before = {
       ...createDefaultScene(),

@@ -53,6 +53,8 @@ export async function createProjectAsset(options: {
   viewportMode?: ViewportMode;
   /** A new 2D or 3D Timeline Clip's required Timeline Asset guid. */
   timelineAsset?: string;
+  /** A new Class's starting components (Create Actor). */
+  classComponents?: import("@haptic/core").SerializedComponent[];
 }): Promise<IndexedAsset> {
   const { type, name } = options;
   const defaultDefinitionGuid = options.dataTree ? options.dataTree.defaultDefinitionGuid : options.defaultDefinitionGuid ?? null;
@@ -98,6 +100,7 @@ export async function createProjectAsset(options: {
     dataTree: options.dataTree,
     viewportMode: options.viewportMode,
     timelineAsset: options.timelineAsset,
+    classComponents: type === "Class" ? options.classComponents : undefined,
   });
   if (type === "DataDefinition" || type === "DataTree") {
     Object.assign(result, assetHeaderDependencyMetadata(type, result.payload, options.registry.list?.() ?? [], result.parentClass));

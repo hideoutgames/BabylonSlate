@@ -12,11 +12,6 @@ import type { AssetRegistry } from "@haptic/assets";
 import type { NavMeshGenerateInput } from "@haptic/navigation";
 import { createAppSettingsStore } from "@haptic/vfs";
 import { newAssetFileName } from "../lib/content-browser-helpers";
-import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
-import {
-  applyKenneyMannequinEmptyScaffold,
-  MANNEQUIN_CLASS_FILE,
-} from "../lib/scaffold-empty-3d";
 import type { ProjectService } from "./project-service";
 
 export type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
@@ -132,6 +127,7 @@ export async function createInputAssets(host: StarterScaffoldHost): Promise<void
   }
 }
 
+/** Basic 3D starter content. Loaded on first use, like the FeatureTest scaffold, so it stays out of startup. */
 export async function scaffoldKenneyMannequinEmpty(
   host: StarterScaffoldHost,
   document: ProjectDocument,
@@ -141,6 +137,10 @@ export async function scaffoldKenneyMannequinEmpty(
   if (!registry) {
     throw new Error("Asset registry is not mounted.");
   }
+  const [{ applyKenneyMannequinEmptyScaffold, MANNEQUIN_CLASS_FILE }, { loadKenneyMannequinGlb }] = await Promise.all([
+    import("../lib/scaffold-empty-3d"),
+    import("../lib/kenney-mannequin"),
+  ]);
   const scene = (await host.loadDocument(
     "scene",
     MAIN_SCENE_FILE,

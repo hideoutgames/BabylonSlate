@@ -1,5 +1,14 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Link2Icon, Link2OffIcon } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+import { ClipboardPasteIcon, CopyIcon, Link2Icon, Link2OffIcon } from "lucide-react";
 import { useEditorReadOnly } from "./editor-read-only";
 import type { Tag, TagContainer } from "@haptic/core";
 import { TagPicker } from "./tag-picker";
@@ -46,6 +55,9 @@ import type { CurveEditorKind, CurveEditorValue } from "./curve-editor-model";
 import type { RangeFieldKind, RangeFieldValue } from "./range-values";
 import { GradientField, type GradientStop } from "./gradient-field";
 import { editVectorAxis } from "./linked-axes";
+import { ContextMenuOverlay } from "./context-menu-overlay";
+import { claimContextMenuEvent, useContextMenu, type ContextMenuItem } from "./use-context-menu";
+import { canCopyPropertyRow, canPastePropertyRow, copyPropertyRow, pastePropertyRow } from "./property-clipboard";
 import "./styles/property-grid.css";
 
 export type Vector3Value =
@@ -205,6 +217,8 @@ export type PropertyRow =
       displayType?: string;
       /** Type glyph on the picker button when a value is selected. */
       visual?: TypeVisualQuery;
+      /** Asset types the row accepts, so Paste can offer a copied asset; without it only the current type pastes. */
+      assetTypes?: readonly string[];
       onPick: () => void;
       onChange: (value: string | null) => void;
     })
@@ -863,6 +877,94 @@ function readOnlyPropertyRow(row: PropertyRow): PropertyRow {
   return next;
 }
 
+/** A text field being typed in keeps the browser's own Cut / Copy / Paste menu. */
+function isEditingText(target: Element): boolean {
+  const field = target.closest("input, textarea, [contenteditable='true']");
+  if (!field || field !== document.activeElement) return false;
+  return !(field instanceof HTMLInputElement) || ["text", "search", "number", "email", "url", "tel", "password"].includes(field.type);
+}
+
+/**
+ * Right-click or long-press on a row or its title opens Copy and Paste for that
+ * row's value. One menu serves the grid; nested grids keep their own rows.
+ */
+function usePropertyRowMenu(rows: PropertyRow[], readOnly: boolean) {
+  const gridRef = useRef<HTMLDivElement>(null);
+  const latestRef = useRef({ rows, readOnly });
+  useLayoutEffect(() => {
+    latestRef.current = { rows, readOnly };
+  });
+  const rowIdRef = useRef<string | null>(null);
+  // A right press focuses a field before contextmenu fires, so whether the
+  // user was typing is read at the press.
+  const pressRef = useRef<{ target: EventTarget | null; editing: boolean } | null>(null);
+  const { menu, closeMenu, bind } = useContextMenu({
+    items: (): ContextMenuItem[] => {
+      const { rows: current, readOnly: locked } = latestRef.current;
+      const source = current.find((row) => row.id === rowIdRef.current);
+      if (!source) return [];
+      const row = locked ? readOnlyPropertyRow(source) : source;
+      return [
+        {
+          id: "property-copy",
+          label: "Copy",
+          icon: <CopyIcon />,
+          disabled: !canCopyPropertyRow(row),
+          onSelect: () => copyPropertyRow(row),
+        },
+        {
+          id: "property-paste",
+          label: "Paste",
+          icon: <ClipboardPasteIcon />,
+          disabled: !canPastePropertyRow(row),
+          onSelect: () => pastePropertyRow(row),
+        },
+      ];
+    },
+  });
+  /** The row of this grid under the event, unless it belongs to a nested grid or the user is typing. */
+  const rowIdFor = (event: { target: EventTarget | null }, editing: boolean): string | null => {
+    const target = event.target;
+    if (!(target instanceof Element) || editing) return null;
+    const rowElement = target.closest("[data-property-row-id]");
+    if (!rowElement || rowElement.closest('[data-slot="property-grid"]') !== gridRef.current) return null;
+    return rowElement.getAttribute("data-property-row-id");
+  };
+  const onPointerDown = (event: ReactPointerEvent) => {
+    const editing = event.target instanceof Element && isEditingText(event.target);
+    pressRef.current = { target: event.target, editing };
+    const id = rowIdFor(event, editing);
+    if (!id) return;
+    rowIdRef.current = id;
+    bind.onPointerDown(event);
+    claimContextMenuEvent(event);
+  };
+  const onContextMenu = (event: ReactMouseEvent) => {
+    const press = pressRef.current;
+    const editing = press && press.target === event.target
+      ? press.editing
+      : event.target instanceof Element && isEditingText(event.target);
+    const id = rowIdFor(event, editing);
+    if (!id) return;
+    rowIdRef.current = id;
+    bind.onContextMenu(event);
+    claimContextMenuEvent(event);
+    event.stopPropagation();
+  };
+  return {
+    gridRef,
+    menu,
+    closeMenu,
+    handlers: {
+      onPointerDown,
+      onContextMenu,
+      onPointerMove: bind.onPointerMove,
+      onPointerUp: bind.onPointerUp,
+      onPointerCancel: bind.onPointerCancel,
+    },
+  };
+}
+
 /** PropertyGrid section band, for Details sections that mix property rows with lists or summaries. */
 export function PropertySectionTitle({
   children,
@@ -892,8 +994,11 @@ export function PropertyGrid({
   const inheritedReadOnly = useEditorReadOnly();
   const readOnly = readOnlyProp || inheritedReadOnly;
   const compact = density === "compact";
+  const rowMenu = usePropertyRowMenu(rows, readOnly);
   return (
     <div
+      ref={rowMenu.gridRef}
+      {...rowMenu.handlers}
       className="flex min-w-0 flex-col gap-0"
       data-slot="property-grid"
       data-readonly={readOnly || undefined}
@@ -933,6 +1038,7 @@ export function PropertyGrid({
             <Field
               key={row.id}
               orientation={orientation}
+              data-property-row-id={row.id}
               data-testid={row.testId ?? `property-row-${row.id}`}
               data-disabled={row.disabled || undefined}
               data-kind={row.kind}
@@ -975,6 +1081,9 @@ export function PropertyGrid({
           );
         })}
       </FieldGroup>
+      {rowMenu.menu ? (
+        <ContextMenuOverlay menu={rowMenu.menu} onClose={rowMenu.closeMenu} contentTestId="property-context-menu" />
+      ) : null}
     </div>
   );
 }

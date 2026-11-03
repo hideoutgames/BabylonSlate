@@ -13,12 +13,10 @@ describe("Scene mode layouts", () => {
     const saved = JSON.parse(JSON.stringify({ sceneMode: "foliage", design, landscape, foliage: null, script, timeline }));
     expect(parseSceneDocumentLayout(saved)).toEqual({ sceneMode: "foliage", design, landscape, foliage: null, script, timeline });
   });
-  it("offers a Scene Layer only Design, Script and Timeline, keeping a layout saved before it had modes", () => {
+  it("offers a Scene Layer only Design, Script and Timeline", () => {
     expect(parseSceneDocumentLayout({ sceneMode: "landscape" }, "scene-layer").sceneMode).toBe("design");
     expect(parseSceneDocumentLayout({ sceneMode: "script" }, "scene-layer").sceneMode).toBe("script");
     expect(parseSceneDocumentLayout({ sceneMode: "timeline" }, "scene-layer").sceneMode).toBe("timeline");
-    const flat = { grid: { root: {} }, panels: { viewport: { id: "viewport" } } };
-    expect(parseSceneDocumentLayout(flat, "scene-layer")).toMatchObject({ sceneMode: "design", design: flat, script: null });
   });
   it("lays Script mode out like an Object Class, without the viewport or Prefab", () => {
     for (const kind of ["scene", "scene-layer"] as const) {
