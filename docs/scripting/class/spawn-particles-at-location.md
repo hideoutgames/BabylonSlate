@@ -26,6 +26,7 @@ Plays a Particle System once at a place in the world, without an actor class of 
 
 ## Notes
 
-- A looping Particle System with **Auto Destroy** plays until you call [Stop Particles](stop-particles.md) on **Effect**; it then finishes its particles and is removed.
+- **Effect** carries one [Particle](../../components/particle.md) component. Use [Get Component](get-component.md) on it to call **Stop**, **Emit Burst** or the parameter functions.
+- A looping Particle System with **Auto Destroy** plays until its Particle component's **Stop** is called; it then finishes its particles and is removed.
 - Up to 256 spawned effects play at once. Beyond that the oldest one stops and is removed, and a warning is logged once.
 - If **System** is not a Particle System, nothing is spawned, **Effect** is empty and a warning is logged.

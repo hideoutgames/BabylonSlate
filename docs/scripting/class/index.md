@@ -622,20 +622,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
-| [Emit Particle Burst](emit-particle-burst.md) | Emits extra particles from the particle systems on an actor. |
-| [Get Particle Color Parameter](get-particle-color-parameter.md) | Returns a parameter of the particle effects on an actor. |
-| [Get Particle Float Parameter](get-particle-float-parameter.md) | Returns a parameter of the particle effects on an actor. |
-| [Get Particle Vector Parameter](get-particle-vector-parameter.md) | Returns a parameter of the particle effects on an actor. |
-| [Is Particles Playing](is-particles-playing.md) | Returns whether any particle system on an actor is playing. |
-| [Play Particles](play-particles.md) | Starts the particle systems on an actor. |
-| [Reset Particle Parameter](reset-particle-parameter.md) | Drops the value a Set Particle Parameter node gave a parameter of the particle effects on an actor. |
-| [Restart Particles](restart-particles.md) | Cuts the particles on an actor and plays its particle systems again from the start. |
-| [Set Particle Color Parameter](set-particle-color-parameter.md) | Sets a parameter of the particle effects on an actor while they run. |
-| [Set Particle Float Parameter](set-particle-float-parameter.md) | Sets a parameter of the particle effects on an actor while they run. |
-| [Set Particle Vector Parameter](set-particle-vector-parameter.md) | Sets a parameter of the particle effects on an actor while they run. |
 | [Spawn Particles At Location](spawn-particles-at-location.md) | Plays a Particle System once at a place in the world, without an actor class of its own. |
 | [Spawn Particles Attached](spawn-particles-attached.md) | Plays a Particle System attached to an actor, or one of its bones, without an actor class of its own. |
-| [Stop Particles](stop-particles.md) | Stops the particle systems on an actor from emitting. |
 
 ## Animation
 

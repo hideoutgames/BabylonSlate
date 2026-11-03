@@ -53,19 +53,22 @@ const logs = (commands: CommandMessage[], category: string) =>
   commands.flatMap((command) => (command.type === "log" && command.category === category ? [command.message] : []));
 
 describe("particle parameters in Class graphs", () => {
-  it("set, read and reset values on the components whose System declares the name, sized to its type", async () => {
+  it("set, read and reset a component's values when its System declares the name, sized to its type", async () => {
     const commands: CommandMessage[] = [];
     const runtime = await runtimeWith([
       "export function onBeginPlay(ctx) {",
       '  const sparks = ctx.getComponentById(ctx.self, "sparks");',
+      '  const smoke = ctx.getComponentById(ctx.self, "smoke");',
+      '  const call = (component, name, args) => ctx.callComponentFunction(component, name, args);',
       '  const log = (value) => ctx.log("log", "P", JSON.stringify(value));',
-      '  log(ctx.getParticleFloatParameter(ctx.self, "Heat"));',
-      '  ctx.setParticleFloatParameter(ctx.self, "Heat", 5);',
-      '  log(ctx.getParticleFloatParameter(ctx.self, "Heat"));',
-      '  log(ctx.getParticleColorParameter(ctx.self, "Tint"));',
-      '  ctx.callComponentFunction(sparks, "setParticleColorParameter", { name: "Tint", value: { x: 1, y: 0, z: 0, w: 0.5 } });',
-      '  log(ctx.callComponentFunction(sparks, "getParticleColorParameter", { name: " Tint " }));',
-      '  log(ctx.resetParticleParameter(ctx.self, "Tint"));',
+      '  log(call(sparks, "getParticleFloatParameter", { name: "Heat" }));',
+      '  call(sparks, "setParticleFloatParameter", { name: "Heat", value: 5 });',
+      '  call(smoke, "setParticleFloatParameter", { name: "Heat", value: 5 });',
+      '  log(call(sparks, "getParticleFloatParameter", { name: "Heat" }));',
+      '  log(call(sparks, "getParticleColorParameter", { name: "Tint" }));',
+      '  call(sparks, "setParticleColorParameter", { name: "Tint", value: { x: 1, y: 0, z: 0, w: 0.5 } });',
+      '  log(call(sparks, "getParticleColorParameter", { name: " Tint " }));',
+      '  log(call(sparks, "resetParticleParameter", { name: "Tint" }).success);',
       "}",
     ], commands);
     expect(logs(commands, "P")).toEqual([
@@ -90,10 +93,12 @@ describe("particle parameters in Class graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = await runtimeWith([
       "export function onBeginPlay(ctx) {",
-      '  ctx.setParticleFloatParameter(ctx.self, "Missing", 1);',
-      '  ctx.setParticleFloatParameter(ctx.self, "Missing", 2);',
-      '  ctx.log("log", "P", JSON.stringify([ctx.getParticleFloatParameter(ctx.self, "Missing"), ctx.resetParticleParameter(ctx.self, "Missing")]));',
-      '  ctx.callComponentFunction(ctx.getComponentById(ctx.self, "smoke"), "setParticleFloatParameter", { name: "Tint", value: 1 });',
+      '  const sparks = ctx.getComponentById(ctx.self, "sparks");',
+      '  const call = (component, name, args) => ctx.callComponentFunction(component, name, args);',
+      '  call(sparks, "setParticleFloatParameter", { name: "Missing", value: 1 });',
+      '  call(sparks, "setParticleFloatParameter", { name: "Missing", value: 2 });',
+      '  ctx.log("log", "P", JSON.stringify([call(sparks, "getParticleFloatParameter", { name: "Missing" }), call(sparks, "resetParticleParameter", { name: "Missing" }).success]));',
+      '  call(ctx.getComponentById(ctx.self, "smoke"), "setParticleFloatParameter", { name: "Tint", value: 1 });',
       "}",
     ], commands);
     expect(parameterCommands(commands)).toEqual([]);
@@ -108,7 +113,9 @@ describe("particle parameters in Class graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = await runtimeWith([
       "export function onBeginPlay(ctx) {",
-      '  ctx.setParticleFloatParameter(ctx.self, "Heat", 5);',
+      '  for (const id of ["sparks", "smoke"]) {',
+      '    ctx.callComponentFunction(ctx.getComponentById(ctx.self, id), "setParticleFloatParameter", { name: "Heat", value: 5 });',
+      "  }",
       "}",
     ], commands);
     runtime.executeConsoleCommand("snapshot start");

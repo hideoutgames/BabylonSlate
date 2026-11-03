@@ -17,15 +17,31 @@ Select an actor, then choose **Add Component > Particles > Particle**. You can a
 | Order In Layer | Order within the layer. Default 0. |
 | Parameters | One row per [parameter](../graphics/particles.md#parameters) of the Particle System, at the System's default. Edit a value to override it for this actor; clear its **Override** box to go back to the default. Shown only when the System has parameters. |
 
+## Scripting
+
+Call the component's own functions on a reference to it: in a Class, its entry under **Components**; in a Scene Script, its **Get** node under **Scene Actors**; on any other actor, [Get Component](../scripting/class/get-component.md).
+
+| Function | What it does |
+| --- | --- |
+| Play | Starts the Particle System. **Retrigger** decides what happens to a run still on screen. |
+| Restart | Cuts the particles on screen and plays from the start, whatever **Retrigger** says. |
+| Stop | Stops emitting. Live particles finish their lifetime. |
+| Is Playing | Whether the component is playing. |
+| Emit Burst | Emits **Count** extra particles from every emitter, or only the one at **Slot**. Does nothing unless the component is playing. |
+| Set Float Parameter, Set Vector Parameter, Set Color Parameter | Sets a [parameter](../graphics/particles.md#parameters) of the System by **Name** while it plays, without restarting. Not saved. |
+| Get Float Parameter, Get Vector Parameter, Get Color Parameter | The value set while playing, else the component's override, else the System's default. **Found** is false when the System does not declare **Name**. |
+| Reset Parameter | Drops the value set while playing, back to the override or the default. |
+
+- In a Class graph, the **Name** pin lists the parameters of the type the function takes, from the Systems of the Class's Particle components.
+- A Float value fills every component of a Vector or Color parameter; a Vector 2 parameter takes X and Y.
+- A name the System does not declare is ignored, with one warning per name.
+- [Event On Particles Finished](../scripting/class/event-on-particles-finished.md) runs when the component stops playing: a Particle System that does not loop ran out, or **Stop** was called, and the last particles are gone.
+
 ## Notes
 
 - Works in world scenes and in Scene Layers.
 - The actor's transform is where the particles are emitted from.
 - Sorting Layers are listed back to front in **Project Settings > Game > Sorting Layers**. Particles still draw after opaque meshes and before blended ones, whatever their layer.
-- [Play Particles](../scripting/class/play-particles.md) and [Stop Particles](../scripting/class/stop-particles.md) start and stop every particle component on an actor, [Is Particles Playing](../scripting/class/is-particles-playing.md) checks whether any of them plays, and [Emit Particle Burst](../scripting/class/emit-particle-burst.md) adds a burst to the ones that are playing. The component also has **Play**, **Restart**, **Stop**, **Is Playing** and **Emit Burst** functions. [Restart Particles](../scripting/class/restart-particles.md) always cuts and starts again, whatever **Retrigger** says.
-- [Event On Particles Finished](../scripting/class/event-on-particles-finished.md) runs when the component stops playing: a Particle System that does not loop ran out, or **Stop** was called, and the last particles are gone.
-- [Set Particle Float Parameter](../scripting/class/set-particle-float-parameter.md), [Set Particle Vector Parameter](../scripting/class/set-particle-vector-parameter.md) and [Set Particle Color Parameter](../scripting/class/set-particle-color-parameter.md) change the System's [parameters](../graphics/particles.md#parameters) while it plays; the Get and [Reset](../scripting/class/reset-particle-parameter.md) nodes read and undo them. The component also has **Set**, **Get** and **Reset Parameter** functions that act on that component only.
-
 - For one-off effects that need no actor of their own, use [Spawn Particles At Location](../scripting/class/spawn-particles-at-location.md) or [Spawn Particles Attached](../scripting/class/spawn-particles-attached.md).
 
 ## Related

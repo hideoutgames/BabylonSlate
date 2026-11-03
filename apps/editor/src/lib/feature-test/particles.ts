@@ -5,6 +5,7 @@ import {
   type ParticleSpace,
   type ParticleSystemPayload,
 } from "@haptic/assets";
+import { engineScriptApiFor } from "@haptic/object-model";
 import {
   createDefaultParticleGraphDocument,
   newParticleNodeProperties,
@@ -172,14 +173,39 @@ async function saveSpawner(ctx: FeatureTestContext, flash: string): Promise<Feat
   return ctx.saveClass({ folder: FOLDER, name: NAMES.spawner, parentClass: "Actor", graph });
 }
 
+/** A Get node for one of the Class's own Particle components. */
+function particleComponentRef(id: string, x: number, y: number, component: { id: string; name: string }) {
+  return gNode(id, "variables.get", x, y, {
+    variableName: component.name,
+    typeId: "object",
+    typeClassId: "ParticleComponent",
+    implicitSelf: true,
+    componentId: component.id,
+  });
+}
+
+/** A call of a Particle component function on a wired component; `data` sets pin defaults. */
+function particleCall(id: string, x: number, y: number, name: string, data: Record<string, unknown> = {}) {
+  const fn = engineScriptApiFor("ParticleComponent")?.functions?.find((entry) => entry.name === name);
+  if (!fn) throw new Error(`ParticleComponent has no "${name}" function.`);
+  return gNode(id, "functions.call", x, y, {
+    functionName: fn.name,
+    classId: "ParticleComponent",
+    implicitSelf: false,
+    pins: fn.pins.map((pin) => ({ ...pin })),
+    runtime: fn.runtime,
+    ...data,
+  });
+}
+
 /** The Flash Relay Class, saved by `buildFeatureTestParticles` and placed by `placeFeatureTestParticles`. */
 const flashRelays = new WeakMap<FeatureTestContext, { ref: FeatureTestClassRef; components: ReturnType<typeof comp>[] }>();
 
 /**
  * A Once flash that replays itself. Begin Play plays it again while the first run still emits,
  * so its Retrigger applies (Overlap keeps the first run as a ghost, Restart cuts it). Event On
- * Particles Finished asserts that Is Particles Playing already reads false, waits, and calls
- * Restart Particles.
+ * Particles Finished asserts that the component's Is Playing already reads false, waits, and
+ * calls its Restart. Each call targets the Flash component.
  */
 async function saveFlashRelay(ctx: FeatureTestContext, flash: string) {
   const components = [comp("prefab-flash", "ParticleComponent", { particleSystemGuid: flash, playOnStart: true }, undefined, { name: "Flash" })];
@@ -192,18 +218,22 @@ async function saveFlashRelay(ctx: FeatureTestContext, flash: string) {
         eventQualifier: "Flash",
         title: "Event On Particles Finished (Flash)",
       }),
-      gNode("playing", "particles.isPlaying", 0, 200),
+      particleComponentRef("flash", -260, 300, { id: "prefab-flash", name: "Flash" }),
+      particleCall("playing", 0, 200, "Is Playing"),
       gNode("stopped", "boolean.not", 240, 200),
-      gNode("check", "debug.assert", 260, 0, { "default:message": "Is Particles Playing read true in Event On Particles Finished" }),
+      gNode("check", "debug.assert", 260, 0, { "default:message": "Is Playing read true in Event On Particles Finished" }),
       gNode("wait", "timers.delay", 520, 0, { "default:duration": 0.75 }),
-      gNode("replay", "particles.restart", 780, 0),
+      particleCall("replay", 780, 0, "Restart"),
       gNode("begin", "flow.event.beginPlay", 0, 400),
       gNode("early", "timers.delay", 260, 400, { "default:duration": 0.15 }),
-      gNode("retrigger", "particles.play", 520, 400),
+      particleCall("retrigger", 520, 400, "Play"),
     ],
     edges: [
+      gWire("flash", "value", "playing", "target"),
+      gWire("flash", "value", "replay", "target"),
+      gWire("flash", "value", "retrigger", "target"),
       gExec("finished", "check"),
-      gWire("playing", "out", "stopped", "in"),
+      gWire("playing", "playing", "stopped", "in"),
       gWire("stopped", "out", "check", "condition"),
       gExec("check", "wait"),
       gExec("wait", "replay"),
@@ -219,9 +249,10 @@ async function saveFlashRelay(ctx: FeatureTestContext, flash: string) {
 const glowPulses = new WeakMap<FeatureTestContext, { ref: FeatureTestClassRef; components: ReturnType<typeof comp>[] }>();
 
 /**
- * Particle parameters from a Class graph: Begin Play raises the showcase's Glow Rate and tints
- * the sparks (only the sparks component's System declares Spark Tint), asserts that Get Particle
- * Float Parameter finds Glow Rate, and resets it after two seconds.
+ * Particle parameters from a Class graph, through each Particle component's own functions:
+ * Begin Play raises the Glow component's Glow Rate and tints the Sparks component (only its
+ * System declares Spark Tint), asserts that Get Float Parameter finds Glow Rate, and resets it
+ * after two seconds.
  */
 async function saveGlowPulse(ctx: FeatureTestContext, showcase: string, sparks: string) {
   const components = [
@@ -233,14 +264,20 @@ async function saveGlowPulse(ctx: FeatureTestContext, showcase: string, sparks: 
     actorDefaults: { eventTick: "disabled" },
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
-      gNode("rate", "particles.setFloatParameter", 260, 0, { "default:name": "Glow Rate", "default:value": 240 }),
-      gNode("tint", "particles.setColorParameter", 520, 0, { "default:name": "Spark Tint", "default:value": { x: 1, y: 0.45, z: 0.1, w: 1 } }),
-      gNode("read", "particles.getFloatParameter", 520, 220, { "default:name": "Glow Rate" }),
-      gNode("check", "debug.assert", 780, 0, { "default:message": "Get Particle Float Parameter did not find Glow Rate" }),
+      particleComponentRef("glow", 0, 260, { id: "prefab-glow", name: "Glow" }),
+      particleComponentRef("sparks", 260, 260, { id: "prefab-sparks", name: "Sparks" }),
+      particleCall("rate", 260, 0, "Set Float Parameter", { "default:name": "Glow Rate", "default:value": 240 }),
+      particleCall("tint", 520, 0, "Set Color Parameter", { "default:name": "Spark Tint", "default:value": { x: 1, y: 0.45, z: 0.1, w: 1 } }),
+      particleCall("read", 520, 220, "Get Float Parameter", { "default:name": "Glow Rate" }),
+      gNode("check", "debug.assert", 780, 0, { "default:message": "Get Float Parameter did not find Glow Rate" }),
       gNode("wait", "timers.delay", 1040, 0, { "default:duration": 2 }),
-      gNode("reset", "particles.resetParameter", 1300, 0, { "default:name": "Glow Rate" }),
+      particleCall("reset", 1300, 0, "Reset Parameter", { "default:name": "Glow Rate" }),
     ],
     edges: [
+      gWire("glow", "value", "rate", "target"),
+      gWire("sparks", "value", "tint", "target"),
+      gWire("glow", "value", "read", "target"),
+      gWire("glow", "value", "reset", "target"),
       gExec("begin", "rate"),
       gExec("rate", "tint"),
       gExec("tint", "check"),

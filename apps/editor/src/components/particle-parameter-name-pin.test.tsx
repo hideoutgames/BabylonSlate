@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ParticleSystemParameter } from "@haptic/assets";
 import type { PinDefaultEditorRequest } from "@haptic/graph-ui";
 import { ClassParticleSystemsContext } from "../context/class-particle-systems-context";
+import { particleParameterNameTypes } from "../lib/particle-parameter-name-types";
 import { ParticleParameterNamePin } from "./particle-parameter-name-pin";
 
 if (typeof window !== "undefined") {
@@ -27,17 +28,18 @@ vi.mock("../lib/use-particle-system-parameters", () => ({
 
 afterEach(() => cleanup());
 
-function renderPin(nodeType: string, value: string, systems: readonly string[]) {
+function renderPin(runtime: string, value: string, systems: readonly string[]) {
   const onChange = vi.fn();
-  const request = { nodeId: "n", nodeType, nodeData: {}, pin: { id: "name", name: "Name", type: { kind: "string" } }, value,
+  const nodeData = { classId: "ParticleComponent", functionName: "Set Parameter", runtime };
+  const request = { nodeId: "n", nodeType: "functions.call", nodeData, pin: { id: "name", name: "Name", type: { kind: "string" } }, value,
     preview: { kind: "string" }, disabled: false, onChange } as unknown as PinDefaultEditorRequest;
   render(<ClassParticleSystemsContext.Provider value={systems}><ParticleParameterNamePin request={request} /></ClassParticleSystemsContext.Provider>);
   return onChange;
 }
 
 describe("particle parameter Name pin", () => {
-  it("lists the Class's parameters of the node's type and keeps an undeclared name selected", async () => {
-    const onChange = renderPin("particles.setFloatParameter", "Old", ["glow", "sparks"]);
+  it("lists the Class's parameters of the function's type and keeps an undeclared name selected", async () => {
+    const onChange = renderPin("setParticleFloatParameter", "Old", ["glow", "sparks"]);
     fireEvent.click(screen.getByTestId("property-n:name"));
     expect(await screen.findByRole("option", { name: "Old (Not Declared)" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Tint" })).toBeNull();
@@ -48,14 +50,22 @@ describe("particle parameter Name pin", () => {
   });
 
   it("lists every type for Reset and falls back to free text without known parameters", async () => {
-    renderPin("particles.resetParameter", "", ["glow", "sparks"]);
+    renderPin("resetParticleParameter", "", ["glow", "sparks"]);
     fireEvent.click(screen.getByTestId("property-n:name"));
     expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Heat", "Tint", "Wind"]);
     cleanup();
-    const onChange = renderPin("particles.setColorParameter", "", []);
+    const onChange = renderPin("setParticleColorParameter", "", []);
     const field = screen.getByTestId("property-n:name") as HTMLInputElement;
     fireEvent.change(field, { target: { value: "Glow" } });
     fireEvent.blur(field);
     expect(onChange).toHaveBeenCalledWith("Glow");
+  });
+
+  it("applies only to Particle component parameter functions", () => {
+    expect(particleParameterNameTypes("functions.call", { classId: "ParticleComponent", runtime: "setParticleVectorParameter" }))
+      .toEqual(["vec2", "vec3"]);
+    expect(particleParameterNameTypes("functions.call", { classId: "ParticleComponent", runtime: "playParticles" })).toBeUndefined();
+    expect(particleParameterNameTypes("functions.call", { classId: "AudioComponent", runtime: "resetParticleParameter" })).toBeUndefined();
+    expect(particleParameterNameTypes("particles.setFloatParameter", {})).toBeUndefined();
   });
 });

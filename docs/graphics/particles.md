@@ -84,14 +84,15 @@ Each Preview lists the parameters under **Preview Parameters**. Values set there
 
 A [Particle](../components/particle.md) component lists its System's parameters under **Parameters** in the **Inspector**: a value edited there overrides the default for that actor. While you Simulate, the Inspector of the running Particle component edits the playing values; those changes are not saved.
 
-During Play, [Set Particle Float Parameter](../scripting/class/set-particle-float-parameter.md) and its Vector and Color versions change a parameter by name on every Particle component of an actor whose System declares it. [Reset Particle Parameter](../scripting/class/reset-particle-parameter.md) goes back to the default.
+During Play, a Particle component's **Set Float Parameter**, **Set Vector Parameter** and **Set Color Parameter** functions change a parameter by name on that component; **Reset Parameter** goes back to the default. See [Particle](../components/particle.md#scripting).
 
 ## Play particles from scripts
 
 The Particle component's **Play On Start** (on by default) starts the effect when the actor spawns. Otherwise use:
 
-- [Play Particles](../scripting/class/play-particles.md) to start an actor's particles.
-- [Stop Particles](../scripting/class/stop-particles.md) to stop emitting. Live particles finish their lifetime.
-- [Set Particle Float Parameter](../scripting/class/set-particle-float-parameter.md) and the other parameter nodes to change an effect while it plays.
+- The Particle component's **Play**, **Restart** and **Stop** functions to start, replay and stop it. Live particles finish their lifetime.
+- Its **Set Float Parameter** and other parameter functions to change the effect while it plays.
+
+Every function acts on one Particle component; see [Particle](../components/particle.md#scripting).
 
 Particles freeze while Play is paused.
