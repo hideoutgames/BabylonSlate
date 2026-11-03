@@ -83,6 +83,21 @@ function eventTargetIsInside(event: {
   );
 }
 
+const claimedEvents = new WeakSet<Event>();
+
+/**
+ * Marks a press or contextmenu event as opening an inner surface's own menu
+ * (a PropertyGrid row inside a list row), so menus bound on its ancestors
+ * stay closed for it.
+ */
+export function claimContextMenuEvent(event: { nativeEvent: Event }): void {
+  claimedEvents.add(event.nativeEvent);
+}
+
+function isClaimed(event: { nativeEvent: Event }): boolean {
+  return claimedEvents.has(event.nativeEvent);
+}
+
 /**
  * Long-press (~500 ms stationary) and contextmenu (mouse) open the same menu.
  * Cancels when the pointer moves beyond the movement threshold or on scroll.
@@ -140,7 +155,7 @@ export function useContextMenu(
 
   const onContextMenu = useCallback(
     (event: ReactMouseEvent) => {
-      if (!enabled || !eventTargetIsInside(event)) return;
+      if (!enabled || !eventTargetIsInside(event) || isClaimed(event)) return;
       event.preventDefault();
       const right = rightPressRef.current;
       if (right?.moved) return;
@@ -198,6 +213,7 @@ export function useContextMenu(
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
+      if (isClaimed(event)) return;
       if (
         enabled &&
         event.pointerType === "mouse" &&

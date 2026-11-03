@@ -62,7 +62,7 @@ The link button beside **Scale** keeps the actor's proportions: while it is on, 
 
 With several actors selected, the heading reads **N Actors** and edits apply to all of them; values that differ show as mixed. The Scale link shows as on only when every selected actor is linked, and pressing it links or unlinks them all. Linked actors keep their own proportions; the others change only the axis you edit. The Scale gizmo and the Scene Layer box work the same way: dragging scales every selected actor on that axis, and linked actors also keep their own proportions. When every selected actor is linked, the whole selection scales together. The **Primary Actor** section holds the name and lock of the actor whose components are shown.
 
-Use **Filter Properties** at the top to find a field by name.
+Use **Filter Properties** at the top to find a field by name. Right-click or hold a property for **Copy** and **Paste**, for example to give one actor another's **Position**; see [Editor tour](../start/editor-tour.md#scene-panels).
 
 ## Add components
 
