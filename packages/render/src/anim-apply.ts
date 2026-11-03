@@ -1,4 +1,4 @@
-import type { Mesh } from "@babylonjs/core";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { CommandMessage } from "@haptic/bridge";
 import type { SpriteAnimationPayload, SpritePayload } from "@haptic/assets";
 import { spriteAnimationFrameAt } from "@haptic/assets";

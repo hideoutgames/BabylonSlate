@@ -3,7 +3,15 @@
  * graph Material's Water Reflection node at Planar quality and not at Sky quality, on the real GPU through the Forward
  * FrameGraph.
  */
-import { Color3, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3, type AbstractEngine, type Material } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody, type WaterReflectionMode } from "@haptic/core";
 import { compileMaterialPlan, createAppWebGpuEngine, createWaterMesh, setSceneRenderSettings, updateSceneWater } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";

@@ -1,4 +1,5 @@
-import type { AbstractEngine, Scene } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Scene } from "@babylonjs/core/scene";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { IFrameGraphPass } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";

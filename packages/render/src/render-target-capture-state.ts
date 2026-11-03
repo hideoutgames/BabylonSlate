@@ -1,4 +1,6 @@
-import { LinesMesh, type AbstractMesh, type Scene } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { isEditorHelperMesh } from "./helper-mesh";
 
 /** Auxiliary camera swaps leave the main view's prepared graph unchanged. */

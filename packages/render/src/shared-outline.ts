@@ -1,7 +1,12 @@
-import {
-  Constants, RawTexture, Texture, VertexBuffer,
-  type AbstractMesh, type Camera, type InstancedMesh, type Mesh, type Scene,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type { WebGPUDrawContext } from "@babylonjs/core/Engines/WebGPU/webgpuDrawContext";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,

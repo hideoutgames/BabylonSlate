@@ -1,4 +1,9 @@
-import { Color3, Matrix, Quaternion, RectAreaLight, TransformNode, Vector3, type MaterialDefines, type Scene } from "@babylonjs/core";
+import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
+import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Scene } from "@babylonjs/core/scene";
 import { type AreaRectLightBinding } from "@haptic/core";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { setAuthoredLightEnabled } from "./light-policy";

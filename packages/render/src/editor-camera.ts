@@ -1,4 +1,7 @@
-import { ArcRotateCamera, Camera, Scene, Vector3 } from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Scene } from "@babylonjs/core/scene";
 import type { ViewportMode } from "@haptic/core";
 import type { RenderScheduler } from "./render-scheduler";
 import {

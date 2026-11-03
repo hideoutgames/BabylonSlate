@@ -1,4 +1,5 @@
-import type { Camera, Effect } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";

@@ -1,19 +1,17 @@
-import {
-  Color3,
-  CreateTorusVertexData,
-  Mesh,
-  PositionGizmo,
-  RotationGizmo,
-  ScaleGizmo,
-  UtilityLayerRenderer,
-  Vector3,
-  type AbstractMesh,
-  type Camera,
-  type Material,
-  type NodeMaterial,
-  type Scene,
-  type StandardMaterial,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { PositionGizmo } from "@babylonjs/core/Gizmos/positionGizmo";
+import { RotationGizmo } from "@babylonjs/core/Gizmos/rotationGizmo";
+import { ScaleGizmo } from "@babylonjs/core/Gizmos/scaleGizmo";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { CreateTorusVertexData } from "@babylonjs/core/Meshes/Builders/torusBuilder";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
+import type { Scene } from "@babylonjs/core/scene";
 import type { ViewportMode } from "@haptic/core";
 import { mapCanvasPointer, type PointerCanvasSize } from "./pick-coords";
 import type { RenderScheduler } from "./render-scheduler";

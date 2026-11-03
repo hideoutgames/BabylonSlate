@@ -1,4 +1,4 @@
-import type { Mesh } from "@babylonjs/core";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { isInstanceSource } from "./instance-source";
 
 /**

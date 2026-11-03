@@ -1,8 +1,16 @@
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
+import { DiscardBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/discardBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import {
-  Constants, DiscardBlock, InputBlock, Material, NodeMaterial, NodeMaterialBlockConnectionPointTypes,
-  ShaderLanguage, Texture, TextureBlock,
-  type NodeMaterialBlock, type Scene,
-} from "@babylonjs/core";
+  NodeMaterialBlockConnectionPointTypes,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Material } from "@babylonjs/core/Materials/material";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import type { Scene } from "@babylonjs/core/scene";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { createGeometryCaptureOutput } from "./geometry-capture-output";

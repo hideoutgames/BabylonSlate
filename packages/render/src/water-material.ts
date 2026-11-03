@@ -1,4 +1,5 @@
-import { Vector3, type AbstractMesh } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { WaterDefinition } from "@haptic/core";
 import type { WaterRemovalCandidate } from "./water-scene-state";
 import { WATER_REMOVAL_SLOTS } from "./water-shader-chunks";

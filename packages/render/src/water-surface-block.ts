@@ -1,4 +1,10 @@
-import { NodeMaterialBlock, NodeMaterialBlockTargets, NodeMaterialBlockConnectionPointTypes as Types, type AbstractMesh, type NodeMaterial, type NodeMaterialDefines } from "@babylonjs/core";
+import {
+  NodeMaterialBlockConnectionPointTypes as Types,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { meshVertexWaves, WATER_GPU_WAVES_DEFINE } from "./water-material";

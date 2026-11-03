@@ -1,4 +1,4 @@
-import type { Scene } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core/scene";
 import { sceneLayerCanvasToLayer } from "@haptic/core";
 import type { CreateEngineOptions } from "./create-engine-types";
 import type { Joystick2DInput } from "./joystick2d-input";

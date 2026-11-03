@@ -1,4 +1,5 @@
-import type { RenderTargetTexture, Scene } from "@babylonjs/core";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Scene } from "@babylonjs/core/scene";
 
 /** Per-owner restoration and failure policy for one borrowed RTT draw. */
 export type BorrowedDrawPolicy = {

@@ -1,4 +1,8 @@
-import { Constants, RawTexture2DArray, type BaseTexture, type Light, type Scene } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { Light } from "@babylonjs/core/Lights/light";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { RawTexture2DArray } from "@babylonjs/core/Materials/Textures/rawTexture2DArray";
+import type { Scene } from "@babylonjs/core/scene";
 import type { AreaEmissionPixels } from "@haptic/assets";
 import { AREA_EMISSION_TEXTURE_BYTES, areaEmissionResourceKey } from "./area-emission-resource";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";

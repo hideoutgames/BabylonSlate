@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect } from "react";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import type { PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import type { EditorLoopHandle } from "../lib/editor-scheduler-registry";

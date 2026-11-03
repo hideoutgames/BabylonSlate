@@ -1,7 +1,9 @@
+import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
 import {
-  FragmentOutputBlock, NodeMaterialBlock, NodeMaterialBlockTargets as Targets,
   NodeMaterialBlockConnectionPointTypes as Types,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialBlockTargets as Targets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { SHARED_OUTLINE_ATTRIBUTE } from "./shared-outline";
 

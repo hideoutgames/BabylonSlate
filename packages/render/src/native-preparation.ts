@@ -1,4 +1,4 @@
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 
 export type NativePreparationPriority = "gameplay" | "preload" | "background";
 export interface NativePreparationLimits { maxConcurrent?: number; temporaryBytes?: number }

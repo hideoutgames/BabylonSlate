@@ -1,14 +1,14 @@
+import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import {
-  FragmentOutputBlock,
-  InputBlock,
   NodeMaterialBlockConnectionPointTypes as Types,
-  NodeMaterialSystemValues,
-  type Effect,
-  type Mesh,
-  type NodeMaterial,
-  type NodeMaterialBlock,
-  type NodeMaterialConnectionPoint,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialSystemValues";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { meshCastsShadows } from "./instance-pool";

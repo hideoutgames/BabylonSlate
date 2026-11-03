@@ -1,4 +1,5 @@
-import { EngineInstrumentation, type AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { EngineInstrumentation } from "@babylonjs/core/Instrumentation/engineInstrumentation";
 
 export type EngineGpuTimingSample = {
   /** Host delivery time, not the originating GPU frame's timestamp. */

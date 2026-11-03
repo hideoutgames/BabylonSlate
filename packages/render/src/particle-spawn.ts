@@ -1,12 +1,12 @@
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import {
-  NodeParticleBlock,
   NodeParticleBlockConnectionPointTypes,
-  Vector3,
-  type NodeParticleBuildState,
-  type NodeParticleConnectionPoint,
-  type Particle,
-  type ParticleSystem,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Particles/Node/Enums/nodeParticleBlockConnectionPointTypes";
+import { NodeParticleBlock } from "@babylonjs/core/Particles/Node/nodeParticleBlock";
+import type { NodeParticleConnectionPoint } from "@babylonjs/core/Particles/Node/nodeParticleBlockConnectionPoint";
+import type { NodeParticleBuildState } from "@babylonjs/core/Particles/Node/nodeParticleBuildState";
+import type { Particle } from "@babylonjs/core/Particles/particle";
+import type { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 
 /**
  * Where a Spawn Emitter's requests go: the world position and velocity of the particle that

@@ -1,4 +1,4 @@
-import type { Effect } from "@babylonjs/core";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 
 /**
  * First shader compile failure of an owned pass chain. Babylon reports the

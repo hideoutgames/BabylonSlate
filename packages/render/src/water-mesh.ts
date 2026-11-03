@@ -1,7 +1,12 @@
-import {
-  Matrix, Mesh, Ray, Vector3, VertexBuffer,
-  type AbstractMesh, type Material, type PickingInfo, type Scene, type TrianglePickingPredicate,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { PickingInfo } from "@babylonjs/core/Collisions/pickingInfo";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import type { TrianglePickingPredicate } from "@babylonjs/core/Culling/ray.core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex,
   normalizeWaterBody, normalizeWaterDefinition, waterBankFadeLength, waterEulerianGradient, waterFootprint,

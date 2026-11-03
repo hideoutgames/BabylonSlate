@@ -1,13 +1,9 @@
-import {
-  Quaternion,
-  UniversalCamera,
-  Vector3,
-  type Camera,
-  type Light,
-  type Matrix,
-  type Mesh,
-  type Scene,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { Quaternion, Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { sceneShadowController } from "./shadow-controller";
 import { createPrimitiveMesh } from "./scene-loader";
 import {

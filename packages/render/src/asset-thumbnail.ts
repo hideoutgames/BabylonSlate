@@ -1,14 +1,12 @@
-import {
-  Color4,
-  Mesh,
-  NodeMaterialModes,
-  type RenderTargetTexture,
-  Vector3,
-  type AbstractEngine,
-  type AbstractMesh,
-  type Material,
-  type Scene,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { DEFAULT_THUMBNAIL_MAX_EDGE } from "@haptic/assets";
 import type { SerializedScene } from "@haptic/core";
 import type { MaterialDocument, MaterialFunctionDocument } from "@haptic/shader-graph";

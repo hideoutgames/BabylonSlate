@@ -1,4 +1,10 @@
-import { Matrix, Mesh, Quaternion, Vector3, Viewport, type AbstractMesh, type Node, type Observer, type Scene } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import { overlayRectContains, type OverlayLayoutEntry, type OverlayLayoutRect } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 

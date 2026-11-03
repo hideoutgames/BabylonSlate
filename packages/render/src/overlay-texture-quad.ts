@@ -1,10 +1,8 @@
-import {
-  MeshBuilder,
-  type AbstractMesh,
-  type Mesh,
-  type NodeMaterial,
-  type Scene,
-} from "@babylonjs/core";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { Scene } from "@babylonjs/core/scene";
 import { sniffImageSize, sniffKtx2Size } from "@haptic/assets";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";

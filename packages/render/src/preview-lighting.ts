@@ -1,4 +1,8 @@
-import { Color3, DirectionalLight, HemisphericLight, Vector3, type Scene } from "@babylonjs/core";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 
 /**
  * Scene-owned studio lighting for isolated asset previews and thumbnails: a directional key from the upper right of

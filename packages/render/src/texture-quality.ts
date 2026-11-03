@@ -1,19 +1,19 @@
 import { acquireTextureVariant, type ResourceLease } from "./resource-cache";
-import type { Texture } from "@babylonjs/core";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
 import {
-  MaterialPluginBase,
-  PBRBaseMaterial,
-  StandardMaterial,
-  TextureBlock,
-  NodeMaterialBlockTargets,
   NodeMaterialBlockConnectionPointTypes,
-  type Effect,
-  type Material,
-  type NodeMaterial,
-  type Scene,
-  type ShaderLanguage,
-  type UniformBuffer,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
+import type { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
+import type { Scene } from "@babylonjs/core/scene";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { registerPersistentMaterialPlugin } from "./material-plugin-registration";

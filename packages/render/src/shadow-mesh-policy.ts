@@ -1,4 +1,7 @@
-import { LinesMesh, Mesh, Vector3, type AbstractMesh } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
@@ -16,7 +19,7 @@ export function authoredShadowParticipation(
   mesh: AbstractMesh,
 ): ShadowParticipation {
   for (
-    let node = mesh as import("@babylonjs/core").Node | null;
+    let node = mesh as import("@babylonjs/core/node").Node | null;
     node;
     node = node.parent
   ) {

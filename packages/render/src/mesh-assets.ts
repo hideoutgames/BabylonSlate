@@ -1,13 +1,11 @@
 import { pooledLeafOf, setActorMeshMaterial } from "./pooled-visuals";
-import {
-  type AbstractMesh,
-  type Material,
-  type NodeMaterial,
-  type Mesh,
-  type Scene,
-  type Texture,
-  type CubeTexture,
-} from "@babylonjs/core";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad, AreaEmissionPixels } from "@haptic/assets";
 import { PIXEL_ART_TEXTURE_SAMPLING, type TextureResources, type ResourceLease } from "./resource-cache";
 import { isSpriteQuad } from "./sprite-quad";

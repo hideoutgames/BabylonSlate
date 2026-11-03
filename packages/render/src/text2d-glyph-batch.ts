@@ -1,4 +1,4 @@
-import { VertexData } from "@babylonjs/core";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 
 /**
  * Rest pose of one glyph plane inside its text root: the plane a glyph used to

@@ -1,4 +1,6 @@
-import type { Material, NodeMaterial, Scene } from "@babylonjs/core";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { Scene } from "@babylonjs/core/scene";
 import { GetEnvironmentBRDFTexture } from "@babylonjs/core/Misc/brdfTextureTools";
 import {
   createDefaultMaterialDocument,

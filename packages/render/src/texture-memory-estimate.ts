@@ -1,4 +1,6 @@
-import { Constants, type AbstractEngine, type InternalTexture } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 
 /** Approximate bytes per texel of a compressed format; formats with 8-byte 4×4 blocks are half a byte. */
 const HALF_BYTE_COMPRESSED = new Set<number>([

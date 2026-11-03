@@ -1,4 +1,7 @@
-import type { AbstractMesh, Camera, Plane, Scene } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { Plane } from "@babylonjs/core/Maths/math.plane";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
 
 /** This frame's frustum: Scene.render recomputes camera matrices only after before-render observers run. */
 function sees(camera: Camera, mesh: AbstractMesh): boolean {

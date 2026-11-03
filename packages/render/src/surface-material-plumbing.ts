@@ -1,7 +1,15 @@
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { BonesBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/bonesBlock";
+import { InstancesBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/instancesBlock";
+import { MorphTargetsBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/morphTargetsBlock";
+import { VertexOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/vertexOutputBlock";
+import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
+import { ViewDirectionBlock } from "@babylonjs/core/Materials/Node/Blocks/viewDirectionBlock";
 import {
-  BonesBlock, InputBlock, InstancesBlock, MorphTargetsBlock, NodeMaterialBlockConnectionPointTypes,
-  NodeMaterialSystemValues, TransformBlock, VertexOutputBlock, ViewDirectionBlock, type NodeMaterialBlock,
-} from "@babylonjs/core";
+  NodeMaterialBlockConnectionPointTypes,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialSystemValues";
+import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { MaterialPlumbing } from "./material-block-registry";
 function matrixInput(
   name: string,

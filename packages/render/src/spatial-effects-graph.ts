@@ -1,4 +1,6 @@
-import { Constants, type Camera, type InternalTexture } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";

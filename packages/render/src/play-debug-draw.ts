@@ -1,14 +1,11 @@
-import {
-  Color3,
-  MeshBuilder,
-  Quaternion,
-  Vector3,
-  type AbstractMesh,
-  type LinesMesh,
-  type Material,
-  type Observer,
-  type Scene,
-} from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Scene } from "@babylonjs/core/scene";
 import { GreasedLineMeshMaterialType } from "@babylonjs/core/Materials/GreasedLine/greasedLineMaterialInterfaces";
 import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBuilder";
 import type { CommandMessage, DebugDrawCommand } from "@haptic/bridge";

@@ -1,4 +1,6 @@
-import type { AbstractMesh, Scene, SubMesh } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { SmartArray } from "@babylonjs/core/Misc/smartArray";

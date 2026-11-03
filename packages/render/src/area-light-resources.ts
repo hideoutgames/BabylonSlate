@@ -1,4 +1,7 @@
-import { Constants, RawTexture, type AbstractEngine, type Scene } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import type { Scene } from "@babylonjs/core/scene";
 import { AREA_LIGHT_LTC_BASE64 } from "./resources/area-lights-ltc";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 

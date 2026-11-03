@@ -6,10 +6,16 @@
  * environment cube. Each scenario captures the scene without water and with it, and where each pixel's view ray meets
  * the lake's rest plane: its distance and how far inside the lake's edge it lies (both -1 where it misses the lake).
  */
-import {
-  Color3, Color4, DirectionalLight, Engine, FreeCamera, Matrix, MeshBuilder, RawCubeTexture, Scene, StandardMaterial, Vector3,
-  type AbstractEngine,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { RawCubeTexture } from "@babylonjs/core/Materials/Textures/rawCubeTexture";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import {
   builtInWaterMaterial, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, setSceneRenderSettings,

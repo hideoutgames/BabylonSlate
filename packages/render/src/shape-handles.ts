@@ -1,8 +1,13 @@
-import {
-  Camera, Color3, CreateLineSystem, CreateSphere, Matrix, Mesh, PointerDragBehavior,
-  Quaternion, Vector3,
-  type LinesMesh, type Scene, type UtilityLayerRenderer,
-} from "@babylonjs/core";
+import { PointerDragBehavior } from "@babylonjs/core/Behaviors/Meshes/pointerDragBehavior";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { CreateLineSystem } from "@babylonjs/core/Meshes/Builders/linesBuilder";
+import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
+import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
+import type { Scene } from "@babylonjs/core/scene";
 import type { RenderScheduler } from "./render-scheduler";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 

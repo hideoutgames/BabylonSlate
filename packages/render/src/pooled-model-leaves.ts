@@ -1,4 +1,10 @@
-import { Mesh, type AbstractMesh, type AnimationGroup, type AssetContainer, type Geometry, type InstancedMesh, type Scene } from "@babylonjs/core";
+import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Geometry } from "@babylonjs/core/Meshes/geometry";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { AssetContainer } from "@babylonjs/core/assetContainer";
+import type { Scene } from "@babylonjs/core/scene";
 import { instancingIneligibility, mirrorsWorld, sceneInstancePool, sceneInstancing, type InstanceGeometry } from "./instance-pool";
 import { attachTemplateLods } from "./model-lod";
 import { animatesOnlyTransform, handOverNode } from "./node-handover";

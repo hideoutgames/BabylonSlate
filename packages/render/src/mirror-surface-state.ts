@@ -1,4 +1,10 @@
-import { Constants, Matrix, RawTexture, Vector3, type AbstractMesh, type Material, type Scene, type ThinTexture } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import type { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
 
 /** What a Mirror surface's material samples: written by the scene's mirror owner, read by Mirror Reflection blocks. */
 export interface MirrorReflectionBinding {

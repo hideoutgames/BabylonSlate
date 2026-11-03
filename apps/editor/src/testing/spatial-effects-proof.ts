@@ -1,20 +1,16 @@
-import {
-  Camera,
-  Color3,
-  Color4,
-  Engine,
-  FreeCamera,
-  Matrix,
-  MeshBuilder,
-  PBRMaterial,
-  Scene,
-  SpotLight,
-  type AbstractEngine,
-  type Material,
-  type Mesh,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Scene } from "@babylonjs/core/scene";
 import {
   fogVolumeBindings,
   identitySerializedTransform,

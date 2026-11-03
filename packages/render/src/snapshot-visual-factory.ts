@@ -6,13 +6,11 @@ import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { createCableMesh } from "./cable-mesh";
 import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { createMirrorSurfaceMesh } from "./mirrors";
-import {
-  Mesh,
-  MeshBuilder,
-  Quaternion,
-  TransformNode,
-  type Scene,
-} from "@babylonjs/core";
+import { Quaternion } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   DEFAULT_SORTING_LAYERS,
   emptySkyboxFaces,

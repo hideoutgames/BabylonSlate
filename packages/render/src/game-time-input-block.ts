@@ -1,4 +1,9 @@
-import { AnimatedInputBlockTypes, InputBlock, NodeMaterialBlockConnectionPointTypes, type Scene } from "@babylonjs/core";
+import { AnimatedInputBlockTypes } from "@babylonjs/core/Materials/Node/Blocks/Input/animatedInputBlockTypes";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import {
+  NodeMaterialBlockConnectionPointTypes,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import type { Scene } from "@babylonjs/core/scene";
 import { isSceneGameTimePaused, sceneGameTimeNow } from "./scene-game-time";
 
 /**

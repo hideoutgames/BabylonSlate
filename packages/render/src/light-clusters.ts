@@ -1,4 +1,4 @@
-import { Matrix, Vector3 } from "@babylonjs/core";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 
 /**
  * Light clusters for the light block: the rendering camera's view volume cut into screen tiles and exponential view

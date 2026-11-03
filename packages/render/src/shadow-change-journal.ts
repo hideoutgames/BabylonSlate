@@ -1,4 +1,6 @@
-import type { Matrix, RenderTargetTexture, Scene } from "@babylonjs/core";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 
 /**
  * Where a shadow map's content changed: world boxes holding every caster whose drawing changed (where it was before

@@ -1,4 +1,5 @@
-import type { AbstractEngine, Scene } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   availableManagedLightingBytes,
   reserveManagedShadowBytes,

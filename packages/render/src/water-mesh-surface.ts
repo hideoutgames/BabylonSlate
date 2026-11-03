@@ -2,7 +2,10 @@
  * The water mesh's per-surface model, shared by its modules: the built grid's inputs (`LAYOUT_STATE`), `Surface`, the
  * per-vertex arrays a blend write fills (`RestBuffers`) and a surface's blending with its neighbours (`SurfaceBlend`).
  */
-import type { Material, Matrix, Mesh, SubMesh, Vector3 } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { WaterBodyProperties, WaterDefinition } from "@haptic/core";
 import type { AuthoredMaterialVariant } from "./material-compiler";
 import type { WaterContactField } from "./water-contact-field";

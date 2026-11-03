@@ -1,4 +1,6 @@
-import { Matrix, Vector3, Viewport, type Scene } from "@babylonjs/core";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
+import type { Scene } from "@babylonjs/core/scene";
 import { actorMeshName } from "./picking";
 
 export interface CanvasPoint {

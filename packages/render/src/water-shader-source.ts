@@ -2,7 +2,7 @@
  * Assembled water shader source per language: the Water Waves node's sources and the Water Cut block's blend cull.
  * `toWgsl` translates the GLSL-shaped chunks.
  */
-import { ShaderLanguage } from "@babylonjs/core";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { WATER_FFT_CASCADES_MAX, WATER_FOAM_WEIGHTS } from "@haptic/core";
 import {
   fftHelpers, fftTurnIn, fftTurnOut, fftTurnTensor, FOAM_FAR_PATCHES, ifFft, SHADING_SLOPE_CAP, spectrumHelpers, spectrumNormalSource,

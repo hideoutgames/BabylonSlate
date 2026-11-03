@@ -1,4 +1,7 @@
-import { InstancedMesh, Mesh, type AbstractMesh, type Scene } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { isSkyboxMesh } from "./skybox";
 

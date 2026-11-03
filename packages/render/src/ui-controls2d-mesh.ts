@@ -1,4 +1,9 @@
-import { Color3, MeshBuilder, VertexData, type AbstractMesh, type Mesh, type Scene } from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { Scene } from "@babylonjs/core/scene";
 import { parseUIControl2DProperties, uiControl2DFraction, type UIControl2DProperties } from "@haptic/core";
 import { applyAlbedoTexture, restoreAlbedoMaterial, type MeshAssetContext } from "./mesh-assets";
 import { applyOverlayUnlitMaterial, type OverlayUnlitFallback } from "./overlay-texture-quad";

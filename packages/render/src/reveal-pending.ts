@@ -1,4 +1,7 @@
-import type { AbstractMesh, Material, Node, Scene } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import { drawingMesh } from "./instance-source";
 
 /**

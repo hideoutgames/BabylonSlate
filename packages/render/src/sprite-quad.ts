@@ -1,9 +1,7 @@
-import {
-  Mesh,
-  MeshBuilder,
-  Scene,
-  VertexBuffer,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { spriteWorldSize, type SpritePayload, type TileUv } from "@haptic/assets";
 import { markOwnerNotifiedGeometry } from "./geometry-revision";
 

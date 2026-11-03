@@ -1,23 +1,19 @@
-import {
-  Color3,
-  Constants,
-  CreateDashedLinesVertexData,
-  FreeCamera,
-  Matrix,
-  MeshBuilder,
-  Quaternion,
-  RenderTargetTexture,
-  TransformNode,
-  Vector3,
-  VertexBuffer,
-  VertexData,
-  type AbstractMesh,
-  type Light,
-  type LinesMesh,
-  type Node,
-  type Observer,
-  type Scene,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { CreateDashedLinesVertexData } from "@babylonjs/core/Meshes/Builders/linesBuilder";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,

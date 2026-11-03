@@ -1,7 +1,20 @@
-import {
-  CubeTexture, InstancedMesh, Matrix, Mesh, MultiMaterial, NodeMaterial, PBRMaterial, RawTexture, StandardMaterial, Texture,
-  VertexBuffer, type AbstractMesh, type BaseTexture, type Geometry, type Light, type Material, type Scene,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Geometry } from "@babylonjs/core/Meshes/geometry";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";

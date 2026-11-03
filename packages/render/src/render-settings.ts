@@ -1,4 +1,6 @@
-import { RenderTargetTexture, type BaseTexture, type Scene } from "@babylonjs/core";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   mergeRenderSettings,
   type RenderSettingsPatch,

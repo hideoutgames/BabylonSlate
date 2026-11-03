@@ -1,5 +1,9 @@
 import { materialTextureBindings, type ResourceLease } from "./resource-cache";
-import type { Material, NodeMaterial, Observer, Scene, Texture } from "@babylonjs/core";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Scene } from "@babylonjs/core/scene";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import type { MaterialParameterValue } from "@haptic/bridge";

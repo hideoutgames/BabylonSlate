@@ -1,4 +1,12 @@
-import { Color4, InputBlock, NodeMaterialBlockConnectionPointTypes, type AbstractMesh, type Material, type Mesh, type SubMesh } from "@babylonjs/core";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import {
+  NodeMaterialBlockConnectionPointTypes,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { MaterialParameterValue } from "@haptic/core";
 import { drawingMesh } from "./instance-source";
 

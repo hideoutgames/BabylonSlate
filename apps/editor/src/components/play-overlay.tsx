@@ -39,7 +39,7 @@ import { cn } from "@haptic/ui/lib/utils";
 import { SelectableText } from "@haptic/editor-kit";
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import { applyInspectSelectionToConsoleLine } from "@haptic/runtime";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { createAppSettingsStore } from "@haptic/vfs";
 import {
   startPlaySession,

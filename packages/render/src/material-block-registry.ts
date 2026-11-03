@@ -7,60 +7,57 @@ import { WaterSurfaceBlock } from "./water-surface-block";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import type { WaterWavesBlock } from "./water-waves-block";
 import { WaterColorsBlock, WaterDepthFadeBlock, WaterFoamBlock, WaterReflectionBlock, WaterSceneColorBlock } from "./water-node-blocks";
+import { CurrentScreenBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/currentScreenBlock";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
+import { DerivativeBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/derivativeBlock";
+import { PerturbNormalBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/perturbNormalBlock";
+import { ScreenSizeBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/screenSizeBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { AddBlock } from "@babylonjs/core/Materials/Node/Blocks/addBlock";
+import { ArcTan2Block } from "@babylonjs/core/Materials/Node/Blocks/arcTan2Block";
+import { ClampBlock } from "@babylonjs/core/Materials/Node/Blocks/clampBlock";
+import { ConditionalBlock, ConditionalBlockConditions } from "@babylonjs/core/Materials/Node/Blocks/conditionalBlock";
+import { CrossBlock } from "@babylonjs/core/Materials/Node/Blocks/crossBlock";
+import { DesaturateBlock } from "@babylonjs/core/Materials/Node/Blocks/desaturateBlock";
+import { DistanceBlock } from "@babylonjs/core/Materials/Node/Blocks/distanceBlock";
+import { DivideBlock } from "@babylonjs/core/Materials/Node/Blocks/divideBlock";
+import { DotBlock } from "@babylonjs/core/Materials/Node/Blocks/dotBlock";
+import { ElbowBlock } from "@babylonjs/core/Materials/Node/Blocks/elbowBlock";
+import { FresnelBlock } from "@babylonjs/core/Materials/Node/Blocks/fresnelBlock";
+import { GradientBlock, GradientBlockColorStep } from "@babylonjs/core/Materials/Node/Blocks/gradientBlock";
+import { LengthBlock } from "@babylonjs/core/Materials/Node/Blocks/lengthBlock";
+import { LerpBlock } from "@babylonjs/core/Materials/Node/Blocks/lerpBlock";
+import { MaxBlock } from "@babylonjs/core/Materials/Node/Blocks/maxBlock";
+import { MinBlock } from "@babylonjs/core/Materials/Node/Blocks/minBlock";
+import { ModBlock } from "@babylonjs/core/Materials/Node/Blocks/modBlock";
+import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlock";
+import { NegateBlock } from "@babylonjs/core/Materials/Node/Blocks/negateBlock";
+import { NormalizeBlock } from "@babylonjs/core/Materials/Node/Blocks/normalizeBlock";
+import { OneMinusBlock } from "@babylonjs/core/Materials/Node/Blocks/oneMinusBlock";
+import { PowBlock } from "@babylonjs/core/Materials/Node/Blocks/powBlock";
+import { ReciprocalBlock } from "@babylonjs/core/Materials/Node/Blocks/reciprocalBlock";
+import { RefractBlock } from "@babylonjs/core/Materials/Node/Blocks/refractBlock";
+import { RemapBlock } from "@babylonjs/core/Materials/Node/Blocks/remapBlock";
+import { Rotate2dBlock } from "@babylonjs/core/Materials/Node/Blocks/rotate2dBlock";
+import { ScaleBlock } from "@babylonjs/core/Materials/Node/Blocks/scaleBlock";
+import { SmoothStepBlock } from "@babylonjs/core/Materials/Node/Blocks/smoothStepBlock";
+import { StepBlock } from "@babylonjs/core/Materials/Node/Blocks/stepBlock";
+import { SubtractBlock } from "@babylonjs/core/Materials/Node/Blocks/subtractBlock";
+import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
 import {
-  AddBlock,
-  ArcTan2Block,
-  ClampBlock,
-  Color3,
-  Color4,
-  ConditionalBlock,
-  ConditionalBlockConditions,
-  CrossBlock,
-  CurrentScreenBlock,
-  DerivativeBlock,
-  DesaturateBlock,
-  DistanceBlock,
-  DivideBlock,
-  DotBlock,
-  ElbowBlock,
-  FresnelBlock,
-  GradientBlock,
-  GradientBlockColorStep,
-  InputBlock,
-  LengthBlock,
-  LerpBlock,
-  MaxBlock,
-  MinBlock,
-  ModBlock,
-  MultiplyBlock,
-  NegateBlock,
-  NodeMaterialBlockConnectionPointTypes,
-  NodeMaterialSystemValues,
-  NormalizeBlock,
-  OneMinusBlock,
-  PerturbNormalBlock,
-  PowBlock,
-  ReciprocalBlock,
-  RefractBlock,
-  RemapBlock,
-  Rotate2dBlock,
-  ScaleBlock,
-  ScreenSizeBlock,
-  SmoothStepBlock,
-  StepBlock,
-  SubtractBlock,
-  TextureBlock,
-  TransformBlock,
   TrigonometryBlock,
   TrigonometryBlockOperations,
-  Vector2,
-  Vector3,
-  Vector4,
-  VectorMergerBlock,
-  VectorSplitterBlock,
-  type NodeMaterialBlock,
-  type NodeMaterialConnectionPoint,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Materials/Node/Blocks/trigonometryBlock";
+import { VectorMergerBlock } from "@babylonjs/core/Materials/Node/Blocks/vectorMergerBlock";
+import { VectorSplitterBlock } from "@babylonjs/core/Materials/Node/Blocks/vectorSplitterBlock";
+import {
+  NodeMaterialBlockConnectionPointTypes,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialSystemValues";
+import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector2, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import { CustomBlock } from "@babylonjs/core/Materials/Node/Blocks/customBlock";
 import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
 import { SceneDepthBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/sceneDepthBlock";

@@ -2,7 +2,15 @@
  * Per-Scene water state shared by every water surface: placeholder textures, the lighting water reads from the Scene
  * (`sceneWaterLighting`) and the per-frame binding data that caches it with the Scene's removal volumes.
  */
-import { BaseTexture, Color3, Constants, DirectionalLight, HemisphericLight, Matrix, RawTexture, Texture, Vector3, Scene } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Scene } from "@babylonjs/core/scene";
 import type { WaterDefinition } from "@haptic/core";
 import { sceneHasWaterRemovals, sceneWaterRemovals, waterRemovalWorldRadius } from "./water-removal-mesh";
 import { waterHazeConstants } from "./water-shader-defines";

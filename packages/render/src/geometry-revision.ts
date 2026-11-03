@@ -1,4 +1,5 @@
-import { VertexBuffer, type Geometry } from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { Geometry } from "@babylonjs/core/Meshes/geometry";
 
 type GeometryWatch = {
   users: number;

@@ -1,4 +1,5 @@
-import type { AbstractEngine, EngineView } from "@babylonjs/core";
+import type { EngineView } from "@babylonjs/core/Engines/AbstractEngine/abstractEngine.views";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 
 /**
  * Direct view presentation. While exactly one enabled registered view is laid

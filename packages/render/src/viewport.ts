@@ -1,4 +1,6 @@
-import { ArcRotateCamera, Scene, Vector3 } from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Scene } from "@babylonjs/core/scene";
 
 import { DEFAULT_CAMERA_RADIUS } from "./editor-camera";
 import { installEngineDefaultMaterial } from "./default-material";

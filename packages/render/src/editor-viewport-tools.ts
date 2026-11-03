@@ -1,11 +1,10 @@
 import { deformerBindings } from "@haptic/core";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost } from "./scene-outline-host";
-import type { AbstractEngine, AbstractMesh } from "@babylonjs/core";
-import {
-  Mesh,
-  Scene,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Scene } from "@babylonjs/core/scene";
 import type {
   ViewportMode,
 } from "@haptic/core";

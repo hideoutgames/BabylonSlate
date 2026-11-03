@@ -1,4 +1,9 @@
-import { CreatePlaneVertexData, DynamicTexture, MeshBuilder, Texture, type Mesh, type Scene } from "@babylonjs/core";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { CreatePlaneVertexData } from "@babylonjs/core/Meshes/Builders/planeBuilder";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { Scene } from "@babylonjs/core/scene";
 import { painterRevision, painterTextureSize, parsePainter2DProperties, type Painter2DProperties, type PainterColor, type PainterCommand, type PainterPathSegment } from "@haptic/core";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";

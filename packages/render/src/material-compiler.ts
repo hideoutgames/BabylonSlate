@@ -1,38 +1,37 @@
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { CoverageClipBlock, registerAlphaToCoverage } from "./alpha-to-coverage";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
+import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
+import { ImageProcessingBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/imageProcessingBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { ParticleBlendMultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleBlendMultiplyBlock";
+import { BonesBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/bonesBlock";
+import { MorphTargetsBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/morphTargetsBlock";
+import { VertexOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/vertexOutputBlock";
+import { AddBlock } from "@babylonjs/core/Materials/Node/Blocks/addBlock";
+import { ColorSplitterBlock } from "@babylonjs/core/Materials/Node/Blocks/colorSplitterBlock";
+import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlock";
+import { RemapBlock } from "@babylonjs/core/Materials/Node/Blocks/remapBlock";
+import { VectorMergerBlock } from "@babylonjs/core/Materials/Node/Blocks/vectorMergerBlock";
+import { VectorSplitterBlock } from "@babylonjs/core/Materials/Node/Blocks/vectorSplitterBlock";
 import {
-  AddBlock,
-  BonesBlock,
-  ColorSplitterBlock,
-  MorphTargetsBlock,
-  MultiplyBlock,
-  Constants,
-  FragmentOutputBlock,
-  ImageProcessingBlock,
-  InputBlock,
-  Material,
-  InstancedMesh,
-  Mesh,
-  MeshBuilder,
-  ParticleBlendMultiplyBlock,
-  ParticleSystem,
-  NodeMaterial,
-  ShaderLanguage,
   NodeMaterialBlockConnectionPointTypes,
-  NodeMaterialModes,
-  RemapBlock,
-  TextureBlock,
-  VectorMergerBlock,
-  VectorSplitterBlock,
-  VertexOutputBlock,
-  type AbstractEngine,
-  type Effect,
-  type NodeMaterialBlock,
-  type NodeMaterialConnectionPoint,
-  type NodeMaterialDefines,
-  type Scene,
-  type Texture,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import { NodeMaterial, type NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Material } from "@babylonjs/core/Materials/material";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import type { Scene } from "@babylonjs/core/scene";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
 import type {

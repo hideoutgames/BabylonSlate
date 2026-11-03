@@ -1,4 +1,6 @@
-import { Effect, type AbstractEngine, type Observer } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Effect } from "@babylonjs/core/Materials/effect";
+import type { Observer } from "@babylonjs/core/Misc/observable";
 
 export interface OwnedEffectRetirement {
   /** Bounded cleanup result. Rejection does not establish safe resource release. */

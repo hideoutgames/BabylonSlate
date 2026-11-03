@@ -1,11 +1,9 @@
-import {
-  CascadedShadowGenerator,
-  DirectionalLight,
-  type ShadowGenerator,
-  type Light,
-  type Scene,
-  type Camera,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import type { Scene } from "@babylonjs/core/scene";
 import type { ShadowSettings } from "@haptic/core";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
 import { isAtlasShadow } from "./shadow-atlas";

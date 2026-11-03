@@ -1,4 +1,5 @@
-import { InternalTexture, InternalTextureSource, type AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 
 /**
  * Babylon 9.29 NullEngine has no depth-array texture and ignores

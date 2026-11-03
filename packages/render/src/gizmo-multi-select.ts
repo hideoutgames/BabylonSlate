@@ -1,10 +1,6 @@
-import {
-  Matrix,
-  Quaternion,
-  Vector3,
-  type AbstractMesh,
-  type DeepImmutable,
-} from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { DeepImmutable } from "@babylonjs/core/types";
 
 const scratchScale = new Vector3();
 const scratchRotation = new Quaternion();

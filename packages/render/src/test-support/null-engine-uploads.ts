@@ -1,4 +1,4 @@
-import type { NullEngine } from "@babylonjs/core";
+import type { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { vi } from "vitest";
 
 /**

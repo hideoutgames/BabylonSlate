@@ -2,7 +2,8 @@
  * When blend data change: the per-frame sync of each scene's `WaterBlendIndex` (`syncSceneBlend`) and a moved body's
  * budgeted blend refresh (`BlendRebuild`), which keeps the previous data until every vertex has its new data.
  */
-import { Matrix, Quaternion, Vector3, type Scene } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import { WaterBlendIndex, type Transform, type WaterBlendBody } from "@haptic/core";
 import { sceneWaterBlendDistance } from "./render-settings";
 import { blendOwnership } from "./water-blend-ownership";

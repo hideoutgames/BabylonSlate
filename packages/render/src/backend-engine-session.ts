@@ -1,5 +1,5 @@
 import { setEngineBackendStatus } from "./backend-status";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { GpuBackend } from "@haptic/core";
 import { createAppEngine, type CreateEngineOptions } from "./create-engine";
 import { allowDirectViewPresentation } from "./direct-view-presentation";

@@ -1,4 +1,4 @@
-import type { AbstractMesh } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { RENDERING_GROUP } from "./sorting";
 
 /** Keep a Play debug mesh out of picking, shadows, fog and Play wireframe/bounds. */

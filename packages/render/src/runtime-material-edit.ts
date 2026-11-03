@@ -1,4 +1,6 @@
-import { Mesh, type Material, type NodeMaterial } from "@babylonjs/core";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { CommandMessage, MaterialParameterValue, RuntimeMaterialEditPreparation } from "@haptic/bridge";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";

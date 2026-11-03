@@ -11,10 +11,20 @@
  * Readiness: the mirror camera and target never join the scene's cameras or textures (their construction blocks
  * entity collection), so allocating, resizing and releasing never changes scene membership.
  */
-import {
-  Camera, Constants, Frustum, Matrix, MultiMaterial, RenderTargetTexture, Texture, ThinTexture, Vector3,
-  type AbstractEngine, type Color4, type AbstractMesh, type IParticleSystem, type Plane, type Scene,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import type { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
+import type { Plane } from "@babylonjs/core/Maths/math.plane";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
+import type { Scene } from "@babylonjs/core/scene";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import {

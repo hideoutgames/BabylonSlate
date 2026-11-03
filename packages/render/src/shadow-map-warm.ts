@@ -1,4 +1,6 @@
-import type { AbstractEngine, Scene, ShadowGenerator } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import type { Scene } from "@babylonjs/core/scene";
 import { isFirstDrawHeld, setFirstDrawHeld, withWarmShadowRender } from "./shadow-first-draw";
 import {
   beginPipelineDeferral,

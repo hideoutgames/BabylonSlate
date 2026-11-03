@@ -1,4 +1,5 @@
-import type { Effect, Scene } from "@babylonjs/core";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Scene } from "@babylonjs/core/scene";
 import { DriverCompileWatch } from "./driver-compile";
 
 /**

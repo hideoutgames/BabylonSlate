@@ -3,23 +3,17 @@ import { sceneRenderTargetCaptures } from "./render-target-capture";
 import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { authoredActorMatrices, authoredComponentActorTransform } from "./authored-transform-matrices";
-import {
-  Camera,
-  Color3,
-  DirectionalLight,
-  HemisphericLight,
-  PointLight,
-  Quaternion,
-  Scene,
-
-  SpotLight,
-  UniversalCamera,
-  Vector3,
-
-  type Light,
-  type AbstractMesh,
-  type Matrix,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Quaternion, Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import type { SerializedActor, SerializedComponent, SerializedScene } from "@haptic/core";
 import {

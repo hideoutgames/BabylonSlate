@@ -1,23 +1,18 @@
-import {
-  CascadedShadowGenerator,
-  Constants,
-  Matrix,
-  RenderTargetTexture,
-  Vector2,
-  Vector3,
-  Vector4,
-  Viewport,
-  ShadowGenerator,
-  type AbstractEngine,
-  type Camera,
-  type DirectionalLight,
-  type Effect,
-  type Light,
-  type PointLight,
-  type RenderTargetWrapper,
-  type Scene,
-  type SpotLight,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import type { PointLight } from "@babylonjs/core/Lights/pointLight";
+import type { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Matrix, Vector2, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
+import type { Scene } from "@babylonjs/core/scene";
 import { SHADOW_CAPACITY_PROFILES, type ShadowProfile } from "@haptic/core";
 import { deviceProfile } from "./device-profile";
 import { ShadowAtlasAllocator, type ShadowAtlasTile } from "./shadow-atlas-allocator";

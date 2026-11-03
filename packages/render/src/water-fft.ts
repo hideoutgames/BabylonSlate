@@ -38,20 +38,17 @@
  * `retireOwnedEffect`. Readiness never blocks: `ready` stays false (the material draws flat water) until the first
  * dispatch completes.
  */
-import {
-  BaseTexture,
-  Constants,
-  EffectRenderer,
-  EffectWrapper,
-  ShaderStore,
-  ThinTexture,
-  type AbstractEngine,
-  type AbstractMesh,
-  type InternalTexture,
-  type Observer,
-  type RenderTargetWrapper,
-  type Scene,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
+import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
+import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Scene } from "@babylonjs/core/scene";
 import { waterSpectrum, type WaterDefinition, type WaterSpectrum } from "@haptic/core";
 import { inActiveView } from "./active-view";
 import { createEngineDrawingState, restoreEngineDrawingState, saveEngineDrawingState } from "./engine-drawing-state";

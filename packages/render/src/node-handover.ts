@@ -1,4 +1,6 @@
-import type { AnimationGroup, Node, Scene } from "@babylonjs/core";
+import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 
 /** Babylon 9.29 `RuntimeAnimation` fields a target change rebinds (`_preparePath` resolves the property path). */
 interface RuntimeAnimationTarget {

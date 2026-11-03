@@ -1,13 +1,10 @@
-import {
-  Constants,
-  CubeTexture,
-  EffectRenderer,
-  EffectWrapper,
-  type AbstractEngine,
-  type BaseTexture,
-  type InternalTexture,
-  type RenderTargetWrapper,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
 import { withDrawingState } from "./engine-drawing-state";
 import {
   beginManagedRenderAllocation,

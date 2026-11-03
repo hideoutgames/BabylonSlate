@@ -2,7 +2,10 @@
  * The water surface's rest grid: graded and uniform axes, river strips, the cell budgets Water Mesh Density scales and
  * Global Water's recentre on whole cells (`updateLayout`).
  */
-import { ArcRotateCamera, Vector3, VertexData, type Camera, type Matrix } from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { waterFootprint, waterRiverCentreline, type WaterBodyProperties } from "@haptic/core";
 import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { sceneBlends } from "./water-mesh-blend-data";

@@ -1,7 +1,12 @@
 import { createPooledPrimitiveVisual, POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
 import { syncPooledLeafFlags } from "./pooled-visuals";
 import { applyOccluderProperty } from "./view-occlusion";
-import { Mesh, MeshBuilder, Quaternion, Scene, Vector3, type AbstractMesh, type Matrix, type TransformNode } from "@babylonjs/core";
+import { Quaternion, Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Scene } from "@babylonjs/core/scene";
 import { resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
 import { bindEditorCable, configureCableMesh, findEditorCableMesh, hasEditorCableMeshes, pruneEditorCables, updateCablePreview } from "./cable-mesh";
@@ -271,7 +276,7 @@ export function applyAuthoredActorMaterialInstances(
     const text = component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent";
     applyAuthoredMaterialInstance(visual, component, assets, {
       unlit: text || component.classId.startsWith("2D"), onPublished,
-      ...(text ? { apply: (material: import("@babylonjs/core").Material) => refreshText2DMaterials(visual, {
+      ...(text ? { apply: (material: import("@babylonjs/core/Materials/material").Material) => refreshText2DMaterials(visual, {
         ...assets, resolveMaterial: (guid, options) => guid === component.properties.materialGuid
           ? material : assets?.resolveMaterial?.(guid, options) ?? null,
       }) } : {}),

@@ -3,14 +3,11 @@
  * investigation. Records presented viewport frames plus live Scene internals
  * on the shared Engine; the e2e spec drives the real editor documents.
  */
-import {
-  Matrix,
-  Mesh,
-  Vector3,
-  type AbstractEngine,
-  type AbstractMesh,
-  type Scene,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   PREVIEW_SKYBOX_MESH_NAME,
   type EngineHandle,

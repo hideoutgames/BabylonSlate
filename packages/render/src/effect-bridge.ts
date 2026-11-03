@@ -1,4 +1,5 @@
-import { Effect, type AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Effect } from "@babylonjs/core/Materials/effect";
 
 /** Longest a bridge keeps Effects for a view that never presents (a load that failed or was abandoned). */
 export const EFFECT_BRIDGE_MS = 120_000;

@@ -1,17 +1,13 @@
-import {
-  BoundingInfo,
-  Camera,
-  Frustum,
-  Matrix,
-  Plane,
-  Quaternion,
-  Vector3,
-  type Effect,
-  type Observer,
-  type Node,
-  type Scene,
-  type TransformNode,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
+import { Plane } from "@babylonjs/core/Maths/math.plane";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import type { FogVolumeBinding, FogVolumeProperties } from "@haptic/core";
 import { setSceneFogVolumesPresent } from "./render-settings";
 

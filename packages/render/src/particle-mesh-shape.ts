@@ -1,17 +1,16 @@
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { CreateSphereVertexData } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import {
-  CreateSphereVertexData,
-  Matrix,
-  type Mesh,
-  NodeParticleBlock,
   NodeParticleBlockConnectionPointTypes,
-  Vector3,
-  VertexData,
-  type AbstractMesh,
-  type NodeParticleBuildState,
-  type NodeParticleConnectionPoint,
-  type Particle,
-  type ParticleSystem,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Particles/Node/Enums/nodeParticleBlockConnectionPointTypes";
+import { NodeParticleBlock } from "@babylonjs/core/Particles/Node/nodeParticleBlock";
+import type { NodeParticleConnectionPoint } from "@babylonjs/core/Particles/Node/nodeParticleBlockConnectionPoint";
+import type { NodeParticleBuildState } from "@babylonjs/core/Particles/Node/nodeParticleBuildState";
+import type { Particle } from "@babylonjs/core/Particles/particle";
+import type { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 
 /**
  * Mesh Shape geometry in the emitter's space: positions and indices, with normals and RGBA

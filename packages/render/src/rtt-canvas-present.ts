@@ -1,4 +1,6 @@
-import { NullEngine, type RenderTargetTexture, type Scene } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Scene } from "@babylonjs/core/scene";
 import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { createDepthTextureTarget } from "./depth-texture-target";

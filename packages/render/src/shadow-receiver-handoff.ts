@@ -1,10 +1,8 @@
-import {
-  NodeMaterial,
-  ShadowLight,
-  type Light,
-  type MaterialDefines,
-  type Scene,
-} from "@babylonjs/core";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { ShadowLight } from "@babylonjs/core/Lights/shadowLight";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines";
+import type { Scene } from "@babylonjs/core/scene";
 import { notifySceneReceiversChanged } from "./scene-readiness-signal";
 
 /** Every per-light input of Babylon 9.29 PrepareDefinesForLight except the generator. */

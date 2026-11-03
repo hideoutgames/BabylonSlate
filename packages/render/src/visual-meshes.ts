@@ -1,5 +1,8 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { Mesh, type AbstractMesh, type Material, type Node } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Node } from "@babylonjs/core/node";
 import { isColliderVisualTree } from "./collider-visual";
 
 function hasGeometry(mesh: AbstractMesh): boolean {

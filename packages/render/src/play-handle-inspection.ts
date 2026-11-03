@@ -1,4 +1,4 @@
-import { Mesh } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { EngineHandle } from "./create-engine-types";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 

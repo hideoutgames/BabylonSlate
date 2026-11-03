@@ -1,4 +1,5 @@
-import type { Camera, Scene } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { Scene } from "@babylonjs/core/scene";
 import { normalizeScenePostProcessStack } from "@haptic/core";
 import type { MaterialParameterValue } from "@haptic/bridge";
 import type { MaterialDocument } from "@haptic/shader-graph";

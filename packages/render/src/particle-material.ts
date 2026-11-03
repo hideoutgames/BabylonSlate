@@ -1,4 +1,5 @@
-import { NodeMaterialModes, type NodeMaterial } from "@babylonjs/core";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { MaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 import type { ParticleMaterialOwner } from "./particle-service";

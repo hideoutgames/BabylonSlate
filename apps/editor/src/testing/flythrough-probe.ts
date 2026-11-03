@@ -12,24 +12,22 @@
  * device performance. The e2e route (`e2e/feature-test-flythrough-route.spec.ts`)
  * analyses the frames; this module only records them.
  */
-import {
-  FrameGraph,
-  Material,
-  MaterialDefines,
-  NodeMaterial,
-  PBRBaseMaterial,
-  ShaderMaterial,
-  ShadowGenerator,
-  StandardMaterial,
-  TargetCamera,
-  Vector3,
-  type AbstractEngine,
-  type Camera,
-  type AbstractMesh,
-  type Light,
-  type Observer,
-  type Scene,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial";
+import { Material } from "@babylonjs/core/Materials/material";
+import { MaterialDefines } from "@babylonjs/core/Materials/materialDefines";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Scene } from "@babylonjs/core/scene";
 import { PLAY_FREE_CAM_NAME, type EngineHandle } from "@haptic/render";
 
 export type FlyVec3 = [number, number, number];

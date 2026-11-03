@@ -1,18 +1,15 @@
-import {
-  Camera,
-  CascadedShadowGenerator,
-  DirectionalLight,
-  InstancedMesh,
-  Matrix,
-  Mesh,
-  RenderTargetTexture,
-  VertexBuffer,
-  type AbstractMesh,
-  type Geometry,
-  type Scene,
-  type ShadowGenerator,
-  type Vector3,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Matrix, type Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Geometry } from "@babylonjs/core/Meshes/geometry";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { AtlasCascadedShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { castsIntoCascade } from "./shadow-caster-size";
 import { canCacheShadowMaterial } from "./shadow-material-policy";

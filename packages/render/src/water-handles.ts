@@ -1,4 +1,7 @@
-import { Color3, Vector3, type Scene, type UtilityLayerRenderer } from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   normalizeWaterBody, waterRiverCentreline, WATER_RIVER_SUBDIVISIONS,
   type WaterBodyProperties, type WaterKind,

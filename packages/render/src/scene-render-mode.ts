@@ -1,4 +1,4 @@
-import type { Scene } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core/scene";
 import type { CelShadingOverrides, ShadowOverrides } from "@haptic/core";
 import {
   updateSceneRenderingSettings,

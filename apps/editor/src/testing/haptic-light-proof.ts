@@ -5,29 +5,26 @@
  * colours, rect lights' form factors and mirror images), its CEL define, its Effects across light changes in both
  * render modes, and its shadows against ray-cast occlusion masks.
  */
-import {
-  Color4,
-  Constants,
-  DirectionalLight,
-  Engine,
-  FreeCamera,
-  HemisphericLight,
-  Matrix,
-  MeshBuilder,
-  PointLight,
-  RawCubeTexture,
-  Ray,
-  Scene,
-  ShadowGenerator,
-  SpotLight,
-  TransformNode,
-  Vector3,
-  type AbstractEngine,
-  type AbstractMesh,
-  type Effect,
-  type Light,
-  type NodeMaterial,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { RawCubeTexture } from "@babylonjs/core/Materials/Textures/rawCubeTexture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Scene } from "@babylonjs/core/scene";
 import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
 import {
   normalizeCelShadingSettings,

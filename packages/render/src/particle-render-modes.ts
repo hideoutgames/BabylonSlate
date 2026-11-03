@@ -1,4 +1,4 @@
-import { ParticleSystem } from "@babylonjs/core";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import type { ParticleBillboardMode, ParticleBlendMode } from "@haptic/core";
 
 /**

@@ -1,4 +1,5 @@
-import type { BaseTexture, Scene } from "@babylonjs/core";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { Scene } from "@babylonjs/core/scene";
 
 export type AllocationRollback = (options?: {
   /** Owner-specific release that runs first; its failures are collected too. */

@@ -1,11 +1,9 @@
-import {
-  Color3,
-  CreateBox,
-  CreateLineSystem,
-  Mesh,
-  Vector3,
-  type Scene,
-} from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
+import { CreateLineSystem } from "@babylonjs/core/Meshes/Builders/linesBuilder";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { normalizeWaterRemoval, type WaterRemovalProperties } from "@haptic/core";
 import { RENDERING_GROUP } from "./sorting";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";

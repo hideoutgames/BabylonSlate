@@ -1,4 +1,13 @@
-import { MaterialPluginBase, PBRBaseMaterial, StandardMaterial, type AbstractMesh, type Material, type MaterialDefines, type Scene, type ShaderLanguage, type SubMesh, type UniformBuffer } from "@babylonjs/core";
+import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines";
+import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
+import type { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { defaultVertexShader } from "@babylonjs/core/Shaders/default.vertex";
 import { pbrVertexShader } from "@babylonjs/core/Shaders/pbr.vertex";
 import { defaultVertexShaderWGSL } from "@babylonjs/core/ShadersWGSL/default.vertex";

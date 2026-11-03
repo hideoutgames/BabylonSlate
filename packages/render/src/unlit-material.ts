@@ -1,9 +1,25 @@
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { ImageProcessingBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/imageProcessingBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { InstancesBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/instancesBlock";
+import { VertexOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/vertexOutputBlock";
+import { ColorMergerBlock } from "@babylonjs/core/Materials/Node/Blocks/colorMergerBlock";
+import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
 import {
-  ColorMergerBlock, Constants, ImageProcessingBlock, ImageProcessingConfiguration, InputBlock, InstancesBlock, Material, NodeMaterial,
-  NodeMaterialBlockConnectionPointTypes as Types, NodeMaterialSystemValues, ShaderLanguage, TransformBlock,
-  Vector4, VertexBuffer, VertexOutputBlock,
-  type AbstractMesh, type BaseTexture, type Mesh, type NodeMaterialBlock, type NodeMaterialDefines, type Scene,
-} from "@babylonjs/core";
+  NodeMaterialBlockConnectionPointTypes as Types,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialSystemValues";
+import { NodeMaterial, type NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
+import { Material } from "@babylonjs/core/Materials/material";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { Vector4 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type { IImageProcessingConfigurationDefines } from "@babylonjs/core/Materials/imageProcessingConfiguration.defines";
 import { PrepareDefinesForPrePass } from "@babylonjs/core/Materials/materialHelper.functions";
 import { MaterialHelperGeometryRendering } from "@babylonjs/core/Materials/materialHelper.geometryrendering";

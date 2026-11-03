@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { ModelMaterialSlot, SkeletonKind } from "@haptic/assets";
 import {
   attachMaterialPreviewGestures,

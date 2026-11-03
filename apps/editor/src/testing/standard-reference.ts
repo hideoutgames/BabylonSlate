@@ -4,7 +4,10 @@
  * references (`unlit-parity-proof.ts`) and the water template proof's floor. The engine itself creates no Standard
  * material.
  */
-import { MaterialPluginBase, ShaderLanguage, ShaderStore, type Material } from "@babylonjs/core";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { defaultPixelShader } from "@babylonjs/core/Shaders/default.fragment";
 import { defaultPixelShaderWGSL } from "@babylonjs/core/ShadersWGSL/default.fragment";
 import { checkedShader } from "../../../../packages/render/src/checked-shader";

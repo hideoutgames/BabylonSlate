@@ -1,4 +1,6 @@
-import { Mesh, SubMesh, type AbstractMesh } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
 /** Partition static index ranges without copying geometry or reordering faces. */

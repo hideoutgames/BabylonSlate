@@ -1,12 +1,9 @@
 import { setFogVolumesVisible } from "./fog-volumes";
 import { sampleSceneWaterFrame } from "./water-mesh";
 import { sampleCableFrame } from "./cable-mesh";
-import {
-  Quaternion,
-  Vector3,
-  type Mesh,
-  type Scene,
-} from "@babylonjs/core";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,

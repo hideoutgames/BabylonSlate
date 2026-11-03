@@ -2,7 +2,10 @@
  * GPU wave displacement for water drawn by a Material with a Water Waves node: grid offsets, the spectrum's vertex
  * uniforms and `WaterVertexWaves`.
  */
-import { BaseTexture, Vector3, type AbstractMesh, Scene } from "@babylonjs/core";
+import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Scene } from "@babylonjs/core/scene";
 import { WATER_FFT_CASCADES_MAX, waterBankFadeLength, waterFoamScale, waterSpectrum, type WaterBodyProperties, type WaterDefinition } from "@haptic/core";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { waterFftForSurface, type WaterFftResult } from "./water-fft";

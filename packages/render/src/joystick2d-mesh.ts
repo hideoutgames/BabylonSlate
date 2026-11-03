@@ -1,4 +1,7 @@
-import { MeshBuilder, type AbstractMesh, type Mesh, type Scene } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { Scene } from "@babylonjs/core/scene";
 import { parseJoystick2DProperties, type Joystick2DProperties } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyOverlayUnlitMaterial, type OverlayUnlitFallback } from "./overlay-texture-quad";

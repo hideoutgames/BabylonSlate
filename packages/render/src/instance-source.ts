@@ -1,4 +1,6 @@
-import type { AbstractMesh, InstancedMesh, Mesh } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 
 /**
  * A regular instance draws in its source's batch, with its source's submeshes, Effects and pipelines: the source is

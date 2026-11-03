@@ -1,5 +1,5 @@
 import type { ResolutionQuality } from "@haptic/core";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 
 /**
  * Per-view frame cost, measured across one rendered (non-loading) frame.

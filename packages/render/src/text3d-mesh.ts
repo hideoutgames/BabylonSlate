@@ -1,11 +1,9 @@
-import {
-  Mesh,
-  MeshBuilder,
-  TransformNode,
-  Vector3,
-  VertexBuffer,
-  type Scene,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Scene } from "@babylonjs/core/scene";
 import { CreatePolygon } from "@babylonjs/core/Meshes/Builders/polygonBuilder";
 import {
   CreateTextShapePaths,

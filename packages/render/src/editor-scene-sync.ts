@@ -1,5 +1,10 @@
 import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
-import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import { applyMaterialBounds } from "./material-bounds";
 import { pooledLeafOf, setDrawnMaterial } from "./pooled-visuals";
 import { isPoolMember } from "./instance-pool";

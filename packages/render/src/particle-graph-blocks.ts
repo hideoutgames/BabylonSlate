@@ -1,59 +1,72 @@
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import {
-  AlignAngleBlock,
-  BasicColorUpdateBlock,
-  BasicPositionUpdateBlock,
-  BoxShapeBlock,
-  Color4,
-  ConeShapeBlock,
-  CreateParticleBlock,
-  CylinderShapeBlock,
-  NodeParticleBlockConnectionPointTypes,
-  NodeParticleContextualSources,
-  NodeParticleSystemSources,
-  ParticleClampBlock,
   ParticleConditionBlock,
   ParticleConditionBlockTests,
-  ParticleConverterBlock,
-  ParticleGradientBlock,
-  ParticleGradientValueBlock,
-  ParticleInputBlock,
-  ParticleLerpBlock,
+} from "@babylonjs/core/Particles/Node/Blocks/Conditions/particleConditionBlock";
+import { BoxShapeBlock } from "@babylonjs/core/Particles/Node/Blocks/Emitters/boxShapeBlock";
+import { ConeShapeBlock } from "@babylonjs/core/Particles/Node/Blocks/Emitters/coneShapeBlock";
+import { CreateParticleBlock } from "@babylonjs/core/Particles/Node/Blocks/Emitters/createParticleBlock";
+import { CylinderShapeBlock } from "@babylonjs/core/Particles/Node/Blocks/Emitters/cylinderShapeBlock";
+import { PointShapeBlock } from "@babylonjs/core/Particles/Node/Blocks/Emitters/pointShapeBlock";
+import { SphereShapeBlock } from "@babylonjs/core/Particles/Node/Blocks/Emitters/sphereShapeBlock";
+import { AlignAngleBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/alignAngleBlock";
+import { BasicColorUpdateBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/basicColorUpdateBlock";
+import { BasicPositionUpdateBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/basicPositionUpdateBlock";
+import { UpdateAngleBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateAngleBlock";
+import { UpdateAttractorBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateAttractorBlock";
+import { UpdateColorBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateColorBlock";
+import { UpdateDirectionBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateDirectionBlock";
+import { UpdatePositionBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updatePositionBlock";
+import { UpdateScaleBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateScaleBlock";
+import { UpdateSizeBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateSizeBlock";
+import { ParticleClampBlock } from "@babylonjs/core/Particles/Node/Blocks/particleClampBlock";
+import { ParticleConverterBlock } from "@babylonjs/core/Particles/Node/Blocks/particleConverterBlock";
+import { ParticleGradientBlock } from "@babylonjs/core/Particles/Node/Blocks/particleGradientBlock";
+import { ParticleGradientValueBlock } from "@babylonjs/core/Particles/Node/Blocks/particleGradientValueBlock";
+import { ParticleInputBlock } from "@babylonjs/core/Particles/Node/Blocks/particleInputBlock";
+import { ParticleLerpBlock } from "@babylonjs/core/Particles/Node/Blocks/particleLerpBlock";
+import {
   ParticleLocalVariableBlock,
   ParticleLocalVariableBlockScope,
+} from "@babylonjs/core/Particles/Node/Blocks/particleLocalVariableBlock";
+import {
   ParticleMathBlock,
   ParticleMathBlockOperations,
-  ParticleNLerpBlock,
+} from "@babylonjs/core/Particles/Node/Blocks/particleMathBlock";
+import { ParticleNLerpBlock } from "@babylonjs/core/Particles/Node/Blocks/particleNLerpBlock";
+import {
   ParticleNumberMathBlock,
   ParticleNumberMathBlockOperations,
+} from "@babylonjs/core/Particles/Node/Blocks/particleNumberMathBlock";
+import {
   ParticleRandomBlock,
   ParticleRandomBlockLocks,
-  ParticleSmoothStepBlock,
-  ParticleStepBlock,
-  ParticleTextureSourceBlock,
+} from "@babylonjs/core/Particles/Node/Blocks/particleRandomBlock";
+import { ParticleSmoothStepBlock } from "@babylonjs/core/Particles/Node/Blocks/particleSmoothStepBlock";
+import { ParticleTextureSourceBlock } from "@babylonjs/core/Particles/Node/Blocks/particleSourceTextureBlock";
+import { ParticleStepBlock } from "@babylonjs/core/Particles/Node/Blocks/particleStepBlock";
+import {
   ParticleTrigonometryBlock,
   ParticleTrigonometryBlockOperations,
-  ParticleVectorLengthBlock,
+} from "@babylonjs/core/Particles/Node/Blocks/particleTrigonometryBlock";
+import { ParticleVectorLengthBlock } from "@babylonjs/core/Particles/Node/Blocks/particleVectorLengthBlock";
+import {
   ParticleVectorMathBlock,
   ParticleVectorMathBlockOperations,
-  PointShapeBlock,
-  SphereShapeBlock,
-  SystemBlock,
-  UpdateAngleBlock,
-  UpdateAttractorBlock,
-  UpdateColorBlock,
-  UpdateDirectionBlock,
-  UpdatePositionBlock,
-  UpdateScaleBlock,
-  UpdateSizeBlock,
-  Vector2,
-  Vector3,
-  NodeParticleBlock,
-  type AbstractMesh,
-  type NodeParticleBuildState,
-  type Particle,
-  type ParticleSystem,
-  type NodeParticleConnectionPoint,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Particles/Node/Blocks/particleVectorMathBlock";
+import { SystemBlock } from "@babylonjs/core/Particles/Node/Blocks/systemBlock";
+import {
+  NodeParticleBlockConnectionPointTypes,
+} from "@babylonjs/core/Particles/Node/Enums/nodeParticleBlockConnectionPointTypes";
+import { NodeParticleContextualSources } from "@babylonjs/core/Particles/Node/Enums/nodeParticleContextualSources";
+import { NodeParticleSystemSources } from "@babylonjs/core/Particles/Node/Enums/nodeParticleSystemSources";
+import { NodeParticleBlock } from "@babylonjs/core/Particles/Node/nodeParticleBlock";
+import type { NodeParticleConnectionPoint } from "@babylonjs/core/Particles/Node/nodeParticleBlockConnectionPoint";
+import type { NodeParticleBuildState } from "@babylonjs/core/Particles/Node/nodeParticleBuildState";
+import type { Particle } from "@babylonjs/core/Particles/particle";
+import type { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import {
   PARTICLE_UPDATE_SPEED,
   particlePrewarmSteps,

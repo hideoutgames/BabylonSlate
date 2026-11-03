@@ -1,12 +1,10 @@
-import type {
-  AbstractMesh,
-  Camera,
-  InternalTexture,
-  Light,
-  RenderTargetTexture,
-  Scene,
-  ShadowGenerator,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import type { Light } from "@babylonjs/core/Lights/light";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";

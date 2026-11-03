@@ -1,4 +1,6 @@
-import { Quaternion, TransformNode, Vector3, type Mesh } from "@babylonjs/core";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { parseSpringArmProperties } from "@haptic/core";
 import { updateAuthoredCameraTransform } from "./scene-illumination";
 import {

@@ -1,4 +1,9 @@
-import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type Node, type TransformNode } from "@babylonjs/core";
+import type { Bone } from "@babylonjs/core/Bones/bone";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Node } from "@babylonjs/core/node";
 import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 import type { RagdollBonePose } from "@haptic/core";
 import type { SnapshotSceneBinding } from "./snapshot-apply";

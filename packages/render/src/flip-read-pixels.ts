@@ -1,4 +1,4 @@
-import type { BaseTexture } from "@babylonjs/core";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 
 /**
  * Copy Babylon RGBA render targets to Canvas2D / PNG. Both backends use flipped RTT rows.

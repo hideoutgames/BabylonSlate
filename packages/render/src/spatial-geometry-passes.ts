@@ -1,4 +1,4 @@
-import type { Scene } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core/scene";
 
 /**
  * Render pass ids of the scene effects' geometry passes (`SpatialEffectsGraph`), whose buffers feed ambient occlusion,

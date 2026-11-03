@@ -1,4 +1,6 @@
-import { Material, ShaderLanguage, type Scene } from "@babylonjs/core";
+import { Material } from "@babylonjs/core/Materials/material";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import type { Scene } from "@babylonjs/core/scene";
 import { Lattice } from "@babylonjs/core/Meshes/lattice";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import { checkedShader } from "./checked-shader";

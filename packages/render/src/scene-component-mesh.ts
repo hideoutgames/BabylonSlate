@@ -4,7 +4,11 @@ import { createPooledPrimitiveVisual } from "./pooled-primitive-visual";
  * here at build time must also change the component's kind in `scene-visual-fingerprint.ts`, or edits to it never
  * rebuild the mesh. `scene-loader.ts` re-exports the public names.
  */
-import { Color3, Mesh, MeshBuilder, Vector3, type Scene } from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   isOverlayLayoutClass, isUIControl2DClass, MIRROR_CLASS_ID, normalizeWaterBody, overlayPanelDestFromScale,
   parseCableProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,

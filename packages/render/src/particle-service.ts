@@ -1,19 +1,17 @@
 import { isSceneStreamSlotPending, registerSceneStreamParticle } from "./scene-stream-admission";
-import {
-  Mesh,
-  Vector3,
-  type ParticleInputBlock,
-  type AbstractEngine,
-  type AbstractMesh,
-  type BaseTexture,
-  type Effect,
-  type IParticleSystem,
-  type NodeMaterial,
-  type NodeParticleSystemSet,
-  type ParticleSystem,
-  type GPUParticleSystem,
-  type Scene,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
+import type { ParticleInputBlock } from "@babylonjs/core/Particles/Node/Blocks/particleInputBlock";
+import type { NodeParticleSystemSet } from "@babylonjs/core/Particles/Node/nodeParticleSystemSet";
+import type { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
+import type { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   applyBasicParameters,
   particleEmitterChangeTier,

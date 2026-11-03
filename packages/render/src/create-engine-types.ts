@@ -13,10 +13,10 @@ import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readin
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import type { SceneSourceAssets } from "./scene-source-assets";
 import type { nativePreparationForEngine, NativePreparationLimits, NativePreparationPriority } from "./native-preparation";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { RenderDiagnostics } from "./render-diagnostics";
 import type { RenderPerformanceSample } from "./render-performance";
-import type { Scene } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core/scene";
 import type {
   AudioProjectSettings,
   PhysicsWorldKind,

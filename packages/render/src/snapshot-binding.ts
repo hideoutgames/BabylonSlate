@@ -1,11 +1,9 @@
-import {
-  Mesh,
-  type AbstractMesh,
-  type Camera,
-  type Light,
-  type Material,
-  type Scene,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { Light } from "@babylonjs/core/Lights/light";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type {
   CommandMessage,
   MaterialParameterValue,
@@ -257,7 +255,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
   };
 }
 
-export type SceneNode = import("@babylonjs/core").Node;
+export type SceneNode = import("@babylonjs/core/node").Node;
 
 /**
  * Imported glTF child names are arbitrary; their component is on an ancestor.

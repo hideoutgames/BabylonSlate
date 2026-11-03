@@ -1,9 +1,7 @@
-import {
-  SphericalPolynomial,
-  type AbstractEngine,
-  type CubeTexture,
-  type InternalTexture,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
 import type { TextureResources } from "./resource-cache";
 import { readEnvironmentBaseRadiance } from "./environment-base-radiance";

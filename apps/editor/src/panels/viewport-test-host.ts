@@ -1,5 +1,6 @@
-import type { AbstractEngine } from "@babylonjs/core";
-import { EngineStore, Vector3 } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { RefObject } from "react";
 import type { SerializedScene } from "@haptic/core";
 import {

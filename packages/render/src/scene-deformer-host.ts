@@ -1,4 +1,5 @@
-import type { AbstractMesh, Scene } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type { DeformerBinding, SerializedScene } from "@haptic/core";
 import {
   disposeMeshLatticeDeformer,

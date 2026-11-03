@@ -1,10 +1,8 @@
 import "./gltf-loader";
 import { applyMaterialBounds } from "./material-bounds";
 import { setDrawnMaterial } from "./pooled-visuals";
-import type {
-  AnimationGroup,
-  Material,
-} from "@babylonjs/core";
+import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Color4 } from "@babylonjs/core/Maths/math.color";

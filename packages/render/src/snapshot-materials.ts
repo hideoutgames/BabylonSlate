@@ -1,7 +1,10 @@
 import { pooledLeafOf, setDrawnMaterial } from "./pooled-visuals";
 import { isPoolMember } from "./instance-pool";
 import { everyInstanceParameter, setMeshInstanceParameters } from "./instance-parameters";
-import type { AbstractMesh, Material, Mesh, Scene } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type { CommandMessage, MaterialParameterValue } from "@haptic/bridge";
 import { applyMaterialBounds } from "./material-bounds";
 import { restoreAlbedoMaterial } from "./mesh-assets";

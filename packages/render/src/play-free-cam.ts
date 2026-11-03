@@ -1,10 +1,7 @@
-import {
-  Camera,
-  Quaternion,
-  UniversalCamera,
-  Vector3,
-  type Scene,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import type { ViewportMode } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 import {

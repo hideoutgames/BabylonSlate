@@ -1,12 +1,10 @@
-import {
-  DirectionalLight,
-  HemisphericLight,
-  RectAreaLight,
-  ShadowLight,
-  Vector3,
-  type Light,
-  type Scene,
-} from "@babylonjs/core";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
+import { ShadowLight } from "@babylonjs/core/Lights/shadowLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 
 
 const authoredEnabled = new WeakMap<

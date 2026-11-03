@@ -1,4 +1,5 @@
-import type { NodeMaterial, Scene } from "@babylonjs/core";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Scene } from "@babylonjs/core/scene";
 import { createWaterMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { markBuiltInWaterMaterial } from "./water-mesh";

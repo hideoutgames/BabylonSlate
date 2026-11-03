@@ -1,4 +1,6 @@
-import { Constants, type Effect, type Scene } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Scene } from "@babylonjs/core/scene";
 import { sceneRenderingSettings } from "./render-settings";
 
 const CEL_ROTATION_UNIFORMS = [

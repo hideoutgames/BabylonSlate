@@ -30,10 +30,18 @@
  * `toLinearSpace` (`gammaSpace: true`). Alpha is coverage: the target clears to transparent black and opaque
  * geometry writes 1, so a shader can keep its sky/environment reflection where no geometry was reflected.
  */
-import {
-  Camera, Color4, Constants, Frustum, Matrix, RenderTargetTexture, ThinTexture, Vector3,
-  type AbstractMesh, type Mesh, type Node, type Observer, type Scene,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import {
   beginPlanarMirrorPassState, buildViewProjectionMatrix, clipFrustumAtMirror, collectPlanarMirrorMeshes, createPlanarMirrorTarget,

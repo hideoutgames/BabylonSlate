@@ -1,4 +1,10 @@
-import { Matrix, Mesh, Scene, Vector3, VertexBuffer, VertexData, type AbstractMesh, type Node } from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import type { Node } from "@babylonjs/core/node";
+import { Scene } from "@babylonjs/core/scene";
 import {
   tilemapChunkVertexData,
   decodeTileGid,

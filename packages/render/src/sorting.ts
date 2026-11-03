@@ -1,4 +1,7 @@
-import { InstancedMesh, type AbstractMesh, type Scene, type SubMesh } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { setMeshRenderingGroup } from "./instance-pool";
 import { sortPooledLeaf } from "./pooled-visuals";
 import { sortingLayerSortKey } from "@haptic/core";

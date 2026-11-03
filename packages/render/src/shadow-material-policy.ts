@@ -1,20 +1,18 @@
-import {
-  DetailMapConfiguration,
-  InstancedMesh,
-  Material,
-  Mesh,
-  NodeMaterial,
-  NodeMaterialModes,
-  PBRAnisotropicConfiguration,
-  PBRBRDFConfiguration,
-  PBRClearCoatConfiguration,
-  PBRIridescenceConfiguration,
-  PBRMaterial,
-  PBRSheenConfiguration,
-  PBRSubSurfaceConfiguration,
-  StandardMaterial,
-  type AbstractMesh,
-} from "@babylonjs/core";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { PBRAnisotropicConfiguration } from "@babylonjs/core/Materials/PBR/pbrAnisotropicConfiguration";
+import { PBRBRDFConfiguration } from "@babylonjs/core/Materials/PBR/pbrBRDFConfiguration";
+import { PBRClearCoatConfiguration } from "@babylonjs/core/Materials/PBR/pbrClearCoatConfiguration";
+import { PBRIridescenceConfiguration } from "@babylonjs/core/Materials/PBR/pbrIridescenceConfiguration";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { PBRSheenConfiguration } from "@babylonjs/core/Materials/PBR/pbrSheenConfiguration";
+import { PBRSubSurfaceConfiguration } from "@babylonjs/core/Materials/PBR/pbrSubSurfaceConfiguration";
+import { Material } from "@babylonjs/core/Materials/material";
+import { DetailMapConfiguration } from "@babylonjs/core/Materials/material.detailMapConfiguration";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TextureQualityPlugin } from "./texture-quality";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
 import { hasMeshLatticeDeformer, isCageOnlyShadowWrapper } from "./lattice-deformer-binding";

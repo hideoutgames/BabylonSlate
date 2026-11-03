@@ -1,4 +1,4 @@
-import { Vector3, type Matrix } from "@babylonjs/core";
+import { Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
 import { parseFoliageProperties, type FoliageBatch, type FoliageProperties } from "@haptic/core";
 
 type Batch = { source: FoliageBatch; positions: Float64Array; alive: Uint8Array; count: number };

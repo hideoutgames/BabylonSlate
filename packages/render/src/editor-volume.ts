@@ -1,12 +1,10 @@
-import {
-  Color3,
-  Mesh,
-  MeshBuilder,
-  Scene,
-  Vector3,
-  VertexBuffer,
-  type AbstractMesh,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import {
   COLLIDER_COLOR,
   createColliderVisualMesh,

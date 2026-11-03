@@ -1,4 +1,5 @@
-import type { AbstractMesh, Camera } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { isRevealPending } from "./reveal-pending";
 
 /** Screen rectangle (NDC) and view-depth span of one mesh's world bounds. */

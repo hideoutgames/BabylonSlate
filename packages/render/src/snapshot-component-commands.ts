@@ -1,10 +1,6 @@
-import {
-  Matrix,
-  Mesh,
-  Quaternion,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { CommandMessage } from "@haptic/bridge";
 import { parseOverlayVisualStyle, type Transform } from "@haptic/core";
 import { shouldFreezeStaticWorldMatrix } from "./scene-loader";

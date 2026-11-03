@@ -1,18 +1,15 @@
-import {
-  BaseTexture,
-  InternalTexture,
-  Mesh,
-  MultiMaterial,
-  NodeMaterial,
-  NodeMaterialModes,
-  type AbstractMesh,
-  type Effect,
-  type Material,
-  type RenderTargetTexture,
-  type Scene,
-  type ShadowGenerator,
-  type SceneOptions,
-} from "@babylonjs/core";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene, SceneOptions } from "@babylonjs/core/scene";
 import { prewarmMaterial } from "./material-compiler";
 import { isEngineDefaultMaterial } from "./default-material";
 import { syncSceneLighting } from "./scene-lighting";
