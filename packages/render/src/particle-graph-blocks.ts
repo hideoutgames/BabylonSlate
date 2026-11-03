@@ -47,9 +47,11 @@ import {
   UpdateSizeBlock,
   Vector2,
   Vector3,
+  NodeParticleBlock,
   type AbstractMesh,
-  type NodeParticleBlock,
   type NodeParticleBuildState,
+  type Particle,
+  type ParticleSystem,
   type NodeParticleConnectionPoint,
 } from "@babylonjs/core";
 import {
@@ -64,6 +66,7 @@ import {
   type ParticleNumericType,
   type ParticleOperation,
 } from "@haptic/particle-graph";
+import { BUILTIN_PARTICLE_NOISE, type ParticleNoiseSource } from "./particle-noise";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 
 /**
@@ -122,6 +125,84 @@ export class SlateLocalVariableBlock extends ParticleLocalVariableBlock {
   }
 }
 
+type NoiseCoordinates = { a: Vector3; b: Vector3 };
+type NoiseParticle = Particle & { _properties: Record<string, unknown> };
+type QueueItem = { process: (particle: Particle) => void; previousItem: QueueItem | null; nextItem: QueueItem | null };
+type QueueSystem = ParticleSystem & { _updateQueueStart: QueueItem | null; _tempScaledUpdateSpeed: number;
+  _fetchR(u: number, v: number, width: number, height: number, pixels: Uint8Array): number };
+
+/**
+ * Noise: each particle gets fixed random coordinates in a noise image and is pushed every frame
+ * by (2 × sample − 1) × Strength per axis, scaled by the frame's simulated seconds (so it follows
+ * pause and time dilation), as Babylon's `UpdateNoiseBlock`. Babylon's block reads its texture
+ * back from the GPU every frame; this one samples CPU pixels its source caches once, and pushes
+ * nothing until they are there.
+ */
+export class SlateNoiseBlock extends NodeParticleBlock {
+  source: ParticleNoiseSource = BUILTIN_PARTICLE_NOISE;
+
+  constructor(name: string) {
+    super(name);
+    this.registerInput("particle", NodeParticleBlockConnectionPointTypes.Particle);
+    this.registerInput("strength", NodeParticleBlockConnectionPointTypes.Vector3, true, new Vector3(2, 2, 2));
+    this.registerOutput("output", NodeParticleBlockConnectionPointTypes.Particle);
+  }
+
+  override getClassName(): string {
+    return "SlateNoiseBlock";
+  }
+
+  get particle(): NodeParticleConnectionPoint {
+    return this._inputs[0]!;
+  }
+
+  get strength(): NodeParticleConnectionPoint {
+    return this._inputs[1]!;
+  }
+
+  get output(): NodeParticleConnectionPoint {
+    return this._outputs[0]!;
+  }
+
+  override _build(state: NodeParticleBuildState): void {
+    const system = this.particle.getConnectedValue(state) as QueueSystem;
+    const source = this.source;
+    const force = new Vector3();
+    const item: QueueItem = {
+      process: (particle) => {
+        const pixels = source.pixels();
+        if (!pixels) return;
+        state.particleContext = particle;
+        state.systemContext = system;
+        const strength = this.strength.getConnectedValue(state) as Vector3;
+        const properties = (particle as NoiseParticle)._properties;
+        let coordinates = properties.slateNoise as NoiseCoordinates | undefined;
+        if (!coordinates) {
+          coordinates = { a: new Vector3(Math.random(), Math.random(), Math.random()), b: new Vector3(Math.random(), Math.random(), Math.random()) };
+          properties.slateNoise = coordinates;
+        }
+        const fetch = (u: number, v: number) => system._fetchR(u, v, pixels.width, pixels.height, pixels.data);
+        force.copyFromFloats(
+          (2 * fetch(coordinates.a.x, coordinates.a.y) - 1) * strength.x,
+          (2 * fetch(coordinates.a.z, coordinates.b.x) - 1) * strength.y,
+          (2 * fetch(coordinates.b.y, coordinates.b.z) - 1) * strength.z,
+        );
+        particle.direction.addInPlace(force.scaleInPlace(system._tempScaledUpdateSpeed));
+      },
+      previousItem: null,
+      nextItem: null,
+    };
+    if (!system._updateQueueStart) system._updateQueueStart = item;
+    else {
+      let last = system._updateQueueStart;
+      while (last.nextItem) last = last.nextItem;
+      item.previousItem = last;
+      last.nextItem = item;
+    }
+    this.output._storedValue = system;
+  }
+}
+
 /** Babylon blocks for one plan operation, keyed by IR pin id. */
 export interface ParticleBlockRealization {
   /** Every block the adapter created; the realizer attaches them to the set. */
@@ -142,6 +223,8 @@ export interface ParticleBlockAdapterContext {
   name: string;
   /** The Particle System's Space: Local lowers Apply Velocity through `LocalPositionUpdated`. */
   space: ParticleSpace;
+  /** A Noise node's pixels for its Texture (null: the built-in noise). Defaults to the built-in noise. */
+  noise?: (textureGuid: string | null) => ParticleNoiseSource;
 }
 
 export type ParticleBlockAdapter = (context: ParticleBlockAdapterContext) => ParticleBlockRealization;
@@ -433,6 +516,12 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   }),
   "force.gravity": gravityAdapter,
   "force.attractor": spine((name) => new UpdateAttractorBlock(name), (block) => ({ position: block.attractor, strength: block.strength })),
+  "update.noise": ({ name, operation, noise }) => {
+    const block = new SlateNoiseBlock(name);
+    const textureGuid = typeof operation.properties.textureGuid === "string" && operation.properties.textureGuid ? operation.properties.textureGuid : null;
+    block.source = noise?.(textureGuid) ?? BUILTIN_PARTICLE_NOISE;
+    return { blocks: [block], inputs: { particle: block.particle, strength: block.strength }, outputs: { out: block.output } };
+  },
   "input.contextual.position": contextual(NodeParticleContextualSources.Position),
   "input.contextual.direction": contextual(NodeParticleContextualSources.Direction),
   "input.contextual.scaledDirection": contextual(NodeParticleContextualSources.ScaledDirection),

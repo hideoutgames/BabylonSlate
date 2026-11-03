@@ -171,6 +171,8 @@ export function newParticleNodeProperties(type: string): Record<string, unknown>
       return { alignment: Math.PI / 2 };
     case "utility.localVariable":
       return { scope: "particle" };
+    case "update.noise":
+      return { textureGuid: null };
     default:
       return {};
   }
@@ -232,6 +234,9 @@ export function normalizeParticleNodeProperties(
       break;
     case "utility.localVariable":
       next.scope = next.scope === "loop" ? "loop" : "particle";
+      break;
+    case "update.noise":
+      next.textureGuid = typeof next.textureGuid === "string" && next.textureGuid.trim() ? next.textureGuid : null;
       break;
   }
   return next;
@@ -422,13 +427,26 @@ export function setParticleNodeAngleUnit(
 
 export interface ParticleGraphDependencies {
   materials: string[];
+  /** Noise node Textures, sorted and unique. */
+  textures: string[];
   all: string[];
 }
 
-/** Header dependencies: the Material only. */
+/** Header dependencies: the Material and every Noise node's Texture. */
 export function particleGraphDependencies(
-  doc: Pick<ParticleGraphDocument, "materialGuid">,
+  doc: Pick<ParticleGraphDocument, "materialGuid"> & Partial<Pick<ParticleGraphDocument, "nodes">>,
 ): ParticleGraphDependencies {
   const materials = doc.materialGuid ? [doc.materialGuid] : [];
-  return { materials, all: [...materials] };
+  const textures = particleGraphNoiseTextures(doc.nodes ?? []);
+  return { materials, textures, all: [...materials, ...textures] };
+}
+
+/** The Textures the graph's Noise nodes read, sorted and unique. */
+export function particleGraphNoiseTextures(nodes: readonly ParticleGraphNode[]): string[] {
+  const guids = new Set<string>();
+  for (const node of nodes) {
+    const guid = node.type === "update.noise" ? node.properties.textureGuid : null;
+    if (typeof guid === "string" && guid) guids.add(guid);
+  }
+  return [...guids].sort();
 }

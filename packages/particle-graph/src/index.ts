@@ -39,6 +39,7 @@ export {
   normalizeParticleGraphSettings,
   normalizeParticleNodeProperties,
   particleGraphDependencies,
+  particleGraphNoiseTextures,
   setParticleNodeAngleUnit,
   setParticleNodeValueType,
   type ParticleGraphDependencies,

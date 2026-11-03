@@ -4,6 +4,7 @@ import {
   particleLibraryCompileKey,
   particleLibraryFromAssets,
   particleLibraryMaterialGuids,
+  particleLibraryNoiseTextureGuids,
 } from "./particle-library";
 import {
   particleAssetDependencies,
@@ -100,8 +101,11 @@ describe("particle library graph entries", () => {
     expect(keyOf(graph((doc) => (doc.materialGuid = "mat-other")))).not.toBe(key);
   });
 
-  it("indexes a Particle Graph's Material", () => {
+  it("indexes a Particle Graph's Material and its Noise Textures", () => {
     const payload = graph().payload as unknown as Record<string, unknown>;
     expect(particleAssetDependencies("ParticleGraph", payload)).toEqual(["mat-graph"]);
+    const noisy = graph((doc) => doc.nodes.push({ id: "noise", type: "update.noise", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-noise" } }));
+    expect(particleAssetDependencies("ParticleGraph", noisy.payload as unknown as Record<string, unknown>)).toEqual(["mat-graph", "tex-noise"]);
+    expect(particleLibraryNoiseTextureGuids(particleLibraryFromAssets([noisy]))).toEqual(["tex-noise"]);
   });
 });

@@ -272,6 +272,12 @@ test.describe("Particle Graph", () => {
     await page.getByRole("option", { name: "Loop", exact: true }).click();
     await expect(details.getByTestId("property-scope")).toContainText("Loop");
     await connectFloatToEmitRate(page);
+    // Noise joins the spine between Apply Velocity and Update Color, on the built-in noise.
+    await addParticleGraphNode(page, "Noise", "update.noise");
+    await expect(details.getByTestId("property-textureGuid")).toContainText("Built-In Noise");
+    await connectHandles(page, '="velocity"', "out", '^="update.noise-"', "particle");
+    await connectHandles(page, '^="update.noise-"', "out", '="updateColor"', "particle");
+    await expect(particleGraphEditor(page).locator('.react-flow__edge[data-id*="update.noise-"][data-id$=":updateColor:particle"]')).toHaveCount(1);
     await particleGraphEditor(page).locator('.react-flow__node[data-id="output"]').click();
     await expect(details.getByTestId("property-capacity")).toBeVisible();
     await expect(details.getByTestId("property-emitRate")).toHaveCount(0);

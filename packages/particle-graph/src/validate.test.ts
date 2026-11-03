@@ -169,9 +169,9 @@ describe("particle graph validation", () => {
   });
 
   it("names reserved v1 features instead of calling them unknown", () => {
-    const found = diagnostics(withSpine([["noise", "update.noise"], ["other", "vendor.thing"]]));
+    const found = diagnostics(withSpine([["flow", "update.flowMap"], ["other", "vendor.thing"]]));
     expect(found).toContainEqual(
-      expect.objectContaining({ code: "particle.unsupportedNode", nodeId: "noise", message: expect.stringContaining("Noise") }),
+      expect.objectContaining({ code: "particle.unsupportedNode", nodeId: "flow", message: expect.stringContaining("Flow Map") }),
     );
     expect(found).toContainEqual(expect.objectContaining({ code: "particle.unknownNode", nodeId: "other" }));
   });
