@@ -89,6 +89,8 @@ export interface PlaySession {
   observeGraphDebug: (target: DebugObserveTarget | null, instanceId: string | null) => void;
   /** Replace the node breakpoints a Simulation stops at (its scripts check them). */
   setBreakpoints: (breakpoints: Breakpoint[]) => void;
+  /** Global Parameter Collection defaults edited during Play reach parameters the session has not set. */
+  setGlobalParameterCatalog: (catalog: import("@haptic/core").GlobalParameterCatalog) => void;
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;

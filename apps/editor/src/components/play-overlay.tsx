@@ -12,7 +12,7 @@ import {
 } from "../context/simulation-controls-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
-import { captureShadowDiagnostics, drawOcclusionOverlay, lightsDebugText } from "@haptic/render";
+import { captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
@@ -1033,6 +1033,8 @@ function PlayOverlayView({
       setGraphDebugSession(session);
       // Breakpoints set, removed or switched off while the session runs apply from its next run of the node.
       const unsubscribeBreakpoints = breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledBreakpoints()));
+      // Global Parameter Collection defaults edited while it runs reach the session's Class graphs.
+      const unsubscribeGlobalParameters = globalParameterDefaults.subscribe(() => session.setGlobalParameterCatalog(currentGlobalParameterCatalog()));
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
       }
@@ -1190,6 +1192,7 @@ function PlayOverlayView({
         detachLifecycle();
         setGraphDebugSession(null);
         unsubscribeBreakpoints?.();
+        unsubscribeGlobalParameters();
         graphDebug?.setHeld(false);
         graphDebug?.setTarget(null);
         finishSessionRef.current();

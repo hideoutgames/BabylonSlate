@@ -77,6 +77,7 @@ The Preview has **Restart** and **Play / Pause**, plus badges showing where it r
 A parameter is a named value an emitter reads, such as an intensity or a tint, that can change while the effect runs without rebuilding it.
 
 - A **Particle Graph** reads each parameter with a [Parameter](../scripting/particle/parameter.md) node. Add one from **Add Node** under **Parameter**, or right-click a constant node and choose **Convert to Parameter**; select the node to edit its name, type and default.
+- A **Particle Graph** can also read a value the whole game shares with a [Global Parameter](../scripting/particle/global-parameter.md) node: one parameter of a [Global Parameter Collection](../assets/global-parameter-collection.md), which any Class graph can set and every emitter and Material that reads it follows.
 - A **Basic Particle Emitter** binds fixed targets, such as **Spawn Rate Scale** or **Color Tint**, to parameter names in its **Parameters** module.
 - A **Particle System** joins its emitters' parameters by name. The first emitter that declares a name sets its type and default; the System can set its own default for each one.
 

@@ -1,3 +1,4 @@
+import { useGlobalParameterCatalog } from "../lib/global-parameter-catalog";
 import {
   createContext,
   useCallback,
@@ -171,9 +172,10 @@ export function ParticleGraphEditingProvider({
     };
   }, [assetRegistry, materialDocuments, registryEpoch, documentPath]);
 
+  const globalParameters = useGlobalParameterCatalog();
   const diagnostics = useMemo(
-    () => validateParticleGraphDocument(document, validationContext),
-    [document, validationContext],
+    () => validateParticleGraphDocument(document, { ...validationContext, globalParameters }),
+    [document, validationContext, globalParameters],
   );
   const errorCount = diagnostics.filter((row) => row.severity === "error").length;
   const valid = errorCount === 0;

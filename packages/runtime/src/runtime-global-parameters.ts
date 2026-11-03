@@ -1,3 +1,5 @@
+import type { CommandMessage } from "@haptic/bridge";
+import type { TraceGlobalParameterValue } from "@haptic/debugger";
 import {
   normalizeGlobalParameterCatalog,
   resizeGlobalParameterValue,
@@ -5,6 +7,9 @@ import {
   type GlobalParameterCatalog,
   type GlobalParameterType,
 } from "@haptic/core";
+
+/** The renderer command a value change sends (`setGlobalParameter`). */
+export type GlobalParameterCommand = Extract<CommandMessage, { type: "setGlobalParameter" }>;
 
 const valueKey = (collectionGuid: string, parameterId: string) => `${collectionGuid}\n${parameterId}`;
 
@@ -20,9 +25,12 @@ export class RuntimeGlobalParameters {
   private readonly warned = new Set<string>();
 
   private readonly warn: (message: string) => void;
+  private readonly emit: (command: GlobalParameterCommand) => void;
 
-  constructor(warn: (message: string) => void = () => undefined) {
+  /** `emit` tells the renderer about every value change, so Materials and Particle Graphs follow. */
+  constructor(warn: (message: string) => void = () => undefined, emit: (command: GlobalParameterCommand) => void = () => undefined) {
     this.warn = warn;
+    this.emit = emit;
   }
 
   /** The session's collections (`load`). */
@@ -46,7 +54,9 @@ export class RuntimeGlobalParameters {
       const [collectionGuid = "", parameterId = ""] = key.split("\n");
       const parameter = this.catalog[collectionGuid]?.find((entry) => entry.id === parameterId);
       const value = this.values.get(key)!;
-      if (!parameter || resizeGlobalParameterValue(value, parameter.type).length !== value.length) this.values.delete(key);
+      if (parameter && resizeGlobalParameterValue(value, parameter.type).length === value.length) continue;
+      this.values.delete(key);
+      this.emit({ type: "setGlobalParameter", collectionGuid, parameterId, value: null });
     }
   }
 
@@ -77,7 +87,9 @@ export class RuntimeGlobalParameters {
   set(collection: unknown, name: unknown, value: readonly unknown[], types: readonly GlobalParameterType[]): GlobalParameter | null {
     const resolved = this.resolve(collection, name, types);
     if (!resolved) return null;
-    this.values.set(valueKey(resolved.guid, resolved.parameter.id), resizeGlobalParameterValue(value, resolved.parameter.type));
+    const fitted = resizeGlobalParameterValue(value, resolved.parameter.type);
+    this.values.set(valueKey(resolved.guid, resolved.parameter.id), fitted);
+    this.emit({ type: "setGlobalParameter", collectionGuid: resolved.guid, parameterId: resolved.parameter.id, value: [...fitted] });
     return resolved.parameter;
   }
 
@@ -92,6 +104,32 @@ export class RuntimeGlobalParameters {
   valueById(collectionGuid: string, parameterId: string): number[] | null {
     const parameter = this.catalog[collectionGuid]?.find((entry) => entry.id === parameterId);
     return parameter ? [...this.valueOf(collectionGuid, parameter)] : null;
+  }
+
+  /** The values set this session, for a trace frame. */
+  traceState(): TraceGlobalParameterValue[] {
+    return [...this.values].map(([key, value]) => {
+      const [collectionGuid = "", parameterId = ""] = key.split("\n");
+      return { collectionGuid, parameterId, value: [...value] };
+    });
+  }
+
+  /** Resume a trace frame's values: each one the frame lacks returns to its default. */
+  restoreFromTrace(values: readonly TraceGlobalParameterValue[]): void {
+    const restored = new Map(values.map((entry) => [valueKey(entry.collectionGuid, entry.parameterId), entry]));
+    for (const key of [...this.values.keys()]) {
+      if (restored.has(key)) continue;
+      const [collectionGuid = "", parameterId = ""] = key.split("\n");
+      this.values.delete(key);
+      this.emit({ type: "setGlobalParameter", collectionGuid, parameterId, value: null });
+    }
+    for (const [key, entry] of restored) {
+      const parameter = this.catalog[entry.collectionGuid]?.find((candidate) => candidate.id === entry.parameterId);
+      if (!parameter) continue;
+      const value = resizeGlobalParameterValue(entry.value, parameter.type);
+      this.values.set(key, value);
+      this.emit({ type: "setGlobalParameter", collectionGuid: entry.collectionGuid, parameterId: entry.parameterId, value: [...value] });
+    }
   }
 
   private valueOf(collectionGuid: string, parameter: GlobalParameter): readonly number[] {

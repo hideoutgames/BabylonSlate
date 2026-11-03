@@ -470,6 +470,9 @@ function handleControl(msg: ControlMessage): void {
     case "debugObserve":
       runtime?.applyDebugObserve(msg.target, msg.instanceId);
       return;
+    case "setGlobalParameterCatalog":
+      runtime?.applyGlobalParameterCatalog(msg.catalog);
+      return;
     case "setBreakpoints":
       runtime?.applyBreakpoints(msg.breakpoints);
       return;

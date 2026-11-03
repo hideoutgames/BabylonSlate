@@ -38,4 +38,38 @@ describe("runtime global parameters", () => {
     expect(globals.get("fx", "Wind", ["vec3"]).value).toEqual([0, 0, 1]);
     expect(globals.get("more", "Glow", ["color"]).found).toBe(true);
   });
+
+  it("tells the renderer about every value it sets or drops", () => {
+    const commands: unknown[] = [];
+    const globals = new RuntimeGlobalParameters(undefined, (command) => commands.push(command));
+    globals.replaceCatalog(catalog);
+    globals.set("fx", "Wind", [3, 4, 5], ["vec2", "vec3"]);
+    globals.set("fx", "Missing", [1], ["float"]);
+    // Wind becomes a Vector 3, so the renderer drops its Vector 2 value too.
+    globals.mergeCatalog({ fx: [catalog.fx[0], { id: "wind", name: "Wind", type: "vec3", defaultValue: [0, 0, 1] }] });
+    expect(commands).toEqual([
+      { type: "setGlobalParameter", collectionGuid: "fx", parameterId: "wind", value: [3, 4] },
+      { type: "setGlobalParameter", collectionGuid: "fx", parameterId: "wind", value: null },
+    ]);
+  });
+
+  it("records set values in trace frames and restores a frame's values", () => {
+    const commands: unknown[] = [];
+    const globals = new RuntimeGlobalParameters(undefined, (command) => commands.push(command));
+    globals.replaceCatalog(catalog);
+    globals.set("fx", "Heat", [2], ["float"]);
+    const frame = globals.traceState();
+    expect(frame).toEqual([{ collectionGuid: "fx", parameterId: "heat", value: [2] }]);
+    globals.set("fx", "Heat", [9], ["float"]);
+    globals.set("fx", "Wind", [1, 1], ["vec2"]);
+    commands.length = 0;
+    globals.restoreFromTrace(frame);
+    expect(globals.get("fx", "Heat", ["float"]).value).toEqual([2]);
+    // Wind was not set at that frame, so it returns to its default.
+    expect(globals.get("fx", "Wind", ["vec2"]).value).toEqual([0, 0]);
+    expect(commands).toEqual([
+      { type: "setGlobalParameter", collectionGuid: "fx", parameterId: "wind", value: null },
+      { type: "setGlobalParameter", collectionGuid: "fx", parameterId: "heat", value: [2] },
+    ]);
+  });
 });

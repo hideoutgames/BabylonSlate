@@ -26,6 +26,7 @@ import { ParticleConverterBlock } from "@babylonjs/core/Particles/Node/Blocks/pa
 import { ParticleGradientBlock } from "@babylonjs/core/Particles/Node/Blocks/particleGradientBlock";
 import { ParticleGradientValueBlock } from "@babylonjs/core/Particles/Node/Blocks/particleGradientValueBlock";
 import { ParticleInputBlock } from "@babylonjs/core/Particles/Node/Blocks/particleInputBlock";
+import { globalParameterComponents, globalParameterDefaults, type GlobalParameterValueSource } from "./global-parameter-values";
 import { ParticleLerpBlock } from "@babylonjs/core/Particles/Node/Blocks/particleLerpBlock";
 import {
   ParticleLocalVariableBlock,
@@ -73,8 +74,10 @@ import {
   type ParticleSpace,
 } from "@haptic/core";
 import {
+  particleGlobalParameterSelection,
   particleSpriteSheetSettings,
   resizeParticleValue,
+  type ParticleGlobalParameterSelection,
   type ParticleGradientStop,
   type ParticleGraphParameter,
   type ParticleGraphSettings,
@@ -247,6 +250,8 @@ export interface ParticleBlockAdapterContext {
   meshShape?: (properties: Readonly<Record<string, unknown>>) => ParticleMeshShapeSource;
   /** The plan's declared parameters by id. */
   parameters: ReadonlyMap<string, ParticleGraphParameter>;
+  /** What Global Parameter nodes read; the editor's defaults when omitted. */
+  globalParameters?: GlobalParameterValueSource;
   /** Where a Spawn Emitter's requests go, for its properties; without one (or null) it spawns nothing. */
   spawn?: (properties: Readonly<Record<string, unknown>>) => ParticleSpawnSink | null;
 }
@@ -276,6 +281,38 @@ function babylonValue(type: ParticleNumericType, value: readonly number[]): numb
  */
 export function setParticleInputBlockValue(block: ParticleInputBlock, type: ParticleNumericType, value: readonly number[]): void {
   block.value = babylonValue(type, value);
+}
+
+/**
+ * A Particle Graph **Global Parameter** node's input. Babylon's built output reads `value` on
+ * every evaluation, so the getter refreshes from `source` once its revision moves: setting a
+ * global parameter changes every running emitter that reads it, with no rebuild.
+ */
+class GlobalParameterInputBlock extends ParticleInputBlock {
+  private readonly selection: ParticleGlobalParameterSelection;
+  private readonly source: GlobalParameterValueSource;
+  private revision = Number.NaN;
+
+  constructor(name: string, selection: ParticleGlobalParameterSelection, source: GlobalParameterValueSource) {
+    super(name, BABYLON_TYPES[selection.valueType]);
+    this.selection = selection;
+    this.source = source;
+  }
+
+  override get value() {
+    // The base constructor reads and writes `value` before this block's fields exist.
+    const source = this.source as GlobalParameterValueSource | undefined;
+    if (source && source.revision !== this.revision) {
+      this.revision = source.revision;
+      const { collectionGuid, parameterId, valueType } = this.selection;
+      super.value = babylonValue(valueType, globalParameterComponents(source, collectionGuid, parameterId, valueType));
+    }
+    return super.value;
+  }
+
+  override set value(value) {
+    super.value = value;
+  }
 }
 
 /** A typed constant; render always connects constants instead of writing `port.value`. */
@@ -600,6 +637,13 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   "const.vec2": constant("vec2"),
   "const.vec3": constant("vec3"),
   "const.color": constant("color"),
+  "global.parameter": ({ name, operation, globalParameters }): ParticleBlockRealization => {
+    // Without a parameter the node has no output, so nothing reads it.
+    const selection = particleGlobalParameterSelection(operation.properties);
+    if (!selection) return { blocks: [], inputs: {}, outputs: {} };
+    const block = new GlobalParameterInputBlock(name, selection, globalParameters ?? globalParameterDefaults);
+    return { blocks: [block], inputs: {}, outputs: { out: block.output } };
+  },
   "input.parameter": ({ name, operation, parameters }) => {
     const parameter = parameters.get(String(operation.properties.parameterId ?? ""));
     if (!parameter) throw new Error("The Parameter node's parameter does not exist.");

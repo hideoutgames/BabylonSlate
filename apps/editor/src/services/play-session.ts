@@ -43,6 +43,7 @@ import {
 } from "@haptic/debugger";
 import {
   applyPlayBreakpoints,
+  applyPlayGlobalParameterCatalog,
   applyPlayFpsSample,
   applyPlayGraphDebugObserve,
   applyPlayHudConsoleCommand,
@@ -843,6 +844,9 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     },
     setBreakpoints: (breakpoints) => {
       if (!stopped) applyPlayBreakpoints({ worker, runtime }, breakpoints);
+    },
+    setGlobalParameterCatalog: (catalog) => {
+      if (!stopped) applyPlayGlobalParameterCatalog({ worker, runtime }, catalog);
     },
     requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {

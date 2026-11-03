@@ -254,6 +254,16 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
     inputs: [],
     outputs: [{ id: "out", name: "Out", type: TEXTURE }],
   },
+  {
+    // Outputs follow the selected parameter's type (`materialGlobalParameterDefinition`).
+    type: "global.parameter",
+    title: "Global Parameter",
+    category: "Parameter",
+    searchAliases: ["Global", "Global Parameter Collection"],
+    cost: 0,
+    inputs: [],
+    outputs: [],
+  },
 ];
 
 const INPUT_NODES: MaterialNodeDefinition[] = [

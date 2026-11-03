@@ -45,6 +45,8 @@ Parameters are the values you can change per instance or from scripts.
 2. Select it and set its **Parameter Name** in the **Inspector**. A new parameter is named **Parameter**; names are case-sensitive and unique in the graph, and a name that is already taken gets **_1**, **_2** and so on. A copied or pasted parameter gets a free name the same way.
 3. Set its **Type** and default value in the Inspector. Changing the type resizes the default and removes wires the new type cannot carry.
 
+For a value the whole game shares, such as a sky tint every Material follows, add a [Global Parameter](../scripting/material/global-parameter.md) node and pick a parameter of a [Global Parameter Collection](../assets/global-parameter-collection.md) in the **Inspector**. Class graphs change it with **Set Global Color Parameter** and the Float and Vector versions.
+
 For a fixed texture, a [Texture Sample](../scripting/material/texture-sample.md) node can also pick its Texture directly. An unconnected UV uses the mesh's UVs, or screen UVs in a post-process Material.
 
 ## Material Instances

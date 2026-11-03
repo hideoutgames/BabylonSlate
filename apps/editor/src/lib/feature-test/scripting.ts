@@ -343,6 +343,13 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
  * Prefab and the `FT_StreamedRoom` sub-scene; selects the Game Instance and
  * registers the Editor Utility Object.
  */
+/** `FT_GlobalParams`, which the Global Parameter Material and the glow Particle Graph read. */
+export function featureTestGlobalParameterCollection(ctx: FeatureTestContext): string {
+  const types = typesByContext.get(ctx);
+  if (!types) throw new Error("FeatureTest scripting types must be built before the Global Parameter readers.");
+  return types.globalParameters;
+}
+
 export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promise<void> {
   const types = typesByContext.get(ctx);
   if (!types) throw new Error("FeatureTest scripting types must be built before the scripting Classes.");

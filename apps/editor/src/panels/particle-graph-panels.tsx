@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { GlobalParameterNodePicker } from "../components/global-parameter-node-picker";
+import { useGlobalParameterCatalog } from "../lib/global-parameter-catalog";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -24,7 +26,9 @@ import {
 } from "@haptic/core";
 import {
   PARTICLE_ANGLE_UNIT_OPTIONS,
+  PARTICLE_GLOBAL_PARAMETER_NODE_TYPE,
   PARTICLE_PARAMETER_NODE_TYPE,
+  selectParticleGlobalParameter,
   PARTICLE_CONDITION_TESTS,
   PARTICLE_LOCAL_VARIABLE_SCOPES,
   PARTICLE_MESH_SHAPE_SOURCES,
@@ -750,6 +754,14 @@ function ParticleNodeDetails({
           </p>
         ) : null}
         {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
+        {node.type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE ? (
+          <GlobalParameterNodePicker
+            collectionGuid={typeof node.properties.collectionGuid === "string" ? node.properties.collectionGuid : ""}
+            parameterId={typeof node.properties.parameterId === "string" ? node.properties.parameterId : ""}
+            onChange={(collectionGuid, parameter) => onChange(selectParticleGlobalParameter(document, node.id, collectionGuid, parameter))}
+            testId="particle-global-parameter"
+          />
+        ) : null}
         {assets.picker}
         {node.type === "trigger.spawn" ? (
           <div className="flex flex-wrap items-center gap-1 px-2 py-1" data-testid="particle-spawn-presets">
@@ -1152,9 +1164,10 @@ function ParticleGraphCanvas() {
   const editing = useParticleGraphEditing();
   const { document, commit, documentId, setSelectedNodeId } = editing;
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(documentId);
+  const globalParameters = useGlobalParameterCatalog();
   const initialGraph = useMemo(
-    () => hydrateParticleGraphForEditor(particleGraphToSerialized(document), document.parameters),
-    [document],
+    () => hydrateParticleGraphForEditor(particleGraphToSerialized(document), document.parameters, globalParameters),
+    [document, globalParameters],
   );
   // Connection vetoes read the graph as it is when the wire is dropped.
   const graphRef = useRef(initialGraph);

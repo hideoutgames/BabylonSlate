@@ -1,4 +1,5 @@
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { GlobalParameterValueSource } from "./global-parameter-values";
 import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
 import { ParticleInputBlock } from "@babylonjs/core/Particles/Node/Blocks/particleInputBlock";
 import type { NodeParticleBlock } from "@babylonjs/core/Particles/Node/nodeParticleBlock";
@@ -58,6 +59,8 @@ export interface RealizeParticleGraphOptions {
   meshShape?: (properties: Readonly<Record<string, unknown>>) => ParticleMeshShapeSource;
   /** Spawn Emitter requests, for a node's properties. Without it Spawn Emitter spawns nothing. */
   spawn?: (properties: Readonly<Record<string, unknown>>) => ParticleSpawnSink | null;
+  /** What Global Parameter nodes read; the editor's defaults when omitted. */
+  globalParameters?: GlobalParameterValueSource;
 }
 
 export type RealizeParticleGraphResult =
@@ -127,7 +130,8 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
     try {
       realization = adapter({ operation, name, space: options.space, parameters, ...(options.noise ? { noise: options.noise } : {}),
         ...(options.meshShape ? { meshShape: options.meshShape } : {}),
-        ...(options.spawn ? { spawn: options.spawn } : {}) });
+        ...(options.spawn ? { spawn: options.spawn } : {}),
+        ...(options.globalParameters ? { globalParameters: options.globalParameters } : {}) });
     } catch (thrown) {
       diagnostics.push({ code: "particle.compile.buildFailed", nodeId: operation.id, message: describeParticleThrow(thrown) });
       continue;

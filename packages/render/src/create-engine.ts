@@ -213,6 +213,7 @@ import {
 } from "@haptic/core";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
+import { GlobalParameterSession, globalParameterDefaults } from "./global-parameter-values";
 import { MaterialLibrary } from "./material-library";
 import { refreshText2DMaterials } from "./text2d-mesh";
 import {
@@ -948,7 +949,15 @@ function initializeEngine(
     if (options.playMode) return;
     applyEditorMaterialFreeze(scene, editingMaterialGuids);
   };
+  // Play reads its own session's global parameter values; editor views read the defaults.
+  const globalParameterSession = options.playMode ? new GlobalParameterSession() : null;
+  const globalParameters = globalParameterSession ?? globalParameterDefaults;
+  // Uniforms read the values when they bind, so a change only needs a frame.
+  const stopGlobalParameterRedraw = globalParameters.subscribe(() => scheduler.invalidate("asset"));
+  const releaseGlobalParameters = () => { stopGlobalParameterRedraw(); globalParameterSession?.dispose(); };
+  onRollback(releaseGlobalParameters);
   const materialLibrary = new MaterialLibrary({
+    globalParameters,
     textureIdentity: (guid) => { const source = binding.textureBytes?.get(guid); return source ? assetByteFingerprint(source) : undefined; },
     functions: () => materialFunctionRecord,
     acquireTexture: (guid, consumerScene, filter) => {
@@ -1011,6 +1020,7 @@ function initializeEngine(
         onDiagnostic: options.onParticleDiagnostic,
         onPlaybackEnded: options.onParticlePlaybackEnded,
         sortingLayers: () => binding.sortingLayers,
+        globalParameters,
       })
     : null;
   onRollback(() => particleService?.dispose());
@@ -2515,6 +2525,7 @@ function initializeEngine(
         debugOverlay = null;
         disposeSnapshotBinding(binding);
         particleService?.dispose();
+        releaseGlobalParameters();
         materialLibrary.dispose();
         for (const key of Object.keys(captureMeshSourceAssets(binding)))
           delete (binding as unknown as Record<string, unknown>)[key];
@@ -2914,6 +2925,9 @@ function initializeEngine(
       if (command.type === "setMaterialParameter") {
         applySetMaterialParameter(binding, command);
         scheduler.invalidate("asset");
+      }
+      if (command.type === "setGlobalParameter") {
+        globalParameterSession?.set(command.collectionGuid, command.parameterId, command.value);
       }
       if (command.type === "setPostProcessMaterialParameter") {
         const validParameter = () => {
