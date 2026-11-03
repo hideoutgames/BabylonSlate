@@ -101,7 +101,6 @@ import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { useSpawnPreviewEmitters } from "../lib/use-spawn-preview-emitters";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
-import { ParticlePreviewParameters } from "../components/particle-parameter-fields";
 import { newParticleParameterId, particleParameterValueRow } from "../lib/particle-parameter-rows";
 
 type Commit = (next: ParticleGraphDocument, mergeKey?: string) => void;
@@ -1029,7 +1028,6 @@ export function ParticleGraphPreview({
   ) => void;
 }) {
   const [picking, setPicking] = useState(false);
-  const [previewValues, setPreviewValues] = useState<Record<string, number[]>>({});
   const spawned = useSpawnPreviewEmitters(previewDocument);
   const library = useMemo(
     () =>
@@ -1048,7 +1046,6 @@ export function ParticleGraphPreview({
             testId="particle-graph-preview-canvas"
             onPickMaterial={() => setPicking(true)}
             onDiagnostics={onBuildDiagnostics}
-            parameterValues={previewValues}
           />
         ) : (
           <ParticlePreviewSurface
@@ -1065,9 +1062,6 @@ export function ParticleGraphPreview({
           />
         )}
       </div>
-      {library ? (
-        <ParticlePreviewParameters parameters={document.parameters ?? []} values={previewValues} onChange={setPreviewValues} />
-      ) : null}
       {library && errorCount > 0 ? (
         <p
           role="status"

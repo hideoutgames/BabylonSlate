@@ -39,7 +39,6 @@ import {
 } from "../lib/play-particles";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
-import { ParticlePreviewParameters } from "../components/particle-parameter-fields";
 import { particleParameterValueRow } from "../lib/particle-parameter-rows";
 
 const EMITTER_TYPES: string[] = [...PARTICLE_EMITTER_ASSET_TYPES];
@@ -185,8 +184,6 @@ export function ParticleSystemPreview({
 }) {
   const system = normalizeParticleSystemPayload(payload);
   const { emitters, loadError, retry } = useSystemEmitters(system);
-  const [previewValues, setPreviewValues] = useState<Record<string, number[]>>({});
-  const { parameters } = systemParameters(system, emitters);
 
   const content =
     system.emitterGuids.length === 0 ? (
@@ -215,14 +212,12 @@ export function ParticleSystemPreview({
         systemGuid={PREVIEW_SYSTEM_GUID}
         testId="particle-system-preview-canvas"
         showSkybox={system.previewSkybox}
-        parameterValues={previewValues}
       />
     );
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="particle-system-preview">
       <div className="min-h-0 flex-1">{content}</div>
-      <ParticlePreviewParameters parameters={parameters} values={previewValues} onChange={setPreviewValues} />
     </div>
   );
 }

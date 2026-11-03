@@ -10,7 +10,7 @@ import { Frustum } from "@babylonjs/core/Maths/math.frustum";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
+import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasRenderTarget, shadowTileSize } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
@@ -96,10 +96,10 @@ export function shadowAllocationCheckpoint(
  */
 function atlasShadowGenerator(
   light: SpotLight | PointLight | DirectionalLight, mapSize: number, cascades: number, atlasEdge: number, camera?: Camera,
-  halved = 0,
+  halved = 0, firstScale = 1,
 ): ShadowGenerator {
   const generator = light instanceof DirectionalLight
-    ? createAtlasCascadedShadowGenerator(light, mapSize, cascades, atlasEdge, camera, halved)
+    ? createAtlasCascadedShadowGenerator(light, mapSize, cascades, atlasEdge, camera, halved, firstScale)
     : createAtlasShadowGenerator(light, mapSize, atlasEdge);
   if (!generator) throw new Error(`The shadow atlas has no room for ${light.name}'s ${mapSize}-texel tiles.`);
   return generator;
@@ -151,7 +151,7 @@ export function createShadowGenerator(
   const camera = view ?? undefined;
   // The controller registers directional, point and spot lights only.
   const generator = atlasShadowGenerator(entry.light as LocalShadowLight | DirectionalLight, mapSize, settings.cascades, atlasEdge, camera,
-    SHADOW_HALF_TILE_CASCADES[settings.profile]);
+    SHADOW_HALF_TILE_CASCADES[settings.profile], SHADOW_FIRST_CASCADE_SCALE[settings.profile]);
   const slot = { entry, view: view !== null };
   context.slots.set(generator, slot);
   if (generator instanceof CascadedShadowGenerator) {
@@ -219,7 +219,7 @@ export function createShadowGenerator(
     const projection = generator instanceof CascadedShadowGenerator
       ? generator.getCascadeProjectionMatrix(layer)
       : generator.projectionMatrix;
-    // The pass's own tile: a far cascade's may be smaller than the first's (`cascadeTileSizes`).
+    // The pass's own tile: the first cascade's may be larger than the map size, a far one's smaller (`cascadeTileSizes`).
     const tile = shadowTileSize(generator, layer);
     const matrix = projection?.m;
     biasInput.width = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0;

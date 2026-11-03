@@ -287,21 +287,6 @@ describe("ParticleSystemPreview", () => {
     ]);
   });
 
-  it("starts preview parameters at their defaults and sends an edit to the running preview", async () => {
-    const bound = { ...withMaterial, bindings: [{ target: "spawn.rateScale" as const, parameterName: "Heat", defaultValue: [2] }] };
-    harness.loadAssetDocument.mockResolvedValue(bound);
-    renderPreview(system);
-    const heat = await screen.findByTestId("property-preview-parameter-Heat") as HTMLInputElement;
-    expect(heat.value).toBe("2");
-    await waitFor(() => expect(harness.services).toHaveLength(1));
-    const service = harness.services[0]! as unknown as { handleCommand: ReturnType<typeof vi.fn> };
-    await waitFor(() => expect(service.handleCommand).toHaveBeenCalledWith(expect.objectContaining({ type: "assignParticle" })));
-    fireEvent.change(heat, { target: { value: "4" } });
-    fireEvent.blur(heat);
-    await waitFor(() => expect(service.handleCommand).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "setParticleParameter", name: "Heat", value: [4] })));
-  });
-
   it("explains a Particle Graph slot that has never validated instead of starting the preview", async () => {
     harness.loadAssetDocument.mockResolvedValue(brokenGraph());
     renderPreview({ ...system, emitterGuids: ["pg-1"] });
