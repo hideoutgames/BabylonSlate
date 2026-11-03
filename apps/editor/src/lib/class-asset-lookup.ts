@@ -6,9 +6,31 @@
  */
 import type { AssetRegistry } from "@haptic/assets";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
-import { documentClassParentOf } from "@haptic/object-model";
+import { GAME_SUBSYSTEM_CLASS_ID, SCENE_SUBSYSTEM_CLASS_ID, documentClassParentOf } from "@haptic/object-model";
 import { classIdForGraphPath } from "../services/script-compiler";
 import type { CreatableAssetType } from "./content-browser-helpers";
+
+/** Engine base classes available when authoring a new Class asset. */
+export const ENGINE_BASE_CLASSES = [
+  "Object",
+  "Actor",
+  "RenderTargetCapture",
+  "SceneLayerActor",
+  "SceneLayerActorSwitcher",
+  "SceneStreamingActor",
+  "ActorComponent",
+  "GameInstance",
+  GAME_SUBSYSTEM_CLASS_ID,
+  SCENE_SUBSYSTEM_CLASS_ID,
+  "FunctionLibrary",
+  "DebugCommand",
+  "EditorUtilityObject",
+  "EditorFunctionLibrary",
+  "BTTask",
+  "BTDecorator",
+  "BTService",
+  "BTComposite",
+] as const;
 
 export type ClassAssetRef = {
   path?: string;

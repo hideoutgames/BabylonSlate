@@ -12,7 +12,7 @@ describe("runtime trace recorder", () => {
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
     try {
       await runtime.loadScripts([{ assetGuid: "logger", classId: "Logger", anchors: [],
-        source: 'let tick = 0; export function onTick(ctx) { tick++; ctx.log("log", "Script", "tick " + tick); ctx.log("error", "Script", "error " + tick); }',
+        source: 'let tick = 0;\nexport function onTick(ctx) { tick++; ctx.log("log", "Script", "tick " + tick); ctx.log("error", "Script", "error " + tick); }',
         entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }] }]);
       runtime.spawnScriptedActor({ classId: "Logger" });
       runtime.start();

@@ -20,7 +20,7 @@ describe("render slots", () => {
       playScene: scene, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([{ assetGuid: "plain-script", classId: "Plain", parentClassId: "Actor",
-        source: "export function onBeginPlay() {}", anchors: [], entryPoints: [] }]);
+        source: "export function onBeginPlay() {}", anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] }]);
       runtime.realizePlayWorld();
       expect(commands).toContainEqual(expect.objectContaining({ type: "spawn", actorGuid: "decorated", slotId: 0 }));
       for (const type of COMPONENT_COMMANDS) expect(commands.map((command) => command.type)).toContain(type);

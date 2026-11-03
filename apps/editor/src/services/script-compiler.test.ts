@@ -1432,7 +1432,7 @@ describe("GraphScriptCompileCache", () => {
       const bundles = compileGraphDocuments(documents, {
         cache, structs, dataDefinitions: structs, dataAssets: [{ guid: "config", name: "Config", type: "DataTree", entries: [{ id: "primary-id", path: "primary", parentPath: "", effectiveDefinitionGuid: definitionGuid }] }],
       });
-      const module = await loadCompiledModule(bundles[0]!.source, "data-compile-cache");
+      const module = await loadCompiledModule(bundles[0]!, "data-compile-cache");
       await module.run!({
         data: { readEntry: (_reference: string, _entryPath: string, requestedType: string) => { readTypes.push(requestedType); return {}; } },
         formatValue: JSON.stringify, log: () => {}, checkInfiniteLoop: () => {},

@@ -289,7 +289,7 @@ describe("runtime session boundaries", () => {
       ] })] } });
     try {
       await runtime.loadScripts([{ classId: "Listener", parentClassId: "Actor", assetGuid: "listener", anchors: [],
-        source: 'export function begin(ctx) { ctx.self.setVariable("began", true); } export function audio(ctx) { ctx.self.setVariable("heard", true); }',
+        source: 'export function begin(ctx) { ctx.self.setVariable("began", true); }\nexport function audio(ctx) { ctx.self.setVariable("heard", true); }',
         entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false }, { name: "audio", event: "onAudioFinished", componentId: "audio", isAsync: false }] }]);
       runtime.pause(); runtime.realizePlayWorld(); runtime.start();
       runtime.notifySceneModelsReady("root", 1);

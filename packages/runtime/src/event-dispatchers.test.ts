@@ -135,11 +135,14 @@ function services(log: string[], extras: Partial<ScriptHostServices> = {}): Scri
   };
 }
 
-/** A hand-written class module whose `events` are entry points, as compiled custom events are. */
-function script(classId: string, source: string, events: readonly string[] = []): CompiledScript {
+/** A hand-written class module exporting custom `events` and plain `functions`, as compiled Class graphs do. */
+function script(classId: string, source: string, events: readonly string[] = [], functions: readonly string[] = []): CompiledScript {
   return {
     assetGuid: `${classId}-asset`, classId, source, anchors: [],
-    entryPoints: events.map((name) => ({ name, event: name, isAsync: false })),
+    entryPoints: [
+      ...events.map((name) => ({ name, event: name, isAsync: false })),
+      ...functions.map((name) => ({ name, isAsync: false })),
+    ],
   };
 }
 
@@ -149,7 +152,7 @@ describe("Event Dispatcher bindings", () => {
     const host = new ScriptHost(services(log));
     await host.load(script("Hero", [
       "export function Heal(ctx) { ctx.log('log', 'Heal', `${ctx.args.Amount} from ${ctx.args.Healer}`); }",
-    ].join("\n")));
+    ].join("\n"), [], ["Heal"]));
     const hero = new Actor({ classId: "Hero", guid: "hero" });
     const ctx = host.createContext(hero, 0, 0);
 

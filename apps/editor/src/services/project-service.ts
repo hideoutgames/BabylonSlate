@@ -103,9 +103,7 @@ import {
 import { runImportOffMainThread } from "@haptic/assets/import-worker-client";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@haptic/vfs";
 import { NAVMESH_CHUNK_ID, navmeshChunk } from "@haptic/navigation/chunk";
-import {
-  assetHeaderDependencyMetadata,
-} from "../lib/content-browser-helpers";
+import { assetHeaderDependencyMetadata } from "../lib/asset-header-dependencies";
 import {
   SEARCH_CATALOG_CLASS_IDS,
   searchNodeTitles,

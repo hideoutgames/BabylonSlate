@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import { copyEngineDefaultSkyboxFaces } from "../editor/vite-engine-skybox";
+import { havokHostedWasmVitePlugin } from "../editor/vite-havok-wasm";
 import { bundledPackagesReport } from "./vite-bundled-packages";
 import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
 
@@ -71,7 +72,7 @@ const PAGE_ON_DEMAND_RUNTIME = /node_modules[\\/](@dimforge[\\/]rapier2d[^\\/]*|
 
 export default defineConfig({
   base: "./",
-  plugins: [copyRuntimePublic(), previewDiagnosticsEntry(rootDir), bundledPackages.main, writePlayerFileList()],
+  plugins: [copyRuntimePublic(), havokHostedWasmVitePlugin(), previewDiagnosticsEntry(rootDir), bundledPackages.main, writePlayerFileList()],
   build: {
     target: "es2022",
     cssCodeSplit: false,
@@ -94,7 +95,7 @@ export default defineConfig({
   },
   worker: {
     format: "es",
-    plugins: () => [bundledPackages.worker()],
+    plugins: () => [havokHostedWasmVitePlugin(), bundledPackages.worker()],
     rolldownOptions: {
       output: {
         entryFileNames: "worker-[name].js",

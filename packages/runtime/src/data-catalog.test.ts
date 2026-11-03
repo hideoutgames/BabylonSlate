@@ -280,12 +280,12 @@ describe("runtime data catalog", () => {
         { id: "health", sourceNodeId: "break", sourcePinId: "Health", targetNodeId: "log", targetPinId: "message" },
       ],
     };
-    await (await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "actor" }).source, "data-read")).run!(context);
+    await (await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "actor" }), "data-read")).run!(context);
     expect(logs).toEqual(["20"]);
     const runOutput = async (typeId: string, path: string, output: string) => {
       graph.nodes = [node("start", "flow.entry"), node("read", typeId, { definitionGuid: "stats", "default:tree": "equipment", "default:entryPath": path }), node("log", "debug.log")];
       graph.edges = [graph.edges[0]!, { id: "output", sourceNodeId: "read", sourcePinId: output, targetNodeId: "log", targetPinId: "message" }];
-      await (await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "actor" }).source, `${typeId}-${output}`)).run!(context);
+      await (await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "actor" }), `${typeId}-${output}`)).run!(context);
       return logs.at(-1);
     };
     expect(await runOutput("data.readEntry", "Weapons", "found")).toBe("false");
@@ -309,7 +309,7 @@ describe("runtime data catalog", () => {
           { id: "value", sourceNodeId: "read", sourcePinId: "value", targetNodeId: "break", targetPinId: "in" },
           { id: "health", sourceNodeId: "break", sourcePinId: "Health", targetNodeId: "log", targetPinId: "message" },
         ])];
-      await (await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "actor" }).source, `unknown-${output}`)).run!(context);
+      await (await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "actor" }), `unknown-${output}`)).run!(context);
       return logs.at(-1);
     };
     expect(await runUnknown({ "default:definition": "stats", definitionGuid: "other" }, "Health")).toBe("20");
@@ -337,7 +337,7 @@ describe("runtime data catalog", () => {
         { id: "value", sourceNodeId: "read", sourcePinId: "found", targetNodeId: "log", targetPinId: "message" },
       ],
     };
-    const module = await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "reader" }).source, "cold-data");
+    const module = await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "reader" }), "cold-data");
     const reading = module.run!(context);
     expect(logs).toEqual([]);
     finish();

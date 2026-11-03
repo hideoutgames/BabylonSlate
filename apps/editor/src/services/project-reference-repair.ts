@@ -22,7 +22,7 @@ import {
   type PluginDescriptor,
 } from "@haptic/assets";
 import { validateClassDeletionReplacements } from "../lib/class-deletion";
-import { classIdFromClassAsset } from "../lib/content-browser-helpers";
+import { classIdFromClassAsset } from "../lib/class-asset-lookup";
 import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
 import type { ProjectService } from "./project-service";
 

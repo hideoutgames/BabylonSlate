@@ -52,7 +52,8 @@ import {
 import { createAppSettingsStore } from "@haptic/vfs";
 import { collectAreaEmissions } from "../lib/collect-area-emissions";
 import { collectGpuTextureBytes, texturePixelSizeFromHeader, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
-import { materialDomainsFromAssets, registryClassParentLookup } from "../lib/content-browser-helpers";
+import { registryClassParentLookup } from "../lib/class-asset-lookup";
+import { materialDomainsFromAssets } from "../lib/material-asset-filters";
 import { collectDataGraphAssets } from "../lib/data-graph";
 import { selectEditorUtilityGraphs } from "../lib/editor-utility-scripts";
 import { inputAssetCatalog } from "../lib/input-asset-catalog";

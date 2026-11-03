@@ -18,8 +18,12 @@ function sceneOf(actors: SerializedActor[]): SerializedScene {
   };
 }
 
+const LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick", "onDestroyed"]);
+
+/** `exports` names every function `source` exports; a lifecycle name binds its event. */
 function componentScript(
   classId: string,
+  exports: string[],
   source: string,
   extra: Partial<CompiledScript> = {},
 ): CompiledScript {
@@ -29,8 +33,8 @@ function componentScript(
     parentClassId: "ActorComponent",
     source,
     anchors: [],
-    entryPoints: ["onBeginPlay", "onTick", "onDestroyed"].map((name) => ({
-      name, event: name, isAsync: false,
+    entryPoints: exports.map((name) => ({
+      name, ...(LIFECYCLE_EVENTS.has(name) ? { event: name } : {}), isAsync: false,
     })),
     ...extra,
   };
@@ -45,7 +49,7 @@ describe("ActorComponent lifecycle boundaries", () => {
       })]),
     });
     try {
-      await runtime.loadScripts([componentScript("Quitter", `
+      await runtime.loadScripts([componentScript("Quitter", ["onTick", "onDestroyed"], `
         export function onTick(ctx) {
           ctx.destroyActor(ctx.self.owner);
           ctx.executeConsoleCommand("quit");
@@ -75,12 +79,12 @@ describe("ActorComponent lifecycle boundaries", () => {
     });
     try {
       await runtime.loadScripts([
-        componentScript("Source", `
+        componentScript("Source", ["onDestroyed"], `
           export function onDestroyed(ctx) {
             ctx.setVariable("replacement", ctx.addComponent(ctx.self.owner, "Replacement"));
           }
         `),
-        componentScript("Replacement", `
+        componentScript("Replacement", ["onBeginPlay"], `
           export function onBeginPlay(ctx) {
             ctx.self.owner.setVariable("replacementBegan", true);
           }
@@ -112,7 +116,7 @@ describe("ActorComponent lifecycle boundaries", () => {
         methods: [{ name: "Damage", outputs: { health: -1 } }],
       });
       await runtime.loadScripts([
-        componentScript("Health", `
+        componentScript("Health", ["damage", "onBeginPlay"], `
           export function damage(ctx) {
             const health = ctx.getVariable("health") - ctx.args.amount;
             ctx.setVariable("health", health);
@@ -128,7 +132,7 @@ describe("ActorComponent lifecycle boundaries", () => {
             interfaceGuid: "damageable", method: "Damage", exportName: "damage",
           }],
         }),
-        componentScript("Owner", `
+        componentScript("Owner", ["onBeginPlay"], `
           export function onBeginPlay(ctx) {
             const health = ctx.getComponent(ctx.self, "Health");
             const result = ctx.callInterface(health, "damageable", "Damage", { amount: 17 });
@@ -168,13 +172,13 @@ describe("ActorComponent lifecycle boundaries", () => {
     });
     try {
       await runtime.loadScripts([
-        componentScript("ChangeScene", `
+        componentScript("ChangeScene", ["onBeginPlay"], `
           export function onBeginPlay(ctx) {
             ctx.log("log", "Lifecycle", "change");
             ctx.changeScene("next");
           }
         `),
-        componentScript("Later", `
+        componentScript("Later", ["onBeginPlay"], `
           export function onBeginPlay(ctx) { ctx.log("log", "Lifecycle", "later"); }
         `),
       ]);
