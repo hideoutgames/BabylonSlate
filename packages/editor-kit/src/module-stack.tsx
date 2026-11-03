@@ -1,4 +1,5 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
+import { LabelHint } from "./label-hint";
 import { ChevronDownIcon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
 import { Switch } from "@haptic/ui/components/switch";
@@ -23,6 +24,8 @@ export interface ModuleStageProps {
   id: string;
   /** Title Case stage name, e.g. "Over Life". */
   title: string;
+  /** What the stage is for, as the title's tooltip (`LabelHint`); never visible text. */
+  hint?: string;
   /** Node role whose `--node-*` token accents the stage and its cards. */
   accentRole: NodeRole;
   /** ModuleCards. */
@@ -30,7 +33,7 @@ export interface ModuleStageProps {
 }
 
 /** Stage section with a sticky header; the accent is a `var(--node-*)` reference. */
-export function ModuleStage({ id, title, accentRole, children }: ModuleStageProps) {
+export function ModuleStage({ id, title, hint, accentRole, children }: ModuleStageProps) {
   const headingId = useId();
   return (
     <section
@@ -47,7 +50,7 @@ export function ModuleStage({ id, title, accentRole, children }: ModuleStageProp
           aria-hidden="true"
           className="h-3 w-[3px] shrink-0 rounded-full bg-[var(--module-accent)]"
         />
-        {title}
+        {hint ? <LabelHint hint={hint}><span>{title}</span></LabelHint> : title}
       </h3>
       <div className="flex flex-col gap-1 px-2">{children}</div>
     </section>

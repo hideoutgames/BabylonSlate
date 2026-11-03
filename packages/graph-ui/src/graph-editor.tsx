@@ -226,6 +226,11 @@ export interface GraphEditorProps {
    * and the Toggle Breakpoint key toggles them on the selected nodes, read-only canvases included.
    */
   breakpoints?: GraphBreakpoints;
+  /**
+   * What a node does, from the host's catalog, shown as its title's tooltip. Pins show their own
+   * `description`. Undefined for a node shows no tooltip.
+   */
+  describeNode?: (nodeType: string, data: Record<string, unknown>) => string | undefined;
   /** Pan/zoom only: no connect, node drag, palette, or Cut/Paste/Delete/Format. */
   readOnly?: boolean;
   /** Locks inline values without disabling node movement or graph connections. */
@@ -725,6 +730,7 @@ function GraphEditorCanvas({
   readOnly: readOnlyProp = false,
   runTrace,
   breakpoints,
+  describeNode,
   readOnlyPinDefaults: readOnlyPinDefaultsProp,
   onPinSelect,
   nodeTypes: nodeTypesProp,
@@ -2959,6 +2965,7 @@ function GraphEditorCanvas({
       acceptsPinDrop: pinDrop?.accepts,
       runTrace,
       breakpoints,
+      describeNode,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
         defaultEdgeOptions.type === "animTransitionBoth"
@@ -2991,6 +2998,7 @@ function GraphEditorCanvas({
       pinDrop,
       runTrace,
       breakpoints,
+      describeNode,
       defaultEdgeOptions.type,
     ],
   );

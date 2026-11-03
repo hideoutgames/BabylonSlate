@@ -4,6 +4,8 @@ import type { SerializedGraph } from "@haptic/core";
 export type SerializedPin = {
   /** Optional compact display hint supplied by a typed graph host. */
   typeLabel?: string;
+  /** What the pin does, shown as the pin name's tooltip. */
+  description?: string;
   group?: string;
   id: string;
   name: string;

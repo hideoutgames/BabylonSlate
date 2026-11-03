@@ -683,6 +683,11 @@ function particleParameterNodeRows(
 }
 
 /** Header, pin defaults and properties of one selected node. */
+/** A Particle Graph node's catalog description, as its title's tooltip on the canvas. */
+function describeParticleNode(nodeType: string): string | undefined {
+  return particleNodeDefinitionFor({ type: nodeType, properties: {} })?.description;
+}
+
 function ParticleNodeDetails({
   document,
   node,
@@ -743,11 +748,9 @@ function ParticleNodeDetails({
       <ModuleStage
         id="node"
         title={definition.title}
+        hint={definition.description}
         accentRole={PARTICLE_STAGE_ROLE[definition.role]}
       >
-        {definition.description ? (
-          <p className="px-2 py-1 text-xs text-muted-foreground">{definition.description}</p>
-        ) : null}
         {node.type === PARTICLE_PARAMETER_NODE_TYPE && parameterRows.length === 0 ? (
           <p className="px-2 py-1 text-xs text-destructive" data-testid="particle-parameter-missing">
             Its parameter is missing. Convert the node to a Constant or delete it.
@@ -1227,6 +1230,7 @@ function ParticleGraphCanvas() {
         initialGraph={initialGraph}
         diagnostics={diagnostics}
         paletteNodes={paletteNodes}
+        describeNode={describeParticleNode}
         pinCompatibility={particlePinsAreCompatible}
         addNodeHistoryScope="particle"
         canConnect={canConnect}

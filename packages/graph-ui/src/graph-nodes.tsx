@@ -11,11 +11,13 @@ import {
   useEffect,
   useRef,
   type MouseEvent,
+  type ReactElement,
   type ReactNode,
 } from "react";
 import { CircleAlertIcon, ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
 import {
   humanizePropertyLabel,
+  LabelHint,
   PinShapeGlyph,
   tagDisplayName,
   useTags,
@@ -317,13 +319,15 @@ function PinRow({
               disabled={disabled || !onPinDefaultChange} onChange={(value) => onPinDefaultChange?.(nodeId, incoming.id, value)}
               renderer={renderPinDefaultEditor}
             /> : null}
-            <span
-              data-pin-label={incoming.name}
-              className="shrink-0 whitespace-nowrap text-base leading-snug text-foreground"
-            >
-              {incomingName}
-              {incoming.typeLabel ? <span className="ml-1 text-xs text-muted-foreground">{incoming.typeLabel}</span> : null}
-            </span>
+            <PinHint pin={incoming}>
+              <span
+                data-pin-label={incoming.name}
+                className="shrink-0 whitespace-nowrap text-base leading-snug text-foreground"
+              >
+                {incomingName}
+                {incoming.typeLabel ? <span className="ml-1 text-xs text-muted-foreground">{incoming.typeLabel}</span> : null}
+              </span>
+            </PinHint>
           </>
         ) : (
           <span className="size-11 shrink-0" />
@@ -336,13 +340,15 @@ function PinRow({
       >
         {outgoing ? (
           <>
-            <span
-              data-pin-label={outgoing.name}
-              className="shrink-0 whitespace-nowrap text-right text-base leading-snug text-foreground"
-            >
-              {outgoingLabel}
-              {outgoing.typeLabel ? <span className="ml-1 text-xs text-muted-foreground">{outgoing.typeLabel}</span> : null}
-            </span>
+            <PinHint pin={outgoing}>
+              <span
+                data-pin-label={outgoing.name}
+                className="shrink-0 whitespace-nowrap text-right text-base leading-snug text-foreground"
+              >
+                {outgoingLabel}
+                {outgoing.typeLabel ? <span className="ml-1 text-xs text-muted-foreground">{outgoing.typeLabel}</span> : null}
+              </span>
+            </PinHint>
             <PinHandle
               nodeId={nodeId}
               pin={outgoing}
@@ -507,6 +513,14 @@ function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   return null;
 }
 
+/** A canvas waits before a node or pin tooltip, so moving across nodes does not flash them. */
+const GRAPH_HINT_DELAY_MS = 600;
+
+/** A pin name with a `description` explains it as a tooltip (`LabelHint`). */
+function PinHint({ pin, children }: { pin: SerializedPin; children: ReactElement }) {
+  return pin.description ? <LabelHint hint={pin.description} delay={GRAPH_HINT_DELAY_MS}>{children}</LabelHint> : children;
+}
+
 export function BlueprintNodeShell({
   nodeId,
   title,
@@ -525,7 +539,8 @@ export function BlueprintNodeShell({
   /** Fixed-width flat card without the role title bar; children render their own header. */
   card?: boolean;
 }) {
-  const { nodeErrorCount } = useGraphEditorContext();
+  const { nodeErrorCount, describeNode } = useGraphEditorContext();
+  const description = data ? describeNode?.(String(data.__nodeType ?? ""), data) : undefined;
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
   const editorOnly = data?.__editorOnly === true;
   const disabled = data?.__disabled === true;
@@ -571,7 +586,11 @@ export function BlueprintNodeShell({
             )}
           >
             <NodeBreakpointDot nodeId={nodeId} data={data} />
-            {title}
+            {description ? (
+              <LabelHint hint={description} underline={false} delay={GRAPH_HINT_DELAY_MS}>
+                <span data-node-title-hint="">{title}</span>
+              </LabelHint>
+            ) : title}
             {headerPins.map((pin) => (
               <HeaderPin key={pin.id} nodeId={nodeId} pin={pin} disabled={disabled} />
             ))}
