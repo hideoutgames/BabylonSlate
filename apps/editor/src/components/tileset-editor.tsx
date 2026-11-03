@@ -48,6 +48,7 @@ import {
   ensureTilesetTiles,
   missingTerrainVariants,
   setAutotileZone,
+  setTilesetTerrains,
   tilesetTerrainById,
   tilesetTileRect,
   terrainVariantMasks,
@@ -400,16 +401,12 @@ export function TilesetEditor({
     terrains.find((terrain) => terrain.id === selectedTerrainId) ?? terrains[0] ?? null;
   const [layoutOpen, setLayoutOpen] = useState(false);
 
-  /** Replace the autotile list; tiles of a removed autotile leave it in the same edit. */
+  /**
+   * Replace the autotile list. Tiles of a removed autotile, and tiles of other
+   * autotiles drawn against it, leave their autotile in the same edit.
+   */
   const commitTerrains = (next: TilesetTerrain[], field?: string) => {
-    const kept = new Set(next.map((terrain) => terrain.id));
-    const tiles = tileset.tiles.map((tile) =>
-      tile.terrain && !kept.has(tile.terrain.id) ? withoutTerrain(tile) : tile,
-    );
-    const payload: TilesetPayload = { ...tileset, tiles, terrains: next };
-    // A Tileset without autotiles saves without the key.
-    if (next.length === 0) delete payload.terrains;
-    commit(payload, field);
+    commit(setTilesetTerrains(tileset, next), field);
   };
 
   const addTerrain = () => {
@@ -987,12 +984,6 @@ function AutotileLayoutDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function withoutTerrain(tile: TilesetTile): TilesetTile {
-  const next = { ...tile };
-  delete next.terrain;
-  return next;
 }
 
 function tileGridLabel(tileset: TilesetPayload, tileId: number): string {

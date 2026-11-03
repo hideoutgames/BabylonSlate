@@ -10,9 +10,11 @@ import {
   getTile,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  refreshStaleTilemapTerrains,
   setTile,
   TERRAIN_E,
   TERRAIN_W,
+  tilePlaceholderHsl,
   type TilemapPayload,
   type TilesetPayload,
 } from "@haptic/assets";
@@ -471,21 +473,31 @@ describe("TilemapPaint", () => {
     expect(canvas.getAttribute("data-gid")).toBe("1");
   });
 
-  it("lists autotiles first with their coverage, paints one from Move, picks one with the Picker and refreshes stale cells", async () => {
+  it("lists autotiles first with their coverage, paints one from Move, picks one with the Picker and shows stale cells refreshed", async () => {
     // Ledge pieces by local id: 1 single, 2 left end, 3 middle, 4 right end; 5 is a plain tile; Water has no tiles.
-    loadAssetDocument.mockImplementation(async (_kind: string, path: string) =>
-      path === GROUND_PATH
-        ? ensureTilesetTiles(normalizeTilesetPayload({
-            textureGuid: "tex-1",
-            atlasWidth: 80,
-            atlasHeight: 16,
-            tileWidth: 16,
-            tileHeight: 16,
-            terrains: [{ id: "ledge", name: "Ledge", style: "sides" }, { id: "water", name: "Water", style: "blob" }],
-            tiles: [0, TERRAIN_E, TERRAIN_E | TERRAIN_W, TERRAIN_W].map((mask, at) => ({ id: at + 1, terrain: { id: "ledge", mask } })),
-          }))
-        : null,
-    );
+    const ground = ensureTilesetTiles(normalizeTilesetPayload({
+      textureGuid: "tex-1",
+      atlasWidth: 80,
+      atlasHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+      terrains: [{ id: "ledge", name: "Ledge", style: "sides" }, { id: "water", name: "Water", style: "blob" }],
+      tiles: [0, TERRAIN_E, TERRAIN_E | TERRAIN_W, TERRAIN_W].map((mask, at) => ({ id: at + 1, terrain: { id: "ledge", mask } })),
+    }));
+    loadAssetDocument.mockImplementation(async (_kind: string, path: string) => (path === GROUND_PATH ? ground : null));
+    // Each cell drawn as its placeholder colour and canvas position.
+    const fills: string[] = [];
+    const createContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement) {
+      const ctx = (createContext as () => unknown).call(this) as { fillStyle: string; fillRect: (x: number, y: number) => void };
+      ctx.fillRect = (x, y) => fills.push(`${ctx.fillStyle} ${x},${y}`);
+      return ctx;
+    }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    const fillOf = (gid: number) => {
+      const { h, s, l } = tilePlaceholderHsl(gid);
+      return `hsl(${h} ${s}% ${l}%)`;
+    };
+    const lastFillAt = (x: number, y: number) => fills.filter((fill) => fill.endsWith(` ${x},${y}`)).at(-1);
     const onChange = vi.fn();
     const openAsset = vi.fn();
     // A ledge whose right end was painted as a single piece before the Tileset gained its end tile.
@@ -501,15 +513,20 @@ describe("TilemapPaint", () => {
     fireEvent.click(autotiles.getByTestId("tilemap-palette-autotile-setup-ts-ground-water"));
     expect(openAsset).toHaveBeenCalledWith("ts-ground");
 
+    // The open map shows the right end at once (cell 3, 1 sits at 96, 192) without editing the document.
+    await waitFor(() => expect(lastFillAt(96, 192)).toBe(`${fillOf(4)} 96,192`));
+    expect(onChange).not.toHaveBeenCalled();
+    // The next edit stores the refreshed cells, current with the Tileset.
+    fireEvent.click(screen.getByRole("button", { name: "Hide Ground Layer" }));
+    const stored = normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    expect([1, 2, 3].map((x) => getTile(stored, "layer-1", x, 1))).toEqual([2, 3, 4]);
+    expect(refreshStaleTilemapTerrains(stored, new Map([["ts-ground", ground]]))).toBe(stored);
+    fireEvent.click(screen.getByRole("button", { name: "Show Ground Layer" }));
+
     const canvas = screen.getByTestId("tilemap-paint-canvas");
     expect(canvas.getAttribute("data-tool")).toBe("move");
     fireEvent.click(autotiles.getByTestId("tilemap-palette-terrain-ts-ground-ledge"));
     expect(canvas.getAttribute("data-tool")).toBe("brush");
-
-    fireEvent.click(screen.getByTestId("tilemap-refresh-autotiles"));
-    const refreshed = normalizeTilemapPayload(onChange.mock.lastCall![0]);
-    expect(onChange.mock.lastCall![1]).toBeUndefined();
-    expect([1, 2, 3].map((x) => getTile(refreshed, "layer-1", x, 1))).toEqual([2, 3, 4]);
 
     // The Picker on an autotile cell takes its autotile, not the single tile.
     fireEvent.click(screen.getByTestId("tilemap-palette-tile-5"));

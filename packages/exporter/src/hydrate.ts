@@ -27,6 +27,7 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
+  refreshStaleTilemaps,
   spriteAnimationDurationMs,
   type AnimationPayload,
   type AudioChannelPayload,
@@ -372,7 +373,8 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     spritePayloads: sizedSprites,
     spriteAnimationPayloads: sizedSpriteAnimations,
     waterPayloads,
-    tilemapPayloads,
+    // Play, Simulate, Preview Build and exported games draw, collide and send the maps as the current Tilesets resolve them.
+    tilemapPayloads: refreshStaleTilemaps(tilemapPayloads, tilesetPayloads),
     tilesetPayloads,
     animGraphs: resolvedAnimGraphs,
     behaviourTrees,

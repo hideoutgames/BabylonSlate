@@ -20,16 +20,26 @@ export interface TilesetTerrain {
   id: string;
   name: string;
   style: TilesetTerrainStyle;
+  /**
+   * Other terrains of this Tileset this terrain has a transition (border) set
+   * for: its tiles whose `border` names one are drawn against that terrain.
+   * Omitted when empty.
+   */
+  borders?: string[];
 }
 
 /**
  * Terrain membership of one tile. `mask` holds the neighbours the tile joins,
  * clockwise from north (`TERRAIN_N` = 1 … `TERRAIN_NW` = 128); the terrain's
  * style decides which bits count, so switching style keeps corner bits.
+ * `border` puts the tile in its terrain's set drawn against that terrain (one
+ * of the terrain's `borders`): its open sides show that terrain. Without it
+ * the tile is in the default set, whose open sides show nothing.
  */
 export interface TilesetTileTerrain {
   id: string;
   mask: number;
+  border?: string;
 }
 
 export interface TilesetTile {
@@ -114,7 +124,7 @@ export function normalizeTilesetPayload(value: unknown): TilesetPayload {
     tileHeight,
     margin: nonNegativeInt(source.margin, 0),
     spacing: nonNegativeInt(source.spacing, 0),
-    tiles: normalizeTiles(source.tiles, new Set(terrains.map((terrain) => terrain.id))),
+    tiles: normalizeTiles(source.tiles, terrainBorderSets(terrains)),
     ...(terrains.length > 0 ? { terrains } : {}),
   };
 }
@@ -268,38 +278,101 @@ function roundUv(value: number): number {
 
 function normalizeTerrains(value: unknown): TilesetTerrain[] {
   if (!Array.isArray(value)) return [];
-  const seen = new Set<string>();
-  const terrains: TilesetTerrain[] = [];
+  const ids = new Set<string>();
+  const rows: Array<{ terrain: TilesetTerrain; borders: unknown }> = [];
   for (const entry of value) {
     if (!entry || typeof entry !== "object") continue;
     const row = entry as Record<string, unknown>;
     const id = stringOrNull(row.id);
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    terrains.push({
-      id,
-      name: typeof row.name === "string" && row.name.trim() !== "" ? row.name : id,
-      style: TILESET_TERRAIN_STYLES.includes(row.style as TilesetTerrainStyle)
-        ? (row.style as TilesetTerrainStyle)
-        : "sides",
+    if (!id || ids.has(id)) continue;
+    ids.add(id);
+    rows.push({
+      terrain: {
+        id,
+        name: typeof row.name === "string" && row.name.trim() !== "" ? row.name : id,
+        style: TILESET_TERRAIN_STYLES.includes(row.style as TilesetTerrainStyle)
+          ? (row.style as TilesetTerrainStyle)
+          : "sides",
+      },
+      borders: row.borders,
     });
   }
-  return terrains;
+  return rows.map(({ terrain, borders }) =>
+    withBorders(terrain, Array.isArray(borders) ? validTerrainBorders(terrain.id, borders, ids) : []));
 }
 
-/** Membership of a terrain the Tileset defines; any other membership is dropped. */
+/** Border ids a terrain may keep: other terrains of its Tileset, each once, in first order. */
+function validTerrainBorders(
+  terrainId: string,
+  borders: readonly unknown[],
+  terrainIds: ReadonlySet<string>,
+): string[] {
+  const kept: string[] = [];
+  for (const border of borders) {
+    if (typeof border !== "string" || border === terrainId || !terrainIds.has(border) || kept.includes(border)) continue;
+    kept.push(border);
+  }
+  return kept;
+}
+
+/** `terrain` with `borders`, the key omitted when there are none. */
+function withBorders(terrain: TilesetTerrain, borders: readonly string[]): TilesetTerrain {
+  const next = { ...terrain };
+  delete next.borders;
+  if (borders.length > 0) next.borders = [...borders];
+  return next;
+}
+
+/** Each terrain id with the border ids it declares. */
+function terrainBorderSets(terrains: readonly TilesetTerrain[]): ReadonlyMap<string, ReadonlySet<string>> {
+  return new Map(terrains.map((terrain) => [terrain.id, new Set(terrain.borders ?? [])]));
+}
+
+/**
+ * `tileset` with `terrains` as its terrain list, keeping every membership
+ * valid: a terrain keeps only borders naming another listed terrain, and a
+ * tile leaves its terrain when that terrain is gone or no longer declares the
+ * tile's border set. Removing a terrain therefore also drops it from the other
+ * terrains' borders, with their tiles drawn against it. Empty keys are omitted.
+ */
+export function setTilesetTerrains(tileset: TilesetPayload, terrains: readonly TilesetTerrain[]): TilesetPayload {
+  const ids = new Set(terrains.map((terrain) => terrain.id));
+  const next = terrains.map((terrain) => withBorders(terrain, validTerrainBorders(terrain.id, terrain.borders ?? [], ids)));
+  const declared = terrainBorderSets(next);
+  const tiles = tileset.tiles.map((tile) => {
+    const membership = tile.terrain;
+    const borders = membership ? declared.get(membership.id) : undefined;
+    if (!membership || (borders && (membership.border === undefined || borders.has(membership.border)))) return tile;
+    const left = { ...tile };
+    delete left.terrain;
+    return left;
+  });
+  const payload: TilesetPayload = { ...tileset, tiles, terrains: next };
+  if (next.length === 0) delete payload.terrains;
+  return payload;
+}
+
+/**
+ * Membership of a terrain the Tileset defines, in a set that terrain
+ * declares; any other membership is dropped whole, so a tile of an undeclared
+ * border set never falls into the default set.
+ */
 function normalizeTileTerrain(
   value: unknown,
-  terrainIds: ReadonlySet<string>,
+  terrainBorders: ReadonlyMap<string, ReadonlySet<string>>,
 ): TilesetTileTerrain | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
   const id = stringOrNull(row.id);
-  if (!id || !terrainIds.has(id)) return null;
-  return { id, mask: nonNegativeInt(row.mask, 0) & 0xff };
+  const borders = id ? terrainBorders.get(id) : undefined;
+  if (!id || !borders) return null;
+  const mask = nonNegativeInt(row.mask, 0) & 0xff;
+  const border = stringOrNull(row.border);
+  if (border === null) return { id, mask };
+  return borders.has(border) ? { id, mask, border } : null;
 }
 
-function normalizeTiles(value: unknown, terrainIds: ReadonlySet<string>): TilesetTile[] {
+function normalizeTiles(value: unknown, terrainBorders: ReadonlyMap<string, ReadonlySet<string>>): TilesetTile[] {
   if (!Array.isArray(value)) return createDefaultTilesetPayload().tiles;
   const seen = new Set<number>();
   const tiles: TilesetTile[] = [];
@@ -317,7 +390,7 @@ function normalizeTiles(value: unknown, terrainIds: ReadonlySet<string>): Tilese
         ? row.animation.map((n) => Number(n) || 0).filter((n) => n > 0)
         : [],
       animationFrameDurationMs: Math.max(1, positiveInt(row.animationFrameDurationMs, DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS)),
-      ...withTerrain(normalizeTileTerrain(row.terrain, terrainIds)),
+      ...withTerrain(normalizeTileTerrain(row.terrain, terrainBorders)),
     });
   }
   return tiles;

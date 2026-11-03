@@ -69,7 +69,19 @@ With the **Autotile** tool, turning a corner on also turns its two sides on, and
 
 A sheet does not need every variant: where one is missing, the brush paints the closest tile, and it prefers a tile that draws no edge inside the autotile. Ties go to the lower tile number.
 
-Each tile belongs to at most one autotile; marking a tile for another autotile moves it over. Removing an autotile takes its tiles out of it; you can undo it. After changing an autotile, use **Refresh Autotiles** in the Tilemap to update maps already painted with it.
+Each tile belongs to at most one autotile; marking a tile for another autotile moves it over. Removing an autotile takes its tiles out of it; you can undo it.
+
+Maps painted with an autotile follow your changes to it by themselves. Every Tilemap that uses this Tileset picks its autotile cells again, in the Tilemap editor, the viewport, Play and exported games. Pieces placed by hand on a Tilemap stay until you change one of this Tileset's autotiles.
+
+## Transitions
+
+A transition joins two autotiles of the same Tileset, such as grass meeting dirt. Without one, an autotile treats a different autotile next to it as empty and draws its edge there. With one, the autotile has a second set of pieces drawn against the other autotile: their open sides show the other autotile instead of nothing.
+
+- When each autotile has pieces drawn against the other, each draws its own half of the seam.
+- When only one of them has pieces drawn against the other, that one draws the whole seam, and the other continues under it as if the seam were more of itself.
+- A cell next to several other autotiles uses the transition it faces on the most sides. When every side continues, a **Blob (47)** autotile looks at its corners instead. A tie uses the ordinary pieces.
+- A transition with a piece missing paints its closest piece, as an ordinary autotile does.
+- Autotiles of different Tilesets never use transitions; they count as empty to each other.
 
 ## Related
 

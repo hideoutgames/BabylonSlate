@@ -14,7 +14,6 @@ import {
   PencilIcon,
   PipetteIcon,
   PlusIcon,
-  RefreshCwIcon,
   SquareIcon,
   StampIcon,
 } from "lucide-react";
@@ -82,7 +81,7 @@ import {
   normalizeTilesetPayload,
   paintCanvasTileAt,
   pickTileId,
-  refreshTilemapTerrains,
+  refreshStaleTilemapTerrains,
   removeTilemapTileset,
   reorderTilemapLayers,
   resizeTilemap,
@@ -199,7 +198,7 @@ export function TilemapDetails({
 }) {
   const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
   const { payloads, loadPayloads } = useLoadedTilesets(authored);
-  const tilemap = useMemo(() => reconcileTilemapTilesets(authored, payloads), [authored, payloads]);
+  const tilemap = useMemo(() => workingTilemap(authored, payloads), [authored, payloads]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removeGuid, setRemoveGuid] = useState<string | null>(null);
   const [selectedLayerId, setSelectedLayerId] = useState(
@@ -509,7 +508,7 @@ export function TilemapPalette({
 }) {
   const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
   const { payloads, loadPayloads } = useLoadedTilesets(authored);
-  const tilemap = useMemo(() => reconcileTilemapTilesets(authored, payloads), [authored, payloads]);
+  const tilemap = useMemo(() => workingTilemap(authored, payloads), [authored, payloads]);
   const editing = useOptionalTilemapEditing();
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -532,7 +531,7 @@ export function TilemapPalette({
           ref,
           tileset,
           terrain,
-          fill: createTerrainResolver(tileset, terrain.id, ref.tileCount)?.(terrainFillMask(terrain.style)) ?? 0,
+          fill: createTerrainResolver(tileset, terrain.id, ref.tileCount)?.resolve(terrainFillMask(terrain.style)) ?? 0,
           covered: total - missingTerrainVariants(tileset, terrain.id).length,
           total,
         };
@@ -708,7 +707,7 @@ export function TilemapPaint({
 }) {
   const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
   const { payloads, loadPayloads } = useLoadedTilesets(authored);
-  const tilemap = useMemo(() => reconcileTilemapTilesets(authored, payloads), [authored, payloads]);
+  const tilemap = useMemo(() => workingTilemap(authored, payloads), [authored, payloads]);
   const latestRef = useRef(tilemap);
   useEffect(() => {
     latestRef.current = tilemap;
@@ -818,7 +817,7 @@ export function TilemapPaint({
     const ref = brush ? tilemap.tilesets.find((entry) => entry.guid === brush.guid) : undefined;
     const tileset = brush ? payloads.get(brush.guid) : undefined;
     const terrain = brush && tileset ? tilesetTerrainById(tileset, brush.terrainId) : null;
-    const preview = brush && tileset && ref ? createTerrainResolver(tileset, brush.terrainId, ref.tileCount)?.(0) : 0;
+    const preview = brush && tileset && ref ? createTerrainResolver(tileset, brush.terrainId, ref.tileCount)?.resolve(0) : 0;
     if (!brush || !ref || !tileset || !terrain || !preview) return null;
     return { brush, terrain, tileset, gid: encodeTileGid(ref.firstGid, preview), localId: preview };
   }, [editing?.selectedTerrain, payloads, tilemap.tilesets]);
@@ -1020,15 +1019,6 @@ export function TilemapPaint({
     setSelectedGid(gid);
   };
 
-  const hasAutotiles = tilemap.tilesets.some((ref) => (payloads.get(ref.guid)?.terrains?.length ?? 0) > 0);
-  /** Re-pick every autotile cell from its neighbours, as one undo step. */
-  const refreshAutotiles = () => {
-    const next = refreshTilemapTerrains(latestRef.current, payloads);
-    if (next === latestRef.current) return;
-    latestRef.current = next;
-    onChange(next as unknown as Record<string, unknown>);
-  };
-
   const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
   const addTileset = async (guid: string | null) => {
     const result = await addTilesetToLatest(guid);
@@ -1181,25 +1171,6 @@ export function TilemapPaint({
                 : `GID ${selectedGid}`}
           </span>
         </div>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="pointer-coarse:min-h-11"
-                disabled={!hasAutotiles}
-                onClick={refreshAutotiles}
-                data-testid="tilemap-refresh-autotiles"
-              />
-            }
-          >
-            <RefreshCwIcon />
-            Refresh Autotiles
-          </TooltipTrigger>
-          <TooltipContent>Repaint autotile cells after their Tileset changed</TooltipContent>
-        </Tooltip>
       </ToolbarStrip>
       <div ref={hostRef} className="relative min-h-0 flex-1">
         <canvas
@@ -1462,6 +1433,16 @@ function TileImage({
       style={{ imageRendering: "pixelated" }}
     />
   );
+}
+
+/**
+ * The map the Tilemap panels show and edit: the stored map with its Tileset
+ * ranges grown to the loaded atlases and the terrain cells of every changed
+ * Tileset re-resolved. Panels build each edit on it, so the next authored edit
+ * stores both, and undoes with them.
+ */
+function workingTilemap(authored: TilemapPayload, payloads: ReadonlyMap<string, TilesetPayload>): TilemapPayload {
+  return refreshStaleTilemapTerrains(reconcileTilemapTilesets(authored, payloads), payloads);
 }
 
 function selectedTileGid(
