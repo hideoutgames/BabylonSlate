@@ -41,8 +41,9 @@ In CEL projects, lit Surface Materials switch to CEL lighting automatically. Unl
 Parameters are the values you can change per instance or from scripts.
 
 1. Add a [Float Parameter](../scripting/material/float-parameter.md), [Vector 2 Parameter](../scripting/material/vector-2-parameter.md), [Vector 3 Parameter](../scripting/material/vector-3-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) or [Texture Parameter](../scripting/material/texture-parameter.md).
-2. Enter a name in **Name Material Parameter**. Names are case-sensitive and must be unique in the graph.
-3. Set the default value in the Inspector.
+   They are listed under **Parameter** in **Add Node**. You can also right-click a Float, Vector 2, Vector 3 or Color constant, or long-press it, and choose **Convert to Parameter**; **Convert to Constant** turns a parameter back.
+2. Select it and set its **Parameter Name** in the **Inspector**. A new parameter is named **Parameter**; names are case-sensitive and unique in the graph, and a name that is already taken gets **_1**, **_2** and so on. A copied or pasted parameter gets a free name the same way.
+3. Set its **Type** and default value in the Inspector. Changing the type resizes the default and removes wires the new type cannot carry.
 
 For a fixed texture, a [Texture Sample](../scripting/material/texture-sample.md) node can also pick its Texture directly. An unconnected UV uses the mesh's UVs, or screen UVs in a post-process Material.
 

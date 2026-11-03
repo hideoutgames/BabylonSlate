@@ -52,7 +52,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Vector 3](vector-3.md) | Returns a fixed Vector 3 that you set in the **Inspector**. |
 | [Vector 4](vector-4.md) | Outputs a fixed Vector 4 value set in the **Inspector**. |
 
-## Parameters
+## Parameter
 
 | Node | Description |
 | --- | --- |
