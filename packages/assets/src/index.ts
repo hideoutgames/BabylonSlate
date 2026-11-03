@@ -44,6 +44,7 @@ export * from "./sprite-payload";
 export * from "./sprite-animation-payload";
 export * from "./tileset-payload";
 export * from "./tileset-terrain";
+export * from "./tileset-autotile-templates";
 export * from "./tilemap-payload";
 export * from "./tilemap-terrain";
 export * from "./tilemap-chunk";
