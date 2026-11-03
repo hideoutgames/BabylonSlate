@@ -135,6 +135,12 @@ const AUDIO_FINISHED: EngineScriptEvent = {
   exportName: "onAudioFinished",
 };
 
+const PARTICLES_FINISHED: EngineScriptEvent = {
+  name: "On Particles Finished",
+  eventType: "flow.event.particlesFinished",
+  exportName: "onParticlesFinished",
+};
+
 export const BUTTON_MOUSE_EVENTS: readonly EngineScriptEvent[] = [
   {
     name: "On Mouse Enter",
@@ -757,7 +763,14 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     functions: [
       { name: "Play", runtime: "playParticles", pins: [EXEC_IN, EXEC_OUT] },
       { name: "Stop", runtime: "stopParticles", pins: [EXEC_IN, EXEC_OUT] },
+      {
+        name: "Is Playing",
+        runtime: "isParticlesPlaying",
+        description: "True from Play until a Once system finishes, Stop is called, or the system cannot play.",
+        pins: [{ name: "playing", typeId: "bool", direction: "out" }],
+      },
     ],
+    events: [PARTICLES_FINISHED],
   },
   {
     classId: "ColliderComponent",

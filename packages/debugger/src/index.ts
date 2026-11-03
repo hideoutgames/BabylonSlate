@@ -63,6 +63,8 @@ export {
   type TraceBtState,
   type TraceFrame,
   type TraceInputEvent,
+  type TraceParticleComponent,
+  type TraceParticleState,
   type TraceSpriteClip,
   type TraceVoice,
   type TracePayload,

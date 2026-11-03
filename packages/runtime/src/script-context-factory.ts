@@ -724,6 +724,10 @@ export function createScriptContext(
       if (!target) return;
       services.setParticlePlaying?.(target.guid, false);
     };
+    context.isParticlesPlaying = (actor) => {
+      const target = asActor(actor);
+      return target ? services.isParticlesPlaying?.(target.guid) === true : false;
+    };
     context.createSceneLayerAsync = async (assetGuid, zOrder) => {
       if (!services.createSceneLayerAsync) throw new Error("This host cannot prepare a cold SceneLayer");
       const layer = await services.createSceneLayerAsync(String(assetGuid ?? ""), Number(zOrder) || 0, self);

@@ -414,6 +414,11 @@ function initializePlayer(
       if (worker) worker.postControl(control);
       else runtime?.applyAudioVoiceEnded(control);
     },
+    onParticlePlaybackEnded: (report) => {
+      const control = { type: "particlePlaybackEnded" as const, ...report };
+      if (worker) worker.postControl(control);
+      else runtime?.applyParticlePlaybackEnded(control);
+    },
     onScalabilityApplied: publishScalabilityStatus,
     onRagdollPoseCaptured: (result) => {
       if (worker) worker.postControl(result);

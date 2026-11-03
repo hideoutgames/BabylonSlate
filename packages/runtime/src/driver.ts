@@ -6,7 +6,7 @@ import type { CurveAssetCatalogEntry, SaveGameService, TimelineClipAssetCatalogE
 import type { SessionBoundaries, RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
-import type { RuntimeAssetLoadState } from "@haptic/core";
+import type { ParticlesFinishedReason, RuntimeAssetLoadState } from "@haptic/core";
 import type { SceneLayerOverlay } from "./scene-layer-overlay";
 import type { CableWorldSync } from "./cable-sync";
 import type { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
@@ -108,6 +108,7 @@ import type { SnapshotPublisher } from "./snapshot-publisher";
 import type { RenderCommandEmitter } from "./render-command-emitter";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import { RuntimeVoices } from "./runtime-voices";
+import { RuntimeParticles } from "./runtime-particles";
 import { SpriteClipTrace, type SpriteClipState } from "./sprite-clip-trace";
 import { WaterClock } from "./water-world";
 import { indexSceneLibrary, registerSceneAssetClasses } from "./scene-library";
@@ -280,6 +281,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   // Leaf services, built by field initializers: they take no other subsystem.
   /** Voices `emit` started and has not stopped, for trace frames and restore; draws their clip and pitch. */
   readonly voices = new RuntimeVoices(() => this.seed);
+  readonly particles = new RuntimeParticles();
   /** Sprite Animation clips actors show, for trace frames and restore. */
   readonly spriteClips = new SpriteClipTrace();
   readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
@@ -727,6 +729,30 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     }
   }
 
+  /**
+   * The render host ended a ParticleComponent's playback. A current finish or Stop runs its
+   * Event On Particles Finished, through owner admission; a stale or failed report only
+   * updates Is Playing (or nothing).
+   */
+  applyParticlePlaybackEnded(
+    message: Extract<ControlMessage, { type: "particlePlaybackEnded" }>,
+  ): void {
+    if (!this.particles.ended(message)) return;
+    const actor = this.world.getActors().find((entry) => entry.guid === message.actorGuid && !entry.destroyed);
+    const component = actor?.components.find(
+      (entry) => !entry.destroyed && entry.classId === "ParticleComponent" && entry.guid === message.componentId,
+    );
+    if (!actor || !component) return;
+    const reason: ParticlesFinishedReason = message.reason === "stopped" ? "Stopped" : "Finished";
+    this.admission.run(component, () => this.scriptHost.invokeEvent(
+      actor.classId,
+      "onParticlesFinished",
+      actor,
+      { reason },
+      component.guid,
+    ));
+  }
+
   requestScalability(request: ScalabilityRequest): ScalabilityResult {
     return this.scalability.request(request);
   }
@@ -854,7 +880,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
    * evaluation, then each live actor's sprite clip in World order (`animState` for a recorded clip,
    * collider clip cleared otherwise), then `stopSound` for live voices the
    * frame lacks and `playSound` at the recorded offset, clip and pitch for each
-   * recorded voice.
+   * recorded voice, then each tracked ParticleComponent's Play state and generation
+   * (`setParticlePlaying`).
    */
   restoreFromTrace(frame: TraceFrame): void {
     this.setTimeDilation(frame.timeDilation);
@@ -880,6 +907,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     }
     const audio = frame.audio ?? { voices: [], nextScriptVoice: 1 };
     for (const command of this.voices.restoreCommands(audio, this.frameId)) this.emit(command);
+    const particles = frame.particles ?? { components: [], nextGeneration: 1 };
+    for (const command of this.particles.restoreCommands(particles)) this.emit(command);
   }
 
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
@@ -1232,7 +1261,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   }
 
   emit(command: CommandMessage): void {
-    command = this.voices.prepare(this.inspector.annotate(command));
+    command = this.particles.prepare(this.voices.prepare(this.inspector.annotate(command)));
 
     // Debug views carry no scene state; counting them would break a final-capture fence.
     if (!DEBUG_VIEW_COMMANDS.has(command.type)) this.commandRevision++;
@@ -1256,6 +1285,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       });
     }
     this.voices.observe(command);
+    this.particles.observe(command);
     this.onCommand?.(command);
   }
 }

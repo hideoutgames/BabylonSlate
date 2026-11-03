@@ -995,6 +995,7 @@ function initializeEngine(
         },
         resolveEmitter: (slotId) => binding.meshes.get(slotId) ?? null,
         onDiagnostic: options.onParticleDiagnostic,
+        onPlaybackEnded: options.onParticlePlaybackEnded,
         sortingLayers: () => binding.sortingLayers,
       })
     : null;

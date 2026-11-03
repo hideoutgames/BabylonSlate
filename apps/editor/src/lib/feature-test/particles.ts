@@ -14,11 +14,14 @@ import { newAssetFileName, type CreatableAssetType } from "../content-browser-he
 import {
   actor,
   comp,
+  instanceComponents,
   requireRef,
   tf,
+  type FeatureTestClassRef,
   type FeatureTestContext,
   type Vec3,
 } from "./context";
+import { classGraph, gExec, gNode, gWire } from "./graph";
 import { stressPoint } from "./layout";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 import { FEATURE_TEST_TWO_D_CHARACTERS_LAYER } from "./two-d";
@@ -32,6 +35,7 @@ export const FEATURE_TEST_PARTICLE_NAMES = {
   sparksEmitter: "FT_FxSparksEmitter",
   smokeEmitter: "FT_FxSmokeEmitter",
   stressEmitter: "FT_FxStressEmitter",
+  flashEmitter: "FT_FxFlashEmitter",
   glowGraph: "FT_FxGlowGraph",
   /** Mixes the Basic fountain emitter and the CPU Particle Graph in one System. */
   showcase: "FT_FxShowcase",
@@ -39,6 +43,9 @@ export const FEATURE_TEST_PARTICLE_NAMES = {
   smoke: "FT_FxSmoke",
   /** Heavy GPU workload, placed only in `FT_Stress`. */
   stress: "FT_FxStress",
+  /** A Once burst that `FT_FxFlashRelay` replays from Event On Particles Finished. */
+  flash: "FT_FxFlash",
+  flashRelay: "FT_FxFlashRelay",
 } as const;
 
 const NAMES = FEATURE_TEST_PARTICLE_NAMES;
@@ -94,6 +101,44 @@ export async function buildFeatureTestParticles(ctx: FeatureTestContext): Promis
   await saveSystem(ctx, NAMES.sparks, [sparks], "world");
   await saveSystem(ctx, NAMES.smoke, [smoke], "local");
   await saveSystem(ctx, NAMES.stress, [stress], "world");
+  const flash = await saveSystem(ctx, NAMES.flash, [await saveEmitter(ctx, NAMES.flashEmitter, flashEmitter(glow))], "world");
+  flashRelays.set(ctx, await saveFlashRelay(ctx, flash));
+}
+
+/** The Flash Relay Class, saved by `buildFeatureTestParticles` and placed by `placeFeatureTestParticles`. */
+const flashRelays = new WeakMap<FeatureTestContext, { ref: FeatureTestClassRef; components: ReturnType<typeof comp>[] }>();
+
+/**
+ * A Once flash that replays itself: Event On Particles Finished asserts that Is Particles
+ * Playing already reads false, waits, and plays the component again.
+ */
+async function saveFlashRelay(ctx: FeatureTestContext, flash: string) {
+  const components = [comp("prefab-flash", "ParticleComponent", { particleSystemGuid: flash, playOnStart: true }, undefined, { name: "Flash" })];
+  const graph = classGraph({
+    components,
+    actorDefaults: { eventTick: "disabled" },
+    nodes: [
+      gNode("finished", "flow.event.particlesFinished", 0, 0, {
+        componentId: "prefab-flash",
+        eventQualifier: "Flash",
+        title: "Event On Particles Finished (Flash)",
+      }),
+      gNode("playing", "particles.isPlaying", 0, 200),
+      gNode("stopped", "boolean.not", 240, 200),
+      gNode("check", "debug.assert", 260, 0, { "default:message": "Is Particles Playing read true in Event On Particles Finished" }),
+      gNode("wait", "timers.delay", 520, 0, { "default:duration": 0.75 }),
+      gNode("replay", "particles.play", 780, 0),
+    ],
+    edges: [
+      gExec("finished", "check"),
+      gWire("playing", "out", "stopped", "in"),
+      gWire("stopped", "out", "check", "condition"),
+      gExec("check", "wait"),
+      gExec("wait", "replay"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.flashRelay, parentClass: "Actor", graph });
+  return { ref, components };
 }
 
 /**
@@ -133,6 +178,10 @@ export async function placeFeatureTestParticles(ctx: FeatureTestContext): Promis
   );
   ctx.addActor(emitterActor("sparks", "Spark Bursts", system(NAMES.sparks), zone.at(0, 1.2, -2)), { zone: "particles" });
   ctx.addActor(emitterActor("smoke", "Rising Smoke", system(NAMES.smoke), zone.at(7, 0.1, -2)), { zone: "particles" });
+  const relay = requireRef(flashRelays.get(ctx), "the Flash Relay Class");
+  ctx.addActor(actor("ft-fx-flash-relay", "Flash Relay", tf(zone.at(0, 1.5, 4)), instanceComponents("ft-fx-flash-relay", relay.components), {
+    classId: relay.ref.classId,
+  }), { zone: "particles" });
 
   const stress = system(NAMES.stress);
   STRESS_GRID.forEach(([x, z], index) => {
@@ -201,6 +250,25 @@ function fountainEmitter(materialGuid: string): ParticleEmitterPayload {
     overLife: { drag: { enabled: true, amount: { mode: "constant", value: 0.05 } } },
     forces: { gravity: { enabled: true, acceleration: [0, -6, 0] } },
     render: { materialGuid, blendMode: "standard", billboard: "all" },
+  });
+}
+
+/** A short Once burst; its drain ends the Flash Relay's playback. */
+function flashEmitter(materialGuid: string): ParticleEmitterPayload {
+  return normalizeParticleEmitterPayload({
+    emitter: { loop: "once", duration: 0.3, prewarm: 0, capacity: 64 },
+    spawn: {
+      rate: { mode: "constant", value: 0 },
+      bursts: { enabled: true, entries: [{ time: 0, count: 40, cycles: 1, interval: 1 }] },
+    },
+    shape: { kind: "sphere", radius: 0.2, radiusRange: 1, direction: { mode: "radial", randomizer: 0.2 } },
+    initialize: {
+      lifetime: { mode: "constant", value: 0.6 },
+      speed: { mode: "range", min: 2, max: 3 },
+      size: { mode: "constant", value: 0.2 },
+      color: { mode: "curve", keys: [{ t: 0, color: [1, 0.9, 0.5, 1] }, { t: 1, color: [1, 0.4, 0.1, 0] }] },
+    },
+    render: { materialGuid, blendMode: "additive", billboard: "all" },
   });
 }
 
