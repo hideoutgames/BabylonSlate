@@ -7,6 +7,41 @@ import {
 
 export type EmissionTarget = Pick<IParticleSystem, "emitRate" | "minLifeTime" | "maxLifeTime" | "manualEmitCount">;
 
+/**
+ * Babylon's manual emission, shared by Basic bursts and Particle Graph bursts. A frame with
+ * `manualEmitCount > -1` emits that many particles instead of its rate emission and leaves
+ * 0, which mutes rate emission for good, so `restore` puts -1 back once the count was consumed.
+ */
+export type ManualEmission = {
+  /** Once per rendered frame, before queueing: a consumed count gives rate emission back. */
+  restore(): void;
+  /** Emits `count` particles in the next simulated frame (`dt` seconds), plus the rate emission that frame skips. */
+  queue(count: number, dt: number): void;
+};
+
+/** `rate` is the system's current rate per second (a graph computes it from its Emit Rate input). */
+export function createManualEmission(target: Pick<IParticleSystem, "manualEmitCount">, rate: () => number): ManualEmission {
+  let queued = false;
+  return {
+    restore() {
+      // A still-positive count was not consumed (not ready, not drawn) and stays queued; later bursts add to it.
+      if (queued && target.manualEmitCount === 0) {
+        target.manualEmitCount = -1;
+        queued = false;
+      }
+    },
+    queue(count, dt) {
+      if (!(count > 0)) return;
+      const current = target.manualEmitCount;
+      // A manual frame skips that frame's rate emission on both backends; add it back
+      // only when nothing is pending, or unconsumed frames would add up to a false burst.
+      const skipped = current === -1 || current === 0 ? Math.round(rate() * dt) : 0;
+      target.manualEmitCount = Math.max(current, 0) + count + skipped;
+      queued = true;
+    },
+  };
+}
+
 export type BasicEmissionDriver = {
   /** Once per rendered frame while the bundle plays and this emitter has not stopped; `dt` in simulated seconds. */
   advance(dt: number): void;
@@ -14,6 +49,11 @@ export type BasicEmissionDriver = {
   halt(): void;
   /** Live edit: adopt a new schedule and keep the cycle clock (wrapped when the emitter loops). */
   setSchedule(schedule: BasicEmissionSchedule): void;
+  /**
+   * A scripted burst (Emit Particle Burst): emitted with the next advance that simulates time,
+   * like an authored burst (one frame late, never during prewarm). Ignored once halted.
+   */
+  burst(count: number): void;
 };
 
 /**
@@ -31,8 +71,9 @@ export function createBasicEmissionDriver(
 ): BasicEmissionDriver {
   let current = schedule;
   let cycleTime = 0;
-  let queued = false;
   let halted = false;
+  let requested = 0;
+  const manual = createManualEmission(target, () => target.emitRate);
 
   const writeCurves = () => {
     const x = Math.min(cycleTime, current.duration) / current.duration;
@@ -47,17 +88,12 @@ export function createBasicEmissionDriver(
   return {
     advance(dt) {
       if (halted) return;
-      // Babylon leaves 0 after consuming a manual count, which mutes rate emission
-      // forever. A still-positive count was not consumed (not ready, not drawn) and
-      // stays queued; later bursts add to it.
-      if (queued && target.manualEmitCount === 0) {
-        target.manualEmitCount = -1;
-        queued = false;
-      }
+      manual.restore();
       if (!(dt > 0)) return;
       const { loop, duration, bursts } = current;
       let from = cycleTime;
-      let due = 0;
+      let due = requested;
+      requested = 0;
       cycleTime += dt;
       if (loop === "once") {
         due += burstParticlesInWindow(bursts, duration, from, Math.min(cycleTime, duration));
@@ -71,16 +107,14 @@ export function createBasicEmissionDriver(
         due += burstParticlesInWindow(bursts, duration, from, cycleTime);
       }
       writeCurves();
-      if (due <= 0) return;
-      const count = target.manualEmitCount;
-      // A manual frame skips that frame's rate emission on both backends; add it back
-      // only when nothing is pending, or unconsumed frames would add up to a false burst.
-      const rate = count === -1 || count === 0 ? Math.round(target.emitRate * dt) : 0;
-      target.manualEmitCount = Math.max(count, 0) + due + rate;
-      queued = true;
+      manual.queue(due, dt);
     },
     halt() {
       halted = true;
+      requested = 0;
+    },
+    burst(count) {
+      if (!halted && count > 0) requested += count;
     },
     setSchedule(next) {
       current = next;

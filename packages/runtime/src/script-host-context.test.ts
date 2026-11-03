@@ -165,7 +165,8 @@ describe("ScriptContext shape", () => {
     "getPressedKeys", "getAxis", "getAxis2D", "getCursorPosition", "getTouches", "getTouchEvents", "getDeviceMotion", "calibrateTilt", "setCursorVisible",
     "setGamepadRumble", "vibrateDevice", "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "projectTouchToScene",
     "sphereOverlap", "shapeSweep",
-    "addImpulse", "moveCharacter", "playSound", "playParticles", "stopParticles", "restartParticles", "isParticlesPlaying", "spawnParticlesAtLocation", "spawnParticlesAttached", "createSceneLayerAsync",
+    "addImpulse", "moveCharacter", "playSound", "playParticles", "stopParticles", "restartParticles", "isParticlesPlaying", "spawnParticlesAtLocation", "spawnParticlesAttached", "emitParticleBurst",
+    "createSceneLayerAsync",
     "moveTo", "stopMovement", "btFinish", "btEvaluate", "getBlackboard", "setBlackboard",
   ] as const satisfies readonly (keyof ScriptContext)[];
   const perCallKeys: readonly string[] = PER_CALL_KEYS;

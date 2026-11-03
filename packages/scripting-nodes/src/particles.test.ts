@@ -33,6 +33,7 @@ describe("particle nodes", () => {
       "particles.isPlaying",
       "particles.spawnAtLocation",
       "particles.spawnAttached",
+      "particles.emitBurst",
     ]);
     const registry = createDefaultNodeRegistry();
     const play = registry.get("particles.play");
@@ -182,5 +183,22 @@ describe("particle nodes", () => {
     mod.onBeginPlay({ self, restartParticles: (actor: unknown) => restarted.push(actor) });
     expect(restarted).toEqual([self]);
   });
-});
 
+  it("Emit Particle Burst bursts Self with Count 10 on every slot unless its pins say otherwise", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph = (properties: Record<string, unknown>): LogicGraph => ({
+      id: "g",
+      kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay"), node(registry, "burst", "particles.emitBurst", properties)],
+      edges: [{ id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "burst", targetPinId: "execIn" }],
+    });
+    const self = { guid: "self" };
+    const calls: unknown[][] = [];
+    for (const properties of [{}, { "default:count": 3, "default:slot": 1 }]) {
+      const body = compileGraph(graph(properties), { assetGuid: "a", registry }).source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+      const mod = new Function(`${body}\nreturn { onBeginPlay };`)() as { onBeginPlay: (ctx: unknown) => void };
+      mod.onBeginPlay({ self, emitParticleBurst: (...args: unknown[]) => calls.push(args) });
+    }
+    expect(calls).toEqual([[self, 10, -1], [self, 3, 1]]);
+  });
+});

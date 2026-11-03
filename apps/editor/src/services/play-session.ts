@@ -310,7 +310,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       sourceTracker.audioAssetReady(guid);
     },
     onParticleDiagnostic: (diagnostic) => {
-      options.onLog?.(diagnostic.message, "warning");
+      options.onLog?.(diagnostic.message, diagnostic.severity ?? "warning");
     },
     onMaterialDiagnostic: (diagnostic) => {
       options.onLog?.(

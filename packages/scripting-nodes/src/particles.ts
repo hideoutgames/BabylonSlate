@@ -3,6 +3,7 @@ import {
   type NodeDefinition,
   BOOL,
   EXEC,
+  INT,
   ROTATOR,
   STRING,
   VEC3,
@@ -105,6 +106,23 @@ export const particleNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => {
       ctx.emit(`${ctx.output("effect")} = ctx.spawnParticlesAttached(${ctx.input("system")}, ${ctx.input("attachTo")}, ${ctx.input("bone")}, ${ctx.input("locationOffset")}, ${ctx.input("rotationOffset")}, ${ctx.input("autoDestroy")});`);
+    },
+  },
+  {
+    id: "particles.emitBurst",
+    title: "Emit Particle Burst",
+    category: "particles",
+    description: "Emits Count extra particles from the actor's playing particle systems: every emitter slot, or only the one at Slot. A system that is not playing ignores it.",
+    searchAliases: ["burst", "emit particles"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      selfActorPin("actor"),
+      pin("count", "Count", "in", INT, "data", true, 10),
+      pin("slot", "Slot", "in", INT, "data", true, -1),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.emitParticleBurst(${ctx.input("actor")}, ${ctx.input("count")}, ${ctx.input("slot")});`);
     },
   },
 ];

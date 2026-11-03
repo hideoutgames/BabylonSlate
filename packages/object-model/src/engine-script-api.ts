@@ -776,6 +776,18 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         description: "True from Play until a Once system finishes, Stop is called, or the system cannot play.",
         pins: [{ name: "playing", typeId: "bool", direction: "out" }],
       },
+      {
+        name: "Emit Burst",
+        runtime: "emitParticleBurst",
+        description: "Emits Count extra particles from every emitter slot, or only the one at Slot. Does nothing unless the component is playing.",
+        searchAliases: ["burst", "emit particles"],
+        pins: [
+          EXEC_IN,
+          EXEC_OUT,
+          { name: "count", typeId: "int", direction: "in", defaultValue: 10 },
+          { name: "slot", typeId: "int", direction: "in", defaultValue: -1 },
+        ],
+      },
     ],
     events: [PARTICLES_FINISHED],
   },

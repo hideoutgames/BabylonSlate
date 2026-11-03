@@ -123,6 +123,10 @@ export function callNativeComponentFunction(
     host.services.setParticlePlaying?.(component.owner.guid, true, component.guid, true);
     return {};
   }
+  if (name === "emitParticleBurst" && component.owner) {
+    host.services.emitParticleBurst?.(component.owner.guid, Number(args.count), Number(args.slot ?? -1), component.guid);
+    return {};
+  }
   if (name === "stopParticles" && component.owner) {
     host.services.setParticlePlaying?.(
       component.owner.guid,

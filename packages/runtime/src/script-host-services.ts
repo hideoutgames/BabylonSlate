@@ -286,6 +286,8 @@ export interface ScriptHostServices {
   spawnParticleEffect?(request: import("./runtime-particle-effects").ParticleEffectRequest, owner: EngineObject | null): Actor | null;
   /** Whether the component (or, without `componentId`, any ParticleComponent of the actor) is playing. */
   isParticlesPlaying?(actorGuid: string, componentId?: string): boolean;
+  /** `count` extra particles from a playing ParticleComponent; `slot` -1 for every emitter slot. */
+  emitParticleBurst?(actorGuid: string, count: number, slot: number, componentId?: string): void;
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
   getScalability?(): ScalabilitySnapshot | null;
