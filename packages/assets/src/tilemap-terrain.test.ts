@@ -10,7 +10,7 @@ import {
   TERRAIN_SW,
   TERRAIN_W,
 } from "./tileset-terrain";
-import { normalizeTilesetPayload, type TilesetPayload } from "./tileset-payload";
+import { ensureTilesetTiles, normalizeTilesetPayload, type TilesetPayload } from "./tileset-payload";
 import {
   addTilemapTileset,
   createDefaultTilemapPayload,
@@ -404,6 +404,17 @@ describe("refreshStaleTilemapTerrains", () => {
     expect([1, 5].map((x) => getTile(refreshed, "layer-1", x, 2))).toEqual([FIRST_GID + 10, SECOND_GID + 11]);
     expect(refreshed.tilesets[1]).toBe(map.tilesets[1]);
     expect(refreshStaleTilemapTerrains(refreshed, current)).toBe(refreshed);
+  });
+
+  it("leaves a tile past the atlas alone, with or without the editor's padded payload", () => {
+    const pastAtlas: TilesetPayload = {
+      ...TILESET,
+      tiles: [...TILESET.tiles, { id: 15, collision: "none", flags: 0, animation: [], terrain: { id: "grass", mask: 0 } }],
+    };
+    const map = setTile({ ...emptyMap(), tilesets: [{ guid: "ts", firstGid: FIRST_GID, tileCount: 15 }] }, "layer-1", 6, 4, FIRST_GID + 14);
+    for (const tileset of [pastAtlas, ensureTilesetTiles(pastAtlas)]) {
+      expect(getTile(refreshStaleTilemapTerrains(map, new Map([["ts", tileset]])), "layer-1", 6, 4)).toBe(FIRST_GID + 14);
+    }
   });
 
   it("stamps a Tileset without terrains without touching its cells", () => {

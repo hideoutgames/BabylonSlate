@@ -10,11 +10,11 @@ import {
 } from "./tileset-terrain";
 import {
   chunkCoordForTile,
+  decodeTileGid,
   encodeTileGid,
   localIndex,
   setTiles,
   tileInBounds,
-  tilemapTileIdentity,
   type TilemapChunkIndex,
   type TilemapLayer,
   type TilemapPayload,
@@ -68,10 +68,10 @@ function terrainMembers(map: TilemapPayload, tilesets: ReadonlyMap<string, Tiles
     let member = byGid.get(gid);
     if (member !== undefined) return member;
     member = null;
-    const identity = tilemapTileIdentity(map, gid);
-    const tileset = identity ? tilesets.get(identity.guid) : undefined;
-    const terrain = identity && tileset ? tilesetTileById(tileset, identity.localId)?.terrain : undefined;
-    if (identity && terrain) member = ofSet({ guid: identity.guid, terrainId: terrain.id });
+    // A tile past the atlas draws nothing and is no member, whether or not the payload went through `ensureTilesetTiles`.
+    const hit = decodeTileGid(map, gid, tilesets);
+    const terrain = hit ? tilesetTileById(hit.tileset, hit.localId)?.terrain : undefined;
+    if (hit && terrain) member = ofSet({ guid: hit.guid, terrainId: terrain.id });
     byGid.set(gid, member);
     return member;
   };
