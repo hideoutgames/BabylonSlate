@@ -48,58 +48,47 @@ A Tileset with no Texture still paints and plays: each tile draws as a flat colo
 
 An autotile turns a group of tiles into a brush that picks pieces for you. Paint it on a Tilemap and every cell takes the piece that fits its neighbours, so edges and corners follow your strokes.
 
-You build autotiles in the **Autotiles** window: a tab beside the **Preview**, also opened by **Edit Autotiles** in the **Inspector**. On a phone, pick **Autotiles** in the window picker. The window has its own copy of the sheet, a board of the autotile's pieces and a small test map.
+You build autotiles in the **Autotiles** window: a tab beside the **Preview**, also opened by **Edit Autotiles** in the **Inspector**. On a phone, pick **Autotiles** in the window picker. The window has three columns: the list of autotiles, the pieces of the one you selected with a small preview map, and the sheet. On a narrow screen they stack.
 
 ### Create an autotile
 
-Tap **New Autotile**, enter a **Name** and choose a **Layout**, then tap **Create**. The new autotile opens in the window, with its first piece selected. Switch between autotiles with the list at the top of the window.
+Tap **+** beside **Autotiles**. A new autotile named **Autotile** appears in the list, selected, with its name ready to type over. It starts as **Blob**; choose its **Layout** above its pieces:
 
 | Layout | Pieces | Good for |
 | --- | --- | --- |
 | 4 Sides | 16. A piece follows its four side neighbours. | Strips, pipes and simple platforms. |
 | Blob | 47. A piece also follows its corners, where both sides next to the corner continue, which gives inner corners. | Ground and walls with inner corners. |
 
-The **⋯** menu holds **Rename…**, **Change Layout**, **Remove Border** (with a border selected, see [Transitions](#transitions)) and **Delete Autotile**. Changing the Layout keeps every tile where it is; the editor first tells you how many pieces will have a tile, how many will be missing, and which tiles become unused because another tile already draws their piece. Deleting an autotile takes its tiles out of it, and other autotiles' borders into it go too; you can undo it. Tilemaps keep the tiles already painted with it.
+Changing the Layout keeps every tile where it is. When the autotile already has tiles, the editor first tells you how many pieces will have a tile, how many will be missing, and which tiles become unused because another tile already draws their piece.
+
+Each row shows the autotile's fill tile, its name and a dot: green when every piece it needs has a tile (every 4 Sides piece, or Blob's **Main** and **Inner Corners**), amber otherwise. The **⋯** menu of a row holds **Rename**, **Add Next To** (see [Transitions](#transitions)) and **Delete**. Deleting an autotile takes its tiles out of it, and other autotiles' pieces next to it go too; you can undo it. Tilemaps keep the tiles already painted with it.
 
 ### Assign pieces
 
-The **Pieces** board shows every piece of the autotile, in the order of the standard sheet block (4 × 4 for 4 Sides, 12 × 4 for Blob), with how many have a tile. A piece shows its tile, with a small grid in the corner: the middle is the tile, and the filled squares around it are the neighbours its artwork continues into. An empty piece has a dashed outline and shows, faded, the tile painting uses instead.
+Select a row to edit its pieces. The pieces are grouped:
 
-- **Piece, then tile**: tap a piece, then tap its tile on the sheet. The next empty piece is selected for you, so you can tap one tile after another.
-- **Tile, then piece**: with no piece selected, tap a tile on the sheet, then tap the piece it draws.
-- Each piece has one tile. Giving a piece another tile takes the old one out, and a tile of another autotile or border moves over.
-- On the sheet, the tiles of the pieces you are editing carry their piece's grid and the selected piece's tile is outlined. Tiles used elsewhere are dimmed.
-- To clear a piece, long-press or right-click it and choose **Clear Piece**, or select it and press Delete. **Show On Sheet** scrolls the sheet to its tile. Long-press or right-click a tile on the sheet and choose **Remove From Autotile** to take it out.
-- Arrow keys move between pieces.
+- **4 Sides**: **Pieces**, the 16 pieces in the order of the standard 4 × 4 sheet block.
+- **Blob**: **Main** (the island with solid corners, 16 pieces), **Inner Corners** (four corners around a one-tile hole) and **More Corners** (the other 27 combinations, folded away). **More Corners** is optional: where a piece is missing, the brush paints the closest one.
+
+Each group says how many of its pieces have a tile. A piece shows its tile, or, while it has none, its shape: the middle square is the tile, the shaded parts are the neighbours it continues into, and the lines are the edges it draws.
+
+- Tap a piece, then tap its tile on the sheet. The next empty piece is selected for you, so you can tap one tile after another. With a mouse you can also drag a tile from the sheet onto any piece.
+- The line above the pieces names the selected piece, its tile (or the tile painting uses instead while it has none) and how many cells of the preview use it.
+- Each piece has one tile. Giving a piece another tile takes the old one out, and a tile of another autotile moves over.
+- On the sheet, the tiles you are editing carry a dot and the selected piece's tile is outlined. Tiles of other autotiles are dimmed.
+- To clear a piece, tap the **×** in its corner (it shows on the selected piece, and on any piece under the mouse), tap **Clear** on the line above the pieces, or press Delete. Arrow keys move between pieces.
+
+If your sheet draws a whole group in the usual arrangement, tap the group's block button and then tap the top-left tile of that block on the sheet: every piece of the group is assigned at once. With a mouse, the block is outlined on the sheet before you click. Press Esc, or tap the button again, to stop. On a sheet in the standard 12 × 4 Blob layout, assign **Main** from its first column and **More Corners** from its fifth: that is all 47 pieces, inner corners included.
 
 Each change is one undo step.
 
-### Fill from a template
+### Preview
 
-If your sheet draws pieces in a familiar arrangement, **Fill From Template…** assigns many pieces at once. It is the main button while the board is empty.
+**Preview** is a small map painted exactly as a Tilemap brush paints it, starting with shapes that use most of the pieces. Tap a cell to paint it or erase it; the cells around it update. **Reset** brings back the starting shapes. The map is never saved.
 
-| Template | Layout | Pieces |
-| --- | --- | --- |
-| 4 Sides Block (4 × 4) | 4 Sides | All 16: a 3 × 3 island, a vertical strip on the right, a horizontal strip along the bottom and a single tile in the bottom-right corner. |
-| Blob Block (12 × 4) | Blob | All 47: the island with solid corners in the first four columns, then the 31 inner-corner pieces, one cell left empty. |
-| Island (3 × 3) | Both | Outer corners, edges and the fill. For Blob the corners are solid. |
-| Horizontal Strip (3 × 1) | Both | Left end, middle and right end. |
-| Vertical Strip (1 × 3) | Both | Top end, middle and bottom end. |
-| Single (1 × 1) | Both | A tile with no neighbours. |
-| Inner Corners, Hole (2 × 2) | Blob | Four inner corners that meet in the middle, around a one-tile hole. |
-| Inner Corners, Outward (2 × 2) | Blob | Four inner corners, each pointing at the corner of the block it sits in. |
-
-After you pick a template, its grids are drawn over the sheet. Tap where its top-left tile is, or drag it into place; it stays inside the sheet. The bar above the sheet shows what **Assign** does, for example **Assign 9 Pieces**, and how many existing assignments it replaces. Tap **Cancel** to leave the sheet as it was. Templates larger than the sheet are unavailable.
-
-### Test paint
-
-**Test Paint** is a small map painted exactly as a Tilemap brush paints it. It starts with an island (with a one-tile hole for Blob), strips and a single tile. With a border selected, it starts with the autotile beside its border autotile, plus a strip on its own.
-
-- Choose the autotile to paint with the list beside the tools: the one you are editing or any other autotile of the Tileset, so you can paint both sides of a border.
-- **Paint** and **Erase** add and remove cells; the cells around them update.
-- **Pick** selects the autotile, border and piece a cell wants. The test map stays as it is.
-- A cell with a dashed warning outline has no tile for its piece and uses the closest one instead.
-- **Reset** brings back the starting shapes. The map is never saved.
+- The cells that use the selected piece are highlighted, even while the piece has no tile, so you can see where it goes.
+- A cell with an amber dot has no tile for its piece and uses the closest one instead. The line beside **Preview** says how many cells do.
+- With a mouse, hover a cell to outline its piece among the pieces. Long-press or right-click a cell and choose **Select Piece** to select the piece it uses.
 
 A sheet does not need every piece: where one is missing, the brush paints the closest tile, and it prefers a tile that draws no edge inside the autotile. Ties go to the lower tile number.
 
@@ -107,14 +96,14 @@ Maps painted with an autotile follow your changes to it by themselves. Every Til
 
 ## Transitions
 
-A transition joins two autotiles of the same Tileset, such as grass meeting dirt. Without one, an autotile treats a different autotile next to it as empty and draws its edge there. With one, the autotile has a second set of pieces drawn against the other autotile, called a **border**: their open sides show the other autotile instead of nothing.
+A transition joins two autotiles of the same Tileset, such as grass meeting dirt. Without one, an autotile treats a different autotile next to it as empty and draws its edge there. With one, the autotile has a second set of pieces drawn next to the other autotile: their open sides show the other autotile instead of nothing.
 
-To add one in the **Autotiles** window, open the border list beside the autotile list and choose the other autotile under **Add Border**. The list then shows **Into** followed by its name; select it to fill its pieces as you would the ordinary ones (shown as **No Border**), with the same board, templates and sheet. **Remove Border** in the **⋯** menu takes the border away with its tiles; you can undo it.
+To add one, open the **⋯** menu of an autotile and choose the other autotile under **Add Next To**. The set appears under the autotile as **Next to** followed by the other autotile's name; select it to assign its pieces as you would the ordinary ones. Its preview shows the autotile inside a field of the other one, and a tap switches a cell between the two. The **×** on the set's row removes it with its tiles; you can undo it.
 
-- When each autotile has pieces drawn against the other, each draws its own half of the seam.
-- When only one of them has pieces drawn against the other, that one draws the whole seam, and the other continues under it as if the seam were more of itself.
+- When each autotile has pieces drawn next to the other, each draws its own half of the seam.
+- When only one of them has pieces drawn next to the other, that one draws the whole seam, and the other continues under it as if the seam were more of itself.
 - A cell next to several other autotiles uses the transition it faces on the most sides. When every side continues, a **Blob** autotile looks at its corners instead. A tie uses the ordinary pieces.
-- A border with a piece missing paints its closest piece, and one with no pieces paints the ordinary ones.
+- A transition with a piece missing paints its closest piece, and one with no pieces paints the ordinary ones.
 - Autotiles of different Tilesets never use transitions; they count as empty to each other.
 
 ## Related

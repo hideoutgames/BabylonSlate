@@ -1,5 +1,6 @@
 import type { AssetLoadingPolicy } from "@haptic/core";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { MinusIcon, PlusIcon } from "lucide-react";
 import {
   AssetCreateProvider,
   type AssetCreateApi,
@@ -7,6 +8,7 @@ import {
   AssetOpenProvider,
   AssetPickerControl,
   AtlasTileGrid,
+  type AtlasTileGridHandle,
   BindingCodePicker,
   ClassPicker,
   SceneComponentPicker,
@@ -142,6 +144,8 @@ export function GalleryComposites() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [atlasTileId, setAtlasTileId] = useState(1);
+  const [atlasHoverId, setAtlasHoverId] = useState(0);
+  const atlasRef = useRef<AtlasTileGridHandle>(null);
   const [sceneComponentPickerOpen, setSceneComponentPickerOpen] =
     useState(false);
   const [namePromptOpen, setNamePromptOpen] = useState(false);
@@ -431,9 +435,26 @@ export function GalleryComposites() {
         </PanelFrame>
       </div>
       <div className="rounded-lg border border-border">
-        <PanelFrame title="Atlas tile grid" data-testid="gallery-atlas-tile-grid">
+        <PanelFrame
+          title="Atlas tile grid"
+          data-testid="gallery-atlas-tile-grid"
+          toolbar={
+            <>
+              <span className="text-xs text-muted-foreground tabular-nums" data-testid="gallery-atlas-hover">
+                {atlasHoverId > 0 ? `Hover: Tile ${atlasHoverId}` : "Hover: None"}
+              </span>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label="Zoom Out" onClick={() => atlasRef.current?.zoomBy(0.8)}>
+                <MinusIcon />
+              </Button>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label="Zoom In" onClick={() => atlasRef.current?.zoomBy(1.25)}>
+                <PlusIcon />
+              </Button>
+            </>
+          }
+        >
           <div className="h-48">
             <AtlasTileGrid
+              ref={atlasRef}
               tileset={ensureTilesetTiles(
                 normalizeTilesetPayload({
                   atlasWidth: 32,
@@ -449,6 +470,8 @@ export function GalleryComposites() {
               imageUrl={null}
               selectedId={atlasTileId}
               onSelect={setAtlasTileId}
+              panZoom
+              onTileHover={setAtlasHoverId}
               renderCellOverlay={galleryAtlasCellOverlay}
               data-testid="gallery-atlas"
             />

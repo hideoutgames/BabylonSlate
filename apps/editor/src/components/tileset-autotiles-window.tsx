@@ -717,7 +717,7 @@ export function TilesetAutotiles({
         className={cn(
           "grid min-h-full grid-cols-1 bg-card",
           "@2xl/autotiles:grid-cols-[minmax(10rem,13rem)_minmax(0,1fr)]",
-          "@4xl/autotiles:h-full @4xl/autotiles:grid-cols-[minmax(11rem,14rem)_minmax(22rem,1fr)_minmax(18rem,30rem)]",
+          "@4xl/autotiles:h-full @4xl/autotiles:grid-cols-[minmax(11rem,12.5rem)_minmax(22rem,1fr)_minmax(18rem,28rem)]",
         )}
       >
         <section
@@ -1103,7 +1103,7 @@ export function TilesetAutotiles({
                           data-border={tile?.border}
                           data-stand-in={own && tile.standIn ? "true" : undefined}
                           data-picked={picked ? "true" : undefined}
-                          className="relative size-7 cursor-crosshair hover:z-[3] hover:outline-2 hover:-outline-offset-2 hover:outline-foreground"
+                          className="group/cell relative size-7 cursor-crosshair"
                         >
                           {tile && tile.tileId > 0 ? (
                             <TileSwatch
@@ -1117,6 +1117,8 @@ export function TilesetAutotiles({
                             <span aria-hidden className="absolute inset-0 bg-muted-foreground/25" />
                           ) : null}
                           {picked ? <span aria-hidden className={cn("pointer-events-none absolute inset-0 z-[1]", PICKED)} /> : null}
+                          {/* Always present: a hovering mouse only draws its neutral ring, so nothing appears or moves for a touch. */}
+                          <span aria-hidden className="pointer-events-none absolute inset-0 z-[3] group-hover/cell:shadow-[inset_0_0_0_2px_var(--foreground)]" />
                           {own && tile.standIn ? (
                             <span
                               aria-hidden
@@ -1496,7 +1498,7 @@ function PieceSlot({
         className={cn(
           "size-[50px] rounded-md bg-muted p-0 hover:border-muted-foreground hover:bg-muted",
           tileId === null && "border-dashed border-input bg-transparent hover:bg-transparent",
-          selected && "border-2 border-(--graph-state-selected) ring-3 ring-(--graph-state-selected)/20 hover:border-(--graph-state-selected)",
+          selected && "border-2 border-solid border-(--graph-state-selected) ring-3 ring-(--graph-state-selected)/20 hover:border-(--graph-state-selected)",
           previewHover && !selected && "outline-2 outline-offset-1 outline-(--graph-state-selected) outline-dashed",
           dropTarget && "border-2 border-(--graph-state-selected) bg-(--graph-state-selected)/15",
         )}
@@ -1545,7 +1547,7 @@ function BlockOutline({ tileset, group, anchor }: { tileset: TilesetPayload; gro
       aria-hidden
       data-testid="tileset-autotiles-block-outline"
       data-anchor={anchor}
-      className="pointer-events-none absolute z-20 rounded-[2px] bg-(--graph-state-selected)/15"
+      className="pointer-events-none absolute z-20 rounded-[2px] bg-(--graph-state-selected)/20"
       style={{
         left: first.x,
         top: first.y,
