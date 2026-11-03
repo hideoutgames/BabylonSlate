@@ -98,6 +98,11 @@ const GALLERY_DELEGATE_SIGNATURES = [
   },
 ];
 
+/** Dims tile 2, as the Autotiles sheet dims tiles of other autotiles. */
+function galleryAtlasCellOverlay(tileId: number) {
+  return tileId === 2 ? <span aria-hidden className="pointer-events-none absolute inset-0 bg-background/60" /> : null;
+}
+
 export function GalleryComposites() {
   const [position, setPosition] = useState<[number, number, number]>([0, 1, 0]);
   const [scale, setScale] = useState<[number, number, number]>([1, 2, 1]);
@@ -444,6 +449,7 @@ export function GalleryComposites() {
               imageUrl={null}
               selectedId={atlasTileId}
               onSelect={setAtlasTileId}
+              renderCellOverlay={galleryAtlasCellOverlay}
               data-testid="gallery-atlas"
             />
           </div>

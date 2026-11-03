@@ -9,7 +9,7 @@ Paint 2D levels from a grid of tiles. A **Tileset** slices an image into tiles a
 3. Tap **Pick Texture** in the **Preview**, or set **Texture** in the **Inspector**. **Atlas Width** and **Atlas Height** fill in from the image.
 4. Set **Tile Width** and **Tile Height** in pixels (default 16), then tap **Confirm Tile Size**. Set **Margin** (border around the sheet) and **Spacing** (gap between tiles) if your sheet has them.
 
-Tiles are numbered from 1, starting at the top-left of the image. In the **Preview**, **Move** pans with one finger, **Select** drags a box to select several tiles, and **Autotile** marks autotile tiles (see [Autotiles](#autotiles)). Pinch or scroll to zoom in any tool.
+Tiles are numbered from 1, starting at the top-left of the image. In the **Preview**, **Move** pans with one finger and **Select** drags a box to select several tiles. Pinch or scroll to zoom in either tool.
 
 ## Tile settings
 
@@ -29,9 +29,9 @@ Turn on **Paint Collision** in the **Preview** toolbar to copy the current tile'
 
 An autotile paints edges and corners for you. Instead of placing each left end, top and corner piece by hand, you paint with the autotile and every cell takes the tile that matches its neighbours.
 
-1. In the Tileset's **Inspector**, under **Autotiles**, tap **New Autotile** and choose its **Layout**: **4 Sides (16)** matches the four side neighbours; **Blob (47)** also matches corners and gives inner corners.
-2. If your sheet follows the standard layout, tap **Fill From Layout…** and pick the tile where the block starts. Otherwise use the **Autotile** tool in the **Preview**: tap or drag over each tile's 3 × 3 grid to mark it as part of the autotile and where its artwork continues.
-3. **Coverage** shows how many variants have a tile and which are missing.
+1. Open the Tileset's **Autotiles** window (a tab beside the **Preview**, or **Edit Autotiles** in the **Inspector**), tap **New Autotile** and choose its **Layout**: **4 Sides** (16 pieces) follows the four side neighbours; **Blob** (47 pieces) also follows corners and gives inner corners.
+2. Tap **Fill From Template…** and place a template over the part of the sheet that matches it, or tap a piece on the **Pieces** board and then its tile on the sheet.
+3. The board shows how many pieces have a tile, and **Test Paint** shows the result, outlining cells that use a stand-in for a missing piece.
 
 Your sheet does not need every piece. Where one is missing, the autotile paints the closest tile it has, preferring a tile that draws no edge inside it. The [Tileset](../assets/tileset.md#autotiles) page has the details.
 

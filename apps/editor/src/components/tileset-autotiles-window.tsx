@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -97,7 +98,6 @@ import {
   createTerrainResolver,
   ensureTilesetTiles,
   normalizeTilesetPayload,
-  offsetAtlasTile,
   removeTileFromAutotile,
   tilePlaceholderHsl,
   tilesetAtlasColumns,
@@ -144,11 +144,18 @@ function pieceLabel(mask: number, style: TilesetTerrainStyle): string {
   return `Piece Joining ${DIRECTIONS.filter(([bit]) => mask & bit).map(([, name]) => name).join(", ")}`;
 }
 
-function glyphRects(mask: number, style: TilesetTerrainStyle, overlay: boolean, x = 0, y = 0) {
+/**
+ * How a glyph draws: `badge` on its own dark plate, `outline` with faint
+ * unjoined parts and no plate (an empty piece over its stand-in), `overlay`
+ * with only the joined parts (over tile art).
+ */
+type GlyphVariant = "badge" | "outline" | "overlay";
+
+function glyphRects(mask: number, style: TilesetTerrainStyle, variant: GlyphVariant, x = 0, y = 0) {
   return GLYPH_CELLS.map(([bit, column, row]) => {
     if (CORNER_BITS.has(bit) && style === "sides") return null;
     const on = bit === 0 || (mask & bit) !== 0;
-    if (overlay && !on) return null;
+    if (variant === "overlay" && !on) return null;
     return (
       <rect
         key={bit}
@@ -157,26 +164,27 @@ function glyphRects(mask: number, style: TilesetTerrainStyle, overlay: boolean, 
         width={0.76}
         height={0.76}
         rx={0.14}
-        className={on ? (bit === 0 ? "fill-ring" : overlay ? "fill-ring/70" : "fill-ring/55") : "fill-muted"}
+        className={
+          on
+            ? bit === 0 ? "fill-ring" : variant === "badge" ? "fill-ring/55" : "fill-ring/75"
+            : variant === "badge" ? "fill-muted" : "fill-muted-foreground/25"
+        }
       />
     );
   });
 }
 
-/**
- * A piece drawn as the tile in the middle and the neighbours it joins around
- * it. `overlay` draws only the joined parts, for glyphs over tile art.
- */
+/** A piece drawn as the tile in the middle and the neighbours it joins around it. */
 function AutotileMaskGlyph({
   mask,
   style,
-  overlay = false,
+  variant = "badge",
   className,
   testId,
 }: {
   mask: number;
   style: TilesetTerrainStyle;
-  overlay?: boolean;
+  variant?: GlyphVariant;
   className?: string;
   testId?: string;
 }) {
@@ -188,8 +196,8 @@ function AutotileMaskGlyph({
       data-mask={mask}
       className={cn("shrink-0", className)}
     >
-      {overlay ? null : <rect width={3} height={3} rx={0.35} className="fill-background" />}
-      {glyphRects(mask, style, overlay)}
+      {variant === "badge" ? <rect width={3} height={3} rx={0.35} className="fill-background" /> : null}
+      {glyphRects(mask, style, variant)}
     </svg>
   );
 }
@@ -198,10 +206,13 @@ function AutotileMaskGlyph({
 function AutotileTemplatePreview({
   template,
   style,
+  height,
   className,
 }: {
   template: AutotileTemplate;
   style: TilesetTerrainStyle;
+  /** CSS height; the width follows the block's shape. */
+  height: string;
   className?: string;
 }) {
   const pitch = 3.4;
@@ -210,6 +221,8 @@ function AutotileTemplatePreview({
       viewBox={`0 0 ${template.columns * pitch - 0.4} ${template.rows * pitch - 0.4}`}
       aria-hidden
       className={cn("shrink-0", className)}
+      // Inline, so the 16px icon size menus and toggles give their SVGs cannot shrink it.
+      style={{ height, width: "auto", maxWidth: "100%" }}
     >
       {template.masks.map((mask, at) => {
         if (mask === null) return null;
@@ -218,7 +231,7 @@ function AutotileTemplatePreview({
         return (
           <g key={at}>
             <rect x={x} y={y} width={3} height={3} rx={0.35} className="fill-background" />
-            {glyphRects(mask, style, false, x, y)}
+            {glyphRects(mask, style, "badge", x, y)}
           </g>
         );
       })}
@@ -505,8 +518,6 @@ export function TilesetAutotiles({
     const anchor = candidates.find((tileId): tileId is number =>
       typeof tileId === "number" && autotileTemplatePlacement(tileset, template, tileId) !== null) ?? 1;
     setPlacement({ autotileId: autotile.id, template, anchor, refused: false });
-    const centre = offsetAtlasTile(tileset, anchor, Math.floor((template.columns - 1) / 2), Math.floor((template.rows - 1) / 2));
-    if (centre !== null) setReveal((current) => ({ tileId: centre, token: (current?.token ?? 0) + 1 }));
     sheetRef.current?.scrollIntoView?.({ block: "nearest" });
   };
 
@@ -661,13 +672,17 @@ export function TilesetAutotiles({
     },
     [sheetMarks, style],
   );
-  const highlightedTileIds = activePlacement
-    ? []
-    : pickedTileId !== null
-      ? [pickedTileId]
-      : selectedMask !== null
-        ? pieces.get(selectedMask)?.slice(0, 1) ?? []
-        : [];
+  const selectedPieceTileId = selectedMask !== null ? pieces.get(selectedMask)?.[0] ?? null : null;
+  // Stable while the highlight is unchanged, so the sheet's cells are not rebuilt on every window render.
+  const highlightedTileIds = useMemo(
+    () => (activePlacement ? [] : pickedTileId !== null ? [pickedTileId] : selectedPieceTileId !== null ? [selectedPieceTileId] : []),
+    [activePlacement, pickedTileId, selectedPieceTileId],
+  );
+  const sheetTapRef = useRef(onSheetTap);
+  useLayoutEffect(() => {
+    sheetTapRef.current = onSheetTap;
+  });
+  const onStableSheetTap = useCallback((tileId: number) => sheetTapRef.current(tileId), []);
 
   const onWindowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Escape" || !(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
@@ -895,7 +910,7 @@ export function TilesetAutotiles({
                                 className="absolute inset-0 size-full rounded-none opacity-30 ring-0"
                               />
                             ) : null}
-                            <AutotileMaskGlyph mask={mask} style={style} className="relative size-[70%]" />
+                            <AutotileMaskGlyph mask={mask} style={style} variant="outline" className="relative size-[70%]" />
                           </>
                         )}
                       </Button>,
@@ -920,7 +935,7 @@ export function TilesetAutotiles({
                 className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel-header px-2 py-1"
                 data-testid="tileset-autotiles-placement-bar"
               >
-                <AutotileTemplatePreview template={activePlacement.template} style={style} className="h-4 max-w-16" />
+                <AutotileTemplatePreview template={activePlacement.template} style={style} height="1rem" />
                 <span className="text-xs font-medium">{activePlacement.template.title}</span>
                 <span className="text-xs text-muted-foreground" data-testid="tileset-autotiles-placement-status">
                   {activePlacement.refused
@@ -958,7 +973,7 @@ export function TilesetAutotiles({
               imageUrl={imageUrl}
               selectedId={0}
               selectedIds={highlightedTileIds}
-              onSelect={onSheetTap}
+              onSelect={onStableSheetTap}
               panZoom
               tool="move"
               renderCellOverlay={renderCellOverlay}
@@ -1141,7 +1156,7 @@ function TemplateMenu({
                 data-testid={`tileset-autotiles-template-${template.id}`}
               >
                 <span className="flex w-16 shrink-0 justify-center">
-                  <AutotileTemplatePreview template={template} style={style} className="h-5 max-w-16" />
+                  <AutotileTemplatePreview template={template} style={style} height="1.25rem" />
                 </span>
                 <span className="flex min-w-0 flex-col">
                   <span>{template.title}</span>
@@ -1198,7 +1213,7 @@ function PlacementGhost({
             style={{ left: rect.x - first.x, top: rect.y - first.y, width: rect.width, height: rect.height }}
           >
             {cell.mask !== null ? (
-              <AutotileMaskGlyph mask={cell.mask} style={style} overlay className="size-[78%]" />
+              <AutotileMaskGlyph mask={cell.mask} style={style} variant="overlay" className="size-[78%]" />
             ) : null}
           </span>
         );
@@ -1477,7 +1492,7 @@ function AutotileCreateDialog({
                     className="h-auto flex-col items-start justify-start gap-1.5 p-2 text-left whitespace-normal"
                     data-testid={`tileset-autotiles-create-layout-${layout.style}`}
                   >
-                    <AutotileTemplatePreview template={AUTOTILE_TEMPLATES[layout.style][0]!} style={layout.style} className="h-8 max-w-full" />
+                    <AutotileTemplatePreview template={AUTOTILE_TEMPLATES[layout.style][0]!} style={layout.style} height="2rem" />
                     <span className="text-sm font-medium">{STYLE_NAMES[layout.style]}</span>
                     <span className="text-xs font-normal text-muted-foreground">
                       {layout.pieces}. {layout.uses}
