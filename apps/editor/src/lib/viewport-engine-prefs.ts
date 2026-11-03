@@ -7,6 +7,8 @@ export function useEditorViewportPrefs(): {
   flySpeed: number;
   cameraPreviewFrameRate: number;
   dropDistance: number;
+  placeOnSurfaces: boolean;
+  placementDistance: number;
   gridSize: number;
   snapTranslate: number;
   snapRotateDeg: number;
@@ -20,6 +22,8 @@ export function useEditorViewportPrefs(): {
     flySpeed: settings.viewportFlySpeed,
     cameraPreviewFrameRate: settings.cameraPreviewFrameRate,
     dropDistance: settings.viewportDropDistance,
+    placeOnSurfaces: settings.viewportPlaceOnSurfaces,
+    placementDistance: settings.viewportPlacementDistance,
     gridSize: settings.viewportGridSize,
     snapTranslate: settings.viewportSnapTranslate,
     snapRotateDeg: settings.viewportSnapRotateDeg,

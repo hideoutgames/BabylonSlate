@@ -13,20 +13,33 @@ import type {
   EditorCameraSessionState,
   GizmoSpace,
   GizmoTool,
+  SurfacePlacement,
+  SurfaceRest,
   ViewportShadingMode,
 } from "@haptic/render";
 import { useEditorSessionState } from "./editor-session-state-context";
 
 export type ViewportDropApi = {
   containsClientPoint(clientX: number, clientY: number): boolean;
-  worldPositionAtClient(
-    clientX: number,
-    clientY: number,
-  ): [number, number, number] | null;
-  worldPositionAtViewCenter(): [number, number, number];
+  /**
+   * Where a new actor dropped at a client point goes: with Place On Surfaces in
+   * 3D, the surface a trace from the camera hits within the Placement Trace
+   * Distance (or the trace's end); otherwise the view plane. Null without a
+   * laid-out viewport.
+   */
+  placementAtClient(clientX: number, clientY: number): SurfacePlacement | null;
+  /** Where a new actor placed without a pointer (Place Actors) goes, traced along the middle of the view. */
+  placementAtViewCenter(): SurfacePlacement;
+  /**
+   * After the viewport has built the placed actors, rest their bounds on the
+   * surfaces they hit and commit that under `mergeKey`, the key their
+   * placement was committed with, so both are one Undo step.
+   */
+  restOnSurface(rests: readonly SurfaceRest[], mergeKey: string): void;
 };
 
 export const FALLBACK_PLACE_POSITION: [number, number, number] = [0, 0, 0];
+
 
 export type SceneShapeEditTarget = { actorId: string; componentId: string };
 
@@ -229,12 +242,14 @@ export function SceneEditingProvider({
       containsClientPoint: (clientX, clientY) =>
         viewportDropApiRef.current?.containsClientPoint(clientX, clientY) ??
         false,
-      worldPositionAtClient: (clientX, clientY) =>
-        viewportDropApiRef.current?.worldPositionAtClient(clientX, clientY) ??
+      placementAtClient: (clientX, clientY) =>
+        viewportDropApiRef.current?.placementAtClient(clientX, clientY) ??
         null,
-      worldPositionAtViewCenter: () =>
-        viewportDropApiRef.current?.worldPositionAtViewCenter() ??
-        FALLBACK_PLACE_POSITION,
+      placementAtViewCenter: () =>
+        viewportDropApiRef.current?.placementAtViewCenter() ??
+        { position: FALLBACK_PLACE_POSITION, normal: null },
+      restOnSurface: (rests, mergeKey) =>
+        viewportDropApiRef.current?.restOnSurface(rests, mergeKey),
     }),
     [],
   );

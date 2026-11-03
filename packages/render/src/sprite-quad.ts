@@ -4,7 +4,7 @@ import {
   Scene,
   VertexBuffer,
 } from "@babylonjs/core";
-import { spriteWorldSize, type SpritePayload } from "@haptic/assets";
+import { spriteWorldSize, type SpritePayload, type TileUv } from "@haptic/assets";
 import { markOwnerNotifiedGeometry } from "./geometry-revision";
 
 const spriteQuads = new WeakSet<Mesh>();
@@ -34,11 +34,11 @@ export function createSpriteQuad(
   return mesh;
 }
 
-const appliedQuads = new WeakMap<Mesh, { positions: Float32Array; width?: number; height?: number; pivotX?: number; pivotY?: number }>();
+const appliedQuads = new WeakMap<Mesh, { positions: Float32Array; uvs: Float32Array; uvKey?: string; width?: number; height?: number; pivotX?: number; pivotY?: number }>();
 function quadState(mesh: Mesh) {
   let state = appliedQuads.get(mesh);
   if (!state) {
-    state = { positions: new Float32Array(12) };
+    state = { positions: new Float32Array(12), uvs: new Float32Array(FULL_TEXTURE_UVS) };
     appliedQuads.set(mesh, state);
   }
   return state;
@@ -60,3 +60,14 @@ export function setSpriteQuadSize(mesh: Mesh, width: number, height: number, piv
   state.width = width; state.height = height; state.pivotX = pivot.x; state.pivotY = pivot.y;
 }
 
+/** Show one region of the texture (a sheet cell, GL v up), or the whole texture when `uv` is absent. */
+export function setSpriteQuadUvs(mesh: Mesh, uv?: TileUv | null): void {
+  const state = quadState(mesh);
+  const key = uv ? `${uv.u0},${uv.v0},${uv.u1},${uv.v1}` : "full";
+  if (state.uvKey === key || (!state.uvKey && key === "full")) return;
+  if (uv) state.uvs.set([uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1]);
+  else state.uvs.set(FULL_TEXTURE_UVS);
+  if (!mesh.getVertexBuffer(VertexBuffer.UVKind)?.isUpdatable()) mesh.markVerticesDataAsUpdatable(VertexBuffer.UVKind, true);
+  mesh.updateVerticesData(VertexBuffer.UVKind, state.uvs, false, false);
+  state.uvKey = key;
+}

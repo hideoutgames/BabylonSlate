@@ -1697,6 +1697,47 @@ describe("ContentBrowserWorkspace creating assets", () => {
     expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();
   });
 
+  it("creates a Sprite Animation from Textures and a Sprite in name order, and a Tileset from one Texture", async () => {
+    const registry = await mountProject();
+    for (const name of ["Run_10", "Run_2"]) {
+      await registry.createAsset("project", `${name}.texture.hasset`, {
+        guid: `tex-${name}`, name, type: "Texture", version: 1, dependencies: [], payload: { width: 64, height: 32 }, chunks: [],
+      });
+    }
+    await createAsset("Sprite", "Run_1");
+    const sprite = registry.list().find((asset) => asset.header.type === "Sprite")!;
+    fireEvent.click(await screen.findByTestId("content-item-assets/Run_10.texture.hasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/Run_2.texture.hasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId(`content-item-${sprite.path}`), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByTestId(`content-item-${sprite.path}`));
+    expect(screen.queryByRole("menuitem", { name: "Create Tileset" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create Sprite Animation" }));
+
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "SpriteAnimation")).toBe(true));
+    const animation = registry.list().find((asset) => asset.header.type === "SpriteAnimation")!;
+    // Named after the first frame without its number.
+    expect(animation.header.name).toBe("Run");
+    expect(animation.path).toBe("assets/Run.spriteanim.hasset");
+    const frames = (animation.header.payload as { frames: Array<{ spriteGuid?: string; textureGuid: string }> }).frames;
+    expect(frames.map((frame) => frame.spriteGuid ?? frame.textureGuid)).toEqual([sprite.header.guid, "tex-Run_2", "tex-Run_10"]);
+    await waitFor(() =>
+      expect(docs.openDocument).toHaveBeenCalledWith(expect.objectContaining({ path: animation.path })),
+    );
+
+    // Right-clicking an unselected tile acts on it alone.
+    const animationTile = await screen.findByTestId(`content-item-${animation.path}`);
+    // A new press ends the menu's hold on the next click.
+    fireEvent.pointerDown(animationTile);
+    fireEvent.click(animationTile);
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/Run_2.texture.hasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create Tileset" }));
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "Tileset")).toBe(true));
+    const tileset = registry.list().find((asset) => asset.header.type === "Tileset")!;
+    expect(tileset.header.name).toBe("Run_2");
+    expect(tileset.header.payload).toMatchObject({ textureGuid: "tex-Run_2", atlasWidth: 64, atlasHeight: 32 });
+    expect(tileset.header.dependencies).toEqual(["tex-Run_2"]);
+  });
+
   it("names a folder from the tree's empty space inline and keeps the generated name on Escape", async () => {
     const registry = await mountProject();
     fireEvent.contextMenu(screen.getByTestId("content-browser-folder-tree"));

@@ -295,11 +295,14 @@ export interface DocumentContextValue {
     id: string,
     newParentId: string,
   ) => Promise<string | null>;
-  /** Apply a scene edit through the command layer (marks dirty + undoable). */
+  /**
+   * Apply a scene edit through the command layer (marks dirty + undoable);
+   * an edit with `mergeKey` joins the latest Undo step of the same key.
+   */
   applySceneChange: (
     id: string,
     next: SerializedScene,
-    options?: { prefabSync?: boolean },
+    options?: { prefabSync?: boolean; mergeKey?: string },
   ) => Promise<boolean>;
   applyAssetDocumentChange: (
     id: string,

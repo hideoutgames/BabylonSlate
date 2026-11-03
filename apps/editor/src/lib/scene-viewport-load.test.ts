@@ -108,6 +108,25 @@ describe("runSceneViewportBlockingLoad", () => {
     ]);
   });
 
+  it("presents without another paint once the load has run for frames since its dialog painted", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const presentFirstFrame = vi.fn(async () => undefined);
+    const task = runSceneViewportBlockingLoad({
+      signal: new AbortController().signal,
+      realize: () => { now += 50; },
+      collect: async () => undefined,
+      whenModelsReady: async () => undefined,
+      warmShaders: async () => undefined,
+      presentFirstFrame,
+      onProgress: () => {},
+    });
+    paint();
+    await task;
+    expect(presentFirstFrame).toHaveBeenCalledOnce();
+    expect(frames).toEqual([]);
+  });
+
   it("waits for chunked realization after collection before inspecting model readiness", async () => {
     let finish!: () => void;
     const order: string[] = [];

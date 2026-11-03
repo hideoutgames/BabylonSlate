@@ -198,6 +198,10 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
             guids.length === 1 && folders.length === 0
               ? assetRegistry?.getByGuid(guids[0]!)?.header.type
               : undefined,
+          assetTypes: guids.flatMap((guid) => {
+            const type = assetRegistry?.getByGuid(guid)?.header.type;
+            return type ? [type] : [];
+          }),
           canRetarget: canRetargetSelectedAssets(
             guids.flatMap((guid) => {
               const asset = assetRegistry?.getByGuid(guid);

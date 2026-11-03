@@ -14,6 +14,7 @@ import {
   type Effect,
   type Light,
   type PointLight,
+  type RenderTargetWrapper,
   type Scene,
   type SpotLight,
 } from "@babylonjs/core";
@@ -101,6 +102,11 @@ export function releaseEmptyShadowAtlas(scene: Scene): void {
 export function shadowAtlasBytes(scene: Scene): number {
   const edge = atlases.get(scene)?.tiles.edge ?? 0;
   return edge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
+}
+
+/** The render target every tile of the Scene's atlas draws into, or null before its first tile. */
+export function shadowAtlasRenderTarget(scene: Scene): RenderTargetWrapper | null {
+  return atlases.get(scene)?.target.renderTarget ?? null;
 }
 
 /**

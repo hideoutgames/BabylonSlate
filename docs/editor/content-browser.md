@@ -36,6 +36,8 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Generate Thumbnail | Redraw the thumbnail of a Model, Animation, Material or actor Class. |
 | Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas: pick one JSON and the PNG it names. A JSON that names no atlas page pairs only with a PNG of the same name that contains `msdf`, such as `Ui-msdf.png` for `Ui-msdf.json`. A second JSON or any other PNG in the pick is refused. |
 | Create Instance | Materials and Material Instances only. Make a Material Instance of it in the same folder, named `<Name>_Instance` (`<Name>_Instance_1`, `_2`, … when that name is taken). |
+| Create Sprite Animation | Textures and Sprites only, one or several, mixed. Make a [Sprite Animation](../assets/sprite-animation.md) with one frame per asset in name order, beside the first one, named after it without its trailing number (`Run_1` makes `Run`). |
+| Create Tileset | One Texture only. Make a [Tileset](../assets/tileset.md) of it in the same folder, with the same name, sized from the Texture. |
 | Duplicate | Copy the selection in place. |
 | Rename | Rename one asset or folder on its tile (see [Rename](#rename)). References to it stay connected. |
 | Retarget… | Animations only. Retarget the selected Animations to another Skeleton. |

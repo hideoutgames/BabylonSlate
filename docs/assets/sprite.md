@@ -1,6 +1,6 @@
 # Sprite
 
-A 2D image: one Texture with its pivot and collision box. To play several images in turn, use a [Sprite Animation](sprite-animation.md).
+A 2D image: one Texture with its pivot and collision box. To play several images in turn, use a [Sprite Animation](sprite-animation.md); its frames can be Sprites, which bring their pivot and collision box.
 
 ## Create
 

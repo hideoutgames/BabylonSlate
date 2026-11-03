@@ -31,7 +31,7 @@ import { modelAssetGuids } from "./model-payload";
 import { particleAssetDependencies } from "./particle-payload";
 import { skeletonAssetGuids } from "./skeleton-payload";
 import { skyboxCreatorAssetDependencies } from "./skybox-creator-payload";
-import { parseSpriteAnimationPayload, spriteAnimationTextureGuids } from "./sprite-animation-payload";
+import { parseSpriteAnimationPayload, spriteAnimationDependencyGuids } from "./sprite-animation-payload";
 
 export interface AssetDependencyMetadata {
   dependencyMetadataVersion: number;
@@ -413,7 +413,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "Model") addMany(modelAssetGuids(payload));
   else if (assetType === "Skeleton") addMany(skeletonAssetGuids(payload));
   else if (assetType === "Animation") addMany(animationAssetGuids(payload));
-  else if (assetType === "SpriteAnimation") addMany(spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload)));
+  else if (assetType === "SpriteAnimation") addMany(spriteAnimationDependencyGuids(parseSpriteAnimationPayload(payload)));
   else if (assetType === "Sprite" || assetType === "Tileset") add(payload.textureGuid);
   else if (assetType === "Tilemap") { for (const tileset of rows(payload.tilesets)) add(tileset.guid); }
   else if (assetType === "Font") addMany(values(payload.fallbackGuids));

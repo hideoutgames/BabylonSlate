@@ -160,6 +160,23 @@ describe("shadow allocation validation", () => {
     }
   });
 
+  it("makes no GL call for a new map that only draws into an atlas target that already passed", () => {
+    const { gl, engine, generator, target, state, expectRestored } = fixture("array");
+    // The atlas's first map is checked in full; only then does its target count as validated.
+    beginShadowAllocationValidation(engine, target)(generator);
+    expectRestored();
+    gl.getError.mockClear();
+    gl.createFramebuffer.mockClear();
+    beginShadowAllocationValidation(engine, target)(generator);
+    expect(gl.getError).not.toHaveBeenCalled();
+    expect(gl.createFramebuffer).not.toHaveBeenCalled();
+    // A map that does not draw into the shared target (the atlas grew) is still checked structurally.
+    const grown = { ...target, _framebuffer: null };
+    const elsewhere = { ...generator, getShadowMap: () => ({ renderTarget: grown }) } as unknown as ShadowGenerator;
+    expect(() => beginShadowAllocationValidation(engine, target)(elsewhere)).toThrow(/framebuffer allocation is missing/);
+    expect(state.deleted).toHaveLength(1);
+  });
+
   it("excludes earlier GL errors while rejecting a non-throwing allocation OOM", () => {
     const { gl, engine, generator, state } = fixture();
     state.errors.push(gl.INVALID_ENUM);

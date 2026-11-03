@@ -562,6 +562,11 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   return resolveActorTypeVisual({ classId: "Actor" });
 }
 
+/** Undo merge key a placement and its rest on a surface share. */
+export function placementMergeKey(actorId: string): string {
+  return `place:${actorId}`;
+}
+
 export function nextActorId(scene: SerializedScene): string {
   let index = 1;
   while (scene.actors.some((actor) => actor.id === `actor-${index}`)) {

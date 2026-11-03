@@ -4,6 +4,7 @@ import {
   Mesh,
   Quaternion,
   Vector3,
+  type AbstractMesh,
   type Node,
 } from "@babylonjs/core";
 import { DEFAULT_EDITOR_DROP_DISTANCE, type SerializedScene, type SerializedTransform } from "@haptic/core";
@@ -152,15 +153,26 @@ export function calculateEditorDropTransforms(options: {
   return changes;
 }
 
+/**
+ * World AABB of an actor's own visible geometry: no child actors, lines,
+ * collider visuals or editor icons, pick proxies and volumes.
+ */
+export function actorVisualBounds(
+  root: AbstractMesh | null,
+  actorRoots: ReadonlySet<AbstractMesh>,
+): DropBounds | null {
+  return sourceBounds(root, actorRoots);
+}
+
 function sourceBounds(
-  root: Mesh | null,
-  actorRoots: ReadonlySet<Mesh>,
+  root: AbstractMesh | null,
+  actorRoots: ReadonlySet<AbstractMesh>,
 ): DropBounds | null {
   if (!root) return null;
   let bounds: DropBounds | null = null;
   for (const mesh of [root, ...root.getChildMeshes()]) {
     let owner: Node = mesh;
-    while (owner.parent && !actorRoots.has(owner as Mesh)) owner = owner.parent;
+    while (owner.parent && !actorRoots.has(owner as AbstractMesh)) owner = owner.parent;
     if (
       owner !== root ||
       mesh instanceof LinesMesh ||
