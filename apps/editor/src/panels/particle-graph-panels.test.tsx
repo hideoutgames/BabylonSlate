@@ -245,6 +245,15 @@ describe("ParticleGraphDetails", () => {
     expect(screen.queryByTestId("property-color")).toBeNull();
   });
 
+  it("sets a Local Variable's Scope and explains it", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "keep", type: "utility.localVariable", position: { x: 0, y: 0 }, properties: { scope: "particle" } });
+    const history = renderDetails(doc, "keep");
+    expect(screen.getByText("One value per particle, read the first time and kept for its whole life.")).toBeTruthy();
+    await pickOption("property-scope", "Loop");
+    expect(nodeOf(history.read(), "keep").properties.scope).toBe("loop");
+  });
+
   it("switches Create Particle's Angle to degrees, converting the authored value", async () => {
     const doc = createDefaultParticleGraphDocument("Embers");
     doc.nodes = doc.nodes.map((entry) => entry.id === "create"

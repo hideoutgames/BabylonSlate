@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultParticleGraphDocument,
+  newParticleNodeProperties,
   normalizeParticleGraphDocument,
   particleGraphDependencies,
   setParticleNodeAngleUnit,
@@ -161,5 +162,16 @@ describe("particle graph document", () => {
     expect(setParticleNodeAngleUnit(create, "degrees").properties).toEqual({ angleUnit: "degrees" });
     const sphere: ParticleGraphNode = { id: "sphere", type: "shape.sphere", position: { x: 0, y: 0 }, properties: {} };
     expect(setParticleNodeAngleUnit(sphere, "degrees")).toBe(sphere);
+  });
+
+  it("gives Local Variable the Particle scope unless it is Loop", () => {
+    const doc = normalizeParticleGraphDocument({
+      nodes: [
+        { id: "a", type: "utility.localVariable", properties: { scope: "loop" } },
+        { id: "b", type: "utility.localVariable", properties: { scope: "galaxy" } },
+      ],
+    });
+    expect(doc.nodes.filter((entry) => entry.type === "utility.localVariable").map((entry) => entry.properties.scope)).toEqual(["loop", "particle"]);
+    expect(newParticleNodeProperties("utility.localVariable")).toEqual({ scope: "particle" });
   });
 });

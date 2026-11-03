@@ -82,6 +82,7 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | Node | Description |
 | --- | --- |
 | [Gradient](gradient.md) | Returns a value sampled from a gradient of 2 to 8 stops at a position from 0 to 1. |
+| [Local Variable](local-variable.md) | Keeps the first value it reads and returns it again, so a random or computed value is read once and reused. |
 | [Random](random.md) | Returns a random value between a minimum and a maximum. |
 
 ## Math
@@ -113,6 +114,7 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | [Modulo](modulo.md) | Returns the remainder after dividing one Float by another. |
 | [Multiply](multiply.md) | Multiplies two values together, component by component. |
 | [Negate](negate.md) | Flips the sign of the input. |
+| [Normalized Lerp](normalized-lerp.md) | Blends from one direction to another by an amount between 0 and 1 and returns the result at length 1. |
 | [One Minus](one-minus.md) | Returns the result of subtracting the input from 1. |
 | [Power](power.md) | Raises a base to the power of an exponent. |
 | [Radians To Degrees](radians-to-degrees.md) | Converts the input from radians to degrees. |

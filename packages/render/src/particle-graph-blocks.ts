@@ -18,8 +18,11 @@ import {
   ParticleGradientValueBlock,
   ParticleInputBlock,
   ParticleLerpBlock,
+  ParticleLocalVariableBlock,
+  ParticleLocalVariableBlockScope,
   ParticleMathBlock,
   ParticleMathBlockOperations,
+  ParticleNLerpBlock,
   ParticleNumberMathBlock,
   ParticleNumberMathBlockOperations,
   ParticleRandomBlock,
@@ -46,6 +49,7 @@ import {
   Vector3,
   type AbstractMesh,
   type NodeParticleBlock,
+  type NodeParticleBuildState,
   type NodeParticleConnectionPoint,
 } from "@babylonjs/core";
 import {
@@ -71,6 +75,50 @@ import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-rende
 export class SlateSystemBlock extends SystemBlock {
   seedBuildId(id: number): void {
     this._buildId = id;
+  }
+}
+
+/**
+ * Babylon 9.29's Local Variable never drops its per-frame entries in Loop scope, and a second
+ * Particle-scope variable replaces the first one's reset hook, so entries pile up. This one keeps,
+ * per particle, a value tagged with the particle's id (a reset gives the particle a new id), and
+ * in Loop scope only the current frame's value. Read outside a particle, Particle scope acts as Loop.
+ */
+export class SlateLocalVariableBlock extends ParticleLocalVariableBlock {
+  private readonly particleValues = new WeakMap<object, { id: number; value: unknown }>();
+  private loopValue: { frame: number; value: unknown } | null = null;
+
+  override _build(state: NodeParticleBuildState): void {
+    if (!this.input.isConnected) {
+      this.output._storedFunction = null;
+      this.output._storedValue = null;
+      return;
+    }
+    // Vectors and colors are cloned so later math on the source never changes the kept value.
+    const snapshot = (value: unknown) => {
+      const cloneable = value as { clone?: () => unknown } | null;
+      return cloneable && typeof cloneable.clone === "function" ? cloneable.clone() : value;
+    };
+    const read = (current: NodeParticleBuildState) => {
+      const particle = current.particleContext;
+      if (this.scope === ParticleLocalVariableBlockScope.Particle && particle) {
+        const kept = this.particleValues.get(particle);
+        if (kept?.id === particle.id) return kept.value;
+        const value = snapshot(this.input.getConnectedValue(current));
+        this.particleValues.set(particle, { id: particle.id, value });
+        return value;
+      }
+      const frame = current.systemContext?.getScene()?.getFrameId() ?? -1;
+      if (this.loopValue?.frame !== frame) this.loopValue = { frame, value: snapshot(this.input.getConnectedValue(current)) };
+      return this.loopValue.value;
+    };
+    if (this.output.isConnected) this.output._storedFunction = read;
+    else this.output._storedValue = read(state);
+  }
+
+  override dispose(): void {
+    this.loopValue = null;
+    super.dispose();
   }
 }
 
@@ -429,6 +477,15 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   "math.lerp": ({ name }) => {
     const block = new ParticleLerpBlock(name);
     return { blocks: [block], inputs: { a: block.left, b: block.right, alpha: block.gradient }, outputs: { out: block.output } };
+  },
+  "math.nlerp": ({ name }) => {
+    const block = new ParticleNLerpBlock(name);
+    return { blocks: [block], inputs: { a: block.left, b: block.right, alpha: block.gradient }, outputs: { out: block.output } };
+  },
+  "utility.localVariable": ({ name, operation }) => {
+    const block = new SlateLocalVariableBlock(name);
+    block.scope = operation.properties.scope === "loop" ? ParticleLocalVariableBlockScope.Loop : ParticleLocalVariableBlockScope.Particle;
+    return { blocks: [block], inputs: { value: block.input }, outputs: { out: block.output } };
   },
   "math.smoothstep": ({ name }) => {
     const block = new ParticleSmoothStepBlock(name);

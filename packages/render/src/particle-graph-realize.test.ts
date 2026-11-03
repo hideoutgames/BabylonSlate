@@ -270,6 +270,56 @@ describe("realizeParticleGraph", () => {
     expect(born.particles[0]!.size).toBeCloseTo(45, 4);
   });
 
+  it("keeps a Local Variable's first read for each particle's life, or one value per frame in Loop scope", () => {
+    const graph = (scope: "particle" | "loop") => withSpine([node("size", "update.size")], [
+      node("random", "random.range", { valueType: "float", lock: "everyRead", "default:min": [0], "default:max": [1] }),
+      node("keep", "utility.localVariable", { scope }),
+    ], [edge("random", "out", "keep", "value"), edge("keep", "out", "size", "size")]);
+    // Particles born this frame have not run Update yet.
+    const sizes = (system: ParticleSystem) => new Map(system.particles.filter((particle) => particle.age > 1 / 30)
+      .map((particle) => [particle.id, particle.size]));
+
+    const perParticle = built(realize(planOf(graph("particle"))).result).system;
+    perParticle.start(0);
+    step(perParticle, 10);
+    const before = sizes(perParticle);
+    expect(before.size).toBeGreaterThan(2);
+    // Distinct per particle, and unchanged frame after frame.
+    expect(new Set(before.values()).size).toBeGreaterThan(1);
+    step(perParticle, 5);
+    for (const [id, size] of sizes(perParticle)) if (before.has(id)) expect(size).toBe(before.get(id));
+
+    const perFrame = built(realize(planOf(graph("loop"))).result).system;
+    perFrame.start(0);
+    const scene = perFrame.getScene()! as unknown as { _frameId: number };
+    const frame = () => { scene._frameId += 1; step(perFrame); };
+    for (let index = 0; index < 10; index += 1) frame();
+    const shared = new Set(sizes(perFrame).values());
+    expect(sizes(perFrame).size).toBeGreaterThan(2);
+    expect(shared.size).toBe(1);
+    const seen = new Set(shared);
+    for (let index = 0; index < 5; index += 1) {
+      frame();
+      const values = new Set(sizes(perFrame).values());
+      expect(values.size).toBe(1);
+      seen.add([...values][0]!);
+    }
+    // A new frame reads a new value.
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it("blends two directions with Normalized Lerp and returns a unit vector", () => {
+    const doc = withSpine([node("size", "update.size")], [
+      node("blend", "math.nlerp", { "default:a": [1, 0, 0], "default:b": [0, 1, 0], "default:alpha": [0.5] }),
+      node("split", "vector.split"),
+    ], [edge("blend", "out", "split", "value"), edge("split", "x", "size", "size")]);
+    const { system } = built(realize(planOf(doc)).result);
+    system.start(0);
+    step(system, 5);
+    expect(system.particles.length).toBeGreaterThan(0);
+    expect(system.particles[0]!.size).toBeCloseTo(Math.SQRT1_2, 6);
+  });
+
   it("emits fractional and computed Emit Rates", () => {
     const slow = createDefaultParticleGraphDocument();
     slow.nodes = slow.nodes.map((entry) => entry.id === "output" ? { ...entry, properties: { "default:emitRate": [0.5] } }
@@ -313,7 +363,8 @@ function graphWith(type: string): ParticleGraphDocument {
   }
   if (definition.role === "shape" || definition.role === "update") return withSpine([subject]);
   const output = definition.outputs[0]!;
-  const kind: ParticleNumericType = output.type.kind === "generic" || output.type.kind === "particle" ? "float" : output.type.kind;
+  const kind: ParticleNumericType = output.type.kind === "particle" ? "float"
+    : output.type.kind === "generic" ? output.type.fallback ?? "float" : output.type.kind;
   const consumer = CONSUMERS[kind];
   return withSpine([node("consumer", consumer.type)], [subject], [edge("subject", output.id, "consumer", consumer.pin)]);
 }

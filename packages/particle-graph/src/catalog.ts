@@ -108,6 +108,17 @@ export const PARTICLE_CONDITION_TESTS: readonly {
 
 export type ParticleRandomLock = "perParticle" | "everyRead";
 
+export type ParticleLocalVariableScope = "particle" | "loop";
+
+/** Local Variable: one value per particle (its first read in each life), or one per frame for every particle. */
+export const PARTICLE_LOCAL_VARIABLE_SCOPES: readonly {
+  id: ParticleLocalVariableScope;
+  label: string;
+}[] = [
+  { id: "particle", label: "Particle" },
+  { id: "loop", label: "Loop" },
+];
+
 export const PARTICLE_RANDOM_LOCKS: readonly {
   id: ParticleRandomLock;
   label: string;
@@ -141,8 +152,6 @@ export const PARTICLE_UNSUPPORTED_V1_TYPES: Readonly<Record<string, string>> = {
   "update.flowMap": "Flow Map",
   "update.age": "Update Age",
   "trigger.spawn": "Particle Trigger",
-  "utility.localVariable": "Local Variable",
-  "math.nlerp": "Normalized Lerp",
   "math.floatToInt": "Float To Int",
 };
 
@@ -157,6 +166,9 @@ const GENERIC_NO_COLOR: ParticlePinType = {
   kind: "generic",
   accepts: ["float", "vec2", "vec3"],
 };
+
+/** Normalized Lerp blends directions: Vector 2 or Vector 3, Vector 3 until wired. */
+const NLERP_VECTOR: ParticlePinType = { kind: "generic", accepts: ["vec2", "vec3"], fallback: "vec3" };
 
 /** Particle pins come first so the spine sits in the first pin row. */
 const PARTICLE_IN: ParticlePinDefinition = {
@@ -562,6 +574,17 @@ const UTILITY_NODES: ParticleNodeDefinition[] = [
     inputs: [{ id: "ratio", name: "Ratio", type: FLOAT, defaultValue: [0], min: 0, max: 1 }],
     outputs: [{ id: "out", name: "Value", type: COLOR, followsValueType: true }],
   },
+  {
+    type: "utility.localVariable",
+    title: "Local Variable",
+    category: "Utility",
+    role: "value",
+    description:
+      "Keeps the first value it reads: per particle for the particle's whole life, or once per frame for every particle (Scope). Use it to read a random or computed value once and reuse it.",
+    searchAliases: ["cache", "store", "remember", "variable"],
+    inputs: [{ id: "value", name: "Value", type: GENERIC, defaultValue: [0], required: true }],
+    outputs: [{ id: "out", name: "Value", type: GENERIC }],
+  },
 ];
 
 const MATH_NODES: ParticleNodeDefinition[] = [
@@ -604,6 +627,20 @@ const MATH_NODES: ParticleNodeDefinition[] = [
       { id: "alpha", name: "Alpha", type: FLOAT, defaultValue: [0], min: 0, max: 1 },
     ],
     outputs: [{ id: "out", name: "Out", type: GENERIC }],
+  },
+  {
+    type: "math.nlerp",
+    title: "Normalized Lerp",
+    category: "Math",
+    role: "value",
+    description: "Blends from A to B by Alpha and returns the result at length 1, for directions.",
+    searchAliases: ["nlerp", "slerp", "direction lerp"],
+    inputs: [
+      { id: "a", name: "A", type: NLERP_VECTOR, defaultValue: [0] },
+      { id: "b", name: "B", type: NLERP_VECTOR, defaultValue: [1] },
+      { id: "alpha", name: "Alpha", type: FLOAT, defaultValue: [0.5], min: 0, max: 1 },
+    ],
+    outputs: [{ id: "out", name: "Out", type: NLERP_VECTOR }],
   },
   {
     type: "math.smoothstep",
