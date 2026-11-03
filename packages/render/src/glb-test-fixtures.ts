@@ -77,6 +77,37 @@ export function encodeTriangleGlb(): Uint8Array {
   );
 }
 
+/**
+ * Two nodes drawing one triangle mesh; the glTF loader makes the second an
+ * InstancedMesh of the first, as models that reuse a part (a mannequin's
+ * limbs) load.
+ */
+export function encodeSharedMeshGlb(): Uint8Array {
+  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  return encodeGlbJsonBin(
+    {
+      asset: { version: "2.0" },
+      scene: 0,
+      scenes: [{ nodes: [0, 1] }],
+      nodes: [{ name: "left", mesh: 0 }, { name: "right", mesh: 0, translation: [2, 0, 0] }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: FLOAT,
+          count: 3,
+          type: "VEC3",
+          min: [0, 0, 0],
+          max: [1, 1, 0],
+        },
+      ],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+      buffers: [{ byteLength: 36 }],
+    },
+    new Uint8Array(positions.buffer),
+  );
+}
+
 /** Triangle GLB with a named translation clip for AnimationGroup tests. */
 export function encodeAnimatedTriangleGlb(clipName = "Idle"): Uint8Array {
   const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);

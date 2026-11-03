@@ -20,7 +20,7 @@ export const COLLIDER_COLOR = new Color3(0.85, 0.9, 0.4);
 /** Solid dashes from both sides; editor helpers draw without fog. */
 const COLLIDER_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "helper" };
 
-export function isColliderVisualMesh(mesh: Mesh): boolean {
+export function isColliderVisualMesh(mesh: Pick<Mesh, "metadata">): boolean {
   return Boolean(
     (mesh.metadata as { editorColliderVisual?: boolean } | null)
       ?.editorColliderVisual,
