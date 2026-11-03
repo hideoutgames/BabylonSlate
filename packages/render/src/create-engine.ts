@@ -1,3 +1,4 @@
+import "./babylon-registrations";
 import { setSceneInstancing } from "./instance-pool";
 import { ejectPooledLeaf } from "./pooled-visuals";
 import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";

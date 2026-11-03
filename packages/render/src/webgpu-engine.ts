@@ -1,3 +1,4 @@
+import "./babylon-registrations";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCompression";

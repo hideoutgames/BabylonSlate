@@ -6,6 +6,8 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
+// The bounding box renderer that draws `showBoundingBox` for `setShowBounds`.
+import "@babylonjs/core/Rendering/boundingBoxRenderer";
 import type { CommandMessage, DebugColliderPrimitive } from "@haptic/bridge";
 import { convexHullEdges } from "@haptic/assets";
 import type { PhysicsWorldKind } from "@haptic/core";
