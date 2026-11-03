@@ -93,6 +93,20 @@ describe("listDockWindows", () => {
     }
   });
 
+  it("opens a Tileset on its Preview with Autotiles as a tab beside it and the Inspector on the right", () => {
+    const windows = listDockWindows("tileset");
+    expect(windows.map((entry) => [entry.id, entry.component, entry.title])).toEqual([
+      ["tileset-preview", "tileset-preview", "Preview"],
+      ["tileset-autotiles", "tileset-autotiles", "Autotiles"],
+      ["tileset-details", "tileset-details", "Inspector"],
+    ]);
+    expect(windows.find((entry) => entry.id === "tileset-autotiles")).toMatchObject({
+      defaultPosition: { referencePanelId: "tileset-preview", direction: "within" },
+    });
+    expect(windows.every((entry) => entry.openByDefault !== false)).toBe(true);
+    expect(primaryDockPanel("tileset")).toBe("tileset-preview");
+  });
+
   it("omits the Locks window when source control is off", () => {
     for (const kind of [
       "scene",

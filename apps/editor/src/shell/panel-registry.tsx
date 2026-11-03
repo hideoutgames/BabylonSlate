@@ -46,6 +46,7 @@ import {
   TilesetPreviewPanel,
   TilesetDetailsPanel,
 } from "../components/tileset-editor";
+import { TilesetAutotilesPanel } from "../components/tileset-autotiles-window";
 import {
   TilemapPaintPanel,
   TilemapDetailsPanel,
@@ -194,6 +195,9 @@ export const panelComponents = {
   ),
   "tileset-details": (props: IDockviewPanelProps) => (
     <TilesetDetailsPanel {...props} />
+  ),
+  "tileset-autotiles": (props: IDockviewPanelProps) => (
+    <TilesetAutotilesPanel {...props} />
   ),
   "tilemap-paint": (props: IDockviewPanelProps) => (
     <TilemapPaintPanel {...props} />
