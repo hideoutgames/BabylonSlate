@@ -33,6 +33,11 @@ export class RuntimeParticles {
       [guid, new Map(entries.map((entry) => [entry.name, entry]))]));
   }
 
+  /** Every parameter Particle System `systemGuid` declares. */
+  parameters(systemGuid: string): ParticleParameterCatalogEntry[] {
+    return [...(this.catalog.get(systemGuid)?.values() ?? [])];
+  }
+
   /** The parameter `name` Particle System `systemGuid` declares, if it does. */
   parameter(systemGuid: string, name: string): ParticleParameterCatalogEntry | undefined {
     return this.catalog.get(systemGuid)?.get(name);

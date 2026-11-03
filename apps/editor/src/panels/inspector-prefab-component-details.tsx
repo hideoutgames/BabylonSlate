@@ -49,6 +49,8 @@ import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor"
 import { ClassCaptureActorsField } from "../components/class-capture-actors-field";
 import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import { NineSlicePreview } from "../components/nine-slice-preview";
+import { particleParameterOverrideRows } from "../lib/particle-parameter-override-rows";
+import { particleSystemGuidsOf, useParticleSystemParameters } from "../lib/use-particle-system-parameters";
 
 const CLASS_KINDS = ["graph"] as const;
 const MODEL_KINDS = ["model"] as const;
@@ -116,6 +118,11 @@ export function PrefabComponentDetails({
     void registryEpoch;
     return materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
   }, [assetRegistry, materialDocuments, registryEpoch]);
+  const particleParameters = useParticleSystemParameters(particleSystemGuidsOf({ components: [component] }));
+  const parameterRows = component.classId === "ParticleComponent"
+    ? particleParameterOverrideRows(PREFAB_ROOT_ID, component,
+      particleParameters.get(String(component.properties.particleSystemGuid ?? "")) ?? [], onUpdate)
+    : [];
   return (
     <div
       className="flex flex-col gap-3 p-3"
@@ -176,6 +183,9 @@ export function PrefabComponentDetails({
             focusTargets: components.filter((entry) => isFocusTargetClass(entry.classId)).map((entry, index) => ({ value: entry.id, label: `${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}` })),
           })}
         />
+        {parameterRows.length ? (
+          <PropertyGrid title="Parameters" rows={parameterRows} data-testid={`particle-parameters-grid-${component.id}`} />
+        ) : null}
         {component.classId === "2DDropdownComponent" ? <NamedListEditor title="Options" values={parseUIControl2DProperties(component.classId, component.properties).options} addLabel="Add Option" onChange={(options) => onUpdate("options", options)} /> : null}
         {component.classId === "2DPanelComponent" ? (
           <NineSlicePreview

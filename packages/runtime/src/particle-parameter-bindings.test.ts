@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@haptic/bridge";
+import type { CommandMessage, RuntimeInspectorAction } from "@haptic/bridge";
 import { createActor, createDefaultSceneSettings, type ParticleParameterCatalog, type SerializedScene } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import { RuntimeParticles } from "./runtime-particles";
@@ -126,6 +126,50 @@ describe("particle parameters in Class graphs", () => {
       { type: "setParticleParameter", actorGuid: "emitter", componentId: "smoke", name: "Heat", value: [5, 5, 5] },
     ]);
     runtime.stop();
+  });
+});
+
+describe("Parameter Overrides and live edits", () => {
+  it("send the component's overrides with its assignment, and none without", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = await runtimeWith(["export function onBeginPlay(ctx) {}"], commands);
+    const assignments = commands.filter((command) => command.type === "assignParticle");
+    expect(assignments.find((command) => command.componentId === "sparks")).toMatchObject({ parameters: { Tint: [0, 1, 0, 1] } });
+    expect(assignments.find((command) => command.componentId === "smoke")).not.toHaveProperty("parameters");
+    runtime.stop();
+  });
+
+  it("list a Particle component's parameters in the Simulation Inspector and set them live", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, sessionGeneration: 2,
+      sessionMode: "simulate", playSceneGuid: "root", playScene: scene(), particleParameterCatalog: catalog,
+      onCommand: (command) => commands.push(command) });
+    await runtime.loadScripts([{ classId: "Hero", assetGuid: "hero-script", parentClassId: "Actor", source: "", anchors: [], entryPoints: [] }]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    try {
+      let requestId = 0;
+      const request = (action: RuntimeInspectorAction) => runtime.requestRuntimeInspector({ sessionGeneration: 2, requestId: ++requestId, action });
+      const tree = await request({ kind: "identities" });
+      const rows = tree.payload?.kind === "identities" ? tree.payload.rows : [];
+      const sparks = rows.find((row) => row.kind === "component" && row.identity.componentGuid === "sparks")!.identity;
+      runtime.pause();
+      const selection = await request({ kind: "selection", target: sparks });
+      expect(selection.payload).toMatchObject({ kind: "selection", properties: expect.arrayContaining([
+        expect.objectContaining({ key: "particle:Heat", typeId: "particle:float", capability: "live", value: 2 }),
+        expect.objectContaining({ key: "particle:Tint", typeId: "particle:color", capability: "live", value: { x: 0, y: 1, z: 0, w: 1 } }),
+      ]) });
+      commands.length = 0;
+      const heat = await request({ kind: "setProperty", target: sparks, sequence: 1, property: "particle:Heat", value: 7 });
+      expect(heat).toMatchObject({ success: true, payload: { kind: "mutation", effectiveValue: 7 } });
+      expect((await request({ kind: "setProperty", target: sparks, sequence: 2, property: "particle:Tint", value: { x: 1, y: 2 } })).success).toBe(false);
+      expect((await request({ kind: "setProperty", target: sparks, sequence: 3, property: "particle:Tint",
+        value: { x: 1, y: 0.5, z: 0, w: 1 } })).success).toBe(true);
+      expect(commands.filter((command) => command.type === "setParticleParameter")).toEqual([
+        { type: "setParticleParameter", actorGuid: "emitter", componentId: "sparks", name: "Heat", value: [7] },
+        { type: "setParticleParameter", actorGuid: "emitter", componentId: "sparks", name: "Tint", value: [1, 0.5, 0, 1] },
+      ]);
+    } finally { runtime.stop(); }
   });
 });
 

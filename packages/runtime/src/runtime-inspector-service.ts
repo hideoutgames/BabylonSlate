@@ -12,7 +12,7 @@ import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { RenderCommandEmitter } from "./render-command-emitter";
 import type { RenderSlots } from "./render-slots";
-import { RuntimeInspector, hasEnabledRagdoll } from "./runtime-inspector";
+import { RuntimeInspector, hasEnabledRagdoll, type RuntimeInspectorHost } from "./runtime-inspector";
 import { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
 import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
@@ -53,6 +53,8 @@ interface RuntimeInspectorServiceHost {
   refreshComponent(component: ActorComponent, propertyName: string): void;
   /** Write a mesh material parameter on the Inspector path: live edit eligibility instead of owner admission. */
   setMaterialParameter(material: MaterialObject, name: string, value: MaterialParameterValue): boolean;
+  /** A ParticleComponent's parameters for live edits (runtime values, as Set Particle Parameter writes them). */
+  particleParameters(): RuntimeInspectorHost["particleParameters"];
   publishSnapshot(): void;
   emit(command: CommandMessage): void;
 }
@@ -162,6 +164,7 @@ export class RuntimeInspectorService {
   private inspector(): RuntimeInspector {
     return this.evaluator ??= new RuntimeInspector({
       world: this.host.world(), materials: this.host.materialParameters(), sessionGeneration: this.host.sessionGeneration(),
+      particleParameters: this.host.particleParameters(),
       canWrite: () => this.host.simulation().canWrite(), stopped: () => this.host.stopped(),
       ready: actor => this.host.simulation().canEditActor(actor),
       renderSlot: actor => this.host.renderSlots().recordedSlot(actor),

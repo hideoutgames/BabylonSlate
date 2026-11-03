@@ -100,6 +100,9 @@ import {
 import { physicsConstraintTargets } from "../lib/physics-constraint-targets";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 import { useRetainedValue } from "../lib/use-retained-value";
+import type { ComponentPropertyUpdate } from "../lib/component-property-row-helpers";
+import { particleParameterOverrideRows } from "../lib/particle-parameter-override-rows";
+import { particleSystemGuidsOf, useParticleSystemParameters } from "../lib/use-particle-system-parameters";
 import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
@@ -300,6 +303,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     [scene],
   );
   const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
+  const particleParameters = useParticleSystemParameters(particleSystemGuidsOf(actor));
   const classSaveGraphs = useMemo(() => {
     void registryEpoch;
     return collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
@@ -514,11 +518,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
             (entry) => entry.id === component.sourceId,
           )
         : undefined;
-      const rows = applyPrefabPropertyDefaults(
-        componentPropertyRows(
-          actor.id,
-          component,
-          (property, value, alsoSet) => {
+      const updateComponent: ComponentPropertyUpdate = (property, value, alsoSet) => {
             if (component.classId === "SceneStreamingComponent" && property === "sceneGuid") {
               const guid = typeof value === "string" ? value : null;
               updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, component.id, guid, assetLabel(guid) ?? "") }));
@@ -542,7 +542,12 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
                   : candidate,
               ),
             }));
-          },
+          };
+      const rows = applyPrefabPropertyDefaults(
+        componentPropertyRows(
+          actor.id,
+          component,
+          updateComponent,
           {
             sortingLayers,
             collisionLayers,
@@ -616,6 +621,10 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         nameParts,
         rows: filterRows(rows, title),
         colliderRows: filterRows(colliderRows, `${title} Transform`),
+        parameterRows: component.classId === "ParticleComponent"
+          ? filterRows(particleParameterOverrideRows(actor.id, component,
+            particleParameters.get(String(component.properties.particleSystemGuid ?? "")) ?? [], updateComponent), `${title} Parameters`)
+          : [],
         showExtras:
           matches(title) || Boolean(extraLabels && matches(extraLabels)),
         expanded: !(
@@ -628,6 +637,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         matches(entry.title) ||
         entry.rows.length ||
         entry.colliderRows.length ||
+        entry.parameterRows.length ||
         entry.showExtras,
     );
   const componentNeedle = componentSearch.trim().toLowerCase();

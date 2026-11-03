@@ -264,7 +264,10 @@ export async function placeFeatureTestParticles(ctx: FeatureTestContext): Promis
     emitterActor("mist", "Fountain Mist", system(NAMES.smoke), fountain, { sortingLayer: "Default", orderInLayer: 5 }),
     { zone: "particles" },
   );
-  ctx.addActor(emitterActor("sparks", "Spark Bursts", system(NAMES.sparks), zone.at(0, 1.2, -2)), { zone: "particles" });
+  // Spark Bursts overrides its System's Spark Intensity: twice the burst count of the default.
+  const sparkBursts = emitterActor("sparks", "Spark Bursts", system(NAMES.sparks), zone.at(0, 1.2, -2));
+  sparkBursts.components[0]!.properties.parameterOverrides = { "Spark Intensity": [2] };
+  ctx.addActor(sparkBursts, { zone: "particles" });
   ctx.addActor(emitterActor("smoke", "Rising Smoke", system(NAMES.smoke), zone.at(7, 0.1, -2)), { zone: "particles" });
   const relay = flashRelays.get(ctx);
   if (!relay) throw new Error("FeatureTest could not find the Flash Relay Class");

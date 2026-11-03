@@ -50,3 +50,36 @@ it("keeps a focused text draft while runtime polls update and commits through th
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(store.getSnapshot()).toBe(before);
 });
+
+it("edits particle parameters as a number, a vector and a color through the runtime transport", async () => {
+  vi.useFakeTimers();
+  const writes: unknown[] = [];
+  const component: RuntimeObjectIdentity = { ...target, componentGuid: "sparks", componentToken: 2 };
+  const store = new SimulationInspectionStore();
+  store.attach(async action => {
+    if (action.kind === "identities") return reply({ kind: "identities", unchanged: true, rows: [] });
+    if (action.kind === "setProperty") {
+      writes.push(action);
+      return reply({ kind: "mutation", target: component, sequence: 1, effectiveValue: action.value }, 1);
+    }
+    return reply({ kind: "selection", target: component, classId: "ParticleComponent", transform: identitySerializedTransform(), transformCapability: "live",
+      properties: [
+        { key: "particle:Heat", name: "Heat", typeId: "particle:float", capability: "live", value: 2 },
+        { key: "particle:Wind", name: "Wind", typeId: "particle:vec2", capability: "live", value: { x: 1, y: 2 } },
+        { key: "particle:Tint", name: "Tint", typeId: "particle:color", capability: "live", value: { x: 1, y: 1, z: 1, w: 1 } },
+      ] });
+  });
+  store.select(component);
+  const view = render(<DocumentWorkspaceProvider documentId="scene"><SimulationInspector store={store} panel={{} as IDockviewPanelProps} /></DocumentWorkspaceProvider>);
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  const heat = screen.getByTestId("property-simulation-particle:Heat") as HTMLInputElement;
+  expect(heat.value).toBe("2");
+  fireEvent.change(heat, { target: { value: "5" } });
+  await act(async () => { heat.blur(); await vi.advanceTimersByTimeAsync(0); });
+  expect(writes).toContainEqual({ kind: "setProperty", target: component, property: "particle:Heat", value: 5 });
+  // Wind shows X and Y only; Tint is a color row.
+  expect(screen.getByTestId("property-simulation-particle:Wind-y")).toBeTruthy();
+  expect(screen.queryByTestId("property-simulation-particle:Wind-z")).toBeNull();
+  expect(screen.getByTestId("property-simulation-particle:Tint")).toBeTruthy();
+  view.unmount();
+});

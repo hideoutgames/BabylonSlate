@@ -105,6 +105,8 @@ import {
   type FunctionGraphPanelParams,
 } from "../shell/function-graph-panels";
 import { claimFocusRouting, graphOwningNode } from "../lib/function-graph-focus";
+import { ClassParticleSystemsContext } from "../context/class-particle-systems-context";
+import { particleSystemGuidsOf } from "../lib/use-particle-system-parameters";
 
 const VALIDATION_DEBOUNCE_MS = 250;
 
@@ -770,6 +772,17 @@ export function GraphPanel(
     [activeFunctionId, graphContent],
   );
 
+  // Own and inherited Particle components, for the particle parameter nodes' Name lists.
+  const classParticleSystems = useMemo(() => {
+    const components = [...(graphContent?.components ?? [])];
+    const seen = new Set<string>();
+    for (let ancestor = parentClass; ancestor && !seen.has(ancestor); ancestor = parentOf(ancestor) ?? "") {
+      seen.add(ancestor);
+      components.push(...(otherClassGraphs[ancestor]?.components ?? []));
+    }
+    return particleSystemGuidsOf({ components });
+  }, [graphContent, otherClassGraphs, parentClass, parentOf]);
+
   const showLibraryEmpty = functionLibraryShowsEventGraphEmpty({
     parentClass,
     parentOf,
@@ -789,6 +802,7 @@ export function GraphPanel(
           </EmptyHeader>
         </Empty>
       ) : (
+        <ClassParticleSystemsContext.Provider value={classParticleSystems}>
         <GraphPinDefaultHostContext.Provider value={isEditorGraphHost({ parentClass, parentOf, assetType: indexed?.header.type })}>
           <GraphEditor
             renderNodeBody={renderNodeBody}
@@ -841,6 +855,7 @@ export function GraphPanel(
             }}
           />
         </GraphPinDefaultHostContext.Provider>
+        </ClassParticleSystemsContext.Provider>
       )}
       <NamePromptDialog
         open={renameEventId !== null}

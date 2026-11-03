@@ -15,6 +15,7 @@ Select an actor, then choose **Add Component > Particles > Particle**. You can a
 | Retrigger | What **Play** does while the effect is still on screen. **Overlap** (default) lets the earlier run finish while a new run starts, keeping up to three earlier runs; a looping system that is playing keeps playing. **Restart** cuts the effect and starts again. |
 | Sorting Layer | The layer the particles draw on. Default **Default**. |
 | Order In Layer | Order within the layer. Default 0. |
+| Parameters | One row per [parameter](../graphics/particles.md#parameters) of the Particle System, at the System's default. Edit a value to override it for this actor; clear its **Override** box to go back to the default. Shown only when the System has parameters. |
 
 ## Notes
 

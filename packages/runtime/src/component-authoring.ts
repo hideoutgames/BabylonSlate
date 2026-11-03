@@ -156,6 +156,7 @@ export function defaultComponentAuthoringProperties(
         retrigger: "overlap",
         sortingLayer: "Default",
         orderInLayer: 0,
+        parameterOverrides: {},
       };
     case "2DAnchorComponent":
       return { anchor: "center", offsetX: 0, offsetY: 0 };

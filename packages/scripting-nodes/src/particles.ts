@@ -52,7 +52,7 @@ function parameterGetter(kind: ParameterKind): NodeDefinition {
     title: `Get Particle ${kind} Parameter`,
     category: "particles",
     pure: true,
-    description: "Returns a particle parameter of the first particle component on the actor whose Particle System declares Name: the value set at runtime, else the default.",
+    description: "Returns a particle parameter of the first particle component on the actor whose Particle System declares Name: the value set at runtime, else the component's override, else the default.",
     searchAliases: ["particle parameter", `get ${kind.toLowerCase()} parameter`],
     pins: () => [
       selfActorPin("actor"),
@@ -190,7 +190,7 @@ export const particleNodes: NodeDefinition[] = [
     id: "particles.resetParameter",
     title: "Reset Particle Parameter",
     category: "particles",
-    description: "Drops the value Set Particle Parameter gave Name on the actor's particle components, back to the default.",
+    description: "Drops the value Set Particle Parameter gave Name on the actor's particle components, back to each component's override or the default.",
     searchAliases: ["particle parameter", "reset parameter"],
     pins: () => [
       pin("execIn", "exec", "in", EXEC),

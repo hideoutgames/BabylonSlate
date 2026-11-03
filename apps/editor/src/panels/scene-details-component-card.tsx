@@ -70,6 +70,8 @@ export interface SceneComponentDetail {
   nameParts: ReturnType<typeof prefabComponentLabelParts>;
   rows: PropertyRow[];
   colliderRows: PropertyRow[];
+  /** A Particle component's **Parameters** override rows; empty for other classes. */
+  parameterRows: PropertyRow[];
   showExtras: boolean;
   expanded: boolean;
 }
@@ -107,6 +109,7 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
     nameParts,
     rows,
     colliderRows,
+    parameterRows,
     showExtras,
     expanded,
     actor,
@@ -356,6 +359,13 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
                 />
               </Field>
             </div>
+          ) : null}
+          {parameterRows.length ? (
+            <PropertyGrid
+              title="Parameters"
+              rows={parameterRows}
+              data-testid={`particle-parameters-grid-${component.id}`}
+            />
           ) : null}
           {colliderRows.length ? (
             <PropertyGrid
