@@ -188,6 +188,8 @@ export interface RuntimeSceneContent {
   materialParameterCatalog?: MaterialParameterCatalog;
   /** Each Particle System's parameters (`buildParticleParameterCatalog`), for Get, Set and Reset Particle Parameter. */
   particleParameterCatalog?: import("@haptic/core").ParticleParameterCatalog;
+  /** Every Global Parameter Collection's parameters by collection guid; values set earlier in the session are kept. */
+  globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
   materialTextureAssetGuids?: string[];
   renderTargets?: Record<string, import("@haptic/core").RenderTargetPayload>;
   renderTargetTextures?: Record<string, import("@haptic/core").RenderTargetTexturePayload>;
@@ -276,6 +278,8 @@ export type ControlMessage =
       materialParameterCatalog?: MaterialParameterCatalog;
       /** Each Particle System's parameters (`buildParticleParameterCatalog`), for Get, Set and Reset Particle Parameter. */
       particleParameterCatalog?: import("@haptic/core").ParticleParameterCatalog;
+      /** Every Global Parameter Collection's parameters by collection guid; values start at their defaults. */
+      globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
       /** Loaded 2D Texture assets; environment containers are excluded. */
       materialTextureAssetGuids?: string[];
       renderTargets?: Record<string, import("@haptic/core").RenderTargetPayload>;

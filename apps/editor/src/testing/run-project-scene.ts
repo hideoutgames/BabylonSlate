@@ -92,6 +92,7 @@ export async function runProjectScene(options: {
       inputAssets: await playContent.collectPlayInputAssets(prepared.required, prepared.game.decodedPayloads),
       dataAssets: content.dataAssets,
       curveAssets: content.curveAssets,
+      globalParameterCatalog: content.globalParameterCatalog,
       timelineClipAssets: content.timelineClipAssets,
       assetCatalog: playAssetCatalog({ registry, settings: document.settings, sceneGuid }),
       collisionPresets: document.settings.physics.collisionPresets,

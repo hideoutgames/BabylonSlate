@@ -676,6 +676,7 @@ export function DocumentWorkspace() {
           doc.ref.kind === "float-curve" ||
           doc.ref.kind === "vector-curve" ||
           doc.ref.kind === "color-curve" ||
+          doc.ref.kind === "global-parameter-collection" ||
           doc.ref.kind === "timeline" ||
           doc.ref.kind === "timeline-clip-2d" ||
           doc.ref.kind === "timeline-clip-3d" ||

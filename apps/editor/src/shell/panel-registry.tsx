@@ -1,3 +1,4 @@
+import { GlobalParameterCollectionPanel } from "../components/global-parameter-collection-editor";
 import { CurveAssetDetailsPanel, CurveAssetEditorPanel } from "../components/curve-asset-editor";
 import { TimelineAssetClipsPanel, TimelineAssetEventsPanel } from "../components/timeline-asset-editor";
 import { TimelineClipInspectorPanel, TimelineClipProxiesPanel, TimelineClipTimelinePanel } from "../components/timeline-clip-asset-editor";
@@ -246,6 +247,7 @@ export const panelComponents = {
   ),
   "curve-asset-editor": (props: IDockviewPanelProps) => <CurveAssetEditorPanel {...props} />,
   "curve-asset-details": (props: IDockviewPanelProps) => <CurveAssetDetailsPanel {...props} />,
+  "global-parameter-collection": (props: IDockviewPanelProps) => <GlobalParameterCollectionPanel {...props} />,
   "timeline-asset-clips": (props: IDockviewPanelProps) => <TimelineAssetClipsPanel {...props} />,
   "timeline-asset-events": (props: IDockviewPanelProps) => <TimelineAssetEventsPanel {...props} />,
   "timeline-clip-proxies": (props: IDockviewPanelProps) => <TimelineClipProxiesPanel {...props} />,

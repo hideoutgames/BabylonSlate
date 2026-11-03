@@ -53,6 +53,7 @@ const JSON_TYPES = new Set<string>([
   "Skeleton",
   "SceneLayer", "AudioMixer", "AudioChannel", "SoundAttenuation", "Water",
   "DataDefinition", "DataTree", "Structure", "Enum", "SaveGame", "FloatCurve", "VectorCurve", "ColorCurve",
+  "GlobalParameterCollection",
 ]);
 
 function countWarning(count: number, warn: number): string {

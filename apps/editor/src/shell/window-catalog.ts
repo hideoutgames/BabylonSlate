@@ -14,6 +14,7 @@ export type DockviewDocumentKind =
   | "float-curve"
   | "vector-curve"
   | "color-curve"
+  | "global-parameter-collection"
   | "timeline"
   | "timeline-clip-2d"
   | "timeline-clip-3d"
@@ -63,6 +64,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "float-curve",
   "vector-curve",
   "color-curve",
+  "global-parameter-collection",
   "timeline",
   "timeline-clip-2d",
   "timeline-clip-3d",
@@ -138,6 +140,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "float-curve": "curve-asset-editor",
   "vector-curve": "curve-asset-editor",
   "color-curve": "curve-asset-editor",
+  "global-parameter-collection": "global-parameter-collection",
   timeline: "timeline-asset-clips",
   "timeline-clip-2d": "timeline-clip-viewport",
   "timeline-clip-3d": "timeline-clip-viewport",
@@ -1190,6 +1193,9 @@ export function listDockWindows(
   if (kind === "timeline") return withOptionalLocks(kind, [
     { id: "timeline-asset-clips", component: "timeline-asset-clips", title: "Timeline Clips" },
     { id: "timeline-asset-events", component: "timeline-asset-events", title: "Events", defaultPosition: { referencePanelId: "timeline-asset-clips", direction: "right", initialWidth: 300 } },
+  ], options);
+  if (kind === "global-parameter-collection") return withOptionalLocks(kind, [
+    { id: "global-parameter-collection", component: "global-parameter-collection", title: "Parameters" },
   ], options);
   if (kind === "float-curve" || kind === "vector-curve" || kind === "color-curve") return withOptionalLocks(kind, [
     { id: "curve-asset-editor", component: "curve-asset-editor", title: "Curve Editor" },

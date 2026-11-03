@@ -20,6 +20,7 @@ const KINDS = Object.keys({
   "float-curve": true,
   "vector-curve": true,
   "color-curve": true,
+  "global-parameter-collection": true,
   "script-interface": true,
   sprite: true,
   "sprite-animation": true,
