@@ -214,13 +214,16 @@ export function captureShadowDiagnostics(
         ),
         parentWorldMatrix: matrix(parentMatrix),
         requestedMapSize,
-        allocationDownsized: dimensions
-          ? dimensions.width < requestedMapSize
-          : null,
+        // The map size its tiles are sized from: a sun's first cascade tile may be larger, its render target with it.
+        allocationDownsized: generator ? generator.mapSize < requestedMapSize : null,
         generator: generator
           ? {
               type: generator.getClassName(),
               cameraId: text((generator.camera ?? camera)?.id),
+              mapSize: generator.mapSize,
+              // Per pass (cascade or cube face), the edge of the tile it draws into.
+              tiles: Array.from({ length: generator instanceof CascadedShadowGenerator ? generator.numCascades : map?.isCube ? 6 : 1 },
+                (_, layer) => shadowTileSize(generator, layer)),
               map: dimensions
                 ? {
                     id: map!.uniqueId,
