@@ -60,16 +60,20 @@ async function addParticleGraphNode(page: Page, search: string, type: string): P
   return node;
 }
 
-/** Wires the Float node's Value into Emitter Output's Emit Rate. */
+/** Taps one node's output handle, then another node's input handle (`data-id` selector values). */
+async function connectHandles(page: Page, source: string, sourcePin: string, target: string, targetPin: string): Promise<void> {
+  const graph = particleGraphEditor(page);
+  await graph.locator(`.react-flow__node[data-id${source}] [data-handleid="${sourcePin}"][data-handlepos="right"]`).click({ force: true });
+  await graph.locator(`.react-flow__node[data-id${target}] [data-handleid="${targetPin}"][data-handlepos="left"]`).click({ force: true });
+}
+
+/** Wires the Float node's Value through a Local Variable into Emitter Output's Emit Rate. */
 async function connectFloatToEmitRate(page: Page): Promise<void> {
   const graph = particleGraphEditor(page);
-  await graph
-    .locator('.react-flow__node[data-id^="const.float-"] [data-handleid="out"][data-handlepos="right"]')
-    .click({ force: true });
-  await graph
-    .locator('.react-flow__node[data-id="output"] [data-handleid="emitRate"][data-handlepos="left"]')
-    .click({ force: true });
+  await connectHandles(page, '^="const.float-"', "out", '^="utility.localVariable-"', "value");
+  await connectHandles(page, '^="utility.localVariable-"', "out", '="output"', "emitRate");
   await expect(graph.locator('.react-flow__edge[data-id*=":out:output:emitRate"]')).toHaveCount(1);
+  await expect(graph.locator('.react-flow__edge[data-id*=":utility.localVariable-"][data-id$=":value"]')).toHaveCount(1);
 }
 
 async function setNumberRow(details: Locator, rowId: string, value: string, unit = ""): Promise<void> {
@@ -262,6 +266,11 @@ test.describe("Particle Graph", () => {
     await expect(details.getByTestId("property-emitRate")).toBeVisible();
     await addParticleGraphNode(page, "Float", "const.float");
     await setNumberRow(details, "value", "40");
+    // A Local Variable in Loop scope keeps one value per frame between them.
+    await addParticleGraphNode(page, "Local Variable", "utility.localVariable");
+    await details.getByTestId("property-scope").click();
+    await page.getByRole("option", { name: "Loop", exact: true }).click();
+    await expect(details.getByTestId("property-scope")).toContainText("Loop");
     await connectFloatToEmitRate(page);
     await particleGraphEditor(page).locator('.react-flow__node[data-id="output"]').click();
     await expect(details.getByTestId("property-capacity")).toBeVisible();

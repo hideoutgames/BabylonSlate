@@ -23,6 +23,7 @@ import {
 import {
   PARTICLE_ANGLE_UNIT_OPTIONS,
   PARTICLE_CONDITION_TESTS,
+  PARTICLE_LOCAL_VARIABLE_SCOPES,
   PARTICLE_GRAPH_LIMITS,
   PARTICLE_OUTPUT_NODE_TYPE,
   PARTICLE_RANDOM_LOCKS,
@@ -246,6 +247,21 @@ function nodePropertyRows(
         },
       );
       break;
+    case "utility.localVariable": {
+      const scope = node.properties.scope === "loop" ? "loop" : "particle";
+      rows.push({
+        id: "scope",
+        kind: "enum",
+        label: "Scope",
+        value: scope,
+        description: scope === "loop"
+          ? "One value per frame, shared by every particle."
+          : "One value per particle, read the first time and kept for its whole life.",
+        options: PARTICLE_LOCAL_VARIABLE_SCOPES.map((option) => ({ value: option.id, label: option.label })),
+        onChange: (next) => setProperties({ scope: next }),
+      });
+      break;
+    }
     case "shape.sphere":
       rows.push({
         id: "hemisphere",

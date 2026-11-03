@@ -169,6 +169,8 @@ export function newParticleNodeProperties(type: string): Record<string, unknown>
       return { emitFromSpawnPointOnly: false, angleUnit: "radians" };
     case "update.alignAngle":
       return { alignment: Math.PI / 2 };
+    case "utility.localVariable":
+      return { scope: "particle" };
     default:
       return {};
   }
@@ -227,6 +229,9 @@ export function normalizeParticleNodeProperties(
       break;
     case "update.alignAngle":
       next.alignment = asFinite(next.alignment, Math.PI / 2);
+      break;
+    case "utility.localVariable":
+      next.scope = next.scope === "loop" ? "loop" : "particle";
       break;
   }
   return next;
