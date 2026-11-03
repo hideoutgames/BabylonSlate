@@ -754,7 +754,7 @@ export function ParticleEmitterEditor({
       label: "Material",
       value: render.materialGuid,
       placeholder: "No Material",
-      description: render.materialGuid
+      status: render.materialGuid
         ? undefined
         : "Pick a Material with the Particle domain.",
       onPick: () => setPicking(true),

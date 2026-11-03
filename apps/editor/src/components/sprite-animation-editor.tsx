@@ -714,9 +714,6 @@ export function SpriteAnimationDetails({
         { value: "frames", label: "Frames" },
         { value: "sheet", label: "Sheet" },
       ],
-      description: sheet
-        ? "Every frame is a cell of one Texture."
-        : "Each frame is a Texture or a Sprite.",
       onChange: (value) => setSource(value === "sheet" ? "sheet" : "frames"),
     },
     {
@@ -797,7 +794,7 @@ export function SpriteAnimationDetails({
           min: 1,
           ...(cellCount > 0 ? { max: cellCount } : {}),
           precision: 0,
-          description: cellCount > 0 ? undefined : "Set the sheet's Texture to see its cells.",
+          status: cellCount > 0 ? undefined : "Set the sheet's Texture to see its cells.",
           onChange: (value) => {
             const cell = Math.max(1, Math.round(value));
             patchFrame({ cell: cellCount > 0 ? Math.min(cellCount, cell) : cell }, "cell");
@@ -811,8 +808,7 @@ export function SpriteAnimationDetails({
           label: "Image",
           value: imageGuid,
           placeholder: "None",
-          description: "A Texture, or a Sprite with its pivot and collision.",
-          onPick: () => setPickerTarget("frame"),
+              onPick: () => setPickerTarget("frame"),
           onChange: (value) => applyImage(value),
           ...assetRowIdentity(
             imageAsset ? { name: imageAsset.name, type: spriteGuid ? "Sprite" : "Texture" } : undefined,

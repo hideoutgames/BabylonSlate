@@ -823,7 +823,7 @@ describe("componentPropertyRows", () => {
 
     const driven = extentsFor([sprite("sprite-1")]);
     expect(driven.disabled).toBe(true);
-    expect(driven.description).toMatch(/Sprite.*Collision/);
+    expect(driven.status).toMatch(/Sprite.*Collision/);
     for (const free of [extentsFor([]), extentsFor([sprite("")])]) {
       expect(free.disabled).toBeFalsy();
       expect(free.description).toBeUndefined();

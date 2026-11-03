@@ -24,7 +24,6 @@ import {
 } from "@haptic/core";
 import {
   PARTICLE_ANGLE_UNIT_OPTIONS,
-  PARTICLE_PARAMETER_NAME_MAX,
   PARTICLE_PARAMETER_NODE_TYPE,
   PARTICLE_CONDITION_TESTS,
   PARTICLE_LOCAL_VARIABLE_SCOPES,
@@ -218,7 +217,7 @@ function nodePropertyRows(
       kind: "enum",
       label: "Angle Unit",
       value: angleUnit,
-      description: "The unit of the Angle input. Switching converts its value.",
+      description: "Switching converts the Angle input's value.",
       options: PARTICLE_ANGLE_UNIT_OPTIONS.map((option) => ({
         value: option.id,
         label: option.label,
@@ -654,7 +653,6 @@ function particleParameterNodeRows(
       kind: "text",
       label: "Name",
       value: parameter.name,
-      description: `Gameplay sets it by this name. Unique in the graph, up to ${PARTICLE_PARAMETER_NAME_MAX} characters; a taken name gets _1, _2 and so on.`,
       onChange: () => undefined,
       onCommit: (text) => {
         const name = normalizeParticleParameterName(text);
@@ -860,7 +858,7 @@ function ParticleGraphSettingsDetails({
       label: "Material",
       value: materialGuid,
       placeholder: "No Material",
-      description: materialGuid ? undefined : "Pick a Material with the Particle domain.",
+      status: materialGuid ? undefined : "Pick a Material with the Particle domain.",
       onPick: () => setPicking(true),
       onChange: (guid) => onChange({ ...document, materialGuid: guid }),
       ...assetRowIdentity(
