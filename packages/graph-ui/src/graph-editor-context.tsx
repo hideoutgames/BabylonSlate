@@ -36,6 +36,8 @@ export type GraphEditorContextValue = {
   runTrace?: GraphRunTrace;
   /** The graph's breakpoints; each node reads its own through `useNodeBreakpoint`. */
   breakpoints?: GraphBreakpoints;
+  /** What a node does, shown as its title's tooltip; undefined shows none. */
+  describeNode?: (nodeType: string, data: Record<string, unknown>) => string | undefined;
   /**
    * Context menu of script-style nodes: Copy, Paste, Duplicate, Delete and
    * Break Links plus the host's items. `resolve` first applies the selection

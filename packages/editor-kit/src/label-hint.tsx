@@ -1,4 +1,4 @@
-import { cloneElement, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { cloneElement, useMemo, useRef, useState, type ReactElement, type ReactNode, type Ref } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import { cn } from "@haptic/ui/lib/utils";
 
@@ -23,28 +23,57 @@ function labelProps(trigger: Props, own: Props): Props {
   }
   merged.className = cn(rest.className as string | undefined, own.className as string | undefined);
   if (rest.style || own.style) merged.style = { ...(rest.style as object), ...(own.style as object) };
-  // The tooltip positions against the trigger, so its ref wins.
-  merged.ref = rest.ref;
   return merged;
 }
 
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
+  if (typeof ref === "function") ref(value);
+  else if (ref) (ref as { current: T | null }).current = value;
+}
+
 /**
- * A row label that explains itself in a tooltip instead of visible text under the row. Hover or
- * keyboard focus shows it; on touch a tap toggles it (long-press stays the row's context menu)
- * and does not focus or toggle the control. A dotted underline marks a label that has one.
+ * Where the tooltip points: the label's text, not its box. A settings or grid label can fill a
+ * whole column, and the tooltip would otherwise float over its middle.
+ */
+function textBounds(element: Element | null): DOMRect {
+  if (!element) return new DOMRect();
+  const range = element.ownerDocument.createRange();
+  range.selectNodeContents(element);
+  const text = typeof range.getBoundingClientRect === "function" ? range.getBoundingClientRect() : null;
+  return text && text.width > 0 ? text : element.getBoundingClientRect();
+}
+
+/**
+ * A label that explains itself in a tooltip instead of visible text: a row label, a graph node
+ * title or a pin name. Hover or keyboard focus shows it; on touch a tap toggles it (long-press
+ * stays the context menu) and does not focus or toggle the control. A dotted underline marks a
+ * label that has one. The tooltip points at the label's text.
  */
 export function LabelHint({
   hint,
   children,
   className,
+  underline = true,
+  delay,
 }: {
   hint: ReactNode;
-  /** The label element (`FieldLabel`, `Label`); it becomes the trigger. */
+  /** The label element (`FieldLabel`, `Label`, a title `span`); it becomes the trigger. */
   children: ReactElement;
   className?: string;
+  /** Off for a label whose tooltip is expected, such as a graph node title. */
+  underline?: boolean;
+  /** Hover delay in ms; a graph canvas waits so moving across nodes does not flash tooltips. */
+  delay?: number;
 }) {
   const [open, setOpen] = useState(false);
   const touch = useRef(false);
+  const element = useRef<Element | null>(null);
+  const anchor = useMemo(() => ({
+    getBoundingClientRect: () => textBounds(element.current),
+    get contextElement() {
+      return element.current ?? undefined;
+    },
+  }), []);
   return (
     <Tooltip
       open={open}
@@ -55,10 +84,21 @@ export function LabelHint({
       }}
     >
       <TooltipTrigger
-        render={(props) => cloneElement(children, labelProps(props as Props, children.props as Props))}
+        render={(props) => {
+          const merged = labelProps(props as Props, children.props as Props);
+          // Base UI positions and dismisses through the trigger's ref; the anchor reads the same element.
+          const triggerRef = (props as Props).ref as Ref<Element> | undefined;
+          merged.ref = (node: Element | null) => {
+            element.current = node;
+            assignRef(triggerRef, node);
+          };
+          return cloneElement(children, merged);
+        }}
         data-label-hint=""
+        {...(delay !== undefined ? { delay } : {})}
         className={cn(
-          "cursor-help underline decoration-muted-foreground/60 decoration-dotted underline-offset-[3px]",
+          "cursor-help",
+          underline && "underline decoration-muted-foreground/60 decoration-dotted underline-offset-[3px]",
           className,
         )}
         onPointerDown={(event) => {
@@ -70,7 +110,7 @@ export function LabelHint({
           setOpen((current) => !current);
         }}
       />
-      <TooltipContent className="max-w-64 whitespace-normal">{hint}</TooltipContent>
+      <TooltipContent anchor={anchor} className="max-w-64 whitespace-normal">{hint}</TooltipContent>
     </Tooltip>
   );
 }

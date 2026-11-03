@@ -116,6 +116,11 @@ const VALIDATION_DEBOUNCE_MS = 250;
  * The Class Event Graph (`graph` panel), or one function graph when DockView
  * passes `functionId` params (`function-graph` panels).
  */
+/** A Class graph node's catalog description, as its title's tooltip; shared types such as Call Function have none. */
+function describeClassGraphNode(nodeType: string): string | undefined {
+  return defaultNodeRegistry().get(nodeType)?.description;
+}
+
 export function GraphPanel(
   props: IDockviewPanelProps<Partial<FunctionGraphPanelParams>>,
 ) {
@@ -824,6 +829,7 @@ export function GraphPanel(
             runTrace={runTrace}
             overlay={steppingBar}
             breakpoints={breakpoints}
+            describeNode={describeClassGraphNode}
             commitPositionsOnDragEnd
             singleExecOutputOnConnect
             colorMode="dark"

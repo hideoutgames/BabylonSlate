@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
@@ -229,6 +229,17 @@ describe("ParticleGraphDetails", () => {
     expect(screen.queryByTestId("search-item-mat-surface")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-mat-particle"));
     expect(history.read().materialGuid).toBe("mat-particle");
+  });
+
+  it("explains the selected node in its heading's tooltip, not as text in the Inspector", () => {
+    renderDetails(createDefaultParticleGraphDocument("Embers"), "create");
+    const stage = screen.getByTestId("module-stage-node");
+    expect(stage.textContent).not.toContain("Starts the particle spine");
+    const heading = within(stage).getByText("Create Particle");
+    expect(heading.closest("[data-label-hint]")).toBeTruthy();
+    fireEvent.pointerDown(heading, { pointerType: "touch" });
+    fireEvent.click(heading);
+    expect(document.querySelector('[data-slot="tooltip-content"][data-open]')?.textContent).toContain("Starts the particle spine");
   });
 
   it("edits a node's unconnected inputs within the pin range, one undo entry per gesture", () => {
