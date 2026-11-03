@@ -42,6 +42,8 @@ export interface PlayContent {
   behaviourTrees: PlayBehaviourTreeEntry[];
   blackboards: PlayBlackboardEntry[];
   dataAssets: DataAssetCatalogEntry[];
+  /** The Global Parameter Collections in the Play closure, by guid. */
+  globalParameterCatalog: import("@haptic/core").GlobalParameterCatalog;
   assetCatalog: RuntimeAssetCatalogEntry[];
   spritePayloads: Map<string, SpritePayload>;
   spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
@@ -106,6 +108,7 @@ function emptyPlayContent(fontCssStack = "sans-serif"): PlayContent {
     behaviourTrees: [],
     blackboards: [],
     dataAssets: [],
+    globalParameterCatalog: {},
     assetCatalog: [],
     spritePayloads: new Map(),
     spriteAnimationPayloads: new Map(),
@@ -161,6 +164,7 @@ export function preparedPlayContent(
     scenes: [...game.scenes].map(([guid, scene]) => ({ guid, scene })),
     sceneLayers: [...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })),
     dataAssets: content.dataAssets,
+    globalParameterCatalog: content.globalParameterCatalog,
     assetCatalog: playAssetCatalog(catalog),
     animGraphs: content.animGraphs,
     behaviourTrees: content.behaviourTrees,
