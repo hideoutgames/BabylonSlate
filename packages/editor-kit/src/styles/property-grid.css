@@ -32,13 +32,13 @@
 
 /*
  * Details rows place a label beside its control once the panel has room.
- * Vectors, asset pickers, ranges, curves, gradients, RGBA colors, and described rows
- * keep the full width for their values and copy.
+ * Vectors, asset pickers, ranges, curves, gradients and RGBA colors keep the full
+ * width for their values.
  */
 @container property-grid (min-width: 16rem) {
   [data-slot="property-grid"]:not([data-hide-labels="true"]):not([data-density="compact"])
     > [data-slot="field-group"]
-    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-kind="collision-responses"], [data-described]) {
+    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-kind="collision-responses"]) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: start;
@@ -47,14 +47,14 @@
 
   [data-slot="property-grid"]:not([data-hide-labels="true"]):not([data-density="compact"])
     > [data-slot="field-group"]
-    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-kind="collision-responses"], [data-described])
+    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-kind="collision-responses"])
     > :first-child {
     min-height: var(--chrome-row, 28px);
   }
 
   [data-slot="property-grid"]:not([data-hide-labels="true"]):not([data-density="compact"])
     > [data-slot="field-group"]
-    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-kind="collision-responses"], [data-described])
+    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-kind="collision-responses"])
     [data-slot="field-label"] {
     overflow: visible;
     white-space: normal;

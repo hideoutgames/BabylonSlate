@@ -36,7 +36,7 @@ describe("material instance overrides", () => {
       { name: "Glow", inherited: { kind: "vec3", value: [0, 0.5, 1] } },
     ], { commit: (next) => commits.push(next), textureIdentity: () => ({}) as never, onPickTexture: () => undefined });
     const [tiling, glow] = rows as Array<Extract<(typeof rows)[number], { kind: "vector3" }>>;
-    expect([tiling!.kind, tiling!.axes, tiling!.value, tiling!.description]).toEqual(["vector3", ["X", "Y"], [3, 3, 0], "Overridden"]);
+    expect([tiling!.kind, tiling!.axes, tiling!.value, tiling!.status]).toEqual(["vector3", ["X", "Y"], [3, 3, 0], "Overridden"]);
     expect([glow!.axes, glow!.value]).toEqual([undefined, [0, 0.5, 1]]);
     glow!.onChange([1, 2, 3]);
     tiling!.onChange([1, 1, 0]);

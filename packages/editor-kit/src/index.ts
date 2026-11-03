@@ -181,6 +181,7 @@ export {
   formatEventTitle,
   humanizePropertyLabel,
 } from "./humanize-property-label";
+export { LabelHint } from "./label-hint";
 export {
   PropertyGrid,
   type Color4Value,

@@ -111,7 +111,7 @@ function colliderShapeRows(
       value: [shape.halfExtents.x, shape.halfExtents.y, 0],
       axes: ["X", "Y"],
       disabled: spriteSizesBox,
-      description: spriteSizesBox
+      status: spriteSizesBox
         ? "No effect while the actor's Sprite has an asset: the Sprite's Collision box sets the size."
         : undefined,
       onChange: (value) =>
@@ -200,7 +200,8 @@ export function ragdollPropertyRows(
       disabled: context.physicsWorld !== "3d",
       description: context.physicsWorld === "3d"
         ? "Requires a Model with a skeleton. Enabling captures its current animation pose for physics; disabling resumes animation."
-        : "Ragdoll requires a 3D physics scene.",
+        : undefined,
+      status: context.physicsWorld === "3d" ? undefined : "Ragdoll requires a 3D physics scene.",
       onChange: (value) => update("enabled", value),
     },
     number("totalMass", "Total Mass", 0.001, "Mass shared across the selected bones, in kilograms."),
