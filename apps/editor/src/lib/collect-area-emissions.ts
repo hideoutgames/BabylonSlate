@@ -1,5 +1,6 @@
 import { areaEmissionTextureGuids, materialParameterTextureGuidsFromGraph, type SerializedGraph, type SerializedScene } from "@haptic/core";
-import { currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionPixels, type IndexedAsset } from "@haptic/assets";
+import { currentAreaEmissionChunk, decodeAreaEmission, mapBounded, type AreaEmissionPixels, type IndexedAsset } from "@haptic/assets";
+import { COLLECTOR_READS } from "./play-content";
 
 /** Observe only referenced prepared content, not unrelated registry activity. */
 export function savedAreaEmissionKey(guids: readonly string[], lookup: (guid: string) => IndexedAsset | undefined): string {
@@ -22,18 +23,25 @@ export async function collectAreaEmissions(options: {
   const candidates = new Set([...required, ...(options.graphs ?? []).flatMap(materialParameterTextureGuidsFromGraph)]);
   const byGuid = new Map(options.assets.map((asset) => [asset.header.guid, asset]));
   const result = new Map<string, AreaEmissionPixels>();
-  for (const guid of candidates) {
+  const entries = [...candidates].map((guid) => {
     const asset = byGuid.get(guid);
-    const chunk = asset && currentAreaEmissionChunk(asset.header);
-    if (!chunk) {
-      if (required.has(guid)) options.onDiagnostic(`Texture ${asset?.header.name ?? guid} needs Prepare Emission before it can illuminate a rectangular light.`);
-      continue;
-    }
+    return { guid, asset, chunk: asset && currentAreaEmissionChunk(asset.header) };
+  });
+  const decoded = await mapBounded(entries, COLLECTOR_READS, async ({ asset, chunk }) => {
+    if (!asset || !chunk) return null;
     try {
-      const bytes = await options.readChunk(asset!.path, chunk.id);
+      const bytes = await options.readChunk(asset.path, chunk.id);
       if (!bytes) throw new Error("Prepared emission chunk is missing.");
-      result.set(guid, await decodeAreaEmission(bytes));
-    } catch (error) { options.onDiagnostic(`Area emission ${asset!.header.name}: ${String(error)}`); }
+      return { ok: true as const, pixels: await decodeAreaEmission(bytes) };
+    } catch (error) { return { ok: false as const, error }; }
+  });
+  // Reported in candidate order, as a serial pass reports them.
+  for (const [index, { guid, asset }] of entries.entries()) {
+    const outcome = decoded[index];
+    if (!outcome) {
+      if (required.has(guid)) options.onDiagnostic(`Texture ${asset?.header.name ?? guid} needs Prepare Emission before it can illuminate a rectangular light.`);
+    } else if (outcome.ok) result.set(guid, outcome.pixels);
+    else options.onDiagnostic(`Area emission ${asset!.header.name}: ${String(outcome.error)}`);
   }
   return result;
 }

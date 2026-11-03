@@ -249,6 +249,8 @@ export interface RuntimeDriver {
   notifySceneLoadingPainted(sceneAssetGuid: string, sceneLoadId: number): void;
   notifySceneLayerReady(layerId: string, layerLoadId: number): void;
   notifySceneLayerLoadingPainted(layerId: string, layerLoadId: number): void;
+  /** Start downloading and compiling the native engines `loadPhysics` will install. */
+  preloadPhysics(): void;
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;

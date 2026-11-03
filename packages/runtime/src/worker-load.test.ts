@@ -22,7 +22,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("waits for the matching host paint before loading the authored world without unplaced script actors", async () => {
+it("loads the first authored world without waiting for a host loading paint and without unplaced script actors", async () => {
   const host = {
     onmessage: undefined as
       ((event: { data: BridgeHostMessage }) => void) | undefined,
@@ -79,14 +79,10 @@ it("waits for the matching host paint before loading the authored world without 
     ],
   });
   send({ type: "play" });
-  await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneLoading")).toBe(true));
-  expect(commands.some((command) => command.type === "activeScene")).toBe(false);
-  send({ type: "sceneLoadingPainted", sceneAssetGuid: "empty", sceneLoadId: 99 });
-  await Promise.resolve();
-  expect(commands.some((command) => command.type === "activeScene")).toBe(false);
-  send({ type: "sceneLoadingPainted", sceneAssetGuid: "empty", sceneLoadId: 1 });
+  // Nothing is shown before the first Scene, so there is no loading paint to wait for.
   await booted;
-  expect(commands.some((command) => command.type === "activeScene")).toBe(true);
+  expect(commands.some((command) => command.type === "sceneLoading")).toBe(false);
+  expect(commands).toContainEqual({ type: "activeScene", sceneAssetGuid: "empty", sceneLoadId: 1 });
   runtime.tick();
   expect(runtime.getWorld().getActors()).toHaveLength(0);
 });

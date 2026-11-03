@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDocumentRef, createEmptyProject, documentId, SCENE_SCHEMA_VERSION } from "@haptic/core";
+import { createActor, createDocumentRef, createEmptyProject, documentId, SCENE_SCHEMA_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createInProcessRuntime } from "@haptic/runtime";
 import type { CommandMessage, ScriptBundleEntry } from "@haptic/bridge";
@@ -325,6 +325,46 @@ describe("Play source ownership", () => {
     const cold = await acquirePlayAssetSources(host, ["scene-a"], { consumer: "Cold again", signal: new AbortController().signal });
     expect(compile).toHaveBeenCalledTimes(2);
     cold.release(); loading.dispose();
+  });
+
+  it("keeps compiled scripts across header changes outside the compile catalog and Scene edits that leave its script alone", async () => {
+    const fixture = await sceneSaveDuringCompilationFixture();
+    const writeTexture = async (quality: number) => {
+      await fixture.storage.writeBinary("assets/texture.hasset", await encodeHasset({ header: {
+        guid: "texture", name: "Texture", type: "Texture", version: currentFormat("Texture"), engineVersion: "0.0.0", mode: "thin",
+        payload: { width: 4, height: 4, compressionQuality: quality }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1,
+      }, chunks: [] }));
+      await fixture.registry.reindexPath("assets/texture.hasset");
+    };
+    await writeTexture(1);
+    const options = { consumer: "Play Scene", signal: new AbortController().signal };
+    const first = await acquirePlayAssetSources(fixture.host, ["scene"], options);
+    expect(fixture.host.compile).toHaveBeenCalledTimes(1);
+    const generation = fixture.registry.generation;
+    // A background encode commits to an unrelated Texture, and the open Scene gains an actor.
+    await writeTexture(2);
+    expect(fixture.registry.generation).not.toBe(generation);
+    const ref = createDocumentRef("scene", "assets/scene.hasset");
+    const edited: OpenDocument = { id: documentId(ref), ref, content: { name: "Original", actors: [createActor("added", "Added", { classId: "script" })] }, dirty: true, layout: null };
+    const second = await acquirePlayAssetSources({ ...fixture.host, documentOverrides: playDocumentOverrides(fixture.registry, [edited]) }, ["scene"], options);
+    expect(second.game.scenes.get("scene")?.actors.map((actor) => actor.id)).toEqual(["added"]);
+    expect(fixture.host.compile).toHaveBeenCalledTimes(1);
+    // A SceneScript is compile input.
+    const scripted: OpenDocument = { ...edited, content: { ...(edited.content as object), script: { nodes: [], edges: [] } } };
+    const third = await acquirePlayAssetSources({ ...fixture.host, documentOverrides: playDocumentOverrides(fixture.registry, [scripted]) }, ["scene"], options);
+    expect(fixture.host.compile).toHaveBeenCalledTimes(2);
+    first.release(); second.release(); third.release();
+    fixture.loading.dispose();
+  });
+
+  it("hands the compile the closure's stored documents, so it does not read its closed Classes again", async () => {
+    const fixture = await sceneSaveDuringCompilationFixture();
+    const prepared = await acquirePlayAssetSources(fixture.host, ["scene"], { consumer: "Play Scene", signal: new AbortController().signal });
+    const [, stored] = fixture.host.compile.mock.calls[0] as unknown as [ReadonlySet<string>, ReadonlyMap<string, { type: string; payload: unknown }>];
+    expect(stored.get("script")).toMatchObject({ type: "Class", version: 1, payload: { nodes: [], edges: [] } });
+    expect(stored.get("scene")).toMatchObject({ type: "Scene", payload: { name: "Original", actors: [] } });
+    prepared.release();
+    fixture.loading.dispose();
   });
 
   it("keeps a Simulation's instrumented scripts and Play's scripts apart in the shared compile cache", async () => {

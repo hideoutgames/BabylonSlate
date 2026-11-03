@@ -28,11 +28,53 @@ function describeWorkerError(event: ErrorEvent): string {
   return `The Play worker failed to start: ${event.message || "its module could not be loaded"}${where}`;
 }
 
+/** The next session's worker, started during Play preparation. */
+let prewarmed: { host: GameWorkerHost; failed: boolean; physics: Set<string> } | null = null;
+
 /**
- * Spawn the game worker via Vite-resolved module URL. Falls back by throwing
- * so the caller can use createInProcessRuntime.
+ * Start the next session's game worker while Play prepares its content, so the
+ * worker module loads and evaluates meanwhile and {@link preloadPrewarmedGameWorkerPhysics}
+ * can compile its physics engine. The next {@link createGameWorkerHost} takes it;
+ * if `signal` ends first (the session was cancelled or failed), it is terminated.
+ */
+export function prewarmGameWorker(signal: AbortSignal): void {
+  if (prewarmed || signal.aborted) return;
+  let host: GameWorkerHost;
+  // A host without module workers falls back in-process when the session starts.
+  try { host = spawnGameWorkerHost(); } catch { return; }
+  const entry = { host, failed: false, physics: new Set<string>() };
+  host.onFailure(() => { entry.failed = true; });
+  prewarmed = entry;
+  signal.addEventListener("abort", () => {
+    if (prewarmed !== entry) return;
+    prewarmed = null;
+    host.terminate();
+  }, { once: true });
+}
+
+/** Have the prewarmed worker, if any, load the physics engine a `physicsWorld` Scene runs on. */
+export function preloadPrewarmedGameWorkerPhysics(physicsWorld: "3d" | "2d", havokWasmUrl: string): void {
+  const entry = prewarmed;
+  if (!entry || entry.failed || entry.physics.has(physicsWorld)) return;
+  entry.physics.add(physicsWorld);
+  entry.host.postControl({ type: "preloadPhysics", physicsWorld, havokWasmUrl });
+}
+
+/**
+ * The session's game worker: the prewarmed one when it is still healthy,
+ * otherwise a new one. Falls back by throwing so the caller can use
+ * createInProcessRuntime.
  */
 export function createGameWorkerHost(): GameWorkerHost {
+  const entry = prewarmed;
+  prewarmed = null;
+  if (entry && !entry.failed) return entry.host;
+  entry?.host.terminate();
+  return spawnGameWorkerHost();
+}
+
+/** Spawn the game worker via Vite-resolved module URL. */
+function spawnGameWorkerHost(): GameWorkerHost {
   const worker = new Worker(
     new URL(
       "../../../../packages/runtime/src/worker-entry.ts",

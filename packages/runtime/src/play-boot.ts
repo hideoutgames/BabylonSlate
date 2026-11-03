@@ -17,6 +17,8 @@ export type PlayBootRuntime = {
   stop?(): void;
   getWorld(): { getActors(): readonly { classId: string }[] };
   spawnScriptedActor(options: PlaySpawnEntry): unknown;
+  /** Start loading the native physics engines so they overlap scripts, navigation and realization. */
+  preloadPhysics?(): void;
   loadPhysics(): Promise<void>;
   /** `bytes` omitted: import the Play scene mesh `load` already catalogued. */
   loadNavMesh?(bytes?: Uint8Array): Promise<void>;
@@ -27,7 +29,9 @@ export type PlayBootRuntime = {
 
 /**
  * Serialize Play startup so compiled scripts load before scene actors spawn.
- * Worker `loadScripts` is async; `play` must not realize the world first.
+ * Worker `loadScripts` is async; `play` must not realize the world first. The
+ * native physics engines start loading when `play` begins and are installed
+ * last; the realized Scene is announced before they are, and completes after.
  */
 export function createPlayBootCoordinator() {
   let scriptsReady: Promise<void> = Promise.resolve();
@@ -75,6 +79,7 @@ export function createPlayBootCoordinator() {
       playing = (async () => {
         let startedEarly = false;
         try {
+          runtime.preloadPhysics?.();
           await waitForSceneWork(scripts, signal);
           await waitForSceneWork(nav, signal);
           signal.throwIfAborted();

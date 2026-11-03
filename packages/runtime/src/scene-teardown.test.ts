@@ -104,14 +104,18 @@ describe("runtime departing Scene loading", () => {
   it("Stop cancels a held paint without allowing a late host acknowledgment to restart realization", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true, onCommand: (command) => commands.push(command) });
+    // The first Scene departs from nothing and realizes without a paint.
+    await runtime.realizePlayWorld();
+    expect(commands.some((command) => command.type === "sceneLoading")).toBe(false);
+    runtime.executeConsoleCommand("changescene world");
     const loading = Promise.resolve(runtime.realizePlayWorld());
     const rejected = expect(loading).rejects.toMatchObject({ name: "AbortError" });
-    await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneLoading")).toBe(true));
+    await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneLoading" && command.sceneLoadId === 2)).toBe(true));
     runtime.stop();
     await rejected;
-    runtime.notifySceneLoadingPainted("world", 1);
+    runtime.notifySceneLoadingPainted("world", 2);
     await Promise.resolve();
-    expect(commands.some((command) => command.type === "activeScene" || command.type === "sceneRealized")).toBe(false);
+    expect(commands.some((command) => (command.type === "activeScene" || command.type === "sceneRealized") && command.sceneLoadId === 2)).toBe(false);
     expect(runtime.getWorld().getActors()).toHaveLength(0);
   });
 
@@ -139,17 +143,19 @@ describe("runtime departing Scene loading", () => {
   });
 
   it("fails a missing host paint at the deadline without reporting the Scene ready", async () => {
-    vi.useFakeTimers();
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true, onCommand: (command) => commands.push(command) });
     try {
+      await runtime.realizePlayWorld();
+      vi.useFakeTimers();
+      runtime.executeConsoleCommand("changescene world");
       const loading = Promise.resolve(runtime.realizePlayWorld());
       const rejected = expect(loading).rejects.toThrow("loading deadline");
       await vi.advanceTimersByTimeAsync(30_000);
       await rejected;
-      expect(commands.some((command) => command.type === "sceneLoadFailed" && command.sceneLoadId === 1)).toBe(true);
-      expect(commands.some((command) => command.type === "activeScene" || command.type === "sceneRealized")).toBe(false);
-      runtime.notifySceneLoadingPainted("world", 1);
+      expect(commands.some((command) => command.type === "sceneLoadFailed" && command.sceneLoadId === 2)).toBe(true);
+      expect(commands.some((command) => (command.type === "activeScene" || command.type === "sceneRealized") && command.sceneLoadId === 2)).toBe(false);
+      runtime.notifySceneLoadingPainted("world", 2);
       await expect(runtime.realizePlayWorld()).rejects.toThrow("loading deadline");
     } finally { runtime.stop(); vi.useRealTimers(); }
   });

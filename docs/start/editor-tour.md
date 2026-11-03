@@ -45,6 +45,14 @@ Other asset editors have their own windows, such as **Preview** and **Inspector*
 
 Number fields show their unit after the value, such as **45°**, **120 ms** or **50%**. You can type the unit or leave it out. Drag a field's handle to change the value, or type a sum such as `90+45`.
 
+Right-click or hold a property, or its name, in any **Inspector** for **Copy** and **Paste**. **Copy** keeps the value for the rest of the session and also puts it on the clipboard as text. **Paste** is available only where the copied value fits:
+
+- The same kind of property: a number, a vector with the same axes, a color, an on/off value, text, or an option the list has.
+- A number and a slider take each other's value, kept within the property's range. A color and a color with alpha take each other's color; the alpha stays.
+- An asset of a type the property takes. An empty asset property knows its types in component and node settings; elsewhere it takes only an asset of the type it already holds.
+
+**Copy** is unavailable when a multi-selection's values differ, and **Paste** in read-only Inspectors such as Play's. While you are typing in a text field, right-click shows the usual text menu instead.
+
 ## Windows and Focus
 
 - **Windows** lists the windows the active document can show. Tick or untick one to show or hide it.

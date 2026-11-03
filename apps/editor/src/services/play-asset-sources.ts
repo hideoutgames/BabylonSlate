@@ -1,7 +1,11 @@
-import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, nearestTextureFiltering, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@haptic/core";
+import {
+  SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, nearestTextureFiltering, normalizeScene, normalizeSceneLayer,
+  parseText2DProperties, readTimelineClipSummaries, renderEffectsAssetGuids, timelineClipSummaries,
+  type CollisionTriangleMesh, type ProjectDocument, type SerializedScene,
+} from "@haptic/core";
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
-  compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, mapBounded,
+  compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID, mapBounded,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
@@ -12,6 +16,7 @@ import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import type { Diagnostic } from "@haptic/scripting";
 import { assetHeaderDependencyMetadata, classIdFromClassAsset } from "../lib/content-browser-helpers";
+import { ownedActorsOfScene, ownedTimelineClipsOfScene } from "../lib/owned-actor-gets";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import type { OpenDocument } from "./document-service";
 
@@ -24,36 +29,47 @@ export interface PlayDocumentOverride {
 const documentIdentities = new WeakMap<object, number>();
 let nextDocumentIdentity = 0;
 
-/** Existing immutable working documents only: this never reads closed asset payloads. */
+/**
+ * Existing immutable working documents only: this never reads closed asset payloads. Each override's
+ * payload and dependency metadata are derived when a preparation first reads them, so only the open
+ * documents a closure reaches pay for it; the schema catalog they resolve against is built once.
+ */
 export function playDocumentOverrides(registry: AssetRegistry, documents: readonly OpenDocument[]): ReadonlyMap<string, PlayDocumentOverride> {
   const assets = registry.list();
   const byPath = new Map(assets.map(asset => [asset.path, asset]));
   const overrides = new Map<string, PlayDocumentOverride>();
+  let schemas: IndexedAsset[] | undefined;
+  // Schema metadata follows open Class/Structure documents as well as scene values.
+  const schemaCatalog = (): IndexedAsset[] => {
+    if (schemas) return schemas;
+    const catalog = assets.map(asset => {
+      const override = overrides.get(asset.header.guid);
+      return override ? { ...asset, header: { ...asset.header, payload: override.payload } } : asset;
+    });
+    for (const asset of catalog) {
+      const override = overrides.get(asset.header.guid);
+      if (override && asset.header.type === "Class") {
+        asset.header.requiredVariableNames = assetHeaderDependencyMetadata(asset.header.type, override.payload, catalog, asset.header.parentClass).requiredVariableNames;
+      }
+    }
+    return schemas = catalog;
+  };
   for (const document of documents) {
     const asset = byPath.get(document.ref.path);
-    if (!asset || !document.content || document.ref.kind === "trace") continue;
-    let identity = documentIdentities.get(document.content);
-    if (identity === undefined) { identity = ++nextDocumentIdentity; documentIdentities.set(document.content, identity); }
+    const content = document.content;
+    if (!asset || !content || document.ref.kind === "trace") continue;
+    let identity = documentIdentities.get(content);
+    if (identity === undefined) { identity = ++nextDocumentIdentity; documentIdentities.set(content, identity); }
+    const { kind } = document.ref;
+    const { type, parentClass } = asset.header;
+    let payload: Record<string, unknown> | undefined;
+    let requiredDependencies: readonly string[] | undefined;
     overrides.set(asset.header.guid, {
-      payload: persistableDocumentContent(document.ref.kind, document.content) as Record<string, unknown>,
-      cacheKey: `working-document:${identity}`, requiredDependencies: [],
-    });
-  }
-  // Schema metadata follows open Class/Structure documents as well as scene values.
-  const schemas = assets.map(asset => {
-    const override = overrides.get(asset.header.guid);
-    return override ? { ...asset, header: { ...asset.header, payload: override.payload } } : asset;
-  });
-  for (const asset of schemas) {
-    const override = overrides.get(asset.header.guid);
-    if (override && asset.header.type === "Class") {
-      asset.header.requiredVariableNames = assetHeaderDependencyMetadata(asset.header.type, override.payload, schemas, asset.header.parentClass).requiredVariableNames;
-    }
-  }
-  for (const asset of schemas) {
-    const override = overrides.get(asset.header.guid);
-    if (override) overrides.set(asset.header.guid, { ...override,
-      requiredDependencies: assetHeaderDependencyMetadata(asset.header.type, override.payload, schemas, asset.header.parentClass).requiredDependencies,
+      get payload() { return payload ??= persistableDocumentContent(kind, content) as Record<string, unknown>; },
+      cacheKey: `working-document:${identity}`,
+      get requiredDependencies() {
+        return requiredDependencies ??= assetHeaderDependencyMetadata(type, this.payload, schemaCatalog(), parentClass).requiredDependencies;
+      },
     });
   }
   return overrides;
@@ -71,8 +87,13 @@ export interface PlayAssetSourceHost {
    * that compiles without them is never handed scripts that have them, nor the other way round.
    */
   traceExecution?: boolean;
-  compile: (required: ReadonlySet<string>) => Promise<{ bundles: ScriptBundleEntry[]; diagnostics: readonly Diagnostic[] }>;
+  /** `stored`: the closure's stored documents preparation has read, by guid, for the compile to reuse. */
+  compile: (required: ReadonlySet<string>, stored: ReadonlyMap<string, StoredPlayDocument>) =>
+    Promise<{ bundles: ScriptBundleEntry[]; diagnostics: readonly Diagnostic[] }>;
 }
+
+/** A document as storage holds it: its asset type, schema version and payload. */
+export type StoredPlayDocument = { type: string; version: number; payload: Record<string, unknown> };
 
 const assetFormats = createDefaultMigrationRegistry();
 
@@ -81,9 +102,12 @@ const assetFormats = createDefaultMigrationRegistry();
  * Play reads stored payloads without migrating them, so every required asset
  * not open as a working document must be at its type's current version.
  */
-async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: readonly string[], signal: AbortSignal): Promise<Map<string, string>> {
+async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: readonly string[], signal: AbortSignal,
+  known?: ReadonlyMap<string, string>): Promise<Map<string, string>> {
   const { registry } = host;
   const revisions = new Map<string, string>();
+  // Assets this preparation already resolved, with their dependencies, are not read again.
+  const resolved = (guid: string) => revisions.has(guid) || known?.has(guid) === true;
   const pending = [...roots];
   signal.throwIfAborted();
   // Each asset's catalog read starts as soon as a referrer names it, so the storage
@@ -113,14 +137,14 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
   };
   const prefetch = (guids: readonly string[]) => {
     // The stack pops from the end, so the last name is read first.
-    for (let index = guids.length - 1; index >= 0; index--) if (!revisions.has(guids[index]!)) startRead(guids[index]!);
+    for (let index = guids.length - 1; index >= 0; index--) if (!resolved(guids[index]!)) startRead(guids[index]!);
   };
   try {
     prefetch(pending);
     while (pending.length) {
       signal.throwIfAborted();
       const guid = pending.pop()!;
-      if (revisions.has(guid)) continue;
+      if (resolved(guid)) continue;
       const locator = await startRead(guid);
       signal.throwIfAborted();
       const asset = registry.getByGuid(guid);
@@ -142,6 +166,16 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
 const CATALOG_READS = 8;
 /** Assets whose documents or chunks are requested at once: the one being processed plus the five after it. */
 const READ_AHEAD = 6;
+
+/**
+ * A closure document's encoded size for cache accounting, without serializing a stored one: its stored
+ * document chunk, or the header that carries its payload inline. A working document is measured as JSON.
+ */
+function documentByteEstimate(host: PlayAssetSourceHost, guid: string, payload: Record<string, unknown>): number {
+  const asset = host.documentOverrides?.has(guid) ? undefined : host.registry.getByGuid(guid);
+  const stored = asset?.header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID)?.byteLength ?? asset?.locator?.payloadOffset;
+  return stored ?? JSON.stringify(payload).length;
+}
 
 function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -296,7 +330,7 @@ async function acquirePlayAssetSourcesAttempt(
       const modes = fontModes.get(guid) ?? new Set<string>();
       for (const chunk of chunks) modes.add(chunk);
       fontModes.set(guid, modes);
-      for (const [dependency, revision] of await currentRequiredPlayAssets(host, [guid], options.signal)) {
+      for (const [dependency, revision] of await currentRequiredPlayAssets(host, [guid], options.signal, catalogRevisions)) {
         const previous = catalogRevisions.get(dependency);
         if (previous && previous !== revision) throw new SourceRevisionChangedError(`Asset ${dependency} changed while resolving font dependencies; retry`);
         catalogRevisions.set(dependency, revision);
@@ -406,7 +440,7 @@ async function acquirePlayAssetSourcesAttempt(
       const chunks = await readChunks(order, index);
       const value = { ...preparedDocument, chunks };
       sourceBytes += [...value.chunks.values()].reduce((total, bytes) => total + bytes.byteLength, 0);
-      documentBytes += new TextEncoder().encode(JSON.stringify(document.payload)).byteLength;
+      documentBytes += documentByteEstimate(host, guid, document.payload);
       revisions.push([guid, preparedDocument.revision]);
       const { type, payload } = document;
       (game.decodedPayloads as Map<string, unknown>).set(guid, payload);
@@ -461,25 +495,37 @@ async function acquirePlayAssetSourcesAttempt(
       .sort(([a], [b]) => a.localeCompare(b));
     // A Scene's SceneScript and a Scene Layer's SceneLayerScript compile too; their
     // scripts, not the whole Scene revisions, key the compile.
+    // The script with what its Get <Actor>, Get <Component> and Get <Timeline Clip> nodes are checked against.
     const embeddedScripts = revisions
       .filter(([guid]) => EMBEDDED_SCRIPT_OWNER_TYPES.has(host.registry.getByGuid(guid)!.header.type))
       .flatMap(([guid]) => {
-        const script = (documents.get(guid)!.document.payload as { script?: unknown }).script;
-        return script ? [[guid, script] as const] : [];
+        const payload = documents.get(guid)!.document.payload as EmbeddedScriptOwner;
+        const scene = payload as Partial<Pick<SerializedScene, "actors" | "timelineClips">>;
+        return payload.script ? [[guid, payload.script, ownedActorsOfScene({ actors: Array.isArray(scene.actors) ? scene.actors : [] }),
+          ownedTimelineClipsOfScene(guid, { timelineClips: Array.isArray(scene.timelineClips) ? scene.timelineClips : [] })] as const] : [];
       })
       .sort(([a], [b]) => a.localeCompare(b));
     const compileRoot = compileInputs.find(([guid]) => SCRIPT_ASSET_TYPES.has(host.registry.getByGuid(guid)!.header.type))?.[0] ??
       embeddedScripts[0]?.[0] ?? root;
-    const compileInputBytes = compileInputs.reduce((total, [guid]) => total + JSON.stringify(documents.get(guid)!.document.payload).length * 2, 0);
-    const workingInputs = [...(host.documentOverrides ?? [])].map(([guid, value]) => [guid, value.cacheKey]).sort(([a], [b]) => a.localeCompare(b));
+    const compileInputBytes = compileInputs.reduce((total, [guid]) => total + documentByteEstimate(host, guid, documents.get(guid)!.document.payload) * 2, 0);
+    // Working documents of the closure: their identity, since their payload replaces the stored revision.
+    const workingInputs = [...required].flatMap((guid) => {
+      const override = host.documentOverrides?.get(guid);
+      return override ? [[guid, override.cacheKey]] : [];
+    }).sort(([a], [b]) => a.localeCompare(b));
+    // What the compile reads: the closure's compile inputs and embedded scripts, and the project-wide catalog
+    // (which carries the working documents among its assets). Scene edits outside scripts keep the entry.
     const compiled = compileRoot ? await scope.acquire(compileRoot, {
-      key: `play-scripts:v1:${JSON.stringify([compileInputs, embeddedScripts, host.registry.generation,
-        workingInputs, project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount,
+      key: `play-scripts:v2:${JSON.stringify([compileInputs, embeddedScripts, playCompileCatalog(host),
+        project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount,
         host.traceExecution === true])}`,
       estimate: { sourceBytes: 0, decodedBytes: Math.max(4096, compileInputBytes * 8), temporaryBytes: Math.max(4096, compileInputBytes * 4) },
       load: async (_asset, signal) => {
         signal.throwIfAborted();
-        const result = await host.compile(required);
+        // The stored documents read above: the compile does not read its closed Classes and Scenes again.
+        const stored = new Map([...documents].filter(([guid]) => !host.documentOverrides?.has(guid))
+          .map(([guid, value]) => [guid, { type: value.document.type, version: value.document.version, payload: value.document.payload }]));
+        const result = await host.compile(required, stored);
         signal.throwIfAborted();
         // Prepared content validates every input against storage before publication.
         for (const [guid, revision] of compileInputs) {
@@ -595,6 +641,34 @@ const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph"]);
 /** Assets that may embed a script (SceneScript, SceneLayerScript). */
 const EMBEDDED_SCRIPT_OWNER_TYPES = new Set(["Scene", "SceneLayer"]);
 const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "InputAxis", "DataDefinition", "DataTree", "Enum", "Structure", "ScriptInterface"]);
+/**
+ * Assets the Play compile reads project-wide, beyond its closure: class lineage and palette, the typed
+ * catalogs, Material domains, and the Timelines with their clip assets.
+ */
+const COMPILE_CATALOG_TYPES = new Set([...COMPILE_INPUT_TYPES, "Material", "MaterialInstance", "Timeline", "TimelineClip2D", "TimelineClip3D"]);
+
+type EmbeddedScriptOwner = { script?: unknown; actors?: unknown; timelineClips?: unknown };
+
+/**
+ * What the Play compile reads across the project: each catalog asset's identity and current revision
+ * (or its working document), and each Scene's and Scene Layer's identity and Timeline Clips. Other
+ * header changes (texture encodes, imports) and Scene edits that leave the clips alone keep compiled
+ * scripts cached; the closure's own documents are keyed separately.
+ */
+function playCompileCatalog(host: PlayAssetSourceHost): unknown[] {
+  return host.registry.list().flatMap((asset): unknown[] => {
+    const { guid, type, name } = asset.header;
+    const override = host.documentOverrides?.get(guid);
+    if (EMBEDDED_SCRIPT_OWNER_TYPES.has(type)) {
+      const clips = override ? timelineClipSummaries((override.payload as EmbeddedScriptOwner).timelineClips as SerializedScene["timelineClips"])
+        : readTimelineClipSummaries(asset.header.payload);
+      return [[guid, asset.path, type, name, clips]];
+    }
+    if (!COMPILE_CATALOG_TYPES.has(type)) return [];
+    const revision = override?.cacheKey ?? asset.locator?.revision ?? JSON.stringify(asset.header.payload ?? null);
+    return [[guid, asset.path, type, name, asset.header.parentClass ?? null, revision]];
+  });
+}
 
 /** Drop cache-owned containers without mutating authored payload objects. */
 function releasePackedContent(content: PackedGameContent): void {

@@ -1265,6 +1265,18 @@ export class ProjectService {
   }
 
   /**
+   * What `loadDocument` returns for a stored document the caller has already
+   * read (Play preparation's closure), without reading it again.
+   */
+  documentContentFromStored(
+    kind: Exclude<DocumentKind, "content-browser" | "trace">,
+    path: string,
+    stored: { type: string; version: number; payload: Record<string, unknown> },
+  ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
+    return this.documentContent(kind, path, stored);
+  }
+
+  /**
    * The stored payload `loadDocument` starts from. It records no migration
    * bookkeeping, so a caller may read several documents ahead and apply
    * `documentContent` to each in its own order.
@@ -1659,32 +1671,41 @@ export class ProjectService {
     options: { scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority },
   ): Promise<Uint8Array | null> {
     const storage = this.storageForPath(path);
-    if (!(await storage.exists(path))) return null;
     const indexed = this.assetRegistry?.getByPath(path);
     if (indexed && this.assetRegistry) {
       if (!indexed.header.chunks.some((chunk) => chunk.id === chunkId)) return null;
       const registry = this.assetRegistry;
-      const locator = await registry.getAssetLocator(indexed.header.guid, { signal: options.signal });
-      const sourceBytes = await registry.getChunkByteLength(indexed.header.guid, chunkId, locator.revision, { signal: options.signal });
+      const guid = indexed.header.guid;
+      // The loader resolves the catalog snapshot (the read's one catalog read) before it loads, and the chunk read
+      // checks storage against it afterwards. The reservation is sized from the indexed snapshot: a load that
+      // resolves another revision retries with a fresh size, so a growing payload is never read unreserved.
+      const estimated = indexed.locator ?? await registry.getAssetLocator(guid, { signal: options.signal });
+      const sourceBytes = await registry.chunkByteLength(guid, chunkId, estimated, estimated.revision);
       const scope = options.scope ?? this.createAssetLoadScope(`Chunk Read: ${path}#${chunkId}`);
       try {
-        return await scope.acquireLatest(`chunk:${indexed.header.guid}:${chunkId}`, indexed.header.guid, {
+        return await scope.acquireLatest(`chunk:${guid}:${chunkId}`, guid, {
           key: `chunk:${chunkId}`,
           estimate: { sourceBytes, decodedBytes: 0, temporaryBytes: sourceBytes },
           load: async (asset, signal) => {
             signal.throwIfAborted();
-            if (asset.revision !== locator.revision || asset.rootId !== indexed.rootId) {
-              throw new SourceRevisionChangedError(`Asset ${indexed.header.guid} changed after estimating chunk ${chunkId}`);
+            const locator = registry.getByGuid(guid)?.locator;
+            if (!locator || asset.revision !== estimated.revision || locator.revision !== asset.revision || asset.rootId !== indexed.rootId) {
+              throw new SourceRevisionChangedError(`Asset ${guid} changed after estimating chunk ${chunkId}`);
             }
-            const value = await registry.readChunk(indexed.header.guid, chunkId, locator.revision, { signal });
+            const value = await registry.readLocatedChunk(guid, chunkId, locator, asset.revision, { signal });
             signal.throwIfAborted();
             return { value, sourceBytes: value.byteLength, decodedBytes: 0 };
           },
         }, { dependencies: "none", signal: options.signal, priority: options.priority });
+      } catch (error) {
+        // A file deleted since it was indexed has no chunk to read.
+        if (!options.signal?.aborted && !isAssetSourceRevisionChanged(error) && !(await storage.exists(path))) return null;
+        throw error;
       } finally {
         if (!options.scope) scope.dispose();
       }
     }
+    if (!(await storage.exists(path))) return null;
     const { header, locator } = await readAssetCatalog(storage, path, { signal: options.signal });
     const entry = header.chunks.find((chunk) => chunk.id === chunkId);
     if (!entry) return null;

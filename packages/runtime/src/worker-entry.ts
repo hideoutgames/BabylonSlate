@@ -41,6 +41,7 @@ import { cookedCollisionMeshMap } from "./source-content-control";
 // messages as a runtime that never started ("Runtime is unavailable.", "Stale session generation.").
 import "@haptic/physics/havok-backend";
 import "@haptic/physics/rapier-backend";
+import { preloadPhysicsEngine } from "@haptic/physics";
 
 let runtime: RuntimeDriver | null = null;
 let sceneSources = createSceneSourceClient(onCommand);
@@ -287,6 +288,10 @@ function handleControl(msg: ControlMessage): void {
       return;
     }
     case "loadSceneContent": ensureRuntime().registerSceneContent(msg); return;
+    case "preloadPhysics":
+      // The session's own load reports a failure; this only warms the module cache it shares.
+      void preloadPhysicsEngine(msg.physicsWorld, { havokWasmUrl: msg.havokWasmUrl }).catch(() => undefined);
+      return;
     case "saveStorageResponse":
       saveStorage.receive(msg.response);
       return;

@@ -65,7 +65,7 @@ describe("Play physics startup", () => {
     }
   });
 
-  it("never announces scene readiness when native cooperative boot fails", async () => {
+  it("never completes the Scene the host presented when native cooperative boot fails", async () => {
     vi.spyOn(HavokPhysicsBackend, "create").mockRejectedValue(new Error("Havok download failed"));
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const commands: CommandMessage[] = [];
@@ -82,7 +82,8 @@ describe("Play physics startup", () => {
     world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: { onSceneFinishLoading: () => { finished = true; } } }));
     await expect(createPlayBootCoordinator().play(runtime)).rejects.toThrow("Havok download failed");
     expect(commands.some((command) => command.type === "activeScene")).toBe(true);
-    expect(commands.some((command) => command.type === "sceneRealized")).toBe(false);
+    // Announced (and acknowledged) while Havok loaded, but never completed.
+    expect(commands.some((command) => command.type === "sceneRealized")).toBe(true);
     expect(finished).toBe(false);
     runtime.resume();
     runtime.tick();
