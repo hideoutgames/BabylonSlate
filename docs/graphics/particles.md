@@ -72,6 +72,16 @@ A Particle Graph opens with **Graph**, **Preview**, **Inspector** and **Compiler
 
 The Preview has **Restart** and **Play / Pause**, plus badges showing where it runs (**GPU**, **CPU** or both) and how many particles are alive.
 
+## Parameters
+
+A parameter is a named value an emitter reads, such as an intensity or a tint, that can change while the effect runs without rebuilding it.
+
+- A **Particle Graph** declares parameters in the **Inspector** under **Parameters** and reads each one with a [Parameter](../scripting/particle/parameter.md) node.
+- A **Basic Particle Emitter** binds fixed targets, such as **Spawn Rate Scale** or **Color Tint**, to parameter names in its **Parameters** module.
+- A **Particle System** joins its emitters' parameters by name. The first emitter that declares a name sets its type and default; the System can set its own default for each one.
+
+Each Preview lists the parameters under **Preview Parameters**. Values set there play at once and are not saved.
+
 ## Play particles from scripts
 
 The Particle component's **Play On Start** (on by default) starts the effect when the actor spawns. Otherwise use:

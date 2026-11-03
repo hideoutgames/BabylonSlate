@@ -22,6 +22,9 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 | Space | **World** (default): particles stay where they were emitted. **Local**: particles move with the actor. |
 | Preview Skybox | Shows the default sky behind the preview. Editor only. |
 | Emitters | Up to 8 emitters, in order. The same emitter can appear more than once. An emitter that was deleted shows **Missing Emitter**. |
+| Parameters | The emitters' parameters, joined by name. Each starts at the default of the first emitter that declares it; edit it to give the System its own default, or reset it to go back. Shown only when an emitter has parameters. |
+
+If two emitters declare one parameter name with different types, the later emitter keeps its own default and **Parameters** says which slot. **Preview Parameters** under the Preview sets values for the preview only.
 
 ## Related
 

@@ -35,10 +35,12 @@ import {
   convertScalarValueMode,
   createDefaultParticleShape,
   normalizeParticleEmitterPayload,
+  particleEmitterParameters,
   type ParticleBurst,
   type ParticleColorValue,
   type ParticleEmitterPayload,
   type ParticleEmitterShape,
+  type ParticleBasicBindingTarget,
   type ParticleScalarPropertyId,
   type ParticleScalarValue,
   type ParticleShapeDirection,
@@ -67,6 +69,8 @@ import {
   type ParticleModuleId,
 } from "../lib/particle-value-modes";
 import { PREVIEW_SYSTEM_GUID, emitterPreviewLibrary } from "../lib/play-particles";
+import { ParticleBasicBindingsEditor, ParticlePreviewParameters } from "../components/particle-parameter-fields";
+import { Badge } from "@haptic/ui/components/badge";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 
@@ -173,13 +177,22 @@ export function ParticleEmitterPreview({
 }) {
   const emitter = normalizeParticleEmitterPayload(payload);
   const [picking, setPicking] = useState(false);
+  const [previewValues, setPreviewValues] = useState<Record<string, number[]>>({});
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="particle-emitter-preview">
-      <ParticlePreviewCanvas
-        library={emitterPreviewLibrary({ kind: "basic", payload: emitter })}
-        systemGuid={PREVIEW_SYSTEM_GUID}
-        testId="particle-emitter-preview-canvas"
-        onPickMaterial={() => setPicking(true)}
+      <div className="min-h-0 flex-1">
+        <ParticlePreviewCanvas
+          library={emitterPreviewLibrary({ kind: "basic", payload: emitter })}
+          systemGuid={PREVIEW_SYSTEM_GUID}
+          testId="particle-emitter-preview-canvas"
+          onPickMaterial={() => setPicking(true)}
+          parameterValues={previewValues}
+        />
+      </div>
+      <ParticlePreviewParameters
+        parameters={particleEmitterParameters({ kind: "basic", payload: emitter })}
+        values={previewValues}
+        onChange={setPreviewValues}
       />
       <ParticleMaterialPicker
         open={picking}
@@ -809,11 +822,35 @@ export function ParticleEmitterEditor({
 
   const bursts = spawn.bursts.entries;
 
+  /** A bound field shows the parameter that drives it. */
+  const boundTo = (target: ParticleBasicBindingTarget) => emitter.bindings.find((binding) => binding.target === target);
+  const bound = (rows: PropertyRow[], target: ParticleBasicBindingTarget, ids: readonly string[]): PropertyRow[] => {
+    const binding = boundTo(target);
+    if (!binding) return rows;
+    return rows.map((row) => ids.includes(row.id)
+      ? { ...row, labelAccessory: (
+          <>
+            {row.labelAccessory}
+            <Badge variant="secondary" data-testid={`particle-bound-${row.id}`}>{`Bound To ${binding.parameterName}`}</Badge>
+          </>
+        ) }
+      : row);
+  };
+
   const stages: StageSpec[] = [
     {
       id: "emitter",
       title: "Emitter",
       modules: [
+        {
+          id: "parameters",
+          title: "Parameters",
+          body: (
+            <div className="p-2">
+              <ParticleBasicBindingsEditor bindings={emitter.bindings} onChange={(bindings) => set("bindings", bindings)} />
+            </div>
+          ),
+        },
         { id: "emitter", title: "Emitter", body: <PropertyGrid rows={emitterRows} /> },
       ],
     },
@@ -826,7 +863,7 @@ export function ParticleEmitterEditor({
           title: "Spawn Rate",
           body: (
             <PropertyGrid
-              rows={[scalar("rate", "Rate", "spawn.rate")]}
+              rows={bound([scalar("rate", "Rate", "spawn.rate")], "spawn.rateScale", ["rate"])}
             />
           ),
         },
@@ -845,7 +882,7 @@ export function ParticleEmitterEditor({
                 countNoun={{ one: "burst", other: "bursts" }}
                 renderItemHeader={({ index }) => (
                   <span className="px-1 text-xs font-medium text-muted-foreground">
-                    {`Burst ${index + 1}`}
+                    {`Burst ${index + 1}${boundTo("spawn.burstScale") ? ` · Count Bound To ${boundTo("spawn.burstScale")!.parameterName}` : ""}`}
                   </span>
                 )}
                 renderItem={({ item, index }) => (
@@ -887,14 +924,15 @@ export function ParticleEmitterEditor({
           title: "Initialize Particle",
           body: (
             <PropertyGrid
-              rows={[
+              rows={bound(bound(bound(bound([
                 scalar("lifetime", "Lifetime", "initialize.lifetime"),
                 scalar("speed", "Speed", "initialize.speed"),
                 scalar("size", "Size", "initialize.size"),
                 ...colorRows(initialize.color, (color, continuous) =>
                   (continuous ? edit : set)("initialize.color", color),
                 ),
-              ]}
+              ], "init.lifetimeScale", ["lifetime"]), "init.speedScale", ["speed"]), "init.sizeScale", ["size"]),
+              "init.colorTint", ["color", "color-min", "color-max"])}
             />
           ),
         },
@@ -985,7 +1023,7 @@ export function ParticleEmitterEditor({
           ...toggle("forces.gravity"),
           body: (
             <PropertyGrid
-              rows={[
+              rows={bound([
                 {
                   id: "gravity",
                   kind: "vector3",
@@ -995,7 +1033,7 @@ export function ParticleEmitterEditor({
                   defaultValue: [0, -9.81, 0],
                   onChange: (value) => edit("forces.gravity.acceleration", vec3(value)),
                 },
-              ]}
+              ], "forces.gravity", ["gravity"])}
             />
           ),
         },

@@ -15,7 +15,7 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 
 | Stage | Modules |
 | --- | --- |
-| Emitter | **Emitter**: Material, Capacity, Loop, Duration, Pre Warm |
+| Emitter | **Parameters**, **Emitter**: Material, Capacity, Loop, Duration, Pre Warm |
 | Spawn | **Spawn Rate**, **Bursts** |
 | Shape | **Shape** |
 | Initialize | **Initialize Particle**, **Scale**, **Rotation** |
@@ -34,6 +34,20 @@ The **Emitter** module:
 | Loop | **Infinite** or **Once**. |
 | Duration | One loop for Infinite, or how long a Once emitter spawns, in seconds. |
 | Pre Warm | Starts an Infinite emitter as if it had already run for this many seconds. |
+
+The **Parameters** module binds targets to parameter names, so gameplay can change them while the emitter runs. Tap **Add Binding**, pick a **Target**, and give it a **Parameter Name** and a **Default**. Each target can be bound once; a bound field shows **Bound To** and the name.
+
+| Target | Type | Effect |
+| --- | --- | --- |
+| Spawn Rate Scale | Float | Multiplies Spawn Rate. |
+| Burst Count Scale | Float | Multiplies each burst's Count, rounded and kept within Capacity. |
+| Lifetime Scale | Float | Multiplies Lifetime. |
+| Speed Scale | Float | Multiplies Speed. |
+| Size Scale | Float | Multiplies Size. |
+| Color Tint | Color | Multiplies Color. |
+| Gravity | Vector 3 | Replaces the Gravity module's acceleration while the module is on. |
+
+One name has one type in an emitter: two targets can share a name only when their types match. **Preview Parameters** under the Preview sets values for the preview only.
 
 The **Render** module sets **Blend Mode** (default **Additive**) and **Billboard** (default **Camera Facing**). The other modules are described in [Particles](../graphics/particles.md#basic-particle-emitter).
 

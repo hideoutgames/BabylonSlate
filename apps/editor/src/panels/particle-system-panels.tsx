@@ -15,6 +15,7 @@ import {
   PARTICLE_SYSTEM_MAX_EMITTERS,
   isParticleEmitterAssetType,
   normalizeParticleSystemPayload,
+  particleSystemParameters,
   type ParticleLibraryEmitter,
   type ParticleSystemPayload,
 } from "@haptic/assets";
@@ -38,6 +39,8 @@ import {
 } from "../lib/play-particles";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
+import { ParticlePreviewParameters } from "../components/particle-parameter-fields";
+import { particleParameterValueRow } from "../lib/particle-parameter-rows";
 
 const EMITTER_TYPES: string[] = [...PARTICLE_EMITTER_ASSET_TYPES];
 
@@ -102,12 +105,11 @@ const idleControls = {
 /** Basic emitters and Particle Graphs: the asset types a system can reference. */
 const EMITTER_KINDS = ["particle-emitter", "particle-graph"] as const;
 
-export function ParticleSystemPreview({
-  payload,
-}: {
-  payload: Record<string, unknown>;
-}) {
-  const system = normalizeParticleSystemPayload(payload);
+/**
+ * The System's slot emitters, from open tabs first, else loaded from the project; refetched
+ * when the slots or an open emitter change. Loaded emitters stay shown while a refetch runs.
+ */
+function useSystemEmitters(system: ParticleSystemPayload) {
   const { loadAssetDocument } = useDocumentActions();
   const { assetRegistry } = useRegistryState();
   const emitterDocuments = useOpenDocumentsOfKinds(EMITTER_KINDS);
@@ -164,6 +166,27 @@ export function ParticleSystemPreview({
     // shown meanwhile.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guidKey, openPayloads, loadAssetDocument, attempt]);
+  return { emitters, loadError, retry: () => setAttempt((value) => value + 1) };
+}
+
+/** The System's derived parameters (`particleSystemParameters`), with and without its own defaults. */
+function systemParameters(system: ParticleSystemPayload, emitters: ReadonlyMap<string, ParticleLibraryEmitter> | null) {
+  if (!emitters) return { parameters: [], conflicts: [], emitterDefaults: new Map<string, number[]>() };
+  const library = (payload: ParticleSystemPayload) => ({ emitters, systems: new Map([[PREVIEW_SYSTEM_GUID, payload]]) });
+  const derived = particleSystemParameters(library(system), PREVIEW_SYSTEM_GUID);
+  const plain = particleSystemParameters(library({ ...system, parameterDefaults: {} }), PREVIEW_SYSTEM_GUID);
+  return { ...derived, emitterDefaults: new Map(plain.parameters.map((parameter) => [parameter.name, parameter.defaultValue])) };
+}
+
+export function ParticleSystemPreview({
+  payload,
+}: {
+  payload: Record<string, unknown>;
+}) {
+  const system = normalizeParticleSystemPayload(payload);
+  const { emitters, loadError, retry } = useSystemEmitters(system);
+  const [previewValues, setPreviewValues] = useState<Record<string, number[]>>({});
+  const { parameters } = systemParameters(system, emitters);
 
   const content =
     system.emitterGuids.length === 0 ? (
@@ -181,7 +204,7 @@ export function ParticleSystemPreview({
         state={{
           status: "error",
           description: `${loadError} Check the linked emitters in the Inspector.`,
-          onRetry: () => setAttempt((value) => value + 1),
+          onRetry: retry,
         }}
       />
     ) : emitters === null ? (
@@ -192,12 +215,14 @@ export function ParticleSystemPreview({
         systemGuid={PREVIEW_SYSTEM_GUID}
         testId="particle-system-preview-canvas"
         showSkybox={system.previewSkybox}
+        parameterValues={previewValues}
       />
     );
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="particle-system-preview">
-      {content}
+      <div className="min-h-0 flex-1">{content}</div>
+      <ParticlePreviewParameters parameters={parameters} values={previewValues} onChange={setPreviewValues} />
     </div>
   );
 }
@@ -229,6 +254,36 @@ export function ParticleSystemEditor({
     onChange(normalizeParticleSystemPayload(next) as unknown as Record<string, unknown>);
   };
   const setGuids = (emitterGuids: string[]) => commit({ ...system, emitterGuids });
+  const { emitters } = useSystemEmitters(system);
+  const { parameters, conflicts, emitterDefaults } = systemParameters(system, emitters);
+  const slotList = (slots: readonly number[]) => slots.map((slot) => slot + 1).join(", ");
+  const setDefault = (name: string, value: number[] | null) => {
+    const parameterDefaults = { ...(system.parameterDefaults ?? {}) };
+    if (value) parameterDefaults[name] = value;
+    else delete parameterDefaults[name];
+    commit({ ...system, parameterDefaults });
+  };
+  const parameterRows: PropertyRow[] = [
+    ...parameters.map((parameter) => {
+      const emitterDefault = emitterDefaults.get(parameter.name) ?? parameter.defaultValue;
+      return particleParameterValueRow({
+        id: `system-parameter-${parameter.name}`,
+        label: parameter.name,
+        type: parameter.type,
+        value: parameter.defaultValue,
+        defaultValue: emitterDefault,
+        description: `Emitter slot ${slotList(parameter.slots)}.${parameter.overridden ? " The System's default." : ""}`,
+        // Back at the emitters' default drops the System's own.
+        onChange: (value) => setDefault(parameter.name, JSON.stringify(value) === JSON.stringify(emitterDefault) ? null : value),
+      });
+    }),
+    ...conflicts.map((conflict): PropertyRow => ({
+      id: `system-parameter-conflict-${conflict.name}`,
+      kind: "info",
+      label: `${conflict.name} Conflict`,
+      value: `Emitter slot ${slotList(conflict.slots)} reads it with another type and keeps its own default.`,
+    })),
+  ];
 
   const rows: PropertyRow[] = [
     {
@@ -255,6 +310,11 @@ export function ParticleSystemEditor({
   return (
     <div className="flex flex-col gap-3 pb-2" data-testid="particle-system-editor">
       <PropertyGrid rows={rows} />
+      {parameterRows.length ? (
+        <div data-testid="particle-system-parameters">
+          <PropertyGrid title="Parameters" rows={parameterRows} />
+        </div>
+      ) : null}
       <div className="px-2">
         <EntryListEditor<string>
           title="Emitters"
