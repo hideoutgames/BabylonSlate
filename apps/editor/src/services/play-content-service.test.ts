@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultAnimGraph } from "@haptic/anim-graph";
+import { getTile, TERRAIN_E, TERRAIN_W } from "@haptic/assets";
 import { createActor, createDefaultScene, type DocumentRef, type SerializedGraph } from "@haptic/core";
 import { DocumentService } from "./document-service";
 import { createPlayContentService } from "./play-content-service";
@@ -184,5 +185,39 @@ describe("createPlayContentService", () => {
 
     expect([...(await playContent.collectPlayFontFacetypeBytes(scene)).keys()]).toEqual(["title", "symbols"]);
     expect(playContent.collectPlayFontCssStacks().fontCssStackByGuid.get("title")).toContain("Edited Title");
+  });
+
+  it("collects viewport Tilemaps with their autotile cells as the Tileset now resolves them", async () => {
+    // Ledge pieces: 1 single, 2 left end, 3 middle, 4 right end; the saved Tileset has only the single piece.
+    const ledges = (masks: readonly number[]) => ({
+      atlasWidth: 64,
+      terrains: [{ id: "ledge", name: "Ledge", style: "sides" }],
+      tiles: masks.map((mask, at) => ({ id: at + 1, terrain: { id: "ledge", mask } })),
+    });
+    const { documents, playContent, open } = createPlayContent([
+      { guid: "ledges", type: "Tileset", name: "Ledges", path: "Ledges.hasset", content: ledges([0]) },
+      {
+        guid: "level", type: "Tilemap", name: "Level", path: "Level.hasset",
+        content: {
+          tilesets: [{ guid: "ledges", firstGid: 1, tileCount: 4 }],
+          width: 5,
+          height: 1,
+          layers: [{ id: "layer-1", chunks: [{ cx: 0, cy: 0, tiles: [0, 1, 1, 1] }] }],
+        },
+      },
+    ]);
+    const scene = { ...createDefaultScene(), actors: [createActor("map", "Map", {
+      components: [{ id: "tilemap", classId: "TilemapComponent", properties: { assetGuid: "level" } }],
+    })] };
+    const row = async () => {
+      const { tilemaps } = await playContent.collectPlayTilemapContent(scene);
+      return [1, 2, 3].map((x) => getTile(tilemaps.get("level")!, "layer-1", x, 0));
+    };
+    expect(await row()).toEqual([1, 1, 1]);
+
+    // The Tileset gains its end and middle pieces in an unsaved tab; the closed map follows at once.
+    const id = await open({ kind: "tileset", path: "Ledges.hasset", label: "Ledges" });
+    documents.updateAssetDocument(id, ledges([0, TERRAIN_E, TERRAIN_E | TERRAIN_W, TERRAIN_W]));
+    expect(await row()).toEqual([2, 3, 4]);
   });
 });

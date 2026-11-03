@@ -99,7 +99,7 @@ import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { RuntimeConsole } from "./runtime-console";
 import type { ActorRealization, ScriptedActorSpawn } from "./actor-realization";
 import type { OverlaySafeAreaInsets } from "@haptic/core";
-import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@haptic/assets";
+import { refreshStaleTilemaps, type ModelPayload, type SpriteAnimationPayload, type SpritePayload, type TilemapPayload, type TilesetPayload } from "@haptic/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@haptic/navigation";
 import { RuntimeSubsystems } from "./runtime-subsystems";
 import type { RenderSlots } from "./render-slots";
@@ -461,8 +461,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.dt = options.dt ?? 1 / 60;
     this.seed = options.seed;
     this.onCommand = options.onCommand;
-    const tilemaps = new Map(Object.entries(options.tilemaps ?? {}));
     const tilesets = new Map(Object.entries(options.tilesets ?? {}));
+    const tilemaps = refreshStaleTilemaps(new Map(Object.entries(options.tilemaps ?? {})), tilesets);
     this.physics = createPhysics(this, options, tilemaps, tilesets);
     this.playScene = options.playScene;
     this.acquireScene = options.acquireScene;
@@ -995,14 +995,15 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
     pixelsPerUnit?: number;
   }): void {
-    const tilemaps =
-      options.tilemaps instanceof Map
-        ? new Map(options.tilemaps)
-        : new Map(Object.entries(options.tilemaps));
     const tilesets =
       options.tilesets instanceof Map
         ? new Map(options.tilesets)
         : new Map(Object.entries(options.tilesets));
+    // Physics collides with each map as the current Tilesets resolve it, as render draws it.
+    const tilemaps = refreshStaleTilemaps(
+      options.tilemaps instanceof Map ? options.tilemaps : new Map(Object.entries(options.tilemaps)),
+      tilesets,
+    );
     this.hasAnimatedTiles = hasAnimatedTiles(tilemaps, tilesets);
     if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
     this.physics.registerTileContent(tilemaps, tilesets, options.pixelsPerUnit);

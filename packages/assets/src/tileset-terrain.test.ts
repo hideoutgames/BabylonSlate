@@ -18,8 +18,15 @@ import {
   TERRAIN_SW,
   TERRAIN_W,
   terrainVariantMasks,
+  tilesetTerrainStamp,
 } from "./tileset-terrain";
-import { ensureTilesetTiles, normalizeTilesetPayload, type TilesetPayload, type TilesetTerrainStyle } from "./tileset-payload";
+import {
+  ensureTilesetTiles,
+  normalizeTilesetPayload,
+  setTilesetTerrains,
+  type TilesetPayload,
+  type TilesetTerrainStyle,
+} from "./tileset-payload";
 
 const N = TERRAIN_N;
 const NE = TERRAIN_NE;
@@ -153,6 +160,46 @@ const BORDERED = normalizeTilesetPayload({
     { id: 5, terrain: { id: "dirt", mask: 0, border: "grass" } },
     { id: 6, terrain: { id: "grass", mask: E | S | W } },
   ],
+});
+
+describe("tilesetTerrainStamp", () => {
+  it("depends only on what terrain resolution reads", () => {
+    const stamp = tilesetTerrainStamp(BORDERED);
+    // A copy decoded again, padded with empty tiles, renamed, reordered, with other tile data.
+    const same = normalizeTilesetPayload({
+      ...BORDERED,
+      terrains: [...BORDERED.terrains!].reverse().map((terrain) => ({ ...terrain, name: `${terrain.name} 2`, borders: [...(terrain.borders ?? [])].reverse() })),
+      tiles: [...BORDERED.tiles].reverse().map((tile) => ({ ...tile, collision: "full", flags: 3 })),
+    });
+    expect(tilesetTerrainStamp(same)).toBe(stamp);
+    expect(tilesetTerrainStamp(ensureTilesetTiles(BORDERED))).toBe(stamp);
+    // Tile 6 lies past the atlas, so its membership never counts.
+    const pastAtlas = { ...BORDERED, tiles: BORDERED.tiles.map((tile) => (tile.id === 6 ? { ...tile, terrain: { id: "grass", mask: 0 } } : tile)) };
+    expect(tilesetTerrainStamp(pastAtlas)).toBe(stamp);
+  });
+
+  it("changes with any terrain's style or borders and any member tile's set or mask", () => {
+    const retile = (id: number, terrain: TilesetPayload["tiles"][number]["terrain"]): TilesetPayload => ({
+      ...BORDERED,
+      tiles: BORDERED.tiles.map((tile) => (tile.id === id ? { ...tile, terrain } : tile)),
+    });
+    const changes = [
+      setTilesetTerrains(BORDERED, BORDERED.terrains!.map((terrain) => (terrain.id === "water" ? { ...terrain, style: "blob" as const } : terrain))),
+      setTilesetTerrains(BORDERED, BORDERED.terrains!.map((terrain) => (terrain.id === "grass" ? { ...terrain, borders: ["dirt"] } : terrain))),
+      retile(1, { id: "grass", mask: N }),
+      retile(1, { id: "grass", mask: 0, border: "dirt" }),
+      retile(1, { id: "dirt", mask: 0, border: "grass" }),
+      retile(1, undefined),
+    ];
+    const stamps = new Set([BORDERED, ...changes].map(tilesetTerrainStamp));
+    expect(stamps.size).toBe(changes.length + 1);
+  });
+
+  it("gives every Tileset without terrains the same stamp", () => {
+    const plain = normalizeTilesetPayload({ atlasWidth: 32, tiles: [{ id: 1, collision: "full" }] });
+    expect(tilesetTerrainStamp(plain)).toBe(tilesetTerrainStamp(normalizeTilesetPayload({})));
+    expect(tilesetTerrainStamp(plain)).not.toBe(tilesetTerrainStamp(terrainSheet("sides", [])));
+  });
 });
 
 describe("terrain border sets", () => {

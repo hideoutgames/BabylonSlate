@@ -3,6 +3,7 @@
  * the neighbours a cell joins, clockwise from north in +Y-up tile space.
  */
 
+import { fnv1a } from "@haptic/core";
 import {
   tilesetAtlasColumns,
   tilesetAtlasRows,
@@ -357,6 +358,42 @@ export function missingTerrainVariants(tileset: TilesetPayload, terrainId: strin
       inTerrainSet(tile, terrainId, border) && tile.id <= limit ? [canonicalTerrainMask(terrain.style, tile.terrain!.mask)] : []),
   );
   return terrainVariantMasks(terrain.style).filter((mask) => !drawn.has(mask));
+}
+
+/** `tilesetTerrainStamp` of a Tileset without terrains. */
+const NO_TERRAIN_STAMP = "0";
+/** Payloads are replaced on edit, never changed in place, so one stamp per object holds. */
+const terrainStamps = new WeakMap<TilesetPayload, string>();
+
+/**
+ * A short deterministic hash (FNV-1a hex) of everything terrain resolution
+ * reads from a Tileset: each terrain's id, style and borders, and the
+ * membership (terrain, mask, border) of each tile inside the atlas. Names,
+ * list order and other tile data do not count, and a payload stamps the same
+ * with or without `ensureTilesetTiles`. A Tileset without terrains stamps "0".
+ */
+export function tilesetTerrainStamp(tileset: TilesetPayload): string {
+  const cached = terrainStamps.get(tileset);
+  if (cached !== undefined) return cached;
+  const terrains = tileset.terrains ?? [];
+  let stamp = NO_TERRAIN_STAMP;
+  if (terrains.length > 0) {
+    const ids = new Set(terrains.map((terrain) => terrain.id));
+    const limit = atlasTileCount(tileset);
+    const data = [
+      terrains
+        .map((terrain) => [terrain.id, terrain.style, [...(terrain.borders ?? [])].sort()] as const)
+        .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+      tileset.tiles
+        .flatMap((tile) => (tile.terrain && tile.id <= limit && ids.has(tile.terrain.id)
+          ? [[tile.id, tile.terrain.id, tile.terrain.mask, tile.terrain.border ?? ""] as const]
+          : []))
+        .sort((a, b) => a[0] - b[0]),
+    ];
+    stamp = fnv1a(JSON.stringify(data));
+  }
+  terrainStamps.set(tileset, stamp);
+  return stamp;
 }
 
 /** The variant a terrain paints with every neighbour joined: its fill tile, shown as its swatch. */

@@ -12,6 +12,7 @@ import {
 } from "./tileset-terrain";
 import { normalizeTilesetPayload, type TilesetPayload } from "./tileset-payload";
 import {
+  addTilemapTileset,
   createDefaultTilemapPayload,
   getTile,
   setTile,
@@ -19,7 +20,7 @@ import {
   type TilemapPayload,
 } from "./tilemap-payload";
 import { applyTilemapPaint, type TileCell, type TilemapPaintStroke } from "./tilemap-paint";
-import { paintTilemapTerrain, refreshTilemapTerrains, type TilemapTerrainBrush } from "./tilemap-terrain";
+import { paintTilemapTerrain, refreshStaleTilemapTerrains, type TilemapTerrainBrush } from "./tilemap-terrain";
 
 const N = TERRAIN_N;
 const E = TERRAIN_E;
@@ -339,25 +340,77 @@ describe("terrain transitions", () => {
     }
     const draw = (map: TilemapPayload) => [3, 2, 1, 0].map((y) => transitionRow(map, y));
     expect(draw(oneByOne)).toEqual(draw(batched));
-    // Re-resolving every cell from scratch changes nothing: no neighbour was left stale.
-    expect(draw(refreshTilemapTerrains(oneByOne, TRANSITION_TILESETS))).toEqual(draw(oneByOne));
-    expect(refreshTilemapTerrains(oneByOne, TRANSITION_TILESETS)).toBe(oneByOne);
+    // Re-resolving every cell from scratch changes none: no neighbour was left stale.
+    expect(refreshStaleTilemapTerrains(withoutStamps(oneByOne), TRANSITION_TILESETS).layers).toBe(oneByOne.layers);
   });
 });
 
-describe("refreshTilemapTerrains", () => {
-  it("re-picks every terrain tile on every layer from its neighbours and leaves plain tiles and unknown terrains", () => {
-    let map = paint(emptyMap(), ISLAND);
+/** `map` as saved before any terrain cell was resolved: every ref is stale. */
+function withoutStamps(map: TilemapPayload): TilemapPayload {
+  return { ...map, tilesets: map.tilesets.map(({ guid, firstGid, tileCount }) => ({ guid, firstGid, tileCount })) };
+}
+
+/** TILESET without its fill tile (7), as it was before the fill was marked. */
+const WITHOUT_FILL: TilesetPayload = {
+  ...TILESET,
+  tiles: TILESET.tiles.map((tile) => (tile.id === 7 ? { id: 7, collision: "none" as const, flags: 0, animation: [] } : tile)),
+};
+
+describe("refreshStaleTilemapTerrains", () => {
+  it("returns the map itself while every stamp matches, and only for loaded Tilesets", () => {
+    const map = paint(emptyMap(), ISLAND);
+    expect(refreshStaleTilemapTerrains(map, TILESETS)).toBe(map);
+    // A newly added Tileset has no cells yet, so the map starts current with it.
+    const added = addTilemapTileset(map, "tr", TRANSITIONS);
+    expect(refreshStaleTilemapTerrains(added, new Map([...TILESETS, ["tr", TRANSITIONS]]))).toBe(added);
+    // A Tileset that is not loaded is left alone, stale or not.
+    const unstamped = withoutStamps(map);
+    expect(refreshStaleTilemapTerrains(unstamped, new Map())).toBe(unstamped);
+  });
+
+  it("re-resolves the terrain cells of a changed Tileset on every layer and takes its new stamp", () => {
+    // Painted while the Tileset had no fill tile: the island's centre took the closest tile, `q`.
+    let map = paintTilemapTerrain(emptyMap(), { layerId: "layer-1", cells: ISLAND, terrain: GRASS, tilesets: new Map([["ts", WITHOUT_FILL]]) });
     map = setTile(map, "layer-1", 7, 0, FIRST_GID + 13);
     map = { ...map, layers: [...map.layers, { ...map.layers[0]!, id: "layer-2", name: "Layer 2" }] };
-    // Before the fill tile existed the island's centre painted the closest tile; adding it to the Tileset changes nothing until a refresh.
-    const withoutFill = new Map([["ts", { ...TILESET, tiles: TILESET.tiles.map((tile) => (tile.id === 7 ? { id: 7, collision: "none" as const, flags: 0, animation: [] } : tile)) }]]);
-    const stale = refreshTilemapTerrains(map, withoutFill);
-    expect(draw(stale)).not.toEqual(draw(map));
-    const refreshed = refreshTilemapTerrains(stale, TILESETS);
-    expect(draw(refreshed)).toEqual(draw(map));
-    expect(getTile(refreshed, "layer-2", 4, 2)).toBe(getTile(map, "layer-1", 4, 2));
-    expect(getTile(refreshed, "layer-1", 7, 0)).toBe(FIRST_GID + 13);
-    expect(refreshTilemapTerrains(refreshed, TILESETS)).toBe(refreshed);
+    expect(getTile(map, "layer-1", 3, 2)).toBe(FIRST_GID + 7);
+    const refreshed = refreshStaleTilemapTerrains(map, TILESETS);
+    expect(draw(refreshed)).toEqual(draw(paint(emptyMap(), ISLAND)).map((row, at) => (at === 5 ? `${row.slice(0, 7)}x` : row)));
+    expect(getTile(refreshed, "layer-2", 3, 2)).toBe(FIRST_GID + 6);
+    // The new stamp makes the refreshed map current.
+    expect(refreshStaleTilemapTerrains(refreshed, TILESETS)).toBe(refreshed);
+    // Painting the stale map elsewhere brings it current too.
+    const painted = paint(map, [{ x: 7, y: 5 }]);
+    expect(getTile(painted, "layer-1", 3, 2)).toBe(FIRST_GID + 6);
+    expect(refreshStaleTilemapTerrains(painted, TILESETS)).toBe(painted);
+  });
+
+  it("keeps hand-placed variants until their own Tileset's terrains change", () => {
+    const SECOND_GID = FIRST_GID + 50;
+    const both = new Map([["ts", TILESET], ["ts2", TILESET]]);
+    let map: TilemapPayload = { ...emptyMap(), tilesets: [...emptyMap().tilesets, { guid: "ts2", firstGid: SECOND_GID, tileCount: 14 }] };
+    map = paintTilemapTerrain(map, { layerId: "layer-1", cells: [{ x: 1, y: 2 }, { x: 2, y: 2 }, { x: 3, y: 2 }], terrain: LEDGE, tilesets: both });
+    map = paintTilemapTerrain(map, { layerId: "layer-1", cells: [{ x: 5, y: 2 }, { x: 6, y: 2 }], terrain: { guid: "ts2", terrainId: "ledge" }, tilesets: both });
+    // Each ledge's left end (`l`, local 11) replaced by hand with a middle piece (`m`, local 12).
+    map = setTile(setTile(map, "layer-1", 1, 2, FIRST_GID + 11), "layer-1", 5, 2, SECOND_GID + 11);
+    expect(refreshStaleTilemapTerrains(map, both)).toBe(map);
+    // The first Tileset's Grass loses a tile: only that Tileset's cells re-resolve.
+    const changed: TilesetPayload = {
+      ...TILESET,
+      tiles: TILESET.tiles.map((tile) => (tile.id === 9 ? { id: 9, collision: "none" as const, flags: 0, animation: [] } : tile)),
+    };
+    const current = new Map([["ts", changed], ["ts2", TILESET]]);
+    const refreshed = refreshStaleTilemapTerrains(map, current);
+    expect([1, 5].map((x) => getTile(refreshed, "layer-1", x, 2))).toEqual([FIRST_GID + 10, SECOND_GID + 11]);
+    expect(refreshed.tilesets[1]).toBe(map.tilesets[1]);
+    expect(refreshStaleTilemapTerrains(refreshed, current)).toBe(refreshed);
+  });
+
+  it("stamps a Tileset without terrains without touching its cells", () => {
+    const plain = normalizeTilesetPayload({ atlasWidth: 32 });
+    const map = setTile({ ...emptyMap(), tilesets: [{ guid: "plain", firstGid: 1, tileCount: 2 }] }, "layer-1", 0, 0, 2);
+    const stamped = refreshStaleTilemapTerrains(map, new Map([["plain", plain]]));
+    expect(stamped.layers).toBe(map.layers);
+    expect(refreshStaleTilemapTerrains(stamped, new Map([["plain", normalizeTilesetPayload({ atlasWidth: 48 })]]))).toBe(stamped);
   });
 });

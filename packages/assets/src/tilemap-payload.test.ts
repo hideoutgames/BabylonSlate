@@ -192,6 +192,21 @@ describe("tilemap payload", () => {
     expect(tilemapTilesetGuids(payload)).toEqual(["a", "b"]);
   });
 
+  it("keeps a Tileset ref's terrain stamp only when it is a non-empty string", () => {
+    const payload = normalizeTilemapPayload({
+      tilesets: [
+        { guid: "a", firstGid: 1, tileCount: 8, terrainStamp: "1a2b3c4d" },
+        { guid: "b", firstGid: 9, tileCount: 4, terrainStamp: "" },
+        { guid: "c", firstGid: 13, tileCount: 2, terrainStamp: 7 },
+      ],
+    });
+    expect(payload.tilesets).toEqual([
+      { guid: "a", firstGid: 1, tileCount: 8, terrainStamp: "1a2b3c4d" },
+      { guid: "b", firstGid: 9, tileCount: 4 },
+      { guid: "c", firstGid: 13, tileCount: 2 },
+    ]);
+  });
+
   it("encodes and decodes Tiled-style GIDs without compacting on remove", () => {
     const ground = ensureTilesetTiles(
       normalizeTilesetPayload({
@@ -213,9 +228,10 @@ describe("tilemap payload", () => {
       ["ground", ground],
       ["deco", deco],
     ]);
+    const ranges = (refs: TilemapPayload["tilesets"]) => refs.map(({ guid, firstGid, tileCount }) => ({ guid, firstGid, tileCount }));
     let map = addTilemapTileset(createDefaultTilemapPayload(), "ground", ground);
     map = addTilemapTileset(map, "deco", deco);
-    expect(map.tilesets).toEqual([
+    expect(ranges(map.tilesets)).toEqual([
       { guid: "ground", firstGid: 1, tileCount: 2 },
       { guid: "deco", firstGid: 3, tileCount: 1 },
     ]);
@@ -232,7 +248,7 @@ describe("tilemap payload", () => {
       tileset: deco,
     });
     map = removeTilemapTileset(map, "ground");
-    expect(map.tilesets).toEqual([{ guid: "deco", firstGid: 3, tileCount: 1 }]);
+    expect(ranges(map.tilesets)).toEqual([{ guid: "deco", firstGid: 3, tileCount: 1 }]);
     expect(decodeTileGid(map, 3, payloads)?.guid).toBe("deco");
     expect(decodeTileGid(map, 1, payloads)).toBeNull();
   });
