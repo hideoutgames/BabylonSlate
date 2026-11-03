@@ -87,6 +87,7 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 
 | Node | Description |
 | --- | --- |
+| [Global Parameter](global-parameter.md) | Returns one parameter of a Global Parameter Collection, a value the whole game shares. |
 | [Parameter](parameter.md) | Returns a graph parameter: a value that gameplay can change while the emitter runs. |
 
 ## Utility

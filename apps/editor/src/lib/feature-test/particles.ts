@@ -29,6 +29,7 @@ import { classGraph, gExec, gNode, gWire } from "./graph";
 import { stressPoint } from "./layout";
 import { FEATURE_TEST_SPRITE_SHEET } from "./imports";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
+import { featureTestGlobalParameterCollection } from "./scripting";
 import { FEATURE_TEST_TWO_D_CHARACTERS_LAYER } from "./two-d";
 
 /** Folder under `assets/FeatureTest/` for every Particle Emitter, Particle Graph and Particle System. */
@@ -109,7 +110,7 @@ export async function buildFeatureTestParticles(ctx: FeatureTestContext): Promis
   const stress = await saveEmitter(ctx, NAMES.stressEmitter, stressEmitter(glow));
   const graph = (
     await ctx.createAsset("ParticleGraph", FOLDER, NAMES.glowGraph, {
-      payload: payload(glowGraph(NAMES.glowGraph, glow)),
+      payload: payload(glowGraph(NAMES.glowGraph, glow, featureTestGlobalParameterCollection(ctx))),
     })
   ).guid;
 
@@ -551,7 +552,7 @@ function stressEmitter(materialGuid: string): ParticleEmitterPayload {
  * → Gravity (gentle lift) → Update Color (Initial Color × Gradient over
  * Normalized Age) → Emitter Output at 90/s. One Particle output feeds one node.
  */
-function glowGraph(name: string, materialGuid: string): ParticleGraphDocument {
+function glowGraph(name: string, materialGuid: string, globalParameters: string): ParticleGraphDocument {
   const graph = createDefaultParticleGraphDocument(name);
   graph.materialGuid = materialGuid;
   graph.settings = { capacity: 512, loop: "infinite", duration: 4, prewarm: 1, blendMode: "additive", billboard: "all" };
@@ -561,7 +562,7 @@ function glowGraph(name: string, materialGuid: string): ParticleGraphDocument {
     Object.assign(found.properties, properties);
     if (x !== undefined) found.position = { ...found.position, x };
   };
-  edit("create", { "default:emitPower": [2.5], "default:lifetime": [1.8] });
+  edit("create", { "default:lifetime": [1.8] });
   edit("shape", { "default:radius": [0.6] });
   edit("gradient", {
     stops: [
@@ -582,6 +583,13 @@ function glowGraph(name: string, materialGuid: string): ParticleGraphDocument {
       properties: { parameterId: "ft-fx-glow-rate", valueType: "float" },
     },
     {
+      // Emit Power is FT_GlobalParams' Wind Strength (1), which the Data Probe sets to 2.5 in Play.
+      id: "windStrength",
+      type: "global.parameter",
+      position: { x: -450, y: 120 },
+      properties: { collectionGuid: globalParameters, parameterId: "ft-global-wind-strength", valueType: "float" },
+    },
+    {
       id: "gravity",
       type: "force.gravity",
       position: { x: 1280, y: 0 },
@@ -599,6 +607,7 @@ function glowGraph(name: string, materialGuid: string): ParticleGraphDocument {
     { id: "e-velocity-gravity", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "gravity", targetPinId: "particle" },
     { id: "e-gravity-color", sourceNodeId: "gravity", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
     { id: "e-size-create", sourceNodeId: "sizeRandom", sourcePinId: "out", targetNodeId: "create", targetPinId: "size" },
+    { id: "e-wind-create", sourceNodeId: "windStrength", sourcePinId: "out", targetNodeId: "create", targetPinId: "emitPower" },
     { id: "e-glowRate-output", sourceNodeId: "glowRate", sourcePinId: "out", targetNodeId: "output", targetPinId: "emitRate" },
   );
   return graph;

@@ -1020,6 +1020,7 @@ function initializeEngine(
         onDiagnostic: options.onParticleDiagnostic,
         onPlaybackEnded: options.onParticlePlaybackEnded,
         sortingLayers: () => binding.sortingLayers,
+        globalParameters,
       })
     : null;
   onRollback(() => particleService?.dispose());

@@ -145,3 +145,4 @@ export {
   type ParticleGraphDiagnostic,
   type ParticleGraphValidationContext,
 } from "./validate";
+export * from "./global-parameter";

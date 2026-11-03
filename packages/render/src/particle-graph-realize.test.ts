@@ -17,6 +17,7 @@ import {
 import { createTestEngine } from "./create-null-engine";
 import { PARTICLE_BLOCK_ADAPTERS, type ParticleBlockAdapter } from "./particle-graph-blocks";
 import { realizeParticleGraph, type RealizeParticleGraphResult } from "./particle-graph-realize";
+import { GlobalParameterSession, type GlobalParameterValueSource } from "./global-parameter-values";
 import { animatedSpriteCell } from "./particle-sprite-sheet";
 
 const cleanups: Array<() => void> = [];
@@ -56,9 +57,10 @@ function planOf(doc: ParticleGraphDocument, settings: Partial<ParticleGraphSetti
   return lowered.plan;
 }
 
-function realize(plan: ParticleBuildPlan, space: ParticleSpace = "world", adapters?: Record<string, ParticleBlockAdapter>) {
+function realize(plan: ParticleBuildPlan, space: ParticleSpace = "world", adapters?: Record<string, ParticleBlockAdapter>,
+  globalParameters?: GlobalParameterValueSource) {
   const { scene, emitter } = host();
-  const result = realizeParticleGraph(plan, { scene, name: "graph", emitter, space, adapters });
+  const result = realizeParticleGraph(plan, { scene, name: "graph", emitter, space, adapters, ...(globalParameters ? { globalParameters } : {}) });
   return { scene, emitter, result };
 }
 
@@ -404,6 +406,31 @@ describe("realizeParticleGraph", () => {
     expect(system.particles[0]!.size).toBeCloseTo(3, 6);
   });
 
+  it("reads a Global Parameter from its source and follows each change without a rebuild", () => {
+    const doc = withSpine([node("size", "update.size")], [
+      { id: "global", type: "global.parameter", position: { x: 0, y: 0 }, properties: { collectionGuid: "fx", parameterId: "scale", valueType: "float" } },
+    ], [edge("global", "out", "size", "size")]);
+    const defaults: GlobalParameterValueSource = {
+      revision: 0,
+      value: (collectionGuid, parameterId) => (collectionGuid === "fx" && parameterId === "scale" ? [0.25] : null),
+      subscribe: () => () => undefined,
+    };
+    const session = new GlobalParameterSession(defaults);
+    const { result } = realize(planOf(doc), "world", undefined, session);
+    const { system } = built(result);
+    system.start(0);
+    step(system, 30);
+    expect(system.getActiveCount()).toBeGreaterThan(0);
+    expect(system.particles[0]!.size).toBeCloseTo(0.25, 6);
+    session.set("fx", "scale", [2]);
+    step(system, 1);
+    expect(system.particles[0]!.size).toBeCloseTo(2, 6);
+    // Dropping the session's value returns every particle to the default.
+    session.set("fx", "scale", null);
+    step(system, 1);
+    expect(system.particles[0]!.size).toBeCloseTo(0.25, 6);
+  });
+
   it("turns on Babylon's animation sheet for a Sprite Sheet and steps each particle's cell with Animate Sprite Sheet", () => {
     const settings = { columns: 2, rows: 2, startCell: 1, endCell: 3, framesPerSecond: 10, loop: true, randomStartCell: false };
     const { system } = built(realize(planOf(withSpine([node("sheet", "sprite.setup", settings), node("animate", "update.basicSprite")]))).result);
@@ -517,7 +544,8 @@ const CONSUMERS: Readonly<Record<ParticleNumericType, { type: string; pin: strin
 
 /** The default graph plus `type`: spine nodes join the spine, value nodes feed an update node. */
 function graphWith(type: string): ParticleGraphDocument {
-  const subject = node("subject", type, type === "input.parameter" ? { parameterId: "p" } : {});
+  const subject = node("subject", type, type === "input.parameter" ? { parameterId: "p" }
+    : type === "global.parameter" ? { collectionGuid: "fx", parameterId: "p", valueType: "float" } : {});
   const definition = particleNodeDefinitionFor(subject)!;
   // Required value pins without a wire get an authored default.
   for (const pin of definition.inputs) {

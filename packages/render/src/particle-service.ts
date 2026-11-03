@@ -1,4 +1,5 @@
 import { isSceneStreamSlotPending, registerSceneStreamParticle } from "./scene-stream-admission";
+import type { GlobalParameterValueSource } from "./global-parameter-values";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
@@ -309,6 +310,7 @@ export class ParticleService {
   private readonly ownerId = ++nextServiceId;
   private readonly scene: Scene;
   private readonly gpuRequested: boolean;
+  private readonly globalParameters: GlobalParameterValueSource | undefined;
   private readonly statsScope: "global" | "local";
   private readonly acquireMaterial?: (guid: string, owner: ParticleMaterialOwner) => ResourceLease<NodeMaterial> | null;
   private readonly acquireTexture?: (guid: string) => ResourceLease<BaseTexture> | null;
@@ -367,8 +369,11 @@ export class ParticleService {
     acquireTexture?: (guid: string) => ResourceLease<BaseTexture> | null;
     /** A Mesh Shape Model's triangles in model space (null: unavailable). */
     acquireModelGeometry?: (guid: string) => Promise<ParticleMeshGeometry | null> | null;
+    /** What Global Parameter nodes read: a Play session's values; the editor's defaults when omitted. */
+    globalParameters?: GlobalParameterValueSource;
   }) {
     this.scene = options.scene;
+    this.globalParameters = options.globalParameters;
     this.gpuRequested = options.gpuSupported ?? true;
     this.statsScope = options.statsScope ?? "global";
     this.acquireMaterial = options.acquireMaterial;
@@ -1296,7 +1301,8 @@ export class ParticleService {
     const realized = realizeParticleGraph(plan, { scene: context.host, name: `particle:${entry.key}:${slot.index}`,
       emitter: context.node, space: context.space, noise: (textureGuid) => this.noiseSource(entry, textureGuid),
       meshShape: (properties) => this.meshShapeSource(entry, context, properties),
-      spawn: (properties) => this.spawnSink(entry, context, properties, depth, triggers) });
+      spawn: (properties) => this.spawnSink(entry, context, properties, depth, triggers),
+      ...(this.globalParameters ? { globalParameters: this.globalParameters } : {}) });
     const closeTriggers = () => {
       for (const trigger of triggers) {
         trigger.closed = true;

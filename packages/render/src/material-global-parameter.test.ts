@@ -11,13 +11,14 @@ afterEach(() => { for (const engine of engines.splice(0)) engine.dispose(); });
 function defaults(initial: Record<string, number[]>) {
   const values = new Map(Object.entries(initial));
   const listeners = new Set<() => void>();
+  let revision = 0;
   const source: GlobalParameterValueSource & { change(key: string, value: number[]): void } = {
-    revision: 0,
+    get revision() { return revision; },
     value: (collectionGuid, parameterId) => values.get(`${collectionGuid}/${parameterId}`) ?? null,
     subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
     change(key, value) {
       values.set(key, value);
-      this.revision += 1;
+      revision += 1;
       for (const listener of listeners) listener();
     },
   };
