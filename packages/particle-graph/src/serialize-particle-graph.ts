@@ -12,6 +12,10 @@ import {
   normalizeParticleGraphDocument,
   type ParticleGraphDocument,
 } from "./document";
+import {
+  particleParameterSnapshot,
+  type ParticleParameterSnapshot,
+} from "./parameter-nodes";
 import { createParticleTypeResolver } from "./resolve";
 import {
   PARTICLE_NUMERIC_TYPES,
@@ -74,6 +78,12 @@ export function pinsForParticleNode(
   ];
 }
 
+/**
+ * Canvas data key of a Parameter node's {@link ParticleParameterSnapshot}. Copies carry it,
+ * so a paste can declare the parameter again where it is missing.
+ */
+export const PARTICLE_PARAMETER_SNAPSHOT_KEY = "__parameter";
+
 /** Keys hydrate adds (and graph-ui may add); dehydrate strips exactly these. */
 const EDITOR_NODE_KEYS = new Set([
   "__pins",
@@ -84,6 +94,7 @@ const EDITOR_NODE_KEYS = new Set([
   "__pure",
   "__latent",
   "__editorOnly",
+  PARTICLE_PARAMETER_SNAPSHOT_KEY,
   "title",
 ]);
 
@@ -102,7 +113,7 @@ export interface ParticlePaletteNode {
   id: string;
   /** The node type when `id` names one entry of several for it (one Parameter entry per parameter). */
   nodeType?: string;
-  /** The added node's title when it differs from the entry's (`Parameter: Intensity` adds `Intensity`). */
+  /** The added node's title when it differs from the entry's. */
   nodeTitle?: string;
   title: string;
   category: string;
@@ -113,25 +124,58 @@ export interface ParticlePaletteNode {
   defaultData: Record<string, unknown>;
 }
 
+/** Add Node **Parameter** entries that place a Parameter node of a new parameter, one per value type. */
+const NEW_PARAMETER_ENTRIES: readonly { type: ParticleNumericType; title: string }[] = [
+  { type: "float", title: "Float Parameter" },
+  { type: "vec2", title: "Vector 2 Parameter" },
+  { type: "vec3", title: "Vector 3 Parameter" },
+  { type: "color", title: "Color Parameter" },
+];
+
+/** Add Node category of the Parameter entries. */
+export const PARTICLE_PARAMETER_CATEGORY = "Parameter";
+
+function snapshotOf(parameter: ParticleGraphParameter): ParticleParameterSnapshot {
+  return { name: parameter.name, type: parameter.type, defaultValue: [...parameter.defaultValue] };
+}
+
 /**
- * Add Node entries in palette order; the Emitter Output is never offered. Each declared
- * parameter adds a `Parameter: <name>` entry that places a Parameter node bound to it.
+ * Add Node entries in palette order; the Emitter Output is never offered. The **Parameter**
+ * category follows **Constants**: a new-parameter entry per value type, then one entry per
+ * declared parameter that places another Parameter node reading it.
  */
 export function particlePaletteNodes(parameters: readonly ParticleGraphParameter[] = []): ParticlePaletteNode[] {
-  const parameterEntries = parameters.map((parameter): ParticlePaletteNode => {
-    const properties = { parameterId: parameter.id, valueType: parameter.type };
-    return {
-      id: `${PARTICLE_PARAMETER_NODE_TYPE}:${parameter.id}`,
-      nodeType: PARTICLE_PARAMETER_NODE_TYPE,
-      title: `Parameter: ${parameter.name}`,
-      nodeTitle: parameter.name,
-      category: "Parameters",
-      searchAliases: [parameter.name, "parameter"],
-      pins: pinsForParticleNode(PARTICLE_PARAMETER_NODE_TYPE, properties),
-      defaultData: { ...properties, __particleRole: "input" },
-    };
+  const parameterNode = (
+    id: string,
+    title: string,
+    properties: { parameterId: string; valueType: ParticleNumericType },
+    extra: Partial<ParticlePaletteNode> & { defaultData?: Record<string, unknown> } = {},
+  ): ParticlePaletteNode => ({
+    id,
+    nodeType: PARTICLE_PARAMETER_NODE_TYPE,
+    title,
+    category: PARTICLE_PARAMETER_CATEGORY,
+    ...extra,
+    pins: pinsForParticleNode(PARTICLE_PARAMETER_NODE_TYPE, properties),
+    defaultData: { ...properties, ...extra.defaultData, __particleRole: "input" },
   });
-  return [...particlePaletteEntries().map((definition) => {
+  const parameterEntries = [
+    ...NEW_PARAMETER_ENTRIES.map(({ type, title }) =>
+      parameterNode(`${PARTICLE_PARAMETER_NODE_TYPE}:new:${type}`, title, { parameterId: "", valueType: type }, {
+        description: "Adds a new parameter of this type. Name it and set its default in the Inspector.",
+        searchAliases: ["parameter", "new parameter"],
+      }),
+    ),
+    ...parameters.map((parameter) =>
+      parameterNode(`${PARTICLE_PARAMETER_NODE_TYPE}:${parameter.id}`, parameter.name,
+        { parameterId: parameter.id, valueType: parameter.type }, {
+          nodeTitle: parameter.name,
+          searchAliases: ["parameter"],
+          defaultData: { [PARTICLE_PARAMETER_SNAPSHOT_KEY]: snapshotOf(parameter) },
+        }),
+    ),
+  ];
+  const entries = particlePaletteEntries().map((definition): ParticlePaletteNode => {
     const properties = newParticleNodeProperties(definition.type);
     return {
       id: definition.type,
@@ -142,7 +186,26 @@ export function particlePaletteNodes(parameters: readonly ParticleGraphParameter
       pins: pinsForParticleNode(definition.type, properties),
       defaultData: { ...properties, __particleRole: definition.role },
     };
-  }), ...parameterEntries];
+  });
+  let afterConstants = entries.length;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index]!.category === "Constants") {
+      afterConstants = index + 1;
+      break;
+    }
+  }
+  return [...entries.slice(0, afterConstants), ...parameterEntries, ...entries.slice(afterConstants)];
+}
+
+/** Parameter snapshots by node id from canvas data (see {@link PARTICLE_PARAMETER_SNAPSHOT_KEY}). */
+export function particleParameterSnapshots(graph: SerializedGraph): Map<string, ParticleParameterSnapshot> {
+  const snapshots = new Map<string, ParticleParameterSnapshot>();
+  for (const node of graph.nodes) {
+    if (node.type !== PARTICLE_PARAMETER_NODE_TYPE) continue;
+    const snapshot = particleParameterSnapshot(node.data[PARTICLE_PARAMETER_SNAPSHOT_KEY]);
+    if (snapshot) snapshots.set(node.id, snapshot);
+  }
+  return snapshots;
 }
 
 export function particleGraphToSerialized(doc: ParticleGraphDocument): SerializedGraph {
@@ -222,7 +285,7 @@ export function hydrateParticleGraphForEditor(
   /** A Parameter node is titled with its parameter's name. */
   parameters: readonly ParticleGraphParameter[] = [],
 ): SerializedGraph {
-  const parameterNames = new Map(parameters.map((parameter) => [parameter.id, parameter.name]));
+  const declared = new Map(parameters.map((parameter) => [parameter.id, parameter]));
   const edges = graph.edges.map((edge) => ({
     id: edge.id,
     sourceNodeId: edge.source,
@@ -271,18 +334,21 @@ export function hydrateParticleGraphForEditor(
         pin.typeLabel = typeLabel(wired || resolved === "float" ? (resolved ?? "generic") : "generic");
       }
       const definition = resolver.definitionOf(node.id);
+      const parameter = node.type === PARTICLE_PARAMETER_NODE_TYPE
+        ? declared.get(String(properties.parameterId ?? ""))
+        : undefined;
       return {
         ...node,
         data: {
           ...properties,
+          ...(parameter ? { [PARTICLE_PARAMETER_SNAPSHOT_KEY]: snapshotOf(parameter) } : {}),
           __pins: pins,
           __nodeType: node.type,
           ...(definition
             ? { __particleRole: definition.role, __category: definition.category }
             : {}),
           ...(definition?.terminal ? { __protected: true } : {}),
-          title: (node.type === PARTICLE_PARAMETER_NODE_TYPE ? parameterNames.get(String(properties.parameterId ?? "")) : undefined)
-            ?? definition?.title ?? PARTICLE_UNSUPPORTED_V1_TYPES[node.type] ?? node.type,
+          title: parameter?.name ?? definition?.title ?? PARTICLE_UNSUPPORTED_V1_TYPES[node.type] ?? node.type,
         },
       };
     }),

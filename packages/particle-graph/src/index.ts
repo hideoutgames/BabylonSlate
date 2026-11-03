@@ -100,11 +100,27 @@ export {
   type ParticleTypeResolver,
 } from "./resolve";
 export {
+  PARTICLE_CONSTANT_NODE_TYPES,
+  bindParticleParameterNode,
+  convertParticleConstantToParameter,
+  convertParticleParameterToConstant,
+  particleConstantValueType,
+  particleParameterSnapshot,
+  particleParameterStartValue,
+  reconcileParticleParameters,
+  uniqueParticleParameterName,
+  withParticleParameter,
+  type ParticleParameterSnapshot,
+} from "./parameter-nodes";
+export {
+  PARTICLE_PARAMETER_CATEGORY,
+  PARTICLE_PARAMETER_SNAPSHOT_KEY,
   hydrateParticleGraphForEditor,
   particleConnectionIsAllowed,
   particleGraphToSerialized,
   particleNodePropertiesFromData,
   particlePaletteNodes,
+  particleParameterSnapshots,
   particlePinsAreCompatible,
   pinsForParticleNode,
   serializedToParticleGraph,

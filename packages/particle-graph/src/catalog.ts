@@ -609,7 +609,7 @@ const INPUT_NODES: ParticleNodeDefinition[] = [
   {
     type: "input.parameter",
     title: "Parameter",
-    category: "Parameters",
+    category: "Parameter",
     role: "input",
     description: "A graph parameter that gameplay can set while the emitter runs. Its type is the parameter's.",
     inputs: [],

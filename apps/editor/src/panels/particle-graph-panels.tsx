@@ -10,6 +10,7 @@ import {
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
+  type NestedMenuItem,
   type PropertyRow,
 } from "@haptic/editor-kit";
 import { GraphEditor, type GraphDiagnostic } from "@haptic/graph-ui";
@@ -23,6 +24,8 @@ import {
 } from "@haptic/core";
 import {
   PARTICLE_ANGLE_UNIT_OPTIONS,
+  PARTICLE_PARAMETER_NAME_MAX,
+  PARTICLE_PARAMETER_NODE_TYPE,
   PARTICLE_CONDITION_TESTS,
   PARTICLE_LOCAL_VARIABLE_SCOPES,
   PARTICLE_MESH_SHAPE_SOURCES,
@@ -34,26 +37,34 @@ import {
   PARTICLE_SPRITE_SHEET_LIMITS,
   PARTICLE_UNSUPPORTED_V1_TYPES,
   PARTICLE_VALUE_TYPE_OPTIONS,
+  bindParticleParameterNode,
   clampParticlePinValue,
+  convertParticleConstantToParameter,
+  convertParticleParameterToConstant,
   createDefaultParticleGraphSettings,
   hydrateParticleGraphForEditor,
   listUnconnectedParticlePinDefaults,
   normalizeParticleGraphSettings,
+  normalizeParticleParameterName,
   particleConnectionIsAllowed,
+  particleConstantValueType,
   particleGradientStops,
   particleGraphToSerialized,
   particleNodeAngleUnit,
   particleNodeDefinitionFor,
   particleNodeValueType,
   particlePaletteNodes,
+  particleParameterSnapshots,
   particlePinDefaultPropertyKey,
   particlePinsAreCompatible,
   particleSpawnSettings,
   particleSpriteSheetSettings,
+  reconcileParticleParameters,
   resizeParticleValue,
   serializedToParticleGraph,
   setParticleNodeAngleUnit,
   setParticleNodeValueType,
+  withParticleParameter,
   withParticleSpawnPreset,
   type ParticleAngleUnit,
   type ParticleGradientStop,
@@ -87,7 +98,8 @@ import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { useSpawnPreviewEmitters } from "../lib/use-spawn-preview-emitters";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
-import { ParticleGraphParametersEditor, ParticlePreviewParameters } from "../components/particle-parameter-fields";
+import { ParticlePreviewParameters } from "../components/particle-parameter-fields";
+import { newParticleParameterId, particleParameterValueRow } from "../lib/particle-parameter-rows";
 
 type Commit = (next: ParticleGraphDocument, mergeKey?: string) => void;
 
@@ -624,6 +636,70 @@ function GradientStopsEditor({
   );
 }
 
+/**
+ * A Parameter node's rows: the parameter it reads, then that parameter's **Name**, **Type** and
+ * **Default**, which every node reading it shares. Retyping resizes the default and retypes
+ * those nodes; picking another parameter drops the old one once no node reads it.
+ */
+function particleParameterNodeRows(
+  document: ParticleGraphDocument,
+  node: ParticleGraphNode,
+  onChange: Commit,
+): PropertyRow[] {
+  const parameters = document.parameters ?? [];
+  const parameter = parameters.find((entry) => entry.id === node.properties.parameterId);
+  const picker: PropertyRow = {
+    id: "parameterId",
+    kind: "enum",
+    label: "Parameter",
+    value: parameter?.id ?? "",
+    description: parameter
+      ? "Name, Type and Default are shared by every node of this parameter."
+      : "Its parameter is gone. Pick another, or convert the node to a Constant.",
+    options: parameters.map((entry) => ({ value: entry.id, label: entry.name })),
+    onChange: (parameterId) => {
+      const next = bindParticleParameterNode(document, node.id, parameterId);
+      if (next) onChange(next);
+    },
+  };
+  if (!parameter) return [picker];
+  const update = (next: typeof parameter, mergeKey?: string) =>
+    onChange(withParticleParameter(document, next), mergeKey);
+  return [
+    picker,
+    {
+      id: "parameterName",
+      kind: "text",
+      label: "Name",
+      value: parameter.name,
+      description: `Gameplay sets it by this name. Unique in the graph, up to ${PARTICLE_PARAMETER_NAME_MAX} characters.`,
+      onChange: () => undefined,
+      onCommit: (text) => {
+        const name = normalizeParticleParameterName(text);
+        if (!name || name === parameter.name) return;
+        if (parameters.some((other) => other.id !== parameter.id && other.name === name)) return;
+        update({ ...parameter, name });
+      },
+    },
+    {
+      id: "parameterType",
+      kind: "enum",
+      label: "Type",
+      value: parameter.type,
+      options: PARTICLE_VALUE_TYPE_OPTIONS.map((option) => ({ value: option.id, label: option.label })),
+      onChange: (type) => update({ ...parameter, type: type as ParticleNumericType }),
+    },
+    particleParameterValueRow({
+      id: "parameterDefault",
+      label: "Default",
+      type: parameter.type,
+      value: parameter.defaultValue,
+      onChange: (defaultValue) =>
+        update({ ...parameter, defaultValue }, particleGraphFieldMergeKey(node.id, "parameterDefault")),
+    }),
+  ];
+}
+
 /** Header, pin defaults and properties of one selected node. */
 function ParticleNodeDetails({
   document,
@@ -657,22 +733,8 @@ function ParticleNodeDetails({
       </ModuleStack>
     );
   }
-  const parameters = document.parameters ?? [];
-  const parameterRows: PropertyRow[] = node.type === "input.parameter"
-    ? [{
-        id: "parameterId",
-        kind: "enum",
-        label: "Parameter",
-        value: String(node.properties.parameterId ?? ""),
-        description: parameters.some((parameter) => parameter.id === node.properties.parameterId)
-          ? undefined
-          : "Pick a parameter, or add one under Parameters with nothing selected.",
-        options: parameters.map((parameter) => ({ value: parameter.id, label: parameter.name })),
-        onChange: (parameterId) => {
-          const parameter = parameters.find((entry) => entry.id === parameterId);
-          if (parameter) setProperties({ parameterId, valueType: parameter.type });
-        },
-      }]
+  const parameterRows = node.type === PARTICLE_PARAMETER_NODE_TYPE
+    ? particleParameterNodeRows(document, node, onChange)
     : [];
   const rows = [
     ...parameterRows,
@@ -909,9 +971,6 @@ function ParticleGraphSettingsDetails({
         >
           <PropertyGrid rows={rows} />
         </ModuleStage>
-        <ModuleStage id="parameters" title="Parameters" accentRole={PARTICLE_STAGE_ROLE.input}>
-          <ParticleGraphParametersEditor document={document} onChange={onChange} />
-        </ModuleStage>
       </ModuleStack>
       <ParticleMaterialPicker
         open={picking}
@@ -942,9 +1001,9 @@ export function ParticleGraphDetails({
     ? document.nodes.find((entry) => entry.id === selectedNodeId)
     : undefined;
   if (node && node.type !== PARTICLE_OUTPUT_NODE_TYPE) {
-    // Keyed so field drafts and list focus never carry over to another node.
+    // Keyed so field drafts and list focus never carry over to another node, or across a conversion.
     return (
-      <ParticleNodeDetails key={node.id} document={document} node={node} onChange={onChange} />
+      <ParticleNodeDetails key={`${node.id}:${node.type}`} document={document} node={node} onChange={onChange} />
     );
   }
   return <ParticleGraphSettingsDetails document={document} onChange={onChange} />;
@@ -1128,6 +1187,38 @@ function ParticleGraphCanvas() {
     [],
   );
   const paletteNodes = useMemo(() => particlePaletteNodes(document.parameters), [document.parameters]);
+  // Menu actions read the document as it is when picked.
+  const documentRef = useRef(document);
+  documentRef.current = document;
+  const contextMenuItemsForNode = useCallback(
+    (nodeId: string): NestedMenuItem[] => {
+      const node = documentRef.current.nodes.find((entry) => entry.id === nodeId);
+      if (node && particleConstantValueType(node.type)) {
+        return [{
+          id: "convert-to-parameter",
+          label: "Convert to Parameter",
+          testId: "particle-graph-convert-to-parameter",
+          onSelect: () => {
+            const next = convertParticleConstantToParameter(documentRef.current, nodeId, newParticleParameterId);
+            if (next) commit(next);
+          },
+        }];
+      }
+      if (node?.type === PARTICLE_PARAMETER_NODE_TYPE) {
+        return [{
+          id: "convert-to-constant",
+          label: "Convert to Constant",
+          testId: "particle-graph-convert-to-constant",
+          onSelect: () => {
+            const next = convertParticleParameterToConstant(documentRef.current, nodeId);
+            if (next) commit(next);
+          },
+        }];
+      }
+      return [];
+    },
+    [commit],
+  );
   // Pin ids stay on the rows so the canvas rings the offending pin.
   const diagnostics = useMemo<GraphDiagnostic[]>(
     () =>
@@ -1153,9 +1244,14 @@ function ParticleGraphCanvas() {
         onSelectionChange={(ids) => setSelectedNodeId(ids[0] ?? null)}
         focusedNodeId={editing.focusedNodeId ?? undefined}
         commitPositionsOnDragEnd
+        contextMenuItemsForNode={contextMenuItemsForNode}
         onChange={(next, meta) =>
           commit(
-            serializedToParticleGraph(next, document),
+            // New Parameter entries declare their parameter; pasted nodes bring theirs back.
+            reconcileParticleParameters(document, serializedToParticleGraph(next, document), {
+              newId: newParticleParameterId,
+              snapshots: particleParameterSnapshots(next),
+            }),
             meta?.kind === "position" && meta.transactionId
               ? `particle-graph-node-move:${meta.transactionId}`
               : undefined,

@@ -187,6 +187,8 @@ describe("ParticleGraphDetails", () => {
     }
     // The unit comes verbatim from the catalog pin.
     expect(screen.getByRole("textbox", { name: "Emit Rate" })).toBeTruthy();
+    // Parameters are edited on their Parameter nodes.
+    expect(screen.queryByTestId("module-stage-parameters")).toBeNull();
   });
 
   it("stores Capacity up to 4096 with one undo entry per gesture", () => {
@@ -345,45 +347,41 @@ describe("ParticleGraphDetails", () => {
     expect(nodeOf(history.read(), "create").properties["default:angle"]).toEqual([45]);
   });
 
-  it("adds, renames and retypes parameters, retyping the nodes that read them", async () => {
-    const doc = createDefaultParticleGraphDocument("Embers");
-    const history = renderDetails(doc);
-    fireEvent.click(screen.getByTestId("particle-graph-parameters-add"));
-    fireEvent.click(screen.getByTestId("particle-graph-parameters-add"));
-    const [first, second] = history.read().parameters;
-    expect([first!.name, second!.name]).toEqual(["Parameter", "Parameter 2"]);
-    // A name another parameter holds is refused; a fresh one is trimmed and kept.
-    type(`property-parameter-${second!.id}-name`, "Parameter");
-    expect(history.read().parameters[1]!.name).toBe("Parameter 2");
-    type(`property-parameter-${second!.id}-name`, "  Intensity ");
-    expect(history.read().parameters[1]!.name).toBe("Intensity");
-    // A Parameter node follows its parameter's type.
-    const withNode = { ...history.read(), nodes: [...history.read().nodes,
-      { id: "reader", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: second!.id, valueType: "float" } }] };
-    cleanup();
-    const next = renderDetails(withNode);
-    await pickOption(`property-parameter-${second!.id}-type`, "Color");
-    expect(next.read().parameters[1]).toMatchObject({ type: "color", defaultValue: [1, 1, 1, 1] });
-    expect(nodeOf(next.read(), "reader").properties.valueType).toBe("color");
-  });
-
-  it("deletes an unused parameter at once and asks before deleting one that nodes read", async () => {
+  it("edits a Parameter node's parameter for every node that reads it", async () => {
     const doc = createDefaultParticleGraphDocument("Embers");
     doc.parameters = [
-      { id: "unused", name: "Unused", type: "float", defaultValue: [1] },
-      { id: "used", name: "Heat", type: "float", defaultValue: [1] },
+      { id: "heat", name: "Heat", type: "float", defaultValue: [1] },
+      { id: "tint", name: "Tint", type: "color", defaultValue: [1, 0, 0, 1] },
     ];
-    doc.nodes.push({ id: "reader", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "used", valueType: "float" } });
-    const history = renderDetails(doc);
-    fireEvent.click(screen.getByTestId("particle-graph-parameters-0-remove"));
-    expect(history.read().parameters.map((parameter) => parameter.id)).toEqual(["used"]);
-    fireEvent.click(screen.getByTestId("particle-graph-parameters-0-remove"));
-    // Not yet: the dialog names the parameter.
-    expect(history.read().parameters).toHaveLength(1);
-    expect(await screen.findByText(/Heat is used by Parameter nodes/)).toBeTruthy();
-    fireEvent.click(screen.getByTestId("particle-graph-parameter-delete-confirm"));
-    expect(history.read().parameters).toEqual([]);
-    expect(nodeOf(history.read(), "reader")).toBeTruthy();
+    doc.nodes.push(
+      { id: "a", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "heat", valueType: "float" } },
+      { id: "b", type: "input.parameter", position: { x: 0, y: 100 }, properties: { parameterId: "heat", valueType: "float" } },
+    );
+    const history = renderDetails(doc, "a");
+    // A name another parameter holds is refused; a fresh one is trimmed and kept.
+    type("property-parameterName", "Tint");
+    expect(history.read().parameters[0]!.name).toBe("Heat");
+    type("property-parameterName", "  Glow ");
+    expect(history.read().parameters[0]!.name).toBe("Glow");
+    type("property-parameterDefault", "3");
+    expect(history.read().parameters[0]!.defaultValue).toEqual([3]);
+    await pickOption("property-parameterType", "Vector 2");
+    expect(history.read().parameters[0]).toMatchObject({ type: "vec2", defaultValue: [3, 3] });
+    expect(["a", "b"].map((id) => nodeOf(history.read(), id).properties.valueType)).toEqual(["vec2", "vec2"]);
+    // Picking another parameter keeps the old one while another node reads it.
+    await pickOption("property-parameterId", "Tint");
+    expect(nodeOf(history.read(), "a").properties).toEqual({ parameterId: "tint", valueType: "color" });
+    expect(history.read().parameters.map((parameter) => parameter.id)).toEqual(["heat", "tint"]);
+  });
+
+  it("explains a Parameter node whose parameter is gone", () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "lost", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "gone", valueType: "float" } });
+    renderDetails(doc, "lost");
+    expect(screen.getByTestId("particle-graph-node-details").textContent).toContain(
+      "Its parameter is gone. Pick another, or convert the node to a Constant.",
+    );
+    expect(screen.queryByTestId("property-parameterName")).toBeNull();
   });
 
   it("edits Gradient stops for its value type", async () => {
@@ -535,6 +533,49 @@ describe("Particle Graph document panels", () => {
       "updateColor.out > output.particle",
       "velocity.out > updateColor.particle",
     ]);
+  });
+
+  it("converts a Constant to a Parameter and back from the node menu, keeping its wire", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "life", type: "const.float", position: { x: 0, y: 400 }, properties: { value: [2.5] } });
+    doc.edges.push({ id: "life-create", sourceNodeId: "life", sourcePinId: "out", targetNodeId: "create", targetPinId: "lifetime" });
+    const { container } = renderPanels(doc, "canvas");
+    const header = async () => {
+      await waitFor(() => expect(container.querySelector('[data-id="life"]')).not.toBeNull());
+      return container.querySelector('[data-id="life"]')!.firstElementChild!;
+    };
+    fireEvent.contextMenu(await header());
+    fireEvent.click(await screen.findByTestId("particle-graph-convert-to-parameter"));
+    const converted = normalizeParticleGraphDocument(store.applyAssetDocumentChange.mock.calls.at(-1)![1]);
+    expect(converted.parameters).toEqual([
+      { id: expect.any(String), name: "Parameter", type: "float", defaultValue: [2.5] },
+    ]);
+    expect(nodeOf(converted, "life")).toMatchObject({
+      type: "input.parameter",
+      properties: { parameterId: converted.parameters[0]!.id },
+    });
+    expect(links(converted)).toEqual(links(doc));
+
+    await waitFor(() => expect(container.querySelector('[data-id="life"]')?.textContent).toContain("Parameter"));
+    fireEvent.contextMenu(await header());
+    fireEvent.click(await screen.findByTestId("particle-graph-convert-to-constant"));
+    const back = normalizeParticleGraphDocument(store.applyAssetDocumentChange.mock.calls.at(-1)![1]);
+    expect(back.parameters).toEqual([]);
+    expect(nodeOf(back, "life")).toMatchObject({ type: "const.float", properties: { value: [2.5] } });
+    expect(links(back)).toEqual(links(doc));
+  });
+
+  it("declares a new parameter for an Add Node Parameter entry", async () => {
+    renderPanels(createDefaultParticleGraphDocument("Embers"), "canvas");
+    fireEvent.click(await screen.findByTestId("graph-add-node"));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "Color Parameter" } });
+    fireEvent.click(screen.getByTestId("node-palette-item-input.parameter:new:color"));
+    const added = normalizeParticleGraphDocument(store.applyAssetDocumentChange.mock.calls.at(-1)![1]);
+    expect(added.parameters).toEqual([
+      { id: expect.any(String), name: "Parameter", type: "color", defaultValue: [1, 1, 1, 1] },
+    ]);
+    const node = added.nodes.find((entry) => entry.type === "input.parameter")!;
+    expect(node.properties).toEqual({ parameterId: added.parameters[0]!.id, valueType: "color" });
   });
 
   it("shows a diagnostic's node in Details when its row is tapped", () => {
