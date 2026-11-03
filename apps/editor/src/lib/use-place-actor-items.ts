@@ -9,6 +9,7 @@ import { useDocumentActions, useRegistryState } from "../context/document-contex
 import { FALLBACK_PLACE_POSITION, useSceneEditing } from "../context/scene-editing-context";
 import {
   nextActorId,
+  placementMergeKey,
   prefabComponentsForGuid,
   spawnPlacedActor,
   type PlaceActorItem,
@@ -36,6 +37,9 @@ function pendingClassAsset(
  * the scene as it is when the load finishes, keeping edits made meanwhile; a
  * second placement during that wait is ignored, since both would claim the
  * same actor ids. `onPlaced` runs after the change with the new actor ids.
+ * With the `surfaceNormal` of a placement trace hit, the viewport then rests
+ * each actor against that surface through its own position, in the same
+ * undo entry.
  */
 export function usePlaceActorItems(options: {
   documentId: string;
@@ -46,21 +50,23 @@ export function usePlaceActorItems(options: {
   items: readonly PlaceActorItem[],
   positions: readonly Position[],
   onPlaced?: (actorIds: string[]) => void,
+  surfaceNormal?: readonly [number, number, number] | null,
 ) => void {
   const { documentId, scene, overlay, graphForPath } = options;
   const { applySceneChange, getOpenDocuments, loadGraphDocument } = useDocumentActions();
   const { assetRegistry } = useRegistryState();
-  const { setSelectedActorIds } = useSceneEditing();
+  const { setSelectedActorIds, viewportDropApi } = useSceneEditing();
   const waitingRef = useRef(false);
 
   return useCallback(
-    (items, positions, onPlaced) => {
+    (items, positions, onPlaced, surfaceNormal) => {
       if (!scene || waitingRef.current || items.length === 0) return;
       const assets = assetRegistry?.list() ?? [];
       // `loaded` is null when no Class waited for its graph.
       const commit = (base: SerializedScene, loaded: ReadonlyMap<string, SerializedGraph> | null) => {
         let next = base;
         const ids: string[] = [];
+        const placed: Array<[number, number, number]> = [];
         items.forEach((item, index) => {
           const asset = loaded ? pendingClassAsset(item, assets) : undefined;
           let resolved = item;
@@ -83,6 +89,7 @@ export function usePlaceActorItems(options: {
           }
           const id = nextActorId(next);
           const position = positions[index] ?? positions[0] ?? FALLBACK_PLACE_POSITION;
+          placed.push([position[0], position[1], position[2]]);
           next = {
             ...next,
             actors: [
@@ -92,7 +99,15 @@ export function usePlaceActorItems(options: {
           };
           ids.push(id);
         });
-        void applySceneChange(documentId, next);
+        const mergeKey = placementMergeKey(ids[0]!);
+        void applySceneChange(documentId, next, { mergeKey });
+        if (surfaceNormal) {
+          const normal: [number, number, number] = [surfaceNormal[0], surfaceNormal[1], surfaceNormal[2]];
+          viewportDropApi.restOnSurface(
+            ids.map((actorId, index) => ({ actorId, point: placed[index]!, normal })),
+            mergeKey,
+          );
+        }
         setSelectedActorIds(ids);
         onPlaced?.(ids);
       };
@@ -127,6 +142,7 @@ export function usePlaceActorItems(options: {
       overlay,
       scene,
       setSelectedActorIds,
+      viewportDropApi,
     ],
   );
 }

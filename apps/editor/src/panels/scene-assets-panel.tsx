@@ -1,4 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
+import type { SurfacePlacement } from "@haptic/render";
 import {
   memo,
   useCallback,
@@ -262,20 +263,22 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
   const placeItems = usePlaceActorItems({ documentId, scene, overlay, graphForPath });
   const canPlace = Boolean(scene) && !simulating;
   const placeAt = useCallback(
-    (ids: readonly string[], center: readonly [number, number, number]) => {
+    (ids: readonly string[], placement: SurfacePlacement) => {
       if (!canPlace || !scene) return;
       const entries = ids.flatMap((id) => byId.get(id) ?? []);
       if (entries.length === 0) return;
       const plane = overlay || scene.viewportMode === "2d" ? "xy" : "xz";
       placeItems(
         entries.map((entry) => entry.item),
-        sceneAssetDropPositions(center, entries.length, plane),
+        sceneAssetDropPositions(placement.position, entries.length, plane),
+        undefined,
+        placement.normal,
       );
     },
     [byId, canPlace, overlay, placeItems, scene],
   );
   const placeAtViewCenter = useCallback(
-    (ids: readonly string[]) => placeAt(ids, viewportDropApi.worldPositionAtViewCenter()),
+    (ids: readonly string[]) => placeAt(ids, viewportDropApi.placementAtViewCenter()),
     [placeAt, viewportDropApi],
   );
 
@@ -314,9 +317,9 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
     (id: string, clientX: number, clientY: number) => {
       setDropHint(null);
       if (!canPlace || !viewportDropApi.containsClientPoint(clientX, clientY)) return;
-      const position = viewportDropApi.worldPositionAtClient(clientX, clientY);
-      if (!position) return;
-      placeAt(draggedSceneAssetIds(id, selectedIds, orderedIds), position);
+      const placement = viewportDropApi.placementAtClient(clientX, clientY);
+      if (!placement) return;
+      placeAt(draggedSceneAssetIds(id, selectedIds, orderedIds), placement);
     },
     [canPlace, orderedIds, placeAt, selectedIds, viewportDropApi],
   );

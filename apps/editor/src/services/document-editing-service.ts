@@ -143,11 +143,16 @@ export class DocumentEditingService {
     return true;
   }
 
-  /** Apply a scene edit through the command layer (marks dirty + undoable). */
+  /**
+   * Apply a scene edit through the command layer (marks dirty + undoable).
+   * An edit with `mergeKey` joins the latest Undo step when that step has the
+   * same key, even after its gesture ended (a placement and its later rest on
+   * a surface); any other edit in between keeps them apart.
+   */
   async applySceneChange(
     id: string,
     next: SerializedScene,
-    options?: { prefabSync?: boolean },
+    options?: { prefabSync?: boolean; mergeKey?: string },
   ): Promise<boolean> {
     const doc = this.documents.getState().openDocuments.get(id);
     if (!doc || !isSceneWorkspaceKind(doc.ref.kind) || !doc.content) {
@@ -173,7 +178,10 @@ export class DocumentEditingService {
     if (commands.length === 0) {
       return false;
     }
-    const result = this.editSession.applyBatch(id, previous, commands)!;
+    const result = this.editSession.applyBatch(id, previous, commands, {
+      mergeKey: options?.mergeKey,
+      amend: options?.mergeKey !== undefined,
+    })!;
     this.documents.updateScene(id, result.doc);
     this.reportHistoryOutcome(id, result);
     await this.notifyAppliedCommand(id, result.command);
