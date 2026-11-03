@@ -13,7 +13,7 @@ import { sceneRenderingSettings } from "./render-settings";
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { lightsInCreationOrder } from "./light-policy";
 import { findSceneShadowController } from "./shadow-controller";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { shadowFilterFetches, shadowViewTexelRatios } from "./shadow-filter";
 
 /** Caller-supplied provenance is deliberately not inferred from an adapter name. */
@@ -282,7 +282,7 @@ export function captureShadowDiagnostics(
                     // A cascade's far end in view depth and its tile's texels per world metre, as last drawn.
                     cascadeEnd: generator instanceof AtlasCascadedShadowGenerator ? finite(generator.cascadeEnds[layer]) : null,
                     texelsPerMetre: generator instanceof CascadedShadowGenerator && extents?.width
-                      ? finite(generator.mapSize / extents.width)
+                      ? finite(shadowTileSize(generator, layer) / extents.width)
                       : null,
                   };
                 },

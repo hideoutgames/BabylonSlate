@@ -176,6 +176,14 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
  */
 export const SHADOW_HALF_TILE_CASCADES = { low: 0, medium: 1, high: 1, ultra: 2 } as const satisfies Record<ShadowProfile, number>;
 
+/**
+ * Per shadow quality level, the sun's first cascade tile edge as a multiple of the map size: the first cascade holds
+ * the shadows nearest the camera, where a texel is largest on screen, so at High its tile has twice the edge (four
+ * times the texels) over the same slice. Low and Medium have no atlas room for it, and Ultra's 4096-texel map would
+ * need an 8192-texel tile, its whole atlas.
+ */
+export const SHADOW_FIRST_CASCADE_SCALE = { low: 1, medium: 1, high: 2, ultra: 1 } as const satisfies Record<ShadowProfile, number>;
+
 export const SHADOW_FAR_CASTER_MIN_TEXELS = { low: 3, medium: 2, high: 1.5, ultra: 1 } as const satisfies Record<ShadowProfile, number>;
 
 /** Conservative admission policy; these are not device performance measurements. */

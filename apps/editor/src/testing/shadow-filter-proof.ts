@@ -18,7 +18,7 @@ import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngin
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { shadowAtlasTexture } from "../../../../packages/render/src/shadow-atlas";
+import { shadowAtlasTexture, shadowTileSize } from "../../../../packages/render/src/shadow-atlas";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 160;
@@ -122,7 +122,7 @@ export async function runShadowFilterProof(backend: "webgl2" | "webgpu") {
       // The cascade's world width over its tile, against the view's world width over its pixels.
       const shadow = generator();
       const width = shadow.getCascadeMaxExtents(0)!.x - shadow.getCascadeMinExtents(0)!.x;
-      const texel = width / shadow.mapSize;
+      const texel = width / shadowTileSize(shadow, 0);
       const viewWidth = 2 * camera.position.y * Math.tan(camera.fov / 2) * (WIDTH / HEIGHT);
       captures.push({ quality, lit, pixelsPerTexel: texel / (viewWidth / WIDTH) });
     }

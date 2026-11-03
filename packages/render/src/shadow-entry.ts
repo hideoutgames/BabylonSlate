@@ -57,6 +57,8 @@ export type AllocationKey = {
   readonly atlasEdge: number;
   /** A sun's last cascades with half-edge tiles (`SHADOW_HALF_TILE_CASCADES`); 0 for any other map. */
   readonly halfTiles: number;
+  /** A sun's first cascade tile edge over its map size (`SHADOW_FIRST_CASCADE_SCALE`); 1 for any other map. */
+  readonly firstTileScale: number;
 };
 
 export function allocationKey(
@@ -65,6 +67,7 @@ export function allocationKey(
   cascades: number,
   atlasEdge: number,
   halfTiles = 0,
+  firstTileScale = 1,
 ): AllocationKey {
   return {
     mapSize,
@@ -72,6 +75,7 @@ export function allocationKey(
     cascades: light instanceof DirectionalLight ? cascades : 1,
     atlasEdge,
     halfTiles: light instanceof DirectionalLight ? halfTiles : 0,
+    firstTileScale: light instanceof DirectionalLight ? firstTileScale : 1,
   };
 }
 
@@ -88,6 +92,7 @@ export function matchesAllocationKey(
   cascades: number,
   atlasEdge: number,
   halfTiles = 0,
+  firstTileScale = 1,
 ): boolean {
   return (
     key !== null &&
@@ -95,7 +100,8 @@ export function matchesAllocationKey(
     key.cube === light.needCube() &&
     sameJsonNumber(key.cascades, light instanceof DirectionalLight ? cascades : 1) &&
     key.atlasEdge === atlasEdge &&
-    key.halfTiles === (light instanceof DirectionalLight ? halfTiles : 0)
+    key.halfTiles === (light instanceof DirectionalLight ? halfTiles : 0) &&
+    key.firstTileScale === (light instanceof DirectionalLight ? firstTileScale : 1)
   );
 }
 
