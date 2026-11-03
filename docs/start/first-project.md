@@ -72,7 +72,7 @@ Benchmark plays every scene at each quality level and takes about ten minutes; k
 
 Breakdown shows what each feature costs your device's GPU. It plays two scenes, measures each feature on its own between unchanged baselines, and also measures occlusion culling seen from two cameras. It needs no console commands. Choose how it measures:
 
-- **Add One** (the default) starts from a light setup well below what the GPU can handle: the Low quality level at half resolution, without post-processing, anti-aliasing, water reflections, water refraction or captures. It turns one feature on at a time at its Medium value, so each change is that feature's own cost. The report flags **OVER CAP** when even the light setup took over 30 ms of GPU time per frame, because the costs are then unreliable.
+- **Add One** (the default) starts from a light setup well below what the GPU can handle: the Low quality level at half resolution, without post-processing, anti-aliasing, water reflections, water refraction, occlusion culling or captures. It turns one feature on at a time at its Medium value, so each change is that feature's own cost. The report flags **OVER CAP** when even the light setup took over 30 ms of GPU time per frame, because the costs are then unreliable.
 - **Remove One** starts from the Medium quality level and turns one feature off at a time, showing what each saves there. A GPU that is already at its limit shows only whether removing a feature brought it back under, not what the feature costs.
 
 Either way, a step whose setting already has that value is skipped, and the report says so. The report also shows how much the GPU time changed while the device warmed up.

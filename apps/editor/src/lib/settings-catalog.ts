@@ -101,7 +101,7 @@ export const ENGINE_CATEGORIES: Array<
   {
     id: "viewport",
     label: "Viewport",
-    keywords: "frame cap camera preview frame rate fps hardware scaling post processing camera speed fly",
+    keywords: "frame cap camera preview frame rate fps hardware scaling post processing occlusion culling camera speed fly",
   },
   {
     id: "assets",

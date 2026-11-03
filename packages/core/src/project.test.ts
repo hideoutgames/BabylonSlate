@@ -172,6 +172,8 @@ describe("project schema", () => {
     expect(look(createEmptyProject("Two", { kind: "2d" }).settings)).toEqual(["legacyDisplay", "neutral"]);
     expect(look(createEmptyProject("Pixels", { pixelArt: true }).settings)).toEqual(["legacyDisplay", "neutral"]);
     expect(createEmptyProject("Three").settings.render.effects?.volumetricLighting.density).toBe(0.003);
+    expect(createEmptyProject("Three").settings.render.quality?.geometry).toMatchObject({ occlusionCulling: true, preset: "high" });
+    expect(createEmptyProject("Two", { kind: "2d" }).settings.render.quality?.geometry).toMatchObject({ occlusionCulling: false, preset: "custom" });
   });
 
   it("filters textures nearest only when Nearest Texture Filtering and Pixel-Perfect Mode are both on", () => {

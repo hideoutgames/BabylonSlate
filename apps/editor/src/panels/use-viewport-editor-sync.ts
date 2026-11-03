@@ -1,6 +1,7 @@
 import { useEffect, type RefObject } from "react";
 import { isSceneLayerAnchorActor, type SerializedScene } from "@haptic/core";
 import type { EngineHandle } from "@haptic/render";
+import { useAppSettings } from "../context/app-settings-context";
 import { useProjectState, useRegistryState } from "../context/document-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
@@ -23,7 +24,7 @@ export interface ViewportEditorSyncDeps {
 /**
  * Pushes editor state into the viewport Engine: open Material tabs, selection
  * and shape-edit debug, viewport and shading modes, collision and Game Camera
- * previews, pivot, gizmo tool, space and snap, grid, sorting layers and
+ * previews, pivot, occlusion culling, gizmo tool, space and snap, grid, sorting layers and
  * pixel-perfect. Every effect re-runs on `engineEpoch`, so a new Engine gets
  * the current state. React runs its effects in call order, so the panel calls
  * it where these effects have always run.
@@ -50,8 +51,9 @@ export function useViewportEditorSync({
     pivotAroundCenter,
     viewportShadingMode,
     collisionsVisible,
-    occlusionCulling,
   } = useSceneEditing();
+  // Editor Settings > Viewport > Occlusion Culling; the project's setting governs Play and exports.
+  const occlusionCulling = useAppSettings().settings.viewportOcclusionCulling;
   const linkedScale = useLinkedScale();
   // The gizmo keeps each linked actor's proportions, and the whole selection's
   // when every actor is linked. Scene Layer anchors take no Scale row, so they
