@@ -7,14 +7,10 @@ export function dataDefinitionGuidOf(properties: Record<string, unknown>): strin
 /** Input pin whose authored literal types an Unknown read's Value. */
 export const DATA_DEFINITION_PIN_ID = "definition";
 
-/**
- * The Data Definition picked on an Unknown read's Data Definition pin. Graphs saved
- * before Async Read Unknown Data Entry had the pin keep the Definition in
- * `definitionGuid`, which applies until the pin is set.
- */
+/** The Data Definition picked on an Unknown read's Data Definition pin. */
 export function dataDefinitionPinGuid(properties: Record<string, unknown>): string {
   const picked = properties[`default:${DATA_DEFINITION_PIN_ID}`];
-  return typeof picked === "string" ? picked.trim() : dataDefinitionGuidOf(properties);
+  return typeof picked === "string" ? picked.trim() : "";
 }
 
 const definitionPin = () => pin(DATA_DEFINITION_PIN_ID, "Data Definition", "in", assetRef("DataDefinition"));

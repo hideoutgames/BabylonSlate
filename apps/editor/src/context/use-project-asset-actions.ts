@@ -15,10 +15,7 @@ import {
   isPluginDocumentReadOnly,
 } from "../lib/plugin-ui";
 import type { DocumentService } from "../services/document-service";
-import {
-  zipGameArtifact,
-} from "../services/export-game";
-import { exportProjectGameArtifact, type ExportGameArtifactOptions } from "../services/export-game-artifact";
+import type { ExportGameArtifactOptions } from "../services/export-game-artifact";
 import type { ProjectService } from "../services/project-service";
 import type { SourceControlService } from "../services/source-control-service";
 import type { DocumentActions } from "./document-context-types";
@@ -162,13 +159,18 @@ export function useProjectAssetActions({
     return projectService.exportZip(snapshot);
   }, [projectService]);
 
+  // The export pipeline (closure, compile, pack) loads on first export.
   const exportGameArtifact = useCallback(
-    (options?: ExportGameArtifactOptions) =>
-      exportProjectGameArtifact(projectService, projectDocumentRef.current, options),
+    async (options?: ExportGameArtifactOptions) => {
+      const current = projectDocumentRef.current;
+      const { exportProjectGameArtifact } = await import("../services/export-game-artifact");
+      return exportProjectGameArtifact(projectService, current, options);
+    },
     [projectService, projectDocumentRef],
   );
 
-  const zipExportedGame = useCallback((artifact: ExportArtifact) => {
+  const zipExportedGame = useCallback(async (artifact: ExportArtifact) => {
+    const { zipGameArtifact } = await import("../services/export-game");
     return zipGameArtifact(artifact);
   }, []);
 

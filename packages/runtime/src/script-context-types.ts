@@ -224,8 +224,6 @@ export interface ScriptContext {
     int(min: number, max: number): number;
     bool(): boolean;
   };
-  /** @deprecated Prefer `ctx.random.float()`. */
-  randomFloat(): number;
   /** Random In Range nodes: draws from the seeded session RNG (integers inclusive, others from Min up to Max). */
   randomInRange(kind: RangeKind, range: unknown): unknown;
   clampToRange(kind: RangeKind, value: unknown, range: unknown): unknown;
@@ -635,7 +633,7 @@ export type HostContextKey =
   | "setMaterialColorParameter" | "setMaterialTextureParameter" | "rotatorToQuat" | "quatToRotator"
   | "combineRotators" | "inverseRotator" | "deltaRotator" | "lerpRotator" | "rotatorForward" | "rotatorRight"
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
-  | "normalizeQuat" | "randomFloat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"
+  | "normalizeQuat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
   | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "createTimelineClip" | "timelineProxy" | "timelineProxyGet" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"

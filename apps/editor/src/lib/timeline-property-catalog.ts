@@ -115,20 +115,6 @@ export function timelinePropertyGroups(actor: SerializedActor, context: Timeline
   return groups;
 }
 
-/** The entry for an existing track's target, for its label; undefined when the actor no longer has it. */
-export function timelinePropertyEntry(
-  actor: SerializedActor,
-  target: TimelineTrackTarget,
-  context: TimelinePropertyContext,
-): TimelinePropertyEntry | undefined {
-  const key = timelineTargetKey(target);
-  for (const group of timelinePropertyGroups(actor, context)) {
-    const entry = group.entries.find((candidate) => timelineTargetKey(candidate.target) === key);
-    if (entry) return entry;
-  }
-  return undefined;
-}
-
 /**
  * Why a track cannot animate: `missing_target` when its actor or component
  * no longer exists (Play skips it), `property_unavailable` when the property

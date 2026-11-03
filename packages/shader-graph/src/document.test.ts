@@ -4,9 +4,9 @@ import {
   MATERIAL_SCHEMA_VERSION,
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
+  createImportedMaterialDocument,
   materialDependencies,
   missingPackedMaterialTextureGuids,
-  migrateLegacyShaderPayload,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
   setMaterialDomain,
@@ -84,91 +84,11 @@ describe("material document", () => {
     );
   });
 
-  it("migrates a legacy Shader payload into a surface material", () => {
-    const legacy = {
-      name: "Surface",
-      postProcess: false,
-      nodes: [
-        { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
-        {
-          id: "out",
-          type: "output.fragment",
-          position: { x: 280, y: 0 },
-          properties: {},
-        },
-      ],
-      edges: [
-        {
-          id: "e0",
-          sourceNodeId: "uv",
-          sourcePinId: "uv",
-          targetNodeId: "out",
-          targetPinId: "color",
-        },
-      ],
-    };
-    const doc = migrateLegacyShaderPayload(legacy);
-    expect(doc.schemaVersion).toBe(MATERIAL_SCHEMA_VERSION);
+  it("builds an imported Material whose texture feeds Base Color", () => {
+    const doc = createImportedMaterialDocument({ textureGuid: "tex-1", shadingModel: "unlit" });
     expect(doc.domain).toBe("surface");
-    expect(doc.nodes.some((node) => node.type === "output.surface")).toBe(true);
-    expect(doc.nodes.some((node) => node.type === "output.fragment")).toBe(
-      false,
-    );
-  });
-
-  it("drops the legacy UV to color edge that was never a valid connection", () => {
-    const doc = migrateLegacyShaderPayload({
-      name: "Surface",
-      postProcess: false,
-      nodes: [
-        { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
-        {
-          id: "out",
-          type: "output.fragment",
-          position: { x: 280, y: 0 },
-          properties: {},
-        },
-      ],
-      edges: [
-        {
-          id: "e0",
-          sourceNodeId: "uv",
-          sourcePinId: "uv",
-          targetNodeId: "out",
-          targetPinId: "color",
-        },
-      ],
-    });
-    expect(
-      doc.edges.some(
-        (edge) => edge.sourceNodeId === "uv" && edge.targetPinId === "color",
-      ),
-    ).toBe(false);
-  });
-
-  it("migrates a legacy post-process Shader payload by domain", () => {
-    const doc = migrateLegacyShaderPayload({
-      name: "Vignette",
-      postProcess: true,
-      nodes: [
-        {
-          id: "out",
-          type: "output.postProcess",
-          position: { x: 0, y: 0 },
-          properties: {},
-        },
-      ],
-      edges: [],
-    });
-    expect(doc.domain).toBe("postProcess");
-    expect(doc.nodes.filter((node) => node.type === "output.postProcess")).toHaveLength(
-      1,
-    );
-  });
-
-  it("migrates an empty imported Material stub into a texture-fed graph", () => {
-    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
-    expect(doc.domain).toBe("surface");
+    expect(doc.shadingModel).toBe("unlit");
+    expect(doc.edges).toContainEqual(expect.objectContaining({ sourceNodeId: "sample", targetNodeId: "output", targetPinId: "baseColor" }));
     const sample = doc.nodes.find((node) => node.type === "texture.sample");
     expect(sample).toBeDefined();
     expect(materialDependencies(doc).textures).toEqual(["tex-1"]);

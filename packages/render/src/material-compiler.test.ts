@@ -5,7 +5,7 @@ import {
   createDefaultMaterialFunctionDocument,
   lowerMaterialDocument,
   materialPinDefaultPropertyKey,
-  migrateLegacyShaderPayload,
+  createImportedMaterialDocument,
   newCustomGlslProperties,
   type MaterialDocument,
 } from "@haptic/shader-graph";
@@ -1632,7 +1632,7 @@ describe("material compiler", () => {
     disposers.push(() => resolved.dispose());
     let ready = false;
     vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
-    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const doc = createImportedMaterialDocument({ textureGuid: "tex-1" });
     const result = compileMaterialPlan(planFor(doc), {
       scene,
       name: "imported-albedo",
@@ -1661,7 +1661,7 @@ describe("material compiler", () => {
     disposers.push(() => resolved.dispose());
     let ready = false;
     vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
-    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const doc = createImportedMaterialDocument({ textureGuid: "tex-1" });
     const result = compileMaterialPlan(planFor(doc), {
       scene,
       name: "imported-albedo",
@@ -1692,7 +1692,7 @@ describe("material compiler", () => {
     disposers.push(() => resolved.dispose());
     let ready = false;
     vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
-    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const doc = createImportedMaterialDocument({ textureGuid: "tex-1" });
     doc.blendMode = "masked";
     doc.alphaCutoff = 0.4;
     const result = compileMaterialPlan(planFor(doc), {
@@ -1725,7 +1725,7 @@ describe("material compiler", () => {
       resolved as Texture & { onErrorObservable: Observable<{ message?: string }> }
     ).onErrorObservable = errors;
     const diagnostics: Array<{ code: string }> = [];
-    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const doc = createImportedMaterialDocument({ textureGuid: "tex-1" });
     const result = compileMaterialPlan(planFor(doc), {
       scene,
       name: "imported-albedo",
@@ -1806,7 +1806,7 @@ describe("material compiler", () => {
     vi.spyOn(resolved, "isReady").mockReturnValue(true);
     (resolved as unknown as { _loadingError: boolean })._loadingError = true;
     expect(isGpuTextureSampleReady(resolved)).toBe(false);
-    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const doc = createImportedMaterialDocument({ textureGuid: "tex-1" });
     const result = compileMaterialPlan(planFor(doc), {
       scene,
       name: "error-sampler",
@@ -1829,7 +1829,7 @@ describe("material compiler", () => {
     disposers.push(() => resolved.dispose());
     let ready = false;
     vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
-    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const doc = createImportedMaterialDocument({ textureGuid: "tex-1" });
     const result = compileMaterialPlan(planFor(doc), {
       scene,
       name: "blocked-dirty",
@@ -1859,7 +1859,7 @@ describe("material compiler", () => {
     const resolved = new Texture(null, scene, true, false);
     disposers.push(() => resolved.dispose());
     vi.spyOn(resolved, "isReady").mockReturnValue(false);
-    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const doc = createImportedMaterialDocument({ textureGuid: "tex-1" });
     const result = compileMaterialPlan(planFor(doc), {
       scene,
       name: "prewarm-wait",

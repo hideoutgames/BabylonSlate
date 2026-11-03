@@ -175,7 +175,7 @@ export function compileGraphDocument(
       serialized
         ? latentSourcesFromSerializedGraph(classId, serialized)
         : [],
-      defaultNodeRegistry,
+      defaultNodeRegistry(),
       parentOf,
     );
   const isLatentFunction = (targetClassId: string, functionName: string) =>
@@ -200,7 +200,7 @@ export function compileGraphDocument(
       compileGraph(logic, {
         assetGuid: options.path,
         className,
-        registry: defaultNodeRegistry,
+        registry: defaultNodeRegistry(),
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
@@ -229,7 +229,7 @@ export function compileGraphDocument(
         compileGraph(fnLogic, {
           assetGuid: options.path,
           className,
-          registry: defaultNodeRegistry,
+          registry: defaultNodeRegistry(),
           tagRegistry: options.tagRegistry,
           exportName,
           stripDevelopmentOnly: options.stripDevelopmentOnly,
@@ -247,7 +247,7 @@ export function compileGraphDocument(
       compileGraph(logic, {
         assetGuid: options.path,
         className,
-        registry: defaultNodeRegistry,
+        registry: defaultNodeRegistry(),
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
@@ -737,7 +737,7 @@ function projectLatentFunctions(
   const parentOf = (classId: string) => parentByClass.get(classId) ?? null;
   const latentFunctions = collectLatentFunctions(
     sources,
-    defaultNodeRegistry,
+    defaultNodeRegistry(),
     parentOf,
   );
   return {
@@ -885,7 +885,7 @@ function compileAnimGraphDocument(
     const compiled = compileTransitionRuleGraph(logic, {
       assetGuid: entry.path,
       className: entry.name?.trim() || classDisplayNameForGraphPath(entry.path),
-      registry: defaultNodeRegistry,
+      registry: defaultNodeRegistry(),
       stripDevelopmentOnly: options.stripDevelopmentOnly,
       tagRegistry: options.tagRegistry,
     });

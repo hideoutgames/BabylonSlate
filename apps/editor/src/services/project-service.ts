@@ -108,7 +108,7 @@ import {
 } from "../lib/content-browser-helpers";
 import {
   SEARCH_CATALOG_CLASS_IDS,
-  SEARCH_NODE_TITLES,
+  searchNodeTitles,
 } from "../lib/search-catalog";
 import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
 import { ENGINE_PLUGIN_LIBRARY_ROOT } from "../lib/engine-plugin-library";
@@ -1024,11 +1024,11 @@ export class ProjectService {
     this.projectSearchIndex = new ProjectSearchIndex(this.storage, {
       blobs: this.blobs,
       catalogClassIds: SEARCH_CATALOG_CLASS_IDS,
-      nodeTitles: SEARCH_NODE_TITLES,
+      nodeTitles: searchNodeTitles(),
     });
     this.bindThumbnailWriter();
-    // Opening a project only builds its catalog. Legacy metadata upgrades and
-    // bulk texture processing are explicit maintenance operations.
+    // Opening a project only builds its catalog; bulk texture processing is an
+    // explicit maintenance operation.
     registry.setAtlasStatusListener((guids) => {
       this.textures.reconcileInBackground(guids);
     });

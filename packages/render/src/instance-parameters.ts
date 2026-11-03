@@ -79,11 +79,6 @@ export function instanceParameterOf(material: Material, name: string): InstanceP
   return materials.get(material)?.parameters.get(name);
 }
 
-/** Whether `material` has per-instance parameters. */
-export function hasInstanceParameters(material: Material): boolean {
-  return materials.has(material);
-}
-
 /** `material`'s value of its per-instance parameter `name`, in authored form. */
 export function instanceParameterValue(material: Material, name: string): MaterialParameterValue | null {
   const value = materials.get(material)?.values.get(name);

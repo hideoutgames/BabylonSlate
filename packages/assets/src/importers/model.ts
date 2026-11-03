@@ -1,5 +1,5 @@
 import { bakeGltfOccluder } from "../occluder-bake";
-import { createDefaultMaterialDocument, migrateLegacyShaderPayload } from "@haptic/shader-graph";
+import { createDefaultMaterialDocument, createImportedMaterialDocument } from "@haptic/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
 import { sniffSourceImageSize } from "../image-size";
@@ -47,7 +47,7 @@ function importedMaterialPayload(
 ): Record<string, unknown> {
   // With no image there is nothing to sample, and a sampler with no image reads black.
   const document = textureGuid
-    ? migrateLegacyShaderPayload({ shadingModel: unlit ? "unlit" : "pbr" }, { textureGuids: [textureGuid] })
+    ? createImportedMaterialDocument({ textureGuid, shadingModel: unlit ? "unlit" : "pbr" })
     : createDefaultMaterialDocument(name);
   return { ...document, name } as unknown as Record<string, unknown>;
 }

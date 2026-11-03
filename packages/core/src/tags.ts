@@ -194,12 +194,3 @@ export function matchesTag(
   }
   return false;
 }
-
-export function tagContainerHas(
-  registry: TagRegistry,
-  container: TagContainer,
-  query: Tag,
-  exact = false,
-): boolean {
-  return container.Tags.some((tag) => matchesTag(registry, tag, query, exact));
-}

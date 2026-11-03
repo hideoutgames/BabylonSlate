@@ -150,7 +150,7 @@ describe("project documents as .hasset", () => {
     expect(reopened.getDocument(classId)).toBeUndefined();
   });
 
-  it("opens a legacy project with stale saved tabs while retaining tabs whose assets exist", async () => {
+  it("drops a saved tab whose file was deleted while retaining tabs whose assets exist", async () => {
     const { service, loaded } = await scaffolded();
     const documents = new DocumentService();
     const sceneId = documentId({ kind: "scene", path: "assets/Removed.scene.hasset" });

@@ -1,5 +1,5 @@
 import { buildDataTreeIndex, isDataTreeAsset, normalizeDataTreeAsset, type SerializedGraph } from "@haptic/core";
-import { DATA_DEFINITION_PIN_ID, dataDefinitionPinGuid } from "@haptic/scripting-nodes";
+import { dataDefinitionPinGuid } from "@haptic/scripting-nodes";
 
 type DataGraphMetadata = {
   title: string; operation: string; required: boolean; schema?: false;
@@ -42,11 +42,6 @@ export function dataGraphMetadata(typeId: string): DataGraphMetadata | undefined
 export function dataGraphDefinitionGuid(typeId: string, properties: Record<string, unknown>): string {
   if (dataGraphMetadata(typeId)?.definitionPin) return dataDefinitionPinGuid(properties);
   return typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
-}
-
-/** A Definition pin types Value only from its literal; a wire cannot. */
-export function isDataGraphDefinitionPin(typeId: string, pinId: string): boolean {
-  return pinId === DATA_DEFINITION_PIN_ID && !!dataGraphMetadata(typeId)?.definitionPin;
 }
 
 export function dataGraphNodeTitle(typeId: DataGraphNodeType, definitionName?: string): string {

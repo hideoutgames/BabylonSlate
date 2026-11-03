@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultScene, quatRotateVector, type SerializedGraph } from "@haptic/core";
 import { AssetRegistry, collectAssetDependencyMetadata, createRegistryAssetLoadingService, encodeHasset, extractGltfPositions, type ImportResult, type IndexedAsset, type RegistryLoadedAsset } from "@haptic/assets";
-import { migrateLegacyShaderPayload } from "@haptic/shader-graph";
+import { createImportedMaterialDocument } from "@haptic/shader-graph";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   applyKenneyMannequinEmptyScaffold,
@@ -48,9 +48,7 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
         modelGuid: "model-1",
         durationMs: 1000,
       }),
-      indexed("Material", "material-1", migrateLegacyShaderPayload(
-        { shadingModel: "unlit" }, { textureGuids: ["texture-1"] },
-      ) as unknown as Record<string, unknown>),
+      indexed("Material", "material-1", createImportedMaterialDocument({ textureGuid: "texture-1", shadingModel: "unlit" }) as unknown as Record<string, unknown>),
       indexed("Texture", "texture-1", { width: 1, height: 1 }),
     ];
     const createAsset = vi.fn(

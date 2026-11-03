@@ -429,27 +429,33 @@ export class DocumentService {
       .reverse()
       .find((id) => parseDocumentId(id)?.kind === "scene");
 
-    for (const id of savedOrder) {
-      if (this.authoringLock !== authoringLock) throw new Error("Project initialization crossed an authoring lock.");
+    const candidates = savedOrder.flatMap((id) => {
       const parsed = parseDocumentId(id);
-      if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
-      if (parsed.kind === "scene" && id !== lastSceneId) continue;
-      // Legacy layouts have only paths. Drop a tab whose file was deleted or
-      // renamed rather than restoring one that cannot load; saved GUIDs repair
-      // newer layouts.
-      if (parsed.kind !== "trace" && projectService.documentExists && !(await projectService.documentExists(parsed.path))) continue;
+      if (!parsed || !isAssetDocumentKind(parsed.kind)) return [];
+      if (parsed.kind === "scene" && id !== lastSceneId) return [];
+      return [{ id, kind: parsed.kind, path: parsed.path }];
+    });
+    // Saved GUIDs already moved renamed tabs to their new paths. Drop a tab
+    // whose file was deleted rather than restoring one that cannot load; the
+    // checks are independent, so they run together.
+    const present = await Promise.all(candidates.map(({ kind, path }) =>
+      kind === "trace" || !projectService.documentExists ? true : projectService.documentExists(path),
+    ));
+    for (const [index, { id, kind, path }] of candidates.entries()) {
+      if (this.authoringLock !== authoringLock) throw new Error("Project initialization crossed an authoring lock.");
+      if (!present[index]) continue;
       // Restored navigation is metadata only. Activate through openDocument to
       // acquire a scope and read the document when the user actually needs it.
       this.state.openDocuments.set(id, {
         id,
         // Same kind suffix openDocument adds on load ("Main Scene", not "Main").
-        ref: createDocumentRef(parsed.kind, parsed.path),
+        ref: createDocumentRef(kind, path),
         content: null,
         layout: layouts.documents[id] ?? null,
         dirty: false,
       });
       this.state.tabOrder.push(id);
-      this.advanceKinds([parsed.kind]);
+      this.advanceKinds([kind]);
     }
 
     sceneLoadOptions?.signal?.throwIfAborted();

@@ -1,8 +1,8 @@
 import { RuntimeDataCatalog, type RuntimeDataApi } from "@haptic/runtime";
 import type { DataAssetCatalogEntry } from "@haptic/core";
-import type { useDocuments } from "../context/document-context";
+import type { DocumentContextValue } from "../context/document-context-types";
 
-type Host = Pick<ReturnType<typeof useDocuments>, "assetRegistry" | "getOpenDocuments">;
+type Host = Pick<DocumentContextValue, "assetRegistry" | "getOpenDocuments">;
 const kinds = new Set(["data-definition", "data-tree", "structure", "enum"]);
 
 /** Shared game read nodes also work in utilities and include live unsaved edits. */

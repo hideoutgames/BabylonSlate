@@ -6,7 +6,7 @@ export interface BlobStore {
   writeBlob(sha256: string, data: Uint8Array): Promise<void>;
   readBlob(sha256: string, options?: StorageReadOptions): Promise<Uint8Array>;
   hasBlob(sha256: string): Promise<boolean>;
-  /** Metadata-only size lookup for budgeting a legacy chunk without byteLength. */
+  /** Metadata-only size lookup: a blob whose size differs from its chunk's recorded byteLength is rejected before it is read. */
   blobByteLength?(sha256: string, options?: StorageReadOptions): Promise<number>;
 }
 

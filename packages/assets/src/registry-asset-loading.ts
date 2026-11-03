@@ -90,8 +90,8 @@ async function registryRecord(
   const documentIndex = chunkIds.indexOf(DOCUMENT_CHUNK_ID);
   return {
     id, rootId: indexed.rootId, revision: locator.revision,
-    // Editing a document can precede an explicit legacy metadata upgrade.
-    // Preparing a runtime consumer always evaluates this versioned contract.
+    // Resolved on read: only a runtime consumer needs it, and symbolic Class
+    // references resolve against the catalog as it is then.
     get requiredDependencies() { return registry.requiredDependenciesFor(id, indexed.header); },
     indexed, chunkIds,
     sourceBytes: lengths.reduce((sum, length) => sum + length, 0),

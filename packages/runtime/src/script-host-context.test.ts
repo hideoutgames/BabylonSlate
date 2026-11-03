@@ -184,7 +184,7 @@ describe("ScriptContext shape", () => {
     expect(Object.getPrototypeOf(second)).toBe(shared);
     expect(Object.getPrototypeOf(shared)).toBe(Object.prototype);
     const hostKeys = Object.keys(shared);
-    expect(hostKeys).toEqual(expect.arrayContaining(["log", "print", "formatValue", "randomFloat", "isA"]));
+    expect(hostKeys).toEqual(expect.arrayContaining(["log", "print", "formatValue", "randomInRange", "isA"]));
     expect(hostKeys.filter((key) => perCallKeys.includes(key))).toEqual([]);
     for (const key of hostKeys) expect(first[key as keyof typeof first]).toBe(shared[key]);
 

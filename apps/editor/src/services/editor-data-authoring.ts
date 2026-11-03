@@ -23,11 +23,11 @@ import {
   type StructField,
   type TypeSchemas,
 } from "@haptic/scripting";
-import type { useDocuments } from "../context/document-context";
+import type { DocumentContextValue } from "../context/document-context-types";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 
-type Host = Pick<ReturnType<typeof useDocuments>,
+type Host = Pick<DocumentContextValue,
   "assetRegistry" | "getOpenDocuments" | "loadAssetDocument" |
   "ensureAssetDocument" | "applyAssetDocumentChange" | "noteAssetsCreated"
 >;

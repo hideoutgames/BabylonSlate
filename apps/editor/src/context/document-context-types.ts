@@ -250,7 +250,7 @@ export interface DocumentContextValue {
     startupSceneGuid?: string | null;
     transcoderAvailable?: boolean;
   }) => Promise<Result<ExportArtifact, string>>;
-  zipExportedGame: (artifact: ExportArtifact) => Uint8Array;
+  zipExportedGame: (artifact: ExportArtifact) => Promise<Uint8Array>;
   dismissRecovery: () => Promise<void>;
   keepRecovery: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
