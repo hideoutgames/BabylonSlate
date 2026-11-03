@@ -6,6 +6,8 @@ import {
   normalizeFontPayload,
 } from "@haptic/assets";
 import type { FontAssetEntry } from "@haptic/render";
+import { mapBounded } from "@haptic/assets";
+import { COLLECTOR_READS } from "./play-content";
 import { parseText2DProperties, type SerializedScene } from "@haptic/core";
 
 export interface FontAssetSource {
@@ -47,10 +49,11 @@ export async function collectFontAssetEntries(
   assets: readonly FontAssetSource[],
   readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
 ): Promise<FontAssetEntry[]> {
+  const fonts = assets.filter((asset) => asset.type === "Font");
+  const sources = await mapBounded(fonts, COLLECTOR_READS, (asset) => readChunk(asset.path, "source"));
   const entries: FontAssetEntry[] = [];
-  for (const asset of assets) {
-    if (asset.type !== "Font") continue;
-    const bytes = await readChunk(asset.path, "source");
+  for (const [index, asset] of fonts.entries()) {
+    const bytes = sources[index];
     if (!bytes || bytes.byteLength === 0) continue;
     const payload = normalizeFontPayload(asset.payload, "Custom Font");
     const copy = new Uint8Array(bytes);
@@ -110,9 +113,10 @@ export async function collectFontFacetypeBytes(
   const wanted = new Set(fontGuids.filter((guid) => guid.trim()));
   const bytes = new Map<string, Uint8Array>();
   if (wanted.size === 0) return bytes;
-  for (const asset of assets) {
-    if (asset.type !== "Font" || !wanted.has(asset.guid)) continue;
-    const chunk = await readChunk(asset.path, FONT_FACETYPE_CHUNK_ID);
+  const fonts = assets.filter((asset) => asset.type === "Font" && wanted.has(asset.guid));
+  const chunks = await mapBounded(fonts, COLLECTOR_READS, (asset) => readChunk(asset.path, FONT_FACETYPE_CHUNK_ID));
+  for (const [index, asset] of fonts.entries()) {
+    const chunk = chunks[index];
     if (!chunk || chunk.byteLength === 0) continue;
     bytes.set(asset.guid, chunk);
   }
@@ -133,10 +137,14 @@ export async function collectFontMsdfPair(
   const wanted = new Set(fontGuids.filter((guid) => guid.trim()));
   const pairs = new Map<string, FontMsdfPair>();
   if (wanted.size === 0) return pairs;
-  for (const asset of assets) {
-    if (asset.type !== "Font" || !wanted.has(asset.guid)) continue;
+  const fonts = assets.filter((asset) => asset.type === "Font" && wanted.has(asset.guid));
+  const read = await mapBounded(fonts, COLLECTOR_READS, async (asset) => {
     const json = await readChunk(asset.path, FONT_MSDF_CHUNK_ID);
     const png = await readChunk(asset.path, FONT_MSDF_PNG_CHUNK_ID);
+    return { json, png };
+  });
+  for (const [index, asset] of fonts.entries()) {
+    const { json, png } = read[index]!;
     if (!json || json.byteLength === 0 || !png || png.byteLength === 0) continue;
     pairs.set(asset.guid, { json, png });
   }

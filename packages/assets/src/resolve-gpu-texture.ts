@@ -73,16 +73,13 @@ export async function resolveGpuTexture(
     const info = readEnvironmentTextureInfo(bytes);
     return { bytes, kind: "source", chunkId: selected.chunk.id, sourceEdge: info.width, targetEdge: info.width, preferredChunkId: null, missingPreferred: false };
   }
-  const raster = await readPixelsOrSource(header, readChunk);
-  const sniffed =
-    (raster ? sniffImageSize(raster.bytes) : null) ??
-    (typeof header.payload.width === "number" &&
-    typeof header.payload.height === "number"
-      ? {
-          width: header.payload.width,
-          height: header.payload.height,
-        }
-      : null);
+  // The source raster is read only when it decides something: the size when the header records none (an import
+  // the encoder also sizes from its source), or the result (Pixel Art, Color Grading, no usable KTX2). A
+  // Texture with a recorded size whose KTX2 binds reads that chunk alone.
+  let raster: { bytes: Uint8Array; chunkId: string } | null | undefined;
+  const readRaster = async () => raster === undefined ? (raster = await readPixelsOrSource(header, readChunk)) : raster;
+  const recorded = payloadPixelSize(header.payload);
+  const sniffed = recorded ?? await readRaster().then((source) => source ? sniffImageSize(source.bytes) : null);
   const sourceEdge =
     longestEdge(sniffed) ??
     DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
@@ -98,11 +95,12 @@ export async function resolveGpuTexture(
   });
   // Changing Usage must take effect even when a previous encode is retained.
   // A resized or block-compressed LUT would grade every color incorrectly.
-  if ((usage === "pixelArt" || usage === "colorGrading") && raster) {
+  const exactSource = usage === "pixelArt" || usage === "colorGrading" ? await readRaster() : null;
+  if (exactSource) {
     return {
-      bytes: raster.bytes,
+      bytes: exactSource.bytes,
       kind: "source",
-      chunkId: raster.chunkId,
+      chunkId: exactSource.chunkId,
       targetEdge,
       sourceEdge,
       preferredChunkId: null,
@@ -184,11 +182,12 @@ export async function resolveGpuTexture(
       missingPreferred: true,
     };
   }
-  if (!raster) return null;
+  const source = await readRaster();
+  if (!source) return null;
   return {
-    bytes: raster.bytes,
+    bytes: source.bytes,
     kind: "source",
-    chunkId: raster.chunkId,
+    chunkId: source.chunkId,
     targetEdge,
     sourceEdge,
     preferredChunkId,

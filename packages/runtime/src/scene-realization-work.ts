@@ -20,17 +20,56 @@ export function sceneRealizationCancelled(): Error {
   return error;
 }
 
+type TaskScheduler = (callback: () => void) => () => void;
+
+let scheduler: TaskScheduler | null = null;
+
+/**
+ * Queue `callback` as a task and return its cancellation. A message-channel
+ * task runs as soon as the queue reaches it: nested `setTimeout(0)` is clamped
+ * to 4 ms, which a large Scene would spend a third of its realization waiting on.
+ */
+function scheduleTask(callback: () => void): () => void {
+  scheduler ??= createTaskScheduler();
+  return scheduler(callback);
+}
+
+function createTaskScheduler(): TaskScheduler {
+  if (typeof MessageChannel !== "function") {
+    return (callback) => {
+      const timer = setTimeout(callback, 0);
+      return () => clearTimeout(timer);
+    };
+  }
+  const channel = new MessageChannel();
+  const queued = new Map<number, () => void>();
+  let next = 0;
+  channel.port1.onmessage = (event: MessageEvent<number>) => {
+    const callback = queued.get(event.data);
+    queued.delete(event.data);
+    callback?.();
+  };
+  // Node: an idle port must not keep the process alive.
+  (channel.port1 as { unref?: () => void }).unref?.();
+  return (callback) => {
+    const id = ++next;
+    queued.set(id, callback);
+    channel.port2.postMessage(id);
+    return () => { queued.delete(id); };
+  };
+}
+
 function yieldTask(signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     signal.throwIfAborted();
     const abort = () => {
-      clearTimeout(timer);
+      cancel();
       reject(signal.reason);
     };
-    const timer = setTimeout(() => {
+    const cancel = scheduleTask(() => {
       signal.removeEventListener("abort", abort);
       resolve();
-    }, 0);
+    });
     signal.addEventListener("abort", abort, { once: true });
   });
 }
@@ -51,7 +90,7 @@ export function waitForSceneWork<T>(promise: Promise<T>, signal: AbortSignal): P
 /**
  * Actor operations stay indivisible. The time budget forces a yield; the step
  * bound only caps a run of steps too cheap to reach it, since every yield costs a
- * task turn (at least 4 ms once timers nest).
+ * task turn.
  */
 export async function runSceneRealizationWork(
   steps: Generator<void, void, unknown>,

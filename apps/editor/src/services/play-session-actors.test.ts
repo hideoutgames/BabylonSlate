@@ -199,8 +199,10 @@ describe.each(["worker", "in-process"] as const)(
           pushInput() {},
           terminate: options.workerTerminate ?? (() => {}),
           postControl(control) {
+            // The session posts its boot controls before installing its handlers, as a real worker's replies are
+            // tasks that arrive after the session has started.
             if (control.type === "load")
-              runtime = createRuntimeFromLoad(control, onCommand);
+              runtime = createRuntimeFromLoad(control, (command) => onCommand(command));
             if (control.type === "loadScripts")
               boot.queueScripts(runtime, control.scripts, control.spawn ?? []);
             if (control.type === "play") void boot.play(runtime).catch(failBoot);

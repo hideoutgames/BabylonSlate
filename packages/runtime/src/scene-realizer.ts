@@ -49,7 +49,7 @@ interface SceneRealizerHost {
   sceneGuid(key: string): string;
   acquireScene(): AcquireRuntimeScene | undefined;
   cooperativeLoading(): CooperativeSceneLoadingOptions | null;
-  /** Play boot loading holds a realized Scene until it finishes. */
+  /** Play boot loading holds a realized Scene's completion until it finishes. */
   bootLoading(): boolean;
   /** The host acknowledges model readiness itself (`notifyModelsReady`). */
   deferModelsReady(): boolean;
@@ -106,7 +106,8 @@ export class SceneRealizer implements RuntimeSubsystem {
   private sceneLoadId = 0;
   private realization: SceneRealization | null = null;
   private sceneWorkBlocked = false;
-  private preparedBootScene: { work: SceneRealization; name: string } | null = null;
+  /** Play boot loading is releasing its Scene Layers; the main Scene completes after them. */
+  private bootLayersReleasing = false;
   private sceneChangeId = 0;
   private pendingSceneFinish: {
     name: string;
@@ -158,16 +159,23 @@ export class SceneRealizer implements RuntimeSubsystem {
     this.activeSceneSource = undefined;
   }
 
-  /** Play boot loading finished: complete the Scene it held. */
-  finishBootLoading(): void {
-    const prepared = this.preparedBootScene;
-    this.preparedBootScene = null;
-    if (!prepared || this.realization !== prepared.work) return;
-    this.checkRealization(prepared.work);
+  /**
+   * Play boot loading finished (native physics is installed). A realized main
+   * Scene was announced (`sceneRealized`) when its steps ended, so the host's
+   * readiness work overlapped the native boot; it completes now if the host has
+   * presented it. `readyLayers` admits the Scene Layers the host presented
+   * meanwhile, before the main Scene completes, as when boot held the Scene.
+   */
+  finishBootLoading(readyLayers: () => void): void {
+    this.bootLayersReleasing = true;
+    try { readyLayers(); } finally { this.bootLayersReleasing = false; }
+    const work = this.realization;
+    if (!work?.finished) return;
+    this.checkRealization(work);
     // Game Instance may have changed poses or created actors during native boot.
     this.host.publishSnapshot();
-    this.checkRealization(prepared.work);
-    this.finishOrDeferSceneLoad(prepared.name, prepared.work.guid, prepared.work.loadId);
+    this.checkRealization(work);
+    this.tryCompleteSceneLoad();
   }
 
   private *spawnOwnedSceneLayers(work: SceneRealization): Generator<void, void, unknown> {
@@ -191,7 +199,6 @@ export class SceneRealizer implements RuntimeSubsystem {
     const work = this.realization;
     if (!work) return null;
     this.realization = null;
-    if (this.preparedBootScene?.work === work) this.preparedBootScene = null;
     work.controller.abort(sceneRealizationCancelled());
     if (work.finished || !cleanup) return work;
     const world = this.host.world();
@@ -312,6 +319,10 @@ export class SceneRealizer implements RuntimeSubsystem {
 
   private async prepareSceneLoading(work: SceneRealization): Promise<void> {
     this.checkRealization(work);
+    // The first Scene of a session departs from nothing: no Scene, layer or
+    // authored loading screen is shown yet, so there is nothing to hide before
+    // realizing. The host begins its loading transaction at `activeScene`.
+    if (!work.departure) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const painted = this.host.deferLoadingPaint() ? new Promise<void>((resolve, reject) => {
       work.painted = resolve;
@@ -460,10 +471,11 @@ export class SceneRealizer implements RuntimeSubsystem {
     this.host.publishSnapshot();
     checkpoint();
     work.finished = true;
-    if (scene) {
-      if (this.host.bootLoading()) this.preparedBootScene = { work, name };
-      else this.finishOrDeferSceneLoad(name, guid, loadId);
-    } else this.sceneWorkBlocked = false;
+    // During Play boot the Scene is announced now, so host readiness (models,
+    // textures, shader warm-up, first frame) overlaps the native physics load;
+    // `tryCompleteSceneLoad` holds its completion until boot loading finishes.
+    if (scene) this.finishOrDeferSceneLoad(name, guid, loadId);
+    else this.sceneWorkBlocked = false;
   }
 
   /** Change Scene (scripts and console): false when no loaded scene matches, so the console can report it. */
@@ -572,10 +584,14 @@ export class SceneRealizer implements RuntimeSubsystem {
       this.tryCompleteSceneLoad();
   }
 
-  /** Finish the main Scene's load once the host presented it and its owned layers are ready. */
+  /**
+   * Finish the main Scene's load once the host presented it, its owned layers
+   * are ready and Play boot loading (native physics) has finished.
+   */
   tryCompleteSceneLoad(): void {
     const pending = this.pendingSceneFinish;
-    if (this.host.stopped() || !pending?.presented || !this.host.layers().ownedReady(pending.guid)) return;
+    if (this.host.stopped() || this.host.bootLoading() || this.bootLayersReleasing ||
+      !pending?.presented || !this.host.layers().ownedReady(pending.guid)) return;
     this.sceneLoadingProgress = 1;
     this.sceneWorkBlocked = false;
     this.pendingSceneFinish = null;

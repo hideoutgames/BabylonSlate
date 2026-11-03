@@ -219,9 +219,24 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     else runtime?.applyScalabilityStatus(acknowledgement);
   };
 
+  const boot = playSessionLoad(options, options.acquireSceneSources !== undefined);
+  const { loadControl, scripts, animGraphs } = boot;
+  // The worker takes its boot content before the view is built, so its module, content parsing and physics
+  // engine load while the Engine is created. Its messages arrive as tasks, after the handlers below are installed.
+  let workerUnavailable: unknown = null;
+  try {
+    worker = createGameWorkerHost();
+    for (const control of playSessionWorkerControls(options, boot)) worker.postControl(control);
+  } catch (error) {
+    // A worker that started but could not take its boot controls must not keep running beside the fallback.
+    worker?.terminate();
+    worker = null;
+    workerUnavailable = error;
+  }
+
   /** The game asked for device motion, perhaps before input capture was attached. */
   let deviceMotionRequested = false;
-  const handle = createEngine(canvas, {
+  const handle = createSessionEngine(() => createEngine(canvas, {
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
     physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
     sharedEngine,
@@ -357,7 +372,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       if (options.onRenderOutputChanged) options.onRenderOutputChanged(settings);
       else options.onSetRenderResolution?.(settings.width, settings.height);
     },
-  });
+  }), () => worker?.terminate());
   if (options.scene) {
     handle.applySceneEnvironment(options.scene);
   }
@@ -635,10 +650,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       options.onBehaviourTreeSnapshot?.(command.trees);
   };
 
-  const { loadControl, scripts, animGraphs } = playSessionLoad(options, sourceTracker.acquireScene !== undefined);
-
-  try {
-    worker = createGameWorkerHost();
+  if (worker) {
     runtimeMode = "worker";
     // A worker that cannot run (failed to load or evaluate, never started) ends the session with its cause, as a
     // Scene that fails to load does: the load never completes, so it must not wait at Preparing Scene.
@@ -664,13 +676,8 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, buffer);
       handle.pushSnapshot(buffer);
     });
-    for (const control of playSessionWorkerControls(options, { loadControl, scripts, animGraphs })) {
-      worker.postControl(control);
-    }
-  } catch (err) {
-    // A worker that started but could not take its boot controls must not keep running beside the fallback.
-    worker?.terminate();
-    worker = null;
+  } else {
+    const err = workerUnavailable;
     runtimeMode = "in-process";
     runtime = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command),
@@ -996,4 +1003,14 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       return stopResult;
     },
   };
+}
+
+/** Build the session's view; when that fails, `release` ends what the session started before it (its worker). */
+function createSessionEngine<T>(create: () => T, release: () => void): T {
+  try {
+    return create();
+  } catch (error) {
+    release();
+    throw error;
+  }
 }

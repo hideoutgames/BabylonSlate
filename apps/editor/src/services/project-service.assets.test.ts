@@ -683,6 +683,34 @@ describe("project documents as .hasset", () => {
     ).toBe(false);
   });
 
+  it("reads a chunk from storage whose revisions are weak with one catalog read before it and one check after", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    // Like browser storage: a revision is metadata, so a catalog snapshot means reading and hashing the header.
+    Object.defineProperty(storage, "hasStrongSourceRevisions", { value: false });
+    await storage.openDocumentsProject("Assets.hproject");
+    await installMinimalProject(storage);
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const path = "assets/Ui.hasset";
+    const source = new Uint8Array([10, 11, 12, 13]);
+    await storage.writeBinary(path, await encodeHasset({
+      header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: "font-guid", type: "Font", name: "Ui", engineVersion: "0.0.0",
+        version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { family: "Ui" } },
+      chunks: [{ id: "source", kind: "font", mime: "font/woff2", data: source }],
+    }));
+    await service.registry!.reindexPath(path);
+    const read = storage.readBinaryRange.bind(storage);
+    const headerReads: number[] = [];
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (file, offset, ...rest) => {
+      if (file === path && offset === 0) headerReads.push(offset);
+      return read(file, offset, ...rest);
+    });
+    const exists = vi.spyOn(storage, "exists");
+    expect(await service.readAssetChunk(path, "source")).toEqual(source);
+    expect(headerReads).toHaveLength(2);
+    expect(exists).not.toHaveBeenCalledWith(path);
+  });
+
   it("opens an imported Font (header payload, no document chunk) and keeps source bytes on save", async () => {
     const { storage, service } = await scaffolded();
     const source = new Uint8Array([10, 11, 12, 13]);
