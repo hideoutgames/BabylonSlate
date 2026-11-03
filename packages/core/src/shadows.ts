@@ -106,6 +106,12 @@ export const SHADOW_LIMITS = {
   normalBias: [0, 1],
   maxLocalLights: [0, Number.MAX_SAFE_INTEGER],
 } as const;
+/**
+ * The largest edge each map size setting snaps to (`normalizeShadowOverrides`: powers of two from 256). The sun's 8192
+ * is a Custom choice no quality level makes, as its cascades need a 16384 shadow atlas; a point light's six faces
+ * could not take 8192 tiles there.
+ */
+export const SHADOW_MAP_SIZE_MAX = { mapSize: 8192, localMapSize: 4096 } as const;
 export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
   if (!value || typeof value !== "object") return {};
   const source = value as Record<string, unknown>;
@@ -152,16 +158,7 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
   for (const key of ["mapSize", "localMapSize"] as const) {
     const n = source[key];
     if (typeof n === "number" && Number.isFinite(n))
-      result[key] =
-        n <= 256
-          ? 256
-          : n <= 512
-            ? 512
-            : n <= 1024
-              ? 1024
-              : n <= 2048
-                ? 2048
-                : 4096;
+      result[key] = Math.min(SHADOW_MAP_SIZE_MAX[key], 2 ** Math.ceil(Math.log2(Math.max(256, n))));
   }
   return result;
 }
@@ -180,7 +177,9 @@ export const SHADOW_HALF_TILE_CASCADES = { low: 0, medium: 1, high: 1, ultra: 2 
  * Per shadow quality level, the sun's first cascade tile edge as a multiple of the map size: the first cascade holds
  * the shadows nearest the camera, where a texel is largest on screen, so at High its tile has twice the edge (four
  * times the texels) over the same slice. Low and Medium have no atlas room for it, and Ultra's 4096-texel map would
- * need an 8192-texel tile, its whole atlas.
+ * need an 8192-texel tile, its whole atlas. A scale is halved while the first tile would be wider than half the atlas's
+ * edge (`cascadeTileSizes` in the renderer), so a Custom map size never asks for a tile the atlas cannot hold beside
+ * the other cascades: High at 4096 or 8192 keeps the map size there.
  */
 export const SHADOW_FIRST_CASCADE_SCALE = { low: 1, medium: 1, high: 2, ultra: 1 } as const satisfies Record<ShadowProfile, number>;
 

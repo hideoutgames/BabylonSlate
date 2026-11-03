@@ -28,15 +28,48 @@ import { recordShadowMapPass, type ShadowTileView } from "./shadow-change-journa
 /** Bytes per texel of the atlas: 32-bit depth, its only attachment. */
 export const SHADOW_ATLAS_BYTES_PER_TEXEL = 4;
 
+/** The largest atlas edge: an 8192 Directional Map Size's cascades need 16384 (1 GiB of depth, `sunShadowAtlasEdge`). */
+export const SHADOW_ATLAS_MAX_EDGE = 16384;
+
+/** The largest atlas edge this device makes: SHADOW_ATLAS_MAX_EDGE within its texture limit and its device class's cap. */
+export function shadowAtlasEdgeLimit(engine: AbstractEngine): number {
+  const edge = Math.min(SHADOW_ATLAS_MAX_EDGE, engine.getCaps().maxTextureSize, deviceProfile().shadowAtlasCap ?? Infinity);
+  return 2 ** Math.floor(Math.log2(edge));
+}
+
 /**
  * The atlas's edge in texels at a shadow quality level: the largest power of two whose depth fits the level's shadow
- * byte budget (Low and Medium 4096, High and Ultra 8192), within the device's texture limit and its device class's cap
- * (`DeviceProfile.shadowAtlasCap`).
+ * byte budget (Low and Medium 4096, High and Ultra 8192), within `shadowAtlasEdgeLimit`. A sun asking for more grows
+ * it (`sunShadowAtlasEdge`).
  */
 export function shadowAtlasEdge(engine: AbstractEngine, profile: ShadowProfile): number {
   const fits = Math.sqrt(SHADOW_CAPACITY_PROFILES[profile].byteBudget / SHADOW_ATLAS_BYTES_PER_TEXEL);
-  const edge = Math.min(fits, engine.getCaps().maxTextureSize, deviceProfile().shadowAtlasCap ?? Infinity);
-  return 2 ** Math.floor(Math.log2(edge));
+  return Math.min(2 ** Math.floor(Math.log2(fits)), shadowAtlasEdgeLimit(engine));
+}
+
+/** Whether tiles of `sizes` texels pack into an `edge`-texel atlas: largest first, power-of-two squares fill by area. */
+function holdsTiles(edge: number, sizes: readonly number[]): boolean {
+  return sizes.reduce((sum, size) => sum + size ** 2, 0) <= edge ** 2;
+}
+
+/**
+ * The atlas edge a sun's cascades at map size `size` ask for (`cascadeTileSizes`): `edge`, the level's, while it holds
+ * them; else the smallest larger power of two up to `limit` (`shadowAtlasEdgeLimit`) that does. Where none does, the
+ * smallest that holds them at the largest smaller map size, to which admission halves the sun's map (an 8192 map falls
+ * back to 4096 where the device makes no 16384 atlas). Local maps never grow it.
+ *
+ * Decided: the level's byte budget sizes the atlas for the level's own maps, and is admission policy, not a device
+ * limit; a Directional Map Size past what that atlas holds is the author's explicit choice, honoured wherever the
+ * device's limits allow, at the larger atlas's cost. The growth brings its own room in the ledgers
+ * (`ShadowCost.exempt`), so it takes none from other allocations.
+ */
+export function sunShadowAtlasEdge(
+  edge: number, limit: number, size: number, cascades: number, halved: number, firstScale: number,
+): number {
+  for (let mapSize = size; mapSize >= 256; mapSize /= 2)
+    for (let grown = edge; grown <= limit; grown *= 2)
+      if (holdsTiles(grown, cascadeTileSizes(mapSize, cascades, halved, firstScale, grown))) return grown;
+  return edge;
 }
 
 type Atlas = { target: RenderTargetTexture; tiles: ShadowAtlasAllocator };
@@ -55,7 +88,8 @@ function disposeWithScene(scene: Scene, target: RenderTargetTexture, forget: () 
 /**
  * A depth-only render target whose depth texture compares, as the light block samples it. The texture is its depth
  * attachment: without `generateDepthBuffer: false` Babylon's WebGL depth texture also allocates an unused depth
- * renderbuffer of the same size (64 MB at a 4096-texel atlas, 256 MB at 8192), again each time the atlas is made.
+ * renderbuffer of the same size (64 MB at a 4096-texel atlas, 256 MB at 8192, 1 GiB at 16384), again each time the
+ * atlas is made.
  */
 function depthTarget(name: string, edge: number, scene: Scene): RenderTargetTexture {
   const target = new RenderTargetTexture(name, edge, scene,
@@ -344,15 +378,23 @@ export function placeInPrivateAtlas<T>(atlas: PrivateShadowAtlas, build: () => T
 }
 
 /**
- * The tile edge of each of a sun's `cascades` at map size `size`: the first takes `firstScale` times the edge
- * (`SHADOW_FIRST_CASCADE_SCALE`), the last `halved` take half the edge, never the first two, which hold the shadows near
+ * The tile edge of each of a sun's `cascades` at map size `size` in an `edge`-texel atlas: the first takes `firstScale`
+ * times the edge (`SHADOW_FIRST_CASCADE_SCALE`), the scale halved while that tile would be wider than half the atlas's
+ * edge, down to the map size; the last `halved` take half the edge, never the first two, which hold the shadows near
  * the camera (the second starts a few metres out), down to the 256-texel floor admitted maps keep and never more than
  * `size` (a caster-variant stand-in's tiles are smaller still; `SHADOW_HALF_TILE_CASCADES`).
+ *
+ * The clamp keeps a Custom map size from asking for a first tile the atlas cannot hold beside the other cascades and
+ * local maps (High's 2 at 8192 would be the whole 16384 atlas): it takes at most a quarter of the atlas, so at 8192 every
+ * level's cascades leave at least three 4096 quadrants, room for the level's own local lights as spot maps; point
+ * lights past that halve the sun as the reserve in `planShadowAdmission` says. The levels' own sizes keep their scale.
  */
-export function cascadeTileSizes(size: number, cascades: number, halved: number, firstScale = 1): number[] {
+export function cascadeTileSizes(size: number, cascades: number, halved: number, firstScale = 1, edge = Infinity): number[] {
+  let scale = firstScale;
+  while (scale > 1 && size * scale > edge / 2) scale /= 2;
   const full = Math.max(2, cascades - halved);
   const far = size > 256 ? Math.max(256, size / 2) : size;
-  return Array.from({ length: cascades }, (_, index) => (index === 0 ? size * firstScale : index < full ? size : far));
+  return Array.from({ length: cascades }, (_, index) => (index === 0 ? size * scale : index < full ? size : far));
 }
 
 /** Allocates tiles of `sizes` texels in the Scene's `edge`-texel atlas, or none when one does not fit. */
@@ -659,7 +701,7 @@ export function isAtlasShadow(generator: unknown): generator is AtlasShadowGener
 export function createAtlasCascadedShadowGenerator(
   light: DirectionalLight, size: number, cascades: number, edge: number, camera?: Camera, halved = 0, firstScale = 1,
 ): AtlasCascadedShadowGenerator | null {
-  const placement = place(light.getScene(), cascadeTileSizes(size, cascades, halved, firstScale), edge);
+  const placement = place(light.getScene(), cascadeTileSizes(size, cascades, halved, firstScale, edge), edge);
   return placement && construct(placement, () => askingLightEngine(light, () => new AtlasCascadedShadowGenerator(size, light, undefined, camera)));
 }
 

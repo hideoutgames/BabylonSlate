@@ -11,7 +11,7 @@ import {
   availableSceneShadowBytes,
   type ShadowCost,
 } from "./shadow-admission";
-import { cascadeTileSizes, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge } from "./shadow-atlas";
+import { cascadeTileSizes, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge, shadowAtlasEdgeLimit, sunShadowAtlasEdge } from "./shadow-atlas";
 import {
   admissionPasses,
   allocationRequestKey,
@@ -31,10 +31,12 @@ export type ShadowAdmissionBudget = {
   readonly bytes: number;
   readonly passes: number;
   /**
-   * The shadow atlas edge (`shadowAtlasEdge`). Spot, point and sun maps are tiles of the atlas, admitted by its
-   * area; the atlas, allocated whole, takes its bytes from `bytes` once one is.
+   * The quality level's shadow atlas edge (`shadowAtlasEdge`). Spot, point and sun maps are tiles of the atlas,
+   * admitted by its area; the atlas, allocated whole, takes its bytes from `bytes` once one is.
    */
   readonly atlasEdge: number;
+  /** The largest edge the atlas may grow to for a planned sun's tiles (`shadowAtlasEdgeLimit`, `sunShadowAtlasEdge`). */
+  readonly atlasEdgeLimit: number;
 };
 /** What a sync admits by (`planShadowAdmission`). */
 export type ShadowAdmissionInput = {
@@ -67,7 +69,13 @@ export type ShadowAdmissionPlan = {
   readonly decisions: readonly ShadowAdmissionDecision[];
   /** Sun first, then by rank, within the count and pass budgets; memory-rejected entries stay "budget-limited". */
   readonly planned: readonly Entry[];
+  /** The atlas, whole, as a cost: its growth past the level's edge is `exempt`. */
   readonly admitted: ShadowCost;
+  /**
+   * The edge of the atlas the planned maps are tiles of: the level's, grown for a planned sun's tiles at its requested
+   * map size, or the size a failed allocation left it (`sunShadowAtlasEdge`).
+   */
+  readonly atlasEdge: number;
 };
 
 /** The shared ledger's room for this scene's maps, and the shadow atlas's edge. */
@@ -93,6 +101,7 @@ export function readShadowAdmissionBudget(
     bytes: byteBudget,
     passes: passBudget,
     atlasEdge: shadowAtlasEdge(scene.getEngine(), settings.profile),
+    atlasEdgeLimit: shadowAtlasEdgeLimit(scene.getEngine()),
   };
 }
 
@@ -179,7 +188,6 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
       a.entry.light.uniqueId - b.entry.light.uniqueId,
   );
   const admitted: ShadowCost = { bytes: 0, passes: 0 };
-  const atlasEdge = budget.atlasEdge;
   // Reserve the single sun before local maps regardless of local priorities.
   candidates.sort(
     (a, b) =>
@@ -203,9 +211,20 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     if (!directional) plannedLocal += 1;
     return true;
   });
-  // The atlas is allocated whole for its first tile.
-  if (planned.length > 0)
+  const halved = SHADOW_HALF_TILE_CASCADES[settings.profile];
+  const firstScale = SHADOW_FIRST_CASCADE_SCALE[settings.profile];
+  // A planned sun grows the atlas for its tiles at the size it asks for, or the one a failed allocation left it.
+  const sun = planned.find((decision) => decision.entry.light instanceof DirectionalLight);
+  const sunRecovery = sun && !sun.dropRecovery ? sun.entry.recovery : null;
+  const atlasEdge = sun
+    ? sunShadowAtlasEdge(budget.atlasEdge, budget.atlasEdgeLimit, Math.min(settings.mapSize, sunRecovery?.mapSize ?? Infinity),
+      settings.cascades, halved, firstScale)
+    : budget.atlasEdge;
+  // The atlas is allocated whole for its first tile; its growth past the level's edge brings its own room.
+  if (planned.length > 0) {
     admitted.bytes += atlasEdge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
+    admitted.exempt = (atlasEdge ** 2 - Math.min(atlasEdge, budget.atlasEdge) ** 2) * SHADOW_ATLAS_BYTES_PER_TEXEL;
+  }
   let atlasArea = 0;
   // The sun, admitted first, leaves the atlas room for the local maps planned into it at the level's size (a point
   // light's six faces), at most half the atlas: local maps past that halve or wait, never the sun's shadow.
@@ -242,8 +261,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     // A tile per cascade or face; a sun's first cascade may take a larger tile and its last ones half-edge tiles
     // (`cascadeTileSizes`).
     const area = (size: number) => directional
-      ? cascadeTileSizes(size, passes, SHADOW_HALF_TILE_CASCADES[settings.profile], SHADOW_FIRST_CASCADE_SCALE[settings.profile])
-        .reduce((sum, tile) => sum + tile ** 2, 0)
+      ? cascadeTileSizes(size, passes, halved, firstScale, atlasEdge).reduce((sum, tile) => sum + tile ** 2, 0)
       : passes * size ** 2;
     const room = atlasEdge ** 2 - atlasArea - (directional ? localReserve : 0);
     while (mapSize >= 256 && area(mapSize) > room) mapSize /= 2;
@@ -259,7 +277,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     decision.status = "active";
     admitted.passes += passes;
   }
-  return { decisions, planned: planned.map((decision) => decision.entry), admitted };
+  return { decisions, planned: planned.map((decision) => decision.entry), admitted, atlasEdge };
 }
 
 /** Writes a plan's decisions to its entries. */
