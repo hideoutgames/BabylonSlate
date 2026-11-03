@@ -833,11 +833,11 @@ export function TilesetAutotiles({
                     if (next !== (border ?? null)) selectBorder(next);
                   }}
                 >
-                  <DropdownMenuRadioItem value="" data-testid="tileset-autotiles-border-none">
+                  <DropdownMenuRadioItem value="" closeOnClick data-testid="tileset-autotiles-border-none">
                     No Border
                   </DropdownMenuRadioItem>
                   {declaredBorders.map((id) => (
-                    <DropdownMenuRadioItem key={id} value={id} data-testid={`tileset-autotiles-border-${id}`}>
+                    <DropdownMenuRadioItem key={id} value={id} closeOnClick data-testid={`tileset-autotiles-border-${id}`}>
                       Into {terrainName(id)}
                     </DropdownMenuRadioItem>
                   ))}
@@ -912,10 +912,10 @@ export function TilesetAutotiles({
                     else changeLayout(next);
                   }}
                 >
-                  <DropdownMenuRadioItem value="sides" data-testid="tileset-autotiles-layout-sides">
+                  <DropdownMenuRadioItem value="sides" closeOnClick data-testid="tileset-autotiles-layout-sides">
                     4 Sides (16 Pieces)
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="blob" data-testid="tileset-autotiles-layout-blob">
+                  <DropdownMenuRadioItem value="blob" closeOnClick data-testid="tileset-autotiles-layout-blob">
                     Blob (47 Pieces)
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
