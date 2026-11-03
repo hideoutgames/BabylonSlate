@@ -155,7 +155,7 @@ describe("particle graph document", () => {
       properties: { angleUnit: "radians", "default:angle": [Math.PI / 4] } };
     const degrees = setParticleNodeAngleUnit(cone, "degrees");
     expect(degrees.properties).toEqual({ angleUnit: "degrees", "default:angle": [45] });
-    expect(setParticleNodeAngleUnit(degrees, "radians").properties["default:angle"]![0]).toBeCloseTo(Math.PI / 4, 10);
+    expect((setParticleNodeAngleUnit(degrees, "radians").properties["default:angle"] as number[])[0]).toBeCloseTo(Math.PI / 4, 10);
     expect(setParticleNodeAngleUnit(degrees, "degrees")).toBe(degrees);
     const create: ParticleGraphNode = { id: "create", type: "particle.create", position: { x: 0, y: 0 }, properties: { angleUnit: "radians" } };
     expect(setParticleNodeAngleUnit(create, "degrees").properties).toEqual({ angleUnit: "degrees" });
