@@ -92,8 +92,6 @@ const SELF_ACTOR_NODE_IDS: ReadonlySet<string> = new Set([
   "component.get",
   "component.has",
   "component.add",
-  "particles.play",
-  "particles.stop",
 ]);
 
 export function shouldRegeneratePins(typeId: string): boolean {

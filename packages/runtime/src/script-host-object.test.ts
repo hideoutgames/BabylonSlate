@@ -70,8 +70,6 @@ describe("ScriptHost Object receivers", () => {
       ctx.addComponent(empty, "MeshComponent");
       ctx.addImpulse(empty, vec, 1);
       ctx.moveCharacter(empty, vec, 0);
-      ctx.playParticles(empty);
-      ctx.stopParticles(empty);
       ctx.moveTo(empty, vec);
       ctx.stopMovement(empty);
       expect(ctx.getComponent(empty, "MeshComponent")).toBeNull();

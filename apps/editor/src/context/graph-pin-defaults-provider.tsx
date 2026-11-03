@@ -16,7 +16,7 @@ import { assetPickerAllowedTypes, collectEnumMemberNames, dataNodePathOptions, p
 import { MATERIAL_DOCUMENT_KINDS, useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { DataTreeEntryField } from "../components/data-tree-entry-picker";
 import { ParticleParameterNamePin } from "../components/particle-parameter-name-pin";
-import { PARTICLE_PARAMETER_NAME_TYPES } from "../lib/particle-parameter-name-types";
+import { particleParameterNameTypes } from "../lib/particle-parameter-name-types";
 import { collectDataGraphAssets, dataGraphAssetCreateOptions, type DataGraphAssetEntry } from "../lib/data-graph";
 
 const ENUM_KINDS = ["enum"] as const;
@@ -153,8 +153,7 @@ export function GraphPinDefaultsProvider({ children }: { children: ReactNode }) 
   // whether a string pin gets an entry picker; the editors read the other catalogs from context.
   const render = useCallback<PinDefaultEditorRenderer>((request) => {
     const kind = request.pin.type.kind;
-    if (request.pin.id === "name" && Object.hasOwn(PARTICLE_PARAMETER_NAME_TYPES, request.nodeType ?? "") &&
-      !request.connectedInputIds?.includes("actor")) {
+    if (request.pin.id === "name" && particleParameterNameTypes(request.nodeType, request.nodeData) !== undefined) {
       return <ParticleParameterNamePin key={`${request.nodeId}:${request.pin.id}`} request={request} />;
     }
     if (kind !== "enumRef" && kind !== "classRef" && kind !== "assetRef" && entryPathOptions(request, dataTrees) === undefined) return null;

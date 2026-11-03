@@ -27,6 +27,7 @@ Plays a Particle System attached to an actor, or one of its bones, without an ac
 
 ## Notes
 
+- **Effect** carries one [Particle](../../components/particle.md) component. Use [Get Component](get-component.md) on it to call **Stop**, **Emit Burst** or the parameter functions.
 - If **Attach To** is destroyed, the effect stops emitting, stays where it was, lets its particles finish and is removed. Actors you attach yourself keep following their parent instead.
 - Nothing is spawned when **Attach To** is empty.
 - It shares the limit of 256 spawned effects with [Spawn Particles At Location](spawn-particles-at-location.md).

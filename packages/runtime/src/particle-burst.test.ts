@@ -19,7 +19,7 @@ describe("Emit Particle Burst commands", () => {
     ]);
   });
 
-  it("reaches the render host from Class graphs and from the Particle component's Emit Burst", async () => {
+  it("reaches the render host from the Particle component's Emit Burst", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
       playScene: { name: "Test", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [
@@ -31,8 +31,9 @@ describe("Emit Particle Burst commands", () => {
     await runtime.loadScripts([{ assetGuid: "hero", classId: "Hero", parentClassId: "Actor", anchors: [],
       source: [
         "export function onBeginPlay(ctx) {",
-        "  ctx.emitParticleBurst(ctx.self, 6, 1);",
-        '  ctx.callComponentFunction(ctx.getComponentById(ctx.self, "sparks"), "emitParticleBurst", { count: 4 });',
+        '  const sparks = ctx.getComponentById(ctx.self, "sparks");',
+        '  ctx.callComponentFunction(sparks, "emitParticleBurst", { count: 6, slot: 1 });',
+        '  ctx.callComponentFunction(sparks, "emitParticleBurst", { count: 4 });',
         "}",
       ].join("\n"),
       entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] }]);
@@ -40,7 +41,7 @@ describe("Emit Particle Burst commands", () => {
     runtime.realizePlayWorld();
     runtime.tick();
     expect(commands.filter((command) => command.type === "emitParticleBurst")).toEqual([
-      { type: "emitParticleBurst", actorGuid: "emitter", count: 6, slot: 1 },
+      { type: "emitParticleBurst", actorGuid: "emitter", count: 6, slot: 1, componentId: "sparks" },
       { type: "emitParticleBurst", actorGuid: "emitter", count: 4, componentId: "sparks" },
     ]);
     runtime.stop();

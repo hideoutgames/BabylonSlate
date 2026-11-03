@@ -129,7 +129,7 @@ describe("particle playback reports in the runtime", () => {
         "export function onParticlesFinished(ctx) {",
         '  const sparks = ctx.getComponentById(ctx.self, "sparks");',
         '  const playing = ctx.callComponentFunction(sparks, "isParticlesPlaying", {}).playing;',
-        '  ctx.log("log", "Finished", `${ctx.args.reason}:${playing}:${ctx.isParticlesPlaying(ctx.self)}`);',
+        '  ctx.log("log", "Finished", `${ctx.args.reason}:${playing}`);',
         "}",
       ].join("\n"),
       entryPoints: [{ name: "onParticlesFinished", event: "onParticlesFinished", isAsync: false, componentId: "sparks" }],
@@ -158,10 +158,10 @@ describe("particle playback reports in the runtime", () => {
     runtime.applyParticlePlaybackEnded({ type: "particlePlaybackEnded", actorGuid: "emitter", componentId: "sparks",
       generation, reason: "finished" });
     // Is Playing has already flipped when the event runs.
-    expect(finishedLogs(commands)).toEqual(["Finished:false:false"]);
+    expect(finishedLogs(commands)).toEqual(["Finished:false"]);
     runtime.applyParticlePlaybackEnded({ type: "particlePlaybackEnded", actorGuid: "emitter", componentId: "sparks",
       generation, reason: "failed" });
-    expect(finishedLogs(commands)).toEqual(["Finished:false:false"]);
+    expect(finishedLogs(commands)).toEqual(["Finished:false"]);
     runtime.stop();
   });
 
@@ -171,7 +171,7 @@ describe("particle playback reports in the runtime", () => {
     const generation = lastPlay(commands);
     runtime.applyParticlePlaybackEnded({ type: "particlePlaybackEnded", actorGuid: "emitter", componentId: "sparks",
       generation, reason: "stopped" });
-    expect(finishedLogs(commands)).toEqual(["Stopped:false:false"]);
+    expect(finishedLogs(commands)).toEqual(["Stopped:false"]);
     runtime.stop();
   });
 
@@ -209,7 +209,6 @@ describe("Retrigger and Restart Particles", () => {
     await runtime.loadScripts([{ assetGuid: "hero-script", classId: "Hero", parentClassId: "Actor", anchors: [],
       source: [
         "export function onBeginPlay(ctx) {",
-        "  ctx.restartParticles(ctx.self);",
         '  ctx.callComponentFunction(ctx.getComponentById(ctx.self, "sparks"), "restartParticles", {});',
         '  ctx.callComponentFunction(ctx.getComponentById(ctx.self, "sparks"), "playParticles", {});',
         "}",
@@ -221,7 +220,6 @@ describe("Retrigger and Restart Particles", () => {
     expect(commands.find((command) => command.type === "assignParticle")).toMatchObject({ componentId: "sparks", retrigger: "restart" });
     const plays = commands.filter((command) => command.type === "setParticlePlaying");
     expect(plays.map((command) => ({ componentId: command.componentId, restart: command.restart }))).toEqual(expect.arrayContaining([
-      { componentId: undefined, restart: true },
       { componentId: "sparks", restart: true },
       { componentId: "sparks", restart: undefined },
     ]));

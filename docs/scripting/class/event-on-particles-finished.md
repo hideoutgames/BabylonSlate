@@ -19,4 +19,4 @@ Runs when a Particle component stops playing and its last particles are gone.
 - It runs after the drain: Stop halts emission at once, and the event waits until the particles already in flight have died.
 - A looping Particle System only finishes when it is stopped.
 - Playing again before the drain ends cancels the pending event; only the latest Play reports.
-- [Is Particles Playing](is-particles-playing.md) already reads false when the event runs.
+- The component's **Is Playing** already reads false when the event runs.

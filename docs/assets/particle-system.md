@@ -30,4 +30,3 @@ If two emitters declare one parameter name with different types, the later emitt
 
 - [Particles](../graphics/particles.md)
 - [Particle component](../components/particle.md)
-- [Play Particles](../scripting/class/play-particles.md)

@@ -37,7 +37,6 @@ import type {
   ScriptContext,
   ScriptExtras,
 } from "./script-context-types";
-import { particleParameterArg, particleParameterResult } from "./particle-parameter-bindings";
 import type { ScriptDebugTrace } from "./script-debug";
 import { DISPATCHER_MAX_DEPTH, type DispatcherBindings } from "./script-dispatchers";
 import {
@@ -57,8 +56,7 @@ import {
   transformTarget,
   writeParentId,
 } from "./script-host-helpers";
-import type { Vec3 } from "@haptic/physics";
-import type { ScriptColor, ScriptHostServices } from "./script-host-services";
+import type { ScriptHostServices } from "./script-host-services";
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
 import { tweenOwnerAlive } from "./tween-runtime";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
@@ -716,62 +714,11 @@ export function createScriptContext(
         emitterActorGuid: self?.guid ?? null,
       });
     };
-    context.playParticles = (actor) => {
-      const target = asActor(actor);
-      if (!target) return;
-      services.setParticlePlaying?.(target.guid, true);
-    };
-    context.stopParticles = (actor) => {
-      const target = asActor(actor);
-      if (!target) return;
-      services.setParticlePlaying?.(target.guid, false);
-    };
-    context.restartParticles = (actor) => {
-      const target = asActor(actor);
-      if (!target) return;
-      services.setParticlePlaying?.(target.guid, true, undefined, true);
-    };
-    context.isParticlesPlaying = (actor) => {
-      const target = asActor(actor);
-      return target ? services.isParticlesPlaying?.(target.guid) === true : false;
-    };
     context.spawnParticlesAtLocation = (system, location, rotation, scale, autoDestroy = true) =>
       services.spawnParticleEffect?.({ systemGuid: String(system ?? ""), location, rotation, scale, autoDestroy: autoDestroy !== false }, self) ?? null;
     context.spawnParticlesAttached = (system, attachTo, bone, locationOffset, rotationOffset, autoDestroy = true) =>
       services.spawnParticleEffect?.({ systemGuid: String(system ?? ""), attachTo: attachTo ?? null, bone: String(bone ?? ""),
         location: locationOffset, rotation: rotationOffset, autoDestroy: autoDestroy !== false }, self) ?? null;
-    context.emitParticleBurst = (actor, count, slot = -1) => {
-      const target = asActor(actor);
-      if (!target) return;
-      services.emitParticleBurst?.(target.guid, Number(count), Number(slot));
-    };
-    const setParticleParameter = (actor: unknown, name: unknown, value: number[]) => {
-      const target = asActor(actor);
-      if (target) services.setParticleParameter?.(target.guid, String(name ?? ""), value);
-    };
-    const getParticleParameter = (actor: unknown, name: unknown) => {
-      const target = asActor(actor);
-      return (target && services.getParticleParameter?.(target.guid, String(name ?? ""))) || { found: false, value: [] };
-    };
-    context.setParticleFloatParameter = (actor, name, value) => setParticleParameter(actor, name, particleParameterArg("Float", value));
-    context.setParticleVectorParameter = (actor, name, value) => setParticleParameter(actor, name, particleParameterArg("Vector", value));
-    context.setParticleColorParameter = (actor, name, value) => setParticleParameter(actor, name, particleParameterArg("Color", value));
-    context.getParticleFloatParameter = (actor, name) => {
-      const { found, value } = getParticleParameter(actor, name);
-      return { found, value: particleParameterResult("Float", value) as number };
-    };
-    context.getParticleVectorParameter = (actor, name) => {
-      const { found, value } = getParticleParameter(actor, name);
-      return { found, value: particleParameterResult("Vector", value) as Vec3 };
-    };
-    context.getParticleColorParameter = (actor, name) => {
-      const { found, value } = getParticleParameter(actor, name);
-      return { found, value: particleParameterResult("Color", value) as ScriptColor };
-    };
-    context.resetParticleParameter = (actor, name) => {
-      const target = asActor(actor);
-      return target ? services.resetParticleParameter?.(target.guid, String(name ?? "")) === true : false;
-    };
     context.createSceneLayerAsync = async (assetGuid, zOrder) => {
       if (!services.createSceneLayerAsync) throw new Error("This host cannot prepare a cold SceneLayer");
       const layer = await services.createSceneLayerAsync(String(assetGuid ?? ""), Number(zOrder) || 0, self);

@@ -33,8 +33,6 @@ function edge(source: string, sourcePin: string, target: string, targetPin: stri
 /** Nodes whose optional Actor pin reads the actor running the graph when left unwired. */
 const CASES = [
   { typeId: "actor.destroy", title: "Destroy Actor", pin: "target", label: "Target", method: "destroyActor", pure: false },
-  { typeId: "particles.play", title: "Play Particles", pin: "actor", label: "Actor", method: "playParticles", pure: false },
-  { typeId: "particles.stop", title: "Stop Particles", pin: "actor", label: "Actor", method: "stopParticles", pure: false },
   { typeId: "actor.attachToBone", title: "Attach To Bone", pin: "actor", label: "Actor", method: "attachToBone", pure: false },
   { typeId: "component.get", title: "Get Component", pin: "actor", label: "Actor", method: "getComponent", pure: true },
   { typeId: "component.has", title: "Has Component", pin: "actor", label: "Actor", method: "getComponent", pure: true },
