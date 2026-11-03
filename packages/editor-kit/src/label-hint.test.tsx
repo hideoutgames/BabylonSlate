@@ -35,6 +35,13 @@ describe("PropertyGrid row descriptions", () => {
     expect(screen.getByText("Lifetime").closest("[data-label-hint]")).toBeTruthy();
   });
 
+  it("keep the label's own slot, which row styles select", () => {
+    grid();
+    const label = screen.getByText("Lifetime").closest("[data-label-hint]")!;
+    expect(label.getAttribute("data-slot")).toBe("field-label");
+    expect(label.tagName).toBe("LABEL");
+  });
+
   it("open as the label's tooltip on a touch tap, which neither focuses nor toggles the control", () => {
     const onChange = grid();
     const label = screen.getByText("Loop").closest("[data-label-hint]")!;

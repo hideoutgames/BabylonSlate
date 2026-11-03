@@ -174,7 +174,10 @@ describe("EngineSettingsForm viewport", () => {
     fireEvent.click(toggle);
     expect(onChange).toHaveBeenCalledWith({ postProcessingEnabled: false });
     expect(toggle.className).not.toMatch(/min-h-\[var\(--touch-target/);
-    expect(toggle.closest("[data-slot='field']")?.querySelector("[data-slot='field-content']")).not.toBeNull();
+    // The explanation is the label's tooltip, not text under the row.
+    const field = toggle.closest("[data-slot='field']");
+    expect(field?.querySelector("[data-slot='field-label'][data-label-hint]")?.textContent).toMatch(/Post-Processing/);
+    expect(field?.querySelector("[data-slot='field-description']")).toBeNull();
   });
 });
 
