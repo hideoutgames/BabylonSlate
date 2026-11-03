@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BasicEmissionSchedule, ParticleBurst } from "@haptic/assets";
-import { createBasicEmissionDriver, type EmissionTarget } from "./particle-emission-driver";
+import { createBasicEmissionDriver, createManualEmission, type EmissionTarget } from "./particle-emission-driver";
 
 function target(emitRate = 0): EmissionTarget {
   return { emitRate, minLifeTime: 1, maxLifeTime: 1, manualEmitCount: -1 };
@@ -93,4 +93,47 @@ describe("Basic emission driver", () => {
     driver.advance(0.1);
     expect(native.manualEmitCount).toBe(5);
   });
+
+  it("emits a scripted burst with the next frame that simulates time, and drops it once halted", () => {
+    const native = target(60);
+    const driver = createBasicEmissionDriver(native, schedule());
+    driver.burst(8);
+    // A paused frame (no simulated time) keeps it waiting.
+    driver.advance(0);
+    expect(native.manualEmitCount).toBe(-1);
+    driver.advance(1 / 60);
+    expect(native.manualEmitCount).toBe(8 + 1);
+    expect(consume(native)).toBe(9);
+    driver.advance(1 / 60);
+    expect(native.manualEmitCount).toBe(-1);
+    driver.burst(5);
+    driver.halt();
+    driver.advance(1 / 60);
+    expect(native.manualEmitCount).toBe(-1);
+    driver.burst(5);
+    driver.advance(1 / 60);
+    expect(native.manualEmitCount).toBe(-1);
+  });
 });
+
+describe("manual emission", () => {
+  it("adds the skipped rate only when nothing is pending and restores -1 once consumed", () => {
+    const native = { manualEmitCount: -1 };
+    let rate = 120;
+    const manual = createManualEmission(native, () => rate);
+    manual.queue(4, 1 / 60);
+    expect(native.manualEmitCount).toBe(4 + 2);
+    // Not consumed yet: a second burst adds only its own count.
+    manual.restore();
+    manual.queue(3, 1 / 60);
+    expect(native.manualEmitCount).toBe(9);
+    native.manualEmitCount = 0;
+    manual.restore();
+    expect(native.manualEmitCount).toBe(-1);
+    // Zero or negative counts queue nothing.
+    rate = 0;
+    manual.queue(0, 1 / 60);
+    expect(native.manualEmitCount).toBe(-1);
+  });
+});
+

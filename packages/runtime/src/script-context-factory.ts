@@ -738,6 +738,11 @@ export function createScriptContext(
     context.spawnParticlesAttached = (system, attachTo, bone, locationOffset, rotationOffset, autoDestroy = true) =>
       services.spawnParticleEffect?.({ systemGuid: String(system ?? ""), attachTo: attachTo ?? null, bone: String(bone ?? ""),
         location: locationOffset, rotation: rotationOffset, autoDestroy: autoDestroy !== false }, self) ?? null;
+    context.emitParticleBurst = (actor, count, slot = -1) => {
+      const target = asActor(actor);
+      if (!target) return;
+      services.emitParticleBurst?.(target.guid, Number(count), Number(slot));
+    };
     context.createSceneLayerAsync = async (assetGuid, zOrder) => {
       if (!services.createSceneLayerAsync) throw new Error("This host cannot prepare a cold SceneLayer");
       const layer = await services.createSceneLayerAsync(String(assetGuid ?? ""), Number(zOrder) || 0, self);

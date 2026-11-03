@@ -1100,6 +1100,18 @@ export type CommandMessage =
       /** The worker's Play generation, echoed by `particlePlaybackEnded`. */
       generation?: number;
     }
+  /**
+   * Emit Particle Burst: `count` extra particles from a playing component (every ParticleComponent
+   * of the actor without `componentId`), from every slot or only the System's emitter at `slot`.
+   */
+  | {
+      type: "emitParticleBurst";
+      actorGuid: string;
+      componentId?: string;
+      count: number;
+      /** Index in the Particle System's emitter list; omitted or -1 for every slot. */
+      slot?: number;
+    }
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
   /**
    * The session's simulation time dilation (`slomo`): render-side simulation that runs on its own

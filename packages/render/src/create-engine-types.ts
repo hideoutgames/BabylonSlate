@@ -491,6 +491,8 @@ export interface CreateEngineOptions {
   onParticleDiagnostic?: (diagnostic: {
     code: string;
     message: string;
+    /** `verbose`: a debug-level note; otherwise a warning. */
+    severity?: "verbose";
     assetGuid?: string;
     nodeId?: string;
     pinId?: string;

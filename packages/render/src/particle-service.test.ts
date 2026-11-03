@@ -925,4 +925,95 @@ describe("ParticleService", () => {
       service.dispose();
     });
   });
+
+  describe("Emit Particle Burst", () => {
+    const burst = (count: number, slot?: number, componentId?: string) => ({ type: "emitParticleBurst" as const, actorGuid: "fx",
+      count, ...(slot !== undefined ? { slot } : {}), ...(componentId ? { componentId } : {}) });
+    const quiet = { spawn: { rate: { mode: "constant", value: 0 } } };
+
+    it.each([false, true])("queues a Basic burst after a frame and gives rate emission back (GPU %s)", async (gpu) => {
+      const { scene, service, assign, frame } = host({ gpu });
+      service.setLibrary(library({ "em-1": basic({ emitter: { capacity: 64 }, spawn: { rate: { mode: "constant", value: 60 } } }) }));
+      assign();
+      const system = scene.particleSystems[0] as ParticleSystem | GPUParticleSystem;
+      expect(system instanceof GPUParticleSystem).toBe(gpu);
+      await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+      service.handleCommand(burst(10));
+      expect(system.manualEmitCount).toBe(-1);
+      frame();
+      // The burst frame skips its own rate emission (60 /s for 1/60 s), so one particle is added back.
+      expect(system.manualEmitCount).toBe(10 + 1);
+      // Babylon consumes the count and leaves 0, which would mute rate emission for good.
+      system.manualEmitCount = 0;
+      frame();
+      expect(system.manualEmitCount).toBe(-1);
+      // A burst larger than the running capacity is capped at it.
+      service.handleCommand(burst(1000));
+      frame();
+      expect(system.manualEmitCount).toBe(64 + 1);
+    });
+
+    it("bursts a Particle Graph slot through the same manual emission and resumes its Emit Rate", async () => {
+      const { scene, service, assign, frame } = host();
+      service.setLibrary(library({ graph: graph() }));
+      assign();
+      const system = scene.particleSystems[0] as ParticleSystem;
+      await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+      service.handleCommand(burst(20));
+      frame();
+      // The default graph's Emit Rate is 30 /s: the skipped frame adds back Math.round(0.5) particles.
+      expect(system.manualEmitCount).toBe(20 + 1);
+      const before = system.getActiveCount();
+      system.animate(true);
+      expect(system.getActiveCount() - before).toBe(21);
+      expect(system.manualEmitCount).toBe(0);
+      frame();
+      expect(system.manualEmitCount).toBe(-1);
+      // Rate emission runs again: 30 /s over one second.
+      const settled = system.getActiveCount();
+      for (let i = 0; i < 60; i += 1) system.animate(true);
+      expect(system.getActiveCount() - settled).toBeGreaterThan(20);
+    });
+
+    it("targets one emitter slot, or every slot with -1", async () => {
+      const { scene, service, assign, frame } = host();
+      service.setLibrary(library({ a: basic(quiet), b: basic(quiet) }));
+      assign();
+      const [first, second] = scene.particleSystems as ParticleSystem[];
+      await vi.waitFor(() => expect(second!.isStarted()).toBe(true));
+      service.handleCommand(burst(4, 1));
+      frame();
+      expect([first!.manualEmitCount, second!.manualEmitCount]).toEqual([-1, 4]);
+      first!.manualEmitCount = -1;
+      second!.manualEmitCount = -1;
+      service.handleCommand(burst(3, -1));
+      service.handleCommand(burst(2, 7));
+      frame();
+      expect([first!.manualEmitCount, second!.manualEmitCount]).toEqual([3, 3]);
+    });
+
+    it("never starts a system: a component that is not playing ignores the burst with a debug-level note", async () => {
+      const { scene, service, assign, frame, diagnostics } = host();
+      service.setLibrary(library({ "em-1": basic(quiet) }));
+      assign(1, false);
+      const system = scene.particleSystems[0] as ParticleSystem;
+      await vi.waitFor(() => expect(service.playbackState("fx", "particle-1")).toBe("ready-stopped"));
+      service.handleCommand(burst(5));
+      service.handleCommand(burst(5, undefined, "other"));
+      frame();
+      expect(system.isStarted()).toBe(false);
+      expect(system.manualEmitCount).toBe(-1);
+      expect(diagnostics.map((entry) => [entry.code, entry.severity])).toEqual([
+        ["particle.burst_not_playing", "verbose"], ["particle.burst_not_playing", "verbose"],
+      ]);
+      // A draining bundle no longer emits either.
+      service.handleCommand({ type: "setParticlePlaying", actorGuid: "fx", playing: true });
+      await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+      service.handleCommand({ type: "setParticlePlaying", actorGuid: "fx", playing: false });
+      service.handleCommand(burst(5));
+      frame();
+      expect(system.manualEmitCount).toBe(0);
+    });
+  });
 });
+

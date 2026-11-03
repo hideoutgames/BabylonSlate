@@ -33,7 +33,7 @@ import {
   type ParticleGraphLowerResult,
 } from "@haptic/particle-graph";
 import type { ResourceLease } from "./resource-cache";
-import { createBasicEmissionDriver, type BasicEmissionDriver } from "./particle-emission-driver";
+import { createBasicEmissionDriver, createManualEmission, type BasicEmissionDriver, type ManualEmission } from "./particle-emission-driver";
 import { describeParticleThrow, realizeParticleGraph, type ParticleGraphCompileCode } from "./particle-graph-realize";
 import {
   applyBasicEmitterPlan,
@@ -58,7 +58,8 @@ export type ParticleDiagnosticCode =
   | "particle.missing_material"
   | "particle.graph_invalid"
   | ParticleGraphCompileCode
-  | "particle.apply_failed";
+  | "particle.apply_failed"
+  | "particle.burst_not_playing";
 /**
  * Slot-level problems carry the emitter guid; bundle-level ones the Particle System guid.
  * Particle Graph problems also carry the graph node (and pin) they are anchored to.
@@ -66,6 +67,8 @@ export type ParticleDiagnosticCode =
 export type ParticleServiceDiagnostic = {
   code: ParticleDiagnosticCode;
   message: string;
+  /** Debug-level notes (a burst on a component that is not playing); others are warnings. */
+  severity?: "verbose";
   assetGuid?: string;
   nodeId?: string;
   pinId?: string;
@@ -134,6 +137,9 @@ type GraphSlot = SlotBase & {
   compileKey: string;
   /** A change rebinds the Material on the running system. */
   materialGuid: string;
+  /** Scripted bursts (`emitParticleBurst`) through Babylon's manual emission, queued after a rendered frame. */
+  manual: ManualEmission;
+  requestedBurst: number;
 };
 type SlotRecord = BasicSlot | GraphSlot;
 /** A new native slot and, for graphs, Babylon's build promises. */
@@ -434,6 +440,7 @@ export class ParticleService {
     if (command.type === "despawn" || command.type === "spawn") this.retireSlots((slot) => slot === command.slotId);
     else if (command.type === "assignParticle") this.assign(command);
     else if (command.type === "setSimulationTimeScale") this.setTimeScale(command.scale);
+    else if (command.type === "emitParticleBurst") this.burst(command);
     else if (command.type === "setParticlePlaying") {
       for (const entry of [...this.live.values()]) {
         if (entry.command.actorGuid !== command.actorGuid || (command.componentId && entry.command.componentId !== command.componentId)) continue;
@@ -444,6 +451,34 @@ export class ParticleService {
         else this.stop(entry);
       }
       this.publishStats();
+    }
+  }
+
+  /**
+   * Emit Particle Burst: `count` more particles from each matching slot of a playing bundle
+   * (every slot, or the one at `slot`), capped at the slot's running capacity and emitted one
+   * frame late like an authored burst. A component that is not playing ignores it with a
+   * debug-level note: bursts never start systems.
+   */
+  private burst(command: Extract<CommandMessage, { type: "emitParticleBurst" }>): void {
+    const count = Math.floor(command.count);
+    if (!(count > 0)) return;
+    const slot = command.slot === undefined || command.slot < 0 ? null : Math.floor(command.slot);
+    let playing = false;
+    for (const entry of this.live.values()) {
+      if (entry.warm || entry.command.actorGuid !== command.actorGuid || (command.componentId && entry.command.componentId !== command.componentId)) continue;
+      if (entry.state !== "playing") continue;
+      playing = true;
+      for (const record of entry.systems) {
+        if (record.stopped || (slot !== null && record.index !== slot)) continue;
+        const capped = Math.min(count, record.system.getCapacity());
+        if (record.kind === "basic") record.driver.burst(capped);
+        else record.requestedBurst += capped;
+      }
+    }
+    if (!playing && this.statsScope === "global") {
+      this.onDiagnostic?.({ code: "particle.burst_not_playing", severity: "verbose",
+        message: "Emit Particle Burst skipped: the particle component is not playing." });
     }
   }
 
@@ -725,7 +760,17 @@ export class ParticleService {
           // The driver runs on the simulation clock, so pause (updateSpeed 0) holds it.
           const ratio = host.getAnimationRatio() || 1;
           for (const record of entry.systems) {
-            if (record.kind === "basic" && !record.stopped && !record.prewarmPending) record.driver.advance(record.system.updateSpeed * ratio);
+            if (record.stopped) continue;
+            const dt = record.system.updateSpeed * ratio;
+            if (record.kind === "basic") {
+              if (!record.prewarmPending) record.driver.advance(dt);
+              continue;
+            }
+            record.manual.restore();
+            if (record.requestedBurst > 0 && dt > 0) {
+              record.manual.queue(record.requestedBurst, dt);
+              record.requestedBurst = 0;
+            }
           }
         }
         this.finishDrain(entry, generation);
@@ -878,10 +923,14 @@ export class ParticleService {
       for (const diagnostic of realized.diagnostics) this.diagnose(entry, { ...diagnostic, assetGuid: slot.guid });
       return null;
     }
+    const system = realized.system;
+    // Node-built systems compute their rate from the Emit Rate input each frame.
+    const rate = (system as unknown as { _calculateEmitRate?: () => number })._calculateEmitRate;
     return {
-      record: { kind: "graph", gpu: false, index: slot.index, emitterGuid: slot.guid, system: realized.system, lease,
-        set: realized.set, compileKey: plan.hash, materialGuid, pending: 0, updateSpeed: realized.system.updateSpeed,
-        started: false, stopped: false, once: plan.settings.loop === "once", cancel: [] },
+      record: { kind: "graph", gpu: false, index: slot.index, emitterGuid: slot.guid, system, lease,
+        set: realized.set, compileKey: plan.hash, materialGuid, pending: 0, updateSpeed: system.updateSpeed,
+        started: false, stopped: false, once: plan.settings.loop === "once", cancel: [],
+        manual: createManualEmission(system, () => rate ? rate.call(system) : system.emitRate), requestedBurst: 0 },
       buildReady: realized.buildReady,
     };
   }

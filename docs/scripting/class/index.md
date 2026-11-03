@@ -622,6 +622,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Emit Particle Burst](emit-particle-burst.md) | Emits extra particles from the particle systems on an actor. |
 | [Is Particles Playing](is-particles-playing.md) | Returns whether any particle system on an actor is playing. |
 | [Play Particles](play-particles.md) | Starts the particle systems on an actor. |
 | [Restart Particles](restart-particles.md) | Cuts the particles on an actor and plays its particle systems again from the start. |

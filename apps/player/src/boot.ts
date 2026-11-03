@@ -343,8 +343,10 @@ function initializePlayer(
       options.onConsoleEvent?.({
         type: "log",
         message: diagnostic.message,
-        severity: "warning",
+        severity: diagnostic.severity ?? "warning",
       });
+      // Debug-level notes reach the console only.
+      if (diagnostic.severity === "verbose") return;
       recordDiagnostic({
         message: diagnostic.message,
         severity: "warning",
