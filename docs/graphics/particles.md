@@ -80,8 +80,6 @@ A parameter is a named value an emitter reads, such as an intensity or a tint, t
 - A **Basic Particle Emitter** binds fixed targets, such as **Spawn Rate Scale** or **Color Tint**, to parameter names in its **Parameters** module.
 - A **Particle System** joins its emitters' parameters by name. The first emitter that declares a name sets its type and default; the System can set its own default for each one.
 
-Each Preview lists the parameters under **Preview Parameters**. Values set there play at once and are not saved.
-
 A [Particle](../components/particle.md) component lists its System's parameters under **Parameters** in the **Inspector**: a value edited there overrides the default for that actor. While you Simulate, the Inspector of the running Particle component edits the playing values; those changes are not saved.
 
 During Play, a Particle component's **Set Float Parameter**, **Set Vector Parameter** and **Set Color Parameter** functions change a parameter by name on that component; **Reset Parameter** goes back to the default. See [Particle](../components/particle.md#scripting).

@@ -6,41 +6,12 @@ import {
   type ParticleBasicBindingTarget,
 } from "@haptic/assets";
 import { EntryListEditor, PropertyGrid, type PropertyRow } from "@haptic/editor-kit";
-import { normalizeParticleParameterName, type ParticleNumericType } from "@haptic/particle-graph";
+import { normalizeParticleParameterName } from "@haptic/particle-graph";
 import { particleParameterValueRow } from "../lib/particle-parameter-rows";
 
 function uniqueName(taken: ReadonlySet<string>, base: string): string {
   if (!taken.has(base)) return base;
   for (let index = 2; ; index += 1) if (!taken.has(`${base} ${index}`)) return `${base} ${index}`;
-}
-
-/**
- * Preview-only parameter values (Preview panels): one field per parameter, starting at its
- * default. They reach the running preview at once and are never saved.
- */
-export function ParticlePreviewParameters({
-  parameters,
-  values,
-  onChange,
-}: {
-  parameters: readonly { name: string; type: ParticleNumericType; defaultValue: readonly number[] }[];
-  values: Readonly<Record<string, readonly number[]>>;
-  onChange: (values: Record<string, number[]>) => void;
-}) {
-  if (!parameters.length) return null;
-  const rows = parameters.map((parameter) => particleParameterValueRow({
-    id: `preview-parameter-${parameter.name}`,
-    label: parameter.name,
-    type: parameter.type,
-    value: values[parameter.name] ?? parameter.defaultValue,
-    defaultValue: parameter.defaultValue,
-    onChange: (value) => onChange({ ...Object.fromEntries(Object.entries(values).map(([name, entry]) => [name, [...entry]])), [parameter.name]: value }),
-  }));
-  return (
-    <div className="max-h-48 shrink-0 overflow-y-auto border-t border-border" data-testid="particle-preview-parameters">
-      <PropertyGrid title="Preview Parameters" rows={rows} />
-    </div>
-  );
 }
 
 /**
