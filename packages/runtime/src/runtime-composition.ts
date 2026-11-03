@@ -1,3 +1,4 @@
+import type { RuntimeGlobalParameters } from "./runtime-global-parameters";
 import type { TimelineRuntime } from "./timeline-runtime";
 import type { CurveAssetCatalogEntry } from "@haptic/core";
 import type { CommandMessage, GameSessionMode, SessionPauseReason } from "@haptic/bridge";
@@ -136,6 +137,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   // Subsystems.
   readonly voices: RuntimeVoices;
   readonly particles: RuntimeParticles;
+  readonly globalParameters: RuntimeGlobalParameters;
   readonly particleEffects: RuntimeParticleEffects;
   readonly spriteClips: SpriteClipTrace;
   readonly assetPreloads: RuntimeAssetPreloads;

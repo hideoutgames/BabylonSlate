@@ -56,6 +56,7 @@ export function runtimeOptionsFromLoadControl(
   | "breakpoints"
   | "materialParameterCatalog"
   | "particleParameterCatalog"
+  | "globalParameterCatalog"
   | "materialTextureAssetGuids"
   | "renderTargets"
   | "renderTargetTextures"
@@ -110,6 +111,7 @@ export function runtimeOptionsFromLoadControl(
     texturePixelSizes: msg.texturePixelSizes,
     ...(msg.materialParameterCatalog !== undefined ? { materialParameterCatalog: msg.materialParameterCatalog } : {}),
     ...(msg.particleParameterCatalog !== undefined ? { particleParameterCatalog: msg.particleParameterCatalog } : {}),
+    ...(msg.globalParameterCatalog !== undefined ? { globalParameterCatalog: msg.globalParameterCatalog } : {}),
     ...(msg.materialTextureAssetGuids !== undefined ? { materialTextureAssetGuids: msg.materialTextureAssetGuids } : {}),
     renderTargets: msg.renderTargets,
     renderTargetTextures: msg.renderTargetTextures,

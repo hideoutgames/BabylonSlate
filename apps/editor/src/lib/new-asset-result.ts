@@ -8,6 +8,8 @@ import {
   createDataTreeAsset,
   createDefaultRenderTargetCaptureProperties,
   createDefaultCurveAssetPayload,
+  createDefaultGlobalParameterCollection,
+  GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE,
   createDefaultTimelineAsset,
   createDefaultTimelineClipAsset,
   timelineClipAssetSummaries,
@@ -353,6 +355,10 @@ export function buildNewAssetResult(options: {
     const result = documentAsset(type, name, guid, clip as unknown as Record<string, unknown>);
     // The header lists the clip at once, so its Timeline Asset shows it before the first save.
     return { ...result, payload: { ...result.payload, ...timelineClipAssetSummaries(clip, "") } };
+  }
+
+  if (type === GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE) {
+    return documentAsset(type, name, guid, createDefaultGlobalParameterCollection() as unknown as Record<string, unknown>);
   }
 
   if (type === "FloatCurve" || type === "VectorCurve" || type === "ColorCurve") {

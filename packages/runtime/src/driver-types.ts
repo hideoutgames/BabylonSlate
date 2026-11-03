@@ -148,6 +148,8 @@ export interface RuntimeDriverOptions {
   materialParameterCatalog?: MaterialParameterCatalog;
   /** Each Particle System's parameters, for Get, Set and Reset Particle Parameter. */
   particleParameterCatalog?: ParticleParameterCatalog;
+  /** Every Global Parameter Collection's parameters by collection guid. */
+  globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
   materialTextureAssetGuids?: readonly string[];
   renderTargets?: Readonly<Record<string, RenderTargetPayload>>;
   renderTargetTextures?: Readonly<Record<string, RenderTargetTexturePayload>>;

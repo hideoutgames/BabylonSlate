@@ -1,4 +1,4 @@
-import type { CurveAssetCatalogEntry } from "@haptic/core";
+import type { CurveAssetCatalogEntry, GlobalParameterType } from "@haptic/core";
 import type {
   AssetLoadHandleState,
   InputTypeValue,
@@ -297,6 +297,13 @@ export interface ScriptHostServices {
   getParticleParameter?(actorGuid: string, name: string, componentId?: string): { found: boolean; value: number[] };
   /** Drops the runtime value, back to the component's override or the default. False when no System declares `name`. */
   resetParticleParameter?(actorGuid: string, name: string, componentId?: string): boolean;
+  /**
+   * Sets a Global Parameter Collection value for the session when `collection` declares `name`
+   * with one of `types`, sized to its type. False (with one warning) otherwise.
+   */
+  setGlobalParameter?(collection: unknown, name: unknown, value: readonly number[], types: readonly GlobalParameterType[]): boolean;
+  /** The value set this session, else the default; `found` false when it cannot be resolved. */
+  getGlobalParameter?(collection: unknown, name: unknown, types: readonly GlobalParameterType[]): { found: boolean; value: number[] };
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
   getScalability?(): ScalabilitySnapshot | null;

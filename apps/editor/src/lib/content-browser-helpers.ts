@@ -289,6 +289,7 @@ export const CREATABLE_ASSET_TYPES = [
   "FloatCurve",
   "VectorCurve",
   "ColorCurve",
+  "GlobalParameterCollection",
   "Timeline",
   "TimelineClip2D",
   "TimelineClip3D",
@@ -319,7 +320,7 @@ export type CreatableAssetTypeGroup = {
 export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   { id: "world", label: "World", types: ["Scene", "SceneLayer", "Prefab"] },
   { id: "input", label: "Input", types: ["InputAction", "InputAxis"] },
-  { id: "data", label: "Data", types: ["DataDefinition", "DataTree", "FloatCurve", "VectorCurve", "ColorCurve"] },
+  { id: "data", label: "Data", types: ["DataDefinition", "DataTree", "FloatCurve", "VectorCurve", "ColorCurve", "GlobalParameterCollection"] },
   {
     id: "scripting",
     label: "Scripting",
@@ -377,6 +378,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   FloatCurve: "A number that changes over time, shared by every script that reads it.",
   VectorCurve: "A vector that changes over time, shared by every script that reads it.",
   ColorCurve: "A colour and alpha that change over time, shared by every script that reads it.",
+  GlobalParameterCollection: "Named Float, Vector and Color values that every Material, Particle Graph and Class graph shares while the game plays.",
   Timeline: "Groups Timeline Clips from Scenes and Scene Layers, so any class can play them and bind their events.",
   TimelineClip2D: "A Timeline Clip in its own file that animates 2D stand-ins, which each instance binds to overlay actors or components.",
   TimelineClip3D: "A Timeline Clip in its own file that animates 3D stand-ins, which each instance binds to actors or components.",

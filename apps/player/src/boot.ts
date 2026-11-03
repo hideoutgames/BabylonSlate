@@ -511,6 +511,7 @@ function initializePlayer(
     inputAssets: manifest.inputAssets,
     dataAssets: content.dataAssets,
     curveAssets: content.curveAssets,
+    globalParameterCatalog: content.globalParameterCatalog,
     assetCatalog: runtimeAssetCatalogFromManifest(manifest.assets),
     focusNavigation: manifest.focusNavigation,
     pixelsPerUnit: content.pixelsPerUnit,

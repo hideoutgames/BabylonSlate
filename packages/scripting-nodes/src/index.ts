@@ -16,6 +16,7 @@ import { registerPhysicsValidationRules } from "./physics";
 import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
 import { particleNodes } from "./particles";
+import { globalParameterNodes } from "./global-parameters";
 import { sceneNodes } from "./scene";
 import { sceneStreamingNodes } from "./scene-streaming";
 import { assetLoadingNodes } from "./asset-loading";
@@ -131,6 +132,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...inputNodes,
     ...audioNodes,
     ...particleNodes,
+    ...globalParameterNodes,
     ...sceneNodes,
     ...sceneStreamingNodes,
     ...assetLoadingNodes,

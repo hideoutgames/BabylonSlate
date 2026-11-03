@@ -2,6 +2,8 @@ import {
   TIMELINE_CLIPS_META,
   curveKindForAssetType,
   normalizeCurveAssetPayload,
+  normalizeGlobalParameterCollection,
+  GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE,
   normalizeDataDefinitionAsset,
   normalizeDataTreeAsset,
   isTimelineClipAssetType,
@@ -54,6 +56,8 @@ export function headerMetaForSave(
   if (type === "DataTree") return { ...normalizeDataTreeAsset(content) };
   const curveKind = curveKindForAssetType(type);
   if (curveKind) return { ...normalizeCurveAssetPayload(curveKind, content) };
+  // Pin dropdowns and the Play catalog read a collection's parameters without loading it.
+  if (type === GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE) return { ...normalizeGlobalParameterCollection(content) };
   if (type === "Timeline") return { ...normalizeTimelineAsset(content) };
   // A clip asset lists its one clip as Scene headers list theirs; the index names it after the asset.
   if (isTimelineClipAssetType(type)) return timelineClipAssetSummaries(normalizeTimelineClipAsset(content), "");

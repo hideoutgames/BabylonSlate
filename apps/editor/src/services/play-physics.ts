@@ -193,6 +193,7 @@ export function playLoadControl(options: {
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
   timelineClipAssets?: import("@haptic/core").TimelineClipAssetCatalogEntry[];
+  globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
   /** Packaged authored assets the Asset Registry nodes query. */
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
@@ -250,6 +251,7 @@ export function playLoadControl(options: {
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
     ...(options.curveAssets ? { curveAssets: options.curveAssets } : {}),
+    ...(options.globalParameterCatalog ? { globalParameterCatalog: options.globalParameterCatalog } : {}),
     ...(options.timelineClipAssets ? { timelineClipAssets: options.timelineClipAssets } : {}),
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,

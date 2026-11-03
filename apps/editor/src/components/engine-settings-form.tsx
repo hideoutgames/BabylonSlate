@@ -88,6 +88,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   { kind: "timeline-clip-3d", keepKey: "timeline-clip-3d", label: "3D Timeline Clip" },
   { kind: "vector-curve", keepKey: "vector-curve", label: "Vector Curve" },
   { kind: "color-curve", keepKey: "color-curve", label: "Color Curve" },
+  { kind: "global-parameter-collection", keepKey: "global-parameter-collection", label: "Global Parameter Collection" },
   {
     kind: "script-interface",
     keepKey: "script-interface",
@@ -185,7 +186,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
 /** Engine Settings → Focus sub-categories, by the Focus rows they hold. */
 const FOCUS_KEEP_SECTIONS: Array<{ id: string; title: string; keys: FocusKeepSettingKey[] }> = [
   { id: "scenes", title: "Scenes", keys: ["scene", "sceneLandscape", "sceneFoliage", "sceneScript", "sceneTimeline", "scene-layer", "sceneLayerScript", "sceneLayerTimeline"] },
-  { id: "scriptingData", title: "Scripting And Data", keys: ["graph", "prefab", "enum", "structure", "data-definition", "data-tree", "script-interface", "save-game", "input-action", "input-axis", "plugin-settings"] },
+  { id: "scriptingData", title: "Scripting And Data", keys: ["graph", "prefab", "enum", "structure", "data-definition", "data-tree", "script-interface", "save-game", "input-action", "input-axis", "plugin-settings", "global-parameter-collection"] },
   { id: "curvesTimelines", title: "Curves And Timelines", keys: ["float-curve", "vector-curve", "color-curve", "timeline", "timeline-clip-2d", "timeline-clip-3d"] },
   { id: "twoD", title: "2D", keys: ["sprite", "sprite-animation", "tileset", "tilemap"] },
   { id: "materialsRendering", title: "Materials And Rendering", keys: ["material", "material-function", "material-instance", "water", "render-target", "render-target-texture", "skybox-creator", "texture"] },

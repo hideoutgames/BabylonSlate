@@ -85,6 +85,9 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
   "curveObject.getFloat": "curveAsset",
   "curveObject.getVector": "curveAsset",
   "curveObject.getColor": "curveAsset",
+  // A Set or Get Global Parameter node needs its collection in the game.
+  ...Object.fromEntries(["set", "get"].flatMap((action) => ["Float", "Vector", "Color"].map((kind) =>
+    [`globalParameters.${action}${kind}Parameter`, "collection"]))),
   "timeline.fromAsset": "timelineAsset",
   "audio.play": "asset",
   "particles.spawnAtLocation": "system",
@@ -359,7 +362,9 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       for (const entry of nodes) if (entry.nodeType.startsWith("input.") ||
         ["data.readEntry", "data.readUnknownEntry", "data.getChildren", "data.getDescendants", "data.getParent"].includes(entry.nodeType) ||
         // Get <Type> Curve Object reads the asset synchronously, so its Curve Asset loads with the owner.
-        entry.nodeType.startsWith("curveObject.get")) requireInputs(String(entry.node.id));
+        entry.nodeType.startsWith("curveObject.get") ||
+        // Set and Get Global Parameter resolve their collection from the session catalog the owner loads with.
+        entry.nodeType.startsWith("globalParameters.")) requireInputs(String(entry.node.id));
       for (const { node, properties, nodeType, pins } of nodes) {
         const needed = requiredNodes.has(String(node.id));
         const schemaNeeded = nodeType !== "data.readEntryAsync";
