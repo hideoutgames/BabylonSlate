@@ -65,12 +65,6 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | [Scaled Direction](scaled-direction.md) | Returns the particle's direction multiplied by the seconds simulated this frame. |
 | [Size](size.md) | Returns the current size of the particle. |
 
-## Parameters
-
-| Node | Description |
-| --- | --- |
-| [Parameter](parameter.md) | Returns a graph parameter: a value that gameplay can change while the emitter runs. |
-
 ## System Values
 
 | Node | Description |
@@ -88,6 +82,12 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | [Float](float.md) | Returns a fixed number that you set in the **Inspector**. |
 | [Vector 2](vector-2.md) | Returns a fixed Vector 2 that you set in the **Inspector**. |
 | [Vector 3](vector-3.md) | Returns a fixed Vector 3 that you set in the **Inspector**. |
+
+## Parameter
+
+| Node | Description |
+| --- | --- |
+| [Parameter](parameter.md) | Returns a graph parameter: a value that gameplay can change while the emitter runs. |
 
 ## Utility
 

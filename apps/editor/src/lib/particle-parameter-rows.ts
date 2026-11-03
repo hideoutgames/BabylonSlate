@@ -29,3 +29,10 @@ export function particleParameterValueRow(options: {
         defaultValue: fallback ? [fallback[0]!, fallback[1]!, fallback[2]!, fallback[3]!] : undefined, onChange: (next) => options.onChange([...next]) };
   }
 }
+
+/** A new parameter id: stable across renames, so Parameter nodes and gameplay overrides keep it. */
+export function newParticleParameterId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `param-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
