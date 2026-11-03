@@ -13,11 +13,14 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   ...ENGINE_COMPONENT_CLASS_IDS,
 ];
 
-const nodeRegistry = createDefaultNodeRegistry();
+let nodeTitles: Readonly<Record<string, string>> | undefined;
 
-/** Graph node type id → palette title. */
-export const SEARCH_NODE_TITLES: Record<string, string> = {};
-
-for (const definition of nodeRegistry.list()) {
-  SEARCH_NODE_TITLES[definition.id] = definition.title;
+/** Graph node type id → palette title, built from the default node registry on first use. */
+export function searchNodeTitles(): Readonly<Record<string, string>> {
+  if (!nodeTitles) {
+    const titles: Record<string, string> = {};
+    for (const definition of createDefaultNodeRegistry().list()) titles[definition.id] = definition.title;
+    nodeTitles = titles;
+  }
+  return nodeTitles;
 }

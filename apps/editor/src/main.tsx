@@ -9,7 +9,6 @@ import {
   isTestModeEnabled,
 } from "@haptic/vfs";
 import { setTouchUi } from "@haptic/editor-kit";
-import { installDirectViewReadSync } from "@haptic/render";
 import App from "./App";
 import { installPreloadErrorReload } from "./lib/preload-error-reload";
 
@@ -108,11 +107,17 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
     Object.assign(window, { __hapticWebGpuProof: runWebGpuProof });
   });
 } else {
-  // Pixel probes read view canvases; a directly presented view writes its image into its canvas first.
-  if (isTestModeEnabled()) installDirectViewReadSync();
-  createRoot(document.getElementById("root")!).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  );
+  const mount = () =>
+    createRoot(document.getElementById("root")!).render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+  if (isTestModeEnabled()) {
+    // Pixel probes read view canvases; a directly presented view writes its image into its canvas first.
+    // Loaded on demand so the render package stays out of the entry chunk, and installed before mount.
+    void import("@haptic/render").then(({ installDirectViewReadSync }) => installDirectViewReadSync()).finally(mount);
+  } else {
+    mount();
+  }
 }

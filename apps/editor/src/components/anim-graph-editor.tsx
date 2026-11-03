@@ -622,7 +622,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
         ...decorateTransitionRuleGraph(openTransition.ruleGraph, oneWay),
         members: ruleMembers,
       },
-      defaultNodeRegistry,
+      defaultNodeRegistry(),
       { ...typeCatalog.schemas, dataAssets },
     );
   }, [doc.transitions, openTransition, ruleMembers, typeCatalog.schemas, dataAssets]);
@@ -639,7 +639,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   const rulePaletteKey = scriptPaletteInjectorKey(rulePaletteInput);
   const rulePalette = useMemo(
     () =>
-      scriptPaletteNodes(defaultNodeRegistry, rulePaletteInputRef.current, {
+      scriptPaletteNodes(defaultNodeRegistry(), rulePaletteInputRef.current, {
         injectors: rulePaletteOpen,
         cache: rulePaletteCacheRef.current,
       }),

@@ -11,6 +11,13 @@ A class with a parent and a logic graph: the variables, functions and events of 
 
 Classes can inherit up to 16 levels deep. A class at that depth cannot be picked as a parent.
 
+From the **Content Browser** asset menu you can also:
+
+- Right-click a Class and choose **Create Child Class** for a Class that inherits from it.
+- Select Models, Sprites and Particle Systems, right-click one and choose **Create Actor** for an Actor Class with a component for each.
+
+See [Create from assets](../editor/content-browser.md#create-from-assets).
+
 ## Editor
 
 Double-tap a Class to open it.

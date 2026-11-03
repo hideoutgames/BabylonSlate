@@ -6,6 +6,8 @@ The fields, defaults and validation rules for the entries of a Data Tree, such a
 
 In the **Content Browser**, choose **New Asset > Data > Data Definition**.
 
+Or right-click a [Structure](structure.md) and choose **Create Data Definition** to start with the Structure's fields. See [Create from assets](../editor/content-browser.md#create-from-assets).
+
 ## Editor
 
 Double-tap a Data Definition to open it.

@@ -66,6 +66,9 @@ function writePlayerFileList(): Plugin {
   };
 }
 
+/** Wasm runtimes the player page imports only on demand; everything else is in `player.js`. */
+const PAGE_ON_DEMAND_RUNTIME = /node_modules[\\/](@dimforge[\\/]rapier2d[^\\/]*|@babylonjs[\\/]havok|@recast-navigation[\\/]wasm)[\\/]/;
+
 export default defineConfig({
   base: "./",
   plugins: [copyRuntimePublic(), previewDiagnosticsEntry(rootDir), bundledPackages.main, writePlayerFileList()],
@@ -75,7 +78,14 @@ export default defineConfig({
     rolldownOptions: {
       output: {
         format: "es",
-        codeSplitting: false,
+        // One player bundle: every module, Babylon's lazily imported shaders and loaders included,
+        // goes into `player.js`. Only the wasm runtimes the page itself loads on demand (Rapier 2D,
+        // Havok and Recast for the in-process fallback and navigation debug) stay separate files, so a
+        // game that never needs them never downloads them. Their names keep `rapier` / `havok`, which
+        // `selectPlayerRuntimeFiles` uses to leave an unused engine out of an export.
+        codeSplitting: {
+          groups: [{ name: "main", test: (id: string) => !PAGE_ON_DEMAND_RUNTIME.test(id) }],
+        },
         entryFileNames: "player.js",
         chunkFileNames: "player-[name].js",
         assetFileNames: "player-[name][extname]",

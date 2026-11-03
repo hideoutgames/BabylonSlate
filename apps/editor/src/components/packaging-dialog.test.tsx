@@ -44,7 +44,7 @@ const summary = () => within(screen.getByTestId("packaging-summary"));
 it("packages the project for the web and downloads the archive named after it", async () => {
   const artifact = { files: [] };
   exportGameArtifact.mockResolvedValue(ok(artifact));
-  zipExportedGame.mockReturnValue(new Uint8Array([1, 2, 3]));
+  zipExportedGame.mockResolvedValue(new Uint8Array([1, 2, 3]));
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:game");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   const downloads: string[] = [];

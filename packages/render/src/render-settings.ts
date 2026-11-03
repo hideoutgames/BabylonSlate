@@ -420,11 +420,6 @@ export function pinFullRenderQuality(scene: Scene): void {
   scene.onNewTextureAddedObservable.add((texture) => applyMaterialTextureAnisotropy(texture, state.textureAnisotropy));
 }
 
-/** Whether `scene` is pinned to full quality (`pinFullRenderQuality`). */
-export function sceneUsesFullQuality(scene: Scene): boolean {
-  return sceneRenderingSettings(scene).fullQuality;
-}
-
 /** The full-quality values a quality update must not lower. */
 function holdFullQuality(scene: Scene, state: SceneRendering): void {
   state.textureAnisotropy = Math.min(FULL_QUALITY_TEXTURE_ANISOTROPY, scene.getEngine().getCaps().maxAnisotropy ?? 1);

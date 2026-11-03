@@ -28,8 +28,6 @@ export function isMaterialSamplerTextureAsset(header: { type: string; payload?: 
 }
 
 /** Assets a Material slot accepts: authored Materials and their instances. */
-export const MATERIAL_ASSET_TYPES = ["Material", "MaterialInstance"] as const;
-
 export function isMaterialAssetType(type: string): boolean {
   return type === "Material" || type === "MaterialInstance";
 }

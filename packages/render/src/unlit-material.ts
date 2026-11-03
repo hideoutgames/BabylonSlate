@@ -449,8 +449,3 @@ export function materialRestore(mesh: AbstractMesh): () => void {
   }
   return () => { mesh.material = material; };
 }
-
-/** Whether `mesh` has an unlit binding (`setUnlitMaterial`). */
-export function isUnlitMesh(mesh: AbstractMesh): boolean {
-  return hasUnlitBinding(mesh) && isUnlitMaterial(mesh.material);
-}

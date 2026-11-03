@@ -40,7 +40,12 @@ import {
   type HydrateGraphOptions,
 } from "./graph-node-refresh";
 
-const registry = createDefaultNodeRegistry();
+let registry: NodeRegistry | undefined;
+
+/** The editor's one default node registry, built on first use rather than at module load. */
+export function defaultNodeRegistry(): NodeRegistry {
+  return (registry ??= createDefaultNodeRegistry());
+}
 
 function hasNonEmptyPins(data: Record<string, unknown>): boolean {
   return Array.isArray(data.__pins) && data.__pins.length > 0;
@@ -184,7 +189,7 @@ export function bindUnboundComponentEvents(
  */
 export function hydrateSerializedGraphForEditor(
   input: SerializedGraph,
-  nodeRegistry: NodeRegistry = registry,
+  nodeRegistry: NodeRegistry = defaultNodeRegistry(),
   options?: HydrateGraphOptions,
 ): SerializedGraph {
   const graph = bindUnboundComponentEvents(input, options);
@@ -394,6 +399,7 @@ export function materializeLogicGraph(
 ): LogicGraph {
   if (isLogicGraphPayload(content)) return content;
   const logic = fromSerializedGraph(content, graphId, kind);
+  const registry = defaultNodeRegistry();
   for (let i = 0; i < logic.nodes.length; i++) {
     const data = content.nodes[i]?.data as
       | { __pins?: LogicGraph["nodes"][0]["pins"]; __nodeType?: string }
@@ -477,5 +483,3 @@ export function materializeLogicGraph(
     });
   return logic;
 }
-
-export { registry as defaultNodeRegistry };

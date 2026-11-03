@@ -106,7 +106,6 @@ import {
 } from "../shell/function-graph-panels";
 import { claimFocusRouting, graphOwningNode } from "../lib/function-graph-focus";
 
-const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
 
 /**
@@ -273,12 +272,12 @@ export function GraphPanel(
     const owned = visible && ownedActors ? refreshOwnedGetNodes(visible, ownedActors, ownedTimelineClips) : visible;
     return hydrateSerializedGraphForEditor(
       (owned ? refreshTimelineClipNodes(owned, timelineAssets) : owned) ??
-        createDefaultLogicGraphSerialized(registry, {
+        createDefaultLogicGraphSerialized(defaultNodeRegistry(), {
           parentClass,
           parentOf,
           assetType: indexed?.header.type,
         }),
-      registry,
+      defaultNodeRegistry(),
       {
         parentOf,
         inputAssets,
@@ -566,7 +565,7 @@ export function GraphPanel(
       ]);
   const paletteNodes = useMemo(
     (): PaletteNode[] =>
-      scriptPaletteNodes(registry, paletteInputRef.current, {
+      scriptPaletteNodes(defaultNodeRegistry(), paletteInputRef.current, {
         injectors: paletteOpen,
         cache: paletteCacheRef.current,
       }),

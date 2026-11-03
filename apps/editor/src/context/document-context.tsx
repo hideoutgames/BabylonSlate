@@ -85,7 +85,6 @@ import {
 } from "./document-context-hooks";
 import { useDocumentDockLayouts } from "./use-document-dock-layouts";
 import { useRefState } from "./use-ref-state";
-import { installEditorTestHooks } from "./document-test-hooks";
 import { useAssetThumbnails } from "./use-asset-thumbnails";
 import { useExternalChanges } from "./use-external-changes";
 import { useSourceControlSync } from "./use-source-control-sync";
@@ -707,21 +706,31 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
-    return installEditorTestHooks({
-      projectService,
-      documentService,
-      sourceControl: sourceControlRef.current,
-      journalBuffer,
-      ensureDerived,
-      bump,
-      cancelDebouncedSave,
-      projectDocument: () => projectDocumentRef.current,
-      isProjectDirty: () => projectSaveState.current.isDirty(projectDocumentRef.current),
-      runForegroundRescan: () => runForegroundRescanRef.current(),
-      applyGraphChange,
-      applySceneChange,
-      updateProjectSettings,
+    // Test Mode only, so the hooks load on demand instead of with the app.
+    let uninstall: (() => void) | undefined;
+    let disposed = false;
+    void import("./document-test-hooks").then(({ installEditorTestHooks }) => {
+      if (disposed) return;
+      uninstall = installEditorTestHooks({
+        projectService,
+        documentService,
+        sourceControl: sourceControlRef.current,
+        journalBuffer,
+        ensureDerived,
+        bump,
+        cancelDebouncedSave,
+        projectDocument: () => projectDocumentRef.current,
+        isProjectDirty: () => projectSaveState.current.isDirty(projectDocumentRef.current),
+        runForegroundRescan: () => runForegroundRescanRef.current(),
+        applyGraphChange,
+        applySceneChange,
+        updateProjectSettings,
+      });
     });
+    return () => {
+      disposed = true;
+      uninstall?.();
+    };
   }, [
     cancelDebouncedSave,
     applyGraphChange,

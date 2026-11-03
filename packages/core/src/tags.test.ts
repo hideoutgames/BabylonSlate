@@ -8,7 +8,6 @@ import {
   normalizeTag,
   normalizeTagContainer,
   normalizeTagRegistry,
-  tagContainerHas,
   type TagRegistry,
 } from "./tags";
 
@@ -148,13 +147,6 @@ describe("Tags", () => {
     expect(matchesTag(registry, 4, 2)).toBe(false);
     expect(matchesTag(registry, 0, 0)).toBe(false);
     expect(matchesTag(registry, 999, 999, true)).toBe(false);
-  });
-
-  it("queries explicit container selections", () => {
-    const container = { Tags: [3, 5] };
-    expect(tagContainerHas(registry, container, 1)).toBe(true);
-    expect(tagContainerHas(registry, container, 1, true)).toBe(false);
-    expect(tagContainerHas(registry, { Tags: [1] }, 3)).toBe(false);
   });
 
   it("normalizes structure values", () => {

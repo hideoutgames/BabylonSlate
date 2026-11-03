@@ -573,98 +573,20 @@ export function normalizeMaterialFunctionDocument(
   };
 }
 
-/** Legacy `output.fragment` / `output.postProcess` to the canonical terminals. */
-const LEGACY_NODE_TYPES: Record<string, string> = {
-  "output.fragment": "output.surface",
-  custom: "custom.glsl",
-};
-
-const LEGACY_TERMINAL_PIN: Record<string, string> = {
-  color: "baseColor",
-};
-
-export interface LegacyShaderMigrationContext {
-  /** Texture guids from an imported Material header's dependencies. */
-  textureGuids?: readonly string[];
-}
-
 /**
- * Legacy authored `Shader` payloads and empty imported `Material` stubs both
- * become canonical Material documents. The legacy default wired a Vector 2 UV
- * into a color input, which was never a legal connection, so it is dropped
- * rather than migrated into a type error.
+ * The Material for an imported glTF material slot with an albedo texture: the
+ * texture sampled at the mesh UVs feeds Base Color.
  */
-export function migrateLegacyShaderPayload(
-  value: unknown,
-  context: LegacyShaderMigrationContext = {},
-): MaterialDocument {
-  const record = asRecord(value);
-  const legacyNodes = normalizeNodes(record.nodes);
-  const hasPostTerminal = legacyNodes.some(
-    (node) => node.type === "output.postProcess",
-  );
-  const domain: MaterialDomain =
-    record.postProcess === true || hasPostTerminal ? "postProcess" : "surface";
-
-  const nodes = legacyNodes.map((node) => ({
-    ...node,
-    type:
-      domain === "postProcess" && node.type === "output.fragment"
-        ? "output.postProcess"
-        : (LEGACY_NODE_TYPES[node.type] ?? node.type),
-  }));
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-
-  const edges = normalizeEdges(record.edges)
-    .map((edge) => {
-      const target = byId.get(edge.targetNodeId);
-      if (!target) return edge;
-      if (target.type !== "output.surface") return edge;
-      return {
-        ...edge,
-        targetPinId: LEGACY_TERMINAL_PIN[edge.targetPinId] ?? edge.targetPinId,
-      };
-    })
-    .filter((edge) => {
-      const source = byId.get(edge.sourceNodeId);
-      const target = byId.get(edge.targetNodeId);
-      if (!source || !target) return false;
-      const sourceDefinition = materialNodeDefinition(source.type);
-      const targetDefinition = materialNodeDefinition(target.type);
-      if (!sourceDefinition || !targetDefinition) return false;
-      const sourcePin = sourceDefinition.outputs.find(
-        (pin) => pin.id === edge.sourcePinId,
-      );
-      const targetPin = targetDefinition.inputs.find(
-        (pin) => pin.id === edge.targetPinId,
-      );
-      if (!sourcePin || !targetPin) return false;
-      // Legacy graphs were never type-checked; keep only connections whose
-      // widths still line up so the migrated material compiles.
-      if (sourcePin.type.kind === "generic" || targetPin.type.kind === "generic") {
-        return true;
-      }
-      return (
-        sourcePin.type.kind === targetPin.type.kind ||
-        sourcePin.type.kind === "float"
-      );
-    });
-
-  const seeded =
-    nodes.length === 0 && (context.textureGuids?.length ?? 0) > 0
-      ? seedImportedMaterialNodes(context.textureGuids![0]!)
-      : { nodes, edges };
-
+export function createImportedMaterialDocument(options: {
+  textureGuid: string;
+  shadingModel?: MaterialShadingModel;
+}): MaterialDocument {
+  const seeded = seedImportedMaterialNodes(options.textureGuid);
   return normalizeMaterialDocument({
     schemaVersion: MATERIAL_SCHEMA_VERSION,
-    name: asString(record.name, "Material"),
-    domain,
-    shadingModel: record.shadingModel,
-    blendMode: record.blendMode,
-    twoSided: record.twoSided,
-    defaultNormals: record.defaultNormals,
-    alphaCutoff: record.alphaCutoff,
-    preview: record.preview,
+    name: "Material",
+    domain: "surface",
+    shadingModel: options.shadingModel,
     nodes: seeded.nodes,
     edges: seeded.edges,
   });

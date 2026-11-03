@@ -264,7 +264,6 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     slerpQuats,
     quatRotateVector,
     normalizeQuat,
-    randomFloat: () => host.rng.nextFloat(),
     randomInRange: (kind, range) => randomInRange(kind, range, host.rng),
     clampToRange,
     isInRange,

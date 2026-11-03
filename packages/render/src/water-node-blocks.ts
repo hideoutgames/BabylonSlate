@@ -160,9 +160,9 @@ vec3 swnFlow = vec3(0.0);
 }
 
 /**
- * Terrain and contact taps (`swnFieldAt`, `swnContactAt`), as built-in water decodes them (`cutSource`) without its
- * slope refinement: the field gives (on, terrain depth below the rest surface, shoreline distance, known terrain) and
- * the contacts the signed distance to the nearest object at a wave height.
+ * Terrain and contact taps (`swnFieldAt`, `swnContactAt`), shared by the Water Cut and the look nodes: the field
+ * gives (on, terrain depth below the rest surface, shoreline distance, known terrain) and the contacts the signed
+ * distance to the nearest object at a wave height.
  */
 function emitFieldHelpers(state: NodeMaterialBuildState): void {
   const wgsl = wgslOf(state);
@@ -934,7 +934,7 @@ function meshRemovals(scene: Scene, mesh: AbstractMesh): readonly WaterRemovalCa
 }
 
 /**
- * Water Cut: built-in water's cut (`cutSource`) for whatever Material a water mesh draws; the compiler adds one to every
+ * Water Cut: removes water for whatever Material a water mesh draws; the compiler adds one to every
  * Surface Material, and on any other mesh it compiles away. Removed water is inside one of the nearest removal volumes
  * (`selectWaterRemovals`), over known terrain above the geometry's waterline (Wave Height: the Water Waves node's
  * vertex height on the GPU path, the displaced vertices' own otherwise), or, on a blending surface, water a neighbour

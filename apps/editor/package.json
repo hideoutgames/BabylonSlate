@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@babylonjs/core": "9.29.0",
-    "@babylonjs/loaders": "9.29.0",
     "@haptic/anim-graph": "workspace:*",
     "@haptic/assets": "workspace:*",
     "@haptic/behaviour-tree": "workspace:*",

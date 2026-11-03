@@ -330,7 +330,7 @@ describe("runtime data catalog", () => {
       data.replace(assets());
     }).createContext(null, 0, 0);
     const graph: LogicGraph = {
-      id: "cold-data", kind: "event", nodes: [node("start", "flow.entry"), node("read", "data.readEntryAsync", { definitionGuid: "stats", "default:tree": "equipment", "default:entryPath": "Weapons/Swords/Iron Sword" }), node("log", "debug.log")],
+      id: "cold-data", kind: "event", nodes: [node("start", "flow.entry"), node("read", "data.readEntryAsync", { "default:definition": "stats", "default:tree": "equipment", "default:entryPath": "Weapons/Swords/Iron Sword" }), node("log", "debug.log")],
       edges: [
         { id: "start", sourceNodeId: "start", sourcePinId: "execOut", targetNodeId: "read", targetPinId: "execIn" },
         { id: "ready", sourceNodeId: "read", sourcePinId: "completed", targetNodeId: "log", targetPinId: "execIn" },

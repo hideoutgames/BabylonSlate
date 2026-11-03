@@ -4,16 +4,17 @@ import { useContextMenu, type ContextMenuItem } from "@haptic/editor-kit";
 import {
   canRetargetSelectedAssets,
   classDocumentShowsPrefab,
+  classIdFromClassAsset,
   contentBrowserContextActions,
   isFolderTreeRoot,
 } from "../lib/content-browser-helpers";
+import { isNewClassParentAllowed } from "../lib/create-project-asset";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { contentBrowserTileMenuItems, type ContentBrowserTileMenuDeps } from "./content-browser-tile-menu";
 
 /** What the asset, folder and empty-grid menus and the selection shortcuts read and act through. */
 export interface ContentBrowserContextMenusDeps extends ContentBrowserTileMenuDeps {
   selectedRootWritable: boolean;
-  classParentOf: (id: string) => string | null;
   selectedGuids: Set<string>;
   selectedFolderPaths: Set<string>;
   setSelectedGuids: Dispatch<SetStateAction<Set<string>>>;
@@ -59,6 +60,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
     requestDeleteSnapshot,
     selectedRootWritable,
     classParentOf,
+    getOpenDocuments,
     selectedGuids,
     selectedFolderPaths,
     setSelectedGuids,
@@ -96,8 +98,12 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
       openMoveForSnapshot,
       setReferenceGuid,
       requestDeleteSnapshot,
+      classParentOf,
+      getOpenDocuments,
     }),
     [
+      classParentOf,
+      getOpenDocuments,
       assetRegistry,
       busy,
       projectGuid,
@@ -202,6 +208,10 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
             const type = assetRegistry?.getByGuid(guid)?.header.type;
             return type ? [type] : [];
           }),
+          canCreateChildClass: (() => {
+            const asset = guids.length === 1 ? assetRegistry?.getByGuid(guids[0]!) : undefined;
+            return asset?.header.type === "Class" && isNewClassParentAllowed(classIdFromClassAsset(asset), assetRegistry?.list() ?? []);
+          })(),
           canRetarget: canRetargetSelectedAssets(
             guids.flatMap((guid) => {
               const asset = assetRegistry?.getByGuid(guid);
@@ -245,9 +255,12 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
       const actionIds = selectionActionIds(guids, folders);
       const items: ContextMenuItem[] = tileContextItems.filter((item) =>
         actionIds.has(item.id),
-      ).map((item) => item.id === "generate-thumbnail"
-        ? { ...item, label: guids.length === 1 ? "Generate Thumbnail" : "Generate Thumbnails" }
-        : item);
+      ).map((item) => {
+        if (item.id === "generate-thumbnail") return { ...item, label: guids.length === 1 ? "Generate Thumbnail" : "Generate Thumbnails" };
+        // One Sprite per Texture; one Material per name group.
+        if (item.id === "create-sprite" && guids.length > 1) return { ...item, label: "Create Sprites" };
+        return item;
+      });
       const deleteIndex = items.findIndex((item) => item.id === "delete");
       if (deleteIndex > 0)
         items.splice(deleteIndex, 0, { type: "separator", id: "delete-separator" });

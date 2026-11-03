@@ -240,12 +240,7 @@ export {
   type TimelineTrack,
 } from "./timeline-chart-model";
 export { GradientField, type GradientFieldProps } from "./gradient-field";
-export {
-  sampleCurve,
-  sampleGradient,
-  type CurveKey,
-  type GradientStop,
-} from "./curve-keys";
+export type { CurveKey, GradientStop } from "./curve-keys";
 export {
   TreeView,
   TREE_ROW_HEIGHT,
