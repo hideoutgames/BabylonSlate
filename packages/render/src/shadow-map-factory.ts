@@ -129,7 +129,7 @@ function applyCascadeSplit(generator: CascadedShadowGenerator, settings: ShadowS
  * receiver defines, automatic bias, culled caster lists and draw counters.
  * `view` keys a sun map to a view's camera (attachView); null is the scene
  * view's map, which receivers of every other camera bind. `atlasEdge`: the
- * shadow atlas the maps are tiles of (`ShadowAdmissionBudget.atlasEdge`).
+ * shadow atlas the maps are tiles of (`ShadowAdmissionPlan.atlasEdge`).
  */
 export function createShadowGenerator(
   context: ShadowMapContext,

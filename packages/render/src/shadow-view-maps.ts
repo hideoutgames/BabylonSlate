@@ -94,7 +94,7 @@ export class ShadowViewMaps {
   }
   /**
    * Mirrors the maps a sync admitted with `settings`, after their releases and replacements, as tiles of the
-   * `atlasEdge`-texel atlas (`ShadowAdmissionBudget.atlasEdge`).
+   * `atlasEdge`-texel atlas (`ShadowAdmissionPlan.atlasEdge`).
    */
   sync(settings: ShadowSettings, casterBounds: () => CasterBounds | undefined, atlasEdge: number): void {
     this.settings = settings;
