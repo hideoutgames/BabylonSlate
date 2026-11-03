@@ -13,7 +13,7 @@ import { sceneRenderingSettings } from "./render-settings";
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { lightsInCreationOrder } from "./light-policy";
 import { findSceneShadowController } from "./shadow-controller";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { shadowFilterFetches, shadowViewTexelRatios } from "./shadow-filter";
 
 /** Caller-supplied provenance is deliberately not inferred from an adapter name. */
@@ -214,13 +214,16 @@ export function captureShadowDiagnostics(
         ),
         parentWorldMatrix: matrix(parentMatrix),
         requestedMapSize,
-        allocationDownsized: dimensions
-          ? dimensions.width < requestedMapSize
-          : null,
+        // The map size its tiles are sized from: a sun's first cascade tile may be larger, its render target with it.
+        allocationDownsized: generator ? generator.mapSize < requestedMapSize : null,
         generator: generator
           ? {
               type: generator.getClassName(),
               cameraId: text((generator.camera ?? camera)?.id),
+              mapSize: generator.mapSize,
+              // Per pass (cascade or cube face), the edge of the tile it draws into.
+              tiles: Array.from({ length: generator instanceof CascadedShadowGenerator ? generator.numCascades : map?.isCube ? 6 : 1 },
+                (_, layer) => shadowTileSize(generator, layer)),
               map: dimensions
                 ? {
                     id: map!.uniqueId,
@@ -282,7 +285,7 @@ export function captureShadowDiagnostics(
                     // A cascade's far end in view depth and its tile's texels per world metre, as last drawn.
                     cascadeEnd: generator instanceof AtlasCascadedShadowGenerator ? finite(generator.cascadeEnds[layer]) : null,
                     texelsPerMetre: generator instanceof CascadedShadowGenerator && extents?.width
-                      ? finite(generator.mapSize / extents.width)
+                      ? finite(shadowTileSize(generator, layer) / extents.width)
                       : null,
                   };
                 },
