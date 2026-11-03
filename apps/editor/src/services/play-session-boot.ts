@@ -140,7 +140,6 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
     breakpoints: options.breakpoints,
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
-    globalParameterCatalog: options.globalParameterCatalog,
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,

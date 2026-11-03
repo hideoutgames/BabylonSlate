@@ -1,5 +1,4 @@
 import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
-import { useGlobalParameterCatalog } from "../lib/global-parameter-catalog";
 import type { DiagnosticResultsStore } from "../services/diagnostic-results-store";
 import type { SimulationSession } from "../services/simulation-session";
 import { SimulationRetentionDialog, SimulationRetentionHint } from "./simulation-retention-dialog";
@@ -762,8 +761,6 @@ function PlayOverlayView({
   const initialLoopCountRef = useRef(loopCount);
   const initialInputAssetsRef = useRef(inputAssets);
   const initialDataAssetsRef = useRef(dataAssets);
-  const globalParameterCatalog = useGlobalParameterCatalog();
-  const initialGlobalParameterCatalogRef = useRef(globalParameterCatalog);
   const initialAssetCatalogRef = useRef(assetCatalog);
   const initialFocusNavigationRef = useRef(focusNavigation);
   const initialPlayPreviewRef = useRef(playPreview);
@@ -888,7 +885,6 @@ function PlayOverlayView({
           loopCount: initialLoopCountRef.current,
           inputAssets: initialInputAssetsRef.current,
           dataAssets: initialDataAssetsRef.current,
-          globalParameterCatalog: initialGlobalParameterCatalogRef.current,
           assetCatalog: initialAssetCatalogRef.current,
           focusNavigation: initialFocusNavigationRef.current,
           animGraphs: animGraphsRef.current,
