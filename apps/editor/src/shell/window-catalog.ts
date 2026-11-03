@@ -855,6 +855,16 @@ const SPRITE_ANIMATION_WINDOWS: DockWindowDefinition[] = [
 const TILESET_WINDOWS: DockWindowDefinition[] = [
   { id: "tileset-preview", component: "tileset-preview", title: "Preview" },
   {
+    // A tab beside the Preview: it carries its own sheet, so it also works alone on a phone.
+    id: "tileset-autotiles",
+    component: "tileset-autotiles",
+    title: "Autotiles",
+    defaultPosition: {
+      referencePanelId: "tileset-preview",
+      direction: "within",
+    },
+  },
+  {
     id: "tileset-details",
     component: "tileset-details",
     title: "Inspector",

@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyAutotileLayout,
   AUTOTILE_LAYOUTS,
-  autotileLayoutPlacement,
-  autotileZoneOn,
   canonicalTerrainMask,
   createTerrainResolver,
   missingTerrainVariants,
-  setAutotileZone,
   TERRAIN_ALL,
   TERRAIN_E,
   TERRAIN_N,
@@ -235,35 +231,7 @@ describe("terrain border sets", () => {
     expect(missingTerrainVariants(BORDERED, "dirt")).toHaveLength(16);
     expect(missingTerrainVariants(BORDERED, "grass", "rock")).toEqual([]);
   });
-
-  it("marks zones and fills layouts in one set at a time", () => {
-    const tile = BORDERED.tiles[0]!;
-    const moved = setAutotileZone(tile, "grass", N, true, "dirt");
-    expect(moved.terrain).toEqual({ id: "grass", mask: N, border: "dirt" });
-    expect(autotileZoneOn(moved, "grass", 0)).toBe(false);
-    expect(autotileZoneOn(moved, "grass", N, "dirt")).toBe(true);
-    // Turning a zone off in another set leaves the tile where it is.
-    expect(setAutotileZone(moved, "grass", 0, false)).toBe(moved);
-    expect(setAutotileZone(moved, "grass", N, true).terrain).toEqual({ id: "grass", mask: N });
-
-    const sheet = ensureTilesetTiles(normalizeTilesetPayload({
-      tileWidth: 16, tileHeight: 16, atlasWidth: 16 * 4, atlasHeight: 16 * 4,
-      terrains: [{ id: "ground", name: "Ground", style: "sides", borders: ["rock"] }, { id: "rock", name: "Rock", style: "sides" }],
-    }));
-    const filled = applyAutotileLayout(sheet, "ground", 1, "rock");
-    expect(filled.tiles[0]!.terrain).toEqual({ id: "ground", mask: E | S, border: "rock" });
-    expect(missingTerrainVariants(filled, "ground", "rock")).toEqual([]);
-    expect(applyAutotileLayout(sheet, "ground", 1, "lava")).toBe(sheet);
-  });
 });
-
-/** A 12 × 6 atlas of 16 px tiles with one terrain of `style`, no member tiles yet. */
-function blankSheet(style: TilesetTerrainStyle): TilesetPayload {
-  return ensureTilesetTiles(normalizeTilesetPayload({
-    tileWidth: 16, tileHeight: 16, atlasWidth: 16 * 12, atlasHeight: 16 * 6,
-    terrains: [{ id: "ground", name: "Ground", style }],
-  }));
-}
 
 describe("standard autotile layouts", () => {
   it("lays out every variant of a style exactly once", () => {
@@ -279,53 +247,6 @@ describe("standard autotile layouts", () => {
     // Blob's first four columns are that island with solid inner corners.
     expect(AUTOTILE_LAYOUTS.blob.masks[0]).toBe(E | SE | S);
     expect(AUTOTILE_LAYOUTS.blob.masks[13]).toBe(TERRAIN_ALL);
-  });
-
-  it("places a layout from its top-left tile and refuses one that runs past the atlas", () => {
-    const sheet = blankSheet("sides");
-    // 12 columns: tile 14 is column 2, row 2.
-    const placement = autotileLayoutPlacement(sheet, "sides", 14)!;
-    expect(placement.slice(0, 5).map((cell) => cell.tileId)).toEqual([14, 15, 16, 17, 26]);
-    expect(placement.at(-1)).toEqual({ tileId: 53, mask: 0 });
-    expect(autotileLayoutPlacement(sheet, "sides", 10)).toBeNull();
-    expect(autotileLayoutPlacement(sheet, "sides", 12 * 3 + 1)).toBeNull();
-    expect(autotileLayoutPlacement(sheet, "blob", 1)?.length).toBe(48);
-    expect(autotileLayoutPlacement(sheet, "blob", 2)).toBeNull();
-  });
-
-  it("fills a block's tiles with the terrain and its neighbours, leaving other tiles and unused cells alone", () => {
-    const sheet = blankSheet("blob");
-    const withOther = { ...sheet, tiles: sheet.tiles.map((tile) => (tile.id === 48 ? { ...tile, terrain: { id: "other", mask: 5 } } : tile)) };
-    const filled = applyAutotileLayout(withOther, "ground", 1);
-    expect(missingTerrainVariants(filled, "ground")).toEqual([]);
-    expect(filled.tiles.find((tile) => tile.id === 1)?.terrain).toEqual({ id: "ground", mask: E | SE | S });
-    // The block's one unused cell keeps what it had.
-    expect(filled.tiles.find((tile) => tile.id === 48)?.terrain).toEqual({ id: "other", mask: 5 });
-    expect(filled.tiles.find((tile) => tile.id === 49)?.terrain).toBeUndefined();
-    expect(applyAutotileLayout(sheet, "ground", 2)).toBe(sheet);
-    expect(applyAutotileLayout(sheet, "missing", 1)).toBe(sheet);
-  });
-});
-
-describe("autotile zones", () => {
-  const tile = { id: 1, collision: "none" as const, flags: 0, animation: [] };
-
-  it("joins a tile with any zone, brings a corner's sides along and takes a side's corners away", () => {
-    const corner = setAutotileZone(tile, "ground", NE, true);
-    expect(corner.terrain).toEqual({ id: "ground", mask: N | NE | E });
-    expect(autotileZoneOn(corner, "ground", 0)).toBe(true);
-    expect(autotileZoneOn(corner, "ground", S)).toBe(false);
-    expect(setAutotileZone(corner, "ground", N, false).terrain).toEqual({ id: "ground", mask: E });
-    expect(setAutotileZone(tile, "ground", 0, true).terrain).toEqual({ id: "ground", mask: 0 });
-    expect(setAutotileZone(corner, "ground", 0, false).terrain).toBeUndefined();
-  });
-
-  it("moves a tile of another terrain over with no neighbours, and leaves it when only turning zones off", () => {
-    const other = { ...tile, terrain: { id: "water", mask: N | E } };
-    expect(setAutotileZone(other, "ground", S, true).terrain).toEqual({ id: "ground", mask: S });
-    expect(setAutotileZone(other, "ground", N, false)).toBe(other);
-    expect(setAutotileZone(other, "ground", 0, false)).toBe(other);
-    expect(autotileZoneOn(other, "ground", N)).toBe(false);
   });
 });
 

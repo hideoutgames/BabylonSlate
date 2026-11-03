@@ -13,10 +13,10 @@ export interface TilesetEditingContextValue {
   setSelectedTileIds: (ids: number[]) => void;
   paintCollision: boolean;
   setPaintCollision: (value: boolean) => void;
-  /** The autotile the Inspector shows and the Preview's Autotile tool edits. */
+  /** The autotile the Autotiles window edits. */
   selectedAutotileId: string | null;
   setSelectedAutotileId: (id: string | null) => void;
-  /** The Preview's tool, shared so the Inspector can switch to the Autotile tool. */
+  /** The Preview's tool, kept while the Preview panel remounts. */
   previewTool: AtlasTileGridTool;
   setPreviewTool: (tool: AtlasTileGridTool) => void;
 }

@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -27,25 +28,16 @@ import {
 } from "@haptic/ui/components/empty";
 import { cn } from "@haptic/ui/lib/utils";
 import { zoomViewAbout, type PanZoomLimits, type PanZoomView } from "./pan-zoom-model";
+import { CONTEXT_MENU_LONG_PRESS_MS } from "./use-context-menu";
 
-export type AtlasTileGridTool = "move" | "select" | "autotile";
+export type AtlasTileGridTool = "move" | "select";
 
-/** Neighbour bits of the 3×3 zones around a tile, in reading order; the centre (0) is membership. */
-const ZONE_BITS: readonly number[] = [128, 1, 2, 64, 0, 4, 32, 16, 8];
-
-/** One zone the Autotile tool turns on or off; every edit of one drag shares `stroke`. */
-export interface AtlasAutotileZoneEdit {
-  tileId: number;
-  zone: number;
-  on: boolean;
-  stroke: number;
-}
-
-export interface AtlasAutotileOverlay {
-  /** `sides` hides the corner zones; a press in a corner then goes to the nearer side. */
-  style: "sides" | "blob";
-  /** Whether a tile's zone is on for the autotile being edited. */
-  zoneOn: (tileId: number, zone: number) => boolean;
+/** A drag that moves something drawn on the sheet instead of panning it. */
+export interface AtlasTileDrag {
+  /** A press on `tileId`: return true to drag from it (a template drawn there) instead of panning. */
+  start: (tileId: number) => boolean;
+  /** Each further tile the dragging pointer enters. */
+  move: (tileId: number) => void;
 }
 
 export interface AtlasTileGridProps {
@@ -61,9 +53,16 @@ export interface AtlasTileGridProps {
   emptyAction?: ReactNode;
   panZoom?: boolean;
   tool?: AtlasTileGridTool;
-  /** The autotile the Autotile tool shows and edits; without it that tool does nothing. */
-  autotile?: AtlasAutotileOverlay;
-  onAutotileZone?: (edit: AtlasAutotileZoneEdit) => void;
+  /** Extra content inside each cell (badges, dimming); memoize it: a new function redraws every cell. */
+  renderCellOverlay?: (tileId: number) => ReactNode;
+  /** Content over the atlas, positioned in atlas pixels (a template preview). */
+  overlay?: ReactNode;
+  /** A right-click, or a touch or pen held still on a tile, opens its menu at the press; a hold never selects. */
+  onTileContextMenu?: (tileId: number, clientX: number, clientY: number) => void;
+  /** In Move, a one-pointer drag from a grabbed tile reports tiles instead of panning. */
+  tileDrag?: AtlasTileDrag;
+  /** Centres the view on `tileId` whenever `token` changes, keeping the zoom. */
+  reveal?: { tileId: number; token: number };
   onImageSize?: (width: number, height: number) => void;
   "data-testid"?: string;
 }
@@ -103,8 +102,8 @@ function fitAtlasView(
 
 /**
  * Clickable atlas with a pixel-aligned grid, collision overlay, and optional
- * pinch zoom. The Autotile tool shows each tile's 3×3 autotile zones and
- * turns them on or off by tap or drag.
+ * pinch zoom. Hosts can decorate cells, draw over the atlas, open a tile menu
+ * and drag content across the sheet.
  */
 export function AtlasTileGrid({
   tileset,
@@ -118,8 +117,11 @@ export function AtlasTileGrid({
   emptyAction,
   panZoom = false,
   tool: toolProp,
-  autotile,
-  onAutotileZone,
+  renderCellOverlay,
+  overlay,
+  onTileContextMenu,
+  tileDrag,
+  reveal,
   onImageSize,
   "data-testid": testId = "atlas-tile-grid",
 }: AtlasTileGridProps) {
@@ -159,9 +161,10 @@ export function AtlasTileGrid({
     startY: number;
     ids: number[] | null;
   } | null>(null);
-  /** The Autotile drag: whether it turns zones on, and the last zone it touched. */
-  const zoneDragRef = useRef<{ pointerId: number; on: boolean; stroke: number; last: string } | null>(null);
-  const zoneStrokeRef = useRef(0);
+  /** A `tileDrag` in progress and the last tile it reported. */
+  const tileDragRef = useRef<{ pointerId: number; lastTileId: number } | null>(null);
+  /** A touch or pen hold that opens the tile menu unless the press moves or ends first. */
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectionPreview, setSelectionPreview] = useState<{
     ids: number[];
     x: number;
@@ -227,36 +230,15 @@ export function AtlasTileGrid({
     });
   };
 
-  /** The tile and zone under the pointer, or null off the atlas. */
-  const zoneAtPointer = (event: ReactPointerEvent<HTMLDivElement>): { tileId: number; zone: number } | null => {
-    const tileId = tileAtPointer(event);
-    const bounds = imageRef.current?.getBoundingClientRect();
-    const cell = tileId > 0 ? tilesetTileRect(filled, tileId) : null;
-    if (!cell || !bounds || bounds.width <= 0 || bounds.height <= 0) return null;
-    const fx = (((event.clientX - bounds.left) / bounds.width) * filled.atlasWidth - cell.x) / cell.width;
-    const fy = (((event.clientY - bounds.top) / bounds.height) * filled.atlasHeight - cell.y) / cell.height;
-    const column = Math.min(2, Math.max(0, Math.floor(fx * 3)));
-    const row = Math.min(2, Math.max(0, Math.floor(fy * 3)));
-    if (autotile?.style === "sides" && column !== 1 && row !== 1) {
-      // 4 Sides has no corners: a corner press goes to the side it is nearer.
-      return Math.abs(fx - 0.5) > Math.abs(fy - 0.5)
-        ? { tileId, zone: ZONE_BITS[3 + column]! }
-        : { tileId, zone: ZONE_BITS[row * 3 + 1]! };
-    }
-    return { tileId, zone: ZONE_BITS[row * 3 + column]! };
+  const clearHold = () => {
+    if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = null;
   };
-
-  const paintZone = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = zoneDragRef.current;
-    const hit = zoneAtPointer(event);
-    if (!drag || !hit) return;
-    const key = `${hit.tileId}:${hit.zone}`;
-    if (key === drag.last) return;
-    drag.last = key;
-    onAutotileZone?.({ ...hit, on: drag.on, stroke: drag.stroke });
-  };
+  useEffect(() => clearHold, []);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // A right press belongs to the tile menu, never to a pan or a tap.
+    if (event.button === 2 && onTileContextMenu) return;
     if (!panZoom && !(tool === "select" && onSelectionChange)) return;
     try {
       event.currentTarget.setPointerCapture?.(pointerIdOf(event));
@@ -272,7 +254,8 @@ export function AtlasTileGrid({
       panDragRef.current = null;
       tapRef.current = null;
       selectionDragRef.current = null;
-      zoneDragRef.current = null;
+      tileDragRef.current = null;
+      clearHold();
       setSelectionPreview(null);
       didPanRef.current = true;
       const points = [...pointersRef.current.values()];
@@ -297,20 +280,28 @@ export function AtlasTileGrid({
       y: event.clientY,
       tileId: tileAtPointer(event),
     };
-    if (tool === "autotile") {
-      const hit = autotile && onAutotileZone ? zoneAtPointer(event) : null;
-      if (!hit) return;
+    const pressedTileId = tapRef.current.tileId;
+    if (tool === "move" && tileDrag && pressedTileId > 0 && tileDrag.start(pressedTileId)) {
       event.preventDefault();
-      // The first zone decides the drag: a zone that was off turns zones on.
-      zoneStrokeRef.current += 1;
-      zoneDragRef.current = {
-        pointerId: pointerIdOf(event),
-        on: !autotile!.zoneOn(hit.tileId, hit.zone),
-        stroke: zoneStrokeRef.current,
-        last: "",
-      };
-      paintZone(event);
+      tileDragRef.current = { pointerId: pointerIdOf(event), lastTileId: pressedTileId };
       return;
+    }
+    if (onTileContextMenu && pressedTileId > 0 && event.pointerType !== "mouse") {
+      const pointerId = pointerIdOf(event);
+      const { clientX, clientY } = event;
+      clearHold();
+      holdTimerRef.current = setTimeout(() => {
+        holdTimerRef.current = null;
+        // Moving past the tap distance, a second finger or a release has already let go of the tap.
+        if (tapRef.current?.pointerId !== pointerId) return;
+        tapRef.current = null;
+        panDragRef.current = null;
+        selectionDragRef.current = null;
+        // The release's click belongs to the menu, not to the cell.
+        didPanRef.current = true;
+        setSelectionPreview(null);
+        onTileContextMenu(pressedTileId, clientX, clientY);
+      }, CONTEXT_MENU_LONG_PRESS_MS);
     }
     if (tool === "move") {
       panDragRef.current = {
@@ -348,6 +339,7 @@ export function AtlasTileGrid({
       Math.hypot(event.clientX - tap.x, event.clientY - tap.y) >= TAP_SELECT_PX
     ) {
       tapRef.current = null;
+      clearHold();
     }
     if (pointersRef.current.size >= 2) {
       if (!panZoom) return;
@@ -386,9 +378,17 @@ export function AtlasTileGrid({
       });
       return;
     }
-    if (zoneDragRef.current?.pointerId === pointerId) {
+    const tileDragState = tileDragRef.current;
+    if (tileDragState?.pointerId === pointerId) {
       event.preventDefault();
-      paintZone(event);
+      const tileId = tileAtPointer(event);
+      if (tileId > 0 && tileId !== tileDragState.lastTileId) {
+        tileDragState.lastTileId = tileId;
+        // The press stays a tap until the pointer leaves the tile it started on.
+        tapRef.current = null;
+        didPanRef.current = true;
+        tileDrag?.move(tileId);
+      }
       return;
     }
     const selection = selectionDragRef.current;
@@ -472,6 +472,7 @@ export function AtlasTileGrid({
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const pointerId = pointerIdOf(event);
     pointersRef.current.delete(pointerId);
+    clearHold();
     const tap = tapRef.current;
     if (tap?.pointerId === pointerId) {
       tapRef.current = null;
@@ -491,8 +492,8 @@ export function AtlasTileGrid({
     if (panDragRef.current?.pointerId === pointerId) {
       panDragRef.current = null;
     }
-    if (zoneDragRef.current?.pointerId === pointerId) {
-      zoneDragRef.current = null;
+    if (tileDragRef.current?.pointerId === pointerId) {
+      tileDragRef.current = null;
     }
     const selection = selectionDragRef.current;
     if (selection?.pointerId === pointerId) {
@@ -527,19 +528,59 @@ export function AtlasTileGrid({
     return () => surface.removeEventListener("wheel", listener);
   }, []);
 
-  const zoneOverlay = tool === "autotile" ? autotile : undefined;
+  const revealToken = reveal?.token;
+  const revealTileId = reveal?.tileId;
+  useLayoutEffect(() => {
+    if (revealToken === undefined || revealTileId === undefined) return;
+    const surface = surfaceRef.current;
+    const rect = tilesetTileRect(filled, revealTileId);
+    if (!surface || !rect) return;
+    const width = surface.clientWidth;
+    const height = surface.clientHeight;
+    if (width <= 0 || height <= 0) return;
+    userViewRef.current = true;
+    setView((current) => ({
+      ...current,
+      x: width / 2 - (rect.x + rect.width / 2) * current.scale,
+      y: height / 2 - (rect.y + rect.height / 2) * current.scale,
+    }));
+    // Only a new token reveals again; tile edits keep the view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealToken]);
+
+  const onContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!onTileContextMenu) return;
+    event.preventDefault();
+    // A positioned press names the tile under it; a keyboard menu (or jsdom) has only its target cell.
+    const rect = imageRef.current?.getBoundingClientRect();
+    const atPoint = rect
+      ? atlasCellAt({
+          localX: event.clientX,
+          localY: event.clientY,
+          imageX: rect.left,
+          imageY: rect.top,
+          imageWidth: rect.width,
+          imageHeight: rect.height,
+          tileset: filled,
+        })
+      : 0;
+    const cell = event.target instanceof Element ? event.target.closest("[data-tile-id]") : null;
+    const tileId = atPoint > 0 ? atPoint : Number(cell?.getAttribute("data-tile-id") ?? 0);
+    if (tileId > 0) onTileContextMenu(tileId, event.clientX, event.clientY);
+  };
+
   const tileButtons = useMemo(
     () =>
       filled.tiles.map((tile) => {
         const rect = tilesetTileRect(filled, tile.id);
         if (!rect) return null;
         const selected = highlightedIds.has(tile.id);
-        const member = zoneOverlay?.zoneOn(tile.id, 0) ?? false;
         return (
           <button
             key={tile.id}
             type="button"
             data-testid={`${testId}-cell-${tile.id}`}
+            data-tile-id={tile.id}
             data-selected={selected ? "true" : "false"}
             data-collision={collisionAttr(tile.collision)}
             className={cn(
@@ -590,41 +631,11 @@ export function AtlasTileGrid({
                 />
               </svg>
             ) : null}
-            {zoneOverlay ? (
-              <span
-                aria-hidden="true"
-                data-testid={`${testId}-zones-${tile.id}`}
-                data-member={member ? "true" : "false"}
-                className={cn(
-                  "pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 gap-[8%] p-[8%]",
-                  !member && "bg-background/60",
-                )}
-              >
-                {ZONE_BITS.map((bit) => {
-                  const corner = bit === 2 || bit === 8 || bit === 32 || bit === 128;
-                  const on = member && (bit === 0 || zoneOverlay.zoneOn(tile.id, bit));
-                  return (
-                    <span
-                      key={bit}
-                      data-zone={bit}
-                      data-on={on ? "true" : "false"}
-                      className={cn(
-                        "rounded-[calc(1px/var(--atlas-zoom,1))]",
-                        corner && zoneOverlay.style === "sides" && "invisible",
-                        // A member's zones that are off stay faintly visible as tap targets.
-                        member && !on && "bg-foreground/15",
-                        on && bit === 0 && "bg-ring",
-                        on && bit !== 0 && "bg-ring/45 shadow-[inset_0_0_0_calc(1px/var(--atlas-zoom,1))_var(--ring)]",
-                      )}
-                    />
-                  );
-                })}
-              </span>
-            ) : null}
+            {renderCellOverlay?.(tile.id)}
           </button>
         );
       }),
-    [filled, highlightedIds, onSelect, testId, zoneOverlay],
+    [filled, highlightedIds, onSelect, renderCellOverlay, testId],
   );
 
   return (
@@ -649,6 +660,7 @@ export function AtlasTileGrid({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onContextMenu={onTileContextMenu ? onContextMenu : undefined}
       >
         {!imageUrl ? (
           <Empty
@@ -697,6 +709,7 @@ export function AtlasTileGrid({
             />
           ) : null}
           {tileButtons}
+          {overlay}
           {selectionPreview ? (
             <div
               aria-hidden="true"

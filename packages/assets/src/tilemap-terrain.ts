@@ -2,6 +2,7 @@
 
 import { tilesetTerrainById, tilesetTileById, type TilesetPayload, type TilesetTerrainStyle } from "./tileset-payload";
 import {
+  canonicalTerrainMask,
   createTerrainResolver,
   TERRAIN_NEIGHBOURS,
   TERRAIN_SIDES,
@@ -142,23 +143,23 @@ function mostFacedBorder(faced: ReadonlyArray<string | null>, directions: readon
 }
 
 /**
- * The GID a cell of `member` at (x, y) takes from its 8 neighbours' terrains
+ * What a cell of `member` at (x, y) wants from its 8 neighbours' terrains
  * (`memberAt`; never their variants, so a painted cell changes only itself and
- * its 8 neighbours). Per direction: outside the map or the same terrain joins;
- * another terrain U of the same Tileset is open facing U when this terrain has
- * a border set for U, else joins when U has a border set for this terrain (U's
- * pieces draw the seam), else is open facing nothing; anything else is open
- * facing nothing. The set is the border faced most often on open sides, or on
- * open corners when every side joins (Blob only); a tie or no border picks the
- * default set.
+ * its 8 neighbours): the joined bits and the set. Per direction: outside the
+ * map or the same terrain joins; another terrain U of the same Tileset is open
+ * facing U when this terrain has a border set for U, else joins when U has a
+ * border set for this terrain (U's pieces draw the seam), else is open facing
+ * nothing; anything else is open facing nothing. The set is the border faced
+ * most often on open sides, or on open corners when every side joins (Blob
+ * only); a tie or no border picks the default set (`undefined`).
  */
-function resolveTerrainCell(
+function terrainCellWant(
   map: TilemapPayload,
   member: TerrainMember,
   x: number,
   y: number,
   memberAt: (x: number, y: number) => TerrainMember | null,
-): number {
+): { mask: number; border: string | undefined } {
   let mask = 0;
   const faced: Array<string | null> = [];
   for (const { bit, dx, dy } of TERRAIN_NEIGHBOURS) {
@@ -180,7 +181,57 @@ function resolveTerrainCell(
   const border = (mask & TERRAIN_SIDES) !== TERRAIN_SIDES
     ? mostFacedBorder(faced, SIDE_NEIGHBOURS)
     : member.style === "blob" ? mostFacedBorder(faced, CORNER_NEIGHBOURS) : undefined;
+  return { mask, border };
+}
+
+/** The GID a cell of `member` at (x, y) takes from its neighbours (`terrainCellWant`). */
+function resolveTerrainCell(
+  map: TilemapPayload,
+  member: TerrainMember,
+  x: number,
+  y: number,
+  memberAt: (x: number, y: number) => TerrainMember | null,
+): number {
+  const { mask, border } = terrainCellWant(map, member, x, y, memberAt);
   return encodeTileGid(member.firstGid, member.resolver.resolve(mask, border));
+}
+
+/** The piece a terrain cell wants: its terrain, the canonical mask of the neighbours it joins, and its set (`border` omitted: the default set). */
+export interface TilemapTerrainCellPiece {
+  guid: string;
+  terrainId: string;
+  mask: number;
+  border?: string;
+}
+
+/**
+ * Reads, for any cell of one layer, the piece painting would resolve there
+ * (`terrainCellWant`): `null` outside the map, on an empty or plain cell, or
+ * on a terrain without tiles. Reads `map` as it is, with no stale refresh, and
+ * shares one set of resolvers across calls.
+ */
+export function tilemapTerrainCellPieces(
+  map: TilemapPayload,
+  layerId: string,
+  tilesets: ReadonlyMap<string, TilesetPayload>,
+): (x: number, y: number) => TilemapTerrainCellPiece | null {
+  const layer = map.layers.find((entry) => entry.id === layerId);
+  if (!layer) return () => null;
+  const members = terrainMembers(map, tilesets);
+  const gidAt = layerReader(map, layer);
+  const memberAt = (x: number, y: number) => members.ofGid(gidAt(x, y));
+  return (x, y) => {
+    const member = tileInBounds(map, x, y) ? memberAt(x, y) : null;
+    if (!member) return null;
+    const { mask, border } = terrainCellWant(map, member, x, y, memberAt);
+    const piece: TilemapTerrainCellPiece = {
+      guid: member.guid,
+      terrainId: member.terrainId,
+      mask: canonicalTerrainMask(member.style, mask),
+    };
+    if (border !== undefined) piece.border = border;
+    return piece;
+  };
 }
 
 /**
