@@ -60,6 +60,7 @@ import {
   type ParticleSpace,
 } from "@haptic/core";
 import {
+  particleSpriteSheetSettings,
   resizeParticleValue,
   type ParticleGradientStop,
   type ParticleGraphParameter,
@@ -68,6 +69,7 @@ import {
   type ParticleOperation,
 } from "@haptic/particle-graph";
 import { SlateMeshShapeBlock, type ParticleMeshShapeSource } from "./particle-mesh-shape";
+import { SlateSpriteAnimateBlock, SlateSpriteCellBlock, SlateSpriteSheetBlock } from "./particle-sprite-sheet";
 import { BUILTIN_PARTICLE_NOISE, type ParticleNoiseSource } from "./particle-noise";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 
@@ -537,6 +539,13 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
     if (meshShape) block.source = meshShape(operation.properties);
     return { blocks: [block], inputs: { particle: block.particle, direction1: block.direction1, direction2: block.direction2 }, outputs: { out: block.output } };
   },
+  "sprite.setup": ({ name, operation }) => {
+    const block = new SlateSpriteSheetBlock(name);
+    block.sheet = particleSpriteSheetSettings(operation.properties);
+    return { blocks: [block], inputs: { particle: block.particle }, outputs: { out: block.output } };
+  },
+  "update.basicSprite": spine((name) => new SlateSpriteAnimateBlock(name)),
+  "update.spriteCell": spine((name) => new SlateSpriteCellBlock(name), (block) => ({ cell: block.cell })),
   "update.noise": ({ name, operation, noise }) => {
     const block = new SlateNoiseBlock(name);
     const textureGuid = typeof operation.properties.textureGuid === "string" && operation.properties.textureGuid ? operation.properties.textureGuid : null;

@@ -17,6 +17,7 @@ import {
 import { createTestEngine } from "./create-null-engine";
 import { PARTICLE_BLOCK_ADAPTERS, type ParticleBlockAdapter } from "./particle-graph-blocks";
 import { realizeParticleGraph, type RealizeParticleGraphResult } from "./particle-graph-realize";
+import { animatedSpriteCell } from "./particle-sprite-sheet";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()?.(); });
@@ -401,6 +402,52 @@ describe("realizeParticleGraph", () => {
     parameterBlocks.get("p-scale")![0]!.value = 1.5;
     step(system, 1);
     expect(system.particles[0]!.size).toBeCloseTo(3, 6);
+  });
+
+  it("turns on Babylon's animation sheet for a Sprite Sheet and steps each particle's cell with Animate Sprite Sheet", () => {
+    const settings = { columns: 2, rows: 2, startCell: 1, endCell: 3, framesPerSecond: 10, loop: true, randomStartCell: false };
+    const { system } = built(realize(planOf(withSpine([node("sheet", "sprite.setup", settings), node("animate", "update.basicSprite")]))).result);
+    expect((system as unknown as { _isAnimationSheetEnabled: boolean })._isAnimationSheetEnabled).toBe(true);
+    // Babylon sizes a cell in texels of particleTexture, the 1 × 1 readiness texture.
+    expect([system.spriteCellWidth, system.spriteCellHeight]).toEqual([0.5, 0.5]);
+    expect(system.particleTexture!.getSize()).toEqual({ width: 1, height: 1 });
+    const defines: string[] = [];
+    system.fillDefines(defines, system.blendMode, false);
+    expect(defines).toContain("#define ANIMATESHEET");
+    system.start(0);
+    step(system, 40);
+    // Born on Start Cell, then 10 cells a second through End Cell and round again.
+    const updated = system.particles.filter((particle) => particle.age > 1 / 30);
+    expect(updated.length).toBeGreaterThan(5);
+    for (const particle of updated) expect(particle.cellIndex).toBe(animatedSpriteCell(settings, 1, particle.age));
+    expect(new Set(updated.map((particle) => particle.cellIndex)).size).toBe(3);
+    for (const particle of system.particles.filter((entry) => entry.age === 0)) expect(particle.cellIndex).toBe(1);
+  });
+
+  it("starts particles on random cells, sets cells from Update Sprite Cell within the sheet, and needs a Sprite Sheet", () => {
+    const sheet = (properties: Record<string, unknown>) => node("sheet", "sprite.setup", { columns: 2, rows: 2, startCell: 1, endCell: 3, ...properties });
+    const random = built(realize(planOf(withSpine([sheet({ randomStartCell: true, framesPerSecond: 0 }), node("animate", "update.basicSprite")]))).result).system;
+    random.start(0);
+    step(random, 40);
+    const cells = new Set(random.particles.map((particle) => particle.cellIndex));
+    expect([...cells].sort()).toEqual([1, 2, 3]);
+
+    const cellOf = (value: number) => {
+      const { system } = built(realize(planOf(withSpine([sheet({}), node("cell", "update.spriteCell", { "default:cell": [value] })]))).result);
+      system.start(0);
+      step(system, 10);
+      return [...new Set(system.particles.filter((particle) => particle.age > 1 / 30).map((particle) => particle.cellIndex))];
+    };
+    expect(cellOf(2.7)).toEqual([2]);
+    expect(cellOf(9)).toEqual([3]);
+    expect(cellOf(-4)).toEqual([0]);
+
+    // Without a Sprite Sheet the sheet stays off and Animate Sprite Sheet changes nothing.
+    const { system: bare } = built(realize(planOf(withSpine([node("animate", "update.basicSprite")]))).result);
+    expect((bare as unknown as { _isAnimationSheetEnabled: boolean })._isAnimationSheetEnabled).toBe(false);
+    bare.start(0);
+    step(bare, 10);
+    expect(new Set(bare.particles.map((particle) => particle.cellIndex))).toEqual(new Set([0]));
   });
 
   it("emits fractional and computed Emit Rates", () => {

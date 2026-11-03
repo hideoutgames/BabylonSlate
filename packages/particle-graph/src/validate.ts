@@ -89,7 +89,9 @@ const MOTION_UPDATES = new Set(["update.position", "update.basicPosition"]);
  * (`AlignAngleBlock`, `UpdateAttractorBlock`). An Attractor after only these
  * still reads the previous particle, or none on the first one.
  */
-const NO_PARTICLE_CONTEXT_UPDATES = new Set(["update.alignAngle", "force.attractor"]);
+const NO_PARTICLE_CONTEXT_UPDATES = new Set(["update.alignAngle", "force.attractor", "sprite.setup"]);
+/** Update nodes that change the cell a Sprite Sheet on the spine set up. */
+const SPRITE_CELL_UPDATES = new Set(["update.basicSprite", "update.spriteCell"]);
 
 function pinById(
   pins: readonly ParticlePinDefinition[],
@@ -412,12 +414,16 @@ function validateSpine(
 
   let sawContextUpdate = false;
   const shapes: string[] = [];
+  const spriteSheets: string[] = [];
+  const spriteCellUpdates: string[] = [];
   let moves = false;
   for (const nodeId of spine) {
     const node = nodesById.get(nodeId)!;
     const definition = definitions.get(nodeId);
     if (!definition) continue;
     if (definition.role === "shape") shapes.push(nodeId);
+    if (node.type === "sprite.setup") spriteSheets.push(nodeId);
+    if (SPRITE_CELL_UPDATES.has(node.type)) spriteCellUpdates.push(nodeId);
     if (MOTION_UPDATES.has(node.type)) moves = true;
     if (definition.role !== "update") continue;
     if (node.type === "force.attractor" && !sawContextUpdate) {
@@ -443,6 +449,25 @@ function validateSpine(
       severity: "warning",
       nodeId,
     });
+  }
+  // The Sprite Sheet nearest Emitter Output builds last, so its settings win.
+  for (const nodeId of spriteSheets.slice(0, -1)) {
+    diagnostics.push({
+      code: "particle.multipleSpriteSheets",
+      message: `"${definitions.get(nodeId)?.title}" is overridden by a later Sprite Sheet on the spine`,
+      severity: "warning",
+      nodeId,
+    });
+  }
+  if (spriteSheets.length === 0) {
+    for (const nodeId of spriteCellUpdates) {
+      diagnostics.push({
+        code: "particle.spriteSheetMissing",
+        message: `"${definitions.get(nodeId)?.title}" has no Sprite Sheet on the spine and has no effect; add a Sprite Sheet`,
+        severity: "warning",
+        nodeId,
+      });
+    }
   }
   const first = spine[0] ? definitions.get(spine[0]) : undefined;
   const overwrittenBy = first?.role === "create" ? createColorOverwrittenBy(graph, incoming, spine, nodesById) : null;

@@ -36,6 +36,7 @@ export {
   PARTICLE_GRAPH_LIMITS,
   PARTICLE_PARAMETER_NAME_MAX,
   PARTICLE_GRAPH_SCHEMA_VERSION,
+  PARTICLE_SPRITE_SHEET_LIMITS,
   createDefaultParticleGraphDocument,
   createDefaultParticleGraphSettings,
   newParticleNodeProperties,
@@ -47,6 +48,7 @@ export {
   particleGraphDependencies,
   particleGraphMeshModels,
   particleGraphNoiseTextures,
+  particleSpriteSheetSettings,
   setParticleNodeAngleUnit,
   setParticleNodeValueType,
   syncParameterNodeTypes,
@@ -56,6 +58,7 @@ export {
   type ParticleGraphNode,
   type ParticleGraphParameter,
   type ParticleGraphSettings,
+  type ParticleSpriteSheetSettings,
 } from "./document";
 export {
   canonicalParticleGradientStops,
