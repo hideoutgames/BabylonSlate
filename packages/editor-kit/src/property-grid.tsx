@@ -24,6 +24,7 @@ import {
   Field,
   FieldContent,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@haptic/ui/components/field";
@@ -58,6 +59,7 @@ import { editVectorAxis } from "./linked-axes";
 import { ContextMenuOverlay } from "./context-menu-overlay";
 import { claimContextMenuEvent, useContextMenu, type ContextMenuItem } from "./use-context-menu";
 import { canCopyPropertyRow, canPastePropertyRow, copyPropertyRow, pastePropertyRow } from "./property-clipboard";
+import { LabelHint } from "./label-hint";
 import "./styles/property-grid.css";
 
 export type Vector3Value =
@@ -72,8 +74,18 @@ interface PropertyRowBase {
   disabled?: boolean;
   /** Selection values differ; reset remains available even if the primary is at default. */
   mixed?: boolean;
-  /** Shown under the control (Title Case labels stay on `label`). */
+  /**
+   * An explanation the label shows as a tooltip (`LabelHint`), never as visible text. Only for
+   * what the label and control cannot say; most rows need none.
+   */
   description?: string;
+  /**
+   * Visible text under the control for live state the user must see without asking: a missing
+   * requirement, why the control is disabled or what it currently resolves to. Never an explanation.
+   */
+  status?: string;
+  /** A visible error under the control, such as a rejected name. */
+  error?: string;
   /** Overrides the Field `data-testid` (`property-row-${id}` by default). */
   testId?: string;
   /**
@@ -1034,6 +1046,15 @@ export function PropertyGrid({
               ) : null}
             </FieldLabel>
           );
+          const hinted = row.description && !hideLabels ? <LabelHint hint={row.description}>{label}</LabelHint> : label;
+          // Screen readers keep the explanation as the control's description.
+          const description = (
+            <>
+              {row.description ? <FieldDescription className="sr-only">{row.description}</FieldDescription> : null}
+              {row.status ? <FieldDescription data-row-status="">{row.status}</FieldDescription> : null}
+              {row.error ? <FieldError>{row.error}</FieldError> : null}
+            </>
+          );
           return (
             <Field
               key={row.id}
@@ -1041,8 +1062,8 @@ export function PropertyGrid({
               data-property-row-id={row.id}
               data-testid={row.testId ?? `property-row-${row.id}`}
               data-disabled={row.disabled || undefined}
+              data-invalid={row.error ? true : undefined}
               data-kind={row.kind}
-              data-described={row.description ? true : undefined}
               className={
                 compact
                   ? "gap-0.5 px-0 py-0"
@@ -1051,18 +1072,16 @@ export function PropertyGrid({
             >
               {orientation === "horizontal" ? (
                 <>
-                  {label}
+                  {hinted}
                   <FieldContent className="min-w-0">
                     <RowControl row={row} />
-                    {row.description ? (
-                      <FieldDescription>{row.description}</FieldDescription>
-                    ) : null}
+                    {description}
                   </FieldContent>
                 </>
               ) : (
                 <>
                   <div className="flex min-w-0 items-center gap-1">
-                    {label}
+                    {hinted}
                     {onLinkedChange && row.kind === "vector3" ? (
                       <LinkAxesToggle row={row} onLinkedChange={onLinkedChange} />
                     ) : null}
@@ -1071,9 +1090,7 @@ export function PropertyGrid({
                   </div>
                   <div className="min-w-0">
                     <RowControl row={row} linkable />
-                    {row.description ? (
-                      <FieldDescription>{row.description}</FieldDescription>
-                    ) : null}
+                    {description}
                   </div>
                 </>
               )}

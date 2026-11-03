@@ -16,6 +16,8 @@ import { assetPickerAllowedTypes, collectEnumMemberNames, dataNodePathOptions, p
 import { MATERIAL_DOCUMENT_KINDS, useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { DataTreeEntryField } from "../components/data-tree-entry-picker";
 import { ParticleParameterNamePin } from "../components/particle-parameter-name-pin";
+import { GlobalParameterNamePin } from "../components/global-parameter-name-pin";
+import { globalParameterPinTypes } from "../lib/global-parameter-pin-types";
 import { MaterialParameterNamePin } from "../components/material-parameter-name-pin";
 import { materialParameterPinTypes } from "../lib/material-parameter-pin-types";
 import { particleParameterNameTypes } from "../lib/particle-parameter-name-types";
@@ -155,6 +157,9 @@ export function GraphPinDefaultsProvider({ children }: { children: ReactNode }) 
   // whether a string pin gets an entry picker; the editors read the other catalogs from context.
   const render = useCallback<PinDefaultEditorRenderer>((request) => {
     const kind = request.pin.type.kind;
+    if (globalParameterPinTypes(request)) {
+      return <GlobalParameterNamePin key={`${request.nodeId}:${request.pin.id}`} request={request} />;
+    }
     if (materialParameterPinTypes(request)) {
       return <MaterialParameterNamePin key={`${request.nodeId}:${request.pin.id}`} request={request} />;
     }

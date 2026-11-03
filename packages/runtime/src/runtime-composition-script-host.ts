@@ -164,6 +164,8 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
       emit,
       warn: (message) => rt.reportLog(message, "warning", "Particles"),
     }),
+    setGlobalParameter: (collection, name, value, types) => rt.globalParameters.set(collection, name, value, types) !== null,
+    getGlobalParameter: (collection, name, types) => rt.globalParameters.get(collection, name, types),
     ...createNavigationHostBindings({ navigation: () => rt.navigation }),
     ...createSceneStreamHostBindings({ streams: rt.streams, world: () => rt.world }),
     animGraphControl: (target) => rt.animGraphs.control(target),

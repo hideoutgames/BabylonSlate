@@ -148,6 +148,8 @@ export interface RuntimeDriverOptions {
   materialParameterCatalog?: MaterialParameterCatalog;
   /** Each Particle System's parameters, for Get, Set and Reset Particle Parameter. */
   particleParameterCatalog?: ParticleParameterCatalog;
+  /** Every Global Parameter Collection's parameters by collection guid. */
+  globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
   materialTextureAssetGuids?: readonly string[];
   renderTargets?: Readonly<Record<string, RenderTargetPayload>>;
   renderTargetTextures?: Readonly<Record<string, RenderTargetTexturePayload>>;
@@ -291,6 +293,8 @@ export interface RuntimeDriver {
   applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void;
   /** Replaces the node breakpoints. */
   applyBreakpoints(breakpoints: readonly Breakpoint[]): void;
+  /** Global Parameter Collections edited during Play: each listed collection replaces its own. */
+  applyGlobalParameterCatalog(catalog: unknown): void;
   applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void;
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,

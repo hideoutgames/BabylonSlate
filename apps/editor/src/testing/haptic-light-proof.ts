@@ -648,11 +648,12 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       }),
       blocked: floorShadowMask(() => sun.direction.normalizeToNew().scaleInPlace(-100)),
     };
-    // The sun's last of three cascades, whose tile at High has half the edge of the others (`SHADOW_HALF_TILE_CASCADES`):
+    // The sun's last of three cascades, whose tile at High has half the map size's edge (`SHADOW_HALF_TILE_CASCADES`; its
+    // first has twice, `SHADOW_FIRST_CASCADE_SCALE`):
     // a 9.5-unit shadow distance (an even split, ending 3.4 units out) puts the blockers and their shadows in it, with no
     // fade, and a low sun from the side casts them where the camera sees them.
     const twoCascades = shadows;
-    shadows = normalizeShadowSettings({ profile: "high", cascades: 3, mapSize: 4096, distance: 9.5, fadeFraction: 0, maxLocalLights: 1, depthBias: 0.0008 });
+    shadows = normalizeShadowSettings({ profile: "high", cascades: 3, mapSize: 2048, distance: 9.5, fadeFraction: 0, maxLocalLights: 1, depthBias: 0.0008 });
     const farDirection = new Vector3(-0.9, -0.5, 0.2);
     const sunFarTiles = {
       modes: await shadowPoses(sun, () => {

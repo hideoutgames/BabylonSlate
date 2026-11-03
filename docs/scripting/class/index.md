@@ -445,6 +445,17 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Float Curve Value Range](get-float-curve-value-range.md) | Returns the lowest and highest key values of a Float Curve. |
 | [Get Vector Curve Time Range](get-vector-curve-time-range.md) | Returns the times of the Vector Curve's first and last keys. |
 
+## Global Parameters
+
+| Node | Description |
+| --- | --- |
+| [Get Global Color Parameter](get-global-color-parameter.md) | Returns a Color parameter of a Global Parameter Collection. |
+| [Get Global Float Parameter](get-global-float-parameter.md) | Returns a Float parameter of a Global Parameter Collection. |
+| [Get Global Vector Parameter](get-global-vector-parameter.md) | Returns a Vector 2 or Vector 3 parameter of a Global Parameter Collection. |
+| [Set Global Color Parameter](set-global-color-parameter.md) | Sets a Color parameter of a Global Parameter Collection for the rest of Play. |
+| [Set Global Float Parameter](set-global-float-parameter.md) | Sets a Float parameter of a Global Parameter Collection for the rest of Play. |
+| [Set Global Vector Parameter](set-global-vector-parameter.md) | Sets a Vector 2 or Vector 3 parameter of a Global Parameter Collection for the rest of Play. |
+
 ## Curve Object
 
 | Node | Description |

@@ -82,6 +82,13 @@ export type TraceParticleState = {
   parameters?: TraceParticleParameters[];
 };
 
+/** A Global Parameter Collection parameter's session value (Set Global <Type> Parameter). */
+export type TraceGlobalParameterValue = {
+  collectionGuid: string;
+  parameterId: string;
+  value: number[];
+};
+
 /** The Sprite Animation clip an actor shows (Animation Graph or Play Animation). */
 export type TraceSpriteClip = {
   actorGuid: string;
@@ -121,6 +128,8 @@ export type TraceFrame = {
   sprites?: TraceSpriteClip[];
   animGraphs?: TraceAnimGraphState[];
   particles?: TraceParticleState;
+  /** Global parameters set this session; the rest hold their defaults. */
+  globalParameters?: TraceGlobalParameterValue[];
 };
 
 export type TraceStopReason = "requested" | "session-ended" | "oversized-frame";

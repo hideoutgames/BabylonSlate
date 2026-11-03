@@ -139,6 +139,19 @@ const VISITS_FIELD = { fieldId: "visits", fieldName: "Visits", typeId: "int", ar
 const SAVED_RANGE_FIELD = { fieldId: "saved-range", fieldName: "SavedRange", typeId: "struct", array: false, typeClassId: "engine:IntRange" };
 const SAVED_CURVE_FIELD = { fieldId: "saved-curve", fieldName: "SavedCurve", typeId: "struct", array: false, typeClassId: "engine:FloatCurve" };
 
+/**
+ * `FT_GlobalParams`: one parameter of each type. The Data Probe sets and reads Wind Strength;
+ * Materials and Particle Graphs read the others.
+ */
+export const FEATURE_TEST_GLOBAL_PARAMETERS = {
+  parameters: [
+    { id: "ft-global-wind-strength", name: "Wind Strength", type: "float", defaultValue: [1] },
+    { id: "ft-global-uv-offset", name: "UV Offset", type: "vec2", defaultValue: [0, 0] },
+    { id: "ft-global-wind-direction", name: "Wind Direction", type: "vec3", defaultValue: [1, 0, 0] },
+    { id: "ft-global-sky-tint", name: "Sky Tint", type: "color", defaultValue: [0.6, 0.8, 1, 1] },
+  ],
+} as const;
+
 interface ScriptingTypes {
   speedMode: { guid: string; members: Array<{ name: string; value: number }> };
   spinConfig: string;
@@ -147,6 +160,8 @@ interface ScriptingTypes {
   itemsTree: string;
   /** Float, Vector and Color Curve assets; the Data Probe reads the Float one through its Curve Object. */
   curves: { float: string; vector: string; color: string };
+  /** `FT_GlobalParams`, a Global Parameter Collection (`FEATURE_TEST_GLOBAL_PARAMETERS`). */
+  globalParameters: string;
   pulseAction: string;
   nudgeAxis: string;
   touchGestureAction: string;
@@ -245,6 +260,10 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
       [curveKey(0, { x: 1, y: 0.9, z: 0.6, w: 1 }, zero4), curveKey(1, { x: 0.3, y: 0.1, z: 0.1, w: 0 }, zero4)], "Tint over life."),
   };
 
+  const globalParameters = (await ctx.createAsset("GlobalParameterCollection", DATA_FOLDER, "FT_GlobalParams", {
+    payload: () => structuredClone(FEATURE_TEST_GLOBAL_PARAMETERS) as unknown as Record<string, unknown>,
+  })).guid;
+
   const pulseAction = await saveDocumentGuid(ctx, "input-action", INPUT_FOLDER,
     newAssetFileName("InputAction", "FT_ScriptPulse"), {
       ...normalizeInputAssetPayload("InputAction", {
@@ -308,6 +327,7 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
     itemStats,
     itemsTree,
     curves,
+    globalParameters,
     pulseAction,
     nudgeAxis,
     touchGestureAction,
@@ -323,6 +343,13 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
  * Prefab and the `FT_StreamedRoom` sub-scene; selects the Game Instance and
  * registers the Editor Utility Object.
  */
+/** `FT_GlobalParams`, which the Global Parameter Material and the glow Particle Graph read. */
+export function featureTestGlobalParameterCollection(ctx: FeatureTestContext): string {
+  const types = typesByContext.get(ctx);
+  if (!types) throw new Error("FeatureTest scripting types must be built before the Global Parameter readers.");
+  return types.globalParameters;
+}
+
 export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promise<void> {
   const types = typesByContext.get(ctx);
   if (!types) throw new Error("FeatureTest scripting types must be built before the scripting Classes.");
@@ -1350,6 +1377,15 @@ async function saveDataProbe(
       gNode("falloff-object", "curveObject.getFloat", 2140, 400, { "default:curveAsset": types.curves.float }),
       gNode("falloff-at", "curveObject.valueAtTimeFloat", 2380, 400, { "default:time": 1 }),
       gNode("assert-asset", "debug.assertEqual", 2140, 0, { "default:expected": 80, "default:message": "Get Float Curve Object read the wrong FT_DataFalloffCurve value" }),
+      gNode("set-global", "globalParameters.setFloatParameter", 2380, -200, {
+        "default:collection": types.globalParameters, "default:parameter": "Wind Strength", "default:value": 2.5,
+      }),
+      gNode("get-global", "globalParameters.getFloatParameter", 2380, -380, {
+        "default:collection": types.globalParameters, "default:parameter": "Wind Strength",
+      }),
+      gNode("assert-global", "debug.assertEqual", 2620, -200, {
+        "default:expected": 2.5, "default:message": "Get Global Float Parameter did not read the Wind Strength Set Global Float Parameter wrote",
+      }),
       gNode("roll-in-range", "range.isFloatInRange", 1900, 400),
       gNode("assert-roll", "debug.assert", 1900, 0, { "default:message": "Sword Damage is outside its Damage Roll range" }),
       gNode("read", "data.readEntry", 220, 160, {
@@ -1366,7 +1402,9 @@ async function saveDataProbe(
       printText("print", 2380, 0, "ft-data-probe", undefined, 8),
     ],
     edges: [
-      ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "assert-roll", "assert-asset", "print"),
+      ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "assert-roll", "assert-asset",
+        "set-global", "assert-global", "print"),
+      gWire("get-global", "value", "assert-global", "actual"),
       gWire("falloff-object", "object", "falloff-at", "target"),
       gWire("falloff-at", "value", "assert-asset", "actual"),
       gWire("fields", "Damage", "roll-in-range", "value"),

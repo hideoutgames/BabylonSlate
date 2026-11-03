@@ -93,9 +93,9 @@ describe("particle graph document", () => {
     expect(lowerParticleGraphDocument(doc).ok).toBe(true);
   });
 
-  it("lists the Material, Noise Textures, Mesh Shape Models and Spawn Emitter emitters as dependencies", () => {
+  it("lists the Material, Noise Textures, Mesh Shape Models, Spawn Emitter emitters and Global Parameter Collections as dependencies", () => {
     const doc = createDefaultParticleGraphDocument();
-    expect(particleGraphDependencies(doc)).toEqual({ materials: [], textures: [], models: [], emitters: [], all: [] });
+    expect(particleGraphDependencies(doc)).toEqual({ materials: [], textures: [], models: [], emitters: [], globalParameterCollections: [], all: [] });
     const noise = (id: string, textureGuid: unknown): ParticleGraphNode =>
       ({ id, type: "update.noise", position: { x: 0, y: 0 }, properties: { textureGuid } });
     const mesh = (id: string, source: string, modelGuid: unknown): ParticleGraphNode =>
@@ -107,12 +107,15 @@ describe("particle graph document", () => {
         mesh("m1", "model", "model-1"), mesh("m2", "ownerMesh", "model-2"), mesh("m3", "model", "model-1"),
         { id: "s1", type: "trigger.spawn", position: { x: 0, y: 0 }, properties: { emitterGuid: "spark" } },
         { id: "s2", type: "trigger.spawn", position: { x: 0, y: 0 }, properties: { emitterGuid: null } },
+        { id: "g1", type: "global.parameter", position: { x: 0, y: 0 }, properties: { collectionGuid: "globals", parameterId: "p", valueType: "float" } },
+        { id: "g2", type: "global.parameter", position: { x: 0, y: 0 }, properties: { collectionGuid: "globals" } },
       ] })).toEqual({
       materials: ["mat-1"],
       textures: ["tex-1", "tex-2"],
       models: ["model-1"],
       emitters: ["spark"],
-      all: ["mat-1", "tex-1", "tex-2", "model-1", "spark"],
+      globalParameterCollections: ["globals"],
+      all: ["mat-1", "tex-1", "tex-2", "model-1", "spark", "globals"],
     });
     const normalized = normalizeParticleGraphDocument({ nodes: [
       { id: "n", type: "update.noise", properties: { textureGuid: "  " } },

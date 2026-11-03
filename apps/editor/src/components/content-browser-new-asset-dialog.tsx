@@ -7,6 +7,7 @@ import {
   SearchInput,
   AssetPicker,
   AssetPickerControl,
+  LabelHint,
   TreeView,
   TypeVisualIcon,
   resolveTypeVisual,
@@ -365,12 +366,11 @@ export function ContentBrowserNewAssetDialog({
             </FieldGroup>
             {type === "Material" ? (
               <FieldGroup>
-                <Field><FieldLabel>Starter</FieldLabel>
+                <Field><LabelHint hint="Water starts from the built-in water's look, to edit and use as a Water asset's Custom Material."><FieldLabel>Starter</FieldLabel></LabelHint>
                   <ToggleGroup value={[waterStarter ? "water" : "empty"]} onValueChange={(values) => { const value = values[0]; if (value === "empty" || value === "water") onWaterStarterChange?.(value === "water"); }} variant="outline" size="sm" aria-label="Starter">
                     <ToggleGroupItem value="empty">Empty</ToggleGroupItem>
                     <ToggleGroupItem value="water">Water</ToggleGroupItem>
                   </ToggleGroup>
-                  {waterStarter ? <FieldDescription>Built-in water's look, to edit and use as a Water asset's Custom Material.</FieldDescription> : null}
                 </Field>
               </FieldGroup>
             ) : null}
@@ -385,17 +385,17 @@ export function ContentBrowserNewAssetDialog({
               </Field></FieldGroup>
             ) : null}
             {isClip ? (
-              <FieldGroup><Field><FieldLabel>Timeline Asset</FieldLabel>
+              <FieldGroup><Field><LabelHint hint="Scripts reach the clip through this Timeline Asset."><FieldLabel>Timeline Asset</FieldLabel></LabelHint>
                 <AssetPickerControl value={timelineAssetGuid}>
                   <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setTimelinePickerOpen(true)} data-testid="new-asset-timeline" disabled={busy}>
                     {timelineAssets.find((asset) => asset.guid === timelineAssetGuid)?.name ?? "New Timeline Asset"}
                   </Button>
                 </AssetPickerControl>
-                <FieldDescription>
-                  {timelineAssetGuid
-                    ? "Scripts reach the clip through this Timeline Asset."
-                    : `Required. A new Timeline Asset named ${name.trim() || "after the clip"}${name.trim() ? " Timeline" : ""} is created beside the clip.`}
-                </FieldDescription>
+                {timelineAssetGuid ? null : (
+                  <FieldDescription>
+                    {`Required. A new Timeline Asset named ${name.trim() || "after the clip"}${name.trim() ? " Timeline" : ""} is created beside the clip.`}
+                  </FieldDescription>
+                )}
                 {timelineAssetGuid ? (
                   <Button variant="ghost" size="sm" className="self-start" onClick={() => onTimelineAssetGuidChange?.(null)} data-testid="new-asset-timeline-new" disabled={busy}>
                     New Timeline Asset Instead

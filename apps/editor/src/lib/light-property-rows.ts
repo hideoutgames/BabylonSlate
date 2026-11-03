@@ -200,6 +200,6 @@ export function areaRectLightPropertyRows(
     { kind: "color", id: rowId(actorId, component.id, "color"), label: "Color", value: properties.color, onChange: (next) => update("color", next) },
     { kind: "number", id: rowId(actorId, component.id, "intensity"), label: "Intensity", value: properties.intensity, min: 0, onChange: (next) => update("intensity", next) },
     { ...assetRow(actorId, component, "textureGuid", "Emission Texture", ["Texture"], update, context, "Choose Emission Texture", "Uniform Emission"),
-      description: properties.textureGuid ? context.areaEmissionStatus?.(properties.textureGuid) : undefined },
+      status: properties.textureGuid ? context.areaEmissionStatus?.(properties.textureGuid) : undefined },
   ];
 }

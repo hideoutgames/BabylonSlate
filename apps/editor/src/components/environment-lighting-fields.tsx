@@ -6,7 +6,7 @@ import {
   type EnvironmentLightingOverrides,
   type EnvironmentLightingSettings,
 } from "@haptic/core";
-import { NumberField } from "@haptic/editor-kit";
+import { LabelHint, NumberField } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Switch } from "@haptic/ui/components/switch";
 import {
@@ -18,35 +18,33 @@ import {
   FieldSet,
 } from "@haptic/ui/components/field";
 
+/** `hint` is the label's tooltip and the control's screen-reader description. */
 const fields = [
   {
     key: "enabled",
     label: "Image-Based Lighting",
-    description:
-      "Lights surfaces with the Scene's prefiltered environment texture.",
+    hint: "Lights surfaces with the Scene's prefiltered environment texture.",
   },
   {
     key: "intensity",
     label: "Environment Intensity",
-    description:
-      "Scales automatic environment lighting. Environment Sample nodes are unaffected.",
+    hint: "Scales automatic environment lighting. Environment Sample nodes are unaffected.",
   },
   {
     key: "rotationYDegrees",
     label: "Environment Rotation",
-    description: "Rotation around world Y, in degrees.",
+    hint: "Rotation around world Y, in degrees.",
   },
   {
     key: "celStrength",
     label: "CEL Environment Strength",
-    description:
-      "Adds diffuse environment light to CEL bands. Zero uses direct light only.",
+    hint: "Adds diffuse environment light to CEL bands. Zero uses direct light only.",
   },
 ] as const;
 
 export const ENVIRONMENT_LIGHTING_SEARCH_TEXT = [
   "Environment Lighting Environment Source None Skybox Environment Texture IBL",
-  ...fields.map(({ label, description }) => `${label} ${description}`),
+  ...fields.map(({ label, hint }) => `${label} ${hint}`),
 ].join(" ");
 
 /** Shared compact fields; Scene overrides remain sparse and independently reset. */
@@ -82,12 +80,15 @@ export function EnvironmentLightingFields({
         Environment Lighting
       </FieldLegend>
       <FieldGroup className="gap-2">
-        {fields.map(({ key, label, description }) => {
+        {fields.map(({ key, label, hint }) => {
           if (key !== "enabled" && !effective.enabled) return null;
           if (key === "celStrength" && !cel) return null;
           const id = `${scene ? "scene" : "project"}-environment-${key}`;
           const overridden = scene && Object.hasOwn(overrides, key);
           const disabled = scene && !overridden;
+          // A scene row shows the project value it inherits or overrides.
+          const status = scene ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${String(defaults[key])}.` : "";
+          const describedBy = status ? `${id}-description ${id}-status` : `${id}-description`;
           return (
             <Field
               key={key}
@@ -95,7 +96,9 @@ export function EnvironmentLightingFields({
               data-disabled={disabled || undefined}
             >
               <div className="flex items-center justify-between gap-2">
-                <FieldLabel htmlFor={id}>{label}</FieldLabel>
+                <LabelHint hint={hint}>
+                  <FieldLabel htmlFor={id}>{label}</FieldLabel>
+                </LabelHint>
                 {scene ? (
                   <Button
                     type="button"
@@ -121,7 +124,7 @@ export function EnvironmentLightingFields({
                   id={id}
                   checked={effective.enabled}
                   disabled={disabled}
-                  aria-describedby={`${id}-description`}
+                  aria-describedby={describedBy}
                   onCheckedChange={(value) => patch(key, value)}
                 />
               ) : (
@@ -132,16 +135,12 @@ export function EnvironmentLightingFields({
                   min={ENVIRONMENT_LIGHTING_LIMITS[key][0]}
                   max={ENVIRONMENT_LIGHTING_LIMITS[key][1]}
                   step={key === "rotationYDegrees" ? 1 : 0.01}
-                  aria-describedby={`${id}-description`}
+                  aria-describedby={describedBy}
                   onChange={(value) => patch(key, value)}
                 />
               )}
-              <FieldDescription id={`${id}-description`}>
-                {scene
-                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${String(defaults[key])}. `
-                  : ""}
-                {description}
-              </FieldDescription>
+              <FieldDescription id={`${id}-description`} className="sr-only">{hint}</FieldDescription>
+              {status ? <FieldDescription id={`${id}-status`}>{status}</FieldDescription> : null}
             </Field>
           );
         })}

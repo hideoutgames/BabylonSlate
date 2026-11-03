@@ -27,6 +27,7 @@ import type { AttachedPostProcessStack, PostProcessStackDiagnostic } from "./pos
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { createPreviewLighting } from "./preview-lighting";
 import { previewMeshesReady, waitUntilReady } from "./preview-readiness";
+import { globalParameterDefaults } from "./global-parameter-values";
 import { createText2DMesh } from "./text2d-mesh";
 import { resolveSceneRenderingQuality } from "./render-settings";
 import { DriverCompileWatch } from "./driver-compile";
@@ -593,6 +594,8 @@ export function createMaterialPreviewPresenter(
   // True once a ready frame's pixels reached the canvas; only a static preview settles.
   let settled = false;
   let settledSize = { width: 0, height: 0 };
+  // Global Parameter nodes read the defaults when they draw, so an edit redraws a settled preview.
+  let settledGlobalParameters = globalParameterDefaults.revision;
   let renderError: string | null = null;
   let readbackError: string | null = null;
   const blitter = createRttCanvasBlitter();
@@ -628,6 +631,7 @@ export function createMaterialPreviewPresenter(
   const settle = (size: { width: number; height: number }) => {
     if (!staticContent || pendingForce || options.settleWhen?.() === false) return;
     settledSize = size;
+    settledGlobalParameters = globalParameterDefaults.revision;
     settled = true;
   };
 
@@ -638,6 +642,7 @@ export function createMaterialPreviewPresenter(
     if (size && (size.width !== settledSize.width || size.height !== settledSize.height)) return true;
     return (
       host.renderer.readinessDirty ||
+      globalParameterDefaults.revision !== settledGlobalParameters ||
       host.scene.animatables.length > 0 ||
       options.animating?.() === true
     );

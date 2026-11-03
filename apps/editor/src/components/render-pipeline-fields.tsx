@@ -2,10 +2,12 @@ import {
   GPU_BACKENDS, isGpuBackend, normalizeRenderingPipeline,
   type GpuBackend, type RenderingPipelineSettings,
 } from "@haptic/core";
+import { LabelHint } from "@haptic/editor-kit";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@haptic/ui/components/select";
 
 const backendLabels: Record<GpuBackend, string> = { auto: "Auto", webgl2: "WebGL2", webgpu: "WebGPU" };
+const GPU_BACKEND_HINT = "Used by viewports, previews, Play and exported games.";
 
 type Props = {
   scope: "project";
@@ -22,7 +24,9 @@ export function RenderPipelineFields(props: Props) {
       <FieldLegend className={props.hideTitle ? "sr-only" : undefined}>Rendering</FieldLegend>
       <FieldGroup className="gap-2">
         <Field className="settings-field">
-          <FieldLabel htmlFor="project-gpu-backend">GPU Backend</FieldLabel>
+          <LabelHint hint={GPU_BACKEND_HINT}>
+            <FieldLabel htmlFor="project-gpu-backend">GPU Backend</FieldLabel>
+          </LabelHint>
           <Select value={project.gpuBackend} onValueChange={(gpuBackend) => {
             if (isGpuBackend(gpuBackend)) props.onChange({ ...project, gpuBackend });
           }}>
@@ -33,8 +37,8 @@ export function RenderPipelineFields(props: Props) {
               {GPU_BACKENDS.map((backend) => <SelectItem key={backend} value={backend}>{backendLabels[backend]}</SelectItem>)}
             </SelectGroup></SelectContent>
           </Select>
-          <FieldDescription id="project-gpu-backend-description">
-            Used by viewports, previews, Play, and exported games.
+          <FieldDescription id="project-gpu-backend-description" className="sr-only">
+            {GPU_BACKEND_HINT}
           </FieldDescription>
         </Field>
       </FieldGroup>

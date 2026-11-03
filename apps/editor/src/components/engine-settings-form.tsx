@@ -6,7 +6,7 @@ import { DebuggerSettingsFields } from "./debugger-settings-fields";
 import { CompactModeField } from "./compact-mode-field";
 import { AddNodeHistoryFields } from "./add-node-history-fields";
 import { SettingsSection } from "./settings-section";
-import { NumberField, SelectableText } from "@haptic/editor-kit";
+import { LabelHint, NumberField, SelectableText } from "@haptic/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
   getHostPlatform,
@@ -27,7 +27,6 @@ import { Slider } from "@haptic/ui/components/slider";
 import { Switch } from "@haptic/ui/components/switch";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
@@ -88,6 +87,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   { kind: "timeline-clip-3d", keepKey: "timeline-clip-3d", label: "3D Timeline Clip" },
   { kind: "vector-curve", keepKey: "vector-curve", label: "Vector Curve" },
   { kind: "color-curve", keepKey: "color-curve", label: "Color Curve" },
+  { kind: "global-parameter-collection", keepKey: "global-parameter-collection", label: "Global Parameter Collection" },
   {
     kind: "script-interface",
     keepKey: "script-interface",
@@ -185,7 +185,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
 /** Engine Settings → Focus sub-categories, by the Focus rows they hold. */
 const FOCUS_KEEP_SECTIONS: Array<{ id: string; title: string; keys: FocusKeepSettingKey[] }> = [
   { id: "scenes", title: "Scenes", keys: ["scene", "sceneLandscape", "sceneFoliage", "sceneScript", "sceneTimeline", "scene-layer", "sceneLayerScript", "sceneLayerTimeline"] },
-  { id: "scriptingData", title: "Scripting And Data", keys: ["graph", "prefab", "enum", "structure", "data-definition", "data-tree", "script-interface", "save-game", "input-action", "input-axis", "plugin-settings"] },
+  { id: "scriptingData", title: "Scripting And Data", keys: ["graph", "prefab", "enum", "structure", "data-definition", "data-tree", "script-interface", "save-game", "input-action", "input-axis", "plugin-settings", "global-parameter-collection"] },
   { id: "curvesTimelines", title: "Curves And Timelines", keys: ["float-curve", "vector-curve", "color-curve", "timeline", "timeline-clip-2d", "timeline-clip-3d"] },
   { id: "twoD", title: "2D", keys: ["sprite", "sprite-animation", "tileset", "tilemap"] },
   { id: "materialsRendering", title: "Materials And Rendering", keys: ["material", "material-function", "material-instance", "water", "render-target", "render-target-texture", "skybox-creator", "texture"] },
@@ -269,12 +269,9 @@ export function EngineSettingsForm({
           {getHostPlatform() === "electron" && (
             <SettingsSection id="updates" title="Updates">
             <Field orientation="horizontal" className="settings-field">
-              <FieldContent>
+              <LabelHint hint="Downloads new releases from GitHub and installs them when you exit Haptic. Desktop release builds only.">
                 <FieldLabel htmlFor="setting-automatic-updates">Automatic Updates</FieldLabel>
-                <FieldDescription>
-                  Download new releases from GitHub and install them when you exit Haptic. Applies to desktop release builds.
-                </FieldDescription>
-              </FieldContent>
+              </LabelHint>
               <Switch id="setting-automatic-updates" checked={settings.automaticUpdatesEnabled} onCheckedChange={automaticUpdatesEnabled => void onChange({ automaticUpdatesEnabled })} />
             </Field>
             </SettingsSection>
@@ -310,14 +307,13 @@ export function EngineSettingsForm({
                 void onChange({ undoHistoryLength: Math.round(undoHistoryLength) })
               }
             />
-            <FieldDescription>
-              Maximum undo steps per document.
-            </FieldDescription>
           </Field>
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-undo-memory-mb">
-              Undo Memory Limit (MB)
-            </FieldLabel>
+            <LabelHint hint="Per document. An edit larger than this still applies but can't be undone.">
+              <FieldLabel htmlFor="setting-undo-memory-mb">
+                Undo Memory Limit (MB)
+              </FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-undo-memory-mb"
               min={MIN_UNDO_BYTE_BUDGET / (1024 * 1024)}
@@ -330,9 +326,6 @@ export function EngineSettingsForm({
                 void onChange({ undoByteBudget: Math.round(megabytes) * 1024 * 1024 })
               }
             />
-            <FieldDescription>
-              Memory each document's Undo history may use. An edit larger than this still applies but can't be undone.
-            </FieldDescription>
           </Field>
         </SettingsSection>
       ) : null}
@@ -345,16 +338,18 @@ export function EngineSettingsForm({
         <>
         <SettingsSection id="renderingOverrides" title="Rendering Overrides">
           <Field orientation="horizontal" className="settings-field">
-            <FieldContent><FieldLabel htmlFor="setting-rendering-overrides">Override Project Rendering</FieldLabel>
-              <FieldDescription>Use local resolution, texture budget and post-processing in editor previews.</FieldDescription>
-            </FieldContent>
+            <LabelHint hint="Uses local resolution, texture budget and post-processing in editor previews.">
+              <FieldLabel htmlFor="setting-rendering-overrides">Override Project Rendering</FieldLabel>
+            </LabelHint>
             <Switch id="setting-rendering-overrides" checked={settings.renderingOverridesEnabled}
               onCheckedChange={(renderingOverridesEnabled) => void onChange({ renderingOverridesEnabled })} />
           </Field>
           <Field className="settings-field settings-field-dependent">
-            <FieldLabel htmlFor="setting-hardware-scale">
-              Hardware Scaling Level
-            </FieldLabel>
+            <LabelHint hint="1 is native resolution; higher values render at a lower resolution.">
+              <FieldLabel htmlFor="setting-hardware-scale">
+                Hardware Scaling Level
+              </FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-hardware-scale"
               min={MIN_HARDWARE_SCALING_LEVEL}
@@ -368,19 +363,13 @@ export function EngineSettingsForm({
                 void onChange({ hardwareScalingLevel })
               }
             />
-            <FieldDescription>
-              1 is native resolution. Higher values reduce resolution.
-            </FieldDescription>
           </Field>
           <Field orientation="horizontal" className="settings-field settings-field-dependent">
-            <FieldContent>
+            <LabelHint hint="Editor and Play preview only; exported games are unchanged.">
               <FieldLabel htmlFor="setting-post-processing">
                 Post-Processing
               </FieldLabel>
-              <FieldDescription>
-                Editor and Play preview only. Exported games are unchanged.
-              </FieldDescription>
-            </FieldContent>
+            </LabelHint>
             <Switch
               id="setting-post-processing"
               data-testid="setting-post-processing"
@@ -394,14 +383,11 @@ export function EngineSettingsForm({
         </SettingsSection>
         <SettingsSection id="culling" title="Culling">
           <Field orientation="horizontal" className="settings-field">
-            <FieldContent>
+            <LabelHint hint="Skips objects hidden behind solid shapes in Scene viewports; Play and exported games follow the project setting.">
               <FieldLabel htmlFor="setting-viewport-occlusion-culling">
                 Occlusion Culling
               </FieldLabel>
-              <FieldDescription>
-                Skips objects hidden behind solid shapes in Scene viewports. Play and exported games follow the project setting.
-              </FieldDescription>
-            </FieldContent>
+            </LabelHint>
             <Switch
               id="setting-viewport-occlusion-culling"
               data-testid="setting-viewport-occlusion-culling"
@@ -430,9 +416,11 @@ export function EngineSettingsForm({
             />
           </Field>
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-camera-preview-frame-rate">
-              Camera Preview Frame Rate (FPS)
-            </FieldLabel>
+            <LabelHint hint="How often the preview of a selected Camera or Render Target Capture redraws.">
+              <FieldLabel htmlFor="setting-camera-preview-frame-rate">
+                Camera Preview Frame Rate (FPS)
+              </FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-camera-preview-frame-rate"
               min={MIN_CAMERA_PREVIEW_FRAME_RATE}
@@ -445,14 +433,13 @@ export function EngineSettingsForm({
                 void onChange({ cameraPreviewFrameRate: Math.round(cameraPreviewFrameRate) })
               }
             />
-            <FieldDescription>
-              How often the preview of a selected Camera or Render Target Capture redraws.
-            </FieldDescription>
           </Field>
         </SettingsSection>
         <SettingsSection id="cameraPlacement" title="Camera And Placement">
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-fly-speed">Camera Speed</FieldLabel>
+            <LabelHint hint="World units per second.">
+              <FieldLabel htmlFor="setting-fly-speed">Camera Speed</FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-fly-speed"
               min={0.0001}
@@ -464,10 +451,11 @@ export function EngineSettingsForm({
                 void onChange({ viewportFlySpeed })
               }
             />
-            <FieldDescription>World units per second.</FieldDescription>
           </Field>
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-drop-distance">Drop Distance</FieldLabel>
+            <LabelHint hint="Placed objects drop onto surfaces within this many world units.">
+              <FieldLabel htmlFor="setting-drop-distance">Drop Distance</FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-drop-distance"
               min={0.0001}
@@ -477,17 +465,11 @@ export function EngineSettingsForm({
               value={settings.viewportDropDistance}
               onChange={(viewportDropDistance) => void onChange({ viewportDropDistance })}
             />
-            <FieldDescription>
-              Placed objects drop onto surfaces within this many world units.
-            </FieldDescription>
           </Field>
           <Field orientation="horizontal" className="settings-field">
-            <FieldContent>
+            <LabelHint hint="New actors placed or dragged into a 3D viewport land on the surface in front of the camera.">
               <FieldLabel htmlFor="setting-place-on-surfaces">Place On Surfaces</FieldLabel>
-              <FieldDescription>
-                New actors placed or dragged into a 3D viewport land on the surface in front of the camera.
-              </FieldDescription>
-            </FieldContent>
+            </LabelHint>
             <Switch
               id="setting-place-on-surfaces"
               data-testid="setting-place-on-surfaces"
@@ -496,7 +478,9 @@ export function EngineSettingsForm({
             />
           </Field>
           <Field className="settings-field settings-field-dependent">
-            <FieldLabel htmlFor="setting-placement-distance">Placement Trace Distance</FieldLabel>
+            <LabelHint hint="How far from the camera, in world units, to look for a surface. With nothing in reach the actor is placed at this distance.">
+              <FieldLabel htmlFor="setting-placement-distance">Placement Trace Distance</FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-placement-distance"
               min={0.0001}
@@ -507,9 +491,6 @@ export function EngineSettingsForm({
               value={settings.viewportPlacementDistance}
               onChange={(viewportPlacementDistance) => void onChange({ viewportPlacementDistance })}
             />
-            <FieldDescription>
-              How far from the camera, in world units, to look for a surface. With nothing in reach the actor is placed at this distance.
-            </FieldDescription>
           </Field>
         </SettingsSection>
         </>
@@ -519,9 +500,11 @@ export function EngineSettingsForm({
         <>
         <SettingsSection id="import" title="Import">
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-model-import-scale">
-              Model Import Default Scale
-            </FieldLabel>
+            <LabelHint hint="Applies to new imports only.">
+              <FieldLabel htmlFor="setting-model-import-scale">
+                Model Import Default Scale
+              </FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-model-import-scale"
               min={0.0001}
@@ -532,12 +515,13 @@ export function EngineSettingsForm({
                 void onChange({ modelImportDefaultScale })
               }
             />
-            <FieldDescription>Applies to new imports only.</FieldDescription>
           </Field>
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-hdr-import-face-size">
-              HDR Import Face Size
-            </FieldLabel>
+            <LabelHint hint="Largest cube face for new .hdr imports. Change an imported Texture in its Inspector.">
+              <FieldLabel htmlFor="setting-hdr-import-face-size">
+                HDR Import Face Size
+              </FieldLabel>
+            </LabelHint>
             <Select
               items={HDR_FACE_SIZE_ITEMS}
               value={String(settings.hdrImportFaceSize)}
@@ -564,22 +548,15 @@ export function EngineSettingsForm({
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <FieldDescription>
-              Largest cube face for new .hdr imports. Change an imported Texture in its Inspector.
-            </FieldDescription>
           </Field>
         </SettingsSection>
         <SettingsSection id="editorTextures" title="Editor Textures">
           <Field orientation="horizontal" className="settings-field">
-            <FieldContent>
+            <LabelHint hint="Reduces texture resolution in the editor and Play preview. Export quality is unchanged.">
               <FieldLabel htmlFor="setting-editor-texture-lod">
                 Editor Texture LOD
               </FieldLabel>
-              <FieldDescription>
-                Reduces texture resolution in the editor and Play preview.
-                Export quality is unchanged.
-              </FieldDescription>
-            </FieldContent>
+            </LabelHint>
             <Switch
               id="setting-editor-texture-lod"
               data-testid="setting-editor-texture-lod"
@@ -590,9 +567,11 @@ export function EngineSettingsForm({
             />
           </Field>
           <Field className="settings-field settings-field-dependent">
-            <FieldLabel id="setting-editor-texture-lod-quality-label" htmlFor="setting-editor-texture-lod-quality">
-              Editor Texture Quality
-            </FieldLabel>
+            <LabelHint hint="Percentage of the source texture size.">
+              <FieldLabel id="setting-editor-texture-lod-quality-label" htmlFor="setting-editor-texture-lod-quality">
+                Editor Texture Quality
+              </FieldLabel>
+            </LabelHint>
             <div className="flex min-w-0 items-center gap-3">
               <Slider
                 id="setting-editor-texture-lod-quality"
@@ -621,17 +600,13 @@ export function EngineSettingsForm({
                 onChange={percent => void onChange({ editorTextureLodQuality: percent / 100 })}
               />
             </div>
-            <FieldDescription>Percentage of source size.</FieldDescription>
           </Field>
           <Field orientation="horizontal" className="settings-field">
-            <FieldContent>
+            <LabelHint hint="Releases unused textures when memory use reaches the budget.">
               <FieldLabel htmlFor="setting-texture-budget">
                 Texture Memory Budget
               </FieldLabel>
-              <FieldDescription>
-                Releases unused textures when memory use reaches the budget.
-              </FieldDescription>
-            </FieldContent>
+            </LabelHint>
             <Switch
               id="setting-texture-budget"
               data-testid="setting-texture-budget"
@@ -665,14 +640,11 @@ export function EngineSettingsForm({
         </SettingsSection>
         <SettingsSection id="audio" title="Audio">
           <Field orientation="horizontal" className="settings-field">
-            <FieldContent>
+            <LabelHint hint="Releases unused audio clips when memory use reaches the budget.">
               <FieldLabel htmlFor="setting-audio-budget">
                 Audio Memory Budget
               </FieldLabel>
-              <FieldDescription>
-                Releases unused audio clips when memory use reaches the budget.
-              </FieldDescription>
-            </FieldContent>
+            </LabelHint>
             <Switch
               id="setting-audio-budget"
               data-testid="setting-audio-budget"
@@ -703,9 +675,11 @@ export function EngineSettingsForm({
             />
           </Field>
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-audio-max-voices">
-              Max Concurrent Voices
-            </FieldLabel>
+            <LabelHint hint="Stops the oldest voice when the limit is reached.">
+              <FieldLabel htmlFor="setting-audio-max-voices">
+                Max Concurrent Voices
+              </FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-audio-max-voices"
               min={8}
@@ -716,9 +690,6 @@ export function EngineSettingsForm({
               value={settings.audioMaxVoices}
               onChange={(audioMaxVoices) => void onChange({ audioMaxVoices })}
             />
-            <FieldDescription>
-              Stops the oldest voice when the limit is reached.
-            </FieldDescription>
           </Field>
         </SettingsSection>
         </>
@@ -766,9 +737,11 @@ export function EngineSettingsForm({
         </SettingsSection>
         <SettingsSection id="canvas" title="Canvas">
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-graph-default-zoom">
-              Graph Default Zoom
-            </FieldLabel>
+            <LabelHint hint="Initial zoom, and the maximum zoom when fitting a graph.">
+              <FieldLabel htmlFor="setting-graph-default-zoom">
+                Graph Default Zoom
+              </FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-graph-default-zoom"
               min={0.1}
@@ -781,17 +754,11 @@ export function EngineSettingsForm({
                 void onChange({ graphDefaultZoom })
               }
             />
-            <FieldDescription>
-              Initial zoom and maximum zoom when fitting a graph.
-            </FieldDescription>
           </Field>
           <Field orientation="horizontal" className="settings-field">
-            <FieldContent>
+            <LabelHint hint="Locks inline node values on this device. Defaults remain editable in the Inspector.">
               <FieldLabel htmlFor="setting-read-only-pin-defaults">Read-Only Pin Defaults</FieldLabel>
-              <FieldDescription>
-                Locks inline node values on this device. Defaults remain editable in the Inspector.
-              </FieldDescription>
-            </FieldContent>
+            </LabelHint>
             <Switch
               id="setting-read-only-pin-defaults"
               checked={settings.readOnlyPinDefaults}

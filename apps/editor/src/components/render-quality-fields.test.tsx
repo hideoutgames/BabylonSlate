@@ -120,7 +120,7 @@ it("separates local illumination cost from shadow budgeting", async () => {
   });
   expect(selected("Lighting Quality")).toBe("Custom");
   expect(screen.getByText(/32 local lights requested/)).toBeTruthy();
-  expect(screen.getByText(/Manual overrides the Auto target/)).toBeTruthy();
+  expect(screen.queryByText(/Auto follows the \w+ target/)).toBeNull();
   expect(selected("Shadows Quality")).toBe("High");
   await select("Lighting Quality", "Medium");
   expect(screen.getByText(/32 local lights requested/)).toBeTruthy();
@@ -166,13 +166,24 @@ it("edits Water quality within its tier and disables rows whose feature is off",
   await select("Water Reflections", "Sky Only");
   expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", true);
   expect(screen.getByLabelText("Refraction Resolution")).toHaveProperty("disabled", true);
-  await select("Water Quality", "Low");
+  await select("Water Quality", "Medium");
   expect(selected("Water Shading Detail")).toBe("Medium");
   expect(screen.getByRole("switch", { name: "Water Refraction" }).getAttribute("aria-checked")).toBe("true");
   expect(screen.getByLabelText("Refraction Resolution")).toHaveProperty("disabled", false);
-  expect(selected("Water Reflections")).toBe("Planar");
-  expect(screen.getByLabelText("Planar Resolution")).toHaveProperty("value", "0.25");
+  expect(screen.getByLabelText("Refraction Resolution")).toHaveProperty("value", "0.5");
+  expect(selected("Water Reflections")).toBe("Screen Space");
+  expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", false);
+  expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("value", "8");
+  expect(screen.getByLabelText("Planar Resolution")).toHaveProperty("disabled", true);
   expect(screen.getByLabelText("Water Mesh Density")).toHaveProperty("value", "0.75");
+  // Low draws water with no scene copy and Sky Only reflections, so their rows are disabled.
+  await select("Water Quality", "Low");
+  expect(selected("Water Shading Detail")).toBe("Low");
+  expect(screen.getByRole("switch", { name: "Water Refraction" }).getAttribute("aria-checked")).toBe("false");
+  expect(screen.getByLabelText("Refraction Resolution")).toHaveProperty("disabled", true);
+  expect(selected("Water Reflections")).toBe("Sky Only");
+  expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", true);
+  expect(screen.getByLabelText("Water Mesh Density")).toHaveProperty("value", "0.5");
   expect(selected("Geometry Quality")).toBe("High");
 });
 

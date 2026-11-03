@@ -10,6 +10,7 @@ import type {
 import { resolveGenericType, type MaterialValueType } from "./types";
 import { customGlslDefinition } from "./custom-glsl";
 import { vectorMaskDefinition } from "./vector-mask";
+import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, materialGlobalParameterDefinition } from "./global-parameter";
 
 export interface ResolverGraph {
   nodes: MaterialGraphNode[];
@@ -109,6 +110,7 @@ export function createTypeResolver(
     if (node && definition) {
       if (node.type === "custom.glsl") definition = customGlslDefinition(node, definition);
       if (node.type === "vector.mask") definition = vectorMaskDefinition(node, definition);
+      if (node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) definition = materialGlobalParameterDefinition(node, definition);
       if (node.type === "function.call") {
         const guid = node.properties.functionGuid;
         const fn = typeof guid === "string" ? functions[guid] : undefined;

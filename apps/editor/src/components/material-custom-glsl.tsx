@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MultilineTextField, PinListEditor, PropertyGrid, type PinListRow } from "@haptic/editor-kit";
+import { LabelHint, MultilineTextField, PinListEditor, PropertyGrid, type PinListRow } from "@haptic/editor-kit";
 import { Field, FieldLabel, FieldDescription } from "@haptic/ui/components/field";
 import { customGlslInterface, customGlslInterfaceError, type CustomGlslPin, type MaterialGraphNode } from "@haptic/shader-graph";
 import { CodeBodyEditor } from "./js-body-editor";
@@ -8,6 +8,8 @@ import { GlslCodePreview } from "./glsl-code-preview";
 const TYPES = ["float", "vec2", "vec3", "vec4"] as const;
 const INPUT_TYPES = [...TYPES, "texture"] as const;
 const LABELS = ["Float", "Vector 2", "Vector 3", "Vector 4"];
+// The Function Body tooltip; it also stays readable as screen-reader text in the row.
+const GLSL_SIGNATURE_HINT = "Use input names as variables. Return the primary output; assign additional output names before returning. Pin names are case sensitive. GLSL/WebGL only.";
 
 export function MaterialCustomGlsl({ node, setProperties, bodyLine }: {
   bodyLine?: number;
@@ -33,15 +35,15 @@ export function MaterialCustomGlsl({ node, setProperties, bodyLine }: {
     <PinListEditor title="Inputs" rows={pins.inputs} types={INPUT_TYPES} showDefault={false} showOptional={false} selectedId={selectedInput} onSelect={selectInput} onChange={(rows) => setPins("inputs", rows)} itemLabel="Input" testIdPrefix="custom-glsl-input" />
     <PinListEditor title="Additional Outputs" rows={pins.outputs.slice(1)} types={TYPES} showDefault={false} showOptional={false} selectedId={selectedOutput} onSelect={selectOutput} onChange={(rows) => setPins("outputs", rows)} itemLabel="Output" testIdPrefix="custom-glsl-output" />
     <Field data-invalid={!!error}>
-      <FieldLabel htmlFor="material-node-glsl">Function Body</FieldLabel>
+      <LabelHint hint={GLSL_SIGNATURE_HINT}>
+        <FieldLabel htmlFor="material-node-glsl">Function Body</FieldLabel>
+      </LabelHint>
       <MultilineTextField code id="material-node-glsl" title="GLSL Function Body"
         value={body} onChange={(body) => setProperties({ body })} data-testid="material-node-glsl"
         renderPreview={(value) => <GlslCodePreview value={value} />}
         renderEditor={(value, onChange) => <CodeBodyEditor value={value} onChange={onChange} language="glsl" bodyLine={bodyLine} names={[...pins.inputs, ...pins.outputs.slice(1)].map((pin) => pin.name)} />}
       />
-      <FieldDescription data-testid="material-node-glsl-signature">
-        Use input names as variables. Return the primary output; assign additional output names before returning. Pin names are case sensitive. Renaming a pin requires updating its references in the code. GLSL/WebGL only. Use Render to compile.
-      </FieldDescription>
+      <FieldDescription data-testid="material-node-glsl-signature" className="sr-only">{GLSL_SIGNATURE_HINT}</FieldDescription>
       {error ? <FieldDescription role="alert">{error}</FieldDescription> : null}
     </Field>
   </div>;

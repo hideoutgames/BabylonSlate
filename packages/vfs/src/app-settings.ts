@@ -56,6 +56,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "timeline-clip-3d": ["timeline-clip-viewport", "timeline-clip-proxies", "timeline-clip-timeline"],
   "vector-curve": ["curve-asset-editor"],
   "color-curve": ["curve-asset-editor"],
+  "global-parameter-collection": ["global-parameter-collection"],
   "script-interface": ["script-interface-preview"],
   sprite: ["sprite-preview"],
   "sprite-animation": ["sprite-animation-preview"],

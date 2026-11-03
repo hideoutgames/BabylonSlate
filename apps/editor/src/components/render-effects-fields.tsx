@@ -3,7 +3,7 @@ import {
   type RenderEffectsSettings,
 } from "@haptic/core";
 import type { ReactNode } from "react";
-import { ColorField, NumberField } from "@haptic/editor-kit";
+import { ColorField, LabelHint, NumberField } from "@haptic/editor-kit";
 import { Switch } from "@haptic/ui/components/switch";
 import { SpatialEffectsFields } from "./spatial-effects-fields";
 import {
@@ -35,6 +35,24 @@ const toneMappingLabels = {
   neutral: "Neutral",
 } as const;
 
+/** Label tooltips; rows whose control is described by one keep it as screen-reader text. */
+const hints = {
+  pipeline: "Scene Linear renders PBR in HDR, then applies tone mapping, exposure and contrast. CEL stays in display space.",
+  toneMapping: "Applies in the Scene Linear display stage only.",
+  exposure: "Scene Linear brightness multiplier before tone mapping.",
+  contrast: "Scene Linear contrast curve strength.",
+  whiteBalance: "Scene Linear correction for the color of the scene lighting.",
+  temperature: "Illuminant to neutralize. Low values cool warm light; 6500 is neutral.",
+  tint: "Positive shifts toward magenta, negative toward green.",
+  bloomScale: "Bloom target size relative to the post-processing resolution.",
+  vignette: "Applies in every Color Pipeline mode.",
+  colorGrading: "Remaps final colors through a lookup table, in every Color Pipeline mode.",
+  lut: "A horizontal strip of square slices, such as 256×16 or 1024×32. Set the Texture's Usage to Color Grading LUT so it stays uncompressed.",
+  upscaling: "Renders the scene and its effects at a lower resolution, then upscales and sharpens with AMD FSR 1.",
+  renderScale: "Fraction of the output width and height rendered. 1 disables upscaling.",
+  sharpness: "Sharpening reduction in stops. 0 is the sharpest.",
+} as const;
+
 type Props = {
   project: RenderEffectsSettings;
   onChange: (value: RenderEffectsSettings) => void;
@@ -62,7 +80,9 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
       <FieldGroup className="gap-2">
         <SpatialEffectsFields value={project} onChange={onChange} />
         <Field className="settings-field">
-          <FieldLabel htmlFor="project-effects-pipeline">Color Pipeline</FieldLabel>
+          <LabelHint hint={hints.pipeline}>
+            <FieldLabel htmlFor="project-effects-pipeline">Color Pipeline</FieldLabel>
+          </LabelHint>
           <Select
             value={project.colorPipeline.mode}
             onValueChange={(mode) => {
@@ -83,12 +103,12 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
               ))}
             </SelectGroup></SelectContent>
           </Select>
-          <FieldDescription id="project-effects-pipeline-description">
-            Scene Linear renders PBR in HDR, then applies tone mapping, exposure and contrast. CEL stays in display space.
-          </FieldDescription>
+          <FieldDescription id="project-effects-pipeline-description" className="sr-only">{hints.pipeline}</FieldDescription>
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="project-effects-tone-mapping">Tone Mapping</FieldLabel>
+          <LabelHint hint={hints.toneMapping}>
+            <FieldLabel htmlFor="project-effects-tone-mapping">Tone Mapping</FieldLabel>
+          </LabelHint>
           <Select
             value={project.toneMapping}
             disabled={project.colorPipeline.mode !== "sceneLinear"}
@@ -106,12 +126,12 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
               ))}
             </SelectGroup></SelectContent>
           </Select>
-          <FieldDescription id="project-effects-tone-mapping-description">
-            Applies in the Scene Linear display stage only.
-          </FieldDescription>
+          <FieldDescription id="project-effects-tone-mapping-description" className="sr-only">{hints.toneMapping}</FieldDescription>
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="project-effects-exposure">Exposure</FieldLabel>
+          <LabelHint hint={hints.exposure}>
+            <FieldLabel htmlFor="project-effects-exposure">Exposure</FieldLabel>
+          </LabelHint>
           <NumberField
             id="project-effects-exposure"
             aria-describedby="project-effects-exposure-description"
@@ -123,12 +143,12 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
             disabled={project.colorPipeline.mode !== "sceneLinear"}
             onChange={(exposure) => patch({ exposure })}
           />
-          <FieldDescription id="project-effects-exposure-description">
-            Scene Linear brightness multiplier before tone mapping.
-          </FieldDescription>
+          <FieldDescription id="project-effects-exposure-description" className="sr-only">{hints.exposure}</FieldDescription>
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="project-effects-contrast">Contrast</FieldLabel>
+          <LabelHint hint={hints.contrast}>
+            <FieldLabel htmlFor="project-effects-contrast">Contrast</FieldLabel>
+          </LabelHint>
           <NumberField
             id="project-effects-contrast"
             aria-describedby="project-effects-contrast-description"
@@ -140,12 +160,12 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
             disabled={project.colorPipeline.mode !== "sceneLinear"}
             onChange={(contrast) => patch({ contrast })}
           />
-          <FieldDescription id="project-effects-contrast-description">
-            Scene Linear contrast curve strength.
-          </FieldDescription>
+          <FieldDescription id="project-effects-contrast-description" className="sr-only">{hints.contrast}</FieldDescription>
         </Field>
         <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="project-effects-white-balance">White Balance</FieldLabel>
+          <LabelHint hint={hints.whiteBalance}>
+            <FieldLabel htmlFor="project-effects-white-balance">White Balance</FieldLabel>
+          </LabelHint>
           <Switch
             id="project-effects-white-balance"
             aria-describedby="project-effects-white-balance-description"
@@ -154,14 +174,14 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
             disabled={project.colorPipeline.mode !== "sceneLinear"}
             onCheckedChange={(enabled) => patchWhiteBalance({ enabled: enabled === true })}
           />
-          <FieldDescription id="project-effects-white-balance-description">
-            Scene Linear correction for the color of the scene lighting.
-          </FieldDescription>
+          <FieldDescription id="project-effects-white-balance-description" className="sr-only">{hints.whiteBalance}</FieldDescription>
         </Field>
         {project.whiteBalance.enabled ? (
           <>
             <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-white-balance-temperature">Temperature (K)</FieldLabel>
+              <LabelHint hint={hints.temperature}>
+                <FieldLabel htmlFor="project-effects-white-balance-temperature">Temperature (K)</FieldLabel>
+              </LabelHint>
               <NumberField
                 id="project-effects-white-balance-temperature"
                 aria-describedby="project-effects-white-balance-temperature-description"
@@ -173,12 +193,12 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 disabled={project.colorPipeline.mode !== "sceneLinear"}
                 onChange={(temperature) => patchWhiteBalance({ temperature })}
               />
-              <FieldDescription id="project-effects-white-balance-temperature-description">
-                Illuminant to neutralize. Low values cool warm light; 6500 is neutral.
-              </FieldDescription>
+              <FieldDescription id="project-effects-white-balance-temperature-description" className="sr-only">{hints.temperature}</FieldDescription>
             </Field>
             <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-white-balance-tint">Tint</FieldLabel>
+              <LabelHint hint={hints.tint}>
+                <FieldLabel htmlFor="project-effects-white-balance-tint">Tint</FieldLabel>
+              </LabelHint>
               <NumberField
                 id="project-effects-white-balance-tint"
                 aria-describedby="project-effects-white-balance-tint-description"
@@ -190,9 +210,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 disabled={project.colorPipeline.mode !== "sceneLinear"}
                 onChange={(tint) => patchWhiteBalance({ tint })}
               />
-              <FieldDescription id="project-effects-white-balance-tint-description">
-                Positive shifts toward magenta, negative toward green.
-              </FieldDescription>
+              <FieldDescription id="project-effects-white-balance-tint-description" className="sr-only">{hints.tint}</FieldDescription>
             </Field>
           </>
         ) : null}
@@ -200,14 +218,10 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
           <FieldLabel htmlFor="project-effects-bloom">Bloom</FieldLabel>
           <Switch
             id="project-effects-bloom"
-            aria-describedby="project-effects-bloom-description"
             data-testid="project-effects-bloom"
             checked={project.bloom.enabled}
             onCheckedChange={(enabled) => patchBloom({ enabled: enabled === true })}
           />
-          <FieldDescription id="project-effects-bloom-description">
-            Threshold glow around bright surfaces.
-          </FieldDescription>
         </Field>
         {project.bloom.enabled ? (
           <>
@@ -248,7 +262,9 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
               />
             </Field>
             <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-bloom-scale">Bloom Scale</FieldLabel>
+              <LabelHint hint={hints.bloomScale}>
+                <FieldLabel htmlFor="project-effects-bloom-scale">Bloom Scale</FieldLabel>
+              </LabelHint>
               <NumberField
                 id="project-effects-bloom-scale"
                 aria-describedby="project-effects-bloom-scale-description"
@@ -259,14 +275,14 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 step={0.05}
                 onChange={(scale) => patchBloom({ scale })}
               />
-              <FieldDescription id="project-effects-bloom-scale-description">
-                Bloom target size relative to the post-processing resolution.
-              </FieldDescription>
+              <FieldDescription id="project-effects-bloom-scale-description" className="sr-only">{hints.bloomScale}</FieldDescription>
             </Field>
           </>
         ) : null}
         <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="project-effects-vignette">Vignette</FieldLabel>
+          <LabelHint hint={hints.vignette}>
+            <FieldLabel htmlFor="project-effects-vignette">Vignette</FieldLabel>
+          </LabelHint>
           <Switch
             id="project-effects-vignette"
             aria-describedby="project-effects-vignette-description"
@@ -274,9 +290,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
             checked={project.vignette.enabled}
             onCheckedChange={(enabled) => patchVignette({ enabled: enabled === true })}
           />
-          <FieldDescription id="project-effects-vignette-description">
-            Darkened frame edges; applies in every pipeline mode.
-          </FieldDescription>
+          <FieldDescription id="project-effects-vignette-description" className="sr-only">{hints.vignette}</FieldDescription>
         </Field>
         {project.vignette.enabled ? (
           <>
@@ -304,7 +318,9 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
           </>
         ) : null}
         <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="project-effects-color-grading">Color Grading</FieldLabel>
+          <LabelHint hint={hints.colorGrading}>
+            <FieldLabel htmlFor="project-effects-color-grading">Color Grading</FieldLabel>
+          </LabelHint>
           <Switch
             id="project-effects-color-grading"
             aria-describedby="project-effects-color-grading-description"
@@ -312,22 +328,20 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
             checked={project.colorGrading.enabled}
             onCheckedChange={(enabled) => patch({ colorGrading: { ...project.colorGrading, enabled: enabled === true } })}
           />
-          <FieldDescription id="project-effects-color-grading-description">
-            Remap final colors through a lookup table; applies in every pipeline mode.
-          </FieldDescription>
+          <FieldDescription id="project-effects-color-grading-description" className="sr-only">{hints.colorGrading}</FieldDescription>
         </Field>
         {project.colorGrading.enabled ? (
           <Field className="settings-field settings-field-dependent">
-            <FieldLabel htmlFor="project-effects-lut">LUT Texture</FieldLabel>
+            <LabelHint hint={hints.lut}>
+              <FieldLabel htmlFor="project-effects-lut">LUT Texture</FieldLabel>
+            </LabelHint>
             {lutControl}
-            <FieldDescription>
-              A horizontal strip of square slices, such as 256×16 or 1024×32. Set the
-              Texture's Usage to Color Grading LUT so it stays uncompressed.
-            </FieldDescription>
           </Field>
         ) : null}
         <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="project-effects-upscaling">FSR Upscaling</FieldLabel>
+          <LabelHint hint={hints.upscaling}>
+            <FieldLabel htmlFor="project-effects-upscaling">FSR Upscaling</FieldLabel>
+          </LabelHint>
           <Switch
             id="project-effects-upscaling"
             aria-describedby="project-effects-upscaling-description"
@@ -335,14 +349,14 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
             checked={project.upscaling.enabled}
             onCheckedChange={(enabled) => patchUpscaling({ enabled: enabled === true })}
           />
-          <FieldDescription id="project-effects-upscaling-description">
-            Renders the scene and its effects at a lower resolution, then upscales and sharpens with AMD FSR 1.
-          </FieldDescription>
+          <FieldDescription id="project-effects-upscaling-description" className="sr-only">{hints.upscaling}</FieldDescription>
         </Field>
         {project.upscaling.enabled ? (
           <>
             <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-upscaling-scale">Render Scale</FieldLabel>
+              <LabelHint hint={hints.renderScale}>
+                <FieldLabel htmlFor="project-effects-upscaling-scale">Render Scale</FieldLabel>
+              </LabelHint>
               <NumberField
                 id="project-effects-upscaling-scale"
                 aria-describedby="project-effects-upscaling-scale-description"
@@ -353,12 +367,12 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 step={0.01}
                 onChange={(renderScale) => patchUpscaling({ renderScale })}
               />
-              <FieldDescription id="project-effects-upscaling-scale-description">
-                Fraction of the output width and height rendered. 1 disables upscaling.
-              </FieldDescription>
+              <FieldDescription id="project-effects-upscaling-scale-description" className="sr-only">{hints.renderScale}</FieldDescription>
             </Field>
             <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-upscaling-sharpness">Sharpness</FieldLabel>
+              <LabelHint hint={hints.sharpness}>
+                <FieldLabel htmlFor="project-effects-upscaling-sharpness">Sharpness</FieldLabel>
+              </LabelHint>
               <NumberField
                 id="project-effects-upscaling-sharpness"
                 aria-describedby="project-effects-upscaling-sharpness-description"
@@ -369,9 +383,7 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false, lutC
                 step={0.05}
                 onChange={(sharpness) => patchUpscaling({ sharpness })}
               />
-              <FieldDescription id="project-effects-upscaling-sharpness-description">
-                Sharpening reduction in stops. 0 is the sharpest.
-              </FieldDescription>
+              <FieldDescription id="project-effects-upscaling-sharpness-description" className="sr-only">{hints.sharpness}</FieldDescription>
             </Field>
           </>
         ) : null}

@@ -29,7 +29,7 @@ Open **Project Settings > Rendering > Shadows**. The defaults below are the High
 | **Shadows Enabled** | On | Lets eligible lights cast real-time shadows. |
 | **Shadow Distance** | 350 | Directional shadow coverage around the camera, in world units. |
 | **Shadow Distance Fade** | 0.1 | Fades the far edge over this fraction of the distance. 0 turns fading off. |
-| **Directional Map Size** | 2048 | Resolution per cascade, 256 to 4096. |
+| **Directional Map Size** | 2048 | Resolution per cascade, 256 to 4096. At High the first cascade uses twice this. |
 | **Shadow Cascades** | 4 | Splits directional coverage, 1 to 4, to keep detail near the camera. |
 | **Shadow Filter** | PCF | **PCF** softens edges. **Contact Hardening (PCSS)** adds a contact-hardening penumbra, in PBR only; flat ground under the sun stays free of its own shadow. |
 | **Shadow Filter Quality** | High | Low, Medium or High. **Low** blends edges over about 3 shadow-map texels, the narrowest smooth edge. **Medium** blends them over about 5 and **High** over about 7, for softer, wider edges at a higher GPU cost. Edges keep the same softness in the world near and far, except where far shadows have too little detail for it. |
@@ -48,16 +48,18 @@ CEL projects always use PCF. Bands and shadow edges in CEL are hard steps.
 
 The **Shadows Quality** setting in **Scalability** applies one of these sets. Changing any field afterwards makes it **Custom**.
 
-| Level | Distance | Map size | Cascades | Half-size far cascades | Filter quality | Local shadow lights | Local map size | Smallest far caster | Screen-Space Shadows |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Low | 120 | 2048 | 2 | 0 | Low | 1 | 512 | 3 texels | Off |
-| Medium | 250 | 2048 | 3 | 1 | High | 2 | 1024 | 2 texels | Off |
-| High | 350 | 2048 | 4 | 1 | High | 4 | 2048 | 1.5 texels | Medium |
-| Ultra | 600 | 4096 | 4 | 2 | High | 8 | 2048 | 1 texel | High |
+| Level | Distance | Map size | First cascade | Cascades | Half-size far cascades | Filter quality | Local shadow lights | Local map size | Smallest far caster | Screen-Space Shadows |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Low | 120 | 2048 | 2048 | 2 | 0 | Low | 1 | 512 | 3 texels | Off |
+| Medium | 250 | 2048 | 2048 | 3 | 1 | High | 2 | 1024 | 2 texels | Off |
+| High | 350 | 2048 | 4096 | 4 | 1 | High | 4 | 2048 | 1.5 texels | Medium |
+| Ultra | 600 | 4096 | 4096 | 4 | 2 | High | 8 | 2048 | 1 texel | High |
 
 Applying a level also resets a Manual **Local Shadow Light Budget** to that level's count.
 
 The last cascades, those farthest from the camera, use half the **Directional Map Size** in each direction (never below 256, and never the first two cascades): far shadows are seen small, and the room they leave goes to closer shadows and local lights.
+
+At High, the first cascade, nearest the camera, uses twice the **Directional Map Size** in each direction over the same distance, so shadows close to the camera have twice the detail. It takes room in the shadow atlas that local shadow lights could otherwise use, and its shadow pass draws more texels.
 
 Beyond the first cascade, an object narrower than the level's smallest far caster, measured in that cascade's shadow texels, casts no directional shadow there: its shadow would be too small to see. The first cascade, nearest the camera, keeps every caster.
 

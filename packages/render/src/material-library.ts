@@ -1,4 +1,5 @@
 import { materialTextureBindings, type ResourceLease } from "./resource-cache";
+import type { GlobalParameterValueSource } from "./global-parameter-values";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Material } from "@babylonjs/core/Materials/material";
@@ -156,6 +157,8 @@ export interface MaterialLibraryOptions {
    * `ready`. A Scene host leaves it off, because its warm-up compiles under the Scene's final lighting and fog.
    */
   warmFirstAcquisition?: boolean;
+  /** What Global Parameter nodes read; the editor's defaults when omitted. */
+  globalParameters?: GlobalParameterValueSource;
 }
 
 interface CacheEntry {
@@ -347,6 +350,7 @@ export class MaterialLibrary {
       resolveTexture: this.options.acquireTexture ? textures.resolve : this.options.resolveTexture,
       onTextureError: this.options.onTextureError,
       onLinkError: (diagnostic) => retireUnlinkable(diagnostic),
+      globalParameters: this.options.globalParameters,
     }); } catch (error) {
       textures.dispose();
       throw error;

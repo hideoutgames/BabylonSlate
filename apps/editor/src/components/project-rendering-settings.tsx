@@ -9,6 +9,7 @@ import {
 } from "@haptic/core";
 import {
   AssetPickerControl,
+  LabelHint,
   NumberField,
   assetRowIdentity,
   selectedPickerIdentity,
@@ -39,6 +40,11 @@ import { RenderQualityFields } from "./render-quality-fields";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
 import { SettingsSection } from "./settings-section";
 
+// Label tooltips that also stay their control's screen-reader description.
+const CUSTOM_RESOLUTION_HINT = "Sets the design size for Play and exported games. Overrides Follow System.";
+const BLACK_BARS_HINT = "Adds bars to preserve the design size. Off fills the window without stretching.";
+const UPSCALING_HINT = "Pixelated enlarges the design size by the largest whole multiple that fits, with sharp square pixels, at full resolution. Without Black Bars the view extends to fill the window.";
+
 interface ProjectRenderingSettingsProps {
   projectDocument: ProjectDocument;
   /** The host's wrapper: render, Play Frame Cap and Play Preview edits wait for Done. */
@@ -60,7 +66,9 @@ export function ProjectRenderingSettings({
         <RenderPipelineFields hideTitle scope="project" project={projectDocument.settings.render}
           onChange={(pipeline) => updateProjectSettings({ render: { ...projectDocument.settings.render, ...pipeline } })} />
         <Field className="settings-field">
-          <FieldLabel htmlFor="setting-render-mode">Render Mode</FieldLabel>
+          <LabelHint hint="CEL uses banded lighting. Scenes can override its style.">
+            <FieldLabel htmlFor="setting-render-mode">Render Mode</FieldLabel>
+          </LabelHint>
           <Select value={projectDocument.settings.render.mode ?? "pbr"}
             onValueChange={(mode) => {
               if (mode === "pbr" || mode === "cel") updateProjectSettings({ render: { ...projectDocument.settings.render, mode } });
@@ -73,7 +81,6 @@ export function ProjectRenderingSettings({
               <SelectItem value="cel">CEL</SelectItem>
             </SelectGroup></SelectContent>
           </Select>
-          <FieldDescription>CEL uses banded lighting. Scenes can override its style.</FieldDescription>
         </Field>
         </SettingsSection>
         <SettingsSection id="scalability" title="Scalability">
@@ -126,9 +133,11 @@ export function ProjectRenderingSettings({
         <SettingsSection id="resolution" title="Resolution">
         <FieldGroup className="gap-2">
           <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="setting-render-custom">
-            Custom Resolution
-          </FieldLabel>
+          <LabelHint hint={CUSTOM_RESOLUTION_HINT}>
+            <FieldLabel htmlFor="setting-render-custom">
+              Custom Resolution
+            </FieldLabel>
+          </LabelHint>
           <Switch
             id="setting-render-custom"
             aria-describedby="setting-render-custom-description"
@@ -143,9 +152,8 @@ export function ProjectRenderingSettings({
             }
             data-testid="setting-render-custom"
           />
-          <FieldDescription id="setting-render-custom-description">
-            Sets the design size for Play and exported games. Overrides
-            Follow System.
+          <FieldDescription id="setting-render-custom-description" className="sr-only">
+            {CUSTOM_RESOLUTION_HINT}
           </FieldDescription>
         </Field>
           <Field className="settings-field settings-field-dependent">
@@ -187,9 +195,11 @@ export function ProjectRenderingSettings({
           </div>
         </Field>
         <Field orientation="horizontal" className="settings-field settings-field-dependent" data-disabled={!projectDocument.settings.render.customResolution}>
-          <FieldLabel htmlFor="setting-render-black-bars">
-            Black Bars
-          </FieldLabel>
+          <LabelHint hint={BLACK_BARS_HINT}>
+            <FieldLabel htmlFor="setting-render-black-bars">
+              Black Bars
+            </FieldLabel>
+          </LabelHint>
           <Switch
             id="setting-render-black-bars"
             aria-describedby="setting-render-black-bars-description"
@@ -205,14 +215,15 @@ export function ProjectRenderingSettings({
             }
             data-testid="setting-render-black-bars"
           />
-          <FieldDescription id="setting-render-black-bars-description">
-            Adds bars to preserve the design size. Off fills the window
-            without stretching.
+          <FieldDescription id="setting-render-black-bars-description" className="sr-only">
+            {BLACK_BARS_HINT}
           </FieldDescription>
         </Field>
         {projectDocument.settings.render.customResolution ? (
           <Field className="settings-field settings-field-dependent">
-            <FieldLabel htmlFor="setting-render-upscaling">Upscaling</FieldLabel>
+            <LabelHint hint={UPSCALING_HINT}>
+              <FieldLabel htmlFor="setting-render-upscaling">Upscaling</FieldLabel>
+            </LabelHint>
             <Select value={projectDocument.settings.render.upscaling}
               onValueChange={(upscaling) => {
                 if (upscaling === "smooth" || upscaling === "pixelated")
@@ -227,10 +238,8 @@ export function ProjectRenderingSettings({
                 <SelectItem value="pixelated">Pixelated</SelectItem>
               </SelectGroup></SelectContent>
             </Select>
-            <FieldDescription id="setting-render-upscaling-description">
-              Pixelated enlarges the design size by the largest whole multiple
-              that fits, with sharp square pixels, at full resolution. Without
-              Black Bars the view extends to fill the window.
+            <FieldDescription id="setting-render-upscaling-description" className="sr-only">
+              {UPSCALING_HINT}
             </FieldDescription>
           </Field>
         ) : null}
@@ -238,7 +247,9 @@ export function ProjectRenderingSettings({
         </SettingsSection>
         <SettingsSection id="water" title="Water">
           <Field className="settings-field">
-            <FieldLabel htmlFor="setting-water-blend-distance">Water Blend Distance</FieldLabel>
+            <LabelHint hint="Metres within which water bodies merge into one surface, in rendering and water queries. 0 turns it off.">
+              <FieldLabel htmlFor="setting-water-blend-distance">Water Blend Distance</FieldLabel>
+            </LabelHint>
             <NumberField
               id="setting-water-blend-distance"
               min={0}
@@ -253,9 +264,6 @@ export function ProjectRenderingSettings({
               }
               data-testid="setting-water-blend-distance"
             />
-            <FieldDescription>
-              Metres within which water bodies merge into one surface, in rendering and water queries. 0 turns it off.
-            </FieldDescription>
           </Field>
         </SettingsSection>
         <SettingsSection id="playPreview" title="Play Preview">
@@ -274,9 +282,6 @@ export function ProjectRenderingSettings({
               updateProjectSettings({ playFrameCap })
             }
           />
-          <FieldDescription>
-              Applies to Play and Preview.
-          </FieldDescription>
         </Field>
         <PlayPreviewSettingsFields
           settings={projectDocument.settings.playPreview}

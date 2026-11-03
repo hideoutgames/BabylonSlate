@@ -351,6 +351,24 @@ export function GalleryComposites() {
       onChange: () => {},
       ...assetRowIdentity({ name: "Grass", type: "Texture" }),
     },
+    {
+      // A label tooltip (LabelHint), and visible live status and error text.
+      kind: "number",
+      id: "gallery-lag",
+      label: "Max Lag Distance",
+      value: 0,
+      description: "0 means unlimited.",
+      status: "Unlimited while Location Lag is off.",
+      onChange: () => {},
+    },
+    {
+      kind: "text",
+      id: "gallery-name",
+      label: "Name",
+      value: "Health",
+      error: "Another field is already named Health.",
+      onChange: () => {},
+    },
   ];
 
   return (

@@ -39,6 +39,7 @@ export * from "./euler";
 export * from "./easing";
 export * from "./curves";
 export * from "./curve-assets";
+export * from "./global-parameters";
 export * from "./tween";
 export * from "./cursor-ray";
 export * from "./format-value";

@@ -254,7 +254,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   });
   expect(work).toEqual({ frames: 3, visibleFrames: 3, copies: 3 });
   expect(clears).toHaveBeenCalledTimes(3);
-  expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: true, scale: 0.75 });
+  expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: true, scale: 0.5 });
   // Opaques draw into the own pair; water, transparents and particles after the copy, in the registered pass only
   // (water's depth pre-pass under that pass's own pre-pass id).
   expect(new Set(waterDraws)).toEqual(new Set(["Forward transparent depth pre-pass → texture", "Forward transparent → texture"]));
@@ -376,19 +376,20 @@ it("registers the transparent pass before its first readiness probe and unregist
   expect(isMainWaterPass(scene, first)).toBe(true);
   expect(isMainWaterPass(scene, camera.renderPassId)).toBe(false);
   expect(copy.invSize).toEqual([1 / engine.getRenderWidth(true), 1 / engine.getRenderHeight(true)]);
-  expect(copy.scale).toBe(0.75);
+  // Medium's Refraction Resolution.
+  expect(copy.scale).toBe(0.5);
   expect(copy.texture.wrapU).toBe(0);
   expect(copy.texture.getSize()).toMatchObject({
-    width: Math.round(engine.getRenderWidth(true) * 0.75), height: Math.round(engine.getRenderHeight(true) * 0.75),
+    width: Math.round(engine.getRenderWidth(true) * 0.5), height: Math.round(engine.getRenderHeight(true) * 0.5),
   });
 
   // A retained graph keeps its registration until its deferred release.
   const releasePrevious = graph.retainResources();
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { refractionScale: 0.5 } }) });
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { refractionScale: 0.75 } }) });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   const second = graph.waterSceneCopyDiagnostics()!.renderPassId;
   expect(second).not.toBe(first);
-  expect(waterSceneCopyForPass(scene, second)?.scale).toBe(0.5);
+  expect(waterSceneCopyForPass(scene, second)?.scale).toBe(0.75);
   expect(waterSceneCopyForPass(scene, first)).toBe(copy);
   releasePrevious();
   expect(waterSceneCopyForPass(scene, first)).toBeNull();
@@ -673,10 +674,10 @@ it("follows a backbuffer resize in place, keeping every task and render pass id"
   const copy = waterSceneCopyForPass(scene, renderPassId)!;
   expect(copy.invSize).toEqual([1 / 256, 1 / 160]);
   expect(copy.revision).not.toBe(revision);
-  expect(copy.texture.getSize()).toEqual({ width: 192, height: 120 });
+  expect(copy.texture.getSize()).toEqual({ width: 128, height: 80 });
   // The resized copy and own pair replace the previous charge.
   expect(managedRenderReservations(engine)).toMatchObject({ pendingBytes: 0 });
-  expect(managedRenderReservations(engine).categoryBytes.water).toBe(192 * 120 * 8 + 256 * 160 * 8);
+  expect(managedRenderReservations(engine).categoryBytes.water).toBe(128 * 80 * 8 + 256 * 160 * 8);
   // Water reads the copy's size on every draw, so its refraction and march follow the resize without recompiling.
   const binds = vi.spyOn(Effect.prototype, "setFloat4");
   await settle(graph, camera);
@@ -696,13 +697,13 @@ it("sizes the copy from the world's render scale when Play composites it at full
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   await settle(graph, camera);
   const copySize = () => waterSceneCopyForPass(scene, graph.waterSceneCopyDiagnostics()!.renderPassId)!.texture.getSize();
-  // Medium's Refraction Resolution 0.75 of the 320 × 200 view.
-  expect(copySize()).toEqual({ width: 240, height: 150 });
+  // Medium's Refraction Resolution 0.5 of the 320 × 200 view.
+  expect(copySize()).toEqual({ width: 160, height: 100 });
   // Scene Layers keep the backbuffer at full size and scale the world through its output scale.
   setSceneOutputScale(scene, 0.5);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   await settle(graph, camera);
-  expect(copySize()).toEqual({ width: 120, height: 75 });
+  expect(copySize()).toEqual({ width: 80, height: 50 });
   graph.dispose();
 });
 
@@ -712,7 +713,7 @@ it("charges the copy and own pair to the water ledger and releases them with the
   const width = engine.getRenderWidth(true), height = engine.getRenderHeight(true);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  const copyBytes = Math.round(width * 0.75) * Math.round(height * 0.75) * 8;
+  const copyBytes = Math.round(width * 0.5) * Math.round(height * 0.5) * 8;
   expect(managedRenderReservations(engine).categoryBytes.water).toBe(copyBytes + width * height * 8);
   graph.dispose();
   await graph.whenReleased();

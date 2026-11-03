@@ -1,3 +1,4 @@
+import { particleGraphGlobalParameterCollections } from "./global-parameter";
 import {
   PARTICLE_BILLBOARD_MODE_IDS,
   PARTICLE_BLEND_MODE_IDS,
@@ -566,6 +567,8 @@ export interface ParticleGraphDependencies {
   models: string[];
   /** Spawn Emitter emitters (Particle Emitters and Particle Graphs), sorted and unique. */
   emitters: string[];
+  /** Global Parameter Collections its Global Parameter nodes read, sorted and unique. */
+  globalParameterCollections: string[];
   all: string[];
 }
 
@@ -577,7 +580,11 @@ export function particleGraphDependencies(
   const textures = particleGraphNoiseTextures(doc.nodes ?? []);
   const models = particleGraphMeshModels(doc.nodes ?? []);
   const emitters = particleGraphSpawnEmitters(doc.nodes ?? []);
-  return { materials, textures, models, emitters, all: [...materials, ...textures, ...models, ...emitters] };
+  const globalParameterCollections = particleGraphGlobalParameterCollections(doc.nodes ?? []);
+  return {
+    materials, textures, models, emitters, globalParameterCollections,
+    all: [...materials, ...textures, ...models, ...emitters, ...globalParameterCollections],
+  };
 }
 
 /** The Models the graph's Mesh Shapes read (Source Model), sorted and unique. */

@@ -364,6 +364,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   FloatCurve: SplineIcon,
   VectorCurve: SplineIcon,
   ColorCurve: SplineIcon,
+  GlobalParameterCollection: FileSlidersIcon,
   FloatCurveObject: SplineIcon,
   VectorCurveObject: SplineIcon,
   ColorCurveObject: SplineIcon,
@@ -420,6 +421,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   FloatCurve: "struct",
   VectorCurve: "struct",
   ColorCurve: "struct",
+  GlobalParameterCollection: "struct",
   ScriptInterface: "class",
   PluginSettings: "scriptType",
 };

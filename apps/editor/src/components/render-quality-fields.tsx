@@ -34,7 +34,7 @@ import {
   type WaterShadingDetail,
   type PostProcessingEffectField,
 } from "@haptic/core";
-import { NumberField } from "@haptic/editor-kit";
+import { LabelHint, NumberField } from "@haptic/editor-kit";
 import {
   Field,
   FieldLabel,
@@ -63,10 +63,10 @@ const labels = {
   postprocessing: "Post Processing",
 };
 /** Each runs only when the project's Effects also enable it. */
-const postProcessingEffects: { field: PostProcessingEffectField; label: string; description: string }[] = [
-  { field: "ambientOcclusion", label: "Allow Ambient Occlusion", description: "Runs the project's Ambient Occlusion when enabled." },
-  { field: "reflections", label: "Allow Reflections", description: "Runs the project's screen-space Reflections when enabled." },
-  { field: "volumetricLighting", label: "Allow Volumetric Lighting", description: "Runs the project's scene-wide Volumetric Lighting when enabled. Fog Volumes always render." },
+const postProcessingEffects: { field: PostProcessingEffectField; label: string; hint: string }[] = [
+  { field: "ambientOcclusion", label: "Allow Ambient Occlusion", hint: "Runs the project's Ambient Occlusion when it is enabled." },
+  { field: "reflections", label: "Allow Reflections", hint: "Runs the project's screen-space Reflections when they are enabled." },
+  { field: "volumetricLighting", label: "Allow Volumetric Lighting", hint: "Runs the project's scene-wide Volumetric Lighting when it is enabled. Fog Volumes always render." },
 ];
 const antiAliasingLabels: Record<AntiAliasingMode, string> = {
   msaa4: "MSAA 4x",
@@ -118,52 +118,57 @@ export function RenderQualityFields({
       <FieldGroup className="gap-2">
         <h4 className="settings-group-heading">Presets</h4>
         {([undefined, ...QUALITY_GROUPS] as (QualityGroup | undefined)[]).map(
-          (group) => (
-            <Field key={group ?? "all"} className="settings-field">
+          (group) => {
+            const label = (
               <FieldLabel htmlFor={`quality-${group ?? "all"}`}>
                 {group ? `${labels[group]} Quality` : "Overall Quality"}
               </FieldLabel>
-              <Select
-                value={group ? qualityGroupLabel(effective, group) : overall}
-                onValueChange={(value) => {
-                  if (value && value !== "custom")
-                    apply(value as QualityLevel, group);
-                }}
-              >
-                <SelectTrigger id={`quality-${group ?? "all"}`}>
-                  <SelectValue>
-                    {displayLabel(
-                      group ? qualityGroupLabel(effective, group) : overall,
-                    )}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="custom" disabled>
-                      Custom
-                    </SelectItem>
-                    {QUALITY_LEVELS.map((level) => (
-                      <SelectItem key={level} value={level}>
-                        {level[0]!.toUpperCase() + level.slice(1)}
+            );
+            return (
+              <Field key={group ?? "all"} className="settings-field">
+                {group ? label : (
+                  <LabelHint hint="Low targets a budget Android phone, Medium an Apple A16, and Ultra a high-end gaming PC.">
+                    {label}
+                  </LabelHint>
+                )}
+                <Select
+                  value={group ? qualityGroupLabel(effective, group) : overall}
+                  onValueChange={(value) => {
+                    if (value && value !== "custom")
+                      apply(value as QualityLevel, group);
+                  }}
+                >
+                  <SelectTrigger id={`quality-${group ?? "all"}`}>
+                    <SelectValue>
+                      {displayLabel(
+                        group ? qualityGroupLabel(effective, group) : overall,
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="custom" disabled>
+                        Custom
                       </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              {!group ? (
-                <FieldDescription>
-                  Low targets a budget Android phone, Medium an Apple A16, and
-                  Ultra a high-end gaming PC.
-                </FieldDescription>
-              ) : null}
-            </Field>
-          ),
+                      {QUALITY_LEVELS.map((level) => (
+                        <SelectItem key={level} value={level}>
+                          {level[0]!.toUpperCase() + level.slice(1)}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            );
+          },
         )}
         <h4 className="settings-group-heading">Resolution</h4>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-resolution-scale">
-            Resolution Scale
-          </FieldLabel>
+          <LabelHint hint="Fraction of the target width and height.">
+            <FieldLabel htmlFor="quality-resolution-scale">
+              Resolution Scale
+            </FieldLabel>
+          </LabelHint>
           <NumberField
             id="quality-resolution-scale"
             value={effective.resolution.scale}
@@ -172,7 +177,6 @@ export function RenderQualityFields({
             step={0.05}
             onChange={(scale) => edit("resolution", { scale })}
           />
-          <FieldDescription>Fraction of the target width and height.</FieldDescription>
           {pixelatedUpscaling(settings) ? (
             <FieldDescription data-testid="quality-resolution-pixelated">
               Upscaling is Pixelated: Play and exported games draw at full
@@ -243,9 +247,11 @@ export function RenderQualityFields({
           />
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-textures-budget">
-            Texture Budget (MiB)
-          </FieldLabel>
+          <LabelHint hint="Unused textures are released above this budget.">
+            <FieldLabel htmlFor="quality-textures-budget">
+              Texture Budget (MiB)
+            </FieldLabel>
+          </LabelHint>
           <NumberField
             id="quality-textures-budget"
             min={1}
@@ -254,22 +260,24 @@ export function RenderQualityFields({
               edit("textures", { byteBudget: mib * 1024 ** 2 })
             }
           />
-          <FieldDescription>Unused textures are released above this budget.</FieldDescription>
         </Field>
         <h4 className="settings-group-heading">Geometry</h4>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-geometry-lod">Auto LOD</FieldLabel>
+          <LabelHint hint="Distant models draw simplified meshes. Each Model's Auto LOD controls whether levels are generated.">
+            <FieldLabel htmlFor="quality-geometry-lod">Auto LOD</FieldLabel>
+          </LabelHint>
           <Switch
             id="quality-geometry-lod"
             checked={effective.geometry.autoLod}
             onCheckedChange={(autoLod) => edit("geometry", { autoLod })}
           />
-          <FieldDescription>Distant models draw simplified meshes. Each Model&apos;s Auto LOD controls whether levels are generated.</FieldDescription>
         </Field>
         <Field className="settings-field settings-field-dependent">
-          <FieldLabel htmlFor="quality-geometry-distance">
-            LOD Distance Scale
-          </FieldLabel>
+          <LabelHint hint="Higher values keep full detail farther away.">
+            <FieldLabel htmlFor="quality-geometry-distance">
+              LOD Distance Scale
+            </FieldLabel>
+          </LabelHint>
           <NumberField
             id="quality-geometry-distance"
             min={LOD_DISTANCE_SCALE_MIN}
@@ -279,20 +287,22 @@ export function RenderQualityFields({
             disabled={!effective.geometry.autoLod}
             onChange={(lodDistanceScale) => edit("geometry", { lodDistanceScale })}
           />
-          <FieldDescription>Higher values keep full detail farther away.</FieldDescription>
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-geometry-occlusion">Occlusion Culling</FieldLabel>
+          <LabelHint hint="In Play, objects wholly hidden behind boxes, spheres, cylinders and two-sided planes are not drawn.">
+            <FieldLabel htmlFor="quality-geometry-occlusion">Occlusion Culling</FieldLabel>
+          </LabelHint>
           <Switch
             id="quality-geometry-occlusion"
             checked={effective.geometry.occlusionCulling}
             onCheckedChange={(occlusionCulling) => edit("geometry", { occlusionCulling })}
           />
-          <FieldDescription>In Play, objects wholly hidden behind boxes, spheres, cylinders and two-sided planes are not drawn.</FieldDescription>
         </Field>
         <h4 className="settings-group-heading">Water</h4>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-water-shading">Water Shading Detail</FieldLabel>
+          <LabelHint hint="Built-in water shading terms. Buoyancy and wave queries never change.">
+            <FieldLabel htmlFor="quality-water-shading">Water Shading Detail</FieldLabel>
+          </LabelHint>
           <Select
             value={water.shadingDetail}
             onValueChange={(shadingDetail) => {
@@ -313,10 +323,11 @@ export function RenderQualityFields({
               </SelectGroup>
             </SelectContent>
           </Select>
-          <FieldDescription>Built-in water shading terms. Buoyancy and wave queries never change.</FieldDescription>
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-water-mesh">Water Mesh Density</FieldLabel>
+          <LabelHint hint="Multiplies each body's Surface Resolution.">
+            <FieldLabel htmlFor="quality-water-mesh">Water Mesh Density</FieldLabel>
+          </LabelHint>
           <NumberField
             id="quality-water-mesh"
             min={WATER_MESH_DENSITY_MIN}
@@ -325,10 +336,11 @@ export function RenderQualityFields({
             value={water.meshDensity}
             onChange={(meshDensity) => edit("water", { meshDensity })}
           />
-          <FieldDescription>Multiplies each body&apos;s Surface Resolution.</FieldDescription>
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-water-contact">Contact Resolution</FieldLabel>
+          <LabelHint hint="Maximum contact foam cells per side.">
+            <FieldLabel htmlFor="quality-water-contact">Contact Resolution</FieldLabel>
+          </LabelHint>
           <NumberField
             id="quality-water-contact"
             min={WATER_CONTACT_RESOLUTION_MIN}
@@ -337,7 +349,6 @@ export function RenderQualityFields({
             value={water.contactResolution}
             onChange={(contactResolution) => edit("water", { contactResolution })}
           />
-          <FieldDescription>Maximum contact foam cells per side.</FieldDescription>
         </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="quality-water-refraction">Water Refraction</FieldLabel>
@@ -349,7 +360,9 @@ export function RenderQualityFields({
           />
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-water-refraction-scale">Refraction Resolution</FieldLabel>
+          <LabelHint hint="Scene copy scale, shared with Screen Space reflections.">
+            <FieldLabel htmlFor="quality-water-refraction-scale">Refraction Resolution</FieldLabel>
+          </LabelHint>
           <NumberField
             id="quality-water-refraction-scale"
             min={WATER_TARGET_SCALE_MIN}
@@ -359,10 +372,11 @@ export function RenderQualityFields({
             disabled={!sceneCopy}
             onChange={(refractionScale) => edit("water", { refractionScale })}
           />
-          <FieldDescription>Scene copy scale, shared with Screen Space reflections.</FieldDescription>
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-water-reflections">Water Reflections</FieldLabel>
+          <LabelHint hint="Planar mirrors flat water and uses Screen Space elsewhere.">
+            <FieldLabel htmlFor="quality-water-reflections">Water Reflections</FieldLabel>
+          </LabelHint>
           <Select
             value={water.reflections}
             onValueChange={(reflections) => {
@@ -383,7 +397,6 @@ export function RenderQualityFields({
               </SelectGroup>
             </SelectContent>
           </Select>
-          <FieldDescription>Planar mirrors flat water and uses Screen Space elsewhere.</FieldDescription>
         </Field>
         <Field className="settings-field settings-field-dependent">
           <FieldLabel htmlFor="quality-water-reflection-steps">Reflection Steps</FieldLabel>
@@ -432,7 +445,9 @@ export function RenderQualityFields({
           </Select>
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-water-fft-cascades">FFT Cascades</FieldLabel>
+          <LabelHint hint="Short-wave detail the GPU ocean draws; floating objects follow the same waves on every tier.">
+            <FieldLabel htmlFor="quality-water-fft-cascades">FFT Cascades</FieldLabel>
+          </LabelHint>
           <NumberField
             id="quality-water-fft-cascades"
             min={WATER_FFT_CASCADES_MIN}
@@ -441,13 +456,14 @@ export function RenderQualityFields({
             value={water.fftCascades}
             onChange={(fftCascades) => edit("water", { fftCascades })}
           />
-          <FieldDescription>Short-wave detail the GPU ocean draws; floating objects follow the same waves on every tier.</FieldDescription>
         </Field>
         <h4 className="settings-group-heading">Post Processing</h4>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-postprocessing-scale">
-            Post Processing Resolution Scale
-          </FieldLabel>
+          <LabelHint hint="Applies to passes with Scalable Resolution.">
+            <FieldLabel htmlFor="quality-postprocessing-scale">
+              Post Processing Resolution Scale
+            </FieldLabel>
+          </LabelHint>
           <NumberField
             id="quality-postprocessing-scale"
             min={0.25}
@@ -458,10 +474,11 @@ export function RenderQualityFields({
               edit("postprocessing", { resolutionScale })
             }
           />
-          <FieldDescription>Applies to passes with Scalable Resolution.</FieldDescription>
         </Field>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-postprocessing-antialiasing">Anti-Aliasing</FieldLabel>
+          <LabelHint hint="MSAA renders each pixel from several samples; FXAA blurs edges after rendering.">
+            <FieldLabel htmlFor="quality-postprocessing-antialiasing">Anti-Aliasing</FieldLabel>
+          </LabelHint>
           <Select
             value={effective.postprocessing.antiAliasing}
             onValueChange={(antiAliasing) => {
@@ -481,25 +498,27 @@ export function RenderQualityFields({
               </SelectGroup>
             </SelectContent>
           </Select>
-          <FieldDescription>Smooths the scene's edges. MSAA renders each pixel from several samples; FXAA blurs edges after rendering.</FieldDescription>
         </Field>
-        {postProcessingEffects.map(({ field, label, description }) => (
+        {postProcessingEffects.map(({ field, label, hint }) => (
           <Field key={field} className="settings-field">
-            <FieldLabel htmlFor={`quality-postprocessing-${field}`}>{label}</FieldLabel>
+            <LabelHint hint={hint}>
+              <FieldLabel htmlFor={`quality-postprocessing-${field}`}>{label}</FieldLabel>
+            </LabelHint>
             <Switch
               id={`quality-postprocessing-${field}`}
               data-testid={`quality-postprocessing-${field}`}
               checked={effective.postprocessing[field]}
               onCheckedChange={(allowed) => edit("postprocessing", { [field]: allowed })}
             />
-            <FieldDescription>{description}</FieldDescription>
           </Field>
         ))}
         <h4 className="settings-group-heading">Lighting</h4>
         <Field className="settings-field">
-          <FieldLabel htmlFor="quality-lighting-mode">
-            Local Light Budget Mode
-          </FieldLabel>
+          <LabelHint hint="Sun and fill lights use separate slots.">
+            <FieldLabel htmlFor="quality-lighting-mode">
+              Local Light Budget Mode
+            </FieldLabel>
+          </LabelHint>
           <Select
             value={effective.lighting.localLightMode}
             onValueChange={(mode) => {
@@ -525,8 +544,7 @@ export function RenderQualityFields({
             {resolveLocalLightBudget(effective.lighting)} local lights requested.{" "}
             {effective.lighting.localLightMode === "auto"
               ? `Auto follows the ${QUALITY_TARGET_LABELS[effective.lighting.profile ?? "medium"]} target.`
-              : "Manual overrides the Auto target."}{" "}
-            Sun and fill lights use separate slots.
+              : null}
           </FieldDescription>
         </Field>
         {effective.lighting.localLightMode === "manual" ? (

@@ -523,6 +523,15 @@ export interface ScriptContext {
     name: string,
     value: number,
   ): void;
+  /** Set Global Float / Vector / Color Parameter: the session value of `name` in Global Parameter Collection `collection`. */
+  setGlobalFloatParameter(collection: unknown, name: string, value: number): void;
+  /** A Vector 2 parameter takes X and Y. */
+  setGlobalVectorParameter(collection: unknown, name: string, value: Vec3): void;
+  setGlobalColorParameter(collection: unknown, name: string, value: ScriptColor): void;
+  getGlobalFloatParameter(collection: unknown, name: string): { found: boolean; value: number };
+  /** A Vector 2 parameter reads with Z 0. */
+  getGlobalVectorParameter(collection: unknown, name: string): { found: boolean; value: Vec3 };
+  getGlobalColorParameter(collection: unknown, name: string): { found: boolean; value: ScriptColor };
   setMaterialColorParameter(
     material: unknown,
     name: string,
@@ -633,6 +642,8 @@ export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
   | "deleteSave" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
   | "eventDelegate" | "bindDispatcher" | "unbindDispatcher" | "unbindAllDispatcher"
+  | "setGlobalFloatParameter" | "setGlobalVectorParameter" | "setGlobalColorParameter"
+  | "getGlobalFloatParameter" | "getGlobalVectorParameter" | "getGlobalColorParameter"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
   | "getMaterialVectorParameter" | "getMaterialTextureParameter" | "resetMaterialFloatParameter"
   | "resetMaterialColorParameter" | "resetMaterialVectorParameter" | "resetMaterialTextureParameter"

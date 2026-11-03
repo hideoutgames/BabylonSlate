@@ -3,7 +3,7 @@ import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
 import type { ScalabilityAcknowledgement, RenderProjectSettings, RuntimeAssetLoadState } from "@haptic/core";
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { buildParticleParameterCatalog, cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
-import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
+import { captureShadowDiagnostics, lightsDebugText, setGlobalParameterCatalog } from "@haptic/render";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { createSessionBoundaryClient, snapshotFloatCount, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
 import { createMessageRateMeter } from "@haptic/debugger";
@@ -494,6 +494,8 @@ function initializePlayer(
     guid,
     layer,
   }));
+  // The game's Global Parameter defaults, which its Materials and Particle Graphs draw until set.
+  setGlobalParameterCatalog(content.globalParameterCatalog);
   const loadControl = {
     sessionMode: options.previewDiagnostics ? "preview" as const : "play" as const,
     sessionGeneration: 0,
@@ -511,6 +513,7 @@ function initializePlayer(
     inputAssets: manifest.inputAssets,
     dataAssets: content.dataAssets,
     curveAssets: content.curveAssets,
+    globalParameterCatalog: content.globalParameterCatalog,
     assetCatalog: runtimeAssetCatalogFromManifest(manifest.assets),
     focusNavigation: manifest.focusNavigation,
     pixelsPerUnit: content.pixelsPerUnit,

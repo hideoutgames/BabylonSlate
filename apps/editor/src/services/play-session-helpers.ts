@@ -1,4 +1,4 @@
-import { DEFAULT_PLAY_FRAME_CAP, printHudCssColor } from "@haptic/core";
+import { DEFAULT_PLAY_FRAME_CAP, printHudCssColor, type GlobalParameterCatalog } from "@haptic/core";
 import type { RuntimeDiagnostic } from "@haptic/runtime";
 import type { DebugInspectSnapshot } from "@haptic/object-model";
 import {
@@ -147,6 +147,18 @@ export function applyPlayGraphDebugObserve(
 }
 
 /** Replace the session's node breakpoints: a worker control, or the in-process runtime directly. */
+/** The editor's collections after an edit during Play (`setGlobalParameterCatalog`). */
+export function applyPlayGlobalParameterCatalog(
+  target: {
+    worker?: { postControl: (message: ControlMessage) => void } | null;
+    runtime?: { applyGlobalParameterCatalog(catalog: unknown): void } | null;
+  },
+  catalog: GlobalParameterCatalog,
+): void {
+  if (target.worker) target.worker.postControl({ type: "setGlobalParameterCatalog", catalog });
+  else target.runtime?.applyGlobalParameterCatalog(catalog);
+}
+
 export function applyPlayBreakpoints(
   target: {
     worker?: { postControl: (message: ControlMessage) => void } | null;

@@ -1095,7 +1095,10 @@ describe("Water rendering", () => {
     camera.maxZ = 1000;
     camera.setTarget(new Vector3(-40, 0, 620));
     try {
-      setQuality(scene, "low");
+      // Low with Water Mesh Density 0.75: Global Water then has vertices within 40 m inside the Ocean's corner (at
+      // Low's own 0.5 its far rows there are about 150 m apart).
+      const low = qualityPresetPatch("low");
+      updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ ...low, water: { ...low.water, meshDensity: 0.75 } }) });
       const sea = createWaterMesh(scene, "sea", normalizeWaterBody({}, "global"), undefined, builtInWaterMaterial(scene));
       // Graded around the camera, so the far corner's cells are about twelve metres.
       const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 260, length: 160 }, "ocean"), undefined, builtInWaterMaterial(scene));

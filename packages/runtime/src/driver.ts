@@ -109,6 +109,7 @@ import type { RenderCommandEmitter } from "./render-command-emitter";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import { RuntimeVoices } from "./runtime-voices";
 import { particleComponentOverrides } from "./particle-parameter-bindings";
+import { RuntimeGlobalParameters } from "./runtime-global-parameters";
 import { RuntimeParticles } from "./runtime-particles";
 import type { RuntimeParticleEffects } from "./runtime-particle-effects";
 import { SpriteClipTrace, type SpriteClipState } from "./sprite-clip-trace";
@@ -285,6 +286,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   /** Voices `emit` started and has not stopped, for trace frames and restore; draws their clip and pitch. */
   readonly voices = new RuntimeVoices(() => this.seed);
   readonly particles = new RuntimeParticles();
+  /** Global Parameter Collection values for this Play session (Set/Get Global Parameter). */
+  readonly globalParameters = new RuntimeGlobalParameters((message) => this.reportLog(message, "warning", "Global Parameters"), (command) => this.emit(command));
   readonly particleEffects: RuntimeParticleEffects;
   /** Sprite Animation clips actors show, for trace frames and restore. */
   readonly spriteClips = new SpriteClipTrace();
@@ -452,6 +455,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     // 3. Render and physics settings, physics worlds and the Scene library.
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.particles.replaceCatalog(options.particleParameterCatalog);
+    this.globalParameters.replaceCatalog(options.globalParameterCatalog);
     this.propertyWrites = createPropertyWrites(this, options);
     this.scalability = createScalability(this, options);
     this.dt = options.dt ?? 1 / 60;
@@ -698,6 +702,10 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.scriptDebug.observe(target, instanceId);
   }
 
+  applyGlobalParameterCatalog(catalog: unknown): void {
+    this.globalParameters.mergeCatalog(catalog);
+  }
+
   applyBreakpoints(breakpoints: readonly Breakpoint[]): void {
     if (this.stopped) return;
     this.breakpoints.set(breakpoints);
@@ -938,6 +946,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       return component ? particleComponentOverrides(component) : {};
     };
     for (const command of this.particles.restoreParameterCommands(particles, overrides)) this.emit(command);
+    this.globalParameters.restoreFromTrace(frame.globalParameters ?? []);
   }
 
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
@@ -968,6 +977,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     for (const [guid, value] of Object.entries(content.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.materialParameters.replaceCatalog(content.materialParameterCatalog, content.materialTextureAssetGuids);
     this.particles.replaceCatalog(content.particleParameterCatalog);
+    // A Scene change keeps the session's global values; only a new catalog replaces them.
+    if (content.globalParameterCatalog) this.globalParameters.mergeCatalog(content.globalParameterCatalog);
     this.dataCatalog.replace(content.dataAssets ?? []);
     this.curveCatalog.clear();
     for (const entry of content.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);

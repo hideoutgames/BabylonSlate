@@ -12,7 +12,7 @@ import {
 } from "../context/simulation-controls-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
-import { captureShadowDiagnostics, drawOcclusionOverlay, lightsDebugText } from "@haptic/render";
+import { captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
@@ -150,6 +150,7 @@ export interface PlayOverlayProps {
   loopCount?: number;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+  globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
@@ -295,6 +296,7 @@ function PlayOverlayView({
   loopCount,
   inputAssets,
   dataAssets,
+  globalParameterCatalog,
   assetCatalog,
   focusNavigation,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
@@ -761,6 +763,7 @@ function PlayOverlayView({
   const initialLoopCountRef = useRef(loopCount);
   const initialInputAssetsRef = useRef(inputAssets);
   const initialDataAssetsRef = useRef(dataAssets);
+  const initialGlobalParameterCatalogRef = useRef(globalParameterCatalog);
   const initialAssetCatalogRef = useRef(assetCatalog);
   const initialFocusNavigationRef = useRef(focusNavigation);
   const initialPlayPreviewRef = useRef(playPreview);
@@ -885,6 +888,7 @@ function PlayOverlayView({
           loopCount: initialLoopCountRef.current,
           inputAssets: initialInputAssetsRef.current,
           dataAssets: initialDataAssetsRef.current,
+          globalParameterCatalog: initialGlobalParameterCatalogRef.current,
           assetCatalog: initialAssetCatalogRef.current,
           focusNavigation: initialFocusNavigationRef.current,
           animGraphs: animGraphsRef.current,
@@ -1029,6 +1033,8 @@ function PlayOverlayView({
       setGraphDebugSession(session);
       // Breakpoints set, removed or switched off while the session runs apply from its next run of the node.
       const unsubscribeBreakpoints = breakpointStore?.subscribe(() => session.setBreakpoints(breakpointStore.enabledBreakpoints()));
+      // Global Parameter Collection defaults edited while it runs reach the session's Class graphs.
+      const unsubscribeGlobalParameters = globalParameterDefaults.subscribe(() => session.setGlobalParameterCatalog(currentGlobalParameterCatalog()));
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
       }
@@ -1186,6 +1192,7 @@ function PlayOverlayView({
         detachLifecycle();
         setGraphDebugSession(null);
         unsubscribeBreakpoints?.();
+        unsubscribeGlobalParameters();
         graphDebug?.setHeld(false);
         graphDebug?.setTarget(null);
         finishSessionRef.current();

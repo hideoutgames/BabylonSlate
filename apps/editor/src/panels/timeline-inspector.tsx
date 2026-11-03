@@ -102,7 +102,7 @@ function valueRow(
       return { kind: "text", id, label, value: typeof value === "string" ? value : "", onChange };
     default:
       return { kind: "text", id, label, value: formatTimelineValue(valueType, value, assetName), disabled: true, onChange: () => {},
-        description: "Set it on the property, then key it." };
+        status: "Set it on the property, then key it." };
   }
 }
 
@@ -250,7 +250,6 @@ export function TimelineInspectorContent({ showClip = true }: { showClip?: boole
         ? [...TIMELINE_INTERPOLATION_OPTIONS]
         : [...TIMELINE_INTERPOLATION_OPTIONS, { value: key.Interpolation, label: timelineInterpolationLabel(key.Interpolation) }];
       rows.push({ kind: "enum", id: "timeline-key-interpolation", label: "Interpolation", value: key.Interpolation, options,
-        description: "How the value moves to the next key.",
         onChange: (value) => commitClip(setTimelineKeyInterpolation(clip, [ref], value as TimelineKey["Interpolation"])) });
     }
     grids.push({ title: "Key", rows, testId: "timeline-inspector-key" });

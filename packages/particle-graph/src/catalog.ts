@@ -1,4 +1,5 @@
 import type { ParticleGraphNode } from "./document";
+import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE, particleGlobalParameterSelection } from "./global-parameter";
 import {
   resizeParticleValue,
   type ParticleNumericType,
@@ -615,6 +616,15 @@ const INPUT_NODES: ParticleNodeDefinition[] = [
     inputs: [],
     outputs: [{ id: "out", name: "Value", type: FLOAT, followsValueType: true }],
   },
+  {
+    type: "global.parameter",
+    title: "Global Parameter",
+    category: "Parameter",
+    role: "input",
+    description: "One parameter of a Global Parameter Collection, which any Class graph can set while the game runs. Its type is the parameter's; without a parameter it has no output.",
+    inputs: [],
+    outputs: [{ id: "out", name: "Value", type: FLOAT, followsValueType: true }],
+  },
 ];
 
 const UTILITY_NODES: ParticleNodeDefinition[] = [
@@ -877,6 +887,7 @@ const VALUE_TYPE_DEFAULTS: Readonly<Record<string, ParticleNumericType>> = {
   "random.range": "float",
   "gradient.sample": "color",
   "input.parameter": "float",
+  "global.parameter": "float",
 };
 
 /** `properties.valueType` of a Random or Gradient node, with the node's default. */
@@ -967,6 +978,10 @@ export function particleNodeDefinitionFor(
 ): ParticleNodeDefinition | undefined {
   const definition = BY_TYPE.get(node.type);
   if (!definition) return undefined;
+  // A Global Parameter node has an output only once it reads a parameter.
+  if (node.type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE && !particleGlobalParameterSelection(node.properties)) {
+    return { ...definition, outputs: [] };
+  }
   if (particleNodeAngleUnit(node.type, node.properties) === "degrees") {
     const { pinId, description } = ANGLE_UNIT_PINS[node.type]!;
     return {

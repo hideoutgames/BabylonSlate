@@ -54,7 +54,7 @@ export function materialInstanceParameterRows(
       id: `parameter-${name}`,
       label: name,
       testId: `material-instance-parameter-${name}`,
-      description: own?.kind === inherited.kind ? "Overridden" : undefined,
+      status: own?.kind === inherited.kind ? "Overridden" : undefined,
     };
     if (inherited.kind === "float") {
       return {

@@ -1,4 +1,5 @@
-import { PARTICLE_CPU_CAPACITY_BUDGET, findGraphCycle } from "@haptic/core";
+import { PARTICLE_CPU_CAPACITY_BUDGET, findGraphCycle, type GlobalParameterCatalog } from "@haptic/core";
+import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE, particleGlobalParameterWarning } from "./global-parameter";
 import {
   PARTICLE_PARAMETER_NODE_TYPE,
   PARTICLE_OUTPUT_NODE_TYPE,
@@ -34,6 +35,8 @@ export interface ParticleGraphDiagnostic {
 }
 
 export interface ParticleGraphValidationContext {
+  /** The project's Global Parameter Collections, so a Global Parameter node whose parameter is gone or retyped warns. */
+  globalParameters?: Readonly<GlobalParameterCatalog>;
   /**
    * Material domain by asset guid (`"particle"` for particle Materials); null
    * when the Material is not in the project. Omitted: only an unset Material
@@ -582,6 +585,10 @@ export function checkParticleGraphDocument(
   diagnostics.push(...validateSpawns(doc, context));
   diagnostics.push(...validateSettings(doc, context));
   diagnostics.push(...validateParameterNodes(doc));
+  for (const node of doc.nodes) {
+    const message = node.type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE ? particleGlobalParameterWarning(node, context.globalParameters) : null;
+    if (message) diagnostics.push({ code: "particle.globalParameter", message, severity: "warning", nodeId: node.id });
+  }
   return { diagnostics, resolver };
 }
 

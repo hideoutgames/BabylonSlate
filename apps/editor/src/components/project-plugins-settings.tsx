@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { OctagonAlertIcon, PuzzleIcon } from "lucide-react";
-import { NamePromptDialog, SelectableText } from "@haptic/editor-kit";
+import { LabelHint, NamePromptDialog, SelectableText } from "@haptic/editor-kit";
 import type { PluginDescriptor } from "@haptic/assets";
 import { isMobilePlatform, pickImportFiles } from "@haptic/vfs";
 import { Badge } from "@haptic/ui/components/badge";
@@ -8,7 +8,6 @@ import { Button } from "@haptic/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
@@ -42,6 +41,8 @@ import { resolvePluginEnabled } from "@haptic/assets";
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import { PluginExportDialog } from "./plugin-export-dialog";
 import { SettingsSection } from "./settings-section";
+
+const SHOW_PLUGIN_CONTENT_HINT = "Hiding plugin folders in the Content Browser keeps their assets available.";
 
 function maturityLabels(plugin: PluginDescriptor) {
   return [
@@ -189,15 +190,11 @@ export function ProjectPluginsSettings() {
     <FieldGroup data-testid="settings-plugins-panel">
       <SettingsSection id="contentBrowser" title="Content Browser">
         <Field orientation="horizontal" className="settings-field">
-          <FieldContent>
+          <LabelHint hint={SHOW_PLUGIN_CONTENT_HINT}>
             <FieldLabel htmlFor="settings-show-plugin-content">
               Show Plugin Content
             </FieldLabel>
-            <FieldDescription id="settings-show-plugin-content-description">
-              Show plugin folders in the Content Browser. Hiding them keeps their
-              assets available.
-            </FieldDescription>
-          </FieldContent>
+          </LabelHint>
           <Switch
             id="settings-show-plugin-content"
             aria-describedby="settings-show-plugin-content-description"
@@ -208,6 +205,9 @@ export function ProjectPluginsSettings() {
             data-testid="settings-show-plugin-content"
             aria-label="Show Plugin Content"
           />
+          <FieldDescription id="settings-show-plugin-content-description" className="sr-only">
+            {SHOW_PLUGIN_CONTENT_HINT}
+          </FieldDescription>
         </Field>
       </SettingsSection>
       <SettingsSection id="installed" title="Installed Plugins">

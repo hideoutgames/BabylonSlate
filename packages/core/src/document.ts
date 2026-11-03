@@ -25,6 +25,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "float-curve",
   "vector-curve",
   "color-curve",
+  "global-parameter-collection",
   "timeline",
   "timeline-clip-2d",
   "timeline-clip-3d",
@@ -125,6 +126,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "DataDefinition";
     case "data-tree":
       return "DataTree";
+    case "global-parameter-collection":
+      return "GlobalParameterCollection";
     case "float-curve":
       return "FloatCurve";
     case "vector-curve":
@@ -222,6 +225,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "data-definition";
     case "DataTree":
       return "data-tree";
+    case "GlobalParameterCollection":
+      return "global-parameter-collection";
     case "FloatCurve":
       return "float-curve";
     case "VectorCurve":
@@ -319,6 +324,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Data Definition";
     case "data-tree":
       return "Data Tree";
+    case "global-parameter-collection":
+      return "Global Parameter Collection";
     case "float-curve":
       return "Float Curve";
     case "vector-curve":
@@ -436,7 +443,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|matinst|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame|bt|blackboard|water)\.hasset$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|matinst|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame|bt|blackboard|water|globalparams)\.hasset$/i,
         "",
       )
       .replace(/\.hasset$/i, "")

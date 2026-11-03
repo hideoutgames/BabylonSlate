@@ -19,7 +19,7 @@ import { applyFeatureTestProjectSettings } from "./settings";
 import { buildFeatureTestAi, featureTestNavBakeInput, placeFeatureTestAi } from "./ai";
 import { buildFeatureTestAnimation, placeFeatureTestAnimation } from "./animation";
 import { buildFeatureTestAudio, placeFeatureTestAudio } from "./audio";
-import { buildFeatureTestMaterials, placeFeatureTestMaterials } from "./materials";
+import { buildFeatureTestGlobalParameterMaterial, buildFeatureTestMaterials, placeFeatureTestMaterials } from "./materials";
 import { buildFeatureTestParticles, placeFeatureTestParticles } from "./particles";
 import { buildFeatureTestPhysics, placeFeatureTestPhysics } from "./physics";
 import { buildFeatureTestRendering, placeFeatureTestRendering } from "./rendering";
@@ -29,6 +29,7 @@ import { buildFeatureTestTimeline } from "./timeline";
 import {
   buildFeatureTestScripting,
   buildFeatureTestScriptingTypes,
+  featureTestGlobalParameterCollection,
   placeFeatureTestScripting,
 } from "./scripting";
 import { buildFeatureTestTwoD } from "./two-d";
@@ -73,6 +74,7 @@ export async function applyFeatureTestScaffold(options: {
   await buildFeatureTestAudio(ctx);
   await buildFeatureTestMaterials(ctx);
   await buildFeatureTestScriptingTypes(ctx);
+  await buildFeatureTestGlobalParameterMaterial(ctx, featureTestGlobalParameterCollection(ctx));
   await buildFeatureTestScripting(ctx);
   await buildFeatureTestTimeline(ctx);
   await buildFeatureTestRendering(ctx);

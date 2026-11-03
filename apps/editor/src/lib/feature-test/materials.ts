@@ -43,6 +43,7 @@ export const FEATURE_TEST_MATERIAL_NAMES = {
   landscape: "FT_MatLandscape",
   overlayUnlit: "FT_MatOverlayUnlit",
   text: "FT_MatText",
+  globalTint: "FT_MatGlobalTint",
 } as const;
 
 const NAMES = FEATURE_TEST_MATERIAL_NAMES;
@@ -132,6 +133,20 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
 }
 
 /**
+ * `FT_MatGlobalTint`: Base Color is the Sky Tint parameter of `FT_GlobalParams`, through a
+ * Global Parameter node. Built once the scripting types created the collection.
+ */
+export async function buildFeatureTestGlobalParameterMaterial(ctx: FeatureTestContext, collectionGuid: string): Promise<void> {
+  const doc = blankMaterial(NAMES.globalTint, "surface");
+  node(doc, "sky-tint", "global.parameter", 0, 0, { collectionGuid, parameterId: "ft-global-sky-tint", valueType: "color" });
+  node(doc, "roughness", "const.float", 0, 1, { value: [0.4] });
+  node(doc, "output", "output.surface", 1, 0);
+  wire(doc, "sky-tint", "rgb", "output", "baseColor");
+  wire(doc, "roughness", "out", "output", "roughness");
+  await saveMaterial(ctx, NAMES.globalTint, doc);
+}
+
+/**
  * `Meshes And Materials` zone: floor, one of every primitive kind in the
  * surface Material, a row of Material / Instance spheres and shapes (instance,
  * chained instance, scene-owned private overrides, emissive, translucent,
@@ -194,6 +209,9 @@ export async function placeFeatureTestMaterials(ctx: FeatureTestContext): Promis
       { scale: [0.66, 0.66, 0.66] });
     crate.components[0]!.materialInstance = { materialGuid: perInstanceTint, parameters: { Tint: color(r, g, b) } };
   });
+  // Its color is a Global Parameter Collection's Sky Tint, which every Material reading it shares.
+  place("global-tint", "Global Parameter Material", "sphere", zone.at(10.5, 0.75, 2.5),
+    featureTestMaterialAssetGuid(ctx, "Material", NAMES.globalTint));
 
   // Back row: Holiday Pack Models keep their imported slot Materials; the last overrides the whole mesh.
   const models = ctx.assets.models;

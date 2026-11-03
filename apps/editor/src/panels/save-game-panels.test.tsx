@@ -138,10 +138,14 @@ describe("Save Game authoring", () => {
 
   it("sets up the project without replacing profile and slot preferences", () => {
     const view = render(editor());
+    const notDefault = /Choose this as the project default/;
+    expect(screen.getByText(notDefault)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Use As Project Default" }));
     expect(harness.settings).toHaveBeenCalledWith({ saveGame: { definitionGuid: "definition", defaultProfile: "player", defaultSlot: "checkpoint", wipeOnPlay: false } });
     harness.defaultGuid = "definition";
     view.rerender(editor());
+    // Its fields reach NodeGraphs now, so the requirement is no longer shown.
+    expect(screen.queryByText(notDefault)).toBeNull();
     fireEvent.change(screen.getByRole("textbox", { name: "Default Slot" }), { target: { value: "autosave" } });
     expect(harness.settings).toHaveBeenLastCalledWith({ saveGame: { definitionGuid: "definition", defaultProfile: "player", defaultSlot: "autosave", wipeOnPlay: false } });
     fireEvent.click(screen.getByRole("button", { name: "Advanced" }));

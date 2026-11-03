@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { GlobalParameterNodePicker } from "../components/global-parameter-node-picker";
+import { useGlobalParameterCatalog } from "../lib/global-parameter-catalog";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -24,8 +26,9 @@ import {
 } from "@haptic/core";
 import {
   PARTICLE_ANGLE_UNIT_OPTIONS,
-  PARTICLE_PARAMETER_NAME_MAX,
+  PARTICLE_GLOBAL_PARAMETER_NODE_TYPE,
   PARTICLE_PARAMETER_NODE_TYPE,
+  selectParticleGlobalParameter,
   PARTICLE_CONDITION_TESTS,
   PARTICLE_LOCAL_VARIABLE_SCOPES,
   PARTICLE_MESH_SHAPE_SOURCES,
@@ -97,7 +100,6 @@ import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { useSpawnPreviewEmitters } from "../lib/use-spawn-preview-emitters";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
-import { ParticlePreviewParameters } from "../components/particle-parameter-fields";
 import { newParticleParameterId, particleParameterValueRow } from "../lib/particle-parameter-rows";
 
 type Commit = (next: ParticleGraphDocument, mergeKey?: string) => void;
@@ -219,7 +221,7 @@ function nodePropertyRows(
       kind: "enum",
       label: "Angle Unit",
       value: angleUnit,
-      description: "The unit of the Angle input. Switching converts its value.",
+      description: "Switching converts the Angle input's value.",
       options: PARTICLE_ANGLE_UNIT_OPTIONS.map((option) => ({
         value: option.id,
         label: option.label,
@@ -655,7 +657,6 @@ function particleParameterNodeRows(
       kind: "text",
       label: "Name",
       value: parameter.name,
-      description: `Gameplay sets it by this name. Unique in the graph, up to ${PARTICLE_PARAMETER_NAME_MAX} characters; a taken name gets _1, _2 and so on.`,
       onChange: () => undefined,
       onCommit: (text) => {
         const name = normalizeParticleParameterName(text);
@@ -753,6 +754,14 @@ function ParticleNodeDetails({
           </p>
         ) : null}
         {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
+        {node.type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE ? (
+          <GlobalParameterNodePicker
+            collectionGuid={typeof node.properties.collectionGuid === "string" ? node.properties.collectionGuid : ""}
+            parameterId={typeof node.properties.parameterId === "string" ? node.properties.parameterId : ""}
+            onChange={(collectionGuid, parameter) => onChange(selectParticleGlobalParameter(document, node.id, collectionGuid, parameter))}
+            testId="particle-global-parameter"
+          />
+        ) : null}
         {assets.picker}
         {node.type === "trigger.spawn" ? (
           <div className="flex flex-wrap items-center gap-1 px-2 py-1" data-testid="particle-spawn-presets">
@@ -861,7 +870,7 @@ function ParticleGraphSettingsDetails({
       label: "Material",
       value: materialGuid,
       placeholder: "No Material",
-      description: materialGuid ? undefined : "Pick a Material with the Particle domain.",
+      status: materialGuid ? undefined : "Pick a Material with the Particle domain.",
       onPick: () => setPicking(true),
       onChange: (guid) => onChange({ ...document, materialGuid: guid }),
       ...assetRowIdentity(
@@ -1017,7 +1026,6 @@ export function ParticleGraphPreview({
   ) => void;
 }) {
   const [picking, setPicking] = useState(false);
-  const [previewValues, setPreviewValues] = useState<Record<string, number[]>>({});
   const spawned = useSpawnPreviewEmitters(previewDocument);
   const library = useMemo(
     () =>
@@ -1036,7 +1044,6 @@ export function ParticleGraphPreview({
             testId="particle-graph-preview-canvas"
             onPickMaterial={() => setPicking(true)}
             onDiagnostics={onBuildDiagnostics}
-            parameterValues={previewValues}
           />
         ) : (
           <ParticlePreviewSurface
@@ -1053,9 +1060,6 @@ export function ParticleGraphPreview({
           />
         )}
       </div>
-      {library ? (
-        <ParticlePreviewParameters parameters={document.parameters ?? []} values={previewValues} onChange={setPreviewValues} />
-      ) : null}
       {library && errorCount > 0 ? (
         <p
           role="status"
@@ -1160,9 +1164,10 @@ function ParticleGraphCanvas() {
   const editing = useParticleGraphEditing();
   const { document, commit, documentId, setSelectedNodeId } = editing;
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(documentId);
+  const globalParameters = useGlobalParameterCatalog();
   const initialGraph = useMemo(
-    () => hydrateParticleGraphForEditor(particleGraphToSerialized(document), document.parameters),
-    [document],
+    () => hydrateParticleGraphForEditor(particleGraphToSerialized(document), document.parameters, globalParameters),
+    [document, globalParameters],
   );
   // Connection vetoes read the graph as it is when the wire is dropped.
   const graphRef = useRef(initialGraph);
