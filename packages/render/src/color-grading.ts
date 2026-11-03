@@ -1,4 +1,8 @@
-import { Constants, RawTexture3D, Texture, type BaseTexture, type Scene } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { RawTexture3D } from "@babylonjs/core/Materials/Textures/rawTexture3D";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { Scene } from "@babylonjs/core/scene";
 import type { MeshAssetContext } from "./mesh-assets";
 
 /**

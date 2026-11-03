@@ -1,20 +1,17 @@
 /** Test-build-only pixel oracle: Babylon's own Scene.render is the reference for the graph. */
-import {
-  Color3,
-  Color4,
-  DirectionalLight,
-  Engine,
-  FreeCamera,
-  HemisphericLight,
-  Material,
-  MeshBuilder,
-  PBRMaterial,
-  RawTexture,
-  RenderTargetTexture,
-  Scene,
-  Texture,
-  Vector3,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Material } from "@babylonjs/core/Materials/material";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import {
   beginEngineDrawCallFrame,
   compileMaterialPlan,

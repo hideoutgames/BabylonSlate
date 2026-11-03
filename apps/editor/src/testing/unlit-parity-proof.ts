@@ -4,10 +4,21 @@
  * used before the migration, once with the unlit binding, in Legacy Display (PBR and CEL) and Scene Linear (no tone
  * mapping and ACES), without fog and with linear and exponential fog. The two images are compared channel by channel.
  */
-import {
-  Camera, Color3, Color4, DynamicTexture, Engine, FreeCamera, MeshBuilder, RawTexture, Scene, StandardMaterial, Texture,
-  Vector3, VertexBuffer, type AbstractEngine, type Material, type Mesh,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderEffectsSettings, type RenderMode } from "@haptic/core";
 import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";

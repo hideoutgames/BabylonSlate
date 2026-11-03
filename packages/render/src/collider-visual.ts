@@ -1,13 +1,9 @@
-import {
-  Color3,
-  CreateBoxVertexData,
-  Matrix,
-  Mesh,
-  Quaternion,
-  Scene,
-  Vector3,
-  type VertexData,
-} from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { CreateBoxVertexData } from "@babylonjs/core/Meshes/Builders/boxBuilder";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import { Scene } from "@babylonjs/core/scene";
 import { convexHullEdges } from "@haptic/assets";
 import type { ColliderShape } from "@haptic/physics";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";

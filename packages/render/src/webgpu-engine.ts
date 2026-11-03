@@ -1,9 +1,8 @@
-import {
-  AbstractEngine,
-  DracoDecoder,
-  KhronosTextureContainer2,
-  MeshoptCompression,
-} from "@babylonjs/core";
+import "./babylon-registrations";
+import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
+import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCompression";
+import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import { _CommonDispose } from "@babylonjs/core/Engines/engine.common";
 import type { CreateEngineOptions } from "./create-engine";

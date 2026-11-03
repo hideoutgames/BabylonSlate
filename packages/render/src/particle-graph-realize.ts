@@ -1,14 +1,12 @@
-import {
-  NodeParticleBuildState,
-  NodeParticleSystemSet,
-  ParticleInputBlock,
-  type AbstractMesh,
-  type IParticleSystem,
-  type NodeParticleBlock,
-  type NodeParticleConnectionPoint,
-  type ParticleSystem,
-  type Scene,
-} from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
+import { ParticleInputBlock } from "@babylonjs/core/Particles/Node/Blocks/particleInputBlock";
+import type { NodeParticleBlock } from "@babylonjs/core/Particles/Node/nodeParticleBlock";
+import type { NodeParticleConnectionPoint } from "@babylonjs/core/Particles/Node/nodeParticleBlockConnectionPoint";
+import { NodeParticleBuildState } from "@babylonjs/core/Particles/Node/nodeParticleBuildState";
+import { NodeParticleSystemSet } from "@babylonjs/core/Particles/Node/nodeParticleSystemSet";
+import type { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import type { Scene } from "@babylonjs/core/scene";
 import type { ParticleSpace } from "@haptic/core";
 import {
   particleNodeDefinitionFor,

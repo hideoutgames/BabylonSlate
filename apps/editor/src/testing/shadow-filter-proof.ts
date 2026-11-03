@@ -4,9 +4,15 @@
  * texels diagonally. Drawn through the Forward FrameGraph at each filter quality, each capture divided by the same view
  * with the sun unshadowed: per pixel row across the edge, the lit share.
  */
-import {
-  Color4, DirectionalLight, Engine, FreeCamera, MeshBuilder, Scene, Vector3, type AbstractEngine, type CascadedShadowGenerator,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import type { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings, type ShadowSettings } from "@haptic/core";
 import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";

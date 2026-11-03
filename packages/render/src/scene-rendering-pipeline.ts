@@ -1,4 +1,4 @@
-import type { Scene } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core/scene";
 import { resolveRenderingPipeline, type ResolvedRenderingPipeline } from "@haptic/core";
 import { engineBackendStatus } from "./backend-status";
 import { sceneRenderingSettings } from "./render-settings";

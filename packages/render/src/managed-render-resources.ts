@@ -1,4 +1,4 @@
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 
 /** Conservative managed rendering ceiling, not measured/free GPU memory. */
 export const MANAGED_RENDER_BYTE_LIMIT = 1024 * 1024 ** 2;

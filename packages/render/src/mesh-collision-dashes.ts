@@ -2,7 +2,8 @@
  * Dashed outlines of the collision shapes a MeshComponent's Collision setting resolves to, parented to its editor mesh.
  * `scene-loader.ts` re-exports the public names.
  */
-import { Mesh, Quaternion } from "@babylonjs/core";
+import { Quaternion } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { SerializedComponent } from "@haptic/core";
 import { extractGltfCollisionMesh, parseMeshCollisionMode, resolveMeshCollisions } from "@haptic/assets";
 import type { ColliderShape } from "@haptic/physics";

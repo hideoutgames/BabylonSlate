@@ -1,4 +1,5 @@
-import type { AbstractEngine, Effect } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 
 type EffectEngine = { createEffect(...args: unknown[]): Effect };
 

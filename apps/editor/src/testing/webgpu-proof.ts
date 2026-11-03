@@ -1,26 +1,22 @@
 /** Test-build-only WebGPU capability and native shader proof. */
-import {
-  Bone,
-  Color3,
-  Color4,
-  DirectionalLight,
-  Camera,
-  EngineStore,
-  FreeCamera,
-  HemisphericLight,
-  Matrix,
-  MeshBuilder,
-  NodeMaterial,
-  PBRMaterial,
-  RawTexture,
-  Scene,
-  ShaderMaterial,
-  Skeleton,
-  Texture,
-  Vector3,
-  VertexBuffer,
-  type AbstractEngine,
-} from "@babylonjs/core";
+import { Bone } from "@babylonjs/core/Bones/bone";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import {

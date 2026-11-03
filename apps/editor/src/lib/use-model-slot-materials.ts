@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { Mesh, type AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import {
   installedAssetIdentity,
   modelMaterialGuids,

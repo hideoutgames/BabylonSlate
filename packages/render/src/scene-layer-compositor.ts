@@ -3,19 +3,16 @@ import { PostProcessParameterState } from "./post-process-parameter-state";
 import { overlayClipAllowsPoint } from "./overlay-layout-render";
 import { pickBufferSize } from "./pick-coords";
 import type { AttachedPostProcessStack } from "./post-process-material";
-import {
-  Camera,
-  Color4,
-  MeshBuilder,
-  Quaternion,
-  type RenderTargetTexture,
-  Scene,
-  UniversalCamera,
-  Vector3,
-  type AbstractEngine,
-  type AbstractMesh,
-  type Mesh,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import type { CommandMessage } from "@haptic/bridge";
 import {
   parseSceneLayerHitTest,

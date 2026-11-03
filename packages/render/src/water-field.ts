@@ -1,13 +1,9 @@
-import {
-  Constants,
-  Matrix,
-  Mesh,
-  Quaternion,
-  RawTexture,
-  Texture,
-  Vector3,
-  type Scene,
-} from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { landscapeWorldHeightAt, type LandscapeProperties, type Transform } from "@haptic/core";
 import { landscapeMeshData, sceneLandscapeRoots } from "./landscape-mesh";
 

@@ -1,4 +1,8 @@
-import type { AbstractMesh, InstancedMesh, Material, Mesh, Scene } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { isPoolMember, materialIneligibility, sceneInstancePool } from "./instance-pool";
 
 /**

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EngineStore, type AbstractEngine, type Effect } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { estimateTextureMemory } from "@haptic/render";
 import { getHostMemoryStats } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";

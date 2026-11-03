@@ -1,13 +1,10 @@
-import {
-  Camera,
-  EffectWrapper,
-  Matrix,
-  ShaderLanguage,
-  ShaderStore,
-  Vector2,
-  type Effect,
-  type Scene,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { Matrix, Vector2 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import { ThinSSRPostProcess } from "@babylonjs/core/PostProcesses/thinSSRPostProcess";
 import { ThinSSRBlurPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlurPostProcess";
 import { ThinSSRBlurCombinerPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlurCombinerPostProcess";

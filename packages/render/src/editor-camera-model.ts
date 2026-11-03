@@ -1,4 +1,7 @@
-import { Geometry, Mesh, VertexData, type Scene } from "@babylonjs/core";
+import { Geometry } from "@babylonjs/core/Meshes/geometry";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import type { Scene } from "@babylonjs/core/scene";
 import geometryData from "./editor-camera-geometry.json";
 import { applyEditorBillboardPass } from "./editor-billboard";
 import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";

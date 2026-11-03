@@ -1,18 +1,14 @@
-import {
-  Color3,
-  Color4,
-  Engine,
-  FreeCamera,
-  HemisphericLight,
-  MeshBuilder,
-  Quaternion,
-  PBRMaterial,
-  RawTexture,
-  Scene,
-  Texture,
-  Vector3,
-  VertexBuffer,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import {
   createDefaultWaterDefinition, normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeWaterBody, type AntiAliasingMode,
 } from "@haptic/core";

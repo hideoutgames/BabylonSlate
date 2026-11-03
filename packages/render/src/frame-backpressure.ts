@@ -1,4 +1,4 @@
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { engineFrameMarkers, type FrameMarker } from "./gpu-busy-probe";
 
 /** How many rendered frames may be queued on the GPU at once (`framesinflight`); "off" renders every admitted frame. */

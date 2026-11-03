@@ -1,4 +1,9 @@
-import { DrawWrapper, GPUParticleSystem, type Effect, type IParticleSystem, type NodeMaterial, type Observer } from "@babylonjs/core";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { DrawWrapper } from "@babylonjs/core/Materials/drawWrapper";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
+import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
 // Custom effects bypass GPUParticleSystem's default effect initializer, which
 // normally imports its WGSL vertex shader before requesting compilation.
 import "@babylonjs/core/ShadersWGSL/gpuRenderParticles.vertex";

@@ -4,7 +4,7 @@ import type { ScalabilityAcknowledgement, RenderProjectSettings, RuntimeAssetLoa
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { buildParticleParameterCatalog, cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
 import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { createSessionBoundaryClient, snapshotFloatCount, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
 import { createMessageRateMeter } from "@haptic/debugger";
 import { encodeInputEvents } from "@haptic/input";

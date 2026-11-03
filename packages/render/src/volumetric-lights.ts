@@ -1,12 +1,10 @@
-import {
-  DirectionalLight,
-  PointLight,
-  SpotLight,
-  Vector3,
-  type Camera,
-  type Effect,
-  type Scene,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import type { VolumetricLightingSettings } from "@haptic/core";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
 import { bindHapticLights, hapticShadowViews } from "./haptic-lights";

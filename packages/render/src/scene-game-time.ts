@@ -1,4 +1,7 @@
-import { GPUParticleSystem, ParticleSystem, PrecisionDate, type Scene } from "@babylonjs/core";
+import { PrecisionDate } from "@babylonjs/core/Misc/precisionDate";
+import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import type { Scene } from "@babylonjs/core/scene";
 
 interface SceneGameClock {
   pausedAt: number | null;

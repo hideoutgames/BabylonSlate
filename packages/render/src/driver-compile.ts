@@ -1,4 +1,8 @@
-import type { AbstractEngine, AbstractMesh, Effect, ObjectRenderer, Scene } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
+import type { Scene } from "@babylonjs/core/scene";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { deferredPipelinesSettled } from "./webgpu-pipeline-deferral";
 

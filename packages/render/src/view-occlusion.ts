@@ -1,4 +1,10 @@
-import { Camera, Matrix, Vector3, type AbstractEngine, type AbstractMesh, type Node, type Scene, type TransformNode } from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import type { ModelOccluder } from "@haptic/assets";
 import { effectDrawnOn } from "./first-draw-stats";
 import { isEditorHelperMesh } from "./helper-mesh";

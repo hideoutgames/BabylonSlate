@@ -1,4 +1,5 @@
-import type { NodeMaterial, Observer } from "@babylonjs/core";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Observer } from "@babylonjs/core/Misc/observable";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";

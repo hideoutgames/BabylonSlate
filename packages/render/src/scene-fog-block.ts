@@ -1,7 +1,14 @@
 import {
-  Color3, NodeMaterialBlock, NodeMaterialBlockTargets, NodeMaterialBlockConnectionPointTypes as Types, ShaderLanguage,
-  type AbstractMesh, type Effect, type NodeMaterial, type NodeMaterialDefines, type Scene,
-} from "@babylonjs/core";
+  NodeMaterialBlockConnectionPointTypes as Types,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { GetFogState } from "@babylonjs/core/Materials/materialHelper.functions";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";

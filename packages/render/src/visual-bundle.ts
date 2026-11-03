@@ -1,4 +1,5 @@
-import type { BaseTexture, Material } from "@babylonjs/core";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { Material } from "@babylonjs/core/Materials/material";
 
 /** Resources produced by one visual generation, recorded before binding overrides. */
 export class VisualBundle {

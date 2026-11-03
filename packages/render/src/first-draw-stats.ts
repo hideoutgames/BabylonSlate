@@ -1,4 +1,6 @@
-import type { AbstractEngine, Effect, Observer } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Observer } from "@babylonjs/core/Misc/observable";
 
 /**
  * Late first draws: Effects drawn for the first time on an Engine once a Play world view presents, and how long the

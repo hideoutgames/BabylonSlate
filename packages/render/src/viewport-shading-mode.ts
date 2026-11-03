@@ -1,9 +1,7 @@
-import {
-  Material,
-  Mesh,
-  NodeMaterial,
-  type Scene,
-} from "@babylonjs/core";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { Material } from "@babylonjs/core/Materials/material";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";

@@ -1,4 +1,5 @@
-import { InternalTexture, InternalTextureSource, NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 
 /**
  * Gives every NullEngine what a shipped Engine has for the light block, the one lighting path: uniform buffers (every

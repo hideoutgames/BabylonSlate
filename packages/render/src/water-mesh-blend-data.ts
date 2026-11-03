@@ -3,7 +3,8 @@
  * (`sceneBlends`), the blend kernel over a range of vertices, a Global grid's rows within a neighbour's reach and the
  * fit of the rest normals and ownership margins.
  */
-import { Matrix, Vector3, type Scene } from "@babylonjs/core";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   createWaterBlendSample, evaluateWaterBlend, MAX_WATER_BLEND_DISTANCE, sameWaterColors, WATER_BLEND_COLOR_PARTNERS, waterBlendReach, waterFootprint,
   type WaterBlendIndex,

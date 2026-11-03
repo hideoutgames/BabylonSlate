@@ -2,7 +2,9 @@
  * A water surface's per-vertex rest inputs (world rest points, rest normals, current, bank distance and gradient,
  * depth) and their uploads, for the whole grid or a range of vertices.
  */
-import { Matrix, Vector3, VertexBuffer, type Mesh } from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { waterFootprint } from "@haptic/core";
 import { L_CX, L_CZ, type RestBuffers, type Surface } from "./water-mesh-surface";
 

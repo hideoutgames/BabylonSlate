@@ -1,4 +1,6 @@
-import { Constants, RenderTargetTexture, type Scene } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Scene } from "@babylonjs/core/scene";
 
 /**
  * A colour render target whose depth is a 24-bit depth texture, which the forward graph imports as its output depth

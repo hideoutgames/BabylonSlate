@@ -1,12 +1,8 @@
-import {
-  LinesMesh,
-  Matrix,
-  Mesh,
-  Quaternion,
-  Vector3,
-  type AbstractMesh,
-  type Node,
-} from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Node } from "@babylonjs/core/node";
 import { DEFAULT_EDITOR_DROP_DISTANCE, type SerializedScene, type SerializedTransform } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isColliderVisualTree } from "./collider-visual";

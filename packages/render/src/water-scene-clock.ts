@@ -2,7 +2,7 @@
  * Each Scene's water clock: real time in the editor and previews, and in Play the water time the worker's physics step
  * evaluated for each snapshot frame (`setSceneWaterTime`, `sampleSceneWaterFrame`).
  */
-import type { Scene } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core/scene";
 import { isSceneGameTimePaused } from "./scene-game-time";
 
 /**

@@ -1,11 +1,9 @@
 import type { ResourceLease } from "./resource-cache";
-import {
-  Vector3,
-  type AbstractEngine,
-  type NodeMaterial,
-  type Scene,
-  type Texture,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import type {
   MaterialDocument,
   MaterialFunctionDocument,

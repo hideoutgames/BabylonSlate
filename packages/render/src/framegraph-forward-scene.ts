@@ -20,8 +20,15 @@ import { isBuiltInWaterMesh } from "./water-mesh";
 import { WaterSceneCopyGraph, waterSceneCopyDemand } from "./water-scene-copy";
 import { MultisamplePresentTask, presentsMultisampleByBlit } from "./multisample-present";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
-import { Constants } from "@babylonjs/core";
-import type { AbstractMesh, Camera, Effect, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { FrameGraphObjectList } from "@babylonjs/core/FrameGraph/frameGraphObjectList";
+import type { Light } from "@babylonjs/core/Lights/light";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Observable, Observer } from "@babylonjs/core/Misc/observable";
+import type { Scene } from "@babylonjs/core/scene";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import {

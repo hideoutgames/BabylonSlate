@@ -1,17 +1,20 @@
-import {
-  Color4,
-  Constants,
-  GPUParticleSystem,
-  NodeMaterialModes,
-  ParticleSystem,
-  RawTexture,
-  Vector3,
-  type AbstractEngine,
-  type FactorGradient,
-  type IParticleSystem,
-  type NodeMaterial,
-  type Scene,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { FactorGradient } from "@babylonjs/core/Misc/gradients";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
+import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import type { Scene } from "@babylonjs/core/scene";
+// GPUParticleSystem looks its WebGL2 and WebGPU simulation up by class name; the compute path needs the
+// WebGPU compute extension.
+import "@babylonjs/core/Particles/webgl2ParticleSystem";
+import "@babylonjs/core/Particles/computeShaderParticleSystem";
+import "@babylonjs/core/Engines/WebGPU/Extensions/engine.computeShader";
 import type {
   BasicEmitterPlan,
   BasicPlanFactorKey,

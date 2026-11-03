@@ -1,15 +1,13 @@
-import {
-  Constants,
-  MaterialDefines,
-  Mesh,
-  Observable,
-  type InstancedMesh,
-  type AbstractEngine,
-  type AbstractMesh,
-  type Effect,
-  type Scene,
-  type SubMesh,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { MaterialDefines } from "@babylonjs/core/Materials/materialDefines";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import { Observable } from "@babylonjs/core/Misc/observable";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   beginPipelineDeferral, capturePipelineTarget, effectDrawn, pipelinesDeferred, type PipelineTarget,
 } from "./webgpu-pipeline-deferral";

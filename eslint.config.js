@@ -14,17 +14,39 @@ const CAPACITOR_PATTERNS = ["@capacitor/*", "@capacitor/**", "@daniele-rolli/*"]
  * than exact paths because Babylon and Capacitor are normally imported by
  * subpath, which an exact-name rule would not catch.
  */
-function boundary(name, files, groups) {
+function boundary(name, files, groups, paths = []) {
   return {
     name,
     files,
     rules: {
       "no-restricted-imports": [
         "error",
-        { patterns: groups },
+        paths.length ? { patterns: groups, paths } : { patterns: groups },
       ],
     },
   };
+}
+
+/**
+ * Babylon marks every index barrel side-effectful, so one value import from the `@babylonjs/core` root bundles
+ * all of Babylon. Production code imports Babylon by module; type imports are erased, and tests keep the root.
+ */
+const BABYLON_ROOT_VALUE_IMPORT = {
+  name: "@babylonjs/core",
+  allowTypeImports: true,
+  message:
+    "Import Babylon values from their module (@babylonjs/core/<Path>/<module>), not the package root, which bundles all of Babylon.",
+};
+
+/**
+ * A boundary for code that may import Babylon: its production files also reject value imports from the package
+ * root. Its test files get the same groups without that path, because a later block replaces an earlier one's options.
+ */
+function babylonBoundary(name, files, groups) {
+  return [
+    { ...boundary(name, files, groups, [BABYLON_ROOT_VALUE_IMPORT]), ignores: ["**/*.test.{ts,tsx}"] },
+    boundary(`${name}:tests`, files.map((glob) => glob.replace("*.{ts,tsx}", "*.test.{ts,tsx}")), groups),
+  ];
 }
 
 const PURE_PACKAGE_GROUPS = [
@@ -91,7 +113,7 @@ const debuggerTypesFromBridge = boundary(
  * package (gui/loaders/inspector and every other editor-side package), and
  * never React or Capacitor.
  */
-const physicsNoReactNoCapacitor = boundary(
+const physicsNoReactNoCapacitor = babylonBoundary(
   "boundary/physics",
   ["packages/physics/**/*.{ts,tsx}"],
   [
@@ -157,7 +179,7 @@ const vfsNoReactNoBabylon = boundary(
   ],
 );
 
-const renderNoReact = boundary(
+const renderNoReact = babylonBoundary(
   "boundary/render",
   ["packages/render/**/*.{ts,tsx}"],
   [
@@ -229,7 +251,7 @@ const uiNoBabylonNoCapacitor = boundary(
   ],
 );
 
-const playerNoReactNoCapacitor = boundary(
+const playerNoReactNoCapacitor = babylonBoundary(
   "boundary/player",
   ["apps/player/**/*.{ts,tsx}"],
   [
@@ -244,7 +266,7 @@ const playerNoReactNoCapacitor = boundary(
   ],
 );
 
-const appNoCapacitor = boundary(
+const appNoCapacitor = babylonBoundary(
   "boundary/app",
   ["apps/editor/src/**/*.{ts,tsx}"],
   [
@@ -303,14 +325,14 @@ export default defineConfig(
   },
   pureNoReactNoBabylon,
   debuggerTypesFromBridge,
-  physicsNoReactNoCapacitor,
+  ...physicsNoReactNoCapacitor,
   navigationNoReactNoBabylon,
   vfsNoReactNoBabylon,
-  renderNoReact,
+  ...renderNoReact,
   ...renderConstructionBans,
   uiNoBabylonNoCapacitor,
-  appNoCapacitor,
-  playerNoReactNoCapacitor,
+  ...appNoCapacitor,
+  ...playerNoReactNoCapacitor,
   {
     files: ["apps/desktop/**/*.ts", "apps/player/vite.config.ts", "apps/editor/vite-player-host.ts"],
     languageOptions: { globals: globals.node },

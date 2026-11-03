@@ -6,9 +6,17 @@
  * effects' geometry pass; in dense fog, water that shows only what Water Scene Color refracts, unbent, over a floor
  * (at the Default tier's copy resolution and at half), and the floor without it; and a faint translucent Material three times brighter than white, whose coverage rises.
  */
-import {
-  Color3, Color4, DirectionalLight, Engine, FreeCamera, Matrix, MeshBuilder, Scene, StandardMaterial, Vector3, type AbstractEngine, type Effect, type NodeMaterial,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { createDefaultWaterDefinition, normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import {
   compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setSceneRenderSettings, updateSceneWater,

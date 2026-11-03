@@ -1,17 +1,15 @@
-import {
-  CascadedShadowGenerator,
-  DirectionalLight,
-  PointLight,
-  SpotLight,
-  ShadowGenerator,
-  Frustum,
-  Plane,
-  RenderTargetTexture,
-  type AbstractMesh,
-  type Light,
-  type Scene,
-  Camera,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
+import { Plane } from "@babylonjs/core/Maths/math.plane";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasRenderTarget, shadowTileSize } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";

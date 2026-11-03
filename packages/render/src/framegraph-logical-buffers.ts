@@ -1,5 +1,8 @@
 import type { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
-import { Color4, Constants, type AbstractMesh, type EngineCapabilities } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { EngineCapabilities } from "@babylonjs/core/Engines/engineCapabilities";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";

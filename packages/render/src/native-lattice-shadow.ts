@@ -1,8 +1,20 @@
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import {
-  Constants, InputBlock, Material, NodeMaterial, NodeMaterialBlockConnectionPointTypes, PBRBaseMaterial,
-  ShaderLanguage, ShadowDepthWrapper, ShadowGenerator, StandardMaterial, Texture, TextureBlock,
-  type DrawWrapper, type NodeMaterialBlock, type SubMesh,
-} from "@babylonjs/core";
+  NodeMaterialBlockConnectionPointTypes,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { DrawWrapper } from "@babylonjs/core/Materials/drawWrapper";
+import { Material } from "@babylonjs/core/Materials/material";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { ShadowDepthWrapper } from "@babylonjs/core/Materials/shadowDepthWrapper";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
 import { applyLatticeDeformerPlumbing } from "./lattice-deformer-block";

@@ -1,4 +1,5 @@
-import type { AnimationGroup, AbstractEngine } from "@babylonjs/core";
+import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import {
   DEFAULT_THUMBNAIL_MAX_EDGE,

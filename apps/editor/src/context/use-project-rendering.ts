@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
   type RefObject,
 } from "react";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { GpuBackend } from "@haptic/core";
 import { createProjectEngineController } from "../lib/project-engine";
 import { RenderingRetryError, retryProjectRendering, stopGameOnDeviceLoss } from "../lib/project-rendering-recovery";

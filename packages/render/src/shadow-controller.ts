@@ -4,19 +4,17 @@ import {
   isForwardLightExcluded,
   lightsInCreationOrder,
 } from "./light-policy";
-import {
-  CascadedShadowGenerator,
-  DirectionalLight,
-  PointLight,
-  SpotLight,
-  Material,
-  RenderTargetTexture,
-  type ShadowGenerator,
-  type AbstractMesh,
-  type Light,
-  type Scene,
-  type Camera,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { setMeshShadowFlags } from "./instance-pool";
 import { TimingTools } from "@babylonjs/core/Misc/timingTools";

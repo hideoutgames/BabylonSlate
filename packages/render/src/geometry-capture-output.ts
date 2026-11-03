@@ -1,8 +1,14 @@
-import {
-  FragmentOutputBlock, InputBlock, MultiplyBlock, NodeMaterialSystemValues, NormalizeBlock,
-  RemapBlock, TransformBlock, VectorMergerBlock, VectorSplitterBlock,
-  type NodeMaterialBlock, type Scene,
-} from "@babylonjs/core";
+import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlock";
+import { NormalizeBlock } from "@babylonjs/core/Materials/Node/Blocks/normalizeBlock";
+import { RemapBlock } from "@babylonjs/core/Materials/Node/Blocks/remapBlock";
+import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
+import { VectorMergerBlock } from "@babylonjs/core/Materials/Node/Blocks/vectorMergerBlock";
+import { VectorSplitterBlock } from "@babylonjs/core/Materials/Node/Blocks/vectorSplitterBlock";
+import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialSystemValues";
+import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { Scene } from "@babylonjs/core/scene";
 import type { MaterialPlumbing } from "./material-block-registry";
 
 /** The same geometry-data contract for native and retained authored captures. */

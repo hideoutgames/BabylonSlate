@@ -1,9 +1,7 @@
-import {
-  TransformNode,
-  Vector3,
-  type AbstractMesh,
-  type Plane,
-} from "@babylonjs/core";
+import type { Plane } from "@babylonjs/core/Maths/math.plane";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
 type Bounds = { min: Vector3; max: Vector3 };

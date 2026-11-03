@@ -1,4 +1,14 @@
-import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderLanguage, ShaderMaterial, ShaderStore, Vector2, Vector4, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
+import type { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
+import { Effect } from "@babylonjs/core/Materials/effect";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Vector2, Vector4 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import type { ViewportMode } from "@haptic/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";

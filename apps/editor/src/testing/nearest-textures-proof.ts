@@ -4,7 +4,13 @@
  * Material whose Texture loads while the switch is on. Linear filtering blends the checker's cells into greys;
  * nearest leaves only its two colours.
  */
-import { Color4, Engine, FreeCamera, MeshBuilder, Scene, Vector3, type AbstractEngine } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import {
   acquireMaterialTexture, createAppWebGpuEngine, MaterialLibrary, materialTextureSampling, resourceCacheForEngine,

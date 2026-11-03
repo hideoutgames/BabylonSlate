@@ -1,4 +1,11 @@
-import { Camera, Constants, Matrix, RawTexture, ThinTexture, Vector3, type DirectionalLight, type Effect, type Scene } from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";

@@ -1,11 +1,8 @@
-import {
-  Color3,
-  Color4,
-  Matrix,
-  Mesh,
-  VertexData,
-  type Scene,
-} from "@babylonjs/core";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import type { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Rendering/edgesRenderer";
 import {
   blockerWorldMatrix,

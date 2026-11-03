@@ -1,4 +1,9 @@
-import { Constants, Material, type AbstractEngine, type AbstractMesh, type Effect, type NodeMaterial } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import { NodeMaterialBlockConnectionPointTypes as Types } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
 import { NodeMaterialBlockTargets as Targets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";

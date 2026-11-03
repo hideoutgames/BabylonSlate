@@ -1,20 +1,16 @@
-import {
-  DirectionalLight,
-  HemisphericLight,
-  Matrix,
-  PointLight,
-  RectAreaLight,
-  ShadowGenerator,
-  SpotLight,
-  TmpVectors,
-  UniformBuffer,
-  Vector3,
-  type Camera,
-  type DataBuffer,
-  type Effect,
-  type Light,
-  type Scene,
-} from "@babylonjs/core";
+import type { DataBuffer } from "@babylonjs/core/Buffers/dataBuffer";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
+import { Matrix, TmpVectors, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import { rectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { deviceProfile } from "./device-profile";

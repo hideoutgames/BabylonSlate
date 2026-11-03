@@ -1,7 +1,11 @@
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import {
-  NodeMaterialBlock, NodeMaterialBlockTargets as Targets, NodeMaterialBlockConnectionPointTypes as Types,
-  InputBlock, NodeMaterialSystemValues, type NodeMaterialConnectionPoint,
-} from "@babylonjs/core";
+  NodeMaterialBlockConnectionPointTypes as Types,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialBlockTargets as Targets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialSystemValues";
+import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import type { MaterialPlumbing } from "./material-block-registry";
 import "@babylonjs/core/Shaders/ShadersInclude/shadowMapVertexExtraDeclaration";

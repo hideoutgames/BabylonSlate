@@ -1,4 +1,7 @@
-import { Constants, InternalTexture, InternalTextureSource, NullEngine, SphericalPolynomial } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { vi } from "vitest";
 
 /** Replace only the missing GPU depth allocator; RTT wrappers retain ownership. */

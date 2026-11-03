@@ -1,8 +1,6 @@
-import {
-  Mesh,
-  VertexData,
-  type Scene,
-} from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   overlayNineSliceCells,
   overlayPanelDestFromScale,

@@ -1,4 +1,8 @@
-import { Color3, Vector3, type Camera, type Scene, type UtilityLayerRenderer } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
+import type { Scene } from "@babylonjs/core/scene";
 import { parseSplineProperties, splineCentreline, type SplinePoint, type SplineProperties } from "@haptic/core";
 import { createShapeHandles, type ShapeHandleTarget, type ShapeHandlesOptions, type ShapeHandlesHost } from "./shape-handles";
 import { splineMeshBody, updateSplineMeshBody } from "./spline-mesh";

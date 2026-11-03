@@ -1,19 +1,15 @@
-import {
-  Constants,
-  CubeTexture,
-  Material,
-  Matrix,
-  Quaternion,
-  RenderTargetTexture,
-  Texture,
-  Vector3,
-  type AbstractMesh,
-  type Mesh,
-  type Node,
-  type Scene,
-  type TransformNode,
-  type UniformBuffer,
-} from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Material } from "@babylonjs/core/Materials/material";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   reflectionProbeBindings,
   reflectionProbeStaticActors,

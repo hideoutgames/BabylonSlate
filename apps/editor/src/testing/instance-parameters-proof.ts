@@ -3,7 +3,15 @@
  * Material whose Tint is marked Per Instance, through a world view's Forward FrameGraph. Each crate's leaf carries its
  * own Tint in its instance buffer; the plain box draws the Material's. The crates draw in one group.
  */
-import { Color4, DirectionalLight, Engine, FreeCamera, Matrix, Scene, Vector3, InstancedMesh, type AbstractEngine, type AbstractMesh } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { compileMaterialPlan, createAppWebGpuEngine, createPrimitiveMesh, RENDERING_GROUP, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";

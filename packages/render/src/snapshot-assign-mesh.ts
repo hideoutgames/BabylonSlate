@@ -1,9 +1,7 @@
-import type {
-  AbstractMesh,
-  Camera,
-  Mesh,
-  Scene,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   emptySkyboxFaces,
   parseOverlayPanelProperties,

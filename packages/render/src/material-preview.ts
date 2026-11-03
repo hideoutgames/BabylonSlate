@@ -1,18 +1,16 @@
 import "./gltf-loader";
-import {
-  ArcRotateCamera,
-  Color4,
-  MeshBuilder,
-  NullEngine,
-  type RenderTargetTexture,
-  Scene,
-  Vector3,
-  type AssetContainer,
-  type AbstractEngine,
-  type Material,
-  type Mesh,
-  type NodeMaterial,
-} from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { AssetContainer } from "@babylonjs/core/assetContainer";
+import { Scene } from "@babylonjs/core/scene";
 import type { MaterialParameterValue } from "@haptic/bridge";
 import type { MaterialDocument, MaterialPreviewMesh } from "@haptic/shader-graph";
 import { createRttCanvasBlitter } from "./flip-read-pixels";

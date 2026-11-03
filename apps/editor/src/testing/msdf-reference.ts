@@ -6,7 +6,13 @@
  * Engine's own conversion (`useExactSrgbConversions`, exact sRGB in the editor and player) instead of a fixed 2.2 power,
  * so it round-trips through the Display Color stage's encode as every other surface's colour does.
  */
-import { Color3, Effect, ShaderLanguage, ShaderMaterial, ShaderStore, type BaseTexture, type Scene } from "@babylonjs/core";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { Effect } from "@babylonjs/core/Materials/effect";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import type { Scene } from "@babylonjs/core/scene";
 import { overlayVisualStyle } from "../../../../packages/render/src/overlay-visual-style";
 
 const MSDF_SHADER = "text2dMsdfReference";

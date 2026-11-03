@@ -1,5 +1,5 @@
-import type { Scene } from "@babylonjs/core";
-import { PickingInfo } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core/scene";
+import { PickingInfo } from "@babylonjs/core/Collisions/pickingInfo";
 import { EDITOR_ACTOR_MESH_PREFIX } from "./scene-loader";
 import { gpuPickMesh } from "./gpu-object-id-picker";
 import { isRevealPending } from "./reveal-pending";

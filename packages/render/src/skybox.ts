@@ -1,12 +1,10 @@
-import {
-  CubeTexture,
-  Mesh,
-  MeshBuilder,
-  PBRMaterial,
-  Texture,
-  type AbstractMesh,
-  type Scene,
-} from "@babylonjs/core";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   DEFAULT_SKYBOX_SIZE,
   SKYBOX_FACE_KEYS,

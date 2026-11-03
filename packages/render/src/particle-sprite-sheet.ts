@@ -1,11 +1,11 @@
 import {
-  NodeParticleBlock,
   NodeParticleBlockConnectionPointTypes,
-  type NodeParticleBuildState,
-  type NodeParticleConnectionPoint,
-  type Particle,
-  type ParticleSystem,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Particles/Node/Enums/nodeParticleBlockConnectionPointTypes";
+import { NodeParticleBlock } from "@babylonjs/core/Particles/Node/nodeParticleBlock";
+import type { NodeParticleConnectionPoint } from "@babylonjs/core/Particles/Node/nodeParticleBlockConnectionPoint";
+import type { NodeParticleBuildState } from "@babylonjs/core/Particles/Node/nodeParticleBuildState";
+import type { Particle } from "@babylonjs/core/Particles/particle";
+import type { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import type { ParticleSpriteSheetSettings } from "@haptic/particle-graph";
 
 type QueueItem = { process: (particle: Particle, system: ParticleSystem) => void; previousItem: QueueItem | null; nextItem: QueueItem | null };

@@ -1,4 +1,16 @@
-import { Color3, Color4, Engine, FreeCamera, Material, Mesh, MeshBuilder, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Material } from "@babylonjs/core/Materials/material";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode } from "@haptic/core";
 import { createAppWebGpuEngine, disposeMeshLatticeDeformer, MaterialLibrary, RenderTargetCaptures, setMeshLatticeDeformer } from "@haptic/render";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";

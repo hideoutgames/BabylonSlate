@@ -1,4 +1,7 @@
-import type { BaseTexture, InternalTexture, RenderTargetWrapper, Scene } from "@babylonjs/core";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import type { Scene } from "@babylonjs/core/scene";
 import { areaLightLtcTexture } from "./area-light-resources";
 
 /**

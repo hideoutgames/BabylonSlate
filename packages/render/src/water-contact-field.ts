@@ -1,20 +1,17 @@
-import {
-  Constants,
-  InstancedMesh,
-  LinesMesh,
-  Matrix,
-  Mesh,
-  NullEngine,
-  RawTexture,
-  Texture,
-  Vector3,
-  VertexBuffer,
-  type AbstractEngine,
-  type AbstractMesh,
-  type Geometry,
-  type Scene,
-  type ThinEngine,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { ThinEngine } from "@babylonjs/core/Engines/thinEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Geometry } from "@babylonjs/core/Meshes/geometry";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { viewOfBox, type BoxView } from "./active-view";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { isEditorHelperMesh } from "./helper-mesh";

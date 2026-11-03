@@ -1,10 +1,8 @@
-import {
-  DirectionalLight,
-  Vector3,
-  type Light,
-  type Scene,
-  type Camera,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import { SHADOW_CAPACITY_PROFILES, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { isDirectionalLightExcluded } from "./light-policy";
 import {

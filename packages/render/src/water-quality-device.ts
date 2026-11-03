@@ -1,4 +1,4 @@
-import type { EngineCapabilities } from "@babylonjs/core";
+import type { EngineCapabilities } from "@babylonjs/core/Engines/engineCapabilities";
 import type { WaterQuality } from "@haptic/core";
 
 export type WaterDeviceCapabilities = Pick<EngineCapabilities, "textureFloatRender" | "textureHalfFloatRender">;

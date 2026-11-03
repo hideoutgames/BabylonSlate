@@ -1,4 +1,5 @@
-import { Matrix, Quaternion, Ray, Vector3 } from "@babylonjs/core";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import {
   convexHullMesh,
   extractGltfCollisionMesh,

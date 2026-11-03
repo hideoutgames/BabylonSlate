@@ -1,4 +1,8 @@
-import type { AbstractMesh, Effect, Material, Node, UniformBuffer } from "@babylonjs/core";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Node } from "@babylonjs/core/node";
 
 /** Leaf shared by the compiler, native adapters, and scene cage owners. */
 export interface LatticeBinding {

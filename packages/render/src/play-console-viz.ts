@@ -1,14 +1,13 @@
-import {
-  Color3,
-  Mesh,
-  MeshBuilder,
-  Quaternion,
-  Vector3,
-  VertexData,
-  type AbstractMesh,
-  type Material,
-  type Scene,
-} from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { Scene } from "@babylonjs/core/scene";
+// The bounding box renderer that draws `showBoundingBox` for `setShowBounds`.
+import "@babylonjs/core/Rendering/boundingBoxRenderer";
 import type { CommandMessage, DebugColliderPrimitive } from "@haptic/bridge";
 import { convexHullEdges } from "@haptic/assets";
 import type { PhysicsWorldKind } from "@haptic/core";

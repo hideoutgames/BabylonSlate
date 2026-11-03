@@ -1,22 +1,21 @@
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { ThinEngine } from "@babylonjs/core/Engines/thinEngine";
 import {
-  Constants,
-  GetEnvironmentBRDFTexture,
-  Material,
-  NodeMaterialBlock,
   NodeMaterialBlockConnectionPointTypes,
-  NodeMaterialBlockTargets,
-  ShaderLanguage,
-  ThinEngine,
-  type AbstractEngine,
-  type AbstractMesh,
-  type BaseTexture,
-  type CubeTexture,
-  type Effect,
-  type Mesh,
-  type NodeMaterial,
-  type NodeMaterialDefines,
-  type Scene,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Material } from "@babylonjs/core/Materials/material";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { GetEnvironmentBRDFTexture } from "@babylonjs/core/Misc/brdfTextureTools";
+import type { Scene } from "@babylonjs/core/scene";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { SphericalHarmonics, type SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";

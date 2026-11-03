@@ -1,4 +1,9 @@
-import { InstancedMesh, type AbstractMesh, type BaseTexture, type IParticleSystem, type Light, type Scene } from "@babylonjs/core";
+import type { Light } from "@babylonjs/core/Lights/light";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
+import type { Scene } from "@babylonjs/core/scene";
 import { isInstancePoolSource } from "./instance-pool";
 import type { CommandMessage } from "@haptic/bridge";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";

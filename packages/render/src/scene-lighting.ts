@@ -2,7 +2,9 @@ import "./texture-quality";
 import { lightsInCreationOrder, syncForwardLightPolicy } from "./light-policy";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty, notifySceneReceiversChanged } from "./scene-readiness-signal";
-import type { Light, Observer, Scene } from "@babylonjs/core";
+import type { Light } from "@babylonjs/core/Lights/light";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Scene } from "@babylonjs/core/scene";
 import { deviceProfile } from "./device-profile";
 import { hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
 

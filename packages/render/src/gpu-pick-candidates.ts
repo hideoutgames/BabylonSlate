@@ -1,4 +1,13 @@
-import { InstancedMesh, LinesMesh, Material, Mesh, MultiMaterial, TransformNode, type AbstractMesh, type Node, type Plane, type Scene } from "@babylonjs/core";
+import { Material } from "@babylonjs/core/Materials/material";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import type { Plane } from "@babylonjs/core/Maths/math.plane";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import { hasStockVertexStage } from "./shadow-material-policy";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 

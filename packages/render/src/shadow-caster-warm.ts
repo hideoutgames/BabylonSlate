@@ -1,12 +1,10 @@
-import {
-  InstancedMesh,
-  type AbstractEngine,
-  type AbstractMesh,
-  type Material,
-  type RenderTargetTexture,
-  type Scene,
-  type ShadowGenerator,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { isPipelineWarmupMesh, isRevealPending } from "./reveal-pending";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { chargeWarmMap, warmMapRoom } from "./shadow-map-warm";

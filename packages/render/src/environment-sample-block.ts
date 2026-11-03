@@ -1,12 +1,11 @@
 import {
-  NodeMaterialBlock,
-  NodeMaterialBlockTargets,
   NodeMaterialBlockConnectionPointTypes,
-  type Effect,
-  type NodeMaterial,
-  type NodeMaterialDefines,
-  type Scene,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Scene } from "@babylonjs/core/scene";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";

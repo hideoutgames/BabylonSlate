@@ -1,7 +1,14 @@
 /** Browser oracle: GPU object-ID picking follows shader-displaced geometry. */
-import {
-  Camera, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, UtilityLayerRenderer, Vector3, VertexBuffer,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
+import { Scene } from "@babylonjs/core/scene";
 import {
   compileMaterialPlan, createAppWebGpuEngine, gpuPickMesh, pickAtCanvas,
 } from "@haptic/render";

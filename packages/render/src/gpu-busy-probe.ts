@@ -1,4 +1,4 @@
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 
 /**
  * GPU-busy time per frame, measured without timer queries and independently of display pacing: the Feature Test

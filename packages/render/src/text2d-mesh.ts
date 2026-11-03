@@ -1,14 +1,12 @@
-import {
-  Mesh,
-  MeshBuilder,
-  Observer,
-  RawTexture,
-  Scene,
-  Texture,
-  VertexBuffer,
-  type BaseTexture,
-  type Nullable,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Observer } from "@babylonjs/core/Misc/observable";
+import { Scene } from "@babylonjs/core/scene";
+import type { Nullable } from "@babylonjs/core/types";
 import {
   parseSceneLayerHitTest,
   parseText2DProperties,

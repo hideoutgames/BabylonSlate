@@ -10,23 +10,20 @@
  * `SceneRenderCoordinator` with `deferPipelines` on a world Scene, drawing steady frames (`render(false)`), as Play and
  * the editor do.
  */
-import {
-  Color3,
-  Color4,
-  DirectionalLight,
-  Engine,
-  FreeCamera,
-  MeshBuilder,
-  PointLight,
-  Scene,
-  SpotLight,
-  Vector3,
-  type Effect,
-  type Light,
-  type Mesh,
-  type NodeMaterial,
-  type ShadowGenerator,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";

@@ -1,4 +1,5 @@
-import { Mesh, type Scene } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { componentIdForPlayMesh, wantsOverlayUnlitMaterial, type SnapshotSceneBinding } from "./snapshot-apply";
 import { prepareSceneStream } from "./scene-stream-preparation";
@@ -28,7 +29,7 @@ export async function drainFinalAuthoringResources(scene: Scene, binding: Snapsh
   options.assertCurrent();
   options.signal.throwIfAborted();
   await prepareSceneStream(scene, binding, [...binding.meshes.keys()], options);
-  const prepared = new Set<import("@babylonjs/core").Material>();
+  const prepared = new Set<import("@babylonjs/core/Materials/material").Material>();
   for (const [slot, root] of binding.meshes) {
     options.assertCurrent();
     options.signal.throwIfAborted();

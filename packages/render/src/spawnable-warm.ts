@@ -1,4 +1,9 @@
-import { Mesh, MeshBuilder, type AbstractMesh, type AssetContainer, type Material, type Scene } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import type { AssetContainer } from "@babylonjs/core/assetContainer";
+import type { Scene } from "@babylonjs/core/scene";
 import { joinPooledPrimitiveGroup } from "./pooled-primitive-visual";
 import { prewarmMeshMaterials } from "./scene-perf";
 import { hideForPipelineWarmup } from "./reveal-pending";

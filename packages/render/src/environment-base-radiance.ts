@@ -1,13 +1,10 @@
-import {
-  Constants,
-  EffectRenderer,
-  EffectWrapper,
-  ShaderStore,
-  type AbstractEngine,
-  type CubeTexture,
-  type Engine,
-  type RenderTargetWrapper,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { Engine } from "@babylonjs/core/Engines/engine";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
+import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
 import { withDrawingState } from "./engine-drawing-state";
 
 const shaderName = "slateEnvironmentBaseRadiance";

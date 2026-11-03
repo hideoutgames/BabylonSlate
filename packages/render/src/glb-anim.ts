@@ -1,14 +1,11 @@
 import { isSceneGameTimePaused } from "./scene-game-time";
 import "./gltf-loader";
 import { Animation } from "@babylonjs/core/Animations/animation";
-import type {
-  AbstractEngine,
-  AbstractMesh,
-  AssetContainer,
-  InstantiatedEntries,
-  Material,
-  Node,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { AssetContainer, InstantiatedEntries } from "@babylonjs/core/assetContainer";
+import type { Node } from "@babylonjs/core/node";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";

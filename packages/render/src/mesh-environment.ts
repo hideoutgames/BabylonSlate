@@ -1,15 +1,13 @@
-import {
-  NodeMaterial,
-  PBRBaseMaterial,
-  type AbstractMesh,
-  type BaseTexture,
-  type Material,
-  type Matrix,
-  type Mesh,
-  type Nullable,
-  type Scene,
-  type SubMesh,
-} from "@babylonjs/core";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import type { Scene } from "@babylonjs/core/scene";
+import type { Nullable } from "@babylonjs/core/types";
 
 /**
  * Per-mesh image-based lighting: a resolver names the environment cube a mesh

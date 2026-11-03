@@ -1,4 +1,7 @@
-import type { AbstractMesh, Node as BabylonNode, Mesh, Scene } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Node as BabylonNode } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import type { CommandMessage } from "@haptic/bridge";
 import { AreaRectLightGroup } from "./area-rect-light";
 import type { CreateEngineOptions } from "./create-engine-types";

@@ -3,23 +3,20 @@
  * a point light's shadows drawn from the shadow atlas by HapticLightingBlock, on the real GPU through the Forward
  * FrameGraph, each with ray-cast masks of what blocks the floor's view of the light, and CEL's, which draws it as PCF.
  */
-import {
-  Color4,
-  DirectionalLight,
-  Engine,
-  FreeCamera,
-  Matrix,
-  MeshBuilder,
-  PointLight,
-  Ray,
-  Scene,
-  ShadowGenerator,
-  SpotLight,
-  Vector3,
-  type AbstractEngine,
-  type AbstractMesh,
-  type Light,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import {
   normalizeCelShadingSettings,
   normalizeEnvironmentLightingSettings,

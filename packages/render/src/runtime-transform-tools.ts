@@ -1,4 +1,8 @@
-import { Matrix, Mesh, Quaternion, Vector3, type AbstractMesh, type Camera, type Scene } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type { RuntimeObjectIdentity } from "@haptic/bridge";
 import type { SerializedTransform, ViewportMode } from "@haptic/core";
 import { createGizmoHost, type GizmoSnapSettings, type GizmoTool } from "./gizmo-host";

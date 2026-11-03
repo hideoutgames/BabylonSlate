@@ -1,3 +1,4 @@
+import "./babylon-registrations";
 import { setSceneInstancing } from "./instance-pool";
 import { ejectPooledLeaf } from "./pooled-visuals";
 import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";
@@ -62,19 +63,22 @@ import { estimateTextureMemory } from "./texture-memory-estimate";
 import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "./preserve-drawing-buffer-setting";
 import { nativePreparationForEngine } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
-import type { AbstractEngine, AssetContainer, BaseTexture, Camera, EngineOptions, EngineView, Material } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { EngineView } from "@babylonjs/core/Engines/AbstractEngine/abstractEngine.views";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { EngineOptions } from "@babylonjs/core/Engines/thinEngine";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import { qualitySettingsFingerprint, resolveRenderingQuality } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
-import {
-  Engine,
-  KhronosTextureContainer2,
-  NodeMaterial,
-  Scene,
-  ScenePerformancePriority,
-  WebGPUCacheRenderPipeline,
-} from "@babylonjs/core";
+import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
+import { Scene, ScenePerformancePriority } from "@babylonjs/core/scene";
 import type {
   SerializedScene,
 } from "@haptic/core";

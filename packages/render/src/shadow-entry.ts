@@ -1,10 +1,8 @@
-import {
-  CascadedShadowGenerator,
-  DirectionalLight,
-  SpotLight,
-  PointLight,
-  type ShadowGenerator,
-} from "@babylonjs/core";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import type { ShadowSettings } from "@haptic/core";
 
 export type ShadowLight = DirectionalLight | PointLight | SpotLight;

@@ -1,4 +1,5 @@
-import type { AbstractMesh, Material } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 
 /**
  * Run `bind`, which may assign several Materials to the same meshes in turn (a

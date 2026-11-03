@@ -1,8 +1,6 @@
-import {
-  Constants,
-  type InternalTexture,
-  type RenderTargetWrapper,
-} from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type {
   ManagedRenderCategory,
   ManagedRenderResource,

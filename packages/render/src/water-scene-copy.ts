@@ -1,7 +1,17 @@
-import {
-  Constants, EffectWrapper, Matrix, MultiMaterial, RenderingManager, ShaderLanguage, Texture, ThinTexture,
-  type AbstractEngine, type AbstractMesh, type Camera, type FrameGraphObjectList, type IParticleSystem, type Scene,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { FrameGraphObjectList } from "@babylonjs/core/FrameGraph/frameGraphObjectList";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
+import { EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
+import { RenderingManager } from "@babylonjs/core/Rendering/renderingManager";
+import type { Scene } from "@babylonjs/core/scene";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";

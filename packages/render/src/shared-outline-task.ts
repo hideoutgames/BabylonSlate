@@ -1,6 +1,10 @@
-import {
-  Color4, Constants, EffectWrapper, Matrix, ShaderLanguage, Texture, type Camera,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";

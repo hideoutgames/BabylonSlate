@@ -1,4 +1,10 @@
-import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Ray, Vector3, type AbstractMesh, type LinesMesh } from "@babylonjs/core";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, LandscapeSculptSession, parseFoliageProperties, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedComponent, type SerializedScene } from "@haptic/core";
 import type { EngineHandle } from "./create-engine";
 import { FoliageEraseSession } from "./foliage-erase";

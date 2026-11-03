@@ -1,4 +1,4 @@
-import type { IParticleSystem } from "@babylonjs/core";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
 import {
   burstParticlesInWindow,
   sampleScalarCurve,

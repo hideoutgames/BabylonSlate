@@ -1,4 +1,5 @@
-import type { AbstractEngine, EngineView } from "@babylonjs/core";
+import type { EngineView } from "@babylonjs/core/Engines/AbstractEngine/abstractEngine.views";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { HeldImageStore } from "./direct-view-presentation";
 
 /**

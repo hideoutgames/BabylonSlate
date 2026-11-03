@@ -1,4 +1,7 @@
-import { Mesh, type InstancedMesh, type Material, type Scene } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { materialIneligibility, sceneInstancePool, sceneInstancing, type InstanceGeometry } from "./instance-pool";
 import { RENDERING_GROUP } from "./sorting";
 import { attachPooledLeaf } from "./pooled-visuals";

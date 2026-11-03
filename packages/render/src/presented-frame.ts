@@ -1,4 +1,4 @@
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 
 type SubmissionDevice = {
   pushErrorScope: (filter: "validation" | "out-of-memory" | "internal") => void;

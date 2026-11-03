@@ -1,8 +1,13 @@
 /** Explicit opt-in performance experiment. No device qualification or pass/fail threshold. */
-import {
-  Color3, Color4, Engine, EngineInstrumentation, FreeCamera, HemisphericLight,
-  MeshBuilder, Scene, StandardMaterial, Vector3,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { EngineInstrumentation } from "@babylonjs/core/Instrumentation/engineInstrumentation";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { Lattice } from "@babylonjs/core/Meshes/lattice";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import { createAppWebGpuEngine, disposeMeshLatticeDeformer, setMeshLatticeDeformer } from "@haptic/render";

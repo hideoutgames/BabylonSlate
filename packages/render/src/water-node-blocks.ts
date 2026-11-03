@@ -1,8 +1,25 @@
+import { Camera } from "@babylonjs/core/Cameras/camera";
 import {
-  Camera, Color3, CubeTexture, Matrix, NodeMaterial, NodeMaterialBlock, NodeMaterialBlockTargets, NodeMaterialBlockConnectionPointTypes as Types, PBRMaterial,
-  ShaderLanguage, Texture, ThinTexture, Vector3, type AbstractMesh, type BaseTexture, type Effect, type Material, type Mesh, type NodeMaterialConnectionPoint,
-  type NodeMaterialDefines, type Scene, type SubMesh,
-} from "@babylonjs/core";
+  NodeMaterialBlockConnectionPointTypes as Types,
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import { NodeMaterial, type NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { createDefaultWaterDefinition, WATER_BLEND_COLOR_PARTNERS, type WaterDefinition } from "@haptic/core";

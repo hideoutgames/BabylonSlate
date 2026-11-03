@@ -1,4 +1,6 @@
-import { Color4, ImageProcessingConfiguration, type BaseTexture } from "@babylonjs/core";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type {
   PostProcessingEffectField,
   PostProcessingQuality,

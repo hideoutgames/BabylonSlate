@@ -1,4 +1,8 @@
-import type { AbstractEngine, IViewportLike, Nullable, RenderTargetWrapper, ThinEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
+import type { ThinEngine } from "@babylonjs/core/Engines/thinEngine";
+import type { IViewportLike } from "@babylonjs/core/Maths/math.like";
+import type { Nullable } from "@babylonjs/core/types";
 
 /**
  * Engine state an owned pass changes: framebuffer attachment (WebGL framebuffer, or WebGPU target layer and mip),

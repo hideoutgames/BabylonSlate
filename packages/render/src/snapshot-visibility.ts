@@ -1,4 +1,6 @@
-import { AbstractMesh, type Mesh, type Scene } from "@babylonjs/core";
+import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { isMesh, type SnapshotSceneBinding } from "./snapshot-binding";
 
 function playMeshMetadata(mesh: Mesh): {
@@ -45,7 +47,7 @@ export function appliedPlayVisibilityOf(mesh: Mesh): boolean | undefined {
 function isOtherSlotRoot(
   binding: SnapshotSceneBinding,
   root: Mesh,
-  node: import("@babylonjs/core").Node,
+  node: import("@babylonjs/core/node").Node,
 ): boolean {
   if (node === root || !node.name.startsWith("actor-")) return false;
   return binding.meshes.get(Number(node.name.slice("actor-".length))) === node;

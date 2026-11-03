@@ -1,4 +1,4 @@
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { GpuBackend } from "@haptic/core";
 
 export interface EngineBackendStatus {

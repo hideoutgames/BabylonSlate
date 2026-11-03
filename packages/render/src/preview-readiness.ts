@@ -1,4 +1,4 @@
-import type { AbstractMesh } from "@babylonjs/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS, type HeldThreadBudget } from "./stall-deadline";
 import { visualMeshes } from "./visual-meshes";

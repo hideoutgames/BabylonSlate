@@ -1,4 +1,12 @@
-import { DirectionalLight, InstancedMesh, Mesh, PointLight, SpotLight, Vector3, type AbstractMesh, type Light, type ShadowGenerator } from "@babylonjs/core";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { ShadowSettings } from "@haptic/core";
 import {
   beginManagedRenderAllocation,

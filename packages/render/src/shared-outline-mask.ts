@@ -1,7 +1,15 @@
-import {
-  Constants, EffectFallbacks, Material, ShaderLanguage, VertexBuffer,
-  type AbstractMesh, type BaseTexture, type DrawWrapper, type Effect, type Matrix, type SmartArray, type SubMesh,
-} from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { DrawWrapper } from "@babylonjs/core/Materials/drawWrapper";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { EffectFallbacks } from "@babylonjs/core/Materials/effectFallbacks";
+import { Material } from "@babylonjs/core/Materials/material";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import type { Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import type { SmartArray } from "@babylonjs/core/Misc/smartArray";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { AddClipPlaneUniforms, BindClipPlane, PrepareStringDefinesForClipPlanes } from "@babylonjs/core/Materials/clipPlaneMaterialHelper";
 import { BindBonesParameters, BindMorphTargetParameters, PrepareDefinesAndAttributesForMorphTargets, PushAttributesForInstances } from "@babylonjs/core/Materials/materialHelper.functions";

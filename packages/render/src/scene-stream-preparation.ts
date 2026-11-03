@@ -1,4 +1,8 @@
-import { MultiMaterial, NodeMaterial, type AbstractMesh, type Material, type Scene } from "@babylonjs/core";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { ownedVisualTexturePreparation } from "./mesh-assets";
 import { createStallDeadline, prewarmMeshMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";

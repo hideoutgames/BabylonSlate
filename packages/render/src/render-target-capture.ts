@@ -1,12 +1,24 @@
 import { activeRenderFrameCapture } from "./render-frame-report";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { pinFloatingOrigin } from "./scene-readiness-signal";
-import {
-  Color4, Constants, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
-  RenderTargetTexture, Texture, UniversalCamera, Vector3,
-  type AbstractMesh, type Camera, type FrameGraphObjectList, type InternalTexture, type IParticleSystem, type Node,
-  type NodeMaterial, type Observer, type Scene,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { FrameGraphObjectList } from "@babylonjs/core/FrameGraph/frameGraphObjectList";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Material } from "@babylonjs/core/Materials/material";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
   normalizeRenderTargetCaptureProperties, normalizeRenderTargetPayload, RENDER_TARGET_CAPTURE_QUALITY_LABELS,

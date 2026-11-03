@@ -1,6 +1,6 @@
 import { installTextureBytes } from "@haptic/render";
 import { useEffect, useRef, useState } from "react";
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import {
   DEFAULT_SKYBOX_SIZE,
   SKYBOX_FACE_KEYS,

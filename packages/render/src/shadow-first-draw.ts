@@ -1,4 +1,5 @@
-import type { Scene, ShadowGenerator } from "@babylonjs/core";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import type { Scene } from "@babylonjs/core/scene";
 
 /**
  * Shadow maps that have not drawn since they were allocated, moved to another light or resumed from standby

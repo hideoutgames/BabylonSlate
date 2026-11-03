@@ -1,4 +1,8 @@
-import { Matrix, Ray, Vector3, VertexBuffer, type AbstractMesh, type Scene } from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import type { ShadowParticipation } from "../../../../packages/render/src/shadow-mesh-policy";
 

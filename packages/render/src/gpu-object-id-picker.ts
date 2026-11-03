@@ -1,5 +1,15 @@
-import type { AbstractMesh, Material, Observable, Plane, Scene } from "@babylonjs/core";
-import { Camera, Constants, Frustum, InstancedMesh, Matrix, Mesh, Ray } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { Plane } from "@babylonjs/core/Maths/math.plane";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Observable } from "@babylonjs/core/Misc/observable";
+import type { Scene } from "@babylonjs/core/scene";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";

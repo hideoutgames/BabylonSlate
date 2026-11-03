@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Mesh, Quaternion, type AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Quaternion } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import {
   normalizeModelPayload,
   simpleColliderToPhysicsShape,

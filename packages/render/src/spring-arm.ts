@@ -1,16 +1,11 @@
-import {
-  Color3,
-  Color4,
-  Matrix,
-  MeshBuilder,
-  Quaternion,
-  TransformNode,
-  Vector3,
-  type LinesMesh,
-  type Mesh,
-  type Node,
-  type Scene,
-} from "@babylonjs/core";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   springArmSocketPosition,
   stepSpringArmLag,

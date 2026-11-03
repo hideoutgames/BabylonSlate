@@ -1,16 +1,13 @@
-import {
-  Camera,
-  Color3,
-  Color4,
-  Engine,
-  FreeCamera,
-  MeshBuilder,
-  PBRMaterial,
-  Scene,
-  Vector3,
-  type Mesh,
-  type NodeMaterial,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import {
   normalizeCelShadingSettings,
   normalizeEnvironmentLightingSettings,

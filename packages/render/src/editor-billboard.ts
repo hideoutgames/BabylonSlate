@@ -1,16 +1,14 @@
 import { sceneShadowController } from "./shadow-controller";
 import { isForwardLightExcluded } from "./light-policy";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
-import {
-  Color3,
-  Mesh,
-  MeshBuilder,
-  Scene,
-  Texture,
-  TransformNode,
-  type AbstractEngine,
-  type Light,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Light } from "@babylonjs/core/Lights/light";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Scene } from "@babylonjs/core/scene";
 import type { SerializedActor } from "@haptic/core";
 import { engineBillboardUrl } from "./default-billboard/urls";
 import { createEngineTextureFromUrl } from "./resource-cache";

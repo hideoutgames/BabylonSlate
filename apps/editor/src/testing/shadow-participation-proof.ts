@@ -5,7 +5,16 @@
  * off and at High. Each capture is compared with the same view under an unshadowed sun, against a ray-cast mask of the
  * plane pixels the cube hides from the sun.
  */
-import { Color4, DirectionalLight, Engine, FreeCamera, Matrix, Ray, Scene, Vector3, type AbstractEngine, type AbstractMesh, type Mesh } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings, type ScreenShadowsQuality } from "@haptic/core";
 import {
   applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, createPrimitiveMesh, setSceneRenderSettings,

@@ -1,4 +1,4 @@
-import { Color4 } from "@babylonjs/core";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
 
 export type EditorColorScheme = "light" | "dark";
 

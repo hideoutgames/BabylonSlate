@@ -7,7 +7,15 @@
  * admitted lights that reach them independently of the shader. Light culling is judged by the gap between the two.
  * `runLightCullingParity` draws the same view lit, with and without the clusters (`setHapticLightCulling`), and times both.
  */
-import { Color4, Engine, FreeCamera, MeshBuilder, PointLight, Scene, Vector3, type AbstractEngine, type Mesh } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings, type RenderMode } from "@haptic/core";
 import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";

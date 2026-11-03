@@ -1,4 +1,5 @@
-import { Matrix, Vector3, type Mesh } from "@babylonjs/core";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { clampUIControl2DValue, normalizeUIControl2DText, sceneLayerCanvasToLayer, uiControl2DValueAt, type OverlayPointerHit } from "@haptic/core";
 import { uiControl2DMesh, type UIControl2DMesh } from "./ui-controls2d-mesh";
 import type { SceneLayerView } from "./scene-layer-compositor";

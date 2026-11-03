@@ -1,4 +1,4 @@
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { pruneWebGpuCachesNow } from "./webgpu-cache-pruning";
 
 /**

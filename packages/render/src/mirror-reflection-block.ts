@@ -1,13 +1,12 @@
 import {
-  Matrix,
-  NodeMaterialBlock,
   NodeMaterialBlockConnectionPointTypes as Types,
-  NodeMaterialBlockTargets,
-  type AbstractMesh,
-  type Effect,
-  type NodeMaterial,
-  type NodeMaterialDefines,
-} from "@babylonjs/core";
+} from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
+import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";

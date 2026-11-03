@@ -1,4 +1,4 @@
-import type { Scene } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core/scene";
 
 /**
  * Auxiliary views (High and Full Quality Render Target Captures) draw inside the scene

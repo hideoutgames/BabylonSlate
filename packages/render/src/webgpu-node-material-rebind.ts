@@ -1,4 +1,5 @@
-import type { Effect, NodeMaterial } from "@babylonjs/core";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 
 // The wrapper runs for every frozen submesh draw; do not allocate names there.
 const LIGHT_BUFFER_NAMES: string[] = [];

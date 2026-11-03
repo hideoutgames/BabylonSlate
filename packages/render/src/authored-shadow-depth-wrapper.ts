@@ -1,7 +1,14 @@
-import {
-  ShadowDepthWrapper, type AbstractMesh, type BaseTexture, type DrawWrapper, type Effect, type Node, type NodeMaterial,
-  type Observer, type RenderTargetTexture, type ShadowGenerator, type SubMesh,
-} from "@babylonjs/core";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { DrawWrapper } from "@babylonjs/core/Materials/drawWrapper";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { ShadowDepthWrapper } from "@babylonjs/core/Materials/shadowDepthWrapper";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import type { Node } from "@babylonjs/core/node";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 
 /** Pinned Babylon 9.29 ownership adapter: dispose() only detaches observers.

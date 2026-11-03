@@ -1,13 +1,11 @@
 import { instanceParameterOf, instanceParameterValue, setInstanceParameterValue } from "./instance-parameters";
-import {
-  Color4,
-  InputBlock,
-  RawTexture,
-  Texture,
-  TextureBlock,
-  type Material,
-  type NodeMaterial,
-} from "@babylonjs/core";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { MaterialParameterValue } from "@haptic/bridge";
 import type { MaterialBuildPlan } from "@haptic/shader-graph";
 import type { BlockRealization } from "./material-block-registry";

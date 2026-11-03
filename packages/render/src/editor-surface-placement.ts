@@ -1,12 +1,9 @@
-import {
-  LinesMesh,
-  Matrix,
-  Ray,
-  Vector3,
-  type AbstractMesh,
-  type ArcRotateCamera,
-  type Scene,
-} from "@babylonjs/core";
+import type { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import type { Scene } from "@babylonjs/core/scene";
 import type { SerializedScene, ViewportMode } from "@haptic/core";
 import { isColliderVisualTree } from "./collider-visual";
 import type { EditorDropTransform } from "./editor-drop";

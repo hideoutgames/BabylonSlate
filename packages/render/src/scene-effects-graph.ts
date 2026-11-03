@@ -1,4 +1,5 @@
-import { Constants, type Camera } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { SpatialEffectsGraph } from "./spatial-effects-graph";
 import { hasSpatialEffects, reserveSpatialEffects, spatialEffectsUnsupported } from "./spatial-effects";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";

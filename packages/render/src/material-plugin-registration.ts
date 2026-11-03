@@ -1,4 +1,5 @@
-import { EngineStore, RegisterMaterialPlugin, type PluginMaterialFactory } from "@babylonjs/core";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore";
+import { RegisterMaterialPlugin, type PluginMaterialFactory } from "@babylonjs/core/Materials/materialPluginManager";
 
 const registered = new Map<string, PluginMaterialFactory>();
 

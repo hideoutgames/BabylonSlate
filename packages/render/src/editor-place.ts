@@ -1,4 +1,5 @@
-import { Matrix, Vector3, type ArcRotateCamera } from "@babylonjs/core";
+import type { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { ViewportMode } from "@haptic/core";
 
 /** Closest a new actor may sit along the view ray, in world units. */

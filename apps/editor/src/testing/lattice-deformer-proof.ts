@@ -1,9 +1,22 @@
 /** Numeric geometry oracle for the production post-WPO lattice path. */
-import {
-  Bone, Camera, Color3, Color4, Engine, FreeCamera, HemisphericLight, Matrix,
-  Mesh, MeshBuilder, MorphTarget, MorphTargetManager, RawTexture, Scene, Skeleton,
-  StandardMaterial, Texture, Vector3, VertexBuffer, type AbstractMesh,
-} from "@babylonjs/core";
+import { Bone } from "@babylonjs/core/Bones/bone";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MorphTarget } from "@babylonjs/core/Morph/morphTarget";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { Scene } from "@babylonjs/core/scene";
 import { Lattice } from "@babylonjs/core/Meshes/lattice";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import {

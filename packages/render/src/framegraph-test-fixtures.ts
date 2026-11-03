@@ -1,4 +1,6 @@
-import { Constants, InternalTexture, InternalTextureSource, type NullEngine } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import type { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 
 /**
  * Babylon 9.29 NullEngine has no FrameGraph allocation, MRT, depth-texture or

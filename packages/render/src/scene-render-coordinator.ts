@@ -1,6 +1,9 @@
 import { activeRenderFrameCapture } from "./render-frame-report";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
-import type { Camera, Effect, FrameGraphObjectList, Scene } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { FrameGraphObjectList } from "@babylonjs/core/FrameGraph/frameGraphObjectList";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Scene } from "@babylonjs/core/scene";
 import { ForwardSceneFrameGraph, type ForwardSceneGraphReadiness, type ForwardSceneGraphResult } from "./framegraph-forward-scene";
 import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
