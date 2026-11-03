@@ -58,7 +58,7 @@ describe("ParticleComponent play-on-start", () => {
     const realized = commands.find((command) => command.type === "sceneRealized")!;
     runtime.notifySceneModelsReady(realized.sceneAssetGuid, realized.sceneLoadId);
     expect(commands.filter((command) => command.type === "setParticlePlaying")).toEqual([
-      { type: "setParticlePlaying", actorGuid: "fx", componentId: "particle-1", playing: true },
+      { type: "setParticlePlaying", actorGuid: "fx", componentId: "particle-1", playing: true, generation: 1 },
     ]);
     runtime.stop();
   });

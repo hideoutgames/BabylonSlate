@@ -404,6 +404,19 @@ export type ControlMessage =
       safeAreaInsets?: Partial<import("@haptic/core").OverlaySafeAreaInsets>;
     }
   | { type: "audioVoiceEnded"; voiceId: string }
+  /**
+   * A ParticleComponent stopped playing on the render host: its drain completed after a
+   * Once system finished (`finished`) or after Stop (`stopped`), or its bundle has no
+   * playable slot (`failed`). `generation` echoes the Play that started it, so the
+   * worker drops reports that a later Play made stale.
+   */
+  | {
+      type: "particlePlaybackEnded";
+      actorGuid: string;
+      componentId: string;
+      generation: number;
+      reason: import("@haptic/core").ParticlePlaybackEndReason;
+    }
   | { type: "assetPreloadResult"; preloadId: string; success: boolean; error?: string; progress?: number }
   | { type: "assetLoadStates"; states: Array<{ guid: string; state: import("@haptic/core").RuntimeAssetLoadState }> }
   | { type: "sceneLoadingPainted"; sceneAssetGuid: string; sceneLoadId: number }
@@ -1072,12 +1085,16 @@ export type CommandMessage =
       play?: boolean;
       sortingLayer?: string;
       orderInLayer?: number;
+      /** The worker's Play generation, echoed by `particlePlaybackEnded`; previews omit it (0). */
+      generation?: number;
     }
   | {
       type: "setParticlePlaying";
       actorGuid: string;
       componentId?: string;
       playing: boolean;
+      /** The worker's Play generation, echoed by `particlePlaybackEnded`. */
+      generation?: number;
     }
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
   | { type: "setScalability"; transaction: ScalabilityTransaction }

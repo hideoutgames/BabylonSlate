@@ -1,6 +1,6 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, Constants, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, Vector3, VectorMergerBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
+import { ArcRotateCamera, ArcTan2Block, Constants, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, TrigonometryBlock, TrigonometryBlockOperations, Vector3, VectorMergerBlock, type NodeMaterialBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
 import { CoverageClipBlock } from "./alpha-to-coverage";
 import { createDefaultMaterialDocument, lowerMaterialDocument, newCustomGlslProperties, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
@@ -31,6 +31,44 @@ function wire(doc: MaterialDocument, source: string, sourcePin: string, target: 
 }
 
 describe("material node contracts", () => {
+  /** The operations of `start` and the Trigonometry blocks feeding it, nearest first, down to the first non-trig block. */
+  function trigChain(start: NodeMaterialBlock | null): { operations: TrigonometryBlockOperations[]; source: NodeMaterialBlock | null } {
+    const operations: TrigonometryBlockOperations[] = [];
+    let block = start;
+    while (block instanceof TrigonometryBlock) {
+      operations.push(block.operation);
+      block = block.input.connectedPoint?.ownerBlock ?? null;
+    }
+    return { operations, source: block };
+  }
+  const T = TrigonometryBlockOperations;
+  it.each([
+    ["math.sinDegrees", [T.Sin, T.Radians]],
+    ["math.cosDegrees", [T.Cos, T.Radians]],
+    ["math.tanDegrees", [T.Tan, T.Radians]],
+    ["math.asinDegrees", [T.Degrees, T.ArcSin]],
+    ["math.acosDegrees", [T.Degrees, T.ArcCos]],
+    ["math.atanDegrees", [T.Degrees, T.ArcTan]],
+  ] as const)("compiles %s as the radian operation behind a unit conversion", async (type, expected) => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "trig", type, { "default:value": [0.5] });
+    wire(doc, "trig", "out", "output", "roughness");
+    const result = await compile(doc);
+    const chain = trigChain(result.material.getBlockByName("trig"));
+    expect(chain.operations).toEqual(expected);
+    expect(chain.source).toBeInstanceOf(InputBlock);
+  });
+  it("compiles Arctangent 2 (Degrees) per component as Atan2 then Radians To Degrees", async () => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "direction", "input.vertexNormalWS");
+    node(doc, "angle", "math.atan2Degrees");
+    wire(doc, "direction", "normal", "angle", "y");
+    wire(doc, "angle", "out", "output", "emissive");
+    const result = await compile(doc);
+    const conversions = result.material.attachedBlocks.filter((block): block is TrigonometryBlock =>
+      block instanceof TrigonometryBlock && block.input.connectedPoint?.ownerBlock instanceof ArcTan2Block);
+    expect(conversions.map((block) => block.operation)).toEqual([T.Degrees, T.Degrees, T.Degrees]);
+  });
   it.each(["uv", "height"])("keeps Landscape %s anchored to absolute scene coordinates when the render origin moves", async (kind) => {
     const doc = createDefaultMaterialDocument("Terrain", "landscape");
     doc.edges = [];

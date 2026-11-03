@@ -67,6 +67,15 @@ export function isTreeSwipeAdd(dx: number, dy: number): boolean {
   return Math.abs(dx) >= TREE_SWIPE_ADD_PX && Math.abs(dx) >= Math.abs(dy);
 }
 
+/**
+ * A touch or pen move that leaves a vertically scrolling list sideways. Such
+ * lists keep `touch-pan-y`, so the browser never pans on it and a drag out
+ * (to a viewport beside the list) can start at once, without the hold.
+ */
+export function isSidewaysDragOut(dx: number, dy: number): boolean {
+  return Math.abs(dx) > Math.abs(dy);
+}
+
 export interface TreeViewNode {
   id: string;
   label: string;
@@ -114,6 +123,12 @@ export interface TreeViewProps {
   /** Fired while an external drag is armed (for graph drop hints). */
   onExternalDragMove?: (id: string, clientX: number, clientY: number) => void;
   onExternalDragEnd?: () => void;
+  /**
+   * Touch and pen: a move that leaves the list sideways starts the external
+   * drag at once (`isSidewaysDragOut`); vertical moves still scroll and a hold
+   * still drags any way. For lists whose rows only drag out, never reparent.
+   */
+  dragOutSideways?: boolean;
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
@@ -137,6 +152,8 @@ interface DragState {
   startY: number;
   armed: boolean;
   canDrag: boolean;
+  /** A sideways touch or pen move may start the external drag without the hold. */
+  canDragOutSideways: boolean;
   moved: boolean;
   swipeAdd: boolean;
   onLabel: boolean;
@@ -179,6 +196,7 @@ export function TreeView({
   onExternalDrop,
   onExternalDragMove,
   onExternalDragEnd,
+  dragOutSideways = false,
   onActivate,
   onContextMenu,
   renamingId = null,
@@ -446,14 +464,23 @@ export function TreeView({
       }
       if (!drag.canDrag) {
         const touch = event.touches[0]!;
-        if (
-          Math.hypot(touch.clientX - drag.startX, touch.clientY - drag.startY) >
-          CONTEXT_MENU_MOVE_TOLERANCE_PX
-        ) {
+        const dx = touch.clientX - drag.startX;
+        const dy = touch.clientY - drag.startY;
+        if (Math.hypot(dx, dy) <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
+        if (!drag.armed && drag.canDragOutSideways && isSidewaysDragOut(dx, dy)) {
+          // Leaving the list sideways drags at once; cancel this touchmove as after a hold.
+          drag.canDrag = true;
+          clearDragTimers(drag);
+          try {
+            containerRef.current?.setPointerCapture?.(drag.pointerId);
+          } catch {
+            /* jsdom and detached nodes */
+          }
+        } else {
           drag.moved = true;
           clearDragTimers(drag);
+          return;
         }
-        return;
       }
       // Pointer capture cannot stop native iOS panning. Cancel the first
       // touchmove after the hold, including movement below the drag threshold.
@@ -558,6 +585,8 @@ export function TreeView({
         startY: event.clientY,
         armed: false,
         canDrag: canDragNow,
+        canDragOutSideways:
+          dragOutSideways && dragEnabled && Boolean(onExternalDrop) && !canDragNow,
         moved: false,
         swipeAdd: false,
         onLabel: Boolean((event.target as Element | null)?.closest?.("[data-tree-label]")),
@@ -572,7 +601,7 @@ export function TreeView({
         }
       }
     },
-    [clearDrag, indexById, nodes, onContextMenu, onExternalDrop, onReparent],
+    [clearDrag, dragOutSideways, indexById, nodes, onContextMenu, onExternalDrop, onReparent],
   );
 
   const onPointerMove = useCallback(
@@ -593,6 +622,20 @@ export function TreeView({
       const moved = Math.hypot(dx, dy);
       if (moved <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
       drag.moved = true;
+      if (
+        !drag.canDrag &&
+        !drag.armed &&
+        drag.canDragOutSideways &&
+        !extraPointerRef.current &&
+        isSidewaysDragOut(dx, dy)
+      ) {
+        drag.canDrag = true;
+        try {
+          containerRef.current?.setPointerCapture?.(drag.pointerId);
+        } catch {
+          /* jsdom and detached nodes */
+        }
+      }
       const inside = pointerInsideTree(event.clientX, event.clientY);
       if (
         drag.pointerType === "touch" &&

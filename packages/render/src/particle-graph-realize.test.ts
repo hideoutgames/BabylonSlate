@@ -227,6 +227,49 @@ describe("realizeParticleGraph", () => {
     before.forEach((x, index) => expect(system.particles[index]!.position.x - x).toBeCloseTo(shift, 3));
   });
 
+  it.each([
+    ["math.sinDegrees", 90, 1],
+    ["math.cosDegrees", 60, 0.5],
+    ["math.tanDegrees", 45, 1],
+    ["math.asinDegrees", 0.5, 30],
+    ["math.acosDegrees", 0.5, 60],
+    ["math.atanDegrees", 1, 45],
+    ["math.sin", Math.PI / 2, 1],
+  ] as const)("%s of %s sizes particles %s", (type, input, expected) => {
+    const doc = withSpine([node("size", "update.size")], [node("trig", type, { "default:value": [input] })],
+      [edge("trig", "out", "size", "size")]);
+    const { system } = built(realize(planOf(doc)).result);
+    system.start(0);
+    step(system, 5);
+    expect(system.particles.length).toBeGreaterThan(0);
+    expect(system.particles[0]!.size).toBeCloseTo(expected, 6);
+  });
+
+  it("turns particles by degree-unit angles and reads their angle back in degrees", () => {
+    const doc = withSpine([node("turn", "update.angleDegrees", { "default:angle": [90] }), node("size", "update.size")],
+      [node("angle", "input.contextual.angleDegrees")], [edge("angle", "out", "size", "size")]);
+    // Create Particle's own angle in degrees: 45° at birth, then Update Angle (Degrees) sets 90°.
+    doc.nodes = doc.nodes.map((entry) => entry.id === "create"
+      ? { ...entry, properties: { ...entry.properties, angleUnit: "degrees", "default:angle": [45] } } : entry);
+    const { system } = built(realize(planOf(doc)).result);
+    system.start(0);
+    step(system, 5);
+    const particle = system.particles[0]!;
+    expect(particle.angle).toBeCloseTo(Math.PI / 2, 6);
+    // Size reads Angle (Degrees) after the update.
+    expect(particle.size).toBeCloseTo(90, 4);
+
+    const birth = withSpine([node("size", "update.size")], [node("angle", "input.contextual.angleDegrees")],
+      [edge("angle", "out", "size", "size")]);
+    birth.nodes = birth.nodes.map((entry) => entry.id === "create"
+      ? { ...entry, properties: { ...entry.properties, angleUnit: "degrees", "default:angle": [45] } } : entry);
+    const born = built(realize(planOf(birth)).result).system;
+    born.start(0);
+    step(born, 5);
+    expect(born.particles[0]!.angle).toBeCloseTo(Math.PI / 4, 6);
+    expect(born.particles[0]!.size).toBeCloseTo(45, 4);
+  });
+
   it("emits fractional and computed Emit Rates", () => {
     const slow = createDefaultParticleGraphDocument();
     slow.nodes = slow.nodes.map((entry) => entry.id === "output" ? { ...entry, properties: { "default:emitRate": [0.5] } }

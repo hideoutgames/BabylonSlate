@@ -346,6 +346,23 @@ describe("collectOverridableEventRows", () => {
     ]);
   });
 
+  it("lists On Particles Finished once per attached ParticleComponent", () => {
+    const rows = collectOverridableEventRows({
+      classId: "Hero",
+      parentClass: "Actor",
+      graph: {
+        nodes: [],
+        edges: [],
+        components: [
+          { id: "sparks", classId: "ParticleComponent", properties: {} },
+          { id: "smoke", classId: "ParticleComponent", properties: {} },
+        ],
+      },
+    });
+    expect(rows.filter((row) => row.eventType === "flow.event.particlesFinished").map((row) => row.componentId))
+      .toEqual(["sparks", "smoke"]);
+  });
+
   it("lists custom events from an attached user component class", () => {
     const rows = collectOverridableEventRows({
       classId: "Hero",

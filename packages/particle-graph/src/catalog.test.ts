@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  PARTICLE_ANGLE_UNIT_OPTIONS,
   PARTICLE_CATALOG,
   PARTICLE_CONDITION_TESTS,
   PARTICLE_RANDOM_LOCKS,
   PARTICLE_VALUE_TYPE_OPTIONS,
   isParticleSpineRole,
+  particleNodeDefinitionFor,
 } from "./catalog";
 import { newParticleNodeProperties } from "./document";
 
-const TITLE_CASE = /^[A-Z0-9][A-Za-z0-9]*( [A-Z0-9][A-Za-z0-9]*)*$/;
+/** Title Case words, optionally ending in one parenthesized unit word: "Angle (Degrees)". */
+const TITLE_CASE = /^[A-Z0-9][A-Za-z0-9]*( [A-Z0-9][A-Za-z0-9]*)*( \([A-Z][A-Za-z0-9]*\))?$/;
 const PIN_WIDTH: Record<string, number> = {
   generic: 1,
   float: 1,
@@ -28,7 +31,7 @@ describe("particle node catalog", () => {
         expect(pin.name).toMatch(TITLE_CASE);
       }
     }
-    for (const option of [...PARTICLE_CONDITION_TESTS, ...PARTICLE_RANDOM_LOCKS, ...PARTICLE_VALUE_TYPE_OPTIONS]) {
+    for (const option of [...PARTICLE_CONDITION_TESTS, ...PARTICLE_RANDOM_LOCKS, ...PARTICLE_VALUE_TYPE_OPTIONS, ...PARTICLE_ANGLE_UNIT_OPTIONS]) {
       expect(option.label).toMatch(TITLE_CASE);
     }
   });
@@ -101,5 +104,21 @@ describe("particle node catalog", () => {
       const pin = PARTICLE_CATALOG.find((definition) => definition.type === type)!.inputs[0]!;
       expect(pin.type.kind === "generic" && pin.type.accepts, type).toEqual(["float", "vec2", "vec3"]);
     }
+  });
+
+  it.each([
+    ["particle.create", { name: "Angle (Degrees)", unit: "°", defaultValue: [0], min: undefined, max: undefined }],
+    ["shape.cone", { name: "Angle (Degrees)", unit: "°", defaultValue: [30], min: 0.572958, max: 180 }],
+  ] as const)("shows %s's angle pin, default and bounds in degrees when Angle Unit is Degrees", (type, expected) => {
+    const radians = particleNodeDefinitionFor({ type, properties: { angleUnit: "radians" } })!.inputs.find((pin) => pin.id === "angle")!;
+    expect(radians.name).toBe("Angle (Radians)");
+    expect(radians.unit).toBe("rad");
+    const degrees = particleNodeDefinitionFor({ type, properties: { angleUnit: "degrees" } })!.inputs.find((pin) => pin.id === "angle")!;
+    expect({ name: degrees.name, unit: degrees.unit, defaultValue: degrees.defaultValue, min: degrees.min, max: degrees.max })
+      .toEqual(expected);
+    // Every other pin is untouched.
+    const others = (properties: Record<string, unknown>) =>
+      particleNodeDefinitionFor({ type, properties })!.inputs.filter((pin) => pin.id !== "angle");
+    expect(others({ angleUnit: "degrees" })).toEqual(others({ angleUnit: "radians" }));
   });
 });

@@ -50,3 +50,12 @@ export function particlePrewarmSteps(seconds: number): {
       : 0;
   return { cycles, stepOffset: cycles ? (seconds * 60) / cycles : 1 };
 }
+
+/** Why a ParticleComponent stopped playing, as the render host reports it (`particlePlaybackEnded`). */
+export type ParticlePlaybackEndReason = "finished" | "stopped" | "failed";
+
+/** Script-facing `engine:ParticlesFinishedReason`, the Reason of Event On Particles Finished. */
+export const ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID = "engine:ParticlesFinishedReason";
+/** Finished: a Once system ran out. Stopped: Stop drained it. */
+export const PARTICLES_FINISHED_REASONS = ["Finished", "Stopped"] as const;
+export type ParticlesFinishedReason = (typeof PARTICLES_FINISHED_REASONS)[number];

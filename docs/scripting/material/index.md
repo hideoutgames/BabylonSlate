@@ -66,14 +66,19 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | --- | --- |
 | [Absolute](absolute.md) | Returns the input with any negative sign removed. |
 | [Add](add.md) | Returns the sum of two values, component by component. |
-| [Arccosine](arccosine.md) | Returns the arccosine of the input as an angle in radians. |
-| [Arcsine](arcsine.md) | Returns the arcsine of the input as an angle in radians. |
-| [Arctangent](arctangent.md) | Returns the arctangent of the input as an angle in radians. |
-| [Arctangent 2](arctangent-2.md) | Returns the angle in radians of the point (X, Y), measured from the positive X axis. |
+| [Arccosine (Degrees)](arccosine-degrees.md) | Returns the arccosine of the input as an angle in degrees. |
+| [Arccosine (Radians)](arccosine.md) | Returns the arccosine of the input as an angle in radians. |
+| [Arcsine (Degrees)](arcsine-degrees.md) | Returns the arcsine of the input as an angle in degrees. |
+| [Arcsine (Radians)](arcsine.md) | Returns the arcsine of the input as an angle in radians. |
+| [Arctangent (Degrees)](arctangent-degrees.md) | Returns the arctangent of the input as an angle in degrees. |
+| [Arctangent (Radians)](arctangent.md) | Returns the arctangent of the input as an angle in radians. |
+| [Arctangent 2 (Degrees)](arctangent-2-degrees.md) | Returns the angle in degrees of the point (X, Y), measured from the positive X axis. |
+| [Arctangent 2 (Radians)](arctangent-2.md) | Returns the angle in radians of the point (X, Y), measured from the positive X axis. |
 | [Ceiling](ceiling.md) | Rounds the input up to the nearest whole number. |
 | [Clamp](clamp.md) | Limits a value so that it stays between a minimum and a maximum. |
-| [Cosine](cosine.md) | Returns the cosine of an angle in radians. |
-| [Degrees](degrees.md) | Converts the input from radians to degrees. |
+| [Cosine (Degrees)](cosine-degrees.md) | Returns the cosine of an angle in degrees. |
+| [Cosine (Radians)](cosine.md) | Returns the cosine of an angle in radians. |
+| [Degrees To Radians](degrees-to-radians.md) | Converts the input from degrees to radians. |
 | [Divide](divide.md) | Divides one value by another, component by component. |
 | [Exponential](exponential.md) | Returns e raised to the power of the input. |
 | [Exponential 2](exponential-2.md) | Returns 2 raised to the power of the input. |
@@ -89,18 +94,20 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Multiply](multiply.md) | Multiplies two values together, component by component. |
 | [Negate](negate.md) | Flips the sign of the input. |
 | [Power](power.md) | Raises a base to the power of an exponent. |
-| [Radians](radians.md) | Converts the input from degrees to radians. |
+| [Radians To Degrees](radians-to-degrees.md) | Converts the input from radians to degrees. |
 | [Reciprocal](reciprocal.md) | Returns the result of dividing 1 by the input. |
 | [Remap](remap.md) | Rescales Value from the range From Min to From Max into the range To Min to To Max. |
 | [Round](round.md) | Rounds the input to the nearest whole number. |
 | [Saturate](saturate.md) | Limits Value to the range 0 to 1. |
 | [Sign](sign.md) | Returns -1, 0 or 1 depending on the sign of the input. |
-| [Sine](sine.md) | Returns the sine of an angle in radians. |
+| [Sine (Degrees)](sine-degrees.md) | Returns the sine of an angle in degrees. |
+| [Sine (Radians)](sine.md) | Returns the sine of an angle in radians. |
 | [Smooth Step](smooth-step.md) | Returns 0 below the first edge, 1 above the second, and a smooth curve in between. |
 | [Square Root](square-root.md) | Returns the square root of the input. |
 | [Step](step.md) | Returns 0 when a value is below an edge, and 1 otherwise. |
 | [Subtract](subtract.md) | Subtracts one value from another, component by component. |
-| [Tangent](tangent.md) | Returns the tangent of an angle in radians. |
+| [Tangent (Degrees)](tangent-degrees.md) | Returns the tangent of an angle in degrees. |
+| [Tangent (Radians)](tangent.md) | Returns the tangent of an angle in radians. |
 
 ## Vector
 

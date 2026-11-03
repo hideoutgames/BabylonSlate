@@ -292,6 +292,9 @@ export interface RuntimeDriver {
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,
   ): void;
+  applyParticlePlaybackEnded(
+    message: Extract<ControlMessage, { type: "particlePlaybackEnded" }>,
+  ): void;
   applyRagdollPoseCaptured(message: Extract<ControlMessage, { type: "ragdollPoseCaptured" }>): void;
   applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void;
   requestScalability(request: ScalabilityRequest): ScalabilityResult;

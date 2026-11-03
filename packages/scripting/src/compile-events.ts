@@ -50,6 +50,7 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.sceneLayerActorSwitchedTo": "onSceneLayerActorSwitchedTo",
   "flow.event.sceneLayerActorSwitchedFrom": "onSceneLayerActorSwitchedFrom",
   "flow.event.audioFinished": "onAudioFinished",
+  "flow.event.particlesFinished": "onParticlesFinished",
   "flow.event.movementStarted": "onMovementStarted",
   "flow.event.movementStopped": "onMovementStopped",
   "flow.event.movementJumped": "onMovementJumped",

@@ -2,7 +2,7 @@
 node: input.contextual.angle
 ---
 
-# Angle
+# Angle (Radians)
 
 Returns the current rotation of the particle in radians.
 
@@ -10,7 +10,7 @@ Returns the current rotation of the particle in radians.
 
 | Pin | Type |
 | --- | --- |
-| Angle | Float |
+| Angle (Radians) | Float |
 
 ## Notes
 

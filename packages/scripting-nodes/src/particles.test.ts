@@ -29,6 +29,7 @@ describe("particle nodes", () => {
     expect(particleNodes.map((entry) => entry.id)).toEqual([
       "particles.play",
       "particles.stop",
+      "particles.isPlaying",
     ]);
     const registry = createDefaultNodeRegistry();
     const play = registry.get("particles.play");
@@ -91,5 +92,41 @@ describe("particle nodes", () => {
     });
     expect(plays).toEqual([self]);
     expect(stops).toEqual([self]);
+  });
+
+  it("Is Particles Playing reads Self when the actor pin is unwired, and the wired actor otherwise", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph = (wired: boolean): LogicGraph => ({
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "other", "actor.getOfClass"),
+        node(registry, "playing", "particles.isPlaying"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "playing", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+        ...(wired ? [{ id: "e3", sourceNodeId: "other", sourcePinId: "out", targetNodeId: "playing", targetPinId: "actor" }] : []),
+      ],
+    });
+    const self = { guid: "self" };
+    const other = { guid: "other" };
+    for (const [wired, expected] of [[false, self], [true, other]] as const) {
+      const body = compileGraph(graph(wired), { assetGuid: "a", registry }).source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+      const mod = new Function(`${body}\nreturn { onBeginPlay };`)() as { onBeginPlay: (ctx: unknown) => void };
+      const asked: unknown[] = [];
+      const logged: unknown[] = [];
+      mod.onBeginPlay({
+        self,
+        getActorOfClass: () => other,
+        formatValue: (value: unknown) => value,
+        isParticlesPlaying: (actor: unknown) => { asked.push(actor); return actor === other; },
+        log: (_severity: string, _category: string, value: unknown) => logged.push(value),
+      });
+      expect(asked).toEqual([expected]);
+      expect(logged).toEqual([expected === other]);
+    }
   });
 });

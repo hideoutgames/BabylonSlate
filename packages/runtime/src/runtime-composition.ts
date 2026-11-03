@@ -38,6 +38,7 @@ import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import type { RuntimePropertyWrites } from "./runtime-property-writes";
 import type { RuntimeSubsystems } from "./runtime-subsystems";
 import type { RuntimeVoices } from "./runtime-voices";
+import type { RuntimeParticles } from "./runtime-particles";
 import type { SceneLayerOverlay } from "./scene-layer-overlay";
 import type { SceneLayers } from "./scene-layers";
 import type { CooperativeSceneLoadingOptions } from "./scene-realization-work";
@@ -133,6 +134,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
 
   // Subsystems.
   readonly voices: RuntimeVoices;
+  readonly particles: RuntimeParticles;
   readonly spriteClips: SpriteClipTrace;
   readonly assetPreloads: RuntimeAssetPreloads;
   readonly blocks: SimulationBlocks;

@@ -610,6 +610,8 @@ describe("component script API", () => {
         actorGuid: "fx",
         componentId: "particle-1",
         playing: true,
+        // Every Play names its generation, which the render host echoes when playback ends.
+        generation: 1,
       },
     ]);
     runtime.stop();

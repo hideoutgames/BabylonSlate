@@ -534,6 +534,8 @@ export interface CreateEngineOptions {
   }) => void;
   /** Finished non-looping AudioComponent voice (Play graph On Audio Finished). */
   onAudioVoiceEnded?: (voiceId: string) => void;
+  /** A ParticleComponent stopped playing (Play graph On Particles Finished and Is Playing). */
+  onParticlePlaybackEnded?: (report: import("./particle-service").ParticlePlaybackEndedReport) => void;
 }
 
 export interface EditorTools {
