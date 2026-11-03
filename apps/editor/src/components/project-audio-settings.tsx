@@ -1,6 +1,7 @@
 import type { ProjectDocument } from "@haptic/core";
 import {
   AssetPickerControl,
+  LabelHint,
   NumberField,
   assetRowIdentity,
   selectedPickerIdentity,
@@ -16,6 +17,8 @@ import { Slider } from "@haptic/ui/components/slider";
 import { Switch } from "@haptic/ui/components/switch";
 import type { DocumentActions, RegistryState } from "../context/document-context-types";
 import { SettingsSection } from "./settings-section";
+
+const OCCLUSION_HINT = "Wall muffling for channels with Muffle Through Walls enabled.";
 
 interface ProjectAudioSettingsProps {
   projectDocument: ProjectDocument;
@@ -35,7 +38,9 @@ export function ProjectAudioSettings({
     <FieldGroup>
       <SettingsSection id="mixer" title="Mixer">
         <Field className="settings-field">
-          <FieldLabel>Audio Mixer</FieldLabel>
+          <LabelHint hint="None bypasses channel and master volume controls.">
+            <FieldLabel>Audio Mixer</FieldLabel>
+          </LabelHint>
           <AssetPickerControl
             value={projectDocument.settings.audio.audioMixerGuid}
           >
@@ -68,16 +73,15 @@ export function ProjectAudioSettings({
               )}
             </Button>
           </AssetPickerControl>
-          <FieldDescription>
-              None bypasses channel and master volume controls.
-          </FieldDescription>
         </Field>
       </SettingsSection>
       <SettingsSection id="occlusion" title="Occlusion">
           <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="settings-audio-occlusion">
-            Occlusion
-          </FieldLabel>
+          <LabelHint hint={OCCLUSION_HINT}>
+            <FieldLabel htmlFor="settings-audio-occlusion">
+              Occlusion
+            </FieldLabel>
+          </LabelHint>
           <Switch
             id="settings-audio-occlusion"
             aria-describedby="settings-audio-occlusion-description"
@@ -92,38 +96,42 @@ export function ProjectAudioSettings({
             }
             data-testid="settings-audio-occlusion"
           />
-          <FieldDescription id="settings-audio-occlusion-description">
-            Wall muffling for channels with Muffle Through Walls enabled.
+          <FieldDescription id="settings-audio-occlusion-description" className="sr-only">
+            {OCCLUSION_HINT}
           </FieldDescription>
         </Field>
       </SettingsSection>
       <SettingsSection id="reverb" title="Reverb">
-        <div className="settings-row">
-          <FieldDescription>
-            Scales baked environment reverb. Sounds without a channel stay dry.
-          </FieldDescription>
-        </div>
         {(
           [
-              [
-                "settings-audio-reverb-wet-scale",
-                "Reverb Wet Scale",
-                "reverbWetScale",
-              ],
-              [
-                "settings-audio-reverb-decay-scale",
-                "Reverb Decay Scale",
-                "reverbDecayScale",
-              ],
+            [
+              "settings-audio-reverb-wet-scale",
+              "Reverb Wet Scale",
+              "reverbWetScale",
+              "Scales baked environment reverb. Sounds without a channel stay dry.",
+            ],
+            [
+              "settings-audio-reverb-decay-scale",
+              "Reverb Decay Scale",
+              "reverbDecayScale",
+              undefined,
+            ],
             [
               "settings-audio-reverb-damping-scale",
               "Reverb Damping Scale",
               "reverbDampingScale",
+              undefined,
             ],
           ] as const
-        ).map(([id, label, key]) => (
+        ).map(([id, label, key, hint]) => (
           <Field key={id} className="settings-field">
-            <FieldLabel id={`${id}-label`} htmlFor={id}>{label}</FieldLabel>
+            {hint ? (
+              <LabelHint hint={hint}>
+                <FieldLabel id={`${id}-label`} htmlFor={id}>{label}</FieldLabel>
+              </LabelHint>
+            ) : (
+              <FieldLabel id={`${id}-label`} htmlFor={id}>{label}</FieldLabel>
+            )}
             <div className="flex min-w-0 items-center gap-2">
               <Slider
                 aria-labelledby={`${id}-label`}

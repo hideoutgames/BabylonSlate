@@ -1,11 +1,10 @@
-import { NumberField } from "@haptic/editor-kit";
+import { LabelHint, NumberField } from "@haptic/editor-kit";
 import {
   RENDER_EFFECTS_LIMITS,
   type RenderEffectsSettings,
 } from "@haptic/core";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
@@ -36,12 +35,13 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
     limits: readonly [number, number],
     change: (v: number) => void,
     step = 0.01,
-    description?: string,
+    hint?: string,
   ) => {
     const id = `project-effects-${suffix}`;
+    const fieldLabel = <FieldLabel htmlFor={id}>{label}</FieldLabel>;
     return (
       <Field key={id} className="settings-field">
-        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        {hint ? <LabelHint hint={hint}>{fieldLabel}</LabelHint> : fieldLabel}
         <NumberField
           id={id}
           data-testid={id}
@@ -50,11 +50,11 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
           max={limits[1]}
           step={step}
           onChange={change}
-          aria-describedby={description ? `${id}-description` : undefined}
+          aria-describedby={hint ? `${id}-description` : undefined}
         />
-        {description ? (
-          <FieldDescription id={`${id}-description`}>
-            {description}
+        {hint ? (
+          <FieldDescription id={`${id}-description`} className="sr-only">
+            {hint}
           </FieldDescription>
         ) : null}
       </Field>
@@ -63,16 +63,11 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
   return (
     <FieldGroup className="gap-2">
       <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
+        <LabelHint hint="Darkens creases and contact points between visible PBR surfaces. Runs where Post Processing quality allows it (Medium and above by default).">
           <FieldLabel htmlFor="project-effects-ambient-occlusion">
             Ambient Occlusion
           </FieldLabel>
-          <FieldDescription>
-            Darken creases and contact points between visible PBR surfaces.
-            Runs where Post Processing quality allows it (Medium and above by
-            default).
-          </FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch
           id="project-effects-ambient-occlusion"
           data-testid="project-effects-ambient-occlusion"
@@ -123,22 +118,15 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             RENDER_EFFECTS_LIMITS.ambientOcclusionSamples,
             (samples) => patchOcclusion({ samples }),
             1,
-            "More samples reduce noise at a higher rendering cost.",
           )}
         </>
       ) : null}
       <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
+        <LabelHint hint="Reflects visible scene objects on lit metal and smooth surfaces, in PBR and CEL. Runs where Post Processing quality allows it (High and above by default).">
           <FieldLabel htmlFor="project-effects-reflections">
             Real-Time Reflections
           </FieldLabel>
-          <FieldDescription>
-            Reflect visible scene objects on lit metal and smooth surfaces, in
-            PBR and CEL. Environment lighting remains available outside the
-            view. Runs where Post Processing
-            quality allows it (High and above by default).
-          </FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch
           id="project-effects-reflections"
           data-testid="project-effects-reflections"
@@ -192,18 +180,11 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
         <FieldLegend>Volumetric Fog</FieldLegend>
         <FieldGroup className="gap-2">
           <Field orientation="horizontal" className="settings-field">
-            <FieldContent>
+            <LabelHint hint="Fog lit by directional, point and spot lights; enable light shadows for occluded beams. Runs where Post Processing quality allows it (High and above by default); Fog Volumes always render and share the controls below.">
               <FieldLabel htmlFor="project-effects-volumetric">
                 Scene-Wide Fog
               </FieldLabel>
-              <FieldDescription>
-                Fog lit by directional, point and spot lights. Light colors tint the
-                fog; enable light shadows for occluded beams. Fog Volumes work with
-                this off. The controls below tune both local and scene-wide fog.
-                Scene-wide fog runs where Post Processing quality allows it (High
-                and above by default); Fog Volumes always render.
-              </FieldDescription>
-            </FieldContent>
+            </LabelHint>
             <Switch
               id="project-effects-volumetric"
               data-testid="project-effects-volumetric"
@@ -218,7 +199,7 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             RENDER_EFFECTS_LIMITS.volumetricDensity,
             (density) => patchVolume({ density }),
             0.001,
-            "Fog thickness per scene unit at and below Fog Height. Zero removes scene-wide haze while Fog Volumes still contribute.",
+            "Fog thickness per scene unit at and below Fog Height. Zero removes scene-wide haze; Fog Volumes still contribute.",
           ) : null}
           {volume.enabled ? number(
             "Fog Height",
@@ -272,7 +253,7 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             RENDER_EFFECTS_LIMITS.spatialResolutionScale,
             (resolutionScale) => patchVolume({ resolutionScale }),
             0.25,
-            "Multiplies Post Processing Resolution Scale, with a quarter-resolution minimum. Lower values reduce cost and soften detail.",
+            "Multiplies Post Processing Resolution Scale, with a quarter-resolution minimum.",
           )}
           {number(
             "Volumetric Steps",
@@ -281,7 +262,6 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             RENDER_EFFECTS_LIMITS.volumetricSteps,
             (steps) => patchVolume({ steps }),
             1,
-            "More samples reduce banding, especially over long distances, at a higher rendering cost.",
           )}
           {number(
             "Volumetric Light Limit",
@@ -290,7 +270,7 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
             RENDER_EFFECTS_LIMITS.volumetricLights,
             (maxLights) => patchVolume({ maxLights }),
             1,
-            "Maximum contributing lights. Lower values reduce cost; hemispheric fill and area lights do not contribute.",
+            "Hemispheric fill and area lights never contribute.",
           )}
         </FieldGroup>
       </FieldSet>

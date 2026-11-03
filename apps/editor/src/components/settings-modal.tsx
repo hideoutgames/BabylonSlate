@@ -8,6 +8,7 @@ import {
   CatalogDialog,
   ClassPicker,
   CollisionPresetsField,
+  LabelHint,
   NamedListEditor,
   NumberField,
   assetRowIdentity,
@@ -108,6 +109,10 @@ interface SettingsModalProps {
  * the active tab (which may sit in a plugin that can be disabled).
  */
 const PROJECT_ASSET_CREATE_OPTIONS: AssetCreateOptions = { ownerPath: null };
+
+// Label tooltips that also stay their control's screen-reader description.
+const INFINITE_LOOP_HINT = "Stops runaway scripts in Play and Preview. Off in release exports.";
+const GARBAGE_COLLECTION_HINT = "How often unreferenced Create Object objects are collected. 60 ticks is about one second.";
 
 const GENERIC_FONT_FALLBACKS = [
   "sans-serif",
@@ -412,7 +417,6 @@ export function SettingsModal({
                 id="settings-autosave-interval"
                 min={1}
                 rejectOutOfRange
-                aria-describedby="settings-autosave-description"
                 className="min-h-[var(--chrome-row,28px)]"
                 value={Math.round(
                   projectDocument.settings.autoSaveIntervalMs / 1000,
@@ -424,9 +428,6 @@ export function SettingsModal({
                 }}
                 data-testid="settings-autosave-interval"
               />
-              <FieldDescription id="settings-autosave-description">
-                Enter at least 1 second. Auto-save writes pending project changes at this interval.
-              </FieldDescription>
             </Field>
           </SettingsSection>
           <SettingsSection id="scripting" title="Scripting">
@@ -444,9 +445,11 @@ export function SettingsModal({
               />
             </Field>
               <Field orientation="horizontal" className="settings-field">
-              <FieldLabel htmlFor="settings-infinite-loop-detection">
-                Infinite Loop Detection
-              </FieldLabel>
+              <LabelHint hint={INFINITE_LOOP_HINT}>
+                <FieldLabel htmlFor="settings-infinite-loop-detection">
+                  Infinite Loop Detection
+                </FieldLabel>
+              </LabelHint>
               <Switch
                 id="settings-infinite-loop-detection"
                 aria-describedby="settings-infinite-loop-description"
@@ -458,8 +461,8 @@ export function SettingsModal({
                 }
                 data-testid="settings-infinite-loop-detection"
               />
-              <FieldDescription id="settings-infinite-loop-description">
-                Stops runaway scripts in Play and Preview. Off in release exports.
+              <FieldDescription id="settings-infinite-loop-description" className="sr-only">
+                {INFINITE_LOOP_HINT}
               </FieldDescription>
             </Field>
               <Field className="settings-field settings-field-dependent" data-disabled={!projectDocument.settings.infiniteLoopDetection}>
@@ -478,9 +481,11 @@ export function SettingsModal({
               />
             </Field>
               <Field className="settings-field">
-                <FieldLabel htmlFor="settings-garbage-collection-interval">
-                  Garbage Collection Interval (Ticks)
-                </FieldLabel>
+                <LabelHint hint={GARBAGE_COLLECTION_HINT}>
+                  <FieldLabel htmlFor="settings-garbage-collection-interval">
+                    Garbage Collection Interval (Ticks)
+                  </FieldLabel>
+                </LabelHint>
               <NumberField
                 id="settings-garbage-collection-interval"
                 min={1}
@@ -492,8 +497,8 @@ export function SettingsModal({
                 onChange={(ticks) => updateProjectSettings({ garbageCollectionIntervalTicks: Math.max(1, Math.round(ticks)) })}
                 data-testid="settings-garbage-collection-interval"
               />
-              <FieldDescription id="settings-garbage-collection-description">
-                How often unreferenced Create Object objects are collected. 60 ticks is about one second.
+              <FieldDescription id="settings-garbage-collection-description" className="sr-only">
+                {GARBAGE_COLLECTION_HINT}
               </FieldDescription>
             </Field>
           </SettingsSection>
@@ -522,9 +527,6 @@ export function SettingsModal({
                   </Button>
                 )}
               />
-              <FieldDescription>
-                  Classes that run only in the editor.
-              </FieldDescription>
             </Field>
           </SettingsSection>
         </FieldGroup>
@@ -568,9 +570,11 @@ export function SettingsModal({
                 addLabel="Add Layer"
                 data-testid="settings-collision-layers"
               />
-              <FieldDescription>
+              {projectDocument.settings.physics.collisionLayers.length >= MAX_COLLISION_LAYERS ? (
+                <FieldDescription>
                   Up to {MAX_COLLISION_LAYERS} layers.
-              </FieldDescription>
+                </FieldDescription>
+              ) : null}
             </Field>
           </SettingsSection>
           <SettingsSection id="collisionPresets" title="Collision Presets">
@@ -586,9 +590,6 @@ export function SettingsModal({
                 }
                 data-testid="settings-collision-presets"
               />
-              <FieldDescription>
-                Each preset sets a Layer and an Ignore, Overlap or Block response to every layer. Colliders pick a preset or Custom.
-              </FieldDescription>
             </Field>
           </SettingsSection>
         </FieldGroup>
@@ -599,7 +600,9 @@ export function SettingsModal({
         <FieldGroup>
           <SettingsSection id="defaults" title="Defaults">
             <Field className="settings-field">
-              <FieldLabel>Default Font</FieldLabel>
+              <LabelHint hint="Used when a requested font is unavailable.">
+                <FieldLabel>Default Font</FieldLabel>
+              </LabelHint>
               <AssetPickerControl
                 value={projectDocument.settings.fonts.defaultFontGuid}
               >
@@ -632,9 +635,6 @@ export function SettingsModal({
                   )}
                 </Button>
               </AssetPickerControl>
-              <FieldDescription>
-                  Used when a requested font is unavailable.
-              </FieldDescription>
             </Field>
               <Field className="settings-field">
               <FieldLabel htmlFor="settings-global-fallback">
@@ -721,7 +721,6 @@ export function SettingsModal({
               >
                 Retry Encoding
               </Button>
-              <FieldDescription>Queues textures whose compression failed.</FieldDescription>
             </Field>
           </SettingsSection>
         </FieldGroup>

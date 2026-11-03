@@ -1,8 +1,8 @@
-import { NumberField } from "@haptic/editor-kit";
+import { LabelHint, NumberField } from "@haptic/editor-kit";
 import type { EngineSettings } from "@haptic/vfs";
 import { MAX_TRACES_KEPT } from "@haptic/core";
 import { Switch } from "@haptic/ui/components/switch";
-import { Field, FieldContent, FieldDescription, FieldLabel } from "@haptic/ui/components/field";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { SettingsSection } from "./settings-section";
 
 export function DebuggerSettingsFields({ settings, onChange }: {
@@ -14,18 +14,16 @@ export function DebuggerSettingsFields({ settings, onChange }: {
   return <>
     <SettingsSection id="diagnostics" title="Diagnostics">
       <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
+        <LabelHint hint="Shows developer diagnostics, such as the Feature Test starter and Copy Error when a scene fails to load. Copied reports include device and GPU details but no project files.">
           <FieldLabel htmlFor="setting-debug-mode">Debug Mode</FieldLabel>
-          <FieldDescription>Shows developer diagnostics: the Feature Test starter and its device check, and Copy Error when a scene fails to load. Copied reports include device and GPU details but no project files.</FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch id="setting-debug-mode" data-testid="setting-debug-mode" checked={settings.debugMode}
           onCheckedChange={(debugMode) => void onChange({ debugMode })} />
       </Field>
       <Field orientation="horizontal" className="settings-field settings-field-dependent" data-disabled={!settings.debugMode || undefined}>
-        <FieldContent>
+        <LabelHint hint="Checks every WebGL call so Copy Error names the one that failed; rendering is much slower while it is on. Requires Debug Mode.">
           <FieldLabel htmlFor="setting-trace-graphics-errors">Trace Graphics Errors</FieldLabel>
-          <FieldDescription>Checks every WebGL call so Copy Error names the call that failed. Rendering becomes much slower while this is on; turn it off after collecting a report. Requires Debug Mode.</FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch id="setting-trace-graphics-errors" data-testid="setting-trace-graphics-errors" disabled={!settings.debugMode}
           checked={settings.debugMode && settings.traceGraphicsErrors}
           onCheckedChange={(traceGraphicsErrors) => void onChange({ traceGraphicsErrors })} />
@@ -33,68 +31,68 @@ export function DebuggerSettingsFields({ settings, onChange }: {
     </SettingsSection>
     <SettingsSection id="simulation" title="Simulation">
       <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
+        <LabelHint hint="On keeps the final scene of the next Simulation as one Undo step; off discards gameplay and live edits. Changes are never applied partially.">
           <FieldLabel htmlFor="setting-keep-simulation-changes">Keep Simulation Changes</FieldLabel>
-          <FieldDescription>Applies to the next Simulation session. Off discards gameplay and live edits. On retains the complete final persistable scene as one Apply Simulation Changes Undo step. Unsupported scene instances, scene transitions or resources must be discarded; partial changes are never applied.</FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch id="setting-keep-simulation-changes" checked={defaults.keepSimulationChanges}
           onCheckedChange={(keepSimulationChanges) => update({ keepSimulationChanges })} />
       </Field>
     </SettingsSection>
     <SettingsSection id="session" title="Session">
       <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
+        <LabelHint hint="The first time a node throws, logs an Error or fails an Assert, the game pauses and the editor opens the graph at that node. Applies to the next Play or Simulation session.">
           <FieldLabel htmlFor="setting-pause-simulation-on-errors">Pause On Errors</FieldLabel>
-          <FieldDescription>Applies to the next Play or Simulation session. The first time a node throws, logs an Error or fails an Assert, the game pauses at the end of that tick and the editor opens the graph at the node; Play hides the game until you choose Resume. Later errors from the same node only add to its count in the session report.</FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch id="setting-pause-simulation-on-errors" checked={defaults.pauseSimulationOnErrors}
           onCheckedChange={(pauseSimulationOnErrors) => update({ pauseSimulationOnErrors })} />
       </Field>
       <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
+        <LabelHint hint="Starts Play and Simulation paused; the Debug menu shares this preference.">
           <FieldLabel htmlFor="setting-pause-on-play">Pause On Play</FieldLabel>
-          <FieldDescription>Start Play and Simulation paused. This uses the same preference as the Debug menu.</FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch id="setting-pause-on-play" checked={defaults.pauseOnPlay} onCheckedChange={(pauseOnPlay) => update({ pauseOnPlay })} />
       </Field>
     </SettingsSection>
     <SettingsSection id="profiler" title="Profiler">
       <Field className="settings-field">
-        <FieldLabel htmlFor="setting-profile-duration">Recording Duration (Seconds)</FieldLabel>
+        <LabelHint hint="Length of the next Performance recording you start in Play or Preview Build.">
+          <FieldLabel htmlFor="setting-profile-duration">Recording Duration (Seconds)</FieldLabel>
+        </LabelHint>
         <NumberField id="setting-profile-duration" min={1} max={60} step={1} value={defaults.profileDurationSeconds}
           onChange={(value) => update({ profileDurationSeconds: Math.round(value) })} />
-        <FieldDescription>Applies to the next explicitly started Performance recording in Play or Preview Build. Opening results does not start recording.</FieldDescription>
       </Field>
       <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
+        <LabelHint hint="Requests GPU timing during Performance recording where the device supports it.">
           <FieldLabel htmlFor="setting-profile-gpu">GPU Timing</FieldLabel>
-          <FieldDescription>Request GPU timing during Performance recording when supported. Unavailable or invalid queries are omitted. Renderer-owned timing is unaffected.</FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch id="setting-profile-gpu" checked={defaults.profileGpuTiming} onCheckedChange={(profileGpuTiming) => update({ profileGpuTiming })} />
       </Field>
       <Field className="settings-field">
-        <FieldLabel htmlFor="setting-profile-budget-mib">Profile Retained Data Budget (MiB)</FieldLabel>
+        <LabelHint hint="Bounds retained Performance timing buffers, separately from Trace. Nothing is reserved until recording starts.">
+          <FieldLabel htmlFor="setting-profile-budget-mib">Profile Retained Data Budget (MiB)</FieldLabel>
+        </LabelHint>
         <NumberField id="setting-profile-budget-mib" min={4} max={64} step={1} value={Math.round(defaults.profileByteBudget / (1024 * 1024))}
           onChange={(value) => update({ profileByteBudget: Math.round(value) * 1024 * 1024 })} />
-        <FieldDescription>Bounds retained timing buffers. This is separate from Trace and is not a browser heap limit. No memory is reserved until recording starts.</FieldDescription>
       </Field>
     </SettingsSection>
     <SettingsSection id="trace" title="Trace">
       <Field className="settings-field">
-        <FieldLabel htmlFor="setting-trace-budget-mib">Trace Memory Budget (MiB)</FieldLabel>
+        <LabelHint hint="Bounds serialized trace data for the next Play or Preview Build session. When it is full, the oldest complete frames are discarded.">
+          <FieldLabel htmlFor="setting-trace-budget-mib">Trace Memory Budget (MiB)</FieldLabel>
+        </LabelHint>
         <NumberField id="setting-trace-budget-mib" min={1} max={256} step={1}
           className="min-h-[var(--chrome-row,28px)]" data-testid="setting-trace-budget-mib"
           value={Math.round(settings.traceByteBudget / (1024 * 1024))}
           onChange={(mebibytes) => void onChange({ traceByteBudget: Math.round(mebibytes) * 1024 * 1024 })} />
-        <FieldDescription>Applies to the next Play or Preview Build session. Bounds serialized trace data, not browser memory. Oldest complete frames are discarded when full; a single oversized frame stops recording and preserves earlier complete frames.</FieldDescription>
       </Field>
       <Field className="settings-field">
-        <FieldLabel htmlFor="setting-traces-kept">Traces Kept</FieldLabel>
+        <LabelHint hint="Per project on this device; Debug > Recent Traces lists them. Recording another deletes the oldest, except traces open in a tab.">
+          <FieldLabel htmlFor="setting-traces-kept">Traces Kept</FieldLabel>
+        </LabelHint>
         <NumberField id="setting-traces-kept" min={1} max={MAX_TRACES_KEPT} step={1}
           className="min-h-[var(--chrome-row,28px)]" data-testid="setting-traces-kept"
           value={settings.tracesKept}
           onChange={(tracesKept) => void onChange({ tracesKept: Math.round(tracesKept) })} />
-        <FieldDescription>Recorded traces kept for each project on this device; Debug &gt; Recent Traces lists them. Recording another deletes the oldest beyond this number, except traces open in a tab.</FieldDescription>
       </Field>
     </SettingsSection>
   </>;

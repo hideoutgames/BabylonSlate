@@ -6,7 +6,7 @@ import {
   type ShadowOverrides,
   type ShadowSettings,
 } from "@haptic/core";
-import { NumberField } from "@haptic/editor-kit";
+import { LabelHint, NumberField } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Switch } from "@haptic/ui/components/switch";
 import {
@@ -40,100 +40,84 @@ const options: Partial<Record<keyof ShadowSettings, Record<string, string>>> = {
     4096: "4096",
   },
 };
+/** `hint` is the label's tooltip and the control's screen-reader description. */
 const fields: {
   key: Exclude<keyof ShadowSettings, "profile" | "preset">;
   label: string;
-  description: string;
+  hint?: string;
 }[] = [
-  {
-    key: "enabled",
-    label: "Shadows Enabled",
-    description: "Lets eligible lights cast real-time shadows.",
-  },
+  { key: "enabled", label: "Shadows Enabled" },
   {
     key: "distance",
     label: "Shadow Distance",
-    description:
-      "Directional shadow coverage around the camera, in world units.",
+    hint: "Directional shadow coverage around the camera, in world units.",
   },
   {
     key: "fadeFraction",
     label: "Shadow Distance Fade",
-    description:
-      "Fades the far edge over this fraction of the distance. Zero disables fading.",
+    hint: "Fades the far edge over this fraction of the distance. Zero disables fading.",
   },
   {
     key: "mapSize",
     label: "Directional Map Size",
-    description:
-      "Resolution per cascade. Larger maps use more GPU memory and time.",
+    hint: "Resolution per cascade. Larger maps use more GPU memory and time.",
   },
   {
     key: "cascades",
     label: "Shadow Cascades",
-    description: "Splits directional coverage to keep detail near the camera.",
+    hint: "Splits directional coverage to keep detail near the camera.",
   },
   {
     key: "filter",
     label: "Shadow Filter",
-    description:
-      "PCF softens edges. PCSS adds contact-hardening penumbra in PBR. CEL always uses PCF.",
+    hint: "PCF softens edges. PCSS adds contact-hardening penumbra in PBR. CEL always uses PCF.",
   },
-  {
-    key: "filterQuality",
-    label: "Shadow Filter Quality",
-    description: "Higher quality uses more texture samples.",
-  },
+  { key: "filterQuality", label: "Shadow Filter Quality" },
   {
     key: "softness",
     label: "Contact Hardening Size",
-    description: "PCSS light size. Larger values widen the penumbra.",
+    hint: "PCSS light size. Larger values widen the penumbra.",
   },
   {
     key: "screenShadows",
     label: "Screen-Space Shadows",
-    description:
-      "Adds the sun's small contact shadows the shadow map misses, near the camera. Uses a depth pass. PBR only.",
+    hint: "Adds the sun's small contact shadows the shadow map misses, near the camera. Uses a depth pass. PBR only.",
   },
   {
     key: "depthBias",
     label: "Shadow Depth Bias",
-    description:
-      "Depth offset. High values detach shadows from surfaces.",
+    hint: "High values detach shadows from surfaces.",
   },
   {
     key: "autoBias",
     label: "Automatic Shadow Bias",
-    description:
-      "Scales directional bias per cascade, with Depth Bias as the minimum. Turn off for manual offsets.",
+    hint: "Scales directional bias per cascade, with Depth Bias as the minimum. Turn off for manual offsets.",
   },
   {
     key: "normalBias",
     label: "Shadow Normal Bias",
-    description: "Normal offset in world units.",
+    hint: "Normal offset in world units.",
   },
   {
     key: "localLightMode",
     label: "Local Shadow Budget Mode",
-    description:
-      "Auto follows the quality tier. Manual sets an upper limit within the device budget.",
+    hint: "Auto follows the quality tier; Manual sets an upper limit within the device budget. Applying a quality preset resets the saved Manual count.",
   },
   {
     key: "maxLocalLights",
     label: "Local Shadow Light Budget",
-    description:
-      "Point and spot lights that can cast shadows at once. A point light renders six faces.",
+    hint: "Point and spot lights that can cast shadows at once. A point light renders six faces.",
   },
   {
     key: "localMapSize",
     label: "Local Shadow Map Size",
-    description: "Resolution for each local light map or cube face.",
+    hint: "Resolution for each local light map or cube face.",
   },
 ];
 
 export const SHADOW_SETTINGS_SEARCH_TEXT = [
   "Shadows Post Processing Auto Manual",
-  ...fields.map(({ label, description }) => `${label} ${description}`),
+  ...fields.map(({ label, hint }) => (hint ? `${label} ${hint}` : label)),
 ].join(" ");
 
 export function ShadowSettingsFields({
@@ -170,7 +154,7 @@ export function ShadowSettingsFields({
         Shadows
       </FieldLegend>
       <FieldGroup className="gap-2">
-        {fields.map(({ key, label, description }) => {
+        {fields.map(({ key, label, hint }) => {
           if (key !== "enabled" && !effective.enabled) return null;
           if (key === "maxLocalLights" && effective.localLightMode !== "manual")
             return null;
@@ -181,10 +165,19 @@ export function ShadowSettingsFields({
             key in SHADOW_LIMITS
               ? SHADOW_LIMITS[key as keyof typeof SHADOW_LIMITS]
               : [0, 2048];
+          // Live state stays visible: the project value behind a scene row and the current Auto budget.
+          const status = [
+            scene ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${String(defaults[key])}.` : "",
+            key === "localLightMode" && effective.localLightMode === "auto"
+              ? `Current Auto Budget: ${SHADOW_CAPACITY_PROFILES[effective.profile].autoLocalLights} local shadow lights.`
+              : "",
+          ].filter(Boolean).join(" ");
+          const describedBy = [hint ? `${id}-description` : "", status ? `${id}-status` : ""].filter(Boolean).join(" ") || undefined;
+          const fieldLabel = <FieldLabel htmlFor={id}>{label}</FieldLabel>;
           return (
             <Field key={key} className={key === "maxLocalLights" ? "settings-field settings-field-dependent" : "settings-field"}>
               <div className="flex items-center justify-between gap-2">
-                <FieldLabel htmlFor={id}>{label}</FieldLabel>
+                {hint ? <LabelHint hint={hint}>{fieldLabel}</LabelHint> : fieldLabel}
                 {scene ? (
                   <Button
                     type="button"
@@ -208,7 +201,7 @@ export function ShadowSettingsFields({
               {key === "enabled" || key === "autoBias" ? (
                 <Switch
                   id={id}
-                  aria-describedby={`${id}-description`}
+                  aria-describedby={describedBy}
                   checked={effective[key]}
                   disabled={scene && !overridden}
                   onCheckedChange={(value) => patch(key, value)}
@@ -227,7 +220,7 @@ export function ShadowSettingsFields({
                       );
                   }}
                 >
-                  <SelectTrigger id={id} aria-describedby={`${id}-description`}>
+                  <SelectTrigger id={id} aria-describedby={describedBy}>
                     <SelectValue>{choices[String(effective[key])]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -243,7 +236,7 @@ export function ShadowSettingsFields({
               ) : (
                 <NumberField
                   id={id}
-                  aria-describedby={`${id}-description`}
+                  aria-describedby={describedBy}
                   value={Number(effective[key])}
                   min={limits[0]}
                   max={limits[1]}
@@ -260,15 +253,10 @@ export function ShadowSettingsFields({
                   }
                 />
               )}
-              <FieldDescription id={`${id}-description`}>
-                {scene
-                  ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${String(defaults[key])}. `
-                  : ""}
-                {description}
-                {key === "localLightMode" && effective.localLightMode === "auto"
-                  ? ` Current Auto Budget: ${SHADOW_CAPACITY_PROFILES[effective.profile].autoLocalLights} local shadow lights. Applying a quality preset resets the saved Manual count to that tier.`
-                  : ""}
-              </FieldDescription>
+              {hint ? (
+                <FieldDescription id={`${id}-description`} className="sr-only">{hint}</FieldDescription>
+              ) : null}
+              {status ? <FieldDescription id={`${id}-status`}>{status}</FieldDescription> : null}
             </Field>
           );
         })}

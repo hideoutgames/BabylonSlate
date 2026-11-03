@@ -1,5 +1,5 @@
 import type { ProjectDocument } from "@haptic/core";
-import { NumberField } from "@haptic/editor-kit";
+import { LabelHint, NumberField } from "@haptic/editor-kit";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -169,9 +169,11 @@ export function ProjectSourceControlSettings({
           />
         </Field>
           <Field className="settings-field">
-          <FieldLabel htmlFor="settings-source-control-token">
-            Token
-          </FieldLabel>
+          <LabelHint hint="Stored on this device for this project. Never included in project files or Git.">
+            <FieldLabel htmlFor="settings-source-control-token">
+              Token
+            </FieldLabel>
+          </LabelHint>
           <div className="flex min-w-0 flex-col gap-1.5">
           <Input
             id="settings-source-control-token"
@@ -222,22 +224,23 @@ export function ProjectSourceControlSettings({
           </Button>
         </div>
           </div>
-          <FieldDescription data-testid="settings-source-control-token-help">
-            Create one in{" "}
-            <a
-              href="https://github.com/settings/tokens"
-              target="_blank"
-              rel="noreferrer"
-            >
-              GitHub Token Settings
-            </a>{" "}
-            with repo scope, or Contents: Read and Write for a fine-grained
-            token. GitLab and Gitea tokens with push access also work.
-          </FieldDescription>
-          <FieldDescription data-testid="settings-source-control-token-copy">
-            {sourceControl.hasToken ? "Token Saved. " : ""}
-              Stored on this device for this project. Never included in project files or Git.
-          </FieldDescription>
+          {sourceControl.hasToken ? (
+            <FieldDescription data-testid="settings-source-control-token-status">Token Saved.</FieldDescription>
+          ) : (
+            // Until a token is saved, the row says how to create one.
+            <FieldDescription data-testid="settings-source-control-token-help">
+              Create one in{" "}
+              <a
+                href="https://github.com/settings/tokens"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub Token Settings
+              </a>{" "}
+              with repo scope, or Contents: Read and Write for a fine-grained
+              token. GitLab and Gitea tokens with push access also work.
+            </FieldDescription>
+          )}
         </Field>
       </SettingsSection>
       <SettingsSection id="locking" title="Locking">

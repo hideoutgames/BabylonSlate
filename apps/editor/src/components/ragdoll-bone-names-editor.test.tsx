@@ -13,6 +13,8 @@ describe("ragdoll bone selection", () => {
       return <RagdollBoneNamesEditor boneNames={boneNames} onChange={(names) => { saved = names; setBoneNames(names); }} />;
     }
     render(<Editor />);
+    const allBones = "Uses the complete skeleton.";
+    expect(screen.getByText(allBones)).toBeTruthy();
     const add = (name: string) => {
       fireEvent.change(screen.getByTestId("ragdoll-bone-names-add-value"), { target: { value: name } });
       fireEvent.click(screen.getByTestId("ragdoll-bone-names-add"));
@@ -20,6 +22,7 @@ describe("ragdoll bone selection", () => {
     add("Hips");
     add("Spine");
     expect(saved).toEqual(["Hips", "Spine"]);
+    expect(screen.queryByText(allBones)).toBeNull();
     add("Spine");
     expect(saved).toEqual(["Hips", "Spine"]);
     expect(screen.getByText(/must be unique/)).toBeTruthy();
@@ -28,5 +31,6 @@ describe("ragdoll bone selection", () => {
     fireEvent.click(screen.getByTestId("ragdoll-bone-names-0-remove"));
     expect(saved).toEqual([]);
     expect(screen.queryByText(/must be unique/)).toBeNull();
+    expect(screen.getByText(allBones)).toBeTruthy();
   });
 });

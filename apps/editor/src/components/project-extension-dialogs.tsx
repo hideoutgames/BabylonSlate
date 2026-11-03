@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { ExtensionDescriptor, ExtensionSettings } from "@haptic/assets";
-import { SearchDropdown } from "@haptic/editor-kit";
+import { LabelHint, SearchDropdown } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Input } from "@haptic/ui/components/input";
 import { Textarea } from "@haptic/ui/components/textarea";
@@ -111,7 +111,7 @@ export function ExtensionEditorDialog({ entry, entries, initialSource, service, 
             <Button variant="outline" size="sm" disabled={busy} className="w-fit">Add Dependency</Button>
           </SearchDropdown>
         </FieldSet>
-        <Field><FieldLabel>Entry Source</FieldLabel><FieldDescription>{settings.entryPoint} · Export activate(api). Module imports are not supported.</FieldDescription>
+        <Field><LabelHint hint="Export activate(api). Module imports are not supported."><FieldLabel>Entry Source</FieldLabel></LabelHint><FieldDescription>{settings.entryPoint}</FieldDescription>
           <div className="h-72 min-h-0 overflow-hidden rounded-md border border-border" role="group" aria-label="Extension Source"><CodeBodyEditor language="javascript" ariaLabel="Extension Source" value={source} onChange={setSource} /></div>
         </Field>
       </FieldGroup>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { getHostPlatform, resolveCompactMode } from "@haptic/vfs";
+import { LabelHint } from "@haptic/editor-kit";
 import {
   Field,
   FieldContent,
@@ -40,16 +41,23 @@ export function ApplicationSettingsFields() {
       <FieldSet>
         <FieldLegend>Updates</FieldLegend>
         <Field orientation="horizontal" className="settings-field">
-          <FieldContent>
-            <FieldLabel htmlFor="application-auto-update">
-              Automatic Updates
-            </FieldLabel>
-            <FieldDescription>
-              {desktop
-                ? "Download new releases from GitHub and install them when you exit Haptic. Also available in Engine Settings."
-                : "Automatic updates are managed here in the desktop app."}
-            </FieldDescription>
-          </FieldContent>
+          {desktop ? (
+            <LabelHint hint="Downloads new releases from GitHub and installs them when you exit Haptic. Also in Engine Settings.">
+              <FieldLabel htmlFor="application-auto-update">
+                Automatic Updates
+              </FieldLabel>
+            </LabelHint>
+          ) : (
+            <FieldContent>
+              <FieldLabel htmlFor="application-auto-update">
+                Automatic Updates
+              </FieldLabel>
+              {/* Why the switch is off here. */}
+              <FieldDescription>
+                Automatic updates are managed here in the desktop app.
+              </FieldDescription>
+            </FieldContent>
+          )}
           <Switch
             id="application-auto-update"
             data-testid="application-auto-update"

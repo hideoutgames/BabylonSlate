@@ -1,6 +1,7 @@
 import { nearestTextureFiltering, type ProjectDocument } from "@haptic/core";
 import {
   AssetPickerControl,
+  LabelHint,
   NamedListEditor,
   NumberField,
   assetRowIdentity,
@@ -19,6 +20,11 @@ import type { DocumentActions, RegistryState } from "../context/document-context
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { SettingsSection } from "./settings-section";
+
+// Label tooltips that also stay their control's screen-reader description.
+const PIXELS_PER_UNIT_HINT = "Texture pixels per world unit. Sizes sprites, tilemaps and 2D text.";
+const PIXEL_PERFECT_HINT = "Frames the 2D editor view 1:1. Play and exported games snap the game camera to the pixel grid.";
+const NEAREST_TEXTURES_HINT = "Samples every Material texture with nearest-neighbour filtering, in 3D too.";
 
 interface ProjectGameSettingsProps {
   projectDocument: ProjectDocument;
@@ -41,7 +47,9 @@ export function ProjectGameSettings({
     <FieldGroup>
       <SettingsSection id="startup" title="Startup">
         <Field className="settings-field">
-          <FieldLabel>Startup Scene</FieldLabel>
+          <LabelHint hint="Exported games start here. Play and Preview use it when Play From Scene is off.">
+            <FieldLabel>Startup Scene</FieldLabel>
+          </LabelHint>
           <AssetPickerControl
             value={projectDocument.settings.startupSceneGuid}
           >
@@ -74,13 +82,11 @@ export function ProjectGameSettings({
               )}
             </Button>
           </AssetPickerControl>
-          <FieldDescription>
-            Exported games start here. Play and Preview use it when Play
-            From Scene is off.
-          </FieldDescription>
         </Field>
         <Field className="settings-field">
-          <FieldLabel>Game Instance</FieldLabel>
+          <LabelHint hint="GameInstance subclass created for Play, Preview and exported games.">
+            <FieldLabel>Game Instance</FieldLabel>
+          </LabelHint>
           <AssetPickerControl
             value={
               assetRegistry
@@ -115,17 +121,15 @@ export function ProjectGameSettings({
             )}
           </Button>
           </AssetPickerControl>
-          <FieldDescription>
-            GameInstance subclass created for Play, Preview and exported
-            games.
-          </FieldDescription>
         </Field>
       </SettingsSection>
       <SettingsSection id="twoD" title="2D">
           <Field className="settings-field">
-            <FieldLabel htmlFor="pixels-per-unit">
-              Pixels Per Unit
-            </FieldLabel>
+            <LabelHint hint={PIXELS_PER_UNIT_HINT}>
+              <FieldLabel htmlFor="pixels-per-unit">
+                Pixels Per Unit
+              </FieldLabel>
+            </LabelHint>
           <NumberField
             id="pixels-per-unit"
             aria-describedby="pixels-per-unit-description"
@@ -143,15 +147,16 @@ export function ProjectGameSettings({
             }
             data-testid="settings-pixels-per-unit"
           />
-          <FieldDescription id="pixels-per-unit-description">
-            Texture pixels per world unit. Sizes sprites, tilemaps and 2D
-            text.
+          <FieldDescription id="pixels-per-unit-description" className="sr-only">
+            {PIXELS_PER_UNIT_HINT}
           </FieldDescription>
         </Field>
           <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="settings-pixel-perfect">
+          <LabelHint hint={PIXEL_PERFECT_HINT}>
+            <FieldLabel htmlFor="settings-pixel-perfect">
               Pixel-Perfect Mode
-          </FieldLabel>
+            </FieldLabel>
+          </LabelHint>
           <Switch
             id="settings-pixel-perfect"
             aria-describedby="settings-pixel-perfect-description"
@@ -163,18 +168,19 @@ export function ProjectGameSettings({
             }
             data-testid="settings-pixel-perfect"
           />
-          <FieldDescription id="settings-pixel-perfect-description">
-            Frames the 2D editor view 1:1. Play and exported games snap the
-            game camera to the pixel grid.
+          <FieldDescription id="settings-pixel-perfect-description" className="sr-only">
+            {PIXEL_PERFECT_HINT}
           </FieldDescription>
         </Field>
           <Field orientation="horizontal" className="settings-field settings-field-dependent" data-disabled={!twoD.pixelPerfect}>
-          <FieldLabel htmlFor="settings-nearest-textures">
+          <LabelHint hint={NEAREST_TEXTURES_HINT}>
+            <FieldLabel htmlFor="settings-nearest-textures">
               Nearest Texture Filtering
-          </FieldLabel>
+            </FieldLabel>
+          </LabelHint>
           <Switch
             id="settings-nearest-textures"
-            aria-describedby="settings-nearest-textures-description"
+            aria-describedby={twoD.pixelPerfect ? "settings-nearest-textures-description" : "settings-nearest-textures-description settings-nearest-textures-status"}
             disabled={!twoD.pixelPerfect}
             checked={nearestTextureFiltering(twoD)}
             onCheckedChange={(checked) =>
@@ -184,10 +190,12 @@ export function ProjectGameSettings({
             }
             data-testid="settings-nearest-textures"
           />
-          <FieldDescription id="settings-nearest-textures-description">
-            Samples every Material texture with nearest-neighbour filtering,
-            in 3D too. Needs Pixel-Perfect Mode.
+          <FieldDescription id="settings-nearest-textures-description" className="sr-only">
+            {NEAREST_TEXTURES_HINT}
           </FieldDescription>
+          {twoD.pixelPerfect ? null : (
+            <FieldDescription id="settings-nearest-textures-status">Needs Pixel-Perfect Mode.</FieldDescription>
+          )}
         </Field>
       </SettingsSection>
       <SettingsSection id="sortingLayers" title="Sorting Layers">
@@ -205,7 +213,6 @@ export function ProjectGameSettings({
             addLabel="Add Layer"
             data-testid="settings-sorting-layers"
           />
-          <FieldDescription>Ordered back to front.</FieldDescription>
         </Field>
       </SettingsSection>
     </FieldGroup>

@@ -1,9 +1,5 @@
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldLabel,
-} from "@haptic/ui/components/field";
+import { LabelHint } from "@haptic/editor-kit";
+import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { Switch } from "@haptic/ui/components/switch";
 
 /** The Compact Mode switch, shared by the Account dialog and Engine Settings. */
@@ -20,13 +16,9 @@ export function CompactModeField({
 }) {
   return (
     <Field orientation="horizontal" className="settings-field">
-      <FieldContent>
+      <LabelHint hint="Small controls and rows for a mouse or trackpad; turn it off for larger touch targets. On by default except on iPhone, iPad and Android.">
         <FieldLabel htmlFor={id}>Compact Mode</FieldLabel>
-        <FieldDescription>
-          Small controls and rows for a mouse or trackpad. Turn off for larger
-          touch targets. On by default except on iPhone, iPad and Android.
-        </FieldDescription>
-      </FieldContent>
+      </LabelHint>
       <Switch
         id={id}
         data-testid={id}
