@@ -35,11 +35,13 @@ import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
+import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { builtInWaterMaterial } from "./water-template";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   for (const engine of engines.splice(0)) engine.dispose();
 });
 /** `beforeController` runs on the bare Scene, before anything observes its meshes. */
@@ -271,6 +273,81 @@ describe("shared shadow lifecycle", () => {
     expect(tileSizes(controller.generator(sun))).toEqual(tiles);
     expect(controller.diagnostics().find((entry) => entry.name === "point")).toMatchObject({
       status: "active", mapSize: shadows.localMapSize, reason: null,
+    });
+  });
+  describe("an 8192 Directional Map Size", () => {
+    const MIB = 1024 ** 2;
+    /** High's shadows with the sun's map at 8192, a Custom choice. */
+    const highAt8192 = () => normalizeShadowSettings({ ...qualityPresetPatch("high").shadows, mapSize: 8192 });
+
+    it("grows the atlas to 16384 for the sun's cascades, its growth raising the ledger's ceiling, and goes back without it", () => {
+      const { scene, controller } = fixture();
+      const engine = scene.getEngine();
+      Object.assign(engine.getCaps(), { maxTextureSize: 16384 });
+      updateSceneRenderingSettings(scene, { shadows: highAt8192() });
+      const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+      const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
+      controller.register(sun, true);
+      controller.register(spot, true);
+      controller.sync();
+      expect(sceneRenderingSettings(scene).shadows).toMatchObject({ profile: "high", preset: "custom", mapSize: 8192 });
+      // The first cascade keeps the map size: twice it would be the whole atlas.
+      expect(tileSizes(controller.generator(sun))).toEqual([8192, 8192, 8192, 4096]);
+      expect(tileSizes(controller.generator(spot))).toEqual([2048]);
+      expect(shadowAtlasTexture(scene).getRenderSize()).toBe(16384);
+      expect(controller.metrics().bytes).toBe(1024 * MIB);
+      // The 768 MiB past High's own 8192 atlas bring their own room.
+      expect(managedRenderReservations(engine)).toMatchObject({ shadowBytes: 1024 * MIB, shadowExemptBytes: 768 * MIB, limit: 1792 * MIB });
+      controller.register(sun, false);
+      controller.sync();
+      expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+      expect(tileSizes(controller.generator(spot))).toEqual([2048]);
+      expect(managedRenderReservations(engine)).toMatchObject({ shadowBytes: 256 * MIB, shadowExemptBytes: 0, limit: 1024 * MIB });
+    });
+
+    it.each([
+      ["with a texture limit of 8192", 8192, null],
+      ["on a phone", 16384, { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)", maxTouchPoints: 5 }],
+    ] as const)("falls back to 4096 maps %s and reports it", (_device, maxTextureSize, nav) => {
+      if (nav) vi.stubGlobal("navigator", nav);
+      const { scene, controller } = fixture();
+      Object.assign(scene.getEngine().getCaps(), { maxTextureSize });
+      updateSceneRenderingSettings(scene, { shadows: highAt8192() });
+      const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+      controller.register(sun, true);
+      controller.sync();
+      expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+      expect(controller.limits()).toEqual(["shadow map reduced by shadow atlas space"]);
+      expect(captureShadowDiagnostics(scene).lights[0]).toMatchObject({
+        requestedMapSize: 8192, allocationDownsized: true, generator: { mapSize: 4096, tiles: [4096, 4096, 4096, 2048] },
+      });
+    });
+
+    it("falls back to the level's atlas when the device cannot allocate the grown one", () => {
+      const { scene, controller } = fixture();
+      const engine = scene.getEngine();
+      Object.assign(engine.getCaps(), { maxTextureSize: 16384 });
+      updateSceneRenderingSettings(scene, { shadows: highAt8192() });
+      const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
+      const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+      // The spot light's tile, built first, makes the 16384 atlas, which the driver refuses once.
+      controller.register(spot, true);
+      controller.register(sun, true);
+      vi.spyOn(engine, "createRenderTargetTexture").mockImplementationOnce(() => {
+        throw new Error("out of memory");
+      });
+      controller.sync();
+      // Nothing more is built in the refused atlas; the sun asks for half its map from the next sync.
+      expect([controller.generator(spot), controller.generator(sun), shadowAtlasBytes(scene)]).toEqual([null, null, 0]);
+      expect(controller.diagnostics([sun])[0]).toMatchObject({ status: "budget-limited", allocationError: "out of memory" });
+      controller.sync();
+      expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+      expect(tileSizes(controller.generator(sun))).toEqual([4096, 4096, 4096, 2048]);
+      expect(tileSizes(controller.generator(spot))).toEqual([2048]);
+      expect(controller.diagnostics([sun])[0]).toMatchObject({
+        status: "active", mapSize: 4096, reason: "shadow map reduced after allocation failure",
+      });
+      expect(managedRenderReservations(engine)).toMatchObject({ shadowExemptBytes: 0 });
     });
   });
   it("registers late meshes and releases removed meshes and disabled light allocations", async () => {

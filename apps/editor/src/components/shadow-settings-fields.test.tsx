@@ -76,6 +76,27 @@ it("keeps independent scene overrides and resets to live project shadow distance
   expect(distance().disabled).toBe(true);
   expect(distance().value).toBe("350");
 });
+it("offers an 8192 Directional Map Size only, which makes the project's level Custom", async () => {
+  const written: ShadowOverrides[] = [];
+  function Fields() {
+    const [project, setProject] = useState(() => normalizeShadowSettings({ profile: "ultra" }));
+    return <ShadowSettingsFields project={project}
+      onChange={(next) => { written.push(next); setProject(normalizeShadowSettings(next)); }} />;
+  }
+  render(<Fields />);
+  const listed = async () => (await screen.findAllByRole("option")).map((option) => option.textContent);
+  fireEvent.click(screen.getByLabelText("Directional Map Size"));
+  expect(await listed()).toEqual(["256", "512", "1024", "2048", "4096", "8192"]);
+  const largest = screen.getByRole("option", { name: "8192" });
+  fireEvent.pointerDown(largest);
+  fireEvent.click(largest);
+  await waitFor(() => expect(written.at(-1)).toMatchObject({ mapSize: 8192, preset: "custom" }));
+  expect(normalizeShadowSettings(written.at(-1))).toMatchObject({ profile: "ultra", preset: "custom", mapSize: 8192 });
+  expect(screen.getByLabelText("Directional Map Size").textContent).toMatch(/^8192/);
+  await waitFor(() => expect(screen.queryAllByRole("option")).toEqual([]));
+  fireEvent.click(screen.getByLabelText("Local Shadow Map Size"));
+  expect(await listed()).toEqual(["256", "512", "1024", "2048", "4096"]);
+});
 it("overrides Screen-Space Shadows for a scene and shows the project level", async () => {
   const written: ShadowOverrides[] = [];
   function Fields() {
