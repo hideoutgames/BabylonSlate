@@ -7,7 +7,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { PIXEL_ART_DESIGN_SIZES, type ProjectAppearance } from "@haptic/core";
-import { NumberField } from "@haptic/editor-kit";
+import { LabelHint, NumberField } from "@haptic/editor-kit";
 import type { HostPlatform } from "@haptic/vfs";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
@@ -47,6 +47,8 @@ import {
 } from "./homepage-project-appearance";
 import { hasTouchInput } from "../lib/touch-input";
 import { useNativeHomepageAccount } from "./homepage-account-context";
+
+const PIXEL_ART_HINT = "Sharp textures and whole-multiple pixel upscaling at full resolution, without anti-aliasing. Without Black Bars the view extends to fill the screen.";
 
 function nativeLocationStatus(
   hostPlatform: HostPlatform,
@@ -508,10 +510,11 @@ export function HomepageCreateDialog({
                       <FieldGroup>
                         {hostPlatform === "web" ? (
                           <Field>
-                            <FieldLabel>Location</FieldLabel>
+                            <LabelHint hint="Export a project backup to keep a separate copy.">
+                              <FieldLabel>Location</FieldLabel>
+                            </LabelHint>
                             <FieldDescription>
-                              Stored in this browser on this device. Export a
-                              project backup to keep a separate copy.
+                              Stored in this browser on this device.
                             </FieldDescription>
                           </Field>
                         ) : (
@@ -599,14 +602,13 @@ export function HomepageCreateDialog({
                             aria-describedby="create-project-pixel-art-description"
                           />
                           <FieldContent>
-                            <FieldLabel htmlFor="create-project-pixel-art">
-                              Pixel Art Optimized
-                            </FieldLabel>
-                            <FieldDescription id="create-project-pixel-art-description">
-                              Sharp textures and whole-multiple pixel upscaling
-                              at full resolution, without anti-aliasing.
-                              Without Black Bars the view extends to fill the
-                              screen.
+                            <LabelHint hint={PIXEL_ART_HINT}>
+                              <FieldLabel htmlFor="create-project-pixel-art">
+                                Pixel Art Optimized
+                              </FieldLabel>
+                            </LabelHint>
+                            <FieldDescription id="create-project-pixel-art-description" className="sr-only">
+                              {PIXEL_ART_HINT}
                             </FieldDescription>
                           </FieldContent>
                         </Field>

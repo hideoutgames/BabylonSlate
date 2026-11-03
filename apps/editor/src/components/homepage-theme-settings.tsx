@@ -5,6 +5,7 @@ import {
   colorFromHex,
   colorToHex,
   DisclosureSection,
+  LabelHint,
   NamePromptDialog,
 } from "@haptic/editor-kit";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
@@ -104,7 +105,9 @@ export function ThemeSettingsFields() {
 
   return (
     <FieldSet data-testid="application-theme">
-      <FieldLegend>Theme</FieldLegend>
+      <LabelHint hint="Changing a Style color of a built-in theme creates a custom theme from it. Export a theme to share or back it up.">
+        <FieldLegend>Theme</FieldLegend>
+      </LabelHint>
       <ThemePreview colors={active.colors} />
       <Field>
         <FieldLabel htmlFor="application-theme-select" className="sr-only">
@@ -196,11 +199,9 @@ export function ThemeSettingsFields() {
             </>
           )}
         </div>
-        <FieldDescription>
-          {active.builtIn
-            ? `${active.name} is built in and can't be changed. Changing a Style color creates a custom theme from it.`
-            : `Custom theme based on your changes. Export it to share or back it up.`}
-        </FieldDescription>
+        {active.builtIn ? (
+          <FieldDescription>{`${active.name} is built in and can't be changed.`}</FieldDescription>
+        ) : null}
         {notice ? (
           <Alert
             variant={notice.tone === "error" ? "destructive" : "default"}

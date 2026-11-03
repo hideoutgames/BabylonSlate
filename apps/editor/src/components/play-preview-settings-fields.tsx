@@ -1,12 +1,13 @@
 import type { PlayPreviewProjectSettings } from "@haptic/core";
-import { NumberField } from "@haptic/editor-kit";
+import { LabelHint, NumberField } from "@haptic/editor-kit";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldLabel,
 } from "@haptic/ui/components/field";
 import { Switch } from "@haptic/ui/components/switch";
+
+const FOLLOW_SYSTEM_HINT = "Off uses a fixed aspect ratio.";
 
 export function PlayPreviewSettingsFields({
   settings,
@@ -19,14 +20,11 @@ export function PlayPreviewSettingsFields({
   return (
     <>
       <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
+        <LabelHint hint={FOLLOW_SYSTEM_HINT}>
           <FieldLabel htmlFor="setting-play-follow-system">
             Follow System
           </FieldLabel>
-          <FieldDescription id="setting-play-follow-system-description">
-            Off uses a fixed aspect ratio.
-          </FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch
           id="setting-play-follow-system"
           aria-describedby="setting-play-follow-system-description"
@@ -36,6 +34,9 @@ export function PlayPreviewSettingsFields({
           }
           data-testid="setting-play-follow-system"
         />
+        <FieldDescription id="setting-play-follow-system-description" className="sr-only">
+          {FOLLOW_SYSTEM_HINT}
+        </FieldDescription>
       </Field>
       <Field className="settings-field settings-field-dependent" data-disabled={aspectDisabled}>
         <FieldLabel htmlFor="setting-play-aspect-width">

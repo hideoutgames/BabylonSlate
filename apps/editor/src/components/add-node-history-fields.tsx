@@ -13,10 +13,10 @@ import {
 } from "@haptic/ui/components/alert-dialog";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldLabel,
 } from "@haptic/ui/components/field";
+import { LabelHint } from "@haptic/editor-kit";
 import { Switch } from "@haptic/ui/components/switch";
 
 /**
@@ -47,15 +47,11 @@ export function AddNodeHistoryFields({
   return (
     <>
       <Field orientation="horizontal" className="settings-field">
-        <FieldContent>
+        <LabelHint hint="After you drag from a pin, nodes you often add from that pin are listed first. Turning this off keeps the saved history.">
           <FieldLabel htmlFor="setting-graph-add-node-history">
             Add Node History
           </FieldLabel>
-          <FieldDescription>
-            After you drag from a pin, nodes you often add from that pin are
-            listed first. Turning this off keeps the saved history.
-          </FieldDescription>
-        </FieldContent>
+        </LabelHint>
         <Switch
           id="setting-graph-add-node-history"
           data-testid="setting-graph-add-node-history"

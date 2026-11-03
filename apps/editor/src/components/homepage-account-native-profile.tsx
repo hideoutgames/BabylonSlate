@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
 import { Button } from "@haptic/ui/components/button";
+import { LabelHint } from "@haptic/editor-kit";
 import {
   Field,
   FieldDescription,
@@ -150,7 +151,9 @@ export function NativeProfileFields({
         </form>
         <Field>
           {/* Not a label: it would open the picker without holding the session check. */}
-          <FieldTitle>Profile Picture</FieldTitle>
+          <LabelHint hint="JPG, PNG, GIF or WEBP, up to 10 MB.">
+            <FieldTitle>Profile Picture</FieldTitle>
+          </LabelHint>
           <div className="homepage-account-center-actions">
             <input
               ref={fileInput}
@@ -199,7 +202,6 @@ export function NativeProfileFields({
               </Button>
             )}
           </div>
-          <FieldDescription>JPG, PNG, GIF or WEBP, up to 10 MB.</FieldDescription>
         </Field>
         {error && (
           <Alert variant="destructive">

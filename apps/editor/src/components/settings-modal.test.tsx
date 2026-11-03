@@ -555,6 +555,7 @@ describe("SettingsModal project authoring", () => {
     const control = () => screen.getByTestId("settings-nearest-textures");
     expect(control().hasAttribute("data-disabled")).toBe(true);
     expect(control().closest('[data-slot="field"]')?.getAttribute("data-disabled")).toBe("true");
+    expect(screen.getByText("Needs Pixel-Perfect Mode.")).toBeTruthy();
     // Stored on, but inert without Pixel-Perfect Mode: it reads off.
     projectTwoD.current = { pixelPerfect: false, nearestTextures: true };
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" key="inert" />);
@@ -564,6 +565,7 @@ describe("SettingsModal project authoring", () => {
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" key="pixel-perfect" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-game"));
     expect(control().hasAttribute("data-disabled")).toBe(false);
+    expect(screen.queryByText("Needs Pixel-Perfect Mode.")).toBeNull();
     fireEvent.click(control());
     expect(updateProjectSettings).toHaveBeenLastCalledWith({
       twoD: expect.objectContaining({ pixelPerfect: true, nearestTextures: true }),
@@ -778,22 +780,28 @@ describe("SettingsModal project authoring", () => {
     expect(lastProjectRender.current).toMatchObject({ mode: "cel", cel: { shadowBands: 6 } });
   });
 
+  // Explanations are the label's tooltip and stay the control's screen-reader description;
+  // live state (a missing requirement) stays visible.
   it.each([
-    ["general", "settings-infinite-loop-detection", /Stops runaway scripts/],
-    ["game", "settings-pixel-perfect", /Frames the 2D editor view 1:1/],
-    ["game", "settings-nearest-textures", /Needs Pixel-Perfect Mode/],
-    ["audio", "settings-audio-occlusion", /Wall muffling/],
-    ["rendering", "setting-render-custom", /Sets the design size/],
-    ["rendering", "setting-render-black-bars", /Adds bars to preserve/],
-    ["rendering", "setting-play-follow-system", /Off uses a fixed aspect ratio/],
-  ])("keeps the %s %s description inside its setting before the separator", (category, controlId, descriptionText) => {
+    ["general", "settings-infinite-loop-detection", /Stops runaway scripts/, "hint"],
+    ["game", "settings-pixel-perfect", /Frames the 2D editor view 1:1/, "hint"],
+    ["game", "settings-nearest-textures", /nearest-neighbour filtering/, "hint"],
+    ["game", "settings-nearest-textures", /Needs Pixel-Perfect Mode/, "status"],
+    ["audio", "settings-audio-occlusion", /Wall muffling/, "hint"],
+    ["rendering", "setting-render-custom", /Sets the design size/, "hint"],
+    ["rendering", "setting-render-black-bars", /Adds bars to preserve/, "hint"],
+    ["rendering", "setting-play-follow-system", /Off uses a fixed aspect ratio/, "hint"],
+  ])("keeps the %s %s description %s inside its setting before the separator", (category, controlId, descriptionText, kind) => {
     showRenderingSections("resolution", "playPreview");
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId(`settings-modal-category-${category}`));
     const control = screen.getByTestId(controlId);
     const description = screen.getByText(descriptionText);
-    expect(control.closest('[data-slot="field"]')?.contains(description)).toBe(true);
-    expect(control.getAttribute("aria-describedby")).toBe(description.id);
+    const field = control.closest('[data-slot="field"]');
+    expect(field?.contains(description)).toBe(true);
+    expect(control.getAttribute("aria-describedby")?.split(" ")).toContain(description.id);
+    expect(description.classList.contains("sr-only")).toBe(kind === "hint");
+    if (kind === "hint") expect(field?.querySelector("[data-label-hint]")).toBeTruthy();
   });
 
   it("identifies Beta when confirming enablement and enables only after confirmation", async () => {
@@ -904,9 +912,10 @@ describe("SettingsModal project authoring", () => {
     fireEvent.change(screen.getByTestId("settings-source-control-token"), {
       target: { value: "ghp_secret" },
     });
-    expect(screen.getByTestId("settings-source-control-token-copy").textContent).toMatch(
+    expect(screen.getByTestId("settings-source-control-token-status").textContent).toMatch(
       /Token Saved/,
     );
+    expect(screen.queryByTestId("settings-source-control-token-help")).toBeNull();
     fireEvent.click(screen.getByTestId("settings-source-control-clear-token"));
     expect(sourceControl.clearToken).toHaveBeenCalled();
     await waitFor(() => {
@@ -915,9 +924,9 @@ describe("SettingsModal project authoring", () => {
           .value,
       ).toBe("");
     });
-    expect(screen.getByTestId("settings-source-control-token-copy").textContent).not.toMatch(
-      /Token Saved/,
-    );
+    // Without a token the row shows how to create one instead.
+    expect(screen.queryByTestId("settings-source-control-token-status")).toBeNull();
+    expect(screen.getByTestId("settings-source-control-token-help")).toBeTruthy();
   });
 
   it("fills Source Control from Git without replacing a URL typed during the read", async () => {
