@@ -169,9 +169,10 @@
 }
 
 /*
- * Settings rows. `.settings-field` puts the label and description in the left
- * column and the control on the right; `.settings-row` stacks a full-width
- * control (lists, tables) under its label.
+ * Settings rows. `.settings-field` puts the label and any visible status in the
+ * left column and the control on the right; `.settings-row` stacks a full-width
+ * control (lists, tables) under its label. A visually hidden (`sr-only`)
+ * description takes no row.
  */
 .settings-dialog .settings-field {
   display: grid;
@@ -197,7 +198,7 @@
   grid-row: 1;
 }
 
-.settings-dialog .settings-field:has(> [data-slot="field-description"]) > :not(:first-child, [data-slot="field-description"], [data-slot="field-error"]) {
+.settings-dialog .settings-field:has(> [data-slot="field-description"]:not(.sr-only)) > :not(:first-child, [data-slot="field-description"], [data-slot="field-error"]) {
   grid-row: 1 / span 2;
 }
 
