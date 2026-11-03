@@ -344,15 +344,15 @@ export function placeInPrivateAtlas<T>(atlas: PrivateShadowAtlas, build: () => T
 }
 
 /**
- * The tile edge of each of a sun's `cascades` at map size `size`: the last `halved` take half the edge, never the first
- * two, which hold the shadows near the camera (the second starts a few metres out), down to the 256-texel floor
- * admitted maps keep and never more than `size` (a caster-variant stand-in's tiles are smaller still;
- * `SHADOW_HALF_TILE_CASCADES`).
+ * The tile edge of each of a sun's `cascades` at map size `size`: the first takes `firstScale` times the edge
+ * (`SHADOW_FIRST_CASCADE_SCALE`), the last `halved` take half the edge, never the first two, which hold the shadows near
+ * the camera (the second starts a few metres out), down to the 256-texel floor admitted maps keep and never more than
+ * `size` (a caster-variant stand-in's tiles are smaller still; `SHADOW_HALF_TILE_CASCADES`).
  */
-export function cascadeTileSizes(size: number, cascades: number, halved: number): number[] {
-  const first = Math.max(2, cascades - halved);
+export function cascadeTileSizes(size: number, cascades: number, halved: number, firstScale = 1): number[] {
+  const full = Math.max(2, cascades - halved);
   const far = size > 256 ? Math.max(256, size / 2) : size;
-  return Array.from({ length: cascades }, (_, index) => (index < first ? size : far));
+  return Array.from({ length: cascades }, (_, index) => (index === 0 ? size * firstScale : index < full ? size : far));
 }
 
 /** Allocates tiles of `sizes` texels in the Scene's `edge`-texel atlas, or none when one does not fit. */
@@ -562,7 +562,9 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   get cascadeDensity(): { end: number; texelsPerMetre: number }[] {
     return this.ends.map((end, index) => {
       const width = (this.getCascadeMaxExtents(index)?.x ?? 0) - (this.getCascadeMinExtents(index)?.x ?? 0);
-      return { end, texelsPerMetre: width > 0 ? this.mapSize / width : 0 };
+      // Each cascade's own tile: the first's may be larger than the map size, the last ones' smaller.
+      const tile = (this.placement.tiles[index] ?? this.placement.tiles[0]!).size;
+      return { end, texelsPerMetre: width > 0 ? tile / width : 0 };
     });
   }
 
@@ -655,9 +657,9 @@ export function isAtlasShadow(generator: unknown): generator is AtlasShadowGener
  * when the atlas has not that many free.
  */
 export function createAtlasCascadedShadowGenerator(
-  light: DirectionalLight, size: number, cascades: number, edge: number, camera?: Camera, halved = 0,
+  light: DirectionalLight, size: number, cascades: number, edge: number, camera?: Camera, halved = 0, firstScale = 1,
 ): AtlasCascadedShadowGenerator | null {
-  const placement = place(light.getScene(), cascadeTileSizes(size, cascades, halved), edge);
+  const placement = place(light.getScene(), cascadeTileSizes(size, cascades, halved, firstScale), edge);
   return placement && construct(placement, () => askingLightEngine(light, () => new AtlasCascadedShadowGenerator(size, light, undefined, camera)));
 }
 

@@ -105,10 +105,21 @@ describe("the sun's drawn cascades", () => {
     expect(generator.lambda).toBe(1);
     // Babylon's own `_viewSpaceFrustumsZ`, as the map last bound.
     generator.cascadeEnds.forEach((end, index) => expect(end).toBeCloseTo([15.874, 62.996, 250][index]!, 2));
-    // Its stabilized cascade boxes give the texel densities the helper predicts for this 2:1 view.
+    // Its stabilized cascade boxes give the texel densities the helper predicts for this 2:1 view, each over its own
+    // tile: Medium's last cascade has half the edge.
     const predicted = cascadeSplit({ fov: 0.8, aspect: 2, near: 0.1, far: 1000, distance: 250, cascades: 3, tile: 1024, anchor: 4 });
     generator.cascadeDensity.forEach((cascade, index) =>
-      expect(cascade.texelsPerMetre).toBeCloseTo(predicted.texelsPerMetre[index]!, 3));
+      expect(cascade.texelsPerMetre).toBeCloseTo(predicted.texelsPerMetre[index]! * [1, 1, 0.5][index]!, 3));
+  });
+
+  // Close-up shadows are drawn in the first cascade, where a texel is largest on screen.
+  it("draw a High sun's first cascade over the same slice as Medium's with twice the texels per metre", () => {
+    const medium = sunScene("medium").generator;
+    const high = sunScene("high").generator;
+    expect(high.cascadeEnds).toEqual(medium.cascadeEnds);
+    expect(high.tiles.map((tile) => tile.size)).toEqual([2048, 1024, 512]);
+    const ratios = high.cascadeDensity.map((cascade, index) => cascade.texelsPerMetre / medium.cascadeDensity[index]!.texelsPerMetre);
+    ratios.forEach((ratio, index) => expect(ratio).toBeCloseTo([2, 1, 1][index]!, 6));
   });
 
   it("keep Babylon's near-uniform mix at Low and for an orthographic camera", () => {

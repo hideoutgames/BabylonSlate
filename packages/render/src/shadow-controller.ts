@@ -21,6 +21,7 @@ import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
   componentCastsShadows,
   effectiveShadowSettings,
+  SHADOW_FIRST_CASCADE_SCALE,
   SHADOW_HALF_TILE_CASCADES,
   type SerializedComponent,
   type ShadowSettings,
@@ -112,7 +113,8 @@ function shadowLightRow(light: Light, entry?: Entry) {
         ? "pcss"
         : "pcf",
     passes: generator ? generatorPasses(generator) : 0,
-    mapSize: generator?.getShadowMap()?.getSize().width ?? 0,
+    // The map size its tiles are sized from: a sun's first cascade tile may be larger (`cascadeTileSizes`).
+    mapSize: generator?.mapSize ?? 0,
     cascades: generator instanceof AtlasCascadedShadowGenerator ? generator.cascadeDensity : [],
   };
 }
@@ -577,7 +579,8 @@ export class SceneShadowController {
     const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&
-        matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile])) {
+        matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
+          SHADOW_FIRST_CASCADE_SCALE[settings.profile])) {
         if (entry.standby) {
           entry.standby = false;
           entry.admittedAt = selectionTime;
@@ -599,7 +602,8 @@ export class SceneShadowController {
       if (entry.status !== "active" || entry.generator || entry.light instanceof DirectionalLight)
         continue;
       const index = donors.findIndex((donor) =>
-        matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile]) &&
+        matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
+          SHADOW_FIRST_CASCADE_SCALE[settings.profile]) &&
         (donor.generator as AtlasShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
       if (index < 0) continue;
       const [donor] = donors.splice(index, 1) as [Entry];
@@ -711,7 +715,8 @@ export class SceneShadowController {
           invalidateShadowReceiverHandoffs(scene);
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
-          entry.key = allocationKey(mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile]);
+          entry.key = allocationKey(mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
+          SHADOW_FIRST_CASCADE_SCALE[settings.profile]);
           entry.failedKey = "";
           if (entry.recovery)
             entry.reason = "shadow map reduced after allocation failure";

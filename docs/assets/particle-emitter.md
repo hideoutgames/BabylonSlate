@@ -47,7 +47,7 @@ The **Parameters** module binds targets to parameter names, so gameplay can chan
 | Color Tint | Color | Multiplies Color. |
 | Gravity | Vector 3 | Replaces the Gravity module's acceleration while the module is on. |
 
-One name has one type in an emitter: two targets can share a name only when their types match. **Preview Parameters** under the Preview sets values for the preview only.
+One name has one type in an emitter: two targets can share a name only when their types match.
 
 The **Render** module sets **Blend Mode** (default **Additive**) and **Billboard** (default **Camera Facing**). The other modules are described in [Particles](../graphics/particles.md#basic-particle-emitter).
 

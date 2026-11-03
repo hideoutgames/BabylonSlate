@@ -57,7 +57,7 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
   try {
     await expect.poll(() => page.evaluate(() => {
       const state = window.__hapticViewportTest.shadowDiagnostics();
-      return [state?.surfaceMode, state?.requestedShadows.profile, state?.lights.find(light => light.generator)?.generator?.map?.width];
+      return [state?.surfaceMode, state?.requestedShadows.profile, state?.lights.find(light => light.generator)?.generator?.mapSize];
     })).toEqual([variant.mode, variant.profile, 2048]);
   } catch (error) {
     const stalled = await page.evaluate(() => ({
@@ -124,7 +124,7 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
   expect(state.backend.requested).toBe(variant.backend);
   expect(state.surfaceMode).toBe(variant.mode);
   expect(state.requestedShadows).toEqual(settings.shadows);
-  expect(state.lights.find(light => light.generator)!.generator!.map!.width).toBe(2048);
+  expect(state.lights.find(light => light.generator)!.generator!.mapSize).toBe(2048);
   expect(points.length).toBeGreaterThan(300);
   expect(regions.head!.lit).toBeGreaterThan(100);
   for (const [name, region] of Object.entries(regions)) {
