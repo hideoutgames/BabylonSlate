@@ -4,6 +4,7 @@
  * Babylon-free; `@haptic/render` realizes the plan on Node Particle blocks.
  */
 export {
+  PARTICLE_ANGLE_UNIT_OPTIONS,
   PARTICLE_CATALOG,
   PARTICLE_CONDITION_TESTS,
   PARTICLE_OUTPUT_NODE_TYPE,
@@ -11,9 +12,14 @@ export {
   PARTICLE_UNSUPPORTED_V1_TYPES,
   PARTICLE_VALUE_TYPE_OPTIONS,
   isParticleSpineRole,
+  particleAngleUnitPin,
+  particleDegreesToRadians,
+  particleNodeAngleUnit,
   particleNodeDefinitionFor,
   particleNodeValueType,
   particlePaletteEntries,
+  particleRadiansToDegrees,
+  type ParticleAngleUnit,
   type ParticleConditionTest,
   type ParticleNodeDefinition,
   type ParticleNodeRole,
@@ -31,6 +37,7 @@ export {
   normalizeParticleGraphSettings,
   normalizeParticleNodeProperties,
   particleGraphDependencies,
+  setParticleNodeAngleUnit,
   setParticleNodeValueType,
   type ParticleGraphDependencies,
   type ParticleGraphDocument,

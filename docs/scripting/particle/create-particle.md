@@ -16,13 +16,19 @@ Starts the Particle chain and sets each new particle's speed, lifetime, colour, 
 | Dead Color | Color | (0, 0, 0, 0) | The colour that [**Fade To Dead Color**](fade-to-dead-color.md) blends each particle towards over its life. |
 | Size | Float | 1 | Starting size. A particle is drawn at **Size** multiplied by **Scale**. |
 | Scale | Vector 2 | (1, 1) | Width and height multipliers applied to **Size**. |
-| Angle | Float (rad) | 0 | Starting rotation in radians. |
+| Angle (Radians) | Float (rad) | 0 | Starting rotation. With **Angle Unit** set to **Degrees** the pin reads **Angle (Degrees)** and takes degrees. |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
 | Particle | Particle |
+
+## Settings
+
+| Setting | Description |
+| --- | --- |
+| Angle Unit | Whether **Angle** is in **Radians** (default) or **Degrees**. Switching converts the value you entered. |
 
 ## Notes
 

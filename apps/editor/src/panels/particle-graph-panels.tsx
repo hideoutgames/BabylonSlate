@@ -22,6 +22,7 @@ import {
   PARTICLE_CURVE_MIN_KEYS,
 } from "@haptic/core";
 import {
+  PARTICLE_ANGLE_UNIT_OPTIONS,
   PARTICLE_CONDITION_TESTS,
   PARTICLE_GRAPH_LIMITS,
   PARTICLE_OUTPUT_NODE_TYPE,
@@ -36,6 +37,7 @@ import {
   particleConnectionIsAllowed,
   particleGradientStops,
   particleGraphToSerialized,
+  particleNodeAngleUnit,
   particleNodeDefinitionFor,
   particleNodeValueType,
   particlePaletteNodes,
@@ -43,7 +45,9 @@ import {
   particlePinsAreCompatible,
   resizeParticleValue,
   serializedToParticleGraph,
+  setParticleNodeAngleUnit,
   setParticleNodeValueType,
+  type ParticleAngleUnit,
   type ParticleGradientStop,
   type ParticleGraphDiagnostic,
   type ParticleGraphDocument,
@@ -111,7 +115,8 @@ function pinDefaultRows(
     const [x = 0, y = 0, z = 0, w = 1] = entry.value;
     const base = {
       id: entry.pinId,
-      label: entry.name,
+      // The unit follows the value, never the label: "Angle (Degrees)" reads "Angle … °".
+      label: entry.name.replace(/ \((Radians|Degrees)\)$/, ""),
       unit: entry.unit,
       description: entry.description,
     };
@@ -182,6 +187,21 @@ function nodePropertyRows(
       })),
       onChange: (next) =>
         replaceNode(setParticleNodeValueType(node, next as ParticleNumericType)),
+    });
+  }
+  const angleUnit = particleNodeAngleUnit(node.type, node.properties);
+  if (angleUnit) {
+    rows.push({
+      id: "angleUnit",
+      kind: "enum",
+      label: "Angle Unit",
+      value: angleUnit,
+      description: "The unit of the Angle input. Switching converts its value.",
+      options: PARTICLE_ANGLE_UNIT_OPTIONS.map((option) => ({
+        value: option.id,
+        label: option.label,
+      })),
+      onChange: (next) => replaceNode(setParticleNodeAngleUnit(node, next as ParticleAngleUnit)),
     });
   }
   switch (node.type) {

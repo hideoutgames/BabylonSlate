@@ -2,6 +2,8 @@ import { fnv1a } from "@haptic/core";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   isParticleSpineRole,
+  particleAngleUnitPin,
+  particleNodeAngleUnit,
   particleNodeValueType,
   type ParticlePinDefinition,
 } from "./catalog";
@@ -48,8 +50,9 @@ export type ParticleOperand =
 export interface ParticleOperation {
   /**
    * The graph node id: the anchor for build diagnostics and focus. A bound on a
-   * wired `clampWired` pin is its own Maximum / Minimum / Clamp operation, with
-   * the id `<node id>/<pin id>`.
+   * wired `clampWired` pin is its own Maximum / Minimum / Clamp operation, and an
+   * angle pin in degrees its own Degrees To Radians operation, with the id
+   * `<node id>/<pin id>`.
    */
   id: string;
   nodeType: string;
@@ -95,6 +98,20 @@ function boundedOperation(
   if (min !== undefined) return operation("math.max", { a: value, b: bound(min) });
   if (max !== undefined) return operation("math.min", { a: value, b: bound(max) });
   return null;
+}
+
+/**
+ * An angle pin authored in degrees (`angleUnit`) reaches its radian Babylon port
+ * through Degrees To Radians, whether it is wired or a literal.
+ */
+function degreesToRadiansOperation(
+  node: ParticleGraphNode,
+  pin: ParticlePinDefinition,
+  value: ParticleOperand,
+): ParticleOperation | null {
+  if (particleAngleUnitPin(node.type) !== pin.id) return null;
+  if (particleNodeAngleUnit(node.type, node.properties) !== "degrees") return null;
+  return { id: `${node.id}/${pin.id}`, nodeType: "math.radians", resolvedType: "float", inputs: { value }, properties: {} };
 }
 
 function planProperties(node: ParticleGraphNode): Record<string, unknown> {
@@ -149,9 +166,9 @@ export function lowerParticleGraphDocument(
           ...(conversion ? { conversion } : {}),
         };
         const bounded =
-          pin.clampWired && to && to !== "particle"
+          (pin.clampWired && to && to !== "particle"
             ? boundedOperation(node, pin, to, wired)
-            : null;
+            : null) ?? degreesToRadiansOperation(node, pin, wired);
         if (bounded) operations.push(bounded);
         inputs[pin.id] = bounded
           ? { kind: "operation", operationId: bounded.id, pinId: "out" }
@@ -162,11 +179,14 @@ export function lowerParticleGraphDocument(
       if (!value) continue;
       const resolved = resolver.inputType(node.id, pin.id);
       const type: ParticleNumericType = resolved && resolved !== "particle" ? resolved : "float";
-      inputs[pin.id] = {
+      const constant: ParticleOperand = {
         kind: "constant",
         type,
         value: clampParticlePinValue(resizeParticleValue(value, type), pin),
       };
+      const converted = degreesToRadiansOperation(node, pin, constant);
+      if (converted) operations.push(converted);
+      inputs[pin.id] = converted ? { kind: "operation", operationId: converted.id, pinId: "out" } : constant;
     }
     const generic = resolver.genericOf(node.id);
     const resolvedType: ParticleValueType | null = definition.terminal

@@ -3,6 +3,7 @@ import {
   createDefaultParticleGraphDocument,
   normalizeParticleGraphDocument,
   particleGraphDependencies,
+  setParticleNodeAngleUnit,
   setParticleNodeValueType,
   type ParticleGraphNode,
 } from "./document";
@@ -129,5 +130,36 @@ describe("particle graph document", () => {
       valueType: "vec3",
       "default:max": [2, 2, 2],
     });
+  });
+
+  it("fills Angle Unit with Radians on Create Particle and Cone Shape, so older graphs load unchanged", () => {
+    const doc = normalizeParticleGraphDocument({
+      nodes: [
+        { id: "create", type: "particle.create", properties: { "default:angle": [0.5] } },
+        { id: "cone", type: "shape.cone", properties: { angleUnit: "turns" } },
+        { id: "degrees", type: "shape.cone", properties: { angleUnit: "degrees", "default:angle": [45] } },
+        { id: "sphere", type: "shape.sphere", properties: {} },
+      ],
+    });
+    const properties = (id: string) => doc.nodes.find((entry) => entry.id === id)!.properties;
+    expect(properties("create")).toEqual({ "default:angle": [0.5], angleUnit: "radians" });
+    expect(properties("cone").angleUnit).toBe("radians");
+    expect(properties("degrees")).toEqual({ angleUnit: "degrees", "default:angle": [45], emitFromSpawnPointOnly: false });
+    expect(properties("sphere").angleUnit).toBeUndefined();
+    // A saved graph reads back the same.
+    expect(normalizeParticleGraphDocument(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+  });
+
+  it("converts the authored angle when Angle Unit changes and leaves an unauthored angle on the catalog default", () => {
+    const cone: ParticleGraphNode = { id: "cone", type: "shape.cone", position: { x: 0, y: 0 },
+      properties: { angleUnit: "radians", "default:angle": [Math.PI / 4] } };
+    const degrees = setParticleNodeAngleUnit(cone, "degrees");
+    expect(degrees.properties).toEqual({ angleUnit: "degrees", "default:angle": [45] });
+    expect(setParticleNodeAngleUnit(degrees, "radians").properties["default:angle"]![0]).toBeCloseTo(Math.PI / 4, 10);
+    expect(setParticleNodeAngleUnit(degrees, "degrees")).toBe(degrees);
+    const create: ParticleGraphNode = { id: "create", type: "particle.create", position: { x: 0, y: 0 }, properties: { angleUnit: "radians" } };
+    expect(setParticleNodeAngleUnit(create, "degrees").properties).toEqual({ angleUnit: "degrees" });
+    const sphere: ParticleGraphNode = { id: "sphere", type: "shape.sphere", position: { x: 0, y: 0 }, properties: {} };
+    expect(setParticleNodeAngleUnit(sphere, "degrees")).toBe(sphere);
   });
 });

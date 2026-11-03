@@ -2,7 +2,7 @@
 node: update.angle
 ---
 
-# Update Angle
+# Update Angle (Radians)
 
 Sets the rotation of every particle each frame, in radians.
 

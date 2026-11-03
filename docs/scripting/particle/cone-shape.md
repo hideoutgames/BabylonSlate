@@ -12,7 +12,7 @@ Spawns particles inside a cone that opens along the emitter's Y axis and launche
 | --- | --- | --- | --- |
 | Particle | Particle |  |  |
 | Radius | Float | 1 | Radius of the wide end of the cone, in metres. |
-| Angle | Float (rad) | 0.5235987755982988 | Full opening angle of the cone, in radians, from 0.01 to pi. |
+| Angle (Radians) | Float (rad) | 0.5235987755982988 | Full opening angle of the cone, from 0.01 to pi radians. With **Angle Unit** set to **Degrees** the pin reads **Angle (Degrees)** and takes 0.57° to 180° (default 30°). |
 | Radius Range | Float | 1 | 0 spawns on the surface and 1 fills the volume. |
 | Height Range | Float | 1 | 0 spawns at the wide end only and 1 spawns anywhere from the tip to the wide end. |
 | Direction Randomizer | Float | 0 | Scatters the outward direction at random, from 0 (none) to 1 (most). Ignored when both directions are set. |
@@ -30,6 +30,7 @@ Spawns particles inside a cone that opens along the emitter's Y axis and launche
 | Setting | Description |
 | --- | --- |
 | Emit From Spawn Point Only | Spawns every particle at the cone's tip instead of inside the cone. |
+| Angle Unit | Whether **Angle** is in **Radians** (default) or **Degrees**. Switching converts the value you entered. |
 
 ## Notes
 
