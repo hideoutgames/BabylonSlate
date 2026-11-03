@@ -199,11 +199,14 @@ export function ParticlePreviewCanvas({
   showSkybox = false,
   onPickMaterial,
   onDiagnostics,
+  parameterValues,
 }: {
   library: ParticleLibrary;
   systemGuid: string;
   testId: string;
   showSkybox?: boolean;
+  /** Temporary parameter values (Preview sliders), by name; never saved. */
+  parameterValues?: Readonly<Record<string, readonly number[]>>;
   /** Offers Pick Material on the No Material state (Basic emitter preview). */
   onPickMaterial?: () => void;
   /**
@@ -258,12 +261,12 @@ export function ParticlePreviewCanvas({
   const diagnosticsRef = useRef<ParticleServiceDiagnostic[]>([]);
   /** True while a service call reports synchronously; the caller evaluates after it. */
   const syncRef = useRef(false);
+  const parameterValuesRef = useRef(parameterValues);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     setEngine(play?.ensureSharedEngine() ?? null);
   }, [play]);
-
   const libraryKey = useMemo(() => particleLibraryCompileKey(library), [library]);
   // A resolver knows only the Material documents collected at boot.
   const materialKey = particleLibraryMaterialGuids(library).sort().join(",");
@@ -301,6 +304,22 @@ export function ParticlePreviewCanvas({
     presenterRef.current?.present({ force: true });
   }, []);
 
+  // Preview values reach the running bundle without restarting it; a cleared one falls back to its default.
+  useEffect(() => {
+    const previous = parameterValuesRef.current ?? {};
+    parameterValuesRef.current = parameterValues;
+    const service = serviceRef.current;
+    if (!service) return;
+    const next = parameterValues ?? {};
+    for (const name of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+      if (previous[name] === next[name]) continue;
+      const value = next[name];
+      service.handleCommand({ type: "setParticleParameter", actorGuid: PREVIEW_ACTOR, componentId: PREVIEW_COMPONENT,
+        name, value: value ? [...value] : null });
+    }
+    redraw();
+  }, [parameterValues, redraw]);
+
   const assign = useCallback(
     (service: ParticleService) => {
       diagnosticsRef.current = [];
@@ -313,6 +332,9 @@ export function ParticlePreviewCanvas({
           componentId: PREVIEW_COMPONENT,
           particleSystemGuid: systemGuid,
           play: true,
+          ...(parameterValuesRef.current
+            ? { parameters: Object.fromEntries(Object.entries(parameterValuesRef.current).map(([name, value]) => [name, [...value]])) }
+            : {}),
         });
       } finally {
         syncRef.current = false;

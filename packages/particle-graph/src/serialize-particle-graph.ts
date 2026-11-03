@@ -1,11 +1,13 @@
 import type { SerializedGraph } from "@haptic/core";
 import {
+  PARTICLE_PARAMETER_NODE_TYPE,
   PARTICLE_UNSUPPORTED_V1_TYPES,
   particleNodeDefinitionFor,
   particlePaletteEntries,
   type ParticlePinDefinition,
 } from "./catalog";
 import {
+  type ParticleGraphParameter,
   newParticleNodeProperties,
   normalizeParticleGraphDocument,
   type ParticleGraphDocument,
@@ -98,6 +100,10 @@ export function particleNodePropertiesFromData(
 
 export interface ParticlePaletteNode {
   id: string;
+  /** The node type when `id` names one entry of several for it (one Parameter entry per parameter). */
+  nodeType?: string;
+  /** The added node's title when it differs from the entry's (`Parameter: Intensity` adds `Intensity`). */
+  nodeTitle?: string;
   title: string;
   category: string;
   description?: string;
@@ -107,9 +113,25 @@ export interface ParticlePaletteNode {
   defaultData: Record<string, unknown>;
 }
 
-/** Add Node entries in palette order; the Emitter Output is never offered. */
-export function particlePaletteNodes(): ParticlePaletteNode[] {
-  return particlePaletteEntries().map((definition) => {
+/**
+ * Add Node entries in palette order; the Emitter Output is never offered. Each declared
+ * parameter adds a `Parameter: <name>` entry that places a Parameter node bound to it.
+ */
+export function particlePaletteNodes(parameters: readonly ParticleGraphParameter[] = []): ParticlePaletteNode[] {
+  const parameterEntries = parameters.map((parameter): ParticlePaletteNode => {
+    const properties = { parameterId: parameter.id, valueType: parameter.type };
+    return {
+      id: `${PARTICLE_PARAMETER_NODE_TYPE}:${parameter.id}`,
+      nodeType: PARTICLE_PARAMETER_NODE_TYPE,
+      title: `Parameter: ${parameter.name}`,
+      nodeTitle: parameter.name,
+      category: "Parameters",
+      searchAliases: [parameter.name, "parameter"],
+      pins: pinsForParticleNode(PARTICLE_PARAMETER_NODE_TYPE, properties),
+      defaultData: { ...properties, __particleRole: "input" },
+    };
+  });
+  return [...particlePaletteEntries().map((definition) => {
     const properties = newParticleNodeProperties(definition.type);
     return {
       id: definition.type,
@@ -120,7 +142,7 @@ export function particlePaletteNodes(): ParticlePaletteNode[] {
       pins: pinsForParticleNode(definition.type, properties),
       defaultData: { ...properties, __particleRole: definition.role },
     };
-  });
+  }), ...parameterEntries];
 }
 
 export function particleGraphToSerialized(doc: ParticleGraphDocument): SerializedGraph {
@@ -195,7 +217,12 @@ function typeLabel(kind: string): string {
  * falls back to a non-Float type (Split lowers as Color). The Emitter Output
  * is protected from deletion.
  */
-export function hydrateParticleGraphForEditor(graph: SerializedGraph): SerializedGraph {
+export function hydrateParticleGraphForEditor(
+  graph: SerializedGraph,
+  /** A Parameter node is titled with its parameter's name. */
+  parameters: readonly ParticleGraphParameter[] = [],
+): SerializedGraph {
+  const parameterNames = new Map(parameters.map((parameter) => [parameter.id, parameter.name]));
   const edges = graph.edges.map((edge) => ({
     id: edge.id,
     sourceNodeId: edge.source,
@@ -254,7 +281,8 @@ export function hydrateParticleGraphForEditor(graph: SerializedGraph): Serialize
             ? { __particleRole: definition.role, __category: definition.category }
             : {}),
           ...(definition?.terminal ? { __protected: true } : {}),
-          title: definition?.title ?? PARTICLE_UNSUPPORTED_V1_TYPES[node.type] ?? node.type,
+          title: (node.type === PARTICLE_PARAMETER_NODE_TYPE ? parameterNames.get(String(properties.parameterId ?? "")) : undefined)
+            ?? definition?.title ?? PARTICLE_UNSUPPORTED_V1_TYPES[node.type] ?? node.type,
         },
       };
     }),

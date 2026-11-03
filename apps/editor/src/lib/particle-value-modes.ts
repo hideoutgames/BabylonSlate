@@ -90,6 +90,7 @@ export function particleScalarSummary(
 }
 
 export type ParticleModuleId =
+  | "parameters"
   | "emitter"
   | "spawnRate"
   | "bursts"
@@ -167,5 +168,9 @@ export function particleModuleSummary(
       return muted(
         `${PARTICLE_BLEND_MODE_LABELS[render.blendMode]} · ${PARTICLE_BILLBOARD_LABELS[render.billboard]}`,
       );
+    case "parameters": {
+      const names = [...new Set(payload.bindings.map((binding) => binding.parameterName))];
+      return muted(names.length ? names.join(", ") : "None");
+    }
   }
 }

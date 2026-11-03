@@ -79,6 +79,7 @@ import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
+import { ParticleGraphParametersEditor, ParticlePreviewParameters } from "../components/particle-parameter-fields";
 
 type Commit = (next: ParticleGraphDocument, mergeKey?: string) => void;
 
@@ -177,7 +178,8 @@ function nodePropertyRows(
   const rows: PropertyRow[] = [];
   const field = (name: string) => particleGraphFieldMergeKey(node.id, name);
   const valueType = particleNodeValueType(node.type, node.properties);
-  if (valueType) {
+  // A Parameter node takes its parameter's type; Details picks the parameter instead.
+  if (valueType && node.type !== "input.parameter") {
     rows.push({
       id: "valueType",
       kind: "enum",
@@ -534,7 +536,25 @@ function ParticleNodeDetails({
       </ModuleStack>
     );
   }
+  const parameters = document.parameters ?? [];
+  const parameterRows: PropertyRow[] = node.type === "input.parameter"
+    ? [{
+        id: "parameterId",
+        kind: "enum",
+        label: "Parameter",
+        value: String(node.properties.parameterId ?? ""),
+        description: parameters.some((parameter) => parameter.id === node.properties.parameterId)
+          ? undefined
+          : "Pick a parameter, or add one in Graph Settings.",
+        options: parameters.map((parameter) => ({ value: parameter.id, label: parameter.name })),
+        onChange: (parameterId) => {
+          const parameter = parameters.find((entry) => entry.id === parameterId);
+          if (parameter) setProperties({ parameterId, valueType: parameter.type });
+        },
+      }]
+    : [];
   const rows = [
+    ...parameterRows,
     ...nodePropertyRows(node, setProperties, replaceNode),
     ...pinDefaultRows(document, node, setProperties),
   ];
@@ -752,6 +772,9 @@ function ParticleGraphSettingsDetails({
         >
           <PropertyGrid rows={rows} />
         </ModuleStage>
+        <ModuleStage id="parameters" title="Parameters" accentRole={PARTICLE_STAGE_ROLE.input}>
+          <ParticleGraphParametersEditor document={document} onChange={onChange} />
+        </ModuleStage>
       </ModuleStack>
       <ParticleMaterialPicker
         open={picking}
@@ -812,6 +835,7 @@ export function ParticleGraphPreview({
   ) => void;
 }) {
   const [picking, setPicking] = useState(false);
+  const [previewValues, setPreviewValues] = useState<Record<string, number[]>>({});
   const library = useMemo(
     () =>
       previewDocument
@@ -829,6 +853,7 @@ export function ParticleGraphPreview({
             testId="particle-graph-preview-canvas"
             onPickMaterial={() => setPicking(true)}
             onDiagnostics={onBuildDiagnostics}
+            parameterValues={previewValues}
           />
         ) : (
           <ParticlePreviewSurface
@@ -845,6 +870,9 @@ export function ParticleGraphPreview({
           />
         )}
       </div>
+      {library ? (
+        <ParticlePreviewParameters parameters={document.parameters ?? []} values={previewValues} onChange={setPreviewValues} />
+      ) : null}
       {library && errorCount > 0 ? (
         <p
           role="status"
@@ -950,7 +978,7 @@ function ParticleGraphCanvas() {
   const { document, commit, documentId, setSelectedNodeId } = editing;
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(documentId);
   const initialGraph = useMemo(
-    () => hydrateParticleGraphForEditor(particleGraphToSerialized(document)),
+    () => hydrateParticleGraphForEditor(particleGraphToSerialized(document), document.parameters),
     [document],
   );
   // Connection vetoes read the graph as it is when the wire is dropped.
@@ -961,7 +989,7 @@ function ParticleGraphCanvas() {
       particleConnectionIsAllowed(graphRef.current, connection),
     [],
   );
-  const paletteNodes = useMemo(() => particlePaletteNodes(), []);
+  const paletteNodes = useMemo(() => particlePaletteNodes(document.parameters), [document.parameters]);
   // Pin ids stay on the rows so the canvas rings the offending pin.
   const diagnostics = useMemo<GraphDiagnostic[]>(
     () =>
