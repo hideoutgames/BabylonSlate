@@ -101,6 +101,7 @@ import {
   removeTileFromAutotile,
   tilePlaceholderHsl,
   tilesetAtlasColumns,
+  tilesetAtlasRows,
   tilesetTileRect,
   terrainVariantMasks,
   TERRAIN_ALL,
@@ -535,7 +536,7 @@ export function TilesetAutotiles({
     return true;
   };
 
-  // Dragging the template keeps the grabbed cell under the pointer, one axis at a time at the sheet's edges.
+  // Dragging the template keeps the grabbed cell under the pointer; at the sheet's edges it stops.
   const ghostDragRef = useRef<{ tileId: number; anchor: number } | null>(null);
   const ghostDrag: AtlasTileDrag | undefined = activePlacement
     ? {
@@ -549,14 +550,13 @@ export function TilesetAutotiles({
           if (!grab) return;
           const from = tileColumnRow(tileset, grab.tileId);
           const to = tileColumnRow(tileset, tileId);
-          const dColumn = to.column - from.column;
-          const dRow = to.row - from.row;
-          const fits = (anchor: number | null) =>
-            anchor !== null && autotileTemplatePlacement(tileset, activePlacement.template, anchor) !== null ? anchor : null;
-          const anchor = fits(offsetAtlasTile(tileset, grab.anchor, dColumn, dRow))
-            ?? fits(offsetAtlasTile(tileset, grab.anchor, dColumn, 0))
-            ?? fits(offsetAtlasTile(tileset, grab.anchor, 0, dRow));
-          if (anchor !== null) setPlacement({ ...activePlacement, anchor, refused: false });
+          const start = tileColumnRow(tileset, grab.anchor);
+          const columns = tilesetAtlasColumns(tileset);
+          const { template } = activePlacement;
+          const column = Math.min(Math.max(0, start.column + to.column - from.column), columns - template.columns);
+          const row = Math.min(Math.max(0, start.row + to.row - from.row), tilesetAtlasRows(tileset) - template.rows);
+          const anchor = row * columns + column + 1;
+          if (anchor !== activePlacement.anchor) setPlacement({ ...activePlacement, anchor, refused: false });
         },
       }
     : undefined;
