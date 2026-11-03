@@ -4,6 +4,7 @@ import {
   createDefaultTilesetPayload,
   ensureTilesetTiles,
   normalizeTilesetPayload,
+  setTilesetTerrains,
   tilesetAtlasColumns,
   tilesetAtlasRows,
   tilesetTileRect,
@@ -72,6 +73,70 @@ describe("tileset payload", () => {
     const legacy = normalizeTilesetPayload({ tiles: [{ id: 1, collision: "full" }] });
     expect("terrains" in legacy).toBe(false);
     expect("terrain" in legacy.tiles[0]!).toBe(false);
+  });
+
+  it("keeps border sets of other terrains and drops a tile of an undeclared set whole", () => {
+    const payload = normalizeTilesetPayload({
+      terrains: [
+        { id: "grass", name: "Grass", style: "blob", borders: ["dirt", "grass", "lava", "dirt", 7, "sand"] },
+        { id: "dirt", name: "Dirt", style: "sides", borders: [] },
+        { id: "sand", name: "Sand", style: "sides", borders: "grass" },
+      ],
+      tiles: [
+        { id: 1, terrain: { id: "grass", mask: 4, border: "dirt" } },
+        { id: 2, terrain: { id: "grass", mask: 4, border: "lava" } },
+        { id: 3, terrain: { id: "dirt", mask: 4, border: "grass" } },
+        { id: 4, terrain: { id: "dirt", mask: 4, border: "" } },
+        { id: 5, terrain: { id: "grass", mask: 4, border: "sand" } },
+      ],
+    });
+    expect(payload.terrains).toEqual([
+      { id: "grass", name: "Grass", style: "blob", borders: ["dirt", "sand"] },
+      { id: "dirt", name: "Dirt", style: "sides" },
+      { id: "sand", name: "Sand", style: "sides" },
+    ]);
+    // Undeclared sets lose the tile; they never fall back to the default set.
+    expect(payload.tiles.map((tile) => tile.terrain)).toEqual([
+      { id: "grass", mask: 4, border: "dirt" },
+      undefined,
+      undefined,
+      { id: "dirt", mask: 4 },
+      { id: "grass", mask: 4, border: "sand" },
+    ]);
+  });
+
+  it("removes a terrain from the other terrains' borders with the tiles drawn against it", () => {
+    const tileset = normalizeTilesetPayload({
+      terrains: [
+        { id: "grass", name: "Grass", style: "blob", borders: ["dirt", "sand"] },
+        { id: "dirt", name: "Dirt", style: "sides", borders: ["grass"] },
+        { id: "sand", name: "Sand", style: "sides" },
+      ],
+      tiles: [
+        { id: 1, terrain: { id: "grass", mask: 4 } },
+        { id: 2, terrain: { id: "grass", mask: 4, border: "dirt" } },
+        { id: 3, terrain: { id: "grass", mask: 4, border: "sand" } },
+        { id: 4, terrain: { id: "dirt", mask: 4, border: "grass" } },
+        { id: 5, collision: "full" },
+      ],
+    });
+    const withoutDirt = setTilesetTerrains(tileset, tileset.terrains!.filter((terrain) => terrain.id !== "dirt"));
+    expect(withoutDirt.terrains).toEqual([
+      { id: "grass", name: "Grass", style: "blob", borders: ["sand"] },
+      { id: "sand", name: "Sand", style: "sides" },
+    ]);
+    expect(withoutDirt.tiles.map((tile) => tile.terrain)).toEqual([
+      { id: "grass", mask: 4 },
+      undefined,
+      { id: "grass", mask: 4, border: "sand" },
+      undefined,
+      undefined,
+    ]);
+    expect(withoutDirt.tiles[4]).toBe(tileset.tiles[4]);
+    // Dropping a border from a terrain's list takes that set's tiles out too.
+    const grassOnly = setTilesetTerrains(withoutDirt, [{ id: "grass", name: "Grass", style: "blob" }]);
+    expect(grassOnly.tiles.map((tile) => tile.terrain)).toEqual([{ id: "grass", mask: 4 }, undefined, undefined, undefined, undefined]);
+    expect("terrains" in setTilesetTerrains(grassOnly, [])).toBe(false);
   });
 
   it("normalizes invalid sizes and drops tile id 0", () => {

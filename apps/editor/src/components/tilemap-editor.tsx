@@ -532,7 +532,7 @@ export function TilemapPalette({
           ref,
           tileset,
           terrain,
-          fill: createTerrainResolver(tileset, terrain.id, ref.tileCount)?.(terrainFillMask(terrain.style)) ?? 0,
+          fill: createTerrainResolver(tileset, terrain.id, ref.tileCount)?.resolve(terrainFillMask(terrain.style)) ?? 0,
           covered: total - missingTerrainVariants(tileset, terrain.id).length,
           total,
         };
@@ -818,7 +818,7 @@ export function TilemapPaint({
     const ref = brush ? tilemap.tilesets.find((entry) => entry.guid === brush.guid) : undefined;
     const tileset = brush ? payloads.get(brush.guid) : undefined;
     const terrain = brush && tileset ? tilesetTerrainById(tileset, brush.terrainId) : null;
-    const preview = brush && tileset && ref ? createTerrainResolver(tileset, brush.terrainId, ref.tileCount)?.(0) : 0;
+    const preview = brush && tileset && ref ? createTerrainResolver(tileset, brush.terrainId, ref.tileCount)?.resolve(0) : 0;
     if (!brush || !ref || !tileset || !terrain || !preview) return null;
     return { brush, terrain, tileset, gid: encodeTileGid(ref.firstGid, preview), localId: preview };
   }, [editing?.selectedTerrain, payloads, tilemap.tilesets]);

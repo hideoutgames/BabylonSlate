@@ -1,7 +1,7 @@
 /** Terrain (autotile) painting on Tilemap layers; pure and Babylon-free. */
 
-import { tilesetTileById, type TilesetPayload } from "./tileset-payload";
-import { createTerrainResolver, TERRAIN_NEIGHBOURS } from "./tileset-terrain";
+import { tilesetTerrainById, tilesetTileById, type TilesetPayload, type TilesetTerrainStyle } from "./tileset-payload";
+import { createTerrainResolver, TERRAIN_NEIGHBOURS, TERRAIN_SIDES, type TerrainResolver } from "./tileset-terrain";
 import {
   chunkCoordForTile,
   encodeTileGid,
@@ -21,10 +21,14 @@ export interface TilemapTerrainBrush {
   terrainId: string;
 }
 
+/** One terrain of one of the map's Tilesets, with its resolver; one object per terrain, so identity compares terrains. */
 interface TerrainMember {
   key: string;
+  guid: string;
+  terrainId: string;
+  style: TilesetTerrainStyle;
   firstGid: number;
-  resolve: (mask: number) => number;
+  resolver: TerrainResolver;
 }
 
 /** Identity of a terrain across a map: its Tileset and its id within it. */
@@ -46,8 +50,11 @@ function terrainMembers(map: TilemapPayload, tilesets: ReadonlyMap<string, Tiles
     member = null;
     const ref = map.tilesets.find((entry) => entry.guid === brush.guid);
     const tileset = tilesets.get(brush.guid);
-    const resolve = ref && tileset ? createTerrainResolver(tileset, brush.terrainId, ref.tileCount) : null;
-    if (ref && resolve) member = { key, firstGid: ref.firstGid, resolve };
+    const terrain = tileset ? tilesetTerrainById(tileset, brush.terrainId) : null;
+    const resolver = ref && tileset ? createTerrainResolver(tileset, brush.terrainId, ref.tileCount) : null;
+    if (ref && terrain && resolver) {
+      member = { key, guid: brush.guid, terrainId: brush.terrainId, style: terrain.style, firstGid: ref.firstGid, resolver };
+    }
     bySet.set(key, member);
     return member;
   };
@@ -102,14 +109,81 @@ function layerReader(
   };
 }
 
+/** `TERRAIN_NEIGHBOURS` indices of the sides (N, E, S, W) and of the corners. */
+const SIDE_NEIGHBOURS = [0, 2, 4, 6] as const;
+const CORNER_NEIGHBOURS = [1, 3, 5, 7] as const;
+
+/** The terrain faced most often in `directions`, or `undefined` on a tie or when none is faced. */
+function mostFacedBorder(faced: ReadonlyArray<string | null>, directions: readonly number[]): string | undefined {
+  const counts = new Map<string, number>();
+  for (const at of directions) {
+    const border = faced[at];
+    if (border) counts.set(border, (counts.get(border) ?? 0) + 1);
+  }
+  let best: string | undefined;
+  let bestCount = 0;
+  let tied = false;
+  for (const [border, count] of counts) {
+    if (count > bestCount) {
+      best = border;
+      bestCount = count;
+      tied = false;
+    } else if (count === bestCount) {
+      tied = true;
+    }
+  }
+  return tied ? undefined : best;
+}
+
+/**
+ * The GID a cell of `member` at (x, y) takes from its 8 neighbours' terrains
+ * (`memberAt`; never their variants, so a painted cell changes only itself and
+ * its 8 neighbours). Per direction: outside the map or the same terrain joins;
+ * another terrain U of the same Tileset is open facing U when this terrain has
+ * a border set for U, else joins when U has a border set for this terrain (U's
+ * pieces draw the seam), else is open facing nothing; anything else is open
+ * facing nothing. The set is the border faced most often on open sides, or on
+ * open corners when every side joins (Blob only); a tie or no border picks the
+ * default set.
+ */
+function resolveTerrainCell(
+  map: TilemapPayload,
+  member: TerrainMember,
+  x: number,
+  y: number,
+  memberAt: (x: number, y: number) => TerrainMember | null,
+): number {
+  let mask = 0;
+  const faced: Array<string | null> = [];
+  for (const { bit, dx, dy } of TERRAIN_NEIGHBOURS) {
+    const nx = x + dx;
+    const ny = y + dy;
+    let face: string | null = null;
+    if (!tileInBounds(map, nx, ny)) {
+      mask |= bit;
+    } else {
+      const other = memberAt(nx, ny);
+      if (other === member) mask |= bit;
+      else if (other && other.guid === member.guid) {
+        if (member.resolver.borders.has(other.terrainId)) face = other.terrainId;
+        else if (other.resolver.borders.has(member.terrainId)) mask |= bit;
+      }
+    }
+    faced.push(face);
+  }
+  const border = (mask & TERRAIN_SIDES) !== TERRAIN_SIDES
+    ? mostFacedBorder(faced, SIDE_NEIGHBOURS)
+    : member.style === "blob" ? mostFacedBorder(faced, CORNER_NEIGHBOURS) : undefined;
+  return encodeTileGid(member.firstGid, member.resolver.resolve(mask, border));
+}
+
 /**
  * Paint `cells` with a terrain, or erase them when `terrain` is `null`, then
  * pick the variant of every painted cell and of every terrain tile around them
- * from its 8 neighbours. Neighbours are read across chunk borders and empty
- * chunks; a neighbour joins when it belongs to the same terrain of the same
- * Tileset, and cells outside the map always join, so terrain runs on past the
- * map edge. Cells outside the map are never written. Returns `map` itself when
- * nothing changes, and nothing changes when the terrain has no tiles.
+ * from its 8 neighbours (`resolveTerrainCell`), read across chunk borders and
+ * empty chunks. Cells outside the map always join, so terrain runs on past the
+ * map edge, and are never written. Returns `map` itself when nothing changes,
+ * and nothing changes when the terrain has no tiles.
  */
 export function paintTilemapTerrain(
   map: TilemapPayload,
@@ -155,13 +229,7 @@ export function paintTilemapTerrain(
   const writes: TileWrite[] = [];
   if (!brush) for (const cell of targets.values()) writes.push({ ...cell, id: 0 });
   for (const entry of resolve.values()) {
-    let mask = 0;
-    for (const { bit, dx, dy } of TERRAIN_NEIGHBOURS) {
-      const x = entry.x + dx;
-      const y = entry.y + dy;
-      if (!tileInBounds(map, x, y) || memberAt(x, y) === entry.member) mask |= bit;
-    }
-    writes.push({ x: entry.x, y: entry.y, id: encodeTileGid(entry.member.firstGid, entry.member.resolve(mask)) });
+    writes.push({ x: entry.x, y: entry.y, id: resolveTerrainCell(map, entry.member, entry.x, entry.y, memberAt) });
   }
   return setTiles(map, options.layerId, writes, options.index);
 }
@@ -181,6 +249,7 @@ export function refreshTilemapTerrains(
   let next = map;
   for (const layer of map.layers) {
     const gidAt = layerReader(map, layer);
+    const memberAt = (x: number, y: number) => members.ofGid(gidAt(x, y));
     const writes: TileWrite[] = [];
     for (const chunk of layer.chunks) {
       chunk.tiles.forEach((gid, at) => {
@@ -188,13 +257,7 @@ export function refreshTilemapTerrains(
         if (!member) return;
         const x = chunk.cx * size + (at % size);
         const y = chunk.cy * size + Math.floor(at / size);
-        let mask = 0;
-        for (const { bit, dx, dy } of TERRAIN_NEIGHBOURS) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (!tileInBounds(map, nx, ny) || members.ofGid(gidAt(nx, ny)) === member) mask |= bit;
-        }
-        const id = encodeTileGid(member.firstGid, member.resolve(mask));
+        const id = resolveTerrainCell(map, member, x, y, memberAt);
         if (id !== gid) writes.push({ x, y, id });
       });
     }

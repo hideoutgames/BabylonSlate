@@ -10,6 +10,7 @@ import {
   type TilesetPayload,
   type TilesetTerrainStyle,
   type TilesetTile,
+  type TilesetTileTerrain,
 } from "./tileset-payload";
 
 export const TERRAIN_N = 1;
@@ -99,45 +100,88 @@ export function terrainMatchScore(want: number, have: number): [number, number, 
   return [missingSides, extraSides, unwantedNotches, missingNotches];
 }
 
+/** Picks the variants of one terrain (`createTerrainResolver`). */
+export interface TerrainResolver {
+  /**
+   * The member tile for neighbour `mask`, from the set drawn against the
+   * terrain `border` (omitted: the default set, drawn against nothing). The
+   * candidates are that set's tiles; a set without tiles falls back to the
+   * default set, and an empty default set to every tile of the terrain. Among
+   * them wins the exact canonical mask, otherwise the closest by
+   * `terrainMatchScore`, ties going to the lowest tile id.
+   */
+  resolve(mask: number, border?: string): number;
+  /** Terrains this terrain has a border set with at least one tile for. */
+  readonly borders: ReadonlySet<string>;
+}
+
+interface TerrainMemberTile {
+  id: number;
+  mask: number;
+}
+
+/** Tiles of the atlas grid; a member tile past it never draws, so terrain code ignores it. */
+function atlasTileCount(tileset: TilesetPayload): number {
+  return tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
+}
+
 /**
  * Variant picker for one terrain of `tileset`, or `null` when the terrain does
- * not exist or has no tiles. The picker maps a neighbour mask to the member
- * tile with the exact canonical mask, otherwise the closest by
- * `terrainMatchScore`, ties going to the lowest tile id. `maxTileId` limits
- * members to the ids a map's Tileset range can encode.
+ * not exist or has no tiles. `maxTileId` limits members to the ids a map's
+ * Tileset range can encode; tiles past the atlas never draw and never count,
+ * so a payload resolves the same with or without `ensureTilesetTiles`.
  */
 export function createTerrainResolver(
   tileset: TilesetPayload,
   terrainId: string,
   maxTileId = Number.POSITIVE_INFINITY,
-): ((mask: number) => number) | null {
+): TerrainResolver | null {
   const terrain = tilesetTerrainById(tileset, terrainId);
   if (!terrain) return null;
-  const members: Array<{ id: number; mask: number }> = [];
+  const declared = new Set(terrain.borders ?? []);
+  const limit = Math.min(maxTileId, atlasTileCount(tileset));
+  const all: TerrainMemberTile[] = [];
+  // Sets by border id; the default set is "".
+  const sets = new Map<string, TerrainMemberTile[]>();
   for (const tile of tileset.tiles) {
-    if (tile.terrain?.id !== terrainId || tile.id > maxTileId) continue;
-    members.push({ id: tile.id, mask: canonicalTerrainMask(terrain.style, tile.terrain.mask) });
+    const membership = tile.terrain;
+    if (membership?.id !== terrainId || tile.id > limit) continue;
+    const border = membership.border ?? "";
+    if (border && !declared.has(border)) continue;
+    const member = { id: tile.id, mask: canonicalTerrainMask(terrain.style, membership.mask) };
+    all.push(member);
+    const set = sets.get(border);
+    if (set) set.push(member);
+    else sets.set(border, [member]);
   }
-  if (members.length === 0) return null;
-  members.sort((a, b) => a.id - b.id);
-  const cache = new Map<number, number>();
-  return (mask) => {
-    const want = canonicalTerrainMask(terrain.style, mask);
-    const cached = cache.get(want);
-    if (cached !== undefined) return cached;
-    let best = members[0]!;
-    let bestScore = terrainMatchScore(want, best.mask);
-    for (let at = 1; at < members.length; at++) {
-      const member = members[at]!;
-      const score = terrainMatchScore(want, member.mask);
-      // Members are in id order, so only a strictly closer tile replaces the best.
-      if (compareScores(score, bestScore) < 0) {
-        best = member;
-        bestScore = score;
+  if (all.length === 0) return null;
+  const byId = (a: TerrainMemberTile, b: TerrainMemberTile) => a.id - b.id;
+  all.sort(byId);
+  for (const set of sets.values()) set.sort(byId);
+  const caches = new Map<readonly TerrainMemberTile[], Map<number, number>>();
+  return {
+    borders: new Set([...sets.keys()].filter((border) => border !== "")),
+    resolve(mask, border) {
+      const members = (border ? sets.get(border) : undefined) ?? sets.get("") ?? all;
+      let cache = caches.get(members);
+      if (!cache) caches.set(members, (cache = new Map()));
+      const want = canonicalTerrainMask(terrain.style, mask);
+      const cached = cache.get(want);
+      if (cached !== undefined) return cached;
+      let best = members[0]!;
+      let bestScore = terrainMatchScore(want, best.mask);
+      for (let at = 1; at < members.length; at++) {
+        const member = members[at]!;
+        const score = terrainMatchScore(want, member.mask);
+        // Members are in id order, so only a strictly closer tile replaces the best.
+        if (compareScores(score, bestScore) < 0) {
+          best = member;
+          bestScore = score;
+        }
       }
-    }
-    cache.set(want, best.id);
-    return best.id;
+      cache.set(want, best.id);
+      return best.id;
+    },
   };
 }
 
@@ -211,21 +255,37 @@ export function autotileLayoutPlacement(
   }));
 }
 
-/** Give the layout's tiles their terrain and neighbours; unused cells and tiles outside the block are left as they are. */
+/** A terrain membership in the default set, or in the set drawn against `border`. */
+function terrainMembership(terrainId: string, mask: number, border: string | undefined): TilesetTileTerrain {
+  return border === undefined ? { id: terrainId, mask } : { id: terrainId, mask, border };
+}
+
+/** Whether `tile` is in the terrain's default set, or in its set drawn against `border`. */
+function inTerrainSet(tile: Pick<TilesetTile, "terrain"> | undefined, terrainId: string, border: string | undefined): boolean {
+  return tile?.terrain?.id === terrainId && tile.terrain.border === border;
+}
+
+/**
+ * Give the layout's tiles their terrain and neighbours, in the default set or
+ * the set drawn against `border`; unused cells and tiles outside the block are
+ * left as they are, and a border the terrain does not declare changes nothing.
+ */
 export function applyAutotileLayout(
   tileset: TilesetPayload,
   terrainId: string,
   startTileId: number,
+  border?: string,
 ): TilesetPayload {
   const terrain = tilesetTerrainById(tileset, terrainId);
-  const placement = terrain ? autotileLayoutPlacement(tileset, terrain.style, startTileId) : null;
+  if (!terrain || (border !== undefined && !terrain.borders?.includes(border))) return tileset;
+  const placement = autotileLayoutPlacement(tileset, terrain.style, startTileId);
   if (!placement) return tileset;
   const masks = new Map(placement.flatMap((cell) => (cell.mask === null ? [] : [[cell.tileId, cell.mask] as const])));
   return {
     ...tileset,
     tiles: tileset.tiles.map((tile) => {
       const mask = masks.get(tile.id);
-      return mask === undefined ? tile : { ...tile, terrain: { id: terrainId, mask } };
+      return mask === undefined ? tile : { ...tile, terrain: terrainMembership(terrainId, mask, border) };
     }),
   };
 }
@@ -237,21 +297,36 @@ export type AutotileZone = number;
 const SIDE_CORNERS = new Map(SIDE_BITS.map((side) => [side, CORNERS.filter((corner) => corner.sides & side).reduce((bits, corner) => bits | corner.bit, 0)]));
 const CORNER_SIDES = new Map(CORNERS.map((corner) => [corner.bit, corner.sides]));
 
-/** Whether a tile's zone is on for a terrain: the centre when the tile belongs to it, a side or corner when its mask joins there. */
-export function autotileZoneOn(tile: Pick<TilesetTile, "terrain"> | undefined, terrainId: string, zone: AutotileZone): boolean {
-  if (tile?.terrain?.id !== terrainId) return false;
-  return zone === 0 || (tile.terrain.mask & zone) !== 0;
+/**
+ * Whether a tile's zone is on for a terrain's set (the default set, or the one
+ * drawn against `border`): the centre when the tile is in that set, a side or
+ * corner when its mask joins there.
+ */
+export function autotileZoneOn(
+  tile: Pick<TilesetTile, "terrain"> | undefined,
+  terrainId: string,
+  zone: AutotileZone,
+  border?: string,
+): boolean {
+  if (!inTerrainSet(tile, terrainId, border)) return false;
+  return zone === 0 || (tile!.terrain!.mask & zone) !== 0;
 }
 
 /**
- * Turn one zone of a tile on or off for a terrain. Turning on any zone makes
- * the tile a member (a tile of another terrain moves over with no
- * neighbours); a corner turns its two sides on with it, and a side turned
- * off takes its corners along. Turning the centre off removes the tile from
- * the terrain.
+ * Turn one zone of a tile on or off for a terrain's set (the default set, or
+ * the one drawn against `border`). Turning on any zone puts the tile in that
+ * set (a tile of another terrain or set moves over with no neighbours); a
+ * corner turns its two sides on with it, and a side turned off takes its
+ * corners along. Turning the centre off removes the tile from the terrain.
  */
-export function setAutotileZone(tile: TilesetTile, terrainId: string, zone: AutotileZone, on: boolean): TilesetTile {
-  const member = tile.terrain?.id === terrainId;
+export function setAutotileZone(
+  tile: TilesetTile,
+  terrainId: string,
+  zone: AutotileZone,
+  on: boolean,
+  border?: string,
+): TilesetTile {
+  const member = inTerrainSet(tile, terrainId, border);
   if (!on) {
     if (!member) return tile;
     if (zone === 0) {
@@ -260,19 +335,26 @@ export function setAutotileZone(tile: TilesetTile, terrainId: string, zone: Auto
       return next;
     }
     const mask = tile.terrain!.mask & ~zone & ~(SIDE_CORNERS.get(zone) ?? 0);
-    return mask === tile.terrain!.mask ? tile : { ...tile, terrain: { id: terrainId, mask } };
+    return mask === tile.terrain!.mask ? tile : { ...tile, terrain: terrainMembership(terrainId, mask, border) };
   }
   const base = member ? tile.terrain!.mask : 0;
   const mask = zone === 0 ? base : base | zone | (CORNER_SIDES.get(zone) ?? 0);
-  return member && mask === base ? tile : { ...tile, terrain: { id: terrainId, mask } };
+  return member && mask === base ? tile : { ...tile, terrain: terrainMembership(terrainId, mask, border) };
 }
 
-/** Canonical masks of a terrain's style that no member tile draws exactly, ascending. */
-export function missingTerrainVariants(tileset: TilesetPayload, terrainId: string): number[] {
+/**
+ * Canonical masks of a terrain's style that no tile of one of its sets draws
+ * exactly, ascending: the default set, or the set drawn against `border`.
+ * Tiles past the atlas draw nothing. Empty for a terrain the Tileset lacks or
+ * a border the terrain does not declare.
+ */
+export function missingTerrainVariants(tileset: TilesetPayload, terrainId: string, border?: string): number[] {
   const terrain = tilesetTerrainById(tileset, terrainId);
-  if (!terrain) return [];
+  if (!terrain || (border !== undefined && !terrain.borders?.includes(border))) return [];
+  const limit = atlasTileCount(tileset);
   const drawn = new Set(
-    tileset.tiles.flatMap((tile) => (tile.terrain?.id === terrainId ? [canonicalTerrainMask(terrain.style, tile.terrain.mask)] : [])),
+    tileset.tiles.flatMap((tile) =>
+      inTerrainSet(tile, terrainId, border) && tile.id <= limit ? [canonicalTerrainMask(terrain.style, tile.terrain!.mask)] : []),
   );
   return terrainVariantMasks(terrain.style).filter((mask) => !drawn.has(mask));
 }
