@@ -184,6 +184,12 @@ export const FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS: readonly FeatureTestBreakdown
     commands: ["quality water refraction on", `quality water refractionScale ${MEDIUM.water.refractionScale}`],
     fields: ["water.refraction", "water.refractionScale"],
   },
+  // Medium's own reflections march the scene copy; planar, which renders the scene again for flat water, is High's.
+  {
+    label: "screen-space water reflection",
+    commands: ["quality water reflections screenSpace", `quality water reflectionSteps ${MEDIUM.water.reflectionSteps}`],
+    fields: ["water.reflections"],
+  },
   {
     label: "planar water reflection",
     commands: ["quality water reflections planar", `quality water planarScale ${MEDIUM.water.planarScale}`],

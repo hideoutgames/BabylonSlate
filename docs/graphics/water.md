@@ -63,14 +63,18 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 
 | Setting | Low | Medium | High | Ultra |
 | --- | --- | --- | --- | --- |
-| **Water Shading Detail** | Medium | Medium | High | Ultra |
-| **Water Mesh Density** | 0.75 | 1 | 1 | 1.5 |
+| **Water Shading Detail** | Low | Medium | High | Ultra |
+| **Water Mesh Density** | 0.5 | 0.75 | 1 | 1.5 |
 | **Contact Resolution** | 256 | 512 | 1024 | 1024 |
-| **Water Refraction** | On | On | On | On |
-| **Water Reflections** | Planar | Planar | Planar | Planar |
+| **Water Refraction** | Off | On | On | On |
+| **Refraction Resolution** | 0.5 | 0.5 | 0.75 | 1 |
+| **Water Reflections** | Sky Only | Screen Space | Planar | Planar |
+| **Reflection Steps** | 6 | 8 | 16 | 24 |
 | **Planar Resolution** | 0.25 | 0.5 | 0.75 | 0.75 |
-| **FFT Size** | 128 | 256 | 256 | 256 |
-| **FFT Cascades** | 3 | 3 | 3 | 3 |
+| **FFT Size** | 64 | 128 | 256 | 256 |
+| **FFT Cascades** | 2 | 3 | 3 | 3 |
+
+Water is one of the most expensive things a scene draws. Low draws it as a blended surface that reflects the sky, without the scene copy refraction needs or a second view for planar reflections. Medium keeps refraction and reflects objects on screen, but draws no planar reflections, which render the scene a second time for flat water.
 
 - **Water Shading Detail** sets how much fine detail the water's shading draws, for built-in water and any Material with water nodes. **High** and **Ultra** draw everything. **Medium** drops the refraction's correction beside the edges of objects in front of the water. **Low** also draws the shoreline at its rest position as waves move, leaves out the foam around objects crossing the water, and draws coarser shore foam. It never changes the other water settings: a Low project with **Planar** reflections still mirrors objects.
 - **Contact Resolution** sets the detail of the foam and rings where objects meet the water. The work of keeping them current is capped per frame and goes to the water nearest the camera first, so around many moving objects foam can trail them by a fraction of a second. Higher values cost more per update and trail longer.
