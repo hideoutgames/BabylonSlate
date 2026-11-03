@@ -153,4 +153,30 @@ describe("particle graph canvas adapter", () => {
       expect(added.data.__particleRole, entry.id).toBe(entry.defaultData.__particleRole);
     }
   });
+
+  it("offers one Parameter entry per parameter, typed by it, and titles Parameter nodes by name", () => {
+    const parameters = [
+      { id: "p-heat", name: "Heat", type: "float" as const, defaultValue: [1] },
+      { id: "p-tint", name: "Tint", type: "color" as const, defaultValue: [1, 1, 1, 1] },
+    ];
+    expect(particlePaletteNodes().some((entry) => entry.id === "input.parameter")).toBe(false);
+    const entries = particlePaletteNodes(parameters).filter((entry) => entry.nodeType === "input.parameter");
+    expect(entries.map(({ id, title, nodeTitle, category }) => ({ id, title, nodeTitle, category }))).toEqual([
+      { id: "input.parameter:p-heat", title: "Parameter: Heat", nodeTitle: "Heat", category: "Parameters" },
+      { id: "input.parameter:p-tint", title: "Parameter: Tint", nodeTitle: "Tint", category: "Parameters" },
+    ]);
+    expect(entries[1]!.defaultData).toEqual({ parameterId: "p-tint", valueType: "color", __particleRole: "input" });
+    expect(entries[1]!.pins.find((entry) => entry.id === "out")?.type.kind).toBe("color");
+
+    const doc = createDefaultParticleGraphDocument();
+    doc.parameters = parameters;
+    doc.nodes.push(
+      { id: "tint", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "p-tint", valueType: "color" } },
+      { id: "lost", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "gone", valueType: "float" } },
+    );
+    const nodes = hydrateParticleGraphForEditor(particleGraphToSerialized(doc), parameters).nodes;
+    expect(nodes.find((node) => node.id === "tint")!.data.title).toBe("Tint");
+    // A node whose parameter is gone keeps the catalog title.
+    expect(nodes.find((node) => node.id === "lost")!.data.title).toBe("Parameter");
+  });
 });

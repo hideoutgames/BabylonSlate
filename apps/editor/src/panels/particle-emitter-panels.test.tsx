@@ -191,6 +191,36 @@ describe("ParticleEmitterEditor", () => {
     expect(emitterOpen()).toBe(true);
   });
 
+  it("binds a field to a parameter, marks the field, and resizes the default when the target changes type", async () => {
+    const history = renderWithHistory(createDefaultParticleEmitterPayload());
+    expect(screen.queryByTestId("particle-bound-rate")).toBeNull();
+    fireEvent.click(screen.getByTestId("particle-emitter-bindings-add"));
+    expect(history.read().bindings).toEqual([{ target: "spawn.rateScale", parameterName: "Intensity", defaultValue: [1] }]);
+    expect(screen.getByTestId("particle-bound-rate").textContent).toBe("Bound To Intensity");
+
+    const name = screen.getByTestId("property-binding-spawn.rateScale-name");
+    fireEvent.change(name, { target: { value: "  Heat " } });
+    fireEvent.blur(name);
+    expect(history.read().bindings[0]!.parameterName).toBe("Heat");
+    expect(screen.getByTestId("particle-bound-rate").textContent).toBe("Bound To Heat");
+
+    // A second binding takes the next free target and the freed default name; a used target is not offered twice.
+    fireEvent.click(screen.getByTestId("particle-emitter-bindings-add"));
+    expect(history.read().bindings.map((binding) => binding.target)).toEqual(["spawn.rateScale", "spawn.burstScale"]);
+    fireEvent.click(screen.getByTestId("property-binding-spawn.burstScale-target"));
+    const used = await screen.findByRole("option", { name: "Spawn Rate Scale" });
+    expect(used.getAttribute("aria-disabled") ?? used.getAttribute("data-disabled")).toBeTruthy();
+    const tint = await screen.findByRole("option", { name: "Color Tint" });
+    fireEvent.pointerDown(tint);
+    fireEvent.click(tint);
+    await waitFor(() => expect(history.read().bindings[1]).toEqual({ target: "init.colorTint", parameterName: "Intensity",
+      defaultValue: [1, 1, 1, 1] }));
+
+    fireEvent.click(screen.getByTestId("particle-emitter-bindings-0-remove"));
+    expect(history.read().bindings.map((binding) => binding.target)).toEqual(["init.colorTint"]);
+    expect(screen.queryByTestId("particle-bound-rate")).toBeNull();
+  });
+
   it("opens a P17-shaped document with the new module defaults", () => {
     renderWithHistory({
       textureGuid: "tex-1",

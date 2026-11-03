@@ -183,6 +183,33 @@ describe("ParticleSystemEditor", () => {
     expect(slotIcon(0)).toBe("ParticleEmitter");
     expect(slotIcon(1)).toBe("ParticleGraph");
   });
+
+  it("lists the slots' parameters with the first slot's default, overrides it, and flags a type conflict", async () => {
+    const basic = createDefaultParticleEmitterPayload();
+    basic.bindings = [
+      { target: "spawn.rateScale", parameterName: "Heat", defaultValue: [2] },
+      { target: "init.colorTint", parameterName: "Glow", defaultValue: [1, 0, 0, 1] },
+    ];
+    const graph = createDefaultParticleGraphDocument("Embers");
+    graph.parameters = [
+      { id: "p-heat", name: "Heat", type: "float", defaultValue: [5] },
+      { id: "p-glow", name: "Glow", type: "float", defaultValue: [1] },
+    ];
+    harness.loadAssetDocument.mockImplementation(async (kind: string) => (kind === "particle-graph" ? graph : basic));
+    const editor = renderEditor({ ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1", "pg-1"] });
+    const heat = await screen.findByTestId("property-system-parameter-Heat") as HTMLInputElement;
+    expect(heat.value).toBe("2");
+    expect(screen.getByTestId("particle-system-parameters").textContent).toContain("Emitter slot 2 reads it with another type");
+
+    fireEvent.change(heat, { target: { value: "3" } });
+    fireEvent.blur(heat);
+    expect(editor.read().parameterDefaults).toEqual({ Heat: [3] });
+    // Back at the emitters' default, the System keeps no default of its own.
+    const edited = screen.getByTestId("property-system-parameter-Heat");
+    fireEvent.change(edited, { target: { value: "2" } });
+    fireEvent.blur(edited);
+    expect(editor.read().parameterDefaults).toEqual({});
+  });
 });
 
 describe("ParticleSystemPreview", () => {
@@ -258,6 +285,21 @@ describe("ParticleSystemPreview", () => {
       "basic",
       "graph",
     ]);
+  });
+
+  it("starts preview parameters at their defaults and sends an edit to the running preview", async () => {
+    const bound = { ...withMaterial, bindings: [{ target: "spawn.rateScale" as const, parameterName: "Heat", defaultValue: [2] }] };
+    harness.loadAssetDocument.mockResolvedValue(bound);
+    renderPreview(system);
+    const heat = await screen.findByTestId("property-preview-parameter-Heat") as HTMLInputElement;
+    expect(heat.value).toBe("2");
+    await waitFor(() => expect(harness.services).toHaveLength(1));
+    const service = harness.services[0]! as unknown as { handleCommand: ReturnType<typeof vi.fn> };
+    await waitFor(() => expect(service.handleCommand).toHaveBeenCalledWith(expect.objectContaining({ type: "assignParticle" })));
+    fireEvent.change(heat, { target: { value: "4" } });
+    fireEvent.blur(heat);
+    await waitFor(() => expect(service.handleCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "setParticleParameter", name: "Heat", value: [4] })));
   });
 
   it("explains a Particle Graph slot that has never validated instead of starting the preview", async () => {
