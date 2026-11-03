@@ -234,4 +234,32 @@ describe("particle graph lowering", () => {
     expect(operation(wiredPlan, "create/angle").inputs.value).toEqual({ kind: "operation", operationId: "half", pinId: "out" });
     expect(operation(wiredPlan, "shape/angle").inputs.value).toEqual({ kind: "constant", type: "float", value: [180] });
   });
+
+  it("keys Parameter nodes by parameter id and type, never by name or default, and carries the parameters in the plan", () => {
+    const withParameter = (parameter: { name: string; type: "float" | "vec3"; defaultValue: number[] }, id = "p1") => edited((doc) => {
+      doc.parameters = [{ id, ...parameter }];
+      doc.nodes.push({ id: "intensity", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: id, valueType: parameter.type } });
+      doc.edges.push({ id: "e-intensity", sourceNodeId: "intensity", sourcePinId: "out", targetNodeId: "output", targetPinId: "emitRate" });
+    });
+    const base = withParameter({ name: "Intensity", type: "float", defaultValue: [10] });
+    const lowered = plan(base);
+    expect(lowered.parameters).toEqual([{ id: "p1", name: "Intensity", type: "float", defaultValue: [10] }]);
+    expect(operation(lowered, "intensity")).toMatchObject({ nodeType: "input.parameter", resolvedType: "float",
+      properties: { parameterId: "p1", valueType: "float" } });
+    expect(operation(lowered, "output").inputs.emitRate).toEqual({ kind: "operation", operationId: "intensity", pinId: "out" });
+    const key = particleGraphCompileKey(base);
+    expect(particleGraphCompileKey(withParameter({ name: "Power", type: "float", defaultValue: [99] }))).toBe(key);
+    expect(particleGraphCompileKey(withParameter({ name: "Intensity", type: "float", defaultValue: [10] }, "p2"))).not.toBe(key);
+  });
+
+  it("refuses a Parameter node whose parameter was deleted", () => {
+    const doc = edited((entry) => {
+      entry.nodes.push({ id: "orphan", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "gone", valueType: "float" } });
+    });
+    const result = lowerParticleGraphDocument(doc);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "particle.parameterMissing", nodeId: "orphan", severity: "error" }),
+    ]));
+  });
 });

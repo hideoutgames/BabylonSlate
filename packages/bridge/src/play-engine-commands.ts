@@ -45,6 +45,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "setParticlePlaying",
   "setSimulationTimeScale",
   "emitParticleBurst",
+  "setParticleParameter",
   "setFreeCam",
   "setWireframe",
   "setShowBounds",

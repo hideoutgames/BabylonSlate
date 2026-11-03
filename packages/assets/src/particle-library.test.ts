@@ -24,6 +24,7 @@ describe("particle library", () => {
     });
     expect(library.systems.get("sys-1")).toEqual({
       emitterGuids: ["em-1"],
+      parameterDefaults: {},
       space: "world",
       previewSkybox: true,
     });

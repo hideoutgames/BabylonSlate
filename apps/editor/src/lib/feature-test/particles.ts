@@ -368,6 +368,11 @@ function sparksEmitter(materialGuid: string): ParticleEmitterPayload {
     },
     forces: { gravity: { enabled: true, acceleration: [0, -9.81, 0] } },
     render: { materialGuid, blendMode: "additive", billboard: "stretched" },
+    // Spark Intensity scales the bursts; Spark Tint tints the sparks.
+    bindings: [
+      { target: "spawn.burstScale", parameterName: "Spark Intensity", defaultValue: [1] },
+      { target: "init.colorTint", parameterName: "Spark Tint", defaultValue: [1, 0.9, 0.7, 1] },
+    ],
   });
 }
 
@@ -451,8 +456,16 @@ function glowGraph(name: string, materialGuid: string): ParticleGraphDocument {
     ],
   });
   edit("updateColor", {}, 1700);
-  edit("output", { "default:emitRate": [90] }, 2120);
+  edit("output", {}, 2120);
+  // Emit Rate is the Glow Rate parameter, so gameplay and the System can retune it by name.
+  graph.parameters = [{ id: "ft-fx-glow-rate", name: "Glow Rate", type: "float", defaultValue: [90] }];
   graph.nodes.push(
+    {
+      id: "glowRate",
+      type: "input.parameter",
+      position: { x: 1700, y: 300 },
+      properties: { parameterId: "ft-fx-glow-rate", valueType: "float" },
+    },
     {
       id: "gravity",
       type: "force.gravity",
@@ -471,6 +484,7 @@ function glowGraph(name: string, materialGuid: string): ParticleGraphDocument {
     { id: "e-velocity-gravity", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "gravity", targetPinId: "particle" },
     { id: "e-gravity-color", sourceNodeId: "gravity", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
     { id: "e-size-create", sourceNodeId: "sizeRandom", sourcePinId: "out", targetNodeId: "create", targetPinId: "size" },
+    { id: "e-glowRate-output", sourceNodeId: "glowRate", sourcePinId: "out", targetNodeId: "output", targetPinId: "emitRate" },
   );
   return graph;
 }

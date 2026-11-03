@@ -29,6 +29,7 @@ export * from "./particle-values";
 export * from "./particle-schedule";
 export * from "./particle-basic-emitter";
 export * from "./particle-library";
+export * from "./particle-parameters";
 export * from "./model-payload";
 export * from "./convex-hull";
 export * from "./glb-geometry";

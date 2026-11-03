@@ -19,6 +19,7 @@ import {
   type ParticleLoopMode,
   type ParticleSpace,
 } from "@haptic/core";
+import { normalizeParticleBasicBindings } from "./particle-parameters";
 import { stableStringify } from "./bytes";
 import type { ParticleBurst } from "./particle-schedule";
 import {
@@ -166,6 +167,8 @@ export type ParticleEmitterPayload = {
     blendMode: ParticleBlendMode;
     billboard: ParticleBillboardMode;
   };
+  /** Runtime parameters that drive fixed targets (`PARTICLE_BASIC_BINDING_TARGETS`); at most 16. */
+  bindings: import("./particle-parameters").ParticleBasicBinding[];
 };
 
 const UP: ParticleVec3Tuple = [0, 1, 0];
@@ -467,6 +470,7 @@ export function normalizeParticleEmitterPayload(
       blendMode: oneOf(render.blendMode, PARTICLE_BLEND_MODE_IDS, "additive"),
       billboard: oneOf(render.billboard, PARTICLE_BILLBOARD_MODE_IDS, "all"),
     },
+    bindings: normalizeParticleBasicBindings(rec.bindings),
   };
 }
 

@@ -249,6 +249,24 @@ export function applyBasicEmitterPlan(system: IParticleSystem, plan: BasicEmitte
   system._recreateUpdateEffect();
 }
 
+/**
+ * Writes what Basic parameter bindings change (`applyBasicParameters`) onto a running system.
+ * Gradient keys are edited in place only when they changed from `previous`, so an unchanged tint
+ * never rebuilds a GPU gradient texture.
+ */
+export function applyBasicParameterPlan(system: IParticleSystem, plan: BasicEmitterPlan, previous: BasicEmitterPlan): void {
+  system.emitRate = plan.emitRate;
+  system.minLifeTime = plan.lifeTime.min;
+  system.maxLifeTime = plan.lifeTime.max;
+  system.minEmitPower = plan.emitPower.min;
+  system.maxEmitPower = plan.emitPower.max;
+  system.minSize = plan.size.min;
+  system.maxSize = plan.size.max;
+  system.gravity.copyFromFloats(plan.gravity[0], plan.gravity[1], plan.gravity[2]);
+  if (JSON.stringify(plan.gradients) === JSON.stringify(previous.gradients)) return;
+  if (editGradientsInPlace(system, plan.gradients) && system instanceof OwnedGPUParticleSystem) system.refreshGradientTextures();
+}
+
 function vec3(value: ParticleVec3Tuple): Vector3 {
   return new Vector3(value[0], value[1], value[2]);
 }

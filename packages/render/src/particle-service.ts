@@ -1,6 +1,7 @@
 import { isSceneStreamSlotPending, registerSceneStreamParticle } from "./scene-stream-admission";
 import {
   Mesh,
+  type ParticleInputBlock,
   type AbstractEngine,
   type AbstractMesh,
   type BaseTexture,
@@ -13,10 +14,15 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import {
+  applyBasicParameters,
   particleEmitterChangeTier,
   particleEmitterMaterialGuid,
+  particleSlotConflicts,
+  particleSlotParameterValues,
+  particleSystemParameters,
   resolveBasicEmitterPlan,
   stableStringify,
+  type BasicEmitterPlan,
   type ParticleEmitterChangeTier,
   type ParticleEmitterPayload,
   type ParticleLibrary,
@@ -38,8 +44,10 @@ import { BUILTIN_PARTICLE_NOISE, particleNoisePixelsFrom, type ParticleNoisePixe
 import { PREVIEW_OWNER_MESH, meshGeometryRelativeTo, type ParticleMeshGeometry, type ParticleMeshShapeSource } from "./particle-mesh-shape";
 import { createBasicEmissionDriver, createManualEmission, type BasicEmissionDriver, type ManualEmission } from "./particle-emission-driver";
 import { describeParticleThrow, realizeParticleGraph, type ParticleGraphCompileCode } from "./particle-graph-realize";
+import { setParticleInputBlockValue } from "./particle-graph-blocks";
 import {
   applyBasicEmitterPlan,
+  applyBasicParameterPlan,
   bindParticleMaterial,
   boundParticlePreparation,
   createBabylonParticleSystem,
@@ -64,7 +72,8 @@ export type ParticleDiagnosticCode =
   | "particle.apply_failed"
   | "particle.burst_not_playing"
   | "particle.noise_texture_unavailable"
-  | "particle.mesh_missing";
+  | "particle.mesh_missing"
+  | "particle.parameter_type_conflict";
 /**
  * Slot-level problems carry the emitter guid; bundle-level ones the Particle System guid.
  * Particle Graph problems also carry the graph node (and pin) they are anchored to.
@@ -123,6 +132,9 @@ type BasicSlot = SlotBase & {
   backend: ParticleSimBackend;
   /** Source payload, diffed by `updateLibrary`. */
   payload: ParticleEmitterPayload;
+  /** The payload's plan without parameters, and the plan last written with them (`applyBasicParameters`). */
+  basePlan: BasicEmitterPlan;
+  appliedPlan: BasicEmitterPlan;
   driver: BasicEmissionDriver;
   /** GPU prewarm runs inside the first ready render and would consume a queued burst, so the driver waits for that draw. */
   prewarmPending: boolean;
@@ -145,6 +157,10 @@ type GraphSlot = SlotBase & {
   /** Scripted bursts (`emitParticleBurst`) through Babylon's manual emission, queued after a rendered frame. */
   manual: ManualEmission;
   requestedBurst: number;
+  /** The document the slot runs: its parameters name the blocks below (a rename stays live). */
+  document: ParticleGraphDocument;
+  /** Each parameter's input blocks by parameter id. */
+  parameterBlocks: Map<string, ParticleInputBlock[]>;
 };
 type SlotRecord = BasicSlot | GraphSlot;
 /** A new native slot and, for graphs, Babylon's build promises. */
@@ -177,6 +193,10 @@ type LiveComponent = {
   playGeneration: number;
   /** Why the current drain began: a Once system finished, or Stop. */
   endReason?: "finished" | "stopped";
+  /** The component's parameter values by name (assignment overrides and runtime sets); kept across preparations. */
+  parameterValues: Map<string, number[]>;
+  /** A value changed since the slots last applied them; applied once, before the next render. */
+  parametersDirty: boolean;
   state: PlaybackState;
   generation: number;
   scene: Scene | null;
@@ -458,6 +478,15 @@ export class ParticleService {
     else if (command.type === "assignParticle") this.assign(command);
     else if (command.type === "setSimulationTimeScale") this.setTimeScale(command.scale);
     else if (command.type === "emitParticleBurst") this.burst(command);
+    else if (command.type === "setParticleParameter") {
+      const name = command.name.trim();
+      for (const entry of this.live.values()) {
+        if (entry.command.actorGuid !== command.actorGuid || (command.componentId && entry.command.componentId !== command.componentId)) continue;
+        if (command.value) entry.parameterValues.set(name, [...command.value]);
+        else entry.parameterValues.delete(name);
+        entry.parametersDirty = true;
+      }
+    }
     else if (command.type === "setParticlePlaying") {
       for (const entry of [...this.live.values()]) {
         if (entry.command.actorGuid !== command.actorGuid || (command.componentId && entry.command.componentId !== command.componentId)) continue;
@@ -570,7 +599,8 @@ export class ParticleService {
     for (const guid of this.library.systems.keys()) {
       if (played.has(guid)) continue;
       const command: Assignment = { type: "assignParticle", slotId: slotId--, actorGuid: WARM_ACTOR, componentId: guid, particleSystemGuid: guid, play: true };
-      const entry: LiveComponent = { key: liveKey(WARM_ACTOR, guid), command, desiredPlaying: true, playGeneration: 0, state: "preparing", generation: 0,
+      const entry: LiveComponent = { key: liveKey(WARM_ACTOR, guid), command, desiredPlaying: true, playGeneration: 0,
+        parameterValues: new Map(), parametersDirty: false, state: "preparing", generation: 0,
         scene: null, node: null, systems: [], ghosts: [], source: null, cancel: [], building: false, warm: true };
       this.live.set(entry.key, entry);
       this.prepare(entry);
@@ -781,7 +811,9 @@ export class ParticleService {
     }
     // Desired state is published before any native or material callback can run.
     const entry: LiveComponent = { key, command: { ...command, particleSystemGuid: guid }, desiredPlaying: command.play !== false,
-      playGeneration: command.generation ?? 0, state: "preparing", generation: 0, scene: null, node: null, systems: [], ghosts: [],
+      playGeneration: command.generation ?? 0,
+      parameterValues: new Map(Object.entries(command.parameters ?? {}).map(([name, value]) => [name.trim(), [...value]])),
+      parametersDirty: false, state: "preparing", generation: 0, scene: null, node: null, systems: [], ghosts: [],
       source: null, cancel: [], building: false };
     this.live.set(key, entry);
     this.prepare(entry);
@@ -855,11 +887,19 @@ export class ParticleService {
         if (record) entry.systems.push(record);
         else source.skipped.add(guid);
       }
+      for (const conflict of this.parameterConflicts(entry)) {
+        this.diagnose(entry, { code: "particle.parameter_type_conflict", assetGuid: entry.command.particleSystemGuid ?? undefined,
+          message: `Parameter "${conflict.name}" has another type in emitter slot ${conflict.slots.map((slot) => slot + 1).join(", ")}; those slots use their own default.` });
+      }
       // No playable slot: behave as an empty bundle without native systems.
       if (!entry.systems.length) { this.releaseBundle(entry); entry.state = "failed"; this.reportFailed(entry); return; }
       const disposing = host.onDisposeObservable.addOnce(() => this.retire(entry));
       const before = host.onBeforeRenderObservable.add(() => {
         if (!this.current(entry, generation)) return;
+        if (entry.parametersDirty) {
+          entry.parametersDirty = false;
+          for (const record of entry.systems) this.applySlotParameters(entry, record);
+        }
         try {
           for (const record of entry.systems) {
             if (record.kind === "basic" && record.gpu) record.lifetime = Math.max(record.lifetime, particleLifetimeBound(record.system));
@@ -954,8 +994,8 @@ export class ParticleService {
     }
     let record: SlotRecord | null = null;
     try {
-      const created = plan
-        ? this.createGraphSlot(entry, context, slot, plan, lease, materialGuid)
+      const created = plan && emitter.kind === "graph"
+        ? this.createGraphSlot(entry, context, slot, plan, lease, materialGuid, emitter.document)
         : emitter.kind === "basic" ? this.createBasicSlot(entry, context, slot, emitter.payload, lease) : null;
       if (!created) {
         // Graph build diagnostics were reported by `createGraphSlot`.
@@ -964,6 +1004,8 @@ export class ParticleService {
       }
       record = created.record;
       const system = record.system;
+      // Graph blocks start at their defaults; Basic slots were created with their values.
+      if (record.kind === "graph") this.applySlotParameters(entry, record);
       registerSceneStreamParticle(system, entry.command.slotId);
       const ready = bindParticleMaterial(system, lease.resource);
       this.applySpeed(record);
@@ -1010,14 +1052,15 @@ export class ParticleService {
 
   private createBasicSlot(entry: LiveComponent, context: SlotContext, slot: { index: number; guid: string },
     payload: ParticleEmitterPayload, lease: ResourceLease<NodeMaterial>): CreatedSlot {
-    const plan = resolveBasicEmitterPlan(payload, { backend: context.backend, space: context.space });
+    const basePlan = resolveBasicEmitterPlan(payload, { backend: context.backend, space: context.space });
+    const plan = this.basicParameterPlan(entry, slot.index, payload, basePlan);
     const gpu = context.backend !== "cpu";
     const system = createBabylonParticleSystem(`particle:${entry.key}:${slot.index}`, context.host, plan.capacity, gpu);
     try {
       system.emitter = context.node;
       applyBasicEmitterPlan(system, plan, "create");
       return { record: { kind: "basic", index: slot.index, emitterGuid: slot.guid, system, lease, gpu, backend: context.backend,
-        payload, driver: createBasicEmissionDriver(system, plan.schedule), prewarmPending: gpu && plan.preWarmCycles > 0,
+        payload, basePlan, appliedPlan: plan, driver: createBasicEmissionDriver(system, plan.schedule), prewarmPending: gpu && plan.preWarmCycles > 0,
         pending: 0, updateSpeed: plan.updateSpeed, started: false, stopped: false, once: payload.emitter.loop === "once",
         lifetime: plan.lifetimeBound, drainedTime: 0, lastFrame: -1, cancel: [] } };
     } catch (error) {
@@ -1028,7 +1071,7 @@ export class ParticleService {
 
   /** Builds synchronously; build problems are reported per graph node and skip only this slot. */
   private createGraphSlot(entry: LiveComponent, context: SlotContext, slot: { index: number; guid: string },
-    plan: ParticleBuildPlan, lease: ResourceLease<NodeMaterial>, materialGuid: string): CreatedSlot | null {
+    plan: ParticleBuildPlan, lease: ResourceLease<NodeMaterial>, materialGuid: string, document: ParticleGraphDocument): CreatedSlot | null {
     const realized = realizeParticleGraph(plan, { scene: context.host, name: `particle:${entry.key}:${slot.index}`,
       emitter: context.node, space: context.space, noise: (textureGuid) => this.noiseSource(entry, textureGuid),
       meshShape: (properties) => this.meshShapeSource(entry, context, properties) });
@@ -1041,8 +1084,8 @@ export class ParticleService {
     const rate = (system as unknown as { _calculateEmitRate?: () => number })._calculateEmitRate;
     return {
       record: { kind: "graph", gpu: false, index: slot.index, emitterGuid: slot.guid, system, lease,
-        set: realized.set, compileKey: plan.hash, materialGuid, pending: 0, updateSpeed: system.updateSpeed,
-        started: false, stopped: false, once: plan.settings.loop === "once", cancel: [],
+        set: realized.set, compileKey: plan.hash, materialGuid, document, parameterBlocks: realized.parameterBlocks,
+        pending: 0, updateSpeed: system.updateSpeed, started: false, stopped: false, once: plan.settings.loop === "once", cancel: [],
         manual: createManualEmission(system, () => rate ? rate.call(system) : system.emitRate), requestedBurst: 0 },
       buildReady: realized.buildReady,
     };
@@ -1288,8 +1331,11 @@ export class ParticleService {
     const failed = entry.state === "failed";
     // Released bundles and bundles waiting for their owner prepare from the new library.
     if (!source || (!entry.node && !failed) || entry.state === "draining" || entry.state === "retired") return NO_CHANGE;
-    if (!sameContent(source.system, library.systems.get(entry.command.particleSystemGuid!))) return BUNDLE_REBUILD;
-    let tier: ParticleEmitterChangeTier = "none";
+    const nextSystem = library.systems.get(entry.command.particleSystemGuid!);
+    // Parameter defaults are values the slots apply live; anything else re-prepares the bundle.
+    const withoutDefaults = (system: ParticleSystemPayload | null | undefined) => system && { ...system, parameterDefaults: undefined };
+    if (!sameContent(withoutDefaults(source.system), withoutDefaults(nextSystem))) return BUNDLE_REBUILD;
+    let tier: ParticleEmitterChangeTier = sameContent(source.system?.parameterDefaults, nextSystem?.parameterDefaults) ? "none" : "live";
     for (const [guid, previous] of source.emitters) {
       const next = library.emitters.get(guid);
       if (!previous || !next || previous.kind !== next.kind) {
@@ -1317,11 +1363,14 @@ export class ParticleService {
     if (previous === next) return "none";
     if (this.graphCompileKey(previous) !== this.graphCompileKey(next)) return "rebuild";
     if (previous.materialGuid !== next.materialGuid) return next.materialGuid ? "live" : "rebuild";
-    return "none";
+    // Parameter names and defaults stay out of the compile key: their blocks take the new values.
+    return sameContent(previous.parameters, next.parameters) ? "none" : "live";
   }
 
   private applyInPlace(entry: LiveComponent): void {
     const source = entry.source!;
+    const nextSystem = this.library.systems.get(entry.command.particleSystemGuid!);
+    if (nextSystem) source.system = nextSystem;
     const space = source.system!.space;
     for (const record of [...entry.systems]) {
       // An earlier slot's failure may have released the bundle.
@@ -1333,13 +1382,20 @@ export class ParticleService {
       }
       if (next?.kind !== "basic") continue;
       const tier = particleEmitterChangeTier(record.payload, next.payload);
-      if (tier === "none") continue;
+      if (tier === "none") {
+        // A System default change: the slot's values may differ.
+        this.applySlotParameters(entry, record);
+        continue;
+      }
       try {
-        const plan = resolveBasicEmitterPlan(next.payload, { backend: record.backend, space });
+        const basePlan = resolveBasicEmitterPlan(next.payload, { backend: record.backend, space });
+        const plan = this.basicParameterPlan(entry, record.index, next.payload, basePlan);
         applyBasicEmitterPlan(record.system, plan, tier === "respawn" ? "respawn" : "live");
         record.driver.setSchedule(plan.schedule);
         record.lifetime = Math.max(record.lifetime, plan.lifetimeBound);
         record.payload = next.payload;
+        record.basePlan = basePlan;
+        record.appliedPlan = plan;
       } catch (error) {
         this.failSlot(entry, record, entry.generation, error);
       }
@@ -1348,8 +1404,65 @@ export class ParticleService {
   }
 
   private applyGraphEdit(entry: LiveComponent, record: GraphSlot, document: ParticleGraphDocument): void {
-    if (this.graphCompileKey(document) !== record.compileKey || !document.materialGuid) this.rebuildGraphSlot(entry, record);
-    else if (document.materialGuid !== record.materialGuid) this.rebindGraphMaterial(entry, record, document.materialGuid);
+    if (this.graphCompileKey(document) !== record.compileKey || !document.materialGuid) {
+      this.rebuildGraphSlot(entry, record);
+      return;
+    }
+    if (document.materialGuid !== record.materialGuid) this.rebindGraphMaterial(entry, record, document.materialGuid);
+    record.document = document;
+    this.applySlotParameters(entry, record);
+  }
+
+  /**
+   * The System's parameter state for one slot: its defaults and the names this slot declares
+   * with a type that conflicts with an earlier slot's (those keep the slot's own defaults).
+   */
+  private slotParameterOptions(entry: LiveComponent, index: number) {
+    return {
+      systemDefaults: entry.source?.system?.parameterDefaults ?? {},
+      componentValues: entry.parameterValues,
+      conflicting: particleSlotConflicts(this.parameterConflicts(entry), index),
+    };
+  }
+
+  private parameterConflicts(entry: LiveComponent) {
+    const system = entry.source?.system ?? null;
+    if (!system) return [];
+    const guid = entry.command.particleSystemGuid ?? "";
+    const emitters = new Map<string, ParticleLibraryEmitter>();
+    for (const [emitterGuid, emitter] of entry.source?.emitters ?? []) if (emitter) emitters.set(emitterGuid, emitter);
+    return particleSystemParameters({ emitters, systems: new Map([[guid, system]]) }, guid).conflicts;
+  }
+
+  /** A Basic payload's plan with the slot's parameter values applied. */
+  private basicParameterPlan(entry: LiveComponent, index: number, payload: ParticleEmitterPayload, basePlan: BasicEmitterPlan): BasicEmitterPlan {
+    if (!payload.bindings.length) return basePlan;
+    const values = particleSlotParameterValues({ kind: "basic", payload }, this.slotParameterOptions(entry, index));
+    return applyBasicParameters(basePlan, payload.bindings, values, { gravityEnabled: payload.forces.gravity.enabled });
+  }
+
+  /** Writes a slot's current parameter values: graph input blocks, or the Basic targets they drive. */
+  private applySlotParameters(entry: LiveComponent, record: SlotRecord): void {
+    try {
+      if (record.kind === "graph") {
+        if (!record.parameterBlocks.size) return;
+        const values = particleSlotParameterValues({ kind: "graph", document: record.document }, this.slotParameterOptions(entry, record.index));
+        for (const parameter of record.document.parameters ?? []) {
+          for (const block of record.parameterBlocks.get(parameter.id) ?? []) {
+            setParticleInputBlockValue(block, parameter.type, values.get(parameter.name) ?? parameter.defaultValue);
+          }
+        }
+        return;
+      }
+      if (!record.payload.bindings.length) return;
+      const plan = this.basicParameterPlan(entry, record.index, record.payload, record.basePlan);
+      applyBasicParameterPlan(record.system, plan, record.appliedPlan);
+      record.driver.setSchedule(plan.schedule);
+      record.lifetime = Math.max(record.lifetime, plan.lifetimeBound);
+      record.appliedPlan = plan;
+    } catch (error) {
+      this.failSlot(entry, record, entry.generation, error);
+    }
   }
 
   /** Replaces one graph slot inside its bundle; the other slots keep their particles. */

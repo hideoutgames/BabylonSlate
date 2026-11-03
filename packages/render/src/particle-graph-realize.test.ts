@@ -376,6 +376,33 @@ describe("realizeParticleGraph", () => {
     }
   });
 
+  it("returns each parameter's blocks, whose value the running system reads without a rebuild, downstream math and Emit Rate included", () => {
+    const doc = withSpine([node("size", "update.size")], [
+      { id: "scale", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "p-scale", valueType: "float" } },
+      { id: "rate", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "p-rate", valueType: "float" } },
+      node("double", "math.multiply", { "default:b": [2] }),
+    ], [edge("scale", "out", "double", "a"), edge("double", "out", "size", "size"), edge("rate", "out", "output", "emitRate")]);
+    doc.parameters = [
+      { id: "p-scale", name: "Scale", type: "float", defaultValue: [0.25] },
+      { id: "p-rate", name: "Rate", type: "float", defaultValue: [0] },
+    ];
+    const { result } = realize(planOf(doc));
+    const { system, parameterBlocks } = built(result) as Extract<RealizeParticleGraphResult, { ok: true }>;
+    expect([...parameterBlocks.keys()].sort()).toEqual(["p-rate", "p-scale"]);
+    system.start(0);
+    step(system, 30);
+    // Emit Rate 0: nothing yet.
+    expect(system.getActiveCount()).toBe(0);
+    parameterBlocks.get("p-rate")![0]!.value = 60;
+    step(system, 30);
+    expect(system.getActiveCount()).toBeGreaterThan(20);
+    expect(system.particles[0]!.size).toBeCloseTo(0.5, 6);
+    // A new value reaches particles through Multiply on the next frame.
+    parameterBlocks.get("p-scale")![0]!.value = 1.5;
+    step(system, 1);
+    expect(system.particles[0]!.size).toBeCloseTo(3, 6);
+  });
+
   it("emits fractional and computed Emit Rates", () => {
     const slow = createDefaultParticleGraphDocument();
     slow.nodes = slow.nodes.map((entry) => entry.id === "output" ? { ...entry, properties: { "default:emitRate": [0.5] } }
@@ -409,7 +436,7 @@ const CONSUMERS: Readonly<Record<ParticleNumericType, { type: string; pin: strin
 
 /** The default graph plus `type`: spine nodes join the spine, value nodes feed an update node. */
 function graphWith(type: string): ParticleGraphDocument {
-  const subject = node("subject", type);
+  const subject = node("subject", type, type === "input.parameter" ? { parameterId: "p" } : {});
   const definition = particleNodeDefinitionFor(subject)!;
   // Required value pins without a wire get an authored default.
   for (const pin of definition.inputs) {
@@ -422,7 +449,10 @@ function graphWith(type: string): ParticleGraphDocument {
   const kind: ParticleNumericType = output.type.kind === "particle" ? "float"
     : output.type.kind === "generic" ? output.type.fallback ?? "float" : output.type.kind;
   const consumer = CONSUMERS[kind];
-  return withSpine([node("consumer", consumer.type)], [subject], [edge("subject", output.id, "consumer", consumer.pin)]);
+  const doc = withSpine([node("consumer", consumer.type)], [subject], [edge("subject", output.id, "consumer", consumer.pin)]);
+  // A Parameter node needs its parameter declared.
+  if (type === "input.parameter") doc.parameters = [{ id: "p", name: "Value", type: "float", defaultValue: [0.5] }];
+  return doc;
 }
 
 describe("Particle Graph catalog", () => {

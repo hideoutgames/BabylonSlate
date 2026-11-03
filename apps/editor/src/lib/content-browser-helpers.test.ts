@@ -1458,6 +1458,7 @@ describe("content-browser-helpers", () => {
       emitterGuids: [],
       space: "world",
       previewSkybox: true,
+      parameterDefaults: {},
     });
   });
 

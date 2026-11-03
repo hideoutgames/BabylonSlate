@@ -1,5 +1,6 @@
 import { PARTICLE_CPU_CAPACITY_BUDGET, findGraphCycle } from "@haptic/core";
 import {
+  PARTICLE_PARAMETER_NODE_TYPE,
   PARTICLE_OUTPUT_NODE_TYPE,
   PARTICLE_UNSUPPORTED_V1_TYPES,
   particleNodeDefinitionFor,
@@ -545,7 +546,21 @@ export function checkParticleGraphDocument(
   const { diagnostics, definitions, resolver } = validateGraph(doc, incoming);
   diagnostics.push(...validateSpine(doc, definitions, incoming));
   diagnostics.push(...validateSettings(doc, context));
+  diagnostics.push(...validateParameterNodes(doc));
   return { diagnostics, resolver };
+}
+
+/** A Parameter node must name a declared parameter (deleting one leaves its nodes in error). */
+function validateParameterNodes(doc: ParticleGraphDocument): ParticleGraphDiagnostic[] {
+  const declared = new Set((doc.parameters ?? []).map((parameter) => parameter.id));
+  return doc.nodes
+    .filter((node) => node.type === PARTICLE_PARAMETER_NODE_TYPE && !declared.has(String(node.properties.parameterId ?? "")))
+    .map((node) => ({
+      code: "particle.parameterMissing",
+      message: "This Parameter node's parameter does not exist; pick one in Graph Settings or delete the node",
+      severity: "error" as const,
+      nodeId: node.id,
+    }));
 }
 
 /** Errors block lowering; warnings do not. */
