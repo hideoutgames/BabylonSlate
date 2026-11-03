@@ -6,6 +6,7 @@
 import {
   normalizeParticleGraphDocument,
   particleGraphCompileKey,
+  particleGraphNoiseTextures,
   type ParticleGraphDocument,
 } from "@haptic/particle-graph";
 import { stableStringify } from "./bytes";
@@ -83,6 +84,15 @@ export function particleEmitterMaterialGuid(
   return entry.kind === "graph"
     ? entry.document.materialGuid
     : entry.payload.render.materialGuid;
+}
+
+/** The Textures the library's Particle Graph Noise nodes read, sorted and unique. */
+export function particleLibraryNoiseTextureGuids(library: ParticleLibrary): string[] {
+  const guids = new Set<string>();
+  for (const entry of library.emitters.values()) {
+    if (entry.kind === "graph") for (const guid of particleGraphNoiseTextures(entry.document.nodes)) guids.add(guid);
+  }
+  return [...guids].sort();
 }
 
 /** Unique Material guids in emitter insertion order. */

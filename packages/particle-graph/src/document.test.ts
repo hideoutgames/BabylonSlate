@@ -92,13 +92,19 @@ describe("particle graph document", () => {
     expect(lowerParticleGraphDocument(doc).ok).toBe(true);
   });
 
-  it("lists the Material as the only dependency", () => {
+  it("lists the Material and the Noise nodes' Textures as dependencies", () => {
     const doc = createDefaultParticleGraphDocument();
-    expect(particleGraphDependencies(doc)).toEqual({ materials: [], all: [] });
-    expect(particleGraphDependencies({ ...doc, materialGuid: "mat-1" })).toEqual({
+    expect(particleGraphDependencies(doc)).toEqual({ materials: [], textures: [], all: [] });
+    const noise = (id: string, textureGuid: unknown): ParticleGraphNode =>
+      ({ id, type: "update.noise", position: { x: 0, y: 0 }, properties: { textureGuid } });
+    expect(particleGraphDependencies({ ...doc, materialGuid: "mat-1",
+      nodes: [...doc.nodes, noise("a", "tex-2"), noise("b", "tex-1"), noise("c", "tex-2"), noise("d", null)] })).toEqual({
       materials: ["mat-1"],
-      all: ["mat-1"],
+      textures: ["tex-1", "tex-2"],
+      all: ["mat-1", "tex-1", "tex-2"],
     });
+    const normalized = normalizeParticleGraphDocument({ nodes: [{ id: "n", type: "update.noise", properties: { textureGuid: "  " } }] });
+    expect(normalized.nodes.find((entry) => entry.id === "n")!.properties.textureGuid).toBeNull();
   });
 
   it("resizes Gradient stops and Random bounds when the value type changes", () => {

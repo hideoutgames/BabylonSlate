@@ -148,7 +148,6 @@ export const PARTICLE_UNSUPPORTED_V1_TYPES: Readonly<Record<string, string>> = {
   "sprite.setup": "Sprite Sheet",
   "update.spriteCell": "Update Sprite Cell",
   "update.basicSprite": "Basic Sprite Update",
-  "update.noise": "Noise",
   "update.flowMap": "Flow Map",
   "update.age": "Update Age",
   "trigger.spawn": "Particle Trigger",
@@ -514,6 +513,13 @@ const UPDATE_NODES: ParticleNodeDefinition[] = [
     "Forces",
     [{ id: "acceleration", name: "Acceleration", type: VEC3, defaultValue: [0, -9.81, 0], unit: "m/s²", description: "m/s²." }],
     "Adds Acceleration × Delta Time to the direction every frame.",
+  ),
+  updateNode(
+    "update.noise",
+    "Noise",
+    "Forces",
+    [{ id: "strength", name: "Strength", type: VEC3, defaultValue: [2, 2, 2], unit: "m/s²", description: "Largest push per axis, m/s²." }],
+    "Pushes each particle with a random force read from a noise texture: the built-in noise, or the Texture set in the Inspector.",
   ),
   updateNode(
     "force.attractor",

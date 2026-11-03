@@ -40,6 +40,7 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | --- | --- |
 | [Attractor](attractor.md) | Pulls every particle towards a point, more strongly the closer it gets. |
 | [Gravity](gravity.md) | Accelerates every particle by changing its direction each frame. |
+| [Noise](noise.md) | Pushes each particle with a random force read from a noise texture, so particles drift apart unevenly. |
 
 ## Particle Attributes
 

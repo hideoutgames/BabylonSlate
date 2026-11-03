@@ -70,6 +70,7 @@ vi.mock("../context/document-context", async () => {
         header: { guid: "mat-particle", name: "SparksMat", type: "Material", payload: { domain: "particle" } },
         path: "assets/SparksMat.material.hasset",
       },
+      { header: { guid: "tex-clouds", name: "Clouds", type: "Texture", payload: {} }, path: "assets/Clouds.png" },
     ],
   };
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
@@ -243,6 +244,19 @@ describe("ParticleGraphDetails", () => {
     renderDetails(createDefaultParticleGraphDocument("Embers"), "updateColor");
     expect(screen.getByTestId("module-stage-node").textContent).toContain("Update Color");
     expect(screen.queryByTestId("property-color")).toBeNull();
+  });
+
+  it("picks a Noise Texture and clears it back to the built-in noise", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "noise", type: "update.noise", position: { x: 0, y: 0 }, properties: { textureGuid: null } });
+    const history = renderDetails(doc, "noise");
+    expect(screen.getByTestId("property-textureGuid").textContent).toContain("Built-In Noise");
+    fireEvent.click(screen.getByTestId("property-textureGuid"));
+    await waitFor(() => expect(screen.getByTestId("search-item-tex-clouds")).toBeTruthy());
+    expect(screen.queryByTestId("search-item-mat-particle")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-tex-clouds"));
+    expect(nodeOf(history.read(), "noise").properties.textureGuid).toBe("tex-clouds");
+    expect(screen.getByTestId("property-textureGuid").textContent).toContain("Clouds");
   });
 
   it("sets a Local Variable's Scope and explains it", async () => {

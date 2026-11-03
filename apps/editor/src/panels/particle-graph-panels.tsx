@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
+  AssetPicker,
   EntryListEditor,
   ModuleStack,
   ModuleStage,
@@ -514,12 +515,57 @@ function ParticleNodeDetails({
         {definition.description ? (
           <p className="px-2 py-1 text-xs text-muted-foreground">{definition.description}</p>
         ) : null}
+        {node.type === "update.noise" ? <NoiseTextureRow node={node} setProperties={setProperties} /> : null}
         {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
         {node.type === "gradient.sample" ? (
           <GradientStopsEditor node={node} setProperties={setProperties} />
         ) : null}
       </ModuleStage>
     </ModuleStack>
+  );
+}
+
+/** Noise **Texture**: a Texture asset whose pixels push the particles; None uses the built-in noise. */
+function NoiseTextureRow({
+  node,
+  setProperties,
+}: {
+  node: ParticleGraphNode;
+  setProperties: (patch: Record<string, unknown>) => void;
+}) {
+  const { assetRegistry } = useRegistryState();
+  const [picking, setPicking] = useState(false);
+  const guid = typeof node.properties.textureGuid === "string" ? node.properties.textureGuid : null;
+  const assets = (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Texture")
+    .map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }));
+  const texture = guid ? assets.find((asset) => asset.guid === guid) : undefined;
+  const row: PropertyRow = {
+    id: "textureGuid",
+    kind: "asset",
+    label: "Texture",
+    value: guid,
+    placeholder: "Built-In Noise",
+    description: guid ? "Its red channel sets the push; each particle reads it at its own random point." : "Without a Texture the built-in noise is used.",
+    onPick: () => setPicking(true),
+    onChange: (next) => setProperties({ textureGuid: next }),
+    ...assetRowIdentity(texture ? { name: texture.name, type: texture.type } : undefined),
+  };
+  return (
+    <>
+      <PropertyGrid rows={[row]} />
+      <AssetPicker
+        open={picking}
+        onOpenChange={setPicking}
+        assets={assets}
+        allowedTypes={["Texture"]}
+        allowNone
+        onPick={(next) => {
+          setProperties({ textureGuid: next });
+          setPicking(false);
+        }}
+        data-testid="particle-noise-texture-picker"
+      />
+    </>
   );
 }
 

@@ -994,6 +994,10 @@ function initializeEngine(
           return document ? acquireParticleMaterial(materialLibrary, guid, document, owner) : null;
         },
         resolveEmitter: (slotId) => binding.meshes.get(slotId) ?? null,
+        acquireTexture: (guid) => {
+          const bytes = binding.textureBytes?.get(guid);
+          return bytes ? acquireMaterialTexture(resourceCache, guid, engine, bytes) : null;
+        },
         onDiagnostic: options.onParticleDiagnostic,
         onPlaybackEnded: options.onParticlePlaybackEnded,
         sortingLayers: () => binding.sortingLayers,

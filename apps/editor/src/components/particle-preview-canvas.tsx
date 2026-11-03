@@ -4,6 +4,7 @@ import {
   particleEmitterMaterialGuid,
   particleLibraryCompileKey,
   particleLibraryMaterialGuids,
+  particleLibraryNoiseTextureGuids,
   type IndexedAsset,
   type ParticleLibrary,
   type ParticleLibraryEmitter,
@@ -263,6 +264,7 @@ export function ParticlePreviewCanvas({
   const libraryKey = useMemo(() => particleLibraryCompileKey(library), [library]);
   // A resolver knows only the Material documents collected at boot.
   const materialKey = particleLibraryMaterialGuids(library).sort().join(",");
+  const noiseKey = particleLibraryNoiseTextureGuids(library).join(",");
 
   /**
    * Full-canvas state only when the run failed; skipped slots become a notice. A
@@ -385,8 +387,10 @@ export function ParticlePreviewCanvas({
         key: textureHeadersKey(textureByGuidRef.current, docs.textureGuids),
       };
       // Emitters have no Texture; Texture Sample nodes read the Material's textures.
+      // Noise nodes read their Textures too.
+      const textureGuids = [...new Set([...docs.textureGuids, ...(noiseKey ? noiseKey.split(",") : [])])];
       const bytes = collectPlayTextureBytes
-        ? await collectPlayTextureBytes(new Map(), new Map(), docs.textureGuids)
+        ? await collectPlayTextureBytes(new Map(), new Map(), textureGuids)
         : new Map<string, Uint8Array>();
       if (cancelled) return;
       const sources = installTextureBytes(bytes) ?? new Map();
@@ -415,6 +419,10 @@ export function ParticlePreviewCanvas({
       const service = new ParticleService({
         scene: host.scene,
         acquireMaterial: materials.acquire,
+        acquireTexture: (guid) => {
+          const data = sources.get(guid);
+          return data ? acquireMaterialTexture(cache, guid, engine, data) : null;
+        },
         statsScope: "local",
         onDiagnostic: (diagnostic) => {
           diagnosticsRef.current.push(diagnostic);
@@ -464,6 +472,7 @@ export function ParticlePreviewCanvas({
     evaluate,
     look,
     materialKey,
+    noiseKey,
     showSkybox,
   ]);
 

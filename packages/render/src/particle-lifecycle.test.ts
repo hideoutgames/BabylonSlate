@@ -741,3 +741,46 @@ describe("retrigger", () => {
   });
 });
 
+describe("Noise Textures", () => {
+  function noiseService(acquireTexture?: (guid: string) => { resource: unknown; key: string; ready?: Promise<void>; release(): void } | null) {
+    const host = createTestEngine();
+    const diagnostics: Array<{ code: string; assetGuid?: string }> = [];
+    const service = new ParticleService({ scene: host.scene, gpuSupported: false,
+      acquireMaterial: (_guid, owner) => {
+        const resource = new NodeMaterial("noise test material", owner.scene);
+        resource.mode = NodeMaterialModes.Particle;
+        resource.createEffectForParticles = () => {};
+        return { key: "material:1", resource, release: () => resource.dispose() };
+      },
+      ...(acquireTexture ? { acquireTexture: acquireTexture as never } : {}),
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic) });
+    cleanups.push(() => { service.dispose(); host.scene.dispose(); host.engine.dispose(); });
+    service.setLibrary(graphLibrary((document) => {
+      document.nodes.push({ id: "noise", type: "update.noise", position: { x: 0, y: 0 }, properties: { textureGuid: "tex" } });
+      document.edges = document.edges.filter((edge) => edge.id !== "e-velocity-color");
+      document.edges.push(
+        { id: "e-velocity-noise", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "noise", targetPinId: "particle" },
+        { id: "e-noise-color", sourceNodeId: "noise", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
+      );
+    }));
+    service.handleCommand({ type: "assignParticle", actorGuid: "actor", componentId: "particle", slotId: 1, particleSystemGuid: "system", play: true });
+    return { service, diagnostics, scene: host.scene };
+  }
+
+  it("falls back to the built-in noise with a warning when the Texture cannot be acquired", () => {
+    const { diagnostics } = noiseService();
+    expect(diagnostics).toContainEqual(expect.objectContaining({ code: "particle.noise_texture_unavailable", assetGuid: "tex" }));
+  });
+
+  it("reads a Texture back once, after it is ready, and releases it", async () => {
+    const release = vi.fn();
+    const readPixels = vi.fn(async () => new Uint8Array(4 * 4 * 4).fill(255));
+    const acquire = vi.fn(() => ({ key: "texture:tex", resource: { readPixels, getSize: () => ({ width: 4, height: 4 }) },
+      ready: Promise.resolve(), release }));
+    const { diagnostics } = noiseService(acquire);
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(readPixels).toHaveBeenCalledTimes(1);
+    expect(diagnostics.filter((entry) => entry.code === "particle.noise_texture_unavailable")).toEqual([]);
+  });
+});

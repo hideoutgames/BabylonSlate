@@ -320,6 +320,29 @@ describe("realizeParticleGraph", () => {
     expect(system.particles[0]!.size).toBeCloseTo(Math.SQRT1_2, 6);
   });
 
+  it("pushes particles with the Noise node's pixels every frame, and not at all until it has them", () => {
+    const doc = withSpine([node("noise", "update.noise", { "default:strength": [6, 6, 6] })]);
+    let pixels: { width: number; height: number; data: Uint8Array } | null = null;
+    const { scene, emitter } = host();
+    const result = realizeParticleGraph(planOf(doc), { scene, name: "graph", emitter, space: "world",
+      noise: (textureGuid) => { expect(textureGuid).toBeNull(); return { pixels: () => pixels }; } });
+    const { system } = built(result);
+    system.start(0);
+    step(system, 5);
+    const particle = system.particles[0]!;
+    const before = particle.direction.clone();
+    step(system, 1);
+    // No pixels yet: the direction is untouched.
+    expect(particle.direction.equalsWithEpsilon(before, 1e-9)).toBe(true);
+    // All red: every axis gets the full Strength, scaled by this frame's seconds.
+    pixels = { width: 1, height: 1, data: new Uint8Array([255, 255, 255, 255]) };
+    step(system, 1);
+    const pushed = particle.direction.subtract(before);
+    expect(pushed.x).toBeCloseTo(6 / 60, 6);
+    expect(pushed.y).toBeCloseTo(6 / 60, 6);
+    expect(pushed.z).toBeCloseTo(6 / 60, 6);
+  });
+
   it("emits fractional and computed Emit Rates", () => {
     const slow = createDefaultParticleGraphDocument();
     slow.nodes = slow.nodes.map((entry) => entry.id === "output" ? { ...entry, properties: { "default:emitRate": [0.5] } }

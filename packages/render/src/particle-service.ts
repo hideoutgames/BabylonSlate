@@ -3,6 +3,7 @@ import {
   Mesh,
   type AbstractEngine,
   type AbstractMesh,
+  type BaseTexture,
   type Effect,
   type IParticleSystem,
   type NodeMaterial,
@@ -33,6 +34,7 @@ import {
   type ParticleGraphLowerResult,
 } from "@haptic/particle-graph";
 import type { ResourceLease } from "./resource-cache";
+import { BUILTIN_PARTICLE_NOISE, particleNoisePixelsFrom, type ParticleNoisePixels, type ParticleNoiseSource } from "./particle-noise";
 import { createBasicEmissionDriver, createManualEmission, type BasicEmissionDriver, type ManualEmission } from "./particle-emission-driver";
 import { describeParticleThrow, realizeParticleGraph, type ParticleGraphCompileCode } from "./particle-graph-realize";
 import {
@@ -59,7 +61,8 @@ export type ParticleDiagnosticCode =
   | "particle.graph_invalid"
   | ParticleGraphCompileCode
   | "particle.apply_failed"
-  | "particle.burst_not_playing";
+  | "particle.burst_not_playing"
+  | "particle.noise_texture_unavailable";
 /**
  * Slot-level problems carry the emitter guid; bundle-level ones the Particle System guid.
  * Particle Graph problems also carry the graph node (and pin) they are anchored to.
@@ -240,6 +243,9 @@ export class ParticleService {
   private readonly gpuRequested: boolean;
   private readonly statsScope: "global" | "local";
   private readonly acquireMaterial?: (guid: string, owner: ParticleMaterialOwner) => ResourceLease<NodeMaterial> | null;
+  private readonly acquireTexture?: (guid: string) => ResourceLease<BaseTexture> | null;
+  /** Noise Texture pixels by guid, read back once per service; null while the read-back runs. */
+  private readonly noiseTextures = new Map<string, { pixels: ParticleNoisePixels | null; fallback: boolean; cancel: () => void }>();
   private readonly resolveEmitter?: (slotId: number) => AbstractMesh | null;
   private sceneForSlot?: (slotId: number) => Scene | null;
   private readonly onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
@@ -286,11 +292,14 @@ export class ParticleService {
     statsScope?: "global" | "local";
     /** Whether a system's programs have drawn on the Engine; defaults to the Engine's tracked draws. */
     programsDrawn?: (system: IParticleSystem) => boolean;
+    /** A Noise node's Texture, read back once; without it (or for a missing Texture) Noise uses the built-in noise. */
+    acquireTexture?: (guid: string) => ResourceLease<BaseTexture> | null;
   }) {
     this.scene = options.scene;
     this.gpuRequested = options.gpuSupported ?? true;
     this.statsScope = options.statsScope ?? "global";
     this.acquireMaterial = options.acquireMaterial;
+    this.acquireTexture = options.acquireTexture;
     this.resolveEmitter = options.resolveEmitter;
     this.sceneForSlot = options.sceneForSlot;
     this.onDiagnostic = options.onDiagnostic;
@@ -653,6 +662,46 @@ export class ParticleService {
     this.cancelSceneDispose();
     this.resetSession();
     this.library = emptyLibrary();
+    for (const texture of this.noiseTextures.values()) texture.cancel();
+    this.noiseTextures.clear();
+  }
+
+  /**
+   * A Noise node's pixels: the built-in noise without a Texture; otherwise the Texture's pixels,
+   * read back once and shared by every system of this service (none until then). A Texture that
+   * cannot be acquired or read falls back to the built-in noise with `particle.noise_texture_unavailable`.
+   */
+  private noiseSource(entry: LiveComponent, textureGuid: string | null): ParticleNoiseSource {
+    if (!textureGuid) return BUILTIN_PARTICLE_NOISE;
+    let texture = this.noiseTextures.get(textureGuid);
+    if (!texture) {
+      const record: { pixels: ParticleNoisePixels | null; fallback: boolean; cancel: () => void } = { pixels: null, fallback: false, cancel: () => {} };
+      texture = record;
+      this.noiseTextures.set(textureGuid, record);
+      const unavailable = (reason: string) => {
+        record.fallback = true;
+        this.diagnose(entry, { code: "particle.noise_texture_unavailable", assetGuid: textureGuid,
+          message: `Noise Texture ${reason}; the built-in noise is used.` });
+      };
+      const lease = this.acquireTexture?.(textureGuid) ?? null;
+      if (!lease) unavailable("is missing");
+      else {
+        let released = false;
+        const release = () => { if (!released) { released = true; lease.release(); } };
+        record.cancel = release;
+        void (lease.ready ?? Promise.resolve())
+          .then(() => (released ? null : lease.resource.readPixels()))
+          .then((view) => {
+            if (released) return;
+            const pixels = view ? particleNoisePixelsFrom(view, lease.resource.getSize()) : null;
+            if (pixels) record.pixels = pixels;
+            else unavailable("could not be read");
+          }, () => { if (!released) unavailable("could not be read"); })
+          .finally(release);
+      }
+    }
+    const record = texture;
+    return { pixels: () => (record.fallback ? BUILTIN_PARTICLE_NOISE.pixels() : record.pixels) };
   }
 
   private assign(command: Assignment): void {
@@ -918,7 +967,7 @@ export class ParticleService {
   private createGraphSlot(entry: LiveComponent, context: SlotContext, slot: { index: number; guid: string },
     plan: ParticleBuildPlan, lease: ResourceLease<NodeMaterial>, materialGuid: string): CreatedSlot | null {
     const realized = realizeParticleGraph(plan, { scene: context.host, name: `particle:${entry.key}:${slot.index}`,
-      emitter: context.node, space: context.space });
+      emitter: context.node, space: context.space, noise: (textureGuid) => this.noiseSource(entry, textureGuid) });
     if (realized.ok === false) {
       for (const diagnostic of realized.diagnostics) this.diagnose(entry, { ...diagnostic, assetGuid: slot.guid });
       return null;
