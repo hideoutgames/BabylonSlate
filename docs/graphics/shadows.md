@@ -17,7 +17,7 @@ Shadows have a budget separate from the [light budget](lighting.md#light-budget)
 - A limited number of point and spot lights can cast shadows at once. A point light costs six shadow maps, so it is much more expensive than a spot light.
 - When too many lights ask for shadows, lights with a higher **Shadow Priority** win, then the lights nearest the camera. Local lights farther than Shadow Distance plus their Range get no shadow.
 - The device can lower these requests to fit its memory. A light whose shadows are unavailable shows a yellow icon in the viewport.
-- Phones and tablets get the same shadow limits as desktops: the quality level alone sets map sizes, and at **High** and **Ultra** all shadows share one 8192 × 8192 shadow map (256 MiB), as on a desktop. A device whose graphics can't hold a texture that large uses the largest it can.
+- Phones and tablets get the same shadow limits as desktops at every quality level: the quality level alone sets map sizes, and at **High** and **Ultra** all shadows share one 8192 × 8192 shadow map (256 MiB), as on a desktop. A device whose graphics can't hold a texture that large uses the largest it can. Only a **Directional Map Size** of 8192 differs: see [8192 directional maps](#8192-directional-maps).
 - A High or Full Quality [Render Target Capture](render-targets.md#quality) draws its own directional shadows, fitted to its view, each captured frame. Point and spot lights share their shadow maps with the camera.
 
 ## Shadow settings
@@ -29,7 +29,7 @@ Open **Project Settings > Rendering > Shadows**. The defaults below are the High
 | **Shadows Enabled** | On | Lets eligible lights cast real-time shadows. |
 | **Shadow Distance** | 350 | Directional shadow coverage around the camera, in world units. |
 | **Shadow Distance Fade** | 0.1 | Fades the far edge over this fraction of the distance. 0 turns fading off. |
-| **Directional Map Size** | 2048 | Resolution per cascade, 256 to 4096. At High the first cascade uses twice this. |
+| **Directional Map Size** | 2048 | Resolution per cascade, 256 to 8192. At High the first cascade uses twice this, up to 4096. 8192 needs a 1 GiB shadow map; see [8192 directional maps](#8192-directional-maps). |
 | **Shadow Cascades** | 4 | Splits directional coverage, 1 to 4, to keep detail near the camera. |
 | **Shadow Filter** | PCF | **PCF** softens edges. **Contact Hardening (PCSS)** adds a contact-hardening penumbra, in PBR only; flat ground under the sun stays free of its own shadow. |
 | **Shadow Filter Quality** | High | Low, Medium or High. **Low** blends edges over about 3 shadow-map texels, the narrowest smooth edge. **Medium** blends them over about 5 and **High** over about 7, for softer, wider edges at a higher GPU cost. Edges keep the same softness in the world near and far, except where far shadows have too little detail for it. |
@@ -40,9 +40,18 @@ Open **Project Settings > Rendering > Shadows**. The defaults below are the High
 | **Shadow Normal Bias** | 0.005 | Normal offset, in world units. |
 | **Local Shadow Budget Mode** | Auto | **Auto** follows the quality level. **Manual** sets an upper limit. |
 | **Local Shadow Light Budget** | 4 | Manual only. Point and spot lights that can cast shadows at once. |
-| **Local Shadow Map Size** | 2048 | Resolution of each local shadow map or cube face. |
+| **Local Shadow Map Size** | 2048 | Resolution of each local shadow map or cube face, 256 to 4096. |
 
 CEL projects always use PCF. Bands and shadow edges in CEL are hard steps.
+
+### 8192 directional maps
+
+No quality level uses a **Directional Map Size** of 8192, so choosing it makes **Shadows Quality** **Custom**.
+
+- All shadows share one shadow map. With 8192 directional cascades it grows to 16384 × 16384, which holds 1 GiB of GPU memory instead of 256 MiB at most, while a directional light casts shadows.
+- At **High**, the first cascade uses 8192 too rather than twice it, which would fill the whole shadow map.
+- Point and spot lights still get their share. Spot lights up to the level's local shadow light count fit beside the cascades; point lights that need more room lower the directional map to 4096.
+- Where the device can't make a texture that large, on phones and tablets, or when the graphics card can't allocate it, the directional light uses 4096 instead (less when local shadow lights need the room), in a shadow map of at most 8192 × 8192. `stat draws` in the [console](../debugging/console.md) then lists **shadow map reduced by shadow atlas space**, or **shadow map reduced after allocation failure**.
 
 ## Quality levels
 
@@ -59,7 +68,7 @@ Applying a level also resets a Manual **Local Shadow Light Budget** to that leve
 
 The last cascades, those farthest from the camera, use half the **Directional Map Size** in each direction (never below 256, and never the first two cascades): far shadows are seen small, and the room they leave goes to closer shadows and local lights.
 
-At High, the first cascade, nearest the camera, uses twice the **Directional Map Size** in each direction over the same distance, so shadows close to the camera have twice the detail. It takes room in the shadow atlas that local shadow lights could otherwise use, and its shadow pass draws more texels.
+At High, the first cascade, nearest the camera, uses twice the **Directional Map Size** in each direction over the same distance, so shadows close to the camera have twice the detail. It takes room in the shadow atlas that local shadow lights could otherwise use, and its shadow pass draws more texels. With a **Directional Map Size** of 4096 or 8192 it uses the map size instead: twice would leave the shadow atlas no room for the other cascades.
 
 Beyond the first cascade, an object narrower than the level's smallest far caster, measured in that cascade's shadow texels, casts no directional shadow there: its shadow would be too small to see. The first cascade, nearest the camera, keeps every caster.
 

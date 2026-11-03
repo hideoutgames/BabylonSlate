@@ -213,6 +213,7 @@ A feature that cannot be showcased is recorded here with its reason; never skip 
 
 - Console `quit`: it ends the Play session, so the starter's console workload never runs it.
 - Upscaling Pixelated and Create Project's Pixel Art Optimized: Pixelated draws at full resolution and resizes the framebuffer by whole multiples, which would change the starter's performance workload and views; the layout, lens and preset tests cover them.
+- An 8192 Directional Map Size: its 16384 shadow atlas holds 1 GiB, which would dominate the starter's deterministic workload and its software GL first frames, and falls back to 4096 on phones and tablets; the starter keeps the new-project High shadows, and `shadow-admission-plan.test.ts` and `shadow-controller.test.ts` cover the atlas growth and its fallbacks.
 - Pixel-Perfect Mode and Nearest Texture Filtering: project-wide switches that would snap the game camera and resample every Feature Test texture, 3D zones included, so the starter leaves both off; `e2e/nearest-textures.spec.ts` and the settings tests cover them.
 - Skinned Skeletons and retargeted Animations: the repository has no skinned model (the Mannequin is a hierarchy rig, the door a node animation).
 - MSDF font atlases: none exists; text uses the facetype and Onest source Fonts.
