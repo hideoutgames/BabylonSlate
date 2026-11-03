@@ -35,7 +35,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Open | Open the asset in its editor. |
 | Generate Thumbnail | Redraw the thumbnail of a Model, Animation, Material or actor Class. |
 | Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas: pick one JSON and the PNG it names. A JSON that names no atlas page pairs only with a PNG of the same name that contains `msdf`, such as `Ui-msdf.png` for `Ui-msdf.json`. A second JSON or any other PNG in the pick is refused. |
-| Create Instance | Materials and Material Instances only. Make a Material Instance of it in the same folder, named `<Name>_Instance` (`<Name>_Instance_1`, `_2`, … when that name is taken). |
+| Create … | Make a new asset from the selection. See [Create from assets](#create-from-assets). |
 | Duplicate | Copy the selection in place. |
 | Rename | Rename one asset or folder. References to it stay connected. |
 | Retarget… | Animations only. Retarget the selected Animations to another Skeleton. |
@@ -45,6 +45,40 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Delete | Delete the selection. |
 
 Double-tap empty space in the grid to open the **New Asset** menu there. Hold or right-click empty space in the grid for **New Folder**, **New Asset** and **Import**, or empty space in the folder tree for **New Folder**.
+
+### Create from assets
+
+The **Create** items build a new asset from the selected assets. Each one appears only when every selected asset is of a type it takes, and no folder is selected. The new asset goes in the same folder as its source (the first selected asset, in name order) and opens. When one choice makes several assets, none of them opens.
+
+New assets are named after their source. If that name is taken by an asset of the same type in the folder, `_1`, `_2`, … is added.
+
+| Item | Takes | Makes |
+| --- | --- | --- |
+| Create Instance | One Material or Material Instance | A [Material Instance](../assets/material-instance.md) of it, named `<Name>_Instance`. |
+| Create Sprite / Create Sprites | Textures | One [Sprite](../assets/sprite.md) per Texture, showing the whole image with the default pivot and collision box. |
+| Create Sprite Animation | Textures and Sprites, mixed | One [Sprite Animation](../assets/sprite-animation.md) with a frame per asset, in name order (`Run_2` before `Run_10`), named after the first without its trailing number (`Run_1` makes `Run`). |
+| Create Tileset | One Texture | A [Tileset](../assets/tileset.md) of it, sized from the Texture. |
+| Create Material | Textures | A [Material](../assets/material.md) per group of Textures that share a name before a map suffix (below). |
+| Create Tilemap | Tilesets | One [Tilemap](../assets/tilemap.md) with every selected Tileset in its Palette, using the first Tileset's tile size. |
+| Create Prefab | Models | One [Prefab](../assets/prefab.md) with a Mesh component for each Model. |
+| Create Actor | Models, Sprites and Particle Systems, mixed | One Actor [Class](../assets/class.md) with a component for each asset: a Mesh for a Model, a Sprite for a Sprite, and a Particle component that plays on start for a Particle System. |
+| Create Particle System | Up to eight Basic Particle Emitters and Particle Graphs | A [Particle System](../assets/particle-system.md) that plays them together. |
+| Create Child Class | One Class | A Class whose parent is that Class, named `<Name>_Child`. Not offered for a Class that cannot have children. |
+| Create Data Definition | One Structure | A [Data Definition](../assets/data-definition.md) whose fields start as the Structure's. |
+| Create Data Tree | One Data Definition | A [Data Tree](../assets/data-tree.md) that uses the Data Definition. |
+| Create Render Target Texture | One Render Target | A [Render Target Texture](../assets/render-target-texture.md) that shows the Render Target. |
+
+**Create Material** reads the end of each Texture's name:
+
+| Name ends in | Wired to |
+| --- | --- |
+| `_normal`, `_norm`, `_nrm`, `_nor` | **Normal**, through a Normal Map node |
+| `_roughness`, `_rough`, `_rgh` | **Roughness** (red channel) |
+| `_metallic`, `_metalness`, `_metal`, `_mtl` | **Metallic** (red channel) |
+| `_emissive`, `_emission`, `_emit` | **Emissive** |
+| `_basecolor`, `_albedo`, `_diffuse`, `_diff`, `_color`, `_col`, or none of these | **Base Color** |
+
+A `-`, `.` or space works in place of `_`, and case does not matter, so `Rock_albedo`, `Rock_Normal` and `rock-rough` make one Material named `Rock`. Textures ending in `_ao` or `_occlusion` join their group but are not used, because Materials have no occlusion input. A group without a Base Color Texture keeps the default color. If two Textures in a group end the same way, the first in name order is used.
 
 ## New folders
 

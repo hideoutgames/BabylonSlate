@@ -6,6 +6,8 @@ Plays up to eight Basic Particle Emitters or Particle Graphs together. This is t
 
 In the **Content Browser**, choose **New Asset > Rendering > Particle System**.
 
+Or select up to eight Basic Particle Emitters and Particle Graphs, right-click one and choose **Create Particle System**. See [Create from assets](../editor/content-browser.md#create-from-assets).
+
 ## Editor
 
 Double-tap the asset to open it. The window has **Preview** and an **Inspector**.

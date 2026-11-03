@@ -6,6 +6,8 @@ A live Render Target that Materials can sample like a Texture, for security moni
 
 In the **Content Browser**, choose **New Asset > Rendering > Render Target Texture**.
 
+Or right-click a [Render Target](render-target.md) and choose **Create Render Target Texture** for one that already shows it. See [Create from assets](../editor/content-browser.md#create-from-assets).
+
 ## Editor
 
 Double-tap the asset to open it. The window has an **Inspector** only.

@@ -182,10 +182,6 @@ export function setSceneOcclusionFrozen(scene: Scene, frozen: boolean): void {
   else frozenScenes.delete(scene);
 }
 
-export function sceneOcclusionFrozen(scene: Scene): boolean {
-  return frozenScenes.has(scene);
-}
-
 /**
  * The occlusion `scene`'s world view last drew, for the `showocclusion` overlay: per texel of its `width` × `height`
  * buffer, row 0 at the top, the view depth occluders hold there (Infinity where none); null while it does not cull.

@@ -128,7 +128,7 @@ export class PayloadFingerprints {
   }
 }
 
-import { copyTextureBytesForUpload, environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@haptic/assets";
+import { environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@haptic/assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
 
@@ -263,11 +263,7 @@ export function installTextureBytes(bytes: ReadonlyMap<string, Uint8Array | Blob
     const kind = source instanceof Uint8Array ? environmentTextureContainer(source) : null;
     const mime = kind === "env" ? "application/vnd.babylon.env" : kind === "dds" ? "image/vnd-ms.dds"
       : source instanceof Uint8Array && isKtx2Bytes(source) ? "image/ktx2" : "application/octet-stream";
-    // Blob uploads bypass the native array-buffer path. Preserve its legacy
-    // UASTC descriptor normalization before installing the immutable source.
-    const upload = source instanceof Uint8Array && isKtx2Bytes(source)
-      ? copyTextureBytesForUpload(source) : source;
-    return [guid, installAssetBytes(upload, mime)];
+    return [guid, installAssetBytes(source, mime)];
   }));
 }
 

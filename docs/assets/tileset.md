@@ -4,7 +4,10 @@ Tile definitions and collision for painting Tilemaps: a Texture sliced into a gr
 
 ## Create
 
-In the **Content Browser**, choose **New Asset > 2D > Tileset**. Import your tile sheet as a Texture first. See [Importing](../editor/importing.md).
+Import your tile sheet as a Texture first. See [Importing](../editor/importing.md). Then, in the **Content Browser**:
+
+- Right-click or long-press the Texture and choose **Create Tileset**. The Tileset takes the Texture's name and size, sits beside it and opens; set **Tile Width** and **Tile Height** next.
+- Or choose **New Asset > 2D > Tileset** and pick the Texture in the editor.
 
 ## Editor
 

@@ -3,7 +3,9 @@ import {
   EffectRenderer,
   EffectWrapper,
   ShaderStore,
+  type AbstractEngine,
   type CubeTexture,
+  type Engine,
   type RenderTargetWrapper,
 } from "@babylonjs/core";
 import { withDrawingState } from "./engine-drawing-state";
@@ -80,6 +82,23 @@ const axes = [
     [0, 0, -1],
   ],
 ] as const;
+
+/**
+ * Reads the bound `target` (32 × 32 RGBA float) without stalling the main thread where the device allows: WebGL2
+ * copies into a pixel buffer behind a fence (Babylon's `_readPixelsAsync`), which resolves once the GPU reaches it,
+ * where a plain `readPixels` waits for every queued draw and shader link first. WebGPU reads are asynchronous
+ * already; other engines read synchronously.
+ */
+function readBoundTarget(engine: AbstractEngine, target: RenderTargetWrapper): Promise<ArrayBufferView | null> {
+  const gl = (engine as Engine)._gl as WebGL2RenderingContext | undefined;
+  if (!engine.isWebGPU && (engine as Engine).webGLVersion >= 2 && typeof gl?.fenceSync === "function") {
+    const read = (engine as Engine)._readPixelsAsync(0, 0, 32, 32, gl.RGBA, gl.FLOAT, new Float32Array(32 * 32 * 4));
+    if (read) return read;
+  }
+  // Pinned BaseTexture.readPixels primitive: captures a 2D target and
+  // restores its framebuffer synchronously before a WebGPU read resolves.
+  return engine._readTexturePixels(target.texture!, 32, 32, -1, 0, null, true);
+}
 
 async function settledPixels(
   reads: Promise<ArrayBufferView | null>[],
@@ -177,11 +196,7 @@ export async function readEnvironmentBaseRadiance(
         effect.effect.setFloat3("axisY", y[0], y[1], y[2]);
         effect.effect.setFloat3("axisZ", z[0], z[1], z[2]);
         renderer.draw();
-        // Pinned BaseTexture.readPixels primitive: captures a 2D target and
-        // restores its framebuffer synchronously before a WebGPU read resolves.
-        reads.push(
-          engine._readTexturePixels(target.texture!, 32, 32, -1, 0, null, true),
-        );
+        reads.push(readBoundTarget(engine, target!));
       }
     });
     const faces = await settledPixels(reads);

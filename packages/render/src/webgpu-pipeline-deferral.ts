@@ -479,20 +479,6 @@ export function beginPipelineDeferral(
 }
 
 /**
- * Drops the pipelines warm draws created (or are creating) at `nodes`, cache nodes of Effects since released, at once:
- * Babylon's pipeline cache, a tree keyed by each Effect's unique id, keeps a released Effect's pipelines until the
- * Engine's cache pruning (`webgpu-cache-pruning.ts`) drops its branch.
- */
-export function releaseWarmPipelines(engine: AbstractEngine, nodes: Iterable<object>): void {
-  const state = states.get(engine);
-  for (const node of nodes as Iterable<CacheNode>) {
-    // A creation still in flight finds its node gone and keeps nothing.
-    state?.pending.delete(node);
-    node.pipeline = undefined;
-  }
-}
-
-/**
  * Whether some draw on `engine` has drawn with `effect` since a deferring view first drew (so it has a pipeline for
  * that draw's state); true while no view defers, when nothing is known.
  */

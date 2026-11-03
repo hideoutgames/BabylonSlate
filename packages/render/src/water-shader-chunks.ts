@@ -4,10 +4,10 @@
  */
 import { WATER_FFT_CASCADES_MAX } from "@haptic/core";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
-import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA } from "./water-field";
+import { WATER_FIELD_SHORE_RANGE as SHORE } from "./water-field";
 import { WATER_SCENE_COPY_SKY_DEPTH } from "./water-scene-copy";
 import {
-  BLEND_COLOR_UNIFORMS, BLEND_PARTNERS, COLOR_LOCALS, COLOR_UNIFORMS, f, FFT, FFT_CASCADE_UNIFORMS, OPEN_EDGE_FADE,
+  f, FFT, FFT_CASCADE_UNIFORMS, OPEN_EDGE_FADE,
   OPEN_EDGE_FADE_TERRAIN, PIXEL_SLOPE_CAP, PIXEL_SLOPE_FILTER, SOFT_SHORE_DEPTH, SPECTRUM_FOAM_SCALE, SSR_REFINE_STEPS,
   SSR_STEPS, SSR_THICKNESS, TURBIDITY, WATER_BLEND_DEFINE, WATER_DETAIL_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER,
 } from "./water-shader-defines";
@@ -598,79 +598,3 @@ float swRemoval(mat4 inv, vec4 shape, vec3 p) {
 
 export const WATER_REMOVAL_SLOTS = 4;
 
-/**
- * Runs at CUSTOM_FRAGMENT_UPDATE_ALPHA: still before the depth pre-pass, so removed water leaves no
- * depth behind, but after WebGPU has copied the fragment inputs (MAIN_BEGIN would see zeros there).
- *
- * Computes the contact derivatives and whether this fragment is removed (`swRemoved`: a removal volume, a blend partner's
- * share, or land above the water), then discards at once only in the depth pre-pass (`DEPTHPREPASS`, set by Babylon from the
- * colour-write state: nothing after it reads a derivative and removed water must write no depth). The colour pass
- * discards in `beforeFogSource`, after every look's derivatives (foam, normals, footprints, line work) were taken with the
- * whole 2x2 quad running: a derivative taken after a neighbour's discard is undefined on some GPUs.
- */
-export function cutSource(wgsl: boolean): string {
-  const sample = wgsl
-    ? "var swField: vec4f = textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, swFieldUv, 0.0);"
-    : "vec4 swField = texture2D(slateWaterFieldSampler, swFieldUv);";
-  const sampleContacts = wgsl
-    ? "var swContactTex: vec4f = textureSampleLevel(slateWaterContactSampler, slateWaterContactSamplerSampler, swContactUv, 0.0);"
-    : "vec4 swContactTex = texture2D(slateWaterContactSampler, swContactUv);";
-  const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `swRemoval(U.slateWaterRemoval${i}, U.slateWaterRemovalShape${i}, swPosW)`);
-  const blended = (i: number) => Array.from({ length: BLEND_PARTNERS }, (_, k) =>
-    ` + U.${BLEND_COLOR_UNIFORMS[k * COLOR_UNIFORMS.length + i]} * swBlendShares[${k}]`).join("");
-  const colors = (blend: boolean) => COLOR_UNIFORMS.map((name, i) =>
-    `vec4 ${COLOR_LOCALS[i]} = ${blend ? `U.${name} * (1.0 - swBlendShares.x - swBlendShares.y - swBlendShares.z)${blended(i)}` : `U.${name}`};`).join("\n");
-  return `
-// Large-world rendering makes vPositionW eye-relative; rebuild the absolute world position.
-vec3 swPosW = IN.vPositionW + U.slateWaterOrigin.xyz;
-// The asset's colours, mixed toward each blended neighbour's by its colour share (\`SLATE_WATER_BLEND\`). A blending surface keeps
-// only fragments it owns (margin >= 0, in metres, with a 1.5 cm overlap, wider than the margin's interpolation error, so seams never open) inside the blended shoreline.
-#ifdef ${WATER_BLEND_DEFINE}
-vec3 swBlendShares = vec3(IN.vSlateWaterBlend.w, IN.vSlateWaterBlendColors);
-${colors(true)}
-float swBlendKeep = min(IN.vSlateWater.y, IN.vSlateWaterBlend.z + 0.015);
-#else
-${colors(false)}
-float swBlendKeep = 1.0;
-#endif
-vec2 swFieldUv = (swPosW.xz - U.slateWaterFieldBounds.xy) * U.slateWaterFieldBounds.zw;
-${sample}
-// The field hands over to the open-water defaults across its last three texels, so its bounds never draw a seam.
-vec2 swFieldEdge = min(swFieldUv, vec2(1.0) - swFieldUv) / max(U.slateWaterFieldStep.xy * 3.0, vec2(0.000001));
-float swFieldOn = U.slateWaterFieldInfo.x * clamp(min(swFieldEdge.x, swFieldEdge.y), 0.0, 1.0);
-// Geometry displacement, not the unfiltered per-pixel normal waves, sets the waterline. Shallows read the fine
-// depth channel (sized to the wave envelope), so gentle shores have no terraces; deeper water falls back to the
-// full-range channel.
-float swFineSpan = U.slateWaterFieldStep.z;
-float swCoarseDepth = mix(U.slateWaterFieldInfo.z, U.slateWaterFieldInfo.w, swField.g);
-float swFineDepth = U.slateWaterFieldInfo.y + swField.b * swFineSpan;
-float swFineTop = U.slateWaterFieldInfo.y + swFineSpan;
-float swTerrainDepth = mix(swFineDepth, swCoarseDepth, smoothstep(swFineTop - 0.8, swFineTop - 0.2, swFineDepth)) + IN.vSlateWater.x;
-float swTerrainShore = mix(${f(SHORE[0])}, ${f(SHORE[1])}, swField.r);
-// Objects: signed distances at four heights across rest +/- the wave envelope (negative inside). Blending the
-// two layers around this fragment's rendered wave height puts contacts on the actual, moving waterline.
-vec2 swContactUv = (swPosW.xz - U.slateWaterContactBounds.xy) * U.slateWaterContactBounds.zw;
-${sampleContacts}
-float swContactOn = U.slateWaterContactInfo.x * step(0.0, swContactUv.x) * step(swContactUv.x, 1.0) * step(0.0, swContactUv.y) * step(swContactUv.y, 1.0);
-float swLayer = (clamp(IN.vSlateWater.x / max(0.001, U.slateWaterContactInfo.z), -1.0, 1.0) * 0.5 + 0.5) * 3.0;
-vec4 swLayerW = max(vec4(0.0), vec4(1.0) - abs(vec4(0.0, 1.0, 2.0, 3.0) - vec4(swLayer)));
-float swContactSigned = mix(1.0, dot(swContactTex, swLayerW) * 2.0 - 1.0, swContactOn) * U.slateWaterContactInfo.y;
-vec2 swContactDerivative = vec2(dFdx(swContactSigned), dFdy(swContactSigned));
-// Derivatives before any discard.
-vec2 swDx = dFdx(swPosW.xz);
-vec2 swDy = dFdy(swPosW.xz);
-float swDet = swDx.x * swDy.y - swDx.y * swDy.x;
-// Outward world X/Z direction from the nearest object, from the screen derivatives of its distance.
-float swSafeDet = mix(1e-12, swDet, step(1e-12, abs(swDet)));
-vec2 swContactGrad = vec2(swContactDerivative.x * swDy.y - swContactDerivative.y * swDx.y, swDx.x * swContactDerivative.y - swDy.x * swContactDerivative.x) / swSafeDet;
-vec2 swContactDir = swContactGrad / max(length(swContactGrad), 0.00001);
-// The four-tap shoreline (\`shorelineSource\`) over known terrain with waves.
-${shorelineSource({ tap: "swFieldTapAt", uv: "swFieldUv", cond: `U.slateWaterWaves.x > 0.0 && swField.a > ${f(WATER_FIELD_TERRAIN_ALPHA)}`, depth: "swTerrainDepth", shore: "swTerrainShore" })}
-float swCut = min(min(${removals[0]}, ${removals[1]}), min(${removals[2]}, ${removals[3]}));
-// Only real terrain removes water; cells extended past a landscape's edge (alpha ramp) never do.
-${wgsl ? "var swRemoved: bool" : "bool swRemoved"} = swCut < 0.0 || swBlendKeep < 0.0 || (swField.a * swFieldOn > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swTerrainDepth <= 0.0);
-#ifdef DEPTHPREPASS
-if (swRemoved) { discard; }
-#endif
-`;
-}

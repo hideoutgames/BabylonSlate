@@ -27,15 +27,6 @@ function sceneLighting(scene: Scene): SceneLighting {
   return lighting;
 }
 
-/**
- * Treat the next sync as a lighting change (readiness and receivers are told),
- * e.g. when a material starts using scene lights again. No-op where lighting is
- * not managed.
- */
-export function invalidateSceneLighting(scene: Scene): void {
-  lightingByScene.get(scene)?.invalidate();
-}
-
 export function sceneLightingLimits(scene: Scene): string[] {
   return [
     ...scene.lights.flatMap((light) => typeof light.metadata?.areaLight?.error === "string" ? [`${light.name}: ${light.metadata.areaLight.error}`] : []),

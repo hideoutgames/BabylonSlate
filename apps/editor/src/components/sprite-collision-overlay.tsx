@@ -85,7 +85,8 @@ export function SpriteCollisionOverlay({
   collision: SpriteCollision;
   /** The frame's texture pixel size, when known. */
   pixels?: FramePixels | null;
-  onChange: (next: SpriteCollision) => void;
+  /** Absent shows the box read-only (a Sprite Animation frame taken from a Sprite). */
+  onChange?: (next: SpriteCollision) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -104,7 +105,7 @@ export function SpriteCollisionOverlay({
       const pointer = normalizedFromPointer(host, clientX, clientY);
       const next = applyHandle(session.start, session.handle, pointer, session.origin, pixels);
       setLive(next);
-      onChange(next);
+      onChange?.(next);
     },
     [onChange, pixels],
   );
@@ -114,7 +115,7 @@ export function SpriteCollisionOverlay({
     event: PointerEvent,
   ) => {
     const host = hostRef.current?.getBoundingClientRect();
-    if (!host) return;
+    if (!host || !onChange) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -147,8 +148,10 @@ export function SpriteCollisionOverlay({
     >
       <div
         data-testid="sprite-collision-overlay"
+        data-read-only={onChange ? undefined : "true"}
         className={cn(
-          "pointer-events-auto absolute cursor-move border border-primary bg-primary/10",
+          "absolute border border-primary bg-primary/10",
+          onChange ? "pointer-events-auto cursor-move" : "pointer-events-none",
           dragging ? "border-solid bg-primary/20" : "border-dashed",
         )}
         style={{
@@ -159,7 +162,7 @@ export function SpriteCollisionOverlay({
         }}
         onPointerDown={(event) => beginDrag("move", event)}
       >
-        {HANDLES.map((handle) => (
+        {(onChange ? HANDLES : []).map((handle) => (
           <button
             key={handle}
             type="button"

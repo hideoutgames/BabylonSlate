@@ -57,7 +57,7 @@ import {
 import type { SubsystemClassEntry } from "../lib/logic-graph-document";
 import { dataGraphDefinitionGuid, dataGraphMetadata, isDataGraphNode, type DataGraphAssetEntry } from "../lib/data-graph";
 import { parentLookup } from "./graph-class-symbols";
-import { defaultNodeRegistry as registry, materializeLogicGraph } from "./graph-hydration";
+import { defaultNodeRegistry, materializeLogicGraph } from "./graph-hydration";
 import {
   dataLiteralEntry,
   type HydrateGraphOptions,
@@ -379,7 +379,7 @@ export function validateSerializedGraph(
   };
   if (isLogicGraphPayload(content)) {
     return [
-      ...validateGraphs([content], ctx, { registry }),
+      ...validateGraphs([content], ctx, { registry: defaultNodeRegistry() }),
       ...hostLineageDiagnostics([content], options),
       ...dataGraphDiagnostics([content], options),
       ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
@@ -413,7 +413,7 @@ export function validateSerializedGraph(
     );
   }
   return [
-    ...validateGraphs(graphs, ctx, { registry }),
+    ...validateGraphs(graphs, ctx, { registry: defaultNodeRegistry() }),
     ...hostLineageDiagnostics(graphs, options),
     ...dataGraphDiagnostics(graphs, options),
     ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
@@ -427,4 +427,4 @@ export function projectHasBlockingErrors(
   return hasBlockingErrors(diagnostics);
 }
 
-export { registry as defaultNodeRegistry };
+export { defaultNodeRegistry };

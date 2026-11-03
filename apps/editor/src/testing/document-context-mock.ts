@@ -182,7 +182,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     forceCloseProject: async () => true,
     exportProject: async () => new Uint8Array(),
     exportGameArtifact: unavailable("exportGameArtifact"),
-    zipExportedGame: () => new Uint8Array(),
+    zipExportedGame: async () => new Uint8Array(),
     dismissRecovery: resolved,
     keepRecovery: noop,
     openDocument: resolved,

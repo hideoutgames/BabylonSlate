@@ -332,6 +332,14 @@ test.describe("Particle Graph", () => {
       .locator("[data-testid^='component-card-']")
       .filter({ has: page.getByRole("button", { name: /^Particle(?: \(|$)/ }) });
     await expect(particleCard).toBeVisible();
+    // Place On Surfaces rests the emitter on the surface at the view centre, the
+    // Mannequin's feet. The frame check expects it in clear view in front of the
+    // Mannequin, where view-centre placement put it before.
+    for (const [axis, value] of [["y", "1"], ["z", "-3"]] as const) {
+      const field = page.getByTestId(`property-actor-position-${axis}`);
+      await field.fill(value);
+      await field.press("Enter");
+    }
     await particleCard.locator('button[data-testid$="-particleSystemGuid"]').click();
     const systemGuid = await guidForPath(page, "assets/EmberMix.particles.hasset");
     expect(systemGuid.length).toBeGreaterThan(0);

@@ -14,6 +14,7 @@ import {
   normalizeAnimationPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  parseSpriteAnimationPayload,
   TILESET_TERRAIN_STYLES,
   tilesetTerrainById,
   tilesetTileById,
@@ -160,6 +161,16 @@ describe("FeatureTest starter", () => {
       }
     }
     expect(TILESET_TERRAIN_STYLES.filter((style) => !painted.has(style))).toEqual([]);
+  });
+
+  it("plays Sprite Animations from Sprite frames and from a sheet's cells", async () => {
+    const registry = reopened.registry!;
+    const animations = await Promise.all(registry.list()
+      .filter((entry) => entry.header.type === "SpriteAnimation")
+      .map(async (asset) => parseSpriteAnimationPayload(await reopened.loadDocument("sprite-animation", asset.path))));
+    const spriteFrames = animations.filter((animation) => animation.source === "frames" && animation.frames.some((frame) => frame.spriteGuid));
+    const sheets = animations.filter((animation) => animation.source === "sheet" && animation.sheet.textureGuid && animation.frames.length > 1);
+    expect({ spriteFrames: spriteFrames.length > 0, sheets: sheets.length > 0 }).toEqual({ spriteFrames: true, sheets: true });
   });
 
   it("opens every scene without rewriting its Class and Prefab instances", async () => {

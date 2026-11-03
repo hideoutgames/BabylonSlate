@@ -178,9 +178,6 @@ importers:
       '@babylonjs/core':
         specifier: 9.29.0
         version: 9.29.0(patch_hash=07aa7e1aafeb5effcc790fce1280be13acc1e2cd19a33a6592242be8908713ec)
-      '@babylonjs/loaders':
-        specifier: 9.29.0
-        version: 9.29.0(@babylonjs/core@9.29.0(patch_hash=07aa7e1aafeb5effcc790fce1280be13acc1e2cd19a33a6592242be8908713ec))(babylonjs-gltf2interface@9.21.2)
       '@capacitor/android':
         specifier: ^8.0.0
         version: 8.5.2(@capacitor/core@8.5.2)

@@ -4,27 +4,8 @@
  * `content-browser-helpers.ts` re-exports the public names.
  */
 import {
-  areaEmissionTextureGuids,
-  assetVariableGuidsFromGraph,
-  classIdsFromVariableMembers,
-  normalizeRenderTargetTexturePayload,
-  normalizeWaterDefinition,
-  renderTargetAssetGuidsFromGraph,
-} from "@haptic/core";
-import {
-  animationAssetGuids,
-  audioAssetDependencies,
   collectAssetDependencyMetadata,
-  dataAssetDependencies,
-  dataGraphAssetDependencies,
-  findClassAssetReferences,
-  modelAssetGuids,
-  parseSpriteAnimationPayload,
-  particleAssetDependencies,
   resolveAssetCatalogDependencies,
-  skeletonAssetGuids,
-  skyboxCreatorAssetDependencies,
-  spriteAnimationTextureGuids,
   type AssetDependencyMetadata,
   type IndexedAsset,
 } from "@haptic/assets";
@@ -59,97 +40,6 @@ export function materialAssetDependencies(
   return [];
 }
 
-/** Header `dependencies[]` written on save for Show References, remap, and export. */
-function legacyAssetHeaderDependencies(
-  assetType: string,
-  payload: Record<string, unknown>,
-  classes: readonly ClassAssetRef[] = [],
-  parentClass?: string | null,
-): string[] {
-  const schemasByGuid = new Map(classes.flatMap(asset => {
-    const fields = asset.header.payload?.fields;
-    return asset.header.guid && ["DataDefinition", "Structure"].includes(asset.header.type) && Array.isArray(fields)
-      ? [[asset.header.guid, fields] as const] : [];
-  }));
-  const definitionFields = (guid: string) => schemasByGuid.get(guid);
-  const classRefs = classes.flatMap((asset) =>
-    asset.header.guid && asset.header.type === "Class"
-      ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []);
-  if (["DataDefinition", "DataTree", "Structure", "Enum"].includes(assetType)) {
-    return dataAssetDependencies(assetType, payload, classRefs, definitionFields);
-  }
-  const unique = new Set<string>([
-    ...(assetType === "Class" ? dataGraphAssetDependencies(payload, classRefs, definitionFields) : []),
-    ...(assetType === "SaveGame" && Array.isArray(payload.fields) ? payload.fields.flatMap((field) => {
-      if (!field || typeof field !== "object" || field.type !== "asset") return [];
-      return (Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue]).filter((value: unknown): value is string => typeof value === "string" && !!value);
-    }) : []),
-    ...(assetType === "Class" ? assetVariableGuidsFromGraph(payload as unknown as import("@haptic/core").SerializedGraph) : []),
-    ...(assetType === "Class" ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@haptic/core").SerializedGraph) : []),
-    ...areaEmissionTextureGuids(payload),
-    ...findClassAssetReferences({ ...payload, parentClass }, classRefs, definitionFields),
-    ...materialAssetDependencies(assetType, payload),
-    ...audioAssetDependencies(assetType, payload),
-    ...particleAssetDependencies(assetType, payload),
-    ...(assetType === "Water" && normalizeWaterDefinition(payload).materialGuid ? [normalizeWaterDefinition(payload).materialGuid!] : []),
-    ...(assetType === "RenderTargetTexture" && normalizeRenderTargetTexturePayload(payload).renderTargetGuid ? [normalizeRenderTargetTexturePayload(payload).renderTargetGuid!] : []),
-    ...skyboxCreatorAssetDependencies(assetType, payload),
-    ...(assetType === "SpriteAnimation"
-      ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
-      : []),
-    ...(assetType === "Model" ? modelAssetGuids(payload) : []),
-    ...(assetType === "Skeleton" ? skeletonAssetGuids(payload) : []),
-    ...(assetType === "Animation" ? animationAssetGuids(payload) : []),
-  ]);
-  if (assetType === "Scene") {
-    const settings = payload.settings as Record<string, unknown> | undefined;
-    const environment = settings?.environmentTextureGuid;
-    if (typeof environment === "string" && environment.length > 0) unique.add(environment);
-  }
-  if (["Scene", "SceneLayer", "Class"].includes(assetType)) {
-    const addClass = (classId: unknown) => {
-      if (typeof classId !== "string" || !classId) return;
-      const asset = classRefs.find((entry) => entry.classId === classId);
-      if (asset) unique.add(asset.guid);
-    };
-    const addComponents = (components: unknown) => {
-      if (!Array.isArray(components)) return;
-      for (const component of components) {
-        if (!component || typeof component !== "object") continue;
-        addClass(component.classId);
-        if (component.classId === "SceneStreamingComponent") {
-          const guid = component.properties?.sceneGuid;
-          if (typeof guid === "string" && guid.length > 0) unique.add(guid);
-        } else if (component.classId === "RenderTargetCaptureComponent") {
-          const guid = component.properties?.renderTargetGuid;
-          if (typeof guid === "string" && guid) unique.add(guid);
-        }
-        if (component.classId !== "MeshComponent" && component.classId !== "CableComponent") continue;
-        for (const key of ["materialGuid", "assetGuid"]) {
-          const guid = component.properties?.[key];
-          if (typeof guid === "string" && guid.length > 0) unique.add(guid);
-        }
-      }
-    };
-    if (assetType === "Scene" || assetType === "SceneLayer") {
-      if (Array.isArray(payload.actors)) {
-        for (const actor of payload.actors) {
-          if (!actor || typeof actor !== "object") continue;
-          addClass(actor.classId);
-          addComponents(actor.components);
-        }
-      }
-    } else {
-      addClass(parentClass);
-      addComponents(payload.components);
-      if (Array.isArray(payload.members)) {
-        for (const classId of classIdsFromVariableMembers(payload.members)) addClass(classId);
-      }
-    }
-  }
-  return [...unique].sort();
-}
-
 /** Shared typed reference collection, using only catalog schemas and this document. */
 export function assetHeaderDependencyMetadata(
   assetType: string,
@@ -162,7 +52,6 @@ export function assetHeaderDependencyMetadata(
     return asset.header.guid && Array.isArray(fields) ? [[asset.header.guid, fields] as const] : [];
   }));
   return collectAssetDependencyMetadata(assetType, payload, {
-    dependencies: legacyAssetHeaderDependencies(assetType, payload, classes, parentClass),
     parentClass,
     classes: classes.flatMap(asset => asset.header.guid && asset.header.type === "Class" ? [{
       guid: asset.header.guid,
@@ -174,7 +63,7 @@ export function assetHeaderDependencyMetadata(
         ? asset.header.payload.variables.map(variable => ({ ...variable, kind: "variable" })) : [])) as import("@haptic/core").GraphClassMember[],
     }] : []),
     definitionFields: guid => definitions.get(guid),
-    graphPins: (type, properties) => defaultNodeRegistry.get(typeof properties.__nodeType === "string" ? properties.__nodeType : type)?.pins(properties),
+    graphPins: (type, properties) => defaultNodeRegistry().get(typeof properties.__nodeType === "string" ? properties.__nodeType : type)?.pins(properties),
   });
 }
 

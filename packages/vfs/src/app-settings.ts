@@ -9,6 +9,9 @@ import {
 
 /** Each undo step retains a document snapshot; keep the history bounded. */
 export const MAX_UNDO_HISTORY_LENGTH = 1000;
+/** Placement trace reach for new actors; short, so far surfaces do not grab them. */
+export const DEFAULT_EDITOR_PLACEMENT_DISTANCE = 25;
+
 const MEBIBYTE = 1024 * 1024;
 /** Per-document Undo memory limit, in bytes (Undo Memory Limit preference). */
 export const DEFAULT_UNDO_BYTE_BUDGET = 16 * MEBIBYTE;
@@ -194,6 +197,10 @@ export const engineSettingsSchema = z.object({
     return Math.min(MAX_CAMERA_PREVIEW_FRAME_RATE, Math.max(MIN_CAMERA_PREVIEW_FRAME_RATE, value));
   }, z.number().min(MIN_CAMERA_PREVIEW_FRAME_RATE).max(MAX_CAMERA_PREVIEW_FRAME_RATE).default(DEFAULT_CAMERA_PREVIEW_FRAME_RATE)),
   viewportDropDistance: z.number().finite().positive().default(DEFAULT_EDITOR_DROP_DISTANCE),
+  /** New actors placed into the 3D viewport land on the surface a trace from the camera hits. */
+  viewportPlaceOnSurfaces: z.boolean().default(true),
+  /** How far that trace reaches, in world units; a miss places the actor at its end. */
+  viewportPlacementDistance: z.number().finite().positive().default(DEFAULT_EDITOR_PLACEMENT_DISTANCE),
   renderingOverridesEnabled: z.boolean().default(false),
   /** Shows developer diagnostics: the Feature Test starter, its device check, and Copy Error on load failures. */
   debugMode: z.boolean().default(false),

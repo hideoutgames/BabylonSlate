@@ -2,7 +2,6 @@
  * The water nodes' shader defines, sampler and uniform names, and the tuning constants their shader chunks embed.
  * `water-material.ts` re-exports the public names.
  */
-import { ThinTexture } from "@babylonjs/core";
 import {
   WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, WATER_SPECTRUM_GRAVITY, waterFoamScale, waterFoamThreshold,
   waterSpectrum, type WaterDefinition, type WaterShadingDetail, type WaterSpectrum,
@@ -76,8 +75,6 @@ export const SSR_REFINE_STEPS = 4;
  * well above the copy's half-float depth precision): a reflected ray this far behind a surface still hits it.
  */
 export const SSR_THICKNESS = [0.2, 0.03] as const;
-/** Bound where a copy or planar feature has no source this draw: Babylon binds its empty texture (alpha 0). */
-export const EMPTY_TEXTURE = new ThinTexture(null);
 /**
  * How far along the reflected ray (times the eye's distance to the water point) the planar lookup follows it: content
  * that far away moves with half the ray's tilt, the sky (beyond) somewhat less than it should and objects at the

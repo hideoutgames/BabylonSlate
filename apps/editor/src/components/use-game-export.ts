@@ -35,7 +35,7 @@ export function useGameExport(projectDocument: ProjectDocument | null): GameExpo
         setError(exportGameFailureMessage(result.error));
         return;
       }
-      downloadZipArchive(zipExportedGame(result.value), gameArchiveName(projectDocument.metadata.name));
+      downloadZipArchive(await zipExportedGame(result.value), gameArchiveName(projectDocument.metadata.name));
       setNotice("Game package prepared. Check your downloads.");
     } catch (cause) {
       console.error("[editor] Packaging failed", cause);

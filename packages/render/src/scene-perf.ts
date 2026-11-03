@@ -97,6 +97,32 @@ async function attributeCompileFailure(unit: string, compile: () => Promise<void
   }
 }
 
+/** Whether `mesh` still draws with `material` (directly, through its MultiMaterial, or as the scene default). */
+function drawsWith(mesh: AbstractMesh, material: Material): boolean {
+  const current = mesh.material ?? mesh.getScene().defaultMaterial;
+  return current === material || (current instanceof MultiMaterial && current.subMaterials.includes(material));
+}
+
+/**
+ * `compile`, or nothing once the mesh no longer draws `material` or either is disposed: Babylon's `forceCompilation`
+ * never settles for a Material disposed while it polls (a Skybox whose cube failed drops and disposes its material),
+ * and nothing would draw that variant. A unit waiting behind another can find its Material gone by its turn.
+ */
+function compileUnlessDisposed(material: Material, mesh: AbstractMesh, compile: () => Promise<void>): Promise<void> {
+  if (mesh.isDisposed() || !drawsWith(mesh, material)) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const materialGone = material.onDisposeObservable.addOnce(() => resolve());
+    const meshGone = mesh.onDisposeObservable.addOnce(() => resolve());
+    void compile().then(resolve, reject).finally(() => {
+      material.onDisposeObservable.remove(materialGone);
+      mesh.onDisposeObservable.remove(meshGone);
+    });
+  });
+}
+
+/** Shader warm-up units compiling at once, across Materials (one Material's units run in order). */
+export const SCENE_SHADER_WARM_CONCURRENCY = 8;
+
 /**
  * `skipMesh` names meshes whose drawn variant a later readiness probe compiles under the pass that draws them (built-in
  * water, whose variant depends on the pass), so warming the pass-less variant here could compile one nothing draws.
@@ -163,6 +189,44 @@ export async function prewarmMeshMaterials(
     total = Math.max(total, done);
     onProgress?.({ done, total });
   };
+  // Units of different Materials compile concurrently, so a driver with parallel compilation
+  // (KHR_parallel_shader_compile) links several programs at once and each unit's 16 ms readiness poll overlaps the
+  // others'. Units of one Material stay in order: Babylon's forceCompilation saves and restores the Material's
+  // `allowShaderHotSwapping` around each compile, and two at once would leave hot swapping off for good.
+  const running = new Set<Promise<void>>();
+  const chains = new Map<Material, Promise<void>>();
+  /** Units started and not finished, oldest first: the oldest is the one a stall names. */
+  const inFlight: string[] = [];
+  let failure: { error: unknown } | null = null;
+  let first = true;
+  const start = (material: Material, mesh: AbstractMesh, unit: string, compile: () => Promise<void>) => {
+    // The first unit names the stall window at once, as it opens; later ones as earlier units finish.
+    if (first) {
+      first = false;
+      deadline.advance(unit);
+    }
+    const previous = chains.get(material) ?? Promise.resolve();
+    const job = previous.then(async () => {
+      check(mesh);
+      inFlight.push(unit);
+      try {
+        await attributeCompileFailure(unit, () => compileUnlessDisposed(material, mesh, compile));
+        check(mesh);
+        compiled();
+      } finally {
+        inFlight.splice(inFlight.indexOf(unit), 1);
+      }
+      // Progress renews the stall window; it names the oldest unit still compiling.
+      deadline.advance(inFlight[0] ?? unit);
+    });
+    chains.set(material, job.catch(() => {}));
+    const tracked: Promise<void> = job.then(() => {}, (error: unknown) => { failure ??= { error }; })
+      .finally(() => { running.delete(tracked); });
+    running.add(tracked);
+  };
+  const settle = async () => {
+    while (running.size) await Promise.race(running);
+  };
   try {
     await deadline.race((async () => {
       onProgress?.({ done, total });
@@ -179,22 +243,22 @@ export async function prewarmMeshMaterials(
         for (const entry of materials) {
           check(mesh);
           const drawn = drawnMaterialVariants(mesh);
-          if (drawn.plain) {
-            const unit = `"${entry.name}" for "${mesh.name}"`;
-            deadline.advance(unit);
-            await attributeCompileFailure(unit, () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh));
-            check(mesh);
-            compiled();
-          }
-          if (drawn.instanced) {
-            const instanced =`"${entry.name}" for instances of "${mesh.name}"`;
-            deadline.advance(instanced);
-            await attributeCompileFailure(instanced, () => entry.forceCompilationAsync(mesh, { useInstances: true }));
-            check(mesh);
-            compiled();
+          const units: Array<[string, () => Promise<void>]> = [];
+          if (drawn.plain)
+            units.push([`"${entry.name}" for "${mesh.name}"`,
+              () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh)]);
+          if (drawn.instanced)
+            units.push([`"${entry.name}" for instances of "${mesh.name}"`,
+              () => entry.forceCompilationAsync(mesh, { useInstances: true })]);
+          for (const [unit, compile] of units) {
+            while (running.size >= SCENE_SHADER_WARM_CONCURRENCY && !failure) await Promise.race(running);
+            if (failure) throw (failure as { error: unknown }).error;
+            start(entry, mesh, unit, compile);
           }
         }
       }
+      await settle();
+      if (failure) throw (failure as { error: unknown }).error;
       // Units the count saw that were gone by their turn (a mesh disposed, a material replaced) end it at what ran.
       if (done !== total) {
         total = done;

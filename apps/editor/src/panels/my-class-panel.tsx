@@ -186,7 +186,7 @@ function eventMemberBodyName(node: SerializedGraph["nodes"][number]): string {
   if (typeof title === "string" && title.trim()) {
     return formatEventMemberName(title);
   }
-  const catalog = defaultNodeRegistry.get(node.type)?.title;
+  const catalog = defaultNodeRegistry().get(node.type)?.title;
   if (catalog) return formatEventMemberName(catalog);
   const typeName = node.type.startsWith("flow.event.")
     ? node.type.slice("flow.event.".length)
@@ -212,7 +212,7 @@ function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
   if (typeof named === "string" && named.trim()) {
     return formatEventTitle(named);
   }
-  const catalog = defaultNodeRegistry.get(node.type)?.title;
+  const catalog = defaultNodeRegistry().get(node.type)?.title;
   if (catalog) return formatEventTitle(catalog);
   const typeName = node.type.startsWith("flow.event.")
     ? node.type.slice("flow.event.".length)

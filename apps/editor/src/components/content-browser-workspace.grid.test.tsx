@@ -1665,6 +1665,123 @@ describe("ContentBrowserWorkspace creating assets", () => {
     expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();
   });
 
+  it("creates a Sprite Animation from Textures and a Sprite in name order, and a Tileset from one Texture", async () => {
+    const registry = await mountProject();
+    for (const name of ["Run_10", "Run_2"]) {
+      await registry.createAsset("project", `${name}.texture.hasset`, {
+        guid: `tex-${name}`, name, type: "Texture", version: 1, dependencies: [], payload: { width: 64, height: 32 }, chunks: [],
+      });
+    }
+    await createAsset("Sprite", "Run_1");
+    const sprite = registry.list().find((asset) => asset.header.type === "Sprite")!;
+    fireEvent.click(await screen.findByTestId("content-item-assets/Run_10.texture.hasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/Run_2.texture.hasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId(`content-item-${sprite.path}`), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByTestId(`content-item-${sprite.path}`));
+    expect(screen.queryByRole("menuitem", { name: "Create Tileset" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create Sprite Animation" }));
+
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "SpriteAnimation")).toBe(true));
+    const animation = registry.list().find((asset) => asset.header.type === "SpriteAnimation")!;
+    // Named after the first frame without its number.
+    expect(animation.header.name).toBe("Run");
+    expect(animation.path).toBe("assets/Run.spriteanim.hasset");
+    const frames = (animation.header.payload as { frames: Array<{ spriteGuid?: string; textureGuid: string }> }).frames;
+    expect(frames.map((frame) => frame.spriteGuid ?? frame.textureGuid)).toEqual([sprite.header.guid, "tex-Run_2", "tex-Run_10"]);
+    await waitFor(() =>
+      expect(docs.openDocument).toHaveBeenCalledWith(expect.objectContaining({ path: animation.path })),
+    );
+
+    // Right-clicking an unselected tile acts on it alone.
+    const animationTile = await screen.findByTestId(`content-item-${animation.path}`);
+    // A new press ends the menu's hold on the next click.
+    fireEvent.pointerDown(animationTile);
+    fireEvent.click(animationTile);
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/Run_2.texture.hasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create Tileset" }));
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "Tileset")).toBe(true));
+    const tileset = registry.list().find((asset) => asset.header.type === "Tileset")!;
+    expect(tileset.header.name).toBe("Run_2");
+    expect(tileset.header.payload).toMatchObject({ textureGuid: "tex-Run_2", atlasWidth: 64, atlasHeight: 32 });
+    expect(tileset.header.dependencies).toEqual(["tex-Run_2"]);
+  });
+
+  /** A press then a tap, as a pointer makes: a menu's hold on the next click ends with the press. */
+  function tapTile(path: string, init: { ctrlKey?: boolean } = {}) {
+    const tile = screen.getByTestId(`content-item-${path}`);
+    fireEvent.pointerDown(tile, init);
+    fireEvent.click(tile, init);
+  }
+
+  function chooseFromMenu(path: string, name: string) {
+    fireEvent.contextMenu(screen.getByTestId(`content-item-${path}`));
+    fireEvent.click(screen.getByRole("menuitem", { name }));
+  }
+
+  it("creates a Sprite per Texture, an Actor from a Sprite and a Child Class of that Actor", async () => {
+    const registry = await mountProject();
+    for (const name of ["Coin", "Gem"]) {
+      await registry.createAsset("project", `${name}.texture.hasset`, {
+        guid: `tex-${name}`, name, type: "Texture", version: 1, dependencies: [], payload: { width: 16, height: 16 }, chunks: [],
+      });
+    }
+    act(() => docs.noteAssetsCreated());
+    tapTile("assets/Coin.texture.hasset");
+    tapTile("assets/Gem.texture.hasset", { ctrlKey: true });
+    chooseFromMenu("assets/Gem.texture.hasset", "Create Sprites");
+    await waitFor(() =>
+      expect(registry.list().filter((asset) => asset.header.type === "Sprite").map((asset) => asset.header.name).sort()).toEqual(["Coin", "Gem"]),
+    );
+    // Several new assets open none of them.
+    expect(docs.openDocument).not.toHaveBeenCalled();
+
+    const coin = registry.list().find((asset) => asset.header.type === "Sprite" && asset.header.name === "Coin")!;
+    expect(coin.header.dependencies).toEqual(["tex-Coin"]);
+    tapTile(coin.path);
+    chooseFromMenu(coin.path, "Create Actor");
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "Class")).toBe(true));
+    const actor = registry.list().find((asset) => asset.header.type === "Class")!;
+    expect(actor.header).toMatchObject({ name: "Coin", parentClass: "Actor" });
+    expect(actor.header.dependencies).toContain(coin.header.guid);
+    expect((await registry.readAssetDocument(actor.header.guid)).payload.components).toEqual([
+      expect.objectContaining({ classId: "SpriteComponent", properties: expect.objectContaining({ assetGuid: coin.header.guid }) }),
+    ]);
+    await waitFor(() => expect(docs.openDocument).toHaveBeenCalledWith(expect.objectContaining({ path: actor.path })));
+
+    tapTile(actor.path);
+    chooseFromMenu(actor.path, "Create Child Class");
+    await waitFor(() => expect(registry.list().filter((asset) => asset.header.type === "Class")).toHaveLength(2));
+    expect(registry.list().find((asset) => asset.header.name === "Coin_Child")?.header.parentClass).toBe("Coin");
+  });
+
+  it("creates a Tilemap from a Tileset, and a Data Definition and Data Tree from a Structure", async () => {
+    const registry = await mountProject();
+    await createAsset("Tileset", "Ground");
+    const ground = registry.list().find((asset) => asset.header.type === "Tileset")!;
+    tapTile(ground.path);
+    chooseFromMenu(ground.path, "Create Tilemap");
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "Tilemap")).toBe(true));
+    const map = registry.list().find((asset) => asset.header.type === "Tilemap")!;
+    expect(map.header.name).toBe("Ground");
+    expect((await registry.readAssetDocument(map.header.guid)).payload.tilesets).toEqual([
+      expect.objectContaining({ guid: ground.header.guid, firstGid: 1 }),
+    ]);
+
+    await createAsset("Structure", "Weapon");
+    const structure = registry.list().find((asset) => asset.header.type === "Structure")!;
+    tapTile(structure.path);
+    chooseFromMenu(structure.path, "Create Data Definition");
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "DataDefinition")).toBe(true));
+    const definition = registry.list().find((asset) => asset.header.type === "DataDefinition")!;
+    expect(definition.header.name).toBe("Weapon");
+
+    tapTile(definition.path);
+    chooseFromMenu(definition.path, "Create Data Tree");
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "DataTree")).toBe(true));
+    const tree = registry.list().find((asset) => asset.header.type === "DataTree")!;
+    expect((await registry.readAssetDocument(tree.header.guid)).payload).toMatchObject({ kind: "dataTree", defaultDefinitionGuid: definition.header.guid });
+  });
+
   it("names a folder from the tree's empty space inline and keeps the generated name on Escape", async () => {
     const registry = await mountProject();
     fireEvent.contextMenu(screen.getByTestId("content-browser-folder-tree"));

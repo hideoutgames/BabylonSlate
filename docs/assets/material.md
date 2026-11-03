@@ -6,6 +6,8 @@ A node graph that decides how a surface, landscape, particle, piece of text or f
 
 In the **Content Browser**, choose **New Asset > Rendering > Material**.
 
+Or select Textures, right-click one and choose **Create Material**. Textures named like `Rock_albedo`, `Rock_normal` and `Rock_rough` make one Material with each wired to its input. See [Create from assets](../editor/content-browser.md#create-from-assets).
+
 ## Editor
 
 Double-tap a Material to open it.

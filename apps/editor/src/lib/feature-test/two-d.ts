@@ -1,6 +1,7 @@
 import {
   addTilemapTileset,
   applyTilemapPaint,
+  createDefaultSpriteAnimationSheet,
   createDefaultTilemapPayload,
   createTilemapLayer,
   emptyChunkTiles,
@@ -75,6 +76,8 @@ export const FEATURE_TEST_TWO_D_NAMES = {
   jumpAnimation: "FT_2DRobotJumpAnim",
   fallAnimation: "FT_2DRobotFallAnim",
   robotGraph: "FT_2DRobotGraph",
+  torchAnimation: "FT_2DTorchSheetAnim",
+  torchGraph: "FT_2DTorchGraph",
   tiles: "FT_2DTiles",
   decorTiles: "FT_2DDecorTiles",
   worldMap: "FT_2DWorldMap",
@@ -205,9 +208,10 @@ const BODY_KINDS: ReadonlyArray<{ title: string; sprite: RobotSpriteKey; shape: 
  */
 export async function buildFeatureTestTwoD(ctx: FeatureTestContext): Promise<void> {
   const sprites = await buildSprites(ctx);
-  const graph = await buildRobotGraph(ctx);
+  const graph = await buildRobotGraph(ctx, sprites);
+  const torchGraph = await buildTorchGraph(ctx);
   const tilemap = await buildTilemap(ctx);
-  const scene = buildScene(ctx, { sprites, graph, tilemap });
+  const scene = buildScene(ctx, { sprites, graph, torchGraph, tilemap });
   await ctx.addSceneDocument({
     kind: "scene",
     folder: "Scenes",
@@ -247,22 +251,33 @@ function robotSprite(ctx: FeatureTestContext, frame: RobotFrame): SpritePayload 
   };
 }
 
-/** Whole-Texture robot frames with per-frame collision; `holds` override chosen frame durations. */
+/**
+ * Robot frames: a pose with a robot Sprite is a Sprite frame (its pivot and
+ * collision), the others whole-Texture frames with per-frame collision.
+ * `holds` override chosen frame durations.
+ */
 function robotAnimation(
   ctx: FeatureTestContext,
+  sprites: SpriteGuids,
   frames: readonly RobotFrame[],
   frameDurationMs: number,
   holds: Readonly<Partial<Record<RobotFrame, number>>> = {},
 ): SpriteAnimationPayload {
   return {
     frameDurationMs,
+    source: "frames",
+    sheet: createDefaultSpriteAnimationSheet(),
     frames: frames.map((frame) => {
-      const size = robotFrameSize(ctx, frame);
       const holdMs = holds[frame];
+      const timing = { durationMs: holdMs ?? frameDurationMs, ...(holdMs !== undefined ? { durationMsOverride: true } : {}) };
+      const spriteKey = (Object.keys(ROBOT_SPRITES) as RobotSpriteKey[]).find((key) => ROBOT_SPRITES[key].frame === frame);
+      if (spriteKey) {
+        return { textureGuid: "", spriteGuid: sprites[spriteKey], ...timing, pivot: { ...CENTER_PIVOT }, collision: robotCollision(frame) };
+      }
+      const size = robotFrameSize(ctx, frame);
       return {
         textureGuid: robotTexture(ctx, frame),
-        durationMs: holdMs ?? frameDurationMs,
-        ...(holdMs !== undefined ? { durationMsOverride: true } : {}),
+        ...timing,
         pivot: { ...CENTER_PIVOT },
         collision: robotCollision(frame),
         width: size.width,
@@ -273,16 +288,48 @@ function robotAnimation(
 }
 
 /**
+ * A Sheet Sprite Animation cut from the Kenney tilesheet's 128 px cells (the
+ * lit and flickering torch, as the decor Tileset animates them) and the
+ * AnimationGraph that loops it.
+ */
+async function buildTorchGraph(ctx: FeatureTestContext): Promise<string> {
+  const textureGuid = requireRef(ctx.assets.textures.platformerTiles, "the Kenney platformer tilesheet Texture");
+  const cellFrame = (cell: number) => ({
+    textureGuid: "",
+    cell,
+    durationMs: 160,
+    pivot: { ...CENTER_PIVOT },
+    collision: { x: 0, y: 0, width: 1, height: 1 },
+  });
+  const animation: SpriteAnimationPayload = {
+    frameDurationMs: 160,
+    source: "sheet",
+    sheet: { textureGuid, cellWidth: TILE_PX, cellHeight: TILE_PX, margin: 0, spacing: 0 },
+    frames: [cellFrame(DECOR.torch), cellFrame(DECOR.torchFlicker)],
+  };
+  const animationGuid = (await ctx.createAsset("SpriteAnimation", FOLDER, NAMES.torchAnimation, { payload: payload(animation) })).guid;
+  const graph: AnimGraphDocument = {
+    ...createDefaultAnimGraph(NAMES.torchGraph),
+    entryStateId: "burn",
+    states: [{ id: "burn", name: "Burn", clipId: "clip-burn", speed: 1, loop: true, position: defaultAnimStatePosition(0) }],
+    clips: [{ id: "clip-burn", kind: "sprite", assetGuid: animationGuid, clipName: "", durationMs: spriteAnimationDurationMs(animation) }],
+    transitions: [],
+    variables: [],
+  };
+  return (await ctx.createAsset("AnimationGraph", FOLDER, NAMES.torchGraph, { payload: payload(graph) })).guid;
+}
+
+/**
  * Four robot Sprite Animations and the 2D AnimationGraph that cycles them:
  * Idle (500 ms) → Walk (walk0–7, contact frames held 110 ms; 700 ms loop at
  * 1.25×) → Jump (one-shot 300 ms) → Fall (300 ms) → Idle, all on exit time.
  */
-async function buildRobotGraph(ctx: FeatureTestContext): Promise<string> {
+async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): Promise<string> {
   const animations = {
-    idle: robotAnimation(ctx, ["idle"], 500),
-    walk: robotAnimation(ctx, WALK_FRAMES, 80, { walk0: 110, walk4: 110 }),
-    jump: robotAnimation(ctx, ["jump"], 300),
-    fall: robotAnimation(ctx, ["fall"], 300),
+    idle: robotAnimation(ctx, sprites, ["idle"], 500),
+    walk: robotAnimation(ctx, sprites, WALK_FRAMES, 80, { walk0: 110, walk4: 110 }),
+    jump: robotAnimation(ctx, sprites, ["jump"], 300),
+    fall: robotAnimation(ctx, sprites, ["fall"], 300),
   };
   const save = async (name: string, value: SpriteAnimationPayload) =>
     (await ctx.createAsset("SpriteAnimation", FOLDER, name, { payload: payload(value) })).guid;
@@ -784,7 +831,7 @@ function tileBottomY(row: number): number {
  */
 function buildScene(
   ctx: FeatureTestContext,
-  refs: { sprites: SpriteGuids; graph: string; tilemap: string },
+  refs: { sprites: SpriteGuids; graph: string; torchGraph: string; tilemap: string },
 ): SerializedScene {
   const scene = createDefaultScene("2d");
   scene.name = FEATURE_TEST_TWO_D_SCENE_NAME;
@@ -869,6 +916,11 @@ function buildScene(
     comp("ft-2d-anim-body-graph", "AnimationGraphComponent", { graphGuid: refs.graph }),
     rigidBody("ft-2d-anim-body-body", "dynamic", { mass: 1 }),
     collider("ft-2d-anim-body-collider", BODY_KINDS[0]!.shape),
+  ]);
+  // The torch graph's Sheet animation replaces the placeholder robot pose with a tilesheet cell on its first tick.
+  add("animation", "ft-2d-anim-torch", "Sheet Torch", [tileCenterX(2), tileBottomY(4) + TILE / 2, 0], [
+    sprite("ft-2d-anim-torch-sprite", refs.sprites.robotIdle, "UI", 1),
+    comp("ft-2d-anim-torch-graph", "AnimationGraphComponent", { graphGuid: refs.torchGraph }),
   ]);
 
   // Released horizontally above the plateau, the bob swings under the pivot without touching it or the walker.
