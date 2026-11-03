@@ -6,6 +6,8 @@ A painted 2D tile map made of layers, each drawing tiles from one or more Tilese
 
 In the **Content Browser**, choose **New Asset > 2D > Tilemap**. A new Tilemap is 64 × 64 tiles and has one layer named **Ground**. Create a [Tileset](tileset.md) first, then add it to the map.
 
+Or select one or more Tilesets, right-click one and choose **Create Tilemap**: the new Tilemap already has them in its Palette and uses the first one's tile size. See [Create from assets](../editor/content-browser.md#create-from-assets).
+
 ## Editor
 
 Double-tap a Tilemap to open it.

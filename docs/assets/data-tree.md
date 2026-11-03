@@ -8,6 +8,8 @@ A hierarchy of named, typed entries. Branches can use different Data Definitions
 2. Enter a **Name**.
 3. Optionally pick a **Default Definition**: the [Data Definition](data-definition.md) that entries use unless they set their own.
 
+Or right-click a Data Definition and choose **Create Data Tree** for a Data Tree that uses it as its **Default Definition**. See [Create from assets](../editor/content-browser.md#create-from-assets).
+
 ## Editor
 
 Double-tap a Data Tree to open it.

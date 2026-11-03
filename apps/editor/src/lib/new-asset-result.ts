@@ -95,6 +95,8 @@ export function buildNewAssetResult(options: {
   viewportMode?: ViewportMode;
   /** A new 2D or 3D Timeline Clip's required Timeline Asset. */
   timelineAsset?: string;
+  /** A new Class's starting components (Create Actor), in place of its parent's defaults. */
+  classComponents?: import("@haptic/core").SerializedComponent[];
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
   if (type === "DataDefinition" || type === "DataTree") {
@@ -179,7 +181,9 @@ export function buildNewAssetResult(options: {
       string,
       unknown
     >;
-    if (parentClass === "SceneStreamingActor") {
+    if (options.classComponents) {
+      payload.components = structuredClone(options.classComponents);
+    } else if (parentClass === "SceneStreamingActor") {
       payload.components = createSceneStreamingActor("prefab").components;
     } else if (parentClass === "RenderTargetCapture") {
       payload.components = [{ id: "prefab-capture", classId: "RenderTargetCaptureComponent", properties: { ...createDefaultRenderTargetCaptureProperties() } }];
@@ -189,7 +193,8 @@ export function buildNewAssetResult(options: {
       name,
       guid,
       version: 1,
-      dependencies: [],
+      // Components name their assets, which the export closure needs before the first save.
+      dependencies: options.classComponents ? assetHeaderDependencies("Class", payload, [], parentClass) : [],
       parentClass: parentClass ?? defaultParentClassForType(type),
       payload,
       chunks: [
@@ -490,7 +495,7 @@ export function buildTilesetAssetResult(
   };
 }
 
-function documentAsset(
+export function documentAsset(
   type: string,
   name: string,
   guid: string,
