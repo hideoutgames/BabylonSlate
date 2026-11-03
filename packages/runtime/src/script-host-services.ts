@@ -275,10 +275,12 @@ export interface ScriptHostServices {
     },
   ): void;
   stopSound?(voiceId: string): void;
+  /** `restart`: Restart Particles, which cuts the run on screen whatever the component's Retrigger. */
   setParticlePlaying?(
     actorGuid: string,
     playing: boolean,
     componentId?: string,
+    restart?: boolean,
   ): void;
   /** Spawn Particles At Location / Attached: a transient effect actor, or null when it cannot spawn. */
   spawnParticleEffect?(request: import("./runtime-particle-effects").ParticleEffectRequest, owner: EngineObject | null): Actor | null;

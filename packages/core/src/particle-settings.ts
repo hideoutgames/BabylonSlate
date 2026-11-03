@@ -62,3 +62,18 @@ export type ParticlesFinishedReason = (typeof PARTICLES_FINISHED_REASONS)[number
 
 /** Spawn Particles effects alive at once; beyond it the oldest is stopped and destroyed after its drain. */
 export const PARTICLE_TRANSIENT_EFFECT_BUDGET = 256;
+
+/**
+ * ParticleComponent Retrigger: what Play does to a run that is still on screen. Overlap lets it
+ * finish as a ghost (a playing run only when every emitter is Once) while a new run starts;
+ * Restart cuts it and starts again.
+ */
+export const PARTICLE_RETRIGGER_MODES = ["overlap", "restart"] as const;
+export type ParticleRetrigger = (typeof PARTICLE_RETRIGGER_MODES)[number];
+export const PARTICLE_RETRIGGER_LABELS: Record<ParticleRetrigger, string> = { overlap: "Overlap", restart: "Restart" };
+/** Overlapped runs kept per ParticleComponent; the oldest is cut beyond it. */
+export const PARTICLE_GHOSTS_PER_COMPONENT = 3;
+
+export function parseParticleRetrigger(value: unknown): ParticleRetrigger {
+  return value === "restart" ? "restart" : "overlap";
+}

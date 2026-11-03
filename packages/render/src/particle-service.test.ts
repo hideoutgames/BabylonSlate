@@ -239,8 +239,10 @@ describe("ParticleService", () => {
     expect(scene.particleSystems).toHaveLength(1);
     service.handleCommand({ type: "setParticlePlaying", actorGuid: "fx", playing: true });
     expect(service.stats().playing).toBe(1);
-    expect(scene.particleSystems[0]).not.toBe(system);
-    await vi.waitFor(() => expect(started(scene.particleSystems[0])).toBe(true));
+    // The draining run overlaps as a ghost next to the new one; resetSession takes both.
+    expect(scene.particleSystems).toHaveLength(2);
+    expect(scene.particleSystems[0]).toBe(system);
+    await vi.waitFor(() => expect(started(scene.particleSystems[1])).toBe(true));
     service.resetSession();
     expect(scene.particleSystems).toHaveLength(0);
     expect(service.stats().playing).toBe(0);

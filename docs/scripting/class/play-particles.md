@@ -21,5 +21,5 @@ Starts the particle systems on an actor.
 
 ## Notes
 
-- Plays every particle component on the actor.
+- Plays every particle component on the actor. While an effect is still on screen, its **Retrigger** setting decides whether the earlier run finishes (**Overlap**) or is cut (**Restart**).
 - If **Actor** is connected to a reference that is empty when the node runs, nothing happens and an error is logged.

@@ -758,10 +758,17 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         typeClassId: "ParticleSystem",
         propertyKey: "particleSystemGuid",
       },
+      { name: "Retrigger", typeId: "string", propertyKey: "retrigger" },
       ...SORTING_VARIABLES,
     ],
     functions: [
       { name: "Play", runtime: "playParticles", pins: [EXEC_IN, EXEC_OUT] },
+      {
+        name: "Restart",
+        runtime: "restartParticles",
+        description: "Cuts the particles on screen and plays from the start, whatever Retrigger says; looping systems too.",
+        pins: [EXEC_IN, EXEC_OUT],
+      },
       { name: "Stop", runtime: "stopParticles", pins: [EXEC_IN, EXEC_OUT] },
       {
         name: "Is Playing",

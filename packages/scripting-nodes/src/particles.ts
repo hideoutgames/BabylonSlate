@@ -39,6 +39,21 @@ export const particleNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "particles.restart",
+    title: "Restart Particles",
+    category: "particles",
+    description: "Cuts the particles on screen and plays the actor's particle systems from the start, whatever their Retrigger; looping systems too.",
+    searchAliases: ["replay particles", "retrigger"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      selfActorPin("actor"),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.restartParticles(${ctx.input("actor")});`);
+    },
+  },
+  {
     id: "particles.isPlaying",
     title: "Is Particles Playing",
     category: "particles",

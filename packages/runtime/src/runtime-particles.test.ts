@@ -198,3 +198,37 @@ describe("particle playback reports in the runtime", () => {
     runtime.stop();
   });
 });
+
+describe("Retrigger and Restart Particles", () => {
+  it("sends the component's Retrigger with its assignment and restart with Restart Particles", async () => {
+    const commands: CommandMessage[] = [];
+    const scene = particleScene();
+    scene.actors[0]!.components![0]!.properties.retrigger = "restart";
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: scene, onCommand: (command) => commands.push(command) });
+    await runtime.loadScripts([{ assetGuid: "hero-script", classId: "Hero", parentClassId: "Actor", anchors: [],
+      source: [
+        "export function onBeginPlay(ctx) {",
+        "  ctx.restartParticles(ctx.self);",
+        '  ctx.callComponentFunction(ctx.getComponentById(ctx.self, "sparks"), "restartParticles", {});',
+        '  ctx.callComponentFunction(ctx.getComponentById(ctx.self, "sparks"), "playParticles", {});',
+        "}",
+      ].join("\n"),
+      entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] }]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    expect(commands.find((command) => command.type === "assignParticle")).toMatchObject({ componentId: "sparks", retrigger: "restart" });
+    const plays = commands.filter((command) => command.type === "setParticlePlaying");
+    expect(plays.map((command) => ({ componentId: command.componentId, restart: command.restart }))).toEqual(expect.arrayContaining([
+      { componentId: undefined, restart: true },
+      { componentId: "sparks", restart: true },
+      { componentId: "sparks", restart: undefined },
+    ]));
+    // Every Restart is a Play with a newer generation.
+    const generations = plays.map((command) => command.generation!);
+    expect([...generations].sort((a, b) => a - b)).toEqual(generations);
+    runtime.stop();
+  });
+});
+

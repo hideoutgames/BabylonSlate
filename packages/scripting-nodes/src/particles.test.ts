@@ -29,6 +29,7 @@ describe("particle nodes", () => {
     expect(particleNodes.map((entry) => entry.id)).toEqual([
       "particles.play",
       "particles.stop",
+      "particles.restart",
       "particles.isPlaying",
       "particles.spawnAtLocation",
       "particles.spawnAttached",
@@ -164,6 +165,22 @@ describe("particle nodes", () => {
     expect([at[0], at[3], at[4]]).toEqual(["sparks", { x: 1, y: 1, z: 1 }, true]);
     const attached = run("particles.spawnAttached", { "default:system": "sparks", "default:autoDestroy": false });
     expect([attached[0], attached[2], attached[5]]).toEqual(["sparks", "", false]);
+  });
+
+  it("Restart Particles restarts Self when the actor pin is unwired", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay"), node(registry, "restart", "particles.restart")],
+      edges: [{ id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "restart", targetPinId: "execIn" }],
+    };
+    const body = compileGraph(graph, { assetGuid: "a", registry }).source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const mod = new Function(`${body}\nreturn { onBeginPlay };`)() as { onBeginPlay: (ctx: unknown) => void };
+    const self = { guid: "self" };
+    const restarted: unknown[] = [];
+    mod.onBeginPlay({ self, restartParticles: (actor: unknown) => restarted.push(actor) });
+    expect(restarted).toEqual([self]);
   });
 });
 
