@@ -57,6 +57,25 @@ describe("shadow settings", () => {
     expect(kept.settings).toMatchObject({ mapSize: 512, localMapSize: 256 });
     expect(kept.limits).toEqual([]);
   });
+  it("snaps map sizes up to a power of two, the sun's to at most 8192 and a local light's to at most 4096", () => {
+    expect([
+      normalizeShadowOverrides({ mapSize: 8192, localMapSize: 8192 }),
+      normalizeShadowOverrides({ mapSize: 4097, localMapSize: 4097 }),
+      normalizeShadowOverrides({ mapSize: 1e6, localMapSize: 1e6 }),
+      normalizeShadowOverrides({ mapSize: 4096, localMapSize: 300 }),
+      normalizeShadowOverrides({ mapSize: -1, localMapSize: 256 }),
+    ]).toEqual([
+      { mapSize: 8192, localMapSize: 4096 },
+      { mapSize: 8192, localMapSize: 4096 },
+      { mapSize: 8192, localMapSize: 4096 },
+      { mapSize: 4096, localMapSize: 512 },
+      { mapSize: 256, localMapSize: 256 },
+    ]);
+  });
+  it("makes any level Custom at an 8192 Directional Map Size", () => {
+    for (const profile of ["low", "medium", "high", "ultra"] as const)
+      expect(normalizeShadowSettings({ profile, preset: profile, mapSize: 8192 })).toMatchObject({ profile, preset: "custom", mapSize: 8192 });
+  });
   it("rejects nonfinite values and keeps CEL independent of PBR contact hardening", () => {
     const requested = normalizeShadowSettings({
       distance: Infinity,

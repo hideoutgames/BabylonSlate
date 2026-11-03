@@ -12,6 +12,7 @@ import {
   configureKtx2Transcoder,
 } from "./ktx2-transcoder";
 import { pruneReleasedWebGpuCacheEntries } from "./webgpu-cache-pruning";
+import { SHADOW_ATLAS_MAX_EDGE } from "./shadow-atlas";
 import { releaseDeletedWebGpuPipelineContexts } from "./webgpu-resource-release";
 
 /** A fully initialized project Engine, with the same offline assets as WebGL2. */
@@ -105,6 +106,9 @@ const DEFAULT_UNIFORM_BUFFERS_PER_SHADER_STAGE = 12;
  */
 export const REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE = 20;
 
+/** WebGPU's default `maxTextureDimension2D`; requesting it is a no-op. */
+const DEFAULT_TEXTURE_DIMENSION_2D = 8192;
+
 /**
  * Limits the device requests; every other limit keeps its WebGPU default, and
  * none is ever above the adapter's, so the device request cannot be refused
@@ -118,6 +122,10 @@ export const REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE = 20;
  *   {@link REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE}, only when the adapter
  *   offers more than the default 12. D3D12 adapters report 12, so they keep
  *   the default; Metal reports more (44 on Apple GPUs).
+ * - `maxTextureDimension2D` up to {@link SHADOW_ATLAS_MAX_EDGE} (16384), only
+ *   when the adapter offers more than the default 8192: an 8192 Directional
+ *   Map Size's cascades need a shadow atlas of that edge, which Babylon's caps
+ *   (`maxTextureSize`) report from the granted limit, as WebGL2 reports its own.
  */
 function adapterRequiredLimits(
   supported: GPUSupportedLimits | undefined,
@@ -136,6 +144,13 @@ function adapterRequiredLimits(
       Math.floor(uniformBuffers),
       REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE,
     );
+  const textureDimension = supported?.maxTextureDimension2D;
+  if (
+    typeof textureDimension === "number" &&
+    Number.isFinite(textureDimension) &&
+    textureDimension > DEFAULT_TEXTURE_DIMENSION_2D
+  )
+    limits.maxTextureDimension2D = Math.min(Math.floor(textureDimension), SHADOW_ATLAS_MAX_EDGE);
   return limits;
 }
 

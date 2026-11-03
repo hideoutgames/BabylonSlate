@@ -154,6 +154,29 @@ describe("WebGPU project Engine initialization", () => {
         ).not.toHaveProperty("maxUniformBuffersPerShaderStage");
       },
     );
+
+    // A 16384 texture holds the shadow atlas an 8192 Directional Map Size needs.
+    it.each([
+      [16384, 16384],
+      [32768, 16384],
+      [12288, 12288],
+    ])(
+      "raises the 2D texture dimension limit from an adapter offering %i to %i, keeping its other requests",
+      async (offered, requested) => {
+        expect(
+          await requestedLimits({ maxInterStageShaderVariables: 28, maxTextureDimension2D: offered }),
+        ).toEqual({ maxInterStageShaderVariables: 28, maxTextureDimension2D: requested });
+      },
+    );
+
+    it.each([8192, 4096])(
+      "leaves the 2D texture dimension limit at its default for an adapter offering %i",
+      async (offered) => {
+        expect(
+          await requestedLimits({ maxTextureDimension2D: offered }),
+        ).not.toHaveProperty("maxTextureDimension2D");
+      },
+    );
   });
 
   it("does not allocate or request an adapter for an already cancelled transition", async () => {

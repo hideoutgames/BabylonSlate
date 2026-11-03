@@ -79,7 +79,10 @@ import {
   type ShadowMapSlot,
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, releaseEmptyShadowAtlas, shadowAtlasBytes } from "./shadow-atlas";
+import {
+  AtlasCascadedShadowGenerator, AtlasShadowGenerator, releaseEmptyShadowAtlas, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasBytes,
+  shadowAtlasRenderTarget,
+} from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
@@ -548,7 +551,7 @@ export class SceneShadowController {
       measure: (light) => cameraDistanceSquared(light, camera!),
     });
     applyShadowAdmission(plan);
-    const { planned, admitted } = plan;
+    const { planned, admitted, atlasEdge } = plan;
     // CSM freezes caster bounds; retained owners refresh them every sync.
     const maintainCascades = (entry: Entry) => {
       if (!(entry.generator instanceof CascadedShadowGenerator)) return;
@@ -579,7 +582,7 @@ export class SceneShadowController {
     const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&
-        matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
+        matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades, atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
           SHADOW_FIRST_CASCADE_SCALE[settings.profile])) {
         if (entry.standby) {
           entry.standby = false;
@@ -602,7 +605,7 @@ export class SceneShadowController {
       if (entry.status !== "active" || entry.generator || entry.light instanceof DirectionalLight)
         continue;
       const index = donors.findIndex((donor) =>
-        matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
+        matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
           SHADOW_FIRST_CASCADE_SCALE[settings.profile]) &&
         (donor.generator as AtlasShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
       if (index < 0) continue;
@@ -659,7 +662,7 @@ export class SceneShadowController {
           !forwardLimited) ||
         JSON.stringify(entry.settings) !== settingsKey() ||
         pooled >= settings.maxLocalLights ||
-        admitted.bytes > standbyBudget
+        admitted.bytes - (admitted.exempt ?? 0) > standbyBudget
       ) {
         release(entry);
         continue;
@@ -675,9 +678,12 @@ export class SceneShadowController {
       if (map && map.refreshRate !== RenderTargetTexture.REFRESHRATE_RENDER_ONCE)
         map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
     }
-    reserveSceneShadows(this.scene, {
-      bytes: admitted.bytes, passes: admitted.passes,
-    });
+    reserveSceneShadows(this.scene, { ...admitted });
+    // An atlas grown for the sun's tiles (`sunShadowAtlasEdge`) that its first map could not allocate: the device
+    // cannot hold it, whatever its texture limit says. The sun asks for half its map from the next sync, which plans a
+    // smaller atlas, and no other map is built in this one.
+    const grown = atlasEdge > budget.atlasEdge;
+    let atlasRefused = false;
     // One scene-wide light invalidation covers every retained generator's defines.
     let materialsDirty = false;
     for (const entry of this.entries.values()) {
@@ -700,14 +706,20 @@ export class SceneShadowController {
         maintainCascades(entry);
         continue;
       }
+      if (atlasRefused) {
+        entry.status = "budget-limited";
+        entry.reason = "shadow atlas space";
+        continue;
+      }
       // The first map reads caster state, bounds and spatial queries from here on.
       currentCasters();
-      // Halving is bounded by the normalized 4096 maximum and 256 floor. Failed
+      // Halving is bounded by the normalized 8192 maximum and 256 floor. Failed
       // attempts are fully released before smaller maps reuse the reservation.
       while (mapSize >= 256) {
         const cleanup = shadowAllocationCheckpoint(scene);
+        const makesAtlas = !shadowAtlasRenderTarget(scene);
         try {
-          const generator = createShadowGenerator(this.maps, entry, mapSize, settings, null, casterBounds, budget.atlasEdge);
+          const generator = createShadowGenerator(this.maps, entry, mapSize, settings, null, casterBounds, atlasEdge);
           entry.generator = generator;
           // Receivers may bind the new map before its first draw (a view keeps drawing while its casters compile).
           neutralUntilRendered(generator);
@@ -715,7 +727,7 @@ export class SceneShadowController {
           invalidateShadowReceiverHandoffs(scene);
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
-          entry.key = allocationKey(mapSize, entry.light, settings.cascades, budget.atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
+          entry.key = allocationKey(mapSize, entry.light, settings.cascades, atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
           SHADOW_FIRST_CASCADE_SCALE[settings.profile]);
           entry.failedKey = "";
           if (entry.recovery)
@@ -756,6 +768,19 @@ export class SceneShadowController {
             entry.reason = reason;
             continue;
           }
+          if (grown && makesAtlas) {
+            const sun = planned.find((other) => other.light instanceof DirectionalLight)!;
+            sun.recovery = {
+              requestKey: allocationRequestKey(sun.light, settings),
+              mapSize: sun.mapSize / 2,
+              error: error instanceof Error ? error.message : String(error),
+            };
+            entry.failedKey = "";
+            entry.status = "budget-limited";
+            entry.reason = "shadow atlas space";
+            atlasRefused = true;
+            break;
+          }
           mapSize /= 2;
           entry.recovery = {
             requestKey,
@@ -768,7 +793,10 @@ export class SceneShadowController {
     }
     // Failed constructors own no allocation. The atlas is counted whole, once, while it holds a map.
     releaseEmptyShadowAtlas(scene);
-    const live: ShadowCost = { bytes: shadowAtlasBytes(scene), passes: 0 };
+    const atlasBytes = shadowAtlasBytes(scene);
+    const live: ShadowCost = {
+      bytes: atlasBytes, passes: 0, exempt: atlasBytes - Math.min(atlasBytes, budget.atlasEdge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL),
+    };
     for (const entry of this.entries.values()) {
       if (!entry.generator) continue;
       if (!entry.standby) live.passes += generatorPasses(entry.generator);
@@ -784,7 +812,7 @@ export class SceneShadowController {
     this.views.sync(settings, () => {
       currentCasters();
       return casterBounds;
-    }, budget.atlasEdge);
+    }, atlasEdge);
   }
   /** Every allocated map: the scene view's (admitted or standby) and every view's own. */
   private forEachGenerator(action: (generator: ShadowGenerator) => void): void {
