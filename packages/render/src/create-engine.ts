@@ -224,7 +224,7 @@ import {
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
 import { findSceneShadowController } from "./shadow-controller";
-import { firstFrameCompletionMs } from "./stall-deadline";
+import { createHeldThreadTimer, firstFrameCompletionMs, type HeldThreadTimer } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 
 import { createEditorViewportTools } from "./editor-viewport-tools";
@@ -486,7 +486,8 @@ function initializeEngine(
     promise: Promise<void>;
     resolve: () => void;
     reject: (error: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
+    /** The loading deadline: the first-frame budget, then the validated draw's completion budget. */
+    timer: HeldThreadTimer;
     ready: boolean;
     attempts: number;
     rendered: boolean;
@@ -535,7 +536,7 @@ function initializeEngine(
         releaseStaged();
       }
       pendingPresentations.delete(id);
-      clearTimeout(pending.timer);
+      pending.timer.cancel();
       pending.submission?.cancel();
       pending.reject(error);
     }
@@ -1889,7 +1890,7 @@ function initializeEngine(
   const finishPresentation = (key: string, pending: PendingPresentation) => {
     if (!pending.rendered || !pending.copied || pending.submission || pendingPresentations.get(key) !== pending) return;
     pendingPresentations.delete(key);
-    clearTimeout(pending.timer);
+    pending.timer.cancel();
     if (pending.owner) {
       const layer = layerLoads.get(pending.owner.layerId);
       if (layer?.loadId === pending.owner.layerLoadId) layer.ready = true;
@@ -2159,10 +2160,7 @@ function initializeEngine(
           // with no progress to observe, so each adds an allowance.
           if (!pending.completionStarted) {
             pending.completionStarted = true;
-            clearTimeout(pending.timer);
-            pending.timer = setTimeout(() => {
-              if (pendingPresentations.get(key) === pending) expirePresentation(key);
-            }, firstFrameCompletionMs(pending.pipelines));
+            pending.timer.restart(firstFrameCompletionMs(pending.pipelines));
           }
         }
         void submission.completed.then(() => {
@@ -3433,18 +3431,19 @@ function initializeEngine(
       // The first draws' readiness probes can still be linking (one at a time
       // where links are synchronous) or building on a parallel-compile driver,
       // which reports completion only; renew the budget while shaders progress.
+      // A first use of programs that are already linked (a closed view's Effects
+      // reused, `effect-bridge.ts`) shows no such progress, yet can hold the
+      // thread past the whole budget on software GL: held time is not charged.
       const compiles = new DriverCompileWatch(engine);
-      const expire = () => {
-        const waiting = pendingPresentations.get(key);
-        if (waiting && !waiting.completionStarted && compiles.renew()) waiting.timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
-        else expirePresentation(key);
-      };
-      const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
+      const timer = createHeldThreadTimer(
+        SCENE_FIRST_FRAME_TIMEOUT_MS,
+        () => { if (pendingPresentations.get(key) === pending) expirePresentation(key); },
+        (now) => !pending.completionStarted && compiles.renew(now),
+      );
       const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 };
       pending.restart = () => {
         if (pending.completionStarted || pendingPresentations.get(key) !== pending) return;
-        clearTimeout(pending.timer);
-        pending.timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
+        pending.timer.restart();
       };
       pendingPresentations.set(key, pending);
       return promise;

@@ -167,6 +167,49 @@ export function createHeldThreadBound(
   };
 }
 
+/** How often a `HeldThreadTimer` checks its bound, so a held gap is seen on the first tick after it. */
+export const HELD_THREAD_CHECKPOINT_MS = 250;
+
+export interface HeldThreadTimer {
+  /** Start a fresh bound of `ms` (the timer's own bound when omitted), keeping the shared held-thread budget. */
+  restart(ms?: number): void;
+  cancel(): void;
+}
+
+/**
+ * A timer for a wait that progresses only through work it cannot observe (a
+ * first frame's draws), whose single due time a synchronous call can pass
+ * unseen: a `createHeldThreadBound` checked every `HELD_THREAD_CHECKPOINT_MS`,
+ * so each held gap is credited (up to `budget`) when the thread frees, before
+ * the bound is judged. `renew` is asked once the bound runs out; `onExpire`
+ * runs when it does not grant another.
+ */
+export function createHeldThreadTimer(
+  ms: number,
+  onExpire: () => void,
+  renew?: (now: number) => boolean,
+  budget: HeldThreadBudget = createHeldThreadBudget(),
+): HeldThreadTimer {
+  let bound: HeldThreadBound;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = () => {
+    timer = undefined;
+    if (bound.expired()) onExpire();
+    else timer = setTimeout(tick, HELD_THREAD_CHECKPOINT_MS);
+  };
+  const cancel = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  const restart = (next = ms) => {
+    cancel();
+    bound = createHeldThreadBound(next, budget, renew);
+    timer = setTimeout(tick, HELD_THREAD_CHECKPOINT_MS);
+  };
+  restart();
+  return { restart, cancel };
+}
+
 export interface StallDeadline {
   /** Restart the deadline after one unit of progress; `unit` names the next one. */
   advance(unit: string): void;
