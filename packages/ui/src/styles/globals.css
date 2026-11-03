@@ -169,8 +169,8 @@
 }
 
 /*
- * Settings rows. `.settings-field` puts the label and any visible status in the
- * left column and the control on the right; `.settings-row` stacks a full-width
+ * Settings rows. `.settings-field` puts the label and description in the left
+ * column and the control on the right; `.settings-row` stacks a full-width
  * control (lists, tables) under its label. A visually hidden (`sr-only`)
  * description takes no row.
  */

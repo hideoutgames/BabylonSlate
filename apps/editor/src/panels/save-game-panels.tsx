@@ -109,7 +109,8 @@ function DefaultValueEditor({ field, value, onChange, label = "Default Value" }:
     });
     return <PropertyGrid rows={rows} />;
   }
-  const base = { id: `default-${field.id}-${label}`, label };
+  // The field's own Default Value row explains when it applies; array items do not.
+  const base = { id: `default-${field.id}-${label}`, label, ...(label === "Default Value" ? { description: "Also used when an existing save is missing this field." } : {}) };
   let row: PropertyRow;
   switch (field.type) {
     case "bool": row = { ...base, kind: "boolean", value: value === true, onChange }; break;
@@ -198,6 +199,7 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
         <FieldLegend>{selectedField.name}</FieldLegend>
         <PropertyGrid rows={[{
           id: `name-${selectedField.id}`, kind: "text", label: "Name", value: selectedField.name,
+          description: "Renaming keeps its saved value.",
           error: nameError?.fieldId === selectedField.id ? nameError.message : undefined,
           // Checked like Add Field; a rejected name stays in the draft and the field keeps its last name.
           onChange: (name) => {
@@ -249,7 +251,6 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
           data-testid="save-game-field-defaults"
           renderItem={({ item, index, onChange }) => <DefaultValueEditor field={selectedField} label={`Item ${index + 1}`} value={item} onChange={onChange} />}
         /></FieldSet> : <DefaultValueEditor field={selectedField} value={selectedField.defaultValue} onChange={(defaultValue) => patch({ defaultValue })} />}
-        <FieldDescription>Used for new games and when an existing save is missing this field. Renaming keeps its saved value.</FieldDescription>
         <div><Button size="sm" variant="outline" className="pointer-coarse:min-h-11" aria-label={`Remove ${selectedField.name}`} onClick={() => {
           const fields = definition.fields.filter((field) => field.id !== selectedField.id);
           void commit({ ...definition, fields }).then((applied) => { if (applied) select(fields[0]?.id ?? null); });
@@ -257,7 +258,7 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
       </FieldSet> : <Empty><EmptyHeader><EmptyTitle>Select A Field</EmptyTitle><EmptyDescription>Add a field in the Fields window to configure the data your game remembers.</EmptyDescription></EmptyHeader></Empty>}
       <FieldSet className="gap-2">
         <FieldLegend>Save Setup</FieldLegend>
-        <FieldDescription>{isDefault ? "This is the project's active Save Game. Get Save and Set Save field nodes use these fields." : "Choose this as the project default to make its fields available in NodeGraphs."}</FieldDescription>
+        {isDefault ? null : <FieldDescription>Choose this as the project default to make its fields available in NodeGraphs.</FieldDescription>}
         <div><Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={!guid || !projectDocument || isDefault} onClick={() => { if (guid && settings) updateProjectSettings({ saveGame: { ...settings, definitionGuid: guid } }); }}>{isDefault ? "Project Default" : "Use As Project Default"}</Button></div>
         {isDefault && settings ? <PropertyGrid rows={[
           { id: `${documentId}-save-default-slot`, kind: "text", label: "Default Slot", value: settings.defaultSlot, description: "Save Game and Load Game use this slot when none is specified.", onChange: (defaultSlot) => updateProjectSettings({ saveGame: { ...settings, defaultSlot } }) },

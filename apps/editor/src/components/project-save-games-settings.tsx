@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveGameService, createDefaultSaveGameDefinition, documentId, validateSaveGameDefinition, validateSaveGameId, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@haptic/core";
 import { createSaveGameStorage, pickImportFiles } from "@haptic/vfs";
-import { AssetPicker, AssetPickerControl } from "@haptic/editor-kit";
+import { AssetPicker, AssetPickerControl, LabelHint } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Input } from "@haptic/ui/components/input";
 import { Switch } from "@haptic/ui/components/switch";
 import { Badge } from "@haptic/ui/components/badge";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
-import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 import { SettingsSection } from "./settings-section";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
 import {
@@ -130,15 +130,14 @@ export function ProjectSaveGamesSettings() {
   const defaultProfileError = saveIdError("Default Profile", settings.defaultProfile);
   return <FieldGroup className="min-w-0" data-testid="settings-save-games-panel">
     <SettingsSection id="defaults" title="Defaults">
-      <Field className="settings-field"><FieldLabel htmlFor="settings-save-definition">Default Definition</FieldLabel>
+      <Field className="settings-field"><LabelHint hint="The Save Game asset that defines the typed fields and defaults saves use. Save Game and Load Game use the Default Slot automatically."><FieldLabel htmlFor="settings-save-definition">Default Definition</FieldLabel></LabelHint>
         <AssetPickerControl value={settings.definitionGuid}><Button id="settings-save-definition" variant="outline" className="w-full justify-start pointer-coarse:min-h-11" onClick={() => setPickerOpen(true)}>{definitionAsset?.header.name ?? "Choose Save Game"}</Button></AssetPickerControl>
-        <FieldDescription>Create a Save Game asset with typed fields and defaults, then select it here. Save Game and Load Game use the default slot automatically.</FieldDescription>
       </Field>
       <Field className="settings-field" data-invalid={defaultSlotError ? true : undefined}><FieldLabel htmlFor="settings-save-slot">Default Slot</FieldLabel><div className="flex min-w-0 flex-col gap-1"><Input id="settings-save-slot" value={settings.defaultSlot} aria-invalid={defaultSlotError ? true : undefined} aria-describedby={defaultSlotError ? "settings-save-slot-error" : undefined} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultSlot: event.target.value } })} />{defaultSlotError ? <FieldError id="settings-save-slot-error">{defaultSlotError}</FieldError> : null}</div></Field>
       <Field className="settings-field" data-invalid={defaultProfileError ? true : undefined}><FieldLabel htmlFor="settings-save-profile">Default Profile</FieldLabel><div className="flex min-w-0 flex-col gap-1"><Input id="settings-save-profile" value={settings.defaultProfile} aria-invalid={defaultProfileError ? true : undefined} aria-describedby={defaultProfileError ? "settings-save-profile-error" : undefined} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultProfile: event.target.value } })} />{defaultProfileError ? <FieldError id="settings-save-profile-error">{defaultProfileError}</FieldError> : null}</div></Field>
     </SettingsSection>
     <SettingsSection id="previewSaves" title="Preview Saves">
-      <Field orientation="horizontal" className="settings-field"><FieldContent className="min-w-0"><FieldLabel htmlFor="settings-save-wipe-on-play">Wipe Preview Saves On Play</FieldLabel><FieldDescription>Clear this project's local preview profiles before each Play session. Exported game saves use a separate namespace.</FieldDescription></FieldContent><Switch id="settings-save-wipe-on-play" checked={settings.wipeOnPlay} onCheckedChange={(wipeOnPlay) => updateProjectSettings({ saveGame: { ...settings, wipeOnPlay } })} /></Field>
+      <Field orientation="horizontal" className="settings-field"><LabelHint hint="Clears this project's local preview profiles before each Play session. Exported game saves are kept separately."><FieldLabel htmlFor="settings-save-wipe-on-play">Wipe Preview Saves On Play</FieldLabel></LabelHint><Switch id="settings-save-wipe-on-play" checked={settings.wipeOnPlay} onCheckedChange={(wipeOnPlay) => updateProjectSettings({ saveGame: { ...settings, wipeOnPlay } })} /></Field>
       <div className="settings-row flex min-w-0 flex-col gap-3">
       <FieldDescription>Inspect and manage this project's editor Play data on this device. Browser data can be cleared by the browser or user; export saves you need to keep.</FieldDescription>
       <div className="flex flex-wrap gap-3"><Field className="min-w-36 flex-1"><FieldLabel htmlFor="save-manager-profile">Profile</FieldLabel><Input id="save-manager-profile" value={profile} disabled={pending} onChange={(event) => setProfile(event.target.value)} /></Field><Field className="min-w-36 flex-1"><FieldLabel htmlFor="save-manager-slot">Import Slot</FieldLabel><Input id="save-manager-slot" value={slot} disabled={pending} onChange={(event) => setSlot(event.target.value)} /></Field></div>

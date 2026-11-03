@@ -1,10 +1,9 @@
 import { defaultExportPreset, type ExportPreset, type ProjectDocument } from "@haptic/core";
-import { NumberField } from "@haptic/editor-kit";
+import { LabelHint, NumberField } from "@haptic/editor-kit";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@haptic/ui/components/field";
@@ -46,9 +45,11 @@ export function ProjectExportSettings({
     <FieldGroup>
       <SettingsSection id="gamePackaging" title="Game Packaging">
         <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="setting-export-debugger">
-            Bundle Debugger
-          </FieldLabel>
+          <LabelHint hint="Includes debugging tools and Development Only nodes in the export.">
+            <FieldLabel htmlFor="setting-export-debugger">
+              Bundle Debugger
+            </FieldLabel>
+          </LabelHint>
           <Switch
             id="setting-export-debugger"
             checked={exportPreset.bundleDebugger}
@@ -57,10 +58,6 @@ export function ProjectExportSettings({
             }
             data-testid="setting-export-debugger"
           />
-          <FieldDescription>
-            Includes debugging tools and Development Only nodes in the
-            export.
-          </FieldDescription>
         </Field>
         <Field className="settings-field">
           <FieldLabel htmlFor="setting-export-file-warn">
@@ -96,11 +93,6 @@ export function ProjectExportSettings({
               updateProjectSettings({ alwaysPackageFolders })
             }
           />
-          <FieldDescription>
-            Assets in these folders and their subfolders ship in every
-            export and Preview Build, even when nothing references them.
-            Editor-only assets and disabled plugin content stay out.
-          </FieldDescription>
         </Field>
       </SettingsSection>
       <SettingsSection id="projectBackup" title="Project Backup">
@@ -117,7 +109,6 @@ export function ProjectExportSettings({
           >
             {exportProjectBusy ? "Exporting Project…" : "Export Project"}
           </Button>
-          <FieldDescription>Editable project backup.</FieldDescription>
         </Field>
         {exportProjectError || exportNotice ? (
           <div className="settings-row">
