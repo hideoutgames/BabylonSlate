@@ -35,6 +35,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Event On Movement Left Ground](event-on-movement-left-ground.md) | Runs when the actor's Movement component stops being on the ground. |
 | [Event On Movement Started](event-on-movement-started.md) | Runs when the actor's Movement component starts moving horizontally. |
 | [Event On Movement Stopped](event-on-movement-stopped.md) | Runs when the actor's Movement component stops moving horizontally. |
+| [Event On Particles Finished](event-on-particles-finished.md) | Runs when a Particle component stops playing and its last particles are gone. |
 | [Event On Press End](event-on-press-end.md) | Runs when a press on a 2D Button ends. |
 | [Event On Press Start](event-on-press-start.md) | Runs when a press begins on a 2D Button. |
 | [Event On Range Changed](event-on-range-changed.md) | Runs when the lower or upper value of a 2D Range Slider changes. |
@@ -621,6 +622,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Is Particles Playing](is-particles-playing.md) | Returns whether any particle system on an actor is playing. |
 | [Play Particles](play-particles.md) | Starts the particle systems on an actor. |
 | [Stop Particles](stop-particles.md) | Stops the particle systems on an actor from emitting. |
 

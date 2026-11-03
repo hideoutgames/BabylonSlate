@@ -57,6 +57,22 @@ export type TraceAudioState = {
   nextScriptVoice: number;
 };
 
+/** One ParticleComponent the session's commands assigned, with its Play state. */
+export type TraceParticleComponent = {
+  actorGuid: string;
+  componentGuid: string;
+  /** Played and not yet reported ended or stopped. */
+  playing: boolean;
+  /** Generation of its latest Play, which the render host echoes when playback ends. */
+  generation: number;
+};
+
+export type TraceParticleState = {
+  components: TraceParticleComponent[];
+  /** The generation the next Play gets. */
+  nextGeneration: number;
+};
+
 /** The Sprite Animation clip an actor shows (Animation Graph or Play Animation). */
 export type TraceSpriteClip = {
   actorGuid: string;
@@ -95,6 +111,7 @@ export type TraceFrame = {
   audio?: TraceAudioState;
   sprites?: TraceSpriteClip[];
   animGraphs?: TraceAnimGraphState[];
+  particles?: TraceParticleState;
 };
 
 export type TraceStopReason = "requested" | "session-ended" | "oversized-frame";

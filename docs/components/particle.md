@@ -20,7 +20,8 @@ Select an actor, then choose **Add Component > Particles > Particle**. You can a
 - Works in world scenes and in Scene Layers.
 - The actor's transform is where the particles are emitted from.
 - Sorting Layers are listed back to front in **Project Settings > Game > Sorting Layers**. Particles still draw after opaque meshes and before blended ones, whatever their layer.
-- [Play Particles](../scripting/class/play-particles.md) and [Stop Particles](../scripting/class/stop-particles.md) start and stop every particle component on an actor. The component also has **Play** and **Stop** functions.
+- [Play Particles](../scripting/class/play-particles.md) and [Stop Particles](../scripting/class/stop-particles.md) start and stop every particle component on an actor, and [Is Particles Playing](../scripting/class/is-particles-playing.md) checks whether any of them plays. The component also has **Play**, **Stop** and **Is Playing** functions.
+- [Event On Particles Finished](../scripting/class/event-on-particles-finished.md) runs when the component stops playing: a Particle System that does not loop ran out, or **Stop** was called, and the last particles are gone.
 
 ## Related
 

@@ -512,6 +512,9 @@ function handleControl(msg: ControlMessage): void {
     case "audioVoiceEnded":
       ensureRuntime().applyAudioVoiceEnded(msg);
       return;
+    case "particlePlaybackEnded":
+      ensureRuntime().applyParticlePlaybackEnded(msg);
+      return;
     case "scalabilityStatus":
       ensureRuntime().applyScalabilityStatus(msg.acknowledgement);
       return;

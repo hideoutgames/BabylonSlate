@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload, type ParticleLibrary, type ParticleLibraryEmitter } from "@haptic/assets";
 import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@haptic/particle-graph";
 import { createTestEngine } from "./create-null-engine";
-import { ParticleService } from "./particle-service";
+import { ParticleService, type ParticlePlaybackEndedReport } from "./particle-service";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()?.(); });
@@ -31,13 +31,16 @@ function graphLibrary(edit?: (document: ParticleGraphDocument) => void): Particl
 }
 
 /** Material leases whose readiness the test controls; `complete()` settles every pending lease. */
-function fixture(pending = false, sceneForSlot?: (slot: number) => Scene | null, upload?: Promise<void> | (() => Promise<void> | undefined)) {
+function fixture(pending = false, sceneForSlot?: (slot: number) => Scene | null, upload?: Promise<void> | (() => Promise<void> | undefined),
+  statsScope: "global" | "local" = "global") {
   const host = createTestEngine();
   const release = vi.fn();
   let acquisitions = 0;
   const waiting: Array<() => void> = [];
   const diagnostics: Array<{ code: string }> = [];
-  const service = new ParticleService({ scene: host.scene, gpuSupported: false, sceneForSlot,
+  const ended: ParticlePlaybackEndedReport[] = [];
+  const service = new ParticleService({ scene: host.scene, gpuSupported: false, sceneForSlot, statsScope,
+    onPlaybackEnded: (report) => ended.push(report),
     acquireMaterial: (_guid, owner) => {
       acquisitions += 1;
       const resource = new NodeMaterial("controlled particle material", owner.scene);
@@ -57,7 +60,7 @@ function fixture(pending = false, sceneForSlot?: (slot: number) => Scene | null,
   const frame = () => { host.scene.onBeforeRenderObservable.notifyObservers(host.scene); host.scene.onAfterRenderObservable.notifyObservers(host.scene); };
   const state = () => service.playbackState("actor", "particle");
   cleanups.push(() => { service.dispose(); host.scene.dispose(); host.engine.dispose(); });
-  return { ...host, service, release, diagnostics, assign, play, frame, state,
+  return { ...host, service, release, diagnostics, ended, assign, play, frame, state,
     acquisitions: () => acquisitions,
     complete: async () => { for (const resolve of waiting.splice(0)) resolve(); await new Promise((settled) => setTimeout(settled, 0)); } };
 }
@@ -406,5 +409,103 @@ describe("Particle Graph slot lifecycle", () => {
     expect(f.scene.particleSystems).toHaveLength(0);
     expect(f.state()).toBe("ready-stopped");
     expect(f.release).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("playback ended reports", () => {
+  const assign = (generation: number, particleSystemGuid = "system") => ({ type: "assignParticle" as const, actorGuid: "actor",
+    componentId: "particle", slotId: 1, particleSystemGuid, play: true, generation });
+  const play = (playing: boolean, generation?: number) => ({ type: "setParticlePlaying" as const, actorGuid: "actor",
+    componentId: "particle", playing, ...(generation !== undefined ? { generation } : {}) });
+  const report = (generation: number, reason: ParticlePlaybackEndedReport["reason"]) =>
+    ({ actorGuid: "actor", componentId: "particle", generation, reason });
+
+  it("reports a finished Once system once, after its drain, with the generation of its Play", async () => {
+    const f = fixture();
+    f.service.setLibrary(libraryOf({ flash: { emitter: { loop: "once", duration: 0.25 } } }));
+    f.service.handleCommand(assign(7));
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    simulate([system], 20);
+    f.frame();
+    expect(f.state()).toBe("draining");
+    expect(f.ended).toEqual([]);
+    simulate([system], 120);
+    f.frame();
+    f.frame();
+    expect(f.state()).toBe("ready-stopped");
+    expect(f.ended).toEqual([report(7, "finished")]);
+
+    // Play again: the next finish reports the new generation.
+    f.service.handleCommand(play(true, 8));
+    const replay = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(replay.isStarted()).toBe(true));
+    simulate([replay], 150);
+    f.frame();
+    expect(f.ended).toEqual([report(7, "finished"), report(8, "finished")]);
+  });
+
+  it("reports Stop as stopped once the drain ends, with the latest Play's generation", async () => {
+    const f = fixture();
+    f.service.handleCommand(assign(1));
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    // Play while playing changes nothing native but names the generation the end reports.
+    f.service.handleCommand(play(true, 2));
+    simulate([system], 10);
+    f.service.handleCommand(play(false));
+    f.frame();
+    expect(f.state()).toBe("draining");
+    expect(f.ended).toEqual([]);
+    simulate([system], 120);
+    f.frame();
+    expect(f.ended).toEqual([report(2, "stopped")]);
+  });
+
+  it("reports Stop before preparation finished as stopped, and a bundle with no playable slot as failed", async () => {
+    const pending = fixture(true);
+    pending.service.handleCommand(assign(3));
+    pending.service.handleCommand(play(false));
+    expect(pending.ended).toEqual([report(3, "stopped")]);
+    // A second Stop on a stopped component reports nothing.
+    pending.service.handleCommand(play(false));
+    expect(pending.ended).toHaveLength(1);
+
+    const empty = fixture();
+    empty.service.setLibrary({ emitters: new Map(), systems: new Map([["system", { emitterGuids: ["missing"], space: "world", previewSkybox: true }]]) });
+    empty.service.handleCommand(assign(4));
+    expect(empty.state()).toBe("failed");
+    // An unknown Particle System never gets an entry but still ends the Play.
+    empty.service.handleCommand({ ...assign(5, "unknown"), componentId: "other" });
+    expect(empty.ended).toEqual([report(4, "failed"), { ...report(5, "failed"), componentId: "other" }]);
+    // Stop on the failed bundle does not report again.
+    empty.service.handleCommand(play(false));
+    expect(empty.ended).toHaveLength(2);
+  });
+
+  it("never reports for previews, Play's load warm-up, retire or despawn", async () => {
+    const preview = fixture(false, undefined, undefined, "local");
+    preview.service.setLibrary(libraryOf({ flash: { emitter: { loop: "once", duration: 0.25 } } }));
+    preview.service.handleCommand(assign(1));
+    const system = preview.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    simulate([system], 150);
+    preview.frame();
+    expect(preview.state()).toBe("ready-stopped");
+    expect(preview.ended).toEqual([]);
+
+    const play = fixture();
+    // A spawnable System without a playable slot fails at the load, silently.
+    play.service.setLibrary({ emitters: new Map(), systems: new Map([["system", { emitterGuids: ["missing"], space: "world", previewSkybox: true }]]) });
+    play.service.prepareSpawnableSystems();
+    play.service.releaseSpawnableSystems();
+    play.service.setLibrary(libraryOf());
+    play.service.handleCommand(assign(2));
+    play.service.handleCommand({ ...assign(3), particleSystemGuid: null });
+    play.service.handleCommand(assign(4));
+    play.service.handleCommand({ type: "despawn", slotId: 1, actorGuid: "actor" });
+    play.service.handleCommand(assign(5));
+    play.service.resetSession();
+    expect(play.ended).toEqual([]);
   });
 });

@@ -10,6 +10,7 @@ import {
   VEC3,
   objectRef,
   structRef,
+  enumRef,
   flowSwitchCasePinId,
   intSwitchCasesOf,
   stringSwitchCasesOf,
@@ -17,6 +18,7 @@ import {
   mapOf,
   RESOLVING_WILDCARD,
   ENGINE_HIT_RESULT_STRUCT_ID,
+  ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID,
   pinTypeForVariable,
   type VariableTypeSpec,
 } from "@haptic/scripting";
@@ -102,6 +104,7 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.sceneLayerActorSwitchedTo": "onSceneLayerActorSwitchedTo",
   "flow.event.sceneLayerActorSwitchedFrom": "onSceneLayerActorSwitchedFrom",
   "flow.event.audioFinished": "onAudioFinished",
+  "flow.event.particlesFinished": "onParticlesFinished",
   "flow.event.movementStarted": "onMovementStarted",
   "flow.event.movementStopped": "onMovementStopped",
   "flow.event.movementJumped": "onMovementJumped",
@@ -482,6 +485,17 @@ export const flowNodes: NodeDefinition[] = [
     codegen: () => {
       /* entry point emitted by the compiler */
     },
+  },
+  {
+    id: "flow.event.particlesFinished",
+    title: "Event On Particles Finished",
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      pin("reason", "Reason", "out", enumRef(ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID)),
+    ],
+    codegen: () => ({ reason: "(ctx.args.reason)" }),
   },
   {
     id: "flow.event.commandRun",

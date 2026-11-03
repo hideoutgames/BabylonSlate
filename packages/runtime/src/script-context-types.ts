@@ -490,6 +490,7 @@ export interface ScriptContext {
   playSound(asset: string, volume?: number): void;
   playParticles(actor?: EngineObject | null): void;
   stopParticles(actor?: EngineObject | null): void;
+  isParticlesPlaying(actor?: EngineObject | null): boolean;
   setChannelVolume(channelGuid: string, volume: number): void;
   setGlobalVolume(volume: number): void;
   changeScene(scene: string): void;

@@ -280,6 +280,8 @@ export interface ScriptHostServices {
     playing: boolean,
     componentId?: string,
   ): void;
+  /** Whether the component (or, without `componentId`, any ParticleComponent of the actor) is playing. */
+  isParticlesPlaying?(actorGuid: string, componentId?: string): boolean;
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
   getScalability?(): ScalabilitySnapshot | null;

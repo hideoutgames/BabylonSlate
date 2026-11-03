@@ -116,6 +116,9 @@ export function callNativeComponentFunction(
     );
     return {};
   }
+  if (name === "isParticlesPlaying") {
+    return { playing: !!component.owner && host.services.isParticlesPlaying?.(component.owner.guid, component.guid) === true };
+  }
   if (name === "stopParticles" && component.owner) {
     host.services.setParticlePlaying?.(
       component.owner.guid,

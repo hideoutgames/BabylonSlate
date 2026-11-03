@@ -24,7 +24,7 @@ import {
   type ParticleSystemPayload,
 } from "@haptic/assets";
 import type { CommandMessage } from "@haptic/bridge";
-import { DEFAULT_SORTING_LAYERS, type ParticleSpace } from "@haptic/core";
+import { DEFAULT_SORTING_LAYERS, type ParticlePlaybackEndReason, type ParticleSpace } from "@haptic/core";
 import {
   lowerParticleGraphDocumentCached,
   particleGraphCompileKey,
@@ -80,6 +80,13 @@ export type ParticlePreviewStats = {
   approximate: boolean;
 };
 export type ParticleMaterialOwner = { scene: Scene; instanceKey: string };
+/** `particlePlaybackEnded` without its message type: one component stopped playing. */
+export type ParticlePlaybackEndedReport = {
+  actorGuid: string;
+  componentId: string;
+  generation: number;
+  reason: ParticlePlaybackEndReason;
+};
 /** `ready-stopped` includes a released bundle (a finished Once System), which replays on its next Play. */
 export type ParticlePlaybackState = "preparing" | "ready-stopped" | "playing" | "draining" | "failed";
 type Assignment = Extract<CommandMessage, { type: "assignParticle" }>;
@@ -147,6 +154,10 @@ type LiveComponent = {
   key: string;
   command: Assignment;
   desiredPlaying: boolean;
+  /** The worker's generation of the latest Play, echoed in `onPlaybackEnded` (0 for previews). */
+  playGeneration: number;
+  /** Why the current drain began: a Once system finished, or Stop. */
+  endReason?: "finished" | "stopped";
   state: PlaybackState;
   generation: number;
   scene: Scene | null;
@@ -205,6 +216,7 @@ export class ParticleService {
   private readonly resolveEmitter?: (slotId: number) => AbstractMesh | null;
   private sceneForSlot?: (slotId: number) => Scene | null;
   private readonly onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
+  private readonly onPlaybackEnded?: (report: ParticlePlaybackEndedReport) => void;
   private readonly sortingLayers?: () => readonly string[] | undefined;
   private library: ParticleLibrary = emptyLibrary();
   private readonly live = new Map<string, LiveComponent>();
@@ -234,6 +246,11 @@ export class ParticleService {
     /** A null result means that the intended owner is not available yet. */
     sceneForSlot?: (slotId: number) => Scene | null;
     onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
+    /**
+     * A playing component stopped: its drain completed (a finished Once system or Stop) or its
+     * bundle has no playable slot. Never for previews, Play's load warm-up, or retire/despawn.
+     */
+    onPlaybackEnded?: (report: ParticlePlaybackEndedReport) => void;
     /** The project's ordered sorting layers, read when a system is built; `DEFAULT_SORTING_LAYERS` when unset. */
     sortingLayers?: () => readonly string[] | undefined;
     /** "global" (Play, player) publishes `particleStats`; "local" (previews) only serves `stats()`. */
@@ -248,6 +265,7 @@ export class ParticleService {
     this.resolveEmitter = options.resolveEmitter;
     this.sceneForSlot = options.sceneForSlot;
     this.onDiagnostic = options.onDiagnostic;
+    this.onPlaybackEnded = options.onPlaybackEnded;
     this.sortingLayers = options.sortingLayers;
     const engine = this.scene.getEngine();
     this.programsDrawn = options.programsDrawn ?? ((system) => particleProgramsDrawn(engine, system));
@@ -363,8 +381,11 @@ export class ParticleService {
     if (command.type === "despawn" || command.type === "spawn") this.retireSlots((slot) => slot === command.slotId);
     else if (command.type === "assignParticle") this.assign(command);
     else if (command.type === "setParticlePlaying") {
-      for (const entry of this.live.values()) {
+      for (const entry of [...this.live.values()]) {
         if (entry.command.actorGuid !== command.actorGuid || (command.componentId && entry.command.componentId !== command.componentId)) continue;
+        if (this.live.get(entry.key) !== entry) continue;
+        // A Play on a playing entry is idempotent but still names the generation its end reports.
+        if (command.playing && command.generation !== undefined) entry.playGeneration = command.generation;
         if (command.playing) {
           if (entry.desiredPlaying) continue;
           entry.desiredPlaying = true;
@@ -447,7 +468,7 @@ export class ParticleService {
     for (const guid of this.library.systems.keys()) {
       if (played.has(guid)) continue;
       const command: Assignment = { type: "assignParticle", slotId: slotId--, actorGuid: WARM_ACTOR, componentId: guid, particleSystemGuid: guid, play: true };
-      const entry: LiveComponent = { key: liveKey(WARM_ACTOR, guid), command, desiredPlaying: true, state: "preparing", generation: 0,
+      const entry: LiveComponent = { key: liveKey(WARM_ACTOR, guid), command, desiredPlaying: true, playGeneration: 0, state: "preparing", generation: 0,
         scene: null, node: null, systems: [], source: null, cancel: [], building: false, warm: true };
       this.live.set(entry.key, entry);
       this.prepare(entry);
@@ -556,11 +577,13 @@ export class ParticleService {
     if (!guid) { this.publishStats(); return; }
     if (!this.library.systems.has(guid)) {
       this.onDiagnostic?.({ code: "particle.unknown_system", message: "Particle System asset is missing; playback skipped.", assetGuid: guid });
-      this.publishStats(); return;
+      this.publishStats();
+      if (command.play !== false) this.report(command, command.generation ?? 0, "failed");
+      return;
     }
     // Desired state is published before any native or material callback can run.
     const entry: LiveComponent = { key, command: { ...command, particleSystemGuid: guid }, desiredPlaying: command.play !== false,
-      state: "preparing", generation: 0, scene: null, node: null, systems: [], source: null, cancel: [], building: false };
+      playGeneration: command.generation ?? 0, state: "preparing", generation: 0, scene: null, node: null, systems: [], source: null, cancel: [], building: false };
     this.live.set(key, entry);
     this.prepare(entry);
     this.publishStats();
@@ -605,7 +628,7 @@ export class ParticleService {
     const payload = this.library.systems.get(entry.command.particleSystemGuid!) ?? null;
     const source: BundleSource = { system: payload, emitters: new Map(), skipped: new Set() };
     entry.source = source;
-    if (!payload) { entry.preparationFailed = true; entry.state = "failed"; return; }
+    if (!payload) { entry.preparationFailed = true; entry.state = "failed"; this.reportFailed(entry); return; }
     entry.scene = host;
     entry.generation = ++this.generation;
     entry.building = true;
@@ -633,7 +656,7 @@ export class ParticleService {
         else source.skipped.add(guid);
       }
       // No playable slot: behave as an empty bundle without native systems.
-      if (!entry.systems.length) { this.releaseBundle(entry); entry.state = "failed"; return; }
+      if (!entry.systems.length) { this.releaseBundle(entry); entry.state = "failed"; this.reportFailed(entry); return; }
       const disposing = host.onDisposeObservable.addOnce(() => this.retire(entry));
       const before = host.onBeforeRenderObservable.add(() => {
         if (!this.current(entry, generation)) return;
@@ -744,7 +767,7 @@ export class ParticleService {
         if (!this.current(entry, generation) || owned.stopped) return;
         owned.stopped = true;
         if (owned.kind === "basic") owned.driver.halt();
-        if (entry.state === "playing" && entry.systems.every((other) => other.stopped)) this.beginDrain(entry);
+        if (entry.state === "playing" && entry.systems.every((other) => other.stopped)) this.beginDrain(entry, "finished");
       });
       record.cancel.push(() => system.onStoppedObservable.remove(stopped));
       if (record.kind === "basic" && record.gpu) {
@@ -877,17 +900,22 @@ export class ParticleService {
   }
 
   private stop(entry: LiveComponent): void {
+    const wasPlaying = entry.desiredPlaying;
     entry.desiredPlaying = false;
     if (entry.state === "preparing" || entry.state === "failed") {
+      const failed = entry.state === "failed";
       this.releaseBundle(entry);
       entry.state = "ready-stopped";
-    } else if (entry.state === "playing") this.beginDrain(entry);
+      // Stopped before it drew anything: it ends now. A failed bundle already reported.
+      if (wasPlaying && !failed) this.report(entry.command, entry.playGeneration, "stopped", entry);
+    } else if (entry.state === "playing") this.beginDrain(entry, "stopped");
   }
 
   /** Stops every emitter that is still running; Once emitters that finished earlier keep their drain time. */
-  private beginDrain(entry: LiveComponent): void {
+  private beginDrain(entry: LiveComponent, reason: "finished" | "stopped"): void {
     if (this.live.get(entry.key) !== entry || entry.state !== "playing") return;
     entry.desiredPlaying = false;
+    entry.endReason = reason;
     entry.state = "draining";
     for (const record of entry.systems) {
       if (record.kind === "basic") record.lifetime = Math.max(record.lifetime, particleLifetimeBound(record.system));
@@ -916,6 +944,18 @@ export class ParticleService {
     this.releaseBundle(entry);
     entry.state = "ready-stopped";
     this.publishStats();
+    this.report(entry.command, entry.playGeneration, entry.endReason ?? "finished", entry);
+  }
+
+  /** A bundle that was to play has no playable slot. */
+  private reportFailed(entry: LiveComponent): void {
+    if (entry.desiredPlaying) this.report(entry.command, entry.playGeneration, "failed", entry);
+  }
+
+  /** Previews and Play's load warm-up never report; retire and despawn never call this. */
+  private report(command: Assignment, generation: number, reason: ParticlePlaybackEndReason, entry?: LiveComponent): void {
+    if (this.statsScope === "local" || entry?.warm || this.disposed || !this.onPlaybackEnded) return;
+    this.onPlaybackEnded({ actorGuid: command.actorGuid, componentId: command.componentId, generation, reason });
   }
 
   /** Bundle-level failure: preparation timeout or a native throw outside one slot. */
@@ -927,6 +967,7 @@ export class ParticleService {
     this.diagnose(entry, { code: "particle.apply_failed", assetGuid: entry.command.particleSystemGuid ?? undefined,
       message: describeParticleThrow(error) });
     this.publishStats();
+    this.reportFailed(entry);
   }
 
   /** An async Material failure retires only its slot; the other slots may start. */
@@ -954,7 +995,8 @@ export class ParticleService {
     if (!entry.systems.length) {
       this.releaseBundle(entry);
       entry.state = "failed";
-    } else if (entry.state === "playing" && entry.systems.every((other) => other.stopped)) this.beginDrain(entry);
+      this.reportFailed(entry);
+    } else if (entry.state === "playing" && entry.systems.every((other) => other.stopped)) this.beginDrain(entry, "finished");
     else this.startIfReady(entry);
   }
 

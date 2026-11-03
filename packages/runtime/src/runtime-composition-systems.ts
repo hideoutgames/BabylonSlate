@@ -328,6 +328,7 @@ export function createTickPipeline(rt: RuntimeComposition, options: RuntimeDrive
     traceState: () => ({
       bt: rt.behaviourTrees.traceStates(),
       audio: rt.voices.traceState(),
+      particles: rt.particles.traceState(),
       sprites: rt.spriteClips.traceStates(rt.world.getActors()),
       animGraphs: rt.animGraphs.traceStates(),
     }),
