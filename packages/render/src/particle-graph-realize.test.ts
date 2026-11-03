@@ -450,6 +450,40 @@ describe("realizeParticleGraph", () => {
     expect(new Set(bare.particles.map((particle) => particle.cellIndex))).toEqual(new Set([0]));
   });
 
+  it("hands Spawn Emitter's sink the firing particle's world position, velocity and the simulated time", () => {
+    const fires: Array<{ position: number[]; velocity: number[]; now: number }> = [];
+    const sink = { fire: (position: { asArray(): number[] }, velocity: { asArray(): number[] }, now: number) =>
+      fires.push({ position: position.asArray(), velocity: velocity.asArray(), now }) };
+    const graph = (wired: boolean, properties: Record<string, unknown> = {}) => withSpine([node("spawn", "trigger.spawn", { emitterGuid: "spark", ...properties })],
+      wired ? [node("one", "const.float", { value: [1] })] : [], wired ? [edge("one", "out", "spawn", "condition")] : []);
+    const seen: Array<Record<string, unknown>> = [];
+    const run = (doc: ParticleGraphDocument, space: ParticleSpace) => {
+      const { scene, emitter } = host();
+      emitter.position.set(5, 0, 0);
+      emitter.computeWorldMatrix(true);
+      const result = realizeParticleGraph(planOf(doc), { scene, name: "graph", emitter, space,
+        spawn: (properties) => { seen.push(properties); return sink as never; } });
+      const { system } = built(result);
+      system.start(0);
+      step(system, 10);
+      return system;
+    };
+    // Condition 0 (unwired) never fires.
+    run(graph(false), "world");
+    expect(fires).toEqual([]);
+    expect(seen[0]).toMatchObject({ emitterGuid: "spark", limit: 8 });
+    // Not 0: every updated particle, every frame, in world space with the system's own clock.
+    const world = run(graph(true), "world");
+    expect(fires.length).toBeGreaterThan(5);
+    expect(fires.at(-1)!.now).toBeCloseTo((world as unknown as { _actualFrame: number })._actualFrame, 9);
+    for (const fire of fires) expect(fire.position[0]).toBeGreaterThan(3);
+    // Local Space particles are carried to world space.
+    fires.length = 0;
+    run(graph(true), "local");
+    expect(fires.length).toBeGreaterThan(5);
+    for (const fire of fires) expect(fire.position[0]).toBeGreaterThan(3);
+  });
+
   it("emits fractional and computed Emit Rates", () => {
     const slow = createDefaultParticleGraphDocument();
     slow.nodes = slow.nodes.map((entry) => entry.id === "output" ? { ...entry, properties: { "default:emitRate": [0.5] } }

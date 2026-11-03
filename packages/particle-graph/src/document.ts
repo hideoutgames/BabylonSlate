@@ -25,6 +25,7 @@ import {
   particleGradientStops,
 } from "./gradient";
 import { resizeParticleValue, type ParticleNumericType } from "./types";
+import { DEFAULT_PARTICLE_SPAWN, particleGraphSpawnEmitters, particleSpawnSettings } from "./spawn";
 
 /** Payload field; never a top-level `version` (the project service strips it). */
 export const PARTICLE_GRAPH_SCHEMA_VERSION = 1 as const;
@@ -224,6 +225,8 @@ export function newParticleNodeProperties(type: string): Record<string, unknown>
       return { parameterId: "", valueType: "float" };
     case "sprite.setup":
       return { ...DEFAULT_SPRITE_SHEET };
+    case "trigger.spawn":
+      return { ...DEFAULT_PARTICLE_SPAWN };
     default:
       return {};
   }
@@ -297,6 +300,9 @@ export function normalizeParticleNodeProperties(
       break;
     case "sprite.setup":
       Object.assign(next, particleSpriteSheetSettings(next));
+      break;
+    case "trigger.spawn":
+      Object.assign(next, particleSpawnSettings(next));
       break;
   }
   return next;
@@ -558,17 +564,20 @@ export interface ParticleGraphDependencies {
   textures: string[];
   /** Mesh Shape Models (Source Model), sorted and unique. */
   models: string[];
+  /** Spawn Emitter emitters (Particle Emitters and Particle Graphs), sorted and unique. */
+  emitters: string[];
   all: string[];
 }
 
-/** Header dependencies: the Material, every Noise node's Texture and every Mesh Shape's Model. */
+/** Header dependencies: the Material, every Noise node's Texture, Mesh Shape's Model and Spawn Emitter's emitter. */
 export function particleGraphDependencies(
   doc: Pick<ParticleGraphDocument, "materialGuid"> & Partial<Pick<ParticleGraphDocument, "nodes">>,
 ): ParticleGraphDependencies {
   const materials = doc.materialGuid ? [doc.materialGuid] : [];
   const textures = particleGraphNoiseTextures(doc.nodes ?? []);
   const models = particleGraphMeshModels(doc.nodes ?? []);
-  return { materials, textures, models, all: [...materials, ...textures, ...models] };
+  const emitters = particleGraphSpawnEmitters(doc.nodes ?? []);
+  return { materials, textures, models, emitters, all: [...materials, ...textures, ...models, ...emitters] };
 }
 
 /** The Models the graph's Mesh Shapes read (Source Model), sorted and unique. */

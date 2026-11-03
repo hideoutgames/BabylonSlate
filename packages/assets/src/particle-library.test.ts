@@ -111,6 +111,11 @@ describe("particle library graph entries", () => {
     expect(particleLibraryNoiseTextureGuids(particleLibraryFromAssets([noisy]))).toEqual(["tex-noise"]);
   });
 
+  it("depends on the emitters its Spawn Emitters play", () => {
+    const spawning = graph((doc) => doc.nodes.push({ id: "spawn", type: "trigger.spawn", position: { x: 0, y: 0 }, properties: { emitterGuid: "em-spark" } }));
+    expect(particleAssetDependencies("ParticleGraph", spawning.payload as unknown as Record<string, unknown>)).toEqual(["em-spark", "mat-graph"]);
+  });
+
   it("indexes the Models its Mesh Shapes read", () => {
     const meshy = graph((doc) => {
       const shape = doc.nodes.find((node) => node.id === "shape")!;

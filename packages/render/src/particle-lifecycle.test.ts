@@ -854,3 +854,114 @@ describe("Mesh Shapes", () => {
     for (const distance of distances) expect(distance).toBeGreaterThan(8);
   });
 });
+
+describe("Spawn Emitter", () => {
+  /** A one-shot spark: 0.2 s of 30 /s, 0.1 s particles. */
+  const spark = basic({ emitter: { loop: "once", duration: 0.2, capacity: 16 }, spawn: { rate: { mode: "constant", value: 30 } },
+    initialize: { lifetime: { mode: "constant", value: 0.1 } } });
+  /** The default graph with an always-firing Spawn Emitter spliced into its spine. */
+  const firing = (properties: Record<string, unknown>) => (document: ParticleGraphDocument) => {
+    document.nodes.push(
+      { id: "spawn", type: "trigger.spawn", position: { x: 0, y: 0 }, properties: { emitterGuid: "spark", limit: 8, minInterval: 0, inheritVelocity: false, ...properties } },
+      { id: "one", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [1] } },
+    );
+    document.edges = document.edges.filter((edge) => edge.id !== "e-velocity-color");
+    document.edges.push(
+      { id: "e-velocity-spawn", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "spawn", targetPinId: "particle" },
+      { id: "e-spawn-color", sourceNodeId: "spawn", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
+      { id: "e-one-spawn", sourceNodeId: "one", sourcePinId: "out", targetNodeId: "spawn", targetPinId: "condition" },
+    );
+  };
+  function spawnService(edit: (document: ParticleGraphDocument) => void, extra: Record<string, ParticleLibraryEmitter> = { spark }) {
+    const host = createTestEngine();
+    const diagnostics: Array<{ code: string; assetGuid?: string }> = [];
+    const leases: string[] = [];
+    const service = new ParticleService({ scene: host.scene, gpuSupported: false,
+      acquireMaterial: (_guid, owner) => {
+        leases.push(owner.instanceKey);
+        const resource = new NodeMaterial("spawn test material", owner.scene);
+        resource.mode = NodeMaterialModes.Particle;
+        resource.createEffectForParticles = () => {};
+        return { key: `material:${owner.instanceKey}`, resource, release: () => resource.dispose() };
+      },
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic) });
+    cleanups.push(() => { service.dispose(); host.scene.dispose(); host.engine.dispose(); });
+    const library = graphLibrary(edit);
+    service.setLibrary({ ...library, emitters: new Map([...library.emitters, ...Object.entries(extra)]) });
+    service.handleCommand({ type: "assignParticle", actorGuid: "actor", componentId: "particle", slotId: 1, particleSystemGuid: "system", play: true });
+    const frame = () => { host.scene.onBeforeRenderObservable.notifyObservers(host.scene); host.scene.onAfterRenderObservable.notifyObservers(host.scene); };
+    return { service, scene: host.scene, diagnostics, leases, frame };
+  }
+  const spawnedNodes = (scene: Scene) => scene.meshes.filter((mesh) => mesh.name.startsWith("particleSpawn:"));
+  /** Renders `frames` frames: simulation, then the service's after-render work, then microtasks. */
+  async function run(scene: Scene, frame: () => void, frames: number) {
+    for (let i = 0; i < frames; i += 1) {
+      simulate(scene.particleSystems, 1);
+      frame();
+      await new Promise((settled) => setTimeout(settled, 0));
+    }
+  }
+  /** Renders frames until `done` (at most two seconds of them). */
+  async function until(scene: Scene, frame: () => void, done: () => boolean) {
+    for (let i = 0; i < 120 && !done(); i += 1) await run(scene, frame, 1);
+    expect(done()).toBe(true);
+  }
+
+  it("plays the Emitter at the particle after the frame, within Limit, counted in the stats and held by one Material", async () => {
+    const { service, scene, frame, leases } = spawnService(firing({ limit: 2 }));
+    const parent = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(parent.isStarted()).toBe(true));
+    // The spark's Material is held while the slot plays.
+    expect(leases.filter((key) => key.includes(":spawn:spark"))).toHaveLength(1);
+    simulate([parent], 5);
+    expect(spawnedNodes(scene)).toHaveLength(0);
+    frame();
+    expect(spawnedNodes(scene)).toHaveLength(2);
+    expect(scene.particleSystems).toHaveLength(3);
+    expect(service.stats().systems).toBe(3);
+    expect(leases.filter((key) => key.includes(":spawn:spark"))).toHaveLength(3);
+    await until(scene, frame, () => scene.particleSystems.slice(1).every((system) => system.isStarted()));
+    // Limit 2 holds while both play.
+    expect(spawnedNodes(scene)).toHaveLength(2);
+  });
+
+  it("waits Min Interval of simulated time, runs one Duration, drains and is disposed", async () => {
+    const { service, scene, frame } = spawnService(firing({ minInterval: 60 }));
+    const parent = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(parent.isStarted()).toBe(true));
+    await until(scene, frame, () => spawnedNodes(scene).length === 1);
+    const instance = scene.particleSystems[1] as ParticleSystem;
+    await until(scene, frame, () => instance.isStarted());
+    await run(scene, frame, 30);
+    // 0.2 s of emission and 0.1 s particles: gone after 0.5 s, and Min Interval allows no other.
+    expect(spawnedNodes(scene)).toHaveLength(0);
+    expect(scene.particleSystems).toEqual([parent]);
+    expect(service.stats().systems).toBe(1);
+  });
+
+  it("moves a spawn with Inherit Velocity", async () => {
+    const { scene, frame } = spawnService(firing({ inheritVelocity: true, minInterval: 60 }));
+    const parent = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(parent.isStarted()).toBe(true));
+    await until(scene, frame, () => spawnedNodes(scene).length === 1);
+    const [node] = spawnedNodes(scene);
+    const start = node!.position.clone();
+    await run(scene, frame, 5);
+    expect(node!.position.subtract(start).length()).toBeGreaterThan(0);
+    expect(scene.particleSystems.length).toBe(2);
+  });
+
+  it("stops at two levels below the effect when a graph spawns itself, and cuts every spawn on retire", async () => {
+    const { scene, frame, diagnostics, service } = spawnService(firing({ emitterGuid: "graph", limit: 1, minInterval: 60 }), {});
+    const parent = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(parent.isStarted()).toBe(true));
+    await until(scene, frame, () => spawnedNodes(scene).length === 2);
+    await run(scene, frame, 6);
+    // The effect, its spawn, and that spawn's spawn; the third level spawns nothing.
+    expect(spawnedNodes(scene)).toHaveLength(2);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ code: "particle.spawn_depth", assetGuid: "graph" }));
+    service.handleCommand({ type: "assignParticle", actorGuid: "actor", componentId: "particle", slotId: 1, particleSystemGuid: null });
+    expect(spawnedNodes(scene)).toHaveLength(0);
+    expect(scene.particleSystems).toEqual([]);
+  });
+});

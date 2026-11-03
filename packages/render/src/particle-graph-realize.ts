@@ -26,6 +26,7 @@ import {
 } from "./particle-graph-blocks";
 import { createParticleReadinessTexture } from "./particle-system-factory";
 import type { ParticleMeshShapeSource } from "./particle-mesh-shape";
+import type { ParticleSpawnSink } from "./particle-spawn";
 import type { ParticleNoiseSource } from "./particle-noise";
 
 /** Render-side Particle Graph build problems, anchored to the graph node (and pin) when known. */
@@ -57,6 +58,8 @@ export interface RealizeParticleGraphOptions {
   noise?: (textureGuid: string | null) => ParticleNoiseSource;
   /** Mesh Shape geometry by node properties; without it Mesh Shape spawns at the emitter. */
   meshShape?: (properties: Readonly<Record<string, unknown>>) => ParticleMeshShapeSource;
+  /** Spawn Emitter requests, for a node's properties. Without it Spawn Emitter spawns nothing. */
+  spawn?: (properties: Readonly<Record<string, unknown>>) => ParticleSpawnSink | null;
 }
 
 export type RealizeParticleGraphResult =
@@ -125,7 +128,8 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
     let realization: ParticleBlockRealization;
     try {
       realization = adapter({ operation, name, space: options.space, parameters, ...(options.noise ? { noise: options.noise } : {}),
-        ...(options.meshShape ? { meshShape: options.meshShape } : {}) });
+        ...(options.meshShape ? { meshShape: options.meshShape } : {}),
+        ...(options.spawn ? { spawn: options.spawn } : {}) });
     } catch (thrown) {
       diagnostics.push({ code: "particle.compile.buildFailed", nodeId: operation.id, message: describeParticleThrow(thrown) });
       continue;

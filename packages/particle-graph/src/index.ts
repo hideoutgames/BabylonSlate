@@ -61,6 +61,16 @@ export {
   type ParticleSpriteSheetSettings,
 } from "./document";
 export {
+  DEFAULT_PARTICLE_SPAWN,
+  PARTICLE_SPAWN_LIMITS,
+  PARTICLE_SPAWN_PRESETS,
+  particleGraphSpawnEmitters,
+  particleSpawnSettings,
+  withParticleSpawnPreset,
+  type ParticleSpawnPreset,
+  type ParticleSpawnSettings,
+} from "./spawn";
+export {
   canonicalParticleGradientStops,
   defaultParticleGradientStops,
   particleGradientStops,

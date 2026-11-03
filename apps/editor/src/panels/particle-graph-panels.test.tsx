@@ -73,6 +73,8 @@ vi.mock("../context/document-context", async () => {
       },
       { header: { guid: "tex-clouds", name: "Clouds", type: "Texture", payload: {} }, path: "assets/Clouds.png" },
       { header: { guid: "model-statue", name: "Statue", type: "Model", payload: {} }, path: "assets/Statue.glb" },
+      { header: { guid: "em-spark", name: "Spark", type: "ParticleEmitter", payload: {} }, path: "assets/Spark.emitter.hasset" },
+      { header: { guid: "pg-smoke", name: "Smoke", type: "ParticleGraph", payload: {} }, path: "assets/Smoke.particlegraph.hasset" },
     ],
   };
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
@@ -297,6 +299,26 @@ describe("ParticleGraphDetails", () => {
     expect(nodeOf(history.read(), "sheet").properties).toMatchObject({ startCell: 7, endCell: 7 });
     type("property-framesPerSecond", "12");
     expect(nodeOf(history.read(), "sheet").properties.framesPerSecond).toBe(12);
+  });
+
+  it("picks a Spawn Emitter's emitter, edits its settings and wires a Condition preset", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "spawn", type: "trigger.spawn", position: { x: 0, y: 0 }, properties: newParticleNodeProperties("trigger.spawn") });
+    const history = renderDetails(doc, "spawn");
+    expect(screen.getByTestId("module-stage-node").textContent).toContain("Spawn Emitter");
+    expect(screen.getByTestId("property-emitterGuid").textContent).toContain("No Emitter");
+    fireEvent.click(screen.getByTestId("property-emitterGuid"));
+    await waitFor(() => expect(screen.getByTestId("search-item-pg-smoke")).toBeTruthy());
+    expect(screen.getByTestId("search-item-em-spark")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-tex-clouds")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-em-spark"));
+    expect(nodeOf(history.read(), "spawn").properties.emitterGuid).toBe("em-spark");
+    type("property-limit", "3");
+    expect(nodeOf(history.read(), "spawn").properties.limit).toBe(3);
+    fireEvent.click(screen.getByTestId("particle-spawn-preset-death"));
+    const wired = history.read();
+    const into = wired.edges.find((edge) => edge.targetNodeId === "spawn" && edge.targetPinId === "condition")!;
+    expect(nodeOf(wired, into.sourceNodeId).type).toBe("logic.condition");
   });
 
   it("sets a Local Variable's Scope and explains it", async () => {

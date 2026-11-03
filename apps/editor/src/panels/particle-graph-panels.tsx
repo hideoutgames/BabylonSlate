@@ -29,6 +29,8 @@ import {
   PARTICLE_GRAPH_LIMITS,
   PARTICLE_OUTPUT_NODE_TYPE,
   PARTICLE_RANDOM_LOCKS,
+  PARTICLE_SPAWN_LIMITS,
+  PARTICLE_SPAWN_PRESETS,
   PARTICLE_SPRITE_SHEET_LIMITS,
   PARTICLE_UNSUPPORTED_V1_TYPES,
   PARTICLE_VALUE_TYPE_OPTIONS,
@@ -46,11 +48,13 @@ import {
   particlePaletteNodes,
   particlePinDefaultPropertyKey,
   particlePinsAreCompatible,
+  particleSpawnSettings,
   particleSpriteSheetSettings,
   resizeParticleValue,
   serializedToParticleGraph,
   setParticleNodeAngleUnit,
   setParticleNodeValueType,
+  withParticleSpawnPreset,
   type ParticleAngleUnit,
   type ParticleGradientStop,
   type ParticleGraphDiagnostic,
@@ -59,6 +63,7 @@ import {
   type ParticleNumericType,
 } from "@haptic/particle-graph";
 import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
+import { Button } from "@haptic/ui/components/button";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { PARTICLE_STAGE_ROLE } from "@haptic/ui/lib/data-types";
 import { useRegistryState } from "../context/document-context";
@@ -79,6 +84,7 @@ import {
 import { MessageDetails } from "../components/message-details";
 import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
+import { useSpawnPreviewEmitters } from "../lib/use-spawn-preview-emitters";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
 import { ParticleGraphParametersEditor, ParticlePreviewParameters } from "../components/particle-parameter-fields";
@@ -253,6 +259,42 @@ function nodePropertyRows(
         },
       );
       break;
+    case "trigger.spawn": {
+      const spawn = particleSpawnSettings(node.properties);
+      rows.push(
+        {
+          id: "limit",
+          kind: "number",
+          label: "Limit",
+          value: spawn.limit,
+          min: PARTICLE_SPAWN_LIMITS.limit.min,
+          max: PARTICLE_SPAWN_LIMITS.limit.max,
+          precision: 0,
+          description: "Spawned emitters of this node playing at once; spawns beyond it are skipped.",
+          onChange: (limit) => setProperties({ limit }, field("limit")),
+        },
+        {
+          id: "minInterval",
+          kind: "number",
+          label: "Min Interval",
+          unit: "s",
+          value: spawn.minInterval,
+          min: PARTICLE_SPAWN_LIMITS.minInterval.min,
+          max: PARTICLE_SPAWN_LIMITS.minInterval.max,
+          description: "Simulated seconds between two spawns of this node.",
+          onChange: (minInterval) => setProperties({ minInterval }, field("minInterval")),
+        },
+        {
+          id: "inheritVelocity",
+          kind: "boolean",
+          label: "Inherit Velocity",
+          value: spawn.inheritVelocity,
+          description: "A spawned emitter keeps moving at the particle's velocity when it fired.",
+          onChange: (inheritVelocity) => setProperties({ inheritVelocity }),
+        },
+      );
+      break;
+    }
     case "sprite.setup": {
       const sheet = particleSpriteSheetSettings(node.properties);
       const last = sheet.columns * sheet.rows - 1;
@@ -637,15 +679,19 @@ function ParticleNodeDetails({
     ...nodePropertyRows(node, setProperties, replaceNode),
     ...pinDefaultRows(document, node, setProperties),
   ];
+  if (node.type === "trigger.spawn") {
+    rows.unshift(assets.row({ property: "emitterGuid", label: "Emitter", assetTypes: ["ParticleEmitter", "ParticleGraph"], placeholder: "No Emitter",
+      description: "The Particle Emitter or Particle Graph played at the particle. It runs one Duration, then its particles fade out." }));
+  }
   if (node.type === "update.noise") {
-    rows.unshift(assets.row({ property: "textureGuid", label: "Texture", assetType: "Texture", placeholder: "Built-In Noise",
+    rows.unshift(assets.row({ property: "textureGuid", label: "Texture", assetTypes: ["Texture"], placeholder: "Built-In Noise",
       description: typeof node.properties.textureGuid === "string"
         ? "Its red channel sets the push; each particle reads it at its own random point."
         : "Without a Texture the built-in noise is used." }));
   }
   if (node.type === "shape.mesh" && node.properties.source === "model") {
     rows.splice(rows.findIndex((row) => row.id === "source") + 1, 0, assets.row({ property: "modelGuid", label: "Model",
-      assetType: "Model", placeholder: "No Model",
+      assetTypes: ["Model"], placeholder: "No Model",
       description: "Particles spawn on the Model's triangles, placed at the emitter." }));
   }
   return (
@@ -660,6 +706,18 @@ function ParticleNodeDetails({
         ) : null}
         {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
         {assets.picker}
+        {node.type === "trigger.spawn" ? (
+          <div className="flex flex-wrap items-center gap-1 px-2 py-1" data-testid="particle-spawn-presets">
+            <span className="text-xs text-muted-foreground">Condition</span>
+            {PARTICLE_SPAWN_PRESETS.map((preset) => (
+              <Button key={preset.id} type="button" variant="outline" size="xs" title={preset.description}
+                data-testid={`particle-spawn-preset-${preset.id}`}
+                onClick={() => onChange(withParticleSpawnPreset(document, node.id, preset.id))}>
+                {preset.label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
         {node.type === "gradient.sample" ? (
           <GradientStopsEditor node={node} setProperties={setProperties} />
         ) : null}
@@ -668,25 +726,25 @@ function ParticleNodeDetails({
   );
 }
 
-type ParticleNodeAssetType = "Texture" | "Model";
+type ParticleNodeAssetType = "Texture" | "Model" | "ParticleEmitter" | "ParticleGraph";
 
 /** Rows for a node's asset properties (Noise **Texture**, Mesh Shape **Model**) and their shared picker; None clears one. */
 function useParticleNodeAssetPicker(
   node: ParticleGraphNode,
   setProperties: (patch: Record<string, unknown>) => void,
 ): {
-  row: (spec: { property: string; label: string; assetType: ParticleNodeAssetType; placeholder: string; description: string }) => PropertyRow;
+  row: (spec: { property: string; label: string; assetTypes: readonly ParticleNodeAssetType[]; placeholder: string; description: string }) => PropertyRow;
   picker: ReactNode;
 } {
   const { assetRegistry } = useRegistryState();
-  const [picking, setPicking] = useState<{ property: string; assetType: ParticleNodeAssetType } | null>(null);
-  const assetsOf = (assetType: ParticleNodeAssetType) => (assetRegistry?.list() ?? [])
-    .filter((asset) => asset.header.type === assetType)
+  const [picking, setPicking] = useState<{ property: string; assetTypes: readonly ParticleNodeAssetType[] } | null>(null);
+  const assetsOf = (assetTypes: readonly ParticleNodeAssetType[]) => (assetRegistry?.list() ?? [])
+    .filter((asset) => (assetTypes as readonly string[]).includes(asset.header.type))
     .map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }));
   return {
-    row: ({ property, label, assetType, placeholder, description }) => {
+    row: ({ property, label, assetTypes, placeholder, description }) => {
       const guid = typeof node.properties[property] === "string" ? (node.properties[property] as string) : null;
-      const selected = guid ? assetsOf(assetType).find((asset) => asset.guid === guid) : undefined;
+      const selected = guid ? assetsOf(assetTypes).find((asset) => asset.guid === guid) : undefined;
       return {
         id: property,
         kind: "asset",
@@ -694,7 +752,7 @@ function useParticleNodeAssetPicker(
         value: guid,
         placeholder,
         description,
-        onPick: () => setPicking({ property, assetType }),
+        onPick: () => setPicking({ property, assetTypes }),
         onChange: (next) => setProperties({ [property]: next }),
         ...assetRowIdentity(selected ? { name: selected.name, type: selected.type } : undefined),
       };
@@ -703,8 +761,8 @@ function useParticleNodeAssetPicker(
       <AssetPicker
         open
         onOpenChange={(open) => { if (!open) setPicking(null); }}
-        assets={assetsOf(picking.assetType)}
-        allowedTypes={[picking.assetType]}
+        assets={assetsOf(picking.assetTypes)}
+        allowedTypes={[...picking.assetTypes]}
         allowNone
         onPick={(next) => {
           setProperties({ [picking.property]: next });
@@ -915,12 +973,13 @@ export function ParticleGraphPreview({
 }) {
   const [picking, setPicking] = useState(false);
   const [previewValues, setPreviewValues] = useState<Record<string, number[]>>({});
+  const spawned = useSpawnPreviewEmitters(previewDocument);
   const library = useMemo(
     () =>
       previewDocument
-        ? emitterPreviewLibrary({ kind: "graph", document: previewDocument })
+        ? emitterPreviewLibrary({ kind: "graph", document: previewDocument }, spawned)
         : null,
-    [previewDocument],
+    [previewDocument, spawned],
   );
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="particle-graph-preview">

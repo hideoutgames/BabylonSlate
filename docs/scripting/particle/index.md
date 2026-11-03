@@ -28,6 +28,7 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | [Animate Sprite Sheet](animate-sprite-sheet.md) | Steps each particle through the cells of the Sprite Sheet as it ages. |
 | [Apply Velocity](apply-velocity.md) | Moves every particle along its direction each frame. |
 | [Fade To Dead Color](fade-to-dead-color.md) | Blends each particle from its colour to its dead colour over its lifetime. |
+| [Spawn Emitter](spawn-emitter.md) | Plays another emitter at a particle's position when Condition is not 0, for example a spark burst where each particle dies. |
 | [Sprite Sheet](sprite-sheet.md) | Draws each particle as one cell of a sprite sheet: a texture divided into a grid of equal frames. |
 | [Update Angle (Degrees)](update-angle-degrees.md) | Sets the rotation of every particle each frame, in degrees. |
 | [Update Angle (Radians)](update-angle.md) | Sets the rotation of every particle each frame, in radians. |

@@ -157,7 +157,6 @@ export const PARTICLE_UNSUPPORTED_V1_TYPES: Readonly<Record<string, string>> = {
   "shape.custom": "Custom Shape",
   "update.flowMap": "Flow Map",
   "update.age": "Update Age",
-  "trigger.spawn": "Particle Trigger",
   "math.floatToInt": "Float To Int",
 };
 
@@ -200,6 +199,7 @@ const PARTICLE_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "force.gravity": ["acceleration", "fall"],
   "force.attractor": ["attract", "magnet", "pull"],
   "sprite.setup": ["flipbook", "animation sheet", "texture sheet", "atlas"],
+  "trigger.spawn": ["sub emitter", "sub-emitter", "trigger", "particle trigger", "on death", "on spawn"],
   "update.basicSprite": ["basic sprite update", "flipbook", "animate sprite"],
   "update.spriteCell": ["cell index", "sprite frame"],
   "input.contextual.direction": ["velocity"],
@@ -563,6 +563,15 @@ const UPDATE_NODES: ParticleNodeDefinition[] = [
     [{ id: "cell", name: "Cell", type: FLOAT, defaultValue: [0], description: "Rounded down and kept within the Sprite Sheet." }],
     "Sets each particle's Sprite Sheet cell to Cell, numbered from the top left.",
   ),
+  {
+    type: "trigger.spawn",
+    title: "Spawn Emitter",
+    category: "Update",
+    role: "update",
+    description: "Plays the Emitter set in the Inspector at a particle's position when Condition is not 0: up to Limit at once, at most once per Min Interval.",
+    inputs: [PARTICLE_IN, { id: "condition", name: "Condition", type: FLOAT, defaultValue: [0], description: "Not 0 fires." }],
+    outputs: [PARTICLE_OUT],
+  },
   updateNode(
     "force.attractor",
     "Attractor",

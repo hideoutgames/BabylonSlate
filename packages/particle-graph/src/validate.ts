@@ -13,6 +13,7 @@ import type {
   ParticleGraphNode,
 } from "./document";
 import { readParticlePinDefault } from "./pin-defaults";
+import { PARTICLE_SPAWN_LIMITS, particleSpawnSettings } from "./spawn";
 import {
   createParticleTypeResolver,
   particleGenericGroup,
@@ -39,6 +40,14 @@ export interface ParticleGraphValidationContext {
    * is reported.
    */
   materialDomain?: (guid: string) => string | null;
+  /**
+   * The emitter asset a Spawn Emitter plays: a Basic emitter, a Particle Graph with the emitters
+   * its own Spawn Emitters play, or null when it is not in the project. Omitted: only an unset
+   * Emitter is reported.
+   */
+  spawnEmitter?: (guid: string) => { kind: "basic" } | { kind: "graph"; spawns: readonly string[] } | null;
+  /** The validated graph's own asset guid, so a Spawn Emitter that leads back to it is a cycle. */
+  documentGuid?: string;
 }
 
 interface GraphLike {
@@ -570,6 +579,7 @@ export function checkParticleGraphDocument(
   const incoming = indexParticleIncomingEdges(doc);
   const { diagnostics, definitions, resolver } = validateGraph(doc, incoming);
   diagnostics.push(...validateSpine(doc, definitions, incoming));
+  diagnostics.push(...validateSpawns(doc, context));
   diagnostics.push(...validateSettings(doc, context));
   diagnostics.push(...validateParameterNodes(doc));
   return { diagnostics, resolver };
@@ -586,6 +596,50 @@ function validateParameterNodes(doc: ParticleGraphDocument): ParticleGraphDiagno
       severity: "error" as const,
       nodeId: node.id,
     }));
+}
+
+/**
+ * Spawn Emitter references: an Emitter to play, one the project has, no reference cycle back
+ * to this graph, and no chain deeper than `PARTICLE_SPAWN_LIMITS.depth` (deeper spawns never play).
+ */
+function validateSpawns(doc: ParticleGraphDocument, context: ParticleGraphValidationContext): ParticleGraphDiagnostic[] {
+  const diagnostics: ParticleGraphDiagnostic[] = [];
+  const lookup = context.spawnEmitter;
+  /** Spawn levels below a graph (1 for an emitter that spawns nothing); Infinity on a cycle back to `doc`. */
+  const levels = (guid: string, path: ReadonlySet<string>): number => {
+    if (guid === context.documentGuid || path.has(guid)) return Number.POSITIVE_INFINITY;
+    const emitter = lookup?.(guid);
+    if (!emitter || emitter.kind === "basic") return 1;
+    const next = new Set(path).add(guid);
+    let deepest = 0;
+    for (const child of emitter.spawns) deepest = Math.max(deepest, levels(child, next));
+    return 1 + deepest;
+  };
+  for (const node of doc.nodes) {
+    if (node.type !== "trigger.spawn") continue;
+    const guid = particleSpawnSettings(node.properties).emitterGuid;
+    if (!guid) {
+      diagnostics.push({ code: "particle.spawnEmitterMissing", message: "Spawn Emitter has no Emitter and spawns nothing; pick one in the Inspector",
+        severity: "warning", nodeId: node.id });
+      continue;
+    }
+    if (!lookup) continue;
+    if (guid !== context.documentGuid && !lookup(guid)) {
+      diagnostics.push({ code: "particle.spawnEmitterUnknown", message: "Spawn Emitter's Emitter is not in the project and spawns nothing",
+        severity: "warning", nodeId: node.id });
+      continue;
+    }
+    const depth = levels(guid, new Set());
+    if (depth === Number.POSITIVE_INFINITY) {
+      diagnostics.push({ code: "particle.spawnCycle", message: "Spawn Emitter leads back to this Particle Graph; an emitter cannot spawn itself",
+        severity: "error", nodeId: node.id });
+    } else if (depth > PARTICLE_SPAWN_LIMITS.depth) {
+      diagnostics.push({ code: "particle.spawnDepth",
+        message: `Spawn Emitter's Emitter spawns more emitters ${depth} levels deep; emitters more than ${PARTICLE_SPAWN_LIMITS.depth} levels below the effect do not play`,
+        severity: "warning", nodeId: node.id });
+    }
+  }
+  return diagnostics;
 }
 
 /** Errors block lowering; warnings do not. */
