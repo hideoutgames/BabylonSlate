@@ -166,7 +166,8 @@ describe("ScriptContext shape", () => {
     "setGamepadRumble", "vibrateDevice", "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "projectTouchToScene",
     "sphereOverlap", "shapeSweep",
     "addImpulse", "moveCharacter", "playSound", "playParticles", "stopParticles", "restartParticles", "isParticlesPlaying", "spawnParticlesAtLocation", "spawnParticlesAttached", "emitParticleBurst",
-    "createSceneLayerAsync",
+    "setParticleFloatParameter", "setParticleVectorParameter", "setParticleColorParameter", "getParticleFloatParameter",
+    "getParticleVectorParameter", "getParticleColorParameter", "resetParticleParameter", "createSceneLayerAsync",
     "moveTo", "stopMovement", "btFinish", "btEvaluate", "getBlackboard", "setBlackboard",
   ] as const satisfies readonly (keyof ScriptContext)[];
   const perCallKeys: readonly string[] = PER_CALL_KEYS;

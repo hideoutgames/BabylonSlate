@@ -1,8 +1,11 @@
 import {
   pin,
   type NodeDefinition,
+  type PinType,
   BOOL,
+  COLOR,
   EXEC,
+  FLOAT,
   INT,
   ROTATOR,
   STRING,
@@ -11,6 +14,58 @@ import {
   objectRef,
 } from "@haptic/scripting";
 import { selfActorPin } from "./self-pin";
+
+type ParameterKind = "Float" | "Vector" | "Color";
+
+const PARAMETER_VALUE: Record<ParameterKind, { type: PinType; defaultValue: unknown; description: string }> = {
+  Float: { type: FLOAT, defaultValue: 1, description: "a Float parameter; a vector or color parameter takes it on every component" },
+  Vector: { type: VEC3, defaultValue: { x: 0, y: 0, z: 0 }, description: "a Vector 3 parameter; a Vector 2 parameter takes X and Y" },
+  Color: { type: COLOR, defaultValue: { x: 1, y: 1, z: 1, w: 1 }, description: "a Color parameter" },
+};
+
+const nameIn = () => ({ ...pin("name", "Name", "in", STRING), defaultValue: "" });
+
+function parameterSetter(kind: ParameterKind): NodeDefinition {
+  const value = PARAMETER_VALUE[kind];
+  return {
+    id: `particles.set${kind}Parameter`,
+    title: `Set Particle ${kind} Parameter`,
+    category: "particles",
+    description: `Sets ${value.description} on the actor's particle components whose Particle System declares Name, while the effect runs. Not saved.`,
+    searchAliases: ["particle parameter", `set ${kind.toLowerCase()} parameter`],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      selfActorPin("actor"),
+      nameIn(),
+      pin("value", "Value", "in", value.type, "data", true, value.defaultValue),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.setParticle${kind}Parameter(${ctx.input("actor")}, ${ctx.input("name")}, ${ctx.input("value")});`);
+    },
+  };
+}
+
+function parameterGetter(kind: ParameterKind): NodeDefinition {
+  return {
+    id: `particles.get${kind}Parameter`,
+    title: `Get Particle ${kind} Parameter`,
+    category: "particles",
+    pure: true,
+    description: "Returns a particle parameter of the first particle component on the actor whose Particle System declares Name: the value set at runtime, else the default.",
+    searchAliases: ["particle parameter", `get ${kind.toLowerCase()} parameter`],
+    pins: () => [
+      selfActorPin("actor"),
+      nameIn(),
+      pin("value", "Value", "out", PARAMETER_VALUE[kind].type),
+      pin("found", "Found", "out", BOOL),
+    ],
+    codegen: (ctx) => {
+      const read = `ctx.getParticle${kind}Parameter(${ctx.input("actor")}, ${ctx.input("name")})`;
+      return { value: `${read}.value`, found: `${read}.found` };
+    },
+  };
+}
 
 export const particleNodes: NodeDefinition[] = [
   {
@@ -123,6 +178,29 @@ export const particleNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.emitParticleBurst(${ctx.input("actor")}, ${ctx.input("count")}, ${ctx.input("slot")});`);
+    },
+  },
+  parameterSetter("Float"),
+  parameterSetter("Vector"),
+  parameterSetter("Color"),
+  parameterGetter("Float"),
+  parameterGetter("Vector"),
+  parameterGetter("Color"),
+  {
+    id: "particles.resetParameter",
+    title: "Reset Particle Parameter",
+    category: "particles",
+    description: "Drops the value Set Particle Parameter gave Name on the actor's particle components, back to the default.",
+    searchAliases: ["particle parameter", "reset parameter"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      selfActorPin("actor"),
+      nameIn(),
+      pin("success", "Success", "out", BOOL),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`${ctx.output("success")} = ctx.resetParticleParameter(${ctx.input("actor")}, ${ctx.input("name")});`);
     },
   },
 ];

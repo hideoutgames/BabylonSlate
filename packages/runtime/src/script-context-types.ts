@@ -496,6 +496,14 @@ export interface ScriptContext {
   spawnParticlesAttached(system: unknown, attachTo: unknown, bone: unknown, locationOffset: unknown, rotationOffset: unknown,
     autoDestroy?: unknown): Actor | null;
   emitParticleBurst(actor: EngineObject | null | undefined, count: number, slot?: number): void;
+  /** Set Particle Float / Vector / Color Parameter on the actor's particle components; a name no System declares warns once. */
+  setParticleFloatParameter(actor: EngineObject | null | undefined, name: string, value: number): void;
+  setParticleVectorParameter(actor: EngineObject | null | undefined, name: string, value: Vec3): void;
+  setParticleColorParameter(actor: EngineObject | null | undefined, name: string, value: ScriptColor): void;
+  getParticleFloatParameter(actor: EngineObject | null | undefined, name: string): { found: boolean; value: number };
+  getParticleVectorParameter(actor: EngineObject | null | undefined, name: string): { found: boolean; value: Vec3 };
+  getParticleColorParameter(actor: EngineObject | null | undefined, name: string): { found: boolean; value: ScriptColor };
+  resetParticleParameter(actor: EngineObject | null | undefined, name: string): boolean;
   setChannelVolume(channelGuid: string, volume: number): void;
   setGlobalVolume(volume: number): void;
   changeScene(scene: string): void;

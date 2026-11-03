@@ -6,6 +6,8 @@
  * ports are typed Float here. The only implicit conversion is a Float splat into
  * a vector or color, which is Babylon's own `adapt` rule.
  */
+import { resizeParticleParameterValue } from "@haptic/core";
+
 export type ParticleValueType = "float" | "vec2" | "vec3" | "color" | "particle";
 
 export type ParticleNumericType = Exclude<ParticleValueType, "particle">;
@@ -16,14 +18,6 @@ export const PARTICLE_NUMERIC_TYPES: readonly ParticleNumericType[] = [
   "vec3",
   "color",
 ];
-
-const COMPONENTS: Record<ParticleValueType, number> = {
-  float: 1,
-  vec2: 2,
-  vec3: 3,
-  color: 4,
-  particle: 0,
-};
 
 const LABELS: Record<ParticleValueType, string> = {
   float: "Float",
@@ -78,14 +72,7 @@ export function resizeParticleValue(
   value: readonly unknown[] | undefined,
   type: ParticleNumericType,
 ): number[] {
-  const width = COMPONENTS[type];
-  const source = (value ?? []).map((component) =>
-    typeof component === "number" && Number.isFinite(component) ? component : 0,
-  );
-  if (source.length === 1) return Array.from({ length: width }, () => source[0]!);
-  return Array.from({ length: width }, (_, index) =>
-    index < source.length ? source[index]! : type === "color" && index === 3 ? 1 : 0,
-  );
+  return resizeParticleParameterValue(value, type);
 }
 
 export type ParticleGenericResolution =

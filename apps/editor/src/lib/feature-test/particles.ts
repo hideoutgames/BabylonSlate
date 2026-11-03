@@ -49,6 +49,8 @@ export const FEATURE_TEST_PARTICLE_NAMES = {
   flashRelay: "FT_FxFlashRelay",
   /** Spawns the flash with Spawn Particles At Location and Spawn Particles Attached. */
   spawner: "FT_FxSpawner",
+  /** Sets Glow Rate and Spark Tint while playing, reads Glow Rate back, then resets it. */
+  glowPulse: "FT_FxGlowPulse",
 } as const;
 
 const NAMES = FEATURE_TEST_PARTICLE_NAMES;
@@ -100,13 +102,14 @@ export async function buildFeatureTestParticles(ctx: FeatureTestContext): Promis
     })
   ).guid;
 
-  await saveSystem(ctx, NAMES.showcase, [fountain, graph], "world");
-  await saveSystem(ctx, NAMES.sparks, [sparks], "world");
+  const showcase = await saveSystem(ctx, NAMES.showcase, [fountain, graph], "world");
+  const sparkBursts = await saveSystem(ctx, NAMES.sparks, [sparks], "world");
   await saveSystem(ctx, NAMES.smoke, [smoke], "local");
   await saveSystem(ctx, NAMES.stress, [stress], "world");
   const flash = await saveSystem(ctx, NAMES.flash, [await saveEmitter(ctx, NAMES.flashEmitter, flashEmitter(glow))], "world");
   flashRelays.set(ctx, await saveFlashRelay(ctx, flash));
   spawners.set(ctx, await saveSpawner(ctx, flash));
+  glowPulses.set(ctx, await saveGlowPulse(ctx, showcase, sparkBursts));
 }
 
 const spawners = new WeakMap<FeatureTestContext, FeatureTestClassRef>();
@@ -188,6 +191,44 @@ async function saveFlashRelay(ctx: FeatureTestContext, flash: string) {
   return { ref, components };
 }
 
+/** The Glow Pulse Class, saved by `buildFeatureTestParticles` and placed by `placeFeatureTestParticles`. */
+const glowPulses = new WeakMap<FeatureTestContext, { ref: FeatureTestClassRef; components: ReturnType<typeof comp>[] }>();
+
+/**
+ * Particle parameters from a Class graph: Begin Play raises the showcase's Glow Rate and tints
+ * the sparks (only the sparks component's System declares Spark Tint), asserts that Get Particle
+ * Float Parameter finds Glow Rate, and resets it after two seconds.
+ */
+async function saveGlowPulse(ctx: FeatureTestContext, showcase: string, sparks: string) {
+  const components = [
+    comp("prefab-glow", "ParticleComponent", { particleSystemGuid: showcase, playOnStart: true }, undefined, { name: "Glow" }),
+    comp("prefab-sparks", "ParticleComponent", { particleSystemGuid: sparks, playOnStart: true }, undefined, { name: "Sparks" }),
+  ];
+  const graph = classGraph({
+    components,
+    actorDefaults: { eventTick: "disabled" },
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("rate", "particles.setFloatParameter", 260, 0, { "default:name": "Glow Rate", "default:value": 240 }),
+      gNode("tint", "particles.setColorParameter", 520, 0, { "default:name": "Spark Tint", "default:value": { x: 1, y: 0.45, z: 0.1, w: 1 } }),
+      gNode("read", "particles.getFloatParameter", 520, 220, { "default:name": "Glow Rate" }),
+      gNode("check", "debug.assert", 780, 0, { "default:message": "Get Particle Float Parameter did not find Glow Rate" }),
+      gNode("wait", "timers.delay", 1040, 0, { "default:duration": 2 }),
+      gNode("reset", "particles.resetParameter", 1300, 0, { "default:name": "Glow Rate" }),
+    ],
+    edges: [
+      gExec("begin", "rate"),
+      gExec("rate", "tint"),
+      gExec("tint", "check"),
+      gWire("read", "found", "check", "condition"),
+      gExec("check", "wait"),
+      gExec("wait", "reset"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.glowPulse, parentClass: "Actor", graph });
+  return { ref, components };
+}
+
 /**
  * `Particles` zone: floor and four Particle Component actors (mixed fountain
  * and graph, mist around the fountain, spark bursts, rising smoke). The stress
@@ -238,6 +279,11 @@ export async function placeFeatureTestParticles(ctx: FeatureTestContext): Promis
   }));
   ctx.addActor(actor("ft-fx-flash-restart", "Flash Relay (Restart)", tf(zone.at(3, 1.5, 4)), restartComponents, {
     classId: relay.ref.classId,
+  }), { zone: "particles" });
+  const pulse = glowPulses.get(ctx);
+  if (!pulse) throw new Error("FeatureTest could not find the Glow Pulse Class");
+  ctx.addActor(actor("ft-fx-glow-pulse", "Glow Pulse", tf(zone.at(7, 0.1, 4)), instanceComponents("ft-fx-glow-pulse", pulse.components), {
+    classId: pulse.ref.classId,
   }), { zone: "particles" });
 
   const spawner = spawners.get(ctx);

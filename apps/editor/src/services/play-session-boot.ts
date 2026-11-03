@@ -8,7 +8,7 @@ import {
   type RuntimeDriver,
   type SessionDiagnosticAggregator,
 } from "@haptic/runtime";
-import { materialParameterTextureAssetGuids } from "@haptic/assets";
+import { buildParticleParameterCatalog, materialParameterTextureAssetGuids } from "@haptic/assets";
 import {
   playLoadModelsControl,
   playLoadSpritesControl,
@@ -147,6 +147,7 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
     texturePixelSizes: Object.fromEntries(options.texturePixelSizes ?? []),
     audioAssetGuids: options.audioAssetGuids ?? [...(options.audioLibrary?.audio.keys() ?? [])],
     materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
+    particleParameterCatalog: options.particleLibrary ? buildParticleParameterCatalog(options.particleLibrary) : {},
     materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes, options.renderTargetTextures),
     animClipCatalog,
     renderTargets: Object.fromEntries(options.renderTargets ?? []),

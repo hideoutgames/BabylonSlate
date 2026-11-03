@@ -4,6 +4,7 @@ import { normalizeParticleEmitterPayload, resolveBasicEmitterPlan } from "./part
 import type { ParticleLibrary, ParticleLibraryEmitter } from "./particle-library";
 import {
   applyBasicParameters,
+  buildParticleParameterCatalog,
   normalizeParticleBasicBindings,
   normalizeParticleParameterValues,
   particleSlotConflicts,
@@ -78,6 +79,18 @@ describe("Particle System parameters", () => {
     expect(values(new Map([["Intensity", [9, 9]]]), { Intensity: [8] }).get("Intensity")).toEqual([9]);
     // Tint conflicts in slot 2 (a float there, a color in the System): runtime values never reach it.
     expect(values(new Map([["Tint", [0.25, 0.5, 0.75, 1]]])).get("Tint")).toEqual([1]);
+  });
+
+  it("build the game Worker's catalog: each System's parameters with its own defaults, without Systems that have none", () => {
+    const base = library({ Intensity: [7] });
+    const withPlain: ParticleLibrary = { emitters: base.emitters,
+      systems: new Map([...base.systems, ["empty", { emitterGuids: ["plain"], space: "world" as const, previewSkybox: true, parameterDefaults: {} }]]) };
+    expect(buildParticleParameterCatalog(withPlain)).toEqual({
+      system: [
+        { name: "Intensity", type: "float", defaultValue: [7] },
+        { name: "Tint", type: "color", defaultValue: [1, 0, 0, 1] },
+      ],
+    });
   });
 });
 
