@@ -51,7 +51,7 @@ Targets are guides, not guarantees. Profile on the devices you ship to.
 
 ## Occlusion culling
 
-With **Occlusion Culling** on (the **Geometry** group of Scalability), Play and exported games skip objects that are wholly hidden behind solid shapes. Fewer draws can raise the frame rate in dense scenes, such as streets and rooms. It is on at every level; turn it off in a project's Geometry group if it costs more than it saves on your devices.
+With **Occlusion Culling** on (the **Geometry** group of Scalability), Play and exported games skip objects that are wholly hidden behind solid shapes. Fewer draws can raise the frame rate in dense scenes, such as streets and rooms. It is on at every level, and new 3D projects use it. New 2D projects start with it off, since sprites rarely hide behind solid shapes. To turn it off completely, clear it in the project's Geometry group, which covers Play and exported games, and in **Engine Settings** > **Viewport**, which covers the editor.
 
 - Box, Sphere and Cylinder meshes from a Mesh component hide what is behind them, and Plane meshes do when two-sided.
 - An imported model hides what is behind it when it is closed and solid: on import, Haptic finds a box that fits inside it, and uses that box. Open, flat or animated models do not hide anything, and a model only hides things while you look at it from outside.
