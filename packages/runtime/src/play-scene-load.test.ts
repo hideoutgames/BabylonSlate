@@ -1542,7 +1542,8 @@ describe("p7-play-scene-load", () => {
         classId: "Bruiser",
         source: `${compiled.source.replace(/\n$/, "")}\n${extraBody}`,
         anchors: compiled.anchors,
-        entryPoints: compiled.entryPoints,
+        // The appended function graph's export is an entry point too, as in a Class compiled with its functions.
+        entryPoints: [...compiled.entryPoints, ...fnCompiled.entryPoints],
         implementedInterfaces: ["iface-damageable"],
         interfaceImplementations: [
           {

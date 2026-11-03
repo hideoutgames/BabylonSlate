@@ -23,8 +23,7 @@
     "@haptic/navigation": "workspace:*",
     "@haptic/object-model": "workspace:*",
     "@haptic/physics": "workspace:*",
-    "@haptic/scripting": "workspace:*",
-    "acorn": "8.18.0"
+    "@haptic/scripting": "workspace:*"
   },
   "devDependencies": {
     "@haptic/scripting-nodes": "workspace:*",

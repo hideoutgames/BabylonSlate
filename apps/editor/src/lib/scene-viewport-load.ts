@@ -10,6 +10,7 @@ import {
   type EnvironmentLightingOverrides,
   type EnvironmentLightingSettings,
 } from "@haptic/core";
+import { holdEncodeQueuePause } from "../services/encode-queue-pause";
 
 /** Requested path changes enter the same shader/presentation barrier as other structural settings. */
 export function sceneViewportRenderSettingsKey(
@@ -91,6 +92,20 @@ export async function runSceneViewportBlockingLoad(options: {
   onProgress: (value: number, phase: SceneViewportLoadPhase, count?: SceneLoadCount) => void;
 }): Promise<void> {
   options.signal.throwIfAborted();
+  // Texture encodes compete with model parsing, texture decode and shader
+  // compiles on few-core devices, so none starts while the dialog blocks.
+  // Cancelling releases at once, even while a stage is still winding down.
+  const releaseEncodes = holdEncodeQueuePause("scene-load");
+  options.signal.addEventListener("abort", releaseEncodes, { once: true });
+  try {
+    await runBlockingLoadPhases(options);
+  } finally {
+    options.signal.removeEventListener("abort", releaseEncodes);
+    releaseEncodes();
+  }
+}
+
+async function runBlockingLoadPhases(options: Parameters<typeof runSceneViewportBlockingLoad>[0]): Promise<void> {
   options.onProgress(0, "Preparing Scene");
   await waitForSceneLoadingPaint(options.signal);
   options.signal.throwIfAborted();

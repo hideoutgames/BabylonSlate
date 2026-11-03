@@ -47,6 +47,7 @@ describe("ScriptHost nested dispatch", () => {
       entryPoints: [
         { name: "onTick", event: "onTick", isAsync: false },
         { name: "OnPing", event: "OnPing", isAsync: false },
+        { name: "Probe", isAsync: false },
       ],
       interfaceImplementations: [{ interfaceGuid: "probe", method: "Probe", exportName: "Probe" }],
     }));
@@ -71,10 +72,11 @@ describe("ScriptHost nested dispatch", () => {
         "export function onTick(ctx) { ctx.callInterface(ctx.self, 'probe', 'Probe', {}); ctx.self.setVariable('after', true); }",
         "export function Probe(ctx) { ctx.checkInfiniteLoop(); return {}; }",
       ].join("\n"), {
-        entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
+        entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }, { name: "Probe", isAsync: false }],
         interfaceImplementations: [{ interfaceGuid: "probe", method: "Probe", exportName: "Probe" }],
       }),
-      script("Rule", "export function evaluate(ctx) { ctx.checkInfiniteLoop(); return { enter: true }; }"),
+      script("Rule", "export function evaluate(ctx) { ctx.checkInfiniteLoop(); return { enter: true }; }",
+        { entryPoints: [{ name: "evaluate", event: "onAnimRule", isAsync: false }] }),
     ]);
     const hero = new Actor({ classId: "Hero", implementedInterfaces: ["probe"] });
     host.bindInterfaceHandlers(hero);
@@ -102,6 +104,8 @@ describe("ScriptHost nested dispatch", () => {
       entryPoints: [
         { name: "onTick", event: "onTick", isAsync: false },
         { name: "OnPing", event: "OnPing", isAsync: false },
+        { name: "Jump", isAsync: false },
+        { name: "Probe", isAsync: false },
       ],
       interfaceImplementations: [{ interfaceGuid: "probe", method: "Probe", exportName: "Probe" }],
     }));
@@ -143,9 +147,9 @@ describe("ScriptHost nested dispatch", () => {
     const host = new ScriptHost(services());
     await host.replaceScripts([
       script("MathLib", "export async function Add(ctx) { await ctx.delay(0); ctx.args.log.push('a'); return { value: 1 }; }",
-        { assetGuid: "math-a" }),
+        { assetGuid: "math-a", entryPoints: [{ name: "Add", isAsync: true }] }),
       script("MathLib", "export function Add(ctx) { ctx.args.log.push('b'); return { value: 2 }; }",
-        { assetGuid: "math-b" }),
+        { assetGuid: "math-b", entryPoints: [{ name: "Add", isAsync: false }] }),
     ]);
     const log: string[] = [];
 
@@ -185,7 +189,7 @@ describe("ScriptHost nested dispatch", () => {
       "  state.done = true;",
       "  return { fired: true };",
       "}",
-    ].join("\n")));
+    ].join("\n"), { entryPoints: [{ name: "Once", isAsync: false }] }));
     const first = host.createContext(new Actor({ classId: "Hero" }), 0, 0);
     const second = host.createContext(new Actor({ classId: "Hero" }), 0, 0);
 

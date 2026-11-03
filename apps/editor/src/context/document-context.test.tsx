@@ -33,6 +33,7 @@ import { JOURNAL_FLUSH_DELAY_MS } from "../lib/journal-buffer";
 import { registerNavBakeSaveFlush } from "../lib/nav-bake-save";
 import { setEditorQuiet } from "../lib/editor-quiet";
 import { editorViewportFramesHeld, subscribeEditorViewportFrameHold } from "../lib/editor-frame-hold";
+import { onEncodeQueuePause } from "../services/encode-queue-pause";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -1722,6 +1723,51 @@ describe("DocumentProvider closed document history", () => {
       expect(transitions).toEqual([false, true, false, true, false, true, false]);
     } finally {
       save.mockRestore();
+      unsubscribe();
+    }
+  });
+
+  it("pauses texture encodes while a Scene loads behind Loading Document, and resumes them when it opens, fails or is cancelled", async () => {
+    const actions = await openProject();
+    const level = await createScene(actions, "Level");
+    await saveAndSwitchScene(actions, level.path);
+    let encodesPaused: boolean | null = null;
+    const unsubscribe = onEncodeQueuePause((paused) => { encodesPaused = paused; });
+    const reads: Array<{ finish: () => void; fail: (error: Error) => void }> = [];
+    const realLoad = ProjectService.prototype.loadDocument;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function (this: ProjectService, kind, path, options) {
+      if (kind === "scene") await new Promise<void>((finish, fail) => { reads.push({ finish, fail }); });
+      return realLoad.call(this, kind, path, options);
+    });
+    try {
+      expect(encodesPaused).toBe(false);
+      let opening!: Promise<void>;
+      act(() => { opening = actions.openDocument(sceneRef(MAIN_SCENE_FILE)); });
+      await waitFor(() => expect(reads).toHaveLength(1));
+      expect(encodesPaused).toBe(true);
+      await act(async () => { reads[0]!.finish(); await opening; });
+      expect(documents().activeDocumentId).toBe(MAIN_SCENE_ID);
+      expect(encodesPaused).toBe(false);
+
+      act(() => { opening = actions.openDocument(sceneRef(level.path)); });
+      await waitFor(() => expect(reads).toHaveLength(2));
+      expect(encodesPaused).toBe(true);
+      await act(async () => { reads[1]!.fail(new Error("The Scene could not be decoded.")); await opening; });
+      expect(screen.getByTestId("scene-loading-dialog").textContent).toContain("Close");
+      expect(encodesPaused).toBe(false);
+
+      act(() => { opening = actions.openDocument(sceneRef(level.path)); });
+      await waitFor(() => expect(reads).toHaveLength(3));
+      expect(encodesPaused).toBe(true);
+      // Returning to the open Main Scene cancels the pending load.
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      expect(encodesPaused).toBe(false);
+      await act(async () => { reads[2]!.finish(); await opening; });
+      expect(documents().activeDocumentId).toBe(MAIN_SCENE_ID);
+      expect(encodesPaused).toBe(false);
+    } finally {
+      for (const pending of reads) pending.finish();
+      read.mockRestore();
       unsubscribe();
     }
   });

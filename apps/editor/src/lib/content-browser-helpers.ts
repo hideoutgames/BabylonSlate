@@ -16,13 +16,10 @@ import {
   walkAncestry,
   type TypeVisual,
 } from "@haptic/editor-kit";
-import {
-  GAME_SUBSYSTEM_CLASS_ID,
-  SCENE_SUBSYSTEM_CLASS_ID,
-  isLockedEngineClassId,
-} from "@haptic/object-model";
+import { isLockedEngineClassId } from "@haptic/object-model";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
+  ENGINE_BASE_CLASSES,
   classIdFromClassAsset,
   classParentLookup,
   newAssetFileName,
@@ -34,6 +31,7 @@ import { shownCompressionState } from "./texture-encode-state";
 // Boot-path consumers import these from `class-asset-lookup` directly; the
 // re-export keeps every other importer of this module unchanged.
 export {
+  ENGINE_BASE_CLASSES,
   classDocumentShowsPrefab,
   classIdFromClassAsset,
   classParentLookup,
@@ -141,27 +139,6 @@ export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
   "encode_failed",
 ];
 
-/** Engine base classes available when authoring a new Class asset. */
-export const ENGINE_BASE_CLASSES = [
-  "Object",
-  "Actor",
-  "RenderTargetCapture",
-  "SceneLayerActor",
-  "SceneLayerActorSwitcher",
-  "SceneStreamingActor",
-  "ActorComponent",
-  "GameInstance",
-  GAME_SUBSYSTEM_CLASS_ID,
-  SCENE_SUBSYSTEM_CLASS_ID,
-  "FunctionLibrary",
-  "DebugCommand",
-  "EditorUtilityObject",
-  "EditorFunctionLibrary",
-  "BTTask",
-  "BTDecorator",
-  "BTService",
-  "BTComposite",
-] as const;
 
 export type ParentClassTreeRow = {
   id: string;
