@@ -47,7 +47,8 @@ function textBounds(element: Element | null): DOMRect {
  * A label that explains itself in a tooltip instead of visible text: a row label, a graph node
  * title or a pin name. Hover or keyboard focus shows it; on touch a tap toggles it (long-press
  * stays the context menu) and does not focus or toggle the control. A dotted underline marks a
- * label that has one. The tooltip points at the label's text.
+ * label that has one. The tooltip points at the label's text, never takes a press, and closes
+ * when the pointer leaves the label.
  */
 export function LabelHint({
   hint,
@@ -77,6 +78,9 @@ export function LabelHint({
   return (
     <Tooltip
       open={open}
+      // Presses pass through: an opening tooltip slides over its label, which on a zoomed-out
+      // graph canvas is smaller than the arrow, and dragging the node by its title must still work.
+      disableHoverablePopup
       onOpenChange={(next, details) => {
         // A tap toggles it below; Base UI would close it again on the same press.
         if (touch.current && details.reason === "trigger-press") return;
