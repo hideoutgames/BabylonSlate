@@ -1,7 +1,8 @@
-import type {
-  CubeTexture,
-  InternalTexture,
+import {
   SphericalPolynomial,
+  type AbstractEngine,
+  type CubeTexture,
+  type InternalTexture,
 } from "@babylonjs/core";
 import { CubeMapToSphericalPolynomialTools } from "@babylonjs/core/Misc/HighDynamicRange/cubemapToSphericalPolynomial";
 import type { TextureResources } from "./resource-cache";
@@ -16,6 +17,37 @@ interface Preparation {
 }
 
 const preparations = new WeakMap<InternalTexture, Preparation>();
+
+/**
+ * Irradiance already read back, per Engine, keyed by the source's content key (asset and content fingerprint, or its
+ * engine files) and decoding: a scene that loads the same environment again (Play, and the editor after Play) reuses
+ * it instead of drawing and reading the cube again. Small: one 9 × 3 table per environment.
+ */
+const remembered = new WeakMap<AbstractEngine, Map<string, number[][]>>();
+const REMEMBERED_PER_ENGINE = 16;
+
+const COEFFICIENTS = ["x", "y", "z", "xx", "yy", "zz", "yz", "zx", "xy"] as const;
+
+function remember(engine: AbstractEngine, key: string, polynomial: SphericalPolynomial): void {
+  let entries = remembered.get(engine);
+  if (!entries) remembered.set(engine, entries = new Map());
+  entries.delete(key);
+  entries.set(key, COEFFICIENTS.map((name) => polynomial[name].asArray()));
+  // Oldest first: drop beyond the bound.
+  for (const oldest of entries.keys()) {
+    if (entries.size <= REMEMBERED_PER_ENGINE) break;
+    entries.delete(oldest);
+  }
+}
+
+function recall(engine: AbstractEngine, key: string): SphericalPolynomial | null {
+  const entries = remembered.get(engine);
+  const data = entries?.get(key);
+  if (!data) return null;
+  entries!.delete(key);
+  entries!.set(key, data);
+  return SphericalPolynomial.FromArray(data);
+}
 
 /**
  * Pinned Babylon 9.29 adapter: inspect existing coefficients without invoking
@@ -85,14 +117,26 @@ function prepare(
   };
   const rgbd = source.isRGBD;
   const gamma = source.gammaSpace;
-  const exactSrgb = internal.getEngine().useExactSrgbConversions;
+  const engine = internal.getEngine();
+  const exactSrgb = engine.useExactSrgbConversions;
   const preparationLease = cache.acquireExisting(source);
+  // A texture the cache holds no content key for (""), such as a generated cube, is never remembered.
+  const key = preparationLease.key ? `${preparationLease.key}\0${rgbd ? 1 : 0}${gamma ? 1 : 0}${exactSrgb ? 1 : 0}` : null;
+  const known = key ? recall(engine, key) : null;
+  if (known) {
+    request.polynomial = known;
+    request.pending = false;
+    preparationLease.release();
+    return request;
+  }
   const current = () =>
     source.getInternalTexture() === internal &&
     internal._hardwareTexture === request.hardware;
   void environmentPolynomial(source, current, { rgbd, gamma, exactSrgb })
     .then((polynomial) => {
-      if (polynomial) request.polynomial = polynomial;
+      if (!polynomial) return;
+      request.polynomial = polynomial;
+      if (key) remember(engine, key, polynomial);
     })
     .catch((cause) => {
       request.error = new Error("Environment irradiance preparation failed.", {

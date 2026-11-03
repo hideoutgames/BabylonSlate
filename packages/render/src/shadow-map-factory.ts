@@ -13,7 +13,7 @@ import {
   Camera,
 } from "@babylonjs/core";
 import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowTileSize } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasRenderTarget, shadowTileSize } from "./shadow-atlas";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
@@ -144,8 +144,10 @@ export function createShadowGenerator(
 ): ShadowGenerator {
   const scene = context.scene;
   const directionalLight = entry.light instanceof DirectionalLight;
+  // Every map is a tile of the Scene's atlas: once the atlas target has passed, a new tile allocates nothing.
   const validateAllocation = beginShadowAllocationValidation(
     scene.getEngine(),
+    shadowAtlasRenderTarget(scene),
   );
   // A view's map is keyed to its camera; the scene view's to the null camera.
   const camera = view ?? undefined;

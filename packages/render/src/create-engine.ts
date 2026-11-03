@@ -50,6 +50,7 @@ import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
+import { bridgeEngineEffects, releaseBridgedEffects } from "./effect-bridge";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
@@ -76,7 +77,7 @@ import {
 import type {
   SerializedScene,
 } from "@haptic/core";
-import { createDefaultScene, engineCommandBus } from "@haptic/core";
+import { engineCommandBus } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
@@ -361,7 +362,7 @@ function initializeEngine(
   // so the page's last Play view returns later editor decodes to workers.
   // Retain before the Play configuration so any construction failure restores it.
   let ktx2Runtime: Pick<Ktx2DecoderRuntimeOptions, "caps" | "renderer"> | null = null;
-  const releaseMainThreadDecoding = options.playMode
+  const releaseMainThreadDecoding = options.playMode && !options.workerDecoders
     ? retainMainThreadDecoding(() => {
         configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
           dracoBasePath: options.dracoBasePath,
@@ -1627,11 +1628,8 @@ function initializeEngine(
     editorToolsRef.current = editor;
   }
 
-  // Play renders snapshot proxy meshes only. Seeding the default scene here
-  // stacks editor helpers under those proxies at the origin (z-fighting / additive look).
-  if (!options.playMode) {
-    loadScene(createDefaultScene());
-  }
+  // No scene is seeded: every view loads its own (the editor its document, Play its snapshot proxies), and a seeded
+  // default scene would only fetch and upload its sky and build its sun's shadow map before being replaced.
 
   const resize = () => {
     if (registeredView && !registeredViewIsEnabled(registeredView)) {
@@ -1889,6 +1887,8 @@ function initializeEngine(
     } else {
       worldLoading = false;
       firstDraws?.resume();
+      // Presented: what it draws holds its own Effects, so the closed view's that nothing uses can go.
+      releaseBridgedEffects(engine);
     }
     pending.resolve();
   };
@@ -2411,6 +2411,8 @@ function initializeEngine(
     editor,
     dispose: () => {
       if (disposed) return;
+      // The Engine's next view (Play after the editor's, the editor's after Play) draws mostly these Effects.
+      if (!ownsEngine) bridgeEngineEffects(engine);
       resetJoysticks();
       runtimeTransformTools?.dispose();
       runtimeTransformTools = null;

@@ -226,6 +226,8 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
     sharedEngine,
     playMode: true,
+    // The editor page loads the mesh decoders' and KTX2 transcoder's wasm in workers: Play keeps them there.
+    workerDecoders: true,
     // While the view holds for WebGPU render pipelines the game waits, as for a blocking load.
     onPipelineHold: (held) => {
       if (stopped || (!worker && !runtime)) return;

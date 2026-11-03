@@ -87,20 +87,24 @@ describe("createCanvasResizeGuard", () => {
         pending.delete(id as number);
       },
     });
+    // The first size is no drag: it applies at once, without a hold.
     apply({ clientWidth: 640, clientHeight: 360 });
     expect(resize).toHaveBeenCalledTimes(1);
-    expect(onHoldChange).toHaveBeenCalledTimes(1);
-    expect(onHoldChange).toHaveBeenLastCalledWith(true);
+    expect(onHoldChange).not.toHaveBeenCalled();
+    expect(pending.size).toBe(0);
 
     apply({ clientWidth: 641, clientHeight: 360 });
     expect(resize).toHaveBeenCalledTimes(2);
+    expect(onHoldChange.mock.calls).toEqual([[true]]);
+    apply({ clientWidth: 642, clientHeight: 360 });
+    expect(resize).toHaveBeenCalledTimes(3);
     expect(onHoldChange.mock.calls).toEqual([[true]]);
     expect(pending.size).toBe(1);
 
     for (const fn of pending.values()) fn();
     pending.clear();
     expect(onHoldChange).toHaveBeenLastCalledWith(false);
-    expect(resize).toHaveBeenCalledTimes(3);
+    expect(resize).toHaveBeenCalledTimes(4);
     apply.dispose();
   });
 
@@ -121,10 +125,11 @@ describe("createCanvasResizeGuard", () => {
       },
     });
     apply({ clientWidth: 640, clientHeight: 360 });
+    apply({ clientWidth: 800, clientHeight: 360 });
     expect(pending.size).toBe(1);
     apply.dispose();
     expect(pending.size).toBe(0);
     expect(onHoldChange.mock.calls).toEqual([[true]]);
-    expect(resize).toHaveBeenCalledTimes(1);
+    expect(resize).toHaveBeenCalledTimes(2);
   });
 });

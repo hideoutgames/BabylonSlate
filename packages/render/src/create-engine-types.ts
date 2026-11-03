@@ -290,6 +290,12 @@ export interface CreateEngineOptions {
   /** When true, use Play scene performance settings. */
   playMode?: boolean;
   /**
+   * A Play view decodes Draco meshes and transcodes KTX2 on the main thread by default: the packed player and the
+   * Preview Build iframe cannot load the decoders' wasm from a blob Worker. A Play view in a page whose workers load
+   * them (the editor's) passes true to keep decoding off the main thread.
+   */
+  workerDecoders?: boolean;
+  /**
    * The world view started (true) or stopped (false) holding its last image
    * while WebGPU render pipelines, or on any backend effects the driver still
    * compiles, are needed, for `PIPELINE_HOLD_PAUSE_DELAY_MS`; the release is
