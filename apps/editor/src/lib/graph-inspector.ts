@@ -501,6 +501,7 @@ function pushPinDefaultRows(
           displayType: identity.displayType,
           visual: identity.visual,
           placeholder: assetType || "Any Asset",
+          ...(assetType ? { assetTypes: [assetType] } : {}),
           onPick: () => mappingNames?.onPickAsset?.(entry.pinId, assetType),
           onChange: (value) => onPatch({ [key]: value }),
         });
