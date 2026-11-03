@@ -317,6 +317,33 @@ const GET_SCENE_REFERENCE: EngineScriptFunction = {
   ],
 };
 
+/** ParticleComponent parameter functions: the component's own runtime values, as the particle parameter nodes set them. */
+const PARTICLE_PARAMETER_NAME: EngineScriptPin = { name: "name", typeId: "string", direction: "in", defaultValue: "" };
+const PARTICLE_PARAMETER_FUNCTIONS: EngineScriptFunction[] = [
+  ...([["Float", "float"], ["Vector", "vec3"], ["Color", "color"]] as const).flatMap(
+    ([kind, typeId]): EngineScriptFunction[] => [
+      {
+        name: `Set ${kind} Parameter`,
+        runtime: `setParticle${kind}Parameter`,
+        description: "Sets a parameter of this component's Particle System while it runs. Not saved; a name the System does not declare is ignored.",
+        pins: [EXEC_IN, EXEC_OUT, PARTICLE_PARAMETER_NAME, { name: "value", typeId, direction: "in", ...(typeId === "float" ? { defaultValue: 1 } : {}) }],
+      },
+      {
+        name: `Get ${kind} Parameter`,
+        runtime: `getParticle${kind}Parameter`,
+        description: "The parameter's value set at runtime, else the default. Found is false when the System does not declare it.",
+        pins: [PARTICLE_PARAMETER_NAME, { name: "value", typeId, direction: "out" }, { name: "found", typeId: "bool", direction: "out" }],
+      },
+    ],
+  ),
+  {
+    name: "Reset Parameter",
+    runtime: "resetParticleParameter",
+    description: "Drops the runtime value, back to the default.",
+    pins: [EXEC_IN, EXEC_OUT, PARTICLE_PARAMETER_NAME, { name: "success", typeId: "bool", direction: "out" }],
+  },
+];
+
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   ...UI_CONTROL_2D_SCRIPT_APIS,
   SCENE_LAYER_ACTOR_SCRIPT_API,
@@ -788,6 +815,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
           { name: "slot", typeId: "int", direction: "in", defaultValue: -1 },
         ],
       },
+      ...PARTICLE_PARAMETER_FUNCTIONS,
     ],
     events: [PARTICLES_FINISHED],
   },

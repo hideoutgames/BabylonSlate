@@ -67,10 +67,19 @@ export type TraceParticleComponent = {
   generation: number;
 };
 
+/** A ParticleComponent's runtime parameter values (Set Particle Parameter) by name. */
+export type TraceParticleParameters = {
+  actorGuid: string;
+  componentGuid: string;
+  values: Record<string, number[]>;
+};
+
 export type TraceParticleState = {
   components: TraceParticleComponent[];
   /** The generation the next Play gets. */
   nextGeneration: number;
+  /** Components with runtime parameter values; omitted when none has any. */
+  parameters?: TraceParticleParameters[];
 };
 
 /** The Sprite Animation clip an actor shows (Animation Graph or Play Animation). */

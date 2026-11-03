@@ -23,6 +23,7 @@ import type {
   FocusNavigationSettings,
   InputAssetDefinition,
   MaterialParameterCatalog,
+  ParticleParameterCatalog,
   OverlaySafeAreaInsets,
   RenderProjectSettings,
   RenderTargetPayload,
@@ -145,6 +146,8 @@ export interface RuntimeDriverOptions {
   /** Audio asset guids known to this Play session (BT PlaySound fail-on-missing). */
   audioAssetGuids?: readonly string[];
   materialParameterCatalog?: MaterialParameterCatalog;
+  /** Each Particle System's parameters, for Get, Set and Reset Particle Parameter. */
+  particleParameterCatalog?: ParticleParameterCatalog;
   materialTextureAssetGuids?: readonly string[];
   renderTargets?: Readonly<Record<string, RenderTargetPayload>>;
   renderTargetTextures?: Readonly<Record<string, RenderTargetTexturePayload>>;

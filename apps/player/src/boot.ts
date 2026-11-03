@@ -2,7 +2,7 @@ import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@haptic/c
 import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
 import type { ScalabilityAcknowledgement, RenderProjectSettings, RuntimeAssetLoadState } from "@haptic/core";
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
-import { cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
+import { buildParticleParameterCatalog, cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
 import { captureShadowDiagnostics, lightsDebugText } from "@haptic/render";
 import type { AbstractEngine } from "@babylonjs/core";
 import { createSessionBoundaryClient, snapshotFloatCount, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
@@ -534,6 +534,7 @@ function initializePlayer(
     traceDebugDraw: manifest.bundleDebugger,
     audioAssetGuids: manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
+    particleParameterCatalog: buildParticleParameterCatalog(content.particleLibrary),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),
     renderTargets: Object.fromEntries(content.renderTargets),
     renderTargetTextures: Object.fromEntries(content.renderTargetTextures),

@@ -1,5 +1,6 @@
 import { DEFORMER_MAX_COORDINATE, isUIControl2DClass, parseDeformerProperties } from "@haptic/core";
 import { Actor, type ActorComponent, type EngineObject } from "@haptic/object-model";
+import { particleParameterArg, particleParameterResult } from "./particle-parameter-bindings";
 import { asActor, asActorComponent, vec3Arg } from "./script-host-helpers";
 import type { ScriptHostServices } from "./script-host-services";
 import { splineComponentFunction } from "./spline-script";
@@ -126,6 +127,21 @@ export function callNativeComponentFunction(
   if (name === "emitParticleBurst" && component.owner) {
     host.services.emitParticleBurst?.(component.owner.guid, Number(args.count), Number(args.slot ?? -1), component.guid);
     return {};
+  }
+  const particleParameter = /^(set|get)Particle(Float|Vector|Color)Parameter$/.exec(name);
+  if (particleParameter || name === "resetParticleParameter") {
+    const owner = component.owner;
+    const parameterName = String(args.name ?? "");
+    if (name === "resetParticleParameter") {
+      return { success: !!owner && host.services.resetParticleParameter?.(owner.guid, parameterName, component.guid) === true };
+    }
+    const [, action, kind] = particleParameter!;
+    if (action === "set") {
+      if (owner) host.services.setParticleParameter?.(owner.guid, parameterName, particleParameterArg(kind!, args.value), component.guid);
+      return {};
+    }
+    const result = (owner && host.services.getParticleParameter?.(owner.guid, parameterName, component.guid)) || { found: false, value: [] };
+    return { found: result.found, value: particleParameterResult(kind!, result.value) };
   }
   if (name === "stopParticles" && component.owner) {
     host.services.setParticlePlaying?.(

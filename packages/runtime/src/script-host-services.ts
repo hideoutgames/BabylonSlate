@@ -288,6 +288,15 @@ export interface ScriptHostServices {
   isParticlesPlaying?(actorGuid: string, componentId?: string): boolean;
   /** `count` extra particles from a playing ParticleComponent; `slot` -1 for every emitter slot. */
   emitParticleBurst?(actorGuid: string, count: number, slot: number, componentId?: string): void;
+  /**
+   * Sets a runtime parameter value on the actor's ParticleComponents (only `componentId` when
+   * given) whose Particle System declares `name`. False when none does.
+   */
+  setParticleParameter?(actorGuid: string, name: string, value: readonly number[], componentId?: string): boolean;
+  /** The first such component's value: runtime ?? override ?? default, sized to the parameter's type. */
+  getParticleParameter?(actorGuid: string, name: string, componentId?: string): { found: boolean; value: number[] };
+  /** Drops the runtime value, back to the component's override or the default. False when no System declares `name`. */
+  resetParticleParameter?(actorGuid: string, name: string, componentId?: string): boolean;
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
   getScalability?(): ScalabilitySnapshot | null;

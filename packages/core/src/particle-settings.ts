@@ -77,3 +77,24 @@ export const PARTICLE_GHOSTS_PER_COMPONENT = 3;
 export function parseParticleRetrigger(value: unknown): ParticleRetrigger {
   return value === "restart" ? "restart" : "overlap";
 }
+
+/** A particle parameter's value type (Basic emitters bind Float, Vector 3 and Color only). */
+export type ParticleParameterValueType = "float" | "vec2" | "vec3" | "color";
+/** One parameter a Particle System's slots declare: its type and default are the first declaring slot's, or the System's own default. */
+export type ParticleParameterCatalogEntry = { name: string; type: ParticleParameterValueType; defaultValue: number[] };
+/**
+ * Each Particle System's parameters by System guid, as the game Worker reads them for Get, Set
+ * and Reset Particle Parameter. Built from the session's particle library; Babylon-free.
+ */
+export type ParticleParameterCatalog = Readonly<Record<string, readonly ParticleParameterCatalogEntry[]>>;
+
+const PARTICLE_PARAMETER_VALUE_WIDTHS: Readonly<Record<ParticleParameterValueType, number>> = { float: 1, vec2: 2, vec3: 3, color: 4 };
+
+/** `value` as `type`: one number splats, missing components are 0 (Color alpha 1), extras are dropped. */
+export function resizeParticleParameterValue(value: readonly unknown[] | undefined, type: ParticleParameterValueType): number[] {
+  const width = PARTICLE_PARAMETER_VALUE_WIDTHS[type];
+  const source = (value ?? []).map((component) => (typeof component === "number" && Number.isFinite(component) ? component : 0));
+  if (source.length === 1) return Array.from({ length: width }, () => source[0]!);
+  return Array.from({ length: width }, (_, index) => (index < source.length ? source[index]! : type === "color" && index === 3 ? 1 : 0));
+}
+

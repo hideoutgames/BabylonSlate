@@ -216,6 +216,7 @@ export function playLoadControl(options: {
   loopCount?: number;
   audioAssetGuids?: string[];
   materialParameterCatalog?: MaterialParameterCatalog;
+  particleParameterCatalog?: import("@haptic/core").ParticleParameterCatalog;
   materialTextureAssetGuids?: string[];
   renderTargets?: Record<string, import("@haptic/core").RenderTargetPayload>;
   renderTargetTextures?: Record<string, import("@haptic/core").RenderTargetTexturePayload>;
@@ -271,6 +272,7 @@ export function playLoadControl(options: {
     loopCount: options.loopCount,
     audioAssetGuids: options.audioAssetGuids,
     materialParameterCatalog: options.materialParameterCatalog,
+    particleParameterCatalog: options.particleParameterCatalog,
     materialTextureAssetGuids: options.materialTextureAssetGuids,
     renderTargets: options.renderTargets,
     renderTargetTextures: options.renderTargetTextures,

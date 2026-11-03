@@ -34,6 +34,13 @@ describe("particle nodes", () => {
       "particles.spawnAtLocation",
       "particles.spawnAttached",
       "particles.emitBurst",
+      "particles.setFloatParameter",
+      "particles.setVectorParameter",
+      "particles.setColorParameter",
+      "particles.getFloatParameter",
+      "particles.getVectorParameter",
+      "particles.getColorParameter",
+      "particles.resetParameter",
     ]);
     const registry = createDefaultNodeRegistry();
     const play = registry.get("particles.play");
@@ -200,5 +207,54 @@ describe("particle nodes", () => {
       mod.onBeginPlay({ self, emitParticleBurst: (...args: unknown[]) => calls.push(args) });
     }
     expect(calls).toEqual([[self, 10, -1], [self, 3, 1]]);
+  });
+
+  it("Set, Get and Reset Particle Parameter call the context on Self with the Name and Value pins", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "float", "particles.setFloatParameter", { "default:name": "Heat" }),
+        node(registry, "vector", "particles.setVectorParameter", { "default:name": "Wind", "default:value": { x: 1, y: 2, z: 3 } }),
+        node(registry, "color", "particles.setColorParameter", { "default:name": "Tint" }),
+        node(registry, "get", "particles.getColorParameter", { "default:name": "Tint" }),
+        node(registry, "reset", "particles.resetParameter", { "default:name": "Heat" }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "float", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "float", sourcePinId: "execOut", targetNodeId: "vector", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "vector", sourcePinId: "execOut", targetNodeId: "color", targetPinId: "execIn" },
+        { id: "e4", sourceNodeId: "color", sourcePinId: "execOut", targetNodeId: "reset", targetPinId: "execIn" },
+        { id: "e5", sourceNodeId: "reset", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e6", sourceNodeId: "get", sourcePinId: "found", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const body = compileGraph(graph, { assetGuid: "a", registry }).source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const mod = new Function(`${body}\nreturn { onBeginPlay };`)() as { onBeginPlay: (ctx: unknown) => void };
+    const self = { guid: "self" };
+    const calls: unknown[][] = [];
+    const record = (name: string) => (...args: unknown[]) => { calls.push([name, ...args]); };
+    const logged: unknown[] = [];
+    mod.onBeginPlay({
+      self,
+      setParticleFloatParameter: record("float"),
+      setParticleVectorParameter: record("vector"),
+      setParticleColorParameter: record("color"),
+      getParticleColorParameter: (...args: unknown[]) => { calls.push(["get", ...args]); return { found: true, value: { x: 1, y: 0, z: 0, w: 1 } }; },
+      resetParticleParameter: (...args: unknown[]) => { calls.push(["reset", ...args]); return true; },
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logged.push(value),
+    });
+    expect(calls).toEqual([
+      ["float", self, "Heat", 1],
+      ["vector", self, "Wind", { x: 1, y: 2, z: 3 }],
+      ["color", self, "Tint", { x: 1, y: 1, z: 1, w: 1 }],
+      ["reset", self, "Heat"],
+      ["get", self, "Tint"],
+    ]);
+    expect(logged).toEqual([true]);
   });
 });

@@ -11,6 +11,7 @@ import {
   type ParticleGraphDocument,
   type ParticleNumericType,
 } from "@haptic/particle-graph";
+import type { ParticleParameterCatalogEntry } from "@haptic/core";
 import type { BasicEmitterPlan } from "./particle-basic-emitter";
 import type { ParticleLibrary, ParticleLibraryEmitter } from "./particle-library";
 
@@ -162,6 +163,20 @@ export function particleSystemParameters(
     }
   });
   return { parameters: [...parameters.values()], conflicts: [...conflicts.values()] };
+}
+
+/**
+ * Every Particle System's parameters, keyed by System guid, for the game Worker (the `load` and
+ * `loadSceneContent` catalogs). Each entry's default is the System's own default, else the
+ * first declaring slot's; a System without parameters is left out.
+ */
+export function buildParticleParameterCatalog(library: ParticleLibrary): Record<string, ParticleParameterCatalogEntry[]> {
+  const catalog: Record<string, ParticleParameterCatalogEntry[]> = {};
+  for (const guid of library.systems.keys()) {
+    const { parameters } = particleSystemParameters(library, guid);
+    if (parameters.length) catalog[guid] = parameters.map(({ name, type, defaultValue }) => ({ name, type, defaultValue: [...defaultValue] }));
+  }
+  return catalog;
 }
 
 /**

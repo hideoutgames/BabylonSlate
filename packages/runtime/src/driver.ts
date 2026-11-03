@@ -108,6 +108,7 @@ import type { SnapshotPublisher } from "./snapshot-publisher";
 import type { RenderCommandEmitter } from "./render-command-emitter";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import { RuntimeVoices } from "./runtime-voices";
+import { particleComponentOverrides } from "./particle-parameter-bindings";
 import { RuntimeParticles } from "./runtime-particles";
 import type { RuntimeParticleEffects } from "./runtime-particle-effects";
 import { SpriteClipTrace, type SpriteClipState } from "./sprite-clip-trace";
@@ -450,6 +451,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
 
     // 3. Render and physics settings, physics worlds and the Scene library.
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
+    this.particles.replaceCatalog(options.particleParameterCatalog);
     this.propertyWrites = createPropertyWrites(this, options);
     this.scalability = createScalability(this, options);
     this.dt = options.dt ?? 1 / 60;
@@ -931,6 +933,11 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     for (const command of this.voices.restoreCommands(audio, this.frameId)) this.emit(command);
     const particles = frame.particles ?? { components: [], nextGeneration: 1 };
     for (const command of this.particles.restoreCommands(particles)) this.emit(command);
+    const overrides = (actorGuid: string, componentId: string) => {
+      const component = this.world.findActor(actorGuid)?.components.find((entry) => entry.guid === componentId);
+      return component ? particleComponentOverrides(component) : {};
+    };
+    for (const command of this.particles.restoreParameterCommands(particles, overrides)) this.emit(command);
   }
 
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
@@ -960,6 +967,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sourceRenderTargetTextures.clear();
     for (const [guid, value] of Object.entries(content.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.materialParameters.replaceCatalog(content.materialParameterCatalog, content.materialTextureAssetGuids);
+    this.particles.replaceCatalog(content.particleParameterCatalog);
     this.dataCatalog.replace(content.dataAssets ?? []);
     this.curveCatalog.clear();
     for (const entry of content.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);

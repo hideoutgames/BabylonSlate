@@ -5,6 +5,7 @@ import { RuntimeAssetCatalog } from "./asset-catalog";
 import { createAudioHostBindings } from "./audio-particle-emitter";
 import type { RuntimeDriverOptions } from "./driver-types";
 import { setWorldGravity, type RuntimeComposition } from "./runtime-composition";
+import { createParticleParameterBindings } from "./particle-parameter-bindings";
 import { recordDiagnostic } from "./runtime-error-reporting";
 import { createActorHostBindings } from "./runtime-host-actors";
 import { createAssetHostBindings } from "./runtime-host-assets";
@@ -157,6 +158,12 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     ...createAudioHostBindings({ frameId, scriptVoiceId: () => rt.voices.scriptVoiceId(), emit }),
     isParticlesPlaying: (actorGuid, componentId) => rt.particles.isPlaying(actorGuid, componentId),
     spawnParticleEffect: (request, owner) => rt.particleEffects.spawn(request, owner),
+    ...createParticleParameterBindings({
+      particles: rt.particles,
+      findActor: (actorGuid) => rt.world.findActor(actorGuid),
+      emit,
+      warn: (message) => rt.reportLog(message, "warning", "Particles"),
+    }),
     ...createNavigationHostBindings({ navigation: () => rt.navigation }),
     ...createSceneStreamHostBindings({ streams: rt.streams, world: () => rt.world }),
     animGraphControl: (target) => rt.animGraphs.control(target),

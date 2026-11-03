@@ -82,11 +82,14 @@ A parameter is a named value an emitter reads, such as an intensity or a tint, t
 
 Each Preview lists the parameters under **Preview Parameters**. Values set there play at once and are not saved.
 
+During Play, [Set Particle Float Parameter](../scripting/class/set-particle-float-parameter.md) and its Vector and Color versions change a parameter by name on every Particle component of an actor whose System declares it. [Reset Particle Parameter](../scripting/class/reset-particle-parameter.md) goes back to the default.
+
 ## Play particles from scripts
 
 The Particle component's **Play On Start** (on by default) starts the effect when the actor spawns. Otherwise use:
 
 - [Play Particles](../scripting/class/play-particles.md) to start an actor's particles.
 - [Stop Particles](../scripting/class/stop-particles.md) to stop emitting. Live particles finish their lifetime.
+- [Set Particle Float Parameter](../scripting/class/set-particle-float-parameter.md) and the other parameter nodes to change an effect while it plays.
 
 Particles freeze while Play is paused.
